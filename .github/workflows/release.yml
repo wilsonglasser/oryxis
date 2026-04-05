@@ -137,7 +137,7 @@ jobs:
             target/
           key: windows-release-${{ hashFiles('**/Cargo.lock') }}
       - run: cargo build --release
-      - name: Package
+      - name: Package zip
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path dist
@@ -145,10 +145,18 @@ jobs:
           Copy-Item README.md dist\
           Copy-Item resources\logo_64.png dist\
           Compress-Archive -Path dist\* -DestinationPath oryxis-windows-x86_64.zip
+      - name: Build installer
+        shell: pwsh
+        run: |
+          choco install nsis -y --no-progress
+          cd resources
+          makensis installer.nsi
       - uses: actions/upload-artifact@v4
         with:
           name: oryxis-windows-x86_64
-          path: oryxis-windows-x86_64.zip
+          path: |
+            oryxis-windows-x86_64.zip
+            oryxis-setup-x86_64.exe
 
   build-windows-arm:
     name: Windows ARM64
@@ -215,4 +223,5 @@ jobs:
             oryxis-macos-x86_64.tar.gz
             oryxis-macos-aarch64.tar.gz
             oryxis-windows-x86_64.zip
+            oryxis-setup-x86_64.exe
             oryxis-windows-aarch64.zip

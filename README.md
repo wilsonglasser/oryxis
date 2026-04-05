@@ -28,8 +28,9 @@ Pre-built binaries are available on the [Releases](https://github.com/wilsonglas
 | Linux | ARM64 | [`oryxis-linux-aarch64.tar.gz`](https://github.com/wilsonglasser/oryxis/releases/latest/download/oryxis-linux-aarch64.tar.gz) |
 | macOS | Intel | [`oryxis-macos-x86_64.tar.gz`](https://github.com/wilsonglasser/oryxis/releases/latest/download/oryxis-macos-x86_64.tar.gz) |
 | macOS | Apple Silicon | [`oryxis-macos-aarch64.tar.gz`](https://github.com/wilsonglasser/oryxis/releases/latest/download/oryxis-macos-aarch64.tar.gz) |
-| Windows | x86_64 | [`oryxis-windows-x86_64.zip`](https://github.com/wilsonglasser/oryxis/releases/latest/download/oryxis-windows-x86_64.zip) |
-| Windows | ARM64 | [`oryxis-windows-aarch64.zip`](https://github.com/wilsonglasser/oryxis/releases/latest/download/oryxis-windows-aarch64.zip) |
+| Windows | x86_64 | [`oryxis-setup-x86_64.exe`](https://github.com/wilsonglasser/oryxis/releases/latest/download/oryxis-setup-x86_64.exe) (installer) |
+| Windows | x86_64 | [`oryxis-windows-x86_64.zip`](https://github.com/wilsonglasser/oryxis/releases/latest/download/oryxis-windows-x86_64.zip) (portable) |
+| Windows | ARM64 | [`oryxis-windows-aarch64.zip`](https://github.com/wilsonglasser/oryxis/releases/latest/download/oryxis-windows-aarch64.zip) (portable) |
 
 ---
 
@@ -129,7 +130,7 @@ sudo apt install -y build-essential pkg-config libssl-dev libgtk-3-dev libwaylan
 
 **macOS:** Xcode Command Line Tools (`xcode-select --install`)
 
-**Windows:** Visual Studio Build Tools with C++ workload
+**Windows:** Visual Studio Build Tools with C++ workload (only needed to compile from source, not to run)
 
 ### Build & Run
 
