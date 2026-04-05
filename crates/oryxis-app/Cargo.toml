@@ -18,3 +18,8 @@ tokio = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 tokio-stream = { workspace = true }
+uuid = { workspace = true }
+chrono = { workspace = true }
+rfd = "0.15"
+image = "0.25"
+iced_fonts = { version = "0.3", features = ["bootstrap"] }

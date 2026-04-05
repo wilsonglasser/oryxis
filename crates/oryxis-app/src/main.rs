@@ -10,15 +10,27 @@ fn main() -> iced::Result {
 
     tracing::info!("Starting Oryxis");
 
+    // Load window icon from PNG
+    let icon = load_icon();
+
     iced::application(app::Oryxis::boot, app::Oryxis::update, app::Oryxis::view)
         .title(app::Oryxis::title)
         .theme(app::Oryxis::theme)
         .subscription(app::Oryxis::subscription)
+        .font(iced_fonts::BOOTSTRAP_FONT_BYTES)
         .window(window::Settings {
             size: Size::new(1200.0, 750.0),
             min_size: Some(Size::new(800.0, 500.0)),
+            icon: icon,
             ..Default::default()
         })
         .antialiasing(true)
         .run()
+}
+
+fn load_icon() -> Option<window::Icon> {
+    let bytes = include_bytes!("../../../resources/logo_64.png");
+    let img = image::load_from_memory(bytes).ok()?.into_rgba8();
+    let (w, h) = img.dimensions();
+    window::icon::from_rgba(img.into_raw(), w, h).ok()
 }

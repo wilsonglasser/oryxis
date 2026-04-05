@@ -12,3 +12,4 @@ iced = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
 thiserror = { workspace = true }
+arboard = "3"

@@ -1,3 +1,3 @@
 pub mod engine;
 
-pub use engine::SshEngine;
+pub use engine::{ConnectionResolver, SshEngine, SshError, SshSession};
