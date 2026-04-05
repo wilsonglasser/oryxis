@@ -227,7 +227,7 @@ cargo watch -x "test --workspace"  # Run tests on save
 
 ## License
 
-MIT
+[AGPL-3.0](LICENSE) — Free and open-source forever. Anyone can use, modify, and distribute. Modified versions made available over a network must share source code.
 
 ---
 

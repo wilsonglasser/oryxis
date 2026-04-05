@@ -1,5 +1,10 @@
 [workspace]
 resolver = "2"
+
+[workspace.package]
+license = "AGPL-3.0-or-later"
+authors = ["Wilson Glasser <wilsonglasser@gmail.com>"]
+repository = "https://github.com/wilsonglasser/oryxis"
 members = [
     "crates/oryxis-core",
     "crates/oryxis-ssh",
