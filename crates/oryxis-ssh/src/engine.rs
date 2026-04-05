@@ -494,32 +494,7 @@ impl SshEngine {
                     .await?)
             }
             AuthMethod::Agent => {
-                #[cfg(unix)]
-                {
-                    match russh_keys::agent::client::AgentClient::connect_env().await {
-                        Ok(mut agent) => {
-                            let identities = agent
-                                .request_identities()
-                                .await
-                                .map_err(|e| SshError::Key(format!("Agent: {}", e)))?;
-
-                            for identity in identities {
-                                if let Ok(true) = handle
-                                    .authenticate_publickey_with(username, identity, &mut agent)
-                                    .await
-                                {
-                                    return Ok(true);
-                                }
-                            }
-                            Ok(false)
-                        }
-                        Err(e) => Err(SshError::Key(format!("ssh-agent not available: {}", e))),
-                    }
-                }
-                #[cfg(not(unix))]
-                {
-                    Err(SshError::Key("ssh-agent is not supported on this platform".into()))
-                }
+                self.auth_via_agent(handle, username).await
             }
             AuthMethod::Interactive => {
                 let pw = password.unwrap_or("").to_string();
@@ -546,6 +521,66 @@ impl SshEngine {
     }
 
     /// Authenticate and open a PTY session on the handle.
+    /// Authenticate via ssh-agent. Uses Unix socket on Linux/macOS, named pipe on Windows.
+    #[cfg(unix)]
+    async fn auth_via_agent(
+        &self,
+        handle: &mut client::Handle<ClientHandler>,
+        username: &str,
+    ) -> Result<bool, SshError> {
+        match russh_keys::agent::client::AgentClient::connect_env().await {
+            Ok(mut agent) => {
+                let identities = agent
+                    .request_identities()
+                    .await
+                    .map_err(|e| SshError::Key(format!("Agent: {}", e)))?;
+
+                for identity in identities {
+                    if let Ok(true) = handle
+                        .authenticate_publickey_with(username, identity, &mut agent)
+                        .await
+                    {
+                        return Ok(true);
+                    }
+                }
+                Ok(false)
+            }
+            Err(e) => Err(SshError::Key(format!("ssh-agent not available: {}", e))),
+        }
+    }
+
+    /// Authenticate via Windows OpenSSH Agent (named pipe).
+    #[cfg(windows)]
+    async fn auth_via_agent(
+        &self,
+        handle: &mut client::Handle<ClientHandler>,
+        username: &str,
+    ) -> Result<bool, SshError> {
+        let pipe_path = r"\\.\pipe\openssh-ssh-agent";
+        match russh_keys::agent::client::AgentClient::connect_named_pipe(pipe_path).await {
+            Ok(mut agent) => {
+                let identities = agent
+                    .request_identities()
+                    .await
+                    .map_err(|e| SshError::Key(format!("Agent: {}", e)))?;
+
+                for identity in identities {
+                    if let Ok(true) = handle
+                        .authenticate_publickey_with(username, identity, &mut agent)
+                        .await
+                    {
+                        return Ok(true);
+                    }
+                }
+                Ok(false)
+            }
+            Err(e) => Err(SshError::Key(format!(
+                "Windows OpenSSH Agent not available ({}): {}",
+                pipe_path, e
+            ))),
+        }
+    }
+
     async fn authenticate_and_open(
         &self,
         mut handle: client::Handle<ClientHandler>,

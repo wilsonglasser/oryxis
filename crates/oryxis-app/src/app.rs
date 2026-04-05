@@ -1024,7 +1024,7 @@ impl Oryxis {
     // -- Vault screens --
 
     fn view_vault_setup(&self) -> Element<'_, Message> {
-        let logo = image(image::Handle::from_path("resources/logo_128.png"))
+        let logo = image(image::Handle::from_bytes(include_bytes!("../../../resources/logo_128.png").to_vec()))
             .width(64)
             .height(64);
         let title = text("Welcome to Oryxis").size(28).color(OryxisColors::TEXT_PRIMARY);
@@ -1062,7 +1062,7 @@ impl Oryxis {
     }
 
     fn view_vault_unlock(&self) -> Element<'_, Message> {
-        let logo = image(image::Handle::from_path("resources/logo_128.png"))
+        let logo = image(image::Handle::from_bytes(include_bytes!("../../../resources/logo_128.png").to_vec()))
             .width(64)
             .height(64);
         let title = text("Oryxis").size(28).color(OryxisColors::ACCENT);
@@ -1216,7 +1216,7 @@ impl Oryxis {
 
     fn view_sidebar(&self) -> Element<'_, Message> {
         // Logo
-        let logo = image(image::Handle::from_path("resources/logo_64.png"))
+        let logo = image(image::Handle::from_bytes(include_bytes!("../../../resources/logo_64.png").to_vec()))
             .width(28)
             .height(28);
         let header = container(
