@@ -2,6 +2,9 @@ use crate::backend::TerminalBackend;
 use crate::colors::TerminalPalette;
 use crate::pty::PtyHandle;
 
+/// Common result type for terminal operations.
+pub type TerminalResult<T> = Result<T, Box<dyn std::error::Error + Send + Sync>>;
+
 use alacritty_terminal::grid::Dimensions;
 use alacritty_terminal::term::cell::Flags as CellFlags;
 use alacritty_terminal::vte::ansi::CursorShape;
@@ -27,7 +30,7 @@ impl TerminalState {
     pub fn new(
         cols: u16,
         rows: u16,
-    ) -> Result<(Self, mpsc::UnboundedReceiver<Vec<u8>>), Box<dyn std::error::Error + Send + Sync>>
+    ) -> TerminalResult<(Self, mpsc::UnboundedReceiver<Vec<u8>>)>
     {
         let backend = TerminalBackend::new(cols, rows);
         let (pty, rx) = PtyHandle::spawn(cols, rows)?;
@@ -38,7 +41,7 @@ impl TerminalState {
     pub fn new_no_pty(
         cols: u16,
         rows: u16,
-    ) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
+    ) -> TerminalResult<Self> {
         let backend = TerminalBackend::new(cols, rows);
         let palette = TerminalPalette::default();
         Ok(Self { backend, pty: None, palette })
@@ -49,11 +52,10 @@ impl TerminalState {
     }
 
     pub fn write(&mut self, data: &[u8]) {
-        if let Some(ref mut pty) = self.pty {
-            if let Err(e) = pty.write(data) {
+        if let Some(ref mut pty) = self.pty
+            && let Err(e) = pty.write(data) {
                 tracing::error!("PTY write error: {}", e);
             }
-        }
     }
 
     pub fn resize(&mut self, cols: u16, rows: u16) -> bool {
@@ -83,7 +85,7 @@ impl TerminalState {
 
         for item in content.display_iter {
             let col = item.point.column.0 as u16;
-            let line = item.point.line.0 as i32;
+            let line = item.point.line.0;
 
             let in_selection = if start.1 == end.1 {
                 // Single line
@@ -226,15 +228,14 @@ where
             }
             // Mouse move — extend selection
             iced::Event::Mouse(mouse::Event::CursorMoved { .. }) => {
-                if widget_state.selecting {
-                    if let Some(pos) = cursor.position_in(bounds) {
+                if widget_state.selecting
+                    && let Some(pos) = cursor.position_in(bounds) {
                         let cell = self.pixel_to_cell(pos);
                         if let Some(ref mut sel) = widget_state.selection {
                             sel.end = cell;
                         }
                         return Some(CanvasAction::request_redraw().and_capture());
                     }
-                }
             }
             // Mouse release — end selection
             iced::Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Left)) => {
@@ -264,28 +265,23 @@ where
                 if modifiers.control() && modifiers.shift() {
                     match c.as_str() {
                         "C" | "c" => {
-                            if let Some(ref sel) = widget_state.selection {
-                                if !sel.is_empty() {
-                                    if let Ok(state) = self.state.lock() {
+                            if let Some(ref sel) = widget_state.selection
+                                && !sel.is_empty()
+                                    && let Ok(state) = self.state.lock() {
                                         let text = state.get_selection_text(sel);
-                                        if !text.is_empty() {
-                                            if let Ok(mut clip) = arboard::Clipboard::new() {
+                                        if !text.is_empty()
+                                            && let Ok(mut clip) = arboard::Clipboard::new() {
                                                 let _ = clip.set_text(&text);
                                             }
-                                        }
                                     }
-                                }
-                            }
                             return Some(CanvasAction::capture());
                         }
                         "V" | "v" => {
-                            if let Ok(mut clip) = arboard::Clipboard::new() {
-                                if let Ok(text) = clip.get_text() {
-                                    if let Ok(mut state) = self.state.lock() {
+                            if let Ok(mut clip) = arboard::Clipboard::new()
+                                && let Ok(text) = clip.get_text()
+                                    && let Ok(mut state) = self.state.lock() {
                                         state.write(text.as_bytes());
                                     }
-                                }
-                            }
                             return Some(CanvasAction::capture());
                         }
                         _ => {}
@@ -299,16 +295,12 @@ where
 
     fn mouse_interaction(
         &self,
-        state: &Self::State,
+        _state: &Self::State,
         bounds: Rectangle,
         cursor: mouse::Cursor,
     ) -> mouse::Interaction {
         if cursor.is_over(bounds) {
-            if state.selecting {
-                mouse::Interaction::Text
-            } else {
-                mouse::Interaction::Text
-            }
+            mouse::Interaction::Text
         } else {
             mouse::Interaction::default()
         }
@@ -331,7 +323,7 @@ where
         // Apply scroll offset
         let scroll_offset = widget_state.scroll_offset;
         if scroll_offset > 0 {
-            let vi = alacritty_terminal::grid::Scroll::Delta(-(scroll_offset as i32));
+            let vi = alacritty_terminal::grid::Scroll::Delta(-scroll_offset);
             state.backend.term.scroll_display(vi);
         }
 
@@ -455,7 +447,7 @@ where
 
         // Reset scroll for next frame
         if scroll_offset > 0 {
-            let vi = alacritty_terminal::grid::Scroll::Delta(scroll_offset as i32);
+            let vi = alacritty_terminal::grid::Scroll::Delta(scroll_offset);
             state.backend.term.scroll_display(vi);
         }
 

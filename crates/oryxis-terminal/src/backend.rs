@@ -11,6 +11,12 @@ pub struct EventProxy {
     pub title: Arc<Mutex<Option<String>>>,
 }
 
+impl Default for EventProxy {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl EventProxy {
     pub fn new() -> Self {
         Self {

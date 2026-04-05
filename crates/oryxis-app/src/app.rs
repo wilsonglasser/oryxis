@@ -385,15 +385,14 @@ impl Oryxis {
 
             // -- Terminal I/O --
             Message::PtyOutput(tab_idx, bytes) => {
-                if let Some(tab) = self.tabs.get(tab_idx) {
-                    if let Ok(mut state) = tab.terminal.lock() {
+                if let Some(tab) = self.tabs.get(tab_idx)
+                    && let Ok(mut state) = tab.terminal.lock() {
                         state.process(&bytes);
                     }
-                }
             }
             Message::KeyboardEvent(event) => {
-                if let Some(tab_idx) = self.active_tab {
-                    if let keyboard::Event::KeyPressed {
+                if let Some(tab_idx) = self.active_tab
+                    && let keyboard::Event::KeyPressed {
                         key,
                         modifiers,
                         text: text_opt,
@@ -408,17 +407,15 @@ impl Oryxis {
                             }
                         });
 
-                        if let Some(bytes) = bytes {
-                            if let Some(tab) = self.tabs.get(tab_idx) {
+                        if let Some(bytes) = bytes
+                            && let Some(tab) = self.tabs.get(tab_idx) {
                                 if let Some(ref ssh) = tab.ssh_session {
                                     let _ = ssh.write(&bytes);
                                 } else if let Ok(mut state) = tab.terminal.lock() {
                                     state.write(&bytes);
                                 }
                             }
-                        }
                     }
-                }
             }
             // -- Connection editor --
             Message::ShowNewConnection => {
@@ -588,21 +585,17 @@ impl Oryxis {
                         let mut passwords = std::collections::HashMap::new();
                         let mut keys = std::collections::HashMap::new();
                         for jid in &conn.jump_chain {
-                            if let Some(vault) = &self.vault {
-                                if let Ok(Some(pw)) = vault.get_connection_password(jid) {
+                            if let Some(vault) = &self.vault
+                                && let Ok(Some(pw)) = vault.get_connection_password(jid) {
                                     passwords.insert(*jid, pw);
                                 }
-                            }
                             // Get jump host's key if it uses key auth
-                            if let Some(jconn) = self.connections.iter().find(|c| c.id == *jid) {
-                                if let Some(kid) = jconn.key_id {
-                                    if let Some(vault) = &self.vault {
-                                        if let Ok(Some(pk)) = vault.get_key_private(&kid) {
+                            if let Some(jconn) = self.connections.iter().find(|c| c.id == *jid)
+                                && let Some(kid) = jconn.key_id
+                                    && let Some(vault) = &self.vault
+                                        && let Ok(Some(pk)) = vault.get_key_private(&kid) {
                                             keys.insert(*jid, pk);
                                         }
-                                    }
-                                }
-                            }
                         }
                         Some(oryxis_ssh::ConnectionResolver {
                             connections: self.connections.clone(),
@@ -755,8 +748,8 @@ impl Oryxis {
                     );
                     let _ = vault.add_log(&entry);
                 }
-                if let Some(last) = self.tabs.last() {
-                    if last.label.contains("connecting") {
+                if let Some(last) = self.tabs.last()
+                    && last.label.contains("connecting") {
                         self.tabs.pop();
                         if self.tabs.is_empty() {
                             self.active_tab = None;
@@ -765,7 +758,6 @@ impl Oryxis {
                             self.active_tab = Some(self.tabs.len() - 1);
                         }
                     }
-                }
                 self.host_panel_error = Some(format!("SSH: {}", err));
             }
 
@@ -829,15 +821,14 @@ impl Oryxis {
             Message::RunSnippet(idx) => {
                 if let Some(snip) = self.snippets.get(idx) {
                     let cmd = format!("{}\n", snip.command);
-                    if let Some(tab_idx) = self.active_tab {
-                        if let Some(tab) = self.tabs.get(tab_idx) {
+                    if let Some(tab_idx) = self.active_tab
+                        && let Some(tab) = self.tabs.get(tab_idx) {
                             if let Some(ref ssh) = tab.ssh_session {
                                 let _ = ssh.write(cmd.as_bytes());
                             } else if let Ok(mut state) = tab.terminal.lock() {
                                 state.write(cmd.as_bytes());
                             }
                         }
-                    }
                 }
             }
 
@@ -1364,11 +1355,11 @@ impl Oryxis {
             if current_group.as_ref() != Some(&conn.group_id) {
                 current_group = Some(conn.group_id);
                 // Only show group header if the connection has a group
-                if let Some(gid) = conn.group_id {
-                    if let Some(group) = self.groups.iter().find(|g| g.id == gid) {
+                if let Some(gid) = conn.group_id
+                    && let Some(group) = self.groups.iter().find(|g| g.id == gid) {
                         // Pad current row before header
-                        if !cards.is_empty() && cards.len() % 3 != 0 {
-                            while cards.len() % 3 != 0 {
+                        if !cards.is_empty() && !cards.len().is_multiple_of(3) {
+                            while !cards.len().is_multiple_of(3) {
                                 cards.push(Space::new().width(CARD_WIDTH).into());
                             }
                         }
@@ -1385,7 +1376,6 @@ impl Oryxis {
                             .into(),
                         );
                     }
-                }
             }
             let is_connected = self.tabs.iter().any(|t| t.label == conn.label);
             let auth_label = match conn.auth_method {
@@ -1998,8 +1988,8 @@ impl Oryxis {
         });
 
         let mut bottom = column![save_btn];
-        if let Some(edit_id) = self.snippet_editing_id {
-            if let Some(idx) = self.snippets.iter().position(|s| s.id == edit_id) {
+        if let Some(edit_id) = self.snippet_editing_id
+            && let Some(idx) = self.snippets.iter().position(|s| s.id == edit_id) {
                 let del_btn = button(
                     container(text("Delete").size(13).color(OryxisColors::ERROR))
                         .padding(Padding { top: 10.0, right: 0.0, bottom: 10.0, left: 0.0 })
@@ -2015,7 +2005,6 @@ impl Oryxis {
                 bottom = bottom.push(Space::new().height(8));
                 bottom = bottom.push(del_btn);
             }
-        }
 
         let panel_content = column![
             panel_header,
@@ -2362,7 +2351,7 @@ impl Oryxis {
         ]);
 
         // ── Section: SSH & Credentials ──
-        let port_text = format!("SSH on port");
+        let port_text = "SSH on port".to_string();
         let ssh_section = panel_section(column![
             // SSH on [port] port
             row![
@@ -2479,8 +2468,8 @@ impl Oryxis {
         });
 
         let mut bottom = column![connect_btn];
-        if let Some(edit_id) = self.editor_form.editing_id {
-            if let Some(idx) = self.connections.iter().position(|c| c.id == edit_id) {
+        if let Some(edit_id) = self.editor_form.editing_id
+            && let Some(idx) = self.connections.iter().position(|c| c.id == edit_id) {
                 let del_btn = button(
                     container(text("Delete Host").size(12).color(OryxisColors::ERROR))
                         .padding(Padding { top: 8.0, right: 0.0, bottom: 8.0, left: 0.0 })
@@ -2497,7 +2486,6 @@ impl Oryxis {
                 bottom = bottom.push(Space::new().height(4));
                 bottom = bottom.push(del_btn);
             }
-        }
 
         // ── Layout ──
         let form_scroll = scrollable(

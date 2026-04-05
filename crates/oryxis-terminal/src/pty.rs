@@ -14,7 +14,7 @@ impl PtyHandle {
     pub fn spawn(
         cols: u16,
         rows: u16,
-    ) -> Result<(Self, mpsc::UnboundedReceiver<Vec<u8>>), Box<dyn std::error::Error + Send + Sync>>
+    ) -> crate::widget::TerminalResult<(Self, mpsc::UnboundedReceiver<Vec<u8>>)>
     {
         let pty_system = native_pty_system();
 

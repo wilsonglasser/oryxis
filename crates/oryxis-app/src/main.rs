@@ -26,7 +26,7 @@ fn main() -> iced::Result {
         .window(window::Settings {
             size: Size::new(WINDOW_WIDTH, WINDOW_HEIGHT),
             min_size: Some(Size::new(MIN_WIDTH, MIN_HEIGHT)),
-            icon: icon,
+            icon,
             ..Default::default()
         })
         .antialiasing(true)

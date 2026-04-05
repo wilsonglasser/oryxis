@@ -123,6 +123,12 @@ pub struct SshEngine {
     host_key_cb: Option<HostKeyCallback>,
 }
 
+impl Default for SshEngine {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SshEngine {
     pub fn new() -> Self {
         Self { host_key_cb: None }
@@ -574,11 +580,10 @@ impl SshEngine {
                         }
                     }
                     Some(ChannelMsg::ExtendedData { data, ext }) => {
-                        if ext == 1 {
-                            if output_tx.send(data.to_vec()).is_err() {
+                        if ext == 1
+                            && output_tx.send(data.to_vec()).is_err() {
                                 break;
                             }
-                        }
                     }
                     Some(ChannelMsg::ExitStatus { exit_status }) => {
                         tracing::info!("Remote exited with status {}", exit_status);

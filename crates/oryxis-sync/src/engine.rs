@@ -12,6 +12,12 @@ pub enum SyncError {
 /// P2P sync engine — will wrap iroh for decentralized folder sync.
 pub struct SyncEngine;
 
+impl Default for SyncEngine {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SyncEngine {
     pub fn new() -> Self {
         Self
