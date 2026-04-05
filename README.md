@@ -9,10 +9,27 @@
 </p>
 
 <p align="center">
+  <a href="https://github.com/wilsonglasser/oryxis/actions/workflows/ci.yml"><img src="https://github.com/wilsonglasser/oryxis/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://github.com/wilsonglasser/oryxis/releases/latest"><img src="https://img.shields.io/github/v/release/wilsonglasser/oryxis?color=green" alt="Release"></a>
   <img src="https://img.shields.io/badge/rust-1.90%2B-orange?logo=rust" alt="Rust">
-  <img src="https://img.shields.io/badge/platform-linux-blue" alt="Platform">
-  <img src="https://img.shields.io/badge/version-0.1.0-green" alt="Version">
+  <img src="https://img.shields.io/badge/platforms-linux%20%7C%20macos%20%7C%20windows-blue" alt="Platforms">
+  <img src="https://img.shields.io/github/license/wilsonglasser/oryxis" alt="License">
 </p>
+
+---
+
+## Download
+
+Pre-built binaries are available on the [Releases](https://github.com/wilsonglasser/oryxis/releases/latest) page:
+
+| Platform | Architecture | Download |
+|----------|-------------|----------|
+| Linux | x86_64 | [`oryxis-linux-x86_64.tar.gz`](https://github.com/wilsonglasser/oryxis/releases/latest/download/oryxis-linux-x86_64.tar.gz) |
+| Linux | ARM64 | [`oryxis-linux-aarch64.tar.gz`](https://github.com/wilsonglasser/oryxis/releases/latest/download/oryxis-linux-aarch64.tar.gz) |
+| macOS | Intel | [`oryxis-macos-x86_64.tar.gz`](https://github.com/wilsonglasser/oryxis/releases/latest/download/oryxis-macos-x86_64.tar.gz) |
+| macOS | Apple Silicon | [`oryxis-macos-aarch64.tar.gz`](https://github.com/wilsonglasser/oryxis/releases/latest/download/oryxis-macos-aarch64.tar.gz) |
+| Windows | x86_64 | [`oryxis-windows-x86_64.zip`](https://github.com/wilsonglasser/oryxis/releases/latest/download/oryxis-windows-x86_64.zip) |
+| Windows | ARM64 | [`oryxis-windows-aarch64.zip`](https://github.com/wilsonglasser/oryxis/releases/latest/download/oryxis-windows-aarch64.zip) |
 
 ---
 
@@ -27,15 +44,15 @@ Most SSH clients are either powerful but ugly (PuTTY), pretty but Electron-heavy
 ## Features
 
 - **Native GPU-accelerated UI** — Built with [Iced](https://iced.rs) (wgpu backend). Termius-inspired dark theme with grid card layouts.
-- **Embedded terminal emulator** — Powered by [alacritty_terminal](https://github.com/alacritty/alacritty) with 256-color, truecolor, copy/paste, mouse selection, and scrollback.
+- **Embedded terminal emulator** — Powered by [alacritty_terminal](https://github.com/alacritty/alacritty) with 256-color, truecolor, copy/paste, mouse selection, and 10k line scrollback.
 - **Encrypted vault** — Master password with Argon2id key derivation. Passwords and private keys encrypted with ChaCha20Poly1305. SQLite storage.
 - **Full SSH pipeline** — Direct connections, SOCKS4/5 proxy, HTTP CONNECT proxy, ProxyCommand, and jump host chaining via [russh](https://github.com/warp-tech/russh).
-- **Key management** — Import SSH keys from file (native file picker) or paste PEM. Keys stored encrypted in the vault.
+- **Key management** — Import SSH keys from file (native OS file picker) or paste PEM. Keys stored encrypted in the vault.
 - **Snippets** — Save and execute commands with one click on the active terminal session.
-- **TOFU host key verification** — Server fingerprints saved on first connect, alerts on key changes.
-- **Known hosts & history** — Full connection log with timestamps, host key registry.
-- **Multi-tab sessions** — Multiple SSH/local shell sessions in tabs, switchable from the top bar.
-- **Single binary** — `cargo build --release` and you're done.
+- **TOFU host key verification** — Server fingerprints saved on first connect, connection rejected if key changes.
+- **Known hosts & history** — Full connection activity log with timestamps. Host key registry with delete/re-trust.
+- **Multi-tab sessions** — Multiple SSH and local shell sessions in tabs with a top tab bar.
+- **Cross-platform** — Linux, macOS, and Windows. Single native binary per platform.
 
 ## Screenshots
 
@@ -96,20 +113,23 @@ Most SSH clients are either powerful but ugly (PuTTY), pretty but Electron-heavy
 | Encryption | Argon2id + ChaCha20Poly1305 |
 | Storage | SQLite (rusqlite) |
 | Clipboard | arboard |
-| File picker | rfd |
+| File picker | rfd (native OS dialog) |
 | Async | Tokio |
 
-## Building
+## Building from Source
 
 ### Prerequisites
 
-- Rust 1.90+
-- Linux with X11 or Wayland
-- System dependencies:
+- Rust 1.90+ (install via [rustup](https://rustup.rs/))
 
+**Linux:**
 ```bash
 sudo apt install -y build-essential pkg-config libssl-dev libgtk-3-dev libwayland-dev libxkbcommon-dev
 ```
+
+**macOS:** Xcode Command Line Tools (`xcode-select --install`)
+
+**Windows:** Visual Studio Build Tools with C++ workload
 
 ### Build & Run
 
@@ -120,23 +140,34 @@ cd oryxis
 # Debug
 cargo run
 
-# Release
+# Release (optimized, ~28MB binary)
 cargo build --release
 ./target/release/oryxis
 
-# Hot reload (requires cargo-watch)
+# Hot reload during development
 cargo install cargo-watch
 cargo watch -x run
+
+# Run tests (44 tests)
+cargo test --workspace
 ```
+
+### Install on Linux
+
+```bash
+./install.sh
+```
+
+Installs binary to `/usr/local/bin`, icon and `.desktop` file for the application menu.
 
 ## Usage
 
-1. **First launch** — Set a master password for the vault
-2. **Add hosts** — Click `+ HOST`, fill in hostname/credentials, save
+1. **First launch** — Set a master password to encrypt your vault
+2. **Add hosts** — Click `+ HOST`, fill in hostname, credentials, and optional jump host
 3. **Connect** — Click a host card to open an SSH session in a new tab
-4. **Keys** — Import SSH keys from file via the Keychain view
-5. **Snippets** — Save commands and execute them on the active session
-6. **Jump hosts** — Select another host as "Jump Host" in the host editor
+4. **Keys** — Import SSH keys from file via the Keychain view (native file picker)
+5. **Snippets** — Save frequently used commands, click to execute on the active session
+6. **Jump hosts** — Create the bastion host first, then select it as "Jump Host" on the target
 
 ### Keyboard Shortcuts
 
@@ -145,13 +176,41 @@ cargo watch -x run
 | `Ctrl+Shift+C` | Copy selected text |
 | `Ctrl+Shift+V` | Paste from clipboard |
 | Mouse drag | Select text in terminal |
-| Mouse wheel | Scroll through terminal history |
+| Mouse wheel | Scroll through terminal history (10k lines) |
+
+### SSH Connection Types
+
+| Type | How to configure |
+|------|-----------------|
+| Direct | Just hostname + port |
+| Jump host | Select another saved host as "Jump Host" |
+| SOCKS5 proxy | Set proxy type to SOCKS5 in connection settings |
+| SOCKS4 proxy | Set proxy type to SOCKS4 |
+| HTTP CONNECT | Set proxy type to HTTP |
+| ProxyCommand | Set proxy type to Command with your command |
+
+### Authentication Methods
+
+| Method | Description |
+|--------|------------|
+| Password | Stored encrypted in vault |
+| Key | Select an imported SSH key |
+| Agent | Uses running ssh-agent |
+| Interactive | Keyboard-interactive (2FA/TOTP) |
+
+## Security
+
+- **Vault encryption** — Argon2id KDF (memory-hard) + ChaCha20Poly1305 AEAD
+- **Zero plaintext storage** — Passwords and private keys never stored unencrypted
+- **TOFU** — Server fingerprints verified on every connection, changed keys rejected
+- **Memory safety** — Pure Rust, no C dependencies in crypto path
+- **No telemetry** — No data leaves your machine
 
 ## Roadmap
 
 | Version | Status | Scope |
 |---------|--------|-------|
-| **v0.1** | Done | SSH connections, vault, key management, snippets, TOFU, multi-tab |
+| **v0.1** | **Released** | SSH connections, vault, key management, snippets, TOFU, multi-tab, 6-platform release |
 | **v0.2** | Planned | Port forwarding UI, SFTP file transfer, split panes |
 | **v0.3** | Planned | P2P folder sharing (iroh), CRDT sync, team roles |
 | **v0.4** | Planned | Session recording, custom themes, biometric unlock |
@@ -159,6 +218,12 @@ cargo watch -x run
 ## Contributing
 
 Contributions, ideas, and feedback are welcome. Open an issue to discuss before submitting large PRs.
+
+```bash
+# Development setup
+cargo install cargo-watch
+cargo watch -x "test --workspace"  # Run tests on save
+```
 
 ## License
 
