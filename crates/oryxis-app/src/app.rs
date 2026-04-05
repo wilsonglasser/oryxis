@@ -91,6 +91,7 @@ pub struct Oryxis {
 
     // UI state
     active_view: View,
+    quick_host_input: String,
 
     // Tabs
     tabs: Vec<TerminalTab>,
@@ -158,6 +159,8 @@ pub enum Message {
 
     // Navigation
     ChangeView(View),
+    QuickHostInput(String),
+    QuickHostContinue,
 
     // Tabs
     SelectTab(usize),
@@ -260,6 +263,7 @@ impl Oryxis {
                 connections: Vec::new(),
                 groups: Vec::new(),
                 active_view: View::Dashboard,
+                quick_host_input: String::new(),
                 tabs: Vec::new(),
                 active_tab: None,
                 show_host_panel: false,
@@ -361,7 +365,18 @@ impl Oryxis {
             // -- Navigation --
             Message::ChangeView(view) => {
                 self.active_view = view;
-                self.active_tab = None; // Show grid view, not terminal
+                self.active_tab = None;
+            }
+            Message::QuickHostInput(v) => {
+                self.quick_host_input = v;
+            }
+            Message::QuickHostContinue => {
+                if !self.quick_host_input.is_empty() {
+                    self.editor_form = ConnectionForm::default();
+                    self.editor_form.hostname = self.quick_host_input.clone();
+                    self.show_host_panel = true;
+                    self.host_panel_error = None;
+                }
             }
 
             // -- Tabs --
@@ -1330,23 +1345,67 @@ impl Oryxis {
         let mut cards: Vec<Element<'_, Message>> = Vec::new();
 
         if self.connections.is_empty() {
-            let empty = container(
+            // Termius-style empty state — centered "Create host" with input
+            let has_input = !self.quick_host_input.is_empty();
+            let btn_bg = if has_input { OryxisColors::SUCCESS } else { OryxisColors::BG_SURFACE };
+
+            let empty_state = container(
                 column![
-                    iced_fonts::bootstrap::hdd_network().size(28).color(OryxisColors::TEXT_MUTED),
+                    // Icon
+                    container(
+                        iced_fonts::bootstrap::hdd_network().size(32).color(OryxisColors::TEXT_MUTED),
+                    )
+                    .padding(16)
+                    .style(|_| container::Style {
+                        background: Some(Background::Color(OryxisColors::BG_SURFACE)),
+                        border: Border { radius: Radius::from(12.0), ..Default::default() },
+                        ..Default::default()
+                    }),
+                    Space::new().height(20),
+                    text("Create host").size(20).color(OryxisColors::TEXT_PRIMARY),
                     Space::new().height(8),
-                    text("No hosts yet").size(13).color(OryxisColors::TEXT_MUTED),
-                    Space::new().height(4),
-                    text("Click + HOST to add one").size(11).color(OryxisColors::TEXT_MUTED),
-                ].align_x(iced::Alignment::Center),
+                    text("Save your connection details as hosts to connect in one click.")
+                        .size(13).color(OryxisColors::TEXT_MUTED),
+                    Space::new().height(24),
+                    // Hostname input
+                    text_input("Type IP or Hostname", &self.quick_host_input)
+                        .on_input(Message::QuickHostInput)
+                        .on_submit(Message::QuickHostContinue)
+                        .padding(14)
+                        .width(380),
+                    Space::new().height(12),
+                    // Continue button
+                    button(
+                        container(text("Continue").size(14).color(OryxisColors::TEXT_PRIMARY))
+                            .padding(Padding { top: 12.0, right: 0.0, bottom: 12.0, left: 0.0 })
+                            .width(380)
+                            .center_x(380),
+                    )
+                    .on_press(Message::QuickHostContinue)
+                    .width(380)
+                    .style(move |_, _| button::Style {
+                        background: Some(Background::Color(btn_bg)),
+                        border: Border { radius: Radius::from(8.0), ..Default::default() },
+                        ..Default::default()
+                    }),
+                ]
+                .align_x(iced::Alignment::Center),
             )
-            .padding(24)
-            .width(CARD_WIDTH)
-            .style(|_| container::Style {
-                background: Some(Background::Color(OryxisColors::BG_SURFACE)),
-                border: Border { radius: Radius::from(10.0), color: OryxisColors::BORDER, width: 1.0 },
-                ..Default::default()
-            });
-            cards.push(empty.into());
+            .center(Length::Fill);
+
+            let main_content = column![toolbar, status, empty_state]
+                .width(Length::Fill)
+                .height(Length::Fill);
+
+            if self.show_host_panel {
+                let panel = self.view_host_panel();
+                return row![main_content, panel]
+                    .width(Length::Fill)
+                    .height(Length::Fill)
+                    .into();
+            } else {
+                return main_content.into();
+            }
         }
 
         // Group connections — only show folder headers for grouped connections
