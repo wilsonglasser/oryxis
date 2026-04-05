@@ -188,6 +188,8 @@ pub enum Message {
     EditorSave,
     EditorCancel,
     DeleteConnection(usize),
+    DuplicateConnection(usize),
+    ConnectFromPanel,
 
     // SSH
     ConnectSsh(usize),
@@ -583,8 +585,41 @@ impl Oryxis {
                     let id = conn.id;
                     if let Some(vault) = &self.vault {
                         let _ = vault.delete_connection(&id);
-                            self.show_host_panel = false;
+                        self.show_host_panel = false;
                         self.load_data_from_vault();
+                    }
+                }
+            }
+            Message::DuplicateConnection(idx) => {
+                if let Some(conn) = self.connections.get(idx).cloned() {
+                    let mut dup = Connection::new(
+                        format!("{} (copy)", conn.label),
+                        &conn.hostname,
+                    );
+                    dup.port = conn.port;
+                    dup.username = conn.username.clone();
+                    dup.auth_method = conn.auth_method.clone();
+                    dup.key_id = conn.key_id;
+                    dup.group_id = conn.group_id;
+                    dup.jump_chain = conn.jump_chain.clone();
+                    dup.proxy = conn.proxy.clone();
+                    dup.tags = conn.tags.clone();
+                    dup.notes = conn.notes.clone();
+                    dup.color = conn.color.clone();
+                    if let Some(vault) = &self.vault {
+                        // Copy password too
+                        let pw = vault.get_connection_password(&conn.id).ok().flatten();
+                        let _ = vault.save_connection(&dup, pw.as_deref());
+                        self.load_data_from_vault();
+                    }
+                }
+            }
+            Message::ConnectFromPanel => {
+                // Connect using the currently edited connection
+                if let Some(edit_id) = self.editor_form.editing_id {
+                    if let Some(idx) = self.connections.iter().position(|c| c.id == edit_id) {
+                        self.show_host_panel = false;
+                        return self.update(Message::ConnectSsh(idx));
                     }
                 }
             }
@@ -1528,13 +1563,19 @@ impl Oryxis {
                     ..Default::default()
                 });
 
-            let edit_btn = button(text("...").size(12).color(OryxisColors::TEXT_MUTED))
+            let edit_btn = button(iced_fonts::bootstrap::pencil().size(12).color(OryxisColors::TEXT_MUTED))
                 .on_press(Message::EditConnection(idx))
-                .padding(Padding { top: 2.0, right: 6.0, bottom: 2.0, left: 6.0 })
-                .style(|_, _| button::Style {
-                    background: Some(Background::Color(Color::TRANSPARENT)),
-                    border: Border::default(),
-                    ..Default::default()
+                .padding(Padding { top: 4.0, right: 8.0, bottom: 4.0, left: 8.0 })
+                .style(|_, status| {
+                    let bg = match status {
+                        BtnStatus::Hovered => OryxisColors::BG_HOVER,
+                        _ => Color::TRANSPARENT,
+                    };
+                    button::Style {
+                        background: Some(Background::Color(bg)),
+                        border: Border { radius: Radius::from(6.0), ..Default::default() },
+                        ..Default::default()
+                    }
                 });
 
             let card = button(
@@ -2582,11 +2623,10 @@ impl Oryxis {
             Space::new().height(0).into()
         };
 
-        // ── Connect / Save button (fixed bottom) ──
-        let btn_label = if is_editing { "Save" } else { "Connect" };
-        let btn_bg = if has_address { OryxisColors::ACCENT } else { OryxisColors::BG_SURFACE };
-        let connect_btn = button(
-            container(text(btn_label).size(14).color(OryxisColors::TEXT_PRIMARY))
+        // ── Bottom actions ──
+        let save_btn_bg = if has_address { OryxisColors::ACCENT } else { OryxisColors::BG_SURFACE };
+        let save_btn = button(
+            container(text("Save").size(14).color(OryxisColors::TEXT_PRIMARY))
                 .padding(Padding { top: 12.0, right: 0.0, bottom: 12.0, left: 0.0 })
                 .width(Length::Fill)
                 .center_x(Length::Fill),
@@ -2594,29 +2634,44 @@ impl Oryxis {
         .on_press(Message::EditorSave)
         .width(Length::Fill)
         .style(move |_, _| button::Style {
-            background: Some(Background::Color(btn_bg)),
+            background: Some(Background::Color(save_btn_bg)),
             border: Border { radius: Radius::from(8.0), ..Default::default() },
             ..Default::default()
         });
 
-        let mut bottom = column![connect_btn];
+        let mut bottom = column![save_btn];
+
         if let Some(edit_id) = self.editor_form.editing_id
             && let Some(idx) = self.connections.iter().position(|c| c.id == edit_id) {
-                let del_btn = button(
-                    container(text("Delete Host").size(12).color(OryxisColors::ERROR))
-                        .padding(Padding { top: 8.0, right: 0.0, bottom: 8.0, left: 0.0 })
-                        .width(Length::Fill)
-                        .center_x(Length::Fill),
+                // Action row: Connect | Duplicate | Remove
+                let action_row = container(
+                    row![
+                        panel_action_btn(
+                            iced_fonts::bootstrap::play_fill(),
+                            "Connect",
+                            Message::ConnectFromPanel,
+                            OryxisColors::SUCCESS,
+                        ),
+                        Space::new().width(8),
+                        panel_action_btn(
+                            iced_fonts::bootstrap::copy(),
+                            "Duplicate",
+                            Message::DuplicateConnection(idx),
+                            OryxisColors::TEXT_SECONDARY,
+                        ),
+                        Space::new().width(8),
+                        panel_action_btn(
+                            iced_fonts::bootstrap::trash(),
+                            "Remove",
+                            Message::DeleteConnection(idx),
+                            OryxisColors::ERROR,
+                        ),
+                    ],
                 )
-                .on_press(Message::DeleteConnection(idx))
-                .width(Length::Fill)
-                .style(|_, _| button::Style {
-                    background: Some(Background::Color(Color::TRANSPARENT)),
-                    border: Border::default(),
-                    ..Default::default()
-                });
-                bottom = bottom.push(Space::new().height(4));
-                bottom = bottom.push(del_btn);
+                .padding(Padding { top: 8.0, right: 0.0, bottom: 0.0, left: 0.0 });
+
+                bottom = bottom.push(Space::new().height(8));
+                bottom = bottom.push(action_row);
             }
 
         // ── Layout ──
@@ -2803,6 +2858,40 @@ fn panel_option_pick_jump<'a>(
         .align_y(iced::Alignment::Center),
     )
     .padding(Padding { top: 4.0, right: 0.0, bottom: 4.0, left: 0.0 })
+    .into()
+}
+
+fn panel_action_btn<'a>(
+    icon_widget: iced::widget::Text<'a>,
+    label: &'a str,
+    msg: Message,
+    color: Color,
+) -> Element<'a, Message> {
+    button(
+        container(
+            column![
+                icon_widget.size(14).color(color),
+                Space::new().height(4),
+                text(label).size(11).color(color),
+            ]
+            .align_x(iced::Alignment::Center),
+        )
+        .padding(Padding { top: 8.0, right: 12.0, bottom: 8.0, left: 12.0 })
+        .center_x(Length::Fill),
+    )
+    .on_press(msg)
+    .width(Length::Fill)
+    .style(move |_, status| {
+        let bg = match status {
+            BtnStatus::Hovered => Color::from_rgba(color.r, color.g, color.b, 0.12),
+            _ => Color::TRANSPARENT,
+        };
+        button::Style {
+            background: Some(Background::Color(bg)),
+            border: Border { radius: Radius::from(8.0), color: OryxisColors::BORDER, width: 1.0 },
+            ..Default::default()
+        }
+    })
     .into()
 }
 
