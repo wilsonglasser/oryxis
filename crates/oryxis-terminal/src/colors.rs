@@ -63,7 +63,7 @@ impl TerminalPalette {
     /// Oryxis Dark — like Termius Dark: white text, teal cursor/accent, vivid ANSI colors
     pub fn oryxis_dark() -> Self {
         Self {
-            foreground: Color::from_rgb(0.85, 0.87, 0.85),  // light gray (readable)
+            foreground: Color::from_rgb(0.133, 0.60, 0.569), // teal (like Termius Dark green)
             background: Color::from_rgb(0.055, 0.071, 0.067),
             cursor: Color::from_rgb(0.133, 0.60, 0.569),     // teal cursor
             ansi: [
