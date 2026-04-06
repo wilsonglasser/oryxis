@@ -164,6 +164,7 @@ pub struct Oryxis {
 
     // Terminal theme
     terminal_theme: oryxis_terminal::TerminalTheme,
+    terminal_font_size: f32,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -266,6 +267,8 @@ pub enum Message {
     // Settings
     LockVault,
     TerminalThemeChanged(String),
+    TerminalFontSizeIncrease,
+    TerminalFontSizeDecrease,
 
     // Local shell
     OpenLocalShell,
@@ -404,6 +407,7 @@ impl Oryxis {
                 snippet_editing_id: None,
                 snippet_error: None,
                 terminal_theme: oryxis_terminal::TerminalTheme::OryxisDark,
+                terminal_font_size: 14.0,
             },
             Task::none(),
         )
@@ -1166,6 +1170,12 @@ impl Oryxis {
                         }
                     }
                 }
+            }
+            Message::TerminalFontSizeIncrease => {
+                self.terminal_font_size = (self.terminal_font_size + 1.0).min(24.0);
+            }
+            Message::TerminalFontSizeDecrease => {
+                self.terminal_font_size = (self.terminal_font_size - 1.0).max(10.0);
             }
             Message::LockVault => {
                 if let Some(vault) = &mut self.vault {
@@ -2326,7 +2336,8 @@ impl Oryxis {
     fn view_terminal(&self) -> Element<'_, Message> {
         let terminal_area: Element<'_, Message> = if let Some(tab_idx) = self.active_tab {
             if let Some(tab) = self.tabs.get(tab_idx) {
-                let view = TerminalView::new(Arc::clone(&tab.terminal));
+                let view = TerminalView::new(Arc::clone(&tab.terminal))
+                    .with_font_size(self.terminal_font_size);
                 canvas(view)
                     .width(Length::Fill)
                     .height(Length::Fill)
@@ -3574,6 +3585,48 @@ impl Oryxis {
             settings_row("Snippets", self.snippets.len().to_string()),
             Space::new().height(6),
             settings_row("Groups", self.groups.len().to_string()),
+            Space::new().height(24),
+            text("Font").size(14).color(OryxisColors::TEXT_MUTED),
+            Space::new().height(8),
+            row![
+                text("Text Size").size(13).color(OryxisColors::TEXT_SECONDARY),
+                Space::new().width(16),
+                button(
+                    container(text("\u{2212}").size(14).color(OryxisColors::TEXT_PRIMARY))
+                        .padding(Padding { top: 4.0, right: 10.0, bottom: 4.0, left: 10.0 }),
+                )
+                .on_press(Message::TerminalFontSizeDecrease)
+                .style(|_, status| {
+                    let bg = match status {
+                        BtnStatus::Hovered => OryxisColors::BG_HOVER,
+                        _ => OryxisColors::BG_SELECTED,
+                    };
+                    button::Style {
+                        background: Some(Background::Color(bg)),
+                        border: Border { radius: Radius::from(4.0), ..Default::default() },
+                        ..Default::default()
+                    }
+                }),
+                Space::new().width(8),
+                text(format!("{:.0}", self.terminal_font_size)).size(13).color(OryxisColors::TEXT_PRIMARY),
+                Space::new().width(8),
+                button(
+                    container(text("+").size(14).color(OryxisColors::TEXT_PRIMARY))
+                        .padding(Padding { top: 4.0, right: 10.0, bottom: 4.0, left: 10.0 }),
+                )
+                .on_press(Message::TerminalFontSizeIncrease)
+                .style(|_, status| {
+                    let bg = match status {
+                        BtnStatus::Hovered => OryxisColors::BG_HOVER,
+                        _ => OryxisColors::BG_SELECTED,
+                    };
+                    button::Style {
+                        background: Some(Background::Color(bg)),
+                        border: Border { radius: Radius::from(4.0), ..Default::default() },
+                        ..Default::default()
+                    }
+                }),
+            ].align_y(iced::Alignment::Center),
             Space::new().height(24),
             text("Terminal").size(14).color(OryxisColors::TEXT_MUTED),
             Space::new().height(8),
