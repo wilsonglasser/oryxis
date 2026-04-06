@@ -384,6 +384,7 @@ impl VaultStore {
         };
 
         let auth_str = match conn.auth_method {
+            AuthMethod::Auto => "auto",
             AuthMethod::Password => "password",
             AuthMethod::Key => "key",
             AuthMethod::Agent => "agent",
@@ -428,10 +429,12 @@ impl VaultStore {
             .query_map([], |row| {
                 let auth_str: String = row.get(5)?;
                 let auth_method = match auth_str.as_str() {
+                    "auto" => AuthMethod::Auto,
+                    "password" => AuthMethod::Password,
                     "key" => AuthMethod::Key,
                     "agent" => AuthMethod::Agent,
                     "interactive" => AuthMethod::Interactive,
-                    _ => AuthMethod::Password,
+                    _ => AuthMethod::Auto,
                 };
 
                 Ok(Connection {

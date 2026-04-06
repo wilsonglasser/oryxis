@@ -370,7 +370,7 @@ where
                 .unwrap_or(false);
 
             if is_selected {
-                bg = Color::from_rgba(0.30, 0.56, 1.0, 0.35); // blue selection
+                bg = Color::from_rgba(0.133, 0.60, 0.569, 0.35); // teal selection
                 fg = Color::WHITE;
             }
 

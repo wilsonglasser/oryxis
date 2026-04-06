@@ -2,7 +2,7 @@ use iced::border::Radius;
 use iced::keyboard;
 use iced::widget::{
     button, canvas, column, container, image, pick_list, row, scrollable, text, text_editor,
-    text_input, Space,
+    text_input, MouseArea, Space,
 };
 use iced::futures::SinkExt;
 use iced::{Background, Border, Color, Element, Length, Padding, Subscription, Task, Theme};
@@ -26,7 +26,7 @@ const DEFAULT_TERM_COLS: u32 = 120;
 const DEFAULT_TERM_ROWS: u32 = 40;
 const PANEL_WIDTH: f32 = 420.0;
 const SIDEBAR_WIDTH: f32 = 180.0;
-const CARD_WIDTH: f32 = 220.0;
+const CARD_WIDTH: f32 = 280.0;
 
 // ---------------------------------------------------------------------------
 // Types
@@ -55,6 +55,12 @@ struct ConnectionForm {
     jump_host: Option<String>,  // label of jump host connection
     /// If editing, the connection ID.
     editing_id: Option<Uuid>,
+    /// Whether the connection already has a password stored in the vault.
+    has_existing_password: bool,
+    /// Whether the user has modified the password field.
+    password_touched: bool,
+    /// Whether to show the password in plain text.
+    password_visible: bool,
 }
 
 impl Default for ConnectionForm {
@@ -65,11 +71,14 @@ impl Default for ConnectionForm {
             port: "22".into(),
             username: String::new(),
             password: String::new(),
-            auth_method: AuthMethod::Password,
+            auth_method: AuthMethod::Auto,
             group_name: String::new(),
             selected_key: None,
             jump_host: None,
             editing_id: None,
+            has_existing_password: false,
+            password_touched: false,
+            password_visible: false,
         }
     }
 }
@@ -84,6 +93,8 @@ pub struct Oryxis {
     vault_state: VaultState,
     vault_password_input: String,
     vault_error: Option<String>,
+    logo_handle: image::Handle,
+    logo_small_handle: image::Handle,
 
     // Data
     connections: Vec<Connection>,
@@ -92,6 +103,7 @@ pub struct Oryxis {
     // UI state
     active_view: View,
     active_group: Option<Uuid>,  // None = root, Some(id) = inside folder
+    host_search: String,
     quick_host_input: String,
 
     // Tabs
@@ -104,7 +116,9 @@ pub struct Oryxis {
     editor_form: ConnectionForm,
     host_panel_error: Option<String>,
 
-    // Connection context menu
+    // Card hover & context menu
+    hovered_card: Option<usize>,
+    card_context_menu: Option<usize>,
 
     // Keys
     keys: Vec<SshKey>,
@@ -114,6 +128,9 @@ pub struct Oryxis {
     key_import_pem: String,  // raw string for import
     key_error: Option<String>,
     key_success: Option<String>,
+    key_context_menu: Option<usize>,
+    editing_key_id: Option<Uuid>,
+    key_search: String,
 
     // Snippets
     snippets: Vec<oryxis_core::models::snippet::Snippet>,
@@ -165,6 +182,7 @@ pub enum Message {
     QuickHostContinue,
     OpenGroup(Uuid),
     BackToRoot,
+    HostSearchChanged(String),
 
     // Tabs
     SelectTab(usize),
@@ -173,6 +191,12 @@ pub enum Message {
     // Terminal I/O
     PtyOutput(usize, Vec<u8>),  // (tab_index, bytes)
     KeyboardEvent(keyboard::Event),
+
+    // Card interactions
+    CardHovered(usize),
+    CardUnhovered,
+    ShowCardMenu(usize),
+    HideCardMenu,
 
     // Connection editor
     ShowNewConnection,
@@ -186,11 +210,11 @@ pub enum Message {
     EditorGroupChanged(String),
     EditorKeyChanged(String),
     EditorJumpHostChanged(String),
+    EditorTogglePasswordVisibility,
     EditorSave,
     EditorCancel,
     DeleteConnection(usize),
     DuplicateConnection(usize),
-    ConnectFromPanel,
 
     // SSH
     ConnectSsh(usize),
@@ -235,6 +259,10 @@ pub enum Message {
     KeyFileBrowseError(String),
     ImportKey,
     DeleteKey(usize),
+    ShowKeyMenu(usize),
+    HideKeyMenu,
+    EditKey(usize),
+    KeySearchChanged(String),
 }
 
 /// Internal message type for SSH connection streams.
@@ -263,6 +291,7 @@ struct ConnectionProgress {
     logs: Vec<(ConnectionStep, String)>,
     failed: bool,
     connection_idx: usize,
+    tab_idx: usize,
 }
 
 // ---------------------------------------------------------------------------
@@ -289,10 +318,13 @@ impl Oryxis {
                 vault_state,
                 vault_password_input: String::new(),
                 vault_error: None,
+                logo_handle: image::Handle::from_bytes(include_bytes!("../../../resources/logo_128.png").as_slice()),
+                logo_small_handle: image::Handle::from_bytes(include_bytes!("../../../resources/logo_64.png").as_slice()),
                 connections: Vec::new(),
                 groups: Vec::new(),
                 active_view: View::Dashboard,
                 active_group: None,
+                host_search: String::new(),
                 quick_host_input: String::new(),
                 tabs: Vec::new(),
                 active_tab: None,
@@ -300,6 +332,8 @@ impl Oryxis {
                 show_host_panel: false,
                 editor_form: ConnectionForm::default(),
                 host_panel_error: None,
+                hovered_card: None,
+                card_context_menu: None,
                 keys: Vec::new(),
                 show_key_panel: false,
                 key_import_label: String::new(),
@@ -307,6 +341,9 @@ impl Oryxis {
                 key_import_pem: String::new(),
                 key_error: None,
                 key_success: None,
+                key_context_menu: None,
+                editing_key_id: None,
+                key_search: String::new(),
                 snippets: Vec::new(),
                 known_hosts: Vec::new(),
                 logs: Vec::new(),
@@ -403,9 +440,14 @@ impl Oryxis {
             }
             Message::OpenGroup(gid) => {
                 self.active_group = Some(gid);
+                self.host_search.clear();
             }
             Message::BackToRoot => {
                 self.active_group = None;
+                self.host_search.clear();
+            }
+            Message::HostSearchChanged(v) => {
+                self.host_search = v;
             }
             Message::QuickHostContinue => {
                 if !self.quick_host_input.is_empty() {
@@ -414,6 +456,20 @@ impl Oryxis {
                     self.show_host_panel = true;
                     self.host_panel_error = None;
                 }
+            }
+
+            // -- Card interactions --
+            Message::CardHovered(idx) => {
+                self.hovered_card = Some(idx);
+            }
+            Message::CardUnhovered => {
+                self.hovered_card = None;
+            }
+            Message::ShowCardMenu(idx) => {
+                self.card_context_menu = if self.card_context_menu == Some(idx) { None } else { Some(idx) };
+            }
+            Message::HideCardMenu => {
+                self.card_context_menu = None;
             }
 
             // -- Tabs --
@@ -476,15 +532,20 @@ impl Oryxis {
                 self.host_panel_error = None;
             }
             Message::EditConnection(idx) => {
+                self.card_context_menu = None;
                 if let Some(conn) = self.connections.get(idx) {
                     self.show_host_panel = true;
                     self.host_panel_error = None;
+                    let has_pw = self.vault.as_ref()
+                        .and_then(|v| v.get_connection_password(&conn.id).ok())
+                        .flatten()
+                        .is_some();
                     self.editor_form = ConnectionForm {
                         label: conn.label.clone(),
                         hostname: conn.hostname.clone(),
                         port: conn.port.to_string(),
                         username: conn.username.clone().unwrap_or_default(),
-                        password: String::new(), // Don't prefill password
+                        password: String::new(),
                         auth_method: conn.auth_method.clone(),
                         group_name: conn
                             .group_id
@@ -499,6 +560,9 @@ impl Oryxis {
                             self.connections.iter().find(|c| c.id == *jid).map(|c| c.label.clone())
                         }),
                         editing_id: Some(conn.id),
+                        has_existing_password: has_pw,
+                        password_touched: false,
+                        password_visible: false,
                     };
                 }
             }
@@ -506,13 +570,20 @@ impl Oryxis {
             Message::EditorHostnameChanged(v) => self.editor_form.hostname = v,
             Message::EditorPortChanged(v) => self.editor_form.port = v,
             Message::EditorUsernameChanged(v) => self.editor_form.username = v,
-            Message::EditorPasswordChanged(v) => self.editor_form.password = v,
+            Message::EditorPasswordChanged(v) => {
+                self.editor_form.password_touched = true;
+                self.editor_form.password = v;
+            }
+            Message::EditorTogglePasswordVisibility => {
+                self.editor_form.password_visible = !self.editor_form.password_visible;
+            }
             Message::EditorAuthMethodChanged(v) => {
                 self.editor_form.auth_method = match v.as_str() {
+                    "Password" => AuthMethod::Password,
                     "Key" => AuthMethod::Key,
                     "Agent" => AuthMethod::Agent,
                     "Interactive" => AuthMethod::Interactive,
-                    _ => AuthMethod::Password,
+                    _ => AuthMethod::Auto,
                 };
             }
             Message::EditorGroupChanged(v) => self.editor_form.group_name = v,
@@ -582,8 +653,10 @@ impl Oryxis {
                     .unwrap_or_default();
                 conn.updated_at = chrono::Utc::now();
 
-                let password = if self.editor_form.password.is_empty() {
-                    None
+                let password = if !self.editor_form.password_touched {
+                    None // User didn't touch the field — preserve existing password
+                } else if self.editor_form.password.is_empty() {
+                    Some("") // User cleared the password — remove it
                 } else {
                     Some(self.editor_form.password.as_str())
                 };
@@ -606,6 +679,7 @@ impl Oryxis {
                 self.host_panel_error = None;
             }
             Message::DeleteConnection(idx) => {
+                self.card_context_menu = None;
                 if let Some(conn) = self.connections.get(idx) {
                     let id = conn.id;
                     if let Some(vault) = &self.vault {
@@ -616,6 +690,7 @@ impl Oryxis {
                 }
             }
             Message::DuplicateConnection(idx) => {
+                self.card_context_menu = None;
                 if let Some(conn) = self.connections.get(idx).cloned() {
                     let mut dup = Connection::new(
                         format!("{} (copy)", conn.label),
@@ -639,24 +714,16 @@ impl Oryxis {
                     }
                 }
             }
-            Message::ConnectFromPanel => {
-                // Connect using the currently edited connection
-                if let Some(edit_id) = self.editor_form.editing_id
-                    && let Some(idx) = self.connections.iter().position(|c| c.id == edit_id) {
-                        self.show_host_panel = false;
-                        return self.update(Message::ConnectSsh(idx));
-                    }
-            }
-
             // -- SSH connection --
             Message::ConnectSsh(idx) => {
+                self.card_context_menu = None;
                 if let Some(conn) = self.connections.get(idx).cloned() {
                     let password = self
                         .vault
                         .as_ref()
                         .and_then(|v| v.get_connection_password(&conn.id).ok().flatten());
 
-                    let private_key = if conn.auth_method == AuthMethod::Key {
+                    let private_key = if conn.auth_method == AuthMethod::Key || conn.auth_method == AuthMethod::Auto {
                         conn.key_id.and_then(|kid| {
                             self.vault.as_ref().and_then(|v| v.get_key_private(&kid).ok().flatten())
                         })
@@ -712,6 +779,7 @@ impl Oryxis {
                                 logs: vec![(ConnectionStep::Connecting, format!("Connecting to {}...", conn.hostname))],
                                 failed: false,
                                 connection_idx: idx,
+                                tab_idx,
                             });
                             self.active_tab = Some(tab_idx);
 
@@ -737,32 +805,54 @@ impl Oryxis {
 
                             let conn_host = conn.hostname.clone();
                             let conn_port = conn.port;
+                            let username = conn.username.clone().unwrap_or_else(|| "root".into());
+                            let auth_method_label = format!("{:?}", conn.auth_method);
                             let stream = iced::stream::channel::<SshStreamMsg>(128, move |mut sender: iced::futures::channel::mpsc::Sender<SshStreamMsg>| {
                                 async move {
-                                    // Step 1: Connecting
+                                    let engine = SshEngine::new().with_host_key_cb(host_key_cb);
+
+                                    // Step 1: TCP connection + SSH handshake + host key verification
                                     let _ = sender.send(SshStreamMsg::Progress(
                                         ConnectionStep::Connecting,
                                         format!("Connecting to {}:{}...", conn_host, conn_port),
                                     )).await;
 
-                                    let engine = SshEngine::new().with_host_key_cb(host_key_cb);
+                                    let mut handle = match engine.establish_transport(&conn, resolver.as_ref()).await {
+                                        Ok(h) => {
+                                            let _ = sender.send(SshStreamMsg::Progress(
+                                                ConnectionStep::Handshake,
+                                                format!("Connected to {}:{} — handshake OK", conn_host, conn_port),
+                                            )).await;
+                                            h
+                                        }
+                                        Err(e) => {
+                                            let _ = sender.send(SshStreamMsg::Error(
+                                                format!("Connection to {}:{} failed: {}", conn_host, conn_port, e),
+                                            )).await;
+                                            return;
+                                        }
+                                    };
 
-                                    // Step 2: Handshake
-                                    let _ = sender.send(SshStreamMsg::Progress(
-                                        ConnectionStep::Handshake,
-                                        "SSH handshake in progress...".into(),
-                                    )).await;
-
-                                    // Step 3: Auth (happens inside connect)
+                                    // Step 2: Authentication
                                     let _ = sender.send(SshStreamMsg::Progress(
                                         ConnectionStep::Authenticating,
-                                        format!("Authenticating as \"{}\"...", conn.username.as_deref().unwrap_or("root")),
+                                        format!("Authenticating as \"{}\" ({})...", username, auth_method_label),
                                     )).await;
 
-                                    match engine
-                                        .connect_with_resolver(&conn, password.as_deref(), private_key.as_deref(), DEFAULT_TERM_COLS, DEFAULT_TERM_ROWS, resolver.as_ref())
-                                        .await
-                                    {
+                                    if let Err(e) = engine.do_authenticate(&mut handle, &conn, password.as_deref(), private_key.as_deref()).await {
+                                        let _ = sender.send(SshStreamMsg::Error(
+                                            format!("Authentication failed for \"{}\": {}", username, e),
+                                        )).await;
+                                        return;
+                                    }
+
+                                    let _ = sender.send(SshStreamMsg::Progress(
+                                        ConnectionStep::Authenticating,
+                                        format!("Authenticated as \"{}\"", username),
+                                    )).await;
+
+                                    // Step 3: Open PTY session
+                                    match engine.open_session(handle, DEFAULT_TERM_COLS, DEFAULT_TERM_ROWS).await {
                                         Ok((session, mut rx)) => {
                                             let session = Arc::new(session);
                                             let _ = sender.send(SshStreamMsg::Connected(session.clone())).await;
@@ -778,7 +868,9 @@ impl Oryxis {
                                             let _ = sender.send(SshStreamMsg::Disconnected).await;
                                         }
                                         Err(e) => {
-                                            let _ = sender.send(SshStreamMsg::Error(e.to_string())).await;
+                                            let _ = sender.send(SshStreamMsg::Error(
+                                                format!("Session setup failed: {}", e),
+                                            )).await;
                                         }
                                     }
                                 }
@@ -845,13 +937,11 @@ impl Oryxis {
             Message::SshCloseProgress => {
                 // Close connection progress, remove the tab
                 if let Some(ref progress) = self.connecting {
-                    let _idx = progress.connection_idx;
+                    let tab_idx = progress.tab_idx;
+                    if tab_idx < self.tabs.len() {
+                        self.tabs.remove(tab_idx);
+                    }
                 }
-                if self.active_tab.is_some()
-                    && let Some(tab_idx) = self.active_tab
-                        && tab_idx < self.tabs.len() {
-                            self.tabs.remove(tab_idx);
-                        }
                 self.connecting = None;
                 self.active_tab = None;
                 self.active_view = View::Dashboard;
@@ -859,11 +949,11 @@ impl Oryxis {
             Message::SshEditFromProgress => {
                 if let Some(ref progress) = self.connecting {
                     let idx = progress.connection_idx;
+                    let tab_idx = progress.tab_idx;
                     self.connecting = None;
-                    if let Some(tab_idx) = self.active_tab
-                        && tab_idx < self.tabs.len() {
-                            self.tabs.remove(tab_idx);
-                        }
+                    if tab_idx < self.tabs.len() {
+                        self.tabs.remove(tab_idx);
+                    }
                     self.active_tab = None;
                     self.active_view = View::Dashboard;
                     return self.update(Message::EditConnection(idx));
@@ -872,11 +962,11 @@ impl Oryxis {
             Message::SshRetry => {
                 if let Some(ref progress) = self.connecting {
                     let idx = progress.connection_idx;
+                    let tab_idx = progress.tab_idx;
                     self.connecting = None;
-                    if let Some(tab_idx) = self.active_tab
-                        && tab_idx < self.tabs.len() {
-                            self.tabs.remove(tab_idx);
-                        }
+                    if tab_idx < self.tabs.len() {
+                        self.tabs.remove(tab_idx);
+                    }
                     self.active_tab = None;
                     return self.update(Message::ConnectSsh(idx));
                 }
@@ -1033,9 +1123,12 @@ impl Oryxis {
                 self.key_import_pem.clear();
                 self.key_error = None;
                 self.key_success = None;
+                self.editing_key_id = None;
+                self.key_context_menu = None;
             }
             Message::HideKeyPanel => {
                 self.show_key_panel = false;
+                self.editing_key_id = None;
             }
             Message::KeyImportLabelChanged(v) => self.key_import_label = v,
             Message::KeyContentAction(action) => {
@@ -1094,16 +1187,22 @@ impl Oryxis {
                     self.key_import_label.clone()
                 };
                 match oryxis_vault::import_key(&label, &self.key_import_pem) {
-                    Ok(generated) => {
+                    Ok(mut generated) => {
+                        // If editing an existing key, preserve its ID
+                        if let Some(existing_id) = self.editing_key_id {
+                            generated.key.id = existing_id;
+                        }
                         if let Some(vault) = &self.vault {
                             match vault.save_key(&generated.key, Some(&generated.private_pem)) {
                                 Ok(()) => {
+                                    let verb = if self.editing_key_id.is_some() { "updated" } else { "imported" };
                                     self.key_error = None;
-                                    self.key_success = Some(format!("Key '{}' imported", label));
+                                    self.key_success = Some(format!("Key '{}' {}", label, verb));
                                     self.key_import_label.clear();
                                     self.key_import_content = text_editor::Content::new();
                                     self.key_import_pem.clear();
                                     self.show_key_panel = false;
+                                    self.editing_key_id = None;
                                     self.load_data_from_vault();
                                 }
                                 Err(e) => self.key_error = Some(e.to_string()),
@@ -1122,6 +1221,32 @@ impl Oryxis {
                         self.key_success = Some("Key deleted".into());
                     }
                 }
+                self.key_context_menu = None;
+            }
+            Message::ShowKeyMenu(idx) => {
+                self.key_context_menu = if self.key_context_menu == Some(idx) { None } else { Some(idx) };
+            }
+            Message::HideKeyMenu => {
+                self.key_context_menu = None;
+            }
+            Message::EditKey(idx) => {
+                if let Some(key) = self.keys.get(idx) {
+                    self.editing_key_id = Some(key.id);
+                    self.key_import_label = key.label.clone();
+                    // Load existing private key PEM from vault
+                    let pem = self.vault.as_ref()
+                        .and_then(|v| v.get_key_private(&key.id).ok().flatten())
+                        .unwrap_or_default();
+                    self.key_import_content = text_editor::Content::with_text(&pem);
+                    self.key_import_pem = pem;
+                    self.show_key_panel = true;
+                    self.key_error = None;
+                    self.key_success = None;
+                    self.key_context_menu = None;
+                }
+            }
+            Message::KeySearchChanged(v) => {
+                self.key_search = v;
             }
         }
         Task::none()
@@ -1147,7 +1272,7 @@ impl Oryxis {
     // -- Vault screens --
 
     fn view_vault_setup(&self) -> Element<'_, Message> {
-        let logo = image(image::Handle::from_bytes(include_bytes!("../../../resources/logo_128.png").to_vec()))
+        let logo = image(self.logo_handle.clone())
             .width(64)
             .height(64);
         let title = text("Welcome to Oryxis").size(28).color(OryxisColors::TEXT_PRIMARY);
@@ -1185,7 +1310,7 @@ impl Oryxis {
     }
 
     fn view_vault_unlock(&self) -> Element<'_, Message> {
-        let logo = image(image::Handle::from_bytes(include_bytes!("../../../resources/logo_128.png").to_vec()))
+        let logo = image(self.logo_handle.clone())
             .width(64)
             .height(64);
         let title = text("Oryxis").size(28).color(OryxisColors::ACCENT);
@@ -1339,7 +1464,7 @@ impl Oryxis {
 
     fn view_sidebar(&self) -> Element<'_, Message> {
         // Logo
-        let logo = image(image::Handle::from_bytes(include_bytes!("../../../resources/logo_64.png").to_vec()))
+        let logo = image(self.logo_small_handle.clone())
             .width(28)
             .height(28);
         let header = container(
@@ -1405,9 +1530,9 @@ impl Oryxis {
     fn view_content(&self) -> Element<'_, Message> {
         // If a terminal tab is active, show terminal
         // Otherwise show the grid view for the current nav item
-        let content: Element<'_, Message> = if self.connecting.is_some() {
+        let content: Element<'_, Message> = if self.connecting.is_some() && self.active_tab.is_some() {
             self.view_connection_progress()
-        } else if self.active_tab.is_some() {
+        } else if self.active_tab.is_some() && self.connecting.is_none() {
             self.view_terminal()
         } else {
             match self.active_view {
@@ -1433,19 +1558,49 @@ impl Oryxis {
 
     fn view_dashboard(&self) -> Element<'_, Message> {
         // ── Toolbar ──
+        let toolbar_left: Element<'_, Message> = if let Some(gid) = self.active_group {
+            let group_name = self.groups.iter()
+                .find(|g| g.id == gid)
+                .map(|g| g.label.as_str())
+                .unwrap_or("Group");
+            row![
+                button(
+                    row![
+                        iced_fonts::bootstrap::arrow_left().size(14).color(OryxisColors::ACCENT),
+                        Space::new().width(6),
+                        text("All Hosts").size(14).color(OryxisColors::ACCENT),
+                    ].align_y(iced::Alignment::Center),
+                )
+                .on_press(Message::BackToRoot)
+                .padding(Padding { top: 4.0, right: 10.0, bottom: 4.0, left: 10.0 })
+                .style(|_, _| button::Style {
+                    background: Some(Background::Color(Color::TRANSPARENT)),
+                    border: Border::default(),
+                    ..Default::default()
+                }),
+                text("/").size(16).color(OryxisColors::TEXT_MUTED),
+                Space::new().width(8),
+                iced_fonts::bootstrap::folder_fill().size(16).color(OryxisColors::ACCENT),
+                Space::new().width(6),
+                text(group_name).size(16).color(OryxisColors::TEXT_PRIMARY),
+            ].align_y(iced::Alignment::Center).into()
+        } else {
+            text("Hosts").size(20).color(OryxisColors::TEXT_PRIMARY).into()
+        };
+
         let toolbar = container(
             row![
-                text("Hosts").size(20).color(OryxisColors::TEXT_PRIMARY),
+                toolbar_left,
                 Space::new().width(Length::Fill),
                 button(
                     container(
                         row![
-                            text("+").size(14).color(OryxisColors::TEXT_PRIMARY),
-                            Space::new().width(6),
+                            text("+").size(12).color(OryxisColors::TEXT_PRIMARY),
+                            Space::new().width(4),
                             text("HOST").size(12).color(OryxisColors::TEXT_PRIMARY),
                         ].align_y(iced::Alignment::Center),
                     )
-                    .padding(Padding { top: 6.0, right: 14.0, bottom: 6.0, left: 14.0 }),
+                    .padding(Padding { top: 6.0, right: 14.0, bottom: 7.0, left: 14.0 }),
                 )
                 .on_press(Message::ShowNewConnection)
                 .style(|_, _| button::Style {
@@ -1456,6 +1611,31 @@ impl Oryxis {
             ].align_y(iced::Alignment::Center),
         )
         .padding(Padding { top: 20.0, right: 24.0, bottom: 16.0, left: 24.0 })
+        .width(Length::Fill);
+
+        // ── Search bar ──
+        let search_bar = container(
+            text_input("Search hosts...", &self.host_search)
+                .on_input(Message::HostSearchChanged)
+                .padding(10)
+                .size(13)
+                .style(|_, status| text_input::Style {
+                    background: Background::Color(OryxisColors::BG_SURFACE),
+                    border: Border {
+                        radius: Radius::from(8.0),
+                        width: 1.0,
+                        color: match status {
+                            text_input::Status::Focused { .. } => OryxisColors::ACCENT,
+                            _ => OryxisColors::BORDER,
+                        },
+                    },
+                    icon: OryxisColors::TEXT_MUTED,
+                    placeholder: OryxisColors::TEXT_MUTED,
+                    value: OryxisColors::TEXT_PRIMARY,
+                    selection: OryxisColors::ACCENT,
+                }),
+        )
+        .padding(Padding { top: 0.0, right: 24.0, bottom: 12.0, left: 24.0 })
         .width(Length::Fill);
 
         // ── Status ──
@@ -1518,7 +1698,7 @@ impl Oryxis {
             )
             .center(Length::Fill);
 
-            let main_content = column![toolbar, status, empty_state]
+            let main_content = column![toolbar, search_bar, status, empty_state]
                 .width(Length::Fill)
                 .height(Length::Fill);
 
@@ -1531,41 +1711,6 @@ impl Oryxis {
             } else {
                 return main_content.into();
             }
-        }
-
-        // Breadcrumb if inside a folder
-        if let Some(gid) = self.active_group {
-            let group_name = self.groups.iter()
-                .find(|g| g.id == gid)
-                .map(|g| g.label.as_str())
-                .unwrap_or("Group");
-            let breadcrumb = container(
-                row![
-                    button(
-                        row![
-                            iced_fonts::bootstrap::arrow_left().size(12).color(OryxisColors::ACCENT),
-                            Space::new().width(6),
-                            text("All Hosts").size(12).color(OryxisColors::ACCENT),
-                        ].align_y(iced::Alignment::Center),
-                    )
-                    .on_press(Message::BackToRoot)
-                    .padding(Padding { top: 4.0, right: 10.0, bottom: 4.0, left: 10.0 })
-                    .style(|_, _| button::Style {
-                        background: Some(Background::Color(Color::TRANSPARENT)),
-                        border: Border::default(),
-                        ..Default::default()
-                    }),
-                    text("/").size(14).color(OryxisColors::TEXT_MUTED),
-                    Space::new().width(8),
-                    iced_fonts::bootstrap::folder_fill().size(14).color(OryxisColors::ACCENT),
-                    Space::new().width(6),
-                    text(group_name).size(14).color(OryxisColors::TEXT_PRIMARY),
-                ].align_y(iced::Alignment::Center),
-            )
-            .padding(Padding { top: 0.0, right: 24.0, bottom: 8.0, left: 24.0 });
-            cards.push(
-                container(breadcrumb).width(CARD_WIDTH * 3.0 + 12.0 * 2.0).into()
-            );
         }
 
         if self.active_group.is_none() {
@@ -1614,7 +1759,8 @@ impl Oryxis {
             }
         }
 
-        // Show host cards — filtered by active group
+        // Show host cards — filtered by active group and search
+        let search_lower = self.host_search.to_lowercase();
         for (idx, conn) in self.connections.iter().enumerate() {
             // Filter: at root show ungrouped only, inside folder show that group
             if let Some(gid) = self.active_group {
@@ -1623,8 +1769,16 @@ impl Oryxis {
                 continue; // hide grouped hosts at root (they're inside folder cards)
             }
 
+            // Filter by search query
+            if !search_lower.is_empty() {
+                let label_match = conn.label.to_lowercase().contains(&search_lower);
+                let host_match = conn.hostname.to_lowercase().contains(&search_lower);
+                if !label_match && !host_match { continue; }
+            }
+
             let is_connected = self.tabs.iter().any(|t| t.label == conn.label);
             let auth_label = match conn.auth_method {
+                AuthMethod::Auto => "Auto",
                 AuthMethod::Password => "Password",
                 AuthMethod::Key => "Key",
                 AuthMethod::Agent => "Agent",
@@ -1641,9 +1795,14 @@ impl Oryxis {
                     ..Default::default()
                 });
 
-            let edit_btn = button(iced_fonts::bootstrap::pencil().size(12).color(OryxisColors::TEXT_MUTED))
-                .on_press(Message::EditConnection(idx))
-                .padding(Padding { top: 4.0, right: 8.0, bottom: 4.0, left: 8.0 })
+            // "..." button — only visible on hover or when menu is open
+            let show_dots = self.hovered_card == Some(idx) || self.card_context_menu == Some(idx);
+            let dots_btn: Element<'_, Message> = if show_dots {
+                button(
+                    text("···").size(14).color(OryxisColors::TEXT_MUTED),
+                )
+                .on_press(Message::ShowCardMenu(idx))
+                .padding(Padding { top: 2.0, right: 6.0, bottom: 2.0, left: 6.0 })
                 .style(|_, status| {
                     let bg = match status {
                         BtnStatus::Hovered => OryxisColors::BG_HOVER,
@@ -1654,9 +1813,13 @@ impl Oryxis {
                         border: Border { radius: Radius::from(6.0), ..Default::default() },
                         ..Default::default()
                     }
-                });
+                })
+                .into()
+            } else {
+                Space::new().width(0).into()
+            };
 
-            let card = button(
+            let card_btn = button(
                 container(
                     row![
                         icon_box,
@@ -1666,7 +1829,7 @@ impl Oryxis {
                             Space::new().height(2),
                             text(subtitle).size(10).color(OryxisColors::TEXT_MUTED),
                         ].width(Length::Fill),
-                        edit_btn,
+                        dots_btn,
                     ].align_y(iced::Alignment::Center),
                 )
                 .padding(16),
@@ -1686,7 +1849,38 @@ impl Oryxis {
                 }
             });
 
-            cards.push(card.into());
+            // Context menu dropdown (shown below the card)
+            let card_el: Element<'_, Message> = if self.card_context_menu == Some(idx) {
+                let menu = container(
+                    column![
+                        context_menu_item(iced_fonts::bootstrap::play_fill(), "Connect", Message::ConnectSsh(idx), OryxisColors::SUCCESS),
+                        context_menu_item(iced_fonts::bootstrap::pencil(), "Edit", Message::EditConnection(idx), OryxisColors::TEXT_SECONDARY),
+                        context_menu_item(iced_fonts::bootstrap::copy(), "Duplicate", Message::DuplicateConnection(idx), OryxisColors::TEXT_SECONDARY),
+                        context_menu_item(iced_fonts::bootstrap::trash(), "Remove", Message::DeleteConnection(idx), OryxisColors::ERROR),
+                    ],
+                )
+                .width(CARD_WIDTH)
+                .padding(4)
+                .style(|_| container::Style {
+                    background: Some(Background::Color(OryxisColors::BG_SURFACE)),
+                    border: Border { radius: Radius::from(8.0), color: OryxisColors::BORDER, width: 1.0 },
+                    ..Default::default()
+                });
+
+                column![card_btn, Space::new().height(4), menu]
+                    .width(CARD_WIDTH)
+                    .into()
+            } else {
+                card_btn.into()
+            };
+
+            // Wrap in MouseArea for hover tracking and right-click
+            let wrapped = MouseArea::new(card_el)
+                .on_enter(Message::CardHovered(idx))
+                .on_exit(Message::CardUnhovered)
+                .on_right_press(Message::ShowCardMenu(idx));
+
+            cards.push(container(wrapped).width(CARD_WIDTH).into());
         }
 
         // Grid layout (3 cols)
@@ -1707,11 +1901,16 @@ impl Oryxis {
         }
 
         let grid = scrollable(
-            column(grid_rows).padding(Padding { top: 0.0, right: 24.0, bottom: 24.0, left: 24.0 }),
+            column(grid_rows)
+                .padding(Padding { top: 0.0, right: 24.0, bottom: 24.0, left: 24.0 }),
         ).height(Length::Fill);
 
+        // Close context menu when clicking on empty area
+        let grid = MouseArea::new(grid)
+            .on_press(Message::HideCardMenu);
+
         // ── Main + side panel ──
-        let main_content = column![toolbar, status, grid]
+        let main_content = column![toolbar, search_bar, status, grid]
             .width(Length::Fill)
             .height(Length::Fill);
 
@@ -1848,7 +2047,7 @@ impl Oryxis {
             .width(Length::Fill)
             .height(Length::Fill)
             .style(|_| container::Style {
-                background: Some(Background::Color(Color::from_rgb(0.07, 0.07, 0.10))),
+                background: Some(Background::Color(OryxisColors::BG_SIDEBAR)),
                 border: Border { radius: Radius::from(10.0), ..Default::default() },
                 ..Default::default()
             });
@@ -1954,13 +2153,13 @@ impl Oryxis {
                 button(
                     container(
                         row![
-                            text("+").size(14).color(OryxisColors::TEXT_PRIMARY),
-                            Space::new().width(6),
+                            text("+").size(12).color(OryxisColors::TEXT_PRIMARY),
+                            Space::new().width(4),
                             text("KEY").size(12).color(OryxisColors::TEXT_PRIMARY),
                         ]
                         .align_y(iced::Alignment::Center),
                     )
-                    .padding(Padding { top: 6.0, right: 14.0, bottom: 6.0, left: 14.0 }),
+                    .padding(Padding { top: 6.0, right: 14.0, bottom: 7.0, left: 14.0 }),
                 )
                 .on_press(Message::ShowKeyPanel)
                 .style(|_, _| button::Style {
@@ -1972,6 +2171,16 @@ impl Oryxis {
             .align_y(iced::Alignment::Center),
         )
         .padding(Padding { top: 20.0, right: 24.0, bottom: 16.0, left: 24.0 })
+        .width(Length::Fill);
+
+        // ── Search bar ──
+        let search_bar = container(
+            text_input("Search keys...", &self.key_search)
+                .on_input(Message::KeySearchChanged)
+                .padding(10)
+                .width(Length::Fill),
+        )
+        .padding(Padding { top: 0.0, right: 24.0, bottom: 12.0, left: 24.0 })
         .width(Length::Fill);
 
         // ── Status message ──
@@ -1993,9 +2202,15 @@ impl Oryxis {
         )
         .padding(Padding { top: 4.0, right: 24.0, bottom: 8.0, left: 24.0 });
 
+        // Filter keys by search query
+        let search_lower = self.key_search.to_lowercase();
+        let filtered_keys: Vec<(usize, &SshKey)> = self.keys.iter().enumerate()
+            .filter(|(_, k)| search_lower.is_empty() || k.label.to_lowercase().contains(&search_lower))
+            .collect();
+
         let mut cards: Vec<Element<'_, Message>> = Vec::new();
 
-        if self.keys.is_empty() {
+        if filtered_keys.is_empty() && self.keys.is_empty() {
             let empty_card = container(
                 column![
                     iced_fonts::bootstrap::key().size(28).color(OryxisColors::TEXT_MUTED),
@@ -2014,9 +2229,16 @@ impl Oryxis {
                 ..Default::default()
             });
             cards.push(empty_card.into());
+        } else if filtered_keys.is_empty() {
+            let no_results = container(
+                text("No keys match your search").size(13).color(OryxisColors::TEXT_MUTED),
+            )
+            .padding(24)
+            .width(CARD_WIDTH);
+            cards.push(no_results.into());
         }
 
-        for (idx, key) in self.keys.iter().enumerate() {
+        for (idx, key) in filtered_keys {
             let algo = format!("Type {}", key.algorithm);
             let icon_box = container(iced_fonts::bootstrap::key().size(18).color(Color::WHITE))
                 .padding(Padding { top: 8.0, right: 10.0, bottom: 8.0, left: 10.0 })
@@ -2025,15 +2247,26 @@ impl Oryxis {
                     border: Border { radius: Radius::from(8.0), ..Default::default() },
                     ..Default::default()
                 });
-            let del_btn = button(text("×").size(14).color(OryxisColors::TEXT_MUTED))
-                .on_press(Message::DeleteKey(idx))
-                .padding(Padding { top: 0.0, right: 4.0, bottom: 0.0, left: 4.0 })
-                .style(|_, _| button::Style {
-                    background: Some(Background::Color(Color::TRANSPARENT)),
-                    border: Border::default(),
+
+            // "..." menu button
+            let dots_btn = button(
+                text("···").size(14).color(OryxisColors::TEXT_MUTED),
+            )
+            .on_press(Message::ShowKeyMenu(idx))
+            .padding(Padding { top: 2.0, right: 6.0, bottom: 2.0, left: 6.0 })
+            .style(|_, status| {
+                let bg = match status {
+                    BtnStatus::Hovered => OryxisColors::BG_HOVER,
+                    _ => Color::TRANSPARENT,
+                };
+                button::Style {
+                    background: Some(Background::Color(bg)),
+                    border: Border { radius: Radius::from(6.0), ..Default::default() },
                     ..Default::default()
-                });
-            let card = container(
+                }
+            });
+
+            let card = button(
                 row![
                     icon_box,
                     Space::new().width(12),
@@ -2042,17 +2275,53 @@ impl Oryxis {
                         Space::new().height(2),
                         text(algo).size(11).color(OryxisColors::TEXT_MUTED),
                     ].width(Length::Fill),
-                    del_btn,
+                    dots_btn,
                 ].align_y(iced::Alignment::Center),
             )
+            .on_press(Message::EditKey(idx))
             .padding(16)
             .width(CARD_WIDTH)
-            .style(|_| container::Style {
-                background: Some(Background::Color(OryxisColors::BG_SURFACE)),
-                border: Border { radius: Radius::from(10.0), color: OryxisColors::BORDER, width: 1.0 },
-                ..Default::default()
+            .style(|_, status| {
+                let (bg, border_color, border_width) = match status {
+                    BtnStatus::Hovered => (OryxisColors::BG_HOVER, OryxisColors::ACCENT, 1.5),
+                    BtnStatus::Pressed => (OryxisColors::BG_SELECTED, OryxisColors::ACCENT, 2.0),
+                    _ => (OryxisColors::BG_SURFACE, OryxisColors::BORDER, 1.0),
+                };
+                button::Style {
+                    background: Some(Background::Color(bg)),
+                    border: Border { radius: Radius::from(10.0), color: border_color, width: border_width },
+                    ..Default::default()
+                }
             });
-            cards.push(card.into());
+
+            // Context menu dropdown (shown below the card)
+            let card_el: Element<'_, Message> = if self.key_context_menu == Some(idx) {
+                let menu = container(
+                    column![
+                        context_menu_item(iced_fonts::bootstrap::pencil(), "Edit", Message::EditKey(idx), OryxisColors::TEXT_SECONDARY),
+                        context_menu_item(iced_fonts::bootstrap::trash(), "Remove", Message::DeleteKey(idx), OryxisColors::ERROR),
+                    ],
+                )
+                .width(CARD_WIDTH)
+                .padding(4)
+                .style(|_| container::Style {
+                    background: Some(Background::Color(OryxisColors::BG_SURFACE)),
+                    border: Border { radius: Radius::from(8.0), color: OryxisColors::BORDER, width: 1.0 },
+                    ..Default::default()
+                });
+
+                column![card, Space::new().height(4), menu]
+                    .width(CARD_WIDTH)
+                    .into()
+            } else {
+                card.into()
+            };
+
+            // Wrap in MouseArea for right-click
+            let wrapped = MouseArea::new(card_el)
+                .on_right_press(Message::ShowKeyMenu(idx));
+
+            cards.push(container(wrapped).width(CARD_WIDTH).into());
         }
 
         // Grid layout (3 cols)
@@ -2077,8 +2346,12 @@ impl Oryxis {
         )
         .height(Length::Fill);
 
+        // Close key context menu when clicking on empty area
+        let grid = MouseArea::new(grid)
+            .on_press(Message::HideKeyMenu);
+
         // ── Main content (grid) ──
-        let main_content = column![toolbar, status, section_title, grid]
+        let main_content = column![toolbar, search_bar, status, section_title, grid]
             .width(Length::Fill)
             .height(Length::Fill);
 
@@ -2096,11 +2369,12 @@ impl Oryxis {
 
     fn view_key_import_panel(&self) -> Element<'_, Message> {
         let has_content = !self.key_import_pem.is_empty();
+        let panel_title = if self.editing_key_id.is_some() { "Edit Key" } else { "Add Key" };
 
         // Panel header
         let panel_header = container(
             row![
-                text("Add Key").size(18).color(OryxisColors::TEXT_PRIMARY),
+                text(panel_title).size(18).color(OryxisColors::TEXT_PRIMARY),
                 Space::new().width(Length::Fill),
                 button(text("X").size(14).color(OryxisColors::TEXT_MUTED))
                     .on_press(Message::HideKeyPanel)
@@ -2174,8 +2448,9 @@ impl Oryxis {
         };
 
         // Save button
+        let save_label = if self.editing_key_id.is_some() { "Update Key" } else { "Save Key" };
         let save_btn = button(
-            container(text("Save Key").size(13).color(OryxisColors::TEXT_PRIMARY))
+            container(text(save_label).size(13).color(OryxisColors::TEXT_PRIMARY))
                 .padding(Padding { top: 10.0, right: 0.0, bottom: 10.0, left: 0.0 })
                 .width(Length::Fill)
                 .center_x(Length::Fill),
@@ -2237,12 +2512,12 @@ impl Oryxis {
                 button(
                     container(
                         row![
-                            text("+").size(14).color(OryxisColors::TEXT_PRIMARY),
-                            Space::new().width(6),
+                            text("+").size(12).color(OryxisColors::TEXT_PRIMARY),
+                            Space::new().width(4),
                             text("SNIPPET").size(12).color(OryxisColors::TEXT_PRIMARY),
                         ].align_y(iced::Alignment::Center),
                     )
-                    .padding(Padding { top: 6.0, right: 14.0, bottom: 6.0, left: 14.0 }),
+                    .padding(Padding { top: 6.0, right: 14.0, bottom: 7.0, left: 14.0 }),
                 )
                 .on_press(Message::ShowSnippetPanel)
                 .style(|_, _| button::Style {
@@ -2560,7 +2835,7 @@ impl Oryxis {
                 .on_press(Message::ClearLogs)
                 .style(|_, status| {
                     let bg = match status {
-                        BtnStatus::Hovered => Color::from_rgba(0.92, 0.33, 0.38, 0.15),
+                        BtnStatus::Hovered => OryxisColors::ERROR_SUBTLE,
                         _ => Color::TRANSPARENT,
                     };
                     button::Style {
@@ -2676,7 +2951,7 @@ impl Oryxis {
             .on_press(Message::LockVault)
             .style(|_, status| {
                 let bg = match status {
-                    BtnStatus::Hovered => Color::from_rgba(0.95, 0.73, 0.25, 0.15),
+                    BtnStatus::Hovered => OryxisColors::WARNING_SUBTLE,
                     _ => Color::TRANSPARENT,
                 };
                 button::Style {
@@ -2821,10 +3096,28 @@ impl Oryxis {
             row![
                 iced_fonts::bootstrap::keyboard().size(13).color(OryxisColors::TEXT_MUTED),
                 Space::new().width(10),
-                text_input("Password", &self.editor_form.password)
+                text_input(
+                    if self.editor_form.has_existing_password && !self.editor_form.password_touched {
+                        "••••••••"
+                    } else {
+                        "Password"
+                    },
+                    &self.editor_form.password,
+                )
                     .on_input(Message::EditorPasswordChanged)
-                    .secure(true)
+                    .secure(!self.editor_form.password_visible)
                     .padding(10),
+                Space::new().width(6),
+                button(
+                    if self.editor_form.password_visible {
+                        iced_fonts::bootstrap::eye_slash().size(14).color(OryxisColors::TEXT_MUTED)
+                    } else {
+                        iced_fonts::bootstrap::eye().size(14).color(OryxisColors::TEXT_MUTED)
+                    }
+                )
+                    .on_press(Message::EditorTogglePasswordVisibility)
+                    .style(|_t, _s| button::Style::default())
+                    .padding(8),
             ].align_y(iced::Alignment::Center),
             Space::new().height(8),
             // Key / Auth selector
@@ -2846,6 +3139,7 @@ impl Oryxis {
         // ── Section: Advanced Options ──
         let jump_host_value = self.editor_form.jump_host.as_deref().unwrap_or("Disabled");
         let auth_value = match self.editor_form.auth_method {
+            AuthMethod::Auto => "Auto",
             AuthMethod::Password => "Password",
             AuthMethod::Key => "Key",
             AuthMethod::Agent => "Agent",
@@ -2862,7 +3156,7 @@ impl Oryxis {
             panel_option_pick(
                 iced_fonts::bootstrap::shield_lock(),
                 "Auth Method",
-                vec!["Password".into(), "Key".into(), "Agent".into(), "Interactive".into()],
+                vec!["Auto".into(), "Password".into(), "Key".into(), "Agent".into(), "Interactive".into()],
                 auth_value.to_string(),
                 Message::EditorAuthMethodChanged,
             ),
@@ -2909,41 +3203,7 @@ impl Oryxis {
             ..Default::default()
         });
 
-        let mut bottom = column![save_btn];
-
-        if let Some(edit_id) = self.editor_form.editing_id
-            && let Some(idx) = self.connections.iter().position(|c| c.id == edit_id) {
-                // Action row: Connect | Duplicate | Remove
-                let action_row = container(
-                    row![
-                        panel_action_btn(
-                            iced_fonts::bootstrap::play_fill(),
-                            "Connect",
-                            Message::ConnectFromPanel,
-                            OryxisColors::SUCCESS,
-                        ),
-                        Space::new().width(8),
-                        panel_action_btn(
-                            iced_fonts::bootstrap::copy(),
-                            "Duplicate",
-                            Message::DuplicateConnection(idx),
-                            OryxisColors::TEXT_SECONDARY,
-                        ),
-                        Space::new().width(8),
-                        panel_action_btn(
-                            iced_fonts::bootstrap::trash(),
-                            "Remove",
-                            Message::DeleteConnection(idx),
-                            OryxisColors::ERROR,
-                        ),
-                    ],
-                )
-                .padding(Padding { top: 8.0, right: 0.0, bottom: 0.0, left: 0.0 });
-
-                bottom = bottom.push(Space::new().height(8));
-                bottom = bottom.push(action_row);
-            }
-
+        let bottom = column![save_btn];
         // ── Layout ──
         let form_scroll = scrollable(
             column![
@@ -2973,7 +3233,7 @@ impl Oryxis {
             .width(PANEL_WIDTH)
             .height(Length::Fill)
             .style(|_| container::Style {
-                background: Some(Background::Color(Color::from_rgb(0.10, 0.11, 0.15))),
+                background: Some(Background::Color(OryxisColors::BG_SURFACE)),
                 border: Border { color: OryxisColors::BORDER, width: 1.0, radius: Radius::from(0.0) },
                 ..Default::default()
             })
@@ -2992,7 +3252,7 @@ fn sidebar_nav_btn<'a>(
     is_active: bool,
 ) -> Element<'a, Message> {
     let bg = if is_active {
-        Color::from_rgba(0.30, 0.56, 1.0, 0.15)
+        OryxisColors::ACCENT_SUBTLE
     } else {
         Color::TRANSPARENT
     };
@@ -3018,8 +3278,8 @@ fn sidebar_nav_btn<'a>(
         .width(Length::Fill)
         .style(move |_, status| {
             let hover_bg = match status {
-                BtnStatus::Hovered if !is_active => Color::from_rgba(1.0, 1.0, 1.0, 0.08),
-                BtnStatus::Pressed => Color::from_rgba(0.30, 0.56, 1.0, 0.25),
+                BtnStatus::Hovered if !is_active => OryxisColors::WHITE_SUBTLE,
+                BtnStatus::Pressed => OryxisColors::ACCENT_PRESSED,
                 _ => bg,
             };
             button::Style {
@@ -3039,8 +3299,8 @@ fn panel_section<'a>(content: iced::widget::Column<'a, Message>) -> Element<'a, 
         .padding(16)
         .width(Length::Fill)
         .style(|_| container::Style {
-            background: Some(Background::Color(Color::from_rgb(0.12, 0.13, 0.17))),
-            border: Border { radius: Radius::from(8.0), color: Color::from_rgb(0.18, 0.19, 0.25), width: 1.0 },
+            background: Some(Background::Color(OryxisColors::BG_HOVER)),
+            border: Border { radius: Radius::from(8.0), color: OryxisColors::BORDER, width: 1.0 },
             ..Default::default()
         })
         .into()
@@ -3061,7 +3321,7 @@ fn panel_divider<'a>() -> Element<'a, Message> {
     container(Space::new().height(1))
         .width(Length::Fill)
         .style(|_| container::Style {
-            background: Some(Background::Color(Color::from_rgb(0.18, 0.19, 0.25))),
+            background: Some(Background::Color(OryxisColors::BORDER)),
             ..Default::default()
         })
         .into()
@@ -3084,6 +3344,37 @@ fn panel_option_row<'a>(
         .align_y(iced::Alignment::Center),
     )
     .padding(Padding { top: 8.0, right: 0.0, bottom: 8.0, left: 0.0 })
+    .into()
+}
+
+fn context_menu_item<'a>(
+    icon_widget: iced::widget::Text<'a>,
+    label: &'a str,
+    msg: Message,
+    color: Color,
+) -> Element<'a, Message> {
+    button(
+        row![
+            icon_widget.size(12).color(color),
+            Space::new().width(8),
+            text(label).size(12).color(OryxisColors::TEXT_PRIMARY),
+        ]
+        .align_y(iced::Alignment::Center),
+    )
+    .on_press(msg)
+    .width(Length::Fill)
+    .padding(Padding { top: 6.0, right: 12.0, bottom: 6.0, left: 12.0 })
+    .style(|_, status| {
+        let bg = match status {
+            BtnStatus::Hovered => OryxisColors::BG_HOVER,
+            _ => Color::TRANSPARENT,
+        };
+        button::Style {
+            background: Some(Background::Color(bg)),
+            border: Border { radius: Radius::from(4.0), ..Default::default() },
+            ..Default::default()
+        }
+    })
     .into()
 }
 
@@ -3128,40 +3419,6 @@ fn panel_option_pick_jump<'a>(
         .align_y(iced::Alignment::Center),
     )
     .padding(Padding { top: 4.0, right: 0.0, bottom: 4.0, left: 0.0 })
-    .into()
-}
-
-fn panel_action_btn<'a>(
-    icon_widget: iced::widget::Text<'a>,
-    label: &'a str,
-    msg: Message,
-    color: Color,
-) -> Element<'a, Message> {
-    button(
-        container(
-            column![
-                icon_widget.size(14).color(color),
-                Space::new().height(4),
-                text(label).size(11).color(color),
-            ]
-            .align_x(iced::Alignment::Center),
-        )
-        .padding(Padding { top: 8.0, right: 12.0, bottom: 8.0, left: 12.0 })
-        .center_x(Length::Fill),
-    )
-    .on_press(msg)
-    .width(Length::Fill)
-    .style(move |_, status| {
-        let bg = match status {
-            BtnStatus::Hovered => Color::from_rgba(color.r, color.g, color.b, 0.12),
-            _ => Color::TRANSPARENT,
-        };
-        button::Style {
-            background: Some(Background::Color(bg)),
-            border: Border { radius: Radius::from(8.0), color: OryxisColors::BORDER, width: 1.0 },
-            ..Default::default()
-        }
-    })
     .into()
 }
 

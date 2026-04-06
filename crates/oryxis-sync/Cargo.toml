@@ -5,7 +5,7 @@ edition = "2024"
 
 [dependencies]
 oryxis-core = { workspace = true }
-iroh = { workspace = true }
+# iroh — will be re-added when P2P sync is implemented
 tokio = { workspace = true }
 serde = { workspace = true }
 tracing = { workspace = true }

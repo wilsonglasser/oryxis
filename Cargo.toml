@@ -19,10 +19,10 @@ repository = "https://github.com/wilsonglasser/oryxis"
 iced = { version = "0.14", features = ["canvas", "tokio", "advanced", "image"] }
 
 # SSH
-russh = "0.48"
+russh = "0.60"
 
 # Terminal parsing
-alacritty_terminal = "0.25"
+alacritty_terminal = "0.26"
 vte = "0.15"
 
 # PTY
@@ -32,13 +32,13 @@ portable-pty = "0.9"
 cosmic-text = "0.18"
 
 # Crypto
-age = "0.10"
+age = "0.11"
 argon2 = "0.5"
 chacha20poly1305 = "0.10"
-secrecy = { version = "0.8", features = ["serde"] }
+secrecy = { version = "0.10", features = ["serde"] }
 
-# P2P
-iroh = "0.97"
+# P2P (disabled until sync feature is implemented)
+# iroh = "0.97"
 
 # Storage
 rusqlite = { version = "0.32", features = ["bundled"] }
