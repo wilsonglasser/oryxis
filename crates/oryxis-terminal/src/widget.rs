@@ -163,6 +163,9 @@ pub struct TerminalView {
     cell_height: f32,
 }
 
+/// Padding around the terminal content (in pixels).
+const TERM_PAD: f32 = 10.0;
+
 impl TerminalView {
     pub fn new(state: Arc<Mutex<TerminalState>>) -> Self {
         Self {
@@ -175,14 +178,16 @@ impl TerminalView {
     pub fn grid_size_for(width: f32, height: f32) -> (u16, u16) {
         let cell_width = 8.4_f32;
         let cell_height = 18.0_f32;
-        let cols = (width / cell_width).floor().max(1.0) as u16;
-        let rows = (height / cell_height).floor().max(1.0) as u16;
+        let usable_w = (width - TERM_PAD * 2.0).max(cell_width);
+        let usable_h = (height - TERM_PAD * 2.0).max(cell_height);
+        let cols = (usable_w / cell_width).floor().max(1.0) as u16;
+        let rows = (usable_h / cell_height).floor().max(1.0) as u16;
         (cols, rows)
     }
 
     fn pixel_to_cell(&self, pos: Point) -> (u16, u16) {
-        let col = (pos.x / self.cell_width).floor().max(0.0) as u16;
-        let row = (pos.y / self.cell_height).floor().max(0.0) as u16;
+        let col = ((pos.x - TERM_PAD) / self.cell_width).floor().max(0.0) as u16;
+        let row = ((pos.y - TERM_PAD) / self.cell_height).floor().max(0.0) as u16;
         (col, row)
     }
 
@@ -350,10 +355,16 @@ where
 
             let col = point.column.0 as u16;
             let row = point.line.0 as u16;
-            let x = col as f32 * cell_w;
-            let y = row as f32 * cell_h;
+            let x = col as f32 * cell_w + TERM_PAD;
+            let y = row as f32 * cell_h + TERM_PAD;
 
-            let mut fg = palette.resolve(&cell.fg, colors);
+            // Resolve foreground — bold text uses bright variant of ANSI colors
+            let effective_fg = if cell.flags.contains(CellFlags::BOLD) {
+                brighten_named(&cell.fg)
+            } else {
+                cell.fg
+            };
+            let mut fg = palette.resolve(&effective_fg, colors);
             let mut bg = palette.resolve(&cell.bg, colors);
 
             if cell.flags.contains(CellFlags::INVERSE) {
@@ -415,8 +426,8 @@ where
 
         // Cursor
         let cursor = content.cursor;
-        let cx = cursor.point.column.0 as f32 * cell_w;
-        let cy = cursor.point.line.0 as f32 * cell_h;
+        let cx = cursor.point.column.0 as f32 * cell_w + TERM_PAD;
+        let cy = cursor.point.line.0 as f32 * cell_h + TERM_PAD;
 
         match cursor.shape {
             CursorShape::Block => {
@@ -452,5 +463,29 @@ where
         }
 
         vec![frame.into_geometry()]
+    }
+}
+
+/// For bold text, promote standard ANSI colors (0-7) to their bright variant (8-15).
+/// This makes bold text colorful like in other terminal emulators.
+fn brighten_named(color: &alacritty_terminal::vte::ansi::Color) -> alacritty_terminal::vte::ansi::Color {
+    use alacritty_terminal::vte::ansi::{Color as AnsiColor, NamedColor};
+    match color {
+        AnsiColor::Named(named) => {
+            let bright = match named {
+                NamedColor::Black => NamedColor::BrightBlack,
+                NamedColor::Red => NamedColor::BrightRed,
+                NamedColor::Green => NamedColor::BrightGreen,
+                NamedColor::Yellow => NamedColor::BrightYellow,
+                NamedColor::Blue => NamedColor::BrightBlue,
+                NamedColor::Magenta => NamedColor::BrightMagenta,
+                NamedColor::Cyan => NamedColor::BrightCyan,
+                NamedColor::White => NamedColor::BrightWhite,
+                other => *other, // already bright or special — keep as-is
+            };
+            AnsiColor::Named(bright)
+        }
+        AnsiColor::Indexed(idx) if *idx < 8 => AnsiColor::Indexed(idx + 8),
+        other => *other,
     }
 }

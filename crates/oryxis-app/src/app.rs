@@ -144,6 +144,8 @@ pub struct Oryxis {
     known_hosts: Vec<oryxis_core::models::known_host::KnownHost>,
     logs: Vec<oryxis_core::models::log_entry::LogEntry>,
 
+    // Terminal theme
+    terminal_theme: oryxis_terminal::TerminalTheme,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -245,6 +247,7 @@ pub enum Message {
 
     // Settings
     LockVault,
+    TerminalThemeChanged(String),
 
     // Local shell
     OpenLocalShell,
@@ -352,6 +355,7 @@ impl Oryxis {
                 snippet_command: String::new(),
                 snippet_editing_id: None,
                 snippet_error: None,
+                terminal_theme: oryxis_terminal::TerminalTheme::OryxisDark,
             },
             Task::none(),
         )
@@ -758,7 +762,8 @@ impl Oryxis {
                     };
 
                     match TerminalState::new_no_pty(DEFAULT_TERM_COLS as u16, DEFAULT_TERM_ROWS as u16) {
-                        Ok(state) => {
+                        Ok(mut state) => {
+                            state.palette = self.terminal_theme.palette();
                             let label = conn.label.clone();
                             let hostname = format!("SSH {}:{}", conn.hostname, conn.port);
                             let terminal = Arc::new(Mutex::new(state));
@@ -1080,6 +1085,17 @@ impl Oryxis {
             }
 
             // -- Settings --
+            Message::TerminalThemeChanged(name) => {
+                if let Some(theme) = oryxis_terminal::TerminalTheme::ALL.iter().find(|t| t.name() == name) {
+                    self.terminal_theme = *theme;
+                    // Apply to all open terminals
+                    for tab in &self.tabs {
+                        if let Ok(mut state) = tab.terminal.lock() {
+                            state.palette = theme.palette();
+                        }
+                    }
+                }
+            }
             Message::LockVault => {
                 if let Some(vault) = &mut self.vault {
                     vault.lock();
@@ -1096,7 +1112,8 @@ impl Oryxis {
 
             Message::OpenLocalShell => {
                 match TerminalState::new(DEFAULT_TERM_COLS as u16, DEFAULT_TERM_ROWS as u16) {
-                    Ok((state, rx)) => {
+                    Ok((mut state, rx)) => {
+                        state.palette = self.terminal_theme.palette();
                         let tab_idx = self.tabs.len();
                         self.tabs.push(TerminalTab {
                             _id: Uuid::new_v4(),
@@ -1397,13 +1414,16 @@ impl Oryxis {
             View::Settings => "Settings",
             View::Terminal => "",
         };
-        if !nav_label.is_empty() && self.active_tab.is_none() {
-            let tab = container(
-                text(nav_label).size(12).color(OryxisColors::ACCENT),
+        if !nav_label.is_empty() {
+            let nav_bg = if self.active_tab.is_none() { OryxisColors::BG_SURFACE } else { Color::TRANSPARENT };
+            let nav_fg = if self.active_tab.is_none() { OryxisColors::ACCENT } else { OryxisColors::TEXT_MUTED };
+            let tab = button(
+                text(nav_label).size(12).color(nav_fg),
             )
+            .on_press(Message::ChangeView(self.active_view))
             .padding(Padding { top: 8.0, right: 16.0, bottom: 8.0, left: 16.0 })
-            .style(|_| container::Style {
-                background: Some(Background::Color(OryxisColors::BG_SURFACE)),
+            .style(move |_, _| button::Style {
+                background: Some(Background::Color(nav_bg)),
                 border: Border {
                     radius: Radius { top_left: 6.0, top_right: 6.0, bottom_left: 0.0, bottom_right: 0.0 },
                     ..Default::default()
@@ -1429,15 +1449,13 @@ impl Oryxis {
                 });
 
             let tab_btn = button(
-                container(
-                    row![
-                        text(&tab.label).size(12).color(tab_fg),
-                        Space::new().width(8),
-                        close_btn,
-                    ].align_y(iced::Alignment::Center),
-                )
-                .padding(Padding { top: 6.0, right: 10.0, bottom: 6.0, left: 14.0 }),
+                row![
+                    text(&tab.label).size(12).color(tab_fg),
+                    Space::new().width(8),
+                    close_btn,
+                ].align_y(iced::Alignment::Center),
             )
+            .padding(Padding { top: 8.0, right: 10.0, bottom: 8.0, left: 14.0 })
             .on_press(Message::SelectTab(idx))
             .style(move |_, _| button::Style {
                 background: Some(Background::Color(tab_bg)),
@@ -1453,7 +1471,7 @@ impl Oryxis {
 
         items.push(Space::new().width(Length::Fill).into());
 
-        container(row(items).align_y(iced::Alignment::End))
+        container(row(items).align_y(iced::Alignment::Center))
             .width(Length::Fill)
             .style(|_| container::Style {
                 background: Some(Background::Color(OryxisColors::BG_SIDEBAR)),
@@ -2937,7 +2955,7 @@ impl Oryxis {
                 }
             };
 
-            let ts = entry.timestamp.format("%Y-%m-%d %H:%M:%S").to_string();
+            let ts = entry.timestamp.with_timezone(&chrono::Local).format("%Y-%m-%d %H:%M:%S").to_string();
 
             let log_row = container(
                 row![
@@ -2994,6 +3012,21 @@ impl Oryxis {
             settings_row("Snippets", self.snippets.len().to_string()),
             Space::new().height(6),
             settings_row("Groups", self.groups.len().to_string()),
+            Space::new().height(24),
+            text("Terminal").size(14).color(OryxisColors::TEXT_MUTED),
+            Space::new().height(8),
+            row![
+                text("Theme").size(13).color(OryxisColors::TEXT_SECONDARY),
+                Space::new().width(16),
+                pick_list(
+                    oryxis_terminal::TerminalTheme::ALL
+                        .iter()
+                        .map(|t| t.name().to_string())
+                        .collect::<Vec<_>>(),
+                    Some(self.terminal_theme.name().to_string()),
+                    Message::TerminalThemeChanged,
+                ),
+            ].align_y(iced::Alignment::Center),
             Space::new().height(24),
             text("Security").size(14).color(OryxisColors::TEXT_MUTED),
             Space::new().height(8),
