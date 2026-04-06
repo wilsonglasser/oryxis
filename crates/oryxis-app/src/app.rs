@@ -2211,24 +2211,53 @@ impl Oryxis {
         let mut cards: Vec<Element<'_, Message>> = Vec::new();
 
         if filtered_keys.is_empty() && self.keys.is_empty() {
-            let empty_card = container(
+            let empty_state = container(
                 column![
-                    iced_fonts::bootstrap::key().size(28).color(OryxisColors::TEXT_MUTED),
+                    container(
+                        iced_fonts::bootstrap::key().size(32).color(OryxisColors::TEXT_MUTED),
+                    )
+                    .padding(16)
+                    .style(|_| container::Style {
+                        background: Some(Background::Color(OryxisColors::BG_SURFACE)),
+                        border: Border { radius: Radius::from(12.0), ..Default::default() },
+                        ..Default::default()
+                    }),
+                    Space::new().height(20),
+                    text("Add a key").size(20).color(OryxisColors::TEXT_PRIMARY),
                     Space::new().height(8),
-                    text("No keys yet").size(13).color(OryxisColors::TEXT_MUTED),
-                    Space::new().height(4),
-                    text("Click + KEY to add one").size(11).color(OryxisColors::TEXT_MUTED),
+                    text("Import SSH keys to authenticate with your hosts.")
+                        .size(13).color(OryxisColors::TEXT_MUTED),
+                    Space::new().height(24),
+                    button(
+                        container(text("Import Key").size(14).color(OryxisColors::TEXT_PRIMARY))
+                            .padding(Padding { top: 12.0, right: 0.0, bottom: 12.0, left: 0.0 })
+                            .width(380)
+                            .center_x(380),
+                    )
+                    .on_press(Message::ShowKeyPanel)
+                    .width(380)
+                    .style(|_, _| button::Style {
+                        background: Some(Background::Color(OryxisColors::ACCENT)),
+                        border: Border { radius: Radius::from(8.0), ..Default::default() },
+                        ..Default::default()
+                    }),
                 ]
                 .align_x(iced::Alignment::Center),
             )
-            .padding(24)
-            .width(CARD_WIDTH)
-            .style(|_| container::Style {
-                background: Some(Background::Color(OryxisColors::BG_SURFACE)),
-                border: Border { radius: Radius::from(10.0), color: OryxisColors::BORDER, width: 1.0 },
-                ..Default::default()
-            });
-            cards.push(empty_card.into());
+            .center(Length::Fill);
+
+            let main_content = column![toolbar, search_bar, status, empty_state]
+                .width(Length::Fill)
+                .height(Length::Fill);
+
+            if self.show_key_panel {
+                let panel = self.view_key_import_panel();
+                return row![main_content, panel]
+                    .width(Length::Fill)
+                    .height(Length::Fill)
+                    .into();
+            }
+            return main_content.into();
         } else if filtered_keys.is_empty() {
             let no_results = container(
                 text("No keys match your search").size(13).color(OryxisColors::TEXT_MUTED),
@@ -2545,23 +2574,53 @@ impl Oryxis {
         let mut cards: Vec<Element<'_, Message>> = Vec::new();
 
         if self.snippets.is_empty() {
-            let empty = container(
+            let empty_state = container(
                 column![
-                    iced_fonts::bootstrap::code_square().size(28).color(OryxisColors::TEXT_MUTED),
+                    container(
+                        iced_fonts::bootstrap::code_square().size(32).color(OryxisColors::TEXT_MUTED),
+                    )
+                    .padding(16)
+                    .style(|_| container::Style {
+                        background: Some(Background::Color(OryxisColors::BG_SURFACE)),
+                        border: Border { radius: Radius::from(12.0), ..Default::default() },
+                        ..Default::default()
+                    }),
+                    Space::new().height(20),
+                    text("Create a snippet").size(20).color(OryxisColors::TEXT_PRIMARY),
                     Space::new().height(8),
-                    text("No snippets yet").size(13).color(OryxisColors::TEXT_MUTED),
-                    Space::new().height(4),
-                    text("Click + SNIPPET to add one").size(11).color(OryxisColors::TEXT_MUTED),
-                ].align_x(iced::Alignment::Center),
+                    text("Save commands you use often for quick access.")
+                        .size(13).color(OryxisColors::TEXT_MUTED),
+                    Space::new().height(24),
+                    button(
+                        container(text("New Snippet").size(14).color(OryxisColors::TEXT_PRIMARY))
+                            .padding(Padding { top: 12.0, right: 0.0, bottom: 12.0, left: 0.0 })
+                            .width(380)
+                            .center_x(380),
+                    )
+                    .on_press(Message::ShowSnippetPanel)
+                    .width(380)
+                    .style(|_, _| button::Style {
+                        background: Some(Background::Color(OryxisColors::ACCENT)),
+                        border: Border { radius: Radius::from(8.0), ..Default::default() },
+                        ..Default::default()
+                    }),
+                ]
+                .align_x(iced::Alignment::Center),
             )
-            .padding(24)
-            .width(CARD_WIDTH)
-            .style(|_| container::Style {
-                background: Some(Background::Color(OryxisColors::BG_SURFACE)),
-                border: Border { radius: Radius::from(10.0), color: OryxisColors::BORDER, width: 1.0 },
-                ..Default::default()
-            });
-            cards.push(empty.into());
+            .center(Length::Fill);
+
+            let main_content = column![toolbar, status, empty_state]
+                .width(Length::Fill)
+                .height(Length::Fill);
+
+            if self.show_snippet_panel {
+                let panel = self.view_snippet_panel();
+                return row![main_content, panel]
+                    .width(Length::Fill)
+                    .height(Length::Fill)
+                    .into();
+            }
+            return main_content.into();
         }
 
         for (idx, snip) in self.snippets.iter().enumerate() {
