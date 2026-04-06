@@ -10,6 +10,7 @@ use iced::widget::button::Status as BtnStatus;
 
 use oryxis_core::models::connection::{AuthMethod, Connection};
 use oryxis_core::models::group::Group;
+use oryxis_core::models::identity::Identity;
 use oryxis_core::models::key::SshKey;
 use oryxis_ssh::{SshEngine, SshSession};
 use oryxis_terminal::widget::{TerminalState, TerminalView};
@@ -53,6 +54,8 @@ struct ConnectionForm {
     group_name: String,
     selected_key: Option<String>,
     jump_host: Option<String>,  // label of jump host connection
+    /// Selected identity label (if any).
+    selected_identity: Option<String>,
     /// If editing, the connection ID.
     editing_id: Option<Uuid>,
     /// Whether the connection already has a password stored in the vault.
@@ -75,6 +78,7 @@ impl Default for ConnectionForm {
             group_name: String::new(),
             selected_key: None,
             jump_host: None,
+            selected_identity: None,
             editing_id: None,
             has_existing_password: false,
             password_touched: false,
@@ -131,6 +135,20 @@ pub struct Oryxis {
     key_context_menu: Option<usize>,
     editing_key_id: Option<Uuid>,
     key_search: String,
+
+    // Identities
+    identities: Vec<Identity>,
+    show_identity_panel: bool,
+    identity_form_label: String,
+    identity_form_username: String,
+    identity_form_password: String,
+    identity_form_key: Option<String>,
+    identity_form_password_visible: bool,
+    identity_form_password_touched: bool,
+    identity_form_has_existing_password: bool,
+    editing_identity_id: Option<Uuid>,
+    identity_context_menu: Option<usize>,
+    show_keychain_add_menu: bool,
 
     // Snippets
     snippets: Vec<oryxis_core::models::snippet::Snippet>,
@@ -266,6 +284,24 @@ pub enum Message {
     HideKeyMenu,
     EditKey(usize),
     KeySearchChanged(String),
+
+    // Identities
+    ShowIdentityPanel,
+    HideIdentityPanel,
+    IdentityLabelChanged(String),
+    IdentityUsernameChanged(String),
+    IdentityPasswordChanged(String),
+    IdentityKeyChanged(String),
+    IdentityTogglePasswordVisibility,
+    SaveIdentity,
+    EditIdentity(usize),
+    DeleteIdentity(usize),
+    ShowIdentityMenu(usize),
+    HideIdentityMenu,
+    ToggleKeychainAddMenu,
+
+    // Connection identity
+    EditorIdentityChanged(String),
 }
 
 /// Internal message type for SSH connection streams.
@@ -347,6 +383,18 @@ impl Oryxis {
                 key_context_menu: None,
                 editing_key_id: None,
                 key_search: String::new(),
+                identities: Vec::new(),
+                show_identity_panel: false,
+                identity_form_label: String::new(),
+                identity_form_username: String::new(),
+                identity_form_password: String::new(),
+                identity_form_key: None,
+                identity_form_password_visible: false,
+                identity_form_password_touched: false,
+                identity_form_has_existing_password: false,
+                editing_identity_id: None,
+                identity_context_menu: None,
+                show_keychain_add_menu: false,
                 snippets: Vec::new(),
                 known_hosts: Vec::new(),
                 logs: Vec::new(),
@@ -366,6 +414,7 @@ impl Oryxis {
             self.connections = vault.list_connections().unwrap_or_default();
             self.groups = vault.list_groups().unwrap_or_default();
             self.keys = vault.list_keys().unwrap_or_default();
+            self.identities = vault.list_identities().unwrap_or_default();
             self.snippets = vault.list_snippets().unwrap_or_default();
             self.known_hosts = vault.list_known_hosts().unwrap_or_default();
             self.logs = vault.list_logs(200).unwrap_or_default();
@@ -563,6 +612,9 @@ impl Oryxis {
                         jump_host: conn.jump_chain.first().and_then(|jid| {
                             self.connections.iter().find(|c| c.id == *jid).map(|c| c.label.clone())
                         }),
+                        selected_identity: conn.identity_id.and_then(|iid| {
+                            self.identities.iter().find(|i| i.id == iid).map(|i| i.label.clone())
+                        }),
                         editing_id: Some(conn.id),
                         has_existing_password: has_pw,
                         password_touched: false,
@@ -650,6 +702,9 @@ impl Oryxis {
                 conn.key_id = self.editor_form.selected_key.as_ref().and_then(|label| {
                     self.keys.iter().find(|k| k.label == *label).map(|k| k.id)
                 });
+                conn.identity_id = self.editor_form.selected_identity.as_ref().and_then(|label| {
+                    self.identities.iter().find(|i| i.label == *label).map(|i| i.id)
+                });
                 conn.jump_chain = self.editor_form.jump_host.as_ref()
                     .and_then(|label| {
                         self.connections.iter().find(|c| c.label == *label).map(|c| vec![c.id])
@@ -722,17 +777,26 @@ impl Oryxis {
             Message::ConnectSsh(idx) => {
                 self.card_context_menu = None;
                 if let Some(conn) = self.connections.get(idx).cloned() {
-                    let password = self
-                        .vault
-                        .as_ref()
-                        .and_then(|v| v.get_connection_password(&conn.id).ok().flatten());
-
-                    let private_key = if conn.auth_method == AuthMethod::Key || conn.auth_method == AuthMethod::Auto {
-                        conn.key_id.and_then(|kid| {
+                    // Resolve credentials: prefer identity if linked, otherwise inline
+                    let (password, private_key) = if let Some(iid) = conn.identity_id {
+                        let id_pw = self.vault.as_ref()
+                            .and_then(|v| v.get_identity_password(&iid).ok().flatten());
+                        let identity = self.identities.iter().find(|i| i.id == iid);
+                        let id_key = identity.and_then(|i| i.key_id).and_then(|kid| {
                             self.vault.as_ref().and_then(|v| v.get_key_private(&kid).ok().flatten())
-                        })
+                        });
+                        (id_pw, id_key)
                     } else {
-                        None
+                        let pw = self.vault.as_ref()
+                            .and_then(|v| v.get_connection_password(&conn.id).ok().flatten());
+                        let pk = if conn.auth_method == AuthMethod::Key || conn.auth_method == AuthMethod::Auto {
+                            conn.key_id.and_then(|kid| {
+                                self.vault.as_ref().and_then(|v| v.get_key_private(&kid).ok().flatten())
+                            })
+                        } else {
+                            None
+                        };
+                        (pw, pk)
                     };
 
                     // Build resolver for jump hosts
@@ -810,7 +874,14 @@ impl Oryxis {
 
                             let conn_host = conn.hostname.clone();
                             let conn_port = conn.port;
-                            let username = conn.username.clone().unwrap_or_else(|| "root".into());
+                            let username = conn.username.clone()
+                                .or_else(|| {
+                                    conn.identity_id.and_then(|iid| {
+                                        self.identities.iter().find(|i| i.id == iid)
+                                            .and_then(|i| i.username.clone())
+                                    })
+                                })
+                                .unwrap_or_else(|| "root".into());
                             let auth_method_label = format!("{:?}", conn.auth_method);
                             let stream = iced::stream::channel::<SshStreamMsg>(128, move |mut sender: iced::futures::channel::mpsc::Sender<SshStreamMsg>| {
                                 async move {
@@ -1245,6 +1316,8 @@ impl Oryxis {
             }
             Message::HideKeyMenu => {
                 self.key_context_menu = None;
+                self.identity_context_menu = None;
+                self.show_keychain_add_menu = false;
             }
             Message::EditKey(idx) => {
                 if let Some(key) = self.keys.get(idx) {
@@ -1264,6 +1337,121 @@ impl Oryxis {
             }
             Message::KeySearchChanged(v) => {
                 self.key_search = v;
+            }
+
+            // ── Identities ──
+            Message::ShowIdentityPanel => {
+                self.show_identity_panel = true;
+                self.identity_form_label.clear();
+                self.identity_form_username.clear();
+                self.identity_form_password.clear();
+                self.identity_form_key = None;
+                self.identity_form_password_visible = false;
+                self.identity_form_password_touched = false;
+                self.identity_form_has_existing_password = false;
+                self.editing_identity_id = None;
+                self.show_keychain_add_menu = false;
+                self.identity_context_menu = None;
+            }
+            Message::HideIdentityPanel => {
+                self.show_identity_panel = false;
+            }
+            Message::IdentityLabelChanged(v) => {
+                self.identity_form_label = v;
+            }
+            Message::IdentityUsernameChanged(v) => {
+                self.identity_form_username = v;
+            }
+            Message::IdentityPasswordChanged(v) => {
+                self.identity_form_password_touched = true;
+                self.identity_form_password = v;
+            }
+            Message::IdentityTogglePasswordVisibility => {
+                self.identity_form_password_visible = !self.identity_form_password_visible;
+            }
+            Message::IdentityKeyChanged(v) => {
+                self.identity_form_key = if v == "(none)" { None } else { Some(v) };
+            }
+            Message::SaveIdentity => {
+                if self.identity_form_label.trim().is_empty() {
+                    return Task::none();
+                }
+                let mut identity = if let Some(id) = self.editing_identity_id {
+                    self.identities.iter().find(|i| i.id == id).cloned()
+                        .unwrap_or_else(|| Identity::new(""))
+                } else {
+                    Identity::new("")
+                };
+                identity.label = self.identity_form_label.clone();
+                identity.username = if self.identity_form_username.is_empty() {
+                    None
+                } else {
+                    Some(self.identity_form_username.clone())
+                };
+                identity.key_id = self.identity_form_key.as_ref().and_then(|label| {
+                    self.keys.iter().find(|k| k.label == *label).map(|k| k.id)
+                });
+                identity.updated_at = chrono::Utc::now();
+
+                let password = if !self.identity_form_password_touched {
+                    None
+                } else if self.identity_form_password.is_empty() {
+                    Some("")
+                } else {
+                    Some(self.identity_form_password.as_str())
+                };
+
+                if let Some(vault) = &self.vault {
+                    let _ = vault.save_identity(&identity, password);
+                    self.load_data_from_vault();
+                }
+                self.show_identity_panel = false;
+            }
+            Message::EditIdentity(idx) => {
+                if let Some(identity) = self.identities.get(idx) {
+                    self.editing_identity_id = Some(identity.id);
+                    self.identity_form_label = identity.label.clone();
+                    self.identity_form_username = identity.username.clone().unwrap_or_default();
+                    self.identity_form_password.clear();
+                    self.identity_form_password_touched = false;
+                    self.identity_form_password_visible = false;
+                    self.identity_form_has_existing_password = self.vault.as_ref()
+                        .and_then(|v| v.get_identity_password(&identity.id).ok().flatten())
+                        .is_some();
+                    self.identity_form_key = identity.key_id.and_then(|kid| {
+                        self.keys.iter().find(|k| k.id == kid).map(|k| k.label.clone())
+                    });
+                    self.show_identity_panel = true;
+                    self.identity_context_menu = None;
+                }
+            }
+            Message::DeleteIdentity(idx) => {
+                if let Some(identity) = self.identities.get(idx) {
+                    let id = identity.id;
+                    if let Some(vault) = &self.vault {
+                        let _ = vault.delete_identity(&id);
+                        self.load_data_from_vault();
+                    }
+                }
+                self.identity_context_menu = None;
+            }
+            Message::ShowIdentityMenu(idx) => {
+                self.identity_context_menu = if self.identity_context_menu == Some(idx) { None } else { Some(idx) };
+            }
+            Message::HideIdentityMenu => {
+                self.identity_context_menu = None;
+            }
+            Message::ToggleKeychainAddMenu => {
+                self.show_keychain_add_menu = !self.show_keychain_add_menu;
+            }
+
+            // ── Connection identity ──
+            Message::EditorIdentityChanged(v) => {
+                if v == "(none)" {
+                    self.editor_form.selected_identity = None;
+                } else {
+                    self.editor_form.selected_identity = Some(v);
+                }
             }
         }
         Task::none()
@@ -2164,27 +2352,50 @@ impl Oryxis {
 
     fn view_keys(&self) -> Element<'_, Message> {
         // ── Header toolbar ──
+        let add_btn = button(
+            container(
+                row![
+                    text("+").size(12).color(OryxisColors::TEXT_PRIMARY),
+                    Space::new().width(4),
+                    text("ADD").size(12).color(OryxisColors::TEXT_PRIMARY),
+                    Space::new().width(4),
+                    text("\u{25BE}").size(10).color(OryxisColors::TEXT_PRIMARY),
+                ]
+                .align_y(iced::Alignment::Center),
+            )
+            .padding(Padding { top: 6.0, right: 14.0, bottom: 7.0, left: 14.0 }),
+        )
+        .on_press(Message::ToggleKeychainAddMenu)
+        .style(|_, _| button::Style {
+            background: Some(Background::Color(OryxisColors::ACCENT)),
+            border: Border { radius: Radius::from(8.0), ..Default::default() },
+            ..Default::default()
+        });
+
+        let add_area: Element<'_, Message> = if self.show_keychain_add_menu {
+            let menu = container(
+                column![
+                    context_menu_item(iced_fonts::bootstrap::key(), "Import Key", Message::ShowKeyPanel, OryxisColors::TEXT_SECONDARY),
+                    context_menu_item(iced_fonts::bootstrap::person(), "New Identity", Message::ShowIdentityPanel, OryxisColors::TEXT_SECONDARY),
+                ],
+            )
+            .width(180)
+            .padding(4)
+            .style(|_| container::Style {
+                background: Some(Background::Color(OryxisColors::BG_SURFACE)),
+                border: Border { radius: Radius::from(8.0), color: OryxisColors::BORDER, width: 1.0 },
+                ..Default::default()
+            });
+            column![add_btn, Space::new().height(4), menu].into()
+        } else {
+            add_btn.into()
+        };
+
         let toolbar = container(
             row![
                 text("Keychain").size(20).color(OryxisColors::TEXT_PRIMARY),
                 Space::new().width(Length::Fill),
-                button(
-                    container(
-                        row![
-                            text("+").size(12).color(OryxisColors::TEXT_PRIMARY),
-                            Space::new().width(4),
-                            text("KEY").size(12).color(OryxisColors::TEXT_PRIMARY),
-                        ]
-                        .align_y(iced::Alignment::Center),
-                    )
-                    .padding(Padding { top: 6.0, right: 14.0, bottom: 7.0, left: 14.0 }),
-                )
-                .on_press(Message::ShowKeyPanel)
-                .style(|_, _| button::Style {
-                    background: Some(Background::Color(OryxisColors::ACCENT)),
-                    border: Border { radius: Radius::from(8.0), ..Default::default() },
-                    ..Default::default()
-                }),
+                add_area,
             ]
             .align_y(iced::Alignment::Center),
         )
@@ -2193,7 +2404,7 @@ impl Oryxis {
 
         // ── Search bar ──
         let search_bar = container(
-            text_input("Search keys...", &self.key_search)
+            text_input("Search keys & identities...", &self.key_search)
                 .on_input(Message::KeySearchChanged)
                 .padding(10)
                 .width(Length::Fill),
@@ -2270,6 +2481,12 @@ impl Oryxis {
 
             if self.show_key_panel {
                 let panel = self.view_key_import_panel();
+                return row![main_content, panel]
+                    .width(Length::Fill)
+                    .height(Length::Fill)
+                    .into();
+            } else if self.show_identity_panel {
+                let panel = self.view_identity_panel();
                 return row![main_content, panel]
                     .width(Length::Fill)
                     .height(Length::Fill)
@@ -2371,7 +2588,7 @@ impl Oryxis {
             cards.push(container(wrapped).width(CARD_WIDTH).into());
         }
 
-        // Grid layout (3 cols)
+        // Key grid layout (3 cols)
         let mut grid_rows: Vec<Element<'_, Message>> = Vec::new();
         let mut current_row: Vec<Element<'_, Message>> = Vec::new();
         for card in cards {
@@ -2388,23 +2605,183 @@ impl Oryxis {
             grid_rows.push(row(std::mem::take(&mut current_row)).spacing(12).into());
         }
 
+        // ── Identities section ──
+        let identity_section_title = container(
+            text("Identities").size(14).color(OryxisColors::TEXT_MUTED),
+        )
+        .padding(Padding { top: 16.0, right: 24.0, bottom: 8.0, left: 24.0 });
+
+        let filtered_identities: Vec<(usize, &Identity)> = self.identities.iter().enumerate()
+            .filter(|(_, i)| search_lower.is_empty() || i.label.to_lowercase().contains(&search_lower))
+            .collect();
+
+        let mut identity_cards: Vec<Element<'_, Message>> = Vec::new();
+
+        if filtered_identities.is_empty() && self.identities.is_empty() {
+            let empty_hint = container(
+                text("No identities yet. Create one to store reusable credentials.")
+                    .size(12).color(OryxisColors::TEXT_MUTED),
+            )
+            .padding(Padding { top: 0.0, right: 0.0, bottom: 0.0, left: 0.0 })
+            .width(CARD_WIDTH);
+            identity_cards.push(empty_hint.into());
+        } else if filtered_identities.is_empty() {
+            let no_results = container(
+                text("No identities match your search").size(13).color(OryxisColors::TEXT_MUTED),
+            )
+            .padding(24)
+            .width(CARD_WIDTH);
+            identity_cards.push(no_results.into());
+        }
+
+        for (idx, identity) in &filtered_identities {
+            let idx = *idx;
+            // Build subtitle describing auth methods
+            let mut parts: Vec<String> = Vec::new();
+            if let Some(u) = &identity.username {
+                parts.push(u.clone());
+            }
+            let has_pw = self.vault.as_ref()
+                .and_then(|v| v.get_identity_password(&identity.id).ok().flatten())
+                .is_some();
+            if has_pw {
+                parts.push("\u{25CF}\u{25CF}\u{25CF}\u{25CF}".into());
+            }
+            if let Some(kid) = identity.key_id {
+                if let Some(k) = self.keys.iter().find(|k| k.id == kid) {
+                    parts.push(k.label.clone());
+                }
+            }
+            let subtitle = if parts.is_empty() { "No credentials".into() } else { parts.join(", ") };
+
+            let icon_box = container(iced_fonts::bootstrap::person().size(18).color(Color::WHITE))
+                .padding(Padding { top: 8.0, right: 10.0, bottom: 8.0, left: 10.0 })
+                .style(|_| container::Style {
+                    background: Some(Background::Color(OryxisColors::ACCENT)),
+                    border: Border { radius: Radius::from(8.0), ..Default::default() },
+                    ..Default::default()
+                });
+
+            let dots_btn = button(
+                text("···").size(14).color(OryxisColors::TEXT_MUTED),
+            )
+            .on_press(Message::ShowIdentityMenu(idx))
+            .padding(Padding { top: 2.0, right: 6.0, bottom: 2.0, left: 6.0 })
+            .style(|_, status| {
+                let bg = match status {
+                    BtnStatus::Hovered => OryxisColors::BG_HOVER,
+                    _ => Color::TRANSPARENT,
+                };
+                button::Style {
+                    background: Some(Background::Color(bg)),
+                    border: Border { radius: Radius::from(6.0), ..Default::default() },
+                    ..Default::default()
+                }
+            });
+
+            let card = button(
+                row![
+                    icon_box,
+                    Space::new().width(12),
+                    column![
+                        text(&identity.label).size(13).color(OryxisColors::TEXT_PRIMARY),
+                        Space::new().height(2),
+                        text(subtitle).size(11).color(OryxisColors::TEXT_MUTED),
+                    ].width(Length::Fill),
+                    dots_btn,
+                ].align_y(iced::Alignment::Center),
+            )
+            .on_press(Message::EditIdentity(idx))
+            .padding(16)
+            .width(CARD_WIDTH)
+            .style(|_, status| {
+                let (bg, border_color, border_width) = match status {
+                    BtnStatus::Hovered => (OryxisColors::BG_HOVER, OryxisColors::ACCENT, 1.5),
+                    BtnStatus::Pressed => (OryxisColors::BG_SELECTED, OryxisColors::ACCENT, 2.0),
+                    _ => (OryxisColors::BG_SURFACE, OryxisColors::BORDER, 1.0),
+                };
+                button::Style {
+                    background: Some(Background::Color(bg)),
+                    border: Border { radius: Radius::from(10.0), color: border_color, width: border_width },
+                    ..Default::default()
+                }
+            });
+
+            let card_el: Element<'_, Message> = if self.identity_context_menu == Some(idx) {
+                let menu = container(
+                    column![
+                        context_menu_item(iced_fonts::bootstrap::pencil(), "Edit", Message::EditIdentity(idx), OryxisColors::TEXT_SECONDARY),
+                        context_menu_item(iced_fonts::bootstrap::trash(), "Remove", Message::DeleteIdentity(idx), OryxisColors::ERROR),
+                    ],
+                )
+                .width(CARD_WIDTH)
+                .padding(4)
+                .style(|_| container::Style {
+                    background: Some(Background::Color(OryxisColors::BG_SURFACE)),
+                    border: Border { radius: Radius::from(8.0), color: OryxisColors::BORDER, width: 1.0 },
+                    ..Default::default()
+                });
+
+                column![card, Space::new().height(4), menu]
+                    .width(CARD_WIDTH)
+                    .into()
+            } else {
+                card.into()
+            };
+
+            let wrapped = MouseArea::new(card_el)
+                .on_right_press(Message::ShowIdentityMenu(idx));
+
+            identity_cards.push(container(wrapped).width(CARD_WIDTH).into());
+        }
+
+        // Identity grid layout (3 cols)
+        let mut identity_grid_rows: Vec<Element<'_, Message>> = Vec::new();
+        let mut current_row: Vec<Element<'_, Message>> = Vec::new();
+        for card in identity_cards {
+            current_row.push(card);
+            if current_row.len() == 3 {
+                identity_grid_rows.push(row(std::mem::take(&mut current_row)).spacing(12).into());
+                identity_grid_rows.push(Space::new().height(12).into());
+            }
+        }
+        if !current_row.is_empty() {
+            while current_row.len() < 3 {
+                current_row.push(Space::new().width(CARD_WIDTH).into());
+            }
+            identity_grid_rows.push(row(std::mem::take(&mut current_row)).spacing(12).into());
+        }
+
+        // Combine keys and identities into one scrollable area
+        let mut all_rows: Vec<Element<'_, Message>> = Vec::new();
+        all_rows.push(section_title.into());
+        all_rows.extend(grid_rows);
+        all_rows.push(identity_section_title.into());
+        all_rows.extend(identity_grid_rows);
+
         let grid = scrollable(
-            column(grid_rows).padding(Padding { top: 0.0, right: 24.0, bottom: 24.0, left: 24.0 }),
+            column(all_rows).padding(Padding { top: 0.0, right: 24.0, bottom: 24.0, left: 24.0 }),
         )
         .height(Length::Fill);
 
-        // Close key context menu when clicking on empty area
+        // Close context menus when clicking on empty area
         let grid = MouseArea::new(grid)
             .on_press(Message::HideKeyMenu);
 
-        // ── Main content (grid) ──
-        let main_content = column![toolbar, search_bar, status, section_title, grid]
+        // ── Main content ──
+        let main_content = column![toolbar, search_bar, status, grid]
             .width(Length::Fill)
             .height(Length::Fill);
 
-        // ── Side panel (import key) ──
+        // ── Side panel ──
         if self.show_key_panel {
             let panel = self.view_key_import_panel();
+            row![main_content, panel]
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .into()
+        } else if self.show_identity_panel {
+            let panel = self.view_identity_panel();
             row![main_content, panel]
                 .width(Length::Fill)
                 .height(Length::Fill)
@@ -2530,6 +2907,191 @@ impl Oryxis {
                     editor,
                     Space::new().height(8),
                     panel_error,
+                    Space::new().height(Length::Fill),
+                    save_btn,
+                ]
+                .height(Length::Fill),
+            )
+            .padding(Padding { top: 0.0, right: 20.0, bottom: 20.0, left: 20.0 })
+            .height(Length::Fill),
+        ]
+        .height(Length::Fill);
+
+        container(panel_content)
+            .width(PANEL_WIDTH)
+            .height(Length::Fill)
+            .style(|_| container::Style {
+                background: Some(Background::Color(OryxisColors::BG_SIDEBAR)),
+                border: Border { color: OryxisColors::BORDER, width: 1.0, radius: Radius::from(0.0) },
+                ..Default::default()
+            })
+            .into()
+    }
+
+    fn view_identity_panel(&self) -> Element<'_, Message> {
+        let panel_title = if self.editing_identity_id.is_some() { "Edit Identity" } else { "New Identity" };
+
+        // Panel header
+        let panel_header = container(
+            row![
+                text(panel_title).size(18).color(OryxisColors::TEXT_PRIMARY),
+                Space::new().width(Length::Fill),
+                button(text("X").size(14).color(OryxisColors::TEXT_MUTED))
+                    .on_press(Message::HideIdentityPanel)
+                    .padding(Padding { top: 4.0, right: 8.0, bottom: 4.0, left: 8.0 })
+                    .style(|_, _| button::Style {
+                        background: Some(Background::Color(OryxisColors::BG_SURFACE)),
+                        border: Border { radius: Radius::from(6.0), ..Default::default() },
+                        ..Default::default()
+                    }),
+            ]
+            .align_y(iced::Alignment::Center),
+        )
+        .padding(Padding { top: 20.0, right: 20.0, bottom: 16.0, left: 20.0 });
+
+        // Label field
+        let label_field = column![
+            text("Label").size(12).color(OryxisColors::TEXT_SECONDARY),
+            Space::new().height(6),
+            text_input("My Identity", &self.identity_form_label)
+                .on_input(Message::IdentityLabelChanged)
+                .padding(10),
+        ];
+
+        // Username field
+        let username_field = column![
+            text("Username").size(12).color(OryxisColors::TEXT_SECONDARY),
+            Space::new().height(6),
+            row![
+                iced_fonts::bootstrap::person().size(13).color(OryxisColors::TEXT_MUTED),
+                Space::new().width(10),
+                text_input("root", &self.identity_form_username)
+                    .on_input(Message::IdentityUsernameChanged)
+                    .padding(10),
+            ].align_y(iced::Alignment::Center),
+        ];
+
+        // Password field with eye toggle
+        let password_field = column![
+            text("Password").size(12).color(OryxisColors::TEXT_SECONDARY),
+            Space::new().height(6),
+            row![
+                iced_fonts::bootstrap::keyboard().size(13).color(OryxisColors::TEXT_MUTED),
+                Space::new().width(10),
+                text_input(
+                    if self.identity_form_has_existing_password && !self.identity_form_password_touched {
+                        "\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}"
+                    } else {
+                        "Password"
+                    },
+                    &self.identity_form_password,
+                )
+                    .on_input(Message::IdentityPasswordChanged)
+                    .secure(!self.identity_form_password_visible)
+                    .padding(10),
+                Space::new().width(6),
+                button(
+                    if self.identity_form_password_visible {
+                        iced_fonts::bootstrap::eye_slash().size(14).color(OryxisColors::TEXT_MUTED)
+                    } else {
+                        iced_fonts::bootstrap::eye().size(14).color(OryxisColors::TEXT_MUTED)
+                    }
+                )
+                    .on_press(Message::IdentityTogglePasswordVisibility)
+                    .style(|_t, _s| button::Style::default())
+                    .padding(8),
+            ].align_y(iced::Alignment::Center),
+        ];
+
+        // Key selector
+        let key_options = {
+            let mut opts = vec!["(none)".to_string()];
+            opts.extend(self.keys.iter().map(|k| k.label.clone()));
+            opts
+        };
+        let key_field = column![
+            text("SSH Key").size(12).color(OryxisColors::TEXT_SECONDARY),
+            Space::new().height(6),
+            row![
+                text("+ Key").size(12).color(OryxisColors::ACCENT),
+                Space::new().width(16),
+                pick_list(
+                    key_options,
+                    Some(self.identity_form_key.clone().unwrap_or_else(|| "(none)".into())),
+                    Message::IdentityKeyChanged,
+                ),
+            ].align_y(iced::Alignment::Center),
+        ];
+
+        // Linked connections (only when editing)
+        let linked_section: Element<'_, Message> = if let Some(editing_id) = self.editing_identity_id {
+            let linked: Vec<&Connection> = self.connections.iter()
+                .filter(|c| c.identity_id == Some(editing_id))
+                .collect();
+            if linked.is_empty() {
+                column![
+                    Space::new().height(16),
+                    text("Linked to").size(12).color(OryxisColors::TEXT_MUTED),
+                    Space::new().height(4),
+                    text("No connections using this identity").size(11).color(OryxisColors::TEXT_MUTED),
+                ].into()
+            } else {
+                let mut items: Vec<Element<'_, Message>> = vec![
+                    Space::new().height(16).into(),
+                    Element::from(text("Linked to").size(12).color(OryxisColors::TEXT_MUTED)),
+                    Space::new().height(4).into(),
+                ];
+                for conn in linked {
+                    items.push(
+                        container(
+                            row![
+                                iced_fonts::bootstrap::hdd_network().size(11).color(OryxisColors::TEXT_MUTED),
+                                Space::new().width(8),
+                                text(&conn.label).size(12).color(OryxisColors::TEXT_SECONDARY),
+                            ].align_y(iced::Alignment::Center),
+                        )
+                        .padding(Padding { top: 4.0, right: 0.0, bottom: 4.0, left: 0.0 })
+                        .into()
+                    );
+                }
+                column(items).into()
+            }
+        } else {
+            Space::new().height(0).into()
+        };
+
+        // Save button
+        let save_label = if self.editing_identity_id.is_some() { "Update Identity" } else { "Save Identity" };
+        let has_label = !self.identity_form_label.trim().is_empty();
+        let save_btn = button(
+            container(text(save_label).size(13).color(OryxisColors::TEXT_PRIMARY))
+                .padding(Padding { top: 10.0, right: 0.0, bottom: 10.0, left: 0.0 })
+                .width(Length::Fill)
+                .center_x(Length::Fill),
+        )
+        .on_press(Message::SaveIdentity)
+        .width(Length::Fill)
+        .style(move |_, _| {
+            let bg = if has_label { OryxisColors::ACCENT } else { OryxisColors::BG_SURFACE };
+            button::Style {
+                background: Some(Background::Color(bg)),
+                border: Border { radius: Radius::from(8.0), ..Default::default() },
+                ..Default::default()
+            }
+        });
+
+        let panel_content = column![
+            panel_header,
+            container(
+                column![
+                    label_field,
+                    Space::new().height(16),
+                    username_field,
+                    Space::new().height(16),
+                    password_field,
+                    Space::new().height(16),
+                    key_field,
+                    linked_section,
                     Space::new().height(Length::Fill),
                     save_btn,
                 ]
@@ -3174,6 +3736,23 @@ impl Oryxis {
             ].align_y(iced::Alignment::Center),
             Space::new().height(12),
             text("Credentials").size(12).color(OryxisColors::TEXT_MUTED),
+            Space::new().height(8),
+            // Identity selector
+            row![
+                iced_fonts::bootstrap::person().size(13).color(OryxisColors::TEXT_MUTED),
+                Space::new().width(10),
+                text("Identity").size(12).color(OryxisColors::TEXT_SECONDARY),
+                Space::new().width(8),
+                pick_list(
+                    {
+                        let mut opts = vec!["(none)".to_string()];
+                        opts.extend(self.identities.iter().map(|i| i.label.clone()));
+                        opts
+                    },
+                    Some(self.editor_form.selected_identity.clone().unwrap_or_else(|| "(none)".into())),
+                    Message::EditorIdentityChanged,
+                ),
+            ].align_y(iced::Alignment::Center),
             Space::new().height(8),
             // Username
             row![
