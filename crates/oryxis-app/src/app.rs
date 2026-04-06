@@ -641,12 +641,11 @@ impl Oryxis {
             }
             Message::ConnectFromPanel => {
                 // Connect using the currently edited connection
-                if let Some(edit_id) = self.editor_form.editing_id {
-                    if let Some(idx) = self.connections.iter().position(|c| c.id == edit_id) {
+                if let Some(edit_id) = self.editor_form.editing_id
+                    && let Some(idx) = self.connections.iter().position(|c| c.id == edit_id) {
                         self.show_host_panel = false;
                         return self.update(Message::ConnectSsh(idx));
                     }
-                }
             }
 
             // -- SSH connection --
@@ -848,13 +847,11 @@ impl Oryxis {
                 if let Some(ref progress) = self.connecting {
                     let _idx = progress.connection_idx;
                 }
-                if self.active_tab.is_some() {
-                    if let Some(tab_idx) = self.active_tab {
-                        if tab_idx < self.tabs.len() {
+                if self.active_tab.is_some()
+                    && let Some(tab_idx) = self.active_tab
+                        && tab_idx < self.tabs.len() {
                             self.tabs.remove(tab_idx);
                         }
-                    }
-                }
                 self.connecting = None;
                 self.active_tab = None;
                 self.active_view = View::Dashboard;
@@ -863,11 +860,10 @@ impl Oryxis {
                 if let Some(ref progress) = self.connecting {
                     let idx = progress.connection_idx;
                     self.connecting = None;
-                    if let Some(tab_idx) = self.active_tab {
-                        if tab_idx < self.tabs.len() {
+                    if let Some(tab_idx) = self.active_tab
+                        && tab_idx < self.tabs.len() {
                             self.tabs.remove(tab_idx);
                         }
-                    }
                     self.active_tab = None;
                     self.active_view = View::Dashboard;
                     return self.update(Message::EditConnection(idx));
@@ -877,11 +873,10 @@ impl Oryxis {
                 if let Some(ref progress) = self.connecting {
                     let idx = progress.connection_idx;
                     self.connecting = None;
-                    if let Some(tab_idx) = self.active_tab {
-                        if tab_idx < self.tabs.len() {
+                    if let Some(tab_idx) = self.active_tab
+                        && tab_idx < self.tabs.len() {
                             self.tabs.remove(tab_idx);
                         }
-                    }
                     self.active_tab = None;
                     return self.update(Message::ConnectSsh(idx));
                 }
@@ -1577,9 +1572,9 @@ impl Oryxis {
             // Root view: show folder cards for groups that have connections
             let mut shown_groups = std::collections::HashSet::new();
             for conn in &self.connections {
-                if let Some(gid) = conn.group_id {
-                    if shown_groups.insert(gid) {
-                        if let Some(group) = self.groups.iter().find(|g| g.id == gid) {
+                if let Some(gid) = conn.group_id
+                    && shown_groups.insert(gid)
+                        && let Some(group) = self.groups.iter().find(|g| g.id == gid) {
                             let count = self.connections.iter().filter(|c| c.group_id == Some(gid)).count();
                             let label = group.label.clone();
                             let count_text = format!("{} host{}", count, if count != 1 { "s" } else { "" });
@@ -1616,8 +1611,6 @@ impl Oryxis {
 
                             cards.push(folder_card.into());
                         }
-                    }
-                }
             }
         }
 
