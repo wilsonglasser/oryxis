@@ -60,29 +60,29 @@ impl Default for TerminalPalette {
 }
 
 impl TerminalPalette {
-    /// Oryxis Dark — teal accent, dark neutral background
+    /// Oryxis Dark — teal foreground, blue highlights, dark neutral background
     pub fn oryxis_dark() -> Self {
         Self {
-            foreground: Color::from_rgb(0.85, 0.87, 0.85),
+            foreground: Color::from_rgb(0.133, 0.60, 0.569), // teal as default text
             background: Color::from_rgb(0.055, 0.071, 0.067),
             cursor: Color::from_rgb(0.133, 0.60, 0.569),
             ansi: [
-                Color::from_rgb(0.18, 0.20, 0.19),  // Black
-                Color::from_rgb(0.92, 0.33, 0.38),   // Red
-                Color::from_rgb(0.30, 0.78, 0.55),   // Green (teal-ish)
-                Color::from_rgb(0.95, 0.73, 0.25),   // Yellow
-                Color::from_rgb(0.133, 0.60, 0.569),  // Blue → teal
-                Color::from_rgb(0.80, 0.62, 0.95),   // Magenta
+                Color::from_rgb(0.18, 0.20, 0.19),   // Black
+                Color::from_rgb(0.92, 0.33, 0.38),    // Red
+                Color::from_rgb(0.30, 0.78, 0.55),    // Green
+                Color::from_rgb(0.95, 0.73, 0.25),    // Yellow
+                Color::from_rgb(0.54, 0.71, 0.98),    // Blue (real blue — highlight)
+                Color::from_rgb(0.80, 0.62, 0.95),    // Magenta (tertiary)
                 Color::from_rgb(0.20, 0.70, 0.667),   // Cyan (teal accent)
-                Color::from_rgb(0.73, 0.75, 0.73),   // White
-                Color::from_rgb(0.36, 0.38, 0.37),   // Bright Black
-                Color::from_rgb(0.95, 0.55, 0.55),   // Bright Red
-                Color::from_rgb(0.40, 0.85, 0.65),   // Bright Green
-                Color::from_rgb(0.98, 0.82, 0.52),   // Bright Yellow
-                Color::from_rgb(0.20, 0.70, 0.667),   // Bright Blue → teal
-                Color::from_rgb(0.85, 0.70, 0.98),   // Bright Magenta
-                Color::from_rgb(0.33, 0.80, 0.75),   // Bright Cyan
-                Color::from_rgb(0.90, 0.91, 0.90),   // Bright White
+                Color::from_rgb(0.85, 0.87, 0.85),    // White (light gray)
+                Color::from_rgb(0.36, 0.38, 0.37),    // Bright Black
+                Color::from_rgb(0.95, 0.55, 0.55),    // Bright Red
+                Color::from_rgb(0.40, 0.85, 0.65),    // Bright Green
+                Color::from_rgb(0.98, 0.82, 0.52),    // Bright Yellow
+                Color::from_rgb(0.66, 0.80, 1.0),     // Bright Blue (brighter highlight)
+                Color::from_rgb(0.85, 0.70, 0.98),    // Bright Magenta
+                Color::from_rgb(0.33, 0.80, 0.75),    // Bright Cyan
+                Color::from_rgb(0.90, 0.91, 0.90),    // Bright White
             ],
         }
     }
