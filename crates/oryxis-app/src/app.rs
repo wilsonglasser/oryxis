@@ -97,6 +97,7 @@ pub struct Oryxis {
     // Tabs
     tabs: Vec<TerminalTab>,
     active_tab: Option<usize>,
+    connecting: Option<ConnectionProgress>,
 
     // Connection editor
     show_host_panel: bool,
@@ -193,10 +194,14 @@ pub enum Message {
 
     // SSH
     ConnectSsh(usize),
+    SshProgress(ConnectionStep, String),
     SshConnected(usize, Arc<SshSession>),
     SshNewKnownHosts(Vec<oryxis_core::models::known_host::KnownHost>),
     SshDisconnected(usize),
     SshError(String),
+    SshCloseProgress,
+    SshEditFromProgress,
+    SshRetry,
 
     // Snippets
     ShowSnippetPanel,
@@ -234,11 +239,30 @@ pub enum Message {
 
 /// Internal message type for SSH connection streams.
 enum SshStreamMsg {
+    Progress(ConnectionStep, String), // (step, log message)
     Connected(Arc<SshSession>),
     NewKnownHosts(Vec<oryxis_core::models::known_host::KnownHost>),
     Data(Vec<u8>),
     Error(String),
     Disconnected,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ConnectionStep {
+    Connecting,   // step 1: TCP/proxy/jump
+    Handshake,    // step 2: SSH handshake + host key
+    Authenticating, // step 3: auth
+}
+
+/// Connection progress state for the connecting tab.
+#[derive(Clone)]
+struct ConnectionProgress {
+    label: String,
+    hostname: String,
+    step: ConnectionStep,
+    logs: Vec<(ConnectionStep, String)>,
+    failed: bool,
+    connection_idx: usize,
 }
 
 // ---------------------------------------------------------------------------
@@ -272,6 +296,7 @@ impl Oryxis {
                 quick_host_input: String::new(),
                 tabs: Vec::new(),
                 active_tab: None,
+                connecting: None,
                 show_host_panel: false,
                 editor_form: ConnectionForm::default(),
                 host_panel_error: None,
@@ -669,87 +694,100 @@ impl Oryxis {
                     match TerminalState::new_no_pty(DEFAULT_TERM_COLS as u16, DEFAULT_TERM_ROWS as u16) {
                         Ok(state) => {
                             let label = conn.label.clone();
+                            let hostname = format!("SSH {}:{}", conn.hostname, conn.port);
                             let terminal = Arc::new(Mutex::new(state));
                             let tab_idx = self.tabs.len();
 
                             self.tabs.push(TerminalTab {
                                 _id: Uuid::new_v4(),
-                                label: format!("{} (connecting...)", label),
+                                label: label.clone(),
                                 terminal: Arc::clone(&terminal),
                                 ssh_session: None,
                             });
-                            self.active_tab = Some(tab_idx);
-                            self.active_view = View::Terminal;
 
-                            // Build TOFU callback with known hosts snapshot
-                            // TOFU: verify/record host keys
+                            // Show progress view instead of terminal
+                            self.connecting = Some(ConnectionProgress {
+                                label: label.clone(),
+                                hostname: hostname.clone(),
+                                step: ConnectionStep::Connecting,
+                                logs: vec![(ConnectionStep::Connecting, format!("Connecting to {}...", conn.hostname))],
+                                failed: false,
+                                connection_idx: idx,
+                            });
+                            self.active_tab = Some(tab_idx);
+
+                            // TOFU callback
                             let known_hosts_snapshot: Arc<Mutex<Vec<oryxis_core::models::known_host::KnownHost>>> =
                                 Arc::new(Mutex::new(self.known_hosts.clone()));
                             let new_hosts: Arc<Mutex<Vec<oryxis_core::models::known_host::KnownHost>>> =
                                 Arc::new(Mutex::new(Vec::new()));
                             let kh_ref = known_hosts_snapshot.clone();
                             let new_ref = new_hosts.clone();
-                            let host_key_cb: oryxis_ssh::engine::HostKeyCallback = Arc::new(move |hostname: &str, port: u16, key_type: &str, fingerprint: &str| {
+                            let host_key_cb: oryxis_ssh::HostKeyCallback = Arc::new(move |host, port, key_type, fingerprint| {
                                 let hosts = kh_ref.lock().unwrap();
-                                if let Some(existing) = hosts.iter().find(|h| h.hostname == hostname && h.port == port) {
+                                if let Some(existing) = hosts.iter().find(|h| h.hostname == host && h.port == port) {
                                     if existing.fingerprint != fingerprint {
-                                        tracing::warn!(
-                                            "HOST KEY CHANGED for {}:{} — expected {}, got {}",
-                                            hostname, port, existing.fingerprint, fingerprint
-                                        );
                                         return false;
                                     }
-                                    return true; // Known, matches
+                                    return true;
                                 }
-                                // New host — record it
-                                tracing::info!("New host key for {}:{} — {}", hostname, port, fingerprint);
-                                let kh = oryxis_core::models::known_host::KnownHost::new(hostname, port, key_type, fingerprint);
+                                let kh = oryxis_core::models::known_host::KnownHost::new(host, port, key_type, fingerprint);
                                 new_ref.lock().unwrap().push(kh);
                                 true
                             });
 
+                            let conn_host = conn.hostname.clone();
+                            let conn_port = conn.port;
                             let stream = iced::stream::channel::<SshStreamMsg>(128, move |mut sender: iced::futures::channel::mpsc::Sender<SshStreamMsg>| {
                                 async move {
+                                    // Step 1: Connecting
+                                    let _ = sender.send(SshStreamMsg::Progress(
+                                        ConnectionStep::Connecting,
+                                        format!("Connecting to {}:{}...", conn_host, conn_port),
+                                    )).await;
+
                                     let engine = SshEngine::new().with_host_key_cb(host_key_cb);
+
+                                    // Step 2: Handshake
+                                    let _ = sender.send(SshStreamMsg::Progress(
+                                        ConnectionStep::Handshake,
+                                        "SSH handshake in progress...".into(),
+                                    )).await;
+
+                                    // Step 3: Auth (happens inside connect)
+                                    let _ = sender.send(SshStreamMsg::Progress(
+                                        ConnectionStep::Authenticating,
+                                        format!("Authenticating as \"{}\"...", conn.username.as_deref().unwrap_or("root")),
+                                    )).await;
+
                                     match engine
                                         .connect_with_resolver(&conn, password.as_deref(), private_key.as_deref(), DEFAULT_TERM_COLS, DEFAULT_TERM_ROWS, resolver.as_ref())
                                         .await
                                     {
                                         Ok((session, mut rx)) => {
                                             let session = Arc::new(session);
-                                            let _ = sender
-                                                .send(SshStreamMsg::Connected(session.clone()))
-                                                .await;
-                                            // Send new known hosts for saving
+                                            let _ = sender.send(SshStreamMsg::Connected(session.clone())).await;
                                             let new_kh = new_hosts.lock().unwrap().drain(..).collect::<Vec<_>>();
                                             if !new_kh.is_empty() {
                                                 let _ = sender.send(SshStreamMsg::NewKnownHosts(new_kh)).await;
                                             }
-                                            // Forward data
                                             while let Some(data) = rx.recv().await {
-                                                if sender
-                                                    .send(SshStreamMsg::Data(data))
-                                                    .await
-                                                    .is_err()
-                                                {
+                                                if sender.send(SshStreamMsg::Data(data)).await.is_err() {
                                                     break;
                                                 }
                                             }
                                             let _ = sender.send(SshStreamMsg::Disconnected).await;
                                         }
                                         Err(e) => {
-                                            let _ = sender
-                                                .send(SshStreamMsg::Error(e.to_string()))
-                                                .await;
+                                            let _ = sender.send(SshStreamMsg::Error(e.to_string())).await;
                                         }
                                     }
                                 }
                             });
 
                             return Task::stream(stream).map(move |msg| match msg {
-                                SshStreamMsg::Connected(session) => {
-                                    Message::SshConnected(tab_idx, session)
-                                }
+                                SshStreamMsg::Progress(step, log) => Message::SshProgress(step, log),
+                                SshStreamMsg::Connected(session) => Message::SshConnected(tab_idx, session),
                                 SshStreamMsg::NewKnownHosts(hosts) => Message::SshNewKnownHosts(hosts),
                                 SshStreamMsg::Data(data) => Message::PtyOutput(tab_idx, data),
                                 SshStreamMsg::Error(err) => Message::SshError(err),
@@ -762,6 +800,12 @@ impl Oryxis {
                     }
                 }
             }
+            Message::SshProgress(step, log) => {
+                if let Some(ref mut progress) = self.connecting {
+                    progress.step = step;
+                    progress.logs.push((step, log));
+                }
+            }
             Message::SshNewKnownHosts(hosts) => {
                 if let Some(vault) = &self.vault {
                     for kh in &hosts {
@@ -772,11 +816,9 @@ impl Oryxis {
             }
             Message::SshConnected(tab_idx, session) => {
                 if let Some(tab) = self.tabs.get_mut(tab_idx) {
-                    let label = tab.label.replace(" (connecting...)", "");
-                    tab.label = label.clone();
                     tab.ssh_session = Some(session);
-                    tracing::info!("SSH connected: {}", tab.label);
-                    // Log
+                    let label = tab.label.clone();
+                    tracing::info!("SSH connected: {}", label);
                     if let Some(vault) = &self.vault {
                         let entry = oryxis_core::models::log_entry::LogEntry::new(
                             &label, &label, oryxis_core::models::log_entry::LogEvent::Connected, "Session established",
@@ -784,6 +826,8 @@ impl Oryxis {
                         let _ = vault.add_log(&entry);
                     }
                 }
+                // Clear progress, show terminal
+                self.connecting = None;
             }
             Message::SshDisconnected(tab_idx) => {
                 if let Some(tab) = self.tabs.get_mut(tab_idx) {
@@ -799,26 +843,65 @@ impl Oryxis {
                     tab.ssh_session = None;
                 }
             }
+            Message::SshCloseProgress => {
+                // Close connection progress, remove the tab
+                if let Some(ref progress) = self.connecting {
+                    let _idx = progress.connection_idx;
+                }
+                if self.active_tab.is_some() {
+                    if let Some(tab_idx) = self.active_tab {
+                        if tab_idx < self.tabs.len() {
+                            self.tabs.remove(tab_idx);
+                        }
+                    }
+                }
+                self.connecting = None;
+                self.active_tab = None;
+                self.active_view = View::Dashboard;
+            }
+            Message::SshEditFromProgress => {
+                if let Some(ref progress) = self.connecting {
+                    let idx = progress.connection_idx;
+                    self.connecting = None;
+                    if let Some(tab_idx) = self.active_tab {
+                        if tab_idx < self.tabs.len() {
+                            self.tabs.remove(tab_idx);
+                        }
+                    }
+                    self.active_tab = None;
+                    self.active_view = View::Dashboard;
+                    return self.update(Message::EditConnection(idx));
+                }
+            }
+            Message::SshRetry => {
+                if let Some(ref progress) = self.connecting {
+                    let idx = progress.connection_idx;
+                    self.connecting = None;
+                    if let Some(tab_idx) = self.active_tab {
+                        if tab_idx < self.tabs.len() {
+                            self.tabs.remove(tab_idx);
+                        }
+                    }
+                    self.active_tab = None;
+                    return self.update(Message::ConnectSsh(idx));
+                }
+            }
             Message::SshError(err) => {
                 tracing::error!("SSH error: {}", err);
-                // Log
                 if let Some(vault) = &self.vault {
+                    let label = self.connecting.as_ref().map(|p| p.label.as_str()).unwrap_or("unknown");
                     let entry = oryxis_core::models::log_entry::LogEntry::new(
-                        "unknown", "unknown", oryxis_core::models::log_entry::LogEvent::Error, &err,
+                        label, label, oryxis_core::models::log_entry::LogEvent::Error, &err,
                     );
                     let _ = vault.add_log(&entry);
                 }
-                if let Some(last) = self.tabs.last()
-                    && last.label.contains("connecting") {
-                        self.tabs.pop();
-                        if self.tabs.is_empty() {
-                            self.active_tab = None;
-                            self.active_view = View::Dashboard;
-                        } else {
-                            self.active_tab = Some(self.tabs.len() - 1);
-                        }
-                    }
-                self.host_panel_error = Some(format!("SSH: {}", err));
+                // Mark progress as failed (keep the view open with logs)
+                if let Some(ref mut progress) = self.connecting {
+                    progress.failed = true;
+                    progress.logs.push((progress.step, format!("Error: {}", err)));
+                } else {
+                    self.host_panel_error = Some(format!("SSH: {}", err));
+                }
             }
 
             // -- Local shell --
@@ -1327,7 +1410,9 @@ impl Oryxis {
     fn view_content(&self) -> Element<'_, Message> {
         // If a terminal tab is active, show terminal
         // Otherwise show the grid view for the current nav item
-        let content: Element<'_, Message> = if self.active_tab.is_some() {
+        let content: Element<'_, Message> = if self.connecting.is_some() {
+            self.view_connection_progress()
+        } else if self.active_tab.is_some() {
             self.view_terminal()
         } else {
             match self.active_view {
@@ -1646,6 +1731,198 @@ impl Oryxis {
         } else {
             main_content.into()
         }
+    }
+
+    fn view_connection_progress(&self) -> Element<'_, Message> {
+        let progress = match &self.connecting {
+            Some(p) => p,
+            None => return Space::new().into(),
+        };
+
+        let step_num = match progress.step {
+            ConnectionStep::Connecting => 1,
+            ConnectionStep::Handshake => 2,
+            ConnectionStep::Authenticating => 3,
+        };
+
+        let failed = progress.failed;
+        let step_color = |n: u8| -> Color {
+            if failed { return OryxisColors::ERROR; }
+            if n < step_num { OryxisColors::SUCCESS }
+            else if n == step_num { OryxisColors::ACCENT }
+            else { OryxisColors::TEXT_MUTED }
+        };
+
+        // Header: host info
+        let header = container(
+            row![
+                container(
+                    iced_fonts::bootstrap::hdd_network().size(18).color(Color::WHITE),
+                )
+                .padding(10)
+                .style(|_| container::Style {
+                    background: Some(Background::Color(OryxisColors::ACCENT)),
+                    border: Border { radius: Radius::from(10.0), ..Default::default() },
+                    ..Default::default()
+                }),
+                Space::new().width(14),
+                column![
+                    text(&progress.label).size(16).color(OryxisColors::TEXT_PRIMARY),
+                    Space::new().height(2),
+                    text(&progress.hostname).size(12).color(OryxisColors::TEXT_MUTED),
+                ],
+            ].align_y(iced::Alignment::Center),
+        )
+        .padding(Padding { top: 24.0, right: 0.0, bottom: 16.0, left: 0.0 });
+
+        // Progress dots
+        let dot = |n: u8| -> Element<'_, Message> {
+            let c = step_color(n);
+            container(text("").size(1))
+                .width(12).height(12)
+                .style(move |_| container::Style {
+                    background: Some(Background::Color(c)),
+                    border: Border { radius: Radius::from(6.0), ..Default::default() },
+                    ..Default::default()
+                })
+                .into()
+        };
+        let line = |n: u8| -> Element<'_, Message> {
+            let c = step_color(n);
+            container(Space::new().height(2))
+                .width(80)
+                .style(move |_| container::Style {
+                    background: Some(Background::Color(c)),
+                    ..Default::default()
+                })
+                .into()
+        };
+
+        let progress_bar = container(
+            row![
+                dot(1), line(1), dot(2), line(2), dot(3),
+            ].align_y(iced::Alignment::Center),
+        )
+        .padding(Padding { top: 0.0, right: 0.0, bottom: 16.0, left: 0.0 })
+        .width(Length::Fill)
+        .center_x(Length::Fill);
+
+        // Status text
+        let status_text = if failed {
+            "Connection failed with connection log:"
+        } else {
+            "Connecting..."
+        };
+        let status_color = if failed { OryxisColors::ERROR } else { OryxisColors::TEXT_SECONDARY };
+
+        // Log entries
+        let mut log_items: Vec<Element<'_, Message>> = Vec::new();
+        for (step, msg) in &progress.logs {
+            let icon_color = if msg.starts_with("Error") {
+                OryxisColors::ERROR
+            } else {
+                match step {
+                    ConnectionStep::Connecting => OryxisColors::TEXT_MUTED,
+                    ConnectionStep::Handshake => OryxisColors::ACCENT,
+                    ConnectionStep::Authenticating => OryxisColors::WARNING,
+                }
+            };
+
+            let icon = if msg.starts_with("Error") {
+                iced_fonts::bootstrap::exclamation_circle()
+            } else {
+                iced_fonts::bootstrap::gear()
+            };
+
+            log_items.push(
+                row![
+                    icon.size(12).color(icon_color),
+                    Space::new().width(10),
+                    text(msg).size(13).color(OryxisColors::TEXT_SECONDARY),
+                ]
+                .align_y(iced::Alignment::Start)
+                .into(),
+            );
+            log_items.push(Space::new().height(6).into());
+        }
+
+        let log_list = scrollable(
+            column(log_items).padding(Padding { top: 8.0, right: 16.0, bottom: 8.0, left: 16.0 }),
+        )
+        .height(Length::Fill);
+
+        let log_container = container(log_list)
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .style(|_| container::Style {
+                background: Some(Background::Color(Color::from_rgb(0.07, 0.07, 0.10))),
+                border: Border { radius: Radius::from(10.0), ..Default::default() },
+                ..Default::default()
+            });
+
+        // Bottom buttons
+        let bottom: Element<'_, Message> = if failed {
+            row![
+                button(
+                    container(text("Close").size(13).color(OryxisColors::TEXT_PRIMARY))
+                        .padding(Padding { top: 10.0, right: 24.0, bottom: 10.0, left: 24.0 }),
+                )
+                .on_press(Message::SshCloseProgress)
+                .style(|_, _| button::Style {
+                    background: Some(Background::Color(OryxisColors::BG_SURFACE)),
+                    border: Border { radius: Radius::from(8.0), ..Default::default() },
+                    ..Default::default()
+                }),
+                Space::new().width(8),
+                button(
+                    container(text("Edit host").size(13).color(OryxisColors::TEXT_PRIMARY))
+                        .padding(Padding { top: 10.0, right: 24.0, bottom: 10.0, left: 24.0 }),
+                )
+                .on_press(Message::SshEditFromProgress)
+                .style(|_, _| button::Style {
+                    background: Some(Background::Color(OryxisColors::BG_SURFACE)),
+                    border: Border { radius: Radius::from(8.0), ..Default::default() },
+                    ..Default::default()
+                }),
+                Space::new().width(Length::Fill),
+                button(
+                    container(text("Start over").size(13).color(OryxisColors::TEXT_PRIMARY))
+                        .padding(Padding { top: 10.0, right: 24.0, bottom: 10.0, left: 24.0 }),
+                )
+                .on_press(Message::SshRetry)
+                .style(|_, _| button::Style {
+                    background: Some(Background::Color(OryxisColors::SUCCESS)),
+                    border: Border { radius: Radius::from(8.0), ..Default::default() },
+                    ..Default::default()
+                }),
+            ]
+            .align_y(iced::Alignment::Center)
+            .into()
+        } else {
+            Space::new().height(0).into()
+        };
+
+        container(
+            column![
+                header,
+                progress_bar,
+                text(status_text).size(14).color(status_color),
+                Space::new().height(12),
+                log_container,
+                Space::new().height(12),
+                bottom,
+            ]
+            .padding(32)
+            .width(500)
+            .height(Length::Fill),
+        )
+        .center_x(Length::Fill)
+        .height(Length::Fill)
+        .style(|_| container::Style {
+            background: Some(Background::Color(OryxisColors::BG_PRIMARY)),
+            ..Default::default()
+        })
+        .into()
     }
 
     fn view_terminal(&self) -> Element<'_, Message> {
