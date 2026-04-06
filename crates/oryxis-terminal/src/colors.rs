@@ -60,29 +60,29 @@ impl Default for TerminalPalette {
 }
 
 impl TerminalPalette {
-    /// Oryxis Dark — teal foreground, blue highlights, dark neutral background
+    /// Oryxis Dark — like Termius Dark: white text, teal cursor/accent, vivid ANSI colors
     pub fn oryxis_dark() -> Self {
         Self {
-            foreground: Color::from_rgb(0.133, 0.60, 0.569), // teal as default text
+            foreground: Color::from_rgb(0.85, 0.87, 0.85),  // light gray (readable)
             background: Color::from_rgb(0.055, 0.071, 0.067),
-            cursor: Color::from_rgb(0.133, 0.60, 0.569),
+            cursor: Color::from_rgb(0.133, 0.60, 0.569),     // teal cursor
             ansi: [
-                Color::from_rgb(0.18, 0.20, 0.19),   // Black
-                Color::from_rgb(0.92, 0.33, 0.38),    // Red
-                Color::from_rgb(0.30, 0.78, 0.55),    // Green
-                Color::from_rgb(0.95, 0.73, 0.25),    // Yellow
-                Color::from_rgb(0.54, 0.71, 0.98),    // Blue (real blue — highlight)
-                Color::from_rgb(0.80, 0.62, 0.95),    // Magenta (tertiary)
-                Color::from_rgb(0.20, 0.70, 0.667),   // Cyan (teal accent)
-                Color::from_rgb(0.85, 0.87, 0.85),    // White (light gray)
-                Color::from_rgb(0.36, 0.38, 0.37),    // Bright Black
-                Color::from_rgb(0.95, 0.55, 0.55),    // Bright Red
-                Color::from_rgb(0.40, 0.85, 0.65),    // Bright Green
-                Color::from_rgb(0.98, 0.82, 0.52),    // Bright Yellow
-                Color::from_rgb(0.66, 0.80, 1.0),     // Bright Blue (brighter highlight)
-                Color::from_rgb(0.85, 0.70, 0.98),    // Bright Magenta
-                Color::from_rgb(0.33, 0.80, 0.75),    // Bright Cyan
-                Color::from_rgb(0.90, 0.91, 0.90),    // Bright White
+                Color::from_rgb(0.18, 0.20, 0.19),    // 0 Black
+                Color::from_rgb(0.95, 0.40, 0.42),    // 1 Red (vivid)
+                Color::from_rgb(0.30, 0.82, 0.55),    // 2 Green (vivid)
+                Color::from_rgb(0.95, 0.78, 0.30),    // 3 Yellow (vivid)
+                Color::from_rgb(0.45, 0.65, 0.95),    // 4 Blue (vivid)
+                Color::from_rgb(0.75, 0.55, 0.90),    // 5 Magenta
+                Color::from_rgb(0.20, 0.75, 0.70),    // 6 Cyan (teal)
+                Color::from_rgb(0.80, 0.82, 0.80),    // 7 White
+                Color::from_rgb(0.40, 0.42, 0.40),    // 8 Bright Black
+                Color::from_rgb(1.0, 0.55, 0.55),     // 9 Bright Red
+                Color::from_rgb(0.40, 0.90, 0.65),    // 10 Bright Green
+                Color::from_rgb(1.0, 0.88, 0.45),     // 11 Bright Yellow
+                Color::from_rgb(0.55, 0.75, 1.0),     // 12 Bright Blue
+                Color::from_rgb(0.85, 0.68, 0.98),    // 13 Bright Magenta
+                Color::from_rgb(0.33, 0.85, 0.78),    // 14 Bright Cyan
+                Color::from_rgb(0.93, 0.94, 0.93),    // 15 Bright White
             ],
         }
     }
