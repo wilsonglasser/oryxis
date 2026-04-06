@@ -149,6 +149,7 @@ jobs:
         shell: pwsh
         run: |
           choco install nsis -y --no-progress
+          $env:PATH = "C:\Program Files (x86)\NSIS;$env:PATH"
           cd resources
           makensis installer.nsi
       - uses: actions/upload-artifact@v4
