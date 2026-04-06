@@ -6,7 +6,7 @@ InstallDir "$PROGRAMFILES64\Oryxis"
 InstallDirRegKey HKLM "Software\Oryxis" "InstallDir"
 RequestExecutionLevel admin
 
-!define MUI_ICON "..\resources\logo_64.png"
+!define MUI_ICON "..\resources\logo.ico"
 !define MUI_ABORTWARNING
 
 !insertmacro MUI_PAGE_WELCOME
@@ -23,7 +23,7 @@ Section "Install"
     SetOutPath $INSTDIR
 
     File "..\target\release\oryxis.exe"
-    File "..\resources\logo_64.png"
+    File "..\resources\logo.ico"
     File "..\README.md"
 
     ; Create start menu shortcuts
