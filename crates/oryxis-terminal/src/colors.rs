@@ -13,8 +13,8 @@ impl Default for TerminalPalette {
     fn default() -> Self {
         Self {
             foreground: Color::from_rgb(0.85, 0.87, 0.90),
-            background: Color::from_rgb(0.06, 0.06, 0.08),
-            cursor: Color::from_rgb(0.30, 0.56, 1.0),
+            background: Color::from_rgb(0.055, 0.071, 0.067),
+            cursor: Color::from_rgb(0.133, 0.60, 0.569),
             // Standard 16 ANSI colors (Catppuccin-ish)
             ansi: [
                 Color::from_rgb(0.18, 0.19, 0.25), // Black

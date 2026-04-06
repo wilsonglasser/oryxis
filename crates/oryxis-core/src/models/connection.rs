@@ -30,7 +30,7 @@ impl Connection {
             hostname: hostname.into(),
             port: 22,
             username: None,
-            auth_method: AuthMethod::Password,
+            auth_method: AuthMethod::Auto,
             key_id: None,
             group_id: None,
             jump_chain: Vec::new(),
@@ -45,8 +45,10 @@ impl Connection {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub enum AuthMethod {
+    #[default]
+    Auto,
     Password,
     Key,
     Agent,
@@ -79,7 +81,7 @@ mod tests {
         assert_eq!(conn.label, "test");
         assert_eq!(conn.hostname, "10.0.0.1");
         assert_eq!(conn.port, 22);
-        assert_eq!(conn.auth_method, AuthMethod::Password);
+        assert_eq!(conn.auth_method, AuthMethod::Auto);
         assert!(conn.username.is_none());
         assert!(conn.jump_chain.is_empty());
         assert!(conn.proxy.is_none());
@@ -119,6 +121,7 @@ mod tests {
 
     #[test]
     fn auth_method_variants() {
+        assert_eq!(serde_json::to_string(&AuthMethod::Auto).unwrap(), "\"Auto\"");
         assert_eq!(serde_json::to_string(&AuthMethod::Password).unwrap(), "\"Password\"");
         assert_eq!(serde_json::to_string(&AuthMethod::Key).unwrap(), "\"Key\"");
         assert_eq!(serde_json::to_string(&AuthMethod::Agent).unwrap(), "\"Agent\"");
