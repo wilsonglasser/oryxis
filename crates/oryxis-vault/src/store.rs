@@ -11,6 +11,7 @@ use uuid::Uuid;
 
 use oryxis_core::models::connection::{AuthMethod, Connection};
 use oryxis_core::models::group::Group;
+use oryxis_core::models::identity::Identity;
 use oryxis_core::models::key::{KeyAlgorithm, SshKey};
 use oryxis_core::models::snippet::Snippet;
 
@@ -201,6 +202,16 @@ impl VaultStore {
                 created_at  TEXT NOT NULL
             );
 
+            CREATE TABLE IF NOT EXISTS identities (
+                id         TEXT PRIMARY KEY,
+                label      TEXT NOT NULL,
+                username   TEXT,
+                password   BLOB,
+                key_id     TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+
             CREATE TABLE IF NOT EXISTS known_hosts (
                 id          TEXT PRIMARY KEY,
                 hostname    TEXT NOT NULL,
@@ -222,6 +233,10 @@ impl VaultStore {
             );
             ",
         )?;
+
+        // Migrations: add columns to existing tables (ignore errors if already present)
+        let _ = self.db.execute_batch("ALTER TABLE connections ADD COLUMN identity_id TEXT;");
+
         Ok(())
     }
 
@@ -394,8 +409,8 @@ impl VaultStore {
         self.db.execute(
             "INSERT OR REPLACE INTO connections
              (id, label, hostname, port, username, auth_method, key_id, group_id,
-              jump_chain, proxy, tags, notes, color, password, last_used, created_at, updated_at)
-             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17)",
+              jump_chain, proxy, tags, notes, color, password, last_used, created_at, updated_at, identity_id)
+             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18)",
             params![
                 conn.id.to_string(),
                 conn.label,
@@ -414,6 +429,7 @@ impl VaultStore {
                 conn.last_used.map(|d| d.to_rfc3339()),
                 conn.created_at.to_rfc3339(),
                 conn.updated_at.to_rfc3339(),
+                conn.identity_id.map(|u| u.to_string()),
             ],
         )?;
         Ok(())
@@ -422,7 +438,7 @@ impl VaultStore {
     pub fn list_connections(&self) -> Result<Vec<Connection>, VaultError> {
         let mut stmt = self.db.prepare(
             "SELECT id, label, hostname, port, username, auth_method, key_id, group_id,
-                    jump_chain, proxy, tags, notes, color, last_used, created_at, updated_at
+                    jump_chain, proxy, tags, notes, color, last_used, created_at, updated_at, identity_id
              FROM connections ORDER BY label",
         )?;
         let conns = stmt
@@ -446,6 +462,9 @@ impl VaultStore {
                     auth_method,
                     key_id: row
                         .get::<_, Option<String>>(6)?
+                        .and_then(|s| Uuid::parse_str(&s).ok()),
+                    identity_id: row
+                        .get::<_, Option<String>>(16)?
                         .and_then(|s| Uuid::parse_str(&s).ok()),
                     group_id: row
                         .get::<_, Option<String>>(7)?
@@ -617,6 +636,111 @@ impl VaultStore {
     pub fn delete_key(&self, id: &Uuid) -> Result<(), VaultError> {
         self.db
             .execute("DELETE FROM keys WHERE id = ?1", params![id.to_string()])?;
+        Ok(())
+    }
+
+    // -----------------------------------------------------------------------
+    // Identities CRUD
+    // -----------------------------------------------------------------------
+
+    /// Save an identity. If `password` is provided, it's encrypted.
+    pub fn save_identity(
+        &self,
+        identity: &Identity,
+        password: Option<&str>,
+    ) -> Result<(), VaultError> {
+        let encrypted_pw = match password {
+            Some(pw) => Some(self.encrypt_field(pw)?),
+            None => {
+                // Keep existing password if not provided
+                self.db
+                    .query_row(
+                        "SELECT password FROM identities WHERE id = ?1",
+                        params![identity.id.to_string()],
+                        |row| row.get::<_, Option<Vec<u8>>>(0),
+                    )
+                    .ok()
+                    .flatten()
+            }
+        };
+
+        self.db.execute(
+            "INSERT OR REPLACE INTO identities
+             (id, label, username, password, key_id, created_at, updated_at)
+             VALUES (?1,?2,?3,?4,?5,?6,?7)",
+            params![
+                identity.id.to_string(),
+                identity.label,
+                identity.username,
+                encrypted_pw,
+                identity.key_id.map(|u| u.to_string()),
+                identity.created_at.to_rfc3339(),
+                identity.updated_at.to_rfc3339(),
+            ],
+        )?;
+        Ok(())
+    }
+
+    pub fn list_identities(&self) -> Result<Vec<Identity>, VaultError> {
+        let mut stmt = self.db.prepare(
+            "SELECT id, label, username, key_id, created_at, updated_at
+             FROM identities ORDER BY label",
+        )?;
+        let identities = stmt
+            .query_map([], |row| {
+                Ok(Identity {
+                    id: Uuid::parse_str(&row.get::<_, String>(0)?).unwrap_or_default(),
+                    label: row.get(1)?,
+                    username: row.get(2)?,
+                    key_id: row
+                        .get::<_, Option<String>>(3)?
+                        .and_then(|s| Uuid::parse_str(&s).ok()),
+                    created_at: row
+                        .get::<_, String>(4)
+                        .ok()
+                        .and_then(|s| chrono::DateTime::parse_from_rfc3339(&s).ok())
+                        .map(|d| d.with_timezone(&chrono::Utc))
+                        .unwrap_or_else(chrono::Utc::now),
+                    updated_at: row
+                        .get::<_, String>(5)
+                        .ok()
+                        .and_then(|s| chrono::DateTime::parse_from_rfc3339(&s).ok())
+                        .map(|d| d.with_timezone(&chrono::Utc))
+                        .unwrap_or_else(chrono::Utc::now),
+                })
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(identities)
+    }
+
+    /// Get the decrypted password for an identity.
+    pub fn get_identity_password(&self, id: &Uuid) -> Result<Option<String>, VaultError> {
+        self.require_unlocked()?;
+        let data: Option<Vec<u8>> = self
+            .db
+            .query_row(
+                "SELECT password FROM identities WHERE id = ?1",
+                params![id.to_string()],
+                |row| row.get(0),
+            )
+            .map_err(|_| VaultError::NotFound(format!("Identity {}", id)))?;
+
+        match data {
+            Some(encrypted) => Ok(Some(self.decrypt_field(&encrypted)?)),
+            None => Ok(None),
+        }
+    }
+
+    pub fn delete_identity(&self, id: &Uuid) -> Result<(), VaultError> {
+        // NULL out identity_id on connections referencing this identity
+        self.db.execute(
+            "UPDATE connections SET identity_id = NULL WHERE identity_id = ?1",
+            params![id.to_string()],
+        )?;
+        self.db.execute(
+            "DELETE FROM identities WHERE id = ?1",
+            params![id.to_string()],
+        )?;
         Ok(())
     }
 
