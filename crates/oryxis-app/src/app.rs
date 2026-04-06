@@ -267,6 +267,7 @@ pub enum Message {
     // Settings
     LockVault,
     TerminalThemeChanged(String),
+    AppThemeChanged(String),
     TerminalFontSizeIncrease,
     TerminalFontSizeDecrease,
 
@@ -1169,6 +1170,12 @@ impl Oryxis {
                             state.palette = theme.palette();
                         }
                     }
+                }
+            }
+            Message::AppThemeChanged(name) => {
+                use crate::theme::AppTheme;
+                if let Some(theme) = AppTheme::ALL.iter().find(|t| t.name() == name) {
+                    AppTheme::set_active(*theme);
                 }
             }
             Message::TerminalFontSizeIncrease => {
@@ -3576,6 +3583,21 @@ impl Oryxis {
         .width(Length::Fill);
 
         let stats = column![
+            text("Appearance").size(14).color(OryxisColors::TEXT_MUTED),
+            Space::new().height(8),
+            row![
+                text("App Theme").size(13).color(OryxisColors::TEXT_SECONDARY),
+                Space::new().width(16),
+                pick_list(
+                    crate::theme::AppTheme::ALL
+                        .iter()
+                        .map(|t| t.name().to_string())
+                        .collect::<Vec<_>>(),
+                    Some(crate::theme::AppTheme::active().name().to_string()),
+                    Message::AppThemeChanged,
+                ),
+            ].align_y(iced::Alignment::Center),
+            Space::new().height(24),
             text("Vault").size(14).color(OryxisColors::TEXT_MUTED),
             Space::new().height(8),
             settings_row("Hosts", self.connections.len().to_string()),
