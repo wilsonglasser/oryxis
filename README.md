@@ -45,6 +45,22 @@ Oryxis is an open-source alternative to [Termius](https://termius.com/) — a de
 
 Most SSH clients are either powerful but ugly (PuTTY), pretty but Electron-heavy (Termius, Tabby), or terminal-only (OpenSSH). Oryxis aims to be all three: **beautiful, fast, and native**.
 
+## Screenshots
+
+<p align="center">
+  <img src="resources/screen_1.png" width="720" alt="Host editor with credentials and folder navigation">
+</p>
+<p align="center">
+  <em>Host editor — folders, search, credentials with key selection</em>
+</p>
+
+<p align="center">
+  <img src="resources/screen_2.png" width="720" alt="Terminal with AI Chat sidebar">
+</p>
+<p align="center">
+  <em>Terminal session with AI Chat sidebar — ask questions, execute commands</em>
+</p>
+
 ## Features
 
 ### SSH & Connectivity
