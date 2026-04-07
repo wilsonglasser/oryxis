@@ -128,7 +128,7 @@ jobs:
           cd resources
           makensis installer.nsi
       - name: Sign EXE with SignPath
-        if: secrets.SIGNPATH_API_TOKEN != ''
+        if: ${{ secrets.SIGNPATH_API_TOKEN != '' }}
         uses: signpath/github-action-submit-signing-request@v1
         with:
           api-token: '${{ secrets.SIGNPATH_API_TOKEN }}'
