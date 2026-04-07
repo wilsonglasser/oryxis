@@ -3729,7 +3729,7 @@ impl Oryxis {
         let mut all_rows: Vec<Element<'_, Message>> = Vec::new();
         all_rows.push(section_title.into());
         all_rows.extend(grid_rows);
-        if !self.identities.is_empty() || !identity_cards.is_empty() {
+        if !self.identities.is_empty() {
             all_rows.push(identity_section_title.into());
             all_rows.extend(identity_grid_rows);
         }
