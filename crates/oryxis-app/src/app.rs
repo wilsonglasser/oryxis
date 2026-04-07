@@ -383,6 +383,9 @@ pub enum Message {
     SettingKeepaliveChanged(String),
     SettingScrollbackChanged(String),
 
+    // Language
+    LanguageChanged(String),
+
     // Local shell
     OpenLocalShell,
 
@@ -602,6 +605,12 @@ impl Oryxis {
             self.known_hosts = vault.list_known_hosts().unwrap_or_default();
             self.logs = vault.list_logs(200).unwrap_or_default();
             self.session_logs = vault.list_session_logs().unwrap_or_default();
+
+            // Language
+            if let Ok(Some(v)) = vault.get_setting("language") {
+                use crate::i18n::Language;
+                Language::set_active(Language::from_code(&v));
+            }
 
             // AI settings
             if let Ok(Some(v)) = vault.get_setting("ai_enabled") {
@@ -1493,6 +1502,15 @@ impl Oryxis {
                     }
                 }
             }
+            Message::LanguageChanged(name) => {
+                use crate::i18n::Language;
+                if let Some(lang) = Language::ALL.iter().find(|l| l.name() == name) {
+                    Language::set_active(*lang);
+                    if let Some(vault) = &self.vault {
+                        let _ = vault.set_setting("language", lang.code());
+                    }
+                }
+            }
             Message::AppThemeChanged(name) => {
                 use crate::theme::AppTheme;
                 if let Some(theme) = AppTheme::ALL.iter().find(|t| t.name() == name) {
@@ -2285,7 +2303,7 @@ impl Oryxis {
         let logo = image(self.logo_handle.clone())
             .width(64)
             .height(64);
-        let title = text("Welcome to Oryxis").size(28).color(OryxisColors::t().text_primary);
+        let title = text(crate::i18n::t("welcome")).size(28).color(OryxisColors::t().text_primary);
         let subtitle = text("Set a master password or continue without one.")
             .size(14)
             .color(OryxisColors::t().text_secondary);
@@ -2297,10 +2315,10 @@ impl Oryxis {
             .padding(12)
             .width(300);
 
-        let btn = styled_button("Create Vault", Message::VaultSetup, OryxisColors::t().accent);
+        let btn = styled_button(crate::i18n::t("create_vault"), Message::VaultSetup, OryxisColors::t().accent);
 
         let skip_btn = button(
-            text("Continue without password").size(13).color(OryxisColors::t().text_secondary),
+            text(crate::i18n::t("continue_without_password")).size(13).color(OryxisColors::t().text_secondary),
         )
         .on_press(Message::VaultSkipPassword)
         .padding(Padding { top: 8.0, right: 16.0, bottom: 8.0, left: 16.0 })
@@ -2341,7 +2359,7 @@ impl Oryxis {
             .width(64)
             .height(64);
         let title = text("Oryxis").size(28).color(OryxisColors::t().accent);
-        let subtitle = text("Enter your master password to unlock.")
+        let subtitle = text(crate::i18n::t("enter_password"))
             .size(14)
             .color(OryxisColors::t().text_secondary);
 
@@ -2352,7 +2370,7 @@ impl Oryxis {
             .padding(12)
             .width(300);
 
-        let btn = styled_button("Unlock", Message::VaultUnlock, OryxisColors::t().accent);
+        let btn = styled_button(crate::i18n::t("unlock"), Message::VaultUnlock, OryxisColors::t().accent);
 
         let error = if let Some(err) = &self.vault_error {
             Element::from(text(err.clone()).size(13).color(OryxisColors::t().error))
@@ -2362,13 +2380,13 @@ impl Oryxis {
 
         let destroy_section: Element<'_, Message> = if self.vault_destroy_confirm {
             column![
-                text("This will permanently delete all saved data.").size(12).color(OryxisColors::t().error),
+                text(crate::i18n::t("vault_destroy_confirm")).size(12).color(OryxisColors::t().error),
                 Space::new().height(6),
-                styled_button("Yes, destroy vault", Message::VaultDestroy, OryxisColors::t().error),
+                styled_button(crate::i18n::t("destroy_vault"), Message::VaultDestroy, OryxisColors::t().error),
             ].align_x(iced::Alignment::Center).into()
         } else {
             button(
-                text("Forgot password? Reset vault").size(12).color(OryxisColors::t().text_muted),
+                text(crate::i18n::t("forgot_password")).size(12).color(OryxisColors::t().text_muted),
             )
             .on_press(Message::VaultDestroyConfirm)
             .padding(Padding { top: 6.0, right: 12.0, bottom: 6.0, left: 12.0 })
@@ -2466,30 +2484,30 @@ impl Oryxis {
             OverlayContent::HostActions(idx) => {
                 let idx = *idx;
                 column![
-                    context_menu_item(iced_fonts::bootstrap::play_fill(), "Connect", Message::ConnectSsh(idx), OryxisColors::t().success),
-                    context_menu_item(iced_fonts::bootstrap::pencil(), "Edit", Message::EditConnection(idx), OryxisColors::t().text_secondary),
-                    context_menu_item(iced_fonts::bootstrap::copy(), "Duplicate", Message::DuplicateConnection(idx), OryxisColors::t().text_secondary),
-                    context_menu_item(iced_fonts::bootstrap::trash(), "Remove", Message::DeleteConnection(idx), OryxisColors::t().error),
+                    context_menu_item(iced_fonts::bootstrap::play_fill(), crate::i18n::t("connect"), Message::ConnectSsh(idx), OryxisColors::t().success),
+                    context_menu_item(iced_fonts::bootstrap::pencil(), crate::i18n::t("edit"), Message::EditConnection(idx), OryxisColors::t().text_secondary),
+                    context_menu_item(iced_fonts::bootstrap::copy(), crate::i18n::t("duplicate"), Message::DuplicateConnection(idx), OryxisColors::t().text_secondary),
+                    context_menu_item(iced_fonts::bootstrap::trash(), crate::i18n::t("remove"), Message::DeleteConnection(idx), OryxisColors::t().error),
                 ].into()
             }
             OverlayContent::KeyActions(idx) => {
                 let idx = *idx;
                 column![
-                    context_menu_item(iced_fonts::bootstrap::pencil(), "Edit", Message::EditKey(idx), OryxisColors::t().text_secondary),
-                    context_menu_item(iced_fonts::bootstrap::trash(), "Remove", Message::DeleteKey(idx), OryxisColors::t().error),
+                    context_menu_item(iced_fonts::bootstrap::pencil(), crate::i18n::t("edit"), Message::EditKey(idx), OryxisColors::t().text_secondary),
+                    context_menu_item(iced_fonts::bootstrap::trash(), crate::i18n::t("remove"), Message::DeleteKey(idx), OryxisColors::t().error),
                 ].into()
             }
             OverlayContent::IdentityActions(idx) => {
                 let idx = *idx;
                 column![
-                    context_menu_item(iced_fonts::bootstrap::pencil(), "Edit", Message::EditIdentity(idx), OryxisColors::t().text_secondary),
-                    context_menu_item(iced_fonts::bootstrap::trash(), "Remove", Message::DeleteIdentity(idx), OryxisColors::t().error),
+                    context_menu_item(iced_fonts::bootstrap::pencil(), crate::i18n::t("edit"), Message::EditIdentity(idx), OryxisColors::t().text_secondary),
+                    context_menu_item(iced_fonts::bootstrap::trash(), crate::i18n::t("remove"), Message::DeleteIdentity(idx), OryxisColors::t().error),
                 ].into()
             }
             OverlayContent::KeychainAdd => {
                 column![
-                    context_menu_item(iced_fonts::bootstrap::key(), "Import Key", Message::ShowKeyPanel, OryxisColors::t().text_secondary),
-                    context_menu_item(iced_fonts::bootstrap::person(), "New Identity", Message::ShowIdentityPanel, OryxisColors::t().text_secondary),
+                    context_menu_item(iced_fonts::bootstrap::key(), crate::i18n::t("import_key"), Message::ShowKeyPanel, OryxisColors::t().text_secondary),
+                    context_menu_item(iced_fonts::bootstrap::person(), crate::i18n::t("new_identity"), Message::ShowIdentityPanel, OryxisColors::t().text_secondary),
                 ].into()
             }
         };
@@ -2611,12 +2629,12 @@ impl Oryxis {
 
         // Navigation items with pill-shaped active state
         let nav_buttons: Vec<Element<'_, Message>> = vec![
-            sidebar_nav_btn(iced_fonts::bootstrap::hdd_network(), "Hosts", View::Dashboard, self.active_view == View::Dashboard && self.active_tab.is_none()),
-            sidebar_nav_btn(iced_fonts::bootstrap::key(), "Keychain", View::Keys, self.active_view == View::Keys && self.active_tab.is_none()),
-            sidebar_nav_btn(iced_fonts::bootstrap::code_square(), "Snippets", View::Snippets, self.active_view == View::Snippets && self.active_tab.is_none()),
-            sidebar_nav_btn(iced_fonts::bootstrap::shield_check(), "Known Hosts", View::KnownHosts, self.active_view == View::KnownHosts && self.active_tab.is_none()),
-            sidebar_nav_btn(iced_fonts::bootstrap::clock_history(), "History", View::History, self.active_view == View::History && self.active_tab.is_none()),
-            sidebar_nav_btn(iced_fonts::bootstrap::gear(), "Settings", View::Settings, self.active_view == View::Settings && self.active_tab.is_none()),
+            sidebar_nav_btn(iced_fonts::bootstrap::hdd_network(), crate::i18n::t("hosts"), View::Dashboard, self.active_view == View::Dashboard && self.active_tab.is_none()),
+            sidebar_nav_btn(iced_fonts::bootstrap::key(), crate::i18n::t("keychain"), View::Keys, self.active_view == View::Keys && self.active_tab.is_none()),
+            sidebar_nav_btn(iced_fonts::bootstrap::code_square(), crate::i18n::t("snippets"), View::Snippets, self.active_view == View::Snippets && self.active_tab.is_none()),
+            sidebar_nav_btn(iced_fonts::bootstrap::shield_check(), crate::i18n::t("known_hosts"), View::KnownHosts, self.active_view == View::KnownHosts && self.active_tab.is_none()),
+            sidebar_nav_btn(iced_fonts::bootstrap::clock_history(), crate::i18n::t("history"), View::History, self.active_view == View::History && self.active_tab.is_none()),
+            sidebar_nav_btn(iced_fonts::bootstrap::gear(), crate::i18n::t("settings"), View::Settings, self.active_view == View::Settings && self.active_tab.is_none()),
         ];
 
         // Local shell shortcut at bottom
@@ -2625,7 +2643,7 @@ impl Oryxis {
                 row![
                     text("+").size(13).color(OryxisColors::t().text_muted),
                     Space::new().width(10),
-                    text("Local Shell").size(12).color(OryxisColors::t().text_muted),
+                    text(crate::i18n::t("local_shell")).size(12).color(OryxisColors::t().text_muted),
                 ]
                 .align_y(iced::Alignment::Center),
             )
@@ -2699,7 +2717,7 @@ impl Oryxis {
                     row![
                         iced_fonts::bootstrap::arrow_left().size(14).color(OryxisColors::t().accent),
                         Space::new().width(6),
-                        text("All Hosts").size(14).color(OryxisColors::t().accent),
+                        text(crate::i18n::t("all_hosts")).size(14).color(OryxisColors::t().accent),
                     ].align_y(iced::Alignment::Center),
                 )
                 .on_press(Message::BackToRoot)
@@ -2798,9 +2816,9 @@ impl Oryxis {
                         ..Default::default()
                     }),
                     Space::new().height(20),
-                    text("Create host").size(20).color(OryxisColors::t().text_primary),
+                    text(crate::i18n::t("create_host_title")).size(20).color(OryxisColors::t().text_primary),
                     Space::new().height(8),
-                    text("Save your connection details as hosts to connect in one click.")
+                    text(crate::i18n::t("create_host_desc"))
                         .size(13).color(OryxisColors::t().text_muted),
                     Space::new().height(24),
                     // Hostname input
@@ -2812,7 +2830,7 @@ impl Oryxis {
                     Space::new().height(12),
                     // Continue button
                     button(
-                        container(text("Continue").size(14).color(OryxisColors::t().text_primary))
+                        container(text(crate::i18n::t("continue_btn")).size(14).color(OryxisColors::t().text_primary))
                             .padding(Padding { top: 12.0, right: 0.0, bottom: 12.0, left: 0.0 })
                             .width(380)
                             .center_x(380),
@@ -3158,7 +3176,7 @@ impl Oryxis {
         let bottom: Element<'_, Message> = if failed {
             row![
                 button(
-                    container(text("Close").size(13).color(OryxisColors::t().text_primary))
+                    container(text(crate::i18n::t("close")).size(13).color(OryxisColors::t().text_primary))
                         .padding(Padding { top: 10.0, right: 24.0, bottom: 10.0, left: 24.0 }),
                 )
                 .on_press(Message::SshCloseProgress)
@@ -3169,7 +3187,7 @@ impl Oryxis {
                 }),
                 Space::new().width(8),
                 button(
-                    container(text("Edit host").size(13).color(OryxisColors::t().text_primary))
+                    container(text(crate::i18n::t("edit_host")).size(13).color(OryxisColors::t().text_primary))
                         .padding(Padding { top: 10.0, right: 24.0, bottom: 10.0, left: 24.0 }),
                 )
                 .on_press(Message::SshEditFromProgress)
@@ -3580,13 +3598,13 @@ impl Oryxis {
                         ..Default::default()
                     }),
                     Space::new().height(20),
-                    text("Add a key").size(20).color(OryxisColors::t().text_primary),
+                    text(crate::i18n::t("add_key_title")).size(20).color(OryxisColors::t().text_primary),
                     Space::new().height(8),
-                    text("Import SSH keys to authenticate with your hosts.")
+                    text(crate::i18n::t("add_key_desc"))
                         .size(13).color(OryxisColors::t().text_muted),
                     Space::new().height(24),
                     button(
-                        container(text("Import Key").size(14).color(OryxisColors::t().text_primary))
+                        container(text(crate::i18n::t("import_key")).size(14).color(OryxisColors::t().text_primary))
                             .padding(Padding { top: 12.0, right: 0.0, bottom: 12.0, left: 0.0 })
                             .width(380)
                             .center_x(380),
@@ -4241,13 +4259,13 @@ impl Oryxis {
                         ..Default::default()
                     }),
                     Space::new().height(20),
-                    text("Create a snippet").size(20).color(OryxisColors::t().text_primary),
+                    text(crate::i18n::t("create_snippet_title")).size(20).color(OryxisColors::t().text_primary),
                     Space::new().height(8),
-                    text("Save commands you use often for quick access.")
+                    text(crate::i18n::t("create_snippet_desc"))
                         .size(13).color(OryxisColors::t().text_muted),
                     Space::new().height(24),
                     button(
-                        container(text("New Snippet").size(14).color(OryxisColors::t().text_primary))
+                        container(text(crate::i18n::t("new_snippet")).size(14).color(OryxisColors::t().text_primary))
                             .padding(Padding { top: 12.0, right: 0.0, bottom: 12.0, left: 0.0 })
                             .width(380)
                             .center_x(380),
@@ -4407,7 +4425,7 @@ impl Oryxis {
         };
 
         let save_btn = button(
-            container(text("Save").size(13).color(OryxisColors::t().text_primary))
+            container(text(crate::i18n::t("save")).size(13).color(OryxisColors::t().text_primary))
                 .padding(Padding { top: 10.0, right: 0.0, bottom: 10.0, left: 0.0 })
                 .width(Length::Fill).center_x(Length::Fill),
         )
@@ -4423,7 +4441,7 @@ impl Oryxis {
         if let Some(edit_id) = self.snippet_editing_id
             && let Some(idx) = self.snippets.iter().position(|s| s.id == edit_id) {
                 let del_btn = button(
-                    container(text("Delete").size(13).color(OryxisColors::t().error))
+                    container(text(crate::i18n::t("delete")).size(13).color(OryxisColors::t().error))
                         .padding(Padding { top: 10.0, right: 0.0, bottom: 10.0, left: 0.0 })
                         .width(Length::Fill).center_x(Length::Fill),
                 )
@@ -4694,7 +4712,7 @@ impl Oryxis {
                     }),
                     Space::new().width(8),
                     button(
-                        container(text("Delete").size(11).color(OryxisColors::t().error))
+                        container(text(crate::i18n::t("delete")).size(11).color(OryxisColors::t().error))
                             .padding(Padding { top: 4.0, right: 10.0, bottom: 4.0, left: 10.0 }),
                     )
                     .on_press(Message::DeleteSessionLog(idx))
@@ -4737,7 +4755,7 @@ impl Oryxis {
                             text("Session Log").size(16).color(OryxisColors::t().text_primary),
                             Space::new().width(Length::Fill),
                             button(
-                                container(text("Close").size(12).color(OryxisColors::t().text_muted))
+                                container(text(crate::i18n::t("close")).size(12).color(OryxisColors::t().text_muted))
                                     .padding(Padding { top: 6.0, right: 14.0, bottom: 6.0, left: 14.0 }),
                             )
                             .on_press(Message::CloseSessionLogView)
@@ -4789,15 +4807,15 @@ impl Oryxis {
         // ── Settings sidebar ──
         let settings_sidebar = {
             let items: Vec<(&str, SettingsSection)> = vec![
-                ("Terminal", SettingsSection::Terminal),
-                ("AI", SettingsSection::AI),
-                ("Theme", SettingsSection::Theme),
-                ("Shortcuts", SettingsSection::Shortcuts),
-                ("Security", SettingsSection::Security),
-                ("About", SettingsSection::About),
+                (crate::i18n::t("terminal_settings"), SettingsSection::Terminal),
+                (crate::i18n::t("ai_assistant"), SettingsSection::AI),
+                (crate::i18n::t("theme"), SettingsSection::Theme),
+                (crate::i18n::t("shortcuts"), SettingsSection::Shortcuts),
+                (crate::i18n::t("security"), SettingsSection::Security),
+                (crate::i18n::t("about"), SettingsSection::About),
             ];
             let mut col = column![
-                text("Settings").size(16).color(OryxisColors::t().text_primary),
+                text(crate::i18n::t("settings")).size(16).color(OryxisColors::t().text_primary),
                 Space::new().height(12),
             ]
             .padding(Padding { top: 20.0, right: 8.0, bottom: 8.0, left: 8.0 });
@@ -4854,18 +4872,18 @@ impl Oryxis {
         let settings_content: Element<'_, Message> = match self.settings_section {
             SettingsSection::Terminal => {
                 let toggles_section = panel_section(column![
-                    toggle_row("Select text to copy & Right click to paste", self.setting_copy_on_select, Message::ToggleCopyOnSelect),
+                    toggle_row(crate::i18n::t("copy_on_select"), self.setting_copy_on_select, Message::ToggleCopyOnSelect),
                     Space::new().height(10),
-                    toggle_row("Use bright colours for bold text", self.setting_bold_is_bright, Message::ToggleBoldIsBright),
+                    toggle_row(crate::i18n::t("bold_bright"), self.setting_bold_is_bright, Message::ToggleBoldIsBright),
                     Space::new().height(10),
-                    toggle_row("Bell sound", self.setting_bell_sound, Message::ToggleBellSound),
+                    toggle_row(crate::i18n::t("bell_sound"), self.setting_bell_sound, Message::ToggleBellSound),
                     Space::new().height(10),
-                    toggle_row("Keyword highlighting", self.setting_keyword_highlight, Message::ToggleKeywordHighlight),
+                    toggle_row(crate::i18n::t("keyword_highlight"), self.setting_keyword_highlight, Message::ToggleKeywordHighlight),
                 ]);
 
                 let font_size_section = panel_section(column![
                     row![
-                        text("Terminal Font Size").size(13).color(OryxisColors::t().text_primary),
+                        text(crate::i18n::t("terminal_font_size")).size(13).color(OryxisColors::t().text_primary),
                         Space::new().width(Length::Fill),
                         button(
                             container(text("\u{2212}").size(14).color(OryxisColors::t().text_primary))
@@ -4906,7 +4924,7 @@ impl Oryxis {
                 ]);
 
                 let keepalive_section = panel_section(column![
-                    text("Keepalive Interval").size(13).color(OryxisColors::t().text_primary),
+                    text(crate::i18n::t("keepalive_interval")).size(13).color(OryxisColors::t().text_primary),
                     Space::new().height(4),
                     text("How often (in seconds) to send SSH keepalive packets. Set to 0 to disable.")
                         .size(11).color(OryxisColors::t().text_muted),
@@ -4918,7 +4936,7 @@ impl Oryxis {
                 ]);
 
                 let scrollback_section = panel_section(column![
-                    text("Scrollback").size(13).color(OryxisColors::t().text_primary),
+                    text(crate::i18n::t("scrollback")).size(13).color(OryxisColors::t().text_primary),
                     Space::new().height(4),
                     text("Limit number of terminal rows. Set to 0 for maximum.")
                         .size(11).color(OryxisColors::t().text_muted),
@@ -4932,7 +4950,7 @@ impl Oryxis {
                 scrollable(
                     container(
                         column![
-                            text("Terminal Settings").size(18).color(OryxisColors::t().text_primary),
+                            text(crate::i18n::t("terminal_settings")).size(18).color(OryxisColors::t().text_primary),
                             Space::new().height(16),
                             toggles_section,
                             Space::new().height(12),
@@ -4953,11 +4971,11 @@ impl Oryxis {
 
             SettingsSection::AI => {
                 let enable_section = panel_section(column![
-                    toggle_row("Enable AI Chat", self.ai_enabled, Message::ToggleAiEnabled),
+                    toggle_row(crate::i18n::t("enable_ai"), self.ai_enabled, Message::ToggleAiEnabled),
                 ]);
 
                 let mut content_col = column![
-                    text("AI Assistant").size(18).color(OryxisColors::t().text_primary),
+                    text(crate::i18n::t("ai_assistant")).size(18).color(OryxisColors::t().text_primary),
                     Space::new().height(16),
                     enable_section,
                 ]
@@ -5162,9 +5180,31 @@ impl Oryxis {
                     grid_rows.push(r.into());
                 }
 
+                // Language picker
+                let lang_options: Vec<String> = crate::i18n::Language::ALL
+                    .iter()
+                    .map(|l| l.name().to_string())
+                    .collect();
+                let active_lang_name = crate::i18n::Language::active().name().to_string();
+
+                let language_section = panel_section(column![
+                    row![
+                        text(crate::i18n::t("language")).size(13).color(OryxisColors::t().text_primary),
+                        Space::new().width(Length::Fill),
+                        pick_list(
+                            lang_options,
+                            Some(active_lang_name),
+                            Message::LanguageChanged,
+                        )
+                        .width(200),
+                    ].align_y(iced::Alignment::Center),
+                ]);
+
                 let mut content_col = column![
-                    text("Theme").size(18).color(OryxisColors::t().text_primary),
+                    text(crate::i18n::t("theme")).size(18).color(OryxisColors::t().text_primary),
                     Space::new().height(16),
+                    language_section,
+                    Space::new().height(12),
                 ]
                 .spacing(12)
                 .width(Length::Fill);
@@ -5183,16 +5223,16 @@ impl Oryxis {
 
             SettingsSection::Shortcuts => {
                 let shortcuts: Vec<(Vec<&str>, &str)> = vec![
-                    (vec!["Ctrl", "Shift", "C"], "Copy from Terminal"),
-                    (vec!["Ctrl", "Shift", "V"], "Paste to Terminal"),
-                    (vec!["Ctrl", "Shift", "W"], "Close Tab"),
-                    (vec!["Ctrl", "1...9"], "Switch to Tab 1-9"),
-                    (vec!["Ctrl", "L"], "Open Local Terminal"),
-                    (vec!["Ctrl", "N"], "New Host"),
+                    (vec!["Ctrl", "Shift", "C"], crate::i18n::t("copy_terminal")),
+                    (vec!["Ctrl", "Shift", "V"], crate::i18n::t("paste_terminal")),
+                    (vec!["Ctrl", "Shift", "W"], crate::i18n::t("close_tab")),
+                    (vec!["Ctrl", "1...9"], crate::i18n::t("switch_tab")),
+                    (vec!["Ctrl", "L"], crate::i18n::t("open_local")),
+                    (vec!["Ctrl", "N"], crate::i18n::t("new_host_shortcut")),
                 ];
 
                 let mut rows_col = column![
-                    text("Keyboard Shortcuts").size(18).color(OryxisColors::t().text_primary),
+                    text(crate::i18n::t("keyboard_shortcuts")).size(18).color(OryxisColors::t().text_primary),
                     Space::new().height(16),
                 ].spacing(8).width(Length::Fill);
 
@@ -5211,7 +5251,7 @@ impl Oryxis {
 
             SettingsSection::Security => {
                 let password_toggle = toggle_row(
-                    "Vault Password",
+                    crate::i18n::t("vault_password"),
                     self.vault_has_user_password,
                     Message::ToggleVaultPassword,
                 );
@@ -5224,7 +5264,7 @@ impl Oryxis {
                         .secure(true)
                         .padding(10)
                         .width(300);
-                    let btn = styled_button("Set Password", Message::SetVaultPassword, OryxisColors::t().accent);
+                    let btn = styled_button(crate::i18n::t("set_password"), Message::SetVaultPassword, OryxisColors::t().accent);
                     let error: Element<'_, Message> = if let Some(err) = &self.vault_password_error {
                         text(err.clone()).size(12).color(OryxisColors::t().error).into()
                     } else {
@@ -5256,7 +5296,7 @@ impl Oryxis {
                         row![
                             iced_fonts::bootstrap::lock().size(14).color(OryxisColors::t().warning),
                             Space::new().width(10),
-                            text("Lock Vault").size(13).color(OryxisColors::t().warning),
+                            text(crate::i18n::t("lock_vault")).size(13).color(OryxisColors::t().warning),
                         ].align_y(iced::Alignment::Center),
                     )
                     .padding(Padding { top: 10.0, right: 20.0, bottom: 10.0, left: 20.0 }),
@@ -5277,7 +5317,7 @@ impl Oryxis {
                 scrollable(
                     container(
                         column![
-                            text("Security").size(18).color(OryxisColors::t().text_primary),
+                            text(crate::i18n::t("security")).size(18).color(OryxisColors::t().text_primary),
                             Space::new().height(16),
                             panel_section(column![password_toggle]),
                             password_section,
@@ -5307,13 +5347,13 @@ impl Oryxis {
                 ]);
 
                 let vault_section = panel_section(column![
-                    text("Vault Statistics").size(14).color(OryxisColors::t().text_muted),
+                    text(crate::i18n::t("vault_stats")).size(14).color(OryxisColors::t().text_muted),
                     Space::new().height(8),
-                    settings_row("Hosts", self.connections.len().to_string()),
+                    settings_row(crate::i18n::t("hosts"), self.connections.len().to_string()),
                     Space::new().height(6),
-                    settings_row("Keys", self.keys.len().to_string()),
+                    settings_row(crate::i18n::t("keychain"), self.keys.len().to_string()),
                     Space::new().height(6),
-                    settings_row("Snippets", self.snippets.len().to_string()),
+                    settings_row(crate::i18n::t("snippets"), self.snippets.len().to_string()),
                     Space::new().height(6),
                     settings_row("Groups", self.groups.len().to_string()),
                 ]);
@@ -5321,7 +5361,7 @@ impl Oryxis {
                 scrollable(
                     container(
                         column![
-                            text("About").size(18).color(OryxisColors::t().text_primary),
+                            text(crate::i18n::t("about")).size(18).color(OryxisColors::t().text_primary),
                             Space::new().height(16),
                             about_section,
                             Space::new().height(12),
@@ -5355,10 +5395,10 @@ impl Oryxis {
             if let Some(tab) = self.tabs.get(idx) {
                 format!("● {} — connected", tab.label)
             } else {
-                "No active connection".into()
+                crate::i18n::t("no_active_connection").into()
             }
         } else {
-            "No active connection".into()
+            crate::i18n::t("no_active_connection").into()
         };
 
         let status_color = if self.active_tab.is_some() {
@@ -5386,7 +5426,7 @@ impl Oryxis {
 
     fn view_host_panel(&self) -> Element<'_, Message> {
         let is_editing = self.editor_form.editing_id.is_some();
-        let title = if is_editing { "Edit Host" } else { "New Host" };
+        let title = if is_editing { crate::i18n::t("edit_host") } else { crate::i18n::t("new_host") };
         let has_address = !self.editor_form.hostname.is_empty();
 
         // ── Header ──
@@ -5427,15 +5467,15 @@ impl Oryxis {
 
         // ── Section: General ──
         let general_section = panel_section(column![
-            panel_field("Label", text_input("My Server", &self.editor_form.label)
+            panel_field(crate::i18n::t("label"), text_input("My Server", &self.editor_form.label)
                 .on_input(Message::EditorLabelChanged).padding(10).into()),
             Space::new().height(8),
-            panel_field("Parent Group", text_input("Production, Staging...", &self.editor_form.group_name)
+            panel_field(crate::i18n::t("parent_group"), text_input("Production, Staging...", &self.editor_form.group_name)
                 .on_input(Message::EditorGroupChanged).padding(10).into()),
         ]);
 
         // ── Section: SSH & Credentials ──
-        let port_text = "SSH on port".to_string();
+        let port_text = crate::i18n::t("ssh_on_port").to_string();
         let mut ssh_items = column![
             // SSH on [port] port
             row![
@@ -5447,7 +5487,7 @@ impl Oryxis {
                     .width(60),
             ].align_y(iced::Alignment::Center),
             Space::new().height(12),
-            text("Credentials").size(12).color(OryxisColors::t().text_muted),
+            text(crate::i18n::t("credentials")).size(12).color(OryxisColors::t().text_muted),
             Space::new().height(8),
             // Username input
             row![
@@ -5532,7 +5572,7 @@ impl Oryxis {
                         Space::new().width(8),
                         column![
                             text(format!("Identity: {}", ident_label)).size(12).color(OryxisColors::t().text_primary),
-                            text("Credentials managed by this identity").size(10).color(OryxisColors::t().text_muted),
+                            text(crate::i18n::t("managed_by_identity")).size(10).color(OryxisColors::t().text_muted),
                         ],
                         Space::new().width(Length::Fill),
                         button(text("x").size(11).color(OryxisColors::t().text_muted))
@@ -5613,13 +5653,13 @@ impl Oryxis {
         let advanced_section = panel_section(column![
             panel_option_row(
                 iced_fonts::bootstrap::link_fourfivedeg(),
-                "Host Chaining",
+                crate::i18n::t("host_chaining"),
                 jump_host_value.to_string(),
             ),
             panel_divider(),
             panel_option_pick(
                 iced_fonts::bootstrap::shield_lock(),
-                "Auth Method",
+                crate::i18n::t("auth_method"),
                 vec!["Auto".into(), "Password".into(), "Key".into(), "Agent".into(), "Interactive".into()],
                 auth_value.to_string(),
                 Message::EditorAuthMethodChanged,
@@ -5654,7 +5694,7 @@ impl Oryxis {
         // ── Bottom actions ──
         let save_btn_bg = if has_address { OryxisColors::t().accent } else { OryxisColors::t().bg_surface };
         let save_btn = button(
-            container(text("Save").size(14).color(OryxisColors::t().text_primary))
+            container(text(crate::i18n::t("save")).size(14).color(OryxisColors::t().text_primary))
                 .padding(Padding { top: 12.0, right: 0.0, bottom: 12.0, left: 0.0 })
                 .width(Length::Fill)
                 .center_x(Length::Fill),

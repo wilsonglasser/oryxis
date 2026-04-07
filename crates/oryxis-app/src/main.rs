@@ -2,6 +2,7 @@
 
 mod ai;
 mod app;
+mod i18n;
 mod theme;
 
 use iced::{window, Size};
