@@ -1055,13 +1055,39 @@ impl VaultStore {
     /// If the vault already has a password_check with "", unlocks it.
     pub fn open_without_password(&mut self) -> Result<(), VaultError> {
         if self.has_master_password()? {
-            // Try unlocking with empty password
+            // Vault already set up — try unlocking with empty password
             self.unlock("")
         } else {
             // First time: set up with empty password
             self.set_master_password("")?;
             Ok(())
         }
+    }
+
+    /// Check if the vault has ANY master password set (regardless of user flag).
+    pub fn is_initialized(&self) -> bool {
+        self.has_master_password().unwrap_or(false)
+    }
+
+    /// Destroy the vault database and recreate it fresh.
+    pub fn destroy_and_recreate(&mut self) -> Result<(), VaultError> {
+        // Drop all tables and recreate
+        self.db.execute_batch(
+            "DROP TABLE IF EXISTS vault_meta;
+             DROP TABLE IF EXISTS connections;
+             DROP TABLE IF EXISTS keys;
+             DROP TABLE IF EXISTS groups;
+             DROP TABLE IF EXISTS known_hosts;
+             DROP TABLE IF EXISTS logs;
+             DROP TABLE IF EXISTS snippets;
+             DROP TABLE IF EXISTS session_logs;
+             DROP TABLE IF EXISTS identities;
+             DROP TABLE IF EXISTS settings;"
+        )?;
+        self.master_key = None;
+        self.create_tables()?;
+        tracing::info!("Vault destroyed and recreated");
+        Ok(())
     }
 
     /// Set a user password on the vault. Re-encrypts all encrypted fields
