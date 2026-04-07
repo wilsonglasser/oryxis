@@ -2615,8 +2615,8 @@ impl Oryxis {
         // Logo — centered, larger
         let header = container(
             image(self.logo_small_handle.clone())
-                .width(48)
-                .height(48),
+                .width(64)
+                .height(64),
         )
         .padding(Padding { top: 16.0, right: 0.0, bottom: 12.0, left: 0.0 })
         .width(Length::Fill)
