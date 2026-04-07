@@ -208,6 +208,7 @@ pub struct Oryxis {
     ai_api_key: String,
     ai_api_key_set: bool,
     ai_api_url: String,
+    ai_system_prompt: String,
 
     // Vault password settings
     vault_has_user_password: bool,
@@ -387,6 +388,7 @@ pub enum Message {
     AiModelChanged(String),
     AiApiKeyChanged(String),
     AiApiUrlChanged(String),
+    AiSystemPromptChanged(String),
     SaveAiApiKey,
 
     // Vault password management
@@ -525,6 +527,7 @@ impl Oryxis {
                 ai_api_key: String::new(),
                 ai_api_key_set: false,
                 ai_api_url: String::new(),
+                ai_system_prompt: String::new(),
                 vault_has_user_password,
                 vault_new_password: String::new(),
                 vault_password_error: None,
@@ -567,6 +570,9 @@ impl Oryxis {
                 self.ai_api_url = v;
             }
             self.ai_api_key_set = vault.get_ai_api_key().ok().flatten().is_some();
+            if let Ok(Some(v)) = vault.get_setting("ai_system_prompt") {
+                self.ai_system_prompt = v;
+            }
         }
     }
 
@@ -1720,7 +1726,14 @@ impl Oryxis {
                 }
             }
             Message::AiProviderChanged(provider) => {
-                self.ai_provider = provider.to_lowercase();
+                // Map display name to internal name
+                self.ai_provider = match provider.as_str() {
+                    "Anthropic" => "anthropic",
+                    "OpenAI" => "openai",
+                    "Google Gemini" => "gemini",
+                    "Custom" => "custom",
+                    other => other,
+                }.to_lowercase();
                 if let Some(vault) = &self.vault {
                     let _ = vault.set_setting("ai_provider", &self.ai_provider);
                 }
@@ -1734,6 +1747,12 @@ impl Oryxis {
                     }
                     "openai" => {
                         self.ai_model = "gpt-4o".into();
+                        if let Some(vault) = &self.vault {
+                            let _ = vault.set_setting("ai_model", &self.ai_model);
+                        }
+                    }
+                    "gemini" => {
+                        self.ai_model = "gemini-2.5-flash".into();
                         if let Some(vault) = &self.vault {
                             let _ = vault.set_setting("ai_model", &self.ai_model);
                         }
@@ -1754,6 +1773,12 @@ impl Oryxis {
                 self.ai_api_url = url;
                 if let Some(vault) = &self.vault {
                     let _ = vault.set_setting("ai_api_url", &self.ai_api_url);
+                }
+            }
+            Message::AiSystemPromptChanged(prompt) => {
+                self.ai_system_prompt = prompt;
+                if let Some(vault) = &self.vault {
+                    let _ = vault.set_setting("ai_system_prompt", &self.ai_system_prompt);
                 }
             }
             Message::SaveAiApiKey => {
@@ -1842,6 +1867,10 @@ impl Oryxis {
                             .and_then(|v| v.get_ai_api_key().ok().flatten())
                             .unwrap_or_default();
 
+                        // Get additional system prompt from settings
+                        let extra_prompt = self.vault.as_ref()
+                            .and_then(|v| v.get_setting("ai_system_prompt").ok().flatten());
+
                         let config = crate::ai::AiConfig {
                             provider: self.ai_provider.clone(),
                             model: self.ai_model.clone(),
@@ -1851,21 +1880,63 @@ impl Oryxis {
                             } else {
                                 Some(self.ai_api_url.clone())
                             },
+                            system_prompt: extra_prompt,
                         };
 
-                        // Build messages from chat history
-                        let messages: Vec<crate::ai::ChatMsg> = tab
-                            .chat_history
-                            .iter()
-                            .map(|m| crate::ai::ChatMsg {
-                                role: match m.role {
-                                    ChatRole::User => "user".into(),
-                                    ChatRole::Assistant => "assistant".into(),
-                                    ChatRole::System => "user".into(),
-                                },
-                                content: serde_json::Value::String(m.content.clone()),
-                            })
-                            .collect();
+                        // Get last ~50 lines of terminal output for context
+                        let terminal_context = if let Ok(state) = tab.terminal.lock() {
+                            let term = &state.backend.term;
+                            let content = term.renderable_content();
+                            let mut lines: Vec<String> = Vec::new();
+                            let mut current_line = String::new();
+                            let mut last_row = 0i32;
+                            for item in content.display_iter {
+                                let row = item.point.line.0;
+                                if row != last_row && !current_line.is_empty() {
+                                    lines.push(std::mem::take(&mut current_line));
+                                    last_row = row;
+                                }
+                                let c = item.cell.c;
+                                if c != '\0' {
+                                    current_line.push(c);
+                                }
+                            }
+                            if !current_line.is_empty() {
+                                lines.push(current_line);
+                            }
+                            // Take last 50 lines
+                            let start = lines.len().saturating_sub(50);
+                            lines[start..].join("\n")
+                        } else {
+                            String::new()
+                        };
+
+                        // Build messages: inject terminal context as first user message
+                        let mut messages: Vec<crate::ai::ChatMsg> = Vec::new();
+                        if !terminal_context.is_empty() {
+                            messages.push(crate::ai::ChatMsg {
+                                role: "user".into(),
+                                content: serde_json::Value::String(format!(
+                                    "[Current terminal output (last ~50 lines)]\n```\n{}\n```",
+                                    terminal_context
+                                )),
+                            });
+                            messages.push(crate::ai::ChatMsg {
+                                role: "assistant".into(),
+                                content: serde_json::Value::String(
+                                    "I can see the terminal output. How can I help?".into()
+                                ),
+                            });
+                        }
+                        // Add chat history
+                        messages.extend(tab.chat_history.iter().map(|m| crate::ai::ChatMsg {
+                            role: match m.role {
+                                ChatRole::User => "user".into(),
+                                ChatRole::Assistant => "assistant".into(),
+                                ChatRole::System => "user".into(),
+                            },
+                            content: serde_json::Value::String(m.content.clone()),
+                        }));
 
                         return Task::perform(
                             async move {
@@ -4631,12 +4702,14 @@ impl Oryxis {
                     let provider_display = match self.ai_provider.as_str() {
                         "anthropic" => "Anthropic",
                         "openai" => "OpenAI",
+                        "gemini" => "Google Gemini",
                         "custom" => "Custom",
                         _ => "Anthropic",
                     };
                     let provider_options = vec![
                         "Anthropic".to_string(),
                         "OpenAI".to_string(),
+                        "Google Gemini".to_string(),
                         "Custom".to_string(),
                     ];
 
@@ -4681,6 +4754,20 @@ impl Oryxis {
                         .padding(10)
                         .width(250)
                         .into();
+
+                    // System prompt section
+                    let prompt_section = panel_section(column![
+                        panel_field("Additional System Instructions",
+                            text_input("Custom instructions for the AI assistant...", &self.ai_system_prompt)
+                                .on_input(Message::AiSystemPromptChanged)
+                                .padding(10)
+                                .into()
+                        ),
+                        Space::new().height(4),
+                        text("Optional. Added to the default system prompt that includes terminal context and bash tool instructions.")
+                            .size(11).color(OryxisColors::t().text_muted),
+                    ]);
+                    content_col = content_col.push(prompt_section);
 
                     let save_btn = styled_button("Save", Message::SaveAiApiKey, OryxisColors::t().accent);
 

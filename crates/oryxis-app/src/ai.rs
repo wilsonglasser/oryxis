@@ -1,11 +1,14 @@
 use serde::{Deserialize, Serialize};
 
+pub const DEFAULT_SYSTEM_PROMPT: &str = "You are a helpful terminal assistant embedded in Oryxis SSH client. You can execute bash commands in the user's active SSH session using the execute_command tool. Be concise and practical. When the user asks you to do something on the server, use the tool. You also receive the last lines of terminal output for context.";
+
 #[derive(Debug, Clone)]
 pub struct AiConfig {
-    pub provider: String,   // "anthropic", "openai", "custom"
+    pub provider: String,   // "anthropic", "openai", "gemini", "custom"
     pub model: String,
     pub api_key: String,
-    pub api_url: Option<String>, // custom endpoint
+    pub api_url: Option<String>,
+    pub system_prompt: Option<String>, // additional system instructions
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -40,6 +43,7 @@ pub async fn send_chat(
     match config.provider.as_str() {
         "anthropic" => send_anthropic(config, messages).await,
         "openai" => send_openai(config, messages).await,
+        "gemini" => send_gemini(config, messages).await,
         "custom" => send_openai(config, messages).await, // custom uses OpenAI-compatible API
         _ => Err(format!("Unknown provider: {}", config.provider)),
     }
@@ -61,10 +65,12 @@ async fn send_anthropic(
 ) -> Result<AiResponse, String> {
     let client = reqwest::Client::new();
 
+    let system_prompt = config.system_prompt.as_deref().unwrap_or(DEFAULT_SYSTEM_PROMPT);
+
     let body = serde_json::json!({
         "model": config.model,
         "max_tokens": 4096,
-        "system": "You are a helpful terminal assistant. You can execute bash commands in the user's active SSH session using the execute_command tool. Be concise. When the user asks you to do something, use the tool to execute it. Show relevant output.",
+        "system": system_prompt,
         "tools": [bash_tool()],
         "messages": messages,
     });
@@ -115,7 +121,7 @@ async fn send_anthropic(
         }
     }
 
-    Err("Empty response from API".into())
+    Err("Empty response from Anthropic API".into())
 }
 
 async fn send_openai(
@@ -125,9 +131,11 @@ async fn send_openai(
     let client = reqwest::Client::new();
 
     // Convert to OpenAI format with system message prepended
+    let system_prompt = config.system_prompt.as_deref().unwrap_or(DEFAULT_SYSTEM_PROMPT);
+
     let openai_messages: Vec<serde_json::Value> = std::iter::once(serde_json::json!({
         "role": "system",
-        "content": "You are a helpful terminal assistant. You can execute bash commands in the user's active SSH session using the execute_command function. Be concise."
+        "content": system_prompt
     }))
     .chain(messages.iter().map(|m| {
         serde_json::json!({
@@ -213,5 +221,89 @@ async fn send_openai(
         }
     }
 
-    Err("Empty response from API".into())
+    Err("Empty response from OpenAI API".into())
+}
+
+async fn send_gemini(
+    config: &AiConfig,
+    messages: &[ChatMsg],
+) -> Result<AiResponse, String> {
+    let client = reqwest::Client::new();
+
+    let gemini_contents: Vec<serde_json::Value> = messages
+        .iter()
+        .map(|m| {
+            let role = if m.role == "assistant" { "model" } else { "user" };
+            serde_json::json!({
+                "role": role,
+                "parts": [{ "text": m.content }]
+            })
+        })
+        .collect();
+
+    let system_prompt = config.system_prompt.as_deref().unwrap_or(DEFAULT_SYSTEM_PROMPT);
+
+    let body = serde_json::json!({
+        "contents": gemini_contents,
+        "systemInstruction": {
+            "parts": [{ "text": system_prompt }]
+        },
+        "tools": [{
+            "functionDeclarations": [{
+                "name": "execute_command",
+                "description": "Execute a bash command in the connected terminal session.",
+                "parameters": {
+                    "type": "OBJECT",
+                    "properties": {
+                        "command": { "type": "STRING", "description": "The bash command to execute" }
+                    },
+                    "required": ["command"]
+                }
+            }]
+        }]
+    });
+
+    let url = match config.api_url.as_deref() {
+        Some(u) if !u.is_empty() => format!("{}?key={}", u, config.api_key),
+        _ => format!(
+            "https://generativelanguage.googleapis.com/v1beta/models/{}:generateContent?key={}",
+            config.model, config.api_key
+        ),
+    };
+
+    let resp = client
+        .post(&url)
+        .header("content-type", "application/json")
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| format!("Request failed: {}", e))?;
+
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let text = resp.text().await.unwrap_or_default();
+        return Err(format!("Gemini API error {}: {}", status, text));
+    }
+
+    let json: serde_json::Value =
+        resp.json().await.map_err(|e| format!("JSON parse: {}", e))?;
+
+    if let Some(candidates) = json["candidates"].as_array() {
+        if let Some(candidate) = candidates.first() {
+            if let Some(parts) = candidate["content"]["parts"].as_array() {
+                for part in parts {
+                    if let Some(fc) = part.get("functionCall") {
+                        let name = fc["name"].as_str().unwrap_or("").to_string();
+                        let command = fc["args"]["command"].as_str().unwrap_or("").to_string();
+                        return Ok(AiResponse::ToolUse { id: String::new(), name, command });
+                    }
+                    if let Some(text) = part["text"].as_str() {
+                        return Ok(AiResponse::Text(text.to_string()));
+                    }
+                }
+            }
+        }
+    }
+
+    Err("Empty response from Gemini API".into())
 }
