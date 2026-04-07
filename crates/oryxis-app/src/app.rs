@@ -215,6 +215,7 @@ pub struct Oryxis {
     vault_has_user_password: bool,
     vault_new_password: String,
     vault_password_error: Option<String>,
+    vault_destroy_confirm: bool,
 
     // AI chat sidebar
     chat_input: String,
@@ -261,6 +262,8 @@ pub enum Message {
     VaultUnlock,
     VaultSetup,
     VaultSkipPassword,
+    VaultDestroyConfirm,
+    VaultDestroy,
 
     // Navigation
     ChangeView(View),
@@ -448,15 +451,21 @@ impl Oryxis {
         let mut vault_has_user_password = false;
 
         if let Some(v) = &mut vault {
-            vault_has_user_password = v.has_user_password().unwrap_or(false);
-            if vault_has_user_password {
-                // User has set a real password -> show unlock screen
-                vault_state = VaultState::Locked;
+            if !v.is_initialized() {
+                // Brand new vault — show setup screen
+                vault_state = VaultState::NeedSetup;
             } else {
-                // No user password -> auto-open with empty password
+                // Vault exists — try opening without password first
                 match v.open_without_password() {
-                    Ok(()) => vault_state = VaultState::Unlocked,
-                    Err(_) => vault_state = VaultState::NeedSetup,
+                    Ok(()) => {
+                        vault_state = VaultState::Unlocked;
+                        vault_has_user_password = false;
+                    }
+                    Err(_) => {
+                        // Has a real password — show unlock screen
+                        vault_state = VaultState::Locked;
+                        vault_has_user_password = true;
+                    }
                 }
             }
         }
@@ -534,6 +543,7 @@ impl Oryxis {
                 vault_has_user_password,
                 vault_new_password: String::new(),
                 vault_password_error: None,
+                vault_destroy_confirm: false,
                 chat_input: String::new(),
                 chat_loading: false,
             },
@@ -611,6 +621,8 @@ impl Oryxis {
                 if let Some(vault) = &mut self.vault {
                     match vault.set_master_password(&self.vault_password_input) {
                         Ok(()) => {
+                            let _ = vault.set_setting("has_user_password", "1");
+                            self.vault_has_user_password = true;
                             self.vault_state = VaultState::Unlocked;
                             self.vault_error = None;
                             self.vault_password_input.clear();
@@ -630,8 +642,31 @@ impl Oryxis {
                             self.vault_error = None;
                             self.load_data_from_vault();
                         }
+                        Err(VaultError::InvalidPassword) => {
+                            self.vault_error = Some(
+                                "This vault already has a password. Enter it above to unlock.".into()
+                            );
+                        }
                         Err(e) => {
                             self.vault_error = Some(format!("Failed to create vault: {}", e));
+                        }
+                    }
+                }
+            }
+            Message::VaultDestroyConfirm => {
+                self.vault_destroy_confirm = !self.vault_destroy_confirm;
+            }
+            Message::VaultDestroy => {
+                if let Some(vault) = &mut self.vault {
+                    match vault.destroy_and_recreate() {
+                        Ok(()) => {
+                            self.vault_state = VaultState::NeedSetup;
+                            self.vault_error = None;
+                            self.vault_destroy_confirm = false;
+                            self.vault_password_input.clear();
+                        }
+                        Err(e) => {
+                            self.vault_error = Some(format!("Failed to reset vault: {}", e));
                         }
                     }
                 }
@@ -2190,8 +2225,24 @@ impl Oryxis {
             Space::new().height(0).into()
         };
 
+        let destroy_section: Element<'_, Message> = if self.vault_destroy_confirm {
+            column![
+                text("This will permanently delete all saved data.").size(12).color(OryxisColors::t().error),
+                Space::new().height(6),
+                styled_button("Yes, destroy vault", Message::VaultDestroy, OryxisColors::t().error),
+            ].align_x(iced::Alignment::Center).into()
+        } else {
+            button(
+                text("Forgot password? Reset vault").size(12).color(OryxisColors::t().text_muted),
+            )
+            .on_press(Message::VaultDestroyConfirm)
+            .padding(Padding { top: 6.0, right: 12.0, bottom: 6.0, left: 12.0 })
+            .style(|_, _| button::Style::default())
+            .into()
+        };
+
         container(
-            column![logo, Space::new().height(16), title, Space::new().height(8), subtitle, Space::new().height(24), input, Space::new().height(12), btn, Space::new().height(8), error]
+            column![logo, Space::new().height(16), title, Space::new().height(8), subtitle, Space::new().height(24), input, Space::new().height(12), btn, Space::new().height(8), error, Space::new().height(16), destroy_section]
                 .align_x(iced::Alignment::Center),
         )
         .center(Length::Fill)
