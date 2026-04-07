@@ -3128,22 +3128,19 @@ impl Oryxis {
 
     fn view_chat_sidebar(&self, tab: &TerminalTab) -> Element<'_, Message> {
         // ── Header ──
-        let close_btn = button(
-            text("X").size(14).color(OryxisColors::t().text_muted),
-        )
-        .on_press(Message::ToggleChatSidebar)
-        .padding(Padding { top: 6.0, right: 10.0, bottom: 6.0, left: 10.0 })
-        .style(|_, status| {
-            let bg = match status {
-                BtnStatus::Hovered => OryxisColors::t().bg_hover,
-                _ => Color::TRANSPARENT,
-            };
-            button::Style {
-                background: Some(Background::Color(bg)),
+        let close_btn: Element<'_, Message> = MouseArea::new(
+            container(
+                text("X").size(14).color(OryxisColors::t().text_muted),
+            )
+            .padding(Padding { top: 6.0, right: 10.0, bottom: 6.0, left: 10.0 })
+            .style(|_| container::Style {
+                background: Some(Background::Color(OryxisColors::t().bg_hover)),
                 border: Border { radius: Radius::from(4.0), ..Default::default() },
                 ..Default::default()
-            }
-        });
+            }),
+        )
+        .on_press(Message::ToggleChatSidebar)
+        .into();
 
         let header = container(
             row![
@@ -3600,13 +3597,7 @@ impl Oryxis {
         let mut identity_cards: Vec<Element<'_, Message>> = Vec::new();
 
         if filtered_identities.is_empty() && self.identities.is_empty() {
-            let empty_hint = container(
-                text("No identities yet. Create one to store reusable credentials.")
-                    .size(12).color(OryxisColors::t().text_muted),
-            )
-            .padding(Padding { top: 0.0, right: 0.0, bottom: 0.0, left: 0.0 })
-            .width(CARD_WIDTH);
-            identity_cards.push(empty_hint.into());
+            // Don't show identities section at all when empty
         } else if filtered_identities.is_empty() {
             let no_results = container(
                 text("No identities match your search").size(13).color(OryxisColors::t().text_muted),
@@ -3738,8 +3729,10 @@ impl Oryxis {
         let mut all_rows: Vec<Element<'_, Message>> = Vec::new();
         all_rows.push(section_title.into());
         all_rows.extend(grid_rows);
-        all_rows.push(identity_section_title.into());
-        all_rows.extend(identity_grid_rows);
+        if !self.identities.is_empty() || !identity_cards.is_empty() {
+            all_rows.push(identity_section_title.into());
+            all_rows.extend(identity_grid_rows);
+        }
 
         let grid = scrollable(
             column(all_rows).padding(Padding { top: 0.0, right: 24.0, bottom: 24.0, left: 24.0 }),
