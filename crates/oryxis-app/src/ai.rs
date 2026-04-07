@@ -112,10 +112,9 @@ async fn send_anthropic(
                     block["input"]["command"].as_str().unwrap_or("").to_string();
                 return Ok(AiResponse::ToolUse { id, name, command });
             }
-            if block["type"] == "text" {
-                if let Some(text) = block["text"].as_str() {
+            if block["type"] == "text"
+                && let Some(text) = block["text"].as_str() {
                     text_parts.push(text.to_string());
-                }
             }
         }
         if !text_parts.is_empty() {
@@ -196,13 +195,13 @@ async fn send_openai(
         resp.json().await.map_err(|e| format!("JSON parse: {}", e))?;
 
     // Parse OpenAI response
-    if let Some(choices) = json["choices"].as_array() {
-        if let Some(choice) = choices.first() {
+    if let Some(choices) = json["choices"].as_array()
+        && let Some(choice) = choices.first() {
             let message = &choice["message"];
 
             // Check for tool calls
-            if let Some(tool_calls) = message["tool_calls"].as_array() {
-                if let Some(tc) = tool_calls.first() {
+            if let Some(tool_calls) = message["tool_calls"].as_array()
+                && let Some(tc) = tool_calls.first() {
                     let id = tc["id"].as_str().unwrap_or("").to_string();
                     let name =
                         tc["function"]["name"].as_str().unwrap_or("").to_string();
@@ -213,14 +212,12 @@ async fn send_openai(
                     let command =
                         args["command"].as_str().unwrap_or("").to_string();
                     return Ok(AiResponse::ToolUse { id, name, command });
-                }
             }
 
             // Text response
             if let Some(content) = message["content"].as_str() {
                 return Ok(AiResponse::Text(content.to_string()));
             }
-        }
     }
 
     Err("Empty response from OpenAI API".into())
@@ -290,21 +287,19 @@ async fn send_gemini(
     let json: serde_json::Value =
         resp.json().await.map_err(|e| format!("JSON parse: {}", e))?;
 
-    if let Some(candidates) = json["candidates"].as_array() {
-        if let Some(candidate) = candidates.first() {
-            if let Some(parts) = candidate["content"]["parts"].as_array() {
-                for part in parts {
-                    if let Some(fc) = part.get("functionCall") {
-                        let name = fc["name"].as_str().unwrap_or("").to_string();
-                        let command = fc["args"]["command"].as_str().unwrap_or("").to_string();
-                        return Ok(AiResponse::ToolUse { id: String::new(), name, command });
-                    }
-                    if let Some(text) = part["text"].as_str() {
-                        return Ok(AiResponse::Text(text.to_string()));
-                    }
+    if let Some(candidates) = json["candidates"].as_array()
+        && let Some(candidate) = candidates.first()
+        && let Some(parts) = candidate["content"]["parts"].as_array() {
+            for part in parts {
+                if let Some(fc) = part.get("functionCall") {
+                    let name = fc["name"].as_str().unwrap_or("").to_string();
+                    let command = fc["args"]["command"].as_str().unwrap_or("").to_string();
+                    return Ok(AiResponse::ToolUse { id: String::new(), name, command });
+                }
+                if let Some(text) = part["text"].as_str() {
+                    return Ok(AiResponse::Text(text.to_string()));
                 }
             }
-        }
     }
 
     Err("Empty response from Gemini API".into())

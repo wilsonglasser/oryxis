@@ -1243,8 +1243,8 @@ impl VaultStore {
                 |row| row.get(0),
             )
             .ok();
-        if let Some(encoded) = encoded {
-            if let Ok(encrypted) = BASE64.decode(encoded.as_bytes()) {
+        if let Some(encoded) = encoded
+            && let Ok(encrypted) = BASE64.decode(encoded.as_bytes()) {
                 let plain = decrypt(&encrypted, old_key)?;
                 let re_encrypted = encrypt(&plain, new_key)?;
                 let re_encoded = BASE64.encode(&re_encrypted);
@@ -1252,7 +1252,6 @@ impl VaultStore {
                     "INSERT OR REPLACE INTO settings (key, value) VALUES ('ai_api_key', ?1)",
                     params![re_encoded],
                 )?;
-            }
         }
         Ok(())
     }
