@@ -439,7 +439,7 @@ pub enum Message {
     // AI chat sidebar
     ToggleChatSidebar,
     ChatInputChanged(String),
-    SendChatMessage,
+    SendChat,
     ChatResponse(String),
     ChatToolExec(String),
     #[allow(dead_code)]
@@ -822,10 +822,9 @@ impl Oryxis {
                         state.process(&bytes);
                     }
                     // Append to session log for terminal recording
-                    if let Some(log_id) = tab.session_log_id {
-                        if let Some(vault) = &self.vault {
+                    if let Some(log_id) = tab.session_log_id
+                        && let Some(vault) = &self.vault {
                             let _ = vault.append_session_data(&log_id, &bytes);
-                        }
                     }
                 }
             }
@@ -1299,10 +1298,9 @@ impl Oryxis {
                 if let Some(tab) = self.tabs.get_mut(tab_idx) {
                     let label = tab.label.replace(" (disconnected)", "");
                     // End session log
-                    if let Some(log_id) = tab.session_log_id {
-                        if let Some(vault) = &self.vault {
+                    if let Some(log_id) = tab.session_log_id
+                        && let Some(vault) = &self.vault {
                             let _ = vault.end_session_log(&log_id);
-                        }
                     }
                     // Log
                     if let Some(vault) = &self.vault {
@@ -1464,11 +1462,10 @@ impl Oryxis {
                 }
             }
             Message::ViewSessionLog(log_id) => {
-                if let Some(vault) = &self.vault {
-                    if let Ok(Some(data)) = vault.get_session_data(&log_id) {
+                if let Some(vault) = &self.vault
+                    && let Ok(Some(data)) = vault.get_session_data(&log_id) {
                         let rendered = strip_ansi(&data);
                         self.viewing_session_log = Some((log_id, rendered));
-                    }
                 }
             }
             Message::CloseSessionLogView => {
@@ -1483,10 +1480,9 @@ impl Oryxis {
                     }
                 }
                 // Close viewer if we deleted the one being viewed
-                if let Some((viewed_id, _)) = &self.viewing_session_log {
-                    if self.session_logs.iter().all(|s| s.id != *viewed_id) {
+                if let Some((viewed_id, _)) = &self.viewing_session_log
+                    && self.session_logs.iter().all(|s| s.id != *viewed_id) {
                         self.viewing_session_log = None;
-                    }
                 }
             }
 
@@ -1952,13 +1948,11 @@ impl Oryxis {
                 }
             }
             Message::SaveAiApiKey => {
-                if !self.ai_api_key.is_empty() {
-                    if let Some(vault) = &self.vault {
-                        if vault.set_ai_api_key(&self.ai_api_key).is_ok() {
-                            self.ai_api_key.clear();
-                            self.ai_api_key_set = true;
-                        }
-                    }
+                if !self.ai_api_key.is_empty()
+                    && let Some(vault) = &self.vault
+                    && vault.set_ai_api_key(&self.ai_api_key).is_ok() {
+                        self.ai_api_key.clear();
+                        self.ai_api_key_set = true;
                 }
             }
 
@@ -2008,22 +2002,21 @@ impl Oryxis {
 
             // ── AI chat sidebar ──
             Message::ToggleChatSidebar => {
-                if let Some(idx) = self.active_tab {
-                    if let Some(tab) = self.tabs.get_mut(idx) {
+                if let Some(idx) = self.active_tab
+                    && let Some(tab) = self.tabs.get_mut(idx) {
                         tab.chat_visible = !tab.chat_visible;
-                    }
                 }
             }
             Message::ChatInputChanged(val) => {
                 self.chat_input = val;
             }
-            Message::SendChatMessage => {
+            Message::SendChat => {
                 let input = self.chat_input.trim().to_string();
                 if input.is_empty() || !self.ai_enabled {
                     return Task::none();
                 }
-                if let Some(idx) = self.active_tab {
-                    if let Some(tab) = self.tabs.get_mut(idx) {
+                if let Some(idx) = self.active_tab
+                    && let Some(tab) = self.tabs.get_mut(idx) {
                         tab.chat_history.push(ChatMessage {
                             role: ChatRole::User,
                             content: input,
@@ -2124,25 +2117,23 @@ impl Oryxis {
                                 }
                             },
                         );
-                    }
                 }
             }
             Message::ChatResponse(response) => {
-                if let Some(idx) = self.active_tab {
-                    if let Some(tab) = self.tabs.get_mut(idx) {
+                if let Some(idx) = self.active_tab
+                    && let Some(tab) = self.tabs.get_mut(idx) {
                         tab.chat_history.push(ChatMessage {
                             role: ChatRole::Assistant,
                             content: response,
                             timestamp: chrono::Utc::now(),
                         });
-                    }
                 }
                 self.chat_loading = false;
             }
             Message::ChatToolExec(command) => {
                 // AI requested to execute a command in the terminal
-                if let Some(idx) = self.active_tab {
-                    if let Some(tab) = self.tabs.get_mut(idx) {
+                if let Some(idx) = self.active_tab
+                    && let Some(tab) = self.tabs.get_mut(idx) {
                         tab.chat_history.push(ChatMessage {
                             role: ChatRole::System,
                             content: format!("$ {}", command),
@@ -2255,18 +2246,16 @@ impl Oryxis {
                                 Err(e) => Message::ChatResponse(format!("Error: {}", e)),
                             },
                         );
-                    }
                 }
             }
             Message::ChatToolResult(output) => {
-                if let Some(idx) = self.active_tab {
-                    if let Some(tab) = self.tabs.get_mut(idx) {
+                if let Some(idx) = self.active_tab
+                    && let Some(tab) = self.tabs.get_mut(idx) {
                         tab.chat_history.push(ChatMessage {
                             role: ChatRole::System,
                             content: output,
                             timestamp: chrono::Utc::now(),
                         });
-                    }
                 }
             }
         }
@@ -2274,7 +2263,7 @@ impl Oryxis {
     }
 
     pub fn subscription(&self) -> Subscription<Message> {
-        let events = iced::event::listen_with(|event, _status, _window| {
+        iced::event::listen_with(|event, _status, _window| {
             match event {
                 iced::event::Event::Keyboard(ke) => Some(Message::KeyboardEvent(ke)),
                 iced::event::Event::Mouse(iced::mouse::Event::CursorMoved { position }) => {
@@ -2282,8 +2271,7 @@ impl Oryxis {
                 }
                 _ => None,
             }
-        });
-        events
+        })
     }
 
     // =======================================================================
@@ -3408,7 +3396,7 @@ impl Oryxis {
             )
             .padding(Padding { top: 8.0, right: 8.0, bottom: 8.0, left: 8.0 }),
         )
-        .on_press(Message::SendChatMessage)
+        .on_press(Message::SendChat)
         .style(|_, status| {
             let bg = match status {
                 BtnStatus::Hovered => OryxisColors::t().accent,
@@ -3425,7 +3413,7 @@ impl Oryxis {
             row![
                 text_input("Ask AI...", &self.chat_input)
                     .on_input(Message::ChatInputChanged)
-                    .on_submit(Message::SendChatMessage)
+                    .on_submit(Message::SendChat)
                     .padding(10)
                     .width(Length::Fill),
                 Space::new().width(4),
@@ -3761,10 +3749,9 @@ impl Oryxis {
             if has_pw {
                 parts.push("\u{25CF}\u{25CF}\u{25CF}\u{25CF}".into());
             }
-            if let Some(kid) = identity.key_id {
-                if let Some(k) = self.keys.iter().find(|k| k.id == kid) {
+            if let Some(kid) = identity.key_id
+                && let Some(k) = self.keys.iter().find(|k| k.id == kid) {
                     parts.push(k.label.clone());
-                }
             }
             let subtitle = if parts.is_empty() { "No credentials".into() } else { parts.join(", ") };
 
