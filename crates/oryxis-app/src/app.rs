@@ -259,6 +259,7 @@ pub enum Message {
     VaultPasswordChanged(String),
     VaultUnlock,
     VaultSetup,
+    VaultSkipPassword,
 
     // Navigation
     ChangeView(View),
@@ -615,6 +616,20 @@ impl Oryxis {
                         }
                         Err(e) => {
                             self.vault_error = Some(e.to_string());
+                        }
+                    }
+                }
+            }
+            Message::VaultSkipPassword => {
+                if let Some(vault) = &mut self.vault {
+                    match vault.open_without_password() {
+                        Ok(()) => {
+                            self.vault_state = VaultState::Unlocked;
+                            self.vault_error = None;
+                            self.load_data_from_vault();
+                        }
+                        Err(e) => {
+                            self.vault_error = Some(format!("Failed to create vault: {}", e));
                         }
                     }
                 }
@@ -2102,11 +2117,11 @@ impl Oryxis {
             .width(64)
             .height(64);
         let title = text("Welcome to Oryxis").size(28).color(OryxisColors::t().text_primary);
-        let subtitle = text("Create a master password to secure your vault.")
+        let subtitle = text("Set a master password or continue without one.")
             .size(14)
             .color(OryxisColors::t().text_secondary);
 
-        let input = text_input("Master password...", &self.vault_password_input)
+        let input = text_input("Master password (optional)...", &self.vault_password_input)
             .on_input(Message::VaultPasswordChanged)
             .on_submit(Message::VaultSetup)
             .secure(true)
@@ -2115,6 +2130,23 @@ impl Oryxis {
 
         let btn = styled_button("Create Vault", Message::VaultSetup, OryxisColors::t().accent);
 
+        let skip_btn = button(
+            text("Continue without password").size(13).color(OryxisColors::t().text_secondary),
+        )
+        .on_press(Message::VaultSkipPassword)
+        .padding(Padding { top: 8.0, right: 16.0, bottom: 8.0, left: 16.0 })
+        .style(|_, status| {
+            let bg = match status {
+                BtnStatus::Hovered => OryxisColors::t().bg_hover,
+                _ => Color::TRANSPARENT,
+            };
+            button::Style {
+                background: Some(Background::Color(bg)),
+                border: Border { radius: Radius::from(6.0), ..Default::default() },
+                ..Default::default()
+            }
+        });
+
         let error = if let Some(err) = &self.vault_error {
             Element::from(text(err.clone()).size(13).color(OryxisColors::t().error))
         } else {
@@ -2122,7 +2154,7 @@ impl Oryxis {
         };
 
         container(
-            column![logo, Space::new().height(16), title, Space::new().height(8), subtitle, Space::new().height(24), input, Space::new().height(12), btn, Space::new().height(8), error]
+            column![logo, Space::new().height(16), title, Space::new().height(8), subtitle, Space::new().height(24), input, Space::new().height(12), btn, Space::new().height(6), skip_btn, Space::new().height(8), error]
                 .align_x(iced::Alignment::Center),
         )
         .center(Length::Fill)
