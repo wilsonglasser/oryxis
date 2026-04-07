@@ -15,6 +15,7 @@ use oryxis_core::models::identity::Identity;
 use oryxis_core::models::key::{KeyAlgorithm, SshKey};
 use oryxis_core::models::snippet::Snippet;
 
+use chrono::{DateTime, Utc};
 use thiserror::Error;
 
 // ---------------------------------------------------------------------------
@@ -46,6 +47,21 @@ impl From<rusqlite::Error> for VaultError {
     fn from(e: rusqlite::Error) -> Self {
         VaultError::Database(e.to_string())
     }
+}
+
+// ---------------------------------------------------------------------------
+// Session log entry (for terminal recording)
+// ---------------------------------------------------------------------------
+
+/// Metadata for a recorded terminal session.
+#[derive(Debug, Clone)]
+pub struct SessionLogEntry {
+    pub id: Uuid,
+    pub connection_id: Uuid,
+    pub label: String,
+    pub started_at: DateTime<Utc>,
+    pub ended_at: Option<DateTime<Utc>>,
+    pub data_size: usize,
 }
 
 // ---------------------------------------------------------------------------
@@ -235,6 +251,15 @@ impl VaultStore {
                 event            TEXT NOT NULL,
                 message          TEXT NOT NULL,
                 timestamp        TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS session_logs (
+                id            TEXT PRIMARY KEY,
+                connection_id TEXT NOT NULL,
+                label         TEXT NOT NULL,
+                started_at    TEXT NOT NULL,
+                ended_at      TEXT,
+                data          BLOB
             );
             ",
         )?;
@@ -896,6 +921,114 @@ impl VaultStore {
 
     pub fn clear_logs(&self) -> Result<(), VaultError> {
         self.db.execute("DELETE FROM logs", [])?;
+        Ok(())
+    }
+
+    // -----------------------------------------------------------------------
+    // Session Logs CRUD (terminal recording)
+    // -----------------------------------------------------------------------
+
+    /// Create a new session log entry with started_at = now.
+    pub fn create_session_log(
+        &self,
+        id: &Uuid,
+        connection_id: &Uuid,
+        label: &str,
+    ) -> Result<(), VaultError> {
+        let now = Utc::now().to_rfc3339();
+        self.db.execute(
+            "INSERT INTO session_logs (id, connection_id, label, started_at, data)
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![
+                id.to_string(),
+                connection_id.to_string(),
+                label,
+                now,
+                Vec::<u8>::new(),
+            ],
+        )?;
+        Ok(())
+    }
+
+    /// Append bytes to an existing session log's data BLOB.
+    pub fn append_session_data(&self, id: &Uuid, data: &[u8]) -> Result<(), VaultError> {
+        let id_str = id.to_string();
+        let existing: Option<Vec<u8>> = self
+            .db
+            .query_row(
+                "SELECT data FROM session_logs WHERE id = ?1",
+                params![id_str],
+                |row| row.get(0),
+            )
+            .ok()
+            .flatten();
+        let mut buf = existing.unwrap_or_default();
+        buf.extend_from_slice(data);
+        self.db.execute(
+            "UPDATE session_logs SET data = ?1 WHERE id = ?2",
+            params![buf, id_str],
+        )?;
+        Ok(())
+    }
+
+    /// Set ended_at = now on a session log.
+    pub fn end_session_log(&self, id: &Uuid) -> Result<(), VaultError> {
+        let now = Utc::now().to_rfc3339();
+        self.db.execute(
+            "UPDATE session_logs SET ended_at = ?1 WHERE id = ?2",
+            params![now, id.to_string()],
+        )?;
+        Ok(())
+    }
+
+    /// List all session logs (metadata only, no data blob).
+    pub fn list_session_logs(&self) -> Result<Vec<SessionLogEntry>, VaultError> {
+        let mut stmt = self.db.prepare(
+            "SELECT id, connection_id, label, started_at, ended_at, LENGTH(COALESCE(data, X''))
+             FROM session_logs ORDER BY started_at DESC",
+        )?;
+        let logs = stmt
+            .query_map([], |row| {
+                Ok(SessionLogEntry {
+                    id: Uuid::parse_str(&row.get::<_, String>(0)?).unwrap_or_default(),
+                    connection_id: Uuid::parse_str(&row.get::<_, String>(1)?).unwrap_or_default(),
+                    label: row.get(2)?,
+                    started_at: row
+                        .get::<_, String>(3)
+                        .ok()
+                        .and_then(|s| chrono::DateTime::parse_from_rfc3339(&s).ok())
+                        .map(|d| d.with_timezone(&Utc))
+                        .unwrap_or_else(Utc::now),
+                    ended_at: row
+                        .get::<_, Option<String>>(4)?
+                        .and_then(|s| chrono::DateTime::parse_from_rfc3339(&s).ok())
+                        .map(|d| d.with_timezone(&Utc)),
+                    data_size: row.get::<_, i64>(5).unwrap_or(0) as usize,
+                })
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(logs)
+    }
+
+    /// Get the raw data bytes for a session log.
+    pub fn get_session_data(&self, id: &Uuid) -> Result<Option<Vec<u8>>, VaultError> {
+        let data: Option<Vec<u8>> = self
+            .db
+            .query_row(
+                "SELECT data FROM session_logs WHERE id = ?1",
+                params![id.to_string()],
+                |row| row.get(0),
+            )
+            .map_err(|_| VaultError::NotFound(format!("Session log {}", id)))?;
+        Ok(data)
+    }
+
+    /// Delete a session log.
+    pub fn delete_session_log(&self, id: &Uuid) -> Result<(), VaultError> {
+        self.db.execute(
+            "DELETE FROM session_logs WHERE id = ?1",
+            params![id.to_string()],
+        )?;
         Ok(())
     }
 

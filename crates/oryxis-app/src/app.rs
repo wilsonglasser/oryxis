@@ -40,6 +40,8 @@ struct TerminalTab {
     terminal: Arc<Mutex<TerminalState>>,
     /// SSH session handle (None for local shell).
     ssh_session: Option<Arc<SshSession>>,
+    /// Session log ID for terminal recording.
+    session_log_id: Option<Uuid>,
 }
 
 /// Connection editor form state.
@@ -161,6 +163,10 @@ pub struct Oryxis {
     // Known hosts & logs
     known_hosts: Vec<oryxis_core::models::known_host::KnownHost>,
     logs: Vec<oryxis_core::models::log_entry::LogEntry>,
+
+    // Session logs (terminal recording)
+    session_logs: Vec<oryxis_vault::SessionLogEntry>,
+    viewing_session_log: Option<(Uuid, String)>, // (log_id, rendered_text)
 
     // Terminal theme
     terminal_theme: oryxis_terminal::TerminalTheme,
@@ -286,6 +292,11 @@ pub enum Message {
 
     // History
     ClearLogs,
+
+    // Session logs
+    ViewSessionLog(Uuid),
+    CloseSessionLogView,
+    DeleteSessionLog(usize),
 
     // Settings
     LockVault,
@@ -443,6 +454,8 @@ impl Oryxis {
                 snippets: Vec::new(),
                 known_hosts: Vec::new(),
                 logs: Vec::new(),
+                session_logs: Vec::new(),
+                viewing_session_log: None,
                 show_snippet_panel: false,
                 snippet_label: String::new(),
                 snippet_command: String::new(),
@@ -481,6 +494,7 @@ impl Oryxis {
             self.snippets = vault.list_snippets().unwrap_or_default();
             self.known_hosts = vault.list_known_hosts().unwrap_or_default();
             self.logs = vault.list_logs(200).unwrap_or_default();
+            self.session_logs = vault.list_session_logs().unwrap_or_default();
         }
     }
 
@@ -609,10 +623,17 @@ impl Oryxis {
 
             // -- Terminal I/O --
             Message::PtyOutput(tab_idx, bytes) => {
-                if let Some(tab) = self.tabs.get(tab_idx)
-                    && let Ok(mut state) = tab.terminal.lock() {
+                if let Some(tab) = self.tabs.get(tab_idx) {
+                    if let Ok(mut state) = tab.terminal.lock() {
                         state.process(&bytes);
                     }
+                    // Append to session log for terminal recording
+                    if let Some(log_id) = tab.session_log_id {
+                        if let Some(vault) = &self.vault {
+                            let _ = vault.append_session_data(&log_id, &bytes);
+                        }
+                    }
+                }
             }
             Message::KeyboardEvent(event) => {
                 if let Some(tab_idx) = self.active_tab
@@ -896,11 +917,21 @@ impl Oryxis {
                             let terminal = Arc::new(Mutex::new(state));
                             let tab_idx = self.tabs.len();
 
+                            // Create session log for terminal recording
+                            let session_log_id = if let Some(vault) = &self.vault {
+                                let log_id = Uuid::new_v4();
+                                let _ = vault.create_session_log(&log_id, &conn.id, &conn.label);
+                                Some(log_id)
+                            } else {
+                                None
+                            };
+
                             self.tabs.push(TerminalTab {
                                 _id: Uuid::new_v4(),
                                 label: label.clone(),
                                 terminal: Arc::clone(&terminal),
                                 ssh_session: None,
+                                session_log_id,
                             });
 
                             // Show progress view instead of terminal
@@ -1062,6 +1093,12 @@ impl Oryxis {
             Message::SshDisconnected(tab_idx) => {
                 if let Some(tab) = self.tabs.get_mut(tab_idx) {
                     let label = tab.label.replace(" (disconnected)", "");
+                    // End session log
+                    if let Some(log_id) = tab.session_log_id {
+                        if let Some(vault) = &self.vault {
+                            let _ = vault.end_session_log(&log_id);
+                        }
+                    }
                     // Log
                     if let Some(vault) = &self.vault {
                         let entry = oryxis_core::models::log_entry::LogEntry::new(
@@ -1071,6 +1108,10 @@ impl Oryxis {
                     }
                     tab.label = format!("{} (disconnected)", label);
                     tab.ssh_session = None;
+                    // Refresh session logs list
+                    if let Some(vault) = &self.vault {
+                        self.session_logs = vault.list_session_logs().unwrap_or_default();
+                    }
                 }
             }
             Message::SshCloseProgress => {
@@ -1217,6 +1258,32 @@ impl Oryxis {
                     self.load_data_from_vault();
                 }
             }
+            Message::ViewSessionLog(log_id) => {
+                if let Some(vault) = &self.vault {
+                    if let Ok(Some(data)) = vault.get_session_data(&log_id) {
+                        let rendered = strip_ansi(&data);
+                        self.viewing_session_log = Some((log_id, rendered));
+                    }
+                }
+            }
+            Message::CloseSessionLogView => {
+                self.viewing_session_log = None;
+            }
+            Message::DeleteSessionLog(idx) => {
+                if let Some(entry) = self.session_logs.get(idx) {
+                    let id = entry.id;
+                    if let Some(vault) = &self.vault {
+                        let _ = vault.delete_session_log(&id);
+                        self.session_logs = vault.list_session_logs().unwrap_or_default();
+                    }
+                }
+                // Close viewer if we deleted the one being viewed
+                if let Some((viewed_id, _)) = &self.viewing_session_log {
+                    if self.session_logs.iter().all(|s| s.id != *viewed_id) {
+                        self.viewing_session_log = None;
+                    }
+                }
+            }
 
             // -- Settings --
             Message::TerminalThemeChanged(name) => {
@@ -1305,6 +1372,7 @@ impl Oryxis {
                             label: "Local Shell".into(),
                             terminal: Arc::new(Mutex::new(state)),
                             ssh_session: None,
+                            session_log_id: None,
                         });
                         self.active_tab = Some(tab_idx);
                         self.active_view = View::Terminal;
@@ -3706,9 +3774,162 @@ impl Oryxis {
             rows.push(Space::new().height(4).into());
         }
 
+        // ── Session Logs section ──
+        rows.push(Space::new().height(16).into());
+        rows.push(
+            container(
+                text("Session Logs").size(16).color(OryxisColors::t().text_primary),
+            )
+            .padding(Padding { top: 0.0, right: 0.0, bottom: 8.0, left: 0.0 })
+            .into(),
+        );
+
+        if self.session_logs.is_empty() {
+            rows.push(
+                container(
+                    text("No session recordings yet. Sessions are recorded automatically when you connect via SSH.")
+                        .size(13).color(OryxisColors::t().text_muted),
+                )
+                .padding(16)
+                .into(),
+            );
+        }
+
+        for (idx, entry) in self.session_logs.iter().enumerate() {
+            let ts = entry.started_at.with_timezone(&chrono::Local).format("%Y-%m-%d %H:%M:%S").to_string();
+            let duration = if let Some(ended) = entry.ended_at {
+                let dur = ended.signed_duration_since(entry.started_at);
+                let secs = dur.num_seconds();
+                if secs < 60 {
+                    format!("{}s", secs)
+                } else if secs < 3600 {
+                    format!("{}m {}s", secs / 60, secs % 60)
+                } else {
+                    format!("{}h {}m", secs / 3600, (secs % 3600) / 60)
+                }
+            } else {
+                "in progress".to_string()
+            };
+            let size_str = format_data_size(entry.data_size);
+            let log_id = entry.id;
+
+            let session_row = container(
+                row![
+                    iced_fonts::bootstrap::file_text().size(14).color(OryxisColors::t().accent),
+                    Space::new().width(12),
+                    column![
+                        text(&entry.label).size(13).color(OryxisColors::t().text_primary),
+                        Space::new().height(2),
+                        row![
+                            text(ts).size(10).color(OryxisColors::t().text_muted),
+                            Space::new().width(12),
+                            text(duration).size(10).color(OryxisColors::t().text_muted),
+                            Space::new().width(12),
+                            text(size_str).size(10).color(OryxisColors::t().text_muted),
+                        ],
+                    ].width(Length::Fill),
+                    button(
+                        container(text("View").size(11).color(OryxisColors::t().accent))
+                            .padding(Padding { top: 4.0, right: 10.0, bottom: 4.0, left: 10.0 }),
+                    )
+                    .on_press(Message::ViewSessionLog(log_id))
+                    .style(|_, status| {
+                        let bg = match status {
+                            BtnStatus::Hovered => Color { a: 0.15, ..OryxisColors::t().accent },
+                            _ => Color::TRANSPARENT,
+                        };
+                        button::Style {
+                            background: Some(Background::Color(bg)),
+                            border: Border { radius: Radius::from(6.0), color: OryxisColors::t().accent, width: 1.0 },
+                            ..Default::default()
+                        }
+                    }),
+                    Space::new().width(8),
+                    button(
+                        container(text("Delete").size(11).color(OryxisColors::t().error))
+                            .padding(Padding { top: 4.0, right: 10.0, bottom: 4.0, left: 10.0 }),
+                    )
+                    .on_press(Message::DeleteSessionLog(idx))
+                    .style(|_, status| {
+                        let bg = match status {
+                            BtnStatus::Hovered => Color { a: 0.15, ..OryxisColors::t().error },
+                            _ => Color::TRANSPARENT,
+                        };
+                        button::Style {
+                            background: Some(Background::Color(bg)),
+                            border: Border { radius: Radius::from(6.0), color: OryxisColors::t().error, width: 1.0 },
+                            ..Default::default()
+                        }
+                    }),
+                ].align_y(iced::Alignment::Center),
+            )
+            .padding(Padding { top: 8.0, right: 16.0, bottom: 8.0, left: 16.0 })
+            .width(Length::Fill)
+            .style(|_| container::Style {
+                background: Some(Background::Color(OryxisColors::t().bg_surface)),
+                border: Border { radius: Radius::from(8.0), ..Default::default() },
+                ..Default::default()
+            });
+
+            rows.push(session_row.into());
+            rows.push(Space::new().height(4).into());
+        }
+
         let list = scrollable(
             column(rows).padding(Padding { top: 0.0, right: 24.0, bottom: 24.0, left: 24.0 }),
         ).height(Length::Fill);
+
+        // Session log viewer overlay
+        if let Some((_log_id, ref rendered_text)) = self.viewing_session_log {
+            let viewer = container(
+                column![
+                    // Header
+                    container(
+                        row![
+                            text("Session Log").size(16).color(OryxisColors::t().text_primary),
+                            Space::new().width(Length::Fill),
+                            button(
+                                container(text("Close").size(12).color(OryxisColors::t().text_muted))
+                                    .padding(Padding { top: 6.0, right: 14.0, bottom: 6.0, left: 14.0 }),
+                            )
+                            .on_press(Message::CloseSessionLogView)
+                            .style(|_, status| {
+                                let bg = match status {
+                                    BtnStatus::Hovered => Color { a: 0.15, ..OryxisColors::t().error },
+                                    _ => Color::TRANSPARENT,
+                                };
+                                button::Style {
+                                    background: Some(Background::Color(bg)),
+                                    border: Border { radius: Radius::from(8.0), color: OryxisColors::t().border, width: 1.0 },
+                                    ..Default::default()
+                                }
+                            }),
+                        ].align_y(iced::Alignment::Center),
+                    )
+                    .padding(Padding { top: 16.0, right: 20.0, bottom: 12.0, left: 20.0 }),
+                    // Content
+                    scrollable(
+                        container(
+                            text(rendered_text)
+                                .size(12)
+                                .color(OryxisColors::t().text_primary)
+                                .font(iced::Font::MONOSPACE),
+                        )
+                        .padding(16)
+                        .width(Length::Fill),
+                    ).height(Length::Fill),
+                ]
+            )
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .style(|_| container::Style {
+                background: Some(Background::Color(OryxisColors::t().bg_primary)),
+                border: Border { radius: Radius::from(0.0), ..Default::default() },
+                ..Default::default()
+            });
+
+            return viewer.into();
+        }
 
         column![toolbar, list]
             .width(Length::Fill)
@@ -4648,6 +4869,38 @@ fn panel_option_row<'a>(
     )
     .padding(Padding { top: 8.0, right: 0.0, bottom: 8.0, left: 0.0 })
     .into()
+}
+
+/// Strip ANSI escape sequences from raw terminal output bytes.
+fn strip_ansi(input: &[u8]) -> String {
+    let text = String::from_utf8_lossy(input);
+    let mut result = String::new();
+    let mut in_escape = false;
+    for ch in text.chars() {
+        if ch == '\x1b' {
+            in_escape = true;
+            continue;
+        }
+        if in_escape {
+            if ch.is_ascii_alphabetic() || ch == '~' {
+                in_escape = false;
+            }
+            continue;
+        }
+        result.push(ch);
+    }
+    result
+}
+
+/// Format byte size for display (e.g. "12.3 KB").
+fn format_data_size(bytes: usize) -> String {
+    if bytes < 1024 {
+        format!("{} B", bytes)
+    } else if bytes < 1024 * 1024 {
+        format!("{:.1} KB", bytes as f64 / 1024.0)
+    } else {
+        format!("{:.1} MB", bytes as f64 / (1024.0 * 1024.0))
+    }
 }
 
 fn context_menu_item<'a>(
