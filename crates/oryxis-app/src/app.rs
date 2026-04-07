@@ -2612,20 +2612,15 @@ impl Oryxis {
     }
 
     fn view_sidebar(&self) -> Element<'_, Message> {
-        // Logo
-        let logo = image(self.logo_small_handle.clone())
-            .width(28)
-            .height(28);
+        // Logo — centered, larger
         let header = container(
-            row![
-                logo,
-                Space::new().width(10),
-                text("ORYXIS").size(16).color(OryxisColors::t().accent),
-            ]
-            .align_y(iced::Alignment::Center),
+            image(self.logo_small_handle.clone())
+                .width(48)
+                .height(48),
         )
-        .padding(Padding { top: 20.0, right: 16.0, bottom: 16.0, left: 16.0 })
-        .width(Length::Fill);
+        .padding(Padding { top: 16.0, right: 0.0, bottom: 12.0, left: 0.0 })
+        .width(Length::Fill)
+        .center_x(Length::Fill);
 
         // Navigation items with pill-shaped active state
         let nav_buttons: Vec<Element<'_, Message>> = vec![
