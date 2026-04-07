@@ -2066,38 +2066,63 @@ impl Oryxis {
 
                         return Task::perform(
                             async move {
-                                // Wait for command output
-                                tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
+                                // Poll terminal until output stabilizes (no change for 800ms)
+                                // or timeout after 15s
+                                let poll_interval = std::time::Duration::from_millis(300);
+                                let stable_threshold = std::time::Duration::from_millis(800);
+                                let max_wait = std::time::Duration::from_secs(15);
 
-                                // Capture terminal output
-                                let output = if let Ok(state) = terminal.lock() {
-                                    let term = &state.backend.term;
-                                    let content = term.renderable_content();
-                                    let mut lines: Vec<String> = Vec::new();
-                                    let mut current_line = String::new();
-                                    let mut last_row = 0i32;
-                                    for item in content.display_iter {
-                                        let row = item.point.line.0;
-                                        if row != last_row && !current_line.is_empty() {
-                                            lines.push(std::mem::take(&mut current_line));
-                                            last_row = row;
+                                let start_time = std::time::Instant::now();
+                                let mut last_snapshot = String::new();
+                                let mut stable_since = std::time::Instant::now();
+
+                                // Initial delay to let command start
+                                tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+
+                                loop {
+                                    let snapshot = if let Ok(state) = terminal.lock() {
+                                        let term = &state.backend.term;
+                                        let content = term.renderable_content();
+                                        let mut lines: Vec<String> = Vec::new();
+                                        let mut current_line = String::new();
+                                        let mut last_row = 0i32;
+                                        for item in content.display_iter {
+                                            let row = item.point.line.0;
+                                            if row != last_row && !current_line.is_empty() {
+                                                lines.push(std::mem::take(&mut current_line));
+                                                last_row = row;
+                                            }
+                                            let c = item.cell.c;
+                                            if c != '\0' { current_line.push(c); }
                                         }
-                                        let c = item.cell.c;
-                                        if c != '\0' { current_line.push(c); }
+                                        if !current_line.is_empty() { lines.push(current_line); }
+                                        let start = lines.len().saturating_sub(40);
+                                        lines[start..].join("\n")
+                                    } else {
+                                        break;
+                                    };
+
+                                    if snapshot != last_snapshot {
+                                        last_snapshot = snapshot;
+                                        stable_since = std::time::Instant::now();
+                                    } else if stable_since.elapsed() >= stable_threshold {
+                                        // Output stable for 800ms — command likely finished
+                                        break;
                                     }
-                                    if !current_line.is_empty() { lines.push(current_line); }
-                                    let start = lines.len().saturating_sub(30);
-                                    lines[start..].join("\n")
-                                } else {
-                                    "(could not read terminal)".into()
-                                };
+
+                                    if start_time.elapsed() >= max_wait {
+                                        break; // Timeout
+                                    }
+
+                                    tokio::time::sleep(poll_interval).await;
+                                }
 
                                 // Send tool result back to AI
                                 messages.push(crate::ai::ChatMsg {
                                     role: "user".into(),
                                     content: serde_json::Value::String(format!(
                                         "[Command executed: `{}`]\nOutput:\n```\n{}\n```\nPlease analyze the output and respond.",
-                                        cmd_clone, output
+                                        cmd_clone, last_snapshot
                                     )),
                                 });
 
@@ -3104,13 +3129,13 @@ impl Oryxis {
     fn view_chat_sidebar(&self, tab: &TerminalTab) -> Element<'_, Message> {
         // ── Header ──
         let close_btn = button(
-            text("x").size(12).color(OryxisColors::t().text_muted),
+            text("X").size(14).color(OryxisColors::t().text_muted),
         )
         .on_press(Message::ToggleChatSidebar)
-        .padding(Padding { top: 2.0, right: 6.0, bottom: 2.0, left: 6.0 })
+        .padding(Padding { top: 6.0, right: 10.0, bottom: 6.0, left: 10.0 })
         .style(|_, status| {
             let bg = match status {
-                BtnStatus::Hovered => OryxisColors::t().bg_primary,
+                BtnStatus::Hovered => OryxisColors::t().bg_hover,
                 _ => Color::TRANSPARENT,
             };
             button::Style {
