@@ -4257,7 +4257,7 @@ impl Oryxis {
 
         // ── Section: SSH & Credentials ──
         let port_text = "SSH on port".to_string();
-        let ssh_section = panel_section(column![
+        let mut ssh_items = column![
             // SSH on [port] port
             row![
                 text(port_text).size(13).color(OryxisColors::t().text_secondary),
@@ -4270,24 +4270,7 @@ impl Oryxis {
             Space::new().height(12),
             text("Credentials").size(12).color(OryxisColors::t().text_muted),
             Space::new().height(8),
-            // Identity selector
-            row![
-                iced_fonts::bootstrap::person().size(13).color(OryxisColors::t().text_muted),
-                Space::new().width(10),
-                text("Identity").size(12).color(OryxisColors::t().text_secondary),
-                Space::new().width(8),
-                pick_list(
-                    {
-                        let mut opts = vec!["(none)".to_string()];
-                        opts.extend(self.identities.iter().map(|i| i.label.clone()));
-                        opts
-                    },
-                    Some(self.editor_form.selected_identity.clone().unwrap_or_else(|| "(none)".into())),
-                    Message::EditorIdentityChanged,
-                ),
-            ].align_y(iced::Alignment::Center),
-            Space::new().height(8),
-            // Username
+            // Username input
             row![
                 iced_fonts::bootstrap::person().size(13).color(OryxisColors::t().text_muted),
                 Space::new().width(10),
@@ -4295,50 +4278,148 @@ impl Oryxis {
                     .on_input(Message::EditorUsernameChanged)
                     .padding(10),
             ].align_y(iced::Alignment::Center),
-            Space::new().height(8),
-            // Password
-            row![
-                iced_fonts::bootstrap::keyboard().size(13).color(OryxisColors::t().text_muted),
-                Space::new().width(10),
-                text_input(
-                    if self.editor_form.has_existing_password && !self.editor_form.password_touched {
-                        "••••••••"
-                    } else {
-                        "Password"
-                    },
-                    &self.editor_form.password,
+        ];
+
+        // Identity suggestion dropdown (shows when username matches an identity)
+        if self.editor_form.selected_identity.is_none() && !self.identities.is_empty() {
+            let search = self.editor_form.username.to_lowercase();
+            let matching: Vec<&Identity> = if search.is_empty() {
+                self.identities.iter().collect()
+            } else {
+                self.identities.iter()
+                    .filter(|i| i.label.to_lowercase().contains(&search)
+                        || i.username.as_deref().unwrap_or("").to_lowercase().contains(&search))
+                    .collect()
+            };
+            if !matching.is_empty() {
+                for identity in matching.iter().take(3) {
+                    let label = identity.label.clone();
+                    let subtitle = format!(
+                        "{}{}",
+                        identity.username.as_deref().unwrap_or(""),
+                        if identity.key_id.is_some() {
+                            let key_name = identity.key_id.and_then(|kid| {
+                                self.keys.iter().find(|k| k.id == kid).map(|k| k.label.as_str())
+                            }).unwrap_or("key");
+                            format!(", {}", key_name)
+                        } else { String::new() },
+                    );
+                    let ident_label = identity.label.clone();
+                    ssh_items = ssh_items.push(
+                        button(
+                            container(
+                                row![
+                                    iced_fonts::bootstrap::person().size(12).color(OryxisColors::t().accent),
+                                    Space::new().width(8),
+                                    column![
+                                        text(label.clone()).size(12).color(OryxisColors::t().text_primary),
+                                        text(subtitle.clone()).size(10).color(OryxisColors::t().text_muted),
+                                    ],
+                                ].align_y(iced::Alignment::Center),
+                            )
+                            .padding(Padding { top: 6.0, right: 10.0, bottom: 6.0, left: 10.0 })
+                            .width(Length::Fill)
+                            .style(|_| container::Style {
+                                background: Some(Background::Color(OryxisColors::t().bg_surface)),
+                                border: Border { radius: Radius::from(6.0), color: OryxisColors::t().border, width: 1.0 },
+                                ..Default::default()
+                            }),
+                        )
+                        .on_press(Message::EditorIdentityChanged(ident_label))
+                        .width(Length::Fill)
+                        .style(|_, status| {
+                            let bg = match status {
+                                BtnStatus::Hovered => OryxisColors::t().bg_hover,
+                                _ => Color::TRANSPARENT,
+                            };
+                            button::Style {
+                                background: Some(Background::Color(bg)),
+                                ..Default::default()
+                            }
+                        }),
+                    );
+                    ssh_items = ssh_items.push(Space::new().height(2));
+                }
+            }
+        }
+
+        // If identity selected, show banner instead of password/key fields
+        if let Some(ref ident_label) = self.editor_form.selected_identity {
+            ssh_items = ssh_items.push(Space::new().height(8));
+            ssh_items = ssh_items.push(
+                container(
+                    row![
+                        iced_fonts::bootstrap::person().size(14).color(OryxisColors::t().accent),
+                        Space::new().width(8),
+                        column![
+                            text(format!("Identity: {}", ident_label)).size(12).color(OryxisColors::t().text_primary),
+                            text("Credentials managed by this identity").size(10).color(OryxisColors::t().text_muted),
+                        ],
+                        Space::new().width(Length::Fill),
+                        button(text("x").size(11).color(OryxisColors::t().text_muted))
+                            .on_press(Message::EditorIdentityChanged("(none)".into()))
+                            .padding(4)
+                            .style(|_, _| button::Style::default()),
+                    ].align_y(iced::Alignment::Center),
                 )
-                    .on_input(Message::EditorPasswordChanged)
-                    .secure(!self.editor_form.password_visible)
-                    .padding(10),
-                Space::new().width(6),
-                button(
-                    if self.editor_form.password_visible {
-                        iced_fonts::bootstrap::eye_slash().size(14).color(OryxisColors::t().text_muted)
-                    } else {
-                        iced_fonts::bootstrap::eye().size(14).color(OryxisColors::t().text_muted)
-                    }
-                )
-                    .on_press(Message::EditorTogglePasswordVisibility)
-                    .style(|_t, _s| button::Style::default())
-                    .padding(8),
-            ].align_y(iced::Alignment::Center),
-            Space::new().height(8),
-            // Key / Auth selector
-            row![
-                text("+ Key").size(12).color(OryxisColors::t().accent),
-                Space::new().width(16),
-                pick_list(
-                    {
-                        let mut opts = vec!["(none)".to_string()];
-                        opts.extend(self.keys.iter().map(|k| k.label.clone()));
-                        opts
-                    },
-                    Some(self.editor_form.selected_key.clone().unwrap_or_else(|| "(none)".into())),
-                    Message::EditorKeyChanged,
-                ),
-            ].align_y(iced::Alignment::Center),
-        ]);
+                .padding(10)
+                .width(Length::Fill)
+                .style(|_| container::Style {
+                    background: Some(Background::Color(Color { a: 0.15, ..OryxisColors::t().accent })),
+                    border: Border { radius: Radius::from(8.0), color: OryxisColors::t().accent, width: 1.0 },
+                    ..Default::default()
+                }),
+            );
+        } else {
+            // Show password + key fields normally
+            ssh_items = ssh_items.push(Space::new().height(8));
+            ssh_items = ssh_items.push(
+                row![
+                    iced_fonts::bootstrap::keyboard().size(13).color(OryxisColors::t().text_muted),
+                    Space::new().width(10),
+                    text_input(
+                        if self.editor_form.has_existing_password && !self.editor_form.password_touched {
+                            "••••••••"
+                        } else {
+                            "Password"
+                        },
+                        &self.editor_form.password,
+                    )
+                        .on_input(Message::EditorPasswordChanged)
+                        .secure(!self.editor_form.password_visible)
+                        .padding(10),
+                    Space::new().width(6),
+                    button(
+                        if self.editor_form.password_visible {
+                            iced_fonts::bootstrap::eye_slash().size(14).color(OryxisColors::t().text_muted)
+                        } else {
+                            iced_fonts::bootstrap::eye().size(14).color(OryxisColors::t().text_muted)
+                        }
+                    )
+                        .on_press(Message::EditorTogglePasswordVisibility)
+                        .style(|_t, _s| button::Style::default())
+                        .padding(8),
+                ].align_y(iced::Alignment::Center)
+            );
+            ssh_items = ssh_items.push(Space::new().height(8));
+            ssh_items = ssh_items.push(
+                row![
+                    text("+ Key").size(12).color(OryxisColors::t().accent),
+                    Space::new().width(16),
+                    pick_list(
+                        {
+                            let mut opts = vec!["(none)".to_string()];
+                            opts.extend(self.keys.iter().map(|k| k.label.clone()));
+                            opts
+                        },
+                        Some(self.editor_form.selected_key.clone().unwrap_or_else(|| "(none)".into())),
+                        Message::EditorKeyChanged,
+                    ),
+                ].align_y(iced::Alignment::Center)
+            );
+        }
+
+        let ssh_section = panel_section(ssh_items);
 
         // ── Section: Advanced Options ──
         let jump_host_value = self.editor_form.jump_host.as_deref().unwrap_or("Disabled");
