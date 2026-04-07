@@ -1973,14 +1973,13 @@ impl Oryxis {
                 // AI requested to execute a command in the terminal
                 if let Some(idx) = self.active_tab {
                     if let Some(tab) = self.tabs.get_mut(idx) {
-                        // Add a system message showing what's being executed
                         tab.chat_history.push(ChatMessage {
                             role: ChatRole::System,
-                            content: format!("Executing: `{}`", command),
+                            content: format!("$ {}", command),
                             timestamp: chrono::Utc::now(),
                         });
 
-                        // Write the command to the terminal (SSH or local PTY)
+                        // Write the command to the terminal
                         let cmd_bytes = format!("{}\n", command);
                         if let Some(ref ssh) = tab.ssh_session {
                             let _ = ssh.write(cmd_bytes.as_bytes());
@@ -1988,14 +1987,81 @@ impl Oryxis {
                             state.write(cmd_bytes.as_bytes());
                         }
 
-                        tab.chat_history.push(ChatMessage {
-                            role: ChatRole::System,
-                            content: "Command sent to terminal.".into(),
-                            timestamp: chrono::Utc::now(),
-                        });
+                        // Wait 1.5s for output, then capture terminal and send back to AI
+                        let terminal = Arc::clone(&tab.terminal);
+                        let api_key = self.vault.as_ref()
+                            .and_then(|v| v.get_ai_api_key().ok().flatten())
+                            .unwrap_or_default();
+                        let extra_prompt = self.vault.as_ref()
+                            .and_then(|v| v.get_setting("ai_system_prompt").ok().flatten());
+
+                        let config = crate::ai::AiConfig {
+                            provider: self.ai_provider.clone(),
+                            model: self.ai_model.clone(),
+                            api_key,
+                            api_url: if self.ai_api_url.is_empty() { None } else { Some(self.ai_api_url.clone()) },
+                            system_prompt: extra_prompt,
+                        };
+
+                        // Build message history including the tool result
+                        let mut messages: Vec<crate::ai::ChatMsg> = tab.chat_history.iter().map(|m| crate::ai::ChatMsg {
+                            role: match m.role {
+                                ChatRole::User => "user".into(),
+                                ChatRole::Assistant => "assistant".into(),
+                                ChatRole::System => "user".into(),
+                            },
+                            content: serde_json::Value::String(m.content.clone()),
+                        }).collect();
+
+                        let cmd_clone = command.clone();
+
+                        return Task::perform(
+                            async move {
+                                // Wait for command output
+                                tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
+
+                                // Capture terminal output
+                                let output = if let Ok(state) = terminal.lock() {
+                                    let term = &state.backend.term;
+                                    let content = term.renderable_content();
+                                    let mut lines: Vec<String> = Vec::new();
+                                    let mut current_line = String::new();
+                                    let mut last_row = 0i32;
+                                    for item in content.display_iter {
+                                        let row = item.point.line.0;
+                                        if row != last_row && !current_line.is_empty() {
+                                            lines.push(std::mem::take(&mut current_line));
+                                            last_row = row;
+                                        }
+                                        let c = item.cell.c;
+                                        if c != '\0' { current_line.push(c); }
+                                    }
+                                    if !current_line.is_empty() { lines.push(current_line); }
+                                    let start = lines.len().saturating_sub(30);
+                                    lines[start..].join("\n")
+                                } else {
+                                    "(could not read terminal)".into()
+                                };
+
+                                // Send tool result back to AI
+                                messages.push(crate::ai::ChatMsg {
+                                    role: "user".into(),
+                                    content: serde_json::Value::String(format!(
+                                        "[Command executed: `{}`]\nOutput:\n```\n{}\n```\nPlease analyze the output and respond.",
+                                        cmd_clone, output
+                                    )),
+                                });
+
+                                crate::ai::send_chat(&config, &messages).await
+                            },
+                            |result| match result {
+                                Ok(crate::ai::AiResponse::Text(text)) => Message::ChatResponse(text),
+                                Ok(crate::ai::AiResponse::ToolUse { command, .. }) => Message::ChatToolExec(command),
+                                Err(e) => Message::ChatResponse(format!("Error: {}", e)),
+                            },
+                        );
                     }
                 }
-                self.chat_loading = false;
             }
             Message::ChatToolResult(output) => {
                 if let Some(idx) = self.active_tab {
