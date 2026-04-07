@@ -123,7 +123,7 @@ pub struct ThemeColors {
     pub border_focus: Color,
 }
 
-const ORYXIS_DARK: ThemeColors = ThemeColors {
+pub const ORYXIS_DARK: ThemeColors = ThemeColors {
     bg_primary: Color::from_rgb(0.086, 0.102, 0.098),
     bg_sidebar: Color::from_rgb(0.067, 0.082, 0.078),
     bg_surface: Color::from_rgb(0.118, 0.137, 0.133),
@@ -144,7 +144,7 @@ const ORYXIS_DARK: ThemeColors = ThemeColors {
     border_focus: Color::from_rgb(0.133, 0.60, 0.569),
 };
 
-const ORYXIS_LIGHT: ThemeColors = ThemeColors {
+pub const ORYXIS_LIGHT: ThemeColors = ThemeColors {
     bg_primary: Color::from_rgb(0.95, 0.96, 0.95),
     bg_sidebar: Color::from_rgb(0.92, 0.93, 0.92),
     bg_surface: Color::from_rgb(1.0, 1.0, 1.0),
@@ -165,7 +165,7 @@ const ORYXIS_LIGHT: ThemeColors = ThemeColors {
     border_focus: Color::from_rgb(0.10, 0.50, 0.47),
 };
 
-const DRACULA: ThemeColors = ThemeColors {
+pub const DRACULA: ThemeColors = ThemeColors {
     bg_primary: Color::from_rgb8(40, 42, 54),
     bg_sidebar: Color::from_rgb8(33, 34, 44),
     bg_surface: Color::from_rgb8(68, 71, 90),
@@ -186,7 +186,7 @@ const DRACULA: ThemeColors = ThemeColors {
     border_focus: Color::from_rgb8(189, 147, 249),
 };
 
-const NORD: ThemeColors = ThemeColors {
+pub const NORD: ThemeColors = ThemeColors {
     bg_primary: Color::from_rgb8(46, 52, 64),
     bg_sidebar: Color::from_rgb8(59, 66, 82),
     bg_surface: Color::from_rgb8(67, 76, 94),
