@@ -46,6 +46,7 @@ enum ChatRole {
 struct ChatMessage {
     role: ChatRole,
     content: String,
+    #[allow(dead_code)]
     timestamp: chrono::DateTime<chrono::Utc>,
 }
 
@@ -335,6 +336,7 @@ pub enum Message {
 
     // Settings
     LockVault,
+    #[allow(dead_code)]
     TerminalThemeChanged(String),
     AppThemeChanged(String),
     TerminalFontSizeIncrease,
@@ -377,7 +379,6 @@ pub enum Message {
     EditIdentity(usize),
     DeleteIdentity(usize),
     ShowIdentityMenu(usize),
-    HideIdentityMenu,
     ToggleKeychainAddMenu,
 
     // Connection identity
@@ -403,6 +404,7 @@ pub enum Message {
     SendChatMessage,
     ChatResponse(String),
     ChatToolExec(String),
+    #[allow(dead_code)]
     ChatToolResult(String),
 }
 
@@ -1716,9 +1718,6 @@ impl Oryxis {
             }
             Message::ShowIdentityMenu(idx) => {
                 self.identity_context_menu = if self.identity_context_menu == Some(idx) { None } else { Some(idx) };
-            }
-            Message::HideIdentityMenu => {
-                self.identity_context_menu = None;
             }
             Message::ToggleKeychainAddMenu => {
                 self.show_keychain_add_menu = !self.show_keychain_add_menu;
