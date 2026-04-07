@@ -152,6 +152,11 @@ impl VaultStore {
                 value BLOB NOT NULL
             );
 
+            CREATE TABLE IF NOT EXISTS settings (
+                key   TEXT PRIMARY KEY,
+                value TEXT NOT NULL
+            );
+
             CREATE TABLE IF NOT EXISTS groups (
                 id         TEXT PRIMARY KEY,
                 label      TEXT NOT NULL,
@@ -891,6 +896,149 @@ impl VaultStore {
 
     pub fn clear_logs(&self) -> Result<(), VaultError> {
         self.db.execute("DELETE FROM logs", [])?;
+        Ok(())
+    }
+
+    // -----------------------------------------------------------------------
+    // Password-less vault support
+    // -----------------------------------------------------------------------
+
+    /// Check if the vault has a user-set master password (vs the default empty password).
+    pub fn has_user_password(&self) -> Result<bool, VaultError> {
+        let val: Option<String> = self
+            .db
+            .query_row(
+                "SELECT value FROM settings WHERE key = 'has_user_password'",
+                [],
+                |row| row.get(0),
+            )
+            .ok();
+        Ok(val.as_deref() == Some("1"))
+    }
+
+    /// Open the vault without a user password (uses empty string as key).
+    /// If the vault has never been set up, sets the master password to "".
+    /// If the vault already has a password_check with "", unlocks it.
+    pub fn open_without_password(&mut self) -> Result<(), VaultError> {
+        if self.has_master_password()? {
+            // Try unlocking with empty password
+            self.unlock("")
+        } else {
+            // First time: set up with empty password
+            self.set_master_password("")?;
+            Ok(())
+        }
+    }
+
+    /// Set a user password on the vault. Re-encrypts all encrypted fields
+    /// from the current master key to the new password.
+    pub fn set_user_password(&mut self, new_password: &str) -> Result<(), VaultError> {
+        let old_key = self.require_unlocked()?.to_vec();
+        let new_key = new_password.as_bytes().to_vec();
+
+        // Re-encrypt all connection passwords
+        self.re_encrypt_connections(&old_key, &new_key)?;
+        // Re-encrypt all key private keys
+        self.re_encrypt_keys(&old_key, &new_key)?;
+        // Re-encrypt all identity passwords
+        self.re_encrypt_identities(&old_key, &new_key)?;
+
+        // Update the password_check with the new password
+        let check = encrypt(b"oryxis_vault_ok", &new_key)?;
+        self.db.execute(
+            "INSERT OR REPLACE INTO vault_meta (key, value) VALUES ('password_check', ?1)",
+            params![check],
+        )?;
+
+        // Mark that user has set a password
+        self.db.execute(
+            "INSERT OR REPLACE INTO settings (key, value) VALUES ('has_user_password', '1')",
+            [],
+        )?;
+
+        self.master_key = Some(new_key);
+        tracing::info!("Vault user password set");
+        Ok(())
+    }
+
+    /// Remove the user password, reverting to the default empty password.
+    /// Re-encrypts all encrypted fields from the current key to empty string.
+    pub fn remove_user_password(&mut self) -> Result<(), VaultError> {
+        let old_key = self.require_unlocked()?.to_vec();
+        let new_key = b"".to_vec();
+
+        // Re-encrypt all encrypted fields
+        self.re_encrypt_connections(&old_key, &new_key)?;
+        self.re_encrypt_keys(&old_key, &new_key)?;
+        self.re_encrypt_identities(&old_key, &new_key)?;
+
+        // Update the password_check with empty password
+        let check = encrypt(b"oryxis_vault_ok", &new_key)?;
+        self.db.execute(
+            "INSERT OR REPLACE INTO vault_meta (key, value) VALUES ('password_check', ?1)",
+            params![check],
+        )?;
+
+        // Mark no user password
+        self.db.execute(
+            "INSERT OR REPLACE INTO settings (key, value) VALUES ('has_user_password', '0')",
+            [],
+        )?;
+
+        self.master_key = Some(new_key);
+        tracing::info!("Vault user password removed");
+        Ok(())
+    }
+
+    // -----------------------------------------------------------------------
+    // Re-encryption helpers
+    // -----------------------------------------------------------------------
+
+    fn re_encrypt_connections(&self, old_key: &[u8], new_key: &[u8]) -> Result<(), VaultError> {
+        let mut stmt = self.db.prepare("SELECT id, password FROM connections WHERE password IS NOT NULL")?;
+        let rows: Vec<(String, Vec<u8>)> = stmt
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
+            .collect::<Result<Vec<_>, _>>()?;
+        for (id, encrypted_pw) in rows {
+            let plain = decrypt(&encrypted_pw, old_key)?;
+            let re_encrypted = encrypt(&plain, new_key)?;
+            self.db.execute(
+                "UPDATE connections SET password = ?1 WHERE id = ?2",
+                params![re_encrypted, id],
+            )?;
+        }
+        Ok(())
+    }
+
+    fn re_encrypt_keys(&self, old_key: &[u8], new_key: &[u8]) -> Result<(), VaultError> {
+        let mut stmt = self.db.prepare("SELECT id, private_key FROM keys WHERE private_key IS NOT NULL")?;
+        let rows: Vec<(String, Vec<u8>)> = stmt
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
+            .collect::<Result<Vec<_>, _>>()?;
+        for (id, encrypted_key) in rows {
+            let plain = decrypt(&encrypted_key, old_key)?;
+            let re_encrypted = encrypt(&plain, new_key)?;
+            self.db.execute(
+                "UPDATE keys SET private_key = ?1 WHERE id = ?2",
+                params![re_encrypted, id],
+            )?;
+        }
+        Ok(())
+    }
+
+    fn re_encrypt_identities(&self, old_key: &[u8], new_key: &[u8]) -> Result<(), VaultError> {
+        let mut stmt = self.db.prepare("SELECT id, password FROM identities WHERE password IS NOT NULL")?;
+        let rows: Vec<(String, Vec<u8>)> = stmt
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
+            .collect::<Result<Vec<_>, _>>()?;
+        for (id, encrypted_pw) in rows {
+            let plain = decrypt(&encrypted_pw, old_key)?;
+            let re_encrypted = encrypt(&plain, new_key)?;
+            self.db.execute(
+                "UPDATE identities SET password = ?1 WHERE id = ?2",
+                params![re_encrypted, id],
+            )?;
+        }
         Ok(())
     }
 }

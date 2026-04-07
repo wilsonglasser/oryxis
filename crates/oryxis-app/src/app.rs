@@ -2,7 +2,7 @@ use iced::border::Radius;
 use iced::keyboard;
 use iced::widget::{
     button, canvas, column, container, image, pick_list, row, scrollable, text, text_editor,
-    text_input, MouseArea, Space,
+    text_input, MouseArea, Row, Space,
 };
 use iced::futures::SinkExt;
 use iced::{Background, Border, Color, Element, Length, Padding, Subscription, Task, Theme};
@@ -174,6 +174,11 @@ pub struct Oryxis {
     setting_keyword_highlight: bool,
     setting_keepalive_interval: String,
     setting_scrollback_rows: String,
+
+    // Vault password settings
+    vault_has_user_password: bool,
+    vault_new_password: String,
+    vault_password_error: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -203,6 +208,8 @@ pub enum View {
 pub(crate) enum SettingsSection {
     Terminal,
     Theme,
+    Shortcuts,
+    Security,
     About,
 }
 
@@ -329,6 +336,11 @@ pub enum Message {
 
     // Connection identity
     EditorIdentityChanged(String),
+
+    // Vault password management
+    ToggleVaultPassword,
+    VaultNewPasswordChanged(String),
+    SetVaultPassword,
 }
 
 /// Internal message type for SSH connection streams.
@@ -366,19 +378,25 @@ struct ConnectionProgress {
 
 impl Oryxis {
     pub fn boot() -> (Self, Task<Message>) {
-        let vault = VaultStore::open_default().ok();
-        let vault_state = match &vault {
-            None => VaultState::Loading,
-            Some(v) => {
-                if v.has_master_password().unwrap_or(false) {
-                    VaultState::Locked
-                } else {
-                    VaultState::NeedSetup
+        let mut vault = VaultStore::open_default().ok();
+        let mut vault_state = VaultState::Loading;
+        let mut vault_has_user_password = false;
+
+        if let Some(v) = &mut vault {
+            vault_has_user_password = v.has_user_password().unwrap_or(false);
+            if vault_has_user_password {
+                // User has set a real password -> show unlock screen
+                vault_state = VaultState::Locked;
+            } else {
+                // No user password -> auto-open with empty password
+                match v.open_without_password() {
+                    Ok(()) => vault_state = VaultState::Unlocked,
+                    Err(_) => vault_state = VaultState::NeedSetup,
                 }
             }
-        };
+        }
 
-        (
+        let (mut app, task) = (
             Self {
                 vault,
                 vault_state,
@@ -439,9 +457,19 @@ impl Oryxis {
                 setting_keyword_highlight: true,
                 setting_keepalive_interval: "0".into(),
                 setting_scrollback_rows: "10000".into(),
+                vault_has_user_password,
+                vault_new_password: String::new(),
+                vault_password_error: None,
             },
             Task::none(),
-        )
+        );
+
+        // If auto-unlocked (no user password), load data immediately
+        if app.vault_state == VaultState::Unlocked {
+            app.load_data_from_vault();
+        }
+
+        (app, task)
     }
 
     fn load_data_from_vault(&mut self) {
@@ -1251,14 +1279,19 @@ impl Oryxis {
             Message::LockVault => {
                 if let Some(vault) = &mut self.vault {
                     vault.lock();
-                    self.vault_state = VaultState::Locked;
-                    self.connections.clear();
-                    self.keys.clear();
-                    self.snippets.clear();
-                    self.groups.clear();
-                    self.tabs.clear();
-                    self.active_tab = None;
-                    self.active_view = View::Dashboard;
+                    if self.vault_has_user_password {
+                        self.vault_state = VaultState::Locked;
+                        self.connections.clear();
+                        self.keys.clear();
+                        self.snippets.clear();
+                        self.groups.clear();
+                        self.tabs.clear();
+                        self.active_tab = None;
+                        self.active_view = View::Dashboard;
+                    } else {
+                        // No user password: re-open immediately
+                        let _ = vault.open_without_password();
+                    }
                 }
             }
 
@@ -1532,6 +1565,50 @@ impl Oryxis {
                     self.editor_form.selected_identity = None;
                 } else {
                     self.editor_form.selected_identity = Some(v);
+                }
+            }
+
+            // ── Vault password management ──
+            Message::ToggleVaultPassword => {
+                if self.vault_has_user_password {
+                    // Remove password
+                    if let Some(vault) = &mut self.vault {
+                        match vault.remove_user_password() {
+                            Ok(()) => {
+                                self.vault_has_user_password = false;
+                                self.vault_password_error = None;
+                                self.vault_new_password.clear();
+                            }
+                            Err(e) => {
+                                self.vault_password_error = Some(e.to_string());
+                            }
+                        }
+                    }
+                } else {
+                    // Show password input (don't do anything yet, user needs to type and confirm)
+                    self.vault_new_password.clear();
+                    self.vault_password_error = None;
+                }
+            }
+            Message::VaultNewPasswordChanged(pw) => {
+                self.vault_new_password = pw;
+            }
+            Message::SetVaultPassword => {
+                if self.vault_new_password.len() < 4 {
+                    self.vault_password_error = Some("Password must be at least 4 characters".into());
+                    return Task::none();
+                }
+                if let Some(vault) = &mut self.vault {
+                    match vault.set_user_password(&self.vault_new_password) {
+                        Ok(()) => {
+                            self.vault_has_user_password = true;
+                            self.vault_password_error = None;
+                            self.vault_new_password.clear();
+                        }
+                        Err(e) => {
+                            self.vault_password_error = Some(e.to_string());
+                        }
+                    }
                 }
             }
         }
@@ -3645,6 +3722,8 @@ impl Oryxis {
             let items: Vec<(&str, SettingsSection)> = vec![
                 ("Terminal", SettingsSection::Terminal),
                 ("Theme", SettingsSection::Theme),
+                ("Shortcuts", SettingsSection::Shortcuts),
+                ("Security", SettingsSection::Security),
                 ("About", SettingsSection::About),
             ];
             let mut col = column![
@@ -3780,29 +3859,6 @@ impl Oryxis {
                         .width(120),
                 ]);
 
-                let lock_btn = button(
-                    container(
-                        row![
-                            iced_fonts::bootstrap::lock().size(14).color(OryxisColors::t().warning),
-                            Space::new().width(10),
-                            text("Lock Vault").size(13).color(OryxisColors::t().warning),
-                        ].align_y(iced::Alignment::Center),
-                    )
-                    .padding(Padding { top: 10.0, right: 20.0, bottom: 10.0, left: 20.0 }),
-                )
-                .on_press(Message::LockVault)
-                .style(|_, status| {
-                    let bg = match status {
-                        BtnStatus::Hovered => Color { a: 0.15, ..OryxisColors::t().warning },
-                        _ => Color::TRANSPARENT,
-                    };
-                    button::Style {
-                        background: Some(Background::Color(bg)),
-                        border: Border { radius: Radius::from(8.0), color: OryxisColors::t().warning, width: 1.0 },
-                        ..Default::default()
-                    }
-                });
-
                 scrollable(
                     container(
                         column![
@@ -3815,10 +3871,6 @@ impl Oryxis {
                             keepalive_section,
                             Space::new().height(12),
                             scrollback_section,
-                            Space::new().height(24),
-                            text("Security").size(14).color(OryxisColors::t().text_muted),
-                            Space::new().height(8),
-                            lock_btn,
                             Space::new().height(24),
                         ]
                         .width(Length::Fill),
@@ -3945,6 +3997,118 @@ impl Oryxis {
                 scrollable(
                     container(content_col)
                         .padding(Padding { top: 20.0, right: 24.0, bottom: 24.0, left: 24.0 }),
+                )
+                .height(Length::Fill)
+                .into()
+            }
+
+            SettingsSection::Shortcuts => {
+                let shortcuts: Vec<(Vec<&str>, &str)> = vec![
+                    (vec!["Ctrl", "Shift", "C"], "Copy from Terminal"),
+                    (vec!["Ctrl", "Shift", "V"], "Paste to Terminal"),
+                    (vec!["Ctrl", "Shift", "W"], "Close Tab"),
+                    (vec!["Ctrl", "1...9"], "Switch to Tab 1-9"),
+                    (vec!["Ctrl", "L"], "Open Local Terminal"),
+                    (vec!["Ctrl", "N"], "New Host"),
+                ];
+
+                let mut rows_col = column![
+                    text("Keyboard Shortcuts").size(18).color(OryxisColors::t().text_primary),
+                    Space::new().height(16),
+                ].spacing(8).width(Length::Fill);
+
+                for (keys, action) in shortcuts {
+                    let badges: Vec<Element<'_, Message>> = keys.iter().map(|k| key_badge(k)).collect();
+                    rows_col = rows_col.push(shortcut_row(badges, action));
+                }
+
+                scrollable(
+                    container(rows_col)
+                        .padding(Padding { top: 20.0, right: 24.0, bottom: 24.0, left: 24.0 }),
+                )
+                .height(Length::Fill)
+                .into()
+            }
+
+            SettingsSection::Security => {
+                let password_toggle = toggle_row(
+                    "Vault Password",
+                    self.vault_has_user_password,
+                    Message::ToggleVaultPassword,
+                );
+
+                let password_section: Element<'_, Message> = if !self.vault_has_user_password {
+                    // Show password input to enable
+                    let input = text_input("New master password...", &self.vault_new_password)
+                        .on_input(Message::VaultNewPasswordChanged)
+                        .on_submit(Message::SetVaultPassword)
+                        .secure(true)
+                        .padding(10)
+                        .width(300);
+                    let btn = styled_button("Set Password", Message::SetVaultPassword, OryxisColors::t().accent);
+                    let error: Element<'_, Message> = if let Some(err) = &self.vault_password_error {
+                        text(err.clone()).size(12).color(OryxisColors::t().error).into()
+                    } else {
+                        Space::new().height(0).into()
+                    };
+                    column![
+                        Space::new().height(8),
+                        text("Set a master password to protect your vault. You will need to enter it each time you open Oryxis.")
+                            .size(11).color(OryxisColors::t().text_muted),
+                        Space::new().height(8),
+                        input,
+                        Space::new().height(8),
+                        btn,
+                        error,
+                    ].into()
+                } else {
+                    let note: Element<'_, Message> = text("Your vault is protected with a master password. Toggle off to remove it.")
+                        .size(11).color(OryxisColors::t().text_muted).into();
+                    let error: Element<'_, Message> = if let Some(err) = &self.vault_password_error {
+                        text(err.clone()).size(12).color(OryxisColors::t().error).into()
+                    } else {
+                        Space::new().height(0).into()
+                    };
+                    column![Space::new().height(4), note, error].into()
+                };
+
+                let lock_btn = button(
+                    container(
+                        row![
+                            iced_fonts::bootstrap::lock().size(14).color(OryxisColors::t().warning),
+                            Space::new().width(10),
+                            text("Lock Vault").size(13).color(OryxisColors::t().warning),
+                        ].align_y(iced::Alignment::Center),
+                    )
+                    .padding(Padding { top: 10.0, right: 20.0, bottom: 10.0, left: 20.0 }),
+                )
+                .on_press(Message::LockVault)
+                .style(|_, status| {
+                    let bg = match status {
+                        BtnStatus::Hovered => Color { a: 0.15, ..OryxisColors::t().warning },
+                        _ => Color::TRANSPARENT,
+                    };
+                    button::Style {
+                        background: Some(Background::Color(bg)),
+                        border: Border { radius: Radius::from(8.0), color: OryxisColors::t().warning, width: 1.0 },
+                        ..Default::default()
+                    }
+                });
+
+                scrollable(
+                    container(
+                        column![
+                            text("Security").size(18).color(OryxisColors::t().text_primary),
+                            Space::new().height(16),
+                            panel_section(column![password_toggle]),
+                            password_section,
+                            Space::new().height(24),
+                            lock_btn,
+                            Space::new().height(24),
+                        ]
+                        .width(Length::Fill),
+                    )
+                    .padding(Padding { top: 20.0, right: 24.0, bottom: 24.0, left: 24.0 }),
                 )
                 .height(Length::Fill)
                 .into()
@@ -4510,6 +4674,24 @@ fn styled_button(label: &str, msg: Message, color: Color) -> Element<'_, Message
         ..Default::default()
     })
     .into()
+}
+
+fn key_badge<'a>(label: &'a str) -> Element<'a, Message> {
+    container(text(label).size(11).color(OryxisColors::t().text_primary))
+        .padding(Padding { top: 3.0, right: 6.0, bottom: 3.0, left: 6.0 })
+        .style(|_| container::Style {
+            background: Some(Background::Color(OryxisColors::t().bg_selected)),
+            border: Border { radius: Radius::from(4.0), ..Default::default() },
+            ..Default::default()
+        })
+        .into()
+}
+
+fn shortcut_row<'a>(keys: Vec<Element<'a, Message>>, action: &'a str) -> Element<'a, Message> {
+    row![
+        Row::with_children(keys).spacing(4).width(200),
+        text(action).size(13).color(OryxisColors::t().text_secondary),
+    ].align_y(iced::Alignment::Center).into()
 }
 
 fn key_to_named_bytes(key: &keyboard::Key, _modifiers: &keyboard::Modifiers) -> Option<Vec<u8>> {
