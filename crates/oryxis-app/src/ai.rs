@@ -53,7 +53,9 @@ pub async fn send_chat(
 pub enum AiResponse {
     Text(String),
     ToolUse {
+        #[allow(dead_code)]
         id: String,
+        #[allow(dead_code)]
         name: String,
         command: String,
     },
