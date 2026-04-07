@@ -33,6 +33,22 @@ const CARD_WIDTH: f32 = 280.0;
 // Types
 // ---------------------------------------------------------------------------
 
+/// Role of a chat message in the AI sidebar.
+#[derive(Debug, Clone, PartialEq)]
+enum ChatRole {
+    User,
+    Assistant,
+    System, // for tool execution results
+}
+
+/// A single message in the AI chat sidebar.
+#[derive(Debug, Clone)]
+struct ChatMessage {
+    role: ChatRole,
+    content: String,
+    timestamp: chrono::DateTime<chrono::Utc>,
+}
+
 /// A terminal tab — either a local shell or an SSH session.
 struct TerminalTab {
     _id: Uuid,
@@ -42,6 +58,10 @@ struct TerminalTab {
     ssh_session: Option<Arc<SshSession>>,
     /// Session log ID for terminal recording.
     session_log_id: Option<Uuid>,
+    /// AI chat history for this terminal session.
+    chat_history: Vec<ChatMessage>,
+    /// Whether the AI chat sidebar is visible.
+    chat_visible: bool,
 }
 
 /// Connection editor form state.
@@ -181,10 +201,22 @@ pub struct Oryxis {
     setting_keepalive_interval: String,
     setting_scrollback_rows: String,
 
+    // AI Chat settings
+    ai_enabled: bool,
+    ai_provider: String,
+    ai_model: String,
+    ai_api_key: String,
+    ai_api_key_set: bool,
+    ai_api_url: String,
+
     // Vault password settings
     vault_has_user_password: bool,
     vault_new_password: String,
     vault_password_error: Option<String>,
+
+    // AI chat sidebar
+    chat_input: String,
+    chat_loading: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -213,6 +245,7 @@ pub enum View {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum SettingsSection {
     Terminal,
+    AI,
     Theme,
     Shortcuts,
     Security,
@@ -348,10 +381,26 @@ pub enum Message {
     // Connection identity
     EditorIdentityChanged(String),
 
+    // AI settings
+    ToggleAiEnabled,
+    AiProviderChanged(String),
+    AiModelChanged(String),
+    AiApiKeyChanged(String),
+    AiApiUrlChanged(String),
+    SaveAiApiKey,
+
     // Vault password management
     ToggleVaultPassword,
     VaultNewPasswordChanged(String),
     SetVaultPassword,
+
+    // AI chat sidebar
+    ToggleChatSidebar,
+    ChatInputChanged(String),
+    SendChatMessage,
+    ChatResponse(String),
+    ChatToolExec(String),
+    ChatToolResult(String),
 }
 
 /// Internal message type for SSH connection streams.
@@ -470,9 +519,17 @@ impl Oryxis {
                 setting_keyword_highlight: true,
                 setting_keepalive_interval: "0".into(),
                 setting_scrollback_rows: "10000".into(),
+                ai_enabled: false,
+                ai_provider: "anthropic".into(),
+                ai_model: "claude-sonnet-4-20250514".into(),
+                ai_api_key: String::new(),
+                ai_api_key_set: false,
+                ai_api_url: String::new(),
                 vault_has_user_password,
                 vault_new_password: String::new(),
                 vault_password_error: None,
+                chat_input: String::new(),
+                chat_loading: false,
             },
             Task::none(),
         );
@@ -495,6 +552,21 @@ impl Oryxis {
             self.known_hosts = vault.list_known_hosts().unwrap_or_default();
             self.logs = vault.list_logs(200).unwrap_or_default();
             self.session_logs = vault.list_session_logs().unwrap_or_default();
+
+            // AI settings
+            if let Ok(Some(v)) = vault.get_setting("ai_enabled") {
+                self.ai_enabled = v == "true";
+            }
+            if let Ok(Some(v)) = vault.get_setting("ai_provider") {
+                self.ai_provider = v;
+            }
+            if let Ok(Some(v)) = vault.get_setting("ai_model") {
+                self.ai_model = v;
+            }
+            if let Ok(Some(v)) = vault.get_setting("ai_api_url") {
+                self.ai_api_url = v;
+            }
+            self.ai_api_key_set = vault.get_ai_api_key().ok().flatten().is_some();
         }
     }
 
@@ -932,6 +1004,8 @@ impl Oryxis {
                                 terminal: Arc::clone(&terminal),
                                 ssh_session: None,
                                 session_log_id,
+                                chat_history: Vec::new(),
+                                chat_visible: false,
                             });
 
                             // Show progress view instead of terminal
@@ -1373,6 +1447,8 @@ impl Oryxis {
                             terminal: Arc::new(Mutex::new(state)),
                             ssh_session: None,
                             session_log_id: None,
+                            chat_history: Vec::new(),
+                            chat_visible: false,
                         });
                         self.active_tab = Some(tab_idx);
                         self.active_view = View::Terminal;
@@ -1636,6 +1712,61 @@ impl Oryxis {
                 }
             }
 
+            // ── AI settings ──
+            Message::ToggleAiEnabled => {
+                self.ai_enabled = !self.ai_enabled;
+                if let Some(vault) = &self.vault {
+                    let _ = vault.set_setting("ai_enabled", if self.ai_enabled { "true" } else { "false" });
+                }
+            }
+            Message::AiProviderChanged(provider) => {
+                self.ai_provider = provider.to_lowercase();
+                if let Some(vault) = &self.vault {
+                    let _ = vault.set_setting("ai_provider", &self.ai_provider);
+                }
+                // Suggest default model when provider changes
+                match self.ai_provider.as_str() {
+                    "anthropic" => {
+                        self.ai_model = "claude-sonnet-4-20250514".into();
+                        if let Some(vault) = &self.vault {
+                            let _ = vault.set_setting("ai_model", &self.ai_model);
+                        }
+                    }
+                    "openai" => {
+                        self.ai_model = "gpt-4o".into();
+                        if let Some(vault) = &self.vault {
+                            let _ = vault.set_setting("ai_model", &self.ai_model);
+                        }
+                    }
+                    _ => {} // custom: keep current model
+                }
+            }
+            Message::AiModelChanged(model) => {
+                self.ai_model = model;
+                if let Some(vault) = &self.vault {
+                    let _ = vault.set_setting("ai_model", &self.ai_model);
+                }
+            }
+            Message::AiApiKeyChanged(key) => {
+                self.ai_api_key = key;
+            }
+            Message::AiApiUrlChanged(url) => {
+                self.ai_api_url = url;
+                if let Some(vault) = &self.vault {
+                    let _ = vault.set_setting("ai_api_url", &self.ai_api_url);
+                }
+            }
+            Message::SaveAiApiKey => {
+                if !self.ai_api_key.is_empty() {
+                    if let Some(vault) = &self.vault {
+                        if vault.set_ai_api_key(&self.ai_api_key).is_ok() {
+                            self.ai_api_key.clear();
+                            self.ai_api_key_set = true;
+                        }
+                    }
+                }
+            }
+
             // ── Vault password management ──
             Message::ToggleVaultPassword => {
                 if self.vault_has_user_password {
@@ -1676,6 +1807,133 @@ impl Oryxis {
                         Err(e) => {
                             self.vault_password_error = Some(e.to_string());
                         }
+                    }
+                }
+            }
+
+            // ── AI chat sidebar ──
+            Message::ToggleChatSidebar => {
+                if let Some(idx) = self.active_tab {
+                    if let Some(tab) = self.tabs.get_mut(idx) {
+                        tab.chat_visible = !tab.chat_visible;
+                    }
+                }
+            }
+            Message::ChatInputChanged(val) => {
+                self.chat_input = val;
+            }
+            Message::SendChatMessage => {
+                let input = self.chat_input.trim().to_string();
+                if input.is_empty() || !self.ai_enabled {
+                    return Task::none();
+                }
+                if let Some(idx) = self.active_tab {
+                    if let Some(tab) = self.tabs.get_mut(idx) {
+                        tab.chat_history.push(ChatMessage {
+                            role: ChatRole::User,
+                            content: input,
+                            timestamp: chrono::Utc::now(),
+                        });
+                        self.chat_input.clear();
+                        self.chat_loading = true;
+
+                        // Build AI config
+                        let api_key = self.vault.as_ref()
+                            .and_then(|v| v.get_ai_api_key().ok().flatten())
+                            .unwrap_or_default();
+
+                        let config = crate::ai::AiConfig {
+                            provider: self.ai_provider.clone(),
+                            model: self.ai_model.clone(),
+                            api_key,
+                            api_url: if self.ai_api_url.is_empty() {
+                                None
+                            } else {
+                                Some(self.ai_api_url.clone())
+                            },
+                        };
+
+                        // Build messages from chat history
+                        let messages: Vec<crate::ai::ChatMsg> = tab
+                            .chat_history
+                            .iter()
+                            .map(|m| crate::ai::ChatMsg {
+                                role: match m.role {
+                                    ChatRole::User => "user".into(),
+                                    ChatRole::Assistant => "assistant".into(),
+                                    ChatRole::System => "user".into(),
+                                },
+                                content: serde_json::Value::String(m.content.clone()),
+                            })
+                            .collect();
+
+                        return Task::perform(
+                            async move {
+                                crate::ai::send_chat(&config, &messages).await
+                            },
+                            |result| match result {
+                                Ok(crate::ai::AiResponse::Text(text)) => {
+                                    Message::ChatResponse(text)
+                                }
+                                Ok(crate::ai::AiResponse::ToolUse {
+                                    command, ..
+                                }) => Message::ChatToolExec(command),
+                                Err(e) => {
+                                    Message::ChatResponse(format!("Error: {}", e))
+                                }
+                            },
+                        );
+                    }
+                }
+            }
+            Message::ChatResponse(response) => {
+                if let Some(idx) = self.active_tab {
+                    if let Some(tab) = self.tabs.get_mut(idx) {
+                        tab.chat_history.push(ChatMessage {
+                            role: ChatRole::Assistant,
+                            content: response,
+                            timestamp: chrono::Utc::now(),
+                        });
+                    }
+                }
+                self.chat_loading = false;
+            }
+            Message::ChatToolExec(command) => {
+                // AI requested to execute a command in the terminal
+                if let Some(idx) = self.active_tab {
+                    if let Some(tab) = self.tabs.get_mut(idx) {
+                        // Add a system message showing what's being executed
+                        tab.chat_history.push(ChatMessage {
+                            role: ChatRole::System,
+                            content: format!("Executing: `{}`", command),
+                            timestamp: chrono::Utc::now(),
+                        });
+
+                        // Write the command to the terminal (SSH or local PTY)
+                        let cmd_bytes = format!("{}\n", command);
+                        if let Some(ref ssh) = tab.ssh_session {
+                            let _ = ssh.write(cmd_bytes.as_bytes());
+                        } else if let Ok(mut state) = tab.terminal.lock() {
+                            state.write(cmd_bytes.as_bytes());
+                        }
+
+                        tab.chat_history.push(ChatMessage {
+                            role: ChatRole::System,
+                            content: "Command sent to terminal.".into(),
+                            timestamp: chrono::Utc::now(),
+                        });
+                    }
+                }
+                self.chat_loading = false;
+            }
+            Message::ChatToolResult(output) => {
+                if let Some(idx) = self.active_tab {
+                    if let Some(tab) = self.tabs.get_mut(idx) {
+                        tab.chat_history.push(ChatMessage {
+                            role: ChatRole::System,
+                            content: output,
+                            timestamp: chrono::Utc::now(),
+                        });
                     }
                 }
             }
@@ -2550,14 +2808,61 @@ impl Oryxis {
     }
 
     fn view_terminal(&self) -> Element<'_, Message> {
+        let chat_visible = self.active_tab
+            .and_then(|idx| self.tabs.get(idx))
+            .map(|tab| tab.chat_visible)
+            .unwrap_or(false);
+
         let terminal_area: Element<'_, Message> = if let Some(tab_idx) = self.active_tab {
             if let Some(tab) = self.tabs.get(tab_idx) {
-                let view = TerminalView::new(Arc::clone(&tab.terminal))
+                let term_view = TerminalView::new(Arc::clone(&tab.terminal))
                     .with_font_size(self.terminal_font_size);
-                canvas(view)
+                let term_canvas: Element<'_, Message> = canvas(term_view)
                     .width(Length::Fill)
                     .height(Length::Fill)
-                    .into()
+                    .into();
+
+                // Chat toggle button (top-right overlay)
+                let toggle_btn = button(
+                    container(
+                        iced_fonts::bootstrap::chat_dots().size(14).color(
+                            if chat_visible { OryxisColors::t().accent } else { OryxisColors::t().text_muted }
+                        ),
+                    )
+                    .padding(Padding { top: 6.0, right: 8.0, bottom: 6.0, left: 8.0 }),
+                )
+                .on_press(Message::ToggleChatSidebar)
+                .style(|_, status| {
+                    let bg = match status {
+                        BtnStatus::Hovered => OryxisColors::t().bg_surface,
+                        _ => Color::TRANSPARENT,
+                    };
+                    button::Style {
+                        background: Some(Background::Color(bg)),
+                        border: Border { radius: Radius::from(6.0), ..Default::default() },
+                        ..Default::default()
+                    }
+                });
+
+                let toggle_row = container(toggle_btn)
+                    .width(Length::Fill)
+                    .align_x(iced::alignment::Horizontal::Right)
+                    .padding(Padding { top: 4.0, right: 8.0, bottom: 0.0, left: 0.0 });
+
+                let term_with_toggle: Element<'_, Message> = column![toggle_row, term_canvas]
+                    .width(Length::Fill)
+                    .height(Length::Fill)
+                    .into();
+
+                if chat_visible {
+                    let sidebar = self.view_chat_sidebar(tab);
+                    row![term_with_toggle, sidebar]
+                        .width(Length::Fill)
+                        .height(Length::Fill)
+                        .into()
+                } else {
+                    term_with_toggle
+                }
             } else {
                 container(text("No active session").size(14).color(OryxisColors::t().text_muted))
                     .center(Length::Fill).into()
@@ -2575,6 +2880,212 @@ impl Oryxis {
                 ..Default::default()
             })
             .into()
+    }
+
+    fn view_chat_sidebar(&self, tab: &TerminalTab) -> Element<'_, Message> {
+        // ── Header ──
+        let close_btn = button(
+            text("x").size(12).color(OryxisColors::t().text_muted),
+        )
+        .on_press(Message::ToggleChatSidebar)
+        .padding(Padding { top: 2.0, right: 6.0, bottom: 2.0, left: 6.0 })
+        .style(|_, status| {
+            let bg = match status {
+                BtnStatus::Hovered => OryxisColors::t().bg_primary,
+                _ => Color::TRANSPARENT,
+            };
+            button::Style {
+                background: Some(Background::Color(bg)),
+                border: Border { radius: Radius::from(4.0), ..Default::default() },
+                ..Default::default()
+            }
+        });
+
+        let header = container(
+            row![
+                iced_fonts::bootstrap::chat_dots().size(14).color(OryxisColors::t().accent),
+                Space::new().width(8),
+                text("AI Chat").size(14).color(OryxisColors::t().text_primary),
+                Space::new().width(Length::Fill),
+                close_btn,
+            ]
+            .align_y(iced::Alignment::Center),
+        )
+        .padding(Padding { top: 12.0, right: 12.0, bottom: 12.0, left: 12.0 })
+        .width(Length::Fill)
+        .style(|_| container::Style {
+            border: Border {
+                width: 0.0,
+                color: OryxisColors::t().border,
+                radius: Radius::from(0.0),
+            },
+            ..Default::default()
+        });
+
+        let header_separator = container(Space::new().height(1))
+            .width(Length::Fill)
+            .style(|_| container::Style {
+                background: Some(Background::Color(OryxisColors::t().border)),
+                ..Default::default()
+            });
+
+        // ── Messages list ──
+        let mut messages_col = column![].spacing(8).padding(Padding { top: 8.0, right: 12.0, bottom: 8.0, left: 12.0 });
+
+        if tab.chat_history.is_empty() {
+            messages_col = messages_col.push(
+                container(
+                    column![
+                        iced_fonts::bootstrap::chat_dots().size(24).color(OryxisColors::t().text_muted),
+                        Space::new().height(8),
+                        text("Ask AI about this session").size(12).color(OryxisColors::t().text_muted),
+                    ]
+                    .align_x(iced::Alignment::Center),
+                )
+                .center_x(Length::Fill)
+                .padding(Padding { top: 40.0, right: 0.0, bottom: 0.0, left: 0.0 }),
+            );
+        } else {
+            for msg in &tab.chat_history {
+                let bubble = self.view_chat_message(msg);
+                messages_col = messages_col.push(bubble);
+            }
+        }
+
+        if self.chat_loading {
+            messages_col = messages_col.push(
+                container(
+                    text("Thinking...").size(12).color(OryxisColors::t().text_muted),
+                )
+                .padding(Padding { top: 4.0, right: 8.0, bottom: 4.0, left: 8.0 })
+                .style(|_| container::Style {
+                    background: Some(Background::Color(OryxisColors::t().bg_surface)),
+                    border: Border { radius: Radius::from(8.0), ..Default::default() },
+                    ..Default::default()
+                }),
+            );
+        }
+
+        let messages_scroll = scrollable(messages_col)
+            .width(Length::Fill)
+            .height(Length::Fill);
+
+        // ── Input area ──
+        let input_separator = container(Space::new().height(1))
+            .width(Length::Fill)
+            .style(|_| container::Style {
+                background: Some(Background::Color(OryxisColors::t().border)),
+                ..Default::default()
+            });
+
+        let send_btn = button(
+            container(
+                iced_fonts::bootstrap::arrow_right().size(14).color(OryxisColors::t().text_primary),
+            )
+            .padding(Padding { top: 8.0, right: 8.0, bottom: 8.0, left: 8.0 }),
+        )
+        .on_press(Message::SendChatMessage)
+        .style(|_, status| {
+            let bg = match status {
+                BtnStatus::Hovered => OryxisColors::t().accent,
+                _ => OryxisColors::t().bg_surface,
+            };
+            button::Style {
+                background: Some(Background::Color(bg)),
+                border: Border { radius: Radius::from(6.0), ..Default::default() },
+                ..Default::default()
+            }
+        });
+
+        let input_row = container(
+            row![
+                text_input("Ask AI...", &self.chat_input)
+                    .on_input(Message::ChatInputChanged)
+                    .on_submit(Message::SendChatMessage)
+                    .padding(10)
+                    .width(Length::Fill),
+                Space::new().width(4),
+                send_btn,
+            ]
+            .align_y(iced::Alignment::Center),
+        )
+        .padding(Padding { top: 8.0, right: 12.0, bottom: 12.0, left: 12.0 })
+        .width(Length::Fill);
+
+        // ── Assemble sidebar ──
+        container(
+            column![header, header_separator, messages_scroll, input_separator, input_row]
+                .width(Length::Fill)
+                .height(Length::Fill),
+        )
+        .width(350)
+        .height(Length::Fill)
+        .style(|_| container::Style {
+            background: Some(Background::Color(OryxisColors::t().bg_primary)),
+            border: Border {
+                width: 1.0,
+                color: OryxisColors::t().border,
+                radius: Radius::from(0.0),
+            },
+            ..Default::default()
+        })
+        .into()
+    }
+
+    fn view_chat_message(&self, msg: &ChatMessage) -> Element<'_, Message> {
+        match msg.role {
+            ChatRole::User => {
+                let bubble = container(
+                    text(msg.content.clone()).size(13).color(Color::WHITE),
+                )
+                .padding(Padding { top: 8.0, right: 12.0, bottom: 8.0, left: 12.0 })
+                .max_width(280)
+                .style(|_| container::Style {
+                    background: Some(Background::Color(OryxisColors::t().accent)),
+                    border: Border { radius: Radius::from(12.0), ..Default::default() },
+                    ..Default::default()
+                });
+
+                container(bubble)
+                    .width(Length::Fill)
+                    .align_x(iced::alignment::Horizontal::Right)
+                    .into()
+            }
+            ChatRole::Assistant => {
+                let bubble = container(
+                    text(msg.content.clone()).size(13).color(OryxisColors::t().text_primary),
+                )
+                .padding(Padding { top: 8.0, right: 12.0, bottom: 8.0, left: 12.0 })
+                .max_width(280)
+                .style(|_| container::Style {
+                    background: Some(Background::Color(OryxisColors::t().bg_surface)),
+                    border: Border { radius: Radius::from(12.0), ..Default::default() },
+                    ..Default::default()
+                });
+
+                container(bubble)
+                    .width(Length::Fill)
+                    .align_x(iced::alignment::Horizontal::Left)
+                    .into()
+            }
+            ChatRole::System => {
+                let bubble = container(
+                    text(msg.content.clone()).size(11).color(OryxisColors::t().text_muted),
+                )
+                .padding(Padding { top: 6.0, right: 10.0, bottom: 6.0, left: 10.0 })
+                .max_width(300)
+                .style(|_| container::Style {
+                    background: Some(Background::Color(Color { r: 0.12, g: 0.12, b: 0.14, a: 1.0 })),
+                    border: Border { radius: Radius::from(8.0), ..Default::default() },
+                    ..Default::default()
+                });
+
+                container(bubble)
+                    .width(Length::Fill)
+                    .align_x(iced::alignment::Horizontal::Left)
+                    .into()
+            }
+        }
     }
 
     fn view_keys(&self) -> Element<'_, Message> {
@@ -3942,6 +4453,7 @@ impl Oryxis {
         let settings_sidebar = {
             let items: Vec<(&str, SettingsSection)> = vec![
                 ("Terminal", SettingsSection::Terminal),
+                ("AI", SettingsSection::AI),
                 ("Theme", SettingsSection::Theme),
                 ("Shortcuts", SettingsSection::Shortcuts),
                 ("Security", SettingsSection::Security),
@@ -4097,6 +4609,99 @@ impl Oryxis {
                         .width(Length::Fill),
                     )
                     .padding(Padding { top: 20.0, right: 24.0, bottom: 24.0, left: 24.0 }),
+                )
+                .height(Length::Fill)
+                .into()
+            }
+
+            SettingsSection::AI => {
+                let enable_section = panel_section(column![
+                    toggle_row("Enable AI Chat", self.ai_enabled, Message::ToggleAiEnabled),
+                ]);
+
+                let mut content_col = column![
+                    text("AI Assistant").size(18).color(OryxisColors::t().text_primary),
+                    Space::new().height(16),
+                    enable_section,
+                ]
+                .spacing(12)
+                .width(Length::Fill);
+
+                if self.ai_enabled {
+                    let provider_display = match self.ai_provider.as_str() {
+                        "anthropic" => "Anthropic",
+                        "openai" => "OpenAI",
+                        "custom" => "Custom",
+                        _ => "Anthropic",
+                    };
+                    let provider_options = vec![
+                        "Anthropic".to_string(),
+                        "OpenAI".to_string(),
+                        "Custom".to_string(),
+                    ];
+
+                    let provider_pick: Element<'_, Message> = pick_list(
+                        provider_options,
+                        Some(provider_display.to_string()),
+                        Message::AiProviderChanged,
+                    )
+                    .width(200)
+                    .into();
+
+                    let model_input: Element<'_, Message> = text_input("Model name...", &self.ai_model)
+                        .on_input(Message::AiModelChanged)
+                        .padding(10)
+                        .width(300)
+                        .into();
+
+                    let mut provider_col = column![
+                        panel_field("Provider", provider_pick),
+                        Space::new().height(12),
+                        panel_field("Model", model_input),
+                    ];
+
+                    if self.ai_provider == "custom" {
+                        let url_input: Element<'_, Message> = text_input("https://api.example.com/v1", &self.ai_api_url)
+                            .on_input(Message::AiApiUrlChanged)
+                            .padding(10)
+                            .width(300)
+                            .into();
+                        provider_col = provider_col
+                            .push(Space::new().height(12))
+                            .push(panel_field("API URL", url_input));
+                    }
+
+                    content_col = content_col.push(panel_section(provider_col));
+
+                    // API Key section
+                    let key_input: Element<'_, Message> = text_input("sk-...", &self.ai_api_key)
+                        .on_input(Message::AiApiKeyChanged)
+                        .on_submit(Message::SaveAiApiKey)
+                        .secure(true)
+                        .padding(10)
+                        .width(250)
+                        .into();
+
+                    let save_btn = styled_button("Save", Message::SaveAiApiKey, OryxisColors::t().accent);
+
+                    let status: Element<'_, Message> = if self.ai_api_key_set {
+                        text("API key saved \u{2713}").size(12).color(OryxisColors::t().success).into()
+                    } else {
+                        Space::new().height(0).into()
+                    };
+
+                    let key_section = panel_section(column![
+                        panel_field("API Key", row![key_input, Space::new().width(8), save_btn].align_y(iced::Alignment::Center).into()),
+                        Space::new().height(4),
+                        status,
+                    ]);
+
+                    content_col = content_col.push(key_section);
+                }
+
+                scrollable(
+                    container(content_col)
+                        .padding(Padding { top: 20.0, right: 24.0, bottom: 24.0, left: 24.0 }),
                 )
                 .height(Length::Fill)
                 .into()

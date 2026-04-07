@@ -15,6 +15,7 @@ use oryxis_core::models::identity::Identity;
 use oryxis_core::models::key::{KeyAlgorithm, SshKey};
 use oryxis_core::models::snippet::Snippet;
 
+use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use chrono::{DateTime, Utc};
 use thiserror::Error;
 
@@ -1075,6 +1076,8 @@ impl VaultStore {
         self.re_encrypt_keys(&old_key, &new_key)?;
         // Re-encrypt all identity passwords
         self.re_encrypt_identities(&old_key, &new_key)?;
+        // Re-encrypt AI API key if present
+        self.re_encrypt_ai_api_key(&old_key, &new_key)?;
 
         // Update the password_check with the new password
         let check = encrypt(b"oryxis_vault_ok", &new_key)?;
@@ -1104,6 +1107,7 @@ impl VaultStore {
         self.re_encrypt_connections(&old_key, &new_key)?;
         self.re_encrypt_keys(&old_key, &new_key)?;
         self.re_encrypt_identities(&old_key, &new_key)?;
+        self.re_encrypt_ai_api_key(&old_key, &new_key)?;
 
         // Update the password_check with empty password
         let check = encrypt(b"oryxis_vault_ok", &new_key)?;
@@ -1121,6 +1125,51 @@ impl VaultStore {
         self.master_key = Some(new_key);
         tracing::info!("Vault user password removed");
         Ok(())
+    }
+
+    // -----------------------------------------------------------------------
+    // Settings (key/value in settings table)
+    // -----------------------------------------------------------------------
+
+    /// Get a plain-text setting from the settings table.
+    pub fn get_setting(&self, key: &str) -> Result<Option<String>, VaultError> {
+        let val: Option<String> = self
+            .db
+            .query_row(
+                "SELECT value FROM settings WHERE key = ?1",
+                params![key],
+                |row| row.get(0),
+            )
+            .ok();
+        Ok(val)
+    }
+
+    /// Set a plain-text setting in the settings table.
+    pub fn set_setting(&self, key: &str, value: &str) -> Result<(), VaultError> {
+        self.db.execute(
+            "INSERT OR REPLACE INTO settings (key, value) VALUES (?1, ?2)",
+            params![key, value],
+        )?;
+        Ok(())
+    }
+
+    /// Store an AI API key encrypted in the settings table (base64-encoded).
+    pub fn set_ai_api_key(&self, api_key: &str) -> Result<(), VaultError> {
+        let encrypted = self.encrypt_field(api_key)?;
+        let encoded = BASE64.encode(&encrypted);
+        self.set_setting("ai_api_key", &encoded)
+    }
+
+    /// Retrieve and decrypt the AI API key from the settings table.
+    pub fn get_ai_api_key(&self) -> Result<Option<String>, VaultError> {
+        match self.get_setting("ai_api_key")? {
+            Some(encoded) => {
+                let encrypted = BASE64.decode(encoded.as_bytes())
+                    .map_err(|e| VaultError::Crypto(format!("Base64 decode: {}", e)))?;
+                Ok(Some(self.decrypt_field(&encrypted)?))
+            }
+            None => Ok(None),
+        }
     }
 
     // -----------------------------------------------------------------------
@@ -1155,6 +1204,29 @@ impl VaultStore {
                 "UPDATE keys SET private_key = ?1 WHERE id = ?2",
                 params![re_encrypted, id],
             )?;
+        }
+        Ok(())
+    }
+
+    fn re_encrypt_ai_api_key(&self, old_key: &[u8], new_key: &[u8]) -> Result<(), VaultError> {
+        let encoded: Option<String> = self
+            .db
+            .query_row(
+                "SELECT value FROM settings WHERE key = 'ai_api_key'",
+                [],
+                |row| row.get(0),
+            )
+            .ok();
+        if let Some(encoded) = encoded {
+            if let Ok(encrypted) = BASE64.decode(encoded.as_bytes()) {
+                let plain = decrypt(&encrypted, old_key)?;
+                let re_encrypted = encrypt(&plain, new_key)?;
+                let re_encoded = BASE64.encode(&re_encrypted);
+                self.db.execute(
+                    "INSERT OR REPLACE INTO settings (key, value) VALUES ('ai_api_key', ?1)",
+                    params![re_encoded],
+                )?;
+            }
         }
         Ok(())
     }
