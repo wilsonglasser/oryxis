@@ -50,9 +50,9 @@ impl Language {
             Self::French => "Français",
             Self::German => "Deutsch",
             Self::Italian => "Italiano",
-            Self::Chinese => "中文",
-            Self::Japanese => "日本語",
-            Self::Russian => "Русский",
+            Self::Chinese => "Chinese",
+            Self::Japanese => "Japanese",
+            Self::Russian => "Russian",
         }
     }
 
