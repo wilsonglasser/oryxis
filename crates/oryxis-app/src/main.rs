@@ -1,5 +1,14 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+// Prevent NVIDIA/AMD GPU drivers from treating this app as a game
+// (disables automatic overlay activation on Windows)
+#[cfg(target_os = "windows")]
+#[unsafe(no_mangle)]
+pub static NvOptimusEnablement: u32 = 0;
+#[cfg(target_os = "windows")]
+#[unsafe(no_mangle)]
+pub static AmdPowerXpressRequestHighPerformance: u32 = 0;
+
 mod ai;
 mod app;
 mod i18n;
