@@ -165,6 +165,15 @@ pub struct Oryxis {
     // Terminal theme
     terminal_theme: oryxis_terminal::TerminalTheme,
     terminal_font_size: f32,
+
+    // Settings
+    settings_section: SettingsSection,
+    setting_copy_on_select: bool,
+    setting_bold_is_bright: bool,
+    setting_bell_sound: bool,
+    setting_keyword_highlight: bool,
+    setting_keepalive_interval: String,
+    setting_scrollback_rows: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -189,6 +198,13 @@ pub enum View {
 // ---------------------------------------------------------------------------
 // Messages
 // ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum SettingsSection {
+    Terminal,
+    Theme,
+    About,
+}
 
 #[derive(Debug, Clone)]
 pub enum Message {
@@ -270,6 +286,13 @@ pub enum Message {
     AppThemeChanged(String),
     TerminalFontSizeIncrease,
     TerminalFontSizeDecrease,
+    ChangeSettingsSection(SettingsSection),
+    ToggleCopyOnSelect,
+    ToggleBoldIsBright,
+    ToggleBellSound,
+    ToggleKeywordHighlight,
+    SettingKeepaliveChanged(String),
+    SettingScrollbackChanged(String),
 
     // Local shell
     OpenLocalShell,
@@ -409,6 +432,13 @@ impl Oryxis {
                 snippet_error: None,
                 terminal_theme: oryxis_terminal::TerminalTheme::OryxisDark,
                 terminal_font_size: 14.0,
+                settings_section: SettingsSection::Terminal,
+                setting_copy_on_select: true,
+                setting_bold_is_bright: true,
+                setting_bell_sound: false,
+                setting_keyword_highlight: true,
+                setting_keepalive_interval: "0".into(),
+                setting_scrollback_rows: "10000".into(),
             },
             Task::none(),
         )
@@ -1196,6 +1226,27 @@ impl Oryxis {
             }
             Message::TerminalFontSizeDecrease => {
                 self.terminal_font_size = (self.terminal_font_size - 1.0).max(10.0);
+            }
+            Message::ChangeSettingsSection(section) => {
+                self.settings_section = section;
+            }
+            Message::ToggleCopyOnSelect => {
+                self.setting_copy_on_select = !self.setting_copy_on_select;
+            }
+            Message::ToggleBoldIsBright => {
+                self.setting_bold_is_bright = !self.setting_bold_is_bright;
+            }
+            Message::ToggleBellSound => {
+                self.setting_bell_sound = !self.setting_bell_sound;
+            }
+            Message::ToggleKeywordHighlight => {
+                self.setting_keyword_highlight = !self.setting_keyword_highlight;
+            }
+            Message::SettingKeepaliveChanged(val) => {
+                self.setting_keepalive_interval = val;
+            }
+            Message::SettingScrollbackChanged(val) => {
+                self.setting_scrollback_rows = val;
             }
             Message::LockVault => {
                 if let Some(vault) = &mut self.vault {
@@ -3589,120 +3640,367 @@ impl Oryxis {
     }
 
     fn view_settings(&self) -> Element<'_, Message> {
-        let toolbar = container(
-            text("Settings").size(20).color(OryxisColors::t().text_primary),
-        )
-        .padding(Padding { top: 20.0, right: 24.0, bottom: 16.0, left: 24.0 })
-        .width(Length::Fill);
+        // ── Settings sidebar ──
+        let settings_sidebar = {
+            let items: Vec<(&str, SettingsSection)> = vec![
+                ("Terminal", SettingsSection::Terminal),
+                ("Theme", SettingsSection::Theme),
+                ("About", SettingsSection::About),
+            ];
+            let mut col = column![
+                text("Settings").size(16).color(OryxisColors::t().text_primary),
+                Space::new().height(12),
+            ]
+            .padding(Padding { top: 20.0, right: 8.0, bottom: 8.0, left: 8.0 });
 
-        let stats = column![
-            text("Appearance").size(14).color(OryxisColors::t().text_muted),
-            Space::new().height(8),
-            row![
-                text("Theme").size(13).color(OryxisColors::t().text_secondary),
-                Space::new().width(16),
-                pick_list(
-                    crate::theme::AppTheme::ALL
-                        .iter()
-                        .map(|t| t.name().to_string())
-                        .collect::<Vec<_>>(),
-                    Some(crate::theme::AppTheme::active().name().to_string()),
-                    Message::AppThemeChanged,
-                ),
-            ].align_y(iced::Alignment::Center),
-            Space::new().height(12),
-            row![
-                text("Terminal Font Size").size(13).color(OryxisColors::t().text_secondary),
-                Space::new().width(16),
-                button(
-                    container(text("\u{2212}").size(14).color(OryxisColors::t().text_primary))
-                        .padding(Padding { top: 4.0, right: 10.0, bottom: 4.0, left: 10.0 }),
-                )
-                .on_press(Message::TerminalFontSizeDecrease)
-                .style(|_, status| {
-                    let bg = match status {
-                        BtnStatus::Hovered => OryxisColors::t().bg_hover,
-                        _ => OryxisColors::t().bg_selected,
-                    };
-                    button::Style {
-                        background: Some(Background::Color(bg)),
-                        border: Border { radius: Radius::from(4.0), ..Default::default() },
-                        ..Default::default()
-                    }
-                }),
-                Space::new().width(8),
-                text(format!("{:.0}", self.terminal_font_size)).size(13).color(OryxisColors::t().text_primary),
-                Space::new().width(8),
-                button(
-                    container(text("+").size(14).color(OryxisColors::t().text_primary))
-                        .padding(Padding { top: 4.0, right: 10.0, bottom: 4.0, left: 10.0 }),
-                )
-                .on_press(Message::TerminalFontSizeIncrease)
-                .style(|_, status| {
-                    let bg = match status {
-                        BtnStatus::Hovered => OryxisColors::t().bg_hover,
-                        _ => OryxisColors::t().bg_selected,
-                    };
-                    button::Style {
-                        background: Some(Background::Color(bg)),
-                        border: Border { radius: Radius::from(4.0), ..Default::default() },
-                        ..Default::default()
-                    }
-                }),
-            ].align_y(iced::Alignment::Center),
-            Space::new().height(24),
-            text("Vault").size(14).color(OryxisColors::t().text_muted),
-            Space::new().height(8),
-            settings_row("Hosts", self.connections.len().to_string()),
-            Space::new().height(6),
-            settings_row("Keys", self.keys.len().to_string()),
-            Space::new().height(6),
-            settings_row("Snippets", self.snippets.len().to_string()),
-            Space::new().height(6),
-            settings_row("Groups", self.groups.len().to_string()),
-            Space::new().height(24),
-            text("Security").size(14).color(OryxisColors::t().text_muted),
-            Space::new().height(8),
-            button(
-                container(
-                    row![
-                        iced_fonts::bootstrap::lock().size(14).color(OryxisColors::t().warning),
-                        Space::new().width(10),
-                        text("Lock Vault").size(13).color(OryxisColors::t().warning),
-                    ].align_y(iced::Alignment::Center),
-                )
-                .padding(Padding { top: 10.0, right: 20.0, bottom: 10.0, left: 20.0 }),
-            )
-            .on_press(Message::LockVault)
-            .style(|_, status| {
-                let bg = match status {
-                    BtnStatus::Hovered => Color { a: 0.15, ..OryxisColors::t().warning },
-                    _ => Color::TRANSPARENT,
+            for (label, section) in items {
+                let is_active = self.settings_section == section;
+                let bg = if is_active {
+                    Color { a: 0.15, ..OryxisColors::t().accent }
+                } else {
+                    Color::TRANSPARENT
                 };
-                button::Style {
-                    background: Some(Background::Color(bg)),
-                    border: Border { radius: Radius::from(8.0), color: OryxisColors::t().warning, width: 1.0 },
+                let fg = if is_active {
+                    OryxisColors::t().accent
+                } else {
+                    OryxisColors::t().text_secondary
+                };
+                let btn: Element<'_, Message> = button(
+                    container(text(label).size(13).color(fg))
+                        .padding(Padding { top: 8.0, right: 16.0, bottom: 8.0, left: 16.0 }),
+                )
+                .on_press(Message::ChangeSettingsSection(section))
+                .width(Length::Fill)
+                .style(move |_, status| {
+                    let hover_bg = match status {
+                        BtnStatus::Hovered if !is_active => Color::from_rgba(1.0, 1.0, 1.0, 0.08),
+                        BtnStatus::Pressed => Color { a: 0.25, ..OryxisColors::t().accent },
+                        _ => bg,
+                    };
+                    button::Style {
+                        background: Some(Background::Color(hover_bg)),
+                        border: Border { radius: Radius::from(10.0), ..Default::default() },
+                        ..Default::default()
+                    }
+                })
+                .into();
+                col = col.push(btn);
+            }
+
+            container(col)
+                .width(200)
+                .height(Length::Fill)
+                .style(|_| container::Style {
+                    background: Some(Background::Color(OryxisColors::t().bg_sidebar)),
+                    border: Border {
+                        color: OryxisColors::t().border,
+                        width: 1.0,
+                        radius: Radius::from(0.0),
+                    },
                     ..Default::default()
+                })
+        };
+
+        // ── Settings content ──
+        let settings_content: Element<'_, Message> = match self.settings_section {
+            SettingsSection::Terminal => {
+                let toggles_section = panel_section(column![
+                    toggle_row("Select text to copy & Right click to paste", self.setting_copy_on_select, Message::ToggleCopyOnSelect),
+                    Space::new().height(10),
+                    toggle_row("Use bright colours for bold text", self.setting_bold_is_bright, Message::ToggleBoldIsBright),
+                    Space::new().height(10),
+                    toggle_row("Bell sound", self.setting_bell_sound, Message::ToggleBellSound),
+                    Space::new().height(10),
+                    toggle_row("Keyword highlighting", self.setting_keyword_highlight, Message::ToggleKeywordHighlight),
+                ]);
+
+                let font_size_section = panel_section(column![
+                    row![
+                        text("Terminal Font Size").size(13).color(OryxisColors::t().text_primary),
+                        Space::new().width(Length::Fill),
+                        button(
+                            container(text("\u{2212}").size(14).color(OryxisColors::t().text_primary))
+                                .padding(Padding { top: 4.0, right: 10.0, bottom: 4.0, left: 10.0 }),
+                        )
+                        .on_press(Message::TerminalFontSizeDecrease)
+                        .style(|_, status| {
+                            let bg = match status {
+                                BtnStatus::Hovered => OryxisColors::t().bg_hover,
+                                _ => OryxisColors::t().bg_selected,
+                            };
+                            button::Style {
+                                background: Some(Background::Color(bg)),
+                                border: Border { radius: Radius::from(4.0), ..Default::default() },
+                                ..Default::default()
+                            }
+                        }),
+                        Space::new().width(8),
+                        text(format!("{:.0}", self.terminal_font_size)).size(13).color(OryxisColors::t().text_primary),
+                        Space::new().width(8),
+                        button(
+                            container(text("+").size(14).color(OryxisColors::t().text_primary))
+                                .padding(Padding { top: 4.0, right: 10.0, bottom: 4.0, left: 10.0 }),
+                        )
+                        .on_press(Message::TerminalFontSizeIncrease)
+                        .style(|_, status| {
+                            let bg = match status {
+                                BtnStatus::Hovered => OryxisColors::t().bg_hover,
+                                _ => OryxisColors::t().bg_selected,
+                            };
+                            button::Style {
+                                background: Some(Background::Color(bg)),
+                                border: Border { radius: Radius::from(4.0), ..Default::default() },
+                                ..Default::default()
+                            }
+                        }),
+                    ].align_y(iced::Alignment::Center),
+                ]);
+
+                let keepalive_section = panel_section(column![
+                    text("Keepalive Interval").size(13).color(OryxisColors::t().text_primary),
+                    Space::new().height(4),
+                    text("How often (in seconds) to send SSH keepalive packets. Set to 0 to disable.")
+                        .size(11).color(OryxisColors::t().text_muted),
+                    Space::new().height(8),
+                    text_input("0", &self.setting_keepalive_interval)
+                        .on_input(Message::SettingKeepaliveChanged)
+                        .size(13)
+                        .width(120),
+                ]);
+
+                let scrollback_section = panel_section(column![
+                    text("Scrollback").size(13).color(OryxisColors::t().text_primary),
+                    Space::new().height(4),
+                    text("Limit number of terminal rows. Set to 0 for maximum.")
+                        .size(11).color(OryxisColors::t().text_muted),
+                    Space::new().height(8),
+                    text_input("10000", &self.setting_scrollback_rows)
+                        .on_input(Message::SettingScrollbackChanged)
+                        .size(13)
+                        .width(120),
+                ]);
+
+                let lock_btn = button(
+                    container(
+                        row![
+                            iced_fonts::bootstrap::lock().size(14).color(OryxisColors::t().warning),
+                            Space::new().width(10),
+                            text("Lock Vault").size(13).color(OryxisColors::t().warning),
+                        ].align_y(iced::Alignment::Center),
+                    )
+                    .padding(Padding { top: 10.0, right: 20.0, bottom: 10.0, left: 20.0 }),
+                )
+                .on_press(Message::LockVault)
+                .style(|_, status| {
+                    let bg = match status {
+                        BtnStatus::Hovered => Color { a: 0.15, ..OryxisColors::t().warning },
+                        _ => Color::TRANSPARENT,
+                    };
+                    button::Style {
+                        background: Some(Background::Color(bg)),
+                        border: Border { radius: Radius::from(8.0), color: OryxisColors::t().warning, width: 1.0 },
+                        ..Default::default()
+                    }
+                });
+
+                scrollable(
+                    container(
+                        column![
+                            text("Terminal Settings").size(18).color(OryxisColors::t().text_primary),
+                            Space::new().height(16),
+                            toggles_section,
+                            Space::new().height(12),
+                            font_size_section,
+                            Space::new().height(12),
+                            keepalive_section,
+                            Space::new().height(12),
+                            scrollback_section,
+                            Space::new().height(24),
+                            text("Security").size(14).color(OryxisColors::t().text_muted),
+                            Space::new().height(8),
+                            lock_btn,
+                            Space::new().height(24),
+                        ]
+                        .width(Length::Fill),
+                    )
+                    .padding(Padding { top: 20.0, right: 24.0, bottom: 24.0, left: 24.0 }),
+                )
+                .height(Length::Fill)
+                .into()
+            }
+
+            SettingsSection::Theme => {
+                use crate::theme::AppTheme;
+                let active_name = AppTheme::active().name();
+
+                let mut grid_rows: Vec<Element<'_, Message>> = Vec::new();
+                let themes: Vec<&AppTheme> = AppTheme::ALL.iter().collect();
+
+                for chunk in themes.chunks(2) {
+                    let mut r = row![].spacing(12);
+                    for theme in chunk {
+                        let name = theme.name();
+                        let is_active = name == active_name;
+                        let colors = match theme {
+                            AppTheme::OryxisDark => &crate::theme::ORYXIS_DARK,
+                            AppTheme::OryxisLight => &crate::theme::ORYXIS_LIGHT,
+                            AppTheme::Dracula => &crate::theme::DRACULA,
+                            AppTheme::Nord => &crate::theme::NORD,
+                        };
+                        let border_color = if is_active {
+                            OryxisColors::t().accent
+                        } else {
+                            OryxisColors::t().border
+                        };
+                        let border_width = if is_active { 2.0 } else { 1.0 };
+
+                        let preview_bg = colors.bg_primary;
+                        let accent_bar = colors.accent;
+                        let success_bar = colors.success;
+                        let error_bar = colors.error;
+
+                        let preview = container(
+                            column![
+                                Space::new().height(20),
+                                row![
+                                    container(Space::new().width(30).height(4))
+                                        .style(move |_| container::Style {
+                                            background: Some(Background::Color(accent_bar)),
+                                            border: Border { radius: Radius::from(2.0), ..Default::default() },
+                                            ..Default::default()
+                                        }),
+                                    Space::new().width(4),
+                                    container(Space::new().width(20).height(4))
+                                        .style(move |_| container::Style {
+                                            background: Some(Background::Color(success_bar)),
+                                            border: Border { radius: Radius::from(2.0), ..Default::default() },
+                                            ..Default::default()
+                                        }),
+                                    Space::new().width(4),
+                                    container(Space::new().width(15).height(4))
+                                        .style(move |_| container::Style {
+                                            background: Some(Background::Color(error_bar)),
+                                            border: Border { radius: Radius::from(2.0), ..Default::default() },
+                                            ..Default::default()
+                                        }),
+                                ].padding(Padding { top: 0.0, right: 8.0, bottom: 8.0, left: 8.0 }),
+                            ],
+                        )
+                        .width(120)
+                        .style(move |_| container::Style {
+                            background: Some(Background::Color(preview_bg)),
+                            border: Border { radius: Radius::from(6.0), ..Default::default() },
+                            ..Default::default()
+                        });
+
+                        let card: Element<'_, Message> = button(
+                            container(
+                                column![
+                                    preview,
+                                    Space::new().height(8),
+                                    text(name).size(12).color(OryxisColors::t().text_primary),
+                                ]
+                                .align_x(iced::Alignment::Center),
+                            )
+                            .padding(12),
+                        )
+                        .on_press(Message::AppThemeChanged(name.to_string()))
+                        .width(Length::FillPortion(1))
+                        .style(move |_, status| {
+                            let bg = match status {
+                                BtnStatus::Hovered => OryxisColors::t().bg_hover,
+                                _ => OryxisColors::t().bg_surface,
+                            };
+                            button::Style {
+                                background: Some(Background::Color(bg)),
+                                border: Border {
+                                    radius: Radius::from(8.0),
+                                    color: border_color,
+                                    width: border_width,
+                                },
+                                ..Default::default()
+                            }
+                        })
+                        .into();
+                        r = r.push(card);
+                    }
+                    // Fill remaining space if odd number
+                    if chunk.len() == 1 {
+                        r = r.push(Space::new().width(Length::FillPortion(1)));
+                    }
+                    grid_rows.push(r.into());
                 }
-            }),
-            Space::new().height(24),
-            text("About").size(14).color(OryxisColors::t().text_muted),
-            Space::new().height(8),
-            text("Oryxis v0.1.0").size(13).color(OryxisColors::t().text_secondary),
-            text("A modern SSH client built in Rust").size(12).color(OryxisColors::t().text_muted),
-            Space::new().height(4),
-            text("Iced + russh + alacritty_terminal").size(11).color(OryxisColors::t().text_muted),
-        ];
+
+                let mut content_col = column![
+                    text("Theme").size(18).color(OryxisColors::t().text_primary),
+                    Space::new().height(16),
+                ]
+                .spacing(12)
+                .width(Length::Fill);
+
+                for row_el in grid_rows {
+                    content_col = content_col.push(row_el);
+                }
+
+                scrollable(
+                    container(content_col)
+                        .padding(Padding { top: 20.0, right: 24.0, bottom: 24.0, left: 24.0 }),
+                )
+                .height(Length::Fill)
+                .into()
+            }
+
+            SettingsSection::About => {
+                let about_section = panel_section(column![
+                    text("Oryxis v0.1.0").size(16).color(OryxisColors::t().text_primary),
+                    Space::new().height(4),
+                    text("A modern SSH client built with Rust").size(13).color(OryxisColors::t().text_secondary),
+                    Space::new().height(16),
+                    settings_row("Built with", "Iced, russh, alacritty_terminal".into()),
+                    Space::new().height(6),
+                    settings_row("License", "AGPL-3.0".into()),
+                    Space::new().height(6),
+                    settings_row("GitHub", "github.com/wilsonglasser/oryxis".into()),
+                ]);
+
+                let vault_section = panel_section(column![
+                    text("Vault Statistics").size(14).color(OryxisColors::t().text_muted),
+                    Space::new().height(8),
+                    settings_row("Hosts", self.connections.len().to_string()),
+                    Space::new().height(6),
+                    settings_row("Keys", self.keys.len().to_string()),
+                    Space::new().height(6),
+                    settings_row("Snippets", self.snippets.len().to_string()),
+                    Space::new().height(6),
+                    settings_row("Groups", self.groups.len().to_string()),
+                ]);
+
+                scrollable(
+                    container(
+                        column![
+                            text("About").size(18).color(OryxisColors::t().text_primary),
+                            Space::new().height(16),
+                            about_section,
+                            Space::new().height(12),
+                            vault_section,
+                            Space::new().height(24),
+                        ]
+                        .width(Length::Fill),
+                    )
+                    .padding(Padding { top: 20.0, right: 24.0, bottom: 24.0, left: 24.0 }),
+                )
+                .height(Length::Fill)
+                .into()
+            }
+        };
 
         container(
-            column![
-                toolbar,
-                scrollable(
-                    container(stats)
-                        .padding(Padding { top: 0.0, right: 24.0, bottom: 24.0, left: 24.0 }),
-                ).height(Length::Fill),
-            ]
-            .width(Length::Fill),
+            row![
+                settings_sidebar,
+                container(settings_content)
+                    .width(Length::Fill)
+                    .height(Length::Fill),
+            ],
         )
         .width(Length::Fill)
         .height(Length::Fill)
@@ -4059,6 +4357,24 @@ fn panel_field<'a>(label: &'a str, input: Element<'a, Message>) -> Element<'a, M
 }
 
 /// A divider line inside a section.
+fn toggle_row<'a>(label: &'a str, value: bool, msg: Message) -> Element<'a, Message> {
+    let toggle_bg = if value { OryxisColors::t().success } else { OryxisColors::t().bg_selected };
+    let toggle_text = if value { "  \u{25CF}" } else { "\u{25CF}  " };
+    row![
+        text(label).size(13).color(OryxisColors::t().text_primary),
+        Space::new().width(Length::Fill),
+        button(text(toggle_text).size(12).color(Color::WHITE))
+            .on_press(msg)
+            .padding(Padding { top: 4.0, right: 8.0, bottom: 4.0, left: 8.0 })
+            .style(move |_, _| button::Style {
+                background: Some(Background::Color(toggle_bg)),
+                border: Border { radius: Radius::from(10.0), ..Default::default() },
+                ..Default::default()
+            }),
+    ].align_y(iced::Alignment::Center)
+    .into()
+}
+
 fn panel_divider<'a>() -> Element<'a, Message> {
     container(Space::new().height(1))
         .width(Length::Fill)
