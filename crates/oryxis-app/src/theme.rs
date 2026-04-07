@@ -51,7 +51,7 @@ pub struct OryxisColors;
 #[allow(dead_code)]
 impl OryxisColors {
     // ── Theme-aware accessors ──
-    fn t() -> &'static ThemeColors {
+    pub fn t() -> &'static ThemeColors {
         match AppTheme::active() {
             AppTheme::OryxisDark => &ORYXIS_DARK,
             AppTheme::OryxisLight => &ORYXIS_LIGHT,

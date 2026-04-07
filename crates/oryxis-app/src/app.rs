@@ -434,12 +434,12 @@ impl Oryxis {
         Theme::custom(
             String::from("Oryxis Dark"),
             iced::theme::Palette {
-                background: OryxisColors::BG_PRIMARY,
-                text: OryxisColors::TEXT_PRIMARY,
-                primary: OryxisColors::ACCENT,
-                success: OryxisColors::SUCCESS,
-                warning: OryxisColors::WARNING,
-                danger: OryxisColors::ERROR,
+                background: OryxisColors::t().bg_primary,
+                text: OryxisColors::t().text_primary,
+                primary: OryxisColors::t().accent,
+                success: OryxisColors::t().success,
+                warning: OryxisColors::t().warning,
+                danger: OryxisColors::t().error,
             },
         )
     }
@@ -1497,10 +1497,10 @@ impl Oryxis {
         let logo = image(self.logo_handle.clone())
             .width(64)
             .height(64);
-        let title = text("Welcome to Oryxis").size(28).color(OryxisColors::TEXT_PRIMARY);
+        let title = text("Welcome to Oryxis").size(28).color(OryxisColors::t().text_primary);
         let subtitle = text("Create a master password to secure your vault.")
             .size(14)
-            .color(OryxisColors::TEXT_SECONDARY);
+            .color(OryxisColors::t().text_secondary);
 
         let input = text_input("Master password...", &self.vault_password_input)
             .on_input(Message::VaultPasswordChanged)
@@ -1509,10 +1509,10 @@ impl Oryxis {
             .padding(12)
             .width(300);
 
-        let btn = styled_button("Create Vault", Message::VaultSetup, OryxisColors::ACCENT);
+        let btn = styled_button("Create Vault", Message::VaultSetup, OryxisColors::t().accent);
 
         let error = if let Some(err) = &self.vault_error {
-            Element::from(text(err.clone()).size(13).color(OryxisColors::ERROR))
+            Element::from(text(err.clone()).size(13).color(OryxisColors::t().error))
         } else {
             Space::new().height(0).into()
         };
@@ -1523,7 +1523,7 @@ impl Oryxis {
         )
         .center(Length::Fill)
         .style(|_| container::Style {
-            background: Some(Background::Color(OryxisColors::BG_PRIMARY)),
+            background: Some(Background::Color(OryxisColors::t().bg_primary)),
             ..Default::default()
         })
         .width(Length::Fill)
@@ -1535,10 +1535,10 @@ impl Oryxis {
         let logo = image(self.logo_handle.clone())
             .width(64)
             .height(64);
-        let title = text("Oryxis").size(28).color(OryxisColors::ACCENT);
+        let title = text("Oryxis").size(28).color(OryxisColors::t().accent);
         let subtitle = text("Enter your master password to unlock.")
             .size(14)
-            .color(OryxisColors::TEXT_SECONDARY);
+            .color(OryxisColors::t().text_secondary);
 
         let input = text_input("Master password...", &self.vault_password_input)
             .on_input(Message::VaultPasswordChanged)
@@ -1547,10 +1547,10 @@ impl Oryxis {
             .padding(12)
             .width(300);
 
-        let btn = styled_button("Unlock", Message::VaultUnlock, OryxisColors::ACCENT);
+        let btn = styled_button("Unlock", Message::VaultUnlock, OryxisColors::t().accent);
 
         let error = if let Some(err) = &self.vault_error {
-            Element::from(text(err.clone()).size(13).color(OryxisColors::ERROR))
+            Element::from(text(err.clone()).size(13).color(OryxisColors::t().error))
         } else {
             Space::new().height(0).into()
         };
@@ -1561,7 +1561,7 @@ impl Oryxis {
         )
         .center(Length::Fill)
         .style(|_| container::Style {
-            background: Some(Background::Color(OryxisColors::BG_PRIMARY)),
+            background: Some(Background::Color(OryxisColors::t().bg_primary)),
             ..Default::default()
         })
         .width(Length::Fill)
@@ -1572,11 +1572,11 @@ impl Oryxis {
     fn view_vault_error(&self, msg: &str) -> Element<'_, Message> {
         let msg = msg.to_string();
         container(
-            text(msg).size(16).color(OryxisColors::ERROR),
+            text(msg).size(16).color(OryxisColors::t().error),
         )
         .center(Length::Fill)
         .style(|_| container::Style {
-            background: Some(Background::Color(OryxisColors::BG_PRIMARY)),
+            background: Some(Background::Color(OryxisColors::t().bg_primary)),
             ..Default::default()
         })
         .width(Length::Fill)
@@ -1600,7 +1600,7 @@ impl Oryxis {
             .width(Length::Fill)
             .height(Length::Fill)
             .style(|_| container::Style {
-                background: Some(Background::Color(OryxisColors::BG_PRIMARY)),
+                background: Some(Background::Color(OryxisColors::t().bg_primary)),
                 ..Default::default()
             })
             .into()
@@ -1620,8 +1620,8 @@ impl Oryxis {
             View::Terminal => "",
         };
         if !nav_label.is_empty() {
-            let nav_bg = if self.active_tab.is_none() { OryxisColors::BG_SURFACE } else { Color::TRANSPARENT };
-            let nav_fg = if self.active_tab.is_none() { OryxisColors::ACCENT } else { OryxisColors::TEXT_MUTED };
+            let nav_bg = if self.active_tab.is_none() { OryxisColors::t().bg_surface } else { Color::TRANSPARENT };
+            let nav_fg = if self.active_tab.is_none() { OryxisColors::t().accent } else { OryxisColors::t().text_muted };
             let tab = button(
                 text(nav_label).size(12).color(nav_fg),
             )
@@ -1641,10 +1641,10 @@ impl Oryxis {
         // Terminal session tabs
         for (idx, tab) in self.tabs.iter().enumerate() {
             let is_active = self.active_tab == Some(idx);
-            let tab_bg = if is_active { OryxisColors::BG_SURFACE } else { Color::TRANSPARENT };
-            let tab_fg = if is_active { OryxisColors::TEXT_PRIMARY } else { OryxisColors::TEXT_MUTED };
+            let tab_bg = if is_active { OryxisColors::t().bg_surface } else { Color::TRANSPARENT };
+            let tab_fg = if is_active { OryxisColors::t().text_primary } else { OryxisColors::t().text_muted };
 
-            let close_btn = button(text("x").size(10).color(OryxisColors::TEXT_MUTED))
+            let close_btn = button(text("x").size(10).color(OryxisColors::t().text_muted))
                 .on_press(Message::CloseTab(idx))
                 .padding(Padding { top: 0.0, right: 4.0, bottom: 0.0, left: 4.0 })
                 .style(|_, _| button::Style {
@@ -1679,7 +1679,7 @@ impl Oryxis {
         container(row(items).align_y(iced::Alignment::Center))
             .width(Length::Fill)
             .style(|_| container::Style {
-                background: Some(Background::Color(OryxisColors::BG_SIDEBAR)),
+                background: Some(Background::Color(OryxisColors::t().bg_sidebar)),
                 ..Default::default()
             })
             .into()
@@ -1694,7 +1694,7 @@ impl Oryxis {
             row![
                 logo,
                 Space::new().width(10),
-                text("ORYXIS").size(16).color(OryxisColors::ACCENT),
+                text("ORYXIS").size(16).color(OryxisColors::t().accent),
             ]
             .align_y(iced::Alignment::Center),
         )
@@ -1715,9 +1715,9 @@ impl Oryxis {
         let local_btn = button(
             container(
                 row![
-                    text("+").size(13).color(OryxisColors::TEXT_MUTED),
+                    text("+").size(13).color(OryxisColors::t().text_muted),
                     Space::new().width(10),
-                    text("Local Shell").size(12).color(OryxisColors::TEXT_MUTED),
+                    text("Local Shell").size(12).color(OryxisColors::t().text_muted),
                 ]
                 .align_y(iced::Alignment::Center),
             )
@@ -1744,7 +1744,7 @@ impl Oryxis {
             .width(SIDEBAR_WIDTH)
             .height(Length::Fill)
             .style(|_| container::Style {
-                background: Some(Background::Color(OryxisColors::BG_SIDEBAR)),
+                background: Some(Background::Color(OryxisColors::t().bg_sidebar)),
                 ..Default::default()
             })
             .into()
@@ -1773,7 +1773,7 @@ impl Oryxis {
             .width(Length::Fill)
             .height(Length::Fill)
             .style(|_| container::Style {
-                background: Some(Background::Color(OryxisColors::BG_PRIMARY)),
+                background: Some(Background::Color(OryxisColors::t().bg_primary)),
                 ..Default::default()
             })
             .into()
@@ -1789,9 +1789,9 @@ impl Oryxis {
             row![
                 button(
                     row![
-                        iced_fonts::bootstrap::arrow_left().size(14).color(OryxisColors::ACCENT),
+                        iced_fonts::bootstrap::arrow_left().size(14).color(OryxisColors::t().accent),
                         Space::new().width(6),
-                        text("All Hosts").size(14).color(OryxisColors::ACCENT),
+                        text("All Hosts").size(14).color(OryxisColors::t().accent),
                     ].align_y(iced::Alignment::Center),
                 )
                 .on_press(Message::BackToRoot)
@@ -1801,14 +1801,14 @@ impl Oryxis {
                     border: Border::default(),
                     ..Default::default()
                 }),
-                text("/").size(16).color(OryxisColors::TEXT_MUTED),
+                text("/").size(16).color(OryxisColors::t().text_muted),
                 Space::new().width(8),
-                iced_fonts::bootstrap::folder_fill().size(16).color(OryxisColors::ACCENT),
+                iced_fonts::bootstrap::folder_fill().size(16).color(OryxisColors::t().accent),
                 Space::new().width(6),
-                text(group_name).size(16).color(OryxisColors::TEXT_PRIMARY),
+                text(group_name).size(16).color(OryxisColors::t().text_primary),
             ].align_y(iced::Alignment::Center).into()
         } else {
-            text("Hosts").size(20).color(OryxisColors::TEXT_PRIMARY).into()
+            text("Hosts").size(20).color(OryxisColors::t().text_primary).into()
         };
 
         let toolbar = container(
@@ -1818,16 +1818,16 @@ impl Oryxis {
                 button(
                     container(
                         row![
-                            text("+").size(12).color(OryxisColors::TEXT_PRIMARY),
+                            text("+").size(12).color(OryxisColors::t().text_primary),
                             Space::new().width(4),
-                            text("HOST").size(12).color(OryxisColors::TEXT_PRIMARY),
+                            text("HOST").size(12).color(OryxisColors::t().text_primary),
                         ].align_y(iced::Alignment::Center),
                     )
                     .padding(Padding { top: 6.0, right: 14.0, bottom: 7.0, left: 14.0 }),
                 )
                 .on_press(Message::ShowNewConnection)
                 .style(|_, _| button::Style {
-                    background: Some(Background::Color(OryxisColors::ACCENT)),
+                    background: Some(Background::Color(OryxisColors::t().accent)),
                     border: Border { radius: Radius::from(8.0), ..Default::default() },
                     ..Default::default()
                 }),
@@ -1843,19 +1843,19 @@ impl Oryxis {
                 .padding(10)
                 .size(13)
                 .style(|_, status| text_input::Style {
-                    background: Background::Color(OryxisColors::BG_SURFACE),
+                    background: Background::Color(OryxisColors::t().bg_surface),
                     border: Border {
                         radius: Radius::from(8.0),
                         width: 1.0,
                         color: match status {
-                            text_input::Status::Focused { .. } => OryxisColors::ACCENT,
-                            _ => OryxisColors::BORDER,
+                            text_input::Status::Focused { .. } => OryxisColors::t().accent,
+                            _ => OryxisColors::t().border,
                         },
                     },
-                    icon: OryxisColors::TEXT_MUTED,
-                    placeholder: OryxisColors::TEXT_MUTED,
-                    value: OryxisColors::TEXT_PRIMARY,
-                    selection: OryxisColors::ACCENT,
+                    icon: OryxisColors::t().text_muted,
+                    placeholder: OryxisColors::t().text_muted,
+                    value: OryxisColors::t().text_primary,
+                    selection: OryxisColors::t().accent,
                 }),
         )
         .padding(Padding { top: 0.0, right: 24.0, bottom: 12.0, left: 24.0 })
@@ -1863,7 +1863,7 @@ impl Oryxis {
 
         // ── Status ──
         let status: Element<'_, Message> = if let Some(err) = &self.host_panel_error {
-            container(Element::from(text(err.clone()).size(12).color(OryxisColors::ERROR)))
+            container(Element::from(text(err.clone()).size(12).color(OryxisColors::t().error)))
                 .padding(Padding { top: 0.0, right: 24.0, bottom: 8.0, left: 24.0 }).into()
         } else {
             Space::new().height(0).into()
@@ -1875,25 +1875,25 @@ impl Oryxis {
         if self.connections.is_empty() {
             // Termius-style empty state — centered "Create host" with input
             let has_input = !self.quick_host_input.is_empty();
-            let btn_bg = if has_input { OryxisColors::SUCCESS } else { OryxisColors::BG_SURFACE };
+            let btn_bg = if has_input { OryxisColors::t().success } else { OryxisColors::t().bg_surface };
 
             let empty_state = container(
                 column![
                     // Icon
                     container(
-                        iced_fonts::bootstrap::hdd_network().size(32).color(OryxisColors::TEXT_MUTED),
+                        iced_fonts::bootstrap::hdd_network().size(32).color(OryxisColors::t().text_muted),
                     )
                     .padding(16)
                     .style(|_| container::Style {
-                        background: Some(Background::Color(OryxisColors::BG_SURFACE)),
+                        background: Some(Background::Color(OryxisColors::t().bg_surface)),
                         border: Border { radius: Radius::from(12.0), ..Default::default() },
                         ..Default::default()
                     }),
                     Space::new().height(20),
-                    text("Create host").size(20).color(OryxisColors::TEXT_PRIMARY),
+                    text("Create host").size(20).color(OryxisColors::t().text_primary),
                     Space::new().height(8),
                     text("Save your connection details as hosts to connect in one click.")
-                        .size(13).color(OryxisColors::TEXT_MUTED),
+                        .size(13).color(OryxisColors::t().text_muted),
                     Space::new().height(24),
                     // Hostname input
                     text_input("Type IP or Hostname", &self.quick_host_input)
@@ -1904,7 +1904,7 @@ impl Oryxis {
                     Space::new().height(12),
                     // Continue button
                     button(
-                        container(text("Continue").size(14).color(OryxisColors::TEXT_PRIMARY))
+                        container(text("Continue").size(14).color(OryxisColors::t().text_primary))
                             .padding(Padding { top: 12.0, right: 0.0, bottom: 12.0, left: 0.0 })
                             .width(380)
                             .center_x(380),
@@ -1952,12 +1952,12 @@ impl Oryxis {
                                 container(
                                     column![
                                         row![
-                                            iced_fonts::bootstrap::folder_fill().size(20).color(OryxisColors::ACCENT),
+                                            iced_fonts::bootstrap::folder_fill().size(20).color(OryxisColors::t().accent),
                                             Space::new().width(Length::Fill),
-                                            text(count_text).size(11).color(OryxisColors::TEXT_MUTED),
+                                            text(count_text).size(11).color(OryxisColors::t().text_muted),
                                         ].align_y(iced::Alignment::Center),
                                         Space::new().height(10),
-                                        text(label).size(14).color(OryxisColors::TEXT_PRIMARY),
+                                        text(label).size(14).color(OryxisColors::t().text_primary),
                                     ],
                                 )
                                 .padding(16),
@@ -1966,9 +1966,9 @@ impl Oryxis {
                             .width(CARD_WIDTH)
                             .style(|_, status| {
                                 let (bg, bc, bw) = match status {
-                                    BtnStatus::Hovered => (OryxisColors::BG_HOVER, OryxisColors::ACCENT, 1.5),
-                                    BtnStatus::Pressed => (OryxisColors::BG_SELECTED, OryxisColors::ACCENT, 2.0),
-                                    _ => (OryxisColors::BG_SURFACE, OryxisColors::BORDER, 1.0),
+                                    BtnStatus::Hovered => (OryxisColors::t().bg_hover, OryxisColors::t().accent, 1.5),
+                                    BtnStatus::Pressed => (OryxisColors::t().bg_selected, OryxisColors::t().accent, 2.0),
+                                    _ => (OryxisColors::t().bg_surface, OryxisColors::t().border, 1.0),
                                 };
                                 button::Style {
                                     background: Some(Background::Color(bg)),
@@ -2009,7 +2009,7 @@ impl Oryxis {
             };
             let subtitle = format!("{}@{}:{} · {}", conn.username.as_deref().unwrap_or("root"), conn.hostname, conn.port, auth_label);
 
-            let icon_color = if is_connected { OryxisColors::SUCCESS } else { OryxisColors::ACCENT };
+            let icon_color = if is_connected { OryxisColors::t().success } else { OryxisColors::t().accent };
             let icon_box = container(iced_fonts::bootstrap::hdd_network().size(14).color(Color::WHITE))
                 .padding(Padding { top: 8.0, right: 8.0, bottom: 8.0, left: 8.0 })
                 .style(move |_| container::Style {
@@ -2022,13 +2022,13 @@ impl Oryxis {
             let show_dots = self.hovered_card == Some(idx) || self.card_context_menu == Some(idx);
             let dots_btn: Element<'_, Message> = if show_dots {
                 button(
-                    text("···").size(14).color(OryxisColors::TEXT_MUTED),
+                    text("···").size(14).color(OryxisColors::t().text_muted),
                 )
                 .on_press(Message::ShowCardMenu(idx))
                 .padding(Padding { top: 2.0, right: 6.0, bottom: 2.0, left: 6.0 })
                 .style(|_, status| {
                     let bg = match status {
-                        BtnStatus::Hovered => OryxisColors::BG_HOVER,
+                        BtnStatus::Hovered => OryxisColors::t().bg_hover,
                         _ => Color::TRANSPARENT,
                     };
                     button::Style {
@@ -2048,9 +2048,9 @@ impl Oryxis {
                         icon_box,
                         Space::new().width(12),
                         column![
-                            text(&conn.label).size(13).color(OryxisColors::TEXT_PRIMARY),
+                            text(&conn.label).size(13).color(OryxisColors::t().text_primary),
                             Space::new().height(2),
-                            text(subtitle).size(10).color(OryxisColors::TEXT_MUTED),
+                            text(subtitle).size(10).color(OryxisColors::t().text_muted),
                         ].width(Length::Fill),
                         dots_btn,
                     ].align_y(iced::Alignment::Center),
@@ -2061,9 +2061,9 @@ impl Oryxis {
             .width(CARD_WIDTH)
             .style(move |_, status| {
                 let (bg, bc, bw) = match status {
-                    BtnStatus::Hovered => (OryxisColors::BG_HOVER, OryxisColors::ACCENT, 1.5),
-                    BtnStatus::Pressed => (OryxisColors::BG_SELECTED, OryxisColors::ACCENT, 2.0),
-                    _ => (OryxisColors::BG_SURFACE, OryxisColors::BORDER, 1.0),
+                    BtnStatus::Hovered => (OryxisColors::t().bg_hover, OryxisColors::t().accent, 1.5),
+                    BtnStatus::Pressed => (OryxisColors::t().bg_selected, OryxisColors::t().accent, 2.0),
+                    _ => (OryxisColors::t().bg_surface, OryxisColors::t().border, 1.0),
                 };
                 button::Style {
                     background: Some(Background::Color(bg)),
@@ -2076,17 +2076,17 @@ impl Oryxis {
             let card_el: Element<'_, Message> = if self.card_context_menu == Some(idx) {
                 let menu = container(
                     column![
-                        context_menu_item(iced_fonts::bootstrap::play_fill(), "Connect", Message::ConnectSsh(idx), OryxisColors::SUCCESS),
-                        context_menu_item(iced_fonts::bootstrap::pencil(), "Edit", Message::EditConnection(idx), OryxisColors::TEXT_SECONDARY),
-                        context_menu_item(iced_fonts::bootstrap::copy(), "Duplicate", Message::DuplicateConnection(idx), OryxisColors::TEXT_SECONDARY),
-                        context_menu_item(iced_fonts::bootstrap::trash(), "Remove", Message::DeleteConnection(idx), OryxisColors::ERROR),
+                        context_menu_item(iced_fonts::bootstrap::play_fill(), "Connect", Message::ConnectSsh(idx), OryxisColors::t().success),
+                        context_menu_item(iced_fonts::bootstrap::pencil(), "Edit", Message::EditConnection(idx), OryxisColors::t().text_secondary),
+                        context_menu_item(iced_fonts::bootstrap::copy(), "Duplicate", Message::DuplicateConnection(idx), OryxisColors::t().text_secondary),
+                        context_menu_item(iced_fonts::bootstrap::trash(), "Remove", Message::DeleteConnection(idx), OryxisColors::t().error),
                     ],
                 )
                 .width(CARD_WIDTH)
                 .padding(4)
                 .style(|_| container::Style {
-                    background: Some(Background::Color(OryxisColors::BG_SURFACE)),
-                    border: Border { radius: Radius::from(8.0), color: OryxisColors::BORDER, width: 1.0 },
+                    background: Some(Background::Color(OryxisColors::t().bg_surface)),
+                    border: Border { radius: Radius::from(8.0), color: OryxisColors::t().border, width: 1.0 },
                     ..Default::default()
                 });
 
@@ -2162,10 +2162,10 @@ impl Oryxis {
 
         let failed = progress.failed;
         let step_color = |n: u8| -> Color {
-            if failed { return OryxisColors::ERROR; }
-            if n < step_num { OryxisColors::SUCCESS }
-            else if n == step_num { OryxisColors::ACCENT }
-            else { OryxisColors::TEXT_MUTED }
+            if failed { return OryxisColors::t().error; }
+            if n < step_num { OryxisColors::t().success }
+            else if n == step_num { OryxisColors::t().accent }
+            else { OryxisColors::t().text_muted }
         };
 
         // Header: host info
@@ -2176,15 +2176,15 @@ impl Oryxis {
                 )
                 .padding(10)
                 .style(|_| container::Style {
-                    background: Some(Background::Color(OryxisColors::ACCENT)),
+                    background: Some(Background::Color(OryxisColors::t().accent)),
                     border: Border { radius: Radius::from(10.0), ..Default::default() },
                     ..Default::default()
                 }),
                 Space::new().width(14),
                 column![
-                    text(&progress.label).size(16).color(OryxisColors::TEXT_PRIMARY),
+                    text(&progress.label).size(16).color(OryxisColors::t().text_primary),
                     Space::new().height(2),
-                    text(&progress.hostname).size(12).color(OryxisColors::TEXT_MUTED),
+                    text(&progress.hostname).size(12).color(OryxisColors::t().text_muted),
                 ],
             ].align_y(iced::Alignment::Center),
         )
@@ -2228,18 +2228,18 @@ impl Oryxis {
         } else {
             "Connecting..."
         };
-        let status_color = if failed { OryxisColors::ERROR } else { OryxisColors::TEXT_SECONDARY };
+        let status_color = if failed { OryxisColors::t().error } else { OryxisColors::t().text_secondary };
 
         // Log entries
         let mut log_items: Vec<Element<'_, Message>> = Vec::new();
         for (step, msg) in &progress.logs {
             let icon_color = if msg.starts_with("Error") {
-                OryxisColors::ERROR
+                OryxisColors::t().error
             } else {
                 match step {
-                    ConnectionStep::Connecting => OryxisColors::TEXT_MUTED,
-                    ConnectionStep::Handshake => OryxisColors::ACCENT,
-                    ConnectionStep::Authenticating => OryxisColors::WARNING,
+                    ConnectionStep::Connecting => OryxisColors::t().text_muted,
+                    ConnectionStep::Handshake => OryxisColors::t().accent,
+                    ConnectionStep::Authenticating => OryxisColors::t().warning,
                 }
             };
 
@@ -2253,7 +2253,7 @@ impl Oryxis {
                 row![
                     icon.size(12).color(icon_color),
                     Space::new().width(10),
-                    text(msg).size(13).color(OryxisColors::TEXT_SECONDARY),
+                    text(msg).size(13).color(OryxisColors::t().text_secondary),
                 ]
                 .align_y(iced::Alignment::Start)
                 .into(),
@@ -2270,7 +2270,7 @@ impl Oryxis {
             .width(Length::Fill)
             .height(Length::Fill)
             .style(|_| container::Style {
-                background: Some(Background::Color(OryxisColors::BG_SIDEBAR)),
+                background: Some(Background::Color(OryxisColors::t().bg_sidebar)),
                 border: Border { radius: Radius::from(10.0), ..Default::default() },
                 ..Default::default()
             });
@@ -2279,34 +2279,34 @@ impl Oryxis {
         let bottom: Element<'_, Message> = if failed {
             row![
                 button(
-                    container(text("Close").size(13).color(OryxisColors::TEXT_PRIMARY))
+                    container(text("Close").size(13).color(OryxisColors::t().text_primary))
                         .padding(Padding { top: 10.0, right: 24.0, bottom: 10.0, left: 24.0 }),
                 )
                 .on_press(Message::SshCloseProgress)
                 .style(|_, _| button::Style {
-                    background: Some(Background::Color(OryxisColors::BG_SURFACE)),
+                    background: Some(Background::Color(OryxisColors::t().bg_surface)),
                     border: Border { radius: Radius::from(8.0), ..Default::default() },
                     ..Default::default()
                 }),
                 Space::new().width(8),
                 button(
-                    container(text("Edit host").size(13).color(OryxisColors::TEXT_PRIMARY))
+                    container(text("Edit host").size(13).color(OryxisColors::t().text_primary))
                         .padding(Padding { top: 10.0, right: 24.0, bottom: 10.0, left: 24.0 }),
                 )
                 .on_press(Message::SshEditFromProgress)
                 .style(|_, _| button::Style {
-                    background: Some(Background::Color(OryxisColors::BG_SURFACE)),
+                    background: Some(Background::Color(OryxisColors::t().bg_surface)),
                     border: Border { radius: Radius::from(8.0), ..Default::default() },
                     ..Default::default()
                 }),
                 Space::new().width(Length::Fill),
                 button(
-                    container(text("Start over").size(13).color(OryxisColors::TEXT_PRIMARY))
+                    container(text("Start over").size(13).color(OryxisColors::t().text_primary))
                         .padding(Padding { top: 10.0, right: 24.0, bottom: 10.0, left: 24.0 }),
                 )
                 .on_press(Message::SshRetry)
                 .style(|_, _| button::Style {
-                    background: Some(Background::Color(OryxisColors::SUCCESS)),
+                    background: Some(Background::Color(OryxisColors::t().success)),
                     border: Border { radius: Radius::from(8.0), ..Default::default() },
                     ..Default::default()
                 }),
@@ -2334,7 +2334,7 @@ impl Oryxis {
         .center_x(Length::Fill)
         .height(Length::Fill)
         .style(|_| container::Style {
-            background: Some(Background::Color(OryxisColors::BG_PRIMARY)),
+            background: Some(Background::Color(OryxisColors::t().bg_primary)),
             ..Default::default()
         })
         .into()
@@ -2350,11 +2350,11 @@ impl Oryxis {
                     .height(Length::Fill)
                     .into()
             } else {
-                container(text("No active session").size(14).color(OryxisColors::TEXT_MUTED))
+                container(text("No active session").size(14).color(OryxisColors::t().text_muted))
                     .center(Length::Fill).into()
             }
         } else {
-            container(text("No active session").size(14).color(OryxisColors::TEXT_MUTED))
+            container(text("No active session").size(14).color(OryxisColors::t().text_muted))
                 .center(Length::Fill).into()
         };
 
@@ -2373,11 +2373,11 @@ impl Oryxis {
         let add_btn = button(
             container(
                 row![
-                    text("+").size(12).color(OryxisColors::TEXT_PRIMARY),
+                    text("+").size(12).color(OryxisColors::t().text_primary),
                     Space::new().width(4),
-                    text("ADD").size(12).color(OryxisColors::TEXT_PRIMARY),
+                    text("ADD").size(12).color(OryxisColors::t().text_primary),
                     Space::new().width(4),
-                    text("\u{25BE}").size(10).color(OryxisColors::TEXT_PRIMARY),
+                    text("\u{25BE}").size(10).color(OryxisColors::t().text_primary),
                 ]
                 .align_y(iced::Alignment::Center),
             )
@@ -2385,7 +2385,7 @@ impl Oryxis {
         )
         .on_press(Message::ToggleKeychainAddMenu)
         .style(|_, _| button::Style {
-            background: Some(Background::Color(OryxisColors::ACCENT)),
+            background: Some(Background::Color(OryxisColors::t().accent)),
             border: Border { radius: Radius::from(8.0), ..Default::default() },
             ..Default::default()
         });
@@ -2393,15 +2393,15 @@ impl Oryxis {
         let add_area: Element<'_, Message> = if self.show_keychain_add_menu {
             let menu = container(
                 column![
-                    context_menu_item(iced_fonts::bootstrap::key(), "Import Key", Message::ShowKeyPanel, OryxisColors::TEXT_SECONDARY),
-                    context_menu_item(iced_fonts::bootstrap::person(), "New Identity", Message::ShowIdentityPanel, OryxisColors::TEXT_SECONDARY),
+                    context_menu_item(iced_fonts::bootstrap::key(), "Import Key", Message::ShowKeyPanel, OryxisColors::t().text_secondary),
+                    context_menu_item(iced_fonts::bootstrap::person(), "New Identity", Message::ShowIdentityPanel, OryxisColors::t().text_secondary),
                 ],
             )
             .width(180)
             .padding(4)
             .style(|_| container::Style {
-                background: Some(Background::Color(OryxisColors::BG_SURFACE)),
-                border: Border { radius: Radius::from(8.0), color: OryxisColors::BORDER, width: 1.0 },
+                background: Some(Background::Color(OryxisColors::t().bg_surface)),
+                border: Border { radius: Radius::from(8.0), color: OryxisColors::t().border, width: 1.0 },
                 ..Default::default()
             });
             column![add_btn, Space::new().height(4), menu].into()
@@ -2411,7 +2411,7 @@ impl Oryxis {
 
         let toolbar = container(
             row![
-                text("Keychain").size(20).color(OryxisColors::TEXT_PRIMARY),
+                text("Keychain").size(20).color(OryxisColors::t().text_primary),
                 Space::new().width(Length::Fill),
                 add_area,
             ]
@@ -2432,11 +2432,11 @@ impl Oryxis {
 
         // ── Status message ──
         let status: Element<'_, Message> = if let Some(err) = &self.key_error {
-            container(Element::from(text(err.clone()).size(12).color(OryxisColors::ERROR)))
+            container(Element::from(text(err.clone()).size(12).color(OryxisColors::t().error)))
                 .padding(Padding { top: 0.0, right: 24.0, bottom: 8.0, left: 24.0 })
                 .into()
         } else if let Some(ok) = &self.key_success {
-            container(Element::from(text(ok.clone()).size(12).color(OryxisColors::SUCCESS)))
+            container(Element::from(text(ok.clone()).size(12).color(OryxisColors::t().success)))
                 .padding(Padding { top: 0.0, right: 24.0, bottom: 8.0, left: 24.0 })
                 .into()
         } else {
@@ -2445,7 +2445,7 @@ impl Oryxis {
 
         // ── Keys grid ──
         let section_title = container(
-            text("Keys").size(14).color(OryxisColors::TEXT_MUTED),
+            text("Keys").size(14).color(OryxisColors::t().text_muted),
         )
         .padding(Padding { top: 4.0, right: 24.0, bottom: 8.0, left: 24.0 });
 
@@ -2461,22 +2461,22 @@ impl Oryxis {
             let empty_state = container(
                 column![
                     container(
-                        iced_fonts::bootstrap::key().size(32).color(OryxisColors::TEXT_MUTED),
+                        iced_fonts::bootstrap::key().size(32).color(OryxisColors::t().text_muted),
                     )
                     .padding(16)
                     .style(|_| container::Style {
-                        background: Some(Background::Color(OryxisColors::BG_SURFACE)),
+                        background: Some(Background::Color(OryxisColors::t().bg_surface)),
                         border: Border { radius: Radius::from(12.0), ..Default::default() },
                         ..Default::default()
                     }),
                     Space::new().height(20),
-                    text("Add a key").size(20).color(OryxisColors::TEXT_PRIMARY),
+                    text("Add a key").size(20).color(OryxisColors::t().text_primary),
                     Space::new().height(8),
                     text("Import SSH keys to authenticate with your hosts.")
-                        .size(13).color(OryxisColors::TEXT_MUTED),
+                        .size(13).color(OryxisColors::t().text_muted),
                     Space::new().height(24),
                     button(
-                        container(text("Import Key").size(14).color(OryxisColors::TEXT_PRIMARY))
+                        container(text("Import Key").size(14).color(OryxisColors::t().text_primary))
                             .padding(Padding { top: 12.0, right: 0.0, bottom: 12.0, left: 0.0 })
                             .width(380)
                             .center_x(380),
@@ -2484,7 +2484,7 @@ impl Oryxis {
                     .on_press(Message::ShowKeyPanel)
                     .width(380)
                     .style(|_, _| button::Style {
-                        background: Some(Background::Color(OryxisColors::ACCENT)),
+                        background: Some(Background::Color(OryxisColors::t().accent)),
                         border: Border { radius: Radius::from(8.0), ..Default::default() },
                         ..Default::default()
                     }),
@@ -2513,7 +2513,7 @@ impl Oryxis {
             return main_content.into();
         } else if filtered_keys.is_empty() {
             let no_results = container(
-                text("No keys match your search").size(13).color(OryxisColors::TEXT_MUTED),
+                text("No keys match your search").size(13).color(OryxisColors::t().text_muted),
             )
             .padding(24)
             .width(CARD_WIDTH);
@@ -2525,20 +2525,20 @@ impl Oryxis {
             let icon_box = container(iced_fonts::bootstrap::key().size(18).color(Color::WHITE))
                 .padding(Padding { top: 8.0, right: 10.0, bottom: 8.0, left: 10.0 })
                 .style(|_| container::Style {
-                    background: Some(Background::Color(OryxisColors::ACCENT)),
+                    background: Some(Background::Color(OryxisColors::t().accent)),
                     border: Border { radius: Radius::from(8.0), ..Default::default() },
                     ..Default::default()
                 });
 
             // "..." menu button
             let dots_btn = button(
-                text("···").size(14).color(OryxisColors::TEXT_MUTED),
+                text("···").size(14).color(OryxisColors::t().text_muted),
             )
             .on_press(Message::ShowKeyMenu(idx))
             .padding(Padding { top: 2.0, right: 6.0, bottom: 2.0, left: 6.0 })
             .style(|_, status| {
                 let bg = match status {
-                    BtnStatus::Hovered => OryxisColors::BG_HOVER,
+                    BtnStatus::Hovered => OryxisColors::t().bg_hover,
                     _ => Color::TRANSPARENT,
                 };
                 button::Style {
@@ -2553,9 +2553,9 @@ impl Oryxis {
                     icon_box,
                     Space::new().width(12),
                     column![
-                        text(&key.label).size(13).color(OryxisColors::TEXT_PRIMARY),
+                        text(&key.label).size(13).color(OryxisColors::t().text_primary),
                         Space::new().height(2),
-                        text(algo).size(11).color(OryxisColors::TEXT_MUTED),
+                        text(algo).size(11).color(OryxisColors::t().text_muted),
                     ].width(Length::Fill),
                     dots_btn,
                 ].align_y(iced::Alignment::Center),
@@ -2565,9 +2565,9 @@ impl Oryxis {
             .width(CARD_WIDTH)
             .style(|_, status| {
                 let (bg, border_color, border_width) = match status {
-                    BtnStatus::Hovered => (OryxisColors::BG_HOVER, OryxisColors::ACCENT, 1.5),
-                    BtnStatus::Pressed => (OryxisColors::BG_SELECTED, OryxisColors::ACCENT, 2.0),
-                    _ => (OryxisColors::BG_SURFACE, OryxisColors::BORDER, 1.0),
+                    BtnStatus::Hovered => (OryxisColors::t().bg_hover, OryxisColors::t().accent, 1.5),
+                    BtnStatus::Pressed => (OryxisColors::t().bg_selected, OryxisColors::t().accent, 2.0),
+                    _ => (OryxisColors::t().bg_surface, OryxisColors::t().border, 1.0),
                 };
                 button::Style {
                     background: Some(Background::Color(bg)),
@@ -2580,15 +2580,15 @@ impl Oryxis {
             let card_el: Element<'_, Message> = if self.key_context_menu == Some(idx) {
                 let menu = container(
                     column![
-                        context_menu_item(iced_fonts::bootstrap::pencil(), "Edit", Message::EditKey(idx), OryxisColors::TEXT_SECONDARY),
-                        context_menu_item(iced_fonts::bootstrap::trash(), "Remove", Message::DeleteKey(idx), OryxisColors::ERROR),
+                        context_menu_item(iced_fonts::bootstrap::pencil(), "Edit", Message::EditKey(idx), OryxisColors::t().text_secondary),
+                        context_menu_item(iced_fonts::bootstrap::trash(), "Remove", Message::DeleteKey(idx), OryxisColors::t().error),
                     ],
                 )
                 .width(CARD_WIDTH)
                 .padding(4)
                 .style(|_| container::Style {
-                    background: Some(Background::Color(OryxisColors::BG_SURFACE)),
-                    border: Border { radius: Radius::from(8.0), color: OryxisColors::BORDER, width: 1.0 },
+                    background: Some(Background::Color(OryxisColors::t().bg_surface)),
+                    border: Border { radius: Radius::from(8.0), color: OryxisColors::t().border, width: 1.0 },
                     ..Default::default()
                 });
 
@@ -2625,7 +2625,7 @@ impl Oryxis {
 
         // ── Identities section ──
         let identity_section_title = container(
-            text("Identities").size(14).color(OryxisColors::TEXT_MUTED),
+            text("Identities").size(14).color(OryxisColors::t().text_muted),
         )
         .padding(Padding { top: 16.0, right: 24.0, bottom: 8.0, left: 24.0 });
 
@@ -2638,14 +2638,14 @@ impl Oryxis {
         if filtered_identities.is_empty() && self.identities.is_empty() {
             let empty_hint = container(
                 text("No identities yet. Create one to store reusable credentials.")
-                    .size(12).color(OryxisColors::TEXT_MUTED),
+                    .size(12).color(OryxisColors::t().text_muted),
             )
             .padding(Padding { top: 0.0, right: 0.0, bottom: 0.0, left: 0.0 })
             .width(CARD_WIDTH);
             identity_cards.push(empty_hint.into());
         } else if filtered_identities.is_empty() {
             let no_results = container(
-                text("No identities match your search").size(13).color(OryxisColors::TEXT_MUTED),
+                text("No identities match your search").size(13).color(OryxisColors::t().text_muted),
             )
             .padding(24)
             .width(CARD_WIDTH);
@@ -2675,19 +2675,19 @@ impl Oryxis {
             let icon_box = container(iced_fonts::bootstrap::person().size(18).color(Color::WHITE))
                 .padding(Padding { top: 8.0, right: 10.0, bottom: 8.0, left: 10.0 })
                 .style(|_| container::Style {
-                    background: Some(Background::Color(OryxisColors::ACCENT)),
+                    background: Some(Background::Color(OryxisColors::t().accent)),
                     border: Border { radius: Radius::from(8.0), ..Default::default() },
                     ..Default::default()
                 });
 
             let dots_btn = button(
-                text("···").size(14).color(OryxisColors::TEXT_MUTED),
+                text("···").size(14).color(OryxisColors::t().text_muted),
             )
             .on_press(Message::ShowIdentityMenu(idx))
             .padding(Padding { top: 2.0, right: 6.0, bottom: 2.0, left: 6.0 })
             .style(|_, status| {
                 let bg = match status {
-                    BtnStatus::Hovered => OryxisColors::BG_HOVER,
+                    BtnStatus::Hovered => OryxisColors::t().bg_hover,
                     _ => Color::TRANSPARENT,
                 };
                 button::Style {
@@ -2702,9 +2702,9 @@ impl Oryxis {
                     icon_box,
                     Space::new().width(12),
                     column![
-                        text(&identity.label).size(13).color(OryxisColors::TEXT_PRIMARY),
+                        text(&identity.label).size(13).color(OryxisColors::t().text_primary),
                         Space::new().height(2),
-                        text(subtitle).size(11).color(OryxisColors::TEXT_MUTED),
+                        text(subtitle).size(11).color(OryxisColors::t().text_muted),
                     ].width(Length::Fill),
                     dots_btn,
                 ].align_y(iced::Alignment::Center),
@@ -2714,9 +2714,9 @@ impl Oryxis {
             .width(CARD_WIDTH)
             .style(|_, status| {
                 let (bg, border_color, border_width) = match status {
-                    BtnStatus::Hovered => (OryxisColors::BG_HOVER, OryxisColors::ACCENT, 1.5),
-                    BtnStatus::Pressed => (OryxisColors::BG_SELECTED, OryxisColors::ACCENT, 2.0),
-                    _ => (OryxisColors::BG_SURFACE, OryxisColors::BORDER, 1.0),
+                    BtnStatus::Hovered => (OryxisColors::t().bg_hover, OryxisColors::t().accent, 1.5),
+                    BtnStatus::Pressed => (OryxisColors::t().bg_selected, OryxisColors::t().accent, 2.0),
+                    _ => (OryxisColors::t().bg_surface, OryxisColors::t().border, 1.0),
                 };
                 button::Style {
                     background: Some(Background::Color(bg)),
@@ -2728,15 +2728,15 @@ impl Oryxis {
             let card_el: Element<'_, Message> = if self.identity_context_menu == Some(idx) {
                 let menu = container(
                     column![
-                        context_menu_item(iced_fonts::bootstrap::pencil(), "Edit", Message::EditIdentity(idx), OryxisColors::TEXT_SECONDARY),
-                        context_menu_item(iced_fonts::bootstrap::trash(), "Remove", Message::DeleteIdentity(idx), OryxisColors::ERROR),
+                        context_menu_item(iced_fonts::bootstrap::pencil(), "Edit", Message::EditIdentity(idx), OryxisColors::t().text_secondary),
+                        context_menu_item(iced_fonts::bootstrap::trash(), "Remove", Message::DeleteIdentity(idx), OryxisColors::t().error),
                     ],
                 )
                 .width(CARD_WIDTH)
                 .padding(4)
                 .style(|_| container::Style {
-                    background: Some(Background::Color(OryxisColors::BG_SURFACE)),
-                    border: Border { radius: Radius::from(8.0), color: OryxisColors::BORDER, width: 1.0 },
+                    background: Some(Background::Color(OryxisColors::t().bg_surface)),
+                    border: Border { radius: Radius::from(8.0), color: OryxisColors::t().border, width: 1.0 },
                     ..Default::default()
                 });
 
@@ -2816,13 +2816,13 @@ impl Oryxis {
         // Panel header
         let panel_header = container(
             row![
-                text(panel_title).size(18).color(OryxisColors::TEXT_PRIMARY),
+                text(panel_title).size(18).color(OryxisColors::t().text_primary),
                 Space::new().width(Length::Fill),
-                button(text("X").size(14).color(OryxisColors::TEXT_MUTED))
+                button(text("X").size(14).color(OryxisColors::t().text_muted))
                     .on_press(Message::HideKeyPanel)
                     .padding(Padding { top: 4.0, right: 8.0, bottom: 4.0, left: 8.0 })
                     .style(|_, _| button::Style {
-                        background: Some(Background::Color(OryxisColors::BG_SURFACE)),
+                        background: Some(Background::Color(OryxisColors::t().bg_surface)),
                         border: Border { radius: Radius::from(6.0), ..Default::default() },
                         ..Default::default()
                     }),
@@ -2833,7 +2833,7 @@ impl Oryxis {
 
         // Name field
         let name_field = column![
-            text("Name").size(12).color(OryxisColors::TEXT_SECONDARY),
+            text("Name").size(12).color(OryxisColors::t().text_secondary),
             Space::new().height(6),
             text_input("my-server-key", &self.key_import_label)
                 .on_input(Message::KeyImportLabelChanged)
@@ -2844,7 +2844,7 @@ impl Oryxis {
         let browse_btn = button(
             container(
                 row![
-                    text("Select File...").size(13).color(OryxisColors::TEXT_PRIMARY),
+                    text("Select File...").size(13).color(OryxisColors::t().text_primary),
                 ]
                 .align_y(iced::Alignment::Center),
             )
@@ -2853,7 +2853,7 @@ impl Oryxis {
         .on_press(Message::BrowseKeyFile)
         .width(Length::Fill)
         .style(|_, _| button::Style {
-            background: Some(Background::Color(OryxisColors::ACCENT)),
+            background: Some(Background::Color(OryxisColors::t().accent)),
             border: Border { radius: Radius::from(8.0), ..Default::default() },
             ..Default::default()
         });
@@ -2862,10 +2862,10 @@ impl Oryxis {
         let file_status: Element<'_, Message> = if has_content {
             container(
                 row![
-                    text("V").size(12).color(OryxisColors::SUCCESS),
+                    text("V").size(12).color(OryxisColors::t().success),
                     Space::new().width(6),
                     text(format!("Loaded ({} bytes)", self.key_import_pem.len()))
-                        .size(11).color(OryxisColors::SUCCESS),
+                        .size(11).color(OryxisColors::t().success),
                 ].align_y(iced::Alignment::Center),
             )
             .padding(Padding { top: 4.0, right: 0.0, bottom: 4.0, left: 0.0 })
@@ -2884,7 +2884,7 @@ impl Oryxis {
 
         // Error in panel
         let panel_error: Element<'_, Message> = if let Some(err) = &self.key_error {
-            Element::from(text(err.clone()).size(11).color(OryxisColors::ERROR))
+            Element::from(text(err.clone()).size(11).color(OryxisColors::t().error))
         } else {
             Space::new().height(0).into()
         };
@@ -2892,7 +2892,7 @@ impl Oryxis {
         // Save button
         let save_label = if self.editing_key_id.is_some() { "Update Key" } else { "Save Key" };
         let save_btn = button(
-            container(text(save_label).size(13).color(OryxisColors::TEXT_PRIMARY))
+            container(text(save_label).size(13).color(OryxisColors::t().text_primary))
                 .padding(Padding { top: 10.0, right: 0.0, bottom: 10.0, left: 0.0 })
                 .width(Length::Fill)
                 .center_x(Length::Fill),
@@ -2900,7 +2900,7 @@ impl Oryxis {
         .on_press(Message::ImportKey)
         .width(Length::Fill)
         .style(move |_, _| {
-            let bg = if has_content { OryxisColors::ACCENT } else { OryxisColors::BG_SURFACE };
+            let bg = if has_content { OryxisColors::t().accent } else { OryxisColors::t().bg_surface };
             button::Style {
                 background: Some(Background::Color(bg)),
                 border: Border { radius: Radius::from(8.0), ..Default::default() },
@@ -2914,13 +2914,13 @@ impl Oryxis {
                 column![
                     name_field,
                     Space::new().height(16),
-                    text("Private Key").size(12).color(OryxisColors::TEXT_SECONDARY),
+                    text("Private Key").size(12).color(OryxisColors::t().text_secondary),
                     Space::new().height(6),
                     browse_btn,
                     Space::new().height(8),
                     file_status,
                     Space::new().height(8),
-                    text("Key Content").size(12).color(OryxisColors::TEXT_SECONDARY),
+                    text("Key Content").size(12).color(OryxisColors::t().text_secondary),
                     Space::new().height(6),
                     editor,
                     Space::new().height(8),
@@ -2939,8 +2939,8 @@ impl Oryxis {
             .width(PANEL_WIDTH)
             .height(Length::Fill)
             .style(|_| container::Style {
-                background: Some(Background::Color(OryxisColors::BG_SIDEBAR)),
-                border: Border { color: OryxisColors::BORDER, width: 1.0, radius: Radius::from(0.0) },
+                background: Some(Background::Color(OryxisColors::t().bg_sidebar)),
+                border: Border { color: OryxisColors::t().border, width: 1.0, radius: Radius::from(0.0) },
                 ..Default::default()
             })
             .into()
@@ -2952,13 +2952,13 @@ impl Oryxis {
         // Panel header
         let panel_header = container(
             row![
-                text(panel_title).size(18).color(OryxisColors::TEXT_PRIMARY),
+                text(panel_title).size(18).color(OryxisColors::t().text_primary),
                 Space::new().width(Length::Fill),
-                button(text("X").size(14).color(OryxisColors::TEXT_MUTED))
+                button(text("X").size(14).color(OryxisColors::t().text_muted))
                     .on_press(Message::HideIdentityPanel)
                     .padding(Padding { top: 4.0, right: 8.0, bottom: 4.0, left: 8.0 })
                     .style(|_, _| button::Style {
-                        background: Some(Background::Color(OryxisColors::BG_SURFACE)),
+                        background: Some(Background::Color(OryxisColors::t().bg_surface)),
                         border: Border { radius: Radius::from(6.0), ..Default::default() },
                         ..Default::default()
                     }),
@@ -2969,7 +2969,7 @@ impl Oryxis {
 
         // Label field
         let label_field = column![
-            text("Label").size(12).color(OryxisColors::TEXT_SECONDARY),
+            text("Label").size(12).color(OryxisColors::t().text_secondary),
             Space::new().height(6),
             text_input("My Identity", &self.identity_form_label)
                 .on_input(Message::IdentityLabelChanged)
@@ -2978,10 +2978,10 @@ impl Oryxis {
 
         // Username field
         let username_field = column![
-            text("Username").size(12).color(OryxisColors::TEXT_SECONDARY),
+            text("Username").size(12).color(OryxisColors::t().text_secondary),
             Space::new().height(6),
             row![
-                iced_fonts::bootstrap::person().size(13).color(OryxisColors::TEXT_MUTED),
+                iced_fonts::bootstrap::person().size(13).color(OryxisColors::t().text_muted),
                 Space::new().width(10),
                 text_input("root", &self.identity_form_username)
                     .on_input(Message::IdentityUsernameChanged)
@@ -2991,10 +2991,10 @@ impl Oryxis {
 
         // Password field with eye toggle
         let password_field = column![
-            text("Password").size(12).color(OryxisColors::TEXT_SECONDARY),
+            text("Password").size(12).color(OryxisColors::t().text_secondary),
             Space::new().height(6),
             row![
-                iced_fonts::bootstrap::keyboard().size(13).color(OryxisColors::TEXT_MUTED),
+                iced_fonts::bootstrap::keyboard().size(13).color(OryxisColors::t().text_muted),
                 Space::new().width(10),
                 text_input(
                     if self.identity_form_has_existing_password && !self.identity_form_password_touched {
@@ -3010,9 +3010,9 @@ impl Oryxis {
                 Space::new().width(6),
                 button(
                     if self.identity_form_password_visible {
-                        iced_fonts::bootstrap::eye_slash().size(14).color(OryxisColors::TEXT_MUTED)
+                        iced_fonts::bootstrap::eye_slash().size(14).color(OryxisColors::t().text_muted)
                     } else {
-                        iced_fonts::bootstrap::eye().size(14).color(OryxisColors::TEXT_MUTED)
+                        iced_fonts::bootstrap::eye().size(14).color(OryxisColors::t().text_muted)
                     }
                 )
                     .on_press(Message::IdentityTogglePasswordVisibility)
@@ -3028,10 +3028,10 @@ impl Oryxis {
             opts
         };
         let key_field = column![
-            text("SSH Key").size(12).color(OryxisColors::TEXT_SECONDARY),
+            text("SSH Key").size(12).color(OryxisColors::t().text_secondary),
             Space::new().height(6),
             row![
-                text("+ Key").size(12).color(OryxisColors::ACCENT),
+                text("+ Key").size(12).color(OryxisColors::t().accent),
                 Space::new().width(16),
                 pick_list(
                     key_options,
@@ -3049,23 +3049,23 @@ impl Oryxis {
             if linked.is_empty() {
                 column![
                     Space::new().height(16),
-                    text("Linked to").size(12).color(OryxisColors::TEXT_MUTED),
+                    text("Linked to").size(12).color(OryxisColors::t().text_muted),
                     Space::new().height(4),
-                    text("No connections using this identity").size(11).color(OryxisColors::TEXT_MUTED),
+                    text("No connections using this identity").size(11).color(OryxisColors::t().text_muted),
                 ].into()
             } else {
                 let mut items: Vec<Element<'_, Message>> = vec![
                     Space::new().height(16).into(),
-                    Element::from(text("Linked to").size(12).color(OryxisColors::TEXT_MUTED)),
+                    Element::from(text("Linked to").size(12).color(OryxisColors::t().text_muted)),
                     Space::new().height(4).into(),
                 ];
                 for conn in linked {
                     items.push(
                         container(
                             row![
-                                iced_fonts::bootstrap::hdd_network().size(11).color(OryxisColors::TEXT_MUTED),
+                                iced_fonts::bootstrap::hdd_network().size(11).color(OryxisColors::t().text_muted),
                                 Space::new().width(8),
-                                text(&conn.label).size(12).color(OryxisColors::TEXT_SECONDARY),
+                                text(&conn.label).size(12).color(OryxisColors::t().text_secondary),
                             ].align_y(iced::Alignment::Center),
                         )
                         .padding(Padding { top: 4.0, right: 0.0, bottom: 4.0, left: 0.0 })
@@ -3082,7 +3082,7 @@ impl Oryxis {
         let save_label = if self.editing_identity_id.is_some() { "Update Identity" } else { "Save Identity" };
         let has_label = !self.identity_form_label.trim().is_empty();
         let save_btn = button(
-            container(text(save_label).size(13).color(OryxisColors::TEXT_PRIMARY))
+            container(text(save_label).size(13).color(OryxisColors::t().text_primary))
                 .padding(Padding { top: 10.0, right: 0.0, bottom: 10.0, left: 0.0 })
                 .width(Length::Fill)
                 .center_x(Length::Fill),
@@ -3090,7 +3090,7 @@ impl Oryxis {
         .on_press(Message::SaveIdentity)
         .width(Length::Fill)
         .style(move |_, _| {
-            let bg = if has_label { OryxisColors::ACCENT } else { OryxisColors::BG_SURFACE };
+            let bg = if has_label { OryxisColors::t().accent } else { OryxisColors::t().bg_surface };
             button::Style {
                 background: Some(Background::Color(bg)),
                 border: Border { radius: Radius::from(8.0), ..Default::default() },
@@ -3124,8 +3124,8 @@ impl Oryxis {
             .width(PANEL_WIDTH)
             .height(Length::Fill)
             .style(|_| container::Style {
-                background: Some(Background::Color(OryxisColors::BG_SIDEBAR)),
-                border: Border { color: OryxisColors::BORDER, width: 1.0, radius: Radius::from(0.0) },
+                background: Some(Background::Color(OryxisColors::t().bg_sidebar)),
+                border: Border { color: OryxisColors::t().border, width: 1.0, radius: Radius::from(0.0) },
                 ..Default::default()
             })
             .into()
@@ -3134,21 +3134,21 @@ impl Oryxis {
     fn view_snippets(&self) -> Element<'_, Message> {
         let toolbar = container(
             row![
-                text("Snippets").size(20).color(OryxisColors::TEXT_PRIMARY),
+                text("Snippets").size(20).color(OryxisColors::t().text_primary),
                 Space::new().width(Length::Fill),
                 button(
                     container(
                         row![
-                            text("+").size(12).color(OryxisColors::TEXT_PRIMARY),
+                            text("+").size(12).color(OryxisColors::t().text_primary),
                             Space::new().width(4),
-                            text("SNIPPET").size(12).color(OryxisColors::TEXT_PRIMARY),
+                            text("SNIPPET").size(12).color(OryxisColors::t().text_primary),
                         ].align_y(iced::Alignment::Center),
                     )
                     .padding(Padding { top: 6.0, right: 14.0, bottom: 7.0, left: 14.0 }),
                 )
                 .on_press(Message::ShowSnippetPanel)
                 .style(|_, _| button::Style {
-                    background: Some(Background::Color(OryxisColors::ACCENT)),
+                    background: Some(Background::Color(OryxisColors::t().accent)),
                     border: Border { radius: Radius::from(8.0), ..Default::default() },
                     ..Default::default()
                 }),
@@ -3158,14 +3158,14 @@ impl Oryxis {
         .width(Length::Fill);
 
         let status: Element<'_, Message> = if let Some(err) = &self.snippet_error {
-            container(Element::from(text(err.clone()).size(12).color(OryxisColors::ERROR)))
+            container(Element::from(text(err.clone()).size(12).color(OryxisColors::t().error)))
                 .padding(Padding { top: 0.0, right: 24.0, bottom: 8.0, left: 24.0 }).into()
         } else {
             Space::new().height(0).into()
         };
 
         let section_title = container(
-            text("Commands").size(14).color(OryxisColors::TEXT_MUTED),
+            text("Commands").size(14).color(OryxisColors::t().text_muted),
         )
         .padding(Padding { top: 4.0, right: 24.0, bottom: 8.0, left: 24.0 });
 
@@ -3175,22 +3175,22 @@ impl Oryxis {
             let empty_state = container(
                 column![
                     container(
-                        iced_fonts::bootstrap::code_square().size(32).color(OryxisColors::TEXT_MUTED),
+                        iced_fonts::bootstrap::code_square().size(32).color(OryxisColors::t().text_muted),
                     )
                     .padding(16)
                     .style(|_| container::Style {
-                        background: Some(Background::Color(OryxisColors::BG_SURFACE)),
+                        background: Some(Background::Color(OryxisColors::t().bg_surface)),
                         border: Border { radius: Radius::from(12.0), ..Default::default() },
                         ..Default::default()
                     }),
                     Space::new().height(20),
-                    text("Create a snippet").size(20).color(OryxisColors::TEXT_PRIMARY),
+                    text("Create a snippet").size(20).color(OryxisColors::t().text_primary),
                     Space::new().height(8),
                     text("Save commands you use often for quick access.")
-                        .size(13).color(OryxisColors::TEXT_MUTED),
+                        .size(13).color(OryxisColors::t().text_muted),
                     Space::new().height(24),
                     button(
-                        container(text("New Snippet").size(14).color(OryxisColors::TEXT_PRIMARY))
+                        container(text("New Snippet").size(14).color(OryxisColors::t().text_primary))
                             .padding(Padding { top: 12.0, right: 0.0, bottom: 12.0, left: 0.0 })
                             .width(380)
                             .center_x(380),
@@ -3198,7 +3198,7 @@ impl Oryxis {
                     .on_press(Message::ShowSnippetPanel)
                     .width(380)
                     .style(|_, _| button::Style {
-                        background: Some(Background::Color(OryxisColors::ACCENT)),
+                        background: Some(Background::Color(OryxisColors::t().accent)),
                         border: Border { radius: Radius::from(8.0), ..Default::default() },
                         ..Default::default()
                     }),
@@ -3225,12 +3225,12 @@ impl Oryxis {
             let icon_box = container(iced_fonts::bootstrap::code_square().size(14).color(Color::WHITE))
                 .padding(Padding { top: 8.0, right: 8.0, bottom: 8.0, left: 8.0 })
                 .style(|_| container::Style {
-                    background: Some(Background::Color(OryxisColors::ACCENT)),
+                    background: Some(Background::Color(OryxisColors::t().accent)),
                     border: Border { radius: Radius::from(8.0), ..Default::default() },
                     ..Default::default()
                 });
 
-            let edit_btn = button(text("...").size(12).color(OryxisColors::TEXT_MUTED))
+            let edit_btn = button(text("...").size(12).color(OryxisColors::t().text_muted))
                 .on_press(Message::EditSnippet(idx))
                 .padding(Padding { top: 2.0, right: 6.0, bottom: 2.0, left: 6.0 })
                 .style(|_, _| button::Style {
@@ -3251,9 +3251,9 @@ impl Oryxis {
                         icon_box,
                         Space::new().width(12),
                         column![
-                            text(&snip.label).size(13).color(OryxisColors::TEXT_PRIMARY),
+                            text(&snip.label).size(13).color(OryxisColors::t().text_primary),
                             Space::new().height(2),
-                            text(cmd_preview).size(10).color(OryxisColors::TEXT_MUTED).font(iced::Font::MONOSPACE),
+                            text(cmd_preview).size(10).color(OryxisColors::t().text_muted).font(iced::Font::MONOSPACE),
                         ].width(Length::Fill),
                         edit_btn,
                     ].align_y(iced::Alignment::Center),
@@ -3264,9 +3264,9 @@ impl Oryxis {
             .width(CARD_WIDTH)
             .style(move |_, status| {
                 let (bg, bc, bw) = match status {
-                    BtnStatus::Hovered => (OryxisColors::BG_HOVER, OryxisColors::ACCENT, 1.5),
-                    BtnStatus::Pressed => (OryxisColors::BG_SELECTED, OryxisColors::ACCENT, 2.0),
-                    _ => (OryxisColors::BG_SURFACE, OryxisColors::BORDER, 1.0),
+                    BtnStatus::Hovered => (OryxisColors::t().bg_hover, OryxisColors::t().accent, 1.5),
+                    BtnStatus::Pressed => (OryxisColors::t().bg_selected, OryxisColors::t().accent, 2.0),
+                    _ => (OryxisColors::t().bg_surface, OryxisColors::t().border, 1.0),
                 };
                 button::Style {
                     background: Some(Background::Color(bg)),
@@ -3315,13 +3315,13 @@ impl Oryxis {
 
         let panel_header = container(
             row![
-                text(title).size(18).color(OryxisColors::TEXT_PRIMARY),
+                text(title).size(18).color(OryxisColors::t().text_primary),
                 Space::new().width(Length::Fill),
-                button(text("X").size(14).color(OryxisColors::TEXT_MUTED))
+                button(text("X").size(14).color(OryxisColors::t().text_muted))
                     .on_press(Message::HideSnippetPanel)
                     .padding(Padding { top: 4.0, right: 8.0, bottom: 4.0, left: 8.0 })
                     .style(|_, _| button::Style {
-                        background: Some(Background::Color(OryxisColors::BG_SURFACE)),
+                        background: Some(Background::Color(OryxisColors::t().bg_surface)),
                         border: Border { radius: Radius::from(6.0), ..Default::default() },
                         ..Default::default()
                     }),
@@ -3330,13 +3330,13 @@ impl Oryxis {
         .padding(Padding { top: 20.0, right: 20.0, bottom: 16.0, left: 20.0 });
 
         let form = column![
-            text("Name").size(12).color(OryxisColors::TEXT_SECONDARY),
+            text("Name").size(12).color(OryxisColors::t().text_secondary),
             Space::new().height(4),
             text_input("restart-nginx", &self.snippet_label)
                 .on_input(Message::SnippetLabelChanged)
                 .padding(10),
             Space::new().height(14),
-            text("Command").size(12).color(OryxisColors::TEXT_SECONDARY),
+            text("Command").size(12).color(OryxisColors::t().text_secondary),
             Space::new().height(4),
             text_input("sudo systemctl restart nginx", &self.snippet_command)
                 .on_input(Message::SnippetCommandChanged)
@@ -3344,20 +3344,20 @@ impl Oryxis {
         ];
 
         let panel_error: Element<'_, Message> = if let Some(err) = &self.snippet_error {
-            Element::from(text(err.clone()).size(11).color(OryxisColors::ERROR))
+            Element::from(text(err.clone()).size(11).color(OryxisColors::t().error))
         } else {
             Space::new().height(0).into()
         };
 
         let save_btn = button(
-            container(text("Save").size(13).color(OryxisColors::TEXT_PRIMARY))
+            container(text("Save").size(13).color(OryxisColors::t().text_primary))
                 .padding(Padding { top: 10.0, right: 0.0, bottom: 10.0, left: 0.0 })
                 .width(Length::Fill).center_x(Length::Fill),
         )
         .on_press(Message::SaveSnippet)
         .width(Length::Fill)
         .style(|_, _| button::Style {
-            background: Some(Background::Color(OryxisColors::ACCENT)),
+            background: Some(Background::Color(OryxisColors::t().accent)),
             border: Border { radius: Radius::from(8.0), ..Default::default() },
             ..Default::default()
         });
@@ -3366,7 +3366,7 @@ impl Oryxis {
         if let Some(edit_id) = self.snippet_editing_id
             && let Some(idx) = self.snippets.iter().position(|s| s.id == edit_id) {
                 let del_btn = button(
-                    container(text("Delete").size(13).color(OryxisColors::ERROR))
+                    container(text("Delete").size(13).color(OryxisColors::t().error))
                         .padding(Padding { top: 10.0, right: 0.0, bottom: 10.0, left: 0.0 })
                         .width(Length::Fill).center_x(Length::Fill),
                 )
@@ -3374,7 +3374,7 @@ impl Oryxis {
                 .width(Length::Fill)
                 .style(|_, _| button::Style {
                     background: Some(Background::Color(Color::TRANSPARENT)),
-                    border: Border { radius: Radius::from(8.0), color: OryxisColors::ERROR, width: 1.0 },
+                    border: Border { radius: Radius::from(8.0), color: OryxisColors::t().error, width: 1.0 },
                     ..Default::default()
                 });
                 bottom = bottom.push(Space::new().height(8));
@@ -3400,8 +3400,8 @@ impl Oryxis {
             .width(PANEL_WIDTH)
             .height(Length::Fill)
             .style(|_| container::Style {
-                background: Some(Background::Color(OryxisColors::BG_SIDEBAR)),
-                border: Border { color: OryxisColors::BORDER, width: 1.0, radius: Radius::from(0.0) },
+                background: Some(Background::Color(OryxisColors::t().bg_sidebar)),
+                border: Border { color: OryxisColors::t().border, width: 1.0, radius: Radius::from(0.0) },
                 ..Default::default()
             })
             .into()
@@ -3409,7 +3409,7 @@ impl Oryxis {
 
     fn view_known_hosts(&self) -> Element<'_, Message> {
         let toolbar = container(
-            text("Known Hosts").size(20).color(OryxisColors::TEXT_PRIMARY),
+            text("Known Hosts").size(20).color(OryxisColors::t().text_primary),
         )
         .padding(Padding { top: 20.0, right: 24.0, bottom: 16.0, left: 24.0 })
         .width(Length::Fill);
@@ -3420,7 +3420,7 @@ impl Oryxis {
             rows.push(
                 container(
                     text("No known hosts yet. They will be added automatically when you connect to servers.")
-                        .size(13).color(OryxisColors::TEXT_MUTED),
+                        .size(13).color(OryxisColors::t().text_muted),
                 )
                 .padding(16)
                 .into(),
@@ -3435,7 +3435,7 @@ impl Oryxis {
             };
             let seen = kh.last_seen.format("%Y-%m-%d %H:%M").to_string();
 
-            let del_btn = button(text("x").size(11).color(OryxisColors::TEXT_MUTED))
+            let del_btn = button(text("x").size(11).color(OryxisColors::t().text_muted))
                 .on_press(Message::DeleteKnownHost(idx))
                 .padding(Padding { top: 2.0, right: 6.0, bottom: 2.0, left: 6.0 })
                 .style(|_, _| button::Style {
@@ -3446,14 +3446,14 @@ impl Oryxis {
 
             let entry = container(
                 row![
-                    iced_fonts::bootstrap::shield_check().size(14).color(OryxisColors::SUCCESS),
+                    iced_fonts::bootstrap::shield_check().size(14).color(OryxisColors::t().success),
                     Space::new().width(12),
                     column![
-                        text(format!("{}:{}", kh.hostname, kh.port)).size(13).color(OryxisColors::TEXT_PRIMARY),
+                        text(format!("{}:{}", kh.hostname, kh.port)).size(13).color(OryxisColors::t().text_primary),
                         Space::new().height(2),
-                        text(format!("{} · {}", kh.key_type, fp_short)).size(10).color(OryxisColors::TEXT_MUTED).font(iced::Font::MONOSPACE),
+                        text(format!("{} · {}", kh.key_type, fp_short)).size(10).color(OryxisColors::t().text_muted).font(iced::Font::MONOSPACE),
                         Space::new().height(2),
-                        text(format!("Last seen: {}", seen)).size(10).color(OryxisColors::TEXT_MUTED),
+                        text(format!("Last seen: {}", seen)).size(10).color(OryxisColors::t().text_muted),
                     ].width(Length::Fill),
                     del_btn,
                 ].align_y(iced::Alignment::Center),
@@ -3461,7 +3461,7 @@ impl Oryxis {
             .padding(Padding { top: 10.0, right: 16.0, bottom: 10.0, left: 16.0 })
             .width(Length::Fill)
             .style(|_| container::Style {
-                background: Some(Background::Color(OryxisColors::BG_SURFACE)),
+                background: Some(Background::Color(OryxisColors::t().bg_surface)),
                 border: Border { radius: Radius::from(8.0), ..Default::default() },
                 ..Default::default()
             });
@@ -3483,21 +3483,21 @@ impl Oryxis {
     fn view_history(&self) -> Element<'_, Message> {
         let toolbar = container(
             row![
-                text("History").size(20).color(OryxisColors::TEXT_PRIMARY),
+                text("History").size(20).color(OryxisColors::t().text_primary),
                 Space::new().width(Length::Fill),
                 button(
-                    container(text("Clear").size(12).color(OryxisColors::TEXT_MUTED))
+                    container(text("Clear").size(12).color(OryxisColors::t().text_muted))
                         .padding(Padding { top: 6.0, right: 14.0, bottom: 6.0, left: 14.0 }),
                 )
                 .on_press(Message::ClearLogs)
                 .style(|_, status| {
                     let bg = match status {
-                        BtnStatus::Hovered => OryxisColors::ERROR_SUBTLE,
+                        BtnStatus::Hovered => Color { a: 0.15, ..OryxisColors::t().error },
                         _ => Color::TRANSPARENT,
                     };
                     button::Style {
                         background: Some(Background::Color(bg)),
-                        border: Border { radius: Radius::from(8.0), color: OryxisColors::BORDER, width: 1.0 },
+                        border: Border { radius: Radius::from(8.0), color: OryxisColors::t().border, width: 1.0 },
                         ..Default::default()
                     }
                 }),
@@ -3512,7 +3512,7 @@ impl Oryxis {
             rows.push(
                 container(
                     text("No activity logged yet.")
-                        .size(13).color(OryxisColors::TEXT_MUTED),
+                        .size(13).color(OryxisColors::t().text_muted),
                 )
                 .padding(16)
                 .into(),
@@ -3522,16 +3522,16 @@ impl Oryxis {
         for entry in &self.logs {
             let (event_icon, event_color) = match entry.event {
                 oryxis_core::models::log_entry::LogEvent::Connected => {
-                    (iced_fonts::bootstrap::check_circle(), OryxisColors::SUCCESS)
+                    (iced_fonts::bootstrap::check_circle(), OryxisColors::t().success)
                 }
                 oryxis_core::models::log_entry::LogEvent::Disconnected => {
-                    (iced_fonts::bootstrap::dash_circle(), OryxisColors::TEXT_MUTED)
+                    (iced_fonts::bootstrap::dash_circle(), OryxisColors::t().text_muted)
                 }
                 oryxis_core::models::log_entry::LogEvent::AuthFailed => {
-                    (iced_fonts::bootstrap::x_circle(), OryxisColors::WARNING)
+                    (iced_fonts::bootstrap::x_circle(), OryxisColors::t().warning)
                 }
                 oryxis_core::models::log_entry::LogEvent::Error => {
-                    (iced_fonts::bootstrap::exclamation_circle(), OryxisColors::ERROR)
+                    (iced_fonts::bootstrap::exclamation_circle(), OryxisColors::t().error)
                 }
             };
 
@@ -3543,20 +3543,20 @@ impl Oryxis {
                     Space::new().width(12),
                     column![
                         row![
-                            text(&entry.connection_label).size(13).color(OryxisColors::TEXT_PRIMARY),
+                            text(&entry.connection_label).size(13).color(OryxisColors::t().text_primary),
                             Space::new().width(8),
                             text(format!("{}", entry.event)).size(11).color(event_color),
                         ].align_y(iced::Alignment::Center),
                         Space::new().height(2),
-                        text(&entry.message).size(11).color(OryxisColors::TEXT_MUTED),
+                        text(&entry.message).size(11).color(OryxisColors::t().text_muted),
                     ].width(Length::Fill),
-                    text(ts).size(10).color(OryxisColors::TEXT_MUTED),
+                    text(ts).size(10).color(OryxisColors::t().text_muted),
                 ].align_y(iced::Alignment::Center),
             )
             .padding(Padding { top: 8.0, right: 16.0, bottom: 8.0, left: 16.0 })
             .width(Length::Fill)
             .style(|_| container::Style {
-                background: Some(Background::Color(OryxisColors::BG_SURFACE)),
+                background: Some(Background::Color(OryxisColors::t().bg_surface)),
                 border: Border { radius: Radius::from(8.0), ..Default::default() },
                 ..Default::default()
             });
@@ -3577,16 +3577,16 @@ impl Oryxis {
 
     fn view_settings(&self) -> Element<'_, Message> {
         let toolbar = container(
-            text("Settings").size(20).color(OryxisColors::TEXT_PRIMARY),
+            text("Settings").size(20).color(OryxisColors::t().text_primary),
         )
         .padding(Padding { top: 20.0, right: 24.0, bottom: 16.0, left: 24.0 })
         .width(Length::Fill);
 
         let stats = column![
-            text("Appearance").size(14).color(OryxisColors::TEXT_MUTED),
+            text("Appearance").size(14).color(OryxisColors::t().text_muted),
             Space::new().height(8),
             row![
-                text("App Theme").size(13).color(OryxisColors::TEXT_SECONDARY),
+                text("App Theme").size(13).color(OryxisColors::t().text_secondary),
                 Space::new().width(16),
                 pick_list(
                     crate::theme::AppTheme::ALL
@@ -3598,7 +3598,7 @@ impl Oryxis {
                 ),
             ].align_y(iced::Alignment::Center),
             Space::new().height(24),
-            text("Vault").size(14).color(OryxisColors::TEXT_MUTED),
+            text("Vault").size(14).color(OryxisColors::t().text_muted),
             Space::new().height(8),
             settings_row("Hosts", self.connections.len().to_string()),
             Space::new().height(6),
@@ -3608,20 +3608,20 @@ impl Oryxis {
             Space::new().height(6),
             settings_row("Groups", self.groups.len().to_string()),
             Space::new().height(24),
-            text("Font").size(14).color(OryxisColors::TEXT_MUTED),
+            text("Font").size(14).color(OryxisColors::t().text_muted),
             Space::new().height(8),
             row![
-                text("Text Size").size(13).color(OryxisColors::TEXT_SECONDARY),
+                text("Text Size").size(13).color(OryxisColors::t().text_secondary),
                 Space::new().width(16),
                 button(
-                    container(text("\u{2212}").size(14).color(OryxisColors::TEXT_PRIMARY))
+                    container(text("\u{2212}").size(14).color(OryxisColors::t().text_primary))
                         .padding(Padding { top: 4.0, right: 10.0, bottom: 4.0, left: 10.0 }),
                 )
                 .on_press(Message::TerminalFontSizeDecrease)
                 .style(|_, status| {
                     let bg = match status {
-                        BtnStatus::Hovered => OryxisColors::BG_HOVER,
-                        _ => OryxisColors::BG_SELECTED,
+                        BtnStatus::Hovered => OryxisColors::t().bg_hover,
+                        _ => OryxisColors::t().bg_selected,
                     };
                     button::Style {
                         background: Some(Background::Color(bg)),
@@ -3630,17 +3630,17 @@ impl Oryxis {
                     }
                 }),
                 Space::new().width(8),
-                text(format!("{:.0}", self.terminal_font_size)).size(13).color(OryxisColors::TEXT_PRIMARY),
+                text(format!("{:.0}", self.terminal_font_size)).size(13).color(OryxisColors::t().text_primary),
                 Space::new().width(8),
                 button(
-                    container(text("+").size(14).color(OryxisColors::TEXT_PRIMARY))
+                    container(text("+").size(14).color(OryxisColors::t().text_primary))
                         .padding(Padding { top: 4.0, right: 10.0, bottom: 4.0, left: 10.0 }),
                 )
                 .on_press(Message::TerminalFontSizeIncrease)
                 .style(|_, status| {
                     let bg = match status {
-                        BtnStatus::Hovered => OryxisColors::BG_HOVER,
-                        _ => OryxisColors::BG_SELECTED,
+                        BtnStatus::Hovered => OryxisColors::t().bg_hover,
+                        _ => OryxisColors::t().bg_selected,
                     };
                     button::Style {
                         background: Some(Background::Color(bg)),
@@ -3650,10 +3650,10 @@ impl Oryxis {
                 }),
             ].align_y(iced::Alignment::Center),
             Space::new().height(24),
-            text("Terminal").size(14).color(OryxisColors::TEXT_MUTED),
+            text("Terminal").size(14).color(OryxisColors::t().text_muted),
             Space::new().height(8),
             row![
-                text("Theme").size(13).color(OryxisColors::TEXT_SECONDARY),
+                text("Theme").size(13).color(OryxisColors::t().text_secondary),
                 Space::new().width(16),
                 pick_list(
                     oryxis_terminal::TerminalTheme::ALL
@@ -3665,14 +3665,14 @@ impl Oryxis {
                 ),
             ].align_y(iced::Alignment::Center),
             Space::new().height(24),
-            text("Security").size(14).color(OryxisColors::TEXT_MUTED),
+            text("Security").size(14).color(OryxisColors::t().text_muted),
             Space::new().height(8),
             button(
                 container(
                     row![
-                        iced_fonts::bootstrap::lock().size(14).color(OryxisColors::WARNING),
+                        iced_fonts::bootstrap::lock().size(14).color(OryxisColors::t().warning),
                         Space::new().width(10),
-                        text("Lock Vault").size(13).color(OryxisColors::WARNING),
+                        text("Lock Vault").size(13).color(OryxisColors::t().warning),
                     ].align_y(iced::Alignment::Center),
                 )
                 .padding(Padding { top: 10.0, right: 20.0, bottom: 10.0, left: 20.0 }),
@@ -3680,22 +3680,22 @@ impl Oryxis {
             .on_press(Message::LockVault)
             .style(|_, status| {
                 let bg = match status {
-                    BtnStatus::Hovered => OryxisColors::WARNING_SUBTLE,
+                    BtnStatus::Hovered => Color { a: 0.15, ..OryxisColors::t().warning },
                     _ => Color::TRANSPARENT,
                 };
                 button::Style {
                     background: Some(Background::Color(bg)),
-                    border: Border { radius: Radius::from(8.0), color: OryxisColors::WARNING, width: 1.0 },
+                    border: Border { radius: Radius::from(8.0), color: OryxisColors::t().warning, width: 1.0 },
                     ..Default::default()
                 }
             }),
             Space::new().height(24),
-            text("About").size(14).color(OryxisColors::TEXT_MUTED),
+            text("About").size(14).color(OryxisColors::t().text_muted),
             Space::new().height(8),
-            text("Oryxis v0.1.0").size(13).color(OryxisColors::TEXT_SECONDARY),
-            text("A modern SSH client built in Rust").size(12).color(OryxisColors::TEXT_MUTED),
+            text("Oryxis v0.1.0").size(13).color(OryxisColors::t().text_secondary),
+            text("A modern SSH client built in Rust").size(12).color(OryxisColors::t().text_muted),
             Space::new().height(4),
-            text("Iced + russh + alacritty_terminal").size(11).color(OryxisColors::TEXT_MUTED),
+            text("Iced + russh + alacritty_terminal").size(11).color(OryxisColors::t().text_muted),
         ];
 
         container(
@@ -3725,23 +3725,23 @@ impl Oryxis {
         };
 
         let status_color = if self.active_tab.is_some() {
-            OryxisColors::SUCCESS
+            OryxisColors::t().success
         } else {
-            OryxisColors::TEXT_MUTED
+            OryxisColors::t().text_muted
         };
 
         container(
             row![
                 text(status_text).size(12).color(status_color),
                 Space::new().width(Length::Fill),
-                text("Oryxis v0.1.0").size(12).color(OryxisColors::TEXT_MUTED),
+                text("Oryxis v0.1.0").size(12).color(OryxisColors::t().text_muted),
             ]
             .padding(Padding { top: 4.0, right: 12.0, bottom: 4.0, left: 12.0 }),
         )
         .width(Length::Fill)
         .style(|_| container::Style {
-            background: Some(Background::Color(OryxisColors::BG_SIDEBAR)),
-            border: Border { color: OryxisColors::BORDER, width: 1.0, radius: Radius::from(0.0) },
+            background: Some(Background::Color(OryxisColors::t().bg_sidebar)),
+            border: Border { color: OryxisColors::t().border, width: 1.0, radius: Radius::from(0.0) },
             ..Default::default()
         })
         .into()
@@ -3755,9 +3755,9 @@ impl Oryxis {
         // ── Header ──
         let panel_header = container(
             row![
-                text(title).size(16).color(OryxisColors::TEXT_PRIMARY),
+                text(title).size(16).color(OryxisColors::t().text_primary),
                 Space::new().width(Length::Fill),
-                button(iced_fonts::bootstrap::arrow_bar_right().size(14).color(OryxisColors::TEXT_MUTED))
+                button(iced_fonts::bootstrap::arrow_bar_right().size(14).color(OryxisColors::t().text_muted))
                     .on_press(Message::EditorCancel)
                     .padding(Padding { top: 4.0, right: 8.0, bottom: 4.0, left: 8.0 })
                     .style(|_, _| button::Style {
@@ -3777,7 +3777,7 @@ impl Oryxis {
                 )
                 .padding(Padding { top: 8.0, right: 8.0, bottom: 8.0, left: 8.0 })
                 .style(|_| container::Style {
-                    background: Some(Background::Color(OryxisColors::ACCENT)),
+                    background: Some(Background::Color(OryxisColors::t().accent)),
                     border: Border { radius: Radius::from(6.0), ..Default::default() },
                     ..Default::default()
                 }),
@@ -3802,7 +3802,7 @@ impl Oryxis {
         let ssh_section = panel_section(column![
             // SSH on [port] port
             row![
-                text(port_text).size(13).color(OryxisColors::TEXT_SECONDARY),
+                text(port_text).size(13).color(OryxisColors::t().text_secondary),
                 Space::new().width(8),
                 text_input("22", &self.editor_form.port)
                     .on_input(Message::EditorPortChanged)
@@ -3810,13 +3810,13 @@ impl Oryxis {
                     .width(60),
             ].align_y(iced::Alignment::Center),
             Space::new().height(12),
-            text("Credentials").size(12).color(OryxisColors::TEXT_MUTED),
+            text("Credentials").size(12).color(OryxisColors::t().text_muted),
             Space::new().height(8),
             // Identity selector
             row![
-                iced_fonts::bootstrap::person().size(13).color(OryxisColors::TEXT_MUTED),
+                iced_fonts::bootstrap::person().size(13).color(OryxisColors::t().text_muted),
                 Space::new().width(10),
-                text("Identity").size(12).color(OryxisColors::TEXT_SECONDARY),
+                text("Identity").size(12).color(OryxisColors::t().text_secondary),
                 Space::new().width(8),
                 pick_list(
                     {
@@ -3831,7 +3831,7 @@ impl Oryxis {
             Space::new().height(8),
             // Username
             row![
-                iced_fonts::bootstrap::person().size(13).color(OryxisColors::TEXT_MUTED),
+                iced_fonts::bootstrap::person().size(13).color(OryxisColors::t().text_muted),
                 Space::new().width(10),
                 text_input("Username", &self.editor_form.username)
                     .on_input(Message::EditorUsernameChanged)
@@ -3840,7 +3840,7 @@ impl Oryxis {
             Space::new().height(8),
             // Password
             row![
-                iced_fonts::bootstrap::keyboard().size(13).color(OryxisColors::TEXT_MUTED),
+                iced_fonts::bootstrap::keyboard().size(13).color(OryxisColors::t().text_muted),
                 Space::new().width(10),
                 text_input(
                     if self.editor_form.has_existing_password && !self.editor_form.password_touched {
@@ -3856,9 +3856,9 @@ impl Oryxis {
                 Space::new().width(6),
                 button(
                     if self.editor_form.password_visible {
-                        iced_fonts::bootstrap::eye_slash().size(14).color(OryxisColors::TEXT_MUTED)
+                        iced_fonts::bootstrap::eye_slash().size(14).color(OryxisColors::t().text_muted)
                     } else {
-                        iced_fonts::bootstrap::eye().size(14).color(OryxisColors::TEXT_MUTED)
+                        iced_fonts::bootstrap::eye().size(14).color(OryxisColors::t().text_muted)
                     }
                 )
                     .on_press(Message::EditorTogglePasswordVisibility)
@@ -3868,7 +3868,7 @@ impl Oryxis {
             Space::new().height(8),
             // Key / Auth selector
             row![
-                text("+ Key").size(12).color(OryxisColors::ACCENT),
+                text("+ Key").size(12).color(OryxisColors::t().accent),
                 Space::new().width(16),
                 pick_list(
                     {
@@ -3926,7 +3926,7 @@ impl Oryxis {
 
         // ── Error ──
         let panel_error: Element<'_, Message> = if let Some(err) = &self.host_panel_error {
-            container(Element::from(text(err.clone()).size(11).color(OryxisColors::ERROR)))
+            container(Element::from(text(err.clone()).size(11).color(OryxisColors::t().error)))
                 .padding(Padding { top: 4.0, right: 16.0, bottom: 4.0, left: 16.0 })
                 .into()
         } else {
@@ -3934,9 +3934,9 @@ impl Oryxis {
         };
 
         // ── Bottom actions ──
-        let save_btn_bg = if has_address { OryxisColors::ACCENT } else { OryxisColors::BG_SURFACE };
+        let save_btn_bg = if has_address { OryxisColors::t().accent } else { OryxisColors::t().bg_surface };
         let save_btn = button(
-            container(text("Save").size(14).color(OryxisColors::TEXT_PRIMARY))
+            container(text("Save").size(14).color(OryxisColors::t().text_primary))
                 .padding(Padding { top: 12.0, right: 0.0, bottom: 12.0, left: 0.0 })
                 .width(Length::Fill)
                 .center_x(Length::Fill),
@@ -3979,8 +3979,8 @@ impl Oryxis {
             .width(PANEL_WIDTH)
             .height(Length::Fill)
             .style(|_| container::Style {
-                background: Some(Background::Color(OryxisColors::BG_SURFACE)),
-                border: Border { color: OryxisColors::BORDER, width: 1.0, radius: Radius::from(0.0) },
+                background: Some(Background::Color(OryxisColors::t().bg_surface)),
+                border: Border { color: OryxisColors::t().border, width: 1.0, radius: Radius::from(0.0) },
                 ..Default::default()
             })
             .into()
@@ -3998,14 +3998,14 @@ fn sidebar_nav_btn<'a>(
     is_active: bool,
 ) -> Element<'a, Message> {
     let bg = if is_active {
-        OryxisColors::ACCENT_SUBTLE
+        Color { a: 0.15, ..OryxisColors::t().accent }
     } else {
         Color::TRANSPARENT
     };
     let fg = if is_active {
-        OryxisColors::ACCENT
+        OryxisColors::t().accent
     } else {
-        OryxisColors::TEXT_SECONDARY
+        OryxisColors::t().text_secondary
     };
 
     container(
@@ -4024,8 +4024,8 @@ fn sidebar_nav_btn<'a>(
         .width(Length::Fill)
         .style(move |_, status| {
             let hover_bg = match status {
-                BtnStatus::Hovered if !is_active => OryxisColors::WHITE_SUBTLE,
-                BtnStatus::Pressed => OryxisColors::ACCENT_PRESSED,
+                BtnStatus::Hovered if !is_active => Color::from_rgba(1.0, 1.0, 1.0, 0.08),
+                BtnStatus::Pressed => Color { a: 0.25, ..OryxisColors::t().accent },
                 _ => bg,
             };
             button::Style {
@@ -4045,8 +4045,8 @@ fn panel_section<'a>(content: iced::widget::Column<'a, Message>) -> Element<'a, 
         .padding(16)
         .width(Length::Fill)
         .style(|_| container::Style {
-            background: Some(Background::Color(OryxisColors::BG_HOVER)),
-            border: Border { radius: Radius::from(8.0), color: OryxisColors::BORDER, width: 1.0 },
+            background: Some(Background::Color(OryxisColors::t().bg_hover)),
+            border: Border { radius: Radius::from(8.0), color: OryxisColors::t().border, width: 1.0 },
             ..Default::default()
         })
         .into()
@@ -4055,7 +4055,7 @@ fn panel_section<'a>(content: iced::widget::Column<'a, Message>) -> Element<'a, 
 /// A labeled form field inside a section.
 fn panel_field<'a>(label: &'a str, input: Element<'a, Message>) -> Element<'a, Message> {
     column![
-        text(label).size(12).color(OryxisColors::TEXT_MUTED),
+        text(label).size(12).color(OryxisColors::t().text_muted),
         Space::new().height(4),
         input,
     ]
@@ -4067,7 +4067,7 @@ fn panel_divider<'a>() -> Element<'a, Message> {
     container(Space::new().height(1))
         .width(Length::Fill)
         .style(|_| container::Style {
-            background: Some(Background::Color(OryxisColors::BORDER)),
+            background: Some(Background::Color(OryxisColors::t().border)),
             ..Default::default()
         })
         .into()
@@ -4081,11 +4081,11 @@ fn panel_option_row<'a>(
 ) -> Element<'a, Message> {
     container(
         row![
-            icon_widget.size(13).color(OryxisColors::TEXT_MUTED),
+            icon_widget.size(13).color(OryxisColors::t().text_muted),
             Space::new().width(10),
-            text(label).size(13).color(OryxisColors::TEXT_SECONDARY),
+            text(label).size(13).color(OryxisColors::t().text_secondary),
             Space::new().width(Length::Fill),
-            text(value).size(12).color(OryxisColors::TEXT_MUTED),
+            text(value).size(12).color(OryxisColors::t().text_muted),
         ]
         .align_y(iced::Alignment::Center),
     )
@@ -4103,7 +4103,7 @@ fn context_menu_item<'a>(
         row![
             icon_widget.size(12).color(color),
             Space::new().width(8),
-            text(label).size(12).color(OryxisColors::TEXT_PRIMARY),
+            text(label).size(12).color(OryxisColors::t().text_primary),
         ]
         .align_y(iced::Alignment::Center),
     )
@@ -4112,7 +4112,7 @@ fn context_menu_item<'a>(
     .padding(Padding { top: 6.0, right: 12.0, bottom: 6.0, left: 12.0 })
     .style(|_, status| {
         let bg = match status {
-            BtnStatus::Hovered => OryxisColors::BG_HOVER,
+            BtnStatus::Hovered => OryxisColors::t().bg_hover,
             _ => Color::TRANSPARENT,
         };
         button::Style {
@@ -4134,9 +4134,9 @@ fn panel_option_pick<'a>(
 ) -> Element<'a, Message> {
     container(
         row![
-            icon_widget.size(13).color(OryxisColors::TEXT_MUTED),
+            icon_widget.size(13).color(OryxisColors::t().text_muted),
             Space::new().width(10),
-            text(label).size(13).color(OryxisColors::TEXT_SECONDARY),
+            text(label).size(13).color(OryxisColors::t().text_secondary),
             Space::new().width(Length::Fill),
             pick_list(options, Some(selected), on_change).width(120),
         ]
@@ -4156,9 +4156,9 @@ fn panel_option_pick_jump<'a>(
 ) -> Element<'a, Message> {
     container(
         row![
-            icon_widget.size(13).color(OryxisColors::TEXT_MUTED),
+            icon_widget.size(13).color(OryxisColors::t().text_muted),
             Space::new().width(10),
-            text(label).size(13).color(OryxisColors::TEXT_SECONDARY),
+            text(label).size(13).color(OryxisColors::t().text_secondary),
             Space::new().width(Length::Fill),
             pick_list(options, Some(selected), on_change).width(140),
         ]
@@ -4171,15 +4171,15 @@ fn panel_option_pick_jump<'a>(
 fn settings_row<'a>(label: &'static str, value: String) -> Element<'a, Message> {
     container(
         row![
-            text(label).size(13).color(OryxisColors::TEXT_SECONDARY),
+            text(label).size(13).color(OryxisColors::t().text_secondary),
             Space::new().width(Length::Fill),
-            text(value).size(13).color(OryxisColors::TEXT_PRIMARY),
+            text(value).size(13).color(OryxisColors::t().text_primary),
         ],
     )
     .padding(Padding { top: 6.0, right: 12.0, bottom: 6.0, left: 12.0 })
     .width(300)
     .style(|_| container::Style {
-        background: Some(Background::Color(OryxisColors::BG_SURFACE)),
+        background: Some(Background::Color(OryxisColors::t().bg_surface)),
         border: Border { radius: Radius::from(6.0), ..Default::default() },
         ..Default::default()
     })
@@ -4188,7 +4188,7 @@ fn settings_row<'a>(label: &'static str, value: String) -> Element<'a, Message> 
 
 fn styled_button(label: &str, msg: Message, color: Color) -> Element<'_, Message> {
     button(
-        container(text(label).size(14).color(OryxisColors::TEXT_PRIMARY))
+        container(text(label).size(14).color(OryxisColors::t().text_primary))
             .padding(Padding { top: 8.0, right: 24.0, bottom: 8.0, left: 24.0 }),
     )
     .on_press(msg)
