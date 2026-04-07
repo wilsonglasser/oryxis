@@ -1577,6 +1577,7 @@ impl Oryxis {
             }
 
             Message::OpenLocalShell => {
+                self.connecting = None; // Clear any pending SSH connection progress
                 match TerminalState::new(DEFAULT_TERM_COLS as u16, DEFAULT_TERM_ROWS as u16) {
                     Ok((mut state, rx)) => {
                         state.palette = self.terminal_theme.palette();
@@ -2273,15 +2274,16 @@ impl Oryxis {
     }
 
     pub fn subscription(&self) -> Subscription<Message> {
-        let kbd = keyboard::listen().map(Message::KeyboardEvent);
-        let mouse = iced::event::listen_with(|event, _status, _window| {
-            if let iced::event::Event::Mouse(iced::mouse::Event::CursorMoved { position }) = event {
-                Some(Message::MouseMoved(position))
-            } else {
-                None
+        let events = iced::event::listen_with(|event, _status, _window| {
+            match event {
+                iced::event::Event::Keyboard(ke) => Some(Message::KeyboardEvent(ke)),
+                iced::event::Event::Mouse(iced::mouse::Event::CursorMoved { position }) => {
+                    Some(Message::MouseMoved(position))
+                }
+                _ => None,
             }
         });
-        Subscription::batch([kbd, mouse])
+        events
     }
 
     // =======================================================================
