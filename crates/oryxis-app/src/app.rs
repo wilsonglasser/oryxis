@@ -1176,6 +1176,19 @@ impl Oryxis {
                 use crate::theme::AppTheme;
                 if let Some(theme) = AppTheme::ALL.iter().find(|t| t.name() == name) {
                     AppTheme::set_active(*theme);
+                    // Map app theme to terminal palette
+                    let term_theme = match theme {
+                        AppTheme::OryxisDark => oryxis_terminal::TerminalTheme::OryxisDark,
+                        AppTheme::OryxisLight => oryxis_terminal::TerminalTheme::OryxisDark, // TODO: light terminal
+                        AppTheme::Dracula => oryxis_terminal::TerminalTheme::Dracula,
+                        AppTheme::Nord => oryxis_terminal::TerminalTheme::Nord,
+                    };
+                    self.terminal_theme = term_theme;
+                    for tab in &self.tabs {
+                        if let Ok(mut state) = tab.terminal.lock() {
+                            state.palette = term_theme.palette();
+                        }
+                    }
                 }
             }
             Message::TerminalFontSizeIncrease => {
@@ -3586,7 +3599,7 @@ impl Oryxis {
             text("Appearance").size(14).color(OryxisColors::t().text_muted),
             Space::new().height(8),
             row![
-                text("App Theme").size(13).color(OryxisColors::t().text_secondary),
+                text("Theme").size(13).color(OryxisColors::t().text_secondary),
                 Space::new().width(16),
                 pick_list(
                     crate::theme::AppTheme::ALL
@@ -3597,21 +3610,9 @@ impl Oryxis {
                     Message::AppThemeChanged,
                 ),
             ].align_y(iced::Alignment::Center),
-            Space::new().height(24),
-            text("Vault").size(14).color(OryxisColors::t().text_muted),
-            Space::new().height(8),
-            settings_row("Hosts", self.connections.len().to_string()),
-            Space::new().height(6),
-            settings_row("Keys", self.keys.len().to_string()),
-            Space::new().height(6),
-            settings_row("Snippets", self.snippets.len().to_string()),
-            Space::new().height(6),
-            settings_row("Groups", self.groups.len().to_string()),
-            Space::new().height(24),
-            text("Font").size(14).color(OryxisColors::t().text_muted),
-            Space::new().height(8),
+            Space::new().height(12),
             row![
-                text("Text Size").size(13).color(OryxisColors::t().text_secondary),
+                text("Terminal Font Size").size(13).color(OryxisColors::t().text_secondary),
                 Space::new().width(16),
                 button(
                     container(text("\u{2212}").size(14).color(OryxisColors::t().text_primary))
@@ -3650,20 +3651,15 @@ impl Oryxis {
                 }),
             ].align_y(iced::Alignment::Center),
             Space::new().height(24),
-            text("Terminal").size(14).color(OryxisColors::t().text_muted),
+            text("Vault").size(14).color(OryxisColors::t().text_muted),
             Space::new().height(8),
-            row![
-                text("Theme").size(13).color(OryxisColors::t().text_secondary),
-                Space::new().width(16),
-                pick_list(
-                    oryxis_terminal::TerminalTheme::ALL
-                        .iter()
-                        .map(|t| t.name().to_string())
-                        .collect::<Vec<_>>(),
-                    Some(self.terminal_theme.name().to_string()),
-                    Message::TerminalThemeChanged,
-                ),
-            ].align_y(iced::Alignment::Center),
+            settings_row("Hosts", self.connections.len().to_string()),
+            Space::new().height(6),
+            settings_row("Keys", self.keys.len().to_string()),
+            Space::new().height(6),
+            settings_row("Snippets", self.snippets.len().to_string()),
+            Space::new().height(6),
+            settings_row("Groups", self.groups.len().to_string()),
             Space::new().height(24),
             text("Security").size(14).color(OryxisColors::t().text_muted),
             Space::new().height(8),
