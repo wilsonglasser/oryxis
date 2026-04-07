@@ -87,6 +87,8 @@ struct ConnectionForm {
     password_touched: bool,
     /// Whether to show the password in plain text.
     password_visible: bool,
+    /// Whether the username field is focused (shows identity autocomplete).
+    username_focused: bool,
 }
 
 impl Default for ConnectionForm {
@@ -106,6 +108,7 @@ impl Default for ConnectionForm {
             has_existing_password: false,
             password_touched: false,
             password_visible: false,
+            username_focused: false,
         }
     }
 }
@@ -833,15 +836,20 @@ impl Oryxis {
                         has_existing_password: has_pw,
                         password_touched: false,
                         password_visible: false,
+                        username_focused: false,
                     };
                 }
             }
-            Message::EditorLabelChanged(v) => self.editor_form.label = v,
-            Message::EditorHostnameChanged(v) => self.editor_form.hostname = v,
-            Message::EditorPortChanged(v) => self.editor_form.port = v,
-            Message::EditorUsernameChanged(v) => self.editor_form.username = v,
+            Message::EditorLabelChanged(v) => { self.editor_form.label = v; self.editor_form.username_focused = false; }
+            Message::EditorHostnameChanged(v) => { self.editor_form.hostname = v; self.editor_form.username_focused = false; }
+            Message::EditorPortChanged(v) => { self.editor_form.port = v; self.editor_form.username_focused = false; }
+            Message::EditorUsernameChanged(v) => {
+                self.editor_form.username = v;
+                self.editor_form.username_focused = true;
+            }
             Message::EditorPasswordChanged(v) => {
                 self.editor_form.password_touched = true;
+                self.editor_form.username_focused = false;
                 self.editor_form.password = v;
             }
             Message::EditorTogglePasswordVisibility => {
@@ -1760,6 +1768,7 @@ impl Oryxis {
 
             // ── Connection identity ──
             Message::EditorIdentityChanged(v) => {
+                self.editor_form.username_focused = false;
                 if v == "(none)" {
                     self.editor_form.selected_identity = None;
                 } else {
@@ -5359,8 +5368,8 @@ impl Oryxis {
             ].align_y(iced::Alignment::Center),
         ];
 
-        // Identity suggestion dropdown (shows when username matches an identity)
-        if self.editor_form.selected_identity.is_none() && !self.identities.is_empty() {
+        // Identity suggestion dropdown (only when username field is focused)
+        if self.editor_form.username_focused && self.editor_form.selected_identity.is_none() && !self.identities.is_empty() {
             let search = self.editor_form.username.to_lowercase();
             let matching: Vec<&Identity> = if search.is_empty() {
                 self.identities.iter().collect()
