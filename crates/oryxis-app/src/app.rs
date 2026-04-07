@@ -2,10 +2,10 @@ use iced::border::Radius;
 use iced::keyboard;
 use iced::widget::{
     button, canvas, column, container, image, pick_list, row, scrollable, text, text_editor,
-    text_input, MouseArea, Row, Space,
+    text_input, MouseArea, Row, Space, Stack,
 };
 use iced::futures::SinkExt;
-use iced::{Background, Border, Color, Element, Length, Padding, Subscription, Task, Theme};
+use iced::{Background, Border, Color, Element, Length, Padding, Point, Subscription, Task, Theme};
 use iced::widget::button::Status as BtnStatus;
 
 use oryxis_core::models::connection::{AuthMethod, Connection};
@@ -114,6 +114,25 @@ impl Default for ConnectionForm {
 }
 
 // ---------------------------------------------------------------------------
+// Overlay (floating context menus)
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone)]
+enum OverlayContent {
+    HostActions(usize),
+    KeyActions(usize),
+    IdentityActions(usize),
+    KeychainAdd,
+}
+
+#[derive(Debug, Clone)]
+struct OverlayState {
+    content: OverlayContent,
+    x: f32,
+    y: f32,
+}
+
+// ---------------------------------------------------------------------------
 // App state
 // ---------------------------------------------------------------------------
 
@@ -149,6 +168,10 @@ pub struct Oryxis {
     // Card hover & context menu
     hovered_card: Option<usize>,
     card_context_menu: Option<usize>,
+
+    // Floating overlay menu
+    overlay: Option<OverlayState>,
+    mouse_position: Point,
 
     // Keys
     keys: Vec<SshKey>,
@@ -283,11 +306,16 @@ pub enum Message {
     // Terminal I/O
     PtyOutput(usize, Vec<u8>),  // (tab_index, bytes)
     KeyboardEvent(keyboard::Event),
+    MouseMoved(Point),
+
+    // Overlay
+    HideOverlayMenu,
 
     // Card interactions
     CardHovered(usize),
     CardUnhovered,
     ShowCardMenu(usize),
+    #[allow(dead_code)]
     HideCardMenu,
 
     // Connection editor
@@ -369,6 +397,7 @@ pub enum Message {
     ImportKey,
     DeleteKey(usize),
     ShowKeyMenu(usize),
+    #[allow(dead_code)]
     HideKeyMenu,
     EditKey(usize),
     KeySearchChanged(String),
@@ -495,6 +524,8 @@ impl Oryxis {
                 host_panel_error: None,
                 hovered_card: None,
                 card_context_menu: None,
+                overlay: None,
+                mouse_position: Point::ORIGIN,
                 keys: Vec::new(),
                 show_key_panel: false,
                 key_import_label: String::new(),
@@ -728,11 +759,32 @@ impl Oryxis {
             Message::CardUnhovered => {
                 self.hovered_card = None;
             }
+            Message::MouseMoved(pos) => {
+                self.mouse_position = pos;
+            }
+            Message::HideOverlayMenu => {
+                self.overlay = None;
+                self.card_context_menu = None;
+                self.key_context_menu = None;
+                self.identity_context_menu = None;
+                self.show_keychain_add_menu = false;
+            }
             Message::ShowCardMenu(idx) => {
-                self.card_context_menu = if self.card_context_menu == Some(idx) { None } else { Some(idx) };
+                if self.card_context_menu == Some(idx) {
+                    self.card_context_menu = None;
+                    self.overlay = None;
+                } else {
+                    self.card_context_menu = Some(idx);
+                    self.overlay = Some(OverlayState {
+                        content: OverlayContent::HostActions(idx),
+                        x: self.mouse_position.x,
+                        y: self.mouse_position.y,
+                    });
+                }
             }
             Message::HideCardMenu => {
                 self.card_context_menu = None;
+                self.overlay = None;
             }
 
             // -- Tabs --
@@ -803,6 +855,7 @@ impl Oryxis {
             }
             Message::EditConnection(idx) => {
                 self.card_context_menu = None;
+                self.overlay = None;
                 if let Some(conn) = self.connections.get(idx) {
                     self.show_host_panel = true;
                     self.host_panel_error = None;
@@ -961,6 +1014,7 @@ impl Oryxis {
             }
             Message::DeleteConnection(idx) => {
                 self.card_context_menu = None;
+                self.overlay = None;
                 if let Some(conn) = self.connections.get(idx) {
                     let id = conn.id;
                     if let Some(vault) = &self.vault {
@@ -972,6 +1026,7 @@ impl Oryxis {
             }
             Message::DuplicateConnection(idx) => {
                 self.card_context_menu = None;
+                self.overlay = None;
                 if let Some(conn) = self.connections.get(idx).cloned() {
                     let mut dup = Connection::new(
                         format!("{} (copy)", conn.label),
@@ -998,6 +1053,7 @@ impl Oryxis {
             // -- SSH connection --
             Message::ConnectSsh(idx) => {
                 self.card_context_menu = None;
+                self.overlay = None;
                 if let Some(conn) = self.connections.get(idx).cloned() {
                     // Resolve credentials: prefer identity if linked, otherwise inline
                     let (password, private_key) = if let Some(iid) = conn.identity_id {
@@ -1537,6 +1593,7 @@ impl Oryxis {
                 self.key_success = None;
                 self.editing_key_id = None;
                 self.key_context_menu = None;
+                self.overlay = None;
             }
             Message::HideKeyPanel => {
                 self.show_key_panel = false;
@@ -1634,14 +1691,26 @@ impl Oryxis {
                     }
                 }
                 self.key_context_menu = None;
+                self.overlay = None;
             }
             Message::ShowKeyMenu(idx) => {
-                self.key_context_menu = if self.key_context_menu == Some(idx) { None } else { Some(idx) };
+                if self.key_context_menu == Some(idx) {
+                    self.key_context_menu = None;
+                    self.overlay = None;
+                } else {
+                    self.key_context_menu = Some(idx);
+                    self.overlay = Some(OverlayState {
+                        content: OverlayContent::KeyActions(idx),
+                        x: self.mouse_position.x,
+                        y: self.mouse_position.y,
+                    });
+                }
             }
             Message::HideKeyMenu => {
                 self.key_context_menu = None;
                 self.identity_context_menu = None;
                 self.show_keychain_add_menu = false;
+                self.overlay = None;
             }
             Message::EditKey(idx) => {
                 if let Some(key) = self.keys.get(idx) {
@@ -1657,6 +1726,7 @@ impl Oryxis {
                     self.key_error = None;
                     self.key_success = None;
                     self.key_context_menu = None;
+                    self.overlay = None;
                 }
             }
             Message::KeySearchChanged(v) => {
@@ -1676,6 +1746,7 @@ impl Oryxis {
                 self.editing_identity_id = None;
                 self.show_keychain_add_menu = false;
                 self.identity_context_menu = None;
+                self.overlay = None;
             }
             Message::HideIdentityPanel => {
                 self.show_identity_panel = false;
@@ -1747,6 +1818,7 @@ impl Oryxis {
                     });
                     self.show_identity_panel = true;
                     self.identity_context_menu = None;
+                    self.overlay = None;
                 }
             }
             Message::DeleteIdentity(idx) => {
@@ -1758,12 +1830,33 @@ impl Oryxis {
                     }
                 }
                 self.identity_context_menu = None;
+                self.overlay = None;
             }
             Message::ShowIdentityMenu(idx) => {
-                self.identity_context_menu = if self.identity_context_menu == Some(idx) { None } else { Some(idx) };
+                if self.identity_context_menu == Some(idx) {
+                    self.identity_context_menu = None;
+                    self.overlay = None;
+                } else {
+                    self.identity_context_menu = Some(idx);
+                    self.overlay = Some(OverlayState {
+                        content: OverlayContent::IdentityActions(idx),
+                        x: self.mouse_position.x,
+                        y: self.mouse_position.y,
+                    });
+                }
             }
             Message::ToggleKeychainAddMenu => {
-                self.show_keychain_add_menu = !self.show_keychain_add_menu;
+                if self.show_keychain_add_menu {
+                    self.show_keychain_add_menu = false;
+                    self.overlay = None;
+                } else {
+                    self.show_keychain_add_menu = true;
+                    self.overlay = Some(OverlayState {
+                        content: OverlayContent::KeychainAdd,
+                        x: self.mouse_position.x,
+                        y: self.mouse_position.y,
+                    });
+                }
             }
 
             // ── Connection identity ──
@@ -2162,7 +2255,15 @@ impl Oryxis {
     }
 
     pub fn subscription(&self) -> Subscription<Message> {
-        keyboard::listen().map(Message::KeyboardEvent)
+        let kbd = keyboard::listen().map(Message::KeyboardEvent);
+        let mouse = iced::event::listen_with(|event, _status, _window| {
+            if let iced::event::Event::Mouse(iced::mouse::Event::CursorMoved { position }) = event {
+                Some(Message::MouseMoved(position))
+            } else {
+                None
+            }
+        });
+        Subscription::batch([kbd, mouse])
     }
 
     // =======================================================================
@@ -2316,11 +2417,98 @@ impl Oryxis {
         let main_row = row![sidebar, right_side].height(Length::Fill);
         let layout = column![main_row, status_bar];
 
-        container(layout)
+        let base: Element<'_, Message> = container(layout)
             .width(Length::Fill)
             .height(Length::Fill)
             .style(|_| container::Style {
                 background: Some(Background::Color(OryxisColors::t().bg_primary)),
+                ..Default::default()
+            })
+            .into();
+
+        if let Some(ref overlay) = self.overlay {
+            let menu = self.render_overlay_menu(overlay);
+
+            // Transparent backdrop that dismisses the menu on click
+            let backdrop: Element<'_, Message> = MouseArea::new(
+                container(Space::new())
+                    .width(Length::Fill)
+                    .height(Length::Fill),
+            )
+            .on_press(Message::HideOverlayMenu)
+            .into();
+
+            // Position the menu using spacers to simulate absolute positioning
+            let positioned_menu: Element<'_, Message> = column![
+                Space::new().height(overlay.y),
+                row![
+                    Space::new().width(overlay.x),
+                    menu,
+                ],
+            ]
+            .into();
+
+            Stack::new()
+                .push(base)
+                .push(backdrop)
+                .push(positioned_menu)
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .into()
+        } else {
+            base
+        }
+    }
+
+    fn render_overlay_menu(&self, overlay: &OverlayState) -> Element<'_, Message> {
+        let menu_width = 180.0;
+        let items: Element<'_, Message> = match &overlay.content {
+            OverlayContent::HostActions(idx) => {
+                let idx = *idx;
+                column![
+                    context_menu_item(iced_fonts::bootstrap::play_fill(), "Connect", Message::ConnectSsh(idx), OryxisColors::t().success),
+                    context_menu_item(iced_fonts::bootstrap::pencil(), "Edit", Message::EditConnection(idx), OryxisColors::t().text_secondary),
+                    context_menu_item(iced_fonts::bootstrap::copy(), "Duplicate", Message::DuplicateConnection(idx), OryxisColors::t().text_secondary),
+                    context_menu_item(iced_fonts::bootstrap::trash(), "Remove", Message::DeleteConnection(idx), OryxisColors::t().error),
+                ].into()
+            }
+            OverlayContent::KeyActions(idx) => {
+                let idx = *idx;
+                column![
+                    context_menu_item(iced_fonts::bootstrap::pencil(), "Edit", Message::EditKey(idx), OryxisColors::t().text_secondary),
+                    context_menu_item(iced_fonts::bootstrap::trash(), "Remove", Message::DeleteKey(idx), OryxisColors::t().error),
+                ].into()
+            }
+            OverlayContent::IdentityActions(idx) => {
+                let idx = *idx;
+                column![
+                    context_menu_item(iced_fonts::bootstrap::pencil(), "Edit", Message::EditIdentity(idx), OryxisColors::t().text_secondary),
+                    context_menu_item(iced_fonts::bootstrap::trash(), "Remove", Message::DeleteIdentity(idx), OryxisColors::t().error),
+                ].into()
+            }
+            OverlayContent::KeychainAdd => {
+                column![
+                    context_menu_item(iced_fonts::bootstrap::key(), "Import Key", Message::ShowKeyPanel, OryxisColors::t().text_secondary),
+                    context_menu_item(iced_fonts::bootstrap::person(), "New Identity", Message::ShowIdentityPanel, OryxisColors::t().text_secondary),
+                ].into()
+            }
+        };
+
+        container(items)
+            .width(menu_width)
+            .padding(4)
+            .style(|_| container::Style {
+                background: Some(Background::Color(OryxisColors::t().bg_surface)),
+                border: Border {
+                    radius: Radius::from(8.0),
+                    color: OryxisColors::t().border,
+                    width: 1.0,
+                },
+                shadow: iced::Shadow {
+                    color: Color::from_rgba(0.0, 0.0, 0.0, 0.3),
+                    offset: iced::Vector::new(0.0, 4.0),
+                    blur_radius: 12.0,
+                },
                 ..Default::default()
             })
             .into()
@@ -2792,33 +2980,8 @@ impl Oryxis {
                 }
             });
 
-            // Context menu dropdown (shown below the card)
-            let card_el: Element<'_, Message> = if self.card_context_menu == Some(idx) {
-                let menu = container(
-                    column![
-                        context_menu_item(iced_fonts::bootstrap::play_fill(), "Connect", Message::ConnectSsh(idx), OryxisColors::t().success),
-                        context_menu_item(iced_fonts::bootstrap::pencil(), "Edit", Message::EditConnection(idx), OryxisColors::t().text_secondary),
-                        context_menu_item(iced_fonts::bootstrap::copy(), "Duplicate", Message::DuplicateConnection(idx), OryxisColors::t().text_secondary),
-                        context_menu_item(iced_fonts::bootstrap::trash(), "Remove", Message::DeleteConnection(idx), OryxisColors::t().error),
-                    ],
-                )
-                .width(CARD_WIDTH)
-                .padding(4)
-                .style(|_| container::Style {
-                    background: Some(Background::Color(OryxisColors::t().bg_surface)),
-                    border: Border { radius: Radius::from(8.0), color: OryxisColors::t().border, width: 1.0 },
-                    ..Default::default()
-                });
-
-                column![card_btn, Space::new().height(4), menu]
-                    .width(CARD_WIDTH)
-                    .into()
-            } else {
-                card_btn.into()
-            };
-
             // Wrap in MouseArea for hover tracking and right-click
-            let wrapped = MouseArea::new(card_el)
+            let wrapped = MouseArea::new(card_btn)
                 .on_enter(Message::CardHovered(idx))
                 .on_exit(Message::CardUnhovered)
                 .on_right_press(Message::ShowCardMenu(idx));
@@ -2847,10 +3010,6 @@ impl Oryxis {
             column(grid_rows)
                 .padding(Padding { top: 0.0, right: 24.0, bottom: 24.0, left: 24.0 }),
         ).height(Length::Fill);
-
-        // Close context menu when clicking on empty area
-        let grid = MouseArea::new(grid)
-            .on_press(Message::HideCardMenu);
 
         // ── Main + side panel ──
         let main_content = column![toolbar, search_bar, status, grid]
@@ -3360,30 +3519,11 @@ impl Oryxis {
             ..Default::default()
         });
 
-        let add_area: Element<'_, Message> = if self.show_keychain_add_menu {
-            let menu = container(
-                column![
-                    context_menu_item(iced_fonts::bootstrap::key(), "Import Key", Message::ShowKeyPanel, OryxisColors::t().text_secondary),
-                    context_menu_item(iced_fonts::bootstrap::person(), "New Identity", Message::ShowIdentityPanel, OryxisColors::t().text_secondary),
-                ],
-            )
-            .width(180)
-            .padding(4)
-            .style(|_| container::Style {
-                background: Some(Background::Color(OryxisColors::t().bg_surface)),
-                border: Border { radius: Radius::from(8.0), color: OryxisColors::t().border, width: 1.0 },
-                ..Default::default()
-            });
-            column![add_btn, Space::new().height(4), menu].into()
-        } else {
-            add_btn.into()
-        };
-
         let toolbar = container(
             row![
                 text("Keychain").size(20).color(OryxisColors::t().text_primary),
                 Space::new().width(Length::Fill),
-                add_area,
+                add_btn,
             ]
             .align_y(iced::Alignment::Center),
         )
@@ -3546,31 +3686,8 @@ impl Oryxis {
                 }
             });
 
-            // Context menu dropdown (shown below the card)
-            let card_el: Element<'_, Message> = if self.key_context_menu == Some(idx) {
-                let menu = container(
-                    column![
-                        context_menu_item(iced_fonts::bootstrap::pencil(), "Edit", Message::EditKey(idx), OryxisColors::t().text_secondary),
-                        context_menu_item(iced_fonts::bootstrap::trash(), "Remove", Message::DeleteKey(idx), OryxisColors::t().error),
-                    ],
-                )
-                .width(CARD_WIDTH)
-                .padding(4)
-                .style(|_| container::Style {
-                    background: Some(Background::Color(OryxisColors::t().bg_surface)),
-                    border: Border { radius: Radius::from(8.0), color: OryxisColors::t().border, width: 1.0 },
-                    ..Default::default()
-                });
-
-                column![card, Space::new().height(4), menu]
-                    .width(CARD_WIDTH)
-                    .into()
-            } else {
-                card.into()
-            };
-
             // Wrap in MouseArea for right-click
-            let wrapped = MouseArea::new(card_el)
+            let wrapped = MouseArea::new(card)
                 .on_right_press(Message::ShowKeyMenu(idx));
 
             cards.push(container(wrapped).width(CARD_WIDTH).into());
@@ -3689,29 +3806,7 @@ impl Oryxis {
                 }
             });
 
-            let card_el: Element<'_, Message> = if self.identity_context_menu == Some(idx) {
-                let menu = container(
-                    column![
-                        context_menu_item(iced_fonts::bootstrap::pencil(), "Edit", Message::EditIdentity(idx), OryxisColors::t().text_secondary),
-                        context_menu_item(iced_fonts::bootstrap::trash(), "Remove", Message::DeleteIdentity(idx), OryxisColors::t().error),
-                    ],
-                )
-                .width(CARD_WIDTH)
-                .padding(4)
-                .style(|_| container::Style {
-                    background: Some(Background::Color(OryxisColors::t().bg_surface)),
-                    border: Border { radius: Radius::from(8.0), color: OryxisColors::t().border, width: 1.0 },
-                    ..Default::default()
-                });
-
-                column![card, Space::new().height(4), menu]
-                    .width(CARD_WIDTH)
-                    .into()
-            } else {
-                card.into()
-            };
-
-            let wrapped = MouseArea::new(card_el)
+            let wrapped = MouseArea::new(card)
                 .on_right_press(Message::ShowIdentityMenu(idx));
 
             identity_cards.push(container(wrapped).width(CARD_WIDTH).into());
@@ -3747,10 +3842,6 @@ impl Oryxis {
             column(all_rows).padding(Padding { top: 0.0, right: 24.0, bottom: 24.0, left: 24.0 }),
         )
         .height(Length::Fill);
-
-        // Close context menus when clicking on empty area
-        let grid = MouseArea::new(grid)
-            .on_press(Message::HideKeyMenu);
 
         // ── Main content ──
         let main_content = column![toolbar, search_bar, status, grid]
