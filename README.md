@@ -16,6 +16,10 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0-blue" alt="License"></a>
 </p>
 
+<p align="center">
+  🌐 English · Português · Español · Français · Deutsch · Italiano · 中文 · 日本語 · Русский
+</p>
+
 ---
 
 ## Download
@@ -44,45 +48,55 @@ Most SSH clients are either powerful but ugly (PuTTY), pretty but Electron-heavy
 ## Features
 
 ### SSH & Connectivity
-- **Smart auto-authentication** — Automatically tries key, agent, password, and keyboard-interactive in order. No need to pick an auth method.
-- **Full SSH pipeline** — Direct connections, SOCKS4/5 proxy, HTTP CONNECT proxy, ProxyCommand, and jump host chaining via [russh 0.60](https://github.com/warp-tech/russh).
-- **RSA SHA-2 support** — Modern rsa-sha2-256/512 signing. Works with servers that reject legacy ssh-rsa.
-- **Connection progress** — Step-by-step indicator (transport, auth, session) with detailed error messages.
-- **TOFU host key verification** — Server fingerprints saved on first connect, rejected if key changes.
+- **Smart auto-authentication** — Automatically tries key, agent, password, and keyboard-interactive in order.
+- **Full SSH pipeline** — Direct, SOCKS4/5, HTTP CONNECT, ProxyCommand, and jump host chaining via [russh 0.60](https://github.com/warp-tech/russh).
+- **RSA SHA-2 support** — Modern rsa-sha2-256/512 signing.
+- **Connection progress** — Step-by-step indicator with detailed error messages.
+- **TOFU host key verification** — Fingerprints saved on first connect, rejected if key changes.
 
 ### Terminal
-- **Embedded emulator** — Powered by [alacritty_terminal 0.26](https://github.com/alacritty/alacritty) with 256-color, truecolor, mouse selection, and scrollback.
-- **Syntax highlighting** — IPs (magenta), URLs (blue), and file paths (cyan) detected and colored automatically.
-- **Bold-to-bright colors** — Bold text uses vivid bright ANSI variants, like Termius.
-- **6 terminal color themes** — Oryxis Dark, Hacker Green, Dracula, Solarized Dark, Monokai, Nord.
-- **Configurable font size** — Adjust terminal text size (10-24px) from Settings.
+- **Embedded emulator** — [alacritty_terminal 0.26](https://github.com/alacritty/alacritty) with 256-color, truecolor, mouse selection, scrollback.
+- **Syntax highlighting** — IPs (magenta), URLs (blue), file paths (cyan) auto-detected.
+- **Bold-to-bright colors** — Bold text uses vivid bright ANSI variants.
+- **6 terminal themes** — Oryxis Dark, Hacker Green, Dracula, Solarized Dark, Monokai, Nord.
+- **Configurable font size** — 10-24px, adjustable in Settings.
+- **Session recording** — Full terminal output saved to vault, viewable in History.
+
+### AI Chat Assistant
+- **Integrated AI sidebar** — Collapsible chat panel per terminal session.
+- **Bash tool execution** — AI can run commands in the active terminal and analyze output.
+- **Smart output capture** — Polls terminal until output stabilizes (no fixed timeouts).
+- **Multiple providers** — Anthropic (Claude), OpenAI (GPT), Google Gemini, or custom OpenAI-compatible endpoints.
+- **Terminal context** — AI receives the last ~50 lines of terminal output for context.
+- **Custom system prompt** — Add additional instructions in Settings.
 
 ### Identity System
-- **Reusable credentials** — Create Identities (username + password + key) and link them to multiple hosts.
-- **Identity picker** — Select an identity in the host editor to auto-fill credentials.
-- **Keychain view** — Keys and Identities side by side, with search, edit, and context menus.
+- **Reusable credentials** — Create Identities (username + password + key) linked to multiple hosts.
+- **Autocomplete** — Type in username field to see matching identities, click to link.
+- **Keychain view** — Keys and Identities side by side with search, edit, context menus.
 
-### Themes
-- **4 global themes** — Oryxis Dark, Oryxis Light, Dracula, Nord. Changes the entire UI instantly.
-- **Teal accent** (#229991) — Inspired by the Oryxis logo, used throughout the interface.
-- **Theme cards** — Visual preview in Settings with color bars.
+### Themes & Internationalization
+- **4 global themes** — Oryxis Dark, Oryxis Light, Dracula, Nord. Changes entire UI instantly.
+- **9 languages** — English, Portugues (Brasil), Espanol, Francais, Deutsch, Italiano, 中文, 日本語, Русский.
+- **Floating overlay menus** — Context menus float over content with click-outside-to-dismiss.
 
 ### Vault & Security
-- **No password by default** — Opens instantly. Enable a master password in Settings if desired.
-- **Argon2id + ChaCha20Poly1305** — Industry-standard key derivation and encryption.
-- **Per-field encryption** — Each password and private key encrypted with unique salt + nonce.
-- **Re-encryption on password change** — All secrets re-encrypted when enabling/disabling master password.
+- **No password by default** — Opens instantly. Enable master password in Settings.
+- **Argon2id + ChaCha20Poly1305** — Industry-standard encryption.
+- **Per-field encryption** — Each secret has unique 32-byte salt + 12-byte nonce.
+- **Re-encryption** — All secrets re-encrypted when password changes.
+- **Vault reset** — "Forgot password?" option to destroy and recreate vault.
 - **No telemetry** — No data leaves your machine.
 
 ### UI / UX
-- **Native GPU-accelerated UI** — Built with [Iced 0.14](https://iced.rs) (wgpu backend).
+- **Native GPU-accelerated UI** — [Iced 0.14](https://iced.rs) (wgpu backend).
 - **Termius-inspired design** — Card grid, slide-in editors, sidebar navigation.
 - **Folder organization** — Group hosts into folders with breadcrumb navigation.
-- **Search** — Filter hosts by name/hostname and keys by label.
-- **Empty states** — Centered onboarding screens for Hosts, Keys, and Snippets.
+- **Search** — Filter hosts and keys by name.
+- **Empty states** — Centered onboarding screens.
 - **Multi-tab sessions** — SSH and local shell sessions in tabs.
 - **Snippets** — Save and execute commands with one click.
-- **Settings with sidebar** — Terminal, Theme, Shortcuts, Security, and About sections.
+- **Settings sidebar** — Terminal, AI, Theme, Shortcuts, Security, About sections.
 
 ## Architecture
 
@@ -91,30 +105,30 @@ Most SSH clients are either powerful but ugly (PuTTY), pretty but Electron-heavy
 |                                                               |
 |  Sidebar -- Navigation (Hosts, Keys, Snippets, etc.)          |
 |  Tab Bar -- Open terminal sessions                            |
-|  Content -- Grid cards or terminal canvas                     |
-|  Panels  -- Slide-in editors (New Host, Add Key, Identity)    |
+|  Content -- Grid cards / terminal canvas / AI chat sidebar    |
+|  Panels  -- Slide-in editors (Host, Key, Identity)            |
+|  Overlay -- Floating context menus                            |
 |                                                               |
 +---------------------------------------------------------------+
 |  oryxis-ssh              |  oryxis-vault                      |
-|  (russh 0.60 + jump      |  (SQLite + Argon2id +              |
-|   hosts + SOCKS + HTTP    |   ChaCha20Poly1305 +               |
-|   proxy + ProxyCommand    |   Identity CRUD)                   |
-|   + auto-auth)            |                                    |
+|  (russh 0.60 + auto-auth |  (SQLite + Argon2id +              |
+|   + jump hosts + proxy    |   ChaCha20Poly1305 +               |
+|   + RSA-SHA2)             |   Identity + Session logs)         |
 +---------------------------------------------------------------+
 |  oryxis-terminal          |  oryxis-core                       |
-|  (alacritty_terminal 0.26 |  (Connection, Key, Group,          |
-|   + canvas + PTY +        |   Snippet, Identity, KnownHost,    |
-|   syntax highlight)       |   LogEntry)                        |
+|  (alacritty_terminal 0.26 |  (Connection, Key, Identity,       |
+|   + syntax highlight      |   Group, Snippet, KnownHost,       |
+|   + 6 themes + recording) |   LogEntry)                        |
 +---------------------------------------------------------------+
 ```
 
 | Crate | Purpose |
 |-------|---------|
-| `oryxis-app` | Iced application, views, state, themes, settings |
+| `oryxis-app` | Iced app, views, themes, i18n, AI chat, overlay system |
 | `oryxis-core` | Shared types — Connection, SshKey, Identity, Group, Snippet, KnownHost, LogEntry |
-| `oryxis-terminal` | Terminal widget (alacritty_terminal + canvas + PTY + selection + syntax highlight + themes) |
+| `oryxis-terminal` | Terminal widget (alacritty + canvas + PTY + syntax highlight + 6 themes) |
 | `oryxis-ssh` | SSH engine — auto-auth, jump hosts, SOCKS/HTTP proxy, ProxyCommand, TOFU, RSA-SHA2 |
-| `oryxis-vault` | Encrypted vault — SQLite + Argon2id + ChaCha20Poly1305 + Identity CRUD |
+| `oryxis-vault` | Encrypted vault — SQLite + Argon2id + ChaCha20Poly1305 + Identity + Session logs |
 | `oryxis-sync` | P2P sync engine — planned |
 
 ## Tech Stack
@@ -125,6 +139,7 @@ Most SSH clients are either powerful but ugly (PuTTY), pretty but Electron-heavy
 | Icons | Bootstrap Icons (iced_fonts) |
 | Terminal | alacritty_terminal 0.26 |
 | SSH | russh 0.60 (async, pure Rust, RSA-SHA2) |
+| AI | reqwest + Anthropic/OpenAI/Gemini APIs |
 | Encryption | Argon2id + ChaCha20Poly1305 |
 | Storage | SQLite (rusqlite) |
 | Clipboard | arboard |
@@ -151,28 +166,20 @@ sudo apt install -y build-essential pkg-config libssl-dev libgtk-3-dev libwaylan
 ```bash
 git clone https://github.com/wilsonglasser/oryxis.git
 cd oryxis
-
-# Debug
-cargo run
-
-# Release (optimized)
-cargo build --release
-./target/release/oryxis
-
-# Run tests
+cargo run            # Debug
+cargo build --release # Release
 cargo test --workspace
 ```
 
 ## Usage
 
-1. **First launch** — App opens directly (no password needed by default)
+1. **First launch** — Choose to set a master password or continue without one
 2. **Add hosts** — Click `+ HOST`, fill in hostname and credentials
-3. **Connect** — Click a host card to open an SSH session
-4. **Identities** — Create reusable credential bundles in the Keychain
-5. **Keys** — Import SSH keys from file via the Keychain view
-6. **Snippets** — Save frequently used commands for quick execution
-7. **Themes** — Switch global theme in Settings (Oryxis Dark, Light, Dracula, Nord)
-8. **Security** — Enable vault master password in Settings > Security
+3. **Identities** — Create reusable credential bundles in the Keychain
+4. **Connect** — Click a host card to open an SSH session
+5. **AI Chat** — Enable in Settings > AI, click chat bubble in terminal to ask questions
+6. **Themes** — Switch in Settings (Oryxis Dark, Light, Dracula, Nord)
+7. **Language** — Change in Settings > Theme (9 languages available)
 
 ### Keyboard Shortcuts
 
@@ -184,41 +191,28 @@ cargo test --workspace
 | `Ctrl+1...9` | Switch to tab 1-9 |
 | `Ctrl+L` | Open local terminal |
 | `Ctrl+N` | New host |
-| Mouse drag | Select text in terminal |
-| Mouse wheel | Scroll terminal history |
-
-### Authentication Methods
-
-| Method | Description |
-|--------|------------|
-| Auto (default) | Tries key, agent, password, keyboard-interactive in order |
-| Password | Stored encrypted in vault |
-| Key | Select an imported SSH key |
-| Agent | Uses running ssh-agent (Unix socket or Windows named pipe) |
-| Interactive | Keyboard-interactive (2FA/TOTP) |
 
 ## Security
 
-- **Vault encryption** — Argon2id KDF (memory-hard) + ChaCha20Poly1305 AEAD
-- **Zero plaintext storage** — Passwords and private keys always encrypted at rest
-- **Per-field encryption** — Each secret has unique 32-byte salt + 12-byte nonce
-- **Optional master password** — Disabled by default for convenience, enable in Settings
-- **Re-encryption** — All secrets re-encrypted when master password changes
+- **Argon2id + ChaCha20Poly1305** — Memory-hard KDF + AEAD encryption
+- **Per-field encryption** — Unique 32-byte salt + 12-byte nonce per secret
+- **Optional master password** — Disabled by default, enable in Settings
 - **TOFU** — Server fingerprints verified on every connection
-- **Memory safety** — Pure Rust, no C dependencies in crypto path
+- **Pure Rust** — No C dependencies in crypto path
 - **No telemetry** — No data leaves your machine
+- **AI keys encrypted** — API keys stored encrypted in vault
 
 ## Roadmap
 
 | Version | Status | Scope |
 |---------|--------|-------|
-| **v0.1** | **Released** | SSH, vault, keys, identities, snippets, themes, settings, 5-platform release |
-| **v0.2** | Planned | Port forwarding UI, SFTP file transfer, split panes |
-| **v0.3** | Planned | P2P sync (iroh), session recording, custom themes |
+| **v0.1** | **Released** | SSH, vault, keys, identities, themes, i18n, AI chat, session recording |
+| **v0.2** | Planned | Port forwarding, SFTP, split panes |
+| **v0.3** | Planned | P2P sync (iroh), custom themes, biometric unlock |
 
 ## Contributing
 
-Contributions, ideas, and feedback are welcome. Open an issue to discuss before submitting large PRs.
+Contributions welcome. Open an issue to discuss before submitting large PRs.
 
 ## License
 
