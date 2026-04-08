@@ -36,11 +36,10 @@ pub fn generate_ed25519(label: &str) -> Result<GeneratedKey, VaultError> {
 
 /// Import an SSH key from PEM/OpenSSH format.
 pub fn import_key(label: &str, private_pem: &str) -> Result<GeneratedKey, VaultError> {
-    let private_key = PrivateKey::from_openssh(private_pem)
-        .or_else(|_| {
-            // Try decoding as russh format too
-            PrivateKey::from_openssh(private_pem.trim())
-        })
+    // Normalize line endings (CRLF → LF) to avoid Base64 parse errors
+    let normalized = private_pem.replace("\r\n", "\n").replace('\r', "\n");
+    let trimmed = normalized.trim();
+    let private_key = PrivateKey::from_openssh(trimmed)
         .map_err(|e| VaultError::Crypto(format!("Failed to parse key: {}", e)))?;
 
     let public_key = private_key.public_key();
@@ -65,7 +64,7 @@ pub fn import_key(label: &str, private_pem: &str) -> Result<GeneratedKey, VaultE
 
     Ok(GeneratedKey {
         key,
-        private_pem: private_pem.to_string(),
+        private_pem: trimmed.to_string(),
     })
 }
 

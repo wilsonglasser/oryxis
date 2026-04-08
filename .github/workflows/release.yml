@@ -126,19 +126,6 @@ jobs:
           $env:PATH = "C:\Program Files (x86)\NSIS;$env:PATH"
           cd resources
           makensis installer.nsi
-      - name: Sign EXE with SignPath
-        if: env.HAS_SIGNPATH == 'true'
-        env:
-          HAS_SIGNPATH: ${{ secrets.SIGNPATH_API_TOKEN != '' }}
-        uses: signpath/github-action-submit-signing-request@v1
-        with:
-          api-token: '${{ secrets.SIGNPATH_API_TOKEN }}'
-          organization-id: '${{ vars.SIGNPATH_ORGANIZATION_ID }}'
-          project-slug: 'oryxis'
-          signing-policy-slug: 'release-signing'
-          artifact-configuration-slug: 'windows-exe'
-          github-artifact-id: '${{ steps.upload-unsigned.outputs.artifact-id }}'
-          wait-for-completion: true
       - uses: actions/upload-artifact@v5
         with:
           name: oryxis-windows-x86_64
