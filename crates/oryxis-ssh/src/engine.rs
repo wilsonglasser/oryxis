@@ -7,7 +7,7 @@ use tokio::net::TcpStream;
 use tokio::process::Command as TokioCommand;
 use tokio::sync::mpsc;
 
-use oryxis_core::models::connection::{AuthMethod, Connection, ProxyConfig, ProxyType};
+use oryxis_core::models::connection::{AuthMethod, Connection, PortForward, ProxyConfig, ProxyType};
 use thiserror::Error;
 
 // ---------------------------------------------------------------------------
@@ -82,6 +82,94 @@ impl client::Handler for ClientHandler {
 /// Used between `establish_transport` and `do_authenticate` / `open_session`.
 pub struct SshHandle(client::Handle<ClientHandler>);
 
+type SharedHandle = Arc<tokio::sync::Mutex<client::Handle<ClientHandler>>>;
+
+/// Bind local TCP listeners for port forwards, validating all ports upfront.
+/// Returns the bound listeners (actual forwarding starts after PTY session opens).
+async fn bind_port_forward_listeners(
+    forwards: &[PortForward],
+) -> Result<Vec<(PortForward, tokio::net::TcpListener)>, SshError> {
+    use tokio::net::TcpListener;
+    let mut listeners = Vec::new();
+    for fwd in forwards {
+        let listener = TcpListener::bind(("127.0.0.1", fwd.local_port))
+            .await
+            .map_err(|e| SshError::Channel(format!(
+                "Failed to bind local port {}: {}", fwd.local_port, e
+            )))?;
+        tracing::info!(
+            "Port forward: 127.0.0.1:{} -> {}:{}",
+            fwd.local_port, fwd.remote_host, fwd.remote_port
+        );
+        listeners.push((fwd.clone(), listener));
+    }
+    Ok(listeners)
+}
+
+/// Spawn listener tasks that bridge local TCP connections to remote hosts via SSH.
+fn spawn_port_forward_tasks(
+    listeners: Vec<(PortForward, tokio::net::TcpListener)>,
+    handle: &SharedHandle,
+) -> Vec<tokio::task::JoinHandle<()>> {
+    let mut tasks = Vec::new();
+    for (fwd, listener) in listeners {
+        let shared = Arc::clone(handle);
+        let remote_host = fwd.remote_host;
+        let remote_port = fwd.remote_port;
+        let local_port = fwd.local_port;
+
+        let task = tokio::spawn(async move {
+            loop {
+                let (stream, addr) = match listener.accept().await {
+                    Ok(v) => v,
+                    Err(e) => {
+                        tracing::error!("Port forward accept error on {}: {}", local_port, e);
+                        break;
+                    }
+                };
+                tracing::debug!("Port forward {} accepted from {}", local_port, addr);
+
+                let shared = Arc::clone(&shared);
+                let remote_host = remote_host.clone();
+                tokio::spawn(async move {
+                    let channel: russh::Channel<russh::client::Msg> = {
+                        let handle = shared.lock().await;
+                        match handle.channel_open_direct_tcpip(
+                            remote_host.clone(),
+                            remote_port as u32,
+                            "127.0.0.1",
+                            local_port as u32,
+                        ).await {
+                            Ok(ch) => ch,
+                            Err(e) => {
+                                tracing::error!(
+                                    "direct-tcpip to {}:{} failed: {}",
+                                    remote_host, remote_port, e
+                                );
+                                return;
+                            }
+                        }
+                    };
+
+                    let channel_stream = channel.into_stream();
+                    let (mut ch_reader, mut ch_writer) = tokio::io::split(channel_stream);
+                    let (mut tcp_reader, mut tcp_writer) = tokio::io::split(stream);
+
+                    let c2t = tokio::io::copy(&mut ch_reader, &mut tcp_writer);
+                    let t2c = tokio::io::copy(&mut tcp_reader, &mut ch_writer);
+
+                    tokio::select! {
+                        r = c2t => { if let Err(e) = r { tracing::debug!("port fwd channel->tcp: {}", e); } }
+                        r = t2c => { if let Err(e) = r { tracing::debug!("port fwd tcp->channel: {}", e); } }
+                    }
+                });
+            }
+        });
+        tasks.push(task);
+    }
+    tasks
+}
+
 // ---------------------------------------------------------------------------
 // SSH Session
 // ---------------------------------------------------------------------------
@@ -95,10 +183,12 @@ pub struct ExecResult {
 
 /// A live SSH session with a remote PTY channel.
 pub struct SshSession {
-    _handle: client::Handle<ClientHandler>,
+    /// Shared SSH handle — kept alive for port forward tasks to open channels.
+    _handle: Arc<tokio::sync::Mutex<client::Handle<ClientHandler>>>,
     writer_tx: mpsc::UnboundedSender<Vec<u8>>,
     _reader_task: tokio::task::JoinHandle<()>,
     _writer_task: tokio::task::JoinHandle<()>,
+    _port_forward_tasks: Vec<tokio::task::JoinHandle<()>>,
 }
 
 impl std::fmt::Debug for SshSession {
@@ -256,8 +346,10 @@ impl SshEngine {
         handle: SshHandle,
         cols: u32,
         rows: u32,
+        port_forwards: &[PortForward],
     ) -> Result<(SshSession, mpsc::UnboundedReceiver<Vec<u8>>), SshError> {
-        self.open_pty_session(handle.0, cols, rows).await
+        let listeners = bind_port_forward_listeners(port_forwards).await?;
+        self.open_pty_session(handle.0, cols, rows, listeners).await
     }
 
     // -----------------------------------------------------------------------
@@ -792,7 +884,8 @@ impl SshEngine {
     ) -> Result<(SshSession, mpsc::UnboundedReceiver<Vec<u8>>), SshError> {
         self.authenticate_handle(&mut handle, connection, password, private_key_pem)
             .await?;
-        self.open_pty_session(handle, cols, rows).await
+        let listeners = bind_port_forward_listeners(&connection.port_forwards).await?;
+        self.open_pty_session(handle, cols, rows, listeners).await
     }
 
     /// Execute a command without PTY (non-interactive) and return the output.
@@ -850,6 +943,7 @@ impl SshEngine {
         handle: client::Handle<ClientHandler>,
         cols: u32,
         rows: u32,
+        pf_listeners: Vec<(PortForward, tokio::net::TcpListener)>,
     ) -> Result<(SshSession, mpsc::UnboundedReceiver<Vec<u8>>), SshError> {
         // Open session channel
         let channel = handle.channel_open_session().await
@@ -914,12 +1008,16 @@ impl SshEngine {
             }
         });
 
+        let shared_handle = Arc::new(tokio::sync::Mutex::new(handle));
+        let pf_tasks = spawn_port_forward_tasks(pf_listeners, &shared_handle);
+
         Ok((
             SshSession {
-                _handle: handle,
+                _handle: shared_handle,
                 writer_tx,
                 _reader_task: reader_task,
                 _writer_task: writer_task,
+                _port_forward_tasks: pf_tasks,
             },
             output_rx,
         ))

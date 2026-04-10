@@ -1,15 +1,10 @@
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub enum SyncMode {
     Auto,
+    #[default]
     Manual,
-}
-
-impl Default for SyncMode {
-    fn default() -> Self {
-        Self::Manual
-    }
 }
 
 #[derive(Debug, Clone)]

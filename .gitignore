@@ -9,3 +9,4 @@ signaling-worker/.wrangler/
 *.pfx
 *.cer
 .wrangler
+site
