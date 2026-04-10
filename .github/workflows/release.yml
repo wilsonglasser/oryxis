@@ -10,6 +10,8 @@ permissions:
 
 env:
   CARGO_TERM_COLOR: always
+  ORYXIS_SIGNALING_URL: ${{ secrets.ORYXIS_SIGNALING_URL }}
+  ORYXIS_SIGNALING_TOKEN: ${{ secrets.ORYXIS_SIGNALING_TOKEN }}
 
 jobs:
   build-linux-x86:
@@ -111,6 +113,15 @@ jobs:
             target/
           key: windows-release-${{ hashFiles('**/Cargo.lock') }}
       - run: cargo build --release
+      - name: Sign exe
+        shell: pwsh
+        run: |
+          $pass = ConvertTo-SecureString -String "${{ secrets.PFX_PASSWORD }}" -AsPlainText -Force
+          Import-PfxCertificate -FilePath resources\oryxis-signing.pfx `
+            -CertStoreLocation Cert:\CurrentUser\My -Password $pass
+          $cert = Get-ChildItem Cert:\CurrentUser\My -CodeSigningCert | Select-Object -First 1
+          Set-AuthenticodeSignature -FilePath target\release\oryxis.exe `
+            -Certificate $cert -TimestampServer "http://timestamp.digicert.com"
       - name: Package zip
         shell: pwsh
         run: |
@@ -126,6 +137,13 @@ jobs:
           $env:PATH = "C:\Program Files (x86)\NSIS;$env:PATH"
           cd resources
           makensis installer.nsi
+      - name: Sign installer
+        shell: pwsh
+        run: |
+          $cert = Get-ChildItem Cert:\CurrentUser\My -CodeSigningCert | Select-Object -First 1
+          Set-AuthenticodeSignature -FilePath oryxis-setup-x86_64.exe `
+            -Certificate $cert -TimestampServer "http://timestamp.digicert.com"
+          Get-AuthenticodeSignature oryxis-setup-x86_64.exe | Format-List
       - uses: actions/upload-artifact@v5
         with:
           name: oryxis-windows-x86_64
@@ -149,6 +167,15 @@ jobs:
             target/
           key: windows-arm-release-${{ hashFiles('**/Cargo.lock') }}
       - run: cargo build --release --target aarch64-pc-windows-msvc
+      - name: Sign exe
+        shell: pwsh
+        run: |
+          $pass = ConvertTo-SecureString -String "${{ secrets.PFX_PASSWORD }}" -AsPlainText -Force
+          Import-PfxCertificate -FilePath resources\oryxis-signing.pfx `
+            -CertStoreLocation Cert:\CurrentUser\My -Password $pass
+          $cert = Get-ChildItem Cert:\CurrentUser\My -CodeSigningCert | Select-Object -First 1
+          Set-AuthenticodeSignature -FilePath target\aarch64-pc-windows-msvc\release\oryxis.exe `
+            -Certificate $cert -TimestampServer "http://timestamp.digicert.com"
       - name: Package
         shell: pwsh
         run: |

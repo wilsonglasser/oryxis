@@ -7,6 +7,7 @@ members = [
     "crates/oryxis-vault",
     "crates/oryxis-sync",
     "crates/oryxis-app",
+    "crates/oryxis-mcp",
 ]
 
 [workspace.package]
@@ -37,8 +38,16 @@ argon2 = "0.5"
 chacha20poly1305 = "0.10"
 secrecy = { version = "0.10", features = ["serde"] }
 
-# P2P (disabled until sync feature is implemented)
-# iroh = "0.97"
+# P2P Sync
+quinn = "0.11"
+rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }
+rcgen = "0.13"
+mdns-sd = "0.12"
+x25519-dalek = { version = "2", features = ["static_secrets"] }
+ed25519-dalek = { version = "2", features = ["rand_core", "serde"] }
+rand = "0.8"
+base64 = "0.22"
+bincode = "1"
 
 # Storage
 rusqlite = { version = "0.32", features = ["bundled"] }

@@ -86,6 +86,13 @@ pub struct SshHandle(client::Handle<ClientHandler>);
 // SSH Session
 // ---------------------------------------------------------------------------
 
+/// Result of a non-interactive command execution.
+pub struct ExecResult {
+    pub exit_code: u32,
+    pub stdout: String,
+    pub stderr: String,
+}
+
 /// A live SSH session with a remote PTY channel.
 pub struct SshSession {
     _handle: client::Handle<ClientHandler>,
@@ -786,6 +793,56 @@ impl SshEngine {
         self.authenticate_handle(&mut handle, connection, password, private_key_pem)
             .await?;
         self.open_pty_session(handle, cols, rows).await
+    }
+
+    /// Execute a command without PTY (non-interactive) and return the output.
+    pub async fn exec_command(
+        &self,
+        handle: SshHandle,
+        command: &str,
+        timeout: std::time::Duration,
+    ) -> Result<ExecResult, SshError> {
+        let channel = handle.0.channel_open_session().await
+            .map_err(|e| SshError::Channel(format!("open session: {}", e)))?;
+
+        channel.exec(true, command).await
+            .map_err(|e| SshError::Channel(format!("exec: {}", e)))?;
+
+        let mut stdout = Vec::new();
+        let mut stderr = Vec::new();
+        let mut exit_code: Option<u32> = None;
+
+        let collect = async {
+            let mut channel = channel;
+            loop {
+                match channel.wait().await {
+                    Some(ChannelMsg::Data { data }) => stdout.extend_from_slice(&data),
+                    Some(ChannelMsg::ExtendedData { data, ext }) => {
+                        if ext == 1 {
+                            stderr.extend_from_slice(&data);
+                        }
+                    }
+                    Some(ChannelMsg::ExitStatus { exit_status }) => {
+                        exit_code = Some(exit_status);
+                    }
+                    Some(ChannelMsg::Eof) | None => break,
+                    _ => {}
+                }
+            }
+        };
+
+        match tokio::time::timeout(timeout, collect).await {
+            Ok(()) => {}
+            Err(_) => {
+                return Err(SshError::Channel("Command timed out".into()));
+            }
+        }
+
+        Ok(ExecResult {
+            exit_code: exit_code.unwrap_or(255),
+            stdout: String::from_utf8_lossy(&stdout).into_owned(),
+            stderr: String::from_utf8_lossy(&stderr).into_owned(),
+        })
     }
 
     async fn open_pty_session(
