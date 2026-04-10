@@ -1,4 +1,4 @@
-use portable_pty::{native_pty_system, CommandBuilder, MasterPty, PtySize};
+use portable_pty::{native_pty_system, CommandBuilder, MasterPty, PtySize, SlavePty};
 use std::io::{Read, Write};
 
 use tokio::sync::mpsc;
@@ -7,6 +7,10 @@ use tokio::sync::mpsc;
 pub struct PtyHandle {
     writer: Box<dyn Write + Send>,
     _master: Box<dyn MasterPty + Send>,
+    // Keep the slave alive for the lifetime of the session.
+    // On Windows (ConPTY), dropping the slave calls ClosePseudoConsole(),
+    // which terminates the child process.
+    _slave: Box<dyn SlavePty + Send>,
 }
 
 impl PtyHandle {
@@ -30,8 +34,6 @@ impl PtyHandle {
         cmd.env("COLORTERM", "truecolor");
 
         let _child = pair.slave.spawn_command(cmd)?;
-        // Drop slave so we only interact via master
-        drop(pair.slave);
 
         let mut reader = pair.master.try_clone_reader()?;
         let writer = pair.master.take_writer()?;
@@ -64,6 +66,7 @@ impl PtyHandle {
             Self {
                 writer,
                 _master: pair.master,
+                _slave: pair.slave,
             },
             rx,
         ))
