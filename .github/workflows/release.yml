@@ -113,6 +113,11 @@ jobs:
             target/
           key: windows-release-${{ hashFiles('**/Cargo.lock') }}
       - run: cargo build --release
+      - name: Decode signing certificate
+        shell: pwsh
+        run: |
+          [IO.File]::WriteAllBytes("resources\oryxis-signing.pfx",
+            [Convert]::FromBase64String("${{ secrets.PFX_BASE64 }}"))
       - name: Sign exe
         shell: pwsh
         run: |
@@ -167,6 +172,11 @@ jobs:
             target/
           key: windows-arm-release-${{ hashFiles('**/Cargo.lock') }}
       - run: cargo build --release --target aarch64-pc-windows-msvc
+      - name: Decode signing certificate
+        shell: pwsh
+        run: |
+          [IO.File]::WriteAllBytes("resources\oryxis-signing.pfx",
+            [Convert]::FromBase64String("${{ secrets.PFX_BASE64 }}"))
       - name: Sign exe
         shell: pwsh
         run: |

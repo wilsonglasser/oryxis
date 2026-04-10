@@ -149,10 +149,10 @@ pub fn export_vault(
                 .flat_map(|c| c.jump_chain.iter().copied())
                 .collect();
             for jid in &jump_ids {
-                if !selected.iter().any(|c| c.id == *jid) {
-                    if let Some(jc) = all_connections.iter().find(|c| c.id == *jid) {
-                        selected.push(jc);
-                    }
+                if !selected.iter().any(|c| c.id == *jid)
+                    && let Some(jc) = all_connections.iter().find(|c| c.id == *jid)
+                {
+                    selected.push(jc);
                 }
             }
             selected
@@ -193,14 +193,12 @@ pub fn export_vault(
             .collect();
         // Also include keys from referenced identities
         for c in &filtered_connections {
-            if let Some(iid) = c.identity_id {
-                if let Some(ident) = all_identities.iter().find(|i| i.id == iid) {
-                    if let Some(kid) = ident.key_id {
-                        if !ids.contains(&kid) {
-                            ids.push(kid);
-                        }
-                    }
-                }
+            if let Some(iid) = c.identity_id
+                && let Some(ident) = all_identities.iter().find(|i| i.id == iid)
+                && let Some(kid) = ident.key_id
+                && !ids.contains(&kid)
+            {
+                ids.push(kid);
             }
         }
         ids
