@@ -65,6 +65,19 @@ pub struct SessionLogEntry {
     pub data_size: usize,
 }
 
+/// Row from the sync_peers table.
+#[derive(Debug, Clone)]
+pub struct SyncPeerRow {
+    pub peer_id: Uuid,
+    pub device_name: String,
+    pub public_key: Vec<u8>,
+    pub last_known_ip: Option<String>,
+    pub last_known_port: Option<u16>,
+    pub last_synced_at: Option<DateTime<Utc>>,
+    pub paired_at: DateTime<Utc>,
+    pub is_active: bool,
+}
+
 // ---------------------------------------------------------------------------
 // Crypto helpers
 // ---------------------------------------------------------------------------
@@ -83,7 +96,7 @@ fn derive_key(password: &[u8], salt: &[u8]) -> Result<[u8; KEY_LEN], VaultError>
 }
 
 /// Encrypt data with ChaCha20Poly1305. Returns: salt(32) + nonce(12) + ciphertext.
-fn encrypt(plaintext: &[u8], password: &[u8]) -> Result<Vec<u8>, VaultError> {
+pub(crate) fn encrypt(plaintext: &[u8], password: &[u8]) -> Result<Vec<u8>, VaultError> {
     let mut salt = [0u8; SALT_LEN];
     OsRng.fill_bytes(&mut salt);
     let key = derive_key(password, &salt)?;
@@ -106,7 +119,7 @@ fn encrypt(plaintext: &[u8], password: &[u8]) -> Result<Vec<u8>, VaultError> {
 }
 
 /// Decrypt data encrypted by `encrypt`. Input: salt(32) + nonce(12) + ciphertext.
-fn decrypt(data: &[u8], password: &[u8]) -> Result<Vec<u8>, VaultError> {
+pub(crate) fn decrypt(data: &[u8], password: &[u8]) -> Result<Vec<u8>, VaultError> {
     if data.len() < SALT_LEN + NONCE_LEN + 16 {
         return Err(VaultError::Crypto("Data too short".into()));
     }
@@ -267,6 +280,44 @@ impl VaultStore {
 
         // Migrations: add columns to existing tables (ignore errors if already present)
         let _ = self.db.execute_batch("ALTER TABLE connections ADD COLUMN identity_id TEXT;");
+        let _ = self.db.execute_batch("ALTER TABLE connections ADD COLUMN mcp_enabled INTEGER DEFAULT 1;");
+        let _ = self.db.execute_batch("ALTER TABLE keys ADD COLUMN updated_at TEXT;");
+        let _ = self.db.execute_batch("ALTER TABLE groups ADD COLUMN created_at TEXT;");
+        let _ = self.db.execute_batch("ALTER TABLE groups ADD COLUMN updated_at TEXT;");
+        let _ = self.db.execute_batch("ALTER TABLE snippets ADD COLUMN updated_at TEXT;");
+        let _ = self.db.execute_batch("ALTER TABLE known_hosts ADD COLUMN updated_at TEXT;");
+
+        // Populate new timestamp columns with sensible defaults
+        let _ = self.db.execute_batch("UPDATE keys SET updated_at = created_at WHERE updated_at IS NULL;");
+        let _ = self.db.execute_batch("UPDATE groups SET created_at = datetime('now'), updated_at = datetime('now') WHERE created_at IS NULL;");
+        let _ = self.db.execute_batch("UPDATE snippets SET updated_at = created_at WHERE updated_at IS NULL;");
+        let _ = self.db.execute_batch("UPDATE known_hosts SET updated_at = last_seen WHERE updated_at IS NULL;");
+
+        // Sync tables
+        let _ = self.db.execute_batch(
+            "
+            CREATE TABLE IF NOT EXISTS sync_peers (
+                peer_id         TEXT PRIMARY KEY,
+                device_name     TEXT NOT NULL,
+                public_key      BLOB NOT NULL,
+                shared_secret   BLOB,
+                last_known_ip   TEXT,
+                last_known_port INTEGER,
+                last_synced_at  TEXT,
+                paired_at       TEXT NOT NULL,
+                is_active       INTEGER DEFAULT 1
+            );
+
+            CREATE TABLE IF NOT EXISTS sync_metadata (
+                entity_type TEXT NOT NULL,
+                entity_id   TEXT NOT NULL,
+                updated_at  TEXT NOT NULL,
+                is_deleted  INTEGER DEFAULT 0,
+                deleted_at  TEXT,
+                PRIMARY KEY (entity_type, entity_id)
+            );
+            ",
+        );
 
         Ok(())
     }
@@ -360,8 +411,8 @@ impl VaultStore {
 
     pub fn save_group(&self, group: &Group) -> Result<(), VaultError> {
         self.db.execute(
-            "INSERT OR REPLACE INTO groups (id, label, parent_id, color, icon, sort_order, is_shared)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            "INSERT OR REPLACE INTO groups (id, label, parent_id, color, icon, sort_order, is_shared, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
             params![
                 group.id.to_string(),
                 group.label,
@@ -370,6 +421,8 @@ impl VaultStore {
                 group.icon,
                 group.sort_order,
                 group.is_shared as i32,
+                group.created_at.to_rfc3339(),
+                group.updated_at.to_rfc3339(),
             ],
         )?;
         Ok(())
@@ -378,7 +431,7 @@ impl VaultStore {
     pub fn list_groups(&self) -> Result<Vec<Group>, VaultError> {
         let mut stmt = self
             .db
-            .prepare("SELECT id, label, parent_id, color, icon, sort_order, is_shared FROM groups ORDER BY sort_order")?;
+            .prepare("SELECT id, label, parent_id, color, icon, sort_order, is_shared, created_at, updated_at FROM groups ORDER BY sort_order")?;
         let groups = stmt
             .query_map([], |row| {
                 Ok(Group {
@@ -391,6 +444,16 @@ impl VaultStore {
                     icon: row.get(4)?,
                     sort_order: row.get(5)?,
                     is_shared: row.get::<_, i32>(6)? != 0,
+                    created_at: row
+                        .get::<_, Option<String>>(7)?
+                        .and_then(|s| chrono::DateTime::parse_from_rfc3339(&s).ok())
+                        .map(|d| d.with_timezone(&chrono::Utc))
+                        .unwrap_or_else(chrono::Utc::now),
+                    updated_at: row
+                        .get::<_, Option<String>>(8)?
+                        .and_then(|s| chrono::DateTime::parse_from_rfc3339(&s).ok())
+                        .map(|d| d.with_timezone(&chrono::Utc))
+                        .unwrap_or_else(chrono::Utc::now),
                 })
             })?
             .collect::<Result<Vec<_>, _>>()?;
@@ -440,8 +503,8 @@ impl VaultStore {
         self.db.execute(
             "INSERT OR REPLACE INTO connections
              (id, label, hostname, port, username, auth_method, key_id, group_id,
-              jump_chain, proxy, tags, notes, color, password, last_used, created_at, updated_at, identity_id)
-             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18)",
+              jump_chain, proxy, tags, notes, color, password, last_used, created_at, updated_at, identity_id, mcp_enabled)
+             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19)",
             params![
                 conn.id.to_string(),
                 conn.label,
@@ -461,17 +524,35 @@ impl VaultStore {
                 conn.created_at.to_rfc3339(),
                 conn.updated_at.to_rfc3339(),
                 conn.identity_id.map(|u| u.to_string()),
+                conn.mcp_enabled as i32,
             ],
         )?;
         Ok(())
     }
 
     pub fn list_connections(&self) -> Result<Vec<Connection>, VaultError> {
-        let mut stmt = self.db.prepare(
-            "SELECT id, label, hostname, port, username, auth_method, key_id, group_id,
-                    jump_chain, proxy, tags, notes, color, last_used, created_at, updated_at, identity_id
-             FROM connections ORDER BY label",
-        )?;
+        self.list_connections_filtered(None)
+    }
+
+    /// List only MCP-enabled connections.
+    pub fn list_mcp_connections(&self) -> Result<Vec<Connection>, VaultError> {
+        self.list_connections_filtered(Some(true))
+    }
+
+    fn list_connections_filtered(&self, mcp_filter: Option<bool>) -> Result<Vec<Connection>, VaultError> {
+        let query = match mcp_filter {
+            Some(true) => {
+                "SELECT id, label, hostname, port, username, auth_method, key_id, group_id,
+                        jump_chain, proxy, tags, notes, color, last_used, created_at, updated_at, identity_id, mcp_enabled
+                 FROM connections WHERE mcp_enabled = 1 ORDER BY label"
+            }
+            _ => {
+                "SELECT id, label, hostname, port, username, auth_method, key_id, group_id,
+                        jump_chain, proxy, tags, notes, color, last_used, created_at, updated_at, identity_id, mcp_enabled
+                 FROM connections ORDER BY label"
+            }
+        };
+        let mut stmt = self.db.prepare(query)?;
         let conns = stmt
             .query_map([], |row| {
                 let auth_str: String = row.get(5)?;
@@ -513,6 +594,7 @@ impl VaultStore {
                         .unwrap_or_default(),
                     notes: row.get(11)?,
                     color: row.get(12)?,
+                    mcp_enabled: row.get::<_, Option<i32>>(17)?.unwrap_or(1) != 0,
                     last_used: row
                         .get::<_, Option<String>>(13)?
                         .and_then(|s| chrono::DateTime::parse_from_rfc3339(&s).ok())
@@ -595,8 +677,8 @@ impl VaultStore {
 
         self.db.execute(
             "INSERT OR REPLACE INTO keys
-             (id, label, fingerprint, algorithm, public_key, private_key, has_passphrase, created_at)
-             VALUES (?1,?2,?3,?4,?5,?6,?7,?8)",
+             (id, label, fingerprint, algorithm, public_key, private_key, has_passphrase, created_at, updated_at)
+             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9)",
             params![
                 key.id.to_string(),
                 key.label,
@@ -606,6 +688,7 @@ impl VaultStore {
                 encrypted_pk,
                 key.has_passphrase as i32,
                 key.created_at.to_rfc3339(),
+                key.updated_at.to_rfc3339(),
             ],
         )?;
         Ok(())
@@ -613,7 +696,7 @@ impl VaultStore {
 
     pub fn list_keys(&self) -> Result<Vec<SshKey>, VaultError> {
         let mut stmt = self.db.prepare(
-            "SELECT id, label, fingerprint, algorithm, public_key, has_passphrase, created_at
+            "SELECT id, label, fingerprint, algorithm, public_key, has_passphrase, created_at, updated_at
              FROM keys ORDER BY label",
         )?;
         let keys = stmt
@@ -637,6 +720,11 @@ impl VaultStore {
                     created_at: row
                         .get::<_, String>(6)
                         .ok()
+                        .and_then(|s| chrono::DateTime::parse_from_rfc3339(&s).ok())
+                        .map(|d| d.with_timezone(&chrono::Utc))
+                        .unwrap_or_else(chrono::Utc::now),
+                    updated_at: row
+                        .get::<_, Option<String>>(7)?
                         .and_then(|s| chrono::DateTime::parse_from_rfc3339(&s).ok())
                         .map(|d| d.with_timezone(&chrono::Utc))
                         .unwrap_or_else(chrono::Utc::now),
@@ -781,8 +869,8 @@ impl VaultStore {
 
     pub fn save_snippet(&self, snippet: &Snippet) -> Result<(), VaultError> {
         self.db.execute(
-            "INSERT OR REPLACE INTO snippets (id, label, command, description, tags, created_at)
-             VALUES (?1,?2,?3,?4,?5,?6)",
+            "INSERT OR REPLACE INTO snippets (id, label, command, description, tags, created_at, updated_at)
+             VALUES (?1,?2,?3,?4,?5,?6,?7)",
             params![
                 snippet.id.to_string(),
                 snippet.label,
@@ -790,6 +878,7 @@ impl VaultStore {
                 snippet.description,
                 serde_json::to_string(&snippet.tags).unwrap_or_default(),
                 snippet.created_at.to_rfc3339(),
+                snippet.updated_at.to_rfc3339(),
             ],
         )?;
         Ok(())
@@ -797,7 +886,7 @@ impl VaultStore {
 
     pub fn list_snippets(&self) -> Result<Vec<Snippet>, VaultError> {
         let mut stmt = self.db.prepare(
-            "SELECT id, label, command, description, tags, created_at FROM snippets ORDER BY label",
+            "SELECT id, label, command, description, tags, created_at, updated_at FROM snippets ORDER BY label",
         )?;
         let snippets = stmt
             .query_map([], |row| {
@@ -813,6 +902,11 @@ impl VaultStore {
                     created_at: row
                         .get::<_, String>(5)
                         .ok()
+                        .and_then(|s| chrono::DateTime::parse_from_rfc3339(&s).ok())
+                        .map(|d| d.with_timezone(&chrono::Utc))
+                        .unwrap_or_else(chrono::Utc::now),
+                    updated_at: row
+                        .get::<_, Option<String>>(6)?
                         .and_then(|s| chrono::DateTime::parse_from_rfc3339(&s).ok())
                         .map(|d| d.with_timezone(&chrono::Utc))
                         .unwrap_or_else(chrono::Utc::now),
@@ -836,11 +930,12 @@ impl VaultStore {
 
     pub fn save_known_host(&self, kh: &oryxis_core::models::known_host::KnownHost) -> Result<(), VaultError> {
         self.db.execute(
-            "INSERT OR REPLACE INTO known_hosts (id, hostname, port, key_type, fingerprint, first_seen, last_seen)
-             VALUES (?1,?2,?3,?4,?5,?6,?7)",
+            "INSERT OR REPLACE INTO known_hosts (id, hostname, port, key_type, fingerprint, first_seen, last_seen, updated_at)
+             VALUES (?1,?2,?3,?4,?5,?6,?7,?8)",
             params![
                 kh.id.to_string(), kh.hostname, kh.port, kh.key_type,
                 kh.fingerprint, kh.first_seen.to_rfc3339(), kh.last_seen.to_rfc3339(),
+                kh.updated_at.to_rfc3339(),
             ],
         )?;
         Ok(())
@@ -848,7 +943,7 @@ impl VaultStore {
 
     pub fn list_known_hosts(&self) -> Result<Vec<oryxis_core::models::known_host::KnownHost>, VaultError> {
         let mut stmt = self.db.prepare(
-            "SELECT id, hostname, port, key_type, fingerprint, first_seen, last_seen
+            "SELECT id, hostname, port, key_type, fingerprint, first_seen, last_seen, updated_at
              FROM known_hosts ORDER BY hostname",
         )?;
         let hosts = stmt.query_map([], |row| {
@@ -863,6 +958,10 @@ impl VaultStore {
                     .map(|d| d.with_timezone(&chrono::Utc))
                     .unwrap_or_else(chrono::Utc::now),
                 last_seen: row.get::<_, String>(6).ok()
+                    .and_then(|s| chrono::DateTime::parse_from_rfc3339(&s).ok())
+                    .map(|d| d.with_timezone(&chrono::Utc))
+                    .unwrap_or_else(chrono::Utc::now),
+                updated_at: row.get::<_, Option<String>>(7).ok().flatten()
                     .and_then(|s| chrono::DateTime::parse_from_rfc3339(&s).ok())
                     .map(|d| d.with_timezone(&chrono::Utc))
                     .unwrap_or_else(chrono::Utc::now),
@@ -1150,6 +1249,126 @@ impl VaultStore {
 
         self.master_key = Some(new_key);
         tracing::info!("Vault user password removed");
+        Ok(())
+    }
+
+    // -----------------------------------------------------------------------
+    // Sync Peers CRUD
+    // -----------------------------------------------------------------------
+
+    pub fn save_sync_peer(
+        &self,
+        peer_id: &uuid::Uuid,
+        device_name: &str,
+        public_key: &[u8],
+        shared_secret: Option<&[u8]>,
+        paired_at: &chrono::DateTime<chrono::Utc>,
+    ) -> Result<(), VaultError> {
+        let encrypted_secret = match shared_secret {
+            Some(s) => Some(self.encrypt_field(&base64::engine::general_purpose::STANDARD.encode(s))?),
+            None => None,
+        };
+        self.db.execute(
+            "INSERT OR REPLACE INTO sync_peers
+             (peer_id, device_name, public_key, shared_secret, paired_at, is_active)
+             VALUES (?1, ?2, ?3, ?4, ?5, 1)",
+            params![
+                peer_id.to_string(),
+                device_name,
+                public_key,
+                encrypted_secret,
+                paired_at.to_rfc3339(),
+            ],
+        )?;
+        Ok(())
+    }
+
+    pub fn update_sync_peer_endpoint(
+        &self,
+        peer_id: &uuid::Uuid,
+        ip: &str,
+        port: u16,
+    ) -> Result<(), VaultError> {
+        self.db.execute(
+            "UPDATE sync_peers SET last_known_ip = ?1, last_known_port = ?2 WHERE peer_id = ?3",
+            params![ip, port as i32, peer_id.to_string()],
+        )?;
+        Ok(())
+    }
+
+    pub fn update_sync_peer_last_synced(
+        &self,
+        peer_id: &uuid::Uuid,
+    ) -> Result<(), VaultError> {
+        self.db.execute(
+            "UPDATE sync_peers SET last_synced_at = ?1 WHERE peer_id = ?2",
+            params![chrono::Utc::now().to_rfc3339(), peer_id.to_string()],
+        )?;
+        Ok(())
+    }
+
+    pub fn list_sync_peers(&self) -> Result<Vec<SyncPeerRow>, VaultError> {
+        let mut stmt = self.db.prepare(
+            "SELECT peer_id, device_name, public_key, last_known_ip, last_known_port,
+                    last_synced_at, paired_at, is_active
+             FROM sync_peers ORDER BY paired_at",
+        )?;
+        let peers = stmt
+            .query_map([], |row| {
+                Ok(SyncPeerRow {
+                    peer_id: uuid::Uuid::parse_str(&row.get::<_, String>(0)?).unwrap_or_default(),
+                    device_name: row.get(1)?,
+                    public_key: row.get(2)?,
+                    last_known_ip: row.get(3)?,
+                    last_known_port: row.get::<_, Option<i32>>(4)?.map(|p| p as u16),
+                    last_synced_at: row
+                        .get::<_, Option<String>>(5)?
+                        .and_then(|s| chrono::DateTime::parse_from_rfc3339(&s).ok())
+                        .map(|d| d.with_timezone(&chrono::Utc)),
+                    paired_at: row
+                        .get::<_, String>(6)
+                        .ok()
+                        .and_then(|s| chrono::DateTime::parse_from_rfc3339(&s).ok())
+                        .map(|d| d.with_timezone(&chrono::Utc))
+                        .unwrap_or_else(chrono::Utc::now),
+                    is_active: row.get::<_, i32>(7)? != 0,
+                })
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(peers)
+    }
+
+    pub fn get_sync_peer_shared_secret(
+        &self,
+        peer_id: &uuid::Uuid,
+    ) -> Result<Option<Vec<u8>>, VaultError> {
+        self.require_unlocked()?;
+        let data: Option<Vec<u8>> = self
+            .db
+            .query_row(
+                "SELECT shared_secret FROM sync_peers WHERE peer_id = ?1",
+                params![peer_id.to_string()],
+                |row| row.get(0),
+            )
+            .ok()
+            .flatten();
+
+        match data {
+            Some(encrypted) => {
+                let b64 = self.decrypt_field(&encrypted)?;
+                let bytes = base64::engine::general_purpose::STANDARD.decode(&b64)
+                    .map_err(|e| VaultError::Crypto(format!("Base64 decode: {}", e)))?;
+                Ok(Some(bytes))
+            }
+            None => Ok(None),
+        }
+    }
+
+    pub fn delete_sync_peer(&self, peer_id: &uuid::Uuid) -> Result<(), VaultError> {
+        self.db.execute(
+            "DELETE FROM sync_peers WHERE peer_id = ?1",
+            params![peer_id.to_string()],
+        )?;
         Ok(())
     }
 
@@ -1594,5 +1813,502 @@ mod tests {
         }
         let logs = vault.list_logs(5).unwrap();
         assert_eq!(logs.len(), 5);
+    }
+
+    // ── MCP enabled field ──
+
+    #[test]
+    fn connection_mcp_enabled_default_true() {
+        let vault = unlocked_vault();
+        let conn = Connection::new("test", "10.0.0.1");
+        assert!(conn.mcp_enabled);
+        vault.save_connection(&conn, None).unwrap();
+
+        let conns = vault.list_connections().unwrap();
+        assert_eq!(conns.len(), 1);
+        assert!(conns[0].mcp_enabled);
+    }
+
+    #[test]
+    fn connection_mcp_enabled_toggle() {
+        let vault = unlocked_vault();
+        let mut conn = Connection::new("test", "10.0.0.1");
+        conn.mcp_enabled = false;
+        vault.save_connection(&conn, None).unwrap();
+
+        let conns = vault.list_connections().unwrap();
+        assert!(!conns[0].mcp_enabled);
+
+        let mcp_conns = vault.list_mcp_connections().unwrap();
+        assert_eq!(mcp_conns.len(), 0);
+    }
+
+    #[test]
+    fn list_mcp_connections_filters() {
+        let vault = unlocked_vault();
+
+        let mut c1 = Connection::new("enabled", "10.0.0.1");
+        c1.mcp_enabled = true;
+        vault.save_connection(&c1, None).unwrap();
+
+        let mut c2 = Connection::new("disabled", "10.0.0.2");
+        c2.mcp_enabled = false;
+        vault.save_connection(&c2, None).unwrap();
+
+        let all = vault.list_connections().unwrap();
+        assert_eq!(all.len(), 2);
+
+        let mcp = vault.list_mcp_connections().unwrap();
+        assert_eq!(mcp.len(), 1);
+        assert_eq!(mcp[0].label, "enabled");
+    }
+
+    // ── Updated timestamps on models ──
+
+    #[test]
+    fn group_has_timestamps() {
+        let vault = unlocked_vault();
+        let g = Group::new("test-group");
+        assert!(g.created_at <= g.updated_at);
+        vault.save_group(&g).unwrap();
+
+        let groups = vault.list_groups().unwrap();
+        assert_eq!(groups.len(), 1);
+        assert!(groups[0].created_at.timestamp() > 0);
+        assert!(groups[0].updated_at.timestamp() > 0);
+    }
+
+    #[test]
+    fn key_has_updated_at() {
+        let vault = unlocked_vault();
+        let key = SshKey::new("test-key", KeyAlgorithm::Ed25519);
+        assert!(key.updated_at.timestamp() > 0);
+        vault.save_key(&key, None).unwrap();
+
+        let keys = vault.list_keys().unwrap();
+        assert_eq!(keys.len(), 1);
+        assert!(keys[0].updated_at.timestamp() > 0);
+    }
+
+    #[test]
+    fn snippet_has_updated_at() {
+        let vault = unlocked_vault();
+        let s = Snippet::new("test", "echo hi");
+        assert!(s.updated_at.timestamp() > 0);
+        vault.save_snippet(&s).unwrap();
+
+        let snippets = vault.list_snippets().unwrap();
+        assert_eq!(snippets.len(), 1);
+        assert!(snippets[0].updated_at.timestamp() > 0);
+    }
+
+    #[test]
+    fn known_host_has_updated_at() {
+        let vault = unlocked_vault();
+        let kh = KnownHost::new("host.test", 22, "ed25519", "SHA256:xyz");
+        assert!(kh.updated_at.timestamp() > 0);
+        vault.save_known_host(&kh).unwrap();
+
+        let hosts = vault.list_known_hosts().unwrap();
+        assert_eq!(hosts.len(), 1);
+        assert!(hosts[0].updated_at.timestamp() > 0);
+    }
+
+    // ── Export / Import ──
+
+    #[test]
+    fn export_import_roundtrip() {
+        use crate::portable::{export_vault, import_vault, ExportOptions, ExportFilter};
+
+        let vault = unlocked_vault();
+
+        // Populate vault
+        let conn = Connection::new("prod-web", "192.168.1.10");
+        vault.save_connection(&conn, Some("secret123")).unwrap();
+
+        let g = Group::new("Production");
+        vault.save_group(&g).unwrap();
+
+        let s = Snippet::new("deploy", "make deploy");
+        vault.save_snippet(&s).unwrap();
+
+        let kh = KnownHost::new("192.168.1.10", 22, "ed25519", "SHA256:abc");
+        vault.save_known_host(&kh).unwrap();
+
+        // Export
+        let export_pw = "export-password";
+        let data = export_vault(&vault, export_pw, ExportOptions { include_private_keys: false, filter: ExportFilter::All }).unwrap();
+
+        // Verify header
+        assert_eq!(&data[..6], b"ORYXIS");
+
+        // Import into fresh vault
+        let vault2 = unlocked_vault();
+        let result = import_vault(&vault2, &data, export_pw).unwrap();
+
+        assert_eq!(result.connections_added, 1);
+        assert_eq!(result.groups_added, 1);
+        assert_eq!(result.snippets_added, 1);
+        assert_eq!(result.known_hosts_added, 1);
+
+        // Verify data
+        let conns = vault2.list_connections().unwrap();
+        assert_eq!(conns.len(), 1);
+        assert_eq!(conns[0].label, "prod-web");
+
+        let pw = vault2.get_connection_password(&conns[0].id).unwrap();
+        assert_eq!(pw, Some("secret123".into()));
+
+        assert_eq!(vault2.list_groups().unwrap().len(), 1);
+        assert_eq!(vault2.list_snippets().unwrap().len(), 1);
+        assert_eq!(vault2.list_known_hosts().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn export_wrong_password_fails() {
+        use crate::portable::{export_vault, import_vault, ExportOptions, ExportFilter};
+
+        let vault = unlocked_vault();
+        let conn = Connection::new("test", "10.0.0.1");
+        vault.save_connection(&conn, None).unwrap();
+
+        let data = export_vault(&vault, "correct", ExportOptions { include_private_keys: false, filter: ExportFilter::All }).unwrap();
+        let result = import_vault(&vault, &data, "wrong");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn export_invalid_file_rejected() {
+        use crate::portable::{import_vault, is_valid_export};
+
+        let vault = unlocked_vault();
+        assert!(!is_valid_export(b"not an oryxis file"));
+        assert!(import_vault(&vault, b"not an oryxis file", "pw").is_err());
+    }
+
+    #[test]
+    fn import_skip_existing() {
+        use crate::portable::{export_vault, import_vault, ExportOptions, ExportFilter};
+
+        let vault = unlocked_vault();
+        let conn = Connection::new("server", "10.0.0.1");
+        vault.save_connection(&conn, Some("pw1")).unwrap();
+
+        let data = export_vault(&vault, "pass", ExportOptions { include_private_keys: false, filter: ExportFilter::All }).unwrap();
+
+        // Import again into same vault — should skip
+        let result = import_vault(&vault, &data, "pass").unwrap();
+        assert_eq!(result.connections_skipped, 1);
+        assert_eq!(result.connections_added, 0);
+
+        // Still only 1 connection
+        assert_eq!(vault.list_connections().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn import_updates_newer() {
+        use crate::portable::{export_vault, import_vault, ExportOptions, ExportFilter};
+
+        let vault1 = unlocked_vault();
+        let mut conn = Connection::new("server", "10.0.0.1");
+        conn.updated_at = chrono::Utc::now();
+        vault1.save_connection(&conn, Some("old_pw")).unwrap();
+
+        // Export
+        let data = export_vault(&vault1, "pass", ExportOptions { include_private_keys: false, filter: ExportFilter::All }).unwrap();
+
+        // Create vault2 with same connection but older timestamp
+        let vault2 = unlocked_vault();
+        let mut old_conn = conn.clone();
+        old_conn.updated_at = chrono::DateTime::parse_from_rfc3339("2020-01-01T00:00:00Z").unwrap().with_timezone(&chrono::Utc);
+        vault2.save_connection(&old_conn, Some("old_pw")).unwrap();
+
+        // Import — should update because export is newer
+        let result = import_vault(&vault2, &data, "pass").unwrap();
+        assert_eq!(result.connections_updated, 1);
+        assert_eq!(result.connections_added, 0);
+    }
+
+    #[test]
+    fn export_with_keys() {
+        use crate::portable::{export_vault, import_vault, ExportOptions, ExportFilter, export_includes_keys};
+
+        let vault = unlocked_vault();
+
+        // Generate a key
+        let generated = crate::keygen::generate_ed25519("test-key").unwrap();
+        vault.save_key(&generated.key, Some(&generated.private_pem)).unwrap();
+
+        // Export WITH keys
+        let data_with = export_vault(&vault, "pass", ExportOptions { include_private_keys: true, filter: ExportFilter::All }).unwrap();
+        assert!(export_includes_keys(&data_with));
+
+        // Export WITHOUT keys
+        let data_without = export_vault(&vault, "pass", ExportOptions { include_private_keys: false, filter: ExportFilter::All }).unwrap();
+        assert!(!export_includes_keys(&data_without));
+
+        // Import with keys into fresh vault
+        let vault2 = unlocked_vault();
+        let result = import_vault(&vault2, &data_with, "pass").unwrap();
+        assert_eq!(result.keys_added, 1);
+
+        let pk = vault2.get_key_private(&generated.key.id).unwrap();
+        assert!(pk.is_some());
+
+        // Import without keys — key added but no private key
+        let vault3 = unlocked_vault();
+        let result = import_vault(&vault3, &data_without, "pass").unwrap();
+        assert_eq!(result.keys_added, 1);
+
+        let pk = vault3.get_key_private(&generated.key.id).unwrap();
+        assert!(pk.is_none());
+    }
+
+    // ── Sync Peers CRUD ──
+
+    #[test]
+    fn save_and_list_sync_peers() {
+        let vault = unlocked_vault();
+        let peer_id = Uuid::new_v4();
+        let public_key = vec![1u8; 32];
+        let now = chrono::Utc::now();
+
+        vault.save_sync_peer(&peer_id, "laptop", &public_key, None, &now).unwrap();
+
+        let peers = vault.list_sync_peers().unwrap();
+        assert_eq!(peers.len(), 1);
+        assert_eq!(peers[0].peer_id, peer_id);
+        assert_eq!(peers[0].device_name, "laptop");
+        assert_eq!(peers[0].public_key, public_key);
+        assert!(peers[0].is_active);
+        assert!(peers[0].last_synced_at.is_none());
+    }
+
+    #[test]
+    fn sync_peer_with_shared_secret() {
+        let vault = unlocked_vault();
+        let peer_id = Uuid::new_v4();
+        let public_key = vec![2u8; 32];
+        let shared_secret = vec![42u8; 32];
+        let now = chrono::Utc::now();
+
+        vault.save_sync_peer(&peer_id, "desktop", &public_key, Some(&shared_secret), &now).unwrap();
+
+        let retrieved = vault.get_sync_peer_shared_secret(&peer_id).unwrap();
+        assert_eq!(retrieved, Some(shared_secret));
+    }
+
+    #[test]
+    fn sync_peer_no_shared_secret() {
+        let vault = unlocked_vault();
+        let peer_id = Uuid::new_v4();
+        let now = chrono::Utc::now();
+
+        vault.save_sync_peer(&peer_id, "phone", &[3u8; 32], None, &now).unwrap();
+
+        let retrieved = vault.get_sync_peer_shared_secret(&peer_id).unwrap();
+        assert!(retrieved.is_none());
+    }
+
+    #[test]
+    fn update_sync_peer_endpoint() {
+        let vault = unlocked_vault();
+        let peer_id = Uuid::new_v4();
+        let now = chrono::Utc::now();
+
+        vault.save_sync_peer(&peer_id, "server", &[4u8; 32], None, &now).unwrap();
+        vault.update_sync_peer_endpoint(&peer_id, "192.168.1.50", 4433).unwrap();
+
+        let peers = vault.list_sync_peers().unwrap();
+        assert_eq!(peers[0].last_known_ip, Some("192.168.1.50".into()));
+        assert_eq!(peers[0].last_known_port, Some(4433));
+    }
+
+    #[test]
+    fn update_sync_peer_last_synced() {
+        let vault = unlocked_vault();
+        let peer_id = Uuid::new_v4();
+        let now = chrono::Utc::now();
+
+        vault.save_sync_peer(&peer_id, "tablet", &[5u8; 32], None, &now).unwrap();
+        assert!(vault.list_sync_peers().unwrap()[0].last_synced_at.is_none());
+
+        vault.update_sync_peer_last_synced(&peer_id).unwrap();
+        assert!(vault.list_sync_peers().unwrap()[0].last_synced_at.is_some());
+    }
+
+    #[test]
+    fn delete_sync_peer() {
+        let vault = unlocked_vault();
+        let peer_id = Uuid::new_v4();
+        let now = chrono::Utc::now();
+
+        vault.save_sync_peer(&peer_id, "temp", &[6u8; 32], None, &now).unwrap();
+        assert_eq!(vault.list_sync_peers().unwrap().len(), 1);
+
+        vault.delete_sync_peer(&peer_id).unwrap();
+        assert_eq!(vault.list_sync_peers().unwrap().len(), 0);
+    }
+
+    #[test]
+    fn multiple_sync_peers() {
+        let vault = unlocked_vault();
+        let now = chrono::Utc::now();
+
+        vault.save_sync_peer(&Uuid::new_v4(), "device-a", &[7u8; 32], None, &now).unwrap();
+        vault.save_sync_peer(&Uuid::new_v4(), "device-b", &[8u8; 32], None, &now).unwrap();
+        vault.save_sync_peer(&Uuid::new_v4(), "device-c", &[9u8; 32], None, &now).unwrap();
+
+        let peers = vault.list_sync_peers().unwrap();
+        assert_eq!(peers.len(), 3);
+    }
+
+    // ── Share (filtered export) ──
+
+    #[test]
+    fn share_single_host() {
+        use crate::portable::{export_vault, import_vault, ExportOptions, ExportFilter};
+
+        let vault = unlocked_vault();
+
+        let c1 = Connection::new("shared-host", "10.0.0.1");
+        vault.save_connection(&c1, Some("pw1")).unwrap();
+        let c2 = Connection::new("private-host", "10.0.0.2");
+        vault.save_connection(&c2, Some("pw2")).unwrap();
+
+        // Share only c1
+        let data = export_vault(&vault, "share-pass", ExportOptions {
+            include_private_keys: false,
+            filter: ExportFilter::Hosts(vec![c1.id]),
+        }).unwrap();
+
+        let vault2 = unlocked_vault();
+        let result = import_vault(&vault2, &data, "share-pass").unwrap();
+
+        assert_eq!(result.connections_added, 1);
+        let conns = vault2.list_connections().unwrap();
+        assert_eq!(conns.len(), 1);
+        assert_eq!(conns[0].label, "shared-host");
+    }
+
+    #[test]
+    fn share_group() {
+        use crate::portable::{export_vault, import_vault, ExportOptions, ExportFilter};
+
+        let vault = unlocked_vault();
+
+        let g = Group::new("Team");
+        vault.save_group(&g).unwrap();
+
+        let mut c1 = Connection::new("web", "10.0.0.1");
+        c1.group_id = Some(g.id);
+        vault.save_connection(&c1, None).unwrap();
+
+        let mut c2 = Connection::new("db", "10.0.0.2");
+        c2.group_id = Some(g.id);
+        vault.save_connection(&c2, None).unwrap();
+
+        let c3 = Connection::new("personal", "10.0.0.3");
+        vault.save_connection(&c3, None).unwrap();
+
+        // Share group
+        let data = export_vault(&vault, "pass", ExportOptions {
+            include_private_keys: false,
+            filter: ExportFilter::Group(g.id),
+        }).unwrap();
+
+        let vault2 = unlocked_vault();
+        let result = import_vault(&vault2, &data, "pass").unwrap();
+
+        assert_eq!(result.connections_added, 2);
+        assert_eq!(result.groups_added, 1);
+        let conns = vault2.list_connections().unwrap();
+        assert_eq!(conns.len(), 2);
+    }
+
+    #[test]
+    fn share_includes_dependencies() {
+        use crate::portable::{export_vault, import_vault, ExportOptions, ExportFilter};
+        use oryxis_core::models::identity::Identity;
+
+        let vault = unlocked_vault();
+
+        // Create key
+        let generated = crate::keygen::generate_ed25519("shared-key").unwrap();
+        vault.save_key(&generated.key, Some(&generated.private_pem)).unwrap();
+
+        // Create identity
+        let mut ident = Identity::new("shared-ident");
+        ident.key_id = Some(generated.key.id);
+        vault.save_identity(&ident, Some("ident-pw")).unwrap();
+
+        // Create group
+        let g = Group::new("Shared");
+        vault.save_group(&g).unwrap();
+
+        // Create connection referencing all deps
+        let mut conn = Connection::new("server", "10.0.0.1");
+        conn.key_id = Some(generated.key.id);
+        conn.identity_id = Some(ident.id);
+        conn.group_id = Some(g.id);
+        vault.save_connection(&conn, Some("conn-pw")).unwrap();
+
+        // Create unrelated data
+        let unrelated = Connection::new("other", "10.0.0.2");
+        vault.save_connection(&unrelated, None).unwrap();
+        let unrelated_key = SshKey::new("other-key", KeyAlgorithm::Ed25519);
+        vault.save_key(&unrelated_key, None).unwrap();
+
+        // Share only the one connection
+        let data = export_vault(&vault, "pass", ExportOptions {
+            include_private_keys: true,
+            filter: ExportFilter::Hosts(vec![conn.id]),
+        }).unwrap();
+
+        let vault2 = unlocked_vault();
+        let result = import_vault(&vault2, &data, "pass").unwrap();
+
+        // Should have 1 connection, 1 key, 1 identity, 1 group
+        assert_eq!(result.connections_added, 1);
+        assert_eq!(result.keys_added, 1);
+        assert_eq!(result.identities_added, 1);
+        assert_eq!(result.groups_added, 1);
+
+        // Should NOT have unrelated data
+        assert_eq!(vault2.list_connections().unwrap().len(), 1);
+        assert_eq!(vault2.list_keys().unwrap().len(), 1);
+
+        // Password should be preserved
+        let pw = vault2.get_connection_password(&conn.id).unwrap();
+        assert_eq!(pw, Some("conn-pw".into()));
+    }
+
+    #[test]
+    fn share_no_snippets_or_known_hosts() {
+        use crate::portable::{export_vault, import_vault, ExportOptions, ExportFilter};
+
+        let vault = unlocked_vault();
+
+        let conn = Connection::new("host", "10.0.0.1");
+        vault.save_connection(&conn, None).unwrap();
+
+        let s = Snippet::new("test", "echo hi");
+        vault.save_snippet(&s).unwrap();
+
+        let kh = KnownHost::new("10.0.0.1", 22, "ed25519", "SHA256:abc");
+        vault.save_known_host(&kh).unwrap();
+
+        // Share only the connection
+        let data = export_vault(&vault, "pass", ExportOptions {
+            include_private_keys: false,
+            filter: ExportFilter::Hosts(vec![conn.id]),
+        }).unwrap();
+
+        let vault2 = unlocked_vault();
+        let result = import_vault(&vault2, &data, "pass").unwrap();
+
+        assert_eq!(result.connections_added, 1);
+        assert_eq!(result.snippets_added, 0);
+        assert_eq!(result.known_hosts_added, 0);
     }
 }

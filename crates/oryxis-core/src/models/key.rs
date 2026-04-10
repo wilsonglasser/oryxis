@@ -11,10 +11,12 @@ pub struct SshKey {
     pub file_ref: String,
     pub has_passphrase: bool,
     pub created_at: chrono::DateTime<chrono::Utc>,
+    pub updated_at: chrono::DateTime<chrono::Utc>,
 }
 
 impl SshKey {
     pub fn new(label: impl Into<String>, algorithm: KeyAlgorithm) -> Self {
+        let now = chrono::Utc::now();
         Self {
             id: Uuid::new_v4(),
             label: label.into(),
@@ -23,7 +25,8 @@ impl SshKey {
             public_key: String::new(),
             file_ref: String::new(),
             has_passphrase: false,
-            created_at: chrono::Utc::now(),
+            created_at: now,
+            updated_at: now,
         }
     }
 }
