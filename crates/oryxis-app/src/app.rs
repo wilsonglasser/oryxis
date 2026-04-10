@@ -185,6 +185,7 @@ pub struct Oryxis {
     // Floating overlay menu
     overlay: Option<OverlayState>,
     mouse_position: Point,
+    window_size: iced::Size,
 
     // Keys
     keys: Vec<SshKey>,
@@ -352,6 +353,7 @@ pub enum Message {
     PtyOutput(usize, Vec<u8>),  // (tab_index, bytes)
     KeyboardEvent(keyboard::Event),
     MouseMoved(Point),
+    WindowResized(iced::Size),
 
     // Overlay
     HideOverlayMenu,
@@ -621,6 +623,7 @@ impl Oryxis {
                 card_context_menu: None,
                 overlay: None,
                 mouse_position: Point::ORIGIN,
+                window_size: iced::Size::new(1024.0, 768.0),
                 keys: Vec::new(),
                 show_key_panel: false,
                 key_import_label: String::new(),
@@ -909,6 +912,9 @@ impl Oryxis {
             }
             Message::MouseMoved(pos) => {
                 self.mouse_position = pos;
+            }
+            Message::WindowResized(size) => {
+                self.window_size = size;
             }
             Message::HideOverlayMenu => {
                 self.overlay = None;
@@ -2716,6 +2722,9 @@ impl Oryxis {
                 iced::event::Event::Mouse(iced::mouse::Event::CursorMoved { position }) => {
                     Some(Message::MouseMoved(position))
                 }
+                iced::event::Event::Window(iced::window::Event::Resized(size)) => {
+                    Some(Message::WindowResized(size))
+                }
                 _ => None,
             }
         })
@@ -2965,11 +2974,15 @@ impl Oryxis {
             .on_press(Message::HideOverlayMenu)
             .into();
 
-            // Position the menu using spacers to simulate absolute positioning
+            // Position the menu, clamping to window bounds to prevent clipping
+            let menu_width = 180.0_f32;
+            let menu_height = 80.0_f32; // approximate menu height
+            let x = overlay.x.min(self.window_size.width - menu_width).max(0.0);
+            let y = overlay.y.min(self.window_size.height - menu_height).max(0.0);
             let positioned_menu: Element<'_, Message> = column![
-                Space::new().height(overlay.y),
+                Space::new().height(y),
                 row![
-                    Space::new().width(overlay.x),
+                    Space::new().width(x),
                     menu,
                 ],
             ]
@@ -4029,7 +4042,8 @@ impl Oryxis {
                     Space::new().width(4),
                     text("ADD").size(12).color(OryxisColors::t().text_primary),
                     Space::new().width(4),
-                    text("\u{25BE}").size(10).color(OryxisColors::t().text_primary),
+                    iced_fonts::bootstrap::caret_down_fill::<iced::Theme, iced::Renderer>()
+                        .size(12).color(OryxisColors::t().text_primary),
                 ]
                 .align_y(iced::Alignment::Center),
             )
@@ -4441,10 +4455,12 @@ impl Oryxis {
         let file_status: Element<'_, Message> = if has_content {
             container(
                 row![
-                    text("V").size(12).color(OryxisColors::t().success),
+                    iced_fonts::bootstrap::check_circle_fill()
+                        .size(13)
+                        .color(OryxisColors::t().success),
                     Space::new().width(6),
                     text(format!("Loaded ({} bytes)", self.key_import_pem.len()))
-                        .size(11).color(OryxisColors::t().success),
+                        .size(12).color(OryxisColors::t().success),
                 ].align_y(iced::Alignment::Center),
             )
             .padding(Padding { top: 4.0, right: 0.0, bottom: 4.0, left: 0.0 })

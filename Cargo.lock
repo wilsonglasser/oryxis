@@ -1404,6 +1404,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e7c1832837b905bbfb5101e07cc24c8deddf52f93225eee6ead5f4d63d53ddcb"
 dependencies = [
  "const-oid 0.9.6",
+ "pem-rfc7468 0.7.0",
  "zeroize",
 ]
 
@@ -1636,6 +1637,8 @@ dependencies = [
  "ff",
  "generic-array 0.14.7",
  "group",
+ "hkdf 0.12.4",
+ "pem-rfc7468 0.7.0",
  "pkcs8 0.10.2",
  "rand_core 0.6.4",
  "sec1 0.7.3",
@@ -1653,7 +1656,7 @@ dependencies = [
  "crypto-bigint 0.7.3",
  "crypto-common 0.2.1",
  "digest 0.11.2",
- "hkdf",
+ "hkdf 0.13.0",
  "hybrid-array",
  "once_cell",
  "pem-rfc7468 1.0.0",
@@ -2425,6 +2428,15 @@ name = "hexf-parse"
 version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "dfa686283ad6dd069f105e5ab091b04c62850d3e4cf5d67debad1933f55023df"
+
+[[package]]
+name = "hkdf"
+version = "0.12.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7b5f8eb2ad728638ea2c7d47a21db23b7b58a72ed6a38256b8a1849f15fbbdf7"
+dependencies = [
+ "hmac 0.12.1",
+]
 
 [[package]]
 name = "hkdf"
@@ -4369,7 +4381,10 @@ dependencies = [
  "chrono",
  "dirs",
  "oryxis-core",
+ "p256 0.13.2",
+ "p384 0.13.1",
  "rand 0.8.5",
+ "rsa 0.9.10",
  "rusqlite",
  "secrecy",
  "serde",
@@ -6357,6 +6372,7 @@ checksum = "3b86f5297f0f04d08cabaa0f6bff7cb6aec4d9c3b49d87990d63da9d9156a8c3"
 dependencies = [
  "bcrypt-pbkdf",
  "ed25519-dalek 2.2.0",
+ "num-bigint-dig",
  "p256 0.13.2",
  "p384 0.13.1",
  "p521 0.13.3",

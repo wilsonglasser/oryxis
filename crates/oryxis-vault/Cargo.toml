@@ -19,7 +19,10 @@ chrono = { workspace = true }
 rand = "0.8"
 dirs = "6"
 base64 = "0.22"
-ssh-key = { version = "0.6", features = ["ed25519", "std", "rand_core", "encryption"] }
+ssh-key = { version = "0.6", features = ["ed25519", "std", "rand_core", "encryption", "rsa", "p256", "p384"] }
+rsa = { version = "0.9", features = ["pem"] }
+p256 = { version = "0.13", features = ["ecdsa", "pkcs8", "pem"] }
+p384 = { version = "0.13", features = ["ecdsa", "pkcs8", "pem"] }
 
 [dev-dependencies]
 tempfile = "3"
