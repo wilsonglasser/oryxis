@@ -1,0 +1,3 @@
+query-filters:
+  - exclude:
+      tags: "security/cwe/cwe-798"
