@@ -281,6 +281,7 @@ impl VaultStore {
         // Migrations: add columns to existing tables (ignore errors if already present)
         let _ = self.db.execute_batch("ALTER TABLE connections ADD COLUMN identity_id TEXT;");
         let _ = self.db.execute_batch("ALTER TABLE connections ADD COLUMN mcp_enabled INTEGER DEFAULT 1;");
+        let _ = self.db.execute_batch("ALTER TABLE connections ADD COLUMN port_forwards TEXT;");
         let _ = self.db.execute_batch("ALTER TABLE keys ADD COLUMN updated_at TEXT;");
         let _ = self.db.execute_batch("ALTER TABLE groups ADD COLUMN created_at TEXT;");
         let _ = self.db.execute_batch("ALTER TABLE groups ADD COLUMN updated_at TEXT;");
@@ -503,8 +504,8 @@ impl VaultStore {
         self.db.execute(
             "INSERT OR REPLACE INTO connections
              (id, label, hostname, port, username, auth_method, key_id, group_id,
-              jump_chain, proxy, tags, notes, color, password, last_used, created_at, updated_at, identity_id, mcp_enabled)
-             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19)",
+              jump_chain, proxy, tags, notes, color, password, last_used, created_at, updated_at, identity_id, mcp_enabled, port_forwards)
+             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20)",
             params![
                 conn.id.to_string(),
                 conn.label,
@@ -525,6 +526,7 @@ impl VaultStore {
                 conn.updated_at.to_rfc3339(),
                 conn.identity_id.map(|u| u.to_string()),
                 conn.mcp_enabled as i32,
+                if conn.port_forwards.is_empty() { None } else { Some(serde_json::to_string(&conn.port_forwards).unwrap_or_default()) },
             ],
         )?;
         Ok(())
@@ -543,12 +545,12 @@ impl VaultStore {
         let query = match mcp_filter {
             Some(true) => {
                 "SELECT id, label, hostname, port, username, auth_method, key_id, group_id,
-                        jump_chain, proxy, tags, notes, color, last_used, created_at, updated_at, identity_id, mcp_enabled
+                        jump_chain, proxy, tags, notes, color, last_used, created_at, updated_at, identity_id, mcp_enabled, port_forwards
                  FROM connections WHERE mcp_enabled = 1 ORDER BY label"
             }
             _ => {
                 "SELECT id, label, hostname, port, username, auth_method, key_id, group_id,
-                        jump_chain, proxy, tags, notes, color, last_used, created_at, updated_at, identity_id, mcp_enabled
+                        jump_chain, proxy, tags, notes, color, last_used, created_at, updated_at, identity_id, mcp_enabled, port_forwards
                  FROM connections ORDER BY label"
             }
         };
@@ -594,6 +596,10 @@ impl VaultStore {
                         .unwrap_or_default(),
                     notes: row.get(11)?,
                     color: row.get(12)?,
+                    port_forwards: row
+                        .get::<_, Option<String>>(18)?
+                        .and_then(|s| serde_json::from_str(&s).ok())
+                        .unwrap_or_default(),
                     mcp_enabled: row.get::<_, Option<i32>>(17)?.unwrap_or(1) != 0,
                     last_used: row
                         .get::<_, Option<String>>(13)?

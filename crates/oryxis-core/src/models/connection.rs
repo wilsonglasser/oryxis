@@ -17,6 +17,8 @@ pub struct Connection {
     pub tags: Vec<String>,
     pub notes: Option<String>,
     pub color: Option<String>,
+    #[serde(default)]
+    pub port_forwards: Vec<PortForward>,
     pub mcp_enabled: bool,
     pub last_used: Option<chrono::DateTime<chrono::Utc>>,
     pub created_at: chrono::DateTime<chrono::Utc>,
@@ -37,6 +39,7 @@ impl Connection {
             identity_id: None,
             group_id: None,
             jump_chain: Vec::new(),
+            port_forwards: Vec::new(),
             proxy: None,
             tags: Vec::new(),
             notes: None,
@@ -57,6 +60,13 @@ pub enum AuthMethod {
     Key,
     Agent,
     Interactive,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct PortForward {
+    pub local_port: u16,
+    pub remote_host: String,
+    pub remote_port: u16,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

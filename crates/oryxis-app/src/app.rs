@@ -89,8 +89,17 @@ struct ConnectionForm {
     password_visible: bool,
     /// Whether the username field is focused (shows identity autocomplete).
     username_focused: bool,
+    /// Port forwarding rules (local -L style).
+    port_forwards: Vec<PortForwardForm>,
     /// Whether this host is exposed via MCP.
     mcp_enabled: bool,
+}
+
+#[derive(Debug, Clone, Default)]
+struct PortForwardForm {
+    local_port: String,
+    remote_host: String,
+    remote_port: String,
 }
 
 impl Default for ConnectionForm {
@@ -111,6 +120,7 @@ impl Default for ConnectionForm {
             password_touched: false,
             password_visible: false,
             username_focused: false,
+            port_forwards: Vec::new(),
             mcp_enabled: true,
         }
     }
@@ -479,6 +489,13 @@ pub enum Message {
     ChatToolExec(String),
     #[allow(dead_code)]
     ChatToolResult(String),
+
+    // Port forwarding
+    EditorAddPortForward,
+    EditorRemovePortForward(usize),
+    EditorPortFwdLocalPortChanged(usize, String),
+    EditorPortFwdRemoteHostChanged(usize, String),
+    EditorPortFwdRemotePortChanged(usize, String),
 
     // MCP
     EditorToggleMcpEnabled,
@@ -1020,6 +1037,11 @@ impl Oryxis {
                         password_touched: false,
                         password_visible: false,
                         username_focused: false,
+                        port_forwards: conn.port_forwards.iter().map(|pf| PortForwardForm {
+                            local_port: pf.local_port.to_string(),
+                            remote_host: pf.remote_host.clone(),
+                            remote_port: pf.remote_port.to_string(),
+                        }).collect(),
                         mcp_enabled: conn.mcp_enabled,
                     };
                 }
@@ -1116,6 +1138,16 @@ impl Oryxis {
                         self.connections.iter().find(|c| c.label == *label).map(|c| vec![c.id])
                     })
                     .unwrap_or_default();
+                conn.port_forwards = self.editor_form.port_forwards.iter().filter_map(|pf| {
+                    let local_port = pf.local_port.parse::<u16>().ok()?;
+                    let remote_port = pf.remote_port.parse::<u16>().ok()?;
+                    if pf.remote_host.is_empty() { return None; }
+                    Some(oryxis_core::models::connection::PortForward {
+                        local_port,
+                        remote_host: pf.remote_host.clone(),
+                        remote_port,
+                    })
+                }).collect();
                 conn.mcp_enabled = self.editor_form.mcp_enabled;
                 conn.updated_at = chrono::Utc::now();
 
@@ -1170,6 +1202,7 @@ impl Oryxis {
                     dup.key_id = conn.key_id;
                     dup.group_id = conn.group_id;
                     dup.jump_chain = conn.jump_chain.clone();
+                    dup.port_forwards = conn.port_forwards.clone();
                     dup.proxy = conn.proxy.clone();
                     dup.tags = conn.tags.clone();
                     dup.notes = conn.notes.clone();
@@ -1349,8 +1382,17 @@ impl Oryxis {
                                         format!("Authenticated as \"{}\"", username),
                                     )).await;
 
-                                    // Step 3: Open PTY session
-                                    match engine.open_session(handle, DEFAULT_TERM_COLS, DEFAULT_TERM_ROWS).await {
+                                    // Step 3: Open PTY session (+ port forwards)
+                                    if !conn.port_forwards.is_empty() {
+                                        let fwd_summary: Vec<String> = conn.port_forwards.iter()
+                                            .map(|pf| format!("{}:{}:{}", pf.local_port, pf.remote_host, pf.remote_port))
+                                            .collect();
+                                        let _ = sender.send(SshStreamMsg::Progress(
+                                            ConnectionStep::Authenticating,
+                                            format!("Port forwards: {}", fwd_summary.join(", ")),
+                                        )).await;
+                                    }
+                                    match engine.open_session(handle, DEFAULT_TERM_COLS, DEFAULT_TERM_ROWS, &conn.port_forwards).await {
                                         Ok((session, mut rx)) => {
                                             let session = Arc::new(session);
                                             let _ = sender.send(SshStreamMsg::Connected(session.clone())).await;
@@ -2386,6 +2428,29 @@ impl Oryxis {
             // ── MCP ──
             Message::EditorToggleMcpEnabled => {
                 self.editor_form.mcp_enabled = !self.editor_form.mcp_enabled;
+            }
+            Message::EditorAddPortForward => {
+                self.editor_form.port_forwards.push(PortForwardForm::default());
+            }
+            Message::EditorRemovePortForward(i) => {
+                if i < self.editor_form.port_forwards.len() {
+                    self.editor_form.port_forwards.remove(i);
+                }
+            }
+            Message::EditorPortFwdLocalPortChanged(i, v) => {
+                if let Some(pf) = self.editor_form.port_forwards.get_mut(i) {
+                    pf.local_port = v;
+                }
+            }
+            Message::EditorPortFwdRemoteHostChanged(i, v) => {
+                if let Some(pf) = self.editor_form.port_forwards.get_mut(i) {
+                    pf.remote_host = v;
+                }
+            }
+            Message::EditorPortFwdRemotePortChanged(i, v) => {
+                if let Some(pf) = self.editor_form.port_forwards.get_mut(i) {
+                    pf.remote_port = v;
+                }
             }
             Message::ToggleMcpServer => {
                 self.mcp_server_enabled = !self.mcp_server_enabled;
@@ -6388,6 +6453,59 @@ impl Oryxis {
             ].align_y(iced::Alignment::Center),
         ]);
 
+        // ── Section: Port Forwarding ──
+        let mut pf_items = column![
+            row![
+                iced_fonts::bootstrap::arrow_left_right().size(14).color(OryxisColors::t().text_muted),
+                Space::new().width(10),
+                text("Port Forwarding").size(13).color(OryxisColors::t().text_secondary),
+                Space::new().width(Length::Fill),
+                button(text("+").size(14).color(OryxisColors::t().text_primary))
+                    .on_press(Message::EditorAddPortForward)
+                    .style(|_, _| button::Style {
+                        background: Some(Background::Color(OryxisColors::t().bg_hover)),
+                        border: Border { radius: Radius::from(4.0), ..Default::default() },
+                        text_color: OryxisColors::t().text_primary,
+                        ..Default::default()
+                    })
+                    .padding(Padding { top: 2.0, right: 8.0, bottom: 2.0, left: 8.0 }),
+            ].align_y(iced::Alignment::Center),
+        ];
+
+        for (i, pf) in self.editor_form.port_forwards.iter().enumerate() {
+            let idx = i;
+            pf_items = pf_items.push(Space::new().height(8));
+            pf_items = pf_items.push(
+                row![
+                    text_input("8080", &pf.local_port)
+                        .on_input(move |v| Message::EditorPortFwdLocalPortChanged(idx, v))
+                        .padding(6)
+                        .width(70),
+                    text(" -> ").size(12).color(OryxisColors::t().text_muted),
+                    text_input("localhost", &pf.remote_host)
+                        .on_input(move |v| Message::EditorPortFwdRemoteHostChanged(idx, v))
+                        .padding(6)
+                        .width(Length::Fill),
+                    text(":").size(12).color(OryxisColors::t().text_muted),
+                    text_input("3306", &pf.remote_port)
+                        .on_input(move |v| Message::EditorPortFwdRemotePortChanged(idx, v))
+                        .padding(6)
+                        .width(70),
+                    button(text("x").size(11).color(OryxisColors::t().error))
+                        .on_press(Message::EditorRemovePortForward(idx))
+                        .style(|_, _| button::Style {
+                            background: None,
+                            border: Border::default(),
+                            text_color: OryxisColors::t().error,
+                            ..Default::default()
+                        })
+                        .padding(Padding { top: 2.0, right: 4.0, bottom: 2.0, left: 4.0 }),
+                ].align_y(iced::Alignment::Center).spacing(4),
+            );
+        }
+
+        let port_forward_section = panel_section(pf_items);
+
         // ── Error ──
         let panel_error: Element<'_, Message> = if let Some(err) = &self.host_panel_error {
             container(Element::from(text(err.clone()).size(11).color(OryxisColors::t().error)))
@@ -6424,6 +6542,8 @@ impl Oryxis {
                 ssh_section,
                 Space::new().height(8),
                 advanced_section,
+                Space::new().height(8),
+                port_forward_section,
                 Space::new().height(8),
                 panel_error,
             ]

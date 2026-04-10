@@ -67,7 +67,7 @@ Most SSH clients are either powerful but ugly (PuTTY), pretty but Electron-heavy
 
 ### SSH & Connectivity
 - **Smart auto-authentication** — Automatically tries key, agent, password, and keyboard-interactive in order.
-- **Full SSH pipeline** — Direct, SOCKS4/5, HTTP CONNECT, ProxyCommand, and jump host chaining via [russh 0.60](https://github.com/warp-tech/russh).
+- **Full SSH pipeline** — Direct, SOCKS4/5, HTTP CONNECT, ProxyCommand, jump host chaining, and local port forwarding via [russh 0.60](https://github.com/warp-tech/russh).
 - **RSA SHA-2 support** — Modern rsa-sha2-256/512 signing.
 - **Connection progress** — Step-by-step indicator with detailed error messages.
 - **TOFU host key verification** — Fingerprints saved on first connect, rejected if key changes.
@@ -140,7 +140,7 @@ Most SSH clients are either powerful but ugly (PuTTY), pretty but Electron-heavy
 ## Architecture
 
 ```
-+----- Iced Application (wgpu) --------------------------------+
++----- Iced Application (wgpu) ---------------------------------+
 |                                                               |
 |  Sidebar -- Navigation (Hosts, Keys, Snippets, etc.)          |
 |  Tab Bar -- Open terminal sessions                            |
@@ -149,20 +149,20 @@ Most SSH clients are either powerful but ugly (PuTTY), pretty but Electron-heavy
 |  Overlay -- Floating context menus                            |
 |                                                               |
 +---------------------------------------------------------------+
-|  oryxis-ssh              |  oryxis-vault                      |
-|  (russh 0.60 + auto-auth |  (SQLite + Argon2id +              |
-|   + jump hosts + proxy    |   ChaCha20Poly1305 +               |
-|   + RSA-SHA2 + exec)      |   Export/Import .oryxis)           |
-+---------------------------+------------------------------------+
-|  oryxis-sync              |  oryxis-mcp                        |
-|  (quinn QUIC + mDNS +     |  (JSON-RPC 2.0 stdio,              |
-|   STUN + Ed25519/X25519   |   list/get/exec SSH hosts           |
-|   + LWW conflict)          |   for AI assistants)               |
-+---------------------------+------------------------------------+
-|  oryxis-terminal          |  oryxis-core                       |
-|  (alacritty_terminal 0.26 |  (Connection, Key, Identity,       |
-|   + syntax highlight      |   Group, Snippet, KnownHost,       |
-|   + 6 themes + recording) |   LogEntry)                        |
+|  oryxis-ssh               |  oryxis-vault                     |
+|  (russh 0.60 + auto-auth  |  (SQLite + Argon2id +             |
+|   + jump hosts + proxy    |   ChaCha20Poly1305 +              |
+|   + RSA-SHA2 + exec)      |   Export/Import .oryxis)          |
++---------------------------+-----------------------------------+
+|  oryxis-sync              |  oryxis-mcp                       |
+|  (quinn QUIC + mDNS +     |  (JSON-RPC 2.0 stdio,             |
+|   STUN + Ed25519/X25519   |  list/get/exec SSH hosts          |
+|   + LWW conflict)         |   for AI assistants)              |
++---------------------------+-----------------------------------+
+|  oryxis-terminal          |  oryxis-core                      |
+|  (alacritty_terminal 0.26 |  (Connection, Key, Identity,      |
+|   + syntax highlight      |   Group, Snippet, KnownHost,      |
+|   + 6 themes + recording) |   LogEntry)                       |
 +---------------------------------------------------------------+
 ```
 
@@ -309,8 +309,6 @@ Expected certificate fingerprint (SHA-256):
 ```
 E5:4E:EC:6E:21:D4:00:87:22:5A:4E:5B:CB:F2:79:6F:72:50:5C:04:F6:AE:83:8C:C9:46:9E:E0:2B:5D:7F:2F
 ```
-
-The public certificate is available at [`resources/oryxis-signing.cer`](resources/oryxis-signing.cer).
 
 ## Roadmap
 
