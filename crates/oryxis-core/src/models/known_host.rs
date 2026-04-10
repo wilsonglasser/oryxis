@@ -10,6 +10,7 @@ pub struct KnownHost {
     pub fingerprint: String,
     pub first_seen: chrono::DateTime<chrono::Utc>,
     pub last_seen: chrono::DateTime<chrono::Utc>,
+    pub updated_at: chrono::DateTime<chrono::Utc>,
 }
 
 impl KnownHost {
@@ -23,6 +24,7 @@ impl KnownHost {
             fingerprint: fingerprint.into(),
             first_seen: now,
             last_seen: now,
+            updated_at: now,
         }
     }
 }

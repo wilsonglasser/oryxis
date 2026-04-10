@@ -89,6 +89,8 @@ struct ConnectionForm {
     password_visible: bool,
     /// Whether the username field is focused (shows identity autocomplete).
     username_focused: bool,
+    /// Whether this host is exposed via MCP.
+    mcp_enabled: bool,
 }
 
 impl Default for ConnectionForm {
@@ -109,6 +111,7 @@ impl Default for ConnectionForm {
             password_touched: false,
             password_visible: false,
             username_focused: false,
+            mcp_enabled: true,
         }
     }
 }
@@ -246,6 +249,37 @@ pub struct Oryxis {
     // AI chat sidebar
     chat_input: String,
     chat_loading: bool,
+
+    // MCP Server
+    mcp_server_enabled: bool,
+
+    // Sync
+    sync_enabled: bool,
+    sync_mode: String,
+    sync_device_name: String,
+    sync_signaling_url: String,
+    sync_relay_url: String,
+    sync_listen_port: String,
+    sync_peers: Vec<oryxis_vault::SyncPeerRow>,
+    sync_pairing_code: Option<String>,
+    sync_status: Option<String>,
+
+    // Export/Import
+    show_export_dialog: bool,
+    export_password: String,
+    export_include_keys: bool,
+    export_status: Option<Result<String, String>>,
+    show_import_dialog: bool,
+    import_password: String,
+    import_file_data: Option<Vec<u8>>,
+    import_status: Option<Result<String, String>>,
+
+    // Share
+    show_share_dialog: bool,
+    share_password: String,
+    share_include_keys: bool,
+    share_filter: Option<oryxis_vault::ExportFilter>,
+    share_status: Option<Result<String, String>>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -278,6 +312,7 @@ pub(crate) enum SettingsSection {
     Theme,
     Shortcuts,
     Security,
+    Sync,
     About,
 }
 
@@ -444,6 +479,46 @@ pub enum Message {
     ChatToolExec(String),
     #[allow(dead_code)]
     ChatToolResult(String),
+
+    // MCP
+    EditorToggleMcpEnabled,
+    ToggleMcpServer,
+
+    // Sync
+    SyncToggleEnabled,
+    SyncModeChanged(String),
+    SyncDeviceNameChanged(String),
+    SyncSignalingUrlChanged(String),
+    SyncRelayUrlChanged(String),
+    SyncListenPortChanged(String),
+    SyncStartPairing,
+    SyncUnpairDevice(uuid::Uuid),
+    SyncNow,
+
+    // Export / Import
+    ExportVault,
+    ExportPasswordChanged(String),
+    ExportToggleKeys,
+    ExportConfirm,
+    #[allow(dead_code)]
+    ExportCompleted(Result<String, String>),
+    ImportVault,
+    #[allow(dead_code)]
+    ImportFileLoaded(Vec<u8>),
+    ImportPasswordChanged(String),
+    ImportConfirm,
+    #[allow(dead_code)]
+    ImportCompleted(Result<String, String>),
+    ExportImportDismiss,
+
+    // Share
+    ShareConnection(usize),
+    #[allow(dead_code)]
+    ShareGroup(uuid::Uuid),
+    SharePasswordChanged(String),
+    ShareToggleKeys,
+    ShareConfirm,
+    ShareDismiss,
 }
 
 /// Internal message type for SSH connection streams.
@@ -583,6 +658,29 @@ impl Oryxis {
                 vault_destroy_confirm: false,
                 chat_input: String::new(),
                 chat_loading: false,
+                mcp_server_enabled: false,
+                sync_enabled: false,
+                sync_mode: "manual".into(),
+                sync_device_name: String::new(),
+                sync_signaling_url: oryxis_sync::SyncConfig::default().signaling_url,
+                sync_relay_url: String::new(),
+                sync_listen_port: "0".into(),
+                sync_peers: Vec::new(),
+                sync_pairing_code: None,
+                sync_status: None,
+                show_export_dialog: false,
+                export_password: String::new(),
+                export_include_keys: true,
+                export_status: None,
+                show_import_dialog: false,
+                import_password: String::new(),
+                import_file_data: None,
+                import_status: None,
+                show_share_dialog: false,
+                share_password: String::new(),
+                share_include_keys: false,
+                share_filter: None,
+                share_status: None,
             },
             Task::none(),
         );
@@ -626,6 +724,30 @@ impl Oryxis {
                 self.ai_api_url = v;
             }
             self.ai_api_key_set = vault.get_ai_api_key().ok().flatten().is_some();
+            if let Ok(Some(v)) = vault.get_setting("mcp_server_enabled") {
+                self.mcp_server_enabled = v == "true";
+            }
+
+            // Sync settings
+            if let Ok(Some(v)) = vault.get_setting("sync_enabled") {
+                self.sync_enabled = v == "true";
+            }
+            if let Ok(Some(v)) = vault.get_setting("sync_mode") {
+                self.sync_mode = v;
+            }
+            if let Ok(Some(v)) = vault.get_setting("sync_device_name") {
+                self.sync_device_name = v;
+            }
+            if let Ok(Some(v)) = vault.get_setting("sync_signaling_url") {
+                self.sync_signaling_url = v;
+            }
+            if let Ok(Some(v)) = vault.get_setting("sync_relay_url") {
+                self.sync_relay_url = v;
+            }
+            if let Ok(Some(v)) = vault.get_setting("sync_listen_port") {
+                self.sync_listen_port = v;
+            }
+            self.sync_peers = vault.list_sync_peers().unwrap_or_default();
             if let Ok(Some(v)) = vault.get_setting("ai_system_prompt") {
                 self.ai_system_prompt = v;
             }
@@ -898,6 +1020,7 @@ impl Oryxis {
                         password_touched: false,
                         password_visible: false,
                         username_focused: false,
+                        mcp_enabled: conn.mcp_enabled,
                     };
                 }
             }
@@ -993,6 +1116,7 @@ impl Oryxis {
                         self.connections.iter().find(|c| c.label == *label).map(|c| vec![c.id])
                     })
                     .unwrap_or_default();
+                conn.mcp_enabled = self.editor_form.mcp_enabled;
                 conn.updated_at = chrono::Utc::now();
 
                 let password = if !self.editor_form.password_touched {
@@ -2258,6 +2382,264 @@ impl Oryxis {
                         });
                 }
             }
+
+            // ── MCP ──
+            Message::EditorToggleMcpEnabled => {
+                self.editor_form.mcp_enabled = !self.editor_form.mcp_enabled;
+            }
+            Message::ToggleMcpServer => {
+                self.mcp_server_enabled = !self.mcp_server_enabled;
+                if let Some(vault) = &self.vault {
+                    let _ = vault.set_setting("mcp_server_enabled", if self.mcp_server_enabled { "true" } else { "false" });
+                }
+            }
+
+            // ── Sync ──
+            Message::SyncToggleEnabled => {
+                self.sync_enabled = !self.sync_enabled;
+                if let Some(vault) = &self.vault {
+                    let _ = vault.set_setting("sync_enabled", if self.sync_enabled { "true" } else { "false" });
+                }
+            }
+            Message::SyncModeChanged(v) => {
+                self.sync_mode = v.clone();
+                if let Some(vault) = &self.vault {
+                    let _ = vault.set_setting("sync_mode", &v);
+                }
+            }
+            Message::SyncDeviceNameChanged(v) => {
+                self.sync_device_name = v.clone();
+                if let Some(vault) = &self.vault {
+                    let _ = vault.set_setting("sync_device_name", &v);
+                }
+            }
+            Message::SyncSignalingUrlChanged(v) => {
+                self.sync_signaling_url = v.clone();
+                if let Some(vault) = &self.vault {
+                    let _ = vault.set_setting("sync_signaling_url", &v);
+                }
+            }
+            Message::SyncRelayUrlChanged(v) => {
+                self.sync_relay_url = v.clone();
+                if let Some(vault) = &self.vault {
+                    let _ = vault.set_setting("sync_relay_url", &v);
+                }
+            }
+            Message::SyncListenPortChanged(v) => {
+                self.sync_listen_port = v.clone();
+                if let Some(vault) = &self.vault {
+                    let _ = vault.set_setting("sync_listen_port", &v);
+                }
+            }
+            Message::SyncStartPairing => {
+                let code = oryxis_sync::crypto::generate_pairing_code();
+                self.sync_pairing_code = Some(code);
+            }
+            Message::SyncUnpairDevice(peer_id) => {
+                if let Some(vault) = &self.vault {
+                    let _ = vault.delete_sync_peer(&peer_id);
+                    self.sync_peers = vault.list_sync_peers().unwrap_or_default();
+                }
+            }
+            Message::SyncNow => {
+                self.sync_status = Some("Sync triggered...".into());
+            }
+
+            // ── Export / Import ──
+            Message::ExportVault => {
+                self.show_export_dialog = true;
+                self.export_password = String::new();
+                self.export_include_keys = true;
+                self.export_status = None;
+            }
+            Message::ExportPasswordChanged(v) => {
+                self.export_password = v;
+            }
+            Message::ExportToggleKeys => {
+                self.export_include_keys = !self.export_include_keys;
+            }
+            Message::ExportConfirm => {
+                if self.export_password.is_empty() {
+                    self.export_status = Some(Err("Password is required".into()));
+                    return Task::none();
+                }
+                if let Some(vault) = &self.vault {
+                    let options = oryxis_vault::ExportOptions {
+                        include_private_keys: self.export_include_keys,
+                        filter: oryxis_vault::ExportFilter::All,
+                    };
+                    match oryxis_vault::export_vault(vault, &self.export_password, options) {
+                        Ok(data) => {
+                            // Open save dialog
+                            let dialog = rfd::FileDialog::new()
+                                .set_title("Export Vault")
+                                .add_filter("Oryxis Export", &["oryxis"])
+                                .set_file_name("vault.oryxis")
+                                .save_file();
+                            if let Some(path) = dialog {
+                                match std::fs::write(&path, &data) {
+                                    Ok(()) => {
+                                        self.export_status = Some(Ok(format!("Exported to {}", path.display())));
+                                    }
+                                    Err(e) => {
+                                        self.export_status = Some(Err(format!("Write failed: {}", e)));
+                                    }
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            self.export_status = Some(Err(e.to_string()));
+                        }
+                    }
+                }
+            }
+            Message::ExportCompleted(result) => {
+                self.export_status = Some(result);
+            }
+            Message::ImportVault => {
+                self.import_status = None;
+                self.import_password = String::new();
+                self.import_file_data = None;
+                // Open file picker
+                let dialog = rfd::FileDialog::new()
+                    .set_title("Import Vault")
+                    .add_filter("Oryxis Export", &["oryxis"])
+                    .pick_file();
+                if let Some(path) = dialog {
+                    match std::fs::read(&path) {
+                        Ok(data) => {
+                            if oryxis_vault::is_valid_export(&data) {
+                                self.import_file_data = Some(data);
+                                self.show_import_dialog = true;
+                            } else {
+                                self.import_status = Some(Err("Invalid export file".into()));
+                            }
+                        }
+                        Err(e) => {
+                            self.import_status = Some(Err(format!("Read failed: {}", e)));
+                        }
+                    }
+                }
+            }
+            Message::ImportFileLoaded(data) => {
+                self.import_file_data = Some(data);
+                self.show_import_dialog = true;
+            }
+            Message::ImportPasswordChanged(v) => {
+                self.import_password = v;
+            }
+            Message::ImportConfirm => {
+                if self.import_password.is_empty() {
+                    self.import_status = Some(Err("Password is required".into()));
+                    return Task::none();
+                }
+                if let (Some(vault), Some(data)) = (&self.vault, &self.import_file_data) {
+                    match oryxis_vault::import_vault(vault, data, &self.import_password) {
+                        Ok(result) => {
+                            let msg = format!(
+                                "Imported: {} connections, {} keys, {} groups, {} identities, {} snippets, {} known hosts",
+                                result.connections_added + result.connections_updated,
+                                result.keys_added,
+                                result.groups_added,
+                                result.identities_added + result.identities_updated,
+                                result.snippets_added,
+                                result.known_hosts_added,
+                            );
+                            self.import_status = Some(Ok(msg));
+                            self.show_import_dialog = false;
+                            self.import_file_data = None;
+                            self.load_data_from_vault();
+                        }
+                        Err(oryxis_vault::VaultError::InvalidPassword) => {
+                            self.import_status = Some(Err("Wrong password".into()));
+                        }
+                        Err(e) => {
+                            self.import_status = Some(Err(e.to_string()));
+                        }
+                    }
+                }
+            }
+            Message::ImportCompleted(result) => {
+                self.import_status = Some(result);
+                if self.import_status.as_ref().is_some_and(|r| r.is_ok()) {
+                    self.show_import_dialog = false;
+                    self.import_file_data = None;
+                    self.load_data_from_vault();
+                }
+            }
+            Message::ExportImportDismiss => {
+                self.show_export_dialog = false;
+                self.show_import_dialog = false;
+                self.export_status = None;
+                self.import_status = None;
+                self.import_file_data = None;
+            }
+
+            // ── Share ──
+            Message::ShareConnection(idx) => {
+                self.overlay = None;
+                if let Some(conn) = self.connections.get(idx) {
+                    self.share_filter = Some(oryxis_vault::ExportFilter::Hosts(vec![conn.id]));
+                    self.show_share_dialog = true;
+                    self.share_password = String::new();
+                    self.share_include_keys = false;
+                    self.share_status = None;
+                }
+            }
+            Message::ShareGroup(group_id) => {
+                self.overlay = None;
+                self.share_filter = Some(oryxis_vault::ExportFilter::Group(group_id));
+                self.show_share_dialog = true;
+                self.share_password = String::new();
+                self.share_include_keys = false;
+                self.share_status = None;
+            }
+            Message::SharePasswordChanged(v) => {
+                self.share_password = v;
+            }
+            Message::ShareToggleKeys => {
+                self.share_include_keys = !self.share_include_keys;
+            }
+            Message::ShareConfirm => {
+                if self.share_password.is_empty() {
+                    self.share_status = Some(Err("Password is required".into()));
+                    return Task::none();
+                }
+                if let (Some(vault), Some(filter)) = (&self.vault, &self.share_filter) {
+                    let options = oryxis_vault::ExportOptions {
+                        include_private_keys: self.share_include_keys,
+                        filter: filter.clone(),
+                    };
+                    match oryxis_vault::export_vault(vault, &self.share_password, options) {
+                        Ok(data) => {
+                            let dialog = rfd::FileDialog::new()
+                                .set_title("Share")
+                                .add_filter("Oryxis Export", &["oryxis"])
+                                .set_file_name("shared.oryxis")
+                                .save_file();
+                            if let Some(path) = dialog {
+                                match std::fs::write(&path, &data) {
+                                    Ok(()) => {
+                                        self.share_status = Some(Ok(format!("Saved to {}", path.display())));
+                                        self.show_share_dialog = false;
+                                    }
+                                    Err(e) => {
+                                        self.share_status = Some(Err(format!("Write failed: {}", e)));
+                                    }
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            self.share_status = Some(Err(e.to_string()));
+                        }
+                    }
+                }
+            }
+            Message::ShareDismiss => {
+                self.show_share_dialog = false;
+                self.share_filter = None;
+                self.share_status = None;
+            }
         }
         Task::none()
     }
@@ -2434,6 +2816,78 @@ impl Oryxis {
             })
             .into();
 
+        // Share dialog overlay
+        if self.show_share_dialog {
+            let share_include_keys = self.share_include_keys;
+            let dialog_content = container(
+                column![
+                    text(crate::i18n::t("share")).size(16).color(OryxisColors::t().text_primary),
+                    Space::new().height(12),
+                    text_input(crate::i18n::t("export_password"), &self.share_password)
+                        .on_input(Message::SharePasswordChanged)
+                        .secure(true)
+                        .padding(10)
+                        .width(280),
+                    Space::new().height(8),
+                    row![
+                        text(crate::i18n::t("include_private_keys")).size(13).color(OryxisColors::t().text_secondary),
+                        Space::new().width(Length::Fill),
+                        button(
+                            text(if share_include_keys { "ON" } else { "OFF" }).size(12)
+                        ).on_press(Message::ShareToggleKeys).style(move |_theme, _status| {
+                            button::Style {
+                                background: Some(Background::Color(if share_include_keys { OryxisColors::t().success } else { OryxisColors::t().bg_hover })),
+                                border: Border { radius: Radius::from(4.0), ..Default::default() },
+                                text_color: OryxisColors::t().text_primary,
+                                ..Default::default()
+                            }
+                        }),
+                    ].align_y(iced::Alignment::Center).width(280),
+                    Space::new().height(12),
+                    row![
+                        styled_button(crate::i18n::t("share"), Message::ShareConfirm, OryxisColors::t().accent),
+                        Space::new().width(8),
+                        styled_button(crate::i18n::t("cancel"), Message::ShareDismiss, OryxisColors::t().text_muted),
+                    ],
+                    if let Some(status) = &self.share_status {
+                        let (msg, color) = match status {
+                            Ok(m) => (m.as_str(), OryxisColors::t().success),
+                            Err(m) => (m.as_str(), OryxisColors::t().error),
+                        };
+                        Element::from(column![Space::new().height(8), text(msg).size(12).color(color)])
+                    } else {
+                        Element::from(Space::new().height(0))
+                    },
+                ]
+                .padding(24),
+            )
+            .style(|_| container::Style {
+                background: Some(Background::Color(OryxisColors::t().bg_surface)),
+                border: Border { radius: Radius::from(12.0), color: OryxisColors::t().border, width: 1.0 },
+                ..Default::default()
+            });
+
+            let backdrop: Element<'_, Message> = MouseArea::new(
+                container(Space::new()).width(Length::Fill).height(Length::Fill),
+            )
+            .on_press(Message::ShareDismiss)
+            .into();
+
+            let centered = container(dialog_content)
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .center_x(Length::Fill)
+                .center_y(Length::Fill);
+
+            return Stack::new()
+                .push(base)
+                .push(backdrop)
+                .push(centered)
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .into();
+        }
+
         if let Some(ref overlay) = self.overlay {
             let menu = self.render_overlay_menu(overlay);
 
@@ -2477,6 +2931,7 @@ impl Oryxis {
                     context_menu_item(iced_fonts::bootstrap::play_fill(), crate::i18n::t("connect"), Message::ConnectSsh(idx), OryxisColors::t().success),
                     context_menu_item(iced_fonts::bootstrap::pencil(), crate::i18n::t("edit"), Message::EditConnection(idx), OryxisColors::t().text_secondary),
                     context_menu_item(iced_fonts::bootstrap::copy(), crate::i18n::t("duplicate"), Message::DuplicateConnection(idx), OryxisColors::t().text_secondary),
+                    context_menu_item(iced_fonts::bootstrap::share(), crate::i18n::t("share"), Message::ShareConnection(idx), OryxisColors::t().text_secondary),
                     context_menu_item(iced_fonts::bootstrap::trash(), crate::i18n::t("remove"), Message::DeleteConnection(idx), OryxisColors::t().error),
                 ].into()
             }
@@ -4796,6 +5251,7 @@ impl Oryxis {
                 (crate::i18n::t("theme"), SettingsSection::Theme),
                 (crate::i18n::t("shortcuts"), SettingsSection::Shortcuts),
                 (crate::i18n::t("security"), SettingsSection::Security),
+                (crate::i18n::t("sync"), SettingsSection::Sync),
                 (crate::i18n::t("about"), SettingsSection::About),
             ];
             let mut col = column![
@@ -5298,6 +5754,101 @@ impl Oryxis {
                     }
                 });
 
+                // MCP Server section
+                let mcp_toggle = toggle_row(
+                    crate::i18n::t("enable_mcp_server"),
+                    self.mcp_server_enabled,
+                    Message::ToggleMcpServer,
+                );
+                let mcp_section = panel_section(column![
+                    text(crate::i18n::t("mcp_server")).size(14).color(OryxisColors::t().text_muted),
+                    Space::new().height(8),
+                    mcp_toggle,
+                    Space::new().height(4),
+                    text(crate::i18n::t("mcp_server_desc")).size(11).color(OryxisColors::t().text_muted),
+                ]);
+
+                // Export/Import section
+                let export_btn = styled_button(crate::i18n::t("export_vault"), Message::ExportVault, OryxisColors::t().accent);
+                let import_btn = styled_button(crate::i18n::t("import_vault"), Message::ImportVault, OryxisColors::t().text_muted);
+
+                let mut export_import_section: iced::widget::Column<'_, Message> = column![
+                    text(crate::i18n::t("export_import")).size(14).color(OryxisColors::t().text_muted),
+                    Space::new().height(8),
+                    row![export_btn, Space::new().width(8), import_btn],
+                ];
+
+                // Show export dialog inline
+                if self.show_export_dialog {
+                    let pw_input = text_input(crate::i18n::t("export_password"), &self.export_password)
+                        .on_input(Message::ExportPasswordChanged)
+                        .secure(true)
+                        .padding(10)
+                        .width(300);
+                    let keys_toggle = row![
+                        text(crate::i18n::t("include_private_keys")).size(13).color(OryxisColors::t().text_secondary),
+                        Space::new().width(Length::Fill),
+                        button(
+                            text(if self.export_include_keys { "ON" } else { "OFF" }).size(12)
+                        ).on_press(Message::ExportToggleKeys).style(move |_theme, _status| {
+                            button::Style {
+                                background: Some(Background::Color(if self.export_include_keys { OryxisColors::t().success } else { OryxisColors::t().bg_hover })),
+                                border: Border { radius: Radius::from(4.0), ..Default::default() },
+                                text_color: OryxisColors::t().text_primary,
+                                ..Default::default()
+                            }
+                        }),
+                    ].align_y(iced::Alignment::Center);
+                    let confirm_btn = styled_button(crate::i18n::t("export_confirm"), Message::ExportConfirm, OryxisColors::t().success);
+                    let cancel_btn = styled_button(crate::i18n::t("cancel"), Message::ExportImportDismiss, OryxisColors::t().text_muted);
+                    export_import_section = export_import_section
+                        .push(Space::new().height(12))
+                        .push(pw_input)
+                        .push(Space::new().height(8))
+                        .push(keys_toggle)
+                        .push(Space::new().height(8))
+                        .push(row![confirm_btn, Space::new().width(8), cancel_btn]);
+                }
+
+                // Show import dialog inline
+                if self.show_import_dialog {
+                    let pw_input = text_input(crate::i18n::t("import_password"), &self.import_password)
+                        .on_input(Message::ImportPasswordChanged)
+                        .on_submit(Message::ImportConfirm)
+                        .secure(true)
+                        .padding(10)
+                        .width(300);
+                    let confirm_btn = styled_button(crate::i18n::t("import_confirm"), Message::ImportConfirm, OryxisColors::t().success);
+                    let cancel_btn = styled_button(crate::i18n::t("cancel"), Message::ExportImportDismiss, OryxisColors::t().text_muted);
+                    export_import_section = export_import_section
+                        .push(Space::new().height(12))
+                        .push(text(crate::i18n::t("import_password_hint")).size(12).color(OryxisColors::t().text_muted))
+                        .push(Space::new().height(4))
+                        .push(pw_input)
+                        .push(Space::new().height(8))
+                        .push(row![confirm_btn, Space::new().width(8), cancel_btn]);
+                }
+
+                // Status messages
+                if let Some(status) = &self.export_status {
+                    let (msg, color) = match status {
+                        Ok(m) => (m.as_str(), OryxisColors::t().success),
+                        Err(m) => (m.as_str(), OryxisColors::t().error),
+                    };
+                    export_import_section = export_import_section
+                        .push(Space::new().height(8))
+                        .push(text(msg).size(12).color(color));
+                }
+                if let Some(status) = &self.import_status {
+                    let (msg, color) = match status {
+                        Ok(m) => (m.as_str(), OryxisColors::t().success),
+                        Err(m) => (m.as_str(), OryxisColors::t().error),
+                    };
+                    export_import_section = export_import_section
+                        .push(Space::new().height(8))
+                        .push(text(msg).size(12).color(color));
+                }
+
                 scrollable(
                     container(
                         column![
@@ -5307,6 +5858,160 @@ impl Oryxis {
                             password_section,
                             Space::new().height(24),
                             lock_btn,
+                            Space::new().height(24),
+                            mcp_section,
+                            Space::new().height(12),
+                            panel_section(export_import_section),
+                            Space::new().height(24),
+                        ]
+                        .width(Length::Fill),
+                    )
+                    .padding(Padding { top: 20.0, right: 24.0, bottom: 24.0, left: 24.0 }),
+                )
+                .height(Length::Fill)
+                .into()
+            }
+
+            SettingsSection::Sync => {
+                // Device info
+                let device_name_input = text_input(
+                    crate::i18n::t("sync_device_name_hint"),
+                    &self.sync_device_name,
+                )
+                .on_input(Message::SyncDeviceNameChanged)
+                .padding(10)
+                .width(300);
+
+                let device_section = panel_section(column![
+                    text(crate::i18n::t("sync_device")).size(14).color(OryxisColors::t().text_muted),
+                    Space::new().height(8),
+                    text(crate::i18n::t("sync_device_name")).size(12).color(OryxisColors::t().text_muted),
+                    Space::new().height(4),
+                    device_name_input,
+                ]);
+
+                // Sync toggle
+                let sync_toggle = toggle_row(
+                    crate::i18n::t("sync_enable"),
+                    self.sync_enabled,
+                    Message::SyncToggleEnabled,
+                );
+
+                let mode_label = if self.sync_mode == "auto" { "Auto" } else { "Manual" };
+                let mode_pick = pick_list(
+                    vec!["Auto".to_string(), "Manual".to_string()],
+                    Some(mode_label.to_string()),
+                    |v| Message::SyncModeChanged(v.to_lowercase()),
+                )
+                .text_size(13)
+                .padding(6);
+
+                let mut options_section: iced::widget::Column<'_, Message> = column![
+                    text(crate::i18n::t("sync_options")).size(14).color(OryxisColors::t().text_muted),
+                    Space::new().height(8),
+                    sync_toggle,
+                    Space::new().height(8),
+                    row![
+                        text(crate::i18n::t("sync_mode")).size(13).color(OryxisColors::t().text_secondary),
+                        Space::new().width(Length::Fill),
+                        mode_pick,
+                    ].align_y(iced::Alignment::Center),
+                ];
+
+                if self.sync_enabled && self.sync_mode == "manual" {
+                    let sync_btn = styled_button(crate::i18n::t("sync_now"), Message::SyncNow, OryxisColors::t().accent);
+                    options_section = options_section
+                        .push(Space::new().height(8))
+                        .push(sync_btn);
+                }
+
+                if let Some(status) = &self.sync_status {
+                    options_section = options_section
+                        .push(Space::new().height(8))
+                        .push(text(status.as_str()).size(12).color(OryxisColors::t().text_muted));
+                }
+
+                // Pairing
+                let pair_btn = styled_button(crate::i18n::t("sync_pair_device"), Message::SyncStartPairing, OryxisColors::t().accent);
+                let mut pairing_section: iced::widget::Column<'_, Message> = column![
+                    text(crate::i18n::t("sync_pairing")).size(14).color(OryxisColors::t().text_muted),
+                    Space::new().height(8),
+                    pair_btn,
+                ];
+
+                if let Some(code) = &self.sync_pairing_code {
+                    pairing_section = pairing_section
+                        .push(Space::new().height(8))
+                        .push(text(format!("{}: {}", crate::i18n::t("sync_pairing_code"), code)).size(18).color(OryxisColors::t().success));
+                }
+
+                // Paired devices list
+                if !self.sync_peers.is_empty() {
+                    pairing_section = pairing_section.push(Space::new().height(12));
+                    for peer in &self.sync_peers {
+                        let last_sync = peer.last_synced_at
+                            .map(|d| d.format("%Y-%m-%d %H:%M").to_string())
+                            .unwrap_or_else(|| crate::i18n::t("sync_never").into());
+                        let unpair = button(
+                            text(crate::i18n::t("sync_unpair")).size(11).color(OryxisColors::t().error)
+                        ).on_press(Message::SyncUnpairDevice(peer.peer_id)).style(|_, _| button::Style {
+                            background: Some(Background::Color(Color::TRANSPARENT)),
+                            ..Default::default()
+                        });
+                        pairing_section = pairing_section.push(
+                            row![
+                                text(&peer.device_name).size(13).color(OryxisColors::t().text_primary),
+                                Space::new().width(Length::Fill),
+                                text(last_sync).size(11).color(OryxisColors::t().text_muted),
+                                Space::new().width(8),
+                                unpair,
+                            ].align_y(iced::Alignment::Center),
+                        ).push(Space::new().height(4));
+                    }
+                }
+
+                // Advanced
+                let signaling_input = text_input("https://...", &self.sync_signaling_url)
+                    .on_input(Message::SyncSignalingUrlChanged)
+                    .padding(8)
+                    .width(300);
+                let relay_input = text_input(crate::i18n::t("sync_relay_optional"), &self.sync_relay_url)
+                    .on_input(Message::SyncRelayUrlChanged)
+                    .padding(8)
+                    .width(300);
+                let port_input = text_input("0", &self.sync_listen_port)
+                    .on_input(Message::SyncListenPortChanged)
+                    .padding(8)
+                    .width(100);
+
+                let advanced_section = panel_section(column![
+                    text(crate::i18n::t("sync_advanced")).size(14).color(OryxisColors::t().text_muted),
+                    Space::new().height(8),
+                    text(crate::i18n::t("sync_signaling_url")).size(12).color(OryxisColors::t().text_muted),
+                    Space::new().height(4),
+                    signaling_input,
+                    Space::new().height(8),
+                    text(crate::i18n::t("sync_relay_url")).size(12).color(OryxisColors::t().text_muted),
+                    Space::new().height(4),
+                    relay_input,
+                    Space::new().height(8),
+                    text(crate::i18n::t("sync_listen_port")).size(12).color(OryxisColors::t().text_muted),
+                    Space::new().height(4),
+                    port_input,
+                ]);
+
+                scrollable(
+                    container(
+                        column![
+                            text(crate::i18n::t("sync")).size(18).color(OryxisColors::t().text_primary),
+                            Space::new().height(16),
+                            device_section,
+                            Space::new().height(12),
+                            panel_section(options_section),
+                            Space::new().height(12),
+                            panel_section(pairing_section),
+                            Space::new().height(12),
+                            advanced_section,
                             Space::new().height(24),
                         ]
                         .width(Length::Fill),
@@ -5664,6 +6369,23 @@ impl Oryxis {
                 self.editor_form.jump_host.clone().unwrap_or_else(|| "(none)".into()),
                 Message::EditorJumpHostChanged,
             ),
+            panel_divider(),
+            row![
+                iced_fonts::bootstrap::plug().size(14).color(OryxisColors::t().text_muted),
+                Space::new().width(10),
+                text(crate::i18n::t("expose_to_mcp")).size(13).color(OryxisColors::t().text_secondary),
+                Space::new().width(Length::Fill),
+                button(
+                    text(if self.editor_form.mcp_enabled { "ON" } else { "OFF" }).size(12)
+                ).on_press(Message::EditorToggleMcpEnabled).style(move |_theme, _status| {
+                    button::Style {
+                        background: Some(Background::Color(if self.editor_form.mcp_enabled { OryxisColors::t().success } else { OryxisColors::t().bg_hover })),
+                        border: Border { radius: Radius::from(4.0), ..Default::default() },
+                        text_color: OryxisColors::t().text_primary,
+                        ..Default::default()
+                    }
+                }),
+            ].align_y(iced::Alignment::Center),
         ]);
 
         // ── Error ──

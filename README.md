@@ -106,6 +106,27 @@ Most SSH clients are either powerful but ugly (PuTTY), pretty but Electron-heavy
 - **Vault reset** — "Forgot password?" option to destroy and recreate vault.
 - **No telemetry** — No data leaves your machine.
 
+### Export / Import
+- **Single encrypted file** — Export your entire vault as a `.oryxis` file protected with a password.
+- **Selective export** — Choose whether to include SSH private keys or only host configurations.
+- **Smart merge** — Import merges by UUID, updating only records that are newer (LWW).
+
+### MCP Server
+- **AI integration** — Expose your SSH hosts to AI assistants (Claude Code, etc.) via the [Model Context Protocol](https://modelcontextprotocol.io/).
+- **5 tools** — `list_hosts`, `get_host`, `ssh_execute`, `list_groups`, `list_keys`.
+- **Per-host control** — Toggle MCP exposure per connection in the host editor.
+- **Disabled by default** — Enable in Settings > Security.
+- **Non-interactive SSH exec** — Execute commands and get stdout/stderr/exit_code without PTY.
+
+### P2P Sync
+- **Decentralized** — Sync vault data between devices over QUIC (quinn), no cloud dependency.
+- **LAN discovery** — Automatic peer discovery via mDNS on the local network.
+- **Internet discovery** — Lightweight signaling server (Cloudflare Workers) for NAT traversal with STUN.
+- **Pairing** — 6-digit code for initial device introduction, then Ed25519 key authentication.
+- **E2E encrypted** — Sync payloads encrypted with shared secret (X25519 + ChaCha20Poly1305).
+- **Auto or manual** — Configurable sync mode with adjustable interval.
+- **Optional relay** — User-configurable relay URL for symmetric NAT environments.
+
 ### UI / UX
 - **Native GPU-accelerated UI** — [Iced 0.14](https://iced.rs) (wgpu backend).
 - **Termius-inspired design** — Card grid, slide-in editors, sidebar navigation.
@@ -114,7 +135,7 @@ Most SSH clients are either powerful but ugly (PuTTY), pretty but Electron-heavy
 - **Empty states** — Centered onboarding screens.
 - **Multi-tab sessions** — SSH and local shell sessions in tabs.
 - **Snippets** — Save and execute commands with one click.
-- **Settings sidebar** — Terminal, AI, Theme, Shortcuts, Security, About sections.
+- **Settings sidebar** — Terminal, AI, Theme, Shortcuts, Security, Sync, About sections.
 
 ## Architecture
 
@@ -131,8 +152,13 @@ Most SSH clients are either powerful but ugly (PuTTY), pretty but Electron-heavy
 |  oryxis-ssh              |  oryxis-vault                      |
 |  (russh 0.60 + auto-auth |  (SQLite + Argon2id +              |
 |   + jump hosts + proxy    |   ChaCha20Poly1305 +               |
-|   + RSA-SHA2)             |   Identity + Session logs)         |
-+---------------------------------------------------------------+
+|   + RSA-SHA2 + exec)      |   Export/Import .oryxis)           |
++---------------------------+------------------------------------+
+|  oryxis-sync              |  oryxis-mcp                        |
+|  (quinn QUIC + mDNS +     |  (JSON-RPC 2.0 stdio,              |
+|   STUN + Ed25519/X25519   |   list/get/exec SSH hosts           |
+|   + LWW conflict)          |   for AI assistants)               |
++---------------------------+------------------------------------+
 |  oryxis-terminal          |  oryxis-core                       |
 |  (alacritty_terminal 0.26 |  (Connection, Key, Identity,       |
 |   + syntax highlight      |   Group, Snippet, KnownHost,       |
@@ -146,8 +172,9 @@ Most SSH clients are either powerful but ugly (PuTTY), pretty but Electron-heavy
 | `oryxis-core` | Shared types — Connection, SshKey, Identity, Group, Snippet, KnownHost, LogEntry |
 | `oryxis-terminal` | Terminal widget (alacritty + canvas + PTY + syntax highlight + 6 themes) |
 | `oryxis-ssh` | SSH engine — auto-auth, jump hosts, SOCKS/HTTP proxy, ProxyCommand, TOFU, RSA-SHA2 |
-| `oryxis-vault` | Encrypted vault — SQLite + Argon2id + ChaCha20Poly1305 + Identity + Session logs |
-| `oryxis-sync` | P2P sync engine — planned |
+| `oryxis-vault` | Encrypted vault — SQLite + Argon2id + ChaCha20Poly1305 + Identity + Session logs + Export/Import |
+| `oryxis-sync` | P2P sync engine — QUIC (quinn) + mDNS + STUN + signaling + Ed25519/X25519 + LWW conflict resolution |
+| `oryxis-mcp` | MCP server binary — JSON-RPC 2.0 over stdio, exposes SSH hosts to AI assistants |
 
 ## Tech Stack
 
@@ -158,6 +185,8 @@ Most SSH clients are either powerful but ugly (PuTTY), pretty but Electron-heavy
 | Terminal | alacritty_terminal 0.26 |
 | SSH | russh 0.60 (async, pure Rust, RSA-SHA2) |
 | AI | reqwest + Anthropic/OpenAI/Gemini APIs |
+| MCP | JSON-RPC 2.0 over stdio |
+| P2P Sync | quinn (QUIC), mDNS, STUN, Ed25519/X25519 |
 | Encryption | Argon2id + ChaCha20Poly1305 |
 | Storage | SQLite (rusqlite) |
 | Clipboard | arboard |
@@ -196,8 +225,54 @@ cargo test --workspace
 3. **Identities** — Create reusable credential bundles in the Keychain
 4. **Connect** — Click a host card to open an SSH session
 5. **AI Chat** — Enable in Settings > AI, click chat bubble in terminal to ask questions
-6. **Themes** — Switch in Settings (Oryxis Dark, Light, Dracula, Nord)
-7. **Language** — Change in Settings > Theme (9 languages available)
+6. **Export/Import** — Settings > Security to export vault or import from another device
+7. **MCP Server** — Enable in Settings > Security, configure in your AI client
+8. **P2P Sync** — Settings > Sync to pair devices and sync vault data
+9. **Themes** — Switch in Settings (Oryxis Dark, Light, Dracula, Nord)
+10. **Language** — Change in Settings > Theme (9 languages available)
+
+### MCP Server Setup
+
+The MCP server (`oryxis-mcp`) exposes your SSH hosts to AI assistants like Claude Code.
+
+1. Enable MCP in Settings > Security
+2. Add to your Claude Code config (`~/.claude.json`):
+
+```json
+{
+  "mcpServers": {
+    "oryxis": {
+      "command": "oryxis-mcp",
+      "env": {
+        "ORYXIS_VAULT_PASSWORD": "your-vault-password"
+      }
+    }
+  }
+}
+```
+
+If your vault has no password, omit the `env` field.
+
+### Signaling Server (for P2P Sync over the internet)
+
+P2P Sync uses a lightweight signaling server on Cloudflare Workers for device discovery over the internet. LAN sync works without it (via mDNS).
+
+To deploy your own signaling server:
+
+```bash
+cd signaling-worker
+npm install -g wrangler
+wrangler login
+wrangler kv namespace create SYNC_KV
+# Copy the ID from the output into wrangler.jsonc
+wrangler secret put SIGNALING_TOKEN
+# Enter your token (same value as ORYXIS_SIGNALING_TOKEN in .env)
+wrangler deploy
+```
+
+Then set your Worker URL in Settings > Sync > Advanced > Signaling Server.
+
+The signaling server only stores `device_id -> IP:port` with a 5-minute TTL. It never sees encryption keys or vault data. All requests require a Bearer token to prevent unauthorized access.
 
 ### Keyboard Shortcuts
 
@@ -219,14 +294,31 @@ cargo test --workspace
 - **Pure Rust** — No C dependencies in crypto path
 - **No telemetry** — No data leaves your machine
 - **AI keys encrypted** — API keys stored encrypted in vault
+- **Signed Windows binaries** — All `.exe` files are Authenticode-signed
+
+### Verifying Windows binaries
+
+Windows builds are signed with a self-signed certificate. You can verify the signature and fingerprint using PowerShell:
+
+```powershell
+(Get-AuthenticodeSignature oryxis.exe).SignerCertificate.Thumbprint
+```
+
+Expected certificate fingerprint (SHA-256):
+
+```
+E5:4E:EC:6E:21:D4:00:87:22:5A:4E:5B:CB:F2:79:6F:72:50:5C:04:F6:AE:83:8C:C9:46:9E:E0:2B:5D:7F:2F
+```
+
+The public certificate is available at [`resources/oryxis-signing.cer`](resources/oryxis-signing.cer).
 
 ## Roadmap
 
 | Version | Status | Scope |
 |---------|--------|-------|
 | **v0.1** | **Released** | SSH, vault, keys, identities, themes, i18n, AI chat, session recording |
-| **v0.2** | Planned | Port forwarding, SFTP, split panes |
-| **v0.3** | Planned | P2P sync (iroh), custom themes, biometric unlock |
+| **v0.2** | **In Progress** | Export/Import, MCP server, P2P sync, port forwarding |
+| **v0.3** | Planned | SFTP, split panes, custom themes, biometric unlock |
 
 ## Contributing
 

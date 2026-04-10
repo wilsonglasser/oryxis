@@ -1,0 +1,24 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "signaling",
+  "main": "worker.js",
+  "compatibility_date": "2025-02-04",
+  "observability": {
+    "enabled": true
+  },
+
+  // To deploy:
+  // 1. cp wrangler.jsonc.example wrangler.jsonc
+  // 2. wrangler login
+  // 3. Create a KV namespace in the CF dashboard or: wrangler kv namespace create SYNC_KV
+  // 4. Paste the ID below
+  // 5. wrangler deploy
+  // 6. wrangler secret put SIGNALING_TOKEN (enter same value as ORYXIS_SIGNALING_TOKEN in .env)
+
+  "kv_namespaces": [
+    {
+      "binding": "SYNC_KV",
+      "id": ""
+    }
+  ]
+}
