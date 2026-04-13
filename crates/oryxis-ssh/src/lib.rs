@@ -1,3 +1,3 @@
 pub mod engine;
 
-pub use engine::{ConnectionResolver, ExecResult, HostKeyCallback, SshEngine, SshError, SshHandle, SshSession};
+pub use engine::{ConnectionResolver, ExecResult, HostKeyAskSender, HostKeyCheckCallback, HostKeyQuery, HostKeyStatus, SshEngine, SshError, SshHandle, SshSession};

@@ -23,6 +23,7 @@ Section "Install"
     SetOutPath $INSTDIR
 
     File "..\target\release\oryxis.exe"
+    File "..\target\release\oryxis-mcp.exe"
     File "..\resources\logo.ico"
     File "..\README.md"
 
@@ -52,6 +53,7 @@ SectionEnd
 
 Section "Uninstall"
     Delete "$INSTDIR\oryxis.exe"
+    Delete "$INSTDIR\oryxis-mcp.exe"
     Delete "$INSTDIR\logo.ico"
     Delete "$INSTDIR\README.md"
     Delete "$INSTDIR\uninstall.exe"

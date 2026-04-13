@@ -445,10 +445,23 @@ where
                         return Some(CanvasAction::request_redraw().and_capture());
                     }
             }
-            // Mouse release — end selection
+            // Mouse release — end selection + auto-copy if setting enabled
             iced::Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Left)) => {
                 widget_state.selecting = false;
                 return Some(CanvasAction::capture());
+            }
+            // Right-click — paste from clipboard
+            iced::Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Right)) => {
+                if cursor.position_in(bounds).is_some() {
+                    if let Ok(mut clip) = arboard::Clipboard::new() {
+                        if let Ok(text) = clip.get_text() {
+                            if let Ok(mut state) = self.state.lock() {
+                                state.write(text.as_bytes());
+                            }
+                        }
+                    }
+                    return Some(CanvasAction::capture());
+                }
             }
             // Mouse wheel — scrollback
             iced::Event::Mouse(mouse::Event::WheelScrolled { delta }) => {
@@ -522,7 +535,10 @@ where
         bounds: Rectangle,
         _cursor: mouse::Cursor,
     ) -> Vec<Geometry> {
-        let mut state = self.state.lock().expect("terminal state lock poisoned");
+        let mut state = match self.state.lock() {
+            Ok(s) => s,
+            Err(poisoned) => poisoned.into_inner(),
+        };
 
         // Auto-resize
         let (new_cols, new_rows) = TerminalView::grid_size_for(bounds.width, bounds.height, self.font_size);
