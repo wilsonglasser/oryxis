@@ -45,13 +45,38 @@ pub enum SshError {
 // Client handler
 // ---------------------------------------------------------------------------
 
-/// Callback to verify/store host keys (TOFU).
-pub type HostKeyCallback = Arc<dyn Fn(&str, u16, &str, &str) -> bool + Send + Sync>;
+/// Result of checking a host key against known hosts.
+#[derive(Debug, Clone)]
+pub enum HostKeyStatus {
+    /// Host is known and fingerprint matches — accept silently.
+    Known,
+    /// Host is known but fingerprint CHANGED — potential MITM.
+    Changed { old_fingerprint: String },
+    /// Host is not known — need to ask the user.
+    Unknown,
+}
+
+/// Query about a host key that the UI must answer.
+#[derive(Debug, Clone)]
+pub struct HostKeyQuery {
+    pub hostname: String,
+    pub port: u16,
+    pub key_type: String,
+    pub fingerprint: String,
+    pub status: HostKeyStatus,
+}
+
+/// Sync callback that checks known hosts and returns the status.
+pub type HostKeyCheckCallback = Arc<dyn Fn(&str, u16, &str, &str) -> HostKeyStatus + Send + Sync>;
+
+/// Channel for asking the UI to verify a host key. The UI sends `true` (accept) or `false` (reject).
+pub type HostKeyAskSender = tokio::sync::mpsc::Sender<(HostKeyQuery, tokio::sync::oneshot::Sender<bool>)>;
 
 struct ClientHandler {
     hostname: String,
     port: u16,
-    host_key_cb: Option<HostKeyCallback>,
+    host_key_check: Option<HostKeyCheckCallback>,
+    host_key_ask_tx: Option<HostKeyAskSender>,
 }
 
 impl client::Handler for ClientHandler {
@@ -66,10 +91,34 @@ impl client::Handler for ClientHandler {
             self.hostname, self.port, key_type, fingerprint
         );
 
-        if let Some(ref cb) = self.host_key_cb {
-            Ok(cb(&self.hostname, self.port, &key_type, &fingerprint))
+        let status = if let Some(ref cb) = self.host_key_check {
+            cb(&self.hostname, self.port, &key_type, &fingerprint)
         } else {
-            Ok(true) // accept all if no callback
+            HostKeyStatus::Unknown
+        };
+
+        match status {
+            HostKeyStatus::Known => Ok(true),
+            HostKeyStatus::Changed { .. } | HostKeyStatus::Unknown => {
+                // Ask the UI
+                if let Some(ref tx) = self.host_key_ask_tx {
+                    let query = HostKeyQuery {
+                        hostname: self.hostname.clone(),
+                        port: self.port,
+                        key_type,
+                        fingerprint,
+                        status,
+                    };
+                    let (resp_tx, resp_rx) = tokio::sync::oneshot::channel();
+                    if tx.send((query, resp_tx)).await.is_err() {
+                        return Ok(false);
+                    }
+                    Ok(resp_rx.await.unwrap_or(false))
+                } else {
+                    // No UI channel — reject changed, accept unknown (legacy fallback)
+                    Ok(matches!(status, HostKeyStatus::Unknown))
+                }
+            }
         }
     }
 }
@@ -223,7 +272,8 @@ pub struct ConnectionResolver {
 }
 
 pub struct SshEngine {
-    host_key_cb: Option<HostKeyCallback>,
+    host_key_check: Option<HostKeyCheckCallback>,
+    host_key_ask_tx: Option<HostKeyAskSender>,
 }
 
 impl Default for SshEngine {
@@ -234,13 +284,18 @@ impl Default for SshEngine {
 
 impl SshEngine {
     pub fn new() -> Self {
-        Self { host_key_cb: None }
+        Self { host_key_check: None, host_key_ask_tx: None }
     }
 
-    /// Set a callback for host key verification (TOFU).
-    /// Callback receives (hostname, port, key_type, fingerprint) and returns true to accept.
-    pub fn with_host_key_cb(mut self, cb: HostKeyCallback) -> Self {
-        self.host_key_cb = Some(cb);
+    /// Set a sync callback that checks known hosts and returns the status.
+    pub fn with_host_key_check(mut self, cb: HostKeyCheckCallback) -> Self {
+        self.host_key_check = Some(cb);
+        self
+    }
+
+    /// Set a channel for asking the UI to verify unknown/changed host keys.
+    pub fn with_host_key_ask(mut self, tx: HostKeyAskSender) -> Self {
+        self.host_key_ask_tx = Some(tx);
         self
     }
 
@@ -248,7 +303,8 @@ impl SshEngine {
         ClientHandler {
             hostname: hostname.into(),
             port,
-            host_key_cb: self.host_key_cb.clone(),
+            host_key_check: self.host_key_check.clone(),
+            host_key_ask_tx: self.host_key_ask_tx.clone(),
         }
     }
 
@@ -1074,14 +1130,15 @@ mod tests {
     #[test]
     fn engine_new() {
         let engine = SshEngine::new();
-        assert!(engine.host_key_cb.is_none());
+        assert!(engine.host_key_check.is_none());
+        assert!(engine.host_key_ask_tx.is_none());
     }
 
     #[test]
     fn engine_with_callback() {
-        let cb: HostKeyCallback = Arc::new(|_h, _p, _t, _f| true);
-        let engine = SshEngine::new().with_host_key_cb(cb);
-        assert!(engine.host_key_cb.is_some());
+        let cb: HostKeyCheckCallback = Arc::new(|_h, _p, _t, _f| HostKeyStatus::Known);
+        let engine = SshEngine::new().with_host_key_check(cb);
+        assert!(engine.host_key_check.is_some());
     }
 
     /// Integration test: connect to a real SSH server.
@@ -1106,7 +1163,8 @@ mod tests {
         let handler = ClientHandler {
             hostname: "[REDACTED-IP]".into(),
             port: 22,
-            host_key_cb: Some(Arc::new(|_h, _p, _t, _f| true)),
+            host_key_check: Some(Arc::new(|_h, _p, _t, _f| HostKeyStatus::Known)),
+            host_key_ask_tx: None,
         };
         let mut handle = match client::connect(config, "[REDACTED-IP]:22", handler).await {
             Ok(h) => {

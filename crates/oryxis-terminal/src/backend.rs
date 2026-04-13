@@ -71,7 +71,12 @@ impl TerminalBackend {
 
     /// Feed raw bytes from PTY into the terminal emulator.
     pub fn process(&mut self, bytes: &[u8]) {
-        self.processor.advance(&mut self.term, bytes);
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            self.processor.advance(&mut self.term, bytes);
+        }));
+        if result.is_err() {
+            tracing::error!("Terminal processor panic on {} bytes (ignored)", bytes.len());
+        }
     }
 
     /// Resize the terminal grid.

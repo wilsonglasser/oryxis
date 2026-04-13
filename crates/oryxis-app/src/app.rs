@@ -173,6 +173,10 @@ pub struct Oryxis {
     active_tab: Option<usize>,
     connecting: Option<ConnectionProgress>,
 
+    // Host key verification dialog
+    pending_host_key: Option<oryxis_ssh::HostKeyQuery>,
+    host_key_response_tx: Option<tokio::sync::mpsc::Sender<bool>>,
+
     // Connection editor
     show_host_panel: bool,
     editor_form: ConnectionForm,
@@ -263,6 +267,9 @@ pub struct Oryxis {
 
     // MCP Server
     mcp_server_enabled: bool,
+    show_mcp_info: bool,
+    mcp_config_copied: bool,
+    mcp_install_status: Option<Result<String, String>>,
 
     // Sync
     sync_enabled: bool,
@@ -390,6 +397,10 @@ pub enum Message {
     SshNewKnownHosts(Vec<oryxis_core::models::known_host::KnownHost>),
     SshDisconnected(usize),
     SshError(String),
+    SshHostKeyVerify(oryxis_ssh::HostKeyQuery),
+    SshHostKeyReject,
+    SshHostKeyContinue,
+    SshHostKeyAcceptAndSave,
     SshCloseProgress,
     SshEditFromProgress,
     SshRetry,
@@ -502,6 +513,11 @@ pub enum Message {
     // MCP
     EditorToggleMcpEnabled,
     ToggleMcpServer,
+    ShowMcpInfo,
+    HideMcpInfo,
+    CopyMcpConfig,
+    InstallMcpConfig,
+    InstallMcpConfigResult(Result<String, String>),
 
     // Sync
     SyncToggleEnabled,
@@ -544,7 +560,9 @@ pub enum Message {
 enum SshStreamMsg {
     Progress(ConnectionStep, String), // (step, log message)
     Connected(Arc<SshSession>),
+    #[allow(dead_code)]
     NewKnownHosts(Vec<oryxis_core::models::known_host::KnownHost>),
+    HostKeyVerify(oryxis_ssh::HostKeyQuery),
     Data(Vec<u8>),
     Error(String),
     Disconnected,
@@ -616,6 +634,8 @@ impl Oryxis {
                 tabs: Vec::new(),
                 active_tab: None,
                 connecting: None,
+                pending_host_key: None,
+                host_key_response_tx: None,
                 show_host_panel: false,
                 editor_form: ConnectionForm::default(),
                 host_panel_error: None,
@@ -679,6 +699,9 @@ impl Oryxis {
                 chat_input: String::new(),
                 chat_loading: false,
                 mcp_server_enabled: false,
+                show_mcp_info: false,
+                mcp_config_copied: false,
+                mcp_install_status: None,
                 sync_enabled: false,
                 sync_mode: "manual".into(),
                 sync_device_name: String::new(),
@@ -974,7 +997,9 @@ impl Oryxis {
                 }
             }
             Message::KeyboardEvent(event) => {
+                // Only send keyboard input to PTY when the terminal is actually visible
                 if let Some(tab_idx) = self.active_tab
+                    && self.connecting.is_none()
                     && let keyboard::Event::KeyPressed {
                         key,
                         modifiers,
@@ -982,22 +1007,76 @@ impl Oryxis {
                         ..
                     } = event
                     {
-                        let bytes = key_to_named_bytes(&key, &modifiers).or_else(|| {
-                            if modifiers.control() {
-                                ctrl_key_bytes(&key)
+                        // Ctrl+V → paste from clipboard (not raw Ctrl+V byte)
+                        if modifiers.control() && !modifiers.shift() {
+                            if let keyboard::Key::Character(ref c) = key {
+                                if c.as_str().eq_ignore_ascii_case("v") {
+                                    if let Ok(mut clip) = arboard::Clipboard::new() {
+                                        if let Ok(text) = clip.get_text() {
+                                            if let Some(tab) = self.tabs.get(tab_idx) {
+                                                if let Some(ref ssh) = tab.ssh_session {
+                                                    let _ = ssh.write(text.as_bytes());
+                                                } else if let Ok(mut state) = tab.terminal.lock() {
+                                                    state.write(text.as_bytes());
+                                                }
+                                            }
+                                        }
+                                    }
+                                    // Don't fall through to the normal key handler
+                                } else if c.as_str().eq_ignore_ascii_case("c") {
+                                    // Ctrl+C → send interrupt (byte 3)
+                                    if let Some(tab) = self.tabs.get(tab_idx) {
+                                        if let Some(ref ssh) = tab.ssh_session {
+                                            let _ = ssh.write(&[3]);
+                                        } else if let Ok(mut state) = tab.terminal.lock() {
+                                            state.write(&[3]);
+                                        }
+                                    }
+                                } else {
+                                    // Other Ctrl+key combinations
+                                    if let Some(bytes) = ctrl_key_bytes(&key) {
+                                        if let Some(tab) = self.tabs.get(tab_idx) {
+                                            if let Some(ref ssh) = tab.ssh_session {
+                                                let _ = ssh.write(&bytes);
+                                            } else if let Ok(mut state) = tab.terminal.lock() {
+                                                state.write(&bytes);
+                                            }
+                                        }
+                                    }
+                                }
                             } else {
-                                text_opt.map(|t| t.as_bytes().to_vec())
-                            }
-                        });
-
-                        if let Some(bytes) = bytes
-                            && let Some(tab) = self.tabs.get(tab_idx) {
-                                if let Some(ref ssh) = tab.ssh_session {
-                                    let _ = ssh.write(&bytes);
-                                } else if let Ok(mut state) = tab.terminal.lock() {
-                                    state.write(&bytes);
+                                // Ctrl + named key (e.g. Ctrl+Home)
+                                if let Some(bytes) = key_to_named_bytes(&key, &modifiers) {
+                                    if let Some(tab) = self.tabs.get(tab_idx) {
+                                        if let Some(ref ssh) = tab.ssh_session {
+                                            let _ = ssh.write(&bytes);
+                                        } else if let Ok(mut state) = tab.terminal.lock() {
+                                            state.write(&bytes);
+                                        }
+                                    }
                                 }
                             }
+                        } else if modifiers.shift() && modifiers.control() {
+                            // Ctrl+Shift combinations handled by terminal widget (copy/paste)
+                            // Don't send to PTY
+                        } else {
+                            // Normal keys (no Ctrl)
+                            let bytes = key_to_named_bytes(&key, &modifiers).or_else(|| {
+                                text_opt.map(|t| t.as_bytes().to_vec())
+                            });
+
+                            if let Some(bytes) = bytes {
+                                if !bytes.is_empty() {
+                                    if let Some(tab) = self.tabs.get(tab_idx) {
+                                        if let Some(ref ssh) = tab.ssh_session {
+                                            let _ = ssh.write(&bytes);
+                                        } else if let Ok(mut state) = tab.terminal.lock() {
+                                            state.write(&bytes);
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
             }
             // -- Connection editor --
@@ -1313,25 +1392,28 @@ impl Oryxis {
                             });
                             self.active_tab = Some(tab_idx);
 
-                            // TOFU callback
+                            // Host key verification: check callback + ask channel
                             let known_hosts_snapshot: Arc<Mutex<Vec<oryxis_core::models::known_host::KnownHost>>> =
                                 Arc::new(Mutex::new(self.known_hosts.clone()));
-                            let new_hosts: Arc<Mutex<Vec<oryxis_core::models::known_host::KnownHost>>> =
-                                Arc::new(Mutex::new(Vec::new()));
                             let kh_ref = known_hosts_snapshot.clone();
-                            let new_ref = new_hosts.clone();
-                            let host_key_cb: oryxis_ssh::HostKeyCallback = Arc::new(move |host, port, key_type, fingerprint| {
+                            let host_key_check: oryxis_ssh::HostKeyCheckCallback = Arc::new(move |host, port, _key_type, fingerprint| {
                                 let hosts = kh_ref.lock().unwrap();
                                 if let Some(existing) = hosts.iter().find(|h| h.hostname == host && h.port == port) {
                                     if existing.fingerprint != fingerprint {
-                                        return false;
+                                        return oryxis_ssh::HostKeyStatus::Changed {
+                                            old_fingerprint: existing.fingerprint.clone(),
+                                        };
                                     }
-                                    return true;
+                                    return oryxis_ssh::HostKeyStatus::Known;
                                 }
-                                let kh = oryxis_core::models::known_host::KnownHost::new(host, port, key_type, fingerprint);
-                                new_ref.lock().unwrap().push(kh);
-                                true
+                                oryxis_ssh::HostKeyStatus::Unknown
                             });
+
+                            // Channel for the SSH engine to ask the UI about host keys
+                            let (hk_ask_tx, mut hk_ask_rx) = tokio::sync::mpsc::channel::<(oryxis_ssh::HostKeyQuery, tokio::sync::oneshot::Sender<bool>)>(1);
+                            // Channel for the UI to send responses back
+                            let (hk_resp_tx, mut hk_resp_rx) = tokio::sync::mpsc::channel::<bool>(1);
+                            self.host_key_response_tx = Some(hk_resp_tx);
 
                             let conn_host = conn.hostname.clone();
                             let conn_port = conn.port;
@@ -1346,7 +1428,22 @@ impl Oryxis {
                             let auth_method_label = format!("{:?}", conn.auth_method);
                             let stream = iced::stream::channel::<SshStreamMsg>(128, move |mut sender: iced::futures::channel::mpsc::Sender<SshStreamMsg>| {
                                 async move {
-                                    let engine = SshEngine::new().with_host_key_cb(host_key_cb);
+                                    let engine = SshEngine::new()
+                                        .with_host_key_check(host_key_check)
+                                        .with_host_key_ask(hk_ask_tx);
+
+                                    // Spawn a bridge task: receives host key queries from the SSH engine,
+                                    // forwards to iced stream, and waits for UI response
+                                    let mut sender_clone = sender.clone();
+                                    let _hk_bridge = tokio::spawn(async move {
+                                        while let Some((query, resp_tx)) = hk_ask_rx.recv().await {
+                                            // Send query to iced UI
+                                            let _ = sender_clone.send(SshStreamMsg::HostKeyVerify(query)).await;
+                                            // Wait for UI response
+                                            let accepted = hk_resp_rx.recv().await.unwrap_or(false);
+                                            let _ = resp_tx.send(accepted);
+                                        }
+                                    });
 
                                     // Step 1: TCP connection + SSH handshake + host key verification
                                     let _ = sender.send(SshStreamMsg::Progress(
@@ -1402,10 +1499,6 @@ impl Oryxis {
                                         Ok((session, mut rx)) => {
                                             let session = Arc::new(session);
                                             let _ = sender.send(SshStreamMsg::Connected(session.clone())).await;
-                                            let new_kh = new_hosts.lock().unwrap().drain(..).collect::<Vec<_>>();
-                                            if !new_kh.is_empty() {
-                                                let _ = sender.send(SshStreamMsg::NewKnownHosts(new_kh)).await;
-                                            }
                                             while let Some(data) = rx.recv().await {
                                                 if sender.send(SshStreamMsg::Data(data)).await.is_err() {
                                                     break;
@@ -1426,6 +1519,7 @@ impl Oryxis {
                                 SshStreamMsg::Progress(step, log) => Message::SshProgress(step, log),
                                 SshStreamMsg::Connected(session) => Message::SshConnected(tab_idx, session),
                                 SshStreamMsg::NewKnownHosts(hosts) => Message::SshNewKnownHosts(hosts),
+                                SshStreamMsg::HostKeyVerify(query) => Message::SshHostKeyVerify(query),
                                 SshStreamMsg::Data(data) => Message::PtyOutput(tab_idx, data),
                                 SshStreamMsg::Error(err) => Message::SshError(err),
                                 SshStreamMsg::Disconnected => Message::SshDisconnected(tab_idx),
@@ -1449,6 +1543,36 @@ impl Oryxis {
                         let _ = vault.save_known_host(kh);
                     }
                     self.known_hosts = vault.list_known_hosts().unwrap_or_default();
+                }
+            }
+            Message::SshHostKeyVerify(query) => {
+                self.pending_host_key = Some(query);
+            }
+            Message::SshHostKeyReject => {
+                self.pending_host_key = None;
+                if let Some(ref tx) = self.host_key_response_tx {
+                    let _ = tx.try_send(false);
+                }
+            }
+            Message::SshHostKeyContinue => {
+                // Accept for this session but don't save to known hosts
+                self.pending_host_key = None;
+                if let Some(ref tx) = self.host_key_response_tx {
+                    let _ = tx.try_send(true);
+                }
+            }
+            Message::SshHostKeyAcceptAndSave => {
+                // Accept and save to known hosts
+                if let (Some(query), Some(vault)) = (&self.pending_host_key, &self.vault) {
+                    let kh = oryxis_core::models::known_host::KnownHost::new(
+                        &query.hostname, query.port, &query.key_type, &query.fingerprint,
+                    );
+                    let _ = vault.save_known_host(&kh);
+                    self.known_hosts = vault.list_known_hosts().unwrap_or_default();
+                }
+                self.pending_host_key = None;
+                if let Some(ref tx) = self.host_key_response_tx {
+                    let _ = tx.try_send(true);
                 }
             }
             Message::SshConnected(tab_idx, session) => {
@@ -2463,6 +2587,28 @@ impl Oryxis {
                 if let Some(vault) = &self.vault {
                     let _ = vault.set_setting("mcp_server_enabled", if self.mcp_server_enabled { "true" } else { "false" });
                 }
+            }
+            Message::ShowMcpInfo => {
+                self.show_mcp_info = true;
+                self.mcp_config_copied = false;
+            }
+            Message::HideMcpInfo => {
+                self.show_mcp_info = false;
+                self.mcp_config_copied = false;
+            }
+            Message::CopyMcpConfig => {
+                self.mcp_config_copied = true;
+                return iced::clipboard::write(mcp_config_json());
+            }
+            Message::InstallMcpConfig => {
+                self.mcp_install_status = None;
+                return Task::perform(
+                    async { install_mcp_config_to_file() },
+                    Message::InstallMcpConfigResult,
+                );
+            }
+            Message::InstallMcpConfigResult(result) => {
+                self.mcp_install_status = Some(result);
             }
 
             // ── Sync ──
@@ -3637,108 +3783,213 @@ impl Oryxis {
         .width(Length::Fill)
         .center_x(Length::Fill);
 
-        // Status text
-        let status_text = if failed {
-            "Connection failed with connection log:"
-        } else {
-            "Connecting..."
-        };
-        let status_color = if failed { OryxisColors::t().error } else { OryxisColors::t().text_secondary };
+        // Host key verification or normal status
+        let (status_widget, body_widget, bottom): (
+            Element<'_, Message>,
+            Element<'_, Message>,
+            Element<'_, Message>,
+        ) = if let Some(ref query) = self.pending_host_key {
+            let is_changed = matches!(query.status, oryxis_ssh::HostKeyStatus::Changed { .. });
 
-        // Log entries
-        let mut log_items: Vec<Element<'_, Message>> = Vec::new();
-        for (step, msg) in &progress.logs {
-            let icon_color = if msg.starts_with("Error") {
-                OryxisColors::t().error
+            let question_text = if is_changed {
+                crate::i18n::t("hk_warning_title")
             } else {
-                match step {
-                    ConnectionStep::Connecting => OryxisColors::t().text_muted,
-                    ConnectionStep::Handshake => OryxisColors::t().accent,
-                    ConnectionStep::Authenticating => OryxisColors::t().warning,
+                crate::i18n::t("hk_unknown_title")
+            };
+            let question_color = if is_changed { OryxisColors::t().error } else { OryxisColors::t().warning };
+
+            let status: Element<'_, Message> = text(question_text).size(14).color(question_color).into();
+
+            let mut body_col = column![];
+
+            if is_changed {
+                body_col = body_col
+                    .push(Space::new().height(8))
+                    .push(text(crate::i18n::t("hk_warning_desc")).size(13).color(OryxisColors::t().error))
+                    .push(Space::new().height(12));
+                if let oryxis_ssh::HostKeyStatus::Changed { ref old_fingerprint } = query.status {
+                    body_col = body_col
+                        .push(text(format!("{} {}", crate::i18n::t("hk_old_fingerprint"), old_fingerprint)).size(12).color(OryxisColors::t().text_muted))
+                        .push(Space::new().height(8));
                 }
-            };
-
-            let icon = if msg.starts_with("Error") {
-                iced_fonts::bootstrap::exclamation_circle()
             } else {
-                iced_fonts::bootstrap::gear()
-            };
+                body_col = body_col
+                    .push(Space::new().height(8))
+                    .push(text(format!(
+                        "The authenticity of {} can not be established.",
+                        query.hostname,
+                    )).size(13).color(OryxisColors::t().text_secondary))
+                    .push(Space::new().height(12));
+            }
 
-            log_items.push(
-                row![
-                    icon.size(12).color(icon_color),
-                    Space::new().width(10),
-                    text(msg).size(13).color(OryxisColors::t().text_secondary),
-                ]
-                .align_y(iced::Alignment::Start)
-                .into(),
-            );
-            log_items.push(Space::new().height(6).into());
-        }
+            body_col = body_col
+                .push(text(format!("{} fingerprint is SHA256:", query.key_type)).size(13).color(OryxisColors::t().text_secondary))
+                .push(Space::new().height(8))
+                .push(text(&query.fingerprint).size(14).color(OryxisColors::t().text_primary))
+                .push(Space::new().height(16))
+                .push(text(crate::i18n::t("hk_add_question")).size(13).color(OryxisColors::t().text_secondary));
 
-        let log_list = scrollable(
-            column(log_items).padding(Padding { top: 8.0, right: 16.0, bottom: 8.0, left: 16.0 }),
-        )
-        .height(Length::Fill);
+            let body: Element<'_, Message> = container(body_col)
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .padding(Padding { top: 8.0, right: 16.0, bottom: 8.0, left: 16.0 })
+                .style(|_| container::Style {
+                    background: Some(Background::Color(OryxisColors::t().bg_sidebar)),
+                    border: Border { radius: Radius::from(10.0), ..Default::default() },
+                    ..Default::default()
+                })
+                .into();
 
-        let log_container = container(log_list)
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .style(|_| container::Style {
-                background: Some(Background::Color(OryxisColors::t().bg_sidebar)),
-                border: Border { radius: Radius::from(10.0), ..Default::default() },
+            let close_btn = button(
+                container(text(crate::i18n::t("close")).size(13).color(OryxisColors::t().text_primary))
+                    .padding(Padding { top: 10.0, right: 24.0, bottom: 10.0, left: 24.0 }),
+            )
+            .on_press(Message::SshHostKeyReject)
+            .style(|_, _| button::Style {
+                background: Some(Background::Color(OryxisColors::t().bg_surface)),
+                border: Border { radius: Radius::from(8.0), ..Default::default() },
                 ..Default::default()
             });
 
-        // Bottom buttons
-        let bottom: Element<'_, Message> = if failed {
-            row![
-                button(
-                    container(text(crate::i18n::t("close")).size(13).color(OryxisColors::t().text_primary))
-                        .padding(Padding { top: 10.0, right: 24.0, bottom: 10.0, left: 24.0 }),
-                )
-                .on_press(Message::SshCloseProgress)
-                .style(|_, _| button::Style {
-                    background: Some(Background::Color(OryxisColors::t().bg_surface)),
-                    border: Border { radius: Radius::from(8.0), ..Default::default() },
-                    ..Default::default()
-                }),
-                Space::new().width(8),
-                button(
-                    container(text(crate::i18n::t("edit_host")).size(13).color(OryxisColors::t().text_primary))
-                        .padding(Padding { top: 10.0, right: 24.0, bottom: 10.0, left: 24.0 }),
-                )
-                .on_press(Message::SshEditFromProgress)
-                .style(|_, _| button::Style {
-                    background: Some(Background::Color(OryxisColors::t().bg_surface)),
-                    border: Border { radius: Radius::from(8.0), ..Default::default() },
-                    ..Default::default()
-                }),
+            let continue_btn = button(
+                container(text(crate::i18n::t("hk_continue")).size(13).color(OryxisColors::t().text_primary))
+                    .padding(Padding { top: 10.0, right: 24.0, bottom: 10.0, left: 24.0 }),
+            )
+            .on_press(Message::SshHostKeyContinue)
+            .style(|_, _| button::Style {
+                background: Some(Background::Color(OryxisColors::t().bg_surface)),
+                border: Border { radius: Radius::from(8.0), color: OryxisColors::t().border, width: 1.0 },
+                ..Default::default()
+            });
+
+            let accept_btn = button(
+                container(text(crate::i18n::t("hk_add_and_continue")).size(13).color(OryxisColors::t().text_primary))
+                    .padding(Padding { top: 10.0, right: 24.0, bottom: 10.0, left: 24.0 }),
+            )
+            .on_press(Message::SshHostKeyAcceptAndSave)
+            .style(|_, _| button::Style {
+                background: Some(Background::Color(OryxisColors::t().success)),
+                border: Border { radius: Radius::from(8.0), ..Default::default() },
+                ..Default::default()
+            });
+
+            let btm: Element<'_, Message> = row![
+                close_btn,
+                Space::new().width(12),
+                continue_btn,
                 Space::new().width(Length::Fill),
-                button(
-                    container(text("Start over").size(13).color(OryxisColors::t().text_primary))
-                        .padding(Padding { top: 10.0, right: 24.0, bottom: 10.0, left: 24.0 }),
-                )
-                .on_press(Message::SshRetry)
-                .style(|_, _| button::Style {
-                    background: Some(Background::Color(OryxisColors::t().success)),
-                    border: Border { radius: Radius::from(8.0), ..Default::default() },
-                    ..Default::default()
-                }),
-            ]
-            .align_y(iced::Alignment::Center)
-            .into()
+                accept_btn,
+            ].align_y(iced::Alignment::Center).into();
+
+            (status, body, btm)
         } else {
-            Space::new().height(0).into()
+            // Normal connection progress
+            let status_text = if failed {
+                "Connection failed with connection log:"
+            } else {
+                "Connecting..."
+            };
+            let status_color = if failed { OryxisColors::t().error } else { OryxisColors::t().text_secondary };
+            let status: Element<'_, Message> = text(status_text).size(14).color(status_color).into();
+
+            // Log entries
+            let mut log_items: Vec<Element<'_, Message>> = Vec::new();
+            for (step, msg) in &progress.logs {
+                let icon_color = if msg.starts_with("Error") {
+                    OryxisColors::t().error
+                } else {
+                    match step {
+                        ConnectionStep::Connecting => OryxisColors::t().text_muted,
+                        ConnectionStep::Handshake => OryxisColors::t().accent,
+                        ConnectionStep::Authenticating => OryxisColors::t().warning,
+                    }
+                };
+
+                let icon = if msg.starts_with("Error") {
+                    iced_fonts::bootstrap::exclamation_circle()
+                } else {
+                    iced_fonts::bootstrap::gear()
+                };
+
+                log_items.push(
+                    row![
+                        icon.size(12).color(icon_color),
+                        Space::new().width(10),
+                        text(msg).size(13).color(OryxisColors::t().text_secondary),
+                    ]
+                    .align_y(iced::Alignment::Start)
+                    .into(),
+                );
+                log_items.push(Space::new().height(6).into());
+            }
+
+            let log_list = scrollable(
+                column(log_items).padding(Padding { top: 8.0, right: 16.0, bottom: 8.0, left: 16.0 }),
+            )
+            .height(Length::Fill);
+
+            let body: Element<'_, Message> = container(log_list)
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .style(|_| container::Style {
+                    background: Some(Background::Color(OryxisColors::t().bg_sidebar)),
+                    border: Border { radius: Radius::from(10.0), ..Default::default() },
+                    ..Default::default()
+                })
+                .into();
+
+            // Bottom buttons
+            let btm: Element<'_, Message> = if failed {
+                row![
+                    button(
+                        container(text(crate::i18n::t("close")).size(13).color(OryxisColors::t().text_primary))
+                            .padding(Padding { top: 10.0, right: 24.0, bottom: 10.0, left: 24.0 }),
+                    )
+                    .on_press(Message::SshCloseProgress)
+                    .style(|_, _| button::Style {
+                        background: Some(Background::Color(OryxisColors::t().bg_surface)),
+                        border: Border { radius: Radius::from(8.0), ..Default::default() },
+                        ..Default::default()
+                    }),
+                    Space::new().width(8),
+                    button(
+                        container(text(crate::i18n::t("edit_host")).size(13).color(OryxisColors::t().text_primary))
+                            .padding(Padding { top: 10.0, right: 24.0, bottom: 10.0, left: 24.0 }),
+                    )
+                    .on_press(Message::SshEditFromProgress)
+                    .style(|_, _| button::Style {
+                        background: Some(Background::Color(OryxisColors::t().bg_surface)),
+                        border: Border { radius: Radius::from(8.0), ..Default::default() },
+                        ..Default::default()
+                    }),
+                    Space::new().width(Length::Fill),
+                    button(
+                        container(text("Start over").size(13).color(OryxisColors::t().text_primary))
+                            .padding(Padding { top: 10.0, right: 24.0, bottom: 10.0, left: 24.0 }),
+                    )
+                    .on_press(Message::SshRetry)
+                    .style(|_, _| button::Style {
+                        background: Some(Background::Color(OryxisColors::t().success)),
+                        border: Border { radius: Radius::from(8.0), ..Default::default() },
+                        ..Default::default()
+                    }),
+                ]
+                .align_y(iced::Alignment::Center)
+                .into()
+            } else {
+                Space::new().height(0).into()
+            };
+
+            (status, body, btm)
         };
 
         container(
             column![
                 header,
                 progress_bar,
-                text(status_text).size(14).color(status_color),
+                status_widget,
                 Space::new().height(12),
-                log_container,
+                body_widget,
                 Space::new().height(12),
                 bottom,
             ]
@@ -5841,13 +6092,39 @@ impl Oryxis {
                     self.mcp_server_enabled,
                     Message::ToggleMcpServer,
                 );
-                let mcp_section = panel_section(column![
+                let mcp_guide_btn = button(
+                    container(text(crate::i18n::t("mcp_setup_guide")).size(12).color(OryxisColors::t().accent))
+                        .padding(Padding { top: 6.0, right: 16.0, bottom: 6.0, left: 16.0 }),
+                )
+                .on_press(if self.show_mcp_info { Message::HideMcpInfo } else { Message::ShowMcpInfo })
+                .style(|_, status| {
+                    let bg = match status {
+                        BtnStatus::Hovered => Color { a: 0.1, ..OryxisColors::t().accent },
+                        _ => Color::TRANSPARENT,
+                    };
+                    button::Style {
+                        background: Some(Background::Color(bg)),
+                        border: Border { radius: Radius::from(6.0), color: OryxisColors::t().accent, width: 1.0 },
+                        ..Default::default()
+                    }
+                });
+                let mut mcp_col = column![
                     text(crate::i18n::t("mcp_server")).size(14).color(OryxisColors::t().text_muted),
                     Space::new().height(8),
                     mcp_toggle,
                     Space::new().height(4),
-                    text(crate::i18n::t("mcp_server_desc")).size(11).color(OryxisColors::t().text_muted),
-                ]);
+                    row![
+                        text(crate::i18n::t("mcp_server_desc")).size(11).color(OryxisColors::t().text_muted),
+                        Space::new().width(Length::Fill),
+                        mcp_guide_btn,
+                    ].align_y(iced::Alignment::Center),
+                ];
+                if self.show_mcp_info {
+                    mcp_col = mcp_col
+                        .push(Space::new().height(12))
+                        .push(mcp_info_panel(self.mcp_config_copied, &self.mcp_install_status));
+                }
+                let mcp_section = panel_section(mcp_col);
 
                 // Export/Import section
                 let export_btn = styled_button(crate::i18n::t("export_vault"), Message::ExportVault, OryxisColors::t().accent);
@@ -6923,4 +7200,227 @@ fn ctrl_key_bytes(key: &keyboard::Key) -> Option<Vec<u8>> {
     } else {
         None
     }
+}
+
+// ---------------------------------------------------------------------------
+// MCP Setup helpers
+// ---------------------------------------------------------------------------
+
+/// Binary command for each platform.
+fn mcp_binary_command() -> &'static str {
+    if cfg!(target_os = "windows") {
+        "C:\\\\Program Files\\\\Oryxis\\\\oryxis-mcp.exe"
+    } else if cfg!(target_os = "macos") {
+        "/Applications/Oryxis.app/Contents/MacOS/oryxis-mcp"
+    } else {
+        "/usr/local/bin/oryxis-mcp"
+    }
+}
+
+/// WSL command for Windows users whose AI client runs inside WSL.
+fn mcp_wsl_command() -> &'static str {
+    "/mnt/c/Program Files/Oryxis/oryxis-mcp.exe"
+}
+
+/// Config file path hint per platform.
+fn mcp_config_path() -> &'static str {
+    if cfg!(target_os = "windows") {
+        "%APPDATA%\\Claude\\claude_desktop_config.json  or  ~/.claude/settings.json (WSL)"
+    } else if cfg!(target_os = "macos") {
+        "~/Library/Application Support/Claude/claude_desktop_config.json  or  ~/.claude/settings.json"
+    } else {
+        "~/.claude/settings.json"
+    }
+}
+
+/// The JSON snippet users need to copy.
+fn mcp_config_json() -> String {
+    let cmd = mcp_binary_command();
+    format!(
+        "{{\n  \"mcpServers\": {{\n    \"oryxis\": {{\n      \"command\": \"{cmd}\"\n    }}\n  }}\n}}"
+    )
+}
+
+/// Write/merge the oryxis MCP entry into ~/.claude/.mcp.json.
+fn install_mcp_config_to_file() -> Result<String, String> {
+    let home_str = if cfg!(target_os = "windows") {
+        std::env::var("USERPROFILE").map_err(|_| "USERPROFILE not set")?
+    } else {
+        std::env::var("HOME").map_err(|_| "HOME not set")?
+    };
+    let home = std::path::PathBuf::from(home_str);
+    let claude_dir = home.join(".claude");
+    let mcp_path = claude_dir.join(".mcp.json");
+
+    // Ensure ~/.claude/ exists
+    std::fs::create_dir_all(&claude_dir)
+        .map_err(|e| format!("Failed to create ~/.claude/: {e}"))?;
+
+    // Read existing or start fresh
+    let mut root: serde_json::Map<String, serde_json::Value> = if mcp_path.exists() {
+        let content = std::fs::read_to_string(&mcp_path)
+            .map_err(|e| format!("Failed to read {}: {e}", mcp_path.display()))?;
+        serde_json::from_str(&content)
+            .map_err(|e| format!("Failed to parse {}: {e}", mcp_path.display()))?
+    } else {
+        serde_json::Map::new()
+    };
+
+    // Ensure mcpServers object exists
+    let servers = root
+        .entry("mcpServers")
+        .or_insert_with(|| serde_json::json!({}));
+    let servers_map = servers
+        .as_object_mut()
+        .ok_or("mcpServers is not an object")?;
+
+    // Set / overwrite the oryxis entry
+    let cmd = mcp_binary_command();
+    servers_map.insert(
+        "oryxis".to_string(),
+        serde_json::json!({ "command": cmd }),
+    );
+
+    // Write back with pretty formatting
+    let output = serde_json::to_string_pretty(&root)
+        .map_err(|e| format!("Failed to serialize: {e}"))?;
+    std::fs::write(&mcp_path, &output)
+        .map_err(|e| format!("Failed to write {}: {e}", mcp_path.display()))?;
+
+    Ok(mcp_path.display().to_string())
+}
+
+/// Monospaced code block widget.
+fn code_block<'a>(content: &str) -> Element<'a, Message> {
+    container(
+        text(content.to_owned()).size(12).color(OryxisColors::t().text_primary),
+    )
+    .padding(12)
+    .width(Length::Fill)
+    .style(|_| container::Style {
+        background: Some(Background::Color(OryxisColors::t().bg_primary)),
+        border: Border { radius: Radius::from(6.0), color: OryxisColors::t().border, width: 1.0 },
+        ..Default::default()
+    })
+    .into()
+}
+
+/// The expandable MCP info panel shown inside the Security settings.
+fn mcp_info_panel(copied: bool, install_status: &Option<Result<String, String>>) -> Element<'_, Message> {
+    let json_text = mcp_config_json();
+
+    let copy_label = if copied {
+        crate::i18n::t("mcp_copied")
+    } else {
+        crate::i18n::t("mcp_info_copy")
+    };
+    let copy_color = if copied { OryxisColors::t().success } else { OryxisColors::t().accent };
+
+    let copy_btn = button(
+        container(text(copy_label).size(12).color(copy_color))
+            .padding(Padding { top: 6.0, right: 16.0, bottom: 6.0, left: 16.0 }),
+    )
+    .on_press(Message::CopyMcpConfig)
+    .style(move |_, status| {
+        let bg = match status {
+            BtnStatus::Hovered => Color { a: 0.1, ..copy_color },
+            _ => Color::TRANSPARENT,
+        };
+        button::Style {
+            background: Some(Background::Color(bg)),
+            border: Border { radius: Radius::from(6.0), color: copy_color, width: 1.0 },
+            ..Default::default()
+        }
+    });
+
+    // Install to ~/.claude/.mcp.json button
+    let (install_label, install_color) = match install_status {
+        Some(Ok(_)) => (crate::i18n::t("mcp_installed"), OryxisColors::t().success),
+        Some(Err(_)) => (crate::i18n::t("mcp_install_failed"), OryxisColors::t().error),
+        None => (crate::i18n::t("mcp_install_claude"), OryxisColors::t().success),
+    };
+    let install_btn = button(
+        container(text(install_label).size(12).color(install_color))
+            .padding(Padding { top: 6.0, right: 16.0, bottom: 6.0, left: 16.0 }),
+    )
+    .on_press(Message::InstallMcpConfig)
+    .style(move |_, status| {
+        let bg = match status {
+            BtnStatus::Hovered => Color { a: 0.1, ..install_color },
+            _ => Color::TRANSPARENT,
+        };
+        button::Style {
+            background: Some(Background::Color(bg)),
+            border: Border { radius: Radius::from(6.0), color: install_color, width: 1.0 },
+            ..Default::default()
+        }
+    });
+
+    let close_btn = button(
+        container(text(crate::i18n::t("mcp_info_close")).size(12).color(OryxisColors::t().text_muted))
+            .padding(Padding { top: 6.0, right: 16.0, bottom: 6.0, left: 16.0 }),
+    )
+    .on_press(Message::HideMcpInfo)
+    .style(|_, status| {
+        let bg = match status {
+            BtnStatus::Hovered => OryxisColors::t().bg_hover,
+            _ => Color::TRANSPARENT,
+        };
+        button::Style {
+            background: Some(Background::Color(bg)),
+            border: Border { radius: Radius::from(6.0), color: OryxisColors::t().border, width: 1.0 },
+            ..Default::default()
+        }
+    });
+
+    let mut info_col = column![
+        text(crate::i18n::t("mcp_info_title")).size(14).color(OryxisColors::t().text_primary),
+        Space::new().height(8),
+        text(crate::i18n::t("mcp_info_desc")).size(12).color(OryxisColors::t().text_secondary),
+        Space::new().height(8),
+        code_block(&json_text),
+        Space::new().height(8),
+        text(format!("{} {}", crate::i18n::t("mcp_info_path_label"), mcp_config_path()))
+            .size(11).color(OryxisColors::t().text_muted),
+    ];
+
+    // On Windows, show the WSL note
+    if cfg!(target_os = "windows") {
+        let wsl_json = format!(
+            "{{\n  \"mcpServers\": {{\n    \"oryxis\": {{\n      \"command\": \"{}\"\n    }}\n  }}\n}}",
+            mcp_wsl_command()
+        );
+        info_col = info_col
+            .push(Space::new().height(12))
+            .push(text(crate::i18n::t("mcp_info_note_wsl")).size(12).color(OryxisColors::t().warning))
+            .push(Space::new().height(4))
+            .push(code_block(&wsl_json));
+    }
+
+    // Install status feedback
+    if let Some(Err(e)) = install_status {
+        info_col = info_col
+            .push(Space::new().height(4))
+            .push(text(e.clone()).size(11).color(OryxisColors::t().error));
+    } else if let Some(Ok(path)) = install_status {
+        info_col = info_col
+            .push(Space::new().height(4))
+            .push(text(format!("{} {path}", crate::i18n::t("mcp_installed_to"))).size(11).color(OryxisColors::t().success));
+    }
+
+    info_col = info_col
+        .push(Space::new().height(8))
+        .push(text(crate::i18n::t("mcp_info_vault_password_note")).size(11).color(OryxisColors::t().text_muted))
+        .push(Space::new().height(12))
+        .push(row![install_btn, Space::new().width(8), copy_btn, Space::new().width(8), close_btn]);
+
+    container(info_col)
+        .padding(16)
+        .width(Length::Fill)
+        .style(|_| container::Style {
+            background: Some(Background::Color(OryxisColors::t().bg_surface)),
+            border: Border { radius: Radius::from(8.0), color: OryxisColors::t().accent, width: 1.0 },
+            ..Default::default()
+        })
+        .into()
 }
