@@ -27,7 +27,13 @@
 
 ## Download
 
-Pre-built binaries are available on the [Releases](https://github.com/wilsonglasser/oryxis/releases/latest) page:
+**Windows (winget):**
+
+```powershell
+winget install WilsonGlasser.Oryxis
+```
+
+Pre-built binaries are also available on the [Releases](https://github.com/wilsonglasser/oryxis/releases/latest) page:
 
 | Platform | Architecture | Download |
 |----------|-------------|----------|
