@@ -1011,15 +1011,14 @@ impl Oryxis {
                         if modifiers.control() && !modifiers.shift() {
                             if let keyboard::Key::Character(ref c) = key {
                                 if c.as_str().eq_ignore_ascii_case("v") {
-                                    if let Ok(mut clip) = arboard::Clipboard::new() {
-                                        if let Ok(text) = clip.get_text() {
-                                            if let Some(tab) = self.tabs.get(tab_idx) {
-                                                if let Some(ref ssh) = tab.ssh_session {
-                                                    let _ = ssh.write(text.as_bytes());
-                                                } else if let Ok(mut state) = tab.terminal.lock() {
-                                                    state.write(text.as_bytes());
-                                                }
-                                            }
+                                    if let Ok(mut clip) = arboard::Clipboard::new()
+                                        && let Ok(text) = clip.get_text()
+                                        && let Some(tab) = self.tabs.get(tab_idx)
+                                    {
+                                        if let Some(ref ssh) = tab.ssh_session {
+                                            let _ = ssh.write(text.as_bytes());
+                                        } else if let Ok(mut state) = tab.terminal.lock() {
+                                            state.write(text.as_bytes());
                                         }
                                     }
                                     // Don't fall through to the normal key handler
@@ -1032,27 +1031,23 @@ impl Oryxis {
                                             state.write(&[3]);
                                         }
                                     }
-                                } else {
+                                } else if let Some(bytes) = ctrl_key_bytes(&key) {
                                     // Other Ctrl+key combinations
-                                    if let Some(bytes) = ctrl_key_bytes(&key) {
-                                        if let Some(tab) = self.tabs.get(tab_idx) {
-                                            if let Some(ref ssh) = tab.ssh_session {
-                                                let _ = ssh.write(&bytes);
-                                            } else if let Ok(mut state) = tab.terminal.lock() {
-                                                state.write(&bytes);
-                                            }
-                                        }
-                                    }
-                                }
-                            } else {
-                                // Ctrl + named key (e.g. Ctrl+Home)
-                                if let Some(bytes) = key_to_named_bytes(&key, &modifiers) {
                                     if let Some(tab) = self.tabs.get(tab_idx) {
                                         if let Some(ref ssh) = tab.ssh_session {
                                             let _ = ssh.write(&bytes);
                                         } else if let Ok(mut state) = tab.terminal.lock() {
                                             state.write(&bytes);
                                         }
+                                    }
+                                }
+                            } else if let Some(bytes) = key_to_named_bytes(&key, &modifiers) {
+                                // Ctrl + named key (e.g. Ctrl+Home)
+                                if let Some(tab) = self.tabs.get(tab_idx) {
+                                    if let Some(ref ssh) = tab.ssh_session {
+                                        let _ = ssh.write(&bytes);
+                                    } else if let Ok(mut state) = tab.terminal.lock() {
+                                        state.write(&bytes);
                                     }
                                 }
                             }
@@ -1065,15 +1060,14 @@ impl Oryxis {
                                 text_opt.map(|t| t.as_bytes().to_vec())
                             });
 
-                            if let Some(bytes) = bytes {
-                                if !bytes.is_empty() {
-                                    if let Some(tab) = self.tabs.get(tab_idx) {
-                                        if let Some(ref ssh) = tab.ssh_session {
-                                            let _ = ssh.write(&bytes);
-                                        } else if let Ok(mut state) = tab.terminal.lock() {
-                                            state.write(&bytes);
-                                        }
-                                    }
+                            if let Some(bytes) = bytes
+                                && !bytes.is_empty()
+                                && let Some(tab) = self.tabs.get(tab_idx)
+                            {
+                                if let Some(ref ssh) = tab.ssh_session {
+                                    let _ = ssh.write(&bytes);
+                                } else if let Ok(mut state) = tab.terminal.lock() {
+                                    state.write(&bytes);
                                 }
                             }
                         }
