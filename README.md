@@ -295,22 +295,6 @@ The signaling server only stores `device_id -> IP:port` with a 5-minute TTL. It 
 - **Pure Rust** — No C dependencies in crypto path
 - **No telemetry** — No data leaves your machine
 - **AI keys encrypted** — API keys stored encrypted in vault
-- **Signed Windows binaries** — All `.exe` files are Authenticode-signed
-
-### Verifying Windows binaries
-
-Windows builds are signed with a self-signed certificate. You can verify the signature and fingerprint using PowerShell:
-
-```powershell
-(Get-AuthenticodeSignature oryxis.exe).SignerCertificate.Thumbprint
-```
-
-Expected certificate fingerprint (SHA-256):
-
-```
-E5:4E:EC:6E:21:D4:00:87:22:5A:4E:5B:CB:F2:79:6F:72:50:5C:04:F6:AE:83:8C:C9:46:9E:E0:2B:5D:7F:2F
-```
-
 ## Roadmap
 
 | Version | Status | Scope |

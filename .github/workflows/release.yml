@@ -113,22 +113,6 @@ jobs:
             target/
           key: windows-release-${{ hashFiles('**/Cargo.lock') }}
       - run: cargo build --release
-      - name: Decode signing certificate
-        shell: pwsh
-        run: |
-          [IO.File]::WriteAllBytes("resources\oryxis-signing.pfx",
-            [Convert]::FromBase64String("${{ secrets.PFX_BASE64 }}"))
-      - name: Sign exe
-        shell: pwsh
-        run: |
-          $pass = ConvertTo-SecureString -String "${{ secrets.PFX_PASSWORD }}" -AsPlainText -Force
-          Import-PfxCertificate -FilePath resources\oryxis-signing.pfx `
-            -CertStoreLocation Cert:\CurrentUser\My -Password $pass
-          $cert = Get-ChildItem Cert:\CurrentUser\My -CodeSigningCert | Select-Object -First 1
-          Set-AuthenticodeSignature -FilePath target\release\oryxis.exe `
-            -Certificate $cert -TimestampServer "http://timestamp.digicert.com"
-          Set-AuthenticodeSignature -FilePath target\release\oryxis-mcp.exe `
-            -Certificate $cert -TimestampServer "http://timestamp.digicert.com"
       - name: Package zip
         shell: pwsh
         run: |
@@ -145,13 +129,6 @@ jobs:
           $env:PATH = "C:\Program Files (x86)\NSIS;$env:PATH"
           cd resources
           makensis installer.nsi
-      - name: Sign installer
-        shell: pwsh
-        run: |
-          $cert = Get-ChildItem Cert:\CurrentUser\My -CodeSigningCert | Select-Object -First 1
-          Set-AuthenticodeSignature -FilePath oryxis-setup-x86_64.exe `
-            -Certificate $cert -TimestampServer "http://timestamp.digicert.com"
-          Get-AuthenticodeSignature oryxis-setup-x86_64.exe | Format-List
       - uses: actions/upload-artifact@v5
         with:
           name: oryxis-windows-x86_64
@@ -175,22 +152,6 @@ jobs:
             target/
           key: windows-arm-release-${{ hashFiles('**/Cargo.lock') }}
       - run: cargo build --release --target aarch64-pc-windows-msvc
-      - name: Decode signing certificate
-        shell: pwsh
-        run: |
-          [IO.File]::WriteAllBytes("resources\oryxis-signing.pfx",
-            [Convert]::FromBase64String("${{ secrets.PFX_BASE64 }}"))
-      - name: Sign exe
-        shell: pwsh
-        run: |
-          $pass = ConvertTo-SecureString -String "${{ secrets.PFX_PASSWORD }}" -AsPlainText -Force
-          Import-PfxCertificate -FilePath resources\oryxis-signing.pfx `
-            -CertStoreLocation Cert:\CurrentUser\My -Password $pass
-          $cert = Get-ChildItem Cert:\CurrentUser\My -CodeSigningCert | Select-Object -First 1
-          Set-AuthenticodeSignature -FilePath target\aarch64-pc-windows-msvc\release\oryxis.exe `
-            -Certificate $cert -TimestampServer "http://timestamp.digicert.com"
-          Set-AuthenticodeSignature -FilePath target\aarch64-pc-windows-msvc\release\oryxis-mcp.exe `
-            -Certificate $cert -TimestampServer "http://timestamp.digicert.com"
       - name: Package
         shell: pwsh
         run: |
@@ -239,3 +200,15 @@ jobs:
             oryxis-windows-x86_64.zip
             oryxis-setup-x86_64.exe
             oryxis-windows-aarch64.zip
+
+  winget:
+    name: Publish to winget
+    needs: [release]
+    runs-on: windows-latest
+    steps:
+      - name: Submit to winget-pkgs
+        uses: vedantmgoyal9/winget-releaser@v2
+        with:
+          identifier: WilsonGlasser.Oryxis
+          installers-regex: 'oryxis-setup-x86_64\.exe$'
+          token: ${{ secrets.WINGET_TOKEN }}
