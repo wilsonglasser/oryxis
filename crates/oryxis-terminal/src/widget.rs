@@ -453,12 +453,11 @@ where
             // Right-click — paste from clipboard
             iced::Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Right)) => {
                 if cursor.position_in(bounds).is_some() {
-                    if let Ok(mut clip) = arboard::Clipboard::new() {
-                        if let Ok(text) = clip.get_text() {
-                            if let Ok(mut state) = self.state.lock() {
-                                state.write(text.as_bytes());
-                            }
-                        }
+                    if let Ok(mut clip) = arboard::Clipboard::new()
+                        && let Ok(text) = clip.get_text()
+                        && let Ok(mut state) = self.state.lock()
+                    {
+                        state.write(text.as_bytes());
                     }
                     return Some(CanvasAction::capture());
                 }
