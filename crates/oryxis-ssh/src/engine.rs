@@ -258,6 +258,52 @@ impl SshSession {
     pub fn is_alive(&self) -> bool {
         !self.writer_tx.is_closed()
     }
+
+    /// Detect the remote OS by executing a silent probe on a side channel
+    /// (no output goes to the user's PTY). Parses `/etc/os-release` for
+    /// Linux; falls back to `uname -s` for non-Linux (Darwin, FreeBSD…).
+    ///
+    /// Returns `Some("ubuntu" | "debian" | "alpine" | "rhel" | "fedora" |
+    /// "arch" | "amzn" | "centos" | "rocky" | "alma" | "darwin" | "freebsd"
+    /// | "openbsd" | "netbsd")` or `None` on any parse / channel failure.
+    pub async fn detect_os(&self) -> Option<String> {
+        let cmd = "cat /etc/os-release 2>/dev/null; echo '---OXYXIS-SEP---'; uname -s";
+        let handle = self._handle.lock().await;
+        let mut channel = handle.channel_open_session().await.ok()?;
+        channel.exec(true, cmd).await.ok()?;
+        drop(handle); // release so other tasks can use the shared handle
+
+        let mut stdout = Vec::new();
+        let collect = async {
+            loop {
+                match channel.wait().await {
+                    Some(russh::ChannelMsg::Data { data }) => stdout.extend_from_slice(&data),
+                    Some(russh::ChannelMsg::Eof) | Some(russh::ChannelMsg::ExitStatus { .. }) | None => break,
+                    _ => {}
+                }
+            }
+        };
+        if tokio::time::timeout(std::time::Duration::from_secs(6), collect).await.is_err() {
+            return None;
+        }
+
+        let text = String::from_utf8_lossy(&stdout);
+        let mut parts = text.split("---OXYXIS-SEP---");
+        let os_release = parts.next().unwrap_or("");
+        let uname_s = parts.next().unwrap_or("").trim();
+
+        // Try /etc/os-release first: `ID=ubuntu` (may be quoted).
+        for line in os_release.lines() {
+            if let Some(rest) = line.strip_prefix("ID=") {
+                let id = rest.trim().trim_matches('"').trim_matches('\'').to_lowercase();
+                if !id.is_empty() { return Some(id); }
+            }
+        }
+        // Fallback: uname -s → darwin / freebsd / openbsd / netbsd / linux.
+        let u = uname_s.to_lowercase();
+        if !u.is_empty() && u != "linux" { return Some(u); }
+        None
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -360,28 +406,41 @@ impl SshEngine {
 
     /// Step 1: Establish TCP transport (direct, proxy, or jump host).
     /// Returns an opaque handle after successful TCP connection + SSH handshake + host key verification.
+    ///
+    /// Wrapped in a 15-second timeout so unreachable hosts fail fast instead of
+    /// hanging on TCP SYN retransmits (Linux default: ~127s for SYN retries).
     pub async fn establish_transport(
         &self,
         connection: &Connection,
         resolver: Option<&ConnectionResolver>,
     ) -> Result<SshHandle, SshError> {
+        const CONNECT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(15);
+
         let target_host = &connection.hostname;
         let target_port = connection.port;
         let addr = format!("{}:{}", target_host, target_port);
 
-        tracing::info!("SSH connecting to {}", addr);
+        tracing::info!("SSH connecting to {} (timeout: {}s)", addr, CONNECT_TIMEOUT.as_secs());
 
-        let handle = if !connection.jump_chain.is_empty() {
-            self.connect_via_jump_hosts(connection, resolver, &addr).await?
-        } else if let Some(proxy) = &connection.proxy {
-            self.connect_via_proxy(proxy, target_host, target_port).await?
-        } else {
-            let config = Arc::new(client::Config::default());
-            let handler = self.make_handler(target_host, target_port);
-            client::connect(config, &addr, handler)
-                .await
-                .map_err(|e| SshError::ConnectionFailed(format!("{}: {}", addr, e)))?
+        let connect_fut = async {
+            if !connection.jump_chain.is_empty() {
+                self.connect_via_jump_hosts(connection, resolver, &addr).await
+            } else if let Some(proxy) = &connection.proxy {
+                self.connect_via_proxy(proxy, target_host, target_port).await
+            } else {
+                let config = Arc::new(client::Config::default());
+                let handler = self.make_handler(target_host, target_port);
+                client::connect(config, &addr, handler)
+                    .await
+                    .map_err(|e| SshError::ConnectionFailed(format!("{}: {}", addr, e)))
+            }
         };
+
+        let handle = tokio::time::timeout(CONNECT_TIMEOUT, connect_fut)
+            .await
+            .map_err(|_| SshError::ConnectionFailed(format!(
+                "{}: timed out after {}s", addr, CONNECT_TIMEOUT.as_secs()
+            )))??;
         Ok(SshHandle(handle))
     }
 

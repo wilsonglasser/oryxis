@@ -12,7 +12,14 @@ pub static AmdPowerXpressRequestHighPerformance: u32 = 0;
 mod ai;
 mod app;
 mod i18n;
+mod mcp;
+mod os_icon;
+mod state;
 mod theme;
+mod update;
+mod util;
+mod views;
+mod widgets;
 
 use iced::{window, Size};
 
@@ -35,11 +42,26 @@ fn main() -> iced::Result {
         .title(app::Oryxis::title)
         .theme(app::Oryxis::theme)
         .subscription(app::Oryxis::subscription)
-        .font(iced_fonts::BOOTSTRAP_FONT_BYTES)
+        .font(iced_fonts::LUCIDE_FONT_BYTES)
+        // Simple Icons — official distro/OS brand marks (Ubuntu, Debian,
+        // Arch, Fedora, CentOS, Red Hat, Alpine, Apple, FreeBSD, Rocky,
+        // Alma, openSUSE, NixOS…) rendered via codepoint lookup. Replaces
+        // the Nerd-Fonts-patched Devicon which had broken glyph mappings.
+        .font(include_bytes!("../../../resources/fonts/SimpleIcons.ttf").as_slice())
+        // Inter — default UI font (matches Termius' UI aesthetic).
+        .font(include_bytes!("../../../resources/fonts/Inter-Regular.ttf").as_slice())
+        .font(include_bytes!("../../../resources/fonts/Inter-SemiBold.ttf").as_slice())
+        .font(include_bytes!("../../../resources/fonts/Inter-Bold.ttf").as_slice())
+        // Source Code Pro — default terminal font; additional mono fonts are
+        // resolved by name from the system when the user picks them.
+        .font(include_bytes!("../../../resources/fonts/SourceCodePro-Regular.ttf").as_slice())
+        .font(include_bytes!("../../../resources/fonts/SourceCodePro-Medium.ttf").as_slice())
+        .default_font(iced::Font::with_name("Inter"))
         .window(window::Settings {
             size: Size::new(WINDOW_WIDTH, WINDOW_HEIGHT),
             min_size: Some(Size::new(MIN_WIDTH, MIN_HEIGHT)),
             icon,
+            decorations: false, // native title bar off — our own chrome in the tab bar
             ..Default::default()
         })
         .antialiasing(true)

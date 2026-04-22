@@ -1,149 +1,65 @@
-use iced::border::Radius;
 use iced::keyboard;
 use iced::widget::{
-    button, canvas, column, container, image, pick_list, row, scrollable, text, text_editor,
-    text_input, MouseArea, Row, Space, Stack,
+    image, text_editor,
 };
 use iced::futures::SinkExt;
-use iced::{Background, Border, Color, Element, Length, Padding, Point, Subscription, Task, Theme};
-use iced::widget::button::Status as BtnStatus;
+use iced::{Element, Point, Subscription, Task, Theme};
 
 use oryxis_core::models::connection::{AuthMethod, Connection};
 use oryxis_core::models::group::Group;
 use oryxis_core::models::identity::Identity;
 use oryxis_core::models::key::SshKey;
 use oryxis_ssh::{SshEngine, SshSession};
-use oryxis_terminal::widget::{TerminalState, TerminalView};
+use oryxis_terminal::widget::TerminalState;
 use oryxis_vault::{VaultError, VaultStore};
 
 use std::sync::{Arc, Mutex};
 use tokio_stream::wrappers::UnboundedReceiverStream;
 use uuid::Uuid;
 
+use crate::mcp::{install_mcp_config_to_file, mcp_config_json};
+use crate::state::{
+    ChatMessage, ChatRole, ConnectionForm, ConnectionProgress, ConnectionStep, OverlayContent,
+    OverlayState, PortForwardForm, SettingsSection, SshStreamMsg, TerminalTab, VaultState, View,
+};
 use crate::theme::OryxisColors;
+use crate::util::{ctrl_key_bytes, key_to_named_bytes, strip_ansi};
 
 // Layout constants
-const DEFAULT_TERM_COLS: u32 = 120;
-const DEFAULT_TERM_ROWS: u32 = 40;
-const PANEL_WIDTH: f32 = 420.0;
-const SIDEBAR_WIDTH: f32 = 180.0;
-const CARD_WIDTH: f32 = 280.0;
+pub(crate) const DEFAULT_TERM_COLS: u32 = 120;
+pub(crate) const DEFAULT_TERM_ROWS: u32 = 40;
+pub(crate) const PANEL_WIDTH: f32 = 420.0;
+pub(crate) const SIDEBAR_WIDTH: f32 = 180.0;
+pub(crate) const SIDEBAR_WIDTH_COLLAPSED: f32 = 56.0;
+pub(crate) const CARD_WIDTH: f32 = 280.0;
 
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
-
-/// Role of a chat message in the AI sidebar.
-#[derive(Debug, Clone, PartialEq)]
-enum ChatRole {
-    User,
-    Assistant,
-    System, // for tool execution results
-}
-
-/// A single message in the AI chat sidebar.
-#[derive(Debug, Clone)]
-struct ChatMessage {
-    role: ChatRole,
-    content: String,
-    #[allow(dead_code)]
-    timestamp: chrono::DateTime<chrono::Utc>,
-}
-
-/// A terminal tab — either a local shell or an SSH session.
-struct TerminalTab {
-    _id: Uuid,
-    label: String,
-    terminal: Arc<Mutex<TerminalState>>,
-    /// SSH session handle (None for local shell).
-    ssh_session: Option<Arc<SshSession>>,
-    /// Session log ID for terminal recording.
-    session_log_id: Option<Uuid>,
-    /// AI chat history for this terminal session.
-    chat_history: Vec<ChatMessage>,
-    /// Whether the AI chat sidebar is visible.
-    chat_visible: bool,
-}
-
-/// Connection editor form state.
-#[derive(Debug, Clone)]
-struct ConnectionForm {
-    label: String,
-    hostname: String,
-    port: String,
-    username: String,
-    password: String,
-    auth_method: AuthMethod,
-    group_name: String,
-    selected_key: Option<String>,
-    jump_host: Option<String>,  // label of jump host connection
-    /// Selected identity label (if any).
-    selected_identity: Option<String>,
-    /// If editing, the connection ID.
-    editing_id: Option<Uuid>,
-    /// Whether the connection already has a password stored in the vault.
-    has_existing_password: bool,
-    /// Whether the user has modified the password field.
-    password_touched: bool,
-    /// Whether to show the password in plain text.
-    password_visible: bool,
-    /// Whether the username field is focused (shows identity autocomplete).
-    username_focused: bool,
-    /// Port forwarding rules (local -L style).
-    port_forwards: Vec<PortForwardForm>,
-    /// Whether this host is exposed via MCP.
-    mcp_enabled: bool,
-}
-
-#[derive(Debug, Clone, Default)]
-struct PortForwardForm {
-    local_port: String,
-    remote_host: String,
-    remote_port: String,
-}
-
-impl Default for ConnectionForm {
-    fn default() -> Self {
-        Self {
-            label: String::new(),
-            hostname: String::new(),
-            port: "22".into(),
-            username: String::new(),
-            password: String::new(),
-            auth_method: AuthMethod::Auto,
-            group_name: String::new(),
-            selected_key: None,
-            jump_host: None,
-            selected_identity: None,
-            editing_id: None,
-            has_existing_password: false,
-            password_touched: false,
-            password_visible: false,
-            username_focused: false,
-            port_forwards: Vec::new(),
-            mcp_enabled: true,
-        }
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Overlay (floating context menus)
-// ---------------------------------------------------------------------------
-
-#[derive(Debug, Clone)]
-enum OverlayContent {
-    HostActions(usize),
-    KeyActions(usize),
-    IdentityActions(usize),
-    KeychainAdd,
-}
-
-#[derive(Debug, Clone)]
-struct OverlayState {
-    content: OverlayContent,
-    x: f32,
-    y: f32,
-}
+/// Monospace fonts offered in the terminal font picker.
+///
+/// `Source Code Pro` is bundled with the binary (see `main.rs`). The rest are
+/// looked up from the OS fontconfig — if not installed, cosmic-text falls back
+/// gracefully to the system default monospace.
+pub(crate) const TERMINAL_FONTS: &[&str] = &[
+    "Source Code Pro",
+    "Source Code Pro Medium",
+    "JetBrains Mono",
+    "Fira Code",
+    "Fira Mono",
+    "Cascadia Code",
+    "Ubuntu Mono",
+    "DejaVu Sans Mono",
+    "Droid Sans Mono",
+    "PT Mono",
+    "Andale Mono",
+    "Anonymous Pro",
+    "Inconsolata",
+    "Inconsolata-g",
+    "Meslo",
+    "Operator Mono Book",
+    "Operator Mono Medium",
+    "Menlo",
+    "Monaco",
+    "Consolas",
+];
 
 // ---------------------------------------------------------------------------
 // App state
@@ -151,188 +67,196 @@ struct OverlayState {
 
 pub struct Oryxis {
     // Vault
-    vault: Option<VaultStore>,
-    vault_state: VaultState,
-    vault_password_input: String,
-    vault_error: Option<String>,
-    logo_handle: image::Handle,
-    logo_small_handle: image::Handle,
+    pub(crate) vault: Option<VaultStore>,
+    pub(crate) vault_state: VaultState,
+    pub(crate) vault_password_input: String,
+    pub(crate) vault_error: Option<String>,
+    pub(crate) logo_handle: image::Handle,
+    pub(crate) logo_small_handle: image::Handle,
 
     // Data
-    connections: Vec<Connection>,
-    groups: Vec<Group>,
+    pub(crate) connections: Vec<Connection>,
+    pub(crate) groups: Vec<Group>,
 
     // UI state
-    active_view: View,
-    active_group: Option<Uuid>,  // None = root, Some(id) = inside folder
-    host_search: String,
-    quick_host_input: String,
+    pub(crate) active_view: View,
+    pub(crate) active_group: Option<Uuid>,  // None = root, Some(id) = inside folder
+    pub(crate) host_search: String,
+    pub(crate) quick_host_input: String,
+    pub(crate) sidebar_collapsed: bool,
 
     // Tabs
-    tabs: Vec<TerminalTab>,
-    active_tab: Option<usize>,
-    connecting: Option<ConnectionProgress>,
+    pub(crate) tabs: Vec<TerminalTab>,
+    pub(crate) active_tab: Option<usize>,
+    pub(crate) hovered_tab: Option<usize>,
+    pub(crate) show_new_tab_picker: bool,
+    pub(crate) new_tab_picker_search: String,
+
+    // Icon/color picker (from the host editor's icon box).
+    pub(crate) show_icon_picker: bool,
+    pub(crate) icon_picker_for: Option<Uuid>,
+    pub(crate) icon_picker_icon: Option<String>,
+    pub(crate) icon_picker_color: Option<String>,
+    pub(crate) icon_picker_hex_input: String,
+    pub(crate) connecting: Option<ConnectionProgress>,
+    /// Counter that advances ~every 100ms while a connection is in progress.
+    /// Used only to drive the pulsing "loading" ring on the active step dot.
+    pub(crate) connect_anim_tick: u32,
 
     // Host key verification dialog
-    pending_host_key: Option<oryxis_ssh::HostKeyQuery>,
-    host_key_response_tx: Option<tokio::sync::mpsc::Sender<bool>>,
+    pub(crate) pending_host_key: Option<oryxis_ssh::HostKeyQuery>,
+    pub(crate) host_key_response_tx: Option<tokio::sync::mpsc::Sender<bool>>,
 
     // Connection editor
-    show_host_panel: bool,
-    editor_form: ConnectionForm,
-    host_panel_error: Option<String>,
+    pub(crate) show_host_panel: bool,
+    pub(crate) editor_form: ConnectionForm,
+    pub(crate) host_panel_error: Option<String>,
 
     // Card hover & context menu
-    hovered_card: Option<usize>,
-    card_context_menu: Option<usize>,
+    pub(crate) hovered_card: Option<usize>,
+    pub(crate) card_context_menu: Option<usize>,
 
     // Floating overlay menu
-    overlay: Option<OverlayState>,
-    mouse_position: Point,
-    window_size: iced::Size,
+    pub(crate) overlay: Option<OverlayState>,
+    pub(crate) mouse_position: Point,
+    pub(crate) window_size: iced::Size,
+    /// Whether the OS window is currently maximized. Used by the custom
+    /// chrome to swap the maximize glyph for a "restore" glyph. Toggled
+    /// optimistically on `WindowMaximizeToggle` since our chrome is the only
+    /// path that can change this state (native titlebar is disabled).
+    pub(crate) window_maximized: bool,
 
     // Keys
-    keys: Vec<SshKey>,
-    show_key_panel: bool,
-    key_import_label: String,
-    key_import_content: text_editor::Content,
-    key_import_pem: String,  // raw string for import
-    key_error: Option<String>,
-    key_success: Option<String>,
-    key_context_menu: Option<usize>,
-    editing_key_id: Option<Uuid>,
-    key_search: String,
+    pub(crate) keys: Vec<SshKey>,
+    pub(crate) show_key_panel: bool,
+    pub(crate) key_import_label: String,
+    pub(crate) key_import_content: text_editor::Content,
+    pub(crate) key_import_pem: String,  // raw string for import
+    pub(crate) key_error: Option<String>,
+    pub(crate) key_success: Option<String>,
+    pub(crate) key_context_menu: Option<usize>,
+    pub(crate) editing_key_id: Option<Uuid>,
+    pub(crate) key_search: String,
 
     // Identities
-    identities: Vec<Identity>,
-    show_identity_panel: bool,
-    identity_form_label: String,
-    identity_form_username: String,
-    identity_form_password: String,
-    identity_form_key: Option<String>,
-    identity_form_password_visible: bool,
-    identity_form_password_touched: bool,
-    identity_form_has_existing_password: bool,
-    editing_identity_id: Option<Uuid>,
-    identity_context_menu: Option<usize>,
-    show_keychain_add_menu: bool,
+    pub(crate) identities: Vec<Identity>,
+    pub(crate) show_identity_panel: bool,
+    pub(crate) identity_form_label: String,
+    pub(crate) identity_form_username: String,
+    pub(crate) identity_form_password: String,
+    pub(crate) identity_form_key: Option<String>,
+    pub(crate) identity_form_password_visible: bool,
+    pub(crate) identity_form_password_touched: bool,
+    pub(crate) identity_form_has_existing_password: bool,
+    pub(crate) editing_identity_id: Option<Uuid>,
+    pub(crate) identity_context_menu: Option<usize>,
+    pub(crate) show_keychain_add_menu: bool,
 
     // Snippets
-    snippets: Vec<oryxis_core::models::snippet::Snippet>,
-    show_snippet_panel: bool,
-    snippet_label: String,
-    snippet_command: String,
-    snippet_editing_id: Option<Uuid>,
-    snippet_error: Option<String>,
+    pub(crate) snippets: Vec<oryxis_core::models::snippet::Snippet>,
+    pub(crate) show_snippet_panel: bool,
+    pub(crate) snippet_label: String,
+    pub(crate) snippet_command: String,
+    pub(crate) snippet_editing_id: Option<Uuid>,
+    pub(crate) snippet_error: Option<String>,
 
     // Known hosts & logs
-    known_hosts: Vec<oryxis_core::models::known_host::KnownHost>,
-    logs: Vec<oryxis_core::models::log_entry::LogEntry>,
+    pub(crate) known_hosts: Vec<oryxis_core::models::known_host::KnownHost>,
+    pub(crate) logs: Vec<oryxis_core::models::log_entry::LogEntry>,
+    pub(crate) logs_page: usize,
+    pub(crate) logs_total: usize,
 
     // Session logs (terminal recording)
-    session_logs: Vec<oryxis_vault::SessionLogEntry>,
-    viewing_session_log: Option<(Uuid, String)>, // (log_id, rendered_text)
+    pub(crate) session_logs: Vec<oryxis_vault::SessionLogEntry>,
+    pub(crate) viewing_session_log: Option<(Uuid, String)>, // (log_id, rendered_text)
 
     // Terminal theme
-    terminal_theme: oryxis_terminal::TerminalTheme,
-    terminal_font_size: f32,
+    pub(crate) terminal_theme: oryxis_terminal::TerminalTheme,
+    pub(crate) terminal_font_size: f32,
+    pub(crate) terminal_font_name: String,
 
     // Settings
-    settings_section: SettingsSection,
-    setting_copy_on_select: bool,
-    setting_bold_is_bright: bool,
-    setting_bell_sound: bool,
-    setting_keyword_highlight: bool,
-    setting_keepalive_interval: String,
-    setting_scrollback_rows: String,
+    pub(crate) settings_section: SettingsSection,
+    pub(crate) setting_copy_on_select: bool,
+    pub(crate) setting_bold_is_bright: bool,
+    pub(crate) setting_bell_sound: bool,
+    pub(crate) setting_keyword_highlight: bool,
+    pub(crate) setting_keepalive_interval: String,
+    pub(crate) setting_scrollback_rows: String,
+    pub(crate) setting_auto_reconnect: bool,
+    pub(crate) setting_max_reconnect_attempts: String,
+    pub(crate) setting_os_detection: bool,
+    pub(crate) setting_auto_check_updates: bool,
+
+    // Update state (set by the async GitHub check on boot)
+    pub(crate) pending_update: Option<crate::update::UpdateInfo>,
+    pub(crate) update_downloading: bool,
+    pub(crate) update_progress: f32,
+    pub(crate) update_error: Option<String>,
+    /// Last manual-check outcome shown near the "Check now" button in
+    /// settings. `Some("")` → in-flight; `Some("Up to date.")` → no newer
+    /// release; `Some("Error: …")` on failure. `None` hides the line.
+    pub(crate) update_check_status: Option<String>,
+    /// Attempt counters keyed by connection UUID — persists across tab recreations.
+    pub(crate) reconnect_counters: std::collections::HashMap<Uuid, u32>,
 
     // AI Chat settings
-    ai_enabled: bool,
-    ai_provider: String,
-    ai_model: String,
-    ai_api_key: String,
-    ai_api_key_set: bool,
-    ai_api_url: String,
-    ai_system_prompt: String,
+    pub(crate) ai_enabled: bool,
+    pub(crate) ai_provider: String,
+    pub(crate) ai_model: String,
+    pub(crate) ai_api_key: String,
+    pub(crate) ai_api_key_set: bool,
+    pub(crate) ai_api_url: String,
+    pub(crate) ai_system_prompt: String,
 
     // Vault password settings
-    vault_has_user_password: bool,
-    vault_new_password: String,
-    vault_password_error: Option<String>,
-    vault_destroy_confirm: bool,
+    pub(crate) vault_has_user_password: bool,
+    pub(crate) vault_new_password: String,
+    pub(crate) vault_password_error: Option<String>,
+    pub(crate) vault_destroy_confirm: bool,
 
     // AI chat sidebar
-    chat_input: String,
-    chat_loading: bool,
+    pub(crate) chat_input: String,
+    pub(crate) chat_loading: bool,
 
     // MCP Server
-    mcp_server_enabled: bool,
-    show_mcp_info: bool,
-    mcp_config_copied: bool,
-    mcp_install_status: Option<Result<String, String>>,
+    pub(crate) mcp_server_enabled: bool,
+    pub(crate) show_mcp_info: bool,
+    pub(crate) mcp_config_copied: bool,
+    pub(crate) mcp_install_status: Option<Result<String, String>>,
 
     // Sync
-    sync_enabled: bool,
-    sync_mode: String,
-    sync_device_name: String,
-    sync_signaling_url: String,
-    sync_relay_url: String,
-    sync_listen_port: String,
-    sync_peers: Vec<oryxis_vault::SyncPeerRow>,
-    sync_pairing_code: Option<String>,
-    sync_status: Option<String>,
+    pub(crate) sync_enabled: bool,
+    pub(crate) sync_mode: String,
+    pub(crate) sync_device_name: String,
+    pub(crate) sync_signaling_url: String,
+    pub(crate) sync_relay_url: String,
+    pub(crate) sync_listen_port: String,
+    pub(crate) sync_peers: Vec<oryxis_vault::SyncPeerRow>,
+    pub(crate) sync_pairing_code: Option<String>,
+    pub(crate) sync_status: Option<String>,
 
     // Export/Import
-    show_export_dialog: bool,
-    export_password: String,
-    export_include_keys: bool,
-    export_status: Option<Result<String, String>>,
-    show_import_dialog: bool,
-    import_password: String,
-    import_file_data: Option<Vec<u8>>,
-    import_status: Option<Result<String, String>>,
+    pub(crate) show_export_dialog: bool,
+    pub(crate) export_password: String,
+    pub(crate) export_include_keys: bool,
+    pub(crate) export_status: Option<Result<String, String>>,
+    pub(crate) show_import_dialog: bool,
+    pub(crate) import_password: String,
+    pub(crate) import_file_data: Option<Vec<u8>>,
+    pub(crate) import_status: Option<Result<String, String>>,
 
     // Share
-    show_share_dialog: bool,
-    share_password: String,
-    share_include_keys: bool,
-    share_filter: Option<oryxis_vault::ExportFilter>,
-    share_status: Option<Result<String, String>>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum VaultState {
-    Loading,
-    NeedSetup,
-    Locked,
-    Unlocked,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum View {
-    Dashboard,
-    Terminal,
-    Keys,
-    Snippets,
-    KnownHosts,
-    History,
-    Settings,
+    pub(crate) show_share_dialog: bool,
+    pub(crate) share_password: String,
+    pub(crate) share_include_keys: bool,
+    pub(crate) share_filter: Option<oryxis_vault::ExportFilter>,
+    pub(crate) share_status: Option<Result<String, String>>,
 }
 
 // ---------------------------------------------------------------------------
 // Messages
 // ---------------------------------------------------------------------------
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum SettingsSection {
-    Terminal,
-    AI,
-    Theme,
-    Shortcuts,
-    Security,
-    Sync,
-    About,
-}
 
 #[derive(Debug, Clone)]
 pub enum Message {
@@ -351,16 +275,39 @@ pub enum Message {
     OpenGroup(Uuid),
     BackToRoot,
     HostSearchChanged(String),
+    ToggleSidebar,
 
     // Tabs
     SelectTab(usize),
     CloseTab(usize),
+    TabHovered(usize),
+    TabUnhovered,
+    ShowNewTabPicker,
+    HideNewTabPicker,
+    NewTabPickerSearchChanged(String),
+
+    // Icon picker (custom host icon/color)
+    ShowIconPicker(Uuid),
+    HideIconPicker,
+    IconPickerSelectIcon(String),
+    IconPickerSelectColor(String),
+    IconPickerHexInputChanged(String),
+    IconPickerSave,
+    IconPickerResetAuto,
+    ShowTabMenu(usize),
+    ReconnectTab(usize),
+    CloseOtherTabs(usize),
+    CloseAllTabs,
 
     // Terminal I/O
     PtyOutput(usize, Vec<u8>),  // (tab_index, bytes)
     KeyboardEvent(keyboard::Event),
     MouseMoved(Point),
     WindowResized(iced::Size),
+    WindowDrag,
+    WindowMinimize,
+    WindowMaximizeToggle,
+    WindowClose,
 
     // Overlay
     HideOverlayMenu,
@@ -417,9 +364,12 @@ pub enum Message {
 
     // Known hosts
     DeleteKnownHost(usize),
+    ClearAllKnownHosts,
 
     // History
     ClearLogs,
+    LogsPageNext,
+    LogsPagePrev,
 
     // Session logs
     ViewSessionLog(Uuid),
@@ -433,6 +383,7 @@ pub enum Message {
     AppThemeChanged(String),
     TerminalFontSizeIncrease,
     TerminalFontSizeDecrease,
+    TerminalFontChanged(String),
     ChangeSettingsSection(SettingsSection),
     ToggleCopyOnSelect,
     ToggleBoldIsBright,
@@ -440,6 +391,24 @@ pub enum Message {
     ToggleKeywordHighlight,
     SettingKeepaliveChanged(String),
     SettingScrollbackChanged(String),
+    SettingToggleAutoReconnect,
+    SettingMaxReconnectChanged(String),
+    SettingToggleOsDetection,
+    OsDetected(Uuid, Option<String>),
+    SettingToggleAutoCheckUpdates,
+
+    // Auto-update
+    CheckForUpdate,
+    CheckForUpdateManual,
+    UpdateCheckResult(Option<crate::update::UpdateInfo>),
+    UpdateSkipVersion,
+    UpdateLater,
+    UpdateStartDownload,
+    UpdateDownloadProgress(f32),
+    UpdateDownloadComplete(Result<std::path::PathBuf, String>),
+    UpdateOpenRelease,
+    AutoReconnectTick,
+    ConnectAnimTick,
 
     // Language
     LanguageChanged(String),
@@ -556,37 +525,6 @@ pub enum Message {
     ShareDismiss,
 }
 
-/// Internal message type for SSH connection streams.
-enum SshStreamMsg {
-    Progress(ConnectionStep, String), // (step, log message)
-    Connected(Arc<SshSession>),
-    #[allow(dead_code)]
-    NewKnownHosts(Vec<oryxis_core::models::known_host::KnownHost>),
-    HostKeyVerify(oryxis_ssh::HostKeyQuery),
-    Data(Vec<u8>),
-    Error(String),
-    Disconnected,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ConnectionStep {
-    Connecting,   // step 1: TCP/proxy/jump
-    Handshake,    // step 2: SSH handshake + host key
-    Authenticating, // step 3: auth
-}
-
-/// Connection progress state for the connecting tab.
-#[derive(Clone)]
-struct ConnectionProgress {
-    label: String,
-    hostname: String,
-    step: ConnectionStep,
-    logs: Vec<(ConnectionStep, String)>,
-    failed: bool,
-    connection_idx: usize,
-    tab_idx: usize,
-}
-
 // ---------------------------------------------------------------------------
 // Application
 // ---------------------------------------------------------------------------
@@ -631,9 +569,19 @@ impl Oryxis {
                 active_group: None,
                 host_search: String::new(),
                 quick_host_input: String::new(),
+                sidebar_collapsed: false,
                 tabs: Vec::new(),
                 active_tab: None,
+                hovered_tab: None,
+                show_new_tab_picker: false,
+                new_tab_picker_search: String::new(),
+                show_icon_picker: false,
+                icon_picker_for: None,
+                icon_picker_icon: None,
+                icon_picker_color: None,
+                icon_picker_hex_input: String::new(),
                 connecting: None,
+                connect_anim_tick: 0,
                 pending_host_key: None,
                 host_key_response_tx: None,
                 show_host_panel: false,
@@ -644,6 +592,7 @@ impl Oryxis {
                 overlay: None,
                 mouse_position: Point::ORIGIN,
                 window_size: iced::Size::new(1024.0, 768.0),
+                window_maximized: false,
                 keys: Vec::new(),
                 show_key_panel: false,
                 key_import_label: String::new(),
@@ -669,6 +618,8 @@ impl Oryxis {
                 snippets: Vec::new(),
                 known_hosts: Vec::new(),
                 logs: Vec::new(),
+                logs_page: 0,
+                logs_total: 0,
                 session_logs: Vec::new(),
                 viewing_session_log: None,
                 show_snippet_panel: false,
@@ -678,6 +629,7 @@ impl Oryxis {
                 snippet_error: None,
                 terminal_theme: oryxis_terminal::TerminalTheme::OryxisDark,
                 terminal_font_size: 14.0,
+                terminal_font_name: "Source Code Pro".to_string(),
                 settings_section: SettingsSection::Terminal,
                 setting_copy_on_select: true,
                 setting_bold_is_bright: true,
@@ -685,6 +637,16 @@ impl Oryxis {
                 setting_keyword_highlight: true,
                 setting_keepalive_interval: "0".into(),
                 setting_scrollback_rows: "10000".into(),
+                setting_auto_reconnect: true,
+                setting_max_reconnect_attempts: "5".into(),
+                setting_os_detection: true,
+                setting_auto_check_updates: true,
+                pending_update: None,
+                update_downloading: false,
+                update_progress: 0.0,
+                update_error: None,
+                update_check_status: None,
+                reconnect_counters: std::collections::HashMap::new(),
                 ai_enabled: false,
                 ai_provider: "anthropic".into(),
                 ai_model: "claude-sonnet-4-20250514".into(),
@@ -733,7 +695,11 @@ impl Oryxis {
             app.load_data_from_vault();
         }
 
-        (app, task)
+        // Kick off an update check in the background. The result flows back
+        // via Message::UpdateCheckResult → optionally sets `pending_update`
+        // which the main view turns into a modal.
+        let boot_task = Task::batch([task, Task::done(Message::CheckForUpdate)]);
+        (app, boot_task)
     }
 
     fn load_data_from_vault(&mut self) {
@@ -744,7 +710,8 @@ impl Oryxis {
             self.identities = vault.list_identities().unwrap_or_default();
             self.snippets = vault.list_snippets().unwrap_or_default();
             self.known_hosts = vault.list_known_hosts().unwrap_or_default();
-            self.logs = vault.list_logs(200).unwrap_or_default();
+            self.logs_total = vault.count_logs().unwrap_or(0);
+            self.logs = vault.list_logs_page(self.logs_page * 50, 50).unwrap_or_default();
             self.session_logs = vault.list_session_logs().unwrap_or_default();
 
             // Language
@@ -917,6 +884,9 @@ impl Oryxis {
             Message::HostSearchChanged(v) => {
                 self.host_search = v;
             }
+            Message::ToggleSidebar => {
+                self.sidebar_collapsed = !self.sidebar_collapsed;
+            }
             Message::QuickHostContinue => {
                 if !self.quick_host_input.is_empty() {
                     self.editor_form = ConnectionForm::default();
@@ -938,6 +908,31 @@ impl Oryxis {
             }
             Message::WindowResized(size) => {
                 self.window_size = size;
+            }
+            Message::WindowDrag => {
+                return iced::window::latest().then(|id_opt| match id_opt {
+                    Some(id) => iced::window::drag(id),
+                    None => Task::none(),
+                });
+            }
+            Message::WindowMinimize => {
+                return iced::window::latest().then(|id_opt| match id_opt {
+                    Some(id) => iced::window::minimize(id, true),
+                    None => Task::none(),
+                });
+            }
+            Message::WindowMaximizeToggle => {
+                self.window_maximized = !self.window_maximized;
+                return iced::window::latest().then(|id_opt| match id_opt {
+                    Some(id) => iced::window::toggle_maximize(id),
+                    None => Task::none(),
+                });
+            }
+            Message::WindowClose => {
+                return iced::window::latest().then(|id_opt| match id_opt {
+                    Some(id) => iced::window::close(id),
+                    None => Task::none(),
+                });
             }
             Message::HideOverlayMenu => {
                 self.overlay = None;
@@ -971,7 +966,92 @@ impl Oryxis {
                     self.active_view = View::Terminal;
                 }
             }
+            Message::TabHovered(idx) => {
+                self.hovered_tab = Some(idx);
+            }
+            Message::TabUnhovered => {
+                self.hovered_tab = None;
+            }
+            Message::ShowNewTabPicker => {
+                self.show_new_tab_picker = true;
+                self.new_tab_picker_search.clear();
+            }
+            Message::HideNewTabPicker => {
+                self.show_new_tab_picker = false;
+            }
+            Message::NewTabPickerSearchChanged(v) => {
+                self.new_tab_picker_search = v;
+            }
+            Message::ShowIconPicker(conn_id) => {
+                // Pre-fill the picker with whatever the connection currently
+                // has (custom > detected). The user either confirms, edits,
+                // or clicks "Reset to auto" to drop the override entirely.
+                if let Some(conn) = self.connections.iter().find(|c| c.id == conn_id) {
+                    self.icon_picker_icon = conn
+                        .custom_icon
+                        .clone()
+                        .or_else(|| Some("server".to_string()));
+                    self.icon_picker_color = conn.custom_color.clone();
+                    self.icon_picker_hex_input = conn.custom_color.clone().unwrap_or_default();
+                }
+                self.icon_picker_for = Some(conn_id);
+                self.show_icon_picker = true;
+            }
+            Message::HideIconPicker => {
+                self.show_icon_picker = false;
+                self.icon_picker_for = None;
+            }
+            Message::IconPickerSelectIcon(name) => {
+                self.icon_picker_icon = Some(name);
+            }
+            Message::IconPickerSelectColor(hex) => {
+                self.icon_picker_hex_input = hex.clone();
+                self.icon_picker_color = Some(hex);
+            }
+            Message::IconPickerHexInputChanged(v) => {
+                self.icon_picker_hex_input = v.clone();
+                // Validate + commit only on well-formed #RRGGBB.
+                let trimmed = v.trim().trim_start_matches('#');
+                if trimmed.len() == 6 && trimmed.chars().all(|c| c.is_ascii_hexdigit()) {
+                    self.icon_picker_color = Some(format!("#{}", trimmed.to_uppercase()));
+                }
+            }
+            Message::IconPickerSave => {
+                if let Some(conn_id) = self.icon_picker_for {
+                    let icon = self.icon_picker_icon.clone();
+                    let color = self.icon_picker_color.clone();
+                    if let Some(conn) = self.connections.iter_mut().find(|c| c.id == conn_id) {
+                        conn.custom_icon = icon.clone();
+                        conn.custom_color = color.clone();
+                        // Full save so the row persists (and other fields
+                        // aren't accidentally overwritten).
+                        if let Some(vault) = &self.vault {
+                            let _ = vault.save_connection(conn, None);
+                        }
+                    }
+                }
+                self.show_icon_picker = false;
+                self.icon_picker_for = None;
+            }
+            Message::IconPickerResetAuto => {
+                // Clears the override, letting the OS-detection result (if any)
+                // drive the icon again. Does not trigger re-detection — that
+                // happens on the next connect if the OS is still unknown.
+                if let Some(conn_id) = self.icon_picker_for
+                    && let Some(conn) = self.connections.iter_mut().find(|c| c.id == conn_id) {
+                    conn.custom_icon = None;
+                    conn.custom_color = None;
+                    if let Some(vault) = &self.vault {
+                        let _ = vault.save_connection(conn, None);
+                    }
+                }
+                self.show_icon_picker = false;
+                self.icon_picker_for = None;
+            }
             Message::CloseTab(idx) => {
+                // Also dismiss any open context menu so the menu doesn't linger
+                // after the user clicks Close from it.
+                self.overlay = None;
                 if idx < self.tabs.len() {
                     self.tabs.remove(idx);
                     if self.tabs.is_empty() {
@@ -981,6 +1061,48 @@ impl Oryxis {
                         self.active_tab = Some(idx.min(self.tabs.len() - 1));
                     }
                 }
+            }
+            Message::ShowTabMenu(idx) => {
+                self.overlay = Some(OverlayState {
+                    content: OverlayContent::TabActions(idx),
+                    x: self.mouse_position.x,
+                    y: self.mouse_position.y,
+                });
+            }
+            Message::ReconnectTab(idx) => {
+                self.overlay = None;
+                // Find the connection matching this tab's label; close the tab and
+                // dispatch ConnectSsh for that connection index. Dead tabs (no matching
+                // connection) are just closed.
+                if let Some(tab) = self.tabs.get(idx) {
+                    let base_label = tab.label.trim_end_matches(" (disconnected)").to_string();
+                    let conn_idx = self.connections.iter().position(|c| c.label == base_label);
+                    self.tabs.remove(idx);
+                    if self.tabs.is_empty() {
+                        self.active_tab = None;
+                        self.active_view = View::Dashboard;
+                    } else {
+                        self.active_tab = Some(idx.min(self.tabs.len() - 1));
+                    }
+                    if let Some(ci) = conn_idx {
+                        return Task::done(Message::ConnectSsh(ci));
+                    }
+                }
+            }
+            Message::CloseOtherTabs(idx) => {
+                self.overlay = None;
+                if idx < self.tabs.len() {
+                    let keep = self.tabs.remove(idx);
+                    self.tabs.clear();
+                    self.tabs.push(keep);
+                    self.active_tab = Some(0);
+                }
+            }
+            Message::CloseAllTabs => {
+                self.overlay = None;
+                self.tabs.clear();
+                self.active_tab = None;
+                self.active_view = View::Dashboard;
             }
 
             // -- Terminal I/O --
@@ -997,7 +1119,19 @@ impl Oryxis {
                 }
             }
             Message::KeyboardEvent(event) => {
-                // Only send keyboard input to PTY when the terminal is actually visible
+                // Global shortcut: Ctrl+K opens the new-tab picker regardless
+                // of which screen or tab is active. Handled before the
+                // tab-specific routing so it works on Dashboard / Settings /
+                // inside a terminal alike.
+                if let keyboard::Event::KeyPressed { key, modifiers, .. } = &event
+                    && modifiers.control()
+                    && let keyboard::Key::Character(c) = key
+                    && c.as_str().eq_ignore_ascii_case("k")
+                {
+                    self.show_new_tab_picker = true;
+                    self.new_tab_picker_search.clear();
+                    return Task::none();
+                }
                 if let Some(tab_idx) = self.active_tab
                     && self.connecting.is_none()
                     && let keyboard::Event::KeyPressed {
@@ -1052,8 +1186,21 @@ impl Oryxis {
                                 }
                             }
                         } else if modifiers.shift() && modifiers.control() {
-                            // Ctrl+Shift combinations handled by terminal widget (copy/paste)
-                            // Don't send to PTY
+                            // Ctrl+Shift+V → paste from clipboard into SSH or local PTY.
+                            // Copy (Ctrl+Shift+C) stays in the terminal widget since it
+                            // owns the selection state.
+                            if let keyboard::Key::Character(ref c) = key
+                                && c.as_str().eq_ignore_ascii_case("v")
+                                && let Ok(mut clip) = arboard::Clipboard::new()
+                                && let Ok(text) = clip.get_text()
+                                && let Some(tab) = self.tabs.get(tab_idx)
+                            {
+                                if let Some(ref ssh) = tab.ssh_session {
+                                    let _ = ssh.write(text.as_bytes());
+                                } else if let Ok(mut state) = tab.terminal.lock() {
+                                    state.write(text.as_bytes());
+                                }
+                            }
                         } else {
                             // Normal keys (no Ctrl)
                             let bytes = key_to_named_bytes(&key, &modifiers).or_else(|| {
@@ -1298,6 +1445,8 @@ impl Oryxis {
             Message::ConnectSsh(idx) => {
                 self.card_context_menu = None;
                 self.overlay = None;
+                // Close the new-tab picker if the connection was picked there.
+                self.show_new_tab_picker = false;
                 if let Some(conn) = self.connections.get(idx).cloned() {
                     // Resolve credentials: prefer identity if linked, otherwise inline
                     let (password, private_key) = if let Some(iid) = conn.identity_id {
@@ -1570,8 +1719,9 @@ impl Oryxis {
                 }
             }
             Message::SshConnected(tab_idx, session) => {
+                let mut detect_for: Option<(Uuid, Arc<SshSession>)> = None;
                 if let Some(tab) = self.tabs.get_mut(tab_idx) {
-                    tab.ssh_session = Some(session);
+                    tab.ssh_session = Some(session.clone());
                     let label = tab.label.clone();
                     tracing::info!("SSH connected: {}", label);
                     if let Some(vault) = &self.vault {
@@ -1580,9 +1730,162 @@ impl Oryxis {
                         );
                         let _ = vault.add_log(&entry);
                     }
+                    // Reset the auto-reconnect counter for this connection.
+                    if let Some(conn) = self.connections.iter().find(|c| c.label == label) {
+                        self.reconnect_counters.remove(&conn.id);
+                        // Queue silent OS detection only if:
+                        //   - the feature is enabled,
+                        //   - we haven't detected this host before (runs once),
+                        //   - and the user hasn't set a custom icon override.
+                        let has_custom =
+                            conn.custom_icon.is_some() || conn.custom_color.is_some();
+                        if self.setting_os_detection && conn.detected_os.is_none() && !has_custom {
+                            detect_for = Some((conn.id, session));
+                        }
+                    }
                 }
                 // Clear progress, show terminal
                 self.connecting = None;
+
+                if let Some((conn_id, sess)) = detect_for {
+                    return Task::perform(
+                        async move { (conn_id, sess.detect_os().await) },
+                        |(id, os)| Message::OsDetected(id, os),
+                    );
+                }
+            }
+            Message::OsDetected(conn_id, os) => {
+                // Persist + update in-memory list so the icon refreshes.
+                if let Some(vault) = &self.vault {
+                    let _ = vault.set_detected_os(&conn_id, os.as_deref());
+                }
+                if let Some(conn) = self.connections.iter_mut().find(|c| c.id == conn_id) {
+                    conn.detected_os = os.clone();
+                }
+                tracing::info!("OS detected for {}: {:?}", conn_id, os);
+            }
+            Message::SettingToggleOsDetection => {
+                self.setting_os_detection = !self.setting_os_detection;
+            }
+            Message::SettingToggleAutoCheckUpdates => {
+                self.setting_auto_check_updates = !self.setting_auto_check_updates;
+            }
+            Message::CheckForUpdate => {
+                if !self.setting_auto_check_updates {
+                    return Task::none();
+                }
+                // Also respect a persisted "skip this version" so we never
+                // nag about the same tag twice.
+                let skipped = self
+                    .vault
+                    .as_ref()
+                    .and_then(|v| v.get_setting("skipped_update_version").ok().flatten());
+                return Task::perform(
+                    crate::update::check_latest_release(),
+                    move |opt| {
+                        match opt {
+                            Some(info) if Some(&info.version) != skipped.as_ref() => {
+                                Message::UpdateCheckResult(Some(info))
+                            }
+                            _ => Message::UpdateCheckResult(None),
+                        }
+                    },
+                );
+            }
+            Message::CheckForUpdateManual => {
+                // Manual trigger from the settings button — runs regardless
+                // of the auto-check preference. Clears prior skipped version
+                // so the user can resurface a previously-dismissed prompt.
+                self.update_error = None;
+                self.update_check_status = Some("Checking…".into());
+                if let Some(vault) = &self.vault {
+                    let _ = vault.set_setting("skipped_update_version", "");
+                }
+                return Task::perform(
+                    crate::update::check_latest_release(),
+                    |info| match info {
+                        Some(i) => Message::UpdateCheckResult(Some(i)),
+                        None => Message::UpdateCheckResult(None),
+                    },
+                );
+            }
+            Message::UpdateCheckResult(info) => {
+                match info {
+                    Some(i) => {
+                        self.pending_update = Some(i);
+                        self.update_check_status = None;
+                    }
+                    None => {
+                        // Only surface the "up to date" message if a manual
+                        // check is in flight (status was set to "Checking…").
+                        // A silent boot check that finds nothing should not
+                        // change the settings UI.
+                        if self.update_check_status.is_some() {
+                            self.update_check_status = Some(format!(
+                                "You're running the latest version ({}).",
+                                env!("CARGO_PKG_VERSION"),
+                            ));
+                        }
+                    }
+                }
+            }
+            Message::UpdateSkipVersion => {
+                if let Some(info) = self.pending_update.take()
+                    && let Some(vault) = &self.vault {
+                    let _ = vault.set_setting("skipped_update_version", &info.version);
+                }
+            }
+            Message::UpdateLater => {
+                self.pending_update = None;
+            }
+            Message::UpdateOpenRelease => {
+                if let Some(info) = &self.pending_update {
+                    let _ = open_in_browser(&info.html_url);
+                }
+            }
+            Message::UpdateStartDownload => {
+                let Some(info) = self.pending_update.clone() else {
+                    return Task::none();
+                };
+                let Some(url) = info.installer_url.clone() else {
+                    self.update_error = Some("No installer asset for this platform".into());
+                    return Task::none();
+                };
+                let name = info
+                    .installer_name
+                    .clone()
+                    .unwrap_or_else(|| format!("oryxis-update-{}", info.version));
+                self.update_downloading = true;
+                self.update_progress = 0.0;
+                self.update_error = None;
+                return Task::perform(
+                    async move {
+                        crate::update::download_installer(&url, &name, |_| {}).await
+                    },
+                    Message::UpdateDownloadComplete,
+                );
+            }
+            Message::UpdateDownloadProgress(p) => {
+                self.update_progress = p;
+            }
+            Message::UpdateDownloadComplete(result) => {
+                self.update_downloading = false;
+                match result {
+                    Ok(path) => {
+                        if let Err(e) = crate::update::launch_installer(&path) {
+                            self.update_error = Some(e);
+                        } else {
+                            // Installer launched — exit app so it can write
+                            // over our binary. Graceful quit via window close.
+                            self.pending_update = None;
+                            return iced::window::latest().then(|id_opt| match id_opt {
+                                Some(id) => iced::window::close(id),
+                                None => Task::none(),
+                            });
+                        }
+                    }
+                    Err(e) => self.update_error = Some(e),
+                }
             }
             Message::SshDisconnected(tab_idx) => {
                 if let Some(tab) = self.tabs.get_mut(tab_idx) {
@@ -1743,12 +2046,42 @@ impl Oryxis {
                     }
                 }
             }
+            Message::ClearAllKnownHosts => {
+                if let Some(vault) = &self.vault {
+                    for kh in self.known_hosts.clone() {
+                        let _ = vault.delete_known_host(&kh.id);
+                    }
+                    self.load_data_from_vault();
+                }
+            }
 
             // -- History --
             Message::ClearLogs => {
                 if let Some(vault) = &self.vault {
                     let _ = vault.clear_logs();
+                    self.logs_page = 0;
                     self.load_data_from_vault();
+                }
+            }
+            Message::LogsPageNext => {
+                let max_page = (self.logs_total.saturating_sub(1)) / 50;
+                if self.logs_page < max_page {
+                    self.logs_page += 1;
+                    if let Some(vault) = &self.vault {
+                        self.logs = vault
+                            .list_logs_page(self.logs_page * 50, 50)
+                            .unwrap_or_default();
+                    }
+                }
+            }
+            Message::LogsPagePrev => {
+                if self.logs_page > 0 {
+                    self.logs_page -= 1;
+                    if let Some(vault) = &self.vault {
+                        self.logs = vault
+                            .list_logs_page(self.logs_page * 50, 50)
+                            .unwrap_or_default();
+                    }
                 }
             }
             Message::ViewSessionLog(log_id) => {
@@ -1804,9 +2137,17 @@ impl Oryxis {
                     // Map app theme to terminal palette
                     let term_theme = match theme {
                         AppTheme::OryxisDark => oryxis_terminal::TerminalTheme::OryxisDark,
-                        AppTheme::OryxisLight => oryxis_terminal::TerminalTheme::OryxisDark, // TODO: light terminal
+                        AppTheme::OryxisLight => oryxis_terminal::TerminalTheme::OryxisDark,
+                        AppTheme::Termius => oryxis_terminal::TerminalTheme::OryxisDark,
+                        AppTheme::Darcula => oryxis_terminal::TerminalTheme::Dracula,
+                        AppTheme::IslandsDark => oryxis_terminal::TerminalTheme::Dracula,
                         AppTheme::Dracula => oryxis_terminal::TerminalTheme::Dracula,
+                        AppTheme::Monokai => oryxis_terminal::TerminalTheme::Monokai,
+                        AppTheme::HackerGreen => oryxis_terminal::TerminalTheme::HackerGreen,
                         AppTheme::Nord => oryxis_terminal::TerminalTheme::Nord,
+                        AppTheme::NordLight => oryxis_terminal::TerminalTheme::Nord,
+                        AppTheme::SolarizedLight => oryxis_terminal::TerminalTheme::SolarizedDark,
+                        AppTheme::PaperLight => oryxis_terminal::TerminalTheme::OryxisDark,
                     };
                     self.terminal_theme = term_theme;
                     for tab in &self.tabs {
@@ -1821,6 +2162,9 @@ impl Oryxis {
             }
             Message::TerminalFontSizeDecrease => {
                 self.terminal_font_size = (self.terminal_font_size - 1.0).max(10.0);
+            }
+            Message::TerminalFontChanged(name) => {
+                self.terminal_font_name = name;
             }
             Message::ChangeSettingsSection(section) => {
                 self.settings_section = section;
@@ -1842,6 +2186,49 @@ impl Oryxis {
             }
             Message::SettingScrollbackChanged(val) => {
                 self.setting_scrollback_rows = val;
+            }
+            Message::SettingToggleAutoReconnect => {
+                self.setting_auto_reconnect = !self.setting_auto_reconnect;
+            }
+            Message::SettingMaxReconnectChanged(val) => {
+                self.setting_max_reconnect_attempts = val;
+            }
+            Message::ConnectAnimTick => {
+                self.connect_anim_tick = self.connect_anim_tick.wrapping_add(1);
+            }
+            Message::AutoReconnectTick => {
+                if !self.setting_auto_reconnect {
+                    // fall through, nothing to do
+                } else {
+                    let max_attempts: u32 =
+                        self.setting_max_reconnect_attempts.parse().unwrap_or(5);
+                    // Find the first disconnected SSH tab whose counter is under the limit.
+                    // Only reconnect one per tick to avoid thrashing; next tick picks up
+                    // the next candidate.
+                    let candidate: Option<usize> = (0..self.tabs.len()).find(|&i| {
+                        let tab = &self.tabs[i];
+                        if !tab.label.ends_with(" (disconnected)") {
+                            return false;
+                        }
+                        let base = tab.label.trim_end_matches(" (disconnected)");
+                        let Some(conn) = self.connections.iter().find(|c| c.label == base) else {
+                            return false;
+                        };
+                        let attempts = self.reconnect_counters.get(&conn.id).copied().unwrap_or(0);
+                        attempts < max_attempts
+                    });
+                    if let Some(tab_idx) = candidate {
+                        let base = self.tabs[tab_idx]
+                            .label
+                            .trim_end_matches(" (disconnected)")
+                            .to_string();
+                        if let Some(conn) = self.connections.iter().find(|c| c.label == base) {
+                            let entry = self.reconnect_counters.entry(conn.id).or_insert(0);
+                            *entry += 1;
+                        }
+                        return Task::done(Message::ReconnectTab(tab_idx));
+                    }
+                }
             }
             Message::LockVault => {
                 if let Some(vault) = &mut self.vault {
@@ -1890,6 +2277,11 @@ impl Oryxis {
             }
             // -- Keys --
             Message::ShowKeyPanel => {
+                // Also navigate to the Keys screen — the import panel is rendered
+                // inside view_keys(), so the user needs to be there to see it
+                // (e.g. when they click "+ Key" from the host editor).
+                self.active_view = View::Keys;
+                self.active_tab = None;
                 self.show_key_panel = true;
                 self.key_import_label.clear();
                 self.key_import_content = text_editor::Content::new();
@@ -2156,10 +2548,14 @@ impl Oryxis {
                     self.overlay = None;
                 } else {
                     self.show_keychain_add_menu = true;
+                    // Push the menu a bit below the click point so it appears
+                    // under the button instead of overlapping it. Also nudge
+                    // left so the menu's left edge roughly aligns with the
+                    // left half of the split button (rather than the cursor).
                     self.overlay = Some(OverlayState {
                         content: OverlayContent::KeychainAdd,
-                        x: self.mouse_position.x,
-                        y: self.mouse_position.y,
+                        x: (self.mouse_position.x - 60.0).max(0.0),
+                        y: self.mouse_position.y + 16.0,
                     });
                 }
             }
@@ -2856,7 +3252,7 @@ impl Oryxis {
     }
 
     pub fn subscription(&self) -> Subscription<Message> {
-        iced::event::listen_with(|event, _status, _window| {
+        let events = iced::event::listen_with(|event, _status, _window| {
             match event {
                 iced::event::Event::Keyboard(ke) => Some(Message::KeyboardEvent(ke)),
                 iced::event::Event::Mouse(iced::mouse::Event::CursorMoved { position }) => {
@@ -2867,7 +3263,27 @@ impl Oryxis {
                 }
                 _ => None,
             }
-        })
+        });
+        // 30-second poll for silent auto-reconnect of disconnected SSH tabs.
+        let auto_reconnect = iced::time::every(std::time::Duration::from_secs(30))
+            .map(|_| Message::AutoReconnectTick);
+
+        // 100 ms tick that drives the pulsing "loading" ring on the active
+        // connection step. Only runs while a connection is in progress and
+        // hasn't failed — no perpetual re-renders on idle.
+        let mut subs = vec![events, auto_reconnect];
+        let is_connecting = self
+            .connecting
+            .as_ref()
+            .map(|p| !p.failed)
+            .unwrap_or(false);
+        if is_connecting {
+            subs.push(
+                iced::time::every(std::time::Duration::from_millis(100))
+                    .map(|_| Message::ConnectAnimTick),
+            );
+        }
+        Subscription::batch(subs)
     }
 
     // =======================================================================
@@ -2875,4546 +3291,75 @@ impl Oryxis {
     // =======================================================================
 
     pub fn view(&self) -> Element<'_, Message> {
-        match self.vault_state {
+        let base = match self.vault_state {
             VaultState::Loading => self.view_vault_error("Failed to open vault database"),
             VaultState::NeedSetup => self.view_vault_setup(),
             VaultState::Locked => self.view_vault_unlock(),
             VaultState::Unlocked => self.view_main(),
+        };
+
+        // Auto-update modal is application-level so it surfaces on the lock
+        // screen too. Rendered via Stack with a scrim that carves out the
+        // top 28 px so the window chrome stays draggable.
+        if self.pending_update.is_some() {
+            use iced::widget::{column, container, Space, Stack};
+            use iced::{Background, Color, Length};
+            let modal = self.view_update_modal();
+            let scrim: Element<'_, Message> = column![
+                // Reserve the chrome bar area so drag / min / max / close
+                // still land on the underlying buttons.
+                Space::new().height(Length::Fixed(28.0)),
+                container(Space::new())
+                    .width(Length::Fill)
+                    .height(Length::Fill)
+                    .style(|_| container::Style {
+                        background: Some(Background::Color(Color::from_rgba(0.0, 0.0, 0.0, 0.5))),
+                        ..Default::default()
+                    }),
+            ]
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .into();
+            return Stack::new()
+                .push(base)
+                .push(scrim)
+                .push(modal)
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .into();
         }
+        base
     }
 
     // -- Vault screens --
 
-    fn view_vault_setup(&self) -> Element<'_, Message> {
-        let logo = image(self.logo_handle.clone())
-            .width(64)
-            .height(64);
-        let title = text(crate::i18n::t("welcome")).size(28).color(OryxisColors::t().text_primary);
-        let subtitle = text("Set a master password or continue without one.")
-            .size(14)
-            .color(OryxisColors::t().text_secondary);
 
-        let input = text_input("Master password (optional)...", &self.vault_password_input)
-            .on_input(Message::VaultPasswordChanged)
-            .on_submit(Message::VaultSetup)
-            .secure(true)
-            .padding(12)
-            .width(300);
 
-        let btn = styled_button(crate::i18n::t("create_vault"), Message::VaultSetup, OryxisColors::t().accent);
 
-        let skip_btn = button(
-            text(crate::i18n::t("continue_without_password")).size(13).color(OryxisColors::t().text_secondary),
-        )
-        .on_press(Message::VaultSkipPassword)
-        .padding(Padding { top: 8.0, right: 16.0, bottom: 8.0, left: 16.0 })
-        .style(|_, status| {
-            let bg = match status {
-                BtnStatus::Hovered => OryxisColors::t().bg_hover,
-                _ => Color::TRANSPARENT,
-            };
-            button::Style {
-                background: Some(Background::Color(bg)),
-                border: Border { radius: Radius::from(6.0), ..Default::default() },
-                ..Default::default()
-            }
-        });
 
-        let error = if let Some(err) = &self.vault_error {
-            Element::from(text(err.clone()).size(13).color(OryxisColors::t().error))
-        } else {
-            Space::new().height(0).into()
-        };
 
-        container(
-            column![logo, Space::new().height(16), title, Space::new().height(8), subtitle, Space::new().height(24), input, Space::new().height(12), btn, Space::new().height(6), skip_btn, Space::new().height(8), error]
-                .align_x(iced::Alignment::Center),
-        )
-        .center(Length::Fill)
-        .style(|_| container::Style {
-            background: Some(Background::Color(OryxisColors::t().bg_primary)),
-            ..Default::default()
-        })
-        .width(Length::Fill)
-        .height(Length::Fill)
-        .into()
-    }
 
-    fn view_vault_unlock(&self) -> Element<'_, Message> {
-        let logo = image(self.logo_handle.clone())
-            .width(64)
-            .height(64);
-        let title = text("Oryxis").size(28).color(OryxisColors::t().accent);
-        let subtitle = text(crate::i18n::t("enter_password"))
-            .size(14)
-            .color(OryxisColors::t().text_secondary);
 
-        let input = text_input("Master password...", &self.vault_password_input)
-            .on_input(Message::VaultPasswordChanged)
-            .on_submit(Message::VaultUnlock)
-            .secure(true)
-            .padding(12)
-            .width(300);
 
-        let btn = styled_button(crate::i18n::t("unlock"), Message::VaultUnlock, OryxisColors::t().accent);
-
-        let error = if let Some(err) = &self.vault_error {
-            Element::from(text(err.clone()).size(13).color(OryxisColors::t().error))
-        } else {
-            Space::new().height(0).into()
-        };
-
-        let destroy_section: Element<'_, Message> = if self.vault_destroy_confirm {
-            column![
-                text(crate::i18n::t("vault_destroy_confirm")).size(12).color(OryxisColors::t().error),
-                Space::new().height(6),
-                styled_button(crate::i18n::t("destroy_vault"), Message::VaultDestroy, OryxisColors::t().error),
-            ].align_x(iced::Alignment::Center).into()
-        } else {
-            button(
-                text(crate::i18n::t("forgot_password")).size(12).color(OryxisColors::t().text_muted),
-            )
-            .on_press(Message::VaultDestroyConfirm)
-            .padding(Padding { top: 6.0, right: 12.0, bottom: 6.0, left: 12.0 })
-            .style(|_, _| button::Style::default())
-            .into()
-        };
-
-        container(
-            column![logo, Space::new().height(16), title, Space::new().height(8), subtitle, Space::new().height(24), input, Space::new().height(12), btn, Space::new().height(8), error, Space::new().height(16), destroy_section]
-                .align_x(iced::Alignment::Center),
-        )
-        .center(Length::Fill)
-        .style(|_| container::Style {
-            background: Some(Background::Color(OryxisColors::t().bg_primary)),
-            ..Default::default()
-        })
-        .width(Length::Fill)
-        .height(Length::Fill)
-        .into()
-    }
-
-    fn view_vault_error(&self, msg: &str) -> Element<'_, Message> {
-        let msg = msg.to_string();
-        container(
-            text(msg).size(16).color(OryxisColors::t().error),
-        )
-        .center(Length::Fill)
-        .style(|_| container::Style {
-            background: Some(Background::Color(OryxisColors::t().bg_primary)),
-            ..Default::default()
-        })
-        .width(Length::Fill)
-        .height(Length::Fill)
-        .into()
-    }
-
-    // -- Main layout --
-
-    fn view_main(&self) -> Element<'_, Message> {
-        let sidebar = self.view_sidebar();
-        let tab_bar = self.view_tab_bar();
-        let content = self.view_content();
-        let status_bar = self.view_status_bar();
-
-        let right_side = column![tab_bar, content].height(Length::Fill);
-        let main_row = row![sidebar, right_side].height(Length::Fill);
-        let layout = column![main_row, status_bar];
-
-        let base: Element<'_, Message> = container(layout)
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .style(|_| container::Style {
-                background: Some(Background::Color(OryxisColors::t().bg_primary)),
-                ..Default::default()
-            })
-            .into();
-
-        // Share dialog overlay
-        if self.show_share_dialog {
-            let share_include_keys = self.share_include_keys;
-            let dialog_content = container(
-                column![
-                    text(crate::i18n::t("share")).size(16).color(OryxisColors::t().text_primary),
-                    Space::new().height(12),
-                    text_input(crate::i18n::t("export_password"), &self.share_password)
-                        .on_input(Message::SharePasswordChanged)
-                        .secure(true)
-                        .padding(10)
-                        .width(280),
-                    Space::new().height(8),
-                    row![
-                        text(crate::i18n::t("include_private_keys")).size(13).color(OryxisColors::t().text_secondary),
-                        Space::new().width(Length::Fill),
-                        button(
-                            text(if share_include_keys { "ON" } else { "OFF" }).size(12)
-                        ).on_press(Message::ShareToggleKeys).style(move |_theme, _status| {
-                            button::Style {
-                                background: Some(Background::Color(if share_include_keys { OryxisColors::t().success } else { OryxisColors::t().bg_hover })),
-                                border: Border { radius: Radius::from(4.0), ..Default::default() },
-                                text_color: OryxisColors::t().text_primary,
-                                ..Default::default()
-                            }
-                        }),
-                    ].align_y(iced::Alignment::Center).width(280),
-                    Space::new().height(12),
-                    row![
-                        styled_button(crate::i18n::t("share"), Message::ShareConfirm, OryxisColors::t().accent),
-                        Space::new().width(8),
-                        styled_button(crate::i18n::t("cancel"), Message::ShareDismiss, OryxisColors::t().text_muted),
-                    ],
-                    if let Some(status) = &self.share_status {
-                        let (msg, color) = match status {
-                            Ok(m) => (m.as_str(), OryxisColors::t().success),
-                            Err(m) => (m.as_str(), OryxisColors::t().error),
-                        };
-                        Element::from(column![Space::new().height(8), text(msg).size(12).color(color)])
-                    } else {
-                        Element::from(Space::new().height(0))
-                    },
-                ]
-                .padding(24),
-            )
-            .style(|_| container::Style {
-                background: Some(Background::Color(OryxisColors::t().bg_surface)),
-                border: Border { radius: Radius::from(12.0), color: OryxisColors::t().border, width: 1.0 },
-                ..Default::default()
-            });
-
-            let backdrop: Element<'_, Message> = MouseArea::new(
-                container(Space::new()).width(Length::Fill).height(Length::Fill),
-            )
-            .on_press(Message::ShareDismiss)
-            .into();
-
-            let centered = container(dialog_content)
-                .width(Length::Fill)
-                .height(Length::Fill)
-                .center_x(Length::Fill)
-                .center_y(Length::Fill);
-
-            return Stack::new()
-                .push(base)
-                .push(backdrop)
-                .push(centered)
-                .width(Length::Fill)
-                .height(Length::Fill)
-                .into();
-        }
-
-        if let Some(ref overlay) = self.overlay {
-            let menu = self.render_overlay_menu(overlay);
-
-            // Transparent backdrop that dismisses the menu on click
-            let backdrop: Element<'_, Message> = MouseArea::new(
-                container(Space::new())
-                    .width(Length::Fill)
-                    .height(Length::Fill),
-            )
-            .on_press(Message::HideOverlayMenu)
-            .into();
-
-            // Position the menu, clamping to window bounds to prevent clipping
-            let menu_width = 180.0_f32;
-            let menu_height = 80.0_f32; // approximate menu height
-            let x = overlay.x.min(self.window_size.width - menu_width).max(0.0);
-            let y = overlay.y.min(self.window_size.height - menu_height).max(0.0);
-            let positioned_menu: Element<'_, Message> = column![
-                Space::new().height(y),
-                row![
-                    Space::new().width(x),
-                    menu,
-                ],
-            ]
-            .into();
-
-            Stack::new()
-                .push(base)
-                .push(backdrop)
-                .push(positioned_menu)
-                .width(Length::Fill)
-                .height(Length::Fill)
-                .into()
-        } else {
-            base
-        }
-    }
-
-    fn render_overlay_menu(&self, overlay: &OverlayState) -> Element<'_, Message> {
-        let menu_width = 180.0;
-        let items: Element<'_, Message> = match &overlay.content {
-            OverlayContent::HostActions(idx) => {
-                let idx = *idx;
-                column![
-                    context_menu_item(iced_fonts::bootstrap::play_fill(), crate::i18n::t("connect"), Message::ConnectSsh(idx), OryxisColors::t().success),
-                    context_menu_item(iced_fonts::bootstrap::pencil(), crate::i18n::t("edit"), Message::EditConnection(idx), OryxisColors::t().text_secondary),
-                    context_menu_item(iced_fonts::bootstrap::copy(), crate::i18n::t("duplicate"), Message::DuplicateConnection(idx), OryxisColors::t().text_secondary),
-                    context_menu_item(iced_fonts::bootstrap::share(), crate::i18n::t("share"), Message::ShareConnection(idx), OryxisColors::t().text_secondary),
-                    context_menu_item(iced_fonts::bootstrap::trash(), crate::i18n::t("remove"), Message::DeleteConnection(idx), OryxisColors::t().error),
-                ].into()
-            }
-            OverlayContent::KeyActions(idx) => {
-                let idx = *idx;
-                column![
-                    context_menu_item(iced_fonts::bootstrap::pencil(), crate::i18n::t("edit"), Message::EditKey(idx), OryxisColors::t().text_secondary),
-                    context_menu_item(iced_fonts::bootstrap::trash(), crate::i18n::t("remove"), Message::DeleteKey(idx), OryxisColors::t().error),
-                ].into()
-            }
-            OverlayContent::IdentityActions(idx) => {
-                let idx = *idx;
-                column![
-                    context_menu_item(iced_fonts::bootstrap::pencil(), crate::i18n::t("edit"), Message::EditIdentity(idx), OryxisColors::t().text_secondary),
-                    context_menu_item(iced_fonts::bootstrap::trash(), crate::i18n::t("remove"), Message::DeleteIdentity(idx), OryxisColors::t().error),
-                ].into()
-            }
-            OverlayContent::KeychainAdd => {
-                column![
-                    context_menu_item(iced_fonts::bootstrap::key(), crate::i18n::t("import_key"), Message::ShowKeyPanel, OryxisColors::t().text_secondary),
-                    context_menu_item(iced_fonts::bootstrap::person(), crate::i18n::t("new_identity"), Message::ShowIdentityPanel, OryxisColors::t().text_secondary),
-                ].into()
-            }
-        };
-
-        container(items)
-            .width(menu_width)
-            .padding(4)
-            .style(|_| container::Style {
-                background: Some(Background::Color(OryxisColors::t().bg_surface)),
-                border: Border {
-                    radius: Radius::from(8.0),
-                    color: OryxisColors::t().border,
-                    width: 1.0,
-                },
-                shadow: iced::Shadow {
-                    color: Color::from_rgba(0.0, 0.0, 0.0, 0.3),
-                    offset: iced::Vector::new(0.0, 4.0),
-                    blur_radius: 12.0,
-                },
-                ..Default::default()
-            })
-            .into()
-    }
-
-    fn view_tab_bar(&self) -> Element<'_, Message> {
-        let mut items: Vec<Element<'_, Message>> = Vec::new();
-
-        // Navigation tabs (grid views)
-        let nav_label = match self.active_view {
-            View::Dashboard => "Hosts",
-            View::Keys => "Keychain",
-            View::Snippets => "Snippets",
-            View::KnownHosts => "Known Hosts",
-            View::History => "History",
-            View::Settings => "Settings",
-            View::Terminal => "",
-        };
-        if !nav_label.is_empty() {
-            let nav_bg = if self.active_tab.is_none() { OryxisColors::t().bg_surface } else { Color::TRANSPARENT };
-            let nav_fg = if self.active_tab.is_none() { OryxisColors::t().accent } else { OryxisColors::t().text_muted };
-            let tab = button(
-                text(nav_label).size(12).color(nav_fg),
-            )
-            .on_press(Message::ChangeView(self.active_view))
-            .padding(Padding { top: 8.0, right: 16.0, bottom: 8.0, left: 16.0 })
-            .style(move |_, _| button::Style {
-                background: Some(Background::Color(nav_bg)),
-                border: Border {
-                    radius: Radius { top_left: 6.0, top_right: 6.0, bottom_left: 0.0, bottom_right: 0.0 },
-                    ..Default::default()
-                },
-                ..Default::default()
-            });
-            items.push(tab.into());
-        }
-
-        // Terminal session tabs
-        for (idx, tab) in self.tabs.iter().enumerate() {
-            let is_active = self.active_tab == Some(idx);
-            let tab_bg = if is_active { OryxisColors::t().bg_surface } else { Color::TRANSPARENT };
-            let tab_fg = if is_active { OryxisColors::t().text_primary } else { OryxisColors::t().text_muted };
-
-            let close_btn = button(text("x").size(10).color(OryxisColors::t().text_muted))
-                .on_press(Message::CloseTab(idx))
-                .padding(Padding { top: 0.0, right: 4.0, bottom: 0.0, left: 4.0 })
-                .style(|_, _| button::Style {
-                    background: Some(Background::Color(Color::TRANSPARENT)),
-                    border: Border::default(),
-                    ..Default::default()
-                });
-
-            let tab_btn = button(
-                row![
-                    text(&tab.label).size(12).color(tab_fg),
-                    Space::new().width(8),
-                    close_btn,
-                ].align_y(iced::Alignment::Center),
-            )
-            .padding(Padding { top: 8.0, right: 10.0, bottom: 8.0, left: 14.0 })
-            .on_press(Message::SelectTab(idx))
-            .style(move |_, _| button::Style {
-                background: Some(Background::Color(tab_bg)),
-                border: Border {
-                    radius: Radius { top_left: 6.0, top_right: 6.0, bottom_left: 0.0, bottom_right: 0.0 },
-                    ..Default::default()
-                },
-                ..Default::default()
-            });
-
-            items.push(tab_btn.into());
-        }
-
-        items.push(Space::new().width(Length::Fill).into());
-
-        container(row(items).align_y(iced::Alignment::Center))
-            .width(Length::Fill)
-            .style(|_| container::Style {
-                background: Some(Background::Color(OryxisColors::t().bg_sidebar)),
-                ..Default::default()
-            })
-            .into()
-    }
-
-    fn view_sidebar(&self) -> Element<'_, Message> {
-        // Logo — centered, larger
-        let header = container(
-            image(self.logo_small_handle.clone())
-                .width(64)
-                .height(64),
-        )
-        .padding(Padding { top: 16.0, right: 0.0, bottom: 12.0, left: 0.0 })
-        .width(Length::Fill)
-        .center_x(Length::Fill);
-
-        // Navigation items with pill-shaped active state
-        let nav_buttons: Vec<Element<'_, Message>> = vec![
-            sidebar_nav_btn(iced_fonts::bootstrap::hdd_network(), crate::i18n::t("hosts"), View::Dashboard, self.active_view == View::Dashboard && self.active_tab.is_none()),
-            sidebar_nav_btn(iced_fonts::bootstrap::key(), crate::i18n::t("keychain"), View::Keys, self.active_view == View::Keys && self.active_tab.is_none()),
-            sidebar_nav_btn(iced_fonts::bootstrap::code_square(), crate::i18n::t("snippets"), View::Snippets, self.active_view == View::Snippets && self.active_tab.is_none()),
-            sidebar_nav_btn(iced_fonts::bootstrap::shield_check(), crate::i18n::t("known_hosts"), View::KnownHosts, self.active_view == View::KnownHosts && self.active_tab.is_none()),
-            sidebar_nav_btn(iced_fonts::bootstrap::clock_history(), crate::i18n::t("history"), View::History, self.active_view == View::History && self.active_tab.is_none()),
-            sidebar_nav_btn(iced_fonts::bootstrap::gear(), crate::i18n::t("settings"), View::Settings, self.active_view == View::Settings && self.active_tab.is_none()),
-        ];
-
-        // Local shell shortcut at bottom
-        let local_btn = button(
-            container(
-                row![
-                    text("+").size(13).color(OryxisColors::t().text_muted),
-                    Space::new().width(10),
-                    text(crate::i18n::t("local_shell")).size(12).color(OryxisColors::t().text_muted),
-                ]
-                .align_y(iced::Alignment::Center),
-            )
-            .padding(Padding { top: 8.0, right: 16.0, bottom: 8.0, left: 16.0 }),
-        )
-        .on_press(Message::OpenLocalShell)
-        .width(Length::Fill)
-        .style(|_, _| button::Style {
-            background: Some(Background::Color(Color::TRANSPARENT)),
-            border: Border { radius: Radius::from(10.0), ..Default::default() },
-            ..Default::default()
-        });
-
-        let sidebar_content = column![
-            header,
-            column(nav_buttons),
-            Space::new().height(Length::Fill),
-            container(local_btn)
-                .padding(Padding { top: 0.0, right: 8.0, bottom: 12.0, left: 8.0 }),
-        ]
-        .width(Length::Fill);
-
-        container(sidebar_content)
-            .width(SIDEBAR_WIDTH)
-            .height(Length::Fill)
-            .style(|_| container::Style {
-                background: Some(Background::Color(OryxisColors::t().bg_sidebar)),
-                ..Default::default()
-            })
-            .into()
-    }
-
-    fn view_content(&self) -> Element<'_, Message> {
-        // If a terminal tab is active, show terminal
-        // Otherwise show the grid view for the current nav item
-        let content: Element<'_, Message> = if self.connecting.is_some() && self.active_tab.is_some() {
-            self.view_connection_progress()
-        } else if self.active_tab.is_some() && self.connecting.is_none() {
-            self.view_terminal()
-        } else {
-            match self.active_view {
-                View::Dashboard => self.view_dashboard(),
-                View::Keys => self.view_keys(),
-                View::Snippets => self.view_snippets(),
-                View::KnownHosts => self.view_known_hosts(),
-                View::History => self.view_history(),
-                View::Settings => self.view_settings(),
-                View::Terminal => self.view_terminal(),
-            }
-        };
-
-        container(content)
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .style(|_| container::Style {
-                background: Some(Background::Color(OryxisColors::t().bg_primary)),
-                ..Default::default()
-            })
-            .into()
-    }
-
-    fn view_dashboard(&self) -> Element<'_, Message> {
-        // ── Toolbar ──
-        let toolbar_left: Element<'_, Message> = if let Some(gid) = self.active_group {
-            let group_name = self.groups.iter()
-                .find(|g| g.id == gid)
-                .map(|g| g.label.as_str())
-                .unwrap_or("Group");
-            row![
-                button(
-                    row![
-                        iced_fonts::bootstrap::arrow_left().size(14).color(OryxisColors::t().accent),
-                        Space::new().width(6),
-                        text(crate::i18n::t("all_hosts")).size(14).color(OryxisColors::t().accent),
-                    ].align_y(iced::Alignment::Center),
-                )
-                .on_press(Message::BackToRoot)
-                .padding(Padding { top: 4.0, right: 10.0, bottom: 4.0, left: 10.0 })
-                .style(|_, _| button::Style {
-                    background: Some(Background::Color(Color::TRANSPARENT)),
-                    border: Border::default(),
-                    ..Default::default()
-                }),
-                text("/").size(16).color(OryxisColors::t().text_muted),
-                Space::new().width(8),
-                iced_fonts::bootstrap::folder_fill().size(16).color(OryxisColors::t().accent),
-                Space::new().width(6),
-                text(group_name).size(16).color(OryxisColors::t().text_primary),
-            ].align_y(iced::Alignment::Center).into()
-        } else {
-            text("Hosts").size(20).color(OryxisColors::t().text_primary).into()
-        };
-
-        let toolbar = container(
-            row![
-                toolbar_left,
-                Space::new().width(Length::Fill),
-                button(
-                    container(
-                        row![
-                            text("+").size(12).color(OryxisColors::t().text_primary),
-                            Space::new().width(4),
-                            text("HOST").size(12).color(OryxisColors::t().text_primary),
-                        ].align_y(iced::Alignment::Center),
-                    )
-                    .padding(Padding { top: 6.0, right: 14.0, bottom: 7.0, left: 14.0 }),
-                )
-                .on_press(Message::ShowNewConnection)
-                .style(|_, _| button::Style {
-                    background: Some(Background::Color(OryxisColors::t().accent)),
-                    border: Border { radius: Radius::from(8.0), ..Default::default() },
-                    ..Default::default()
-                }),
-            ].align_y(iced::Alignment::Center),
-        )
-        .padding(Padding { top: 20.0, right: 24.0, bottom: 16.0, left: 24.0 })
-        .width(Length::Fill);
-
-        // ── Search bar ──
-        let search_bar = container(
-            text_input("Search hosts...", &self.host_search)
-                .on_input(Message::HostSearchChanged)
-                .padding(10)
-                .size(13)
-                .style(|_, status| text_input::Style {
-                    background: Background::Color(OryxisColors::t().bg_surface),
-                    border: Border {
-                        radius: Radius::from(8.0),
-                        width: 1.0,
-                        color: match status {
-                            text_input::Status::Focused { .. } => OryxisColors::t().accent,
-                            _ => OryxisColors::t().border,
-                        },
-                    },
-                    icon: OryxisColors::t().text_muted,
-                    placeholder: OryxisColors::t().text_muted,
-                    value: OryxisColors::t().text_primary,
-                    selection: OryxisColors::t().accent,
-                }),
-        )
-        .padding(Padding { top: 0.0, right: 24.0, bottom: 12.0, left: 24.0 })
-        .width(Length::Fill);
-
-        // ── Status ──
-        let status: Element<'_, Message> = if let Some(err) = &self.host_panel_error {
-            container(Element::from(text(err.clone()).size(12).color(OryxisColors::t().error)))
-                .padding(Padding { top: 0.0, right: 24.0, bottom: 8.0, left: 24.0 }).into()
-        } else {
-            Space::new().height(0).into()
-        };
-
-        // ── Host cards grid ──
-        let mut cards: Vec<Element<'_, Message>> = Vec::new();
-
-        if self.connections.is_empty() {
-            // Termius-style empty state — centered "Create host" with input
-            let has_input = !self.quick_host_input.is_empty();
-            let btn_bg = if has_input { OryxisColors::t().success } else { OryxisColors::t().bg_surface };
-
-            let empty_state = container(
-                column![
-                    // Icon
-                    container(
-                        iced_fonts::bootstrap::hdd_network().size(32).color(OryxisColors::t().text_muted),
-                    )
-                    .padding(16)
-                    .style(|_| container::Style {
-                        background: Some(Background::Color(OryxisColors::t().bg_surface)),
-                        border: Border { radius: Radius::from(12.0), ..Default::default() },
-                        ..Default::default()
-                    }),
-                    Space::new().height(20),
-                    text(crate::i18n::t("create_host_title")).size(20).color(OryxisColors::t().text_primary),
-                    Space::new().height(8),
-                    text(crate::i18n::t("create_host_desc"))
-                        .size(13).color(OryxisColors::t().text_muted),
-                    Space::new().height(24),
-                    // Hostname input
-                    text_input("Type IP or Hostname", &self.quick_host_input)
-                        .on_input(Message::QuickHostInput)
-                        .on_submit(Message::QuickHostContinue)
-                        .padding(14)
-                        .width(380),
-                    Space::new().height(12),
-                    // Continue button
-                    button(
-                        container(text(crate::i18n::t("continue_btn")).size(14).color(OryxisColors::t().text_primary))
-                            .padding(Padding { top: 12.0, right: 0.0, bottom: 12.0, left: 0.0 })
-                            .width(380)
-                            .center_x(380),
-                    )
-                    .on_press(Message::QuickHostContinue)
-                    .width(380)
-                    .style(move |_, _| button::Style {
-                        background: Some(Background::Color(btn_bg)),
-                        border: Border { radius: Radius::from(8.0), ..Default::default() },
-                        ..Default::default()
-                    }),
-                ]
-                .align_x(iced::Alignment::Center),
-            )
-            .center(Length::Fill);
-
-            let main_content = column![toolbar, search_bar, status, empty_state]
-                .width(Length::Fill)
-                .height(Length::Fill);
-
-            if self.show_host_panel {
-                let panel = self.view_host_panel();
-                return row![main_content, panel]
-                    .width(Length::Fill)
-                    .height(Length::Fill)
-                    .into();
-            } else {
-                return main_content.into();
-            }
-        }
-
-        if self.active_group.is_none() {
-            // Root view: show folder cards for groups that have connections
-            let mut shown_groups = std::collections::HashSet::new();
-            for conn in &self.connections {
-                if let Some(gid) = conn.group_id
-                    && shown_groups.insert(gid)
-                        && let Some(group) = self.groups.iter().find(|g| g.id == gid) {
-                            let count = self.connections.iter().filter(|c| c.group_id == Some(gid)).count();
-                            let label = group.label.clone();
-                            let count_text = format!("{} host{}", count, if count != 1 { "s" } else { "" });
-
-                            // Folder card with "stacked" effect
-                            let folder_card = button(
-                                container(
-                                    column![
-                                        row![
-                                            iced_fonts::bootstrap::folder_fill().size(20).color(OryxisColors::t().accent),
-                                            Space::new().width(Length::Fill),
-                                            text(count_text).size(11).color(OryxisColors::t().text_muted),
-                                        ].align_y(iced::Alignment::Center),
-                                        Space::new().height(10),
-                                        text(label).size(14).color(OryxisColors::t().text_primary),
-                                    ],
-                                )
-                                .padding(16),
-                            )
-                            .on_press(Message::OpenGroup(gid))
-                            .width(CARD_WIDTH)
-                            .style(|_, status| {
-                                let (bg, bc, bw) = match status {
-                                    BtnStatus::Hovered => (OryxisColors::t().bg_hover, OryxisColors::t().accent, 1.5),
-                                    BtnStatus::Pressed => (OryxisColors::t().bg_selected, OryxisColors::t().accent, 2.0),
-                                    _ => (OryxisColors::t().bg_surface, OryxisColors::t().border, 1.0),
-                                };
-                                button::Style {
-                                    background: Some(Background::Color(bg)),
-                                    border: Border { radius: Radius::from(10.0), color: bc, width: bw },
-                                    ..Default::default()
-                                }
-                            });
-
-                            cards.push(folder_card.into());
-                        }
-            }
-        }
-
-        // Show host cards — filtered by active group and search
-        let search_lower = self.host_search.to_lowercase();
-        for (idx, conn) in self.connections.iter().enumerate() {
-            // Filter: at root show ungrouped only, inside folder show that group
-            if let Some(gid) = self.active_group {
-                if conn.group_id != Some(gid) { continue; }
-            } else if conn.group_id.is_some() {
-                continue; // hide grouped hosts at root (they're inside folder cards)
-            }
-
-            // Filter by search query
-            if !search_lower.is_empty() {
-                let label_match = conn.label.to_lowercase().contains(&search_lower);
-                let host_match = conn.hostname.to_lowercase().contains(&search_lower);
-                if !label_match && !host_match { continue; }
-            }
-
-            let is_connected = self.tabs.iter().any(|t| t.label == conn.label);
-            let auth_label = match conn.auth_method {
-                AuthMethod::Auto => "Auto",
-                AuthMethod::Password => "Password",
-                AuthMethod::Key => "Key",
-                AuthMethod::Agent => "Agent",
-                AuthMethod::Interactive => "Interactive",
-            };
-            let subtitle = format!("{}@{}:{} · {}", conn.username.as_deref().unwrap_or("root"), conn.hostname, conn.port, auth_label);
-
-            let icon_color = if is_connected { OryxisColors::t().success } else { OryxisColors::t().accent };
-            let icon_box = container(iced_fonts::bootstrap::hdd_network().size(14).color(Color::WHITE))
-                .padding(Padding { top: 8.0, right: 8.0, bottom: 8.0, left: 8.0 })
-                .style(move |_| container::Style {
-                    background: Some(Background::Color(icon_color)),
-                    border: Border { radius: Radius::from(8.0), ..Default::default() },
-                    ..Default::default()
-                });
-
-            // "..." button — only visible on hover or when menu is open
-            let show_dots = self.hovered_card == Some(idx) || self.card_context_menu == Some(idx);
-            let dots_btn: Element<'_, Message> = if show_dots {
-                button(
-                    text("···").size(14).color(OryxisColors::t().text_muted),
-                )
-                .on_press(Message::ShowCardMenu(idx))
-                .padding(Padding { top: 2.0, right: 6.0, bottom: 2.0, left: 6.0 })
-                .style(|_, status| {
-                    let bg = match status {
-                        BtnStatus::Hovered => OryxisColors::t().bg_hover,
-                        _ => Color::TRANSPARENT,
-                    };
-                    button::Style {
-                        background: Some(Background::Color(bg)),
-                        border: Border { radius: Radius::from(6.0), ..Default::default() },
-                        ..Default::default()
-                    }
-                })
-                .into()
-            } else {
-                Space::new().width(0).into()
-            };
-
-            let card_btn = button(
-                container(
-                    row![
-                        icon_box,
-                        Space::new().width(12),
-                        column![
-                            text(&conn.label).size(13).color(OryxisColors::t().text_primary),
-                            Space::new().height(2),
-                            text(subtitle).size(10).color(OryxisColors::t().text_muted),
-                        ].width(Length::Fill),
-                        dots_btn,
-                    ].align_y(iced::Alignment::Center),
-                )
-                .padding(16),
-            )
-            .on_press(Message::ConnectSsh(idx))
-            .width(CARD_WIDTH)
-            .style(move |_, status| {
-                let (bg, bc, bw) = match status {
-                    BtnStatus::Hovered => (OryxisColors::t().bg_hover, OryxisColors::t().accent, 1.5),
-                    BtnStatus::Pressed => (OryxisColors::t().bg_selected, OryxisColors::t().accent, 2.0),
-                    _ => (OryxisColors::t().bg_surface, OryxisColors::t().border, 1.0),
-                };
-                button::Style {
-                    background: Some(Background::Color(bg)),
-                    border: Border { radius: Radius::from(10.0), color: bc, width: bw },
-                    ..Default::default()
-                }
-            });
-
-            // Wrap in MouseArea for hover tracking and right-click
-            let wrapped = MouseArea::new(card_btn)
-                .on_enter(Message::CardHovered(idx))
-                .on_exit(Message::CardUnhovered)
-                .on_right_press(Message::ShowCardMenu(idx));
-
-            cards.push(container(wrapped).width(CARD_WIDTH).into());
-        }
-
-        // Grid layout (3 cols)
-        let mut grid_rows: Vec<Element<'_, Message>> = Vec::new();
-        let mut current_row: Vec<Element<'_, Message>> = Vec::new();
-        for card in cards {
-            current_row.push(card);
-            if current_row.len() == 3 {
-                grid_rows.push(row(std::mem::take(&mut current_row)).spacing(12).into());
-                grid_rows.push(Space::new().height(12).into());
-            }
-        }
-        if !current_row.is_empty() {
-            while current_row.len() < 3 {
-                current_row.push(Space::new().width(CARD_WIDTH).into());
-            }
-            grid_rows.push(row(std::mem::take(&mut current_row)).spacing(12).into());
-        }
-
-        let grid = scrollable(
-            column(grid_rows)
-                .padding(Padding { top: 0.0, right: 24.0, bottom: 24.0, left: 24.0 }),
-        ).height(Length::Fill);
-
-        // ── Main + side panel ──
-        let main_content = column![toolbar, search_bar, status, grid]
-            .width(Length::Fill)
-            .height(Length::Fill);
-
-        if self.show_host_panel {
-            let panel = self.view_host_panel();
-            row![main_content, panel]
-                .width(Length::Fill)
-                .height(Length::Fill)
-                .into()
-        } else {
-            main_content.into()
-        }
-    }
-
-    fn view_connection_progress(&self) -> Element<'_, Message> {
-        let progress = match &self.connecting {
-            Some(p) => p,
-            None => return Space::new().into(),
-        };
-
-        let step_num = match progress.step {
-            ConnectionStep::Connecting => 1,
-            ConnectionStep::Handshake => 2,
-            ConnectionStep::Authenticating => 3,
-        };
-
-        let failed = progress.failed;
-        let step_color = |n: u8| -> Color {
-            if failed { return OryxisColors::t().error; }
-            if n < step_num { OryxisColors::t().success }
-            else if n == step_num { OryxisColors::t().accent }
-            else { OryxisColors::t().text_muted }
-        };
-
-        // Header: host info
-        let header = container(
-            row![
-                container(
-                    iced_fonts::bootstrap::hdd_network().size(18).color(Color::WHITE),
-                )
-                .padding(10)
-                .style(|_| container::Style {
-                    background: Some(Background::Color(OryxisColors::t().accent)),
-                    border: Border { radius: Radius::from(10.0), ..Default::default() },
-                    ..Default::default()
-                }),
-                Space::new().width(14),
-                column![
-                    text(&progress.label).size(16).color(OryxisColors::t().text_primary),
-                    Space::new().height(2),
-                    text(&progress.hostname).size(12).color(OryxisColors::t().text_muted),
-                ],
-            ].align_y(iced::Alignment::Center),
-        )
-        .padding(Padding { top: 24.0, right: 0.0, bottom: 16.0, left: 0.0 });
-
-        // Progress dots
-        let dot = |n: u8| -> Element<'_, Message> {
-            let c = step_color(n);
-            container(text("").size(1))
-                .width(12).height(12)
-                .style(move |_| container::Style {
-                    background: Some(Background::Color(c)),
-                    border: Border { radius: Radius::from(6.0), ..Default::default() },
-                    ..Default::default()
-                })
-                .into()
-        };
-        let line = |n: u8| -> Element<'_, Message> {
-            let c = step_color(n);
-            container(Space::new().height(2))
-                .width(80)
-                .style(move |_| container::Style {
-                    background: Some(Background::Color(c)),
-                    ..Default::default()
-                })
-                .into()
-        };
-
-        let progress_bar = container(
-            row![
-                dot(1), line(1), dot(2), line(2), dot(3),
-            ].align_y(iced::Alignment::Center),
-        )
-        .padding(Padding { top: 0.0, right: 0.0, bottom: 16.0, left: 0.0 })
-        .width(Length::Fill)
-        .center_x(Length::Fill);
-
-        // Host key verification or normal status
-        let (status_widget, body_widget, bottom): (
-            Element<'_, Message>,
-            Element<'_, Message>,
-            Element<'_, Message>,
-        ) = if let Some(ref query) = self.pending_host_key {
-            let is_changed = matches!(query.status, oryxis_ssh::HostKeyStatus::Changed { .. });
-
-            let question_text = if is_changed {
-                crate::i18n::t("hk_warning_title")
-            } else {
-                crate::i18n::t("hk_unknown_title")
-            };
-            let question_color = if is_changed { OryxisColors::t().error } else { OryxisColors::t().warning };
-
-            let status: Element<'_, Message> = text(question_text).size(14).color(question_color).into();
-
-            let mut body_col = column![];
-
-            if is_changed {
-                body_col = body_col
-                    .push(Space::new().height(8))
-                    .push(text(crate::i18n::t("hk_warning_desc")).size(13).color(OryxisColors::t().error))
-                    .push(Space::new().height(12));
-                if let oryxis_ssh::HostKeyStatus::Changed { ref old_fingerprint } = query.status {
-                    body_col = body_col
-                        .push(text(format!("{} {}", crate::i18n::t("hk_old_fingerprint"), old_fingerprint)).size(12).color(OryxisColors::t().text_muted))
-                        .push(Space::new().height(8));
-                }
-            } else {
-                body_col = body_col
-                    .push(Space::new().height(8))
-                    .push(text(format!(
-                        "The authenticity of {} can not be established.",
-                        query.hostname,
-                    )).size(13).color(OryxisColors::t().text_secondary))
-                    .push(Space::new().height(12));
-            }
-
-            body_col = body_col
-                .push(text(format!("{} fingerprint is SHA256:", query.key_type)).size(13).color(OryxisColors::t().text_secondary))
-                .push(Space::new().height(8))
-                .push(text(&query.fingerprint).size(14).color(OryxisColors::t().text_primary))
-                .push(Space::new().height(16))
-                .push(text(crate::i18n::t("hk_add_question")).size(13).color(OryxisColors::t().text_secondary));
-
-            let body: Element<'_, Message> = container(body_col)
-                .width(Length::Fill)
-                .height(Length::Fill)
-                .padding(Padding { top: 8.0, right: 16.0, bottom: 8.0, left: 16.0 })
-                .style(|_| container::Style {
-                    background: Some(Background::Color(OryxisColors::t().bg_sidebar)),
-                    border: Border { radius: Radius::from(10.0), ..Default::default() },
-                    ..Default::default()
-                })
-                .into();
-
-            let close_btn = button(
-                container(text(crate::i18n::t("close")).size(13).color(OryxisColors::t().text_primary))
-                    .padding(Padding { top: 10.0, right: 24.0, bottom: 10.0, left: 24.0 }),
-            )
-            .on_press(Message::SshHostKeyReject)
-            .style(|_, _| button::Style {
-                background: Some(Background::Color(OryxisColors::t().bg_surface)),
-                border: Border { radius: Radius::from(8.0), ..Default::default() },
-                ..Default::default()
-            });
-
-            let continue_btn = button(
-                container(text(crate::i18n::t("hk_continue")).size(13).color(OryxisColors::t().text_primary))
-                    .padding(Padding { top: 10.0, right: 24.0, bottom: 10.0, left: 24.0 }),
-            )
-            .on_press(Message::SshHostKeyContinue)
-            .style(|_, _| button::Style {
-                background: Some(Background::Color(OryxisColors::t().bg_surface)),
-                border: Border { radius: Radius::from(8.0), color: OryxisColors::t().border, width: 1.0 },
-                ..Default::default()
-            });
-
-            let accept_btn = button(
-                container(text(crate::i18n::t("hk_add_and_continue")).size(13).color(OryxisColors::t().text_primary))
-                    .padding(Padding { top: 10.0, right: 24.0, bottom: 10.0, left: 24.0 }),
-            )
-            .on_press(Message::SshHostKeyAcceptAndSave)
-            .style(|_, _| button::Style {
-                background: Some(Background::Color(OryxisColors::t().success)),
-                border: Border { radius: Radius::from(8.0), ..Default::default() },
-                ..Default::default()
-            });
-
-            let btm: Element<'_, Message> = row![
-                close_btn,
-                Space::new().width(12),
-                continue_btn,
-                Space::new().width(Length::Fill),
-                accept_btn,
-            ].align_y(iced::Alignment::Center).into();
-
-            (status, body, btm)
-        } else {
-            // Normal connection progress
-            let status_text = if failed {
-                "Connection failed with connection log:"
-            } else {
-                "Connecting..."
-            };
-            let status_color = if failed { OryxisColors::t().error } else { OryxisColors::t().text_secondary };
-            let status: Element<'_, Message> = text(status_text).size(14).color(status_color).into();
-
-            // Log entries
-            let mut log_items: Vec<Element<'_, Message>> = Vec::new();
-            for (step, msg) in &progress.logs {
-                let icon_color = if msg.starts_with("Error") {
-                    OryxisColors::t().error
-                } else {
-                    match step {
-                        ConnectionStep::Connecting => OryxisColors::t().text_muted,
-                        ConnectionStep::Handshake => OryxisColors::t().accent,
-                        ConnectionStep::Authenticating => OryxisColors::t().warning,
-                    }
-                };
-
-                let icon = if msg.starts_with("Error") {
-                    iced_fonts::bootstrap::exclamation_circle()
-                } else {
-                    iced_fonts::bootstrap::gear()
-                };
-
-                log_items.push(
-                    row![
-                        icon.size(12).color(icon_color),
-                        Space::new().width(10),
-                        text(msg).size(13).color(OryxisColors::t().text_secondary),
-                    ]
-                    .align_y(iced::Alignment::Start)
-                    .into(),
-                );
-                log_items.push(Space::new().height(6).into());
-            }
-
-            let log_list = scrollable(
-                column(log_items).padding(Padding { top: 8.0, right: 16.0, bottom: 8.0, left: 16.0 }),
-            )
-            .height(Length::Fill);
-
-            let body: Element<'_, Message> = container(log_list)
-                .width(Length::Fill)
-                .height(Length::Fill)
-                .style(|_| container::Style {
-                    background: Some(Background::Color(OryxisColors::t().bg_sidebar)),
-                    border: Border { radius: Radius::from(10.0), ..Default::default() },
-                    ..Default::default()
-                })
-                .into();
-
-            // Bottom buttons
-            let btm: Element<'_, Message> = if failed {
-                row![
-                    button(
-                        container(text(crate::i18n::t("close")).size(13).color(OryxisColors::t().text_primary))
-                            .padding(Padding { top: 10.0, right: 24.0, bottom: 10.0, left: 24.0 }),
-                    )
-                    .on_press(Message::SshCloseProgress)
-                    .style(|_, _| button::Style {
-                        background: Some(Background::Color(OryxisColors::t().bg_surface)),
-                        border: Border { radius: Radius::from(8.0), ..Default::default() },
-                        ..Default::default()
-                    }),
-                    Space::new().width(8),
-                    button(
-                        container(text(crate::i18n::t("edit_host")).size(13).color(OryxisColors::t().text_primary))
-                            .padding(Padding { top: 10.0, right: 24.0, bottom: 10.0, left: 24.0 }),
-                    )
-                    .on_press(Message::SshEditFromProgress)
-                    .style(|_, _| button::Style {
-                        background: Some(Background::Color(OryxisColors::t().bg_surface)),
-                        border: Border { radius: Radius::from(8.0), ..Default::default() },
-                        ..Default::default()
-                    }),
-                    Space::new().width(Length::Fill),
-                    button(
-                        container(text("Start over").size(13).color(OryxisColors::t().text_primary))
-                            .padding(Padding { top: 10.0, right: 24.0, bottom: 10.0, left: 24.0 }),
-                    )
-                    .on_press(Message::SshRetry)
-                    .style(|_, _| button::Style {
-                        background: Some(Background::Color(OryxisColors::t().success)),
-                        border: Border { radius: Radius::from(8.0), ..Default::default() },
-                        ..Default::default()
-                    }),
-                ]
-                .align_y(iced::Alignment::Center)
-                .into()
-            } else {
-                Space::new().height(0).into()
-            };
-
-            (status, body, btm)
-        };
-
-        container(
-            column![
-                header,
-                progress_bar,
-                status_widget,
-                Space::new().height(12),
-                body_widget,
-                Space::new().height(12),
-                bottom,
-            ]
-            .padding(32)
-            .width(500)
-            .height(Length::Fill),
-        )
-        .center_x(Length::Fill)
-        .height(Length::Fill)
-        .style(|_| container::Style {
-            background: Some(Background::Color(OryxisColors::t().bg_primary)),
-            ..Default::default()
-        })
-        .into()
-    }
-
-    fn view_terminal(&self) -> Element<'_, Message> {
-        let chat_visible = self.active_tab
-            .and_then(|idx| self.tabs.get(idx))
-            .map(|tab| tab.chat_visible)
-            .unwrap_or(false);
-
-        let terminal_area: Element<'_, Message> = if let Some(tab_idx) = self.active_tab {
-            if let Some(tab) = self.tabs.get(tab_idx) {
-                let term_view = TerminalView::new(Arc::clone(&tab.terminal))
-                    .with_font_size(self.terminal_font_size);
-                let term_canvas: Element<'_, Message> = canvas(term_view)
-                    .width(Length::Fill)
-                    .height(Length::Fill)
-                    .into();
-
-                // Chat toggle button (top-right overlay)
-                let toggle_btn = button(
-                    container(
-                        iced_fonts::bootstrap::chat_dots().size(14).color(
-                            if chat_visible { OryxisColors::t().accent } else { OryxisColors::t().text_muted }
-                        ),
-                    )
-                    .padding(Padding { top: 6.0, right: 8.0, bottom: 6.0, left: 8.0 }),
-                )
-                .on_press(Message::ToggleChatSidebar)
-                .style(|_, status| {
-                    let bg = match status {
-                        BtnStatus::Hovered => OryxisColors::t().bg_surface,
-                        _ => Color::TRANSPARENT,
-                    };
-                    button::Style {
-                        background: Some(Background::Color(bg)),
-                        border: Border { radius: Radius::from(6.0), ..Default::default() },
-                        ..Default::default()
-                    }
-                });
-
-                let toggle_row = container(toggle_btn)
-                    .width(Length::Fill)
-                    .align_x(iced::alignment::Horizontal::Right)
-                    .padding(Padding { top: 4.0, right: 8.0, bottom: 0.0, left: 0.0 });
-
-                let term_with_toggle: Element<'_, Message> = column![toggle_row, term_canvas]
-                    .width(Length::Fill)
-                    .height(Length::Fill)
-                    .into();
-
-                if chat_visible {
-                    let sidebar = self.view_chat_sidebar(tab);
-                    row![term_with_toggle, sidebar]
-                        .width(Length::Fill)
-                        .height(Length::Fill)
-                        .into()
-                } else {
-                    term_with_toggle
-                }
-            } else {
-                container(text("No active session").size(14).color(OryxisColors::t().text_muted))
-                    .center(Length::Fill).into()
-            }
-        } else {
-            container(text("No active session").size(14).color(OryxisColors::t().text_muted))
-                .center(Length::Fill).into()
-        };
-
-        container(terminal_area)
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .style(|_| container::Style {
-                background: Some(Background::Color(OryxisColors::TERMINAL_BG)),
-                ..Default::default()
-            })
-            .into()
-    }
-
-    fn view_chat_sidebar(&self, tab: &TerminalTab) -> Element<'_, Message> {
-        // ── Header ──
-        let close_btn: Element<'_, Message> = MouseArea::new(
-            container(
-                text("X").size(14).color(OryxisColors::t().text_muted),
-            )
-            .padding(Padding { top: 6.0, right: 10.0, bottom: 6.0, left: 10.0 })
-            .style(|_| container::Style {
-                background: Some(Background::Color(OryxisColors::t().bg_hover)),
-                border: Border { radius: Radius::from(4.0), ..Default::default() },
-                ..Default::default()
-            }),
-        )
-        .on_press(Message::ToggleChatSidebar)
-        .into();
-
-        let header = container(
-            row![
-                iced_fonts::bootstrap::chat_dots().size(14).color(OryxisColors::t().accent),
-                Space::new().width(8),
-                text("AI Chat").size(14).color(OryxisColors::t().text_primary),
-                Space::new().width(Length::Fill),
-                close_btn,
-            ]
-            .align_y(iced::Alignment::Center),
-        )
-        .padding(Padding { top: 12.0, right: 12.0, bottom: 12.0, left: 12.0 })
-        .width(Length::Fill)
-        .style(|_| container::Style {
-            border: Border {
-                width: 0.0,
-                color: OryxisColors::t().border,
-                radius: Radius::from(0.0),
-            },
-            ..Default::default()
-        });
-
-        let header_separator = container(Space::new().height(1))
-            .width(Length::Fill)
-            .style(|_| container::Style {
-                background: Some(Background::Color(OryxisColors::t().border)),
-                ..Default::default()
-            });
-
-        // ── Messages list ──
-        let mut messages_col = column![].spacing(8).padding(Padding { top: 8.0, right: 12.0, bottom: 8.0, left: 12.0 });
-
-        if tab.chat_history.is_empty() {
-            messages_col = messages_col.push(
-                container(
-                    column![
-                        iced_fonts::bootstrap::chat_dots().size(24).color(OryxisColors::t().text_muted),
-                        Space::new().height(8),
-                        text("Ask AI about this session").size(12).color(OryxisColors::t().text_muted),
-                    ]
-                    .align_x(iced::Alignment::Center),
-                )
-                .center_x(Length::Fill)
-                .padding(Padding { top: 40.0, right: 0.0, bottom: 0.0, left: 0.0 }),
-            );
-        } else {
-            for msg in &tab.chat_history {
-                let bubble = self.view_chat_message(msg);
-                messages_col = messages_col.push(bubble);
-            }
-        }
-
-        if self.chat_loading {
-            messages_col = messages_col.push(
-                container(
-                    text("Thinking...").size(12).color(OryxisColors::t().text_muted),
-                )
-                .padding(Padding { top: 4.0, right: 8.0, bottom: 4.0, left: 8.0 })
-                .style(|_| container::Style {
-                    background: Some(Background::Color(OryxisColors::t().bg_surface)),
-                    border: Border { radius: Radius::from(8.0), ..Default::default() },
-                    ..Default::default()
-                }),
-            );
-        }
-
-        let messages_scroll = scrollable(messages_col)
-            .width(Length::Fill)
-            .height(Length::Fill);
-
-        // ── Input area ──
-        let input_separator = container(Space::new().height(1))
-            .width(Length::Fill)
-            .style(|_| container::Style {
-                background: Some(Background::Color(OryxisColors::t().border)),
-                ..Default::default()
-            });
-
-        let send_btn = button(
-            container(
-                iced_fonts::bootstrap::arrow_right().size(14).color(OryxisColors::t().text_primary),
-            )
-            .padding(Padding { top: 8.0, right: 8.0, bottom: 8.0, left: 8.0 }),
-        )
-        .on_press(Message::SendChat)
-        .style(|_, status| {
-            let bg = match status {
-                BtnStatus::Hovered => OryxisColors::t().accent,
-                _ => OryxisColors::t().bg_surface,
-            };
-            button::Style {
-                background: Some(Background::Color(bg)),
-                border: Border { radius: Radius::from(6.0), ..Default::default() },
-                ..Default::default()
-            }
-        });
-
-        let input_row = container(
-            row![
-                text_input("Ask AI...", &self.chat_input)
-                    .on_input(Message::ChatInputChanged)
-                    .on_submit(Message::SendChat)
-                    .padding(10)
-                    .width(Length::Fill),
-                Space::new().width(4),
-                send_btn,
-            ]
-            .align_y(iced::Alignment::Center),
-        )
-        .padding(Padding { top: 8.0, right: 12.0, bottom: 12.0, left: 12.0 })
-        .width(Length::Fill);
-
-        // ── Assemble sidebar ──
-        container(
-            column![header, header_separator, messages_scroll, input_separator, input_row]
-                .width(Length::Fill)
-                .height(Length::Fill),
-        )
-        .width(350)
-        .height(Length::Fill)
-        .style(|_| container::Style {
-            background: Some(Background::Color(OryxisColors::t().bg_primary)),
-            border: Border {
-                width: 1.0,
-                color: OryxisColors::t().border,
-                radius: Radius::from(0.0),
-            },
-            ..Default::default()
-        })
-        .into()
-    }
-
-    fn view_chat_message(&self, msg: &ChatMessage) -> Element<'_, Message> {
-        match msg.role {
-            ChatRole::User => {
-                let bubble = container(
-                    text(msg.content.clone()).size(13).color(Color::WHITE),
-                )
-                .padding(Padding { top: 8.0, right: 12.0, bottom: 8.0, left: 12.0 })
-                .max_width(280)
-                .style(|_| container::Style {
-                    background: Some(Background::Color(OryxisColors::t().accent)),
-                    border: Border { radius: Radius::from(12.0), ..Default::default() },
-                    ..Default::default()
-                });
-
-                container(bubble)
-                    .width(Length::Fill)
-                    .align_x(iced::alignment::Horizontal::Right)
-                    .into()
-            }
-            ChatRole::Assistant => {
-                let bubble = container(
-                    text(msg.content.clone()).size(13).color(OryxisColors::t().text_primary),
-                )
-                .padding(Padding { top: 8.0, right: 12.0, bottom: 8.0, left: 12.0 })
-                .max_width(280)
-                .style(|_| container::Style {
-                    background: Some(Background::Color(OryxisColors::t().bg_surface)),
-                    border: Border { radius: Radius::from(12.0), ..Default::default() },
-                    ..Default::default()
-                });
-
-                container(bubble)
-                    .width(Length::Fill)
-                    .align_x(iced::alignment::Horizontal::Left)
-                    .into()
-            }
-            ChatRole::System => {
-                let bubble = container(
-                    text(msg.content.clone()).size(11).color(OryxisColors::t().text_muted),
-                )
-                .padding(Padding { top: 6.0, right: 10.0, bottom: 6.0, left: 10.0 })
-                .max_width(300)
-                .style(|_| container::Style {
-                    background: Some(Background::Color(Color { r: 0.12, g: 0.12, b: 0.14, a: 1.0 })),
-                    border: Border { radius: Radius::from(8.0), ..Default::default() },
-                    ..Default::default()
-                });
-
-                container(bubble)
-                    .width(Length::Fill)
-                    .align_x(iced::alignment::Horizontal::Left)
-                    .into()
-            }
-        }
-    }
-
-    fn view_keys(&self) -> Element<'_, Message> {
-        // ── Header toolbar ──
-        let add_btn = button(
-            container(
-                row![
-                    text("+").size(12).color(OryxisColors::t().text_primary),
-                    Space::new().width(4),
-                    text("ADD").size(12).color(OryxisColors::t().text_primary),
-                    Space::new().width(4),
-                    iced_fonts::bootstrap::caret_down_fill::<iced::Theme, iced::Renderer>()
-                        .size(12).color(OryxisColors::t().text_primary),
-                ]
-                .align_y(iced::Alignment::Center),
-            )
-            .padding(Padding { top: 6.0, right: 14.0, bottom: 7.0, left: 14.0 }),
-        )
-        .on_press(Message::ToggleKeychainAddMenu)
-        .style(|_, _| button::Style {
-            background: Some(Background::Color(OryxisColors::t().accent)),
-            border: Border { radius: Radius::from(8.0), ..Default::default() },
-            ..Default::default()
-        });
-
-        let toolbar = container(
-            row![
-                text("Keychain").size(20).color(OryxisColors::t().text_primary),
-                Space::new().width(Length::Fill),
-                add_btn,
-            ]
-            .align_y(iced::Alignment::Center),
-        )
-        .padding(Padding { top: 20.0, right: 24.0, bottom: 16.0, left: 24.0 })
-        .width(Length::Fill);
-
-        // ── Search bar ──
-        let search_bar = container(
-            text_input("Search keys & identities...", &self.key_search)
-                .on_input(Message::KeySearchChanged)
-                .padding(10)
-                .width(Length::Fill),
-        )
-        .padding(Padding { top: 0.0, right: 24.0, bottom: 12.0, left: 24.0 })
-        .width(Length::Fill);
-
-        // ── Status message ──
-        let status: Element<'_, Message> = if let Some(err) = &self.key_error {
-            container(Element::from(text(err.clone()).size(12).color(OryxisColors::t().error)))
-                .padding(Padding { top: 0.0, right: 24.0, bottom: 8.0, left: 24.0 })
-                .into()
-        } else if let Some(ok) = &self.key_success {
-            container(Element::from(text(ok.clone()).size(12).color(OryxisColors::t().success)))
-                .padding(Padding { top: 0.0, right: 24.0, bottom: 8.0, left: 24.0 })
-                .into()
-        } else {
-            Space::new().height(0).into()
-        };
-
-        // ── Keys grid ──
-        let section_title = container(
-            text("Keys").size(14).color(OryxisColors::t().text_muted),
-        )
-        .padding(Padding { top: 4.0, right: 24.0, bottom: 8.0, left: 24.0 });
-
-        // Filter keys by search query
-        let search_lower = self.key_search.to_lowercase();
-        let filtered_keys: Vec<(usize, &SshKey)> = self.keys.iter().enumerate()
-            .filter(|(_, k)| search_lower.is_empty() || k.label.to_lowercase().contains(&search_lower))
-            .collect();
-
-        let mut cards: Vec<Element<'_, Message>> = Vec::new();
-
-        if filtered_keys.is_empty() && self.keys.is_empty() {
-            let empty_state = container(
-                column![
-                    container(
-                        iced_fonts::bootstrap::key().size(32).color(OryxisColors::t().text_muted),
-                    )
-                    .padding(16)
-                    .style(|_| container::Style {
-                        background: Some(Background::Color(OryxisColors::t().bg_surface)),
-                        border: Border { radius: Radius::from(12.0), ..Default::default() },
-                        ..Default::default()
-                    }),
-                    Space::new().height(20),
-                    text(crate::i18n::t("add_key_title")).size(20).color(OryxisColors::t().text_primary),
-                    Space::new().height(8),
-                    text(crate::i18n::t("add_key_desc"))
-                        .size(13).color(OryxisColors::t().text_muted),
-                    Space::new().height(24),
-                    button(
-                        container(text(crate::i18n::t("import_key")).size(14).color(OryxisColors::t().text_primary))
-                            .padding(Padding { top: 12.0, right: 0.0, bottom: 12.0, left: 0.0 })
-                            .width(380)
-                            .center_x(380),
-                    )
-                    .on_press(Message::ShowKeyPanel)
-                    .width(380)
-                    .style(|_, _| button::Style {
-                        background: Some(Background::Color(OryxisColors::t().accent)),
-                        border: Border { radius: Radius::from(8.0), ..Default::default() },
-                        ..Default::default()
-                    }),
-                ]
-                .align_x(iced::Alignment::Center),
-            )
-            .center(Length::Fill);
-
-            let main_content = column![toolbar, search_bar, status, empty_state]
-                .width(Length::Fill)
-                .height(Length::Fill);
-
-            if self.show_key_panel {
-                let panel = self.view_key_import_panel();
-                return row![main_content, panel]
-                    .width(Length::Fill)
-                    .height(Length::Fill)
-                    .into();
-            } else if self.show_identity_panel {
-                let panel = self.view_identity_panel();
-                return row![main_content, panel]
-                    .width(Length::Fill)
-                    .height(Length::Fill)
-                    .into();
-            }
-            return main_content.into();
-        } else if filtered_keys.is_empty() {
-            let no_results = container(
-                text("No keys match your search").size(13).color(OryxisColors::t().text_muted),
-            )
-            .padding(24)
-            .width(CARD_WIDTH);
-            cards.push(no_results.into());
-        }
-
-        for (idx, key) in filtered_keys {
-            let algo = format!("Type {}", key.algorithm);
-            let icon_box = container(iced_fonts::bootstrap::key().size(18).color(Color::WHITE))
-                .padding(Padding { top: 8.0, right: 10.0, bottom: 8.0, left: 10.0 })
-                .style(|_| container::Style {
-                    background: Some(Background::Color(OryxisColors::t().accent)),
-                    border: Border { radius: Radius::from(8.0), ..Default::default() },
-                    ..Default::default()
-                });
-
-            // "..." menu button
-            let dots_btn = button(
-                text("···").size(14).color(OryxisColors::t().text_muted),
-            )
-            .on_press(Message::ShowKeyMenu(idx))
-            .padding(Padding { top: 2.0, right: 6.0, bottom: 2.0, left: 6.0 })
-            .style(|_, status| {
-                let bg = match status {
-                    BtnStatus::Hovered => OryxisColors::t().bg_hover,
-                    _ => Color::TRANSPARENT,
-                };
-                button::Style {
-                    background: Some(Background::Color(bg)),
-                    border: Border { radius: Radius::from(6.0), ..Default::default() },
-                    ..Default::default()
-                }
-            });
-
-            let card = button(
-                row![
-                    icon_box,
-                    Space::new().width(12),
-                    column![
-                        text(&key.label).size(13).color(OryxisColors::t().text_primary),
-                        Space::new().height(2),
-                        text(algo).size(11).color(OryxisColors::t().text_muted),
-                    ].width(Length::Fill),
-                    dots_btn,
-                ].align_y(iced::Alignment::Center),
-            )
-            .on_press(Message::EditKey(idx))
-            .padding(16)
-            .width(CARD_WIDTH)
-            .style(|_, status| {
-                let (bg, border_color, border_width) = match status {
-                    BtnStatus::Hovered => (OryxisColors::t().bg_hover, OryxisColors::t().accent, 1.5),
-                    BtnStatus::Pressed => (OryxisColors::t().bg_selected, OryxisColors::t().accent, 2.0),
-                    _ => (OryxisColors::t().bg_surface, OryxisColors::t().border, 1.0),
-                };
-                button::Style {
-                    background: Some(Background::Color(bg)),
-                    border: Border { radius: Radius::from(10.0), color: border_color, width: border_width },
-                    ..Default::default()
-                }
-            });
-
-            // Wrap in MouseArea for right-click
-            let wrapped = MouseArea::new(card)
-                .on_right_press(Message::ShowKeyMenu(idx));
-
-            cards.push(container(wrapped).width(CARD_WIDTH).into());
-        }
-
-        // Key grid layout (3 cols)
-        let mut grid_rows: Vec<Element<'_, Message>> = Vec::new();
-        let mut current_row: Vec<Element<'_, Message>> = Vec::new();
-        for card in cards {
-            current_row.push(card);
-            if current_row.len() == 3 {
-                grid_rows.push(row(std::mem::take(&mut current_row)).spacing(12).into());
-                grid_rows.push(Space::new().height(12).into());
-            }
-        }
-        if !current_row.is_empty() {
-            while current_row.len() < 3 {
-                current_row.push(Space::new().width(CARD_WIDTH).into());
-            }
-            grid_rows.push(row(std::mem::take(&mut current_row)).spacing(12).into());
-        }
-
-        // ── Identities section ──
-        let identity_section_title = container(
-            text("Identities").size(14).color(OryxisColors::t().text_muted),
-        )
-        .padding(Padding { top: 16.0, right: 24.0, bottom: 8.0, left: 24.0 });
-
-        let filtered_identities: Vec<(usize, &Identity)> = self.identities.iter().enumerate()
-            .filter(|(_, i)| search_lower.is_empty() || i.label.to_lowercase().contains(&search_lower))
-            .collect();
-
-        let mut identity_cards: Vec<Element<'_, Message>> = Vec::new();
-
-        if filtered_identities.is_empty() && self.identities.is_empty() {
-            // Don't show identities section at all when empty
-        } else if filtered_identities.is_empty() {
-            let no_results = container(
-                text("No identities match your search").size(13).color(OryxisColors::t().text_muted),
-            )
-            .padding(24)
-            .width(CARD_WIDTH);
-            identity_cards.push(no_results.into());
-        }
-
-        for (idx, identity) in &filtered_identities {
-            let idx = *idx;
-            // Build subtitle describing auth methods
-            let mut parts: Vec<String> = Vec::new();
-            if let Some(u) = &identity.username {
-                parts.push(u.clone());
-            }
-            let has_pw = self.vault.as_ref()
-                .and_then(|v| v.get_identity_password(&identity.id).ok().flatten())
-                .is_some();
-            if has_pw {
-                parts.push("\u{25CF}\u{25CF}\u{25CF}\u{25CF}".into());
-            }
-            if let Some(kid) = identity.key_id
-                && let Some(k) = self.keys.iter().find(|k| k.id == kid) {
-                    parts.push(k.label.clone());
-            }
-            let subtitle = if parts.is_empty() { "No credentials".into() } else { parts.join(", ") };
-
-            let icon_box = container(iced_fonts::bootstrap::person().size(18).color(Color::WHITE))
-                .padding(Padding { top: 8.0, right: 10.0, bottom: 8.0, left: 10.0 })
-                .style(|_| container::Style {
-                    background: Some(Background::Color(OryxisColors::t().accent)),
-                    border: Border { radius: Radius::from(8.0), ..Default::default() },
-                    ..Default::default()
-                });
-
-            let dots_btn = button(
-                text("···").size(14).color(OryxisColors::t().text_muted),
-            )
-            .on_press(Message::ShowIdentityMenu(idx))
-            .padding(Padding { top: 2.0, right: 6.0, bottom: 2.0, left: 6.0 })
-            .style(|_, status| {
-                let bg = match status {
-                    BtnStatus::Hovered => OryxisColors::t().bg_hover,
-                    _ => Color::TRANSPARENT,
-                };
-                button::Style {
-                    background: Some(Background::Color(bg)),
-                    border: Border { radius: Radius::from(6.0), ..Default::default() },
-                    ..Default::default()
-                }
-            });
-
-            let card = button(
-                row![
-                    icon_box,
-                    Space::new().width(12),
-                    column![
-                        text(&identity.label).size(13).color(OryxisColors::t().text_primary),
-                        Space::new().height(2),
-                        text(subtitle).size(11).color(OryxisColors::t().text_muted),
-                    ].width(Length::Fill),
-                    dots_btn,
-                ].align_y(iced::Alignment::Center),
-            )
-            .on_press(Message::EditIdentity(idx))
-            .padding(16)
-            .width(CARD_WIDTH)
-            .style(|_, status| {
-                let (bg, border_color, border_width) = match status {
-                    BtnStatus::Hovered => (OryxisColors::t().bg_hover, OryxisColors::t().accent, 1.5),
-                    BtnStatus::Pressed => (OryxisColors::t().bg_selected, OryxisColors::t().accent, 2.0),
-                    _ => (OryxisColors::t().bg_surface, OryxisColors::t().border, 1.0),
-                };
-                button::Style {
-                    background: Some(Background::Color(bg)),
-                    border: Border { radius: Radius::from(10.0), color: border_color, width: border_width },
-                    ..Default::default()
-                }
-            });
-
-            let wrapped = MouseArea::new(card)
-                .on_right_press(Message::ShowIdentityMenu(idx));
-
-            identity_cards.push(container(wrapped).width(CARD_WIDTH).into());
-        }
-
-        // Identity grid layout (3 cols)
-        let mut identity_grid_rows: Vec<Element<'_, Message>> = Vec::new();
-        let mut current_row: Vec<Element<'_, Message>> = Vec::new();
-        for card in identity_cards {
-            current_row.push(card);
-            if current_row.len() == 3 {
-                identity_grid_rows.push(row(std::mem::take(&mut current_row)).spacing(12).into());
-                identity_grid_rows.push(Space::new().height(12).into());
-            }
-        }
-        if !current_row.is_empty() {
-            while current_row.len() < 3 {
-                current_row.push(Space::new().width(CARD_WIDTH).into());
-            }
-            identity_grid_rows.push(row(std::mem::take(&mut current_row)).spacing(12).into());
-        }
-
-        // Combine keys and identities into one scrollable area
-        let mut all_rows: Vec<Element<'_, Message>> = Vec::new();
-        all_rows.push(section_title.into());
-        all_rows.extend(grid_rows);
-        if !self.identities.is_empty() {
-            all_rows.push(identity_section_title.into());
-            all_rows.extend(identity_grid_rows);
-        }
-
-        let grid = scrollable(
-            column(all_rows).padding(Padding { top: 0.0, right: 24.0, bottom: 24.0, left: 24.0 }),
-        )
-        .height(Length::Fill);
-
-        // ── Main content ──
-        let main_content = column![toolbar, search_bar, status, grid]
-            .width(Length::Fill)
-            .height(Length::Fill);
-
-        // ── Side panel ──
-        if self.show_key_panel {
-            let panel = self.view_key_import_panel();
-            row![main_content, panel]
-                .width(Length::Fill)
-                .height(Length::Fill)
-                .into()
-        } else if self.show_identity_panel {
-            let panel = self.view_identity_panel();
-            row![main_content, panel]
-                .width(Length::Fill)
-                .height(Length::Fill)
-                .into()
-        } else {
-            main_content.into()
-        }
-    }
-
-    fn view_key_import_panel(&self) -> Element<'_, Message> {
-        let has_content = !self.key_import_pem.is_empty();
-        let panel_title = if self.editing_key_id.is_some() { "Edit Key" } else { "Add Key" };
-
-        // Panel header
-        let panel_header = container(
-            row![
-                text(panel_title).size(18).color(OryxisColors::t().text_primary),
-                Space::new().width(Length::Fill),
-                button(text("X").size(14).color(OryxisColors::t().text_muted))
-                    .on_press(Message::HideKeyPanel)
-                    .padding(Padding { top: 4.0, right: 8.0, bottom: 4.0, left: 8.0 })
-                    .style(|_, _| button::Style {
-                        background: Some(Background::Color(OryxisColors::t().bg_surface)),
-                        border: Border { radius: Radius::from(6.0), ..Default::default() },
-                        ..Default::default()
-                    }),
-            ]
-            .align_y(iced::Alignment::Center),
-        )
-        .padding(Padding { top: 20.0, right: 20.0, bottom: 16.0, left: 20.0 });
-
-        // Name field
-        let name_field = column![
-            text("Name").size(12).color(OryxisColors::t().text_secondary),
-            Space::new().height(6),
-            text_input("my-server-key", &self.key_import_label)
-                .on_input(Message::KeyImportLabelChanged)
-                .padding(10),
-        ];
-
-        // File selector button
-        let browse_btn = button(
-            container(
-                row![
-                    text("Select File...").size(13).color(OryxisColors::t().text_primary),
-                ]
-                .align_y(iced::Alignment::Center),
-            )
-            .padding(Padding { top: 8.0, right: 16.0, bottom: 8.0, left: 16.0 }),
-        )
-        .on_press(Message::BrowseKeyFile)
-        .width(Length::Fill)
-        .style(|_, _| button::Style {
-            background: Some(Background::Color(OryxisColors::t().accent)),
-            border: Border { radius: Radius::from(8.0), ..Default::default() },
-            ..Default::default()
-        });
-
-        // Status indicator
-        let file_status: Element<'_, Message> = if has_content {
-            container(
-                row![
-                    iced_fonts::bootstrap::check_circle_fill()
-                        .size(13)
-                        .color(OryxisColors::t().success),
-                    Space::new().width(6),
-                    text(format!("Loaded ({} bytes)", self.key_import_pem.len()))
-                        .size(12).color(OryxisColors::t().success),
-                ].align_y(iced::Alignment::Center),
-            )
-            .padding(Padding { top: 4.0, right: 0.0, bottom: 4.0, left: 0.0 })
-            .into()
-        } else {
-            Space::new().height(0).into()
-        };
-
-        // Editable key content (text_editor = multi-line)
-        let editor = text_editor(&self.key_import_content)
-            .on_action(Message::KeyContentAction)
-            .padding(10)
-            .height(180)
-            .font(iced::Font::MONOSPACE)
-            .size(11);
-
-        // Error in panel
-        let panel_error: Element<'_, Message> = if let Some(err) = &self.key_error {
-            Element::from(text(err.clone()).size(11).color(OryxisColors::t().error))
-        } else {
-            Space::new().height(0).into()
-        };
-
-        // Save button
-        let save_label = if self.editing_key_id.is_some() { "Update Key" } else { "Save Key" };
-        let save_btn = button(
-            container(text(save_label).size(13).color(OryxisColors::t().text_primary))
-                .padding(Padding { top: 10.0, right: 0.0, bottom: 10.0, left: 0.0 })
-                .width(Length::Fill)
-                .center_x(Length::Fill),
-        )
-        .on_press(Message::ImportKey)
-        .width(Length::Fill)
-        .style(move |_, _| {
-            let bg = if has_content { OryxisColors::t().accent } else { OryxisColors::t().bg_surface };
-            button::Style {
-                background: Some(Background::Color(bg)),
-                border: Border { radius: Radius::from(8.0), ..Default::default() },
-                ..Default::default()
-            }
-        });
-
-        let panel_content = column![
-            panel_header,
-            container(
-                column![
-                    name_field,
-                    Space::new().height(16),
-                    text("Private Key").size(12).color(OryxisColors::t().text_secondary),
-                    Space::new().height(6),
-                    browse_btn,
-                    Space::new().height(8),
-                    file_status,
-                    Space::new().height(8),
-                    text("Key Content").size(12).color(OryxisColors::t().text_secondary),
-                    Space::new().height(6),
-                    editor,
-                    Space::new().height(8),
-                    panel_error,
-                    Space::new().height(Length::Fill),
-                    save_btn,
-                ]
-                .height(Length::Fill),
-            )
-            .padding(Padding { top: 0.0, right: 20.0, bottom: 20.0, left: 20.0 })
-            .height(Length::Fill),
-        ]
-        .height(Length::Fill);
-
-        container(panel_content)
-            .width(PANEL_WIDTH)
-            .height(Length::Fill)
-            .style(|_| container::Style {
-                background: Some(Background::Color(OryxisColors::t().bg_sidebar)),
-                border: Border { color: OryxisColors::t().border, width: 1.0, radius: Radius::from(0.0) },
-                ..Default::default()
-            })
-            .into()
-    }
-
-    fn view_identity_panel(&self) -> Element<'_, Message> {
-        let panel_title = if self.editing_identity_id.is_some() { "Edit Identity" } else { "New Identity" };
-
-        // Panel header
-        let panel_header = container(
-            row![
-                text(panel_title).size(18).color(OryxisColors::t().text_primary),
-                Space::new().width(Length::Fill),
-                button(text("X").size(14).color(OryxisColors::t().text_muted))
-                    .on_press(Message::HideIdentityPanel)
-                    .padding(Padding { top: 4.0, right: 8.0, bottom: 4.0, left: 8.0 })
-                    .style(|_, _| button::Style {
-                        background: Some(Background::Color(OryxisColors::t().bg_surface)),
-                        border: Border { radius: Radius::from(6.0), ..Default::default() },
-                        ..Default::default()
-                    }),
-            ]
-            .align_y(iced::Alignment::Center),
-        )
-        .padding(Padding { top: 20.0, right: 20.0, bottom: 16.0, left: 20.0 });
-
-        // Label field
-        let label_field = column![
-            text("Label").size(12).color(OryxisColors::t().text_secondary),
-            Space::new().height(6),
-            text_input("My Identity", &self.identity_form_label)
-                .on_input(Message::IdentityLabelChanged)
-                .padding(10),
-        ];
-
-        // Username field
-        let username_field = column![
-            text("Username").size(12).color(OryxisColors::t().text_secondary),
-            Space::new().height(6),
-            row![
-                iced_fonts::bootstrap::person().size(13).color(OryxisColors::t().text_muted),
-                Space::new().width(10),
-                text_input("root", &self.identity_form_username)
-                    .on_input(Message::IdentityUsernameChanged)
-                    .padding(10),
-            ].align_y(iced::Alignment::Center),
-        ];
-
-        // Password field with eye toggle
-        let password_field = column![
-            text("Password").size(12).color(OryxisColors::t().text_secondary),
-            Space::new().height(6),
-            row![
-                iced_fonts::bootstrap::keyboard().size(13).color(OryxisColors::t().text_muted),
-                Space::new().width(10),
-                text_input(
-                    if self.identity_form_has_existing_password && !self.identity_form_password_touched {
-                        "\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}"
-                    } else {
-                        "Password"
-                    },
-                    &self.identity_form_password,
-                )
-                    .on_input(Message::IdentityPasswordChanged)
-                    .secure(!self.identity_form_password_visible)
-                    .padding(10),
-                Space::new().width(6),
-                button(
-                    if self.identity_form_password_visible {
-                        iced_fonts::bootstrap::eye_slash().size(14).color(OryxisColors::t().text_muted)
-                    } else {
-                        iced_fonts::bootstrap::eye().size(14).color(OryxisColors::t().text_muted)
-                    }
-                )
-                    .on_press(Message::IdentityTogglePasswordVisibility)
-                    .style(|_t, _s| button::Style::default())
-                    .padding(8),
-            ].align_y(iced::Alignment::Center),
-        ];
-
-        // Key selector
-        let key_options = {
-            let mut opts = vec!["(none)".to_string()];
-            opts.extend(self.keys.iter().map(|k| k.label.clone()));
-            opts
-        };
-        let key_field = column![
-            text("SSH Key").size(12).color(OryxisColors::t().text_secondary),
-            Space::new().height(6),
-            row![
-                text("+ Key").size(12).color(OryxisColors::t().accent),
-                Space::new().width(16),
-                pick_list(
-                    key_options,
-                    Some(self.identity_form_key.clone().unwrap_or_else(|| "(none)".into())),
-                    Message::IdentityKeyChanged,
-                ),
-            ].align_y(iced::Alignment::Center),
-        ];
-
-        // Linked connections (only when editing)
-        let linked_section: Element<'_, Message> = if let Some(editing_id) = self.editing_identity_id {
-            let linked: Vec<&Connection> = self.connections.iter()
-                .filter(|c| c.identity_id == Some(editing_id))
-                .collect();
-            if linked.is_empty() {
-                column![
-                    Space::new().height(16),
-                    text("Linked to").size(12).color(OryxisColors::t().text_muted),
-                    Space::new().height(4),
-                    text("No connections using this identity").size(11).color(OryxisColors::t().text_muted),
-                ].into()
-            } else {
-                let mut items: Vec<Element<'_, Message>> = vec![
-                    Space::new().height(16).into(),
-                    Element::from(text("Linked to").size(12).color(OryxisColors::t().text_muted)),
-                    Space::new().height(4).into(),
-                ];
-                for conn in linked {
-                    items.push(
-                        container(
-                            row![
-                                iced_fonts::bootstrap::hdd_network().size(11).color(OryxisColors::t().text_muted),
-                                Space::new().width(8),
-                                text(&conn.label).size(12).color(OryxisColors::t().text_secondary),
-                            ].align_y(iced::Alignment::Center),
-                        )
-                        .padding(Padding { top: 4.0, right: 0.0, bottom: 4.0, left: 0.0 })
-                        .into()
-                    );
-                }
-                column(items).into()
-            }
-        } else {
-            Space::new().height(0).into()
-        };
-
-        // Save button
-        let save_label = if self.editing_identity_id.is_some() { "Update Identity" } else { "Save Identity" };
-        let has_label = !self.identity_form_label.trim().is_empty();
-        let save_btn = button(
-            container(text(save_label).size(13).color(OryxisColors::t().text_primary))
-                .padding(Padding { top: 10.0, right: 0.0, bottom: 10.0, left: 0.0 })
-                .width(Length::Fill)
-                .center_x(Length::Fill),
-        )
-        .on_press(Message::SaveIdentity)
-        .width(Length::Fill)
-        .style(move |_, _| {
-            let bg = if has_label { OryxisColors::t().accent } else { OryxisColors::t().bg_surface };
-            button::Style {
-                background: Some(Background::Color(bg)),
-                border: Border { radius: Radius::from(8.0), ..Default::default() },
-                ..Default::default()
-            }
-        });
-
-        let panel_content = column![
-            panel_header,
-            container(
-                column![
-                    label_field,
-                    Space::new().height(16),
-                    username_field,
-                    Space::new().height(16),
-                    password_field,
-                    Space::new().height(16),
-                    key_field,
-                    linked_section,
-                    Space::new().height(Length::Fill),
-                    save_btn,
-                ]
-                .height(Length::Fill),
-            )
-            .padding(Padding { top: 0.0, right: 20.0, bottom: 20.0, left: 20.0 })
-            .height(Length::Fill),
-        ]
-        .height(Length::Fill);
-
-        container(panel_content)
-            .width(PANEL_WIDTH)
-            .height(Length::Fill)
-            .style(|_| container::Style {
-                background: Some(Background::Color(OryxisColors::t().bg_sidebar)),
-                border: Border { color: OryxisColors::t().border, width: 1.0, radius: Radius::from(0.0) },
-                ..Default::default()
-            })
-            .into()
-    }
-
-    fn view_snippets(&self) -> Element<'_, Message> {
-        let toolbar = container(
-            row![
-                text("Snippets").size(20).color(OryxisColors::t().text_primary),
-                Space::new().width(Length::Fill),
-                button(
-                    container(
-                        row![
-                            text("+").size(12).color(OryxisColors::t().text_primary),
-                            Space::new().width(4),
-                            text("SNIPPET").size(12).color(OryxisColors::t().text_primary),
-                        ].align_y(iced::Alignment::Center),
-                    )
-                    .padding(Padding { top: 6.0, right: 14.0, bottom: 7.0, left: 14.0 }),
-                )
-                .on_press(Message::ShowSnippetPanel)
-                .style(|_, _| button::Style {
-                    background: Some(Background::Color(OryxisColors::t().accent)),
-                    border: Border { radius: Radius::from(8.0), ..Default::default() },
-                    ..Default::default()
-                }),
-            ].align_y(iced::Alignment::Center),
-        )
-        .padding(Padding { top: 20.0, right: 24.0, bottom: 16.0, left: 24.0 })
-        .width(Length::Fill);
-
-        let status: Element<'_, Message> = if let Some(err) = &self.snippet_error {
-            container(Element::from(text(err.clone()).size(12).color(OryxisColors::t().error)))
-                .padding(Padding { top: 0.0, right: 24.0, bottom: 8.0, left: 24.0 }).into()
-        } else {
-            Space::new().height(0).into()
-        };
-
-        let section_title = container(
-            text("Commands").size(14).color(OryxisColors::t().text_muted),
-        )
-        .padding(Padding { top: 4.0, right: 24.0, bottom: 8.0, left: 24.0 });
-
-        let mut cards: Vec<Element<'_, Message>> = Vec::new();
-
-        if self.snippets.is_empty() {
-            let empty_state = container(
-                column![
-                    container(
-                        iced_fonts::bootstrap::code_square().size(32).color(OryxisColors::t().text_muted),
-                    )
-                    .padding(16)
-                    .style(|_| container::Style {
-                        background: Some(Background::Color(OryxisColors::t().bg_surface)),
-                        border: Border { radius: Radius::from(12.0), ..Default::default() },
-                        ..Default::default()
-                    }),
-                    Space::new().height(20),
-                    text(crate::i18n::t("create_snippet_title")).size(20).color(OryxisColors::t().text_primary),
-                    Space::new().height(8),
-                    text(crate::i18n::t("create_snippet_desc"))
-                        .size(13).color(OryxisColors::t().text_muted),
-                    Space::new().height(24),
-                    button(
-                        container(text(crate::i18n::t("new_snippet")).size(14).color(OryxisColors::t().text_primary))
-                            .padding(Padding { top: 12.0, right: 0.0, bottom: 12.0, left: 0.0 })
-                            .width(380)
-                            .center_x(380),
-                    )
-                    .on_press(Message::ShowSnippetPanel)
-                    .width(380)
-                    .style(|_, _| button::Style {
-                        background: Some(Background::Color(OryxisColors::t().accent)),
-                        border: Border { radius: Radius::from(8.0), ..Default::default() },
-                        ..Default::default()
-                    }),
-                ]
-                .align_x(iced::Alignment::Center),
-            )
-            .center(Length::Fill);
-
-            let main_content = column![toolbar, status, empty_state]
-                .width(Length::Fill)
-                .height(Length::Fill);
-
-            if self.show_snippet_panel {
-                let panel = self.view_snippet_panel();
-                return row![main_content, panel]
-                    .width(Length::Fill)
-                    .height(Length::Fill)
-                    .into();
-            }
-            return main_content.into();
-        }
-
-        for (idx, snip) in self.snippets.iter().enumerate() {
-            let icon_box = container(iced_fonts::bootstrap::code_square().size(14).color(Color::WHITE))
-                .padding(Padding { top: 8.0, right: 8.0, bottom: 8.0, left: 8.0 })
-                .style(|_| container::Style {
-                    background: Some(Background::Color(OryxisColors::t().accent)),
-                    border: Border { radius: Radius::from(8.0), ..Default::default() },
-                    ..Default::default()
-                });
-
-            let edit_btn = button(text("...").size(12).color(OryxisColors::t().text_muted))
-                .on_press(Message::EditSnippet(idx))
-                .padding(Padding { top: 2.0, right: 6.0, bottom: 2.0, left: 6.0 })
-                .style(|_, _| button::Style {
-                    background: Some(Background::Color(Color::TRANSPARENT)),
-                    border: Border::default(),
-                    ..Default::default()
-                });
-
-            let cmd_preview = if snip.command.len() > 30 {
-                format!("{}...", &snip.command[..30])
-            } else {
-                snip.command.clone()
-            };
-
-            let card = button(
-                container(
-                    row![
-                        icon_box,
-                        Space::new().width(12),
-                        column![
-                            text(&snip.label).size(13).color(OryxisColors::t().text_primary),
-                            Space::new().height(2),
-                            text(cmd_preview).size(10).color(OryxisColors::t().text_muted).font(iced::Font::MONOSPACE),
-                        ].width(Length::Fill),
-                        edit_btn,
-                    ].align_y(iced::Alignment::Center),
-                )
-                .padding(16),
-            )
-            .on_press(Message::RunSnippet(idx))
-            .width(CARD_WIDTH)
-            .style(move |_, status| {
-                let (bg, bc, bw) = match status {
-                    BtnStatus::Hovered => (OryxisColors::t().bg_hover, OryxisColors::t().accent, 1.5),
-                    BtnStatus::Pressed => (OryxisColors::t().bg_selected, OryxisColors::t().accent, 2.0),
-                    _ => (OryxisColors::t().bg_surface, OryxisColors::t().border, 1.0),
-                };
-                button::Style {
-                    background: Some(Background::Color(bg)),
-                    border: Border { radius: Radius::from(10.0), color: bc, width: bw },
-                    ..Default::default()
-                }
-            });
-
-            cards.push(card.into());
-        }
-
-        let mut grid_rows: Vec<Element<'_, Message>> = Vec::new();
-        let mut current_row: Vec<Element<'_, Message>> = Vec::new();
-        for card in cards {
-            current_row.push(card);
-            if current_row.len() == 3 {
-                grid_rows.push(row(std::mem::take(&mut current_row)).spacing(12).into());
-                grid_rows.push(Space::new().height(12).into());
-            }
-        }
-        if !current_row.is_empty() {
-            while current_row.len() < 3 {
-                current_row.push(Space::new().width(CARD_WIDTH).into());
-            }
-            grid_rows.push(row(std::mem::take(&mut current_row)).spacing(12).into());
-        }
-
-        let grid = scrollable(
-            column(grid_rows).padding(Padding { top: 0.0, right: 24.0, bottom: 24.0, left: 24.0 }),
-        ).height(Length::Fill);
-
-        let main_content = column![toolbar, status, section_title, grid]
-            .width(Length::Fill).height(Length::Fill);
-
-        if self.show_snippet_panel {
-            let panel = self.view_snippet_panel();
-            row![main_content, panel].width(Length::Fill).height(Length::Fill).into()
-        } else {
-            main_content.into()
-        }
-    }
-
-    fn view_snippet_panel(&self) -> Element<'_, Message> {
-        let is_editing = self.snippet_editing_id.is_some();
-        let title = if is_editing { "Edit Snippet" } else { "New Snippet" };
-
-        let panel_header = container(
-            row![
-                text(title).size(18).color(OryxisColors::t().text_primary),
-                Space::new().width(Length::Fill),
-                button(text("X").size(14).color(OryxisColors::t().text_muted))
-                    .on_press(Message::HideSnippetPanel)
-                    .padding(Padding { top: 4.0, right: 8.0, bottom: 4.0, left: 8.0 })
-                    .style(|_, _| button::Style {
-                        background: Some(Background::Color(OryxisColors::t().bg_surface)),
-                        border: Border { radius: Radius::from(6.0), ..Default::default() },
-                        ..Default::default()
-                    }),
-            ].align_y(iced::Alignment::Center),
-        )
-        .padding(Padding { top: 20.0, right: 20.0, bottom: 16.0, left: 20.0 });
-
-        let form = column![
-            text("Name").size(12).color(OryxisColors::t().text_secondary),
-            Space::new().height(4),
-            text_input("restart-nginx", &self.snippet_label)
-                .on_input(Message::SnippetLabelChanged)
-                .padding(10),
-            Space::new().height(14),
-            text("Command").size(12).color(OryxisColors::t().text_secondary),
-            Space::new().height(4),
-            text_input("sudo systemctl restart nginx", &self.snippet_command)
-                .on_input(Message::SnippetCommandChanged)
-                .padding(10),
-        ];
-
-        let panel_error: Element<'_, Message> = if let Some(err) = &self.snippet_error {
-            Element::from(text(err.clone()).size(11).color(OryxisColors::t().error))
-        } else {
-            Space::new().height(0).into()
-        };
-
-        let save_btn = button(
-            container(text(crate::i18n::t("save")).size(13).color(OryxisColors::t().text_primary))
-                .padding(Padding { top: 10.0, right: 0.0, bottom: 10.0, left: 0.0 })
-                .width(Length::Fill).center_x(Length::Fill),
-        )
-        .on_press(Message::SaveSnippet)
-        .width(Length::Fill)
-        .style(|_, _| button::Style {
-            background: Some(Background::Color(OryxisColors::t().accent)),
-            border: Border { radius: Radius::from(8.0), ..Default::default() },
-            ..Default::default()
-        });
-
-        let mut bottom = column![save_btn];
-        if let Some(edit_id) = self.snippet_editing_id
-            && let Some(idx) = self.snippets.iter().position(|s| s.id == edit_id) {
-                let del_btn = button(
-                    container(text(crate::i18n::t("delete")).size(13).color(OryxisColors::t().error))
-                        .padding(Padding { top: 10.0, right: 0.0, bottom: 10.0, left: 0.0 })
-                        .width(Length::Fill).center_x(Length::Fill),
-                )
-                .on_press(Message::DeleteSnippet(idx))
-                .width(Length::Fill)
-                .style(|_, _| button::Style {
-                    background: Some(Background::Color(Color::TRANSPARENT)),
-                    border: Border { radius: Radius::from(8.0), color: OryxisColors::t().error, width: 1.0 },
-                    ..Default::default()
-                });
-                bottom = bottom.push(Space::new().height(8));
-                bottom = bottom.push(del_btn);
-            }
-
-        let panel_content = column![
-            panel_header,
-            container(
-                column![
-                    form,
-                    Space::new().height(12),
-                    panel_error,
-                    Space::new().height(Length::Fill),
-                    bottom,
-                ].height(Length::Fill),
-            )
-            .padding(Padding { top: 0.0, right: 20.0, bottom: 20.0, left: 20.0 })
-            .height(Length::Fill),
-        ].height(Length::Fill);
-
-        container(panel_content)
-            .width(PANEL_WIDTH)
-            .height(Length::Fill)
-            .style(|_| container::Style {
-                background: Some(Background::Color(OryxisColors::t().bg_sidebar)),
-                border: Border { color: OryxisColors::t().border, width: 1.0, radius: Radius::from(0.0) },
-                ..Default::default()
-            })
-            .into()
-    }
-
-    fn view_known_hosts(&self) -> Element<'_, Message> {
-        let toolbar = container(
-            text("Known Hosts").size(20).color(OryxisColors::t().text_primary),
-        )
-        .padding(Padding { top: 20.0, right: 24.0, bottom: 16.0, left: 24.0 })
-        .width(Length::Fill);
-
-        let mut rows: Vec<Element<'_, Message>> = Vec::new();
-
-        if self.known_hosts.is_empty() {
-            rows.push(
-                container(
-                    text("No known hosts yet. They will be added automatically when you connect to servers.")
-                        .size(13).color(OryxisColors::t().text_muted),
-                )
-                .padding(16)
-                .into(),
-            );
-        }
-
-        for (idx, kh) in self.known_hosts.iter().enumerate() {
-            let fp_short = if kh.fingerprint.len() > 40 {
-                format!("{}...", &kh.fingerprint[..40])
-            } else {
-                kh.fingerprint.clone()
-            };
-            let seen = kh.last_seen.format("%Y-%m-%d %H:%M").to_string();
-
-            let del_btn = button(text("x").size(11).color(OryxisColors::t().text_muted))
-                .on_press(Message::DeleteKnownHost(idx))
-                .padding(Padding { top: 2.0, right: 6.0, bottom: 2.0, left: 6.0 })
-                .style(|_, _| button::Style {
-                    background: Some(Background::Color(Color::TRANSPARENT)),
-                    border: Border::default(),
-                    ..Default::default()
-                });
-
-            let entry = container(
-                row![
-                    iced_fonts::bootstrap::shield_check().size(14).color(OryxisColors::t().success),
-                    Space::new().width(12),
-                    column![
-                        text(format!("{}:{}", kh.hostname, kh.port)).size(13).color(OryxisColors::t().text_primary),
-                        Space::new().height(2),
-                        text(format!("{} · {}", kh.key_type, fp_short)).size(10).color(OryxisColors::t().text_muted).font(iced::Font::MONOSPACE),
-                        Space::new().height(2),
-                        text(format!("Last seen: {}", seen)).size(10).color(OryxisColors::t().text_muted),
-                    ].width(Length::Fill),
-                    del_btn,
-                ].align_y(iced::Alignment::Center),
-            )
-            .padding(Padding { top: 10.0, right: 16.0, bottom: 10.0, left: 16.0 })
-            .width(Length::Fill)
-            .style(|_| container::Style {
-                background: Some(Background::Color(OryxisColors::t().bg_surface)),
-                border: Border { radius: Radius::from(8.0), ..Default::default() },
-                ..Default::default()
-            });
-
-            rows.push(entry.into());
-            rows.push(Space::new().height(6).into());
-        }
-
-        let list = scrollable(
-            column(rows).padding(Padding { top: 0.0, right: 24.0, bottom: 24.0, left: 24.0 }),
-        ).height(Length::Fill);
-
-        column![toolbar, list]
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .into()
-    }
-
-    fn view_history(&self) -> Element<'_, Message> {
-        let toolbar = container(
-            row![
-                text("History").size(20).color(OryxisColors::t().text_primary),
-                Space::new().width(Length::Fill),
-                button(
-                    container(text("Clear").size(12).color(OryxisColors::t().text_muted))
-                        .padding(Padding { top: 6.0, right: 14.0, bottom: 6.0, left: 14.0 }),
-                )
-                .on_press(Message::ClearLogs)
-                .style(|_, status| {
-                    let bg = match status {
-                        BtnStatus::Hovered => Color { a: 0.15, ..OryxisColors::t().error },
-                        _ => Color::TRANSPARENT,
-                    };
-                    button::Style {
-                        background: Some(Background::Color(bg)),
-                        border: Border { radius: Radius::from(8.0), color: OryxisColors::t().border, width: 1.0 },
-                        ..Default::default()
-                    }
-                }),
-            ].align_y(iced::Alignment::Center),
-        )
-        .padding(Padding { top: 20.0, right: 24.0, bottom: 16.0, left: 24.0 })
-        .width(Length::Fill);
-
-        let mut rows: Vec<Element<'_, Message>> = Vec::new();
-
-        if self.logs.is_empty() {
-            rows.push(
-                container(
-                    text("No activity logged yet.")
-                        .size(13).color(OryxisColors::t().text_muted),
-                )
-                .padding(16)
-                .into(),
-            );
-        }
-
-        for entry in &self.logs {
-            let (event_icon, event_color) = match entry.event {
-                oryxis_core::models::log_entry::LogEvent::Connected => {
-                    (iced_fonts::bootstrap::check_circle(), OryxisColors::t().success)
-                }
-                oryxis_core::models::log_entry::LogEvent::Disconnected => {
-                    (iced_fonts::bootstrap::dash_circle(), OryxisColors::t().text_muted)
-                }
-                oryxis_core::models::log_entry::LogEvent::AuthFailed => {
-                    (iced_fonts::bootstrap::x_circle(), OryxisColors::t().warning)
-                }
-                oryxis_core::models::log_entry::LogEvent::Error => {
-                    (iced_fonts::bootstrap::exclamation_circle(), OryxisColors::t().error)
-                }
-            };
-
-            let ts = entry.timestamp.with_timezone(&chrono::Local).format("%Y-%m-%d %H:%M:%S").to_string();
-
-            let log_row = container(
-                row![
-                    event_icon.size(14).color(event_color),
-                    Space::new().width(12),
-                    column![
-                        row![
-                            text(&entry.connection_label).size(13).color(OryxisColors::t().text_primary),
-                            Space::new().width(8),
-                            text(format!("{}", entry.event)).size(11).color(event_color),
-                        ].align_y(iced::Alignment::Center),
-                        Space::new().height(2),
-                        text(&entry.message).size(11).color(OryxisColors::t().text_muted),
-                    ].width(Length::Fill),
-                    text(ts).size(10).color(OryxisColors::t().text_muted),
-                ].align_y(iced::Alignment::Center),
-            )
-            .padding(Padding { top: 8.0, right: 16.0, bottom: 8.0, left: 16.0 })
-            .width(Length::Fill)
-            .style(|_| container::Style {
-                background: Some(Background::Color(OryxisColors::t().bg_surface)),
-                border: Border { radius: Radius::from(8.0), ..Default::default() },
-                ..Default::default()
-            });
-
-            rows.push(log_row.into());
-            rows.push(Space::new().height(4).into());
-        }
-
-        // ── Session Logs section ──
-        rows.push(Space::new().height(16).into());
-        rows.push(
-            container(
-                text("Session Logs").size(16).color(OryxisColors::t().text_primary),
-            )
-            .padding(Padding { top: 0.0, right: 0.0, bottom: 8.0, left: 0.0 })
-            .into(),
-        );
-
-        if self.session_logs.is_empty() {
-            rows.push(
-                container(
-                    text("No session recordings yet. Sessions are recorded automatically when you connect via SSH.")
-                        .size(13).color(OryxisColors::t().text_muted),
-                )
-                .padding(16)
-                .into(),
-            );
-        }
-
-        for (idx, entry) in self.session_logs.iter().enumerate() {
-            let ts = entry.started_at.with_timezone(&chrono::Local).format("%Y-%m-%d %H:%M:%S").to_string();
-            let duration = if let Some(ended) = entry.ended_at {
-                let dur = ended.signed_duration_since(entry.started_at);
-                let secs = dur.num_seconds();
-                if secs < 60 {
-                    format!("{}s", secs)
-                } else if secs < 3600 {
-                    format!("{}m {}s", secs / 60, secs % 60)
-                } else {
-                    format!("{}h {}m", secs / 3600, (secs % 3600) / 60)
-                }
-            } else {
-                "in progress".to_string()
-            };
-            let size_str = format_data_size(entry.data_size);
-            let log_id = entry.id;
-
-            let session_row = container(
-                row![
-                    iced_fonts::bootstrap::file_text().size(14).color(OryxisColors::t().accent),
-                    Space::new().width(12),
-                    column![
-                        text(&entry.label).size(13).color(OryxisColors::t().text_primary),
-                        Space::new().height(2),
-                        row![
-                            text(ts).size(10).color(OryxisColors::t().text_muted),
-                            Space::new().width(12),
-                            text(duration).size(10).color(OryxisColors::t().text_muted),
-                            Space::new().width(12),
-                            text(size_str).size(10).color(OryxisColors::t().text_muted),
-                        ],
-                    ].width(Length::Fill),
-                    button(
-                        container(text("View").size(11).color(OryxisColors::t().accent))
-                            .padding(Padding { top: 4.0, right: 10.0, bottom: 4.0, left: 10.0 }),
-                    )
-                    .on_press(Message::ViewSessionLog(log_id))
-                    .style(|_, status| {
-                        let bg = match status {
-                            BtnStatus::Hovered => Color { a: 0.15, ..OryxisColors::t().accent },
-                            _ => Color::TRANSPARENT,
-                        };
-                        button::Style {
-                            background: Some(Background::Color(bg)),
-                            border: Border { radius: Radius::from(6.0), color: OryxisColors::t().accent, width: 1.0 },
-                            ..Default::default()
-                        }
-                    }),
-                    Space::new().width(8),
-                    button(
-                        container(text(crate::i18n::t("delete")).size(11).color(OryxisColors::t().error))
-                            .padding(Padding { top: 4.0, right: 10.0, bottom: 4.0, left: 10.0 }),
-                    )
-                    .on_press(Message::DeleteSessionLog(idx))
-                    .style(|_, status| {
-                        let bg = match status {
-                            BtnStatus::Hovered => Color { a: 0.15, ..OryxisColors::t().error },
-                            _ => Color::TRANSPARENT,
-                        };
-                        button::Style {
-                            background: Some(Background::Color(bg)),
-                            border: Border { radius: Radius::from(6.0), color: OryxisColors::t().error, width: 1.0 },
-                            ..Default::default()
-                        }
-                    }),
-                ].align_y(iced::Alignment::Center),
-            )
-            .padding(Padding { top: 8.0, right: 16.0, bottom: 8.0, left: 16.0 })
-            .width(Length::Fill)
-            .style(|_| container::Style {
-                background: Some(Background::Color(OryxisColors::t().bg_surface)),
-                border: Border { radius: Radius::from(8.0), ..Default::default() },
-                ..Default::default()
-            });
-
-            rows.push(session_row.into());
-            rows.push(Space::new().height(4).into());
-        }
-
-        let list = scrollable(
-            column(rows).padding(Padding { top: 0.0, right: 24.0, bottom: 24.0, left: 24.0 }),
-        ).height(Length::Fill);
-
-        // Session log viewer overlay
-        if let Some((_log_id, ref rendered_text)) = self.viewing_session_log {
-            let viewer = container(
-                column![
-                    // Header
-                    container(
-                        row![
-                            text("Session Log").size(16).color(OryxisColors::t().text_primary),
-                            Space::new().width(Length::Fill),
-                            button(
-                                container(text(crate::i18n::t("close")).size(12).color(OryxisColors::t().text_muted))
-                                    .padding(Padding { top: 6.0, right: 14.0, bottom: 6.0, left: 14.0 }),
-                            )
-                            .on_press(Message::CloseSessionLogView)
-                            .style(|_, status| {
-                                let bg = match status {
-                                    BtnStatus::Hovered => Color { a: 0.15, ..OryxisColors::t().error },
-                                    _ => Color::TRANSPARENT,
-                                };
-                                button::Style {
-                                    background: Some(Background::Color(bg)),
-                                    border: Border { radius: Radius::from(8.0), color: OryxisColors::t().border, width: 1.0 },
-                                    ..Default::default()
-                                }
-                            }),
-                        ].align_y(iced::Alignment::Center),
-                    )
-                    .padding(Padding { top: 16.0, right: 20.0, bottom: 12.0, left: 20.0 }),
-                    // Content
-                    scrollable(
-                        container(
-                            text(rendered_text)
-                                .size(12)
-                                .color(OryxisColors::t().text_primary)
-                                .font(iced::Font::MONOSPACE),
-                        )
-                        .padding(16)
-                        .width(Length::Fill),
-                    ).height(Length::Fill),
-                ]
-            )
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .style(|_| container::Style {
-                background: Some(Background::Color(OryxisColors::t().bg_primary)),
-                border: Border { radius: Radius::from(0.0), ..Default::default() },
-                ..Default::default()
-            });
-
-            return viewer.into();
-        }
-
-        column![toolbar, list]
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .into()
-    }
-
-    fn view_settings(&self) -> Element<'_, Message> {
-        // ── Settings sidebar ──
-        let settings_sidebar = {
-            let items: Vec<(&str, SettingsSection)> = vec![
-                (crate::i18n::t("terminal_settings"), SettingsSection::Terminal),
-                (crate::i18n::t("ai_assistant"), SettingsSection::AI),
-                (crate::i18n::t("theme"), SettingsSection::Theme),
-                (crate::i18n::t("shortcuts"), SettingsSection::Shortcuts),
-                (crate::i18n::t("security"), SettingsSection::Security),
-                (crate::i18n::t("sync"), SettingsSection::Sync),
-                (crate::i18n::t("about"), SettingsSection::About),
-            ];
-            let mut col = column![
-                text(crate::i18n::t("settings")).size(16).color(OryxisColors::t().text_primary),
-                Space::new().height(12),
-            ]
-            .padding(Padding { top: 20.0, right: 8.0, bottom: 8.0, left: 8.0 });
-
-            for (label, section) in items {
-                let is_active = self.settings_section == section;
-                let bg = if is_active {
-                    Color { a: 0.15, ..OryxisColors::t().accent }
-                } else {
-                    Color::TRANSPARENT
-                };
-                let fg = if is_active {
-                    OryxisColors::t().accent
-                } else {
-                    OryxisColors::t().text_secondary
-                };
-                let btn: Element<'_, Message> = button(
-                    container(text(label).size(13).color(fg))
-                        .padding(Padding { top: 8.0, right: 16.0, bottom: 8.0, left: 16.0 }),
-                )
-                .on_press(Message::ChangeSettingsSection(section))
-                .width(Length::Fill)
-                .style(move |_, status| {
-                    let hover_bg = match status {
-                        BtnStatus::Hovered if !is_active => Color::from_rgba(1.0, 1.0, 1.0, 0.08),
-                        BtnStatus::Pressed => Color { a: 0.25, ..OryxisColors::t().accent },
-                        _ => bg,
-                    };
-                    button::Style {
-                        background: Some(Background::Color(hover_bg)),
-                        border: Border { radius: Radius::from(10.0), ..Default::default() },
-                        ..Default::default()
-                    }
-                })
-                .into();
-                col = col.push(btn);
-            }
-
-            container(col)
-                .width(200)
-                .height(Length::Fill)
-                .style(|_| container::Style {
-                    background: Some(Background::Color(OryxisColors::t().bg_sidebar)),
-                    border: Border {
-                        color: OryxisColors::t().border,
-                        width: 1.0,
-                        radius: Radius::from(0.0),
-                    },
-                    ..Default::default()
-                })
-        };
-
-        // ── Settings content ──
-        let settings_content: Element<'_, Message> = match self.settings_section {
-            SettingsSection::Terminal => {
-                let toggles_section = panel_section(column![
-                    toggle_row(crate::i18n::t("copy_on_select"), self.setting_copy_on_select, Message::ToggleCopyOnSelect),
-                    Space::new().height(10),
-                    toggle_row(crate::i18n::t("bold_bright"), self.setting_bold_is_bright, Message::ToggleBoldIsBright),
-                    Space::new().height(10),
-                    toggle_row(crate::i18n::t("bell_sound"), self.setting_bell_sound, Message::ToggleBellSound),
-                    Space::new().height(10),
-                    toggle_row(crate::i18n::t("keyword_highlight"), self.setting_keyword_highlight, Message::ToggleKeywordHighlight),
-                ]);
-
-                let font_size_section = panel_section(column![
-                    row![
-                        text(crate::i18n::t("terminal_font_size")).size(13).color(OryxisColors::t().text_primary),
-                        Space::new().width(Length::Fill),
-                        button(
-                            container(text("\u{2212}").size(14).color(OryxisColors::t().text_primary))
-                                .padding(Padding { top: 4.0, right: 10.0, bottom: 4.0, left: 10.0 }),
-                        )
-                        .on_press(Message::TerminalFontSizeDecrease)
-                        .style(|_, status| {
-                            let bg = match status {
-                                BtnStatus::Hovered => OryxisColors::t().bg_hover,
-                                _ => OryxisColors::t().bg_selected,
-                            };
-                            button::Style {
-                                background: Some(Background::Color(bg)),
-                                border: Border { radius: Radius::from(4.0), ..Default::default() },
-                                ..Default::default()
-                            }
-                        }),
-                        Space::new().width(8),
-                        text(format!("{:.0}", self.terminal_font_size)).size(13).color(OryxisColors::t().text_primary),
-                        Space::new().width(8),
-                        button(
-                            container(text("+").size(14).color(OryxisColors::t().text_primary))
-                                .padding(Padding { top: 4.0, right: 10.0, bottom: 4.0, left: 10.0 }),
-                        )
-                        .on_press(Message::TerminalFontSizeIncrease)
-                        .style(|_, status| {
-                            let bg = match status {
-                                BtnStatus::Hovered => OryxisColors::t().bg_hover,
-                                _ => OryxisColors::t().bg_selected,
-                            };
-                            button::Style {
-                                background: Some(Background::Color(bg)),
-                                border: Border { radius: Radius::from(4.0), ..Default::default() },
-                                ..Default::default()
-                            }
-                        }),
-                    ].align_y(iced::Alignment::Center),
-                ]);
-
-                let keepalive_section = panel_section(column![
-                    text(crate::i18n::t("keepalive_interval")).size(13).color(OryxisColors::t().text_primary),
-                    Space::new().height(4),
-                    text("How often (in seconds) to send SSH keepalive packets. Set to 0 to disable.")
-                        .size(11).color(OryxisColors::t().text_muted),
-                    Space::new().height(8),
-                    text_input("0", &self.setting_keepalive_interval)
-                        .on_input(Message::SettingKeepaliveChanged)
-                        .size(13)
-                        .width(120),
-                ]);
-
-                let scrollback_section = panel_section(column![
-                    text(crate::i18n::t("scrollback")).size(13).color(OryxisColors::t().text_primary),
-                    Space::new().height(4),
-                    text("Limit number of terminal rows. Set to 0 for maximum.")
-                        .size(11).color(OryxisColors::t().text_muted),
-                    Space::new().height(8),
-                    text_input("10000", &self.setting_scrollback_rows)
-                        .on_input(Message::SettingScrollbackChanged)
-                        .size(13)
-                        .width(120),
-                ]);
-
-                scrollable(
-                    container(
-                        column![
-                            text(crate::i18n::t("terminal_settings")).size(18).color(OryxisColors::t().text_primary),
-                            Space::new().height(16),
-                            toggles_section,
-                            Space::new().height(12),
-                            font_size_section,
-                            Space::new().height(12),
-                            keepalive_section,
-                            Space::new().height(12),
-                            scrollback_section,
-                            Space::new().height(24),
-                        ]
-                        .width(Length::Fill),
-                    )
-                    .padding(Padding { top: 20.0, right: 24.0, bottom: 24.0, left: 24.0 }),
-                )
-                .height(Length::Fill)
-                .into()
-            }
-
-            SettingsSection::AI => {
-                let enable_section = panel_section(column![
-                    toggle_row(crate::i18n::t("enable_ai"), self.ai_enabled, Message::ToggleAiEnabled),
-                ]);
-
-                let mut content_col = column![
-                    text(crate::i18n::t("ai_assistant")).size(18).color(OryxisColors::t().text_primary),
-                    Space::new().height(16),
-                    enable_section,
-                ]
-                .spacing(12)
-                .width(Length::Fill);
-
-                if self.ai_enabled {
-                    let provider_display = match self.ai_provider.as_str() {
-                        "anthropic" => "Anthropic",
-                        "openai" => "OpenAI",
-                        "gemini" => "Google Gemini",
-                        "custom" => "Custom",
-                        _ => "Anthropic",
-                    };
-                    let provider_options = vec![
-                        "Anthropic".to_string(),
-                        "OpenAI".to_string(),
-                        "Google Gemini".to_string(),
-                        "Custom".to_string(),
-                    ];
-
-                    let provider_pick: Element<'_, Message> = pick_list(
-                        provider_options,
-                        Some(provider_display.to_string()),
-                        Message::AiProviderChanged,
-                    )
-                    .width(200)
-                    .into();
-
-                    let model_input: Element<'_, Message> = text_input("Model name...", &self.ai_model)
-                        .on_input(Message::AiModelChanged)
-                        .padding(10)
-                        .width(300)
-                        .into();
-
-                    let mut provider_col = column![
-                        panel_field("Provider", provider_pick),
-                        Space::new().height(12),
-                        panel_field("Model", model_input),
-                    ];
-
-                    if self.ai_provider == "custom" {
-                        let url_input: Element<'_, Message> = text_input("https://api.example.com/v1", &self.ai_api_url)
-                            .on_input(Message::AiApiUrlChanged)
-                            .padding(10)
-                            .width(300)
-                            .into();
-                        provider_col = provider_col
-                            .push(Space::new().height(12))
-                            .push(panel_field("API URL", url_input));
-                    }
-
-                    content_col = content_col.push(panel_section(provider_col));
-
-                    // API Key section
-                    let key_input: Element<'_, Message> = text_input("sk-...", &self.ai_api_key)
-                        .on_input(Message::AiApiKeyChanged)
-                        .on_submit(Message::SaveAiApiKey)
-                        .secure(true)
-                        .padding(10)
-                        .width(250)
-                        .into();
-
-                    // System prompt section
-                    let prompt_section = panel_section(column![
-                        panel_field("Additional System Instructions",
-                            text_input("Custom instructions for the AI assistant...", &self.ai_system_prompt)
-                                .on_input(Message::AiSystemPromptChanged)
-                                .padding(10)
-                                .into()
-                        ),
-                        Space::new().height(4),
-                        text("Optional. Added to the default system prompt that includes terminal context and bash tool instructions.")
-                            .size(11).color(OryxisColors::t().text_muted),
-                    ]);
-                    content_col = content_col.push(prompt_section);
-
-                    let save_btn = styled_button("Save", Message::SaveAiApiKey, OryxisColors::t().accent);
-
-                    let status: Element<'_, Message> = if self.ai_api_key_set {
-                        text("API key saved \u{2713}").size(12).color(OryxisColors::t().success).into()
-                    } else {
-                        Space::new().height(0).into()
-                    };
-
-                    let key_section = panel_section(column![
-                        panel_field("API Key", row![key_input, Space::new().width(8), save_btn].align_y(iced::Alignment::Center).into()),
-                        Space::new().height(4),
-                        status,
-                    ]);
-
-                    content_col = content_col.push(key_section);
-                }
-
-                scrollable(
-                    container(content_col)
-                        .padding(Padding { top: 20.0, right: 24.0, bottom: 24.0, left: 24.0 }),
-                )
-                .height(Length::Fill)
-                .into()
-            }
-
-            SettingsSection::Theme => {
-                use crate::theme::AppTheme;
-                let active_name = AppTheme::active().name();
-
-                let mut grid_rows: Vec<Element<'_, Message>> = Vec::new();
-                let themes: Vec<&AppTheme> = AppTheme::ALL.iter().collect();
-
-                for chunk in themes.chunks(2) {
-                    let mut r = row![].spacing(12);
-                    for theme in chunk {
-                        let name = theme.name();
-                        let is_active = name == active_name;
-                        let colors = match theme {
-                            AppTheme::OryxisDark => &crate::theme::ORYXIS_DARK,
-                            AppTheme::OryxisLight => &crate::theme::ORYXIS_LIGHT,
-                            AppTheme::Dracula => &crate::theme::DRACULA,
-                            AppTheme::Nord => &crate::theme::NORD,
-                        };
-                        let border_color = if is_active {
-                            OryxisColors::t().accent
-                        } else {
-                            OryxisColors::t().border
-                        };
-                        let border_width = if is_active { 2.0 } else { 1.0 };
-
-                        let preview_bg = colors.bg_primary;
-                        let accent_bar = colors.accent;
-                        let success_bar = colors.success;
-                        let error_bar = colors.error;
-
-                        let preview = container(
-                            column![
-                                Space::new().height(20),
-                                row![
-                                    container(Space::new().width(30).height(4))
-                                        .style(move |_| container::Style {
-                                            background: Some(Background::Color(accent_bar)),
-                                            border: Border { radius: Radius::from(2.0), ..Default::default() },
-                                            ..Default::default()
-                                        }),
-                                    Space::new().width(4),
-                                    container(Space::new().width(20).height(4))
-                                        .style(move |_| container::Style {
-                                            background: Some(Background::Color(success_bar)),
-                                            border: Border { radius: Radius::from(2.0), ..Default::default() },
-                                            ..Default::default()
-                                        }),
-                                    Space::new().width(4),
-                                    container(Space::new().width(15).height(4))
-                                        .style(move |_| container::Style {
-                                            background: Some(Background::Color(error_bar)),
-                                            border: Border { radius: Radius::from(2.0), ..Default::default() },
-                                            ..Default::default()
-                                        }),
-                                ].padding(Padding { top: 0.0, right: 8.0, bottom: 8.0, left: 8.0 }),
-                            ],
-                        )
-                        .width(120)
-                        .style(move |_| container::Style {
-                            background: Some(Background::Color(preview_bg)),
-                            border: Border { radius: Radius::from(6.0), ..Default::default() },
-                            ..Default::default()
-                        });
-
-                        let card: Element<'_, Message> = button(
-                            container(
-                                column![
-                                    preview,
-                                    Space::new().height(8),
-                                    text(name).size(12).color(OryxisColors::t().text_primary),
-                                ]
-                                .align_x(iced::Alignment::Center),
-                            )
-                            .padding(12),
-                        )
-                        .on_press(Message::AppThemeChanged(name.to_string()))
-                        .width(Length::FillPortion(1))
-                        .style(move |_, status| {
-                            let bg = match status {
-                                BtnStatus::Hovered => OryxisColors::t().bg_hover,
-                                _ => OryxisColors::t().bg_surface,
-                            };
-                            button::Style {
-                                background: Some(Background::Color(bg)),
-                                border: Border {
-                                    radius: Radius::from(8.0),
-                                    color: border_color,
-                                    width: border_width,
-                                },
-                                ..Default::default()
-                            }
-                        })
-                        .into();
-                        r = r.push(card);
-                    }
-                    // Fill remaining space if odd number
-                    if chunk.len() == 1 {
-                        r = r.push(Space::new().width(Length::FillPortion(1)));
-                    }
-                    grid_rows.push(r.into());
-                }
-
-                // Language picker
-                let lang_options: Vec<String> = crate::i18n::Language::ALL
-                    .iter()
-                    .map(|l| l.name().to_string())
-                    .collect();
-                let active_lang_name = crate::i18n::Language::active().name().to_string();
-
-                let language_section = panel_section(column![
-                    row![
-                        text(crate::i18n::t("language")).size(13).color(OryxisColors::t().text_primary),
-                        Space::new().width(Length::Fill),
-                        pick_list(
-                            lang_options,
-                            Some(active_lang_name),
-                            Message::LanguageChanged,
-                        )
-                        .width(200),
-                    ].align_y(iced::Alignment::Center),
-                ]);
-
-                let mut content_col = column![
-                    text(crate::i18n::t("theme")).size(18).color(OryxisColors::t().text_primary),
-                    Space::new().height(16),
-                    language_section,
-                    Space::new().height(12),
-                ]
-                .spacing(12)
-                .width(Length::Fill);
-
-                for row_el in grid_rows {
-                    content_col = content_col.push(row_el);
-                }
-
-                scrollable(
-                    container(content_col)
-                        .padding(Padding { top: 20.0, right: 24.0, bottom: 24.0, left: 24.0 }),
-                )
-                .height(Length::Fill)
-                .into()
-            }
-
-            SettingsSection::Shortcuts => {
-                let shortcuts: Vec<(Vec<&str>, &str)> = vec![
-                    (vec!["Ctrl", "Shift", "C"], crate::i18n::t("copy_terminal")),
-                    (vec!["Ctrl", "Shift", "V"], crate::i18n::t("paste_terminal")),
-                    (vec!["Ctrl", "Shift", "W"], crate::i18n::t("close_tab")),
-                    (vec!["Ctrl", "1...9"], crate::i18n::t("switch_tab")),
-                    (vec!["Ctrl", "L"], crate::i18n::t("open_local")),
-                    (vec!["Ctrl", "N"], crate::i18n::t("new_host_shortcut")),
-                ];
-
-                let mut rows_col = column![
-                    text(crate::i18n::t("keyboard_shortcuts")).size(18).color(OryxisColors::t().text_primary),
-                    Space::new().height(16),
-                ].spacing(8).width(Length::Fill);
-
-                for (keys, action) in shortcuts {
-                    let badges: Vec<Element<'_, Message>> = keys.iter().map(|k| key_badge(k)).collect();
-                    rows_col = rows_col.push(shortcut_row(badges, action));
-                }
-
-                scrollable(
-                    container(rows_col)
-                        .padding(Padding { top: 20.0, right: 24.0, bottom: 24.0, left: 24.0 }),
-                )
-                .height(Length::Fill)
-                .into()
-            }
-
-            SettingsSection::Security => {
-                let password_toggle = toggle_row(
-                    crate::i18n::t("vault_password"),
-                    self.vault_has_user_password,
-                    Message::ToggleVaultPassword,
-                );
-
-                let password_section: Element<'_, Message> = if !self.vault_has_user_password {
-                    // Show password input to enable
-                    let input = text_input("New master password...", &self.vault_new_password)
-                        .on_input(Message::VaultNewPasswordChanged)
-                        .on_submit(Message::SetVaultPassword)
-                        .secure(true)
-                        .padding(10)
-                        .width(300);
-                    let btn = styled_button(crate::i18n::t("set_password"), Message::SetVaultPassword, OryxisColors::t().accent);
-                    let error: Element<'_, Message> = if let Some(err) = &self.vault_password_error {
-                        text(err.clone()).size(12).color(OryxisColors::t().error).into()
-                    } else {
-                        Space::new().height(0).into()
-                    };
-                    column![
-                        Space::new().height(8),
-                        text("Set a master password to protect your vault. You will need to enter it each time you open Oryxis.")
-                            .size(11).color(OryxisColors::t().text_muted),
-                        Space::new().height(8),
-                        input,
-                        Space::new().height(8),
-                        btn,
-                        error,
-                    ].into()
-                } else {
-                    let note: Element<'_, Message> = text("Your vault is protected with a master password. Toggle off to remove it.")
-                        .size(11).color(OryxisColors::t().text_muted).into();
-                    let error: Element<'_, Message> = if let Some(err) = &self.vault_password_error {
-                        text(err.clone()).size(12).color(OryxisColors::t().error).into()
-                    } else {
-                        Space::new().height(0).into()
-                    };
-                    column![Space::new().height(4), note, error].into()
-                };
-
-                let lock_btn = button(
-                    container(
-                        row![
-                            iced_fonts::bootstrap::lock().size(14).color(OryxisColors::t().warning),
-                            Space::new().width(10),
-                            text(crate::i18n::t("lock_vault")).size(13).color(OryxisColors::t().warning),
-                        ].align_y(iced::Alignment::Center),
-                    )
-                    .padding(Padding { top: 10.0, right: 20.0, bottom: 10.0, left: 20.0 }),
-                )
-                .on_press(Message::LockVault)
-                .style(|_, status| {
-                    let bg = match status {
-                        BtnStatus::Hovered => Color { a: 0.15, ..OryxisColors::t().warning },
-                        _ => Color::TRANSPARENT,
-                    };
-                    button::Style {
-                        background: Some(Background::Color(bg)),
-                        border: Border { radius: Radius::from(8.0), color: OryxisColors::t().warning, width: 1.0 },
-                        ..Default::default()
-                    }
-                });
-
-                // MCP Server section
-                let mcp_toggle = toggle_row(
-                    crate::i18n::t("enable_mcp_server"),
-                    self.mcp_server_enabled,
-                    Message::ToggleMcpServer,
-                );
-                let mcp_guide_btn = button(
-                    container(text(crate::i18n::t("mcp_setup_guide")).size(12).color(OryxisColors::t().accent))
-                        .padding(Padding { top: 6.0, right: 16.0, bottom: 6.0, left: 16.0 }),
-                )
-                .on_press(if self.show_mcp_info { Message::HideMcpInfo } else { Message::ShowMcpInfo })
-                .style(|_, status| {
-                    let bg = match status {
-                        BtnStatus::Hovered => Color { a: 0.1, ..OryxisColors::t().accent },
-                        _ => Color::TRANSPARENT,
-                    };
-                    button::Style {
-                        background: Some(Background::Color(bg)),
-                        border: Border { radius: Radius::from(6.0), color: OryxisColors::t().accent, width: 1.0 },
-                        ..Default::default()
-                    }
-                });
-                let mut mcp_col = column![
-                    text(crate::i18n::t("mcp_server")).size(14).color(OryxisColors::t().text_muted),
-                    Space::new().height(8),
-                    mcp_toggle,
-                    Space::new().height(4),
-                    row![
-                        text(crate::i18n::t("mcp_server_desc")).size(11).color(OryxisColors::t().text_muted),
-                        Space::new().width(Length::Fill),
-                        mcp_guide_btn,
-                    ].align_y(iced::Alignment::Center),
-                ];
-                if self.show_mcp_info {
-                    mcp_col = mcp_col
-                        .push(Space::new().height(12))
-                        .push(mcp_info_panel(self.mcp_config_copied, &self.mcp_install_status));
-                }
-                let mcp_section = panel_section(mcp_col);
-
-                // Export/Import section
-                let export_btn = styled_button(crate::i18n::t("export_vault"), Message::ExportVault, OryxisColors::t().accent);
-                let import_btn = styled_button(crate::i18n::t("import_vault"), Message::ImportVault, OryxisColors::t().text_muted);
-
-                let mut export_import_section: iced::widget::Column<'_, Message> = column![
-                    text(crate::i18n::t("export_import")).size(14).color(OryxisColors::t().text_muted),
-                    Space::new().height(8),
-                    row![export_btn, Space::new().width(8), import_btn],
-                ];
-
-                // Show export dialog inline
-                if self.show_export_dialog {
-                    let pw_input = text_input(crate::i18n::t("export_password"), &self.export_password)
-                        .on_input(Message::ExportPasswordChanged)
-                        .secure(true)
-                        .padding(10)
-                        .width(300);
-                    let keys_toggle = row![
-                        text(crate::i18n::t("include_private_keys")).size(13).color(OryxisColors::t().text_secondary),
-                        Space::new().width(Length::Fill),
-                        button(
-                            text(if self.export_include_keys { "ON" } else { "OFF" }).size(12)
-                        ).on_press(Message::ExportToggleKeys).style(move |_theme, _status| {
-                            button::Style {
-                                background: Some(Background::Color(if self.export_include_keys { OryxisColors::t().success } else { OryxisColors::t().bg_hover })),
-                                border: Border { radius: Radius::from(4.0), ..Default::default() },
-                                text_color: OryxisColors::t().text_primary,
-                                ..Default::default()
-                            }
-                        }),
-                    ].align_y(iced::Alignment::Center);
-                    let confirm_btn = styled_button(crate::i18n::t("export_confirm"), Message::ExportConfirm, OryxisColors::t().success);
-                    let cancel_btn = styled_button(crate::i18n::t("cancel"), Message::ExportImportDismiss, OryxisColors::t().text_muted);
-                    export_import_section = export_import_section
-                        .push(Space::new().height(12))
-                        .push(pw_input)
-                        .push(Space::new().height(8))
-                        .push(keys_toggle)
-                        .push(Space::new().height(8))
-                        .push(row![confirm_btn, Space::new().width(8), cancel_btn]);
-                }
-
-                // Show import dialog inline
-                if self.show_import_dialog {
-                    let pw_input = text_input(crate::i18n::t("import_password"), &self.import_password)
-                        .on_input(Message::ImportPasswordChanged)
-                        .on_submit(Message::ImportConfirm)
-                        .secure(true)
-                        .padding(10)
-                        .width(300);
-                    let confirm_btn = styled_button(crate::i18n::t("import_confirm"), Message::ImportConfirm, OryxisColors::t().success);
-                    let cancel_btn = styled_button(crate::i18n::t("cancel"), Message::ExportImportDismiss, OryxisColors::t().text_muted);
-                    export_import_section = export_import_section
-                        .push(Space::new().height(12))
-                        .push(text(crate::i18n::t("import_password_hint")).size(12).color(OryxisColors::t().text_muted))
-                        .push(Space::new().height(4))
-                        .push(pw_input)
-                        .push(Space::new().height(8))
-                        .push(row![confirm_btn, Space::new().width(8), cancel_btn]);
-                }
-
-                // Status messages
-                if let Some(status) = &self.export_status {
-                    let (msg, color) = match status {
-                        Ok(m) => (m.as_str(), OryxisColors::t().success),
-                        Err(m) => (m.as_str(), OryxisColors::t().error),
-                    };
-                    export_import_section = export_import_section
-                        .push(Space::new().height(8))
-                        .push(text(msg).size(12).color(color));
-                }
-                if let Some(status) = &self.import_status {
-                    let (msg, color) = match status {
-                        Ok(m) => (m.as_str(), OryxisColors::t().success),
-                        Err(m) => (m.as_str(), OryxisColors::t().error),
-                    };
-                    export_import_section = export_import_section
-                        .push(Space::new().height(8))
-                        .push(text(msg).size(12).color(color));
-                }
-
-                scrollable(
-                    container(
-                        column![
-                            text(crate::i18n::t("security")).size(18).color(OryxisColors::t().text_primary),
-                            Space::new().height(16),
-                            panel_section(column![password_toggle]),
-                            password_section,
-                            Space::new().height(24),
-                            lock_btn,
-                            Space::new().height(24),
-                            mcp_section,
-                            Space::new().height(12),
-                            panel_section(export_import_section),
-                            Space::new().height(24),
-                        ]
-                        .width(Length::Fill),
-                    )
-                    .padding(Padding { top: 20.0, right: 24.0, bottom: 24.0, left: 24.0 }),
-                )
-                .height(Length::Fill)
-                .into()
-            }
-
-            SettingsSection::Sync => {
-                // Device info
-                let device_name_input = text_input(
-                    crate::i18n::t("sync_device_name_hint"),
-                    &self.sync_device_name,
-                )
-                .on_input(Message::SyncDeviceNameChanged)
-                .padding(10)
-                .width(300);
-
-                let device_section = panel_section(column![
-                    text(crate::i18n::t("sync_device")).size(14).color(OryxisColors::t().text_muted),
-                    Space::new().height(8),
-                    text(crate::i18n::t("sync_device_name")).size(12).color(OryxisColors::t().text_muted),
-                    Space::new().height(4),
-                    device_name_input,
-                ]);
-
-                // Sync toggle
-                let sync_toggle = toggle_row(
-                    crate::i18n::t("sync_enable"),
-                    self.sync_enabled,
-                    Message::SyncToggleEnabled,
-                );
-
-                let mode_label = if self.sync_mode == "auto" { "Auto" } else { "Manual" };
-                let mode_pick = pick_list(
-                    vec!["Auto".to_string(), "Manual".to_string()],
-                    Some(mode_label.to_string()),
-                    |v| Message::SyncModeChanged(v.to_lowercase()),
-                )
-                .text_size(13)
-                .padding(6);
-
-                let mut options_section: iced::widget::Column<'_, Message> = column![
-                    text(crate::i18n::t("sync_options")).size(14).color(OryxisColors::t().text_muted),
-                    Space::new().height(8),
-                    sync_toggle,
-                    Space::new().height(8),
-                    row![
-                        text(crate::i18n::t("sync_mode")).size(13).color(OryxisColors::t().text_secondary),
-                        Space::new().width(Length::Fill),
-                        mode_pick,
-                    ].align_y(iced::Alignment::Center),
-                ];
-
-                if self.sync_enabled && self.sync_mode == "manual" {
-                    let sync_btn = styled_button(crate::i18n::t("sync_now"), Message::SyncNow, OryxisColors::t().accent);
-                    options_section = options_section
-                        .push(Space::new().height(8))
-                        .push(sync_btn);
-                }
-
-                if let Some(status) = &self.sync_status {
-                    options_section = options_section
-                        .push(Space::new().height(8))
-                        .push(text(status.as_str()).size(12).color(OryxisColors::t().text_muted));
-                }
-
-                // Pairing
-                let pair_btn = styled_button(crate::i18n::t("sync_pair_device"), Message::SyncStartPairing, OryxisColors::t().accent);
-                let mut pairing_section: iced::widget::Column<'_, Message> = column![
-                    text(crate::i18n::t("sync_pairing")).size(14).color(OryxisColors::t().text_muted),
-                    Space::new().height(8),
-                    pair_btn,
-                ];
-
-                if let Some(code) = &self.sync_pairing_code {
-                    pairing_section = pairing_section
-                        .push(Space::new().height(8))
-                        .push(text(format!("{}: {}", crate::i18n::t("sync_pairing_code"), code)).size(18).color(OryxisColors::t().success));
-                }
-
-                // Paired devices list
-                if !self.sync_peers.is_empty() {
-                    pairing_section = pairing_section.push(Space::new().height(12));
-                    for peer in &self.sync_peers {
-                        let last_sync = peer.last_synced_at
-                            .map(|d| d.format("%Y-%m-%d %H:%M").to_string())
-                            .unwrap_or_else(|| crate::i18n::t("sync_never").into());
-                        let unpair = button(
-                            text(crate::i18n::t("sync_unpair")).size(11).color(OryxisColors::t().error)
-                        ).on_press(Message::SyncUnpairDevice(peer.peer_id)).style(|_, _| button::Style {
-                            background: Some(Background::Color(Color::TRANSPARENT)),
-                            ..Default::default()
-                        });
-                        pairing_section = pairing_section.push(
-                            row![
-                                text(&peer.device_name).size(13).color(OryxisColors::t().text_primary),
-                                Space::new().width(Length::Fill),
-                                text(last_sync).size(11).color(OryxisColors::t().text_muted),
-                                Space::new().width(8),
-                                unpair,
-                            ].align_y(iced::Alignment::Center),
-                        ).push(Space::new().height(4));
-                    }
-                }
-
-                // Advanced
-                let signaling_input = text_input("https://...", &self.sync_signaling_url)
-                    .on_input(Message::SyncSignalingUrlChanged)
-                    .padding(8)
-                    .width(300);
-                let relay_input = text_input(crate::i18n::t("sync_relay_optional"), &self.sync_relay_url)
-                    .on_input(Message::SyncRelayUrlChanged)
-                    .padding(8)
-                    .width(300);
-                let port_input = text_input("0", &self.sync_listen_port)
-                    .on_input(Message::SyncListenPortChanged)
-                    .padding(8)
-                    .width(100);
-
-                let advanced_section = panel_section(column![
-                    text(crate::i18n::t("sync_advanced")).size(14).color(OryxisColors::t().text_muted),
-                    Space::new().height(8),
-                    text(crate::i18n::t("sync_signaling_url")).size(12).color(OryxisColors::t().text_muted),
-                    Space::new().height(4),
-                    signaling_input,
-                    Space::new().height(8),
-                    text(crate::i18n::t("sync_relay_url")).size(12).color(OryxisColors::t().text_muted),
-                    Space::new().height(4),
-                    relay_input,
-                    Space::new().height(8),
-                    text(crate::i18n::t("sync_listen_port")).size(12).color(OryxisColors::t().text_muted),
-                    Space::new().height(4),
-                    port_input,
-                ]);
-
-                scrollable(
-                    container(
-                        column![
-                            text(crate::i18n::t("sync")).size(18).color(OryxisColors::t().text_primary),
-                            Space::new().height(16),
-                            device_section,
-                            Space::new().height(12),
-                            panel_section(options_section),
-                            Space::new().height(12),
-                            panel_section(pairing_section),
-                            Space::new().height(12),
-                            advanced_section,
-                            Space::new().height(24),
-                        ]
-                        .width(Length::Fill),
-                    )
-                    .padding(Padding { top: 20.0, right: 24.0, bottom: 24.0, left: 24.0 }),
-                )
-                .height(Length::Fill)
-                .into()
-            }
-
-            SettingsSection::About => {
-                let about_section = panel_section(column![
-                    text("Oryxis v0.1.0").size(16).color(OryxisColors::t().text_primary),
-                    Space::new().height(4),
-                    text("A modern SSH client built with Rust").size(13).color(OryxisColors::t().text_secondary),
-                    Space::new().height(16),
-                    settings_row("Built with", "Iced, russh, alacritty_terminal".into()),
-                    Space::new().height(6),
-                    settings_row("License", "AGPL-3.0".into()),
-                    Space::new().height(6),
-                    settings_row("GitHub", "github.com/wilsonglasser/oryxis".into()),
-                ]);
-
-                let vault_section = panel_section(column![
-                    text(crate::i18n::t("vault_stats")).size(14).color(OryxisColors::t().text_muted),
-                    Space::new().height(8),
-                    settings_row(crate::i18n::t("hosts"), self.connections.len().to_string()),
-                    Space::new().height(6),
-                    settings_row(crate::i18n::t("keychain"), self.keys.len().to_string()),
-                    Space::new().height(6),
-                    settings_row(crate::i18n::t("snippets"), self.snippets.len().to_string()),
-                    Space::new().height(6),
-                    settings_row("Groups", self.groups.len().to_string()),
-                ]);
-
-                scrollable(
-                    container(
-                        column![
-                            text(crate::i18n::t("about")).size(18).color(OryxisColors::t().text_primary),
-                            Space::new().height(16),
-                            about_section,
-                            Space::new().height(12),
-                            vault_section,
-                            Space::new().height(24),
-                        ]
-                        .width(Length::Fill),
-                    )
-                    .padding(Padding { top: 20.0, right: 24.0, bottom: 24.0, left: 24.0 }),
-                )
-                .height(Length::Fill)
-                .into()
-            }
-        };
-
-        container(
-            row![
-                settings_sidebar,
-                container(settings_content)
-                    .width(Length::Fill)
-                    .height(Length::Fill),
-            ],
-        )
-        .width(Length::Fill)
-        .height(Length::Fill)
-        .into()
-    }
-
-    fn view_status_bar(&self) -> Element<'_, Message> {
-        let status_text = if let Some(idx) = self.active_tab {
-            if let Some(tab) = self.tabs.get(idx) {
-                format!("● {} — connected", tab.label)
-            } else {
-                crate::i18n::t("no_active_connection").into()
-            }
-        } else {
-            crate::i18n::t("no_active_connection").into()
-        };
-
-        let status_color = if self.active_tab.is_some() {
-            OryxisColors::t().success
-        } else {
-            OryxisColors::t().text_muted
-        };
-
-        container(
-            row![
-                text(status_text).size(12).color(status_color),
-                Space::new().width(Length::Fill),
-                text("Oryxis v0.1.0").size(12).color(OryxisColors::t().text_muted),
-            ]
-            .padding(Padding { top: 4.0, right: 12.0, bottom: 4.0, left: 12.0 }),
-        )
-        .width(Length::Fill)
-        .style(|_| container::Style {
-            background: Some(Background::Color(OryxisColors::t().bg_sidebar)),
-            border: Border { color: OryxisColors::t().border, width: 1.0, radius: Radius::from(0.0) },
-            ..Default::default()
-        })
-        .into()
-    }
-
-    fn view_host_panel(&self) -> Element<'_, Message> {
-        let is_editing = self.editor_form.editing_id.is_some();
-        let title = if is_editing { crate::i18n::t("edit_host") } else { crate::i18n::t("new_host") };
-        let has_address = !self.editor_form.hostname.is_empty();
-
-        // ── Header ──
-        let panel_header = container(
-            row![
-                text(title).size(16).color(OryxisColors::t().text_primary),
-                Space::new().width(Length::Fill),
-                button(iced_fonts::bootstrap::arrow_bar_right().size(14).color(OryxisColors::t().text_muted))
-                    .on_press(Message::EditorCancel)
-                    .padding(Padding { top: 4.0, right: 8.0, bottom: 4.0, left: 8.0 })
-                    .style(|_, _| button::Style {
-                        background: Some(Background::Color(Color::TRANSPARENT)),
-                        border: Border::default(),
-                        ..Default::default()
-                    }),
-            ].align_y(iced::Alignment::Center),
-        )
-        .padding(Padding { top: 16.0, right: 16.0, bottom: 12.0, left: 16.0 });
-
-        // ── Section: Address ──
-        let address_section = panel_section(column![
-            row![
-                container(
-                    iced_fonts::bootstrap::hdd_network().size(14).color(Color::WHITE),
-                )
-                .padding(Padding { top: 8.0, right: 8.0, bottom: 8.0, left: 8.0 })
-                .style(|_| container::Style {
-                    background: Some(Background::Color(OryxisColors::t().accent)),
-                    border: Border { radius: Radius::from(6.0), ..Default::default() },
-                    ..Default::default()
-                }),
-                Space::new().width(10),
-                text_input("IP or Hostname", &self.editor_form.hostname)
-                    .on_input(Message::EditorHostnameChanged)
-                    .padding(10),
-            ].align_y(iced::Alignment::Center),
-        ]);
-
-        // ── Section: General ──
-        let general_section = panel_section(column![
-            panel_field(crate::i18n::t("label"), text_input("My Server", &self.editor_form.label)
-                .on_input(Message::EditorLabelChanged).padding(10).into()),
-            Space::new().height(8),
-            panel_field(crate::i18n::t("parent_group"), text_input("Production, Staging...", &self.editor_form.group_name)
-                .on_input(Message::EditorGroupChanged).padding(10).into()),
-        ]);
-
-        // ── Section: SSH & Credentials ──
-        let port_text = crate::i18n::t("ssh_on_port").to_string();
-        let mut ssh_items = column![
-            // SSH on [port] port
-            row![
-                text(port_text).size(13).color(OryxisColors::t().text_secondary),
-                Space::new().width(8),
-                text_input("22", &self.editor_form.port)
-                    .on_input(Message::EditorPortChanged)
-                    .padding(6)
-                    .width(60),
-            ].align_y(iced::Alignment::Center),
-            Space::new().height(12),
-            text(crate::i18n::t("credentials")).size(12).color(OryxisColors::t().text_muted),
-            Space::new().height(8),
-            // Username input
-            row![
-                iced_fonts::bootstrap::person().size(13).color(OryxisColors::t().text_muted),
-                Space::new().width(10),
-                text_input("Username", &self.editor_form.username)
-                    .on_input(Message::EditorUsernameChanged)
-                    .padding(10),
-            ].align_y(iced::Alignment::Center),
-        ];
-
-        // Identity suggestion dropdown (only when username field is focused)
-        if self.editor_form.username_focused && self.editor_form.selected_identity.is_none() && !self.identities.is_empty() {
-            let search = self.editor_form.username.to_lowercase();
-            let matching: Vec<&Identity> = if search.is_empty() {
-                self.identities.iter().collect()
-            } else {
-                self.identities.iter()
-                    .filter(|i| i.label.to_lowercase().contains(&search)
-                        || i.username.as_deref().unwrap_or("").to_lowercase().contains(&search))
-                    .collect()
-            };
-            if !matching.is_empty() {
-                for identity in matching.iter().take(3) {
-                    let label = identity.label.clone();
-                    let subtitle = format!(
-                        "{}{}",
-                        identity.username.as_deref().unwrap_or(""),
-                        if identity.key_id.is_some() {
-                            let key_name = identity.key_id.and_then(|kid| {
-                                self.keys.iter().find(|k| k.id == kid).map(|k| k.label.as_str())
-                            }).unwrap_or("key");
-                            format!(", {}", key_name)
-                        } else { String::new() },
-                    );
-                    let ident_label = identity.label.clone();
-                    ssh_items = ssh_items.push(
-                        button(
-                            container(
-                                row![
-                                    iced_fonts::bootstrap::person().size(12).color(OryxisColors::t().accent),
-                                    Space::new().width(8),
-                                    column![
-                                        text(label.clone()).size(12).color(OryxisColors::t().text_primary),
-                                        text(subtitle.clone()).size(10).color(OryxisColors::t().text_muted),
-                                    ],
-                                ].align_y(iced::Alignment::Center),
-                            )
-                            .padding(Padding { top: 6.0, right: 10.0, bottom: 6.0, left: 10.0 })
-                            .width(Length::Fill)
-                            .style(|_| container::Style {
-                                background: Some(Background::Color(OryxisColors::t().bg_surface)),
-                                border: Border { radius: Radius::from(6.0), color: OryxisColors::t().border, width: 1.0 },
-                                ..Default::default()
-                            }),
-                        )
-                        .on_press(Message::EditorIdentityChanged(ident_label))
-                        .width(Length::Fill)
-                        .style(|_, status| {
-                            let bg = match status {
-                                BtnStatus::Hovered => OryxisColors::t().bg_hover,
-                                _ => Color::TRANSPARENT,
-                            };
-                            button::Style {
-                                background: Some(Background::Color(bg)),
-                                ..Default::default()
-                            }
-                        }),
-                    );
-                    ssh_items = ssh_items.push(Space::new().height(2));
-                }
-            }
-        }
-
-        // If identity selected, show banner instead of password/key fields
-        if let Some(ref ident_label) = self.editor_form.selected_identity {
-            ssh_items = ssh_items.push(Space::new().height(8));
-            ssh_items = ssh_items.push(
-                container(
-                    row![
-                        iced_fonts::bootstrap::person().size(14).color(OryxisColors::t().accent),
-                        Space::new().width(8),
-                        column![
-                            text(format!("Identity: {}", ident_label)).size(12).color(OryxisColors::t().text_primary),
-                            text(crate::i18n::t("managed_by_identity")).size(10).color(OryxisColors::t().text_muted),
-                        ],
-                        Space::new().width(Length::Fill),
-                        button(text("x").size(11).color(OryxisColors::t().text_muted))
-                            .on_press(Message::EditorIdentityChanged("(none)".into()))
-                            .padding(4)
-                            .style(|_, _| button::Style::default()),
-                    ].align_y(iced::Alignment::Center),
-                )
-                .padding(10)
-                .width(Length::Fill)
-                .style(|_| container::Style {
-                    background: Some(Background::Color(Color { a: 0.15, ..OryxisColors::t().accent })),
-                    border: Border { radius: Radius::from(8.0), color: OryxisColors::t().accent, width: 1.0 },
-                    ..Default::default()
-                }),
-            );
-        } else {
-            // Show password + key fields normally
-            ssh_items = ssh_items.push(Space::new().height(8));
-            ssh_items = ssh_items.push(
-                row![
-                    iced_fonts::bootstrap::keyboard().size(13).color(OryxisColors::t().text_muted),
-                    Space::new().width(10),
-                    text_input(
-                        if self.editor_form.has_existing_password && !self.editor_form.password_touched {
-                            "••••••••"
-                        } else {
-                            "Password"
-                        },
-                        &self.editor_form.password,
-                    )
-                        .on_input(Message::EditorPasswordChanged)
-                        .secure(!self.editor_form.password_visible)
-                        .padding(10),
-                    Space::new().width(6),
-                    button(
-                        if self.editor_form.password_visible {
-                            iced_fonts::bootstrap::eye_slash().size(14).color(OryxisColors::t().text_muted)
-                        } else {
-                            iced_fonts::bootstrap::eye().size(14).color(OryxisColors::t().text_muted)
-                        }
-                    )
-                        .on_press(Message::EditorTogglePasswordVisibility)
-                        .style(|_t, _s| button::Style::default())
-                        .padding(8),
-                ].align_y(iced::Alignment::Center)
-            );
-            ssh_items = ssh_items.push(Space::new().height(8));
-            ssh_items = ssh_items.push(
-                row![
-                    text("+ Key").size(12).color(OryxisColors::t().accent),
-                    Space::new().width(16),
-                    pick_list(
-                        {
-                            let mut opts = vec!["(none)".to_string()];
-                            opts.extend(self.keys.iter().map(|k| k.label.clone()));
-                            opts
-                        },
-                        Some(self.editor_form.selected_key.clone().unwrap_or_else(|| "(none)".into())),
-                        Message::EditorKeyChanged,
-                    ),
-                ].align_y(iced::Alignment::Center)
-            );
-        }
-
-        let ssh_section = panel_section(ssh_items);
-
-        // ── Section: Advanced Options ──
-        let jump_host_value = self.editor_form.jump_host.as_deref().unwrap_or("Disabled");
-        let auth_value = match self.editor_form.auth_method {
-            AuthMethod::Auto => "Auto",
-            AuthMethod::Password => "Password",
-            AuthMethod::Key => "Key",
-            AuthMethod::Agent => "Agent",
-            AuthMethod::Interactive => "Interactive",
-        };
-
-        let advanced_section = panel_section(column![
-            panel_option_row(
-                iced_fonts::bootstrap::link_fourfivedeg(),
-                crate::i18n::t("host_chaining"),
-                jump_host_value.to_string(),
-            ),
-            panel_divider(),
-            panel_option_pick(
-                iced_fonts::bootstrap::shield_lock(),
-                crate::i18n::t("auth_method"),
-                vec!["Auto".into(), "Password".into(), "Key".into(), "Agent".into(), "Interactive".into()],
-                auth_value.to_string(),
-                Message::EditorAuthMethodChanged,
-            ),
-            panel_divider(),
-            panel_option_pick_jump(
-                iced_fonts::bootstrap::diagram_three(),
-                "Jump Host",
-                {
-                    let mut opts = vec!["(none)".to_string()];
-                    for c in &self.connections {
-                        if Some(c.id) != self.editor_form.editing_id {
-                            opts.push(c.label.clone());
-                        }
-                    }
-                    opts
-                },
-                self.editor_form.jump_host.clone().unwrap_or_else(|| "(none)".into()),
-                Message::EditorJumpHostChanged,
-            ),
-            panel_divider(),
-            row![
-                iced_fonts::bootstrap::plug().size(14).color(OryxisColors::t().text_muted),
-                Space::new().width(10),
-                text(crate::i18n::t("expose_to_mcp")).size(13).color(OryxisColors::t().text_secondary),
-                Space::new().width(Length::Fill),
-                button(
-                    text(if self.editor_form.mcp_enabled { "ON" } else { "OFF" }).size(12)
-                ).on_press(Message::EditorToggleMcpEnabled).style(move |_theme, _status| {
-                    button::Style {
-                        background: Some(Background::Color(if self.editor_form.mcp_enabled { OryxisColors::t().success } else { OryxisColors::t().bg_hover })),
-                        border: Border { radius: Radius::from(4.0), ..Default::default() },
-                        text_color: OryxisColors::t().text_primary,
-                        ..Default::default()
-                    }
-                }),
-            ].align_y(iced::Alignment::Center),
-        ]);
-
-        // ── Section: Port Forwarding ──
-        let mut pf_items = column![
-            row![
-                iced_fonts::bootstrap::arrow_left_right().size(14).color(OryxisColors::t().text_muted),
-                Space::new().width(10),
-                text("Port Forwarding").size(13).color(OryxisColors::t().text_secondary),
-                Space::new().width(Length::Fill),
-                button(text("+").size(14).color(OryxisColors::t().text_primary))
-                    .on_press(Message::EditorAddPortForward)
-                    .style(|_, _| button::Style {
-                        background: Some(Background::Color(OryxisColors::t().bg_hover)),
-                        border: Border { radius: Radius::from(4.0), ..Default::default() },
-                        text_color: OryxisColors::t().text_primary,
-                        ..Default::default()
-                    })
-                    .padding(Padding { top: 2.0, right: 8.0, bottom: 2.0, left: 8.0 }),
-            ].align_y(iced::Alignment::Center),
-        ];
-
-        for (i, pf) in self.editor_form.port_forwards.iter().enumerate() {
-            let idx = i;
-            pf_items = pf_items.push(Space::new().height(8));
-            pf_items = pf_items.push(
-                row![
-                    text_input("8080", &pf.local_port)
-                        .on_input(move |v| Message::EditorPortFwdLocalPortChanged(idx, v))
-                        .padding(6)
-                        .width(70),
-                    text(" -> ").size(12).color(OryxisColors::t().text_muted),
-                    text_input("localhost", &pf.remote_host)
-                        .on_input(move |v| Message::EditorPortFwdRemoteHostChanged(idx, v))
-                        .padding(6)
-                        .width(Length::Fill),
-                    text(":").size(12).color(OryxisColors::t().text_muted),
-                    text_input("3306", &pf.remote_port)
-                        .on_input(move |v| Message::EditorPortFwdRemotePortChanged(idx, v))
-                        .padding(6)
-                        .width(70),
-                    button(text("x").size(11).color(OryxisColors::t().error))
-                        .on_press(Message::EditorRemovePortForward(idx))
-                        .style(|_, _| button::Style {
-                            background: None,
-                            border: Border::default(),
-                            text_color: OryxisColors::t().error,
-                            ..Default::default()
-                        })
-                        .padding(Padding { top: 2.0, right: 4.0, bottom: 2.0, left: 4.0 }),
-                ].align_y(iced::Alignment::Center).spacing(4),
-            );
-        }
-
-        let port_forward_section = panel_section(pf_items);
-
-        // ── Error ──
-        let panel_error: Element<'_, Message> = if let Some(err) = &self.host_panel_error {
-            container(Element::from(text(err.clone()).size(11).color(OryxisColors::t().error)))
-                .padding(Padding { top: 4.0, right: 16.0, bottom: 4.0, left: 16.0 })
-                .into()
-        } else {
-            Space::new().height(0).into()
-        };
-
-        // ── Bottom actions ──
-        let save_btn_bg = if has_address { OryxisColors::t().accent } else { OryxisColors::t().bg_surface };
-        let save_btn = button(
-            container(text(crate::i18n::t("save")).size(14).color(OryxisColors::t().text_primary))
-                .padding(Padding { top: 12.0, right: 0.0, bottom: 12.0, left: 0.0 })
-                .width(Length::Fill)
-                .center_x(Length::Fill),
-        )
-        .on_press(Message::EditorSave)
-        .width(Length::Fill)
-        .style(move |_, _| button::Style {
-            background: Some(Background::Color(save_btn_bg)),
-            border: Border { radius: Radius::from(8.0), ..Default::default() },
-            ..Default::default()
-        });
-
-        let bottom = column![save_btn];
-        // ── Layout ──
-        let form_scroll = scrollable(
-            column![
-                address_section,
-                Space::new().height(8),
-                general_section,
-                Space::new().height(8),
-                ssh_section,
-                Space::new().height(8),
-                advanced_section,
-                Space::new().height(8),
-                port_forward_section,
-                Space::new().height(8),
-                panel_error,
-            ]
-            .padding(Padding { top: 0.0, right: 16.0, bottom: 16.0, left: 16.0 }),
-        )
-        .height(Length::Fill);
-
-        let panel_content = column![
-            panel_header,
-            form_scroll,
-            container(bottom)
-                .padding(Padding { top: 8.0, right: 16.0, bottom: 16.0, left: 16.0 }),
-        ]
-        .height(Length::Fill);
-
-        container(panel_content)
-            .width(PANEL_WIDTH)
-            .height(Length::Fill)
-            .style(|_| container::Style {
-                background: Some(Background::Color(OryxisColors::t().bg_surface)),
-                border: Border { color: OryxisColors::t().border, width: 1.0, radius: Radius::from(0.0) },
-                ..Default::default()
-            })
-            .into()
-    }
 }
 
-// ===========================================================================
-// Helpers
-// ===========================================================================
-
-fn sidebar_nav_btn<'a>(
-    icon_widget: iced::widget::Text<'a>,
-    label: &'a str,
-    view: View,
-    is_active: bool,
-) -> Element<'a, Message> {
-    let bg = if is_active {
-        Color { a: 0.15, ..OryxisColors::t().accent }
-    } else {
-        Color::TRANSPARENT
-    };
-    let fg = if is_active {
-        OryxisColors::t().accent
-    } else {
-        OryxisColors::t().text_secondary
-    };
-
-    container(
-        button(
-            container(
-                row![
-                    icon_widget.size(14).color(fg),
-                    Space::new().width(10),
-                    text(label).size(13).color(fg),
-                ]
-                .align_y(iced::Alignment::Center),
-            )
-            .padding(Padding { top: 8.0, right: 16.0, bottom: 8.0, left: 16.0 }),
-        )
-        .on_press(Message::ChangeView(view))
-        .width(Length::Fill)
-        .style(move |_, status| {
-            let hover_bg = match status {
-                BtnStatus::Hovered if !is_active => Color::from_rgba(1.0, 1.0, 1.0, 0.08),
-                BtnStatus::Pressed => Color { a: 0.25, ..OryxisColors::t().accent },
-                _ => bg,
-            };
-            button::Style {
-                background: Some(Background::Color(hover_bg)),
-                border: Border { radius: Radius::from(10.0), ..Default::default() },
-                ..Default::default()
-            }
-        }),
-    )
-    .padding(Padding { top: 1.0, right: 8.0, bottom: 1.0, left: 8.0 })
-    .into()
-}
-
-/// A section card with slightly lighter background.
-fn panel_section<'a>(content: iced::widget::Column<'a, Message>) -> Element<'a, Message> {
-    container(content)
-        .padding(16)
-        .width(Length::Fill)
-        .style(|_| container::Style {
-            background: Some(Background::Color(OryxisColors::t().bg_hover)),
-            border: Border { radius: Radius::from(8.0), color: OryxisColors::t().border, width: 1.0 },
-            ..Default::default()
-        })
-        .into()
-}
-
-/// A labeled form field inside a section.
-fn panel_field<'a>(label: &'a str, input: Element<'a, Message>) -> Element<'a, Message> {
-    column![
-        text(label).size(12).color(OryxisColors::t().text_muted),
-        Space::new().height(4),
-        input,
-    ]
-    .into()
-}
-
-/// A divider line inside a section.
-fn toggle_row<'a>(label: &'a str, value: bool, msg: Message) -> Element<'a, Message> {
-    let toggle_bg = if value { OryxisColors::t().success } else { OryxisColors::t().bg_selected };
-    let toggle_text = if value { "  \u{25CF}" } else { "\u{25CF}  " };
-    row![
-        text(label).size(13).color(OryxisColors::t().text_primary),
-        Space::new().width(Length::Fill),
-        button(text(toggle_text).size(12).color(Color::WHITE))
-            .on_press(msg)
-            .padding(Padding { top: 4.0, right: 8.0, bottom: 4.0, left: 8.0 })
-            .style(move |_, _| button::Style {
-                background: Some(Background::Color(toggle_bg)),
-                border: Border { radius: Radius::from(10.0), ..Default::default() },
-                ..Default::default()
-            }),
-    ].align_y(iced::Alignment::Center)
-    .into()
-}
-
-fn panel_divider<'a>() -> Element<'a, Message> {
-    container(Space::new().height(1))
-        .width(Length::Fill)
-        .style(|_| container::Style {
-            background: Some(Background::Color(OryxisColors::t().border)),
-            ..Default::default()
-        })
-        .into()
-}
-
-/// An option row: [icon] [label] ... [value]
-fn panel_option_row<'a>(
-    icon_widget: iced::widget::Text<'a>,
-    label: &'a str,
-    value: String,
-) -> Element<'a, Message> {
-    container(
-        row![
-            icon_widget.size(13).color(OryxisColors::t().text_muted),
-            Space::new().width(10),
-            text(label).size(13).color(OryxisColors::t().text_secondary),
-            Space::new().width(Length::Fill),
-            text(value).size(12).color(OryxisColors::t().text_muted),
-        ]
-        .align_y(iced::Alignment::Center),
-    )
-    .padding(Padding { top: 8.0, right: 0.0, bottom: 8.0, left: 0.0 })
-    .into()
-}
-
-/// Strip ANSI escape sequences from raw terminal output bytes.
-fn strip_ansi(input: &[u8]) -> String {
-    let text = String::from_utf8_lossy(input);
-    let mut result = String::new();
-    let mut in_escape = false;
-    for ch in text.chars() {
-        if ch == '\x1b' {
-            in_escape = true;
-            continue;
-        }
-        if in_escape {
-            if ch.is_ascii_alphabetic() || ch == '~' {
-                in_escape = false;
-            }
-            continue;
-        }
-        result.push(ch);
+/// Open an external URL in the user's default browser. Best-effort — errors
+/// are ignored, since we fall back to copying the URL to the clipboard in
+/// the UI if opening fails is something the user notices.
+fn open_in_browser(url: &str) -> Result<(), std::io::Error> {
+    #[cfg(target_os = "windows")]
+    {
+        std::process::Command::new("cmd")
+            .args(["/C", "start", "", url])
+            .spawn()?;
     }
-    result
-}
-
-/// Format byte size for display (e.g. "12.3 KB").
-fn format_data_size(bytes: usize) -> String {
-    if bytes < 1024 {
-        format!("{} B", bytes)
-    } else if bytes < 1024 * 1024 {
-        format!("{:.1} KB", bytes as f64 / 1024.0)
-    } else {
-        format!("{:.1} MB", bytes as f64 / (1024.0 * 1024.0))
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open").arg(url).spawn()?;
     }
-}
-
-fn context_menu_item<'a>(
-    icon_widget: iced::widget::Text<'a>,
-    label: &'a str,
-    msg: Message,
-    color: Color,
-) -> Element<'a, Message> {
-    button(
-        row![
-            icon_widget.size(12).color(color),
-            Space::new().width(8),
-            text(label).size(12).color(OryxisColors::t().text_primary),
-        ]
-        .align_y(iced::Alignment::Center),
-    )
-    .on_press(msg)
-    .width(Length::Fill)
-    .padding(Padding { top: 6.0, right: 12.0, bottom: 6.0, left: 12.0 })
-    .style(|_, status| {
-        let bg = match status {
-            BtnStatus::Hovered => OryxisColors::t().bg_hover,
-            _ => Color::TRANSPARENT,
-        };
-        button::Style {
-            background: Some(Background::Color(bg)),
-            border: Border { radius: Radius::from(4.0), ..Default::default() },
-            ..Default::default()
-        }
-    })
-    .into()
-}
-
-/// An option row with a pick_list for selection.
-fn panel_option_pick<'a>(
-    icon_widget: iced::widget::Text<'a>,
-    label: &'a str,
-    options: Vec<String>,
-    selected: String,
-    on_change: impl Fn(String) -> Message + 'a,
-) -> Element<'a, Message> {
-    container(
-        row![
-            icon_widget.size(13).color(OryxisColors::t().text_muted),
-            Space::new().width(10),
-            text(label).size(13).color(OryxisColors::t().text_secondary),
-            Space::new().width(Length::Fill),
-            pick_list(options, Some(selected), on_change).width(120),
-        ]
-        .align_y(iced::Alignment::Center),
-    )
-    .padding(Padding { top: 4.0, right: 0.0, bottom: 4.0, left: 0.0 })
-    .into()
-}
-
-/// An option row with pick_list for jump host.
-fn panel_option_pick_jump<'a>(
-    icon_widget: iced::widget::Text<'a>,
-    label: &'a str,
-    options: Vec<String>,
-    selected: String,
-    on_change: impl Fn(String) -> Message + 'a,
-) -> Element<'a, Message> {
-    container(
-        row![
-            icon_widget.size(13).color(OryxisColors::t().text_muted),
-            Space::new().width(10),
-            text(label).size(13).color(OryxisColors::t().text_secondary),
-            Space::new().width(Length::Fill),
-            pick_list(options, Some(selected), on_change).width(140),
-        ]
-        .align_y(iced::Alignment::Center),
-    )
-    .padding(Padding { top: 4.0, right: 0.0, bottom: 4.0, left: 0.0 })
-    .into()
-}
-
-fn settings_row<'a>(label: &'static str, value: String) -> Element<'a, Message> {
-    container(
-        row![
-            text(label).size(13).color(OryxisColors::t().text_secondary),
-            Space::new().width(Length::Fill),
-            text(value).size(13).color(OryxisColors::t().text_primary),
-        ],
-    )
-    .padding(Padding { top: 6.0, right: 12.0, bottom: 6.0, left: 12.0 })
-    .width(300)
-    .style(|_| container::Style {
-        background: Some(Background::Color(OryxisColors::t().bg_surface)),
-        border: Border { radius: Radius::from(6.0), ..Default::default() },
-        ..Default::default()
-    })
-    .into()
-}
-
-fn styled_button(label: &str, msg: Message, color: Color) -> Element<'_, Message> {
-    button(
-        container(text(label).size(14).color(OryxisColors::t().text_primary))
-            .padding(Padding { top: 8.0, right: 24.0, bottom: 8.0, left: 24.0 }),
-    )
-    .on_press(msg)
-    .style(move |_, _| button::Style {
-        background: Some(Background::Color(color)),
-        border: Border { radius: Radius::from(6.0), ..Default::default() },
-        ..Default::default()
-    })
-    .into()
-}
-
-fn key_badge<'a>(label: &'a str) -> Element<'a, Message> {
-    container(text(label).size(11).color(OryxisColors::t().text_primary))
-        .padding(Padding { top: 3.0, right: 6.0, bottom: 3.0, left: 6.0 })
-        .style(|_| container::Style {
-            background: Some(Background::Color(OryxisColors::t().bg_selected)),
-            border: Border { radius: Radius::from(4.0), ..Default::default() },
-            ..Default::default()
-        })
-        .into()
-}
-
-fn shortcut_row<'a>(keys: Vec<Element<'a, Message>>, action: &'a str) -> Element<'a, Message> {
-    row![
-        Row::with_children(keys).spacing(4).width(200),
-        text(action).size(13).color(OryxisColors::t().text_secondary),
-    ].align_y(iced::Alignment::Center).into()
-}
-
-fn key_to_named_bytes(key: &keyboard::Key, _modifiers: &keyboard::Modifiers) -> Option<Vec<u8>> {
-    if let keyboard::Key::Named(named) = key {
-        let bytes: &[u8] = match named {
-            keyboard::key::Named::Enter => b"\r",
-            keyboard::key::Named::Backspace => b"\x7f",
-            keyboard::key::Named::Tab => b"\t",
-            keyboard::key::Named::Escape => b"\x1b",
-            keyboard::key::Named::ArrowUp => b"\x1b[A",
-            keyboard::key::Named::ArrowDown => b"\x1b[B",
-            keyboard::key::Named::ArrowRight => b"\x1b[C",
-            keyboard::key::Named::ArrowLeft => b"\x1b[D",
-            keyboard::key::Named::Home => b"\x1b[H",
-            keyboard::key::Named::End => b"\x1b[F",
-            keyboard::key::Named::PageUp => b"\x1b[5~",
-            keyboard::key::Named::PageDown => b"\x1b[6~",
-            keyboard::key::Named::Insert => b"\x1b[2~",
-            keyboard::key::Named::Delete => b"\x1b[3~",
-            keyboard::key::Named::F1 => b"\x1bOP",
-            keyboard::key::Named::F2 => b"\x1bOQ",
-            keyboard::key::Named::F3 => b"\x1bOR",
-            keyboard::key::Named::F4 => b"\x1bOS",
-            keyboard::key::Named::F5 => b"\x1b[15~",
-            keyboard::key::Named::F6 => b"\x1b[17~",
-            keyboard::key::Named::F7 => b"\x1b[18~",
-            keyboard::key::Named::F8 => b"\x1b[19~",
-            keyboard::key::Named::F9 => b"\x1b[20~",
-            keyboard::key::Named::F10 => b"\x1b[21~",
-            keyboard::key::Named::F11 => b"\x1b[23~",
-            keyboard::key::Named::F12 => b"\x1b[24~",
-            keyboard::key::Named::Space => b" ",
-            _ => return None,
-        };
-        Some(bytes.to_vec())
-    } else {
-        None
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        std::process::Command::new("xdg-open").arg(url).spawn()?;
     }
-}
-
-fn ctrl_key_bytes(key: &keyboard::Key) -> Option<Vec<u8>> {
-    if let keyboard::Key::Character(c) = key {
-        let ch = c.as_str().bytes().next()?;
-        let ctrl = match ch {
-            b'a'..=b'z' => ch - b'a' + 1,
-            b'A'..=b'Z' => ch - b'A' + 1,
-            b'[' => 27,
-            b'\\' => 28,
-            b']' => 29,
-            b'^' => 30,
-            b'_' => 31,
-            _ => return None,
-        };
-        Some(vec![ctrl])
-    } else {
-        None
-    }
-}
-
-// ---------------------------------------------------------------------------
-// MCP Setup helpers
-// ---------------------------------------------------------------------------
-
-/// Binary command for each platform.
-fn mcp_binary_command() -> &'static str {
-    if cfg!(target_os = "windows") {
-        "C:\\\\Program Files\\\\Oryxis\\\\oryxis-mcp.exe"
-    } else if cfg!(target_os = "macos") {
-        "/Applications/Oryxis.app/Contents/MacOS/oryxis-mcp"
-    } else {
-        "/usr/local/bin/oryxis-mcp"
-    }
-}
-
-/// WSL command for Windows users whose AI client runs inside WSL.
-fn mcp_wsl_command() -> &'static str {
-    "/mnt/c/Program Files/Oryxis/oryxis-mcp.exe"
-}
-
-/// Config file path hint per platform.
-fn mcp_config_path() -> &'static str {
-    if cfg!(target_os = "windows") {
-        "%APPDATA%\\Claude\\claude_desktop_config.json  or  ~/.claude/settings.json (WSL)"
-    } else if cfg!(target_os = "macos") {
-        "~/Library/Application Support/Claude/claude_desktop_config.json  or  ~/.claude/settings.json"
-    } else {
-        "~/.claude/settings.json"
-    }
-}
-
-/// The JSON snippet users need to copy.
-fn mcp_config_json() -> String {
-    let cmd = mcp_binary_command();
-    format!(
-        "{{\n  \"mcpServers\": {{\n    \"oryxis\": {{\n      \"command\": \"{cmd}\"\n    }}\n  }}\n}}"
-    )
-}
-
-/// Write/merge the oryxis MCP entry into ~/.claude/.mcp.json.
-fn install_mcp_config_to_file() -> Result<String, String> {
-    let home_str = if cfg!(target_os = "windows") {
-        std::env::var("USERPROFILE").map_err(|_| "USERPROFILE not set")?
-    } else {
-        std::env::var("HOME").map_err(|_| "HOME not set")?
-    };
-    let home = std::path::PathBuf::from(home_str);
-    let claude_dir = home.join(".claude");
-    let mcp_path = claude_dir.join(".mcp.json");
-
-    // Ensure ~/.claude/ exists
-    std::fs::create_dir_all(&claude_dir)
-        .map_err(|e| format!("Failed to create ~/.claude/: {e}"))?;
-
-    // Read existing or start fresh
-    let mut root: serde_json::Map<String, serde_json::Value> = if mcp_path.exists() {
-        let content = std::fs::read_to_string(&mcp_path)
-            .map_err(|e| format!("Failed to read {}: {e}", mcp_path.display()))?;
-        serde_json::from_str(&content)
-            .map_err(|e| format!("Failed to parse {}: {e}", mcp_path.display()))?
-    } else {
-        serde_json::Map::new()
-    };
-
-    // Ensure mcpServers object exists
-    let servers = root
-        .entry("mcpServers")
-        .or_insert_with(|| serde_json::json!({}));
-    let servers_map = servers
-        .as_object_mut()
-        .ok_or("mcpServers is not an object")?;
-
-    // Set / overwrite the oryxis entry
-    let cmd = mcp_binary_command();
-    servers_map.insert(
-        "oryxis".to_string(),
-        serde_json::json!({ "command": cmd }),
-    );
-
-    // Write back with pretty formatting
-    let output = serde_json::to_string_pretty(&root)
-        .map_err(|e| format!("Failed to serialize: {e}"))?;
-    std::fs::write(&mcp_path, &output)
-        .map_err(|e| format!("Failed to write {}: {e}", mcp_path.display()))?;
-
-    Ok(mcp_path.display().to_string())
-}
-
-/// Monospaced code block widget.
-fn code_block<'a>(content: &str) -> Element<'a, Message> {
-    container(
-        text(content.to_owned()).size(12).color(OryxisColors::t().text_primary),
-    )
-    .padding(12)
-    .width(Length::Fill)
-    .style(|_| container::Style {
-        background: Some(Background::Color(OryxisColors::t().bg_primary)),
-        border: Border { radius: Radius::from(6.0), color: OryxisColors::t().border, width: 1.0 },
-        ..Default::default()
-    })
-    .into()
-}
-
-/// The expandable MCP info panel shown inside the Security settings.
-fn mcp_info_panel(copied: bool, install_status: &Option<Result<String, String>>) -> Element<'_, Message> {
-    let json_text = mcp_config_json();
-
-    let copy_label = if copied {
-        crate::i18n::t("mcp_copied")
-    } else {
-        crate::i18n::t("mcp_info_copy")
-    };
-    let copy_color = if copied { OryxisColors::t().success } else { OryxisColors::t().accent };
-
-    let copy_btn = button(
-        container(text(copy_label).size(12).color(copy_color))
-            .padding(Padding { top: 6.0, right: 16.0, bottom: 6.0, left: 16.0 }),
-    )
-    .on_press(Message::CopyMcpConfig)
-    .style(move |_, status| {
-        let bg = match status {
-            BtnStatus::Hovered => Color { a: 0.1, ..copy_color },
-            _ => Color::TRANSPARENT,
-        };
-        button::Style {
-            background: Some(Background::Color(bg)),
-            border: Border { radius: Radius::from(6.0), color: copy_color, width: 1.0 },
-            ..Default::default()
-        }
-    });
-
-    // Install to ~/.claude/.mcp.json button
-    let (install_label, install_color) = match install_status {
-        Some(Ok(_)) => (crate::i18n::t("mcp_installed"), OryxisColors::t().success),
-        Some(Err(_)) => (crate::i18n::t("mcp_install_failed"), OryxisColors::t().error),
-        None => (crate::i18n::t("mcp_install_claude"), OryxisColors::t().success),
-    };
-    let install_btn = button(
-        container(text(install_label).size(12).color(install_color))
-            .padding(Padding { top: 6.0, right: 16.0, bottom: 6.0, left: 16.0 }),
-    )
-    .on_press(Message::InstallMcpConfig)
-    .style(move |_, status| {
-        let bg = match status {
-            BtnStatus::Hovered => Color { a: 0.1, ..install_color },
-            _ => Color::TRANSPARENT,
-        };
-        button::Style {
-            background: Some(Background::Color(bg)),
-            border: Border { radius: Radius::from(6.0), color: install_color, width: 1.0 },
-            ..Default::default()
-        }
-    });
-
-    let close_btn = button(
-        container(text(crate::i18n::t("mcp_info_close")).size(12).color(OryxisColors::t().text_muted))
-            .padding(Padding { top: 6.0, right: 16.0, bottom: 6.0, left: 16.0 }),
-    )
-    .on_press(Message::HideMcpInfo)
-    .style(|_, status| {
-        let bg = match status {
-            BtnStatus::Hovered => OryxisColors::t().bg_hover,
-            _ => Color::TRANSPARENT,
-        };
-        button::Style {
-            background: Some(Background::Color(bg)),
-            border: Border { radius: Radius::from(6.0), color: OryxisColors::t().border, width: 1.0 },
-            ..Default::default()
-        }
-    });
-
-    let mut info_col = column![
-        text(crate::i18n::t("mcp_info_title")).size(14).color(OryxisColors::t().text_primary),
-        Space::new().height(8),
-        text(crate::i18n::t("mcp_info_desc")).size(12).color(OryxisColors::t().text_secondary),
-        Space::new().height(8),
-        code_block(&json_text),
-        Space::new().height(8),
-        text(format!("{} {}", crate::i18n::t("mcp_info_path_label"), mcp_config_path()))
-            .size(11).color(OryxisColors::t().text_muted),
-    ];
-
-    // On Windows, show the WSL note
-    if cfg!(target_os = "windows") {
-        let wsl_json = format!(
-            "{{\n  \"mcpServers\": {{\n    \"oryxis\": {{\n      \"command\": \"{}\"\n    }}\n  }}\n}}",
-            mcp_wsl_command()
-        );
-        info_col = info_col
-            .push(Space::new().height(12))
-            .push(text(crate::i18n::t("mcp_info_note_wsl")).size(12).color(OryxisColors::t().warning))
-            .push(Space::new().height(4))
-            .push(code_block(&wsl_json));
-    }
-
-    // Install status feedback
-    if let Some(Err(e)) = install_status {
-        info_col = info_col
-            .push(Space::new().height(4))
-            .push(text(e.clone()).size(11).color(OryxisColors::t().error));
-    } else if let Some(Ok(path)) = install_status {
-        info_col = info_col
-            .push(Space::new().height(4))
-            .push(text(format!("{} {path}", crate::i18n::t("mcp_installed_to"))).size(11).color(OryxisColors::t().success));
-    }
-
-    info_col = info_col
-        .push(Space::new().height(8))
-        .push(text(crate::i18n::t("mcp_info_vault_password_note")).size(11).color(OryxisColors::t().text_muted))
-        .push(Space::new().height(12))
-        .push(row![install_btn, Space::new().width(8), copy_btn, Space::new().width(8), close_btn]);
-
-    container(info_col)
-        .padding(16)
-        .width(Length::Fill)
-        .style(|_| container::Style {
-            background: Some(Background::Color(OryxisColors::t().bg_surface)),
-            border: Border { radius: Radius::from(8.0), color: OryxisColors::t().accent, width: 1.0 },
-            ..Default::default()
-        })
-        .into()
+    Ok(())
 }
