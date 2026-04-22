@@ -282,6 +282,9 @@ impl VaultStore {
         let _ = self.db.execute_batch("ALTER TABLE connections ADD COLUMN identity_id TEXT;");
         let _ = self.db.execute_batch("ALTER TABLE connections ADD COLUMN mcp_enabled INTEGER DEFAULT 1;");
         let _ = self.db.execute_batch("ALTER TABLE connections ADD COLUMN port_forwards TEXT;");
+        let _ = self.db.execute_batch("ALTER TABLE connections ADD COLUMN detected_os TEXT;");
+        let _ = self.db.execute_batch("ALTER TABLE connections ADD COLUMN custom_icon TEXT;");
+        let _ = self.db.execute_batch("ALTER TABLE connections ADD COLUMN custom_color TEXT;");
         let _ = self.db.execute_batch("ALTER TABLE keys ADD COLUMN updated_at TEXT;");
         let _ = self.db.execute_batch("ALTER TABLE groups ADD COLUMN created_at TEXT;");
         let _ = self.db.execute_batch("ALTER TABLE groups ADD COLUMN updated_at TEXT;");
@@ -504,8 +507,9 @@ impl VaultStore {
         self.db.execute(
             "INSERT OR REPLACE INTO connections
              (id, label, hostname, port, username, auth_method, key_id, group_id,
-              jump_chain, proxy, tags, notes, color, password, last_used, created_at, updated_at, identity_id, mcp_enabled, port_forwards)
-             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20)",
+              jump_chain, proxy, tags, notes, color, password, last_used, created_at, updated_at, identity_id, mcp_enabled, port_forwards,
+              detected_os, custom_icon, custom_color)
+             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20,?21,?22,?23)",
             params![
                 conn.id.to_string(),
                 conn.label,
@@ -527,6 +531,12 @@ impl VaultStore {
                 conn.identity_id.map(|u| u.to_string()),
                 conn.mcp_enabled as i32,
                 if conn.port_forwards.is_empty() { None } else { Some(serde_json::to_string(&conn.port_forwards).unwrap_or_default()) },
+                // OS detection + custom icon overrides — saved on every
+                // write so they survive edits. Previously these were left
+                // out and got wiped to NULL on each save.
+                conn.detected_os,
+                conn.custom_icon,
+                conn.custom_color,
             ],
         )?;
         Ok(())
@@ -545,12 +555,12 @@ impl VaultStore {
         let query = match mcp_filter {
             Some(true) => {
                 "SELECT id, label, hostname, port, username, auth_method, key_id, group_id,
-                        jump_chain, proxy, tags, notes, color, last_used, created_at, updated_at, identity_id, mcp_enabled, port_forwards
+                        jump_chain, proxy, tags, notes, color, last_used, created_at, updated_at, identity_id, mcp_enabled, port_forwards, detected_os, custom_icon, custom_color
                  FROM connections WHERE mcp_enabled = 1 ORDER BY label"
             }
             _ => {
                 "SELECT id, label, hostname, port, username, auth_method, key_id, group_id,
-                        jump_chain, proxy, tags, notes, color, last_used, created_at, updated_at, identity_id, mcp_enabled, port_forwards
+                        jump_chain, proxy, tags, notes, color, last_used, created_at, updated_at, identity_id, mcp_enabled, port_forwards, detected_os, custom_icon, custom_color
                  FROM connections ORDER BY label"
             }
         };
@@ -617,10 +627,23 @@ impl VaultStore {
                         .and_then(|s| chrono::DateTime::parse_from_rfc3339(&s).ok())
                         .map(|d| d.with_timezone(&chrono::Utc))
                         .unwrap_or_else(chrono::Utc::now),
+                    detected_os: row.get::<_, Option<String>>(19).unwrap_or(None),
+                    custom_icon: row.get::<_, Option<String>>(20).unwrap_or(None),
+                    custom_color: row.get::<_, Option<String>>(21).unwrap_or(None),
                 })
             })?
             .collect::<Result<Vec<_>, _>>()?;
         Ok(conns)
+    }
+
+    /// Update just the detected OS for a connection — used by the background
+    /// OS-detection task so we don't overwrite other columns (e.g. last_used).
+    pub fn set_detected_os(&self, id: &Uuid, os: Option<&str>) -> Result<(), VaultError> {
+        self.db.execute(
+            "UPDATE connections SET detected_os = ?1 WHERE id = ?2",
+            params![os, id.to_string()],
+        )?;
+        Ok(())
     }
 
     /// Get the decrypted password for a connection.
@@ -998,11 +1021,21 @@ impl VaultStore {
     }
 
     pub fn list_logs(&self, limit: usize) -> Result<Vec<oryxis_core::models::log_entry::LogEntry>, VaultError> {
+        self.list_logs_page(0, limit)
+    }
+
+    /// Paginated variant: skip `offset` rows and return up to `limit` rows
+    /// (still ordered by timestamp desc).
+    pub fn list_logs_page(
+        &self,
+        offset: usize,
+        limit: usize,
+    ) -> Result<Vec<oryxis_core::models::log_entry::LogEntry>, VaultError> {
         let mut stmt = self.db.prepare(
             "SELECT id, connection_label, hostname, event, message, timestamp
-             FROM logs ORDER BY timestamp DESC LIMIT ?1",
+             FROM logs ORDER BY timestamp DESC LIMIT ?1 OFFSET ?2",
         )?;
-        let logs = stmt.query_map(params![limit as i64], |row| {
+        let logs = stmt.query_map(params![limit as i64, offset as i64], |row| {
             let event_str: String = row.get(3)?;
             let event = match event_str.as_str() {
                 "Connected" => oryxis_core::models::log_entry::LogEvent::Connected,
@@ -1028,6 +1061,14 @@ impl VaultStore {
     pub fn clear_logs(&self) -> Result<(), VaultError> {
         self.db.execute("DELETE FROM logs", [])?;
         Ok(())
+    }
+
+    /// Total number of log rows — used to drive pagination controls.
+    pub fn count_logs(&self) -> Result<usize, VaultError> {
+        let n: i64 = self
+            .db
+            .query_row("SELECT COUNT(*) FROM logs", [], |row| row.get(0))?;
+        Ok(n as usize)
     }
 
     // -----------------------------------------------------------------------

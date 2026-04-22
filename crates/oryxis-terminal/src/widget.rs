@@ -191,6 +191,12 @@ fn detect_highlights(
         {
             let mut i = 0;
             while i < len {
+                // Only slice at ASCII 'h' — guaranteed char boundary. Skipping this
+                // guard panics when i lands mid-UTF-8 (e.g. typing "ç" crashed the app).
+                if bytes[i] != b'h' {
+                    i += 1;
+                    continue;
+                }
                 let rest = &row_str[i..];
                 if rest.starts_with("http://") || rest.starts_with("https://") {
                     let start = i;
@@ -355,6 +361,7 @@ pub struct TerminalView {
     font_size: f32,
     cell_width: f32,
     cell_height: f32,
+    font: Font,
 }
 
 /// Padding around the terminal content (in pixels).
@@ -368,6 +375,7 @@ impl TerminalView {
             font_size,
             cell_width: font_size * 0.6,
             cell_height: font_size * 1.286,
+            font: Font::MONOSPACE,
         }
     }
 
@@ -375,6 +383,17 @@ impl TerminalView {
         self.font_size = size;
         self.cell_width = size * 0.6;
         self.cell_height = size * 1.286;
+        self
+    }
+
+    /// Override the font used for cell rendering. If the font can't be resolved
+    /// by cosmic-text, it falls back to the system default monospace.
+    pub fn with_font_name(mut self, name: &str) -> Self {
+        // Leak the string so Font::with_name can hold a 'static &str. The number
+        // of unique names is bounded (~20 from the picker), so the total leak is
+        // tiny and amortized across the process lifetime.
+        let leaked: &'static str = Box::leak(name.to_string().into_boxed_str());
+        self.font = Font::with_name(leaked);
         self
     }
 
@@ -476,36 +495,26 @@ where
                 }
                 return Some(CanvasAction::request_redraw().and_capture());
             }
-            // Keyboard — Ctrl+Shift+C copy, Ctrl+Shift+V paste
+            // Keyboard — Ctrl+Shift+C copy (paste is handled in app.rs so it can
+            // reach the SSH session; widget.state.write only targets a local PTY).
             iced::Event::Keyboard(keyboard::Event::KeyPressed {
                 key: keyboard::Key::Character(c),
                 modifiers,
                 ..
             }) => {
-                if modifiers.control() && modifiers.shift() {
-                    match c.as_str() {
-                        "C" | "c" => {
-                            if let Some(ref sel) = widget_state.selection
-                                && !sel.is_empty()
-                                    && let Ok(state) = self.state.lock() {
-                                        let text = state.get_selection_text(sel);
-                                        if !text.is_empty()
-                                            && let Ok(mut clip) = arboard::Clipboard::new() {
-                                                let _ = clip.set_text(&text);
-                                            }
-                                    }
-                            return Some(CanvasAction::capture());
+                if modifiers.control() && modifiers.shift() && matches!(c.as_str(), "C" | "c") {
+                    if let Some(ref sel) = widget_state.selection
+                        && !sel.is_empty()
+                        && let Ok(state) = self.state.lock()
+                    {
+                        let text = state.get_selection_text(sel);
+                        if !text.is_empty()
+                            && let Ok(mut clip) = arboard::Clipboard::new()
+                        {
+                            let _ = clip.set_text(&text);
                         }
-                        "V" | "v" => {
-                            if let Ok(mut clip) = arboard::Clipboard::new()
-                                && let Ok(text) = clip.get_text()
-                                    && let Ok(mut state) = self.state.lock() {
-                                        state.write(text.as_bytes());
-                                    }
-                            return Some(CanvasAction::capture());
-                        }
-                        _ => {}
                     }
+                    return Some(CanvasAction::capture());
                 }
             }
             _ => {}
@@ -671,7 +680,7 @@ where
                     position: Point::new(x, y),
                     color: fg,
                     size: Pixels(self.font_size),
-                    font: Font::MONOSPACE,
+                    font: self.font,
                     align_x: alignment::Horizontal::Left.into(),
                     align_y: alignment::Vertical::Top,
                     ..Default::default()

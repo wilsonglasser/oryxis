@@ -23,6 +23,23 @@ pub struct Connection {
     pub last_used: Option<chrono::DateTime<chrono::Utc>>,
     pub created_at: chrono::DateTime<chrono::Utc>,
     pub updated_at: chrono::DateTime<chrono::Utc>,
+    /// Detected remote OS id — populated the first time we successfully SSH
+    /// into this host and the OS-detection setting is enabled. Values are
+    /// lowercase `ID=` from `/etc/os-release` for Linux (ubuntu / debian /
+    /// alpine / rhel / fedora / arch / amzn / centos / rocky / alma / suse)
+    /// or `uname -s` lowercased for non-Linux (darwin / freebsd / openbsd /
+    /// netbsd). `None` means unknown — show the generic server icon.
+    #[serde(default)]
+    pub detected_os: Option<String>,
+    /// User-chosen icon id (overrides the auto-detected one). When present,
+    /// the OS-detection probe is skipped and the stored icon / color are
+    /// used verbatim on host cards / tabs / editor.
+    #[serde(default)]
+    pub custom_icon: Option<String>,
+    /// User-chosen icon-background color as a hex string (e.g. `#E95420`).
+    /// Paired with `custom_icon`.
+    #[serde(default)]
+    pub custom_color: Option<String>,
 }
 
 impl Connection {
@@ -48,6 +65,9 @@ impl Connection {
             last_used: None,
             created_at: now,
             updated_at: now,
+            detected_os: None,
+            custom_icon: None,
+            custom_color: None,
         }
     }
 }
