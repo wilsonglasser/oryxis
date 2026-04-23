@@ -470,16 +470,16 @@ where
                 return Some(CanvasAction::capture());
             }
             // Right-click — paste from clipboard
-            iced::Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Right)) => {
-                if cursor.position_in(bounds).is_some() {
-                    if let Ok(mut clip) = arboard::Clipboard::new()
-                        && let Ok(text) = clip.get_text()
-                        && let Ok(mut state) = self.state.lock()
-                    {
-                        state.write(text.as_bytes());
-                    }
-                    return Some(CanvasAction::capture());
+            iced::Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Right))
+                if cursor.position_in(bounds).is_some() =>
+            {
+                if let Ok(mut clip) = arboard::Clipboard::new()
+                    && let Ok(text) = clip.get_text()
+                    && let Ok(mut state) = self.state.lock()
+                {
+                    state.write(text.as_bytes());
                 }
+                return Some(CanvasAction::capture());
             }
             // Mouse wheel — scrollback
             iced::Event::Mouse(mouse::Event::WheelScrolled { delta }) => {
@@ -501,21 +501,19 @@ where
                 key: keyboard::Key::Character(c),
                 modifiers,
                 ..
-            }) => {
-                if modifiers.control() && modifiers.shift() && matches!(c.as_str(), "C" | "c") {
-                    if let Some(ref sel) = widget_state.selection
-                        && !sel.is_empty()
-                        && let Ok(state) = self.state.lock()
+            }) if modifiers.control() && modifiers.shift() && matches!(c.as_str(), "C" | "c") => {
+                if let Some(ref sel) = widget_state.selection
+                    && !sel.is_empty()
+                    && let Ok(state) = self.state.lock()
+                {
+                    let text = state.get_selection_text(sel);
+                    if !text.is_empty()
+                        && let Ok(mut clip) = arboard::Clipboard::new()
                     {
-                        let text = state.get_selection_text(sel);
-                        if !text.is_empty()
-                            && let Ok(mut clip) = arboard::Clipboard::new()
-                        {
-                            let _ = clip.set_text(&text);
-                        }
+                        let _ = clip.set_text(&text);
                     }
-                    return Some(CanvasAction::capture());
                 }
+                return Some(CanvasAction::capture());
             }
             _ => {}
         }

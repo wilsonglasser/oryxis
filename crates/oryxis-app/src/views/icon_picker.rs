@@ -7,7 +7,7 @@
 use iced::border::Radius;
 use iced::widget::button::Status as BtnStatus;
 use iced::widget::{button, column, container, row, scrollable, text, text_input, MouseArea, Space};
-use iced::{Background, Border, Color, Element, Length, Padding};
+use iced::{Background, Border, Color, Element, Length};
 
 use crate::app::{Message, Oryxis};
 use crate::os_icon;
@@ -65,7 +65,7 @@ impl Oryxis {
             Space::new().height(8),
             column(icon_rows).spacing(6),
         ];
-        let _ = id_str_unused_suppress(&selected_icon); // keep borrowck simple
+        id_str_unused_suppress(&selected_icon);
 
         // ── Color grid ──
         let mut color_row_children: Vec<Element<'_, Message>> = Vec::new();

@@ -4,7 +4,7 @@
 
 use iced::border::Radius;
 use iced::widget::{column, container, row, scrollable, text, MouseArea, Space};
-use iced::{Background, Border, Color, Element, Length, Padding};
+use iced::{Background, Border, Element, Length, Padding};
 
 use crate::app::{Message, Oryxis};
 use crate::theme::OryxisColors;
@@ -166,6 +166,7 @@ impl Oryxis {
 /// buttons. We still expose a no-op backdrop helper here so other call
 /// sites keep compiling, but the top-level dispatcher renders its own
 /// non-interactive scrim that leaves the window chrome uncovered.
+#[allow(dead_code)]
 pub(crate) fn update_modal_backdrop<'a>() -> Element<'a, Message> {
     MouseArea::new(
         container(Space::new()).width(Length::Fill).height(Length::Fill),
