@@ -305,6 +305,13 @@ pub enum Message {
     MouseMoved(Point),
     WindowResized(iced::Size),
     WindowDrag,
+    WindowResizeDrag(iced::window::Direction),
+    /// Double-click on a N/S edge — fill the full monitor height while
+    /// keeping horizontal position and width.
+    WindowExpandVertical,
+    /// Double-click on an E/W edge — fill the full monitor width while
+    /// keeping vertical position and height.
+    WindowExpandHorizontal,
     WindowMinimize,
     WindowMaximizeToggle,
     WindowClose,
@@ -913,6 +920,55 @@ impl Oryxis {
                 return iced::window::latest().then(|id_opt| match id_opt {
                     Some(id) => iced::window::drag(id),
                     None => Task::none(),
+                });
+            }
+            Message::WindowResizeDrag(direction) => {
+                // Ignore resize requests while maximized — the window has no
+                // borders to grab and the OS will reject/misbehave on WinIt.
+                if self.window_maximized {
+                    return Task::none();
+                }
+                return iced::window::latest().then(move |id_opt| match id_opt {
+                    Some(id) => iced::window::drag_resize(id, direction),
+                    None => Task::none(),
+                });
+            }
+            Message::WindowExpandVertical => {
+                if self.window_maximized {
+                    return Task::none();
+                }
+                let current_width = self.window_size.width;
+                return iced::window::latest().then(move |id_opt| {
+                    let Some(id) = id_opt else { return Task::none(); };
+                    iced::window::position(id).then(move |pos_opt| {
+                        let Some(pos) = pos_opt else { return Task::none(); };
+                        iced::window::monitor_size(id).then(move |mon_opt| {
+                            let Some(mon) = mon_opt else { return Task::none(); };
+                            Task::batch([
+                                iced::window::move_to(id, Point::new(pos.x, 0.0)),
+                                iced::window::resize(id, iced::Size::new(current_width, mon.height)),
+                            ])
+                        })
+                    })
+                });
+            }
+            Message::WindowExpandHorizontal => {
+                if self.window_maximized {
+                    return Task::none();
+                }
+                let current_height = self.window_size.height;
+                return iced::window::latest().then(move |id_opt| {
+                    let Some(id) = id_opt else { return Task::none(); };
+                    iced::window::position(id).then(move |pos_opt| {
+                        let Some(pos) = pos_opt else { return Task::none(); };
+                        iced::window::monitor_size(id).then(move |mon_opt| {
+                            let Some(mon) = mon_opt else { return Task::none(); };
+                            Task::batch([
+                                iced::window::move_to(id, Point::new(0.0, pos.y)),
+                                iced::window::resize(id, iced::Size::new(mon.width, current_height)),
+                            ])
+                        })
+                    })
                 });
             }
             Message::WindowMinimize => {

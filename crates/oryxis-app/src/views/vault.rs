@@ -11,12 +11,15 @@ use crate::views::chrome::window_chrome_bar;
 use crate::widgets::styled_button;
 
 /// Wrap a vault screen body with the top window chrome so the user can still
-/// drag / minimize / maximize / close before unlocking the vault.
-fn with_chrome<'a>(body: Element<'a, Message>) -> Element<'a, Message> {
-    iced::widget::column![window_chrome_bar(), body]
+/// drag / minimize / maximize / close before unlocking the vault. Also adds
+/// the edge-resize border so the lock screen is as resizable as the main app.
+fn with_chrome<'a>(body: Element<'a, Message>, maximized: bool) -> Element<'a, Message> {
+    let content: Element<'a, Message> = iced::widget::column![window_chrome_bar(), body]
         .width(Length::Fill)
         .height(Length::Fill)
-        .into()
+        .into();
+    let overlay = if maximized { None } else { Some(crate::views::layout::resize_border()) };
+    crate::views::layout::wrap_with_resize(content, overlay)
 }
 
 impl Oryxis {
@@ -73,7 +76,7 @@ impl Oryxis {
         .width(Length::Fill)
         .height(Length::Fill)
         .into();
-        with_chrome(body)
+        with_chrome(body, self.window_maximized)
     }
 
     pub(crate) fn view_vault_unlock(&self) -> Element<'_, Message> {
@@ -128,7 +131,7 @@ impl Oryxis {
         .width(Length::Fill)
         .height(Length::Fill)
         .into();
-        with_chrome(body)
+        with_chrome(body, self.window_maximized)
     }
 
     pub(crate) fn view_vault_error(&self, msg: &str) -> Element<'_, Message> {
@@ -144,7 +147,7 @@ impl Oryxis {
         .width(Length::Fill)
         .height(Length::Fill)
         .into();
-        with_chrome(body)
+        with_chrome(body, self.window_maximized)
     }
 
     // -- Main layout --

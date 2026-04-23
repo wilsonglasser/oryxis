@@ -224,9 +224,16 @@ fn en(key: &str) -> &'static str {
 
         // Session logs
         "session_logs" => "Session Logs",
+        "session_log" => "Session Log",
         "view_log" => "View Log",
+        "view" => "View",
         "duration" => "Duration",
         "in_progress" => "In Progress",
+        "clear" => "Clear",
+        "entries" => "entries",
+        "of" => "of",
+        "no_activity" => "No activity logged yet.",
+        "no_session_recordings" => "No session recordings yet. Sessions are recorded automatically when you connect via SSH.",
 
         // Identity
         "identity" => "Identity",
@@ -421,7 +428,14 @@ fn pt_br(key: &str) -> Option<&'static str> {
         "keyboard_shortcuts" => "Atalhos de Teclado",
 
         "session_logs" => "Logs de Sessão",
+        "session_log" => "Log de Sessão",
         "view_log" => "Ver Log",
+        "view" => "Ver",
+        "clear" => "Limpar",
+        "entries" => "entradas",
+        "of" => "de",
+        "no_activity" => "Nenhuma atividade registrada ainda.",
+        "no_session_recordings" => "Nenhuma gravação de sessão ainda. Sessões são gravadas automaticamente ao conectar via SSH.",
         "duration" => "Duração",
         "in_progress" => "Em Andamento",
 
@@ -603,7 +617,14 @@ fn es(key: &str) -> Option<&'static str> {
         "keyboard_shortcuts" => "Atajos de Teclado",
 
         "session_logs" => "Registros de Sesión",
+        "session_log" => "Registro de Sesión",
         "view_log" => "Ver Registro",
+        "view" => "Ver",
+        "clear" => "Limpiar",
+        "entries" => "entradas",
+        "of" => "de",
+        "no_activity" => "Aún no hay actividad registrada.",
+        "no_session_recordings" => "Aún no hay grabaciones de sesión. Las sesiones se graban automáticamente al conectar por SSH.",
         "duration" => "Duración",
         "in_progress" => "En Progreso",
 
@@ -764,7 +785,14 @@ fn fr(key: &str) -> Option<&'static str> {
         "keyboard_shortcuts" => "Raccourcis Clavier",
 
         "session_logs" => "Journaux de Session",
+        "session_log" => "Journal de Session",
         "view_log" => "Voir le Journal",
+        "view" => "Voir",
+        "clear" => "Effacer",
+        "entries" => "entrées",
+        "of" => "sur",
+        "no_activity" => "Aucune activité enregistrée pour le moment.",
+        "no_session_recordings" => "Aucun enregistrement de session. Les sessions sont enregistrées automatiquement lors de la connexion SSH.",
         "duration" => "Durée",
         "in_progress" => "En Cours",
 
@@ -925,7 +953,14 @@ fn de(key: &str) -> Option<&'static str> {
         "keyboard_shortcuts" => "Tastenkürzel",
 
         "session_logs" => "Sitzungsprotokolle",
+        "session_log" => "Sitzungsprotokoll",
         "view_log" => "Protokoll anzeigen",
+        "view" => "Anzeigen",
+        "clear" => "Leeren",
+        "entries" => "Einträge",
+        "of" => "von",
+        "no_activity" => "Noch keine Aktivität protokolliert.",
+        "no_session_recordings" => "Noch keine Sitzungsaufzeichnungen. Sitzungen werden beim Verbinden über SSH automatisch aufgezeichnet.",
         "duration" => "Dauer",
         "in_progress" => "In Bearbeitung",
 
@@ -1086,7 +1121,14 @@ fn it(key: &str) -> Option<&'static str> {
         "keyboard_shortcuts" => "Scorciatoie da Tastiera",
 
         "session_logs" => "Registri di Sessione",
+        "session_log" => "Registro di Sessione",
         "view_log" => "Visualizza Registro",
+        "view" => "Visualizza",
+        "clear" => "Pulisci",
+        "entries" => "voci",
+        "of" => "di",
+        "no_activity" => "Nessuna attività registrata.",
+        "no_session_recordings" => "Nessuna registrazione di sessione. Le sessioni vengono registrate automaticamente alla connessione SSH.",
         "duration" => "Durata",
         "in_progress" => "In Corso",
 
@@ -1247,7 +1289,14 @@ fn zh(key: &str) -> Option<&'static str> {
         "keyboard_shortcuts" => "键盘快捷键",
 
         "session_logs" => "会话日志",
+        "session_log" => "会话日志",
         "view_log" => "查看日志",
+        "view" => "查看",
+        "clear" => "清除",
+        "entries" => "条",
+        "of" => "共",
+        "no_activity" => "尚未记录任何活动。",
+        "no_session_recordings" => "尚无会话录制。通过 SSH 连接时会自动录制会话。",
         "duration" => "持续时间",
         "in_progress" => "进行中",
 
@@ -1408,7 +1457,14 @@ fn ja(key: &str) -> Option<&'static str> {
         "keyboard_shortcuts" => "キーボードショートカット",
 
         "session_logs" => "セッションログ",
+        "session_log" => "セッションログ",
         "view_log" => "ログを表示",
+        "view" => "表示",
+        "clear" => "クリア",
+        "entries" => "件",
+        "of" => "/",
+        "no_activity" => "まだアクティビティが記録されていません。",
+        "no_session_recordings" => "セッション記録はまだありません。SSH 接続時にセッションは自動的に記録されます。",
         "duration" => "所要時間",
         "in_progress" => "進行中",
 
@@ -1569,7 +1625,14 @@ fn ru(key: &str) -> Option<&'static str> {
         "keyboard_shortcuts" => "Горячие клавиши",
 
         "session_logs" => "Журналы сеансов",
+        "session_log" => "Журнал сеанса",
         "view_log" => "Просмотреть журнал",
+        "view" => "Просмотр",
+        "clear" => "Очистить",
+        "entries" => "записей",
+        "of" => "из",
+        "no_activity" => "Активность пока не записана.",
+        "no_session_recordings" => "Записей сеансов пока нет. Сеансы записываются автоматически при подключении по SSH.",
         "duration" => "Длительность",
         "in_progress" => "В процессе",
 
