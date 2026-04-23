@@ -1025,10 +1025,8 @@ impl SshEngine {
             loop {
                 match channel.wait().await {
                     Some(ChannelMsg::Data { data }) => stdout.extend_from_slice(&data),
-                    Some(ChannelMsg::ExtendedData { data, ext }) => {
-                        if ext == 1 {
-                            stderr.extend_from_slice(&data);
-                        }
+                    Some(ChannelMsg::ExtendedData { data, ext: 1 }) => {
+                        stderr.extend_from_slice(&data);
                     }
                     Some(ChannelMsg::ExitStatus { exit_status }) => {
                         exit_code = Some(exit_status);
@@ -1084,18 +1082,10 @@ impl SshEngine {
         let reader_task = tokio::spawn(async move {
             let mut channel = channel;
             loop {
-                match channel.wait().await {
-                    Some(ChannelMsg::Data { data }) => {
-                        if output_tx.send(data.to_vec()).is_err() {
-                            break;
-                        }
-                    }
-                    Some(ChannelMsg::ExtendedData { data, ext }) => {
-                        if ext == 1
-                            && output_tx.send(data.to_vec()).is_err() {
-                                break;
-                            }
-                    }
+                let bytes: Option<Vec<u8>> = match channel.wait().await {
+                    Some(ChannelMsg::Data { data }) => Some(data.to_vec()),
+                    Some(ChannelMsg::ExtendedData { data, ext: 1 }) => Some(data.to_vec()),
+                    Some(ChannelMsg::ExtendedData { .. }) => continue,
                     Some(ChannelMsg::ExitStatus { exit_status }) => {
                         tracing::info!("Remote exited with status {}", exit_status);
                         break;
@@ -1104,7 +1094,12 @@ impl SshEngine {
                         tracing::info!("SSH channel closed");
                         break;
                     }
-                    _ => {}
+                    _ => continue,
+                };
+                if let Some(b) = bytes
+                    && output_tx.send(b).is_err()
+                {
+                    break;
                 }
             }
         });

@@ -411,6 +411,7 @@ pub enum Message {
     UpdateSkipVersion,
     UpdateLater,
     UpdateStartDownload,
+    #[allow(dead_code)]
     UpdateDownloadProgress(f32),
     UpdateDownloadComplete(Result<std::path::PathBuf, String>),
     UpdateOpenRelease,
