@@ -126,14 +126,16 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $ProgressPreference = 'SilentlyContinue'
-          # windows-2025 image does not ship NSIS and the choco community
-          # repo returns 503s. Download the official installer directly.
-          $url = 'https://prdownloads.sourceforge.net/nsis/nsis-3.11-setup.exe?download'
-          $installer = Join-Path $env:RUNNER_TEMP 'nsis-setup.exe'
-          Invoke-WebRequest -Uri $url -OutFile $installer -MaximumRedirection 10 -UseBasicParsing
-          $proc = Start-Process -FilePath $installer -ArgumentList '/S' -Wait -PassThru
-          if ($proc.ExitCode -ne 0) { throw "NSIS installer exited with $($proc.ExitCode)" }
+          # choco community repo occasionally returns 503s — retry a few times.
+          $max = 5
+          $ok = $false
+          for ($i = 1; $i -le $max -and -not $ok; $i++) {
+            Write-Host "NSIS install attempt $i/$max"
+            choco install nsis -y --no-progress
+            if ($LASTEXITCODE -eq 0) { $ok = $true }
+            elseif ($i -lt $max) { Start-Sleep -Seconds 20 }
+          }
+          if (-not $ok) { throw "choco install nsis failed after $max attempts" }
           if (-not (Test-Path 'C:\Program Files (x86)\NSIS\makensis.exe')) {
             throw 'makensis.exe not found after install'
           }
