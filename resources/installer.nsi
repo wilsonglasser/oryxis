@@ -1,12 +1,12 @@
 !include "MUI2.nsh"
 
 Name "Oryxis"
-OutFile "..\oryxis-setup-x86_64.exe"
+OutFile "${__FILEDIR__}\..\oryxis-setup-x86_64.exe"
 InstallDir "$PROGRAMFILES64\Oryxis"
 InstallDirRegKey HKLM "Software\Oryxis" "InstallDir"
 RequestExecutionLevel admin
 
-!define MUI_ICON "..\resources\logo.ico"
+!define MUI_ICON "${__FILEDIR__}\logo.ico"
 !define MUI_ABORTWARNING
 
 !insertmacro MUI_PAGE_WELCOME
@@ -22,10 +22,10 @@ RequestExecutionLevel admin
 Section "Install"
     SetOutPath $INSTDIR
 
-    File "..\target\release\oryxis.exe"
-    File "..\target\release\oryxis-mcp.exe"
-    File "..\resources\logo.ico"
-    File "..\README.md"
+    File "${__FILEDIR__}\..\target\release\oryxis.exe"
+    File "${__FILEDIR__}\..\target\release\oryxis-mcp.exe"
+    File "${__FILEDIR__}\logo.ico"
+    File "${__FILEDIR__}\..\README.md"
 
     ; Create start menu shortcuts
     CreateDirectory "$SMPROGRAMS\Oryxis"
