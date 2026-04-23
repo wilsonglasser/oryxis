@@ -123,13 +123,9 @@ jobs:
           Copy-Item resources\logo_64.png dist\
           Compress-Archive -Path dist\* -DestinationPath oryxis-windows-x86_64.zip
       - name: Build installer
-        shell: pwsh
-        run: |
-          # NSIS is pre-installed on windows-latest; no external package
-          # manager needed (choco community repo has flaky availability).
-          $env:PATH = "C:\Program Files (x86)\NSIS;$env:PATH"
-          cd resources
-          makensis installer.nsi
+        uses: joncloud/makensis-action@v4.1
+        with:
+          script-file: resources/installer.nsi
       - uses: actions/upload-artifact@v5
         with:
           name: oryxis-windows-x86_64
