@@ -27,11 +27,6 @@ pub async fn handle_request(
             }),
         ),
 
-        "notifications/initialized" | "initialized" => {
-            // Notification — no response needed, but if it has an id, respond
-            JsonRpcResponse::success(id, json!({}))
-        }
-
         "tools/list" => {
             let tools = tools::tool_definitions();
             JsonRpcResponse::success(

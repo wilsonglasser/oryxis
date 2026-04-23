@@ -74,6 +74,14 @@ async fn main() {
             }
         };
 
+        // Per JSON-RPC 2.0 a request without an `id` is a notification and
+        // MUST NOT receive a response. MCP also reserves "notifications/*"
+        // method names for notifications. Silently drop both.
+        let is_notification = request.id.is_none() || request.method.starts_with("notifications/");
+        if is_notification {
+            continue;
+        }
+
         let id = request.id.clone().unwrap_or(serde_json::Value::Null);
         let response = server::handle_request(
             &request.method,
