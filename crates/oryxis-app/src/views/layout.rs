@@ -2,12 +2,85 @@
 
 use iced::border::Radius;
 use iced::widget::{button, column, container, row, text, text_input, MouseArea, Space, Stack};
+use iced::window::Direction;
 use iced::{Background, Border, Color, Element, Length};
 
 use crate::app::{Message, Oryxis};
 use crate::state::{OverlayContent, OverlayState, View};
 use crate::theme::OryxisColors;
 use crate::widgets::{context_menu_item, styled_button};
+
+/// Thickness of the edge hit-zones used for dragging to resize. Corners are
+/// the same thickness but `EDGE × EDGE` squares — a bit generous so the user
+/// can actually grab them without millimetre precision.
+const RESIZE_EDGE: f32 = 5.0;
+
+/// Invisible hit-zone used on the window edges and corners. Captures a press
+/// and hands off to the OS as a native resize drag. Double-click on N/S
+/// expands to full monitor height; on E/W to full monitor width.
+fn resize_handle<'a>(direction: Direction, width: Length, height: Length) -> Element<'a, Message> {
+    let mut area = MouseArea::new(container(Space::new()).width(width).height(height))
+        .on_press(Message::WindowResizeDrag(direction))
+        .interaction(match direction {
+            Direction::North | Direction::South => iced::mouse::Interaction::ResizingVertically,
+            Direction::East | Direction::West => iced::mouse::Interaction::ResizingHorizontally,
+            Direction::NorthEast | Direction::SouthWest => iced::mouse::Interaction::ResizingDiagonallyUp,
+            Direction::NorthWest | Direction::SouthEast => iced::mouse::Interaction::ResizingDiagonallyDown,
+        });
+    area = match direction {
+        Direction::North | Direction::South => area.on_double_click(Message::WindowExpandVertical),
+        Direction::East | Direction::West => area.on_double_click(Message::WindowExpandHorizontal),
+        _ => area,
+    };
+    area.into()
+}
+
+/// Layers the resize border on top of the given content, or returns the
+/// content untouched when the window is maximized (no borders to grab).
+pub(crate) fn wrap_with_resize<'a>(
+    content: Element<'a, Message>,
+    overlay: Option<Element<'a, Message>>,
+) -> Element<'a, Message> {
+    match overlay {
+        Some(overlay) => Stack::new()
+            .push(content)
+            .push(overlay)
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .into(),
+        None => content,
+    }
+}
+
+/// Transparent border frame made of 8 resize hit-zones (4 edges + 4 corners).
+/// The centre is a `Space` with fill so pointer events fall through to the
+/// base layer underneath.
+pub(crate) fn resize_border<'a>() -> Element<'a, Message> {
+    let t = RESIZE_EDGE;
+    column![
+        row![
+            resize_handle(Direction::NorthWest, Length::Fixed(t), Length::Fixed(t)),
+            resize_handle(Direction::North, Length::Fill, Length::Fixed(t)),
+            resize_handle(Direction::NorthEast, Length::Fixed(t), Length::Fixed(t)),
+        ]
+        .height(Length::Fixed(t)),
+        row![
+            resize_handle(Direction::West, Length::Fixed(t), Length::Fill),
+            Space::new().width(Length::Fill).height(Length::Fill),
+            resize_handle(Direction::East, Length::Fixed(t), Length::Fill),
+        ]
+        .height(Length::Fill),
+        row![
+            resize_handle(Direction::SouthWest, Length::Fixed(t), Length::Fixed(t)),
+            resize_handle(Direction::South, Length::Fill, Length::Fixed(t)),
+            resize_handle(Direction::SouthEast, Length::Fixed(t), Length::Fixed(t)),
+        ]
+        .height(Length::Fixed(t)),
+    ]
+    .width(Length::Fill)
+    .height(Length::Fill)
+    .into()
+}
 
 impl Oryxis {
     pub(crate) fn view_main(&self) -> Element<'_, Message> {
@@ -28,6 +101,12 @@ impl Oryxis {
                 ..Default::default()
             })
             .into();
+
+        // Edge/corner resize handles — only when the window isn't maximized.
+        // Placed as the topmost stack layer so they win over tab-bar buttons
+        // near the frame, while the Space in the middle is pass-through.
+        let resize_overlay: Option<Element<'_, Message>> =
+            if self.window_maximized { None } else { Some(resize_border()) };
 
         // Share dialog overlay
         if self.show_share_dialog {
@@ -92,39 +171,48 @@ impl Oryxis {
                 .center_x(Length::Fill)
                 .center_y(Length::Fill);
 
-            return Stack::new()
-                .push(base)
-                .push(backdrop)
-                .push(centered)
-                .width(Length::Fill)
-                .height(Length::Fill)
-                .into();
+            return wrap_with_resize(
+                Stack::new()
+                    .push(base)
+                    .push(backdrop)
+                    .push(centered)
+                    .width(Length::Fill)
+                    .height(Length::Fill)
+                    .into(),
+                resize_overlay,
+            );
         }
 
         // New-tab picker (opens via the "+" button in the tab bar).
         if self.show_new_tab_picker {
             let picker = self.view_new_tab_picker();
             let backdrop = crate::views::new_tab_picker::new_tab_picker_backdrop();
-            return Stack::new()
-                .push(base)
-                .push(backdrop)
-                .push(picker)
-                .width(Length::Fill)
-                .height(Length::Fill)
-                .into();
+            return wrap_with_resize(
+                Stack::new()
+                    .push(base)
+                    .push(backdrop)
+                    .push(picker)
+                    .width(Length::Fill)
+                    .height(Length::Fill)
+                    .into(),
+                resize_overlay,
+            );
         }
 
         // Icon/color picker (from the host editor).
         if self.show_icon_picker {
             let picker = self.view_icon_picker();
             let backdrop = crate::views::icon_picker::icon_picker_backdrop();
-            return Stack::new()
-                .push(base)
-                .push(backdrop)
-                .push(picker)
-                .width(Length::Fill)
-                .height(Length::Fill)
-                .into();
+            return wrap_with_resize(
+                Stack::new()
+                    .push(base)
+                    .push(backdrop)
+                    .push(picker)
+                    .width(Length::Fill)
+                    .height(Length::Fill)
+                    .into(),
+                resize_overlay,
+            );
         }
 
         // Note: the update modal is rendered at the top-level `view()`
@@ -157,15 +245,18 @@ impl Oryxis {
             ]
             .into();
 
-            Stack::new()
-                .push(base)
-                .push(backdrop)
-                .push(positioned_menu)
-                .width(Length::Fill)
-                .height(Length::Fill)
-                .into()
+            wrap_with_resize(
+                Stack::new()
+                    .push(base)
+                    .push(backdrop)
+                    .push(positioned_menu)
+                    .width(Length::Fill)
+                    .height(Length::Fill)
+                    .into(),
+                resize_overlay,
+            )
         } else {
-            base
+            wrap_with_resize(base, resize_overlay)
         }
     }
 

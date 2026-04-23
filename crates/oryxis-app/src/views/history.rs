@@ -18,11 +18,11 @@ impl Oryxis {
         let can_prev = self.logs_page > 0;
         let can_next = self.logs_page < max_page;
         let range_label = if self.logs_total == 0 {
-            "0 entries".to_string()
+            format!("0 {}", crate::i18n::t("entries"))
         } else {
             let start = self.logs_page * per_page + 1;
             let end = ((self.logs_page + 1) * per_page).min(self.logs_total);
-            format!("{}\u{2013}{} of {}", start, end, self.logs_total)
+            format!("{}\u{2013}{} {} {}", start, end, crate::i18n::t("of"), self.logs_total)
         };
 
         let prev_btn = nav_btn(iced_fonts::lucide::chevron_left(), Message::LogsPagePrev, can_prev);
@@ -30,7 +30,7 @@ impl Oryxis {
 
         let toolbar = container(
             row![
-                text("History").size(20).color(OryxisColors::t().text_primary),
+                text(crate::i18n::t("history")).size(20).color(OryxisColors::t().text_primary),
                 Space::new().width(Length::Fill),
                 text(range_label).size(11).color(OryxisColors::t().text_muted),
                 Space::new().width(8),
@@ -39,7 +39,7 @@ impl Oryxis {
                 next_btn,
                 Space::new().width(12),
                 button(
-                    container(text("CLEAR").size(11).font(iced::Font {
+                    container(text(crate::i18n::t("clear").to_uppercase()).size(11).font(iced::Font {
                         weight: iced::font::Weight::Bold,
                         ..iced::Font::with_name("Inter")
                     }).color(OryxisColors::t().text_muted))
@@ -68,7 +68,7 @@ impl Oryxis {
         if self.logs.is_empty() {
             rows.push(
                 container(
-                    text("No activity logged yet.")
+                    text(crate::i18n::t("no_activity"))
                         .size(13).color(OryxisColors::t().text_muted),
                 )
                 .padding(16)
@@ -126,7 +126,7 @@ impl Oryxis {
         rows.push(Space::new().height(16).into());
         rows.push(
             container(
-                text("Session Logs").size(16).color(OryxisColors::t().text_primary),
+                text(crate::i18n::t("session_logs")).size(16).color(OryxisColors::t().text_primary),
             )
             .padding(Padding { top: 0.0, right: 0.0, bottom: 8.0, left: 0.0 })
             .into(),
@@ -135,7 +135,7 @@ impl Oryxis {
         if self.session_logs.is_empty() {
             rows.push(
                 container(
-                    text("No session recordings yet. Sessions are recorded automatically when you connect via SSH.")
+                    text(crate::i18n::t("no_session_recordings"))
                         .size(13).color(OryxisColors::t().text_muted),
                 )
                 .padding(16)
@@ -156,7 +156,7 @@ impl Oryxis {
                     format!("{}h {}m", secs / 3600, (secs % 3600) / 60)
                 }
             } else {
-                "in progress".to_string()
+                crate::i18n::t("in_progress").to_string()
             };
             let size_str = format_data_size(entry.data_size);
             let log_id = entry.id;
@@ -177,7 +177,7 @@ impl Oryxis {
                         ],
                     ].width(Length::Fill),
                     button(
-                        container(text("View").size(11).color(OryxisColors::t().accent))
+                        container(text(crate::i18n::t("view")).size(11).color(OryxisColors::t().accent))
                             .padding(Padding { top: 4.0, right: 10.0, bottom: 4.0, left: 10.0 }),
                     )
                     .on_press(Message::ViewSessionLog(log_id))
@@ -234,7 +234,7 @@ impl Oryxis {
                     // Header
                     container(
                         row![
-                            text("Session Log").size(16).color(OryxisColors::t().text_primary),
+                            text(crate::i18n::t("session_log")).size(16).color(OryxisColors::t().text_primary),
                             Space::new().width(Length::Fill),
                             button(
                                 container(text(crate::i18n::t("close")).size(11).font(iced::Font {
