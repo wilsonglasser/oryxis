@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="resources/logo.svg" width="120" alt="Oryxis logo">
+  <img src="resources/logo_128.png" width="120" alt="Oryxis logo">
 </p>
 
 <h1 align="center">Oryxis</h1>
