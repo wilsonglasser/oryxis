@@ -21,6 +21,10 @@ impl Oryxis {
     pub(crate) fn view_tab_bar(&self) -> Element<'_, Message> {
         let mut items: Vec<Element<'_, Message>> = Vec::new();
 
+        // Sidebar collapse toggle sits at the very start of the tab bar so
+        // the sidebar header can stay dedicated to the logo.
+        items.push(super::sidebar::sidebar_toggle_btn(!self.sidebar_collapsed));
+
         let nav_label = match self.active_view {
             View::Dashboard => "Hosts",
             View::Keys => "Keychain",

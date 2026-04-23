@@ -21,19 +21,12 @@ impl Oryxis {
     }
 
     fn view_sidebar_expanded(&self) -> Element<'_, Message> {
-        // Header: logo + collapse toggle on the right
-        let header = container(
-            row![
-                Space::new().width(Length::Fill),
-                image(self.logo_small_handle.clone()).width(48).height(48),
-                Space::new().width(Length::Fill),
-                sidebar_toggle_btn(true),
-                Space::new().width(6),
-            ]
-            .align_y(iced::Alignment::Center),
-        )
-        .padding(Padding { top: 12.0, right: 0.0, bottom: 10.0, left: 0.0 })
-        .width(Length::Fill);
+        // Header: centered logo. Collapse toggle lives in the tab bar now
+        // so the logo stays visible in both sidebar states.
+        let header = container(image(self.logo_small_handle.clone()).width(48).height(48))
+            .padding(Padding { top: 12.0, right: 0.0, bottom: 10.0, left: 0.0 })
+            .width(Length::Fill)
+            .center_x(Length::Fill);
 
         let active_is_nav = self.active_tab.is_none();
         let nav_buttons: Vec<Element<'_, Message>> = vec![
@@ -84,7 +77,7 @@ impl Oryxis {
     }
 
     fn view_sidebar_collapsed(&self) -> Element<'_, Message> {
-        let header = container(sidebar_toggle_btn(false))
+        let header = container(image(self.logo_small_handle.clone()).width(40).height(40))
             .padding(Padding { top: 12.0, right: 0.0, bottom: 10.0, left: 0.0 })
             .width(Length::Fill)
             .center_x(Length::Fill);
@@ -139,7 +132,7 @@ impl Oryxis {
 
 /// Chevron button that toggles the sidebar between expanded and collapsed.
 /// `expanded=true` renders a `«` chevron; `false` renders `»`.
-fn sidebar_toggle_btn<'a>(expanded: bool) -> Element<'a, Message> {
+pub(crate) fn sidebar_toggle_btn<'a>(expanded: bool) -> Element<'a, Message> {
     let glyph = if expanded { "\u{00AB}" } else { "\u{00BB}" };
     button(
         container(text(glyph).size(14).color(OryxisColors::t().text_muted))
