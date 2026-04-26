@@ -52,10 +52,20 @@ impl Oryxis {
         )
         .on_press(Message::OpenLocalShell)
         .width(Length::Fill)
-        .style(|_, _| button::Style {
-            background: Some(Background::Color(Color::TRANSPARENT)),
-            border: Border { radius: Radius::from(10.0), ..Default::default() },
-            ..Default::default()
+        .style(|_, status| {
+            // Same hover treatment as the sidebar nav rows above.
+            // Was a flat transparent style with no feedback at all,
+            // making the row feel inert.
+            let bg = match status {
+                BtnStatus::Hovered => OryxisColors::t().bg_hover,
+                BtnStatus::Pressed => OryxisColors::t().bg_selected,
+                _ => Color::TRANSPARENT,
+            };
+            button::Style {
+                background: Some(Background::Color(bg)),
+                border: Border { radius: Radius::from(10.0), ..Default::default() },
+                ..Default::default()
+            }
         });
 
         let sidebar_content = column![
