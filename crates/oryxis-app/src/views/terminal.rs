@@ -281,8 +281,50 @@ impl Oryxis {
         .into();
 
         // ── Assemble sidebar ──
+        // Optional toast — floats just above the input separator with
+        // a fade-friendly background. Cleared after ~1.8 s by a
+        // `ToastClear` round-trip (see dispatch.rs::CopyToClipboard).
+        let toast: Element<'_, Message> = if let Some(text_) = self.toast.as_ref() {
+            container(
+                container(
+                    text(text_.clone())
+                        .size(11)
+                        .color(OryxisColors::t().text_primary),
+                )
+                .padding(Padding {
+                    top: 4.0,
+                    right: 10.0,
+                    bottom: 4.0,
+                    left: 10.0,
+                })
+                .style(|_| container::Style {
+                    background: Some(Background::Color(Color {
+                        a: 0.95,
+                        ..OryxisColors::t().bg_selected
+                    })),
+                    border: Border {
+                        radius: Radius::from(8.0),
+                        color: OryxisColors::t().border,
+                        width: 1.0,
+                    },
+                    ..Default::default()
+                }),
+            )
+            .width(Length::Fill)
+            .padding(Padding {
+                top: 0.0,
+                right: 12.0,
+                bottom: 6.0,
+                left: 12.0,
+            })
+            .align_x(iced::alignment::Horizontal::Center)
+            .into()
+        } else {
+            Space::new().height(0).into()
+        };
+
         let panel = container(
-            column![header, header_separator, messages_scroll, input_separator, input_row]
+            column![header, header_separator, messages_scroll, toast, input_separator, input_row]
                 .width(Length::Fill)
                 .height(Length::Fill),
         )
@@ -459,25 +501,26 @@ impl Oryxis {
                         }),
                         iced::widget::Space::new().height(8),
                         iced::widget::row![
-                            crate::widgets::styled_button(
+                            pending_tool_btn(
                                 "Run",
                                 Message::ChatToolApprove(cmd_for_run),
                                 OryxisColors::t().accent,
+                                OryxisColors::t().button_text,
                             ),
-                            iced::widget::Space::new().width(6),
-                            crate::widgets::styled_button(
-                                "Always run",
+                            pending_tool_btn(
+                                "Always",
                                 Message::ChatToolApproveAlways(cmd_for_always),
                                 OryxisColors::t().success,
+                                OryxisColors::t().button_text,
                             ),
-                            iced::widget::Space::new().width(6),
-                            crate::widgets::styled_button(
+                            pending_tool_btn(
                                 "Deny",
                                 Message::ChatToolDeny(cmd_for_deny),
                                 OryxisColors::t().bg_hover,
+                                OryxisColors::t().text_primary,
                             ),
                         ]
-                        .spacing(0)
+                        .spacing(6)
                         .align_y(iced::Alignment::Center),
                     ],
                 )
@@ -587,71 +630,71 @@ impl<'a>
     ) -> Element<'a, Message> {
         // Reuse the stock code-block rendering for the actual text /
         // syntax highlighting / horizontal scroll, then stack a tiny
-        // toolbar of Copy + Play buttons in the top-right corner.
+        // toolbar of Copy + Play in the top-right corner. Built with
+        // `MouseArea` instead of `button(...)` because the `button`
+        // widget chain inside our chat scrollable swallows clicks
+        // (same iced quirk `chat_header_btn` works around — see its
+        // comment below).
         let body: Element<'a, Message> = iced::widget::markdown::code_block(
             settings,
             lines,
             Self::on_link_click,
         );
-        let copy = iced::widget::button(
-            iced_fonts::lucide::copy()
-                .size(12)
-                .color(OryxisColors::t().text_muted),
-        )
-        .on_press(Message::CopyToClipboard(code.to_string()))
-        .padding(Padding {
-            top: 3.0,
-            right: 5.0,
-            bottom: 3.0,
-            left: 5.0,
-        })
-        .style(|_, status| {
-            let base = OryxisColors::t().text_secondary;
-            let bg = match status {
-                iced::widget::button::Status::Hovered => Color { a: 0.25, ..base },
-                iced::widget::button::Status::Pressed => Color { a: 0.4, ..base },
-                _ => Color { a: 0.10, ..base },
-            };
-            iced::widget::button::Style {
-                background: Some(Background::Color(bg)),
+        let copy = iced::widget::MouseArea::new(
+            container(
+                iced_fonts::lucide::copy()
+                    .size(12)
+                    .color(OryxisColors::t().text_muted),
+            )
+            .padding(Padding {
+                top: 3.0,
+                right: 5.0,
+                bottom: 3.0,
+                left: 5.0,
+            })
+            .style(|_| container::Style {
+                background: Some(Background::Color(Color {
+                    a: 0.10,
+                    ..OryxisColors::t().text_secondary
+                })),
                 border: Border {
                     radius: Radius::from(4.0),
                     ..Default::default()
                 },
                 ..Default::default()
-            }
-        });
-        let play = iced::widget::button(
-            iced_fonts::lucide::play()
-                .size(12)
-                .color(OryxisColors::t().success),
+            }),
+        )
+        .on_press(Message::CopyToClipboard(code.to_string()))
+        .interaction(iced::mouse::Interaction::Pointer);
+        let play = iced::widget::MouseArea::new(
+            container(
+                iced_fonts::lucide::play()
+                    .size(12)
+                    .color(OryxisColors::t().success),
+            )
+            .padding(Padding {
+                top: 3.0,
+                right: 5.0,
+                bottom: 3.0,
+                left: 5.0,
+            })
+            .style(|_| container::Style {
+                background: Some(Background::Color(Color {
+                    a: 0.12,
+                    ..OryxisColors::t().success
+                })),
+                border: Border {
+                    radius: Radius::from(4.0),
+                    ..Default::default()
+                },
+                ..Default::default()
+            }),
         )
         .on_press(Message::ChatToolProposed {
             command: code.to_string(),
             risk: "risky".into(),
         })
-        .padding(Padding {
-            top: 3.0,
-            right: 5.0,
-            bottom: 3.0,
-            left: 5.0,
-        })
-        .style(|_, status| {
-            let base = OryxisColors::t().success;
-            let bg = match status {
-                iced::widget::button::Status::Hovered => Color { a: 0.30, ..base },
-                iced::widget::button::Status::Pressed => Color { a: 0.45, ..base },
-                _ => Color { a: 0.12, ..base },
-            };
-            iced::widget::button::Style {
-                background: Some(Background::Color(bg)),
-                border: Border {
-                    radius: Radius::from(4.0),
-                    ..Default::default()
-                },
-                ..Default::default()
-            }
-        });
+        .interaction(iced::mouse::Interaction::Pointer);
         let toolbar = container(
             iced::widget::row![copy, iced::widget::Space::new().width(4), play]
                 .align_y(iced::Alignment::Center),
@@ -669,6 +712,47 @@ impl<'a>
             .push(toolbar)
             .into()
     }
+}
+
+/// Filled chip-button used by the PendingTool confirmation prompt
+/// (`Run` / `Always` / `Deny`). Same `MouseArea` treatment as
+/// `chat_header_btn` because the iced `button` widget chain inside
+/// the chat scrollable was eating clicks on the bubble-level buttons.
+fn pending_tool_btn<'a>(
+    label: &'a str,
+    msg: Message,
+    bg: Color,
+    fg: Color,
+) -> Element<'a, Message> {
+    use iced::widget::MouseArea;
+    MouseArea::new(
+        container(
+            text(label.to_owned())
+                .size(12)
+                .font(iced::Font {
+                    weight: iced::font::Weight::Semibold,
+                    ..iced::Font::with_name(crate::theme::SYSTEM_UI_FAMILY)
+                })
+                .color(fg),
+        )
+        .padding(Padding {
+            top: 5.0,
+            right: 12.0,
+            bottom: 5.0,
+            left: 12.0,
+        })
+        .style(move |_| container::Style {
+            background: Some(Background::Color(bg)),
+            border: Border {
+                radius: Radius::from(6.0),
+                ..Default::default()
+            },
+            ..Default::default()
+        }),
+    )
+    .on_press(msg)
+    .interaction(iced::mouse::Interaction::Pointer)
+    .into()
 }
 
 /// Header glyph button used in the chat sidebar (reset, close). Built with
