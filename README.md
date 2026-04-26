@@ -57,17 +57,45 @@ Most SSH clients are either powerful but ugly (PuTTY), pretty but Electron-heavy
 ## Screenshots
 
 <p align="center">
-  <img src="resources/screen_1.png" width="720" alt="Host editor with credentials and folder navigation">
+  <img src="resources/screen_1.png" width="720" alt="Hosts grid with folders and quick search">
 </p>
 <p align="center">
-  <em>Host editor — folders, search, credentials with key selection</em>
+  <em>Hosts — cards grid with folders, distro auto-detection, inline quick connect</em>
 </p>
 
 <p align="center">
-  <img src="resources/screen_2.png" width="720" alt="Terminal with AI Chat sidebar">
+  <img src="resources/screen_2.png" width="720" alt="SFTP dual-pane browser, local on the left, remote on the right">
 </p>
 <p align="center">
-  <em>Terminal session with AI Chat sidebar — ask questions, execute commands</em>
+  <em>SFTP browser — drag &amp; drop uploads, multi-select transfers, edit-in-place, parallel channels</em>
+</p>
+
+<p align="center">
+  <img src="resources/screen_3.png" width="720" alt="Keychain showing keys and reusable identities">
+</p>
+<p align="center">
+  <em>Keychain — keys and reusable identities side by side, linked to multiple hosts</em>
+</p>
+
+<p align="center">
+  <img src="resources/screen_5.png" width="720" alt="Terminal session with AI Chat sidebar">
+</p>
+<p align="center">
+  <em>Streaming AI sidebar — token-by-token responses, per-code-block Copy / Play, risk-aware tool gate</em>
+</p>
+
+<p align="center">
+  <img src="resources/screen_4.png" width="720" alt="Theme settings showing the 12-theme picker">
+</p>
+<p align="center">
+  <em>12 global themes with palette previews — Oryxis, Termius, Darcula, Dracula, Monokai, Nord, Solarized&hellip;</em>
+</p>
+
+<p align="center">
+  <img src="resources/screen_6.png" width="720" alt="P2P Sync settings with pairing flow">
+</p>
+<p align="center">
+  <em>P2P sync over QUIC — LAN via mDNS, internet via STUN, pairing &amp; optional relay</em>
 </p>
 
 ## Features
