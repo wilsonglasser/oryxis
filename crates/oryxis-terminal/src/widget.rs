@@ -184,6 +184,14 @@ pub struct TerminalWidgetState {
     /// `Some((cursor_y_at_press, scroll_offset_at_press))` while the user
     /// is dragging the scrollbar thumb.
     scrollbar_drag: Option<(f32, i32)>,
+    /// Latest known modifier mask, refreshed on every keyboard event.
+    /// Drives the Ctrl+Click-to-open-link UX (Termius-style: plain
+    /// clicks select, Ctrl+Click follows the URL).
+    modifiers: iced::keyboard::Modifiers,
+    /// Currently hovered URL + the cursor pixel position. Used by the
+    /// canvas to underline only the hovered URL (not all of them) and
+    /// by the parent to render the "Ctrl+Click to open" tooltip.
+    hovered_url: Option<(String, iced::Point)>,
 }
 
 // ---------------------------------------------------------------------------
@@ -472,13 +480,24 @@ fn highlight_color_at(highlights: &[Highlight], row: u16, col: u16) -> Option<Co
 /// Returns true when the given cell is part of a URL highlight — used by the
 /// draw pass to paint an underline under clickable links.
 #[inline]
-fn is_url_cell(highlights: &[Highlight], row: u16, col: u16) -> bool {
-    highlights.iter().any(|h| {
-        h.kind == HighlightKind::Url
-            && h.row == row
-            && col >= h.start_col
-            && col <= h.end_col
-    })
+/// Find the URL highlight that contains a specific cell — used by the
+/// draw pass to underline only the URL the cursor is over (instead of
+/// every URL in the viewport, which made even un-hovered links look
+/// "linkable" with no Ctrl-click feedback).
+fn hovered_url_range(
+    highlights: &[Highlight],
+    row: u16,
+    col: u16,
+) -> Option<(u16, u16, u16)> {
+    highlights
+        .iter()
+        .find(|h| {
+            h.kind == HighlightKind::Url
+                && h.row == row
+                && col >= h.start_col
+                && col <= h.end_col
+        })
+        .map(|h| (h.row, h.start_col, h.end_col))
 }
 
 /// Extract the URL string at a given cell from the current viewport, if any.
@@ -784,7 +803,12 @@ where
                     }
                     let (col, vrow) = self.pixel_to_cell(pos);
                     let line = Self::visible_row_to_line(vrow, widget_state.scroll_offset);
-                    if let Ok(state) = self.state.lock()
+                    // Only follow URLs on Ctrl+Click — plain clicks
+                    // start a selection, matching Termius. Without
+                    // the modifier gate, every click on a logged URL
+                    // would lose the selection start.
+                    if widget_state.modifiers.control()
+                        && let Ok(state) = self.state.lock()
                         && let Some(url) = url_at_cell(&state.backend.term, vrow, col)
                     {
                         drop(state);
@@ -831,7 +855,26 @@ where
                         }
                         return Some(CanvasAction::request_redraw().and_capture());
                     }
-                if hover_changed {
+                // URL hover detection — drives the underline-on-hover
+                // and "Ctrl+Click to open" tooltip. Only refresh the
+                // canvas when the hovered URL actually changes (or
+                // appears / disappears) so we're not redrawing on
+                // every mouse-move pixel.
+                let new_hover_url = if let Some(pos) = cursor.position_in(bounds)
+                    && let Ok(state) = self.state.lock()
+                {
+                    let (col, vrow) = self.pixel_to_cell(pos);
+                    url_at_cell(&state.backend.term, vrow, col).map(|u| (u, pos))
+                } else {
+                    None
+                };
+                let url_changed = match (&widget_state.hovered_url, &new_hover_url) {
+                    (Some((a, _)), Some((b, _))) => a != b,
+                    (None, None) => false,
+                    _ => true,
+                };
+                widget_state.hovered_url = new_hover_url;
+                if hover_changed || url_changed {
                     return Some(CanvasAction::request_redraw());
                 }
             }
@@ -924,6 +967,19 @@ where
                 }
                 return Some(CanvasAction::request_redraw().and_capture());
             }
+            // Modifier tracking for the URL Ctrl+Click gate. iced
+            // doesn't pass the current modifier mask on mouse events,
+            // so we mirror it from the dedicated change event.
+            iced::Event::Keyboard(keyboard::Event::ModifiersChanged(m)) => {
+                let was_ctrl = widget_state.modifiers.control();
+                widget_state.modifiers = *m;
+                let now_ctrl = m.control();
+                // Re-render to flip the cursor icon / tooltip text
+                // immediately when Ctrl is pressed/released over a URL.
+                if widget_state.hovered_url.is_some() && was_ctrl != now_ctrl {
+                    return Some(CanvasAction::request_redraw());
+                }
+            }
             // Keyboard — Ctrl+Shift+C copy (paste is handled in app.rs so it can
             // reach the SSH session; widget.state.write only targets a local PTY).
             iced::Event::Keyboard(keyboard::Event::KeyPressed {
@@ -951,15 +1007,20 @@ where
 
     fn mouse_interaction(
         &self,
-        _state: &Self::State,
+        state: &Self::State,
         bounds: Rectangle,
         cursor: mouse::Cursor,
     ) -> mouse::Interaction {
-        if cursor.is_over(bounds) {
-            mouse::Interaction::Text
-        } else {
-            mouse::Interaction::default()
+        if !cursor.is_over(bounds) {
+            return mouse::Interaction::default();
         }
+        // Pointer cursor over a URL — same as the browser hover affordance
+        // and clear visual cue that "click does something different here".
+        // Only when Ctrl is held does the click actually open the link.
+        if state.hovered_url.is_some() {
+            return mouse::Interaction::Pointer;
+        }
+        mouse::Interaction::Text
     }
 
     fn draw(
@@ -1086,6 +1147,22 @@ where
             Vec::new()
         };
 
+        // Resolve which URL (if any) the cursor is over right now,
+        // re-derived from the hovered cursor pixel position. We can't
+        // trust the column we cached on hover because the grid may
+        // have re-flowed since (resize, scroll). Drives both the
+        // "underline only the hovered URL" rule and the tooltip
+        // anchor below.
+        let hovered_url_extent: Option<(u16, u16, u16)> = if let Some((_, pos)) =
+            widget_state.hovered_url
+        {
+            let col = ((pos.x - TERM_PAD) / cell_w).max(0.0) as u16;
+            let row = ((pos.y - TERM_PAD) / cell_h).max(0.0) as u16;
+            hovered_url_range(&highlights, row, col)
+        } else {
+            None
+        };
+
         // --- Pass 2: draw cells with highlight overrides ---
         for cd in &cells {
             let x = cd.col as f32 * cell_w + TERM_PAD;
@@ -1152,10 +1229,15 @@ where
                 });
             }
 
-            // Underline — either from cell flags (ANSI SGR) or because the
-            // cell is part of a detected URL (auto-linker visual cue).
-            let is_url = is_url_cell(&highlights, cd.row, cd.col);
-            if cd.flags.intersects(CellFlags::ALL_UNDERLINES) || is_url {
+            // Underline — from explicit ANSI SGR flags, or for URL
+            // cells that the cursor is currently hovering over (the
+            // visual cue paired with the Pointer cursor + tooltip).
+            // Other URLs in the viewport stay un-underlined to avoid
+            // looking like every link is independently clickable.
+            let is_hovered_url = hovered_url_extent.is_some_and(|(r, sc, ec)| {
+                cd.row == r && cd.col >= sc && cd.col <= ec
+            });
+            if cd.flags.intersects(CellFlags::ALL_UNDERLINES) || is_hovered_url {
                 let width = if cd.flags.contains(CellFlags::WIDE_CHAR) { cell_w * 2.0 } else { cell_w };
                 frame.fill_rectangle(Point::new(x, y + cell_h - 2.0), Size::new(width, 1.0), fg);
             }
@@ -1230,6 +1312,49 @@ where
                 Size::new(sb.track_w, sb.thumb_h),
                 Color { a: thumb_alpha, ..palette.foreground },
             );
+        }
+
+        // "Ctrl + Click to open the link" tooltip — painted near the
+        // hovered URL with a small offset so it doesn't sit directly
+        // under the cursor. Stays put once anchored to the URL row;
+        // we don't follow per-pixel mouse moves to avoid jitter.
+        if let Some((_url, hover_pos)) = widget_state.hovered_url.as_ref() {
+            let tip_y_offset = -28.0; // above the cursor
+            let tip_x = (hover_pos.x + 6.0).min(bounds.width - 220.0).max(4.0);
+            let tip_y = (hover_pos.y + tip_y_offset).max(4.0);
+            let bg = Color { a: 0.92, ..palette.background };
+            let border = Color { a: 0.6, ..palette.foreground };
+            // Width fits "Ctrl + Click to open the link" at ~12 px font.
+            let tip_w = 200.0;
+            let tip_h = 22.0;
+            frame.fill_rectangle(
+                Point::new(tip_x, tip_y),
+                Size::new(tip_w, tip_h),
+                bg,
+            );
+            // Lightweight border via a 1px outline (4 strokes).
+            frame.fill_rectangle(Point::new(tip_x, tip_y), Size::new(tip_w, 1.0), border);
+            frame.fill_rectangle(
+                Point::new(tip_x, tip_y + tip_h - 1.0),
+                Size::new(tip_w, 1.0),
+                border,
+            );
+            frame.fill_rectangle(Point::new(tip_x, tip_y), Size::new(1.0, tip_h), border);
+            frame.fill_rectangle(
+                Point::new(tip_x + tip_w - 1.0, tip_y),
+                Size::new(1.0, tip_h),
+                border,
+            );
+            frame.fill_text(CanvasText {
+                content: "Ctrl + Click to open the link".to_string(),
+                position: Point::new(tip_x + 8.0, tip_y + tip_h / 2.0),
+                color: palette.foreground,
+                size: Pixels(11.0),
+                font: self.font,
+                align_x: alignment::Horizontal::Left.into(),
+                align_y: alignment::Vertical::Center,
+                ..Default::default()
+            });
         }
 
         vec![frame.into_geometry()]
