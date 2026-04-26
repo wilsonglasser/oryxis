@@ -281,53 +281,64 @@ impl Oryxis {
         .into();
 
         // ── Assemble sidebar ──
-        // Optional toast — floats just above the input separator with
-        // a fade-friendly background. Cleared after ~1.8 s by a
+        let panel_column =
+            column![header, header_separator, messages_scroll, input_separator, input_row]
+                .width(Length::Fill)
+                .height(Length::Fill);
+
+        // Optional toast — floats above the input area without taking
+        // a row in the column layout. Cleared after ~1.8 s by a
         // `ToastClear` round-trip (see dispatch.rs::CopyToClipboard).
-        let toast: Element<'_, Message> = if let Some(text_) = self.toast.as_ref() {
-            container(
-                container(
-                    text(text_.clone())
-                        .size(11)
-                        .color(OryxisColors::t().text_primary),
-                )
-                .padding(Padding {
-                    top: 4.0,
-                    right: 10.0,
-                    bottom: 4.0,
-                    left: 10.0,
-                })
-                .style(|_| container::Style {
-                    background: Some(Background::Color(Color {
-                        a: 0.95,
-                        ..OryxisColors::t().bg_selected
-                    })),
-                    border: Border {
-                        radius: Radius::from(8.0),
-                        color: OryxisColors::t().border,
-                        width: 1.0,
-                    },
-                    ..Default::default()
-                }),
+        let panel_inner: Element<'_, Message> = if let Some(text_) = self.toast.as_ref() {
+            let chip = container(
+                text(text_.clone())
+                    .size(11)
+                    .color(OryxisColors::t().text_primary),
             )
-            .width(Length::Fill)
             .padding(Padding {
-                top: 0.0,
+                top: 5.0,
                 right: 12.0,
-                bottom: 6.0,
+                bottom: 5.0,
                 left: 12.0,
             })
-            .align_x(iced::alignment::Horizontal::Center)
-            .into()
-        } else {
-            Space::new().height(0).into()
-        };
-
-        let panel = container(
-            column![header, header_separator, messages_scroll, toast, input_separator, input_row]
+            .style(|_| container::Style {
+                background: Some(Background::Color(Color {
+                    a: 0.95,
+                    ..OryxisColors::t().bg_selected
+                })),
+                border: Border {
+                    radius: Radius::from(8.0),
+                    color: OryxisColors::t().border,
+                    width: 1.0,
+                },
+                ..Default::default()
+            });
+            // Anchor the chip horizontally centered, vertically near
+            // the bottom of the sidebar (just above the input row).
+            // Using a column with fillers so we don't depend on iced
+            // alignment quirks.
+            let toast_overlay = container(
+                column![
+                    Space::new().height(Length::Fill),
+                    container(chip)
+                        .width(Length::Fill)
+                        .align_x(iced::alignment::Horizontal::Center),
+                    Space::new().height(Length::Fixed(70.0)),
+                ]
                 .width(Length::Fill)
                 .height(Length::Fill),
-        )
+            )
+            .width(Length::Fill)
+            .height(Length::Fill);
+            iced::widget::Stack::new()
+                .push(panel_column)
+                .push(toast_overlay)
+                .into()
+        } else {
+            panel_column.into()
+        };
+
+        let panel = container(panel_inner)
         .width(Length::Fill)
         .height(Length::Fill)
         .style(|_| container::Style {
@@ -690,10 +701,11 @@ impl<'a>
                 ..Default::default()
             }),
         )
-        .on_press(Message::ChatToolProposed {
-            command: code.to_string(),
-            risk: "risky".into(),
-        })
+        // Manually clicking Play is the user's explicit go-ahead, so
+        // we route it through `ChatToolApprove` (run once) and skip
+        // the risk gate — re-prompting after a deliberate Play would
+        // be redundant.
+        .on_press(Message::ChatToolApprove(code.to_string()))
         .interaction(iced::mouse::Interaction::Pointer);
         let toolbar = container(
             iced::widget::row![copy, iced::widget::Space::new().width(4), play]
