@@ -448,24 +448,30 @@ fn new_tab_btn<'a>() -> Element<'a, Message> {
 /// how many tabs are open, so the user has a discoverable escape hatch
 /// from a packed tab strip.
 fn tab_jump_btn<'a>() -> Element<'a, Message> {
+    let hover_color = OryxisColors::t().text_secondary;
     button(
         container(
             text("\u{22EF}") // horizontal ellipsis ⋯
                 .size(15)
-                .color(OryxisColors::t().text_muted),
+                .color(hover_color),
         )
-        .center_x(Length::Fixed(DOTS_BUTTON_WIDTH))
-        .center_y(Length::Fixed(TAB_HEIGHT)),
+        .center(Length::Fixed(DOTS_BUTTON_WIDTH))
+        .height(Length::Fixed(BAR_HEIGHT)),
     )
     .on_press(Message::ShowTabJump)
-    .style(|_, status| {
+    .padding(0)
+    .style(move |_, status| {
+        // Match the window-chrome / new-tab buttons' subtle hover
+        // and squared corners so the right cluster reads as one
+        // continuous strip.
         let bg = match status {
-            BtnStatus::Hovered => Color::from_rgba(1.0, 1.0, 1.0, 0.06),
+            BtnStatus::Hovered => Color { a: 0.2, ..hover_color },
+            BtnStatus::Pressed => Color { a: 0.35, ..hover_color },
             _ => Color::TRANSPARENT,
         };
         button::Style {
             background: Some(Background::Color(bg)),
-            border: Border { radius: Radius::from(6.0), ..Default::default() },
+            border: Border::default(),
             ..Default::default()
         }
     })
