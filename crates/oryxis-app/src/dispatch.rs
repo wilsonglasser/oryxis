@@ -334,6 +334,13 @@ impl Oryxis {
                     tracing::warn!("open_in_browser({url}) failed: {e}");
                 }
             }
+            Message::CopyToClipboard(content) => {
+                if let Ok(mut clip) = arboard::Clipboard::new()
+                    && let Err(e) = clip.set_text(content)
+                {
+                    tracing::warn!("clipboard set_text failed: {e}");
+                }
+            }
 
             // ── Vault password management ──
             Message::ToggleVaultPassword => {

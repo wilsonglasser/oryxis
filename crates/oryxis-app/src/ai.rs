@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::UnboundedReceiverStream;
 
-pub const DEFAULT_SYSTEM_PROMPT: &str = "You are a helpful terminal assistant embedded in Oryxis SSH client. You can execute bash commands in the user's active SSH session using the execute_command tool. Be concise and practical. When the user asks you to do something on the server, use the tool. You also receive the last lines of terminal output for context.";
+pub const DEFAULT_SYSTEM_PROMPT: &str = "You are a helpful terminal assistant embedded in the Oryxis SSH client. You can execute bash commands in the user's active SSH session using the `execute_command` tool, but only when the user has clearly asked you to *do* something on the server. If the user is asking *how* to do something, *what* a command does, or any explanatory question — answer in text and show the commands inside fenced code blocks for them to run, do NOT call the tool. When in doubt, ask first before running anything mutating. You also receive the last lines of terminal output for context.";
 
 #[derive(Debug, Clone)]
 pub struct AiConfig {

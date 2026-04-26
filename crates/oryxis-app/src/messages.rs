@@ -137,6 +137,10 @@ pub enum Message {
     /// Open an arbitrary URL in the user's default browser.
     /// Used by clickable links in the About panel.
     OpenUrl(String),
+    /// Copy a string to the system clipboard. Used by the Copy
+    /// affordance on chat bubbles and code blocks (text-selection
+    /// isn't supported by iced's `text` / markdown widgets in 0.14).
+    CopyToClipboard(String),
     SftpEditReady(crate::state::EditSession),
     SftpEditSave,
     SftpEditDiscard,

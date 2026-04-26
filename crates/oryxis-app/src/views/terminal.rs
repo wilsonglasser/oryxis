@@ -306,8 +306,14 @@ impl Oryxis {
     pub(crate) fn view_chat_message<'a>(&'a self, msg: &'a ChatMessage) -> Element<'a, Message> {
         match msg.role {
             ChatRole::User => {
+                // The accent fill pairs with the per-theme `button_text`
+                // (same rule the rest of the CTA buttons follow). User
+                // messages stay capped at 280 px and right-aligned to
+                // keep the standard chat shape.
                 let bubble = container(
-                    text(msg.content.clone()).size(13).color(Color::WHITE),
+                    text(msg.content.clone())
+                        .size(13)
+                        .color(OryxisColors::t().button_text),
                 )
                 .padding(Padding { top: 8.0, right: 12.0, bottom: 8.0, left: 12.0 })
                 .max_width(280)
@@ -349,9 +355,17 @@ impl Oryxis {
                 )
                 .map(|_uri: iced::widget::markdown::Uri| Message::NoOp);
 
+                // Bubble fills the sidebar width — earlier we clamped
+                // at 300 px which left a wide empty strip when the user
+                // dragged the sidebar wider. The chat is the only thing
+                // in this column, so wider = more useful.
+                //
+                // Right-padding bumped to 36 px so the floating Copy
+                // button has somewhere to sit without overlapping the
+                // first line of text.
                 let bubble = container(md)
-                    .padding(Padding { top: 8.0, right: 12.0, bottom: 8.0, left: 12.0 })
-                    .max_width(300)
+                    .padding(Padding { top: 8.0, right: 36.0, bottom: 8.0, left: 12.0 })
+                    .width(Length::Fill)
                     .style(|_| container::Style {
                         background: Some(Background::Color(OryxisColors::t().bg_surface)),
                         text_color: Some(OryxisColors::t().text_primary),
@@ -359,7 +373,54 @@ impl Oryxis {
                         ..Default::default()
                     });
 
-                container(bubble)
+                // Hover-affordance Copy button — text widgets in iced
+                // 0.14 don't support text selection, so an explicit
+                // copy-the-whole-message button covers the gap. Sits
+                // top-right of the bubble; subtle by default, brighter
+                // on hover.
+                let copy_msg = msg.content.clone();
+                let copy_btn = iced::widget::button(
+                    iced_fonts::lucide::copy()
+                        .size(13)
+                        .color(OryxisColors::t().text_muted),
+                )
+                .on_press(Message::CopyToClipboard(copy_msg))
+                .padding(Padding {
+                    top: 4.0,
+                    right: 6.0,
+                    bottom: 4.0,
+                    left: 6.0,
+                })
+                .style(|_, status| {
+                    let bg = match status {
+                        iced::widget::button::Status::Hovered => {
+                            Color { a: 0.25, ..OryxisColors::t().text_secondary }
+                        }
+                        iced::widget::button::Status::Pressed => {
+                            Color { a: 0.4, ..OryxisColors::t().text_secondary }
+                        }
+                        _ => Color::TRANSPARENT,
+                    };
+                    iced::widget::button::Style {
+                        background: Some(Background::Color(bg)),
+                        border: Border { radius: Radius::from(4.0), ..Default::default() },
+                        ..Default::default()
+                    }
+                });
+                let copy_overlay = container(copy_btn)
+                    .width(Length::Fill)
+                    .align_x(iced::alignment::Horizontal::Right)
+                    .padding(Padding {
+                        top: 6.0,
+                        right: 6.0,
+                        bottom: 0.0,
+                        left: 0.0,
+                    });
+                let stacked = iced::widget::Stack::new()
+                    .push(bubble)
+                    .push(copy_overlay);
+
+                container(stacked)
                     .width(Length::Fill)
                     .align_x(iced::alignment::Horizontal::Left)
                     .into()
