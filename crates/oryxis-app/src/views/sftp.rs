@@ -729,6 +729,11 @@ fn actions_menu_overlay<'a>(local: bool, show_hidden: bool) -> Element<'a, Messa
         .spacing(2)
         .padding(4),
     )
+    // Pin the menu to the same width as the rows inside it. Without
+    // this, `menu_separator`'s `Length::Fill` propagates up through
+    // `column![]` and the outer container, stretching the dropdown
+    // across the entire pane.
+    .width(Length::Fixed(228.0))
     .style(|_| container::Style {
         background: Some(Background::Color(OryxisColors::t().bg_surface)),
         border: Border {
@@ -1080,10 +1085,20 @@ fn list_windows_drives() -> Vec<String> {
                 drives.push(format!("{}:", letter as char));
             }
         }
-        // WSL distros are exposed as folders under \\wsl.localhost.
-        let wsl_root = std::path::Path::new(r"\\wsl.localhost");
-        if wsl_root.exists() {
-            drives.push("\\\\wsl.localhost".to_string());
+        // WSL distros live under \\wsl.localhost (or the legacy
+        // \\wsl$). `Path::exists()` on a UNC root returns false until
+        // the SMB redirector lazily mounts it, so we detect WSL via
+        // `wsl.exe` in System32 — present iff the user has WSL
+        // installed at all. We expose `\\wsl$` as the entry point
+        // because it's the alias that always resolves; navigating into
+        // it lists distros as folders.
+        let wsl_exe = std::env::var_os("SystemRoot")
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|| std::path::PathBuf::from(r"C:\Windows"))
+            .join("System32")
+            .join("wsl.exe");
+        if wsl_exe.exists() {
+            drives.push(r"\\wsl$".to_string());
         }
         drives
     }
