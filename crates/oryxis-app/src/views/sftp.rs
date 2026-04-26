@@ -788,13 +788,17 @@ pub(crate) fn row_context_menu_box<'a>(
     let mut items = column![].spacing(2).padding(4);
     // Upload — local files/folders when a remote session is mounted.
     // Multi mode batches the whole same-pane selection.
+    let accent = OryxisColors::t().accent;
+    let secondary = OryxisColors::t().text_secondary;
+    let danger = OryxisColors::t().error;
     if menu.side == SftpPaneSide::Local {
         if remote_connected {
             if multi {
-                items = items.push(menu_item_owned(
+                items = items.push(menu_item_owned_tinted(
                     iced_fonts::lucide::upload(),
                     format!("Upload {} items", selection_count_same_pane),
                     Message::SftpUploadSelection,
+                    accent,
                 ));
             } else {
                 let upload_msg = if menu.is_dir {
@@ -802,10 +806,11 @@ pub(crate) fn row_context_menu_box<'a>(
                 } else {
                     Message::SftpUpload(std::path::PathBuf::from(&menu.path))
                 };
-                items = items.push(menu_item(
+                items = items.push(menu_item_tinted(
                     iced_fonts::lucide::upload(),
                     "Upload to remote",
                     upload_msg,
+                    accent,
                 ));
             }
         }
@@ -814,19 +819,21 @@ pub(crate) fn row_context_menu_box<'a>(
         // just hand the path to `open` — the user's edits hit the
         // file directly with no roundtrip.
         if !multi && !menu.is_dir {
-            items = items.push(menu_item_owned(
+            items = items.push(menu_item_owned_tinted(
                 iced_fonts::lucide::pencil(),
                 crate::i18n::t("edit").to_string(),
                 Message::SftpOpenLocal(std::path::PathBuf::from(&menu.path)),
+                secondary,
             ));
         }
     }
     if menu.side == SftpPaneSide::Remote {
         if multi {
-            items = items.push(menu_item_owned(
+            items = items.push(menu_item_owned_tinted(
                 iced_fonts::lucide::download(),
                 format!("Download {} items", selection_count_same_pane),
                 Message::SftpDownloadSelection,
+                accent,
             ));
         } else {
             let download_msg = if menu.is_dir {
@@ -834,26 +841,29 @@ pub(crate) fn row_context_menu_box<'a>(
             } else {
                 Message::SftpDownload(menu.path.clone())
             };
-            items = items.push(menu_item(
+            items = items.push(menu_item_tinted(
                 iced_fonts::lucide::download(),
                 "Download to local",
                 download_msg,
+                accent,
             ));
             // Edit-in-place — only meaningful for single files.
             if !menu.is_dir {
-                items = items.push(menu_item_owned(
+                items = items.push(menu_item_owned_tinted(
                     iced_fonts::lucide::pencil(),
                     crate::i18n::t("edit").to_string(),
                     Message::SftpStartEdit(menu.path.clone()),
+                    secondary,
                 ));
             }
         }
     }
     if multi {
-        items = items.push(menu_item_owned(
+        items = items.push(menu_item_owned_tinted(
             iced_fonts::lucide::copy(),
             format!("Duplicate {} items", selection_count_same_pane),
             Message::SftpDuplicateSelection,
+            secondary,
         ));
     } else {
         let duplicate_msg = if menu.is_dir {
@@ -861,20 +871,23 @@ pub(crate) fn row_context_menu_box<'a>(
         } else {
             Message::SftpDuplicate(menu.side, menu.path.clone())
         };
-        items = items.push(menu_item(
+        items = items.push(menu_item_tinted(
             iced_fonts::lucide::copy(),
             "Duplicate",
             duplicate_msg,
+            secondary,
         ));
-        items = items.push(menu_item(
+        items = items.push(menu_item_tinted(
             iced_fonts::lucide::pencil(),
             "Rename",
             Message::SftpStartRename(menu.side, menu.path.clone()),
+            secondary,
         ));
-        items = items.push(menu_item(
+        items = items.push(menu_item_tinted(
             iced_fonts::lucide::cog(),
             "Properties",
             Message::SftpShowProperties(menu.side, menu.path.clone(), menu.is_dir),
+            secondary,
         ));
     }
     let delete_label = if multi {
@@ -887,10 +900,11 @@ pub(crate) fn row_context_menu_box<'a>(
     } else {
         Message::SftpAskDelete(menu.side, menu.path.clone(), menu.is_dir)
     };
-    items = items.push(menu_item_owned(
+    items = items.push(menu_item_owned_tinted(
         iced_fonts::lucide::trash(),
         delete_label,
         delete_msg,
+        danger,
     ));
 
     container(items)
@@ -942,14 +956,18 @@ pub(crate) const ROW_CONTEXT_MENU_WIDTH: f32 = 220.0;
 
 /// Owned-label variant of `menu_item` for cases where the label is
 /// computed at runtime (e.g. "Delete N items" with a dynamic count).
-fn menu_item_owned<'a>(
+/// Owned-label variant that lets the caller pick the icon tint —
+/// used for destructive (red) and primary (accent / success) actions
+/// to match the host-card context menu's color coding.
+fn menu_item_owned_tinted<'a>(
     icon: iced::widget::Text<'a>,
     label: String,
     msg: Message,
+    tint: Color,
 ) -> Element<'a, Message> {
     button(
         row![
-            icon.size(12).color(OryxisColors::t().text_secondary),
+            icon.size(12).color(tint),
             Space::new().width(10),
             text(label).size(12).color(OryxisColors::t().text_primary),
         ]
@@ -977,9 +995,20 @@ fn menu_item<'a>(
     label: &'a str,
     msg: Message,
 ) -> Element<'a, Message> {
+    menu_item_tinted(icon, label, msg, OryxisColors::t().text_secondary)
+}
+
+/// Like `menu_item` but with an explicit icon tint (red for delete,
+/// accent for primary actions, etc.).
+fn menu_item_tinted<'a>(
+    icon: iced::widget::Text<'a>,
+    label: &'a str,
+    msg: Message,
+    tint: Color,
+) -> Element<'a, Message> {
     button(
         row![
-            icon.size(12).color(OryxisColors::t().text_secondary),
+            icon.size(12).color(tint),
             Space::new().width(10),
             text(label).size(12).color(OryxisColors::t().text_primary),
         ]
