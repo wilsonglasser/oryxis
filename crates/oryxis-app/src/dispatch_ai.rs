@@ -408,7 +408,6 @@ impl Oryxis {
                 }
             }
             Message::ChatToolApprove(command) => {
-                tracing::info!("ChatToolApprove fired: {}", command);
                 // Pop the pending bubble that triggered this approval.
                 if let Some(idx) = self.active_tab
                     && let Some(tab) = self.tabs.get_mut(idx)

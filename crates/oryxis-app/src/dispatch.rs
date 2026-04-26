@@ -335,11 +335,25 @@ impl Oryxis {
                 }
             }
             Message::CopyToClipboard(content) => {
-                if let Ok(mut clip) = arboard::Clipboard::new()
-                    && let Err(e) = clip.set_text(content)
-                {
-                    tracing::warn!("clipboard set_text failed: {e}");
+                let mut ok = false;
+                if let Ok(mut clip) = arboard::Clipboard::new() {
+                    match clip.set_text(content) {
+                        Ok(()) => ok = true,
+                        Err(e) => tracing::warn!("clipboard set_text failed: {e}"),
+                    }
                 }
+                if ok {
+                    self.toast = Some(crate::i18n::t("copied_to_clipboard").to_string());
+                    return Task::perform(
+                        async {
+                            tokio::time::sleep(std::time::Duration::from_millis(1800)).await;
+                        },
+                        |_| Message::ToastClear,
+                    );
+                }
+            }
+            Message::ToastClear => {
+                self.toast = None;
             }
 
             // ── Vault password management ──

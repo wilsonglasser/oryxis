@@ -141,6 +141,9 @@ pub enum Message {
     /// affordance on chat bubbles and code blocks (text-selection
     /// isn't supported by iced's `text` / markdown widgets in 0.14).
     CopyToClipboard(String),
+    /// Dismiss the transient toast chip (`Oryxis.toast`). Fired by a
+    /// `Task::perform` sleep scheduled when a toast is shown.
+    ToastClear,
     SftpEditReady(crate::state::EditSession),
     SftpEditSave,
     SftpEditDiscard,

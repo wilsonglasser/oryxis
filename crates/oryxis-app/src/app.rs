@@ -265,6 +265,12 @@ pub struct Oryxis {
     pub(crate) vault_password_error: Option<String>,
     pub(crate) vault_destroy_confirm: bool,
 
+    /// Transient bottom-of-chat status chip — currently used for the
+    /// "Copied to clipboard" feedback after a Copy button click.
+    /// `Some(text)` → render the chip; cleared after ~1.8 s by a
+    /// `Task::perform`-spawned `ToastClear` round-trip.
+    pub(crate) toast: Option<String>,
+
     // AI chat sidebar
     pub(crate) chat_input: text_editor::Content,
     pub(crate) chat_loading: bool,
