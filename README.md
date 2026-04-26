@@ -75,9 +75,11 @@ Most SSH clients are either powerful but ugly (PuTTY), pretty but Electron-heavy
 ### SSH & Connectivity
 - **Smart auto-authentication** — Automatically tries key, agent, password, and keyboard-interactive in order.
 - **Full SSH pipeline** — Direct, SOCKS4/5, HTTP CONNECT, ProxyCommand, jump host chaining, and local port forwarding via [russh 0.60](https://github.com/warp-tech/russh).
+- **SSH agent forwarding** — Per-host opt-in (`ForwardAgent yes` from `ssh_config` is honored on import). Bridges the local ssh-agent socket through the channel so you can `ssh hostB` from inside hostA without staging keys remotely. Unsolicited forward channels are rejected.
 - **RSA SHA-2 support** — Modern rsa-sha2-256/512 signing.
 - **Connection progress** — Step-by-step indicator with detailed error messages.
 - **TOFU host key verification** — Fingerprints saved on first connect, rejected if key changes.
+- **Integration tests** — Real OpenSSH server containers via testcontainers (`cargo test -p oryxis-ssh -- --ignored`) covering password auth, ed25519 pubkey, exec exit codes, stdout/stderr separation, PTY round-trip, resize, agent forwarding on/off.
 
 ### Terminal
 - **Embedded emulator** — [alacritty_terminal 0.26](https://github.com/alacritty/alacritty) with 256-color, truecolor, mouse selection, scrollback.
@@ -102,7 +104,8 @@ Most SSH clients are either powerful but ugly (PuTTY), pretty but Electron-heavy
 
 ### AI Chat Assistant
 - **Integrated AI sidebar** — Collapsible chat panel per terminal session.
-- **Bash tool execution** — AI can run commands in the active terminal and analyze output.
+- **Streaming responses** — Tokens land in the bubble as the model emits them via SSE (Anthropic, OpenAI, Gemini, OpenAI-compat). Markdown re-renders progressively as each delta arrives.
+- **Bash tool execution** — AI can run commands in the active terminal and analyze output. Tool follow-ups stream through the same pipeline (poll terminal for stable output → stream the next round).
 - **Smart output capture** — Polls terminal until output stabilizes (no fixed timeouts).
 - **Multiple providers** — Anthropic (Claude), OpenAI (GPT), Google Gemini, or custom OpenAI-compatible endpoints.
 - **Terminal context** — AI receives the last ~50 lines of terminal output for context.
@@ -114,9 +117,12 @@ Most SSH clients are either powerful but ugly (PuTTY), pretty but Electron-heavy
 - **Keychain view** — Keys and Identities side by side with search, edit, context menus.
 
 ### Themes & Internationalization
-- **4 global themes** — Oryxis Dark, Oryxis Light, Dracula, Nord. Changes entire UI instantly.
-- **9 languages** — English, Portugues (Brasil), Espanol, Francais, Deutsch, Italiano, 中文, 日本語, Русский.
+- **12 global themes** — Oryxis Dark / Light, Termius, Darcula, Islands Dark, Dracula, Monokai, Hacker Green, Nord, Nord Light, Solarized Light, Paper Light. Changes entire UI instantly.
+- **Per-theme button colors** — Every theme defines a `button_bg` / `button_text` pair so primary CTAs (`+ HOST`, `New Snippet`, modal Save, etc.) keep readable foregrounds across the whole palette.
+- **WCAG contrast guards** — Unit tests iterate every theme and assert text-on-surface and button label contrast against AA bounds; bad picks fail CI before they ship.
+- **9 languages** — English, Português (Brasil), Español, Français, Deutsch, Italiano, 中文, 日本語, Русский.
 - **Floating overlay menus** — Context menus float over content with click-outside-to-dismiss.
+- **Theme + language honored on the lock screen** — Settings live in the plaintext settings table, so the unlock / setup screen already renders in the chosen theme before the vault is open.
 
 ### Vault & Security
 - **No password by default** — Opens instantly. Enable master password in Settings.
@@ -321,8 +327,10 @@ The signaling server only stores `device_id -> IP:port` with a 5-minute TTL. It 
 | Version | Status | Scope |
 |---------|--------|-------|
 | **v0.1** | **Released** | SSH, vault, keys, identities, themes, i18n, AI chat, session recording |
-| **v0.2** | **In Progress** | Export/Import, MCP server, P2P sync, port forwarding |
-| **v0.3** | Planned | SFTP, split panes, custom themes, biometric unlock |
+| **v0.2** | **Released** | Export/Import, MCP server, P2P sync, port forwarding |
+| **v0.3** | **Released** | SFTP browser (dual-pane, drag/drop, multi-select, edit-in-place, properties, queue), tab overflow + jump-to modal |
+| **v0.4** | **Released** | Streaming AI responses, SSH agent forwarding, SSH integration tests, `app.rs` / `dispatch.rs` split into per-domain modules, theme contrast pass + per-theme button colors |
+| **v0.5** | Planned | Split panes, biometric unlock, custom themes |
 
 ## Contributing
 
