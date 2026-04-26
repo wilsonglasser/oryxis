@@ -719,11 +719,11 @@ impl TerminalView {
     /// Override the font used for cell rendering. If the font can't be resolved
     /// by cosmic-text, it falls back to the system default monospace.
     pub fn with_font_name(mut self, name: &str) -> Self {
-        // Leak the string so Font::with_name can hold a 'static &str. The number
+        // Leak the string so Font::new can hold a 'static &str. The number
         // of unique names is bounded (~20 from the picker), so the total leak is
         // tiny and amortized across the process lifetime.
         let leaked: &'static str = Box::leak(name.to_string().into_boxed_str());
-        self.font = Font::with_name(leaked);
+        self.font = Font::new(leaked);
         self
     }
 

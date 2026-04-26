@@ -27,12 +27,12 @@ impl Oryxis {
                 row![
                     text("+").size(13).font(iced::Font {
                         weight: iced::font::Weight::Bold,
-                        ..iced::Font::with_name(crate::theme::SYSTEM_UI_FAMILY)
+                        ..iced::Font::new(crate::theme::SYSTEM_UI_FAMILY)
                     }).color(OryxisColors::t().button_text),
                     Space::new().width(4),
                     text("ADD").size(11).font(iced::Font {
                         weight: iced::font::Weight::Bold,
-                        ..iced::Font::with_name(crate::theme::SYSTEM_UI_FAMILY)
+                        ..iced::Font::new(crate::theme::SYSTEM_UI_FAMILY)
                     }).color(OryxisColors::t().button_text),
                 ]
                 .align_y(iced::Alignment::Center),
@@ -482,7 +482,7 @@ impl Oryxis {
                         .size(13)
                         .font(iced::Font {
                             weight: iced::font::Weight::Semibold,
-                            ..iced::Font::with_name(crate::theme::SYSTEM_UI_FAMILY)
+                            ..iced::Font::new(crate::theme::SYSTEM_UI_FAMILY)
                         })
                         .color(crate::theme::contrast_text_for(OryxisColors::t().accent)),
                 ]
@@ -679,10 +679,12 @@ impl Oryxis {
                 text("+ Key").size(12).color(OryxisColors::t().accent),
                 Space::new().width(16),
                 pick_list(
-                    key_options,
                     Some(self.identity_form_key.clone().unwrap_or_else(|| "(none)".into())),
-                    Message::IdentityKeyChanged,
-                ).padding(10).style(crate::widgets::rounded_pick_list_style),
+                    key_options,
+                    |s: &String| s.clone(),
+                )
+                .on_select(Message::IdentityKeyChanged)
+                .padding(10).style(crate::widgets::rounded_pick_list_style),
             ].align_y(iced::Alignment::Center),
         ];
 

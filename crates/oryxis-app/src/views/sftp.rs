@@ -1960,7 +1960,7 @@ pub(crate) fn drag_ghost<'a>(label: &str) -> Element<'a, Message> {
                 .color(Color::WHITE)
                 .font(iced::Font {
                     weight: iced::font::Weight::Medium,
-                    ..iced::Font::with_name(crate::theme::SYSTEM_UI_FAMILY)
+                    ..iced::Font::new(crate::theme::SYSTEM_UI_FAMILY)
                 }),
         ]
         .align_y(iced::Alignment::Center),
@@ -2115,7 +2115,7 @@ fn properties_modal<'a>(
             .size(15)
             .font(iced::Font {
                 weight: iced::font::Weight::Semibold,
-                ..iced::Font::with_name(crate::theme::SYSTEM_UI_FAMILY)
+                ..iced::Font::new(crate::theme::SYSTEM_UI_FAMILY)
             })
             .color(OryxisColors::t().text_primary),
         Space::new().height(4),
@@ -2226,7 +2226,7 @@ fn overwrite_modal<'a>(
             .size(15)
             .font(iced::Font {
                 weight: iced::font::Weight::Semibold,
-                ..iced::Font::with_name(crate::theme::SYSTEM_UI_FAMILY)
+                ..iced::Font::new(crate::theme::SYSTEM_UI_FAMILY)
             })
             .color(OryxisColors::t().text_primary),
         Space::new().height(4),
@@ -2333,7 +2333,7 @@ fn primary_button<'a>(label: &'a str, msg: Message, color: Color) -> Element<'a,
             .size(12)
             .font(iced::Font {
                 weight: iced::font::Weight::Semibold,
-                ..iced::Font::with_name(crate::theme::SYSTEM_UI_FAMILY)
+                ..iced::Font::new(crate::theme::SYSTEM_UI_FAMILY)
             })
             .color(fg),
     )

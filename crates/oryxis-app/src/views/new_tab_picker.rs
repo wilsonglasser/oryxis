@@ -92,7 +92,7 @@ impl Oryxis {
         let list_header = row![
             text("Recent connections").size(13).font(iced::Font {
                 weight: iced::font::Weight::Bold,
-                ..iced::Font::with_name(crate::theme::SYSTEM_UI_FAMILY)
+                ..iced::Font::new(crate::theme::SYSTEM_UI_FAMILY)
             }).color(OryxisColors::t().text_primary),
             Space::new().width(Length::Fill),
         ]
@@ -210,7 +210,7 @@ fn picker_row<'a>(
 
     let label_text = text(label.to_string()).size(13).font(iced::Font {
         weight: iced::font::Weight::Semibold,
-        ..iced::Font::with_name(crate::theme::SYSTEM_UI_FAMILY)
+        ..iced::Font::new(crate::theme::SYSTEM_UI_FAMILY)
     }).color(OryxisColors::t().text_primary);
 
     let breadcrumb_text = text(breadcrumb).size(12).color(OryxisColors::t().accent);

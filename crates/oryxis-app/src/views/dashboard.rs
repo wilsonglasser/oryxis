@@ -54,12 +54,12 @@ impl Oryxis {
                             row![
                                 text("+").size(13).font(iced::Font {
                                     weight: iced::font::Weight::Bold,
-                                    ..iced::Font::with_name(crate::theme::SYSTEM_UI_FAMILY)
+                                    ..iced::Font::new(crate::theme::SYSTEM_UI_FAMILY)
                                 }).color(fg),
                                 Space::new().width(4),
                                 text("HOST").size(11).font(iced::Font {
                                     weight: iced::font::Weight::Bold,
-                                    ..iced::Font::with_name(crate::theme::SYSTEM_UI_FAMILY)
+                                    ..iced::Font::new(crate::theme::SYSTEM_UI_FAMILY)
                                 }).color(fg),
                             ].align_y(iced::Alignment::Center),
                         )

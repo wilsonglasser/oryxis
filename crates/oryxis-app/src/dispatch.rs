@@ -446,7 +446,7 @@ impl Oryxis {
             }
             Message::CopyMcpConfig => {
                 self.mcp_config_copied = true;
-                return iced::clipboard::write(mcp_config_json());
+                return iced::clipboard::write(mcp_config_json()).discard();
             }
             Message::InstallMcpConfig => {
                 self.mcp_install_status = None;
