@@ -97,17 +97,18 @@ impl Oryxis {
                 Space::new().width(10),
                 text_input("IP or Hostname", &self.editor_form.hostname)
                     .on_input(Message::EditorHostnameChanged)
-                    .padding(10),
+                    .padding(10)
+                    .style(crate::widgets::rounded_input_style),
             ].align_y(iced::Alignment::Center),
         ]);
 
         // ── Section: General ──
         let general_section = panel_section(column![
             panel_field(crate::i18n::t("label"), text_input("My Server", &self.editor_form.label)
-                .on_input(Message::EditorLabelChanged).padding(10).into()),
+                .on_input(Message::EditorLabelChanged).padding(10).style(crate::widgets::rounded_input_style).into()),
             Space::new().height(8),
             panel_field(crate::i18n::t("parent_group"), text_input("Production, Staging...", &self.editor_form.group_name)
-                .on_input(Message::EditorGroupChanged).padding(10).into()),
+                .on_input(Message::EditorGroupChanged).padding(10).style(crate::widgets::rounded_input_style).into()),
         ]);
 
         // ── Section: SSH & Credentials ──
@@ -120,7 +121,8 @@ impl Oryxis {
                 text_input("22", &self.editor_form.port)
                     .on_input(Message::EditorPortChanged)
                     .padding(6)
-                    .width(60),
+                    .width(60)
+                    .style(crate::widgets::rounded_input_style),
             ].align_y(iced::Alignment::Center),
             Space::new().height(12),
             text(crate::i18n::t("credentials")).size(12).color(OryxisColors::t().text_muted),
@@ -131,7 +133,8 @@ impl Oryxis {
                 Space::new().width(10),
                 text_input("Username", &self.editor_form.username)
                     .on_input(Message::EditorUsernameChanged)
-                    .padding(10),
+                    .padding(10)
+                    .style(crate::widgets::rounded_input_style),
             ].align_y(iced::Alignment::Center),
         ];
 
@@ -242,7 +245,8 @@ impl Oryxis {
                     )
                         .on_input(Message::EditorPasswordChanged)
                         .secure(!self.editor_form.password_visible)
-                        .padding(10),
+                        .padding(10)
+                        .style(crate::widgets::rounded_input_style),
                     Space::new().width(6),
                     button(
                         if self.editor_form.password_visible {
@@ -286,7 +290,7 @@ impl Oryxis {
                         },
                         Some(self.editor_form.selected_key.clone().unwrap_or_else(|| "(none)".into())),
                         Message::EditorKeyChanged,
-                    ),
+                    ).padding(10).style(crate::widgets::rounded_pick_list_style),
                 ].align_y(iced::Alignment::Center)
             );
         }
@@ -339,16 +343,39 @@ impl Oryxis {
                 Space::new().width(10),
                 text(crate::i18n::t("expose_to_mcp")).size(13).color(OryxisColors::t().text_secondary),
                 Space::new().width(Length::Fill),
-                button(
-                    text(if self.editor_form.mcp_enabled { "ON" } else { "OFF" }).size(12)
-                ).on_press(Message::EditorToggleMcpEnabled).style(move |_theme, _status| {
-                    button::Style {
-                        background: Some(Background::Color(if self.editor_form.mcp_enabled { OryxisColors::t().success } else { OryxisColors::t().bg_hover })),
-                        border: Border { radius: Radius::from(4.0), ..Default::default() },
-                        text_color: OryxisColors::t().text_primary,
-                        ..Default::default()
-                    }
-                }),
+                {
+                    let on = self.editor_form.mcp_enabled;
+                    let bg = if on { OryxisColors::t().success } else { OryxisColors::t().bg_hover };
+                    let fg = crate::theme::contrast_text_for(bg);
+                    button(text(if on { "ON" } else { "OFF" }).size(12).color(fg))
+                        .on_press(Message::EditorToggleMcpEnabled)
+                        .style(move |_theme, _status| button::Style {
+                            background: Some(Background::Color(bg)),
+                            border: Border { radius: Radius::from(4.0), ..Default::default() },
+                            text_color: fg,
+                            ..Default::default()
+                        })
+                },
+            ].align_y(iced::Alignment::Center),
+            panel_divider(),
+            row![
+                iced_fonts::lucide::key_round().size(14).color(OryxisColors::t().text_muted),
+                Space::new().width(10),
+                text(crate::i18n::t("forward_ssh_agent")).size(13).color(OryxisColors::t().text_secondary),
+                Space::new().width(Length::Fill),
+                {
+                    let on = self.editor_form.agent_forwarding;
+                    let bg = if on { OryxisColors::t().success } else { OryxisColors::t().bg_hover };
+                    let fg = crate::theme::contrast_text_for(bg);
+                    button(text(if on { "ON" } else { "OFF" }).size(12).color(fg))
+                        .on_press(Message::EditorToggleAgentForwarding)
+                        .style(move |_theme, _status| button::Style {
+                            background: Some(Background::Color(bg)),
+                            border: Border { radius: Radius::from(4.0), ..Default::default() },
+                            text_color: fg,
+                            ..Default::default()
+                        })
+                },
             ].align_y(iced::Alignment::Center),
         ]);
 
@@ -379,17 +406,20 @@ impl Oryxis {
                     text_input("8080", &pf.local_port)
                         .on_input(move |v| Message::EditorPortFwdLocalPortChanged(idx, v))
                         .padding(6)
-                        .width(70),
+                        .width(70)
+                        .style(crate::widgets::rounded_input_style),
                     text(" -> ").size(12).color(OryxisColors::t().text_muted),
                     text_input("localhost", &pf.remote_host)
                         .on_input(move |v| Message::EditorPortFwdRemoteHostChanged(idx, v))
                         .padding(6)
-                        .width(Length::Fill),
+                        .width(Length::Fill)
+                        .style(crate::widgets::rounded_input_style),
                     text(":").size(12).color(OryxisColors::t().text_muted),
                     text_input("3306", &pf.remote_port)
                         .on_input(move |v| Message::EditorPortFwdRemotePortChanged(idx, v))
                         .padding(6)
-                        .width(70),
+                        .width(70)
+                        .style(crate::widgets::rounded_input_style),
                     button(text("x").size(11).color(OryxisColors::t().error))
                         .on_press(Message::EditorRemovePortForward(idx))
                         .style(|_, _| button::Style {

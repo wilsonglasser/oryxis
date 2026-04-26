@@ -34,7 +34,7 @@ impl EventListener for EventProxy {
                 }
             }
             Event::Wakeup => {}
-            Event::Bell => tracing::debug!("Terminal bell"),
+            Event::Bell => {}
             _ => {}
         }
     }

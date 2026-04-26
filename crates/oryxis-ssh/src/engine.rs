@@ -72,11 +72,44 @@ pub type HostKeyCheckCallback = Arc<dyn Fn(&str, u16, &str, &str) -> HostKeyStat
 /// Channel for asking the UI to verify a host key. The UI sends `true` (accept) or `false` (reject).
 pub type HostKeyAskSender = tokio::sync::mpsc::Sender<(HostKeyQuery, tokio::sync::oneshot::Sender<bool>)>;
 
-struct ClientHandler {
+pub(crate) struct ClientHandler {
     hostname: String,
     port: u16,
     host_key_check: Option<HostKeyCheckCallback>,
     host_key_ask_tx: Option<HostKeyAskSender>,
+    /// Mirrors `SshEngine::agent_forwarding`. The handler uses it as a
+    /// gate on `server_channel_open_agent_forward` — without an opt-in,
+    /// inbound forward channels are rejected even if the server tries
+    /// to open one.
+    agent_forwarding: bool,
+}
+
+/// Bridge an inbound agent-forward channel to the local ssh-agent so
+/// the remote side can use the keys held by our local agent. The remote
+/// app speaks ssh-agent protocol over the channel; we just shovel raw
+/// bytes between the channel and the local socket / pipe.
+#[cfg(unix)]
+async fn bridge_agent_channel(
+    channel: russh::Channel<russh::client::Msg>,
+) -> std::io::Result<()> {
+    let path = std::env::var_os("SSH_AUTH_SOCK").ok_or_else(|| {
+        std::io::Error::other("agent forwarding requested but SSH_AUTH_SOCK is not set")
+    })?;
+    let mut agent = tokio::net::UnixStream::connect(&path).await?;
+    let mut stream = channel.into_stream();
+    let _ = tokio::io::copy_bidirectional(&mut agent, &mut stream).await?;
+    Ok(())
+}
+
+#[cfg(windows)]
+async fn bridge_agent_channel(
+    channel: russh::Channel<russh::client::Msg>,
+) -> std::io::Result<()> {
+    let pipe_path = r"\\.\pipe\openssh-ssh-agent";
+    let mut agent = tokio::net::windows::named_pipe::ClientOptions::new().open(pipe_path)?;
+    let mut stream = channel.into_stream();
+    let _ = tokio::io::copy_bidirectional(&mut agent, &mut stream).await?;
+    Ok(())
 }
 
 impl client::Handler for ClientHandler {
@@ -121,6 +154,30 @@ impl client::Handler for ClientHandler {
             }
         }
     }
+
+    async fn server_channel_open_agent_forward(
+        &mut self,
+        channel: russh::Channel<russh::client::Msg>,
+        _session: &mut client::Session,
+    ) -> Result<(), Self::Error> {
+        if !self.agent_forwarding {
+            // Server is trying to open a forward channel we never asked
+            // for. Drop it on the floor — `Channel` is closed when it
+            // goes out of scope.
+            tracing::warn!(
+                "rejecting unsolicited agent-forward channel from {}:{}",
+                self.hostname,
+                self.port
+            );
+            return Ok(());
+        }
+        tokio::spawn(async move {
+            if let Err(e) = bridge_agent_channel(channel).await {
+                tracing::warn!("agent-forward bridge ended: {e}");
+            }
+        });
+        Ok(())
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -131,7 +188,7 @@ impl client::Handler for ClientHandler {
 /// Used between `establish_transport` and `do_authenticate` / `open_session`.
 pub struct SshHandle(client::Handle<ClientHandler>);
 
-type SharedHandle = Arc<tokio::sync::Mutex<client::Handle<ClientHandler>>>;
+pub(crate) type SharedHandle = Arc<tokio::sync::Mutex<client::Handle<ClientHandler>>>;
 
 /// Bind local TCP listeners for port forwards, validating all ports upfront.
 /// Returns the bound listeners (actual forwarding starts after PTY session opens).
@@ -235,9 +292,19 @@ pub struct SshSession {
     /// Shared SSH handle — kept alive for port forward tasks to open channels.
     _handle: Arc<tokio::sync::Mutex<client::Handle<ClientHandler>>>,
     writer_tx: mpsc::UnboundedSender<Vec<u8>>,
+    /// Forwarded to the SSH channel as `window-change` requests so the
+    /// remote shell sees SIGWINCH and re-renders for the new viewport.
+    /// Without this, apps like `top` keep rendering for the original
+    /// columns and our local alacritty wraps the overflow into extra
+    /// rows ("double line" effect).
+    resize_tx: mpsc::UnboundedSender<(u16, u16)>,
     _reader_task: tokio::task::JoinHandle<()>,
     _writer_task: tokio::task::JoinHandle<()>,
     _port_forward_tasks: Vec<tokio::task::JoinHandle<()>>,
+    /// Cap on how long `open_sftp` (and the per-sibling open in the
+    /// transfer pool) wait before giving up. Set by `SshEngine`'s
+    /// builder so the user can tune it from the SFTP settings panel.
+    pub(crate) sftp_open_timeout: std::time::Duration,
 }
 
 impl std::fmt::Debug for SshSession {
@@ -253,6 +320,52 @@ impl SshSession {
         self.writer_tx
             .send(data.to_vec())
             .map_err(|e| SshError::Channel(format!("write failed: {}", e)))
+    }
+
+    /// Notify the remote shell that the local viewport changed shape.
+    /// Errors are swallowed because resize requests fire often and a
+    /// dropped one is cosmetically ugly but never fatal.
+    pub fn resize(&self, cols: u16, rows: u16) {
+        let _ = self.resize_tx.send((cols, rows));
+    }
+
+    /// Hand out a clone of the resize sender so the terminal state can
+    /// forward viewport changes directly without round-tripping a message.
+    pub fn resize_sender(&self) -> mpsc::UnboundedSender<(u16, u16)> {
+        self.resize_tx.clone()
+    }
+
+    /// Open a fresh SFTP subsystem channel on this session — the SSH
+    /// connection multiplexes, so the original PTY channel keeps running.
+    /// Wrapped in the engine-configured timeout to keep `open_sftp` from
+    /// hanging the UI when a server doesn't speak the sftp subsystem.
+    pub async fn open_sftp(&self) -> Result<crate::sftp::SftpClient, SshError> {
+        let timeout = self.sftp_open_timeout;
+        let handle_for_exec = self._handle.clone();
+        let inner = async {
+            let handle = self._handle.lock().await;
+            let channel = handle
+                .channel_open_session()
+                .await
+                .map_err(|e| SshError::Channel(format!("sftp channel open: {e}")))?;
+            channel
+                .request_subsystem(true, "sftp")
+                .await
+                .map_err(|e| SshError::Channel(format!("sftp subsystem: {e}")))?;
+            let session = russh_sftp::client::SftpSession::new(channel.into_stream())
+                .await
+                .map_err(|e| SshError::Channel(format!("sftp init: {e}")))?;
+            Ok::<_, SshError>(session)
+        };
+        let session = tokio::time::timeout(timeout, inner)
+            .await
+            .map_err(|_| {
+                SshError::Channel(format!(
+                    "sftp open timed out after {}s",
+                    timeout.as_secs()
+                ))
+            })??;
+        Ok(crate::sftp::SftpClient::new(session, handle_for_exec, timeout))
     }
 
     pub fn is_alive(&self) -> bool {
@@ -320,6 +433,23 @@ pub struct ConnectionResolver {
 pub struct SshEngine {
     host_key_check: Option<HostKeyCheckCallback>,
     host_key_ask_tx: Option<HostKeyAskSender>,
+    /// Optional client-side keepalive: when set, russh sends a no-op
+    /// SSH_MSG_GLOBAL_REQUEST every N seconds so NAT / firewall idle
+    /// timeouts don't kill the session.
+    keepalive_interval: Option<std::time::Duration>,
+    /// Phase-by-phase timeouts. Each step of the connect ladder gets
+    /// its own bound so a misbehaving server can't hang the UI on any
+    /// single stage. Defaults are sane (15s/30s/10s) and the user can
+    /// override via the SFTP settings panel.
+    connect_timeout: std::time::Duration,
+    auth_timeout: std::time::Duration,
+    session_timeout: std::time::Duration,
+    /// Forward the local ssh-agent socket to the remote shell. Off by
+    /// default (matches OpenSSH's default `ForwardAgent no`). Enabled
+    /// per-connection from the editor; relayed both to the channel-
+    /// level `auth-agent-req@openssh.com` request *and* to
+    /// `ClientHandler` so we only accept forward channels we asked for.
+    agent_forwarding: bool,
 }
 
 impl Default for SshEngine {
@@ -330,7 +460,44 @@ impl Default for SshEngine {
 
 impl SshEngine {
     pub fn new() -> Self {
-        Self { host_key_check: None, host_key_ask_tx: None }
+        Self {
+            host_key_check: None,
+            host_key_ask_tx: None,
+            keepalive_interval: None,
+            connect_timeout: std::time::Duration::from_secs(15),
+            auth_timeout: std::time::Duration::from_secs(30),
+            session_timeout: std::time::Duration::from_secs(10),
+            agent_forwarding: false,
+        }
+    }
+
+    /// Enable ssh-agent forwarding for the next session opened on this
+    /// engine. The flag is propagated to the channel-open request and
+    /// to the inbound forward-channel handler so we don't proxy
+    /// channels we didn't ask for.
+    pub fn with_agent_forwarding(mut self, enabled: bool) -> Self {
+        self.agent_forwarding = enabled;
+        self
+    }
+
+    /// Override the TCP/SSH-handshake timeout (default 15s).
+    pub fn with_connect_timeout(mut self, t: std::time::Duration) -> Self {
+        self.connect_timeout = t;
+        self
+    }
+
+    /// Override the authentication-phase timeout (default 30s).
+    pub fn with_auth_timeout(mut self, t: std::time::Duration) -> Self {
+        self.auth_timeout = t;
+        self
+    }
+
+    /// Override the session/SFTP-channel-open timeout (default 10s).
+    /// Applies to PTY session open, SFTP subsystem open, and sibling
+    /// channel opens for the parallel transfer pool.
+    pub fn with_session_timeout(mut self, t: std::time::Duration) -> Self {
+        self.session_timeout = t;
+        self
     }
 
     /// Set a sync callback that checks known hosts and returns the status.
@@ -345,12 +512,26 @@ impl SshEngine {
         self
     }
 
+    /// Configure the client-side keepalive interval (zero / `None` disables).
+    pub fn with_keepalive(mut self, interval: Option<std::time::Duration>) -> Self {
+        self.keepalive_interval = interval.filter(|d| !d.is_zero());
+        self
+    }
+
+    fn make_config(&self) -> Arc<client::Config> {
+        Arc::new(client::Config {
+            keepalive_interval: self.keepalive_interval,
+            ..client::Config::default()
+        })
+    }
+
     fn make_handler(&self, hostname: &str, port: u16) -> ClientHandler {
         ClientHandler {
             hostname: hostname.into(),
             port,
             host_key_check: self.host_key_check.clone(),
             host_key_ask_tx: self.host_key_ask_tx.clone(),
+            agent_forwarding: self.agent_forwarding,
         }
     }
 
@@ -372,7 +553,10 @@ impl SshEngine {
             .await
     }
 
-    /// Connect with a resolver for jump host credentials.
+    /// Connect with a resolver for jump host credentials. Wraps the
+    /// transport setup in `connect_timeout` so the SFTP picker (which
+    /// goes through here) doesn't fall through to the kernel's ~127s
+    /// SYN-retransmit ceiling on unreachable hosts.
     pub async fn connect_with_resolver(
         &self,
         connection: &Connection,
@@ -385,20 +569,36 @@ impl SshEngine {
         let target_host = &connection.hostname;
         let target_port = connection.port;
         let addr = format!("{}:{}", target_host, target_port);
+        let connect_timeout = self.connect_timeout;
 
-        tracing::info!("SSH connecting to {}", addr);
+        tracing::info!(
+            "SSH connecting to {} (timeout: {}s)",
+            addr,
+            connect_timeout.as_secs()
+        );
 
-        let handle = if !connection.jump_chain.is_empty() {
-            self.connect_via_jump_hosts(connection, resolver, &addr).await?
-        } else if let Some(proxy) = &connection.proxy {
-            self.connect_via_proxy(proxy, target_host, target_port).await?
-        } else {
-            let config = Arc::new(client::Config::default());
-            let handler = self.make_handler(target_host, target_port);
-            client::connect(config, &addr, handler)
-                .await
-                .map_err(|e| SshError::ConnectionFailed(format!("{}: {}", addr, e)))?
+        let connect_fut = async {
+            if !connection.jump_chain.is_empty() {
+                self.connect_via_jump_hosts(connection, resolver, &addr).await
+            } else if let Some(proxy) = &connection.proxy {
+                self.connect_via_proxy(proxy, target_host, target_port).await
+            } else {
+                let config = self.make_config();
+                let handler = self.make_handler(target_host, target_port);
+                client::connect(config, &addr, handler)
+                    .await
+                    .map_err(|e| SshError::ConnectionFailed(format!("{}: {}", addr, e)))
+            }
         };
+        let handle = tokio::time::timeout(connect_timeout, connect_fut)
+            .await
+            .map_err(|_| {
+                SshError::ConnectionFailed(format!(
+                    "{}: timed out after {}s",
+                    addr,
+                    connect_timeout.as_secs()
+                ))
+            })??;
 
         self.authenticate_and_open(handle, connection, password, private_key_pem, cols, rows)
             .await
@@ -414,13 +614,13 @@ impl SshEngine {
         connection: &Connection,
         resolver: Option<&ConnectionResolver>,
     ) -> Result<SshHandle, SshError> {
-        const CONNECT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(15);
+        let connect_timeout = self.connect_timeout;
 
         let target_host = &connection.hostname;
         let target_port = connection.port;
         let addr = format!("{}:{}", target_host, target_port);
 
-        tracing::info!("SSH connecting to {} (timeout: {}s)", addr, CONNECT_TIMEOUT.as_secs());
+        tracing::info!("SSH connecting to {} (timeout: {}s)", addr, connect_timeout.as_secs());
 
         let connect_fut = async {
             if !connection.jump_chain.is_empty() {
@@ -428,7 +628,7 @@ impl SshEngine {
             } else if let Some(proxy) = &connection.proxy {
                 self.connect_via_proxy(proxy, target_host, target_port).await
             } else {
-                let config = Arc::new(client::Config::default());
+                let config = self.make_config();
                 let handler = self.make_handler(target_host, target_port);
                 client::connect(config, &addr, handler)
                     .await
@@ -436,15 +636,17 @@ impl SshEngine {
             }
         };
 
-        let handle = tokio::time::timeout(CONNECT_TIMEOUT, connect_fut)
+        let handle = tokio::time::timeout(connect_timeout, connect_fut)
             .await
             .map_err(|_| SshError::ConnectionFailed(format!(
-                "{}: timed out after {}s", addr, CONNECT_TIMEOUT.as_secs()
+                "{}: timed out after {}s", addr, connect_timeout.as_secs()
             )))??;
         Ok(SshHandle(handle))
     }
 
-    /// Step 2: Authenticate on an established handle.
+    /// Step 2: Authenticate on an established handle. Configurable
+    /// timeout (default 30s) so a misbehaving server wedging mid-
+    /// handshake can't hang the connect flow forever.
     pub async fn do_authenticate(
         &self,
         handle: &mut SshHandle,
@@ -452,10 +654,23 @@ impl SshEngine {
         password: Option<&str>,
         private_key_pem: Option<&str>,
     ) -> Result<(), SshError> {
-        self.authenticate_handle(&mut handle.0, connection, password, private_key_pem).await
+        let auth_timeout = self.auth_timeout;
+        tokio::time::timeout(
+            auth_timeout,
+            self.authenticate_handle(&mut handle.0, connection, password, private_key_pem),
+        )
+        .await
+        .map_err(|_| {
+            SshError::ConnectionFailed(format!(
+                "auth timed out after {}s",
+                auth_timeout.as_secs()
+            ))
+        })?
     }
 
-    /// Step 3: Open PTY session on an authenticated handle.
+    /// Step 3: Open PTY session on an authenticated handle. The session
+    /// timeout (default 10s) covers the channel-open + pty-request +
+    /// shell-request chain.
     pub async fn open_session(
         &self,
         handle: SshHandle,
@@ -463,8 +678,25 @@ impl SshEngine {
         rows: u32,
         port_forwards: &[PortForward],
     ) -> Result<(SshSession, mpsc::UnboundedReceiver<Vec<u8>>), SshError> {
+        let session_timeout = self.session_timeout;
         let listeners = bind_port_forward_listeners(port_forwards).await?;
-        self.open_pty_session(handle.0, cols, rows, listeners).await
+        tokio::time::timeout(
+            session_timeout,
+            self.open_pty_session(handle.0, cols, rows, listeners),
+        )
+        .await
+        .map_err(|_| {
+            SshError::ConnectionFailed(format!(
+                "session open timed out after {}s",
+                session_timeout.as_secs()
+            ))
+        })?
+        .map(|(mut session, rx)| {
+            // Propagate the SFTP-open timeout so siblings opened later
+            // honour the same configured limit.
+            session.sftp_open_timeout = session_timeout;
+            (session, rx)
+        })
     }
 
     // -----------------------------------------------------------------------
@@ -502,7 +734,7 @@ impl SshEngine {
                     .map_err(|e| SshError::Proxy(format!("SOCKS5: {}", e)))?
                 };
 
-                let config = Arc::new(client::Config::default());
+                let config = self.make_config();
                 client::connect_stream(config, stream, self.make_handler(target_host, target_port))
                     .await
                     .map_err(|e| SshError::Proxy(format!("SSH over SOCKS5: {}", e)))
@@ -525,7 +757,7 @@ impl SshEngine {
                     .map_err(|e| SshError::Proxy(format!("SOCKS4: {}", e)))?
                 };
 
-                let config = Arc::new(client::Config::default());
+                let config = self.make_config();
                 client::connect_stream(config, stream, self.make_handler(target_host, target_port))
                     .await
                     .map_err(|e| SshError::Proxy(format!("SSH over SOCKS4: {}", e)))
@@ -535,7 +767,7 @@ impl SshEngine {
                     .http_connect_tunnel(&proxy_addr, target_host, target_port)
                     .await?;
 
-                let config = Arc::new(client::Config::default());
+                let config = self.make_config();
                 client::connect_stream(config, stream, self.make_handler(target_host, target_port))
                     .await
                     .map_err(|e| SshError::Proxy(format!("SSH over HTTP CONNECT: {}", e)))
@@ -543,7 +775,7 @@ impl SshEngine {
             ProxyType::Command(cmd) => {
                 let stream = self.proxy_command(cmd).await?;
 
-                let config = Arc::new(client::Config::default());
+                let config = self.make_config();
                 client::connect_stream(config, stream, self.make_handler(target_host, target_port))
                     .await
                     .map_err(|e| SshError::Proxy(format!("SSH over ProxyCommand: {}", e)))
@@ -643,7 +875,7 @@ impl SshEngine {
             .ok_or_else(|| SshError::JumpHost("First jump host not found".into()))?;
 
         let first_addr = format!("{}:{}", first_jump.hostname, first_jump.port);
-        let config = Arc::new(client::Config::default());
+        let config = self.make_config();
         let handler = self.make_handler(&first_jump.hostname, first_jump.port);
         let mut current_handle = client::connect(config, &first_addr, handler)
             .await
@@ -681,7 +913,7 @@ impl SshEngine {
                 .map_err(|e| SshError::JumpHost(format!("direct-tcpip to {}: {}", jump.hostname, e)))?;
 
             let stream = channel.into_stream();
-            let config = Arc::new(client::Config::default());
+            let config = self.make_config();
             let handler = self.make_handler(&jump.hostname, jump.port);
             current_handle = client::connect_stream(config, stream, handler)
                 .await
@@ -706,7 +938,7 @@ impl SshEngine {
             .map_err(|e| SshError::JumpHost(format!("direct-tcpip to target {}: {}", final_addr, e)))?;
 
         let stream = channel.into_stream();
-        let config = Arc::new(client::Config::default());
+        let config = self.make_config();
         let handler = self.make_handler(&target_host, target_port as u16);
         client::connect_stream(config, stream, handler)
             .await
@@ -997,10 +1229,37 @@ impl SshEngine {
         cols: u32,
         rows: u32,
     ) -> Result<(SshSession, mpsc::UnboundedReceiver<Vec<u8>>), SshError> {
-        self.authenticate_handle(&mut handle, connection, password, private_key_pem)
-            .await?;
+        // Apply the same per-phase timeouts the public 2-step API uses
+        // — single-call connects via `connect_with_resolver` were
+        // bypassing them, leaving auth/session free to hang on the OS
+        // default ceilings.
+        let auth_timeout = self.auth_timeout;
+        let session_timeout = self.session_timeout;
+        tokio::time::timeout(
+            auth_timeout,
+            self.authenticate_handle(&mut handle, connection, password, private_key_pem),
+        )
+        .await
+        .map_err(|_| {
+            SshError::ConnectionFailed(format!(
+                "auth timed out after {}s",
+                auth_timeout.as_secs()
+            ))
+        })??;
         let listeners = bind_port_forward_listeners(&connection.port_forwards).await?;
-        self.open_pty_session(handle, cols, rows, listeners).await
+        let (mut session, rx) = tokio::time::timeout(
+            session_timeout,
+            self.open_pty_session(handle, cols, rows, listeners),
+        )
+        .await
+        .map_err(|_| {
+            SshError::ConnectionFailed(format!(
+                "session open timed out after {}s",
+                session_timeout.as_secs()
+            ))
+        })??;
+        session.sftp_open_timeout = session_timeout;
+        Ok((session, rx))
     }
 
     /// Execute a command without PTY (non-interactive) and return the output.
@@ -1022,6 +1281,9 @@ impl SshEngine {
 
         let collect = async {
             let mut channel = channel;
+            // Read until channel close (`None`), not just Eof — some
+            // servers send `ExitStatus` after `Eof`, so breaking early
+            // would leave us defaulting to 255.
             loop {
                 match channel.wait().await {
                     Some(ChannelMsg::Data { data }) => stdout.extend_from_slice(&data),
@@ -1031,7 +1293,7 @@ impl SshEngine {
                     Some(ChannelMsg::ExitStatus { exit_status }) => {
                         exit_code = Some(exit_status);
                     }
-                    Some(ChannelMsg::Eof) | None => break,
+                    None => break,
                     _ => {}
                 }
             }
@@ -1068,6 +1330,19 @@ impl SshEngine {
             .await
             .map_err(|e| SshError::Channel(format!("PTY request failed: {}", e)))?;
 
+        // Optional ssh-agent forwarding. Must fire BEFORE `request_shell`
+        // — sshd reads the channel requests in order and only sets
+        // `SSH_AUTH_SOCK` on the launched process if forwarding was
+        // already requested when the shell starts. Issued without
+        // `want_reply`; failures (server has `AllowAgentForwarding no`)
+        // are not fatal — the user still gets a normal shell, they
+        // just can't hop further with their local keys.
+        if self.agent_forwarding
+            && let Err(e) = channel.agent_forward(false).await
+        {
+            tracing::warn!("agent_forward request failed (non-fatal): {}", e);
+        }
+
         // Request shell
         channel.request_shell(false).await
             .map_err(|e| SshError::Channel(format!("Shell request failed: {}", e)))?;
@@ -1075,31 +1350,45 @@ impl SshEngine {
         // I/O bridging
         let (output_tx, output_rx) = mpsc::unbounded_channel::<Vec<u8>>();
         let (writer_tx, mut writer_rx) = mpsc::unbounded_channel::<Vec<u8>>();
+        let (resize_tx, mut resize_rx) = mpsc::unbounded_channel::<(u16, u16)>();
 
         let mut channel_writer = channel.make_writer();
 
-        // Reader task
+        // Reader task — multiplexes incoming PTY data with outgoing
+        // window-change requests so we only own `channel` in one place.
         let reader_task = tokio::spawn(async move {
             let mut channel = channel;
             loop {
-                let bytes: Option<Vec<u8>> = match channel.wait().await {
-                    Some(ChannelMsg::Data { data }) => Some(data.to_vec()),
-                    Some(ChannelMsg::ExtendedData { data, ext: 1 }) => Some(data.to_vec()),
-                    Some(ChannelMsg::ExtendedData { .. }) => continue,
-                    Some(ChannelMsg::ExitStatus { exit_status }) => {
-                        tracing::info!("Remote exited with status {}", exit_status);
-                        break;
+                tokio::select! {
+                    msg = channel.wait() => {
+                        let bytes: Option<Vec<u8>> = match msg {
+                            Some(ChannelMsg::Data { data }) => Some(data.to_vec()),
+                            Some(ChannelMsg::ExtendedData { data, ext: 1 }) => Some(data.to_vec()),
+                            Some(ChannelMsg::ExtendedData { .. }) => continue,
+                            Some(ChannelMsg::ExitStatus { exit_status }) => {
+                                tracing::info!("Remote exited with status {}", exit_status);
+                                break;
+                            }
+                            Some(ChannelMsg::Eof) | None => {
+                                tracing::info!("SSH channel closed");
+                                break;
+                            }
+                            _ => continue,
+                        };
+                        if let Some(b) = bytes
+                            && output_tx.send(b).is_err()
+                        {
+                            break;
+                        }
                     }
-                    Some(ChannelMsg::Eof) | None => {
-                        tracing::info!("SSH channel closed");
-                        break;
+                    Some((cols, rows)) = resize_rx.recv() => {
+                        if let Err(e) = channel
+                            .window_change(cols as u32, rows as u32, 0, 0)
+                            .await
+                        {
+                            tracing::warn!("SSH window-change failed: {}", e);
+                        }
                     }
-                    _ => continue,
-                };
-                if let Some(b) = bytes
-                    && output_tx.send(b).is_err()
-                {
-                    break;
                 }
             }
         });
@@ -1125,9 +1414,13 @@ impl SshEngine {
             SshSession {
                 _handle: shared_handle,
                 writer_tx,
+                resize_tx,
                 _reader_task: reader_task,
                 _writer_task: writer_task,
                 _port_forward_tasks: pf_tasks,
+                // Default — overridden by the engine right after this
+                // returns via `sftp_open_timeout` assignment.
+                sftp_open_timeout: std::time::Duration::from_secs(10),
             },
             output_rx,
         ))
@@ -1195,57 +1488,9 @@ mod tests {
         assert!(engine.host_key_check.is_some());
     }
 
-    /// Integration test: connect to a real SSH server.
-    /// Run with: cargo test -p oryxis-ssh -- --ignored real_ssh
-    #[tokio::test]
-    #[ignore]
-    async fn real_ssh_connect_with_key() {
-        let key_pem = std::fs::read_to_string("[REDACTED-KEY-PATH]")
-            .expect("Key file not found");
-
-        // Step 1: test key decode
-        let private_key = match russh::keys::decode_secret_key(&key_pem, None) {
-            Ok(kp) => {
-                println!("Key decoded OK: {:?}", kp.algorithm());
-                kp
-            }
-            Err(e) => panic!("Key decode FAILED: {}", e),
-        };
-
-        // Step 2: raw TCP + handshake
-        let config = Arc::new(client::Config::default());
-        let handler = ClientHandler {
-            hostname: "[REDACTED-IP]".into(),
-            port: 22,
-            host_key_check: Some(Arc::new(|_h, _p, _t, _f| HostKeyStatus::Known)),
-            host_key_ask_tx: None,
-        };
-        let mut handle = match client::connect(config, "[REDACTED-IP]:22", handler).await {
-            Ok(h) => {
-                println!("TCP + handshake OK");
-                h
-            }
-            Err(e) => panic!("Connect FAILED: {}", e),
-        };
-
-        // Step 3: try publickey with rsa-sha2-256
-        println!("Key algorithm: {:?}", private_key.algorithm());
-        println!("Key public algorithm: {:?}", private_key.public_key().algorithm());
-        let key = PrivateKeyWithHashAlg::new(
-            Arc::new(private_key),
-            Some(HashAlg::Sha256),
-        );
-        match handle.authenticate_publickey("root", key).await {
-            Ok(res) if res.success() => println!("Publickey auth SUCCESS"),
-            Ok(_) => println!("Publickey auth REJECTED"),
-            Err(e) => println!("Publickey auth ERROR: {}", e),
-        }
-
-        // Step 4: try password
-        match handle.authenticate_password("root", "[REDACTED-PASSWORD]").await {
-            Ok(res) if res.success() => println!("Password auth SUCCESS"),
-            Ok(_) => println!("Password auth REJECTED"),
-            Err(e) => println!("Password auth ERROR: {}", e),
-        }
-    }
+    // (Personal integration test against a private SSH server was
+    // removed — it had hardcoded credentials and a path that only
+    // existed on the original author's machine, and didn't compile in
+    // CI anyway. End-to-end SSH coverage now lives in the
+    // `tests/` directory once the harness is wired.)
 }

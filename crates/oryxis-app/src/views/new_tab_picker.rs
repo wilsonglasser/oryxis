@@ -18,50 +18,56 @@ impl Oryxis {
     /// `self.show_new_tab_picker` before rendering and stacking it on top of
     /// the base view.
     pub(crate) fn view_new_tab_picker(&self) -> Element<'_, Message> {
+        // Internal right-padding leaves room for the floating "Ctrl+K"
+        // affordance so the typed value never slides under the hint.
         let search = text_input("Search hosts or tabs", &self.new_tab_picker_search)
             .on_input(Message::NewTabPickerSearchChanged)
-            .padding(14)
+            .padding(Padding {
+                top: 14.0,
+                right: 64.0,
+                bottom: 14.0,
+                left: 14.0,
+            })
             .size(14)
-            .style(|_, status| text_input::Style {
-                background: Background::Color(OryxisColors::t().bg_surface),
-                border: Border {
-                    radius: Radius::from(8.0),
-                    width: match status {
-                        text_input::Status::Focused { .. } => 1.5,
-                        _ => 1.0,
-                    },
-                    color: match status {
-                        text_input::Status::Focused { .. } => OryxisColors::t().accent,
-                        _ => OryxisColors::t().border,
-                    },
-                },
-                icon: OryxisColors::t().text_muted,
-                placeholder: OryxisColors::t().text_muted,
-                value: OryxisColors::t().text_primary,
-                selection: OryxisColors::t().accent,
+            .style(crate::widgets::rounded_input_style);
+
+        // Right-anchored "Ctrl+K" hint inside a styled chip so it reads
+        // as a keyboard affordance rather than placeholder text. Lives
+        // in a Stack on top of the input — `text` has no click handler,
+        // so focus-on-click still works on the wider left portion.
+        let ctrl_k_chip = container(
+            text("Ctrl+K").size(11).color(OryxisColors::t().text_muted),
+        )
+        .padding(Padding {
+            top: 2.0,
+            right: 6.0,
+            bottom: 2.0,
+            left: 6.0,
+        })
+        .style(|_| container::Style {
+            background: Some(Background::Color(OryxisColors::t().bg_hover)),
+            border: Border {
+                radius: Radius::from(4.0),
+                ..Default::default()
+            },
+            ..Default::default()
+        });
+        let ctrl_k_overlay = container(ctrl_k_chip)
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .align_x(iced::alignment::Horizontal::Right)
+            .align_y(iced::alignment::Vertical::Center)
+            .padding(Padding {
+                top: 0.0,
+                right: 12.0,
+                bottom: 0.0,
+                left: 0.0,
             });
 
-        let ctrl_k_hint = text("Ctrl+K").size(11).color(OryxisColors::t().text_muted);
-
-        let search_bar = container(
-            row![
-                search,
-            ]
-            .align_y(iced::Alignment::Center),
-        )
-        .width(Length::Fill);
-
-        // Hint to the right of the search (overlaid-ish; for now a separate
-        // column row since we don't have input-suffix in iced stable).
-        let search_block = column![
-            search_bar,
-            Space::new().height(4),
-            row![
-                Space::new().width(Length::Fill),
-                ctrl_k_hint,
-                Space::new().width(12),
-            ],
-        ];
+        let search_block = iced::widget::Stack::new()
+            .push(search)
+            .push(ctrl_k_overlay)
+            .width(Length::Fill);
 
         // Filter + order: most-recently-used first, fall back to stable order.
         let needle = self.new_tab_picker_search.to_lowercase();
@@ -86,7 +92,7 @@ impl Oryxis {
         let list_header = row![
             text("Recent connections").size(13).font(iced::Font {
                 weight: iced::font::Weight::Bold,
-                ..iced::Font::with_name("Inter")
+                ..iced::Font::with_name(crate::theme::SYSTEM_UI_FAMILY)
             }).color(OryxisColors::t().text_primary),
             Space::new().width(Length::Fill),
         ]
@@ -167,7 +173,13 @@ impl Oryxis {
             ..Default::default()
         });
 
-        container(body)
+        // Wrap the body in a MouseArea with a no-op press so clicks inside
+        // the picker don't fall through to the dismiss backdrop below.
+        let body_trap: Element<'_, Message> = MouseArea::new(body)
+            .on_press(Message::NoOp)
+            .into();
+
+        container(body_trap)
             .width(Length::Fill)
             .height(Length::Fill)
             .center_x(Length::Fill)
@@ -198,7 +210,7 @@ fn picker_row<'a>(
 
     let label_text = text(label.to_string()).size(13).font(iced::Font {
         weight: iced::font::Weight::Semibold,
-        ..iced::Font::with_name("Inter")
+        ..iced::Font::with_name(crate::theme::SYSTEM_UI_FAMILY)
     }).color(OryxisColors::t().text_primary);
 
     let breadcrumb_text = text(breadcrumb).size(12).color(OryxisColors::t().accent);
@@ -233,11 +245,17 @@ fn picker_row<'a>(
     .into()
 }
 
-/// Transparent backdrop that dismisses the picker on click. Meant to be
-/// stacked below the picker body.
+/// Semi-transparent black backdrop that dismisses the picker on click.
+/// Meant to be stacked below the picker body.
 pub(crate) fn new_tab_picker_backdrop<'a>() -> Element<'a, Message> {
     MouseArea::new(
-        container(Space::new()).width(Length::Fill).height(Length::Fill),
+        container(Space::new())
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .style(|_| container::Style {
+                background: Some(Background::Color(Color::from_rgba(0.0, 0.0, 0.0, 0.5))),
+                ..Default::default()
+            }),
     )
     .on_press(Message::HideNewTabPicker)
     .into()

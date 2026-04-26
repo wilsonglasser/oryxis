@@ -265,16 +265,27 @@ impl Oryxis {
                 ..Default::default()
             });
 
-            let accept_btn = button(
-                container(text(crate::i18n::t("hk_add_and_continue")).size(13).color(OryxisColors::t().text_primary))
+            let accept_btn = {
+                let fg = crate::theme::contrast_text_for(OryxisColors::t().success);
+                button(
+                    container(
+                        text(crate::i18n::t("hk_add_and_continue"))
+                            .size(13)
+                            .font(iced::Font {
+                                weight: iced::font::Weight::Semibold,
+                                ..iced::Font::with_name(crate::theme::SYSTEM_UI_FAMILY)
+                            })
+                            .color(fg),
+                    )
                     .padding(Padding { top: 10.0, right: 24.0, bottom: 10.0, left: 24.0 }),
-            )
-            .on_press(Message::SshHostKeyAcceptAndSave)
-            .style(|_, _| button::Style {
-                background: Some(Background::Color(OryxisColors::t().success)),
-                border: Border { radius: Radius::from(8.0), ..Default::default() },
-                ..Default::default()
-            });
+                )
+                .on_press(Message::SshHostKeyAcceptAndSave)
+                .style(|_, _| button::Style {
+                    background: Some(Background::Color(OryxisColors::t().success)),
+                    border: Border { radius: Radius::from(8.0), ..Default::default() },
+                    ..Default::default()
+                })
+            };
 
             let btm: Element<'_, Message> = row![
                 close_btn,
@@ -366,16 +377,27 @@ impl Oryxis {
                         ..Default::default()
                     }),
                     Space::new().width(Length::Fill),
-                    button(
-                        container(text("Start over").size(13).color(OryxisColors::t().text_primary))
+                    {
+                        let fg = crate::theme::contrast_text_for(OryxisColors::t().success);
+                        button(
+                            container(
+                                text(crate::i18n::t("start_over"))
+                                    .size(13)
+                                    .font(iced::Font {
+                                        weight: iced::font::Weight::Semibold,
+                                        ..iced::Font::with_name(crate::theme::SYSTEM_UI_FAMILY)
+                                    })
+                                    .color(fg),
+                            )
                             .padding(Padding { top: 10.0, right: 24.0, bottom: 10.0, left: 24.0 }),
-                    )
-                    .on_press(Message::SshRetry)
-                    .style(|_, _| button::Style {
-                        background: Some(Background::Color(OryxisColors::t().success)),
-                        border: Border { radius: Radius::from(8.0), ..Default::default() },
-                        ..Default::default()
-                    }),
+                        )
+                        .on_press(Message::SshRetry)
+                        .style(|_, _| button::Style {
+                            background: Some(Background::Color(OryxisColors::t().success)),
+                            border: Border { radius: Radius::from(8.0), ..Default::default() },
+                            ..Default::default()
+                        })
+                    },
                 ]
                 .align_y(iced::Alignment::Center)
                 .into()

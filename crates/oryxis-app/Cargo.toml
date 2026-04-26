@@ -1,11 +1,37 @@
 [package]
 name = "oryxis-app"
-version = "0.3.3"
+version = "0.4.0"
 edition = "2024"
+description = "Modern SSH client built in Rust — terminal, SFTP, and host management with a sane keyboard-driven UI."
+license.workspace = true
+homepage = "https://github.com/wilsonglasser/oryxis"
 
 [[bin]]
 name = "oryxis"
 path = "src/main.rs"
+
+# cargo-deb metadata. Run `cargo deb -p oryxis-app --no-build` after a
+# `cargo build --release` to produce a Debian package under
+# `target/debian/`. Depends only on the GUI runtime libs winit needs.
+[package.metadata.deb]
+name = "oryxis"
+maintainer = "Wilson Glasser <wilsonglasser@gmail.com>"
+copyright = "2026, Wilson Glasser <wilsonglasser@gmail.com>"
+license-file = ["../../LICENSE", "0"]
+extended-description = """Oryxis is a Rust-native SSH client. It bundles a terminal, an
+SFTP browser, and host management with a focus on keyboard-driven flow."""
+depends = "$auto, libgtk-3-0, libwayland-client0, libxkbcommon0"
+section = "net"
+priority = "optional"
+assets = [
+    ["target/release/oryxis", "usr/bin/", "755"],
+    ["target/release/oryxis-mcp", "usr/bin/", "755"],
+    ["../../resources/oryxis.desktop", "usr/share/applications/", "644"],
+    ["../../resources/logo_64.png", "usr/share/icons/hicolor/64x64/apps/oryxis.png", "644"],
+    ["../../resources/logo_128.png", "usr/share/icons/hicolor/128x128/apps/oryxis.png", "644"],
+    ["../../resources/logo_256.png", "usr/share/icons/hicolor/256x256/apps/oryxis.png", "644"],
+    ["../../README.md", "usr/share/doc/oryxis/README.md", "644"],
+]
 
 [dependencies]
 oryxis-core = { workspace = true }
@@ -22,11 +48,28 @@ uuid = { workspace = true }
 chrono = { workspace = true }
 rfd = "0.15"
 image = "0.25"
-iced_fonts = { version = "0.3", features = ["lucide"] }
+iced_fonts = { version = "0.3", features = ["lucide", "codicon"] }
 serde = { workspace = true }
 serde_json = { workspace = true }
-reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
+reqwest = { version = "0.12", features = ["json", "rustls-tls", "stream"], default-features = false }
+# Async stream combinators — used by the AI streaming path to fold the
+# reqwest byte stream into provider-specific SSE chunks.
+futures-util = "0.3"
 arboard = "3"
+# Cross-platform "open this file with the OS default app" — used by the
+# SFTP edit-in-place flow to launch the user's editor on a downloaded
+# temp copy. Tiny crate, no transitive deps of note.
+open = "5"
+# Sentry's default `transport` feature pulls native-tls (and openssl-sys on
+# Linux). The hidden `rustls` feature routes its internal reqwest via rustls
+# instead, matching the rest of the project's TLS stack.
+sentry = { version = "0.47", default-features = false, features = ["backtrace", "contexts", "debug-images", "panic", "release-health", "reqwest", "rustls"] }
+sentry-tracing = "0.47"
 
 [target.'cfg(windows)'.build-dependencies]
 winresource = "0.1"
+
+[dev-dependencies]
+# Property-based fuzzing for path/name helpers — generates random
+# inputs to flush out edge cases the hand-written cases missed.
+proptest = "1"

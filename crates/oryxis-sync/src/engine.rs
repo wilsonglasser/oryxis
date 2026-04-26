@@ -90,6 +90,12 @@ impl SyncEngine {
             return Ok(());
         }
 
+        // rustls 0.23 requires an explicit CryptoProvider when both
+        // `ring` and `aws-lc-rs` could be linked transitively. We pin
+        // `ring` here once, before any TLS handshake. `install_default`
+        // errors if already installed — fine, treat as idempotent.
+        let _ = rustls::crypto::ring::default_provider().install_default();
+
         let (shutdown_tx, _) = tokio::sync::broadcast::channel(1);
         self.shutdown_tx = Some(shutdown_tx.clone());
 

@@ -1,8 +1,7 @@
 //! Bottom status bar — connection state, keepalive info, and host summary.
 
-use iced::border::Radius;
-use iced::widget::{container, row, text, Space};
-use iced::{Background, Border, Element, Length, Padding};
+use iced::widget::{column, container, row, text, Space};
+use iced::{Background, Element, Length, Padding};
 
 use crate::app::{Message, Oryxis};
 use crate::theme::OryxisColors;
@@ -25,7 +24,17 @@ impl Oryxis {
             OryxisColors::t().text_muted
         };
 
-        container(
+        // 1 px hairline on top only — iced's Border has a single width that
+        // applies to all four sides, so a dedicated separator widget is the
+        // way to keep just the top edge.
+        let top_hairline = container(Space::new().height(1))
+            .width(Length::Fill)
+            .style(|_| container::Style {
+                background: Some(Background::Color(OryxisColors::t().border)),
+                ..Default::default()
+            });
+
+        let bar = container(
             row![
                 text(status_text).size(12).color(status_color),
                 Space::new().width(Length::Fill),
@@ -36,9 +45,9 @@ impl Oryxis {
         .width(Length::Fill)
         .style(|_| container::Style {
             background: Some(Background::Color(OryxisColors::t().bg_sidebar)),
-            border: Border { color: OryxisColors::t().border, width: 1.0, radius: Radius::from(0.0) },
             ..Default::default()
-        })
-        .into()
+        });
+
+        column![top_hairline, bar].into()
     }
 }

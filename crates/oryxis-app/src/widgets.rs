@@ -6,12 +6,62 @@
 
 use iced::border::Radius;
 use iced::widget::button::Status as BtnStatus;
-use iced::widget::{button, container, pick_list, text, Row, Space};
-use iced::{Background, Border, Color, Element, Length, Padding};
+use iced::widget::{button, container, pick_list, text, text_input, Row, Space};
+use iced::{Background, Border, Color, Element, Length, Padding, Theme};
 
 use crate::app::Message;
 use crate::state::View;
 use crate::theme::OryxisColors;
+
+/// Corner radius used for text inputs and pick lists across the UI.
+/// Bumped from the iced default (~2 px) so form controls feel modern and
+/// match the rounded look of the cards and buttons.
+pub const INPUT_RADIUS: f32 = 10.0;
+
+/// Shared style closure for `text_input`. Apply via `.style(rounded_input_style)`
+/// to get the app's accent-focused look with the consistent 10 px radius.
+pub fn rounded_input_style(_theme: &Theme, status: text_input::Status) -> text_input::Style {
+    let c = OryxisColors::t();
+    let (border_color, border_width) = match status {
+        text_input::Status::Focused { .. } => (c.accent, 1.5),
+        text_input::Status::Disabled => (c.border, 1.0),
+        _ => (c.border, 1.0),
+    };
+    text_input::Style {
+        background: Background::Color(c.bg_surface),
+        border: Border {
+            radius: Radius::from(INPUT_RADIUS),
+            width: border_width,
+            color: border_color,
+        },
+        icon: c.text_muted,
+        placeholder: c.text_muted,
+        value: c.text_primary,
+        selection: c.accent,
+    }
+}
+
+/// Shared style closure for `pick_list` — matches `rounded_input_style` so
+/// selects and inputs sit side-by-side with the same geometry.
+pub fn rounded_pick_list_style(_theme: &Theme, status: pick_list::Status) -> pick_list::Style {
+    let c = OryxisColors::t();
+    let border_color = match status {
+        pick_list::Status::Opened { .. } => c.accent,
+        pick_list::Status::Hovered => c.accent_hover,
+        _ => c.border,
+    };
+    pick_list::Style {
+        text_color: c.text_primary,
+        placeholder_color: c.text_muted,
+        handle_color: c.text_muted,
+        background: Background::Color(c.bg_surface),
+        border: Border {
+            radius: Radius::from(INPUT_RADIUS),
+            width: 1.0,
+            color: border_color,
+        },
+    }
+}
 
 pub(crate) fn sidebar_nav_btn<'a>(
     icon_widget: iced::widget::Text<'a>,
@@ -178,7 +228,7 @@ pub(crate) fn panel_option_pick<'a>(
             Space::new().width(10),
             text(label).size(13).color(OryxisColors::t().text_secondary),
             Space::new().width(Length::Fill),
-            pick_list(options, Some(selected), on_change).width(120),
+            pick_list(options, Some(selected), on_change).width(120).padding(10).style(rounded_pick_list_style),
         ]
         .align_y(iced::Alignment::Center),
     )
@@ -200,7 +250,7 @@ pub(crate) fn panel_option_pick_jump<'a>(
             Space::new().width(10),
             text(label).size(13).color(OryxisColors::t().text_secondary),
             Space::new().width(Length::Fill),
-            pick_list(options, Some(selected), on_change).width(140),
+            pick_list(options, Some(selected), on_change).width(140).padding(10).style(rounded_pick_list_style),
         ]
         .align_y(iced::Alignment::Center),
     )
@@ -226,17 +276,94 @@ pub(crate) fn settings_row<'a>(label: &'static str, value: String) -> Element<'a
     .into()
 }
 
+/// Same shape as `settings_row`, but the value text renders in the
+/// accent color and a click anywhere on the row dispatches
+/// `Message::OpenUrl(url)` so the OS default browser opens it. Used in
+/// the About panel for the GitHub line.
+pub(crate) fn settings_row_link<'a>(
+    label: &'a str,
+    display: String,
+    url: String,
+) -> Element<'a, Message> {
+    let body = container(
+        iced::widget::row![
+            text(label.to_owned())
+                .size(13)
+                .color(OryxisColors::t().text_secondary),
+            Space::new().width(Length::Fill),
+            text(display).size(13).color(OryxisColors::t().accent),
+        ],
+    )
+    .padding(Padding { top: 6.0, right: 12.0, bottom: 6.0, left: 12.0 })
+    .width(300)
+    .style(|_| container::Style {
+        background: Some(Background::Color(OryxisColors::t().bg_surface)),
+        border: Border { radius: Radius::from(6.0), ..Default::default() },
+        ..Default::default()
+    });
+    iced::widget::MouseArea::new(body)
+        .on_press(Message::OpenUrl(url))
+        .interaction(iced::mouse::Interaction::Pointer)
+        .into()
+}
+
+/// Wide call-to-action button — Semibold label, theme-defined
+/// `button_bg` / `button_text` pair, fixed 380-wide / 8 px radius.
+/// Used for empty-state primary actions on Keys / Snippets and
+/// anywhere else we want the same prominent affordance.
+pub(crate) fn cta_button<'a>(label: String, msg: Message) -> Element<'a, Message> {
+    let fg = OryxisColors::t().button_text;
+    button(
+        container(
+            text(label)
+                .size(14)
+                .font(iced::Font {
+                    weight: iced::font::Weight::Semibold,
+                    ..iced::Font::with_name(crate::theme::SYSTEM_UI_FAMILY)
+                })
+                .color(fg),
+        )
+        .padding(Padding { top: 12.0, right: 0.0, bottom: 12.0, left: 0.0 })
+        .width(380)
+        .center_x(380),
+    )
+    .on_press(msg)
+    .width(380)
+    .style(|_, status| {
+        let bg = match status {
+            iced::widget::button::Status::Hovered => OryxisColors::t().button_bg_hover,
+            _ => OryxisColors::t().button_bg,
+        };
+        button::Style {
+            background: Some(Background::Color(bg)),
+            border: Border { radius: Radius::from(8.0), ..Default::default() },
+            ..Default::default()
+        }
+    })
+    .into()
+}
+
 /// Primary styled button — bold Inter, compact vertical padding, wide
 /// horizontal padding. Used for Connect / Save / Cancel / destructive actions.
 /// On hover the background lightens; keeps consistent language with split
 /// buttons elsewhere (+ HOST, + ADD).
 pub(crate) fn styled_button(label: &str, msg: Message, color: Color) -> Element<'_, Message> {
+    // Accent-colored CTAs share the per-theme `button_text` pairing so
+    // every primary button (here, `+ HOST`, `+ ADD`, `New Snippet`,
+    // etc.) renders in the same text color across the app. Non-accent
+    // call sites (Cancel on bg_hover, Destroy on error, …) still
+    // auto-pick via the luminance heuristic.
+    let fg = if color == OryxisColors::t().accent {
+        OryxisColors::t().button_text
+    } else {
+        crate::theme::contrast_text_for(color)
+    };
     button(
         container(
             text(label.to_owned()).size(12).font(iced::Font {
                 weight: iced::font::Weight::Bold,
-                ..iced::Font::with_name("Inter")
-            }).color(OryxisColors::t().text_primary),
+                ..iced::Font::with_name(crate::theme::SYSTEM_UI_FAMILY)
+            }).color(fg),
         )
         .padding(Padding { top: 5.0, right: 18.0, bottom: 5.0, left: 18.0 }),
     )

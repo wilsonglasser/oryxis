@@ -212,6 +212,16 @@ fn en(key: &str) -> &'static str {
         "close_other_tabs" => "Close Other Tabs",
         "close_all_tabs" => "Close All Tabs",
         "reconnect" => "Reconnect",
+        "duplicate_tab" => "Duplicate Tab",
+        "duplicate_new_window" => "Duplicate in New Window",
+        "rename" => "Rename",
+        "sftp" => "SFTP",
+        "rename_folder" => "Rename folder",
+        "delete_folder" => "Delete folder",
+        "delete_folder_question" => "Delete this folder?",
+        "delete_folder_keep_hosts" => "Move hosts to root",
+        "delete_folder_with_hosts" => "Delete folder and hosts",
+        "folder_name" => "Folder name",
         "auto_reconnect" => "Auto-reconnect on disconnect",
         "max_reconnect_attempts" => "Maximum reconnect attempts",
         "terminal_font" => "Terminal Font",
@@ -290,6 +300,8 @@ fn en(key: &str) -> &'static str {
         "import_password" => "Import password...",
         "import_password_hint" => "Enter the password used when exporting",
         "expose_to_mcp" => "Expose to MCP / AI",
+        "forward_ssh_agent" => "Forward SSH Agent",
+        "github" => "GitHub",
         "share" => "Share",
 
         // Misc
@@ -315,6 +327,8 @@ fn en(key: &str) -> &'static str {
         "hk_reject" => "Reject",
         "hk_continue" => "Continue",
         "hk_add_and_continue" => "Add and continue",
+        "select_file" => "Select File...",
+        "start_over" => "Start over",
         "hk_add_question" => "Do you want to add it to the list of known hosts?",
 
         _ => "???",
@@ -489,6 +503,8 @@ fn pt_br(key: &str) -> Option<&'static str> {
         "import_password" => "Senha de importação...",
         "import_password_hint" => "Digite a senha usada na exportação",
         "expose_to_mcp" => "Expor ao MCP / IA",
+        "forward_ssh_agent" => "Encaminhar SSH Agent",
+        "github" => "GitHub",
         "share" => "Compartilhar",
 
         "search_hosts" => "Buscar hosts...",
@@ -512,6 +528,8 @@ fn pt_br(key: &str) -> Option<&'static str> {
         "hk_reject" => "Rejeitar",
         "hk_continue" => "Continuar",
         "hk_add_and_continue" => "Adicionar e continuar",
+        "select_file" => "Selecionar arquivo...",
+        "start_over" => "Recomeçar",
         "hk_add_question" => "Deseja adicioná-lo à lista de hosts conhecidos?",
 
         _ => return None,
@@ -667,6 +685,8 @@ fn es(key: &str) -> Option<&'static str> {
         "import_password" => "Contraseña de importación...",
         "import_password_hint" => "Ingrese la contraseña usada al exportar",
         "expose_to_mcp" => "Exponer al MCP / IA",
+        "forward_ssh_agent" => "Reenviar SSH Agent",
+        "github" => "GitHub",
 
         "hk_unknown_title" => "Clave de Host Desconocida",
         "hk_unknown_desc" => "No se puede verificar la autenticidad de este host. ¿Desea confiar en este host?",
@@ -680,6 +700,8 @@ fn es(key: &str) -> Option<&'static str> {
         "hk_reject" => "Rechazar",
         "hk_continue" => "Continuar",
         "hk_add_and_continue" => "Agregar y continuar",
+        "select_file" => "Seleccionar archivo...",
+        "start_over" => "Empezar de nuevo",
         "hk_add_question" => "¿Desea agregarlo a la lista de hosts conocidos?",
 
         _ => return None,
@@ -835,6 +857,8 @@ fn fr(key: &str) -> Option<&'static str> {
         "import_password" => "Mot de passe d'importation...",
         "import_password_hint" => "Entrez le mot de passe utilisé lors de l'exportation",
         "expose_to_mcp" => "Exposer au MCP / IA",
+        "forward_ssh_agent" => "Transférer SSH Agent",
+        "github" => "GitHub",
 
         "hk_unknown_title" => "Clé d'Hôte Inconnue",
         "hk_unknown_desc" => "L'authenticité de cet hôte ne peut être vérifiée. Voulez-vous faire confiance à cet hôte ?",
@@ -848,6 +872,8 @@ fn fr(key: &str) -> Option<&'static str> {
         "hk_reject" => "Refuser",
         "hk_continue" => "Continuer",
         "hk_add_and_continue" => "Ajouter et continuer",
+        "select_file" => "Sélectionner un fichier...",
+        "start_over" => "Recommencer",
         "hk_add_question" => "Voulez-vous l'ajouter à la liste des hôtes connus ?",
 
         _ => return None,
@@ -1003,6 +1029,8 @@ fn de(key: &str) -> Option<&'static str> {
         "import_password" => "Import-Passwort...",
         "import_password_hint" => "Geben Sie das beim Export verwendete Passwort ein",
         "expose_to_mcp" => "Für MCP / KI freigeben",
+        "forward_ssh_agent" => "SSH-Agent weiterleiten",
+        "github" => "GitHub",
 
         "hk_unknown_title" => "Unbekannter Host-Schlüssel",
         "hk_unknown_desc" => "Die Authentizität dieses Hosts kann nicht überprüft werden. Möchten Sie diesem Host vertrauen?",
@@ -1016,6 +1044,8 @@ fn de(key: &str) -> Option<&'static str> {
         "hk_reject" => "Ablehnen",
         "hk_continue" => "Fortfahren",
         "hk_add_and_continue" => "Hinzufügen und fortfahren",
+        "select_file" => "Datei auswählen...",
+        "start_over" => "Neu starten",
         "hk_add_question" => "Möchten Sie ihn zur Liste der bekannten Hosts hinzufügen?",
 
         _ => return None,
@@ -1171,6 +1201,8 @@ fn it(key: &str) -> Option<&'static str> {
         "import_password" => "Password di importazione...",
         "import_password_hint" => "Inserisci la password usata durante l'esportazione",
         "expose_to_mcp" => "Esponi a MCP / IA",
+        "forward_ssh_agent" => "Inoltra SSH Agent",
+        "github" => "GitHub",
 
         "hk_unknown_title" => "Chiave Host Sconosciuta",
         "hk_unknown_desc" => "L'autenticità di questo host non può essere verificata. Vuoi fidarti di questo host?",
@@ -1184,6 +1216,8 @@ fn it(key: &str) -> Option<&'static str> {
         "hk_reject" => "Rifiuta",
         "hk_continue" => "Continua",
         "hk_add_and_continue" => "Aggiungi e continua",
+        "select_file" => "Seleziona file...",
+        "start_over" => "Ricomincia",
         "hk_add_question" => "Vuoi aggiungerlo alla lista degli host conosciuti?",
 
         _ => return None,
@@ -1339,6 +1373,8 @@ fn zh(key: &str) -> Option<&'static str> {
         "import_password" => "导入密码...",
         "import_password_hint" => "输入导出时使用的密码",
         "expose_to_mcp" => "暴露给 MCP / AI",
+        "forward_ssh_agent" => "转发 SSH 代理",
+        "github" => "GitHub",
 
         "hk_unknown_title" => "未知主机密钥",
         "hk_unknown_desc" => "无法验证此主机的真实性。您要信任此主机吗？",
@@ -1352,6 +1388,8 @@ fn zh(key: &str) -> Option<&'static str> {
         "hk_reject" => "拒绝",
         "hk_continue" => "继续",
         "hk_add_and_continue" => "添加并继续",
+        "select_file" => "选择文件...",
+        "start_over" => "重新开始",
         "hk_add_question" => "您要将其添加到已知主机列表中吗？",
 
         _ => return None,
@@ -1507,6 +1545,8 @@ fn ja(key: &str) -> Option<&'static str> {
         "import_password" => "インポートパスワード...",
         "import_password_hint" => "エクスポート時に使用したパスワードを入力",
         "expose_to_mcp" => "MCP / AIに公開",
+        "forward_ssh_agent" => "SSHエージェント転送",
+        "github" => "GitHub",
 
         "hk_unknown_title" => "不明なホストキー",
         "hk_unknown_desc" => "このホストの信頼性を確認できません。このホストを信頼しますか？",
@@ -1520,6 +1560,8 @@ fn ja(key: &str) -> Option<&'static str> {
         "hk_reject" => "拒否",
         "hk_continue" => "続行",
         "hk_add_and_continue" => "追加して続行",
+        "select_file" => "ファイルを選択...",
+        "start_over" => "やり直す",
         "hk_add_question" => "既知のホストのリストに追加しますか？",
 
         _ => return None,
@@ -1675,6 +1717,8 @@ fn ru(key: &str) -> Option<&'static str> {
         "import_password" => "Пароль импорта...",
         "import_password_hint" => "Введите пароль, использованный при экспорте",
         "expose_to_mcp" => "Открыть для MCP / ИИ",
+        "forward_ssh_agent" => "Перенаправить SSH-агент",
+        "github" => "GitHub",
 
         "hk_unknown_title" => "Неизвестный ключ хоста",
         "hk_unknown_desc" => "Подлинность этого хоста не может быть проверена. Вы хотите доверять этому хосту?",
@@ -1688,6 +1732,8 @@ fn ru(key: &str) -> Option<&'static str> {
         "hk_reject" => "Отклонить",
         "hk_continue" => "Продолжить",
         "hk_add_and_continue" => "Добавить и продолжить",
+        "select_file" => "Выбрать файл...",
+        "start_over" => "Начать заново",
         "hk_add_question" => "Хотите добавить его в список известных хостов?",
 
         _ => return None,

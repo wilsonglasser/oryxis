@@ -1,4 +1,8 @@
 fn main() {
+    // SENTRY_DSN is read at compile time via option_env! in main.rs; tell cargo
+    // to rebuild when it changes so release builds pick up the secret.
+    println!("cargo:rerun-if-env-changed=SENTRY_DSN");
+
     // Embed the app icon + VERSIONINFO resource so NVIDIA / AMD overlay software
     // classifies Oryxis as a productivity app (not a game) based on the
     // FileDescription / ProductName / Comments metadata rather than defaulting

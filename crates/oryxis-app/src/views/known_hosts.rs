@@ -22,7 +22,7 @@ impl Oryxis {
                         Space::new().width(6),
                         text("Re-verify all").size(11).font(iced::Font {
                             weight: iced::font::Weight::Bold,
-                            ..iced::Font::with_name("Inter")
+                            ..iced::Font::with_name(crate::theme::SYSTEM_UI_FAMILY)
                         }).color(OryxisColors::t().error),
                     ].align_y(iced::Alignment::Center),
                 )
@@ -90,7 +90,7 @@ impl Oryxis {
                         Space::new().width(6),
                         text("Remove").size(11).font(iced::Font {
                             weight: iced::font::Weight::Bold,
-                            ..iced::Font::with_name("Inter")
+                            ..iced::Font::with_name(crate::theme::SYSTEM_UI_FAMILY)
                         }).color(OryxisColors::t().error),
                     ].align_y(iced::Alignment::Center),
                 )

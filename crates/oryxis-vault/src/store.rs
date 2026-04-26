@@ -165,6 +165,13 @@ impl VaultStore {
         let db = SqliteConn::open(&path)?;
         db.execute_batch("PRAGMA journal_mode=WAL;")?;
 
+        // Tighten file permissions to 0600 on Unix — the vault holds
+        // encrypted credentials but if another local user can read the
+        // ciphertext they can attempt offline brute force at leisure.
+        // Best-effort: a missing chmod (e.g., readonly fs, exotic mount)
+        // shouldn't break vault open, just log and move on.
+        Self::tighten_perms(&path);
+
         let mut store = Self {
             db,
             master_key: None,
@@ -172,6 +179,32 @@ impl VaultStore {
         };
         store.create_tables()?;
         Ok(store)
+    }
+
+    #[cfg(unix)]
+    fn tighten_perms(path: &Path) {
+        use std::os::unix::fs::PermissionsExt as _;
+        for ext in ["", "-wal", "-shm"] {
+            let mut p = path.to_path_buf();
+            if !ext.is_empty()
+                && let Some(name) = p.file_name().and_then(|n| n.to_str())
+            {
+                p.set_file_name(format!("{}{}", name, ext));
+            }
+            if !p.exists() {
+                continue;
+            }
+            if let Err(e) = std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o600)) {
+                tracing::warn!("vault chmod 0600 on {}: {e}", p.display());
+            }
+        }
+    }
+
+    #[cfg(not(unix))]
+    fn tighten_perms(_path: &Path) {
+        // Windows ACL hardening is a separate effort — the default
+        // user-profile ACL already keeps other local users out of
+        // %APPDATA%, so we no-op here for now.
     }
 
     fn create_tables(&mut self) -> Result<(), VaultError> {
@@ -285,6 +318,7 @@ impl VaultStore {
         let _ = self.db.execute_batch("ALTER TABLE connections ADD COLUMN detected_os TEXT;");
         let _ = self.db.execute_batch("ALTER TABLE connections ADD COLUMN custom_icon TEXT;");
         let _ = self.db.execute_batch("ALTER TABLE connections ADD COLUMN custom_color TEXT;");
+        let _ = self.db.execute_batch("ALTER TABLE connections ADD COLUMN agent_forwarding INTEGER DEFAULT 0;");
         let _ = self.db.execute_batch("ALTER TABLE keys ADD COLUMN updated_at TEXT;");
         let _ = self.db.execute_batch("ALTER TABLE groups ADD COLUMN created_at TEXT;");
         let _ = self.db.execute_batch("ALTER TABLE groups ADD COLUMN updated_at TEXT;");
@@ -508,8 +542,8 @@ impl VaultStore {
             "INSERT OR REPLACE INTO connections
              (id, label, hostname, port, username, auth_method, key_id, group_id,
               jump_chain, proxy, tags, notes, color, password, last_used, created_at, updated_at, identity_id, mcp_enabled, port_forwards,
-              detected_os, custom_icon, custom_color)
-             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20,?21,?22,?23)",
+              detected_os, custom_icon, custom_color, agent_forwarding)
+             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20,?21,?22,?23,?24)",
             params![
                 conn.id.to_string(),
                 conn.label,
@@ -537,6 +571,7 @@ impl VaultStore {
                 conn.detected_os,
                 conn.custom_icon,
                 conn.custom_color,
+                conn.agent_forwarding as i32,
             ],
         )?;
         Ok(())
@@ -555,12 +590,12 @@ impl VaultStore {
         let query = match mcp_filter {
             Some(true) => {
                 "SELECT id, label, hostname, port, username, auth_method, key_id, group_id,
-                        jump_chain, proxy, tags, notes, color, last_used, created_at, updated_at, identity_id, mcp_enabled, port_forwards, detected_os, custom_icon, custom_color
+                        jump_chain, proxy, tags, notes, color, last_used, created_at, updated_at, identity_id, mcp_enabled, port_forwards, detected_os, custom_icon, custom_color, agent_forwarding
                  FROM connections WHERE mcp_enabled = 1 ORDER BY label"
             }
             _ => {
                 "SELECT id, label, hostname, port, username, auth_method, key_id, group_id,
-                        jump_chain, proxy, tags, notes, color, last_used, created_at, updated_at, identity_id, mcp_enabled, port_forwards, detected_os, custom_icon, custom_color
+                        jump_chain, proxy, tags, notes, color, last_used, created_at, updated_at, identity_id, mcp_enabled, port_forwards, detected_os, custom_icon, custom_color, agent_forwarding
                  FROM connections ORDER BY label"
             }
         };
@@ -630,6 +665,11 @@ impl VaultStore {
                     detected_os: row.get::<_, Option<String>>(19).unwrap_or(None),
                     custom_icon: row.get::<_, Option<String>>(20).unwrap_or(None),
                     custom_color: row.get::<_, Option<String>>(21).unwrap_or(None),
+                    agent_forwarding: row
+                        .get::<_, Option<i32>>(22)
+                        .unwrap_or(None)
+                        .unwrap_or(0)
+                        != 0,
                 })
             })?
             .collect::<Result<Vec<_>, _>>()?;
@@ -1542,13 +1582,12 @@ impl VaultStore {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use oryxis_core::models::connection::{AuthMethod, Connection};
+    use oryxis_core::models::connection::Connection;
     use oryxis_core::models::group::Group;
     use oryxis_core::models::key::{KeyAlgorithm, SshKey};
     use oryxis_core::models::known_host::KnownHost;
     use oryxis_core::models::log_entry::{LogEntry, LogEvent};
     use oryxis_core::models::snippet::Snippet;
-    use std::path::PathBuf;
     use tempfile::NamedTempFile;
 
     fn temp_vault() -> VaultStore {
@@ -2357,5 +2396,88 @@ mod tests {
         assert_eq!(result.connections_added, 1);
         assert_eq!(result.snippets_added, 0);
         assert_eq!(result.known_hosts_added, 0);
+    }
+
+    // ── Settings (key/value) ─────────────────────────────────────
+    // Backs the app's user-preference persistence. Worth pinning
+    // explicitly since the UI relies on round-trip identity for
+    // anything stored as a string (timeouts, keepalive, parallelism,
+    // booleans-as-strings, etc.).
+
+    #[test]
+    fn settings_round_trip_string_value() {
+        let vault = temp_vault();
+        vault.set_setting("scrollback_rows", "10000").unwrap();
+        assert_eq!(
+            vault.get_setting("scrollback_rows").unwrap().as_deref(),
+            Some("10000"),
+        );
+    }
+
+    #[test]
+    fn settings_get_unset_returns_none() {
+        let vault = temp_vault();
+        // No tests should pollute global state, but defensively
+        // assert that a fresh vault has nothing under our key.
+        assert_eq!(
+            vault.get_setting("never_set_anywhere").unwrap(),
+            None,
+        );
+    }
+
+    #[test]
+    fn settings_overwrite_replaces_value() {
+        let vault = temp_vault();
+        vault.set_setting("ai_provider", "anthropic").unwrap();
+        vault.set_setting("ai_provider", "openai").unwrap();
+        assert_eq!(
+            vault.get_setting("ai_provider").unwrap().as_deref(),
+            Some("openai"),
+        );
+    }
+
+    #[test]
+    fn settings_persist_across_reopen() {
+        // Opening the vault file twice (different `VaultStore`
+        // instances backed by the same SQLite file) must yield the
+        // same setting value — the bug we're guarding against is
+        // someone adding a transient cache that doesn't write through.
+        use tempfile::NamedTempFile;
+        let tmp = NamedTempFile::new().unwrap();
+        let path = tmp.path().to_path_buf();
+        {
+            let v = VaultStore::open(&path).unwrap();
+            v.set_setting("sftp_concurrency", "4").unwrap();
+        }
+        let v2 = VaultStore::open(&path).unwrap();
+        assert_eq!(
+            v2.get_setting("sftp_concurrency").unwrap().as_deref(),
+            Some("4"),
+        );
+    }
+
+    #[test]
+    fn settings_handle_unicode_values() {
+        // The settings panel exposes `ai_system_prompt` as a free-form
+        // string the user can fill with anything. Make sure we round-
+        // trip non-ASCII without mangling.
+        let vault = temp_vault();
+        let value = "Olá 🚀 — system prompt with emojis";
+        vault.set_setting("ai_system_prompt", value).unwrap();
+        assert_eq!(
+            vault.get_setting("ai_system_prompt").unwrap().as_deref(),
+            Some(value),
+        );
+    }
+
+    #[test]
+    fn settings_independent_keys_dont_collide() {
+        let vault = temp_vault();
+        vault.set_setting("a", "1").unwrap();
+        vault.set_setting("b", "2").unwrap();
+        vault.set_setting("c", "3").unwrap();
+        assert_eq!(vault.get_setting("a").unwrap().as_deref(), Some("1"));
+        assert_eq!(vault.get_setting("b").unwrap().as_deref(), Some("2"));
+        assert_eq!(vault.get_setting("c").unwrap().as_deref(), Some("3"));
     }
 }

@@ -89,8 +89,24 @@ impl Oryxis {
         let content = self.view_content();
         let status_bar = self.view_status_bar();
 
-        let right_side = column![tab_bar, content].height(Length::Fill);
-        let main_row = row![sidebar, right_side].height(Length::Fill);
+        // 1 px separators: horizontal below the tab bar, vertical between
+        // sidebar and content. Same hairline look as Termius — anchors the
+        // chrome visually without stealing contrast.
+        let h_separator = container(Space::new().height(1))
+            .width(Length::Fill)
+            .style(|_| container::Style {
+                background: Some(Background::Color(OryxisColors::t().border)),
+                ..Default::default()
+            });
+        let v_separator = container(Space::new().width(1))
+            .height(Length::Fill)
+            .style(|_| container::Style {
+                background: Some(Background::Color(OryxisColors::t().border)),
+                ..Default::default()
+            });
+
+        let right_side = column![tab_bar, h_separator, content].height(Length::Fill);
+        let main_row = row![sidebar, v_separator, right_side].height(Length::Fill);
         let layout = column![main_row, status_bar];
 
         let base: Element<'_, Message> = container(layout)
@@ -119,7 +135,8 @@ impl Oryxis {
                         .on_input(Message::SharePasswordChanged)
                         .secure(true)
                         .padding(10)
-                        .width(280),
+                        .width(280)
+                        .style(crate::widgets::rounded_input_style),
                     Space::new().height(8),
                     row![
                         text(crate::i18n::t("include_private_keys")).size(13).color(OryxisColors::t().text_secondary),
@@ -183,6 +200,136 @@ impl Oryxis {
             );
         }
 
+        // Folder rename modal — shown after the user picks "Rename" from
+        // the folder context menu.
+        if let Some((_gid, ref input)) = self.folder_rename {
+            let dialog = container(
+                column![
+                    text(crate::i18n::t("rename_folder"))
+                        .size(16)
+                        .color(OryxisColors::t().text_primary),
+                    Space::new().height(12),
+                    text_input(crate::i18n::t("folder_name"), input.as_str())
+                        .on_input(Message::FolderRenameInput)
+                        .on_submit(Message::ConfirmRenameFolder)
+                        .padding(10)
+                        .width(320)
+                        .style(crate::widgets::rounded_input_style),
+                    Space::new().height(12),
+                    row![
+                        styled_button(crate::i18n::t("save"), Message::ConfirmRenameFolder, OryxisColors::t().accent),
+                        Space::new().width(8),
+                        styled_button(crate::i18n::t("cancel"), Message::CancelFolderModal, OryxisColors::t().text_muted),
+                    ],
+                ]
+                .padding(24),
+            )
+            .style(|_| container::Style {
+                background: Some(Background::Color(OryxisColors::t().bg_surface)),
+                border: Border { radius: Radius::from(12.0), color: OryxisColors::t().border, width: 1.0 },
+                ..Default::default()
+            });
+
+            let backdrop: Element<'_, Message> = MouseArea::new(
+                container(Space::new()).width(Length::Fill).height(Length::Fill),
+            )
+            .on_press(Message::CancelFolderModal)
+            .into();
+
+            let centered = container(dialog)
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .center_x(Length::Fill)
+                .center_y(Length::Fill);
+
+            return wrap_with_resize(
+                Stack::new()
+                    .push(base)
+                    .push(backdrop)
+                    .push(centered)
+                    .width(Length::Fill)
+                    .height(Length::Fill)
+                    .into(),
+                resize_overlay,
+            );
+        }
+
+        // Folder delete confirmation — three-way choice instead of a yes/no
+        // since destroying hosts vs only the folder are very different
+        // intentions and deserve explicit affordances.
+        if let Some(gid) = self.folder_delete {
+            let folder_name = self
+                .groups
+                .iter()
+                .find(|g| g.id == gid)
+                .map(|g| g.label.clone())
+                .unwrap_or_default();
+            let host_count = self
+                .connections
+                .iter()
+                .filter(|c| c.group_id == Some(gid))
+                .count();
+            let dialog = container(
+                column![
+                    text(crate::i18n::t("delete_folder_question"))
+                        .size(16)
+                        .color(OryxisColors::t().text_primary),
+                    Space::new().height(6),
+                    text(format!("\"{}\" — {} hosts", folder_name, host_count))
+                        .size(13)
+                        .color(OryxisColors::t().text_muted),
+                    Space::new().height(16),
+                    styled_button(
+                        crate::i18n::t("delete_folder_keep_hosts"),
+                        Message::DeleteFolderKeepHosts,
+                        OryxisColors::t().accent,
+                    ),
+                    Space::new().height(8),
+                    styled_button(
+                        crate::i18n::t("delete_folder_with_hosts"),
+                        Message::DeleteFolderWithHosts,
+                        OryxisColors::t().error,
+                    ),
+                    Space::new().height(8),
+                    styled_button(
+                        crate::i18n::t("cancel"),
+                        Message::CancelFolderModal,
+                        OryxisColors::t().text_muted,
+                    ),
+                ]
+                .padding(24)
+                .width(360),
+            )
+            .style(|_| container::Style {
+                background: Some(Background::Color(OryxisColors::t().bg_surface)),
+                border: Border { radius: Radius::from(12.0), color: OryxisColors::t().border, width: 1.0 },
+                ..Default::default()
+            });
+
+            let backdrop: Element<'_, Message> = MouseArea::new(
+                container(Space::new()).width(Length::Fill).height(Length::Fill),
+            )
+            .on_press(Message::CancelFolderModal)
+            .into();
+
+            let centered = container(dialog)
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .center_x(Length::Fill)
+                .center_y(Length::Fill);
+
+            return wrap_with_resize(
+                Stack::new()
+                    .push(base)
+                    .push(backdrop)
+                    .push(centered)
+                    .width(Length::Fill)
+                    .height(Length::Fill)
+                    .into(),
+                resize_overlay,
+            );
+        }
+
         // New-tab picker (opens via the "+" button in the tab bar).
         if self.show_new_tab_picker {
             let picker = self.view_new_tab_picker();
@@ -192,6 +339,21 @@ impl Oryxis {
                     .push(base)
                     .push(backdrop)
                     .push(picker)
+                    .width(Length::Fill)
+                    .height(Length::Fill)
+                    .into(),
+                resize_overlay,
+            );
+        }
+
+        // Tab-jump modal — Termius-style "Jump to" list. Opens via the
+        // ⋯ button in the tab bar or the global Ctrl+J shortcut.
+        if self.show_tab_jump {
+            let modal = self.view_tab_jump_modal();
+            return wrap_with_resize(
+                Stack::new()
+                    .push(base)
+                    .push(modal)
                     .width(Length::Fill)
                     .height(Length::Fill)
                     .into(),
@@ -245,7 +407,7 @@ impl Oryxis {
             ]
             .into();
 
-            wrap_with_resize(
+            return wrap_with_resize(
                 Stack::new()
                     .push(base)
                     .push(backdrop)
@@ -254,10 +416,101 @@ impl Oryxis {
                     .height(Length::Fill)
                     .into(),
                 resize_overlay,
-            )
-        } else {
-            wrap_with_resize(base, resize_overlay)
+            );
         }
+
+        // SFTP row right-click menu — rendered at the layout root so the
+        // window-coord click position lines up with the menu origin
+        // without having to compensate for the title + tab bar height.
+        if let Some(ref row_menu) = self.sftp.row_menu {
+            let remote_connected = self.sftp.client.is_some();
+            // Count of selected rows in the same pane as the right-
+            // clicked row — drives the bulk vs single menu mode.
+            let selection_count_same_pane = self
+                .sftp
+                .selected_rows
+                .iter()
+                .filter(|(s, _)| *s == row_menu.side)
+                .count();
+            let menu = crate::views::sftp::row_context_menu_box(
+                row_menu,
+                remote_connected,
+                selection_count_same_pane,
+            );
+            let backdrop: Element<'_, Message> = MouseArea::new(
+                container(Space::new())
+                    .width(Length::Fill)
+                    .height(Length::Fill),
+            )
+            .on_press(Message::SftpRowMenuClose)
+            .into();
+            // Nudge the menu a few px down/right so it doesn't sit
+            // directly under the cursor — feels like the OS-native menu
+            // anchoring.
+            let nudged_x = row_menu.x + 2.0;
+            let nudged_y = row_menu.y + 2.0;
+            let menu_height = crate::views::sftp::row_context_menu_height(
+                row_menu,
+                remote_connected,
+                selection_count_same_pane,
+            );
+            let x = nudged_x
+                .min(self.window_size.width - crate::views::sftp::ROW_CONTEXT_MENU_WIDTH)
+                .max(0.0);
+            let y = nudged_y
+                .min(self.window_size.height - menu_height)
+                .max(0.0);
+            let positioned_menu: Element<'_, Message> = column![
+                Space::new().height(y),
+                row![Space::new().width(x), menu],
+            ]
+            .into();
+            return wrap_with_resize(
+                Stack::new()
+                    .push(base)
+                    .push(backdrop)
+                    .push(positioned_menu)
+                    .width(Length::Fill)
+                    .height(Length::Fill)
+                    .into(),
+                resize_overlay,
+            );
+        }
+
+        // Floating drag ghost — rendered last so it sits above
+        // everything else. Tracks the cursor while a cross-pane SFTP
+        // drag is in flight; non-interactive so it doesn't swallow the
+        // release event that ends the drag.
+        if let Some(drag) = &self.sftp.drag
+            && drag.active
+        {
+            let ghost = crate::views::sftp::drag_ghost(&drag.label);
+            // Offset slightly down-right of the cursor — matches OS
+            // drag previews and keeps the label out from under the
+            // pointer.
+            let x = (self.mouse_position.x + 12.0)
+                .min(self.window_size.width - 200.0)
+                .max(0.0);
+            let y = (self.mouse_position.y + 12.0)
+                .min(self.window_size.height - 40.0)
+                .max(0.0);
+            let positioned: Element<'_, Message> = column![
+                Space::new().height(y),
+                row![Space::new().width(x), ghost],
+            ]
+            .into();
+            return wrap_with_resize(
+                Stack::new()
+                    .push(base)
+                    .push(positioned)
+                    .width(Length::Fill)
+                    .height(Length::Fill)
+                    .into(),
+                resize_overlay,
+            );
+        }
+
+        wrap_with_resize(base, resize_overlay)
     }
 
     pub(crate) fn render_overlay_menu(&self, overlay: &OverlayState) -> Element<'_, Message> {
@@ -293,9 +546,18 @@ impl Oryxis {
                     context_menu_item(iced_fonts::lucide::user(), crate::i18n::t("new_identity"), Message::ShowIdentityPanel, OryxisColors::t().text_secondary),
                 ].into()
             }
+            OverlayContent::FolderActions(gid) => {
+                let gid = *gid;
+                column![
+                    context_menu_item(iced_fonts::lucide::pencil(), crate::i18n::t("rename"), Message::StartRenameFolder(gid), OryxisColors::t().text_secondary),
+                    context_menu_item(iced_fonts::lucide::trash(), crate::i18n::t("delete"), Message::StartDeleteFolder(gid), OryxisColors::t().error),
+                ].into()
+            }
             OverlayContent::TabActions(idx) => {
                 let idx = *idx;
                 column![
+                    context_menu_item(iced_fonts::lucide::copy(), crate::i18n::t("duplicate_tab"), Message::DuplicateTab(idx), OryxisColors::t().text_secondary),
+                    context_menu_item(iced_fonts::lucide::external_link(), crate::i18n::t("duplicate_new_window"), Message::DuplicateInNewWindow(idx), OryxisColors::t().text_secondary),
                     context_menu_item(iced_fonts::lucide::rotate_cw(), crate::i18n::t("reconnect"), Message::ReconnectTab(idx), OryxisColors::t().accent),
                     context_menu_item(iced_fonts::lucide::x(), crate::i18n::t("close_tab"), Message::CloseTab(idx), OryxisColors::t().text_secondary),
                     context_menu_item(iced_fonts::lucide::x(), crate::i18n::t("close_other_tabs"), Message::CloseOtherTabs(idx), OryxisColors::t().text_secondary),
@@ -337,6 +599,7 @@ impl Oryxis {
                 View::Snippets => self.view_snippets(),
                 View::KnownHosts => self.view_known_hosts(),
                 View::History => self.view_history(),
+                View::Sftp => self.view_sftp(),
                 View::Settings => self.view_settings(),
                 View::Terminal => self.view_terminal(),
             }

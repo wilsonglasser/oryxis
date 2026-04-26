@@ -19,6 +19,7 @@ impl Oryxis {
         let settings_sidebar = {
             let items: Vec<(&str, SettingsSection)> = vec![
                 (crate::i18n::t("terminal_settings"), SettingsSection::Terminal),
+                ("SFTP", SettingsSection::Sftp),
                 (crate::i18n::t("ai_assistant"), SettingsSection::AI),
                 (crate::i18n::t("theme"), SettingsSection::Theme),
                 (crate::i18n::t("shortcuts"), SettingsSection::Shortcuts),
@@ -26,11 +27,8 @@ impl Oryxis {
                 (crate::i18n::t("sync"), SettingsSection::Sync),
                 (crate::i18n::t("about"), SettingsSection::About),
             ];
-            let mut col = column![
-                text(crate::i18n::t("settings")).size(16).color(OryxisColors::t().text_primary),
-                Space::new().height(12),
-            ]
-            .padding(Padding { top: 20.0, right: 8.0, bottom: 8.0, left: 8.0 });
+            let mut col = column![]
+                .padding(Padding { top: 12.0, right: 8.0, bottom: 8.0, left: 8.0 });
 
             for (label, section) in items {
                 let is_active = self.settings_section == section;
@@ -66,18 +64,23 @@ impl Oryxis {
                 col = col.push(btn);
             }
 
-            container(col)
+            // Wrap the panel in a row so we can stick a 1 px hairline on the
+            // right edge only — iced's Border applies to all four sides at
+            // once, so we compose the single-edge separator instead.
+            let right_hairline = container(Space::new().width(1))
+                .height(Length::Fill)
+                .style(|_| container::Style {
+                    background: Some(Background::Color(OryxisColors::t().border)),
+                    ..Default::default()
+                });
+            let panel = container(col)
                 .width(200)
                 .height(Length::Fill)
                 .style(|_| container::Style {
                     background: Some(Background::Color(OryxisColors::t().bg_sidebar)),
-                    border: Border {
-                        color: OryxisColors::t().border,
-                        width: 1.0,
-                        radius: Radius::from(0.0),
-                    },
                     ..Default::default()
-                })
+                });
+            iced::widget::row![panel, right_hairline].height(Length::Fill)
         };
 
         // ── Settings content ──
@@ -87,8 +90,6 @@ impl Oryxis {
                     toggle_row(crate::i18n::t("copy_on_select"), self.setting_copy_on_select, Message::ToggleCopyOnSelect),
                     Space::new().height(10),
                     toggle_row(crate::i18n::t("bold_bright"), self.setting_bold_is_bright, Message::ToggleBoldIsBright),
-                    Space::new().height(10),
-                    toggle_row(crate::i18n::t("bell_sound"), self.setting_bell_sound, Message::ToggleBellSound),
                     Space::new().height(10),
                     toggle_row(crate::i18n::t("keyword_highlight"), self.setting_keyword_highlight, Message::ToggleKeywordHighlight),
                 ]);
@@ -143,8 +144,9 @@ impl Oryxis {
                     Space::new().height(8),
                     text_input("0", &self.setting_keepalive_interval)
                         .on_input(Message::SettingKeepaliveChanged)
-                        .size(13)
-                        .width(120),
+                        .padding(10)
+                        .width(240)
+                        .style(crate::widgets::rounded_input_style),
                 ]);
 
                 let scrollback_section = panel_section(column![
@@ -155,8 +157,9 @@ impl Oryxis {
                     Space::new().height(8),
                     text_input("10000", &self.setting_scrollback_rows)
                         .on_input(Message::SettingScrollbackChanged)
-                        .size(13)
-                        .width(120),
+                        .padding(10)
+                        .width(240)
+                        .style(crate::widgets::rounded_input_style),
                 ]);
 
                 // Font picker — full list, regardless of whether a given font is
@@ -175,7 +178,7 @@ impl Oryxis {
                         fonts,
                         Some(self.terminal_font_name.clone()),
                         Message::TerminalFontChanged,
-                    ).width(260),
+                    ).width(260).padding(10).style(crate::widgets::rounded_pick_list_style),
                 ]);
 
                 let auto_update_enabled = self.setting_auto_check_updates;
@@ -248,8 +251,9 @@ impl Oryxis {
                     Space::new().height(4),
                     text_input("5", &self.setting_max_reconnect_attempts)
                         .on_input(Message::SettingMaxReconnectChanged)
-                        .size(13)
-                        .width(80),
+                        .padding(10)
+                        .width(240)
+                        .style(crate::widgets::rounded_input_style),
                 ]);
 
                 scrollable(
@@ -282,6 +286,92 @@ impl Oryxis {
                 .into()
             }
 
+            SettingsSection::Sftp => {
+                let concurrency_section = panel_section(column![
+                    text("Transfer parallelism")
+                        .size(13)
+                        .color(OryxisColors::t().text_primary),
+                    Space::new().height(4),
+                    text("Concurrent SFTP transfers per session (1–8). Each slot opens its own subsystem channel — higher = faster bulk transfers, more bandwidth pressure.")
+                        .size(11)
+                        .color(OryxisColors::t().text_muted),
+                    Space::new().height(8),
+                    text_input("2", &self.setting_sftp_concurrency)
+                        .on_input(Message::SettingSftpConcurrencyChanged)
+                        .padding(10)
+                        .width(240)
+                        .style(crate::widgets::rounded_input_style),
+                ]);
+
+                let timeout_input = |label: &str, hint: &str, value: &str, on_input: fn(String) -> Message| {
+                    panel_section(column![
+                        text(label.to_string())
+                            .size(13)
+                            .color(OryxisColors::t().text_primary),
+                        Space::new().height(4),
+                        text(hint.to_string())
+                            .size(11)
+                            .color(OryxisColors::t().text_muted),
+                        Space::new().height(8),
+                        text_input("0", value)
+                            .on_input(on_input)
+                            .padding(10)
+                            .width(240)
+                            .style(crate::widgets::rounded_input_style),
+                    ])
+                };
+
+                let connect_section = timeout_input(
+                    "Connect timeout (s)",
+                    "How long to wait for the TCP connect + SSH transport handshake before failing fast. Default 15.",
+                    &self.setting_sftp_connect_timeout,
+                    Message::SettingSftpConnectTimeoutChanged,
+                );
+                let auth_section = timeout_input(
+                    "Auth timeout (s)",
+                    "Cap on the authentication phase. Long enough to cover password + 2FA prompts. Default 30.",
+                    &self.setting_sftp_auth_timeout,
+                    Message::SettingSftpAuthTimeoutChanged,
+                );
+                let session_section = timeout_input(
+                    "Channel open timeout (s)",
+                    "How long a single SFTP / PTY / sibling channel-open is allowed to take before erroring. Default 10.",
+                    &self.setting_sftp_session_timeout,
+                    Message::SettingSftpSessionTimeoutChanged,
+                );
+                let op_section = timeout_input(
+                    "Operation timeout (s)",
+                    "Per-request cap (list, read, write, rename). Bounds the \"Loading…\" state when the remote stops responding. Applies live to the active session. Default 30.",
+                    &self.setting_sftp_op_timeout,
+                    Message::SettingSftpOpTimeoutChanged,
+                );
+
+                scrollable(
+                    container(
+                        column![
+                            text("SFTP")
+                                .size(18)
+                                .color(OryxisColors::t().text_primary),
+                            Space::new().height(16),
+                            concurrency_section,
+                            Space::new().height(12),
+                            connect_section,
+                            Space::new().height(12),
+                            auth_section,
+                            Space::new().height(12),
+                            session_section,
+                            Space::new().height(12),
+                            op_section,
+                            Space::new().height(24),
+                        ]
+                        .width(Length::Fill),
+                    )
+                    .padding(Padding { top: 20.0, right: 24.0, bottom: 24.0, left: 24.0 }),
+                )
+                .height(Length::Fill)
+                .into()
+            }
+
             SettingsSection::AI => {
                 let enable_section = panel_section(column![
                     toggle_row(crate::i18n::t("enable_ai"), self.ai_enabled, Message::ToggleAiEnabled),
@@ -296,33 +386,63 @@ impl Oryxis {
                 .width(Length::Fill);
 
                 if self.ai_enabled {
-                    let provider_display = match self.ai_provider.as_str() {
-                        "anthropic" => "Anthropic",
-                        "openai" => "OpenAI",
-                        "gemini" => "Google Gemini",
-                        "custom" => "Custom",
-                        _ => "Anthropic",
-                    };
-                    let provider_options = vec![
-                        "Anthropic".to_string(),
-                        "OpenAI".to_string(),
-                        "Google Gemini".to_string(),
-                        "Custom".to_string(),
-                    ];
+                    let current_info = crate::ai::provider_info(&self.ai_provider);
+                    let provider_options: Vec<String> = crate::ai::PROVIDERS
+                        .iter()
+                        .map(|p| p.display.to_string())
+                        .collect();
 
                     let provider_pick: Element<'_, Message> = pick_list(
                         provider_options,
-                        Some(provider_display.to_string()),
+                        Some(current_info.display.to_string()),
                         Message::AiProviderChanged,
                     )
-                    .width(200)
+                    .width(220)
+                    .padding(10)
+                    .style(crate::widgets::rounded_pick_list_style)
                     .into();
 
                     let model_input: Element<'_, Message> = text_input("Model name...", &self.ai_model)
                         .on_input(Message::AiModelChanged)
                         .padding(10)
                         .width(300)
+                        .style(crate::widgets::rounded_input_style)
                         .into();
+
+                    // When a key is already stored, the input is cleared
+                    // for security but the placeholder communicates that
+                    // a key exists — typing replaces it on save.
+                    let key_placeholder = if self.ai_api_key_set {
+                        "\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}\u{2022} saved — type to replace"
+                    } else {
+                        "sk-..."
+                    };
+                    let key_input: Element<'_, Message> = text_input(key_placeholder, &self.ai_api_key)
+                        .on_input(Message::AiApiKeyChanged)
+                        .on_submit(Message::SaveAiApiKey)
+                        .secure(true)
+                        .padding(10)
+                        .width(280)
+                        .style(crate::widgets::rounded_input_style)
+                        .into();
+                    let save_btn = styled_button("Save", Message::SaveAiApiKey, OryxisColors::t().accent);
+                    let key_status: Element<'_, Message> = if self.ai_api_key_set {
+                        row![
+                            iced_fonts::lucide::circle_check().size(13).color(OryxisColors::t().success),
+                            Space::new().width(6),
+                            text("API key saved").size(12).color(OryxisColors::t().success),
+                        ]
+                        .align_y(iced::Alignment::Center)
+                        .into()
+                    } else {
+                        row![
+                            iced_fonts::lucide::circle_alert().size(13).color(OryxisColors::t().text_muted),
+                            Space::new().width(6),
+                            text("No API key set").size(12).color(OryxisColors::t().text_muted),
+                        ]
+                        .align_y(iced::Alignment::Center)
+                        .into()
+                    };
 
                     let mut provider_col = column![
                         panel_field("Provider", provider_pick),
@@ -330,57 +450,65 @@ impl Oryxis {
                         panel_field("Model", model_input),
                     ];
 
-                    if self.ai_provider == "custom" {
-                        let url_input: Element<'_, Message> = text_input("https://api.example.com/v1", &self.ai_api_url)
+                    if current_info.kind == crate::ai::ProviderKind::Custom {
+                        let url_input: Element<'_, Message> = text_input("https://api.example.com/v1/chat/completions", &self.ai_api_url)
                             .on_input(Message::AiApiUrlChanged)
                             .padding(10)
                             .width(300)
+                            .style(crate::widgets::rounded_input_style)
                             .into();
                         provider_col = provider_col
                             .push(Space::new().height(12))
                             .push(panel_field("API URL", url_input));
                     }
 
+                    provider_col = provider_col
+                        .push(Space::new().height(12))
+                        .push(panel_field(
+                            "API Key",
+                            row![key_input, Space::new().width(8), save_btn]
+                                .align_y(iced::Alignment::Center)
+                                .into(),
+                        ))
+                        .push(Space::new().height(4))
+                        .push(key_status);
+
                     content_col = content_col.push(panel_section(provider_col));
 
-                    // API Key section
-                    let key_input: Element<'_, Message> = text_input("sk-...", &self.ai_api_key)
-                        .on_input(Message::AiApiKeyChanged)
-                        .on_submit(Message::SaveAiApiKey)
-                        .secure(true)
+                    // System prompt — multi-line editor that grows with the
+                    // content. `Length::Shrink` lets the editor auto-resize
+                    // to fit its text, capped by the panel's scroll area.
+                    let prompt_editor: Element<'_, Message> = iced::widget::text_editor(&self.ai_system_prompt)
+                        .placeholder("Custom instructions for the AI assistant...")
+                        .on_action(Message::AiSystemPromptAction)
                         .padding(10)
-                        .width(250)
+                        .height(Length::Shrink)
+                        .style(|_theme, status| {
+                            let c = OryxisColors::t();
+                            let (border_color, border_width) = match status {
+                                iced::widget::text_editor::Status::Focused { .. } => (c.accent, 1.5),
+                                _ => (c.border, 1.0),
+                            };
+                            iced::widget::text_editor::Style {
+                                background: iced::Background::Color(c.bg_surface),
+                                border: iced::Border {
+                                    radius: iced::border::Radius::from(crate::widgets::INPUT_RADIUS),
+                                    width: border_width,
+                                    color: border_color,
+                                },
+                                placeholder: c.text_muted,
+                                value: c.text_primary,
+                                selection: c.accent,
+                            }
+                        })
                         .into();
-
-                    // System prompt section
                     let prompt_section = panel_section(column![
-                        panel_field("Additional System Instructions",
-                            text_input("Custom instructions for the AI assistant...", &self.ai_system_prompt)
-                                .on_input(Message::AiSystemPromptChanged)
-                                .padding(10)
-                                .into()
-                        ),
+                        panel_field("Additional System Instructions", prompt_editor),
                         Space::new().height(4),
                         text("Optional. Added to the default system prompt that includes terminal context and bash tool instructions.")
                             .size(11).color(OryxisColors::t().text_muted),
                     ]);
                     content_col = content_col.push(prompt_section);
-
-                    let save_btn = styled_button("Save", Message::SaveAiApiKey, OryxisColors::t().accent);
-
-                    let status: Element<'_, Message> = if self.ai_api_key_set {
-                        text("API key saved \u{2713}").size(12).color(OryxisColors::t().success).into()
-                    } else {
-                        Space::new().height(0).into()
-                    };
-
-                    let key_section = panel_section(column![
-                        panel_field("API Key", row![key_input, Space::new().width(8), save_btn].align_y(iced::Alignment::Center).into()),
-                        Space::new().height(4),
-                        status,
-                    ]);
-
-                    content_col = content_col.push(key_section);
                 }
 
                 scrollable(
@@ -517,7 +645,9 @@ impl Oryxis {
                             Some(active_lang_name),
                             Message::LanguageChanged,
                         )
-                        .width(200),
+                        .width(200)
+                        .padding(10)
+                        .style(crate::widgets::rounded_pick_list_style),
                     ].align_y(iced::Alignment::Center),
                 ]);
 
@@ -584,7 +714,8 @@ impl Oryxis {
                         .on_submit(Message::SetVaultPassword)
                         .secure(true)
                         .padding(10)
-                        .width(300);
+                        .width(300)
+                        .style(crate::widgets::rounded_input_style);
                     let btn = styled_button(crate::i18n::t("set_password"), Message::SetVaultPassword, OryxisColors::t().accent);
                     let error: Element<'_, Message> = if let Some(err) = &self.vault_password_error {
                         text(err.clone()).size(12).color(OryxisColors::t().error).into()
@@ -691,7 +822,8 @@ impl Oryxis {
                         .on_input(Message::ExportPasswordChanged)
                         .secure(true)
                         .padding(10)
-                        .width(300);
+                        .width(300)
+                        .style(crate::widgets::rounded_input_style);
                     let keys_toggle = row![
                         text(crate::i18n::t("include_private_keys")).size(13).color(OryxisColors::t().text_secondary),
                         Space::new().width(Length::Fill),
@@ -724,7 +856,8 @@ impl Oryxis {
                         .on_submit(Message::ImportConfirm)
                         .secure(true)
                         .padding(10)
-                        .width(300);
+                        .width(300)
+                        .style(crate::widgets::rounded_input_style);
                     let confirm_btn = styled_button(crate::i18n::t("import_confirm"), Message::ImportConfirm, OryxisColors::t().success);
                     let cancel_btn = styled_button(crate::i18n::t("cancel"), Message::ExportImportDismiss, OryxisColors::t().text_muted);
                     export_import_section = export_import_section
@@ -756,6 +889,37 @@ impl Oryxis {
                         .push(text(msg).size(12).color(color));
                 }
 
+                // SSH config import — separate card, sits below the
+                // vault export/import. One-shot batch importer; no
+                // preview yet.
+                let ssh_config_btn = styled_button(
+                    "Import ~/.ssh/config",
+                    Message::ImportSshConfig,
+                    OryxisColors::t().accent,
+                );
+                let mut ssh_config_section: iced::widget::Column<'_, Message> = column![
+                    text("SSH config import")
+                        .size(14)
+                        .color(OryxisColors::t().text_muted),
+                    Space::new().height(4),
+                    text(
+                        "Pick an OpenSSH config file (defaults to ~/.ssh/config). Each `Host` block becomes a connection record; wildcards and existing labels are skipped.",
+                    )
+                    .size(11)
+                    .color(OryxisColors::t().text_muted),
+                    Space::new().height(8),
+                    ssh_config_btn,
+                ];
+                if let Some(status) = &self.ssh_config_import_status {
+                    let (msg, color) = match status {
+                        Ok(m) => (m.as_str(), OryxisColors::t().success),
+                        Err(m) => (m.as_str(), OryxisColors::t().error),
+                    };
+                    ssh_config_section = ssh_config_section
+                        .push(Space::new().height(8))
+                        .push(text(msg).size(12).color(color));
+                }
+
                 scrollable(
                     container(
                         column![
@@ -769,6 +933,8 @@ impl Oryxis {
                             mcp_section,
                             Space::new().height(12),
                             panel_section(export_import_section),
+                            Space::new().height(12),
+                            panel_section(ssh_config_section),
                             Space::new().height(24),
                         ]
                         .width(Length::Fill),
@@ -787,7 +953,8 @@ impl Oryxis {
                 )
                 .on_input(Message::SyncDeviceNameChanged)
                 .padding(10)
-                .width(300);
+                .width(300)
+                .style(crate::widgets::rounded_input_style);
 
                 let device_section = panel_section(column![
                     text(crate::i18n::t("sync_device")).size(14).color(OryxisColors::t().text_muted),
@@ -811,7 +978,8 @@ impl Oryxis {
                     |v| Message::SyncModeChanged(v.to_lowercase()),
                 )
                 .text_size(13)
-                .padding(6);
+                .padding(10)
+                .style(crate::widgets::rounded_pick_list_style);
 
                 let mut options_section: iced::widget::Column<'_, Message> = column![
                     text(crate::i18n::t("sync_options")).size(14).color(OryxisColors::t().text_muted),
@@ -881,15 +1049,18 @@ impl Oryxis {
                 let signaling_input = text_input("https://...", &self.sync_signaling_url)
                     .on_input(Message::SyncSignalingUrlChanged)
                     .padding(8)
-                    .width(300);
+                    .width(300)
+                    .style(crate::widgets::rounded_input_style);
                 let relay_input = text_input(crate::i18n::t("sync_relay_optional"), &self.sync_relay_url)
                     .on_input(Message::SyncRelayUrlChanged)
                     .padding(8)
-                    .width(300);
+                    .width(300)
+                    .style(crate::widgets::rounded_input_style);
                 let port_input = text_input("0", &self.sync_listen_port)
                     .on_input(Message::SyncListenPortChanged)
                     .padding(8)
-                    .width(100);
+                    .width(100)
+                    .style(crate::widgets::rounded_input_style);
 
                 let advanced_section = panel_section(column![
                     text(crate::i18n::t("sync_advanced")).size(14).color(OryxisColors::t().text_muted),
@@ -939,7 +1110,11 @@ impl Oryxis {
                     Space::new().height(6),
                     settings_row("License", "AGPL-3.0".into()),
                     Space::new().height(6),
-                    settings_row("GitHub", "github.com/wilsonglasser/oryxis".into()),
+                    crate::widgets::settings_row_link(
+                        crate::i18n::t("github"),
+                        "github.com/wilsonglasser/oryxis".into(),
+                        "https://github.com/wilsonglasser/oryxis".into(),
+                    ),
                 ]);
 
                 let vault_section = panel_section(column![

@@ -1,4 +1,5 @@
 #[cfg(test)]
+#[allow(clippy::module_inception)]
 mod tests {
     use serde_json::{json, Value};
     use tempfile::NamedTempFile;

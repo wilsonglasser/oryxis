@@ -27,13 +27,13 @@ impl Oryxis {
                 row![
                     text("+").size(13).font(iced::Font {
                         weight: iced::font::Weight::Bold,
-                        ..iced::Font::with_name("Inter")
-                    }).color(OryxisColors::t().text_primary),
+                        ..iced::Font::with_name(crate::theme::SYSTEM_UI_FAMILY)
+                    }).color(OryxisColors::t().button_text),
                     Space::new().width(4),
                     text("ADD").size(11).font(iced::Font {
                         weight: iced::font::Weight::Bold,
-                        ..iced::Font::with_name("Inter")
-                    }).color(OryxisColors::t().text_primary),
+                        ..iced::Font::with_name(crate::theme::SYSTEM_UI_FAMILY)
+                    }).color(OryxisColors::t().button_text),
                 ]
                 .align_y(iced::Alignment::Center),
             )
@@ -43,8 +43,8 @@ impl Oryxis {
         .on_press(Message::ToggleKeychainAddMenu)
         .style(|_, status| {
             let bg = match status {
-                BtnStatus::Hovered => OryxisColors::t().accent_hover,
-                _ => OryxisColors::t().accent,
+                BtnStatus::Hovered => OryxisColors::t().button_bg_hover,
+                _ => OryxisColors::t().button_bg,
             };
             button::Style {
                 background: Some(Background::Color(bg)),
@@ -71,7 +71,7 @@ impl Oryxis {
         let add_chevron = button(
             container(
                 iced_fonts::lucide::chevron_down::<iced::Theme, iced::Renderer>()
-                    .size(12).color(OryxisColors::t().text_primary),
+                    .size(12).color(OryxisColors::t().button_text),
             )
             .center_y(Length::Fixed(24.0))
             .padding(Padding { top: 0.0, right: 4.0, bottom: 0.0, left: 4.0 }),
@@ -79,8 +79,8 @@ impl Oryxis {
         .on_press(Message::ToggleKeychainAddMenu)
         .style(|_, status| {
             let bg = match status {
-                BtnStatus::Hovered => OryxisColors::t().accent_hover,
-                _ => OryxisColors::t().accent,
+                BtnStatus::Hovered => OryxisColors::t().button_bg_hover,
+                _ => OryxisColors::t().button_bg,
             };
             button::Style {
                 background: Some(Background::Color(bg)),
@@ -119,7 +119,9 @@ impl Oryxis {
             text_input("Search keys & identities...", &self.key_search)
                 .on_input(Message::KeySearchChanged)
                 .padding(10)
-                .width(Length::Fill),
+                .size(13)
+                .width(Length::Fill)
+                .style(crate::widgets::rounded_input_style),
         )
         .padding(Padding { top: 0.0, right: 24.0, bottom: 12.0, left: 24.0 })
         .width(Length::Fill);
@@ -169,19 +171,10 @@ impl Oryxis {
                     text(crate::i18n::t("add_key_desc"))
                         .size(13).color(OryxisColors::t().text_muted),
                     Space::new().height(24),
-                    button(
-                        container(text(crate::i18n::t("import_key")).size(14).color(OryxisColors::t().text_primary))
-                            .padding(Padding { top: 12.0, right: 0.0, bottom: 12.0, left: 0.0 })
-                            .width(380)
-                            .center_x(380),
-                    )
-                    .on_press(Message::ShowKeyPanel)
-                    .width(380)
-                    .style(|_, _| button::Style {
-                        background: Some(Background::Color(OryxisColors::t().accent)),
-                        border: Border { radius: Radius::from(8.0), ..Default::default() },
-                        ..Default::default()
-                    }),
+                    crate::widgets::cta_button(
+                        crate::i18n::t("import_key").to_string(),
+                        Message::ShowKeyPanel,
+                    ),
                 ]
                 .align_x(iced::Alignment::Center),
             )
@@ -477,14 +470,21 @@ impl Oryxis {
             Space::new().height(6),
             text_input("my-server-key", &self.key_import_label)
                 .on_input(Message::KeyImportLabelChanged)
-                .padding(10),
+                .padding(10)
+                .style(crate::widgets::rounded_input_style),
         ];
 
         // File selector button
         let browse_btn = button(
             container(
                 row![
-                    text("Select File...").size(13).color(OryxisColors::t().text_primary),
+                    text(crate::i18n::t("select_file"))
+                        .size(13)
+                        .font(iced::Font {
+                            weight: iced::font::Weight::Semibold,
+                            ..iced::Font::with_name(crate::theme::SYSTEM_UI_FAMILY)
+                        })
+                        .color(crate::theme::contrast_text_for(OryxisColors::t().accent)),
                 ]
                 .align_y(iced::Alignment::Center),
             )
@@ -615,7 +615,8 @@ impl Oryxis {
             Space::new().height(6),
             text_input("My Identity", &self.identity_form_label)
                 .on_input(Message::IdentityLabelChanged)
-                .padding(10),
+                .padding(10)
+                .style(crate::widgets::rounded_input_style),
         ];
 
         // Username field
@@ -627,7 +628,8 @@ impl Oryxis {
                 Space::new().width(10),
                 text_input("root", &self.identity_form_username)
                     .on_input(Message::IdentityUsernameChanged)
-                    .padding(10),
+                    .padding(10)
+                    .style(crate::widgets::rounded_input_style),
             ].align_y(iced::Alignment::Center),
         ];
 
@@ -648,7 +650,8 @@ impl Oryxis {
                 )
                     .on_input(Message::IdentityPasswordChanged)
                     .secure(!self.identity_form_password_visible)
-                    .padding(10),
+                    .padding(10)
+                    .style(crate::widgets::rounded_input_style),
                 Space::new().width(6),
                 button(
                     if self.identity_form_password_visible {
@@ -679,7 +682,7 @@ impl Oryxis {
                     key_options,
                     Some(self.identity_form_key.clone().unwrap_or_else(|| "(none)".into())),
                     Message::IdentityKeyChanged,
-                ),
+                ).padding(10).style(crate::widgets::rounded_pick_list_style),
             ].align_y(iced::Alignment::Center),
         ];
 

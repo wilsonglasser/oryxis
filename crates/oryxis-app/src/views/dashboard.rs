@@ -47,35 +47,38 @@ impl Oryxis {
             row![
                 toolbar_left,
                 Space::new().width(Length::Fill),
-                button(
-                    container(
-                        row![
-                            text("+").size(13).font(iced::Font {
-                                weight: iced::font::Weight::Bold,
-                                ..iced::Font::with_name("Inter")
-                            }).color(OryxisColors::t().text_primary),
-                            Space::new().width(4),
-                            text("HOST").size(11).font(iced::Font {
-                                weight: iced::font::Weight::Bold,
-                                ..iced::Font::with_name("Inter")
-                            }).color(OryxisColors::t().text_primary),
-                        ].align_y(iced::Alignment::Center),
+                {
+                    let fg = OryxisColors::t().button_text;
+                    button(
+                        container(
+                            row![
+                                text("+").size(13).font(iced::Font {
+                                    weight: iced::font::Weight::Bold,
+                                    ..iced::Font::with_name(crate::theme::SYSTEM_UI_FAMILY)
+                                }).color(fg),
+                                Space::new().width(4),
+                                text("HOST").size(11).font(iced::Font {
+                                    weight: iced::font::Weight::Bold,
+                                    ..iced::Font::with_name(crate::theme::SYSTEM_UI_FAMILY)
+                                }).color(fg),
+                            ].align_y(iced::Alignment::Center),
+                        )
+                        .center_y(Length::Fixed(24.0))
+                        .padding(Padding { top: 0.0, right: 14.0, bottom: 0.0, left: 14.0 }),
                     )
-                    .center_y(Length::Fixed(24.0))
-                    .padding(Padding { top: 0.0, right: 14.0, bottom: 0.0, left: 14.0 }),
-                )
-                .on_press(Message::ShowNewConnection)
-                .style(|_, status| {
-                    let bg = match status {
-                        BtnStatus::Hovered => OryxisColors::t().accent_hover,
-                        _ => OryxisColors::t().accent,
-                    };
-                    button::Style {
-                        background: Some(Background::Color(bg)),
-                        border: Border { radius: Radius::from(6.0), ..Default::default() },
-                        ..Default::default()
-                    }
-                }),
+                    .on_press(Message::ShowNewConnection)
+                    .style(|_, status| {
+                        let bg = match status {
+                            BtnStatus::Hovered => OryxisColors::t().button_bg_hover,
+                            _ => OryxisColors::t().button_bg,
+                        };
+                        button::Style {
+                            background: Some(Background::Color(bg)),
+                            border: Border { radius: Radius::from(6.0), ..Default::default() },
+                            ..Default::default()
+                        }
+                    })
+                },
             ].align_y(iced::Alignment::Center),
         )
         .padding(Padding { top: 20.0, right: 24.0, bottom: 16.0, left: 24.0 })
@@ -87,21 +90,7 @@ impl Oryxis {
                 .on_input(Message::HostSearchChanged)
                 .padding(10)
                 .size(13)
-                .style(|_, status| text_input::Style {
-                    background: Background::Color(OryxisColors::t().bg_surface),
-                    border: Border {
-                        radius: Radius::from(8.0),
-                        width: 1.0,
-                        color: match status {
-                            text_input::Status::Focused { .. } => OryxisColors::t().accent,
-                            _ => OryxisColors::t().border,
-                        },
-                    },
-                    icon: OryxisColors::t().text_muted,
-                    placeholder: OryxisColors::t().text_muted,
-                    value: OryxisColors::t().text_primary,
-                    selection: OryxisColors::t().accent,
-                }),
+                .style(crate::widgets::rounded_input_style),
         )
         .padding(Padding { top: 0.0, right: 24.0, bottom: 12.0, left: 24.0 })
         .width(Length::Fill);
@@ -145,7 +134,8 @@ impl Oryxis {
                         .on_input(Message::QuickHostInput)
                         .on_submit(Message::QuickHostContinue)
                         .padding(14)
-                        .width(380),
+                        .width(380)
+                        .style(crate::widgets::rounded_input_style),
                     Space::new().height(12),
                     // Continue button
                     button(
@@ -207,6 +197,27 @@ impl Oryxis {
                                 ..Default::default()
                             });
 
+                            // ⋮ button — same visual / placement as the
+                            // host-card actions. Anchored to the right of
+                            // the folder row, opens the rename/delete menu.
+                            let actions_btn: Element<'_, Message> = button(
+                                text("\u{22EE}").size(14).color(OryxisColors::t().text_muted),
+                            )
+                            .on_press(Message::ShowFolderActions(gid))
+                            .padding(Padding { top: 1.0, right: 6.0, bottom: 1.0, left: 6.0 })
+                            .style(|_, status| {
+                                let bg = match status {
+                                    BtnStatus::Hovered => OryxisColors::t().bg_hover,
+                                    _ => Color::TRANSPARENT,
+                                };
+                                button::Style {
+                                    background: Some(Background::Color(bg)),
+                                    border: Border { radius: Radius::from(6.0), ..Default::default() },
+                                    ..Default::default()
+                                }
+                            })
+                            .into();
+
                             let folder_card = button(
                                 container(
                                     row![
@@ -217,6 +228,7 @@ impl Oryxis {
                                             Space::new().height(2),
                                             text(count_text).size(10).color(OryxisColors::t().text_muted),
                                         ].width(Length::Fill),
+                                        actions_btn,
                                     ].align_y(iced::Alignment::Center),
                                 )
                                 .padding(Padding { top: 8.0, right: 6.0, bottom: 8.0, left: 8.0 }),

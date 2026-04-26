@@ -1,4 +1,5 @@
 #[cfg(test)]
+#[allow(clippy::module_inception)]
 mod tests {
     use std::sync::{Arc, Mutex};
 
@@ -162,9 +163,11 @@ mod tests {
     async fn sync_engine_start_stop() {
         let vault = test_vault();
         let identity = DeviceIdentity::generate("test");
-        let mut config = SyncConfig::default();
-        config.enabled = true;
-        config.mode = SyncMode::Manual;
+        let config = SyncConfig {
+            enabled: true,
+            mode: SyncMode::Manual,
+            ..SyncConfig::default()
+        };
 
         let mut engine = SyncEngine::new(config, identity, Arc::new(Mutex::new(vault)));
         let _events = engine.take_events();

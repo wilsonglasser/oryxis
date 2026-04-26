@@ -14,10 +14,19 @@ use crate::widgets::styled_button;
 /// drag / minimize / maximize / close before unlocking the vault. Also adds
 /// the edge-resize border so the lock screen is as resizable as the main app.
 fn with_chrome<'a>(body: Element<'a, Message>, maximized: bool) -> Element<'a, Message> {
-    let content: Element<'a, Message> = iced::widget::column![window_chrome_bar(), body]
+    // 1 px hairline between the chrome bar and the screen body — matches the
+    // separator that sits below the tab bar on the main view.
+    let h_separator = iced::widget::container(iced::widget::Space::new().height(1))
         .width(Length::Fill)
-        .height(Length::Fill)
-        .into();
+        .style(|_| iced::widget::container::Style {
+            background: Some(iced::Background::Color(OryxisColors::t().border)),
+            ..Default::default()
+        });
+    let content: Element<'a, Message> =
+        iced::widget::column![window_chrome_bar(), h_separator, body]
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .into();
     let overlay = if maximized { None } else { Some(crate::views::layout::resize_border()) };
     crate::views::layout::wrap_with_resize(content, overlay)
 }
@@ -37,7 +46,8 @@ impl Oryxis {
             .on_submit(Message::VaultSetup)
             .secure(true)
             .padding(12)
-            .width(300);
+            .width(300)
+            .style(crate::widgets::rounded_input_style);
 
         let btn = styled_button(crate::i18n::t("create_vault"), Message::VaultSetup, OryxisColors::t().accent);
 
@@ -93,7 +103,8 @@ impl Oryxis {
             .on_submit(Message::VaultUnlock)
             .secure(true)
             .padding(12)
-            .width(300);
+            .width(300)
+            .style(crate::widgets::rounded_input_style);
 
         let btn = styled_button(crate::i18n::t("unlock"), Message::VaultUnlock, OryxisColors::t().accent);
 

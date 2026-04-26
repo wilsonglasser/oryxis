@@ -17,7 +17,7 @@ repository = "https://github.com/wilsonglasser/oryxis"
 
 [workspace.dependencies]
 # UI
-iced = { version = "0.14", features = ["canvas", "tokio", "advanced", "image"] }
+iced = { version = "0.14", features = ["canvas", "tokio", "advanced", "image", "markdown", "highlighter"] }
 
 # SSH
 russh = "0.60"

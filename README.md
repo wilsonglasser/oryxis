@@ -37,8 +37,8 @@ Pre-built binaries are also available on the [Releases](https://github.com/wilso
 
 | Platform | Architecture | Download |
 |----------|-------------|----------|
-| Linux | x86_64 | [`oryxis-linux-x86_64.tar.gz`](https://github.com/wilsonglasser/oryxis/releases/latest/download/oryxis-linux-x86_64.tar.gz) |
-| Linux | ARM64 | [`oryxis-linux-aarch64.tar.gz`](https://github.com/wilsonglasser/oryxis/releases/latest/download/oryxis-linux-aarch64.tar.gz) |
+| Linux | x86_64 | [`oryxis-linux-x86_64.tar.gz`](https://github.com/wilsonglasser/oryxis/releases/latest/download/oryxis-linux-x86_64.tar.gz) · [`.deb`](https://github.com/wilsonglasser/oryxis/releases/latest/download/oryxis-linux-x86_64.deb) · [`.AppImage`](https://github.com/wilsonglasser/oryxis/releases/latest/download/oryxis-linux-x86_64.AppImage) |
+| Linux | ARM64 | [`oryxis-linux-aarch64.tar.gz`](https://github.com/wilsonglasser/oryxis/releases/latest/download/oryxis-linux-aarch64.tar.gz) · [`.deb`](https://github.com/wilsonglasser/oryxis/releases/latest/download/oryxis-linux-aarch64.deb) · [`.AppImage`](https://github.com/wilsonglasser/oryxis/releases/latest/download/oryxis-linux-aarch64.AppImage) |
 | macOS | Apple Silicon | [`oryxis-macos-aarch64.tar.gz`](https://github.com/wilsonglasser/oryxis/releases/latest/download/oryxis-macos-aarch64.tar.gz) |
 | Windows | x86_64 | [`oryxis-setup-x86_64.exe`](https://github.com/wilsonglasser/oryxis/releases/latest/download/oryxis-setup-x86_64.exe) (installer) |
 | Windows | x86_64 | [`oryxis-windows-x86_64.zip`](https://github.com/wilsonglasser/oryxis/releases/latest/download/oryxis-windows-x86_64.zip) (portable) |
@@ -86,6 +86,19 @@ Most SSH clients are either powerful but ugly (PuTTY), pretty but Electron-heavy
 - **6 terminal themes** — Oryxis Dark, Hacker Green, Dracula, Solarized Dark, Monokai, Nord.
 - **Configurable font size** — 10-24px, adjustable in Settings.
 - **Session recording** — Full terminal output saved to vault, viewable in History.
+
+### SFTP File Browser
+- **Dual-pane layout** — Local on the left, remote on the right, columnar (name / modified / size) with click-to-sort.
+- **Drag-and-drop uploads** — Drop files from any OS file manager onto the remote pane (or onto a specific folder row to upload there).
+- **Internal drag** — Drag rows from one pane to the other to upload/download; ghost preview follows the cursor.
+- **Multi-select** — Ctrl/Cmd-click toggles, Shift-click range, plain click replaces. Right-click on a selection runs Delete / Download / Duplicate / Upload as a batch.
+- **Edit-in-place** — Right-click → Edit downloads to a temp file, opens your OS default editor, watches for save (mtime poll), prompts to upload back.
+- **Properties dialog** — Per-row chmod with R/W/X grid for owner / group / others, file size, mtime, owner uid/gid.
+- **Overwrite handling** — Replace / Replace if different size / Duplicate / Cancel modal on collision; "Apply to remaining" sticky decision for multi-file transfers.
+- **Configurable parallelism** — 1–8 concurrent SFTP channels per session for fast bulk transfers.
+- **`rm -rf` over exec** — Recursive remote delete via SSH exec instead of slow per-file SFTP, single round-trip.
+- **Live progress bar** — Per-file count, current item, percent, cancel button.
+- **Tunable timeouts** — Connect / auth / channel-open / per-operation timeouts, all live-applicable from Settings → SFTP.
 
 ### AI Chat Assistant
 - **Integrated AI sidebar** — Collapsible chat panel per terminal session.
@@ -142,7 +155,9 @@ Most SSH clients are either powerful but ugly (PuTTY), pretty but Electron-heavy
 - **Empty states** — Centered onboarding screens.
 - **Multi-tab sessions** — SSH and local shell sessions in tabs.
 - **Snippets** — Save and execute commands with one click.
-- **Settings sidebar** — Terminal, AI, Theme, Shortcuts, Security, Sync, About sections.
+- **Settings sidebar** — Terminal, SFTP, AI, Theme, Shortcuts, Security, Sync, About sections.
+- **Persistent settings** — All preferences stored in the encrypted vault and restored on next launch.
+- **Tab overflow** — Tabs compact down to a min width as the bar fills (active stays at natural width). Beyond that, the strip becomes horizontally scrollable (mouse wheel scrolls), and a `⋯` button surfaces a "Jump to" modal (`Ctrl+J`) listing all open tabs + Quick connect entries.
 
 ## Architecture
 

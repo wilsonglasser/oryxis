@@ -76,6 +76,47 @@ pub(crate) fn key_to_named_bytes(
     }
 }
 
+/// Snap the chat sidebar's scrollable to its bottom — used after the
+/// user sends a message and after the assistant response arrives, so
+/// the conversation stays anchored at the latest exchange.
+pub(crate) fn chat_scroll_to_end() -> iced::Task<crate::app::Message> {
+    iced::widget::operation::snap_to_end(iced::widget::Id::new("chat-scroll"))
+}
+
+/// Strip non-digit characters and clamp the result against `max`.
+/// Empty / fully-invalid input collapses to `"0"`. Used to keep numeric
+/// setting fields from accepting garbage like "abc" or
+/// "999999999999999".
+pub(crate) fn sanitize_uint(input: &str, max: u64) -> String {
+    let digits: String = input.chars().filter(|c| c.is_ascii_digit()).collect();
+    if digits.is_empty() {
+        return "0".to_string();
+    }
+    let value: u64 = digits.parse().unwrap_or(max);
+    value.min(max).to_string()
+}
+
+/// Open an external URL in the user's default browser. Best-effort —
+/// the UI falls back to copying the URL to the clipboard if this fails,
+/// so the io::Error here is something the caller can swallow.
+pub(crate) fn open_in_browser(url: &str) -> Result<(), std::io::Error> {
+    #[cfg(target_os = "windows")]
+    {
+        std::process::Command::new("cmd")
+            .args(["/C", "start", "", url])
+            .spawn()?;
+    }
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open").arg(url).spawn()?;
+    }
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        std::process::Command::new("xdg-open").arg(url).spawn()?;
+    }
+    Ok(())
+}
+
 /// Translate a Ctrl+<char> combination into the control byte sequence.
 pub(crate) fn ctrl_key_bytes(key: &keyboard::Key) -> Option<Vec<u8>> {
     if let keyboard::Key::Character(c) = key {

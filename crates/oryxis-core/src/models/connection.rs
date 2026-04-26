@@ -40,6 +40,14 @@ pub struct Connection {
     /// Paired with `custom_icon`.
     #[serde(default)]
     pub custom_color: Option<String>,
+    /// Forward the local ssh-agent socket to the remote shell. When
+    /// enabled, after the session channel is open we send an
+    /// `auth-agent-req@openssh.com` request; sshd then sets
+    /// `SSH_AUTH_SOCK` on the remote side and tunnels back any reads
+    /// from that socket through this SSH transport. Lets the user
+    /// `ssh hostB` from inside hostA without staging keys remotely.
+    #[serde(default)]
+    pub agent_forwarding: bool,
 }
 
 impl Connection {
@@ -68,6 +76,7 @@ impl Connection {
             detected_os: None,
             custom_icon: None,
             custom_color: None,
+            agent_forwarding: false,
         }
     }
 }

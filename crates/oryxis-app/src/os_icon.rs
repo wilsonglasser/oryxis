@@ -42,7 +42,9 @@ fn distro_entry(os: &str) -> Option<(u32, Color)> {
         "alma" | "almalinux"   => (0xEA6D, Color::from_rgb8(0x00, 0x00, 0x00)),
         "suse" | "opensuse" | "opensuse-leap" | "opensuse-tumbleweed"
                       => (0xF23A, Color::from_rgb8(0x73, 0xBA, 0x25)),
-        "amzn" | "amazon" => (0xF092, Color::from_rgb8(0xFF, 0x99, 0x00)),
+        // "amzn" / "amazon" handled separately in `resolve_icon` and
+        // `custom_icon_glyph` — Simple Icons v16.17 has no Amazon glyph, so
+        // we fall back to the Lucide `bird` icon in Amazon orange.
         "freebsd"     => (0xEE13, Color::from_rgb8(0xAB, 0x2B, 0x28)),
         "openbsd" | "netbsd" => (0xF092, Color::from_rgb8(0xFA, 0xDA, 0x64)),
         "darwin" | "macos" => (0xEAC1, Color::from_rgb8(0x30, 0x30, 0x30)),
@@ -63,14 +65,20 @@ fn distro_entry(os: &str) -> Option<(u32, Color)> {
 
 /// Resolves (icon widget, brand color) for an OS id. Falls back to the
 /// generic Lucide `server` glyph in `fallback_color` when unknown.
+const AMAZON_ORANGE: Color = Color::from_rgb(0xFF as f32 / 255.0, 0x99 as f32 / 255.0, 0.0);
+
 pub(crate) fn resolve_icon<'a>(
     os: Option<&str>,
     fallback_color: Color,
 ) -> (Text<'a>, Color) {
-    if let Some(id) = os
-        && let Some((cp, color)) = distro_entry(&id.to_lowercase())
-    {
-        return (si_text(cp), color);
+    if let Some(id) = os {
+        let lower = id.to_lowercase();
+        if matches!(lower.as_str(), "amzn" | "amazon" | "amazonlinux") {
+            return (iced_fonts::lucide::bird(), AMAZON_ORANGE);
+        }
+        if let Some((cp, color)) = distro_entry(&lower) {
+            return (si_text(cp), color);
+        }
     }
     (iced_fonts::lucide::server(), fallback_color)
 }
@@ -197,10 +205,13 @@ pub(crate) const PRESET_COLORS: &[&str] = &[
 /// Resolve a picker id into a Text glyph. `si:<name>` goes through Simple
 /// Icons; bare ids fall through to Lucide.
 pub(crate) fn custom_icon_glyph<'a>(id: &str) -> Text<'a> {
-    if let Some(rest) = id.strip_prefix("si:")
-        && let Some(cp) = si_codepoint_for(rest)
-    {
-        return si_text(cp);
+    if let Some(rest) = id.strip_prefix("si:") {
+        if matches!(rest, "amazon" | "amzn" | "amazonlinux") {
+            return iced_fonts::lucide::bird();
+        }
+        if let Some(cp) = si_codepoint_for(rest) {
+            return si_text(cp);
+        }
     }
     match id {
         // Infra

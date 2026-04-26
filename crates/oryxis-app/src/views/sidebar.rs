@@ -31,6 +31,7 @@ impl Oryxis {
         let active_is_nav = self.active_tab.is_none();
         let nav_buttons: Vec<Element<'_, Message>> = vec![
             sidebar_nav_btn(iced_fonts::lucide::server(), crate::i18n::t("hosts"), View::Dashboard, active_is_nav && self.active_view == View::Dashboard),
+            sidebar_nav_btn(iced_fonts::lucide::folder_tree(), crate::i18n::t("sftp"), View::Sftp, active_is_nav && self.active_view == View::Sftp),
             sidebar_nav_btn(iced_fonts::lucide::key_round(), crate::i18n::t("keychain"), View::Keys, active_is_nav && self.active_view == View::Keys),
             sidebar_nav_btn(iced_fonts::lucide::code(), crate::i18n::t("snippets"), View::Snippets, active_is_nav && self.active_view == View::Snippets),
             sidebar_nav_btn(iced_fonts::lucide::shield_check(), crate::i18n::t("known_hosts"), View::KnownHosts, active_is_nav && self.active_view == View::KnownHosts),
@@ -85,6 +86,7 @@ impl Oryxis {
         let active_is_nav = self.active_tab.is_none();
         let icons: Vec<Element<'_, Message>> = vec![
             collapsed_nav_btn(iced_fonts::lucide::server(), View::Dashboard, active_is_nav && self.active_view == View::Dashboard),
+            collapsed_nav_btn(iced_fonts::lucide::folder_tree(), View::Sftp, active_is_nav && self.active_view == View::Sftp),
             collapsed_nav_btn(iced_fonts::lucide::key_round(), View::Keys, active_is_nav && self.active_view == View::Keys),
             collapsed_nav_btn(iced_fonts::lucide::code(), View::Snippets, active_is_nav && self.active_view == View::Snippets),
             collapsed_nav_btn(iced_fonts::lucide::shield_check(), View::KnownHosts, active_is_nav && self.active_view == View::KnownHosts),
@@ -130,23 +132,38 @@ impl Oryxis {
     }
 }
 
-/// Chevron button that toggles the sidebar between expanded and collapsed.
-/// `expanded=true` renders a `«` chevron; `false` renders `»`.
+/// Toggle the sidebar between expanded and collapsed. Uses the
+/// `panel-left-{close,open}` lucide pair — a small rectangle with a
+/// vertical bar, animated open/closed depending on state. Reads as
+/// "sidebar panel" much faster than a generic `«` / `»` chevron, which
+/// is what we used to ship.
 pub(crate) fn sidebar_toggle_btn<'a>(expanded: bool) -> Element<'a, Message> {
-    let glyph = if expanded { "\u{00AB}" } else { "\u{00BB}" };
+    let icon = if expanded {
+        iced_fonts::lucide::panel_left_close()
+    } else {
+        iced_fonts::lucide::panel_left_open()
+    };
     button(
-        container(text(glyph).size(14).color(OryxisColors::t().text_muted))
-            .center(Length::Fixed(28.0)),
+        container(icon.size(15).color(OryxisColors::t().text_secondary))
+            .center(Length::Fixed(28.0))
+            .height(Length::Fixed(40.0)),
     )
     .on_press(Message::ToggleSidebar)
+    .padding(0)
     .style(|_, status| {
+        // Match the chrome / new-tab buttons' subtle hover style — a
+        // tinted overlay using the icon color, not a flat white wash.
+        // Squared corners so it lines up flush with the rest of the
+        // tab bar's right cluster.
+        let hover_color = OryxisColors::t().text_secondary;
         let bg = match status {
-            BtnStatus::Hovered => Color::from_rgba(1.0, 1.0, 1.0, 0.08),
+            BtnStatus::Hovered => Color { a: 0.2, ..hover_color },
+            BtnStatus::Pressed => Color { a: 0.35, ..hover_color },
             _ => Color::TRANSPARENT,
         };
         button::Style {
             background: Some(Background::Color(bg)),
-            border: Border { radius: Radius::from(6.0), ..Default::default() },
+            border: Border::default(),
             ..Default::default()
         }
     })

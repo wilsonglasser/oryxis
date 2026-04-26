@@ -14,35 +14,38 @@ impl Oryxis {
             row![
                 text("Snippets").size(20).color(OryxisColors::t().text_primary),
                 Space::new().width(Length::Fill),
-                button(
-                    container(
-                        row![
-                            text("+").size(13).font(iced::Font {
-                                weight: iced::font::Weight::Bold,
-                                ..iced::Font::with_name("Inter")
-                            }).color(OryxisColors::t().text_primary),
-                            Space::new().width(4),
-                            text("SNIPPET").size(11).font(iced::Font {
-                                weight: iced::font::Weight::Bold,
-                                ..iced::Font::with_name("Inter")
-                            }).color(OryxisColors::t().text_primary),
-                        ].align_y(iced::Alignment::Center),
+                {
+                    let fg = OryxisColors::t().button_text;
+                    button(
+                        container(
+                            row![
+                                text("+").size(13).font(iced::Font {
+                                    weight: iced::font::Weight::Bold,
+                                    ..iced::Font::with_name(crate::theme::SYSTEM_UI_FAMILY)
+                                }).color(fg),
+                                Space::new().width(4),
+                                text("SNIPPET").size(11).font(iced::Font {
+                                    weight: iced::font::Weight::Bold,
+                                    ..iced::Font::with_name(crate::theme::SYSTEM_UI_FAMILY)
+                                }).color(fg),
+                            ].align_y(iced::Alignment::Center),
+                        )
+                        .center_y(Length::Fixed(24.0))
+                        .padding(Padding { top: 0.0, right: 14.0, bottom: 0.0, left: 14.0 }),
                     )
-                    .center_y(Length::Fixed(24.0))
-                    .padding(Padding { top: 0.0, right: 14.0, bottom: 0.0, left: 14.0 }),
-                )
-                .on_press(Message::ShowSnippetPanel)
-                .style(|_, status| {
-                    let bg = match status {
-                        BtnStatus::Hovered => OryxisColors::t().accent_hover,
-                        _ => OryxisColors::t().accent,
-                    };
-                    button::Style {
-                        background: Some(Background::Color(bg)),
-                        border: Border { radius: Radius::from(6.0), ..Default::default() },
-                        ..Default::default()
-                    }
-                }),
+                    .on_press(Message::ShowSnippetPanel)
+                    .style(|_, status| {
+                        let bg = match status {
+                            BtnStatus::Hovered => OryxisColors::t().button_bg_hover,
+                            _ => OryxisColors::t().button_bg,
+                        };
+                        button::Style {
+                            background: Some(Background::Color(bg)),
+                            border: Border { radius: Radius::from(6.0), ..Default::default() },
+                            ..Default::default()
+                        }
+                    })
+                },
             ].align_y(iced::Alignment::Center),
         )
         .padding(Padding { top: 20.0, right: 24.0, bottom: 16.0, left: 24.0 })
@@ -80,19 +83,10 @@ impl Oryxis {
                     text(crate::i18n::t("create_snippet_desc"))
                         .size(13).color(OryxisColors::t().text_muted),
                     Space::new().height(24),
-                    button(
-                        container(text(crate::i18n::t("new_snippet")).size(14).color(OryxisColors::t().text_primary))
-                            .padding(Padding { top: 12.0, right: 0.0, bottom: 12.0, left: 0.0 })
-                            .width(380)
-                            .center_x(380),
-                    )
-                    .on_press(Message::ShowSnippetPanel)
-                    .width(380)
-                    .style(|_, _| button::Style {
-                        background: Some(Background::Color(OryxisColors::t().accent)),
-                        border: Border { radius: Radius::from(8.0), ..Default::default() },
-                        ..Default::default()
-                    }),
+                    crate::widgets::cta_button(
+                        crate::i18n::t("new_snippet").to_string(),
+                        Message::ShowSnippetPanel,
+                    ),
                 ]
                 .align_x(iced::Alignment::Center),
             )
@@ -225,13 +219,15 @@ impl Oryxis {
             Space::new().height(4),
             text_input("restart-nginx", &self.snippet_label)
                 .on_input(Message::SnippetLabelChanged)
-                .padding(10),
+                .padding(10)
+                .style(crate::widgets::rounded_input_style),
             Space::new().height(14),
             text("Command").size(12).color(OryxisColors::t().text_secondary),
             Space::new().height(4),
             text_input("sudo systemctl restart nginx", &self.snippet_command)
                 .on_input(Message::SnippetCommandChanged)
-                .padding(10),
+                .padding(10)
+                .style(crate::widgets::rounded_input_style),
         ];
 
         let panel_error: Element<'_, Message> = if let Some(err) = &self.snippet_error {

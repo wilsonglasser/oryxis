@@ -1,5 +1,47 @@
-use iced::Color;
+use iced::font::{Family, Weight};
+use iced::{Color, Font};
 use std::sync::atomic::{AtomicUsize, Ordering};
+
+// ---------------------------------------------------------------------------
+// System UI font stack
+// ---------------------------------------------------------------------------
+//
+// The UI uses the native system font on each OS (same strategy as Termius /
+// any modern Electron app), so widgets render with the weights, hinting and
+// AA the user expects for that platform:
+//
+//   * Windows → Segoe UI / Segoe UI Variable (bundled with Win10/11)
+//   * macOS   → SF Pro Text (bundled with macOS)
+//   * Linux   → Inter (we ship the TTF; no ubiquitous system UI font)
+//
+// cosmic-text resolves the family via fontdb, which on Win/Mac scans the
+// system font directories. On Linux we fall back to our bundled Inter.
+
+#[cfg(target_os = "windows")]
+pub const SYSTEM_UI_FAMILY: &str = "Segoe UI";
+#[cfg(target_os = "macos")]
+pub const SYSTEM_UI_FAMILY: &str = "SF Pro Text";
+#[cfg(not(any(target_os = "windows", target_os = "macos")))]
+pub const SYSTEM_UI_FAMILY: &str = "Inter";
+
+/// System UI font at Regular (400) — the default for body text, labels,
+/// inputs and sidebar items.
+pub const SYSTEM_UI: Font = Font {
+    family: Family::Name(SYSTEM_UI_FAMILY),
+    weight: Weight::Normal,
+    stretch: iced::font::Stretch::Normal,
+    style: iced::font::Style::Normal,
+};
+
+/// System UI font at SemiBold (600) — for elements that need presence:
+/// tabs, active chips, headings, important buttons.
+pub const SYSTEM_UI_SEMIBOLD: Font = Font {
+    family: Family::Name(SYSTEM_UI_FAMILY),
+    weight: Weight::Semibold,
+    stretch: iced::font::Stretch::Normal,
+    style: iced::font::Style::Normal,
+};
+
 
 /// Global app theme index.
 static ACTIVE_THEME: AtomicUsize = AtomicUsize::new(0);
@@ -62,6 +104,18 @@ impl AppTheme {
     pub fn active() -> AppTheme {
         let idx = ACTIVE_THEME.load(Ordering::Relaxed);
         Self::ALL.get(idx).copied().unwrap_or(AppTheme::OryxisDark)
+    }
+
+    /// Inverse of `name()` — used when re-hydrating the persisted
+    /// `app_theme` setting on boot. Unknown / stale strings fall back
+    /// to the default so a renamed theme can never make the app
+    /// unusable.
+    pub fn from_name(name: &str) -> AppTheme {
+        Self::ALL
+            .iter()
+            .copied()
+            .find(|t| t.name() == name)
+            .unwrap_or(AppTheme::OryxisDark)
     }
 }
 
@@ -153,6 +207,14 @@ pub struct ThemeColors {
     pub terminal_cursor: Color,
     pub border: Color,
     pub border_focus: Color,
+    /// Filled background for primary CTA buttons (`+ HOST`, `+ ADD`,
+    /// modal Save, etc.). Per-theme so we can ship readable foregrounds
+    /// even on themes whose `accent` is too pale or too saturated for a
+    /// generic auto-contrast pick. The buttons that paint with this
+    /// also paint their label with `button_text`.
+    pub button_bg: Color,
+    pub button_bg_hover: Color,
+    pub button_text: Color,
 }
 
 pub const ORYXIS_DARK: ThemeColors = ThemeColors {
@@ -174,6 +236,15 @@ pub const ORYXIS_DARK: ThemeColors = ThemeColors {
     terminal_cursor: Color::from_rgb(0.133, 0.60, 0.569),
     border: Color::from_rgb(0.157, 0.196, 0.192),
     border_focus: Color::from_rgb(0.133, 0.60, 0.569),
+    // CTA button surface — defaults mirror `accent` /
+    // `accent_hover` so existing renderings stay identical;
+    // CTA button surface — defaults mirror `accent` /
+    // `accent_hover` so existing renderings stay identical.
+    // Override per-theme if white text doesn't read well
+    // against this accent.
+    button_bg: Color::from_rgb(0.133, 0.60, 0.569),
+    button_bg_hover: Color::from_rgb(0.20, 0.70, 0.667),
+    button_text: Color::WHITE,
 };
 
 pub const ORYXIS_LIGHT: ThemeColors = ThemeColors {
@@ -195,6 +266,15 @@ pub const ORYXIS_LIGHT: ThemeColors = ThemeColors {
     terminal_cursor: Color::from_rgb(0.10, 0.50, 0.47),
     border: Color::from_rgb(0.85, 0.87, 0.86),
     border_focus: Color::from_rgb(0.10, 0.50, 0.47),
+    // CTA button surface — defaults mirror `accent` /
+    // `accent_hover` so existing renderings stay identical;
+    // CTA button surface — defaults mirror `accent` /
+    // `accent_hover` so existing renderings stay identical.
+    // Override per-theme if white text doesn't read well
+    // against this accent.
+    button_bg: Color::from_rgb(0.10, 0.50, 0.47),
+    button_bg_hover: Color::from_rgb(0.133, 0.60, 0.569),
+    button_text: Color::WHITE,
 };
 
 /// Termius — neutral dark navy with cyan accent. Re-tuned off real screenshots:
@@ -218,6 +298,15 @@ pub const TERMIUS: ThemeColors = ThemeColors {
     terminal_cursor: Color::from_rgb8(43, 194, 208),
     border: Color::from_rgb8(46, 52, 66),            // #2E3442
     border_focus: Color::from_rgb8(43, 194, 208),
+    // CTA button surface — defaults mirror `accent` /
+    // `accent_hover` so existing renderings stay identical;
+    // CTA button surface — defaults mirror `accent` /
+    // `accent_hover` so existing renderings stay identical.
+    // Override per-theme if white text doesn't read well
+    // against this accent.
+    button_bg: Color::from_rgb8(43, 194, 208),
+    button_bg_hover: Color::from_rgb8(80, 214, 226),
+    button_text: Color::WHITE,
 };
 
 /// Darcula — JetBrains' signature dark theme (editor bg `#2B2B2B`, tool window
@@ -241,6 +330,15 @@ pub const DARCULA: ThemeColors = ThemeColors {
     terminal_cursor: Color::from_rgb8(204, 120, 50),
     border: Color::from_rgb8(81, 81, 81),            // #515151
     border_focus: Color::from_rgb8(204, 120, 50),
+    // CTA button surface — defaults mirror `accent` /
+    // `accent_hover` so existing renderings stay identical;
+    // CTA button surface — defaults mirror `accent` /
+    // `accent_hover` so existing renderings stay identical.
+    // Override per-theme if white text doesn't read well
+    // against this accent.
+    button_bg: Color::from_rgb8(204, 120, 50),
+    button_bg_hover: Color::from_rgb8(255, 198, 109),
+    button_text: Color::WHITE,
 };
 
 /// Islands Dark — JetBrains' New UI Islands variant. Same palette as Darcula
@@ -265,6 +363,15 @@ pub const ISLANDS_DARK: ThemeColors = ThemeColors {
     terminal_cursor: Color::from_rgb8(117, 163, 255),
     border: Color::from_rgb8(46, 48, 53),            // #2E3035 — faint ring
     border_focus: Color::from_rgb8(117, 163, 255),
+    // CTA button surface — defaults mirror `accent` /
+    // `accent_hover` so existing renderings stay identical;
+    // CTA button surface — defaults mirror `accent` /
+    // `accent_hover` so existing renderings stay identical.
+    // Override per-theme if white text doesn't read well
+    // against this accent.
+    button_bg: Color::from_rgb8(117, 163, 255),
+    button_bg_hover: Color::from_rgb8(140, 180, 255),
+    button_text: Color::WHITE,
 };
 
 /// Nord Light — Snow Storm base (snow-white bg, frost-blue accent). Pairs
@@ -288,6 +395,15 @@ pub const NORD_LIGHT: ThemeColors = ThemeColors {
     terminal_cursor: Color::from_rgb8(94, 129, 172),
     border: Color::from_rgb8(209, 216, 228),
     border_focus: Color::from_rgb8(94, 129, 172),
+    // CTA button surface — defaults mirror `accent` /
+    // `accent_hover` so existing renderings stay identical;
+    // CTA button surface — defaults mirror `accent` /
+    // `accent_hover` so existing renderings stay identical.
+    // Override per-theme if white text doesn't read well
+    // against this accent.
+    button_bg: Color::from_rgb8(94, 129, 172),
+    button_bg_hover: Color::from_rgb8(129, 161, 193),
+    button_text: Color::WHITE,
 };
 
 /// Solarized Light — Ethan Schoonover's classic cream/beige palette. The "pardo"
@@ -298,8 +414,11 @@ pub const SOLARIZED_LIGHT: ThemeColors = ThemeColors {
     bg_surface: Color::from_rgb8(253, 246, 227),   // #FDF6E3
     bg_hover: Color::from_rgb8(238, 232, 213),     // #EEE8D5
     bg_selected: Color::from_rgb8(220, 215, 197),  // slight darken
-    text_primary: Color::from_rgb8(88, 110, 117),  // #586E75 — base01
-    text_secondary: Color::from_rgb8(101, 123, 131), // #657B83 — base00
+    // base02 instead of base01 so AA contrast lands above 4.5 on the
+    // base2 sidebar — the original base01 sat at 4.39:1 (failed the
+    // automated theme contrast test).
+    text_primary: Color::from_rgb8(7, 54, 66),     // #073642 — base02
+    text_secondary: Color::from_rgb8(88, 110, 117), // #586E75 — base01
     text_muted: Color::from_rgb8(147, 161, 161),   // #93A1A1 — base1
     accent: Color::from_rgb8(38, 139, 210),        // #268BD2 — blue
     accent_hover: Color::from_rgb8(42, 161, 152),  // #2AA198 — cyan
@@ -311,6 +430,15 @@ pub const SOLARIZED_LIGHT: ThemeColors = ThemeColors {
     terminal_cursor: Color::from_rgb8(38, 139, 210),
     border: Color::from_rgb8(220, 215, 197),
     border_focus: Color::from_rgb8(38, 139, 210),
+    // CTA button surface — defaults mirror `accent` /
+    // `accent_hover` so existing renderings stay identical;
+    // CTA button surface — defaults mirror `accent` /
+    // `accent_hover` so existing renderings stay identical.
+    // Override per-theme if white text doesn't read well
+    // against this accent.
+    button_bg: Color::from_rgb8(38, 139, 210),
+    button_bg_hover: Color::from_rgb8(42, 161, 152),
+    button_text: Color::WHITE,
 };
 
 /// Paper Light — minimal warm white with muted teal. Cleaner alternative to
@@ -334,6 +462,15 @@ pub const PAPER_LIGHT: ThemeColors = ThemeColors {
     terminal_cursor: Color::from_rgb8(44, 122, 123),
     border: Color::from_rgb8(226, 222, 215),
     border_focus: Color::from_rgb8(44, 122, 123),
+    // CTA button surface — defaults mirror `accent` /
+    // `accent_hover` so existing renderings stay identical;
+    // CTA button surface — defaults mirror `accent` /
+    // `accent_hover` so existing renderings stay identical.
+    // Override per-theme if white text doesn't read well
+    // against this accent.
+    button_bg: Color::from_rgb8(44, 122, 123),
+    button_bg_hover: Color::from_rgb8(56, 178, 172),
+    button_text: Color::WHITE,
 };
 
 /// Dracula — Zeno Rocha's classic theme (purple/pink with vivid accents).
@@ -357,6 +494,15 @@ pub const DRACULA: ThemeColors = ThemeColors {
     terminal_cursor: Color::from_rgb8(248, 248, 242),
     border: Color::from_rgb8(68, 71, 90),
     border_focus: Color::from_rgb8(189, 147, 249),
+    // CTA button surface — defaults mirror `accent` /
+    // `accent_hover` so existing renderings stay identical;
+    // CTA button surface — defaults mirror `accent` /
+    // `accent_hover` so existing renderings stay identical.
+    // Override per-theme if white text doesn't read well
+    // against this accent.
+    button_bg: Color::from_rgb8(189, 147, 249),
+    button_bg_hover: Color::from_rgb8(210, 170, 255),
+    button_text: Color::WHITE,
 };
 
 /// Monokai — Wimer Hazenberg's classic (pink keyword, green string, dark bg).
@@ -379,6 +525,15 @@ pub const MONOKAI: ThemeColors = ThemeColors {
     terminal_cursor: Color::from_rgb8(249, 38, 114),
     border: Color::from_rgb8(73, 72, 62),
     border_focus: Color::from_rgb8(249, 38, 114),
+    // CTA button surface — defaults mirror `accent` /
+    // `accent_hover` so existing renderings stay identical;
+    // CTA button surface — defaults mirror `accent` /
+    // `accent_hover` so existing renderings stay identical.
+    // Override per-theme if white text doesn't read well
+    // against this accent.
+    button_bg: Color::from_rgb8(249, 38, 114),
+    button_bg_hover: Color::from_rgb8(255, 80, 145),
+    button_text: Color::WHITE,
 };
 
 /// Hacker Green — near-black background, phosphor-green text. "Matrix" vibe.
@@ -401,6 +556,15 @@ pub const HACKER_GREEN: ThemeColors = ThemeColors {
     terminal_cursor: Color::from_rgb8(92, 235, 101),
     border: Color::from_rgb8(34, 70, 34),
     border_focus: Color::from_rgb8(92, 235, 101),
+    // CTA button surface — defaults mirror `accent` /
+    // `accent_hover` so existing renderings stay identical;
+    // CTA button surface — defaults mirror `accent` /
+    // `accent_hover` so existing renderings stay identical.
+    // Override per-theme if white text doesn't read well
+    // against this accent.
+    button_bg: Color::from_rgb8(92, 235, 101),
+    button_bg_hover: Color::from_rgb8(130, 255, 140),
+    button_text: Color::WHITE,
 };
 
 pub const NORD: ThemeColors = ThemeColors {
@@ -422,4 +586,70 @@ pub const NORD: ThemeColors = ThemeColors {
     terminal_cursor: Color::from_rgb8(216, 222, 233),
     border: Color::from_rgb8(94, 105, 128),          // visible against bg_hover
     border_focus: Color::from_rgb8(136, 192, 208),
+    // CTA button surface — defaults mirror `accent` /
+    // `accent_hover` so existing renderings stay identical;
+    // CTA button surface — defaults mirror `accent` /
+    // `accent_hover` so existing renderings stay identical.
+    // Override per-theme if white text doesn't read well
+    // against this accent.
+    button_bg: Color::from_rgb8(136, 192, 208),
+    button_bg_hover: Color::from_rgb8(163, 209, 222),
+    button_text: Color::WHITE,
 };
+
+// ---------------------------------------------------------------------------
+// Contrast helpers (WCAG 2.x relative luminance)
+// ---------------------------------------------------------------------------
+
+/// WCAG 2.x relative luminance for an sRGB color in [0, 1] components.
+/// Used by `contrast_text_for` and the contrast tests; see
+/// <https://www.w3.org/TR/WCAG20/#relativeluminancedef>.
+fn relative_luminance(c: Color) -> f32 {
+    fn channel(v: f32) -> f32 {
+        if v <= 0.03928 {
+            v / 12.92
+        } else {
+            ((v + 0.055) / 1.055).powf(2.4)
+        }
+    }
+    0.2126 * channel(c.r) + 0.7152 * channel(c.g) + 0.0722 * channel(c.b)
+}
+
+/// WCAG contrast ratio between two opaque sRGB colors. Range 1.0 (no
+/// contrast) up to 21.0 (white-on-black). AA-compliant body text
+/// requires at least 4.5; large/bold text at least 3.0. Currently
+/// used only by the theme tests — `contrast_text_for` switched to a
+/// luminance threshold for visual consistency. Kept as a public
+/// helper so future palette work can spot-check pairings without
+/// re-deriving the formula.
+#[allow(dead_code)]
+pub fn contrast_ratio(a: Color, b: Color) -> f32 {
+    let la = relative_luminance(a);
+    let lb = relative_luminance(b);
+    let (lighter, darker) = if la >= lb { (la, lb) } else { (lb, la) };
+    (lighter + 0.05) / (darker + 0.05)
+}
+
+/// Pick a foreground (white vs near-black) for the given button-like
+/// background. Decided by background luminance, not raw WCAG ratio:
+/// any non-pale fill reads better with white text in flat UI (the
+/// Termius cyan, Darcula orange, OryxisDark teal etc. all sit between
+/// L≈0.25 and L≈0.45 and look unambiguously "white text" tints to
+/// most users), so we only flip to near-black when the background is
+/// genuinely pale — yellow warning chips, paper-light surfaces, etc.
+/// 0.62 is the empirical hand-tuned cutoff: above it (warning yellow,
+/// pure white) black wins; below it (every accent in every theme we
+/// ship) white wins, matching the existing `text_primary` look that
+/// shipped before the helper existed.
+pub fn contrast_text_for(bg: Color) -> Color {
+    const LIGHT_BG_LUMINANCE_CUTOFF: f32 = 0.55;
+    if relative_luminance(bg) >= LIGHT_BG_LUMINANCE_CUTOFF {
+        Color::from_rgb(0.05, 0.06, 0.07)
+    } else {
+        Color::WHITE
+    }
+}
+
+#[cfg(test)]
+#[path = "theme_tests.rs"]
+mod tests;

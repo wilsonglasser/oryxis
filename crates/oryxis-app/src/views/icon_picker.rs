@@ -60,7 +60,7 @@ impl Oryxis {
         let icons_block = column![
             text("Icon").size(12).font(iced::Font {
                 weight: iced::font::Weight::Semibold,
-                ..iced::Font::with_name("Inter")
+                ..iced::Font::with_name(crate::theme::SYSTEM_UI_FAMILY)
             }).color(OryxisColors::t().text_secondary),
             Space::new().height(8),
             column(icon_rows).spacing(6),
@@ -95,12 +95,13 @@ impl Oryxis {
             .on_input(Message::IconPickerHexInputChanged)
             .padding(8)
             .size(12)
-            .width(120);
+            .width(120)
+            .style(crate::widgets::rounded_input_style);
 
         let colors_block = column![
             text("Background color").size(12).font(iced::Font {
                 weight: iced::font::Weight::Semibold,
-                ..iced::Font::with_name("Inter")
+                ..iced::Font::with_name(crate::theme::SYSTEM_UI_FAMILY)
             }).color(OryxisColors::t().text_secondary),
             Space::new().height(8),
             color_grid,
@@ -131,7 +132,7 @@ impl Oryxis {
             column![
                 text("Custom icon").size(16).font(iced::Font {
                     weight: iced::font::Weight::Bold,
-                    ..iced::Font::with_name("Inter")
+                    ..iced::Font::with_name(crate::theme::SYSTEM_UI_FAMILY)
                 }).color(OryxisColors::t().text_primary),
                 Space::new().height(4),
                 text("Override the auto-detected icon and color. Use \u{201c}Reset to auto\u{201d} to let OS detection drive it again.")
