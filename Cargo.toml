@@ -17,7 +17,10 @@ repository = "https://github.com/wilsonglasser/oryxis"
 
 [workspace.dependencies]
 # UI
-iced = { version = "0.14", features = ["canvas", "tokio", "advanced", "image", "markdown", "highlighter"] }
+# Tracking the wilsonglasser/iced fork's text-selection branch (iced
+# 0.15-dev with the text selection feature on top) until it lands
+# upstream. Will move back to a crates.io version once it ships.
+iced = { git = "https://github.com/wilsonglasser/iced", branch = "text-selection", features = ["canvas", "tokio", "advanced", "image", "markdown", "highlighter"] }
 
 # SSH
 russh = "0.60"
@@ -79,3 +82,4 @@ oryxis-sync = { path = "crates/oryxis-sync" }
 opt-level = 3
 lto = "thin"
 strip = true
+

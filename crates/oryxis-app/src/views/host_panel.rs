@@ -283,14 +283,16 @@ impl Oryxis {
                     add_key_btn,
                     Space::new().width(16),
                     pick_list(
+                        Some(self.editor_form.selected_key.clone().unwrap_or_else(|| "(none)".into())),
                         {
                             let mut opts = vec!["(none)".to_string()];
                             opts.extend(self.keys.iter().map(|k| k.label.clone()));
                             opts
                         },
-                        Some(self.editor_form.selected_key.clone().unwrap_or_else(|| "(none)".into())),
-                        Message::EditorKeyChanged,
-                    ).padding(10).style(crate::widgets::rounded_pick_list_style),
+                        |s: &String| s.clone(),
+                    )
+                    .on_select(Message::EditorKeyChanged)
+                    .padding(10).style(crate::widgets::rounded_pick_list_style),
                 ].align_y(iced::Alignment::Center)
             );
         }

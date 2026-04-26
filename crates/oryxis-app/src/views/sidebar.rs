@@ -270,7 +270,7 @@ impl Oryxis {
                 .size(15)
                 .font(iced::Font {
                     weight: iced::font::Weight::Semibold,
-                    ..iced::Font::with_name(crate::theme::SYSTEM_UI_FAMILY)
+                    ..iced::Font::new(crate::theme::SYSTEM_UI_FAMILY)
                 })
                 .color(OryxisColors::t().text_primary),
         )

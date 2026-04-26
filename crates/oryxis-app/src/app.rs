@@ -351,7 +351,7 @@ impl Oryxis {
     pub fn theme(&self) -> Theme {
         Theme::custom(
             String::from("Oryxis Dark"),
-            iced::theme::Palette {
+            iced::theme::palette::Seed {
                 background: OryxisColors::t().bg_primary,
                 text: OryxisColors::t().text_primary,
                 primary: OryxisColors::t().accent,

@@ -41,7 +41,7 @@ impl Oryxis {
                 button(
                     container(text(crate::i18n::t("clear").to_uppercase()).size(11).font(iced::Font {
                         weight: iced::font::Weight::Bold,
-                        ..iced::Font::with_name(crate::theme::SYSTEM_UI_FAMILY)
+                        ..iced::Font::new(crate::theme::SYSTEM_UI_FAMILY)
                     }).color(OryxisColors::t().text_muted))
                         .center_y(Length::Fixed(24.0))
                         .padding(Padding { top: 0.0, right: 14.0, bottom: 0.0, left: 14.0 }),
@@ -239,7 +239,7 @@ impl Oryxis {
                             button(
                                 container(text(crate::i18n::t("close")).size(11).font(iced::Font {
                                     weight: iced::font::Weight::Bold,
-                                    ..iced::Font::with_name(crate::theme::SYSTEM_UI_FAMILY)
+                                    ..iced::Font::new(crate::theme::SYSTEM_UI_FAMILY)
                                 }).color(OryxisColors::t().text_muted))
                                     .center_y(Length::Fixed(24.0))
                                     .padding(Padding { top: 0.0, right: 14.0, bottom: 0.0, left: 14.0 }),

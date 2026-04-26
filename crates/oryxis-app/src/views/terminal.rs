@@ -401,6 +401,8 @@ impl Oryxis {
                     code_size: 12.into(),
                     spacing: 8.into(),
                     style: iced::widget::markdown::Style::from(self.theme()),
+                    selectable: true,
+                    group_selection: true,
                 };
                 // Custom viewer overrides `code_block` to add Copy +
                 // Play buttons inside each fenced block; everything
@@ -479,7 +481,7 @@ impl Oryxis {
                                 .size(12)
                                 .font(iced::Font {
                                     weight: iced::font::Weight::Semibold,
-                                    ..iced::Font::with_name(
+                                    ..iced::Font::new(
                                         crate::theme::SYSTEM_UI_FAMILY
                                     )
                                 })
@@ -490,7 +492,7 @@ impl Oryxis {
                         container(
                             text(cmd.clone())
                                 .size(12)
-                                .font(iced::Font::with_name("Source Code Pro"))
+                                .font(iced::Font::new("Source Code Pro"))
                                 .color(OryxisColors::t().text_primary),
                         )
                         .padding(Padding {
@@ -743,7 +745,7 @@ fn pending_tool_btn<'a>(
                 .size(12)
                 .font(iced::Font {
                     weight: iced::font::Weight::Semibold,
-                    ..iced::Font::with_name(crate::theme::SYSTEM_UI_FAMILY)
+                    ..iced::Font::new(crate::theme::SYSTEM_UI_FAMILY)
                 })
                 .color(fg),
         )

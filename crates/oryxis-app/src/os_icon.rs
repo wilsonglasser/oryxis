@@ -15,7 +15,7 @@ const SI_FAMILY: &str = "Simple Icons";
 
 fn si_text<'a>(codepoint: u32) -> Text<'a> {
     let c = char::from_u32(codepoint).unwrap_or('\u{25A1}');
-    text(c.to_string()).font(iced::Font::with_name(SI_FAMILY))
+    text(c.to_string()).font(iced::Font::new(SI_FAMILY))
 }
 
 fn parse_hex_color(s: &str) -> Option<Color> {

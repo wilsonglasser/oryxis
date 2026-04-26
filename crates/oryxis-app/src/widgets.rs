@@ -228,7 +228,7 @@ pub(crate) fn panel_option_pick<'a>(
             Space::new().width(10),
             text(label).size(13).color(OryxisColors::t().text_secondary),
             Space::new().width(Length::Fill),
-            pick_list(options, Some(selected), on_change).width(120).padding(10).style(rounded_pick_list_style),
+            pick_list(Some(selected), options, |s: &String| s.clone()).on_select(on_change).width(120).padding(10).style(rounded_pick_list_style),
         ]
         .align_y(iced::Alignment::Center),
     )
@@ -250,7 +250,7 @@ pub(crate) fn panel_option_pick_jump<'a>(
             Space::new().width(10),
             text(label).size(13).color(OryxisColors::t().text_secondary),
             Space::new().width(Length::Fill),
-            pick_list(options, Some(selected), on_change).width(140).padding(10).style(rounded_pick_list_style),
+            pick_list(Some(selected), options, |s: &String| s.clone()).on_select(on_change).width(140).padding(10).style(rounded_pick_list_style),
         ]
         .align_y(iced::Alignment::Center),
     )
@@ -319,7 +319,7 @@ pub(crate) fn cta_button<'a>(label: String, msg: Message) -> Element<'a, Message
                 .size(14)
                 .font(iced::Font {
                     weight: iced::font::Weight::Semibold,
-                    ..iced::Font::with_name(crate::theme::SYSTEM_UI_FAMILY)
+                    ..iced::Font::new(crate::theme::SYSTEM_UI_FAMILY)
                 })
                 .color(fg),
         )
@@ -362,7 +362,7 @@ pub(crate) fn styled_button(label: &str, msg: Message, color: Color) -> Element<
         container(
             text(label.to_owned()).size(12).font(iced::Font {
                 weight: iced::font::Weight::Bold,
-                ..iced::Font::with_name(crate::theme::SYSTEM_UI_FAMILY)
+                ..iced::Font::new(crate::theme::SYSTEM_UI_FAMILY)
             }).color(fg),
         )
         .padding(Padding { top: 5.0, right: 18.0, bottom: 5.0, left: 18.0 }),

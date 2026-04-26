@@ -175,10 +175,12 @@ impl Oryxis {
                         .size(11).color(OryxisColors::t().text_muted),
                     Space::new().height(8),
                     pick_list(
-                        fonts,
                         Some(self.terminal_font_name.clone()),
-                        Message::TerminalFontChanged,
-                    ).width(260).padding(10).style(crate::widgets::rounded_pick_list_style),
+                        fonts,
+                        |s: &String| s.clone(),
+                    )
+                    .on_select(Message::TerminalFontChanged)
+                    .width(260).padding(10).style(crate::widgets::rounded_pick_list_style),
                 ]);
 
                 let auto_update_enabled = self.setting_auto_check_updates;
@@ -393,10 +395,11 @@ impl Oryxis {
                         .collect();
 
                     let provider_pick: Element<'_, Message> = pick_list(
-                        provider_options,
                         Some(current_info.display.to_string()),
-                        Message::AiProviderChanged,
+                        provider_options,
+                        |s: &String| s.clone(),
                     )
+                    .on_select(Message::AiProviderChanged)
                     .width(220)
                     .padding(10)
                     .style(crate::widgets::rounded_pick_list_style)
@@ -641,10 +644,11 @@ impl Oryxis {
                         text(crate::i18n::t("language")).size(13).color(OryxisColors::t().text_primary),
                         Space::new().width(Length::Fill),
                         pick_list(
-                            lang_options,
                             Some(active_lang_name),
-                            Message::LanguageChanged,
+                            lang_options,
+                            |s: &String| s.clone(),
                         )
+                        .on_select(Message::LanguageChanged)
                         .width(200)
                         .padding(10)
                         .style(crate::widgets::rounded_pick_list_style),
@@ -973,10 +977,11 @@ impl Oryxis {
 
                 let mode_label = if self.sync_mode == "auto" { "Auto" } else { "Manual" };
                 let mode_pick = pick_list(
-                    vec!["Auto".to_string(), "Manual".to_string()],
                     Some(mode_label.to_string()),
-                    |v| Message::SyncModeChanged(v.to_lowercase()),
+                    vec!["Auto".to_string(), "Manual".to_string()],
+                    |s: &String| s.clone(),
                 )
+                .on_select(|v| Message::SyncModeChanged(v.to_lowercase()))
                 .text_size(13)
                 .padding(10)
                 .style(crate::widgets::rounded_pick_list_style);

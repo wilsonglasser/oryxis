@@ -20,7 +20,7 @@ impl Oryxis {
         let current = env!("CARGO_PKG_VERSION");
         let title = text("Update available").size(18).font(iced::Font {
             weight: iced::font::Weight::Bold,
-            ..iced::Font::with_name(crate::theme::SYSTEM_UI_FAMILY)
+            ..iced::Font::new(crate::theme::SYSTEM_UI_FAMILY)
         }).color(OryxisColors::t().text_primary);
 
         let subtitle = text(format!("Oryxis {} is available. You're on {}.", info.version, current))
