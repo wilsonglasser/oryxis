@@ -415,10 +415,14 @@ fn session_tab<'a>(
 /// whole right cluster reads as one strip; `PLUS_BUTTON_WIDTH` was
 /// only used for the layout-math `RIGHT_CLUSTER_WIDTH` calculation,
 /// which still applies because we publish the same constant value.
+///
+/// Uses `lucide::plus` instead of a literal `+` text character — on
+/// Windows, Segoe UI's `+` renders much chunkier than the codicon
+/// `−` / `□` / `✕` glyphs right next to it, breaking visual rhythm.
 fn new_tab_btn<'a>() -> Element<'a, Message> {
     let hover_color = OryxisColors::t().text_secondary;
     button(
-        container(text("+").size(15).color(hover_color))
+        container(iced_fonts::lucide::plus().size(15).color(hover_color))
             .center(Length::Fixed(PLUS_BUTTON_WIDTH))
             .height(Length::Fixed(BAR_HEIGHT)),
     )
