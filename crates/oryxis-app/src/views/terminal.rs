@@ -349,22 +349,25 @@ impl Oryxis {
                     spacing: 8.into(),
                     style: iced::widget::markdown::Style::from(self.theme()),
                 };
-                let md: Element<'_, Message> = iced::widget::markdown::view(
-                    &msg.parsed_md,
+                // Custom viewer overrides `code_block` to add Copy +
+                // Play buttons inside each fenced block; everything
+                // else (paragraphs, headings, lists) renders with the
+                // default markdown behaviour.
+                let md: Element<'_, Message> = iced::widget::markdown::view_with(
+                    msg.parsed_md.iter(),
                     md_settings,
-                )
-                .map(|_uri: iced::widget::markdown::Uri| Message::NoOp);
+                    &ChatMdViewer,
+                );
 
                 // Bubble fills the sidebar width — earlier we clamped
                 // at 300 px which left a wide empty strip when the user
                 // dragged the sidebar wider. The chat is the only thing
-                // in this column, so wider = more useful.
-                //
-                // Right-padding bumped to 36 px so the floating Copy
-                // button has somewhere to sit without overlapping the
-                // first line of text.
+                // in this column, so wider = more useful. Per-code-block
+                // Copy / Play buttons are injected by `ChatMdViewer`
+                // inside each fenced code block; the bubble itself
+                // doesn't need a separate copy affordance.
                 let bubble = container(md)
-                    .padding(Padding { top: 8.0, right: 36.0, bottom: 8.0, left: 12.0 })
+                    .padding(Padding { top: 8.0, right: 12.0, bottom: 8.0, left: 12.0 })
                     .width(Length::Fill)
                     .style(|_| container::Style {
                         background: Some(Background::Color(OryxisColors::t().bg_surface)),
@@ -373,54 +376,7 @@ impl Oryxis {
                         ..Default::default()
                     });
 
-                // Hover-affordance Copy button — text widgets in iced
-                // 0.14 don't support text selection, so an explicit
-                // copy-the-whole-message button covers the gap. Sits
-                // top-right of the bubble; subtle by default, brighter
-                // on hover.
-                let copy_msg = msg.content.clone();
-                let copy_btn = iced::widget::button(
-                    iced_fonts::lucide::copy()
-                        .size(13)
-                        .color(OryxisColors::t().text_muted),
-                )
-                .on_press(Message::CopyToClipboard(copy_msg))
-                .padding(Padding {
-                    top: 4.0,
-                    right: 6.0,
-                    bottom: 4.0,
-                    left: 6.0,
-                })
-                .style(|_, status| {
-                    let bg = match status {
-                        iced::widget::button::Status::Hovered => {
-                            Color { a: 0.25, ..OryxisColors::t().text_secondary }
-                        }
-                        iced::widget::button::Status::Pressed => {
-                            Color { a: 0.4, ..OryxisColors::t().text_secondary }
-                        }
-                        _ => Color::TRANSPARENT,
-                    };
-                    iced::widget::button::Style {
-                        background: Some(Background::Color(bg)),
-                        border: Border { radius: Radius::from(4.0), ..Default::default() },
-                        ..Default::default()
-                    }
-                });
-                let copy_overlay = container(copy_btn)
-                    .width(Length::Fill)
-                    .align_x(iced::alignment::Horizontal::Right)
-                    .padding(Padding {
-                        top: 6.0,
-                        right: 6.0,
-                        bottom: 0.0,
-                        left: 0.0,
-                    });
-                let stacked = iced::widget::Stack::new()
-                    .push(bubble)
-                    .push(copy_overlay);
-
-                container(stacked)
+                container(bubble)
                     .width(Length::Fill)
                     .align_x(iced::alignment::Horizontal::Left)
                     .into()
@@ -508,19 +464,20 @@ impl Oryxis {
                                 Message::ChatToolApprove(cmd_for_run),
                                 OryxisColors::t().accent,
                             ),
-                            iced::widget::Space::new().width(8),
+                            iced::widget::Space::new().width(6),
                             crate::widgets::styled_button(
                                 "Always run",
                                 Message::ChatToolApproveAlways(cmd_for_always),
                                 OryxisColors::t().success,
                             ),
-                            iced::widget::Space::new().width(Length::Fill),
+                            iced::widget::Space::new().width(6),
                             crate::widgets::styled_button(
                                 "Deny",
                                 Message::ChatToolDeny(cmd_for_deny),
                                 OryxisColors::t().bg_hover,
                             ),
                         ]
+                        .spacing(0)
                         .align_y(iced::Alignment::Center),
                     ],
                 )
@@ -599,6 +556,118 @@ impl Oryxis {
                     .into()
             }
         }
+    }
+}
+
+/// Custom markdown viewer that injects Copy / Play buttons inside each
+/// fenced code block. Everything else (paragraphs, headings, lists)
+/// renders with the iced default. Text widgets in iced 0.14 aren't
+/// selectable, so the Copy button is the user's escape hatch for
+/// pulling commands out of the assistant's response.
+struct ChatMdViewer;
+
+impl<'a>
+    iced::widget::markdown::Viewer<
+        'a,
+        Message,
+        iced::Theme,
+        iced::Renderer,
+    > for ChatMdViewer
+{
+    fn on_link_click(_url: iced::widget::markdown::Uri) -> Message {
+        Message::NoOp
+    }
+
+    fn code_block(
+        &self,
+        settings: iced::widget::markdown::Settings,
+        _language: Option<&'a str>,
+        code: &'a str,
+        lines: &'a [iced::widget::markdown::Text],
+    ) -> Element<'a, Message> {
+        // Reuse the stock code-block rendering for the actual text /
+        // syntax highlighting / horizontal scroll, then stack a tiny
+        // toolbar of Copy + Play buttons in the top-right corner.
+        let body: Element<'a, Message> = iced::widget::markdown::code_block(
+            settings,
+            lines,
+            Self::on_link_click,
+        );
+        let copy = iced::widget::button(
+            iced_fonts::lucide::copy()
+                .size(12)
+                .color(OryxisColors::t().text_muted),
+        )
+        .on_press(Message::CopyToClipboard(code.to_string()))
+        .padding(Padding {
+            top: 3.0,
+            right: 5.0,
+            bottom: 3.0,
+            left: 5.0,
+        })
+        .style(|_, status| {
+            let base = OryxisColors::t().text_secondary;
+            let bg = match status {
+                iced::widget::button::Status::Hovered => Color { a: 0.25, ..base },
+                iced::widget::button::Status::Pressed => Color { a: 0.4, ..base },
+                _ => Color { a: 0.10, ..base },
+            };
+            iced::widget::button::Style {
+                background: Some(Background::Color(bg)),
+                border: Border {
+                    radius: Radius::from(4.0),
+                    ..Default::default()
+                },
+                ..Default::default()
+            }
+        });
+        let play = iced::widget::button(
+            iced_fonts::lucide::play()
+                .size(12)
+                .color(OryxisColors::t().success),
+        )
+        .on_press(Message::ChatToolProposed {
+            command: code.to_string(),
+            risk: "risky".into(),
+        })
+        .padding(Padding {
+            top: 3.0,
+            right: 5.0,
+            bottom: 3.0,
+            left: 5.0,
+        })
+        .style(|_, status| {
+            let base = OryxisColors::t().success;
+            let bg = match status {
+                iced::widget::button::Status::Hovered => Color { a: 0.30, ..base },
+                iced::widget::button::Status::Pressed => Color { a: 0.45, ..base },
+                _ => Color { a: 0.12, ..base },
+            };
+            iced::widget::button::Style {
+                background: Some(Background::Color(bg)),
+                border: Border {
+                    radius: Radius::from(4.0),
+                    ..Default::default()
+                },
+                ..Default::default()
+            }
+        });
+        let toolbar = container(
+            iced::widget::row![copy, iced::widget::Space::new().width(4), play]
+                .align_y(iced::Alignment::Center),
+        )
+        .width(Length::Fill)
+        .align_x(iced::alignment::Horizontal::Right)
+        .padding(Padding {
+            top: 4.0,
+            right: 4.0,
+            bottom: 0.0,
+            left: 0.0,
+        });
+        iced::widget::Stack::new()
+            .push(body)
+            .push(toolbar)
+            .into()
     }
 }
 
