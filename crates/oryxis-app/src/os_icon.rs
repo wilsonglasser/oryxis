@@ -50,7 +50,12 @@ fn distro_entry(os: &str) -> Option<(u32, Color)> {
         "darwin" | "macos" => (0xEAC1, Color::from_rgb8(0x30, 0x30, 0x30)),
         "gentoo"      => (0xEE42, Color::from_rgb8(0x54, 0x48, 0x7A)),
         "manjaro"     => (0xF0E5, Color::from_rgb8(0x35, 0xBF, 0xA4)),
-        "kali"        => (0xEFF1, Color::from_rgb8(0x55, 0x7C, 0x94)),
+        // Simple Icons brand value for Kali is #557C94 (washed-out blue
+        // gray) — visually it lands almost the same as the dark sidebar
+        // bg and the dragon glyph disappears. Bumped to Kali's primary
+        // documentation blue (closer to what Termius renders) so the
+        // host card actually has the recognisable navy chip.
+        "kali"        => (0xEFF1, Color::from_rgb8(0x19, 0x76, 0xD2)),
         "raspbian" | "raspberry_pi_os" => (0xF38B, Color::from_rgb8(0xA2, 0x28, 0x46)),
         "nixos"       => (0xF1CC, Color::from_rgb8(0x52, 0x77, 0xC3)),
         "deepin"      => (0xECD5, Color::from_rgb8(0x00, 0x7C, 0xFF)),
