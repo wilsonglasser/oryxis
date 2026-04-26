@@ -42,6 +42,22 @@ impl TerminalState {
         Ok((Self { backend, pty: Some(pty), palette, remote_resize_tx: None }, rx))
     }
 
+    /// Like `new` but spawns an explicit program (e.g. PowerShell or
+    /// `wsl.exe -d Ubuntu`) instead of the OS default shell. Used by
+    /// the Local Shell picker on Windows.
+    pub fn new_with_command(
+        cols: u16,
+        rows: u16,
+        program: &str,
+        args: &[String],
+    ) -> TerminalResult<(Self, mpsc::UnboundedReceiver<Vec<u8>>)>
+    {
+        let backend = TerminalBackend::new(cols, rows);
+        let (pty, rx) = PtyHandle::spawn_command(cols, rows, Some(program), args)?;
+        let palette = TerminalPalette::default();
+        Ok((Self { backend, pty: Some(pty), palette, remote_resize_tx: None }, rx))
+    }
+
     pub fn new_no_pty(
         cols: u16,
         rows: u16,

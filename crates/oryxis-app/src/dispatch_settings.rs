@@ -236,32 +236,149 @@ impl Oryxis {
             }
 
             Message::OpenLocalShell => {
-                self.connecting = None; // Clear any pending SSH connection progress
-                match TerminalState::new(DEFAULT_TERM_COLS as u16, DEFAULT_TERM_ROWS as u16) {
-                    Ok((mut state, rx)) => {
-                        state.palette = self.terminal_theme.palette();
-                        let tab_idx = self.tabs.len();
-                        self.tabs.push(TerminalTab::new_single(
-                            "Local Shell".into(),
-                            Arc::new(Mutex::new(state)),
-                        ));
-                        self.active_tab = Some(tab_idx);
-                        self.active_view = View::Terminal;
-
-                        let stream = UnboundedReceiverStream::new(rx);
-                        return Ok(Task::batch(vec![
-                            self.tab_scroll_to_active(),
-                            Task::stream(stream)
-                                .map(move |bytes| Message::PtyOutput(tab_idx, bytes)),
-                        ]));
-                    }
-                    Err(e) => {
-                        tracing::error!("Failed to spawn local shell: {}", e);
-                    }
+                // On Windows, surface the picker so the user can pick
+                // between cmd / PowerShell / their WSL distros. Other
+                // platforms get the default shell — there's nothing
+                // useful to choose.
+                if cfg!(target_os = "windows") {
+                    return Ok(Task::done(Message::ShowLocalShellPicker));
                 }
+                return Ok(spawn_local_shell(self, None));
+            }
+            Message::ShowLocalShellPicker => {
+                if self.local_shells.is_none() {
+                    self.local_shells = Some(detect_local_shells());
+                }
+                self.local_shell_picker_open = true;
+            }
+            Message::HideLocalShellPicker => {
+                self.local_shell_picker_open = false;
+            }
+            Message::OpenLocalShellWith { program, args, label } => {
+                self.local_shell_picker_open = false;
+                return Ok(spawn_local_shell(self, Some((program, args, label))));
             }
             m => return Err(m),
         }
         Ok(Task::none())
     }
+}
+
+/// Spawn either the default shell (`pick = None`) or a specific
+/// program (`pick = Some((program, args, label))`) and wire it up
+/// as a new terminal tab.
+fn spawn_local_shell(
+    app: &mut Oryxis,
+    pick: Option<(String, Vec<String>, String)>,
+) -> Task<Message> {
+    app.connecting = None; // Clear any pending SSH connection progress
+    let result = match &pick {
+        Some((program, args, _)) => TerminalState::new_with_command(
+            DEFAULT_TERM_COLS as u16,
+            DEFAULT_TERM_ROWS as u16,
+            program,
+            args,
+        ),
+        None => TerminalState::new(DEFAULT_TERM_COLS as u16, DEFAULT_TERM_ROWS as u16),
+    };
+    match result {
+        Ok((mut state, rx)) => {
+            state.palette = app.terminal_theme.palette();
+            let tab_idx = app.tabs.len();
+            let label = pick
+                .as_ref()
+                .map(|(_, _, l)| l.clone())
+                .unwrap_or_else(|| "Local Shell".to_string());
+            app.tabs.push(TerminalTab::new_single(
+                label,
+                Arc::new(Mutex::new(state)),
+            ));
+            app.active_tab = Some(tab_idx);
+            app.active_view = View::Terminal;
+            let stream = UnboundedReceiverStream::new(rx);
+            Task::batch(vec![
+                app.tab_scroll_to_active(),
+                Task::stream(stream).map(move |bytes| Message::PtyOutput(tab_idx, bytes)),
+            ])
+        }
+        Err(e) => {
+            tracing::error!("Failed to spawn local shell: {}", e);
+            Task::none()
+        }
+    }
+}
+
+/// Build the menu of available local shells. Only meaningful on
+/// Windows; other platforms just get the default.
+#[allow(unused_mut)]
+fn detect_local_shells() -> Vec<crate::state::LocalShellSpec> {
+    use crate::state::LocalShellSpec;
+    let mut out: Vec<LocalShellSpec> = Vec::new();
+    #[cfg(target_os = "windows")]
+    {
+        // PowerShell — prefer pwsh.exe (PS7+) over the bundled
+        // powershell.exe; both detect via `where.exe` to cope with
+        // the fact that PS7 isn't on every machine.
+        if which("pwsh.exe").is_some() {
+            out.push(LocalShellSpec {
+                label: "PowerShell".into(),
+                program: "pwsh.exe".into(),
+                args: vec![],
+            });
+        } else {
+            out.push(LocalShellSpec {
+                label: "Windows PowerShell".into(),
+                program: "powershell.exe".into(),
+                args: vec![],
+            });
+        }
+        out.push(LocalShellSpec {
+            label: "Command Prompt".into(),
+            program: "cmd.exe".into(),
+            args: vec![],
+        });
+        // WSL distros — `wsl --list --quiet` outputs UTF-16 LE BOM
+        // by default. Decode and split on lines to get distro names.
+        for distro in list_wsl_distros() {
+            out.push(LocalShellSpec {
+                label: format!("{distro} (WSL)"),
+                program: "wsl.exe".into(),
+                args: vec!["-d".into(), distro],
+            });
+        }
+    }
+    out
+}
+
+#[cfg(target_os = "windows")]
+fn which(program: &str) -> Option<std::path::PathBuf> {
+    let out = std::process::Command::new("where").arg(program).output().ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let s = String::from_utf8_lossy(&out.stdout);
+    s.lines().next().map(|l| std::path::PathBuf::from(l.trim()))
+}
+
+#[cfg(target_os = "windows")]
+fn list_wsl_distros() -> Vec<String> {
+    let out = match std::process::Command::new("wsl")
+        .args(["--list", "--quiet"])
+        .output()
+    {
+        Ok(o) if o.status.success() => o,
+        _ => return Vec::new(),
+    };
+    // wsl.exe emits UTF-16 LE with a BOM. Decode by reading
+    // u16 pairs.
+    let bytes = out.stdout;
+    let utf16: Vec<u16> = bytes
+        .chunks_exact(2)
+        .map(|c| u16::from_le_bytes([c[0], c[1]]))
+        .collect();
+    String::from_utf16_lossy(&utf16)
+        .lines()
+        .map(|l| l.trim().trim_start_matches('\u{feff}').to_string())
+        .filter(|l| !l.is_empty())
+        .collect()
 }

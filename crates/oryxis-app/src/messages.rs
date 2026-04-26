@@ -319,6 +319,19 @@ pub enum Message {
 
     // Local shell
     OpenLocalShell,
+    /// Show the Local Shell picker overlay (Windows: cmd / PowerShell
+    /// / WSL distros). On non-Windows platforms `OpenLocalShell` skips
+    /// this and spawns the default directly.
+    ShowLocalShellPicker,
+    /// Dismiss the picker overlay (clicking outside or Escape).
+    HideLocalShellPicker,
+    /// Spawn a specific local shell — `(program, args, label)` —
+    /// produced by clicking a row in the picker.
+    OpenLocalShellWith {
+        program: String,
+        args: Vec<String>,
+        label: String,
+    },
 
     // Keys
     ShowKeyPanel,

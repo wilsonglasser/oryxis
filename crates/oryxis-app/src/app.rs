@@ -271,6 +271,17 @@ pub struct Oryxis {
     /// `Task::perform`-spawned `ToastClear` round-trip.
     pub(crate) toast: Option<String>,
 
+    /// Cached list of available local shells (PowerShell, cmd, WSL
+    /// distros, etc.) — populated lazily when the user opens the
+    /// Local Shell picker so we don't pay the `wsl --list` spawn on
+    /// every boot. `None` means not detected yet.
+    pub(crate) local_shells: Option<Vec<crate::state::LocalShellSpec>>,
+    /// True while the Local Shell picker overlay is showing. Only
+    /// surfaces on Windows where there's a real choice between cmd /
+    /// PowerShell / WSL distros — non-Windows just spawns the
+    /// default shell directly.
+    pub(crate) local_shell_picker_open: bool,
+
     // AI chat sidebar
     pub(crate) chat_input: text_editor::Content,
     pub(crate) chat_loading: bool,

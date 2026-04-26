@@ -46,6 +46,37 @@ impl Oryxis {
                 .width(Length::Fill)
                 .height(Length::Fill)
                 .into()
+        } else if self.local_shell_picker_open {
+            use iced::widget::{column, container, Space, Stack};
+            use iced::{Color, Length};
+            let modal = self.view_local_shell_picker();
+            let scrim: Element<'_, Message> = column![
+                Space::new().height(Length::Fixed(40.0)),
+                container(Space::new())
+                    .width(Length::Fill)
+                    .height(Length::Fill)
+                    .style(|_| container::Style {
+                        background: Some(iced::Background::Color(Color::from_rgba(
+                            0.0, 0.0, 0.0, 0.5,
+                        ))),
+                        ..Default::default()
+                    }),
+            ]
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .into();
+            // The scrim itself dismisses the picker on click — outside-
+            // click-to-close pattern shared with the SFTP modals.
+            let scrim: Element<'_, Message> = iced::widget::MouseArea::new(scrim)
+                .on_press(Message::HideLocalShellPicker)
+                .into();
+            Stack::new()
+                .push(base)
+                .push(scrim)
+                .push(modal)
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .into()
         } else {
             base
         };

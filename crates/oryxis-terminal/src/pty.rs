@@ -14,10 +14,25 @@ pub struct PtyHandle {
 }
 
 impl PtyHandle {
-    /// Spawn a new shell in a PTY. Returns the handle and a receiver for output bytes.
+    /// Spawn the OS default shell. Equivalent to
+    /// `spawn_command(cols, rows, None, &[])`.
     pub fn spawn(
         cols: u16,
         rows: u16,
+    ) -> crate::widget::TerminalResult<(Self, mpsc::UnboundedReceiver<Vec<u8>>)>
+    {
+        Self::spawn_command(cols, rows, None, &[])
+    }
+
+    /// Spawn an explicit program in a PTY (e.g. PowerShell or
+    /// `wsl.exe -d Ubuntu`). Passing `None` for `program` falls back
+    /// to the OS default. Always sets `TERM=xterm-256color` and
+    /// `COLORTERM=truecolor` so apps detect 256-color / truecolor.
+    pub fn spawn_command(
+        cols: u16,
+        rows: u16,
+        program: Option<&str>,
+        args: &[String],
     ) -> crate::widget::TerminalResult<(Self, mpsc::UnboundedReceiver<Vec<u8>>)>
     {
         let pty_system = native_pty_system();
@@ -29,7 +44,13 @@ impl PtyHandle {
             pixel_height: 0,
         })?;
 
-        let mut cmd = CommandBuilder::new_default_prog();
+        let mut cmd = match program {
+            Some(p) => CommandBuilder::new(p),
+            None => CommandBuilder::new_default_prog(),
+        };
+        for arg in args {
+            cmd.arg(arg);
+        }
         cmd.env("TERM", "xterm-256color");
         cmd.env("COLORTERM", "truecolor");
 

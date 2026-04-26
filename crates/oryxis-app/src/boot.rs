@@ -199,6 +199,8 @@ impl Oryxis {
                 vault_password_error: None,
                 vault_destroy_confirm: false,
                 toast: None,
+                local_shells: None,
+                local_shell_picker_open: false,
                 chat_input: text_editor::Content::new(),
                 chat_loading: false,
                 chat_scroll_at_bottom: true,

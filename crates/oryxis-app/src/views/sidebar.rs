@@ -215,3 +215,105 @@ fn collapsed_nav_btn<'a>(
     .padding(Padding { top: 1.0, right: 8.0, bottom: 1.0, left: 8.0 })
     .into()
 }
+
+impl Oryxis {
+    /// Local Shell picker modal — listed shells come from
+    /// `dispatch_settings::detect_local_shells`. Shown only on
+    /// Windows; non-Windows platforms `OpenLocalShell` directly.
+    pub(crate) fn view_local_shell_picker(&self) -> Element<'_, Message> {
+        let shells = self.local_shells.as_deref().unwrap_or(&[]);
+        let mut list = column![].spacing(2);
+        for spec in shells {
+            list = list.push(
+                button(
+                    row![
+                        iced_fonts::lucide::terminal()
+                            .size(14)
+                            .color(OryxisColors::t().accent),
+                        Space::new().width(10),
+                        text(spec.label.clone())
+                            .size(13)
+                            .color(OryxisColors::t().text_primary),
+                    ]
+                    .align_y(iced::Alignment::Center),
+                )
+                .on_press(Message::OpenLocalShellWith {
+                    program: spec.program.clone(),
+                    args: spec.args.clone(),
+                    label: spec.label.clone(),
+                })
+                .padding(Padding {
+                    top: 8.0,
+                    right: 16.0,
+                    bottom: 8.0,
+                    left: 12.0,
+                })
+                .width(Length::Fill)
+                .style(|_, status| {
+                    let bg = match status {
+                        BtnStatus::Hovered => OryxisColors::t().bg_hover,
+                        _ => Color::TRANSPARENT,
+                    };
+                    button::Style {
+                        background: Some(Background::Color(bg)),
+                        border: Border {
+                            radius: Radius::from(6.0),
+                            ..Default::default()
+                        },
+                        ..Default::default()
+                    }
+                }),
+            );
+        }
+        let header = container(
+            text(crate::i18n::t("local_shell"))
+                .size(15)
+                .font(iced::Font {
+                    weight: iced::font::Weight::Semibold,
+                    ..iced::Font::with_name(crate::theme::SYSTEM_UI_FAMILY)
+                })
+                .color(OryxisColors::t().text_primary),
+        )
+        .padding(Padding {
+            top: 16.0,
+            right: 16.0,
+            bottom: 8.0,
+            left: 16.0,
+        });
+        let body = container(list)
+            .padding(Padding {
+                top: 4.0,
+                right: 8.0,
+                bottom: 12.0,
+                left: 8.0,
+            })
+            .width(Length::Fill);
+        // Wrap the dialog in a MouseArea NoOp so clicks on its body
+        // don't fall through to the scrim and dismiss it.
+        let dialog = iced::widget::MouseArea::new(
+            container(column![header, body])
+                .width(Length::Fixed(360.0))
+                .style(|_| container::Style {
+                    background: Some(Background::Color(OryxisColors::t().bg_surface)),
+                    border: Border {
+                        radius: Radius::from(12.0),
+                        color: OryxisColors::t().border,
+                        width: 1.0,
+                    },
+                    shadow: iced::Shadow {
+                        color: Color::from_rgba(0.0, 0.0, 0.0, 0.30),
+                        offset: iced::Vector::new(0.0, 8.0),
+                        blur_radius: 24.0,
+                    },
+                    ..Default::default()
+                }),
+        )
+        .on_press(Message::NoOp);
+        container(dialog)
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .center_x(Length::Fill)
+            .center_y(Length::Fill)
+            .into()
+    }
+}

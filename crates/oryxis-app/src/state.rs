@@ -395,6 +395,25 @@ pub(crate) struct LocalEntry {
 }
 
 // ---------------------------------------------------------------------------
+// Local shell picker
+// ---------------------------------------------------------------------------
+
+/// One row in the Local Shell picker (Windows: cmd / PowerShell / a
+/// WSL distro). Populated lazily by `dispatch.rs::ShowLocalShellPicker`
+/// the first time the user opens the menu, then cached on `Oryxis`.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct LocalShellSpec {
+    /// User-facing label — e.g. "PowerShell", "cmd", "Ubuntu (WSL)".
+    pub label: String,
+    /// Executable to spawn. Bare program name (resolved via `PATH`)
+    /// or a full path; passed to portable-pty's `CommandBuilder`.
+    pub program: String,
+    /// Arguments tacked on after the program. For WSL distros this
+    /// is `["-d", "<distro-name>"]`; for plain shells it's empty.
+    pub args: Vec<String>,
+}
+
+// ---------------------------------------------------------------------------
 // Chat (AI sidebar per terminal tab)
 // ---------------------------------------------------------------------------
 
