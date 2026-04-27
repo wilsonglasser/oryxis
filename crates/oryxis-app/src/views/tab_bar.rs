@@ -94,7 +94,12 @@ impl Oryxis {
                 .connections
                 .iter()
                 .find(|c| c.label == base_label)
-                .and_then(|c| c.detected_os.clone());
+                .and_then(|c| c.detected_os.clone())
+                // Fall back to deriving the OS from the tab label
+                // for Local Shell tabs (`"Ubuntu (WSL)"`,
+                // `"PowerShell"`, `"Command Prompt"`, …) — those
+                // never go through the SSH `detect_os` round-trip.
+                .or_else(|| crate::os_icon::local_shell_os_hint(base_label));
             let width = if is_active { active_width } else { inactive_width };
             tab_items.push(session_tab(
                 idx,
@@ -135,6 +140,9 @@ impl Oryxis {
                 .padding(Padding { top: 4.0, right: 0.0, bottom: 4.0, left: 6.0 }),
         )
         .on_press(Message::WindowDrag)
+        // Native title-bar convention: double-click the drag area to
+        // toggle maximize.
+        .on_double_click(Message::WindowMaximizeToggle)
         // Vertical wheel translates to horizontal scroll on the tab
         // strip. The horizontal scrollable inside doesn't capture a
         // pure-y wheel event (iced only steers wheel along the

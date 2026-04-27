@@ -121,6 +121,7 @@ fn en(key: &str) -> &'static str {
         "history" => "History",
         "settings" => "Settings",
         "local_shell" => "Local Shell",
+        "detecting_shells" => "Detecting shells…",
 
         // Actions
         "create_host" => "Create host",
@@ -180,6 +181,7 @@ fn en(key: &str) -> &'static str {
         "bold_bright" => "Use bright colours for bold text",
         "bell_sound" => "Bell sound",
         "keyword_highlight" => "Keyword highlighting",
+        "smart_contrast" => "Smart contrast (rescue blue-on-blue)",
         "keepalive_interval" => "Keepalive Interval",
         "scrollback" => "Scrollback",
         "vault_password" => "Vault Password",
@@ -302,6 +304,7 @@ fn en(key: &str) -> &'static str {
         "expose_to_mcp" => "Expose to MCP / AI",
         "forward_ssh_agent" => "Forward SSH Agent",
         "github" => "GitHub",
+        "website" => "Website",
         "share" => "Share",
 
         // Misc
@@ -349,6 +352,7 @@ fn pt_br(key: &str) -> Option<&'static str> {
         "history" => "Histórico",
         "settings" => "Configurações",
         "local_shell" => "Shell Local",
+        "detecting_shells" => "Detectando shells…",
 
         "create_host" => "Criar host",
         "save" => "Salvar",
@@ -403,6 +407,7 @@ fn pt_br(key: &str) -> Option<&'static str> {
         "bold_bright" => "Usar cores brilhantes para texto em negrito",
         "bell_sound" => "Som do bell",
         "keyword_highlight" => "Destaque de palavras-chave",
+        "smart_contrast" => "Contraste inteligente (corrige azul-no-azul)",
         "keepalive_interval" => "Intervalo de Keepalive",
         "scrollback" => "Histórico de rolagem",
         "vault_password" => "Senha do Cofre",
@@ -506,6 +511,7 @@ fn pt_br(key: &str) -> Option<&'static str> {
         "expose_to_mcp" => "Expor ao MCP / IA",
         "forward_ssh_agent" => "Encaminhar SSH Agent",
         "github" => "GitHub",
+        "website" => "Website",
         "share" => "Compartilhar",
 
         "search_hosts" => "Buscar hosts...",
@@ -551,6 +557,7 @@ fn es(key: &str) -> Option<&'static str> {
         "history" => "Historial",
         "settings" => "Configuración",
         "local_shell" => "Shell Local",
+        "detecting_shells" => "Detectando shells…",
 
         "create_host" => "Crear host",
         "save" => "Guardar",
@@ -605,6 +612,7 @@ fn es(key: &str) -> Option<&'static str> {
         "bold_bright" => "Usar colores brillantes para texto en negrita",
         "bell_sound" => "Sonido de campana",
         "keyword_highlight" => "Resaltado de palabras clave",
+        "smart_contrast" => "Contraste inteligente (corrige azul sobre azul)",
         "keepalive_interval" => "Intervalo de Keepalive",
         "scrollback" => "Historial de desplazamiento",
         "vault_password" => "Contraseña del Cofre",
@@ -689,6 +697,7 @@ fn es(key: &str) -> Option<&'static str> {
         "expose_to_mcp" => "Exponer al MCP / IA",
         "forward_ssh_agent" => "Reenviar SSH Agent",
         "github" => "GitHub",
+        "website" => "Website",
 
         "hk_unknown_title" => "Clave de Host Desconocida",
         "hk_unknown_desc" => "No se puede verificar la autenticidad de este host. ¿Desea confiar en este host?",
@@ -724,6 +733,7 @@ fn fr(key: &str) -> Option<&'static str> {
         "history" => "Historique",
         "settings" => "Paramètres",
         "local_shell" => "Shell Local",
+        "detecting_shells" => "Détection des shells…",
 
         "create_host" => "Créer un hôte",
         "save" => "Enregistrer",
@@ -778,6 +788,7 @@ fn fr(key: &str) -> Option<&'static str> {
         "bold_bright" => "Utiliser des couleurs vives pour le texte en gras",
         "bell_sound" => "Son de la cloche",
         "keyword_highlight" => "Surlignage des mots-clés",
+        "smart_contrast" => "Contraste intelligent (corrige bleu-sur-bleu)",
         "keepalive_interval" => "Intervalle de Keepalive",
         "scrollback" => "Historique de défilement",
         "vault_password" => "Mot de passe du Coffre",
@@ -862,6 +873,7 @@ fn fr(key: &str) -> Option<&'static str> {
         "expose_to_mcp" => "Exposer au MCP / IA",
         "forward_ssh_agent" => "Transférer SSH Agent",
         "github" => "GitHub",
+        "website" => "Website",
 
         "hk_unknown_title" => "Clé d'Hôte Inconnue",
         "hk_unknown_desc" => "L'authenticité de cet hôte ne peut être vérifiée. Voulez-vous faire confiance à cet hôte ?",
@@ -897,6 +909,7 @@ fn de(key: &str) -> Option<&'static str> {
         "history" => "Verlauf",
         "settings" => "Einstellungen",
         "local_shell" => "Lokale Shell",
+        "detecting_shells" => "Shells werden erkannt…",
 
         "create_host" => "Host erstellen",
         "save" => "Speichern",
@@ -951,6 +964,7 @@ fn de(key: &str) -> Option<&'static str> {
         "bold_bright" => "Helle Farben für fetten Text verwenden",
         "bell_sound" => "Glockenton",
         "keyword_highlight" => "Schlüsselwort-Hervorhebung",
+        "smart_contrast" => "Smart-Kontrast (Blau-auf-Blau retten)",
         "keepalive_interval" => "Keepalive-Intervall",
         "scrollback" => "Scrollverlauf",
         "vault_password" => "Tresor-Passwort",
@@ -1035,6 +1049,7 @@ fn de(key: &str) -> Option<&'static str> {
         "expose_to_mcp" => "Für MCP / KI freigeben",
         "forward_ssh_agent" => "SSH-Agent weiterleiten",
         "github" => "GitHub",
+        "website" => "Website",
 
         "hk_unknown_title" => "Unbekannter Host-Schlüssel",
         "hk_unknown_desc" => "Die Authentizität dieses Hosts kann nicht überprüft werden. Möchten Sie diesem Host vertrauen?",
@@ -1070,6 +1085,7 @@ fn it(key: &str) -> Option<&'static str> {
         "history" => "Cronologia",
         "settings" => "Impostazioni",
         "local_shell" => "Shell Locale",
+        "detecting_shells" => "Rilevamento shell…",
 
         "create_host" => "Crea host",
         "save" => "Salva",
@@ -1124,6 +1140,7 @@ fn it(key: &str) -> Option<&'static str> {
         "bold_bright" => "Usa colori vivaci per il testo in grassetto",
         "bell_sound" => "Suono campanella",
         "keyword_highlight" => "Evidenziazione parole chiave",
+        "smart_contrast" => "Contrasto intelligente (recupera blu-su-blu)",
         "keepalive_interval" => "Intervallo Keepalive",
         "scrollback" => "Cronologia scorrimento",
         "vault_password" => "Password del Vault",
@@ -1208,6 +1225,7 @@ fn it(key: &str) -> Option<&'static str> {
         "expose_to_mcp" => "Esponi a MCP / IA",
         "forward_ssh_agent" => "Inoltra SSH Agent",
         "github" => "GitHub",
+        "website" => "Website",
 
         "hk_unknown_title" => "Chiave Host Sconosciuta",
         "hk_unknown_desc" => "L'autenticità di questo host non può essere verificata. Vuoi fidarti di questo host?",
@@ -1243,6 +1261,7 @@ fn zh(key: &str) -> Option<&'static str> {
         "history" => "历史记录",
         "settings" => "设置",
         "local_shell" => "本地终端",
+        "detecting_shells" => "正在检测终端…",
 
         "create_host" => "创建主机",
         "save" => "保存",
@@ -1297,6 +1316,7 @@ fn zh(key: &str) -> Option<&'static str> {
         "bold_bright" => "粗体文本使用高亮颜色",
         "bell_sound" => "响铃声音",
         "keyword_highlight" => "关键词高亮",
+        "smart_contrast" => "智能对比度（拯救蓝底蓝字）",
         "keepalive_interval" => "心跳间隔",
         "scrollback" => "回滚行数",
         "vault_password" => "保险库密码",
@@ -1381,6 +1401,7 @@ fn zh(key: &str) -> Option<&'static str> {
         "expose_to_mcp" => "暴露给 MCP / AI",
         "forward_ssh_agent" => "转发 SSH 代理",
         "github" => "GitHub",
+        "website" => "Website",
 
         "hk_unknown_title" => "未知主机密钥",
         "hk_unknown_desc" => "无法验证此主机的真实性。您要信任此主机吗？",
@@ -1416,6 +1437,7 @@ fn ja(key: &str) -> Option<&'static str> {
         "history" => "履歴",
         "settings" => "設定",
         "local_shell" => "ローカルシェル",
+        "detecting_shells" => "シェルを検出中…",
 
         "create_host" => "ホストを作成",
         "save" => "保存",
@@ -1470,6 +1492,7 @@ fn ja(key: &str) -> Option<&'static str> {
         "bold_bright" => "太字テキストに明るい色を使用",
         "bell_sound" => "ベル音",
         "keyword_highlight" => "キーワードハイライト",
+        "smart_contrast" => "スマートコントラスト（青地に青を救済）",
         "keepalive_interval" => "キープアライブ間隔",
         "scrollback" => "スクロールバック",
         "vault_password" => "ボールトパスワード",
@@ -1554,6 +1577,7 @@ fn ja(key: &str) -> Option<&'static str> {
         "expose_to_mcp" => "MCP / AIに公開",
         "forward_ssh_agent" => "SSHエージェント転送",
         "github" => "GitHub",
+        "website" => "Website",
 
         "hk_unknown_title" => "不明なホストキー",
         "hk_unknown_desc" => "このホストの信頼性を確認できません。このホストを信頼しますか？",
@@ -1589,6 +1613,7 @@ fn ru(key: &str) -> Option<&'static str> {
         "history" => "История",
         "settings" => "Настройки",
         "local_shell" => "Локальная оболочка",
+        "detecting_shells" => "Поиск оболочек…",
 
         "create_host" => "Создать хост",
         "save" => "Сохранить",
@@ -1643,6 +1668,7 @@ fn ru(key: &str) -> Option<&'static str> {
         "bold_bright" => "Яркие цвета для жирного текста",
         "bell_sound" => "Звук звонка",
         "keyword_highlight" => "Подсветка ключевых слов",
+        "smart_contrast" => "Умный контраст (исправляет синее на синем)",
         "keepalive_interval" => "Интервал Keepalive",
         "scrollback" => "Буфер прокрутки",
         "vault_password" => "Пароль хранилища",
@@ -1727,6 +1753,7 @@ fn ru(key: &str) -> Option<&'static str> {
         "expose_to_mcp" => "Открыть для MCP / ИИ",
         "forward_ssh_agent" => "Перенаправить SSH-агент",
         "github" => "GitHub",
+        "website" => "Website",
 
         "hk_unknown_title" => "Неизвестный ключ хоста",
         "hk_unknown_desc" => "Подлинность этого хоста не может быть проверена. Вы хотите доверять этому хосту?",

@@ -37,7 +37,7 @@ impl TerminalState {
     ) -> TerminalResult<(Self, mpsc::UnboundedReceiver<Vec<u8>>)>
     {
         let backend = TerminalBackend::new(cols, rows);
-        let (pty, rx) = PtyHandle::spawn(cols, rows)?;
+        let (pty, rx) = PtyHandle::spawn(cols, rows, &backend.event_proxy)?;
         let palette = TerminalPalette::default();
         Ok((Self { backend, pty: Some(pty), palette, remote_resize_tx: None }, rx))
     }
@@ -53,7 +53,9 @@ impl TerminalState {
     ) -> TerminalResult<(Self, mpsc::UnboundedReceiver<Vec<u8>>)>
     {
         let backend = TerminalBackend::new(cols, rows);
-        let (pty, rx) = PtyHandle::spawn_command(cols, rows, Some(program), args)?;
+        let (pty, rx) = PtyHandle::spawn_command(
+            cols, rows, Some(program), args, &backend.event_proxy,
+        )?;
         let palette = TerminalPalette::default();
         Ok((Self { backend, pty: Some(pty), palette, remote_resize_tx: None }, rx))
     }
@@ -82,7 +84,7 @@ impl TerminalState {
     }
 
     pub fn write(&mut self, data: &[u8]) {
-        if let Some(ref mut pty) = self.pty
+        if let Some(ref pty) = self.pty
             && let Err(e) = pty.write(data) {
                 tracing::error!("PTY write error: {}", e);
             }
@@ -484,6 +486,32 @@ fn detect_highlights(
     highlights
 }
 
+/// WCAG 2.x relative luminance for an sRGB colour in `[0, 1]`. Used by
+/// the smart-contrast fallback to decide whether a too-close cell
+/// should flip its foreground to white or near-black.
+fn relative_luminance(c: Color) -> f32 {
+    fn channel(v: f32) -> f32 {
+        if v <= 0.03928 {
+            v / 12.92
+        } else {
+            ((v + 0.055) / 1.055).powf(2.4)
+        }
+    }
+    0.2126 * channel(c.r) + 0.7152 * channel(c.g) + 0.0722 * channel(c.b)
+}
+
+/// WCAG contrast ratio between two opaque colours: 1.0 = identical,
+/// 21.0 = white-on-black. We trip the smart-contrast fallback below
+/// `2.5`, well under the AA-body threshold of `4.5` so we only act
+/// on visually disappearing pairs and leave merely-low-contrast
+/// styling alone.
+fn contrast_ratio(a: Color, b: Color) -> f32 {
+    let la = relative_luminance(a);
+    let lb = relative_luminance(b);
+    let (lighter, darker) = if la >= lb { (la, lb) } else { (lb, la) };
+    (lighter + 0.05) / (darker + 0.05)
+}
+
 #[inline]
 fn is_word_byte(b: u8) -> bool {
     b.is_ascii_alphanumeric() || b == b'_'
@@ -638,41 +666,88 @@ pub struct TerminalView {
     /// When true, the terminal scans visible rows for URLs / IPs / paths
     /// and tints them. Disable to recover frame time in dense UIs.
     keyword_highlight: bool,
+    /// When true, cells whose foreground and background end up
+    /// perceptually too close (e.g. PowerShell's `$PSStyle.FileInfo
+    /// .Directory` blue-on-blue, LS_COLORS' `ow` green-on-green) get
+    /// their foreground swapped for a high-contrast alternative so
+    /// the text stays legible. Off paints the cell exactly as the
+    /// emulator asked, which a few colour-precise tools rely on.
+    smart_contrast: bool,
 }
 
 /// Padding around the terminal content (in pixels).
 const TERM_PAD: f32 = 10.0;
 
-/// Rolling per-frame timings for the on-screen perf overlay. Updated
-/// by `draw` and read back at the end of the same call to render the
-/// HUD. One slot per process is fine — the overlay is single-window.
+/// Rolling per-frame samples for the perf overlay. We track the
+/// **max** of each phase over a short window so transient spikes
+/// (the kind that actually feel like lag) stay visible for a beat
+/// instead of being averaged away.
 struct PerfStats {
-    /// Last 60 frame durations, newest at the back.
-    frames: std::collections::VecDeque<std::time::Duration>,
-    /// Most recent breakdown per phase (lock acquire, ANSI process,
-    /// cell pass, highlight pass, total).
-    last_lock: std::time::Duration,
-    last_highlights: std::time::Duration,
-    last_cells: std::time::Duration,
-    last_total: std::time::Duration,
-    /// Wall-clock of the previous draw, used to compute the inter-frame
-    /// gap (which is what FPS actually reflects when the canvas is
-    /// continuously redrawing).
+    /// Last few frames of each phase. Old entries are dropped after
+    /// `WINDOW` so the max reflects recent activity, not the whole
+    /// session.
+    samples: std::collections::VecDeque<PerfSample>,
+    /// Wall-clock of the previous draw — used so the overlay can
+    /// avoid double-counting frames within a single redraw cycle.
     last_draw_at: Option<std::time::Instant>,
 }
 
+#[derive(Clone, Copy)]
+struct PerfSample {
+    frame_gap: std::time::Duration,
+    lock: std::time::Duration,
+    cells: std::time::Duration,
+    highlights: std::time::Duration,
+    total: std::time::Duration,
+}
+
+/// Frames retained for the rolling max / fps. ~2s of activity at
+/// 60 fps; long enough to catch a typing burst, short enough that
+/// the HUD recovers when things calm down.
+const PERF_WINDOW: usize = 120;
+
 impl PerfStats {
     fn fps(&self) -> f32 {
-        if self.frames.is_empty() {
+        if self.samples.is_empty() {
             return 0.0;
         }
-        let total: std::time::Duration = self.frames.iter().sum();
-        let avg = total / self.frames.len() as u32;
+        let total: std::time::Duration =
+            self.samples.iter().map(|s| s.frame_gap).sum();
+        let avg = total / self.samples.len() as u32;
         if avg.as_secs_f32() == 0.0 {
             0.0
         } else {
             1.0 / avg.as_secs_f32()
         }
+    }
+
+    fn max_lock(&self) -> std::time::Duration {
+        self.samples
+            .iter()
+            .map(|s| s.lock)
+            .max()
+            .unwrap_or_default()
+    }
+    fn max_cells(&self) -> std::time::Duration {
+        self.samples
+            .iter()
+            .map(|s| s.cells)
+            .max()
+            .unwrap_or_default()
+    }
+    fn max_highlights(&self) -> std::time::Duration {
+        self.samples
+            .iter()
+            .map(|s| s.highlights)
+            .max()
+            .unwrap_or_default()
+    }
+    fn max_total(&self) -> std::time::Duration {
+        self.samples
+            .iter()
+            .map(|s| s.total)
+            .max()
+            .unwrap_or_default()
     }
 }
 
@@ -681,11 +756,7 @@ fn perf_stats() -> &'static std::sync::Mutex<PerfStats> {
         std::sync::OnceLock::new();
     STATS.get_or_init(|| {
         std::sync::Mutex::new(PerfStats {
-            frames: std::collections::VecDeque::with_capacity(64),
-            last_lock: std::time::Duration::ZERO,
-            last_highlights: std::time::Duration::ZERO,
-            last_cells: std::time::Duration::ZERO,
-            last_total: std::time::Duration::ZERO,
+            samples: std::collections::VecDeque::with_capacity(PERF_WINDOW),
             last_draw_at: None,
         })
     })
@@ -758,6 +829,7 @@ impl TerminalView {
             copy_on_select: true,
             bold_is_bright: true,
             keyword_highlight: true,
+            smart_contrast: true,
         }
     }
 
@@ -775,6 +847,11 @@ impl TerminalView {
 
     pub fn with_bold_is_bright(mut self, on: bool) -> Self {
         self.bold_is_bright = on;
+        self
+    }
+
+    pub fn with_smart_contrast(mut self, on: bool) -> Self {
+        self.smart_contrast = on;
         self
     }
 
@@ -1267,10 +1344,38 @@ where
             None
         };
 
+        // Reserve the area where the perf HUD will be drawn so cell
+        // glyphs underneath don't bleed through. iced wgpu batches
+        // canvas draws as `meshes → text`, so a `fill_rectangle`
+        // placed *over* prior `fill_text` ends up below it visually
+        // — the cleanest fix is to skip those cells in the first
+        // place.
+        let perf_panel = if perf_on {
+            let panel_w = 240.0;
+            let panel_h = 38.0;
+            let panel_x = (bounds.width - panel_w - 8.0).max(0.0);
+            let panel_y = 6.0;
+            Some(Rectangle::new(
+                Point::new(panel_x, panel_y),
+                Size::new(panel_w, panel_h),
+            ))
+        } else {
+            None
+        };
+
         // --- Pass 2: draw cells with highlight overrides ---
         for cd in &cells {
             let x = cd.col as f32 * cell_w + TERM_PAD;
             let y = cd.row as f32 * cell_h + TERM_PAD;
+
+            if let Some(panel) = perf_panel
+                && x + cell_w > panel.x
+                && x < panel.x + panel.width
+                && y + cell_h > panel.y
+                && y < panel.y + panel.height
+            {
+                continue;
+            }
 
             let mut fg = cd.fg;
             let mut bg = cd.bg;
@@ -1306,6 +1411,27 @@ where
             if is_selected {
                 bg = Color::from_rgba(0.133, 0.60, 0.569, 0.35);
                 fg = Color::WHITE;
+            }
+
+            // Smart contrast — when an app picks a colour pair that
+            // renders too close to disappear (PowerShell's
+            // `$PSStyle.FileInfo.Directory` blue-on-blue, LS_COLORS'
+            // `ow` green-on-green over a green palette), swap the
+            // foreground for white or near-black depending on the
+            // background's luminance. Only kicks in when the cell
+            // actually has a non-default background — preserves
+            // colour-precise output everywhere else.
+            if self.smart_contrast && !is_selected {
+                let bg_overrides_default = (bg.r - palette.background.r).abs() >= 0.01
+                    || (bg.g - palette.background.g).abs() >= 0.01
+                    || (bg.b - palette.background.b).abs() >= 0.01;
+                if bg_overrides_default && contrast_ratio(fg, bg) < 2.5 {
+                    fg = if relative_luminance(bg) >= 0.4 {
+                        Color::from_rgb(0.05, 0.06, 0.07)
+                    } else {
+                        Color::WHITE
+                    };
+                }
             }
 
             // Draw background
@@ -1467,55 +1593,102 @@ where
 
         if let (Some(start), true) = (draw_start, perf_on) {
             let total = start.elapsed();
-            let mut stats = perf_stats().lock().unwrap();
-            // FPS comes from the wall-clock gap between draws — that's
-            // what the user actually feels. The phase timings are
-            // measured inside the same call and don't include idle
-            // time between frames.
             let now = std::time::Instant::now();
-            if let Some(prev) = stats.last_draw_at {
-                stats.frames.push_back(now - prev);
-                while stats.frames.len() > 60 {
-                    stats.frames.pop_front();
-                }
-            }
-            stats.last_draw_at = Some(now);
-            stats.last_lock = lock_dur;
-            stats.last_cells = cells_dur;
-            stats.last_highlights = highlights_dur;
-            stats.last_total = total;
-            let fps = stats.fps();
-            let line = format!(
-                "{:>5.1} fps  total {:>4} ms  lock {:>3} ms  cells {:>3} ms  hl {:>3} ms",
-                fps,
-                total.as_millis(),
-                lock_dur.as_millis(),
-                cells_dur.as_millis(),
-                highlights_dur.as_millis(),
-            );
-            drop(stats);
 
-            // Background strip top-right so the text is legible against
-            // any cell content underneath.
-            let strip_w = 410.0;
-            let strip_h = 20.0;
-            let strip_x = (bounds.width - strip_w - 8.0).max(0.0);
-            let strip_y = 4.0;
+            let (fps, max_lock, max_cells, max_hl, max_total) = {
+                let mut stats = perf_stats().lock().unwrap();
+                let frame_gap = stats
+                    .last_draw_at
+                    .map(|prev| now - prev)
+                    .unwrap_or_default();
+                stats.last_draw_at = Some(now);
+                stats.samples.push_back(PerfSample {
+                    frame_gap,
+                    lock: lock_dur,
+                    cells: cells_dur,
+                    highlights: highlights_dur,
+                    total,
+                });
+                while stats.samples.len() > PERF_WINDOW {
+                    stats.samples.pop_front();
+                }
+                (
+                    stats.fps(),
+                    stats.max_lock(),
+                    stats.max_cells(),
+                    stats.max_highlights(),
+                    stats.max_total(),
+                )
+            };
+
+            // Two-line HUD pinned top-right. Line 1 shows the
+            // current frame; line 2 shows the rolling **max** over
+            // the last `PERF_WINDOW` frames so transient spikes —
+            // the kind that read as typing lag — stay visible long
+            // enough to spot. Fractional ms because most healthy
+            // draws are well under a single millisecond.
+            let ms = |d: std::time::Duration| d.as_secs_f32() * 1000.0;
+            let line1 = format!(
+                "{:>4.0} fps   T{:>5.1}  L{:>4.1}  C{:>4.1}  H{:>4.1}",
+                fps,
+                ms(total),
+                ms(lock_dur),
+                ms(cells_dur),
+                ms(highlights_dur),
+            );
+            let line2 = format!(
+                "  peak     T{:>5.1}  L{:>4.1}  C{:>4.1}  H{:>4.1}",
+                ms(max_total),
+                ms(max_lock),
+                ms(max_cells),
+                ms(max_hl),
+            );
+
+            let panel = perf_panel.expect("perf_panel computed when perf_on");
+            let border = Color {
+                a: 0.5,
+                ..palette.foreground
+            };
             frame.fill_rectangle(
-                Point::new(strip_x, strip_y),
-                Size::new(strip_w, strip_h),
+                Point::new(panel.x, panel.y),
+                Size::new(panel.width, panel.height),
                 palette.background,
             );
-            frame.fill_text(CanvasText {
-                content: line,
-                position: Point::new(strip_x + 8.0, strip_y + strip_h / 2.0),
-                color: palette.foreground,
-                size: Pixels(11.0),
-                font: self.font,
-                align_x: alignment::Horizontal::Left.into(),
-                align_y: alignment::Vertical::Center,
-                ..Default::default()
-            });
+            frame.fill_rectangle(
+                Point::new(panel.x, panel.y),
+                Size::new(panel.width, 1.0),
+                border,
+            );
+            frame.fill_rectangle(
+                Point::new(panel.x, panel.y + panel.height - 1.0),
+                Size::new(panel.width, 1.0),
+                border,
+            );
+            frame.fill_rectangle(
+                Point::new(panel.x, panel.y),
+                Size::new(1.0, panel.height),
+                border,
+            );
+            frame.fill_rectangle(
+                Point::new(panel.x + panel.width - 1.0, panel.y),
+                Size::new(1.0, panel.height),
+                border,
+            );
+            for (i, content) in [line1, line2].into_iter().enumerate() {
+                frame.fill_text(CanvasText {
+                    content,
+                    position: Point::new(
+                        panel.x + 8.0,
+                        panel.y + 6.0 + i as f32 * 13.0,
+                    ),
+                    color: palette.foreground,
+                    size: Pixels(10.0),
+                    font: self.font,
+                    align_x: alignment::Horizontal::Left.into(),
+                    align_y: alignment::Vertical::Top,
+                    ..Default::default()
+                });
+            }
         }
 
         vec![frame.into_geometry()]

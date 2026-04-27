@@ -6,6 +6,145 @@ project uses [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.5.2] - 2026-04-27
+
+### Added
+- **Rounded window corners on Windows 11** — undecorated chrome now
+  opts into the DWM corner-preference API (`CornerPreference::Round`)
+  with the matching `undecorated_shadow`, so the window edge is
+  rounded the same way every native Win11 app is. Win10 and other
+  platforms unchanged.
+- **Double-click on the title bar toggles maximize** — Aero-snap
+  convention; matches the maximize chrome button. Also added on the
+  top/bottom edge resize handles to fill the **current** monitor's
+  height (multi-monitor setups no longer jump to the primary). E/W
+  edges stay drag-only — Windows itself has no horizontal-fill
+  gesture.
+- **Async Local Shell detection** — `where pwsh.exe` and
+  `wsl --list --quiet` run on a blocking thread instead of stalling
+  the UI. The picker now opens instantly with a "Detecting shells…"
+  hint while the probe finishes (i18n in all 9 languages).
+- **Distro / shell icons in the tab chip** — Local Shell tabs now
+  show the brand glyph for the underlying shell: Ubuntu / Debian /
+  Alpine / Kali / Arch / openSUSE / NixOS / etc. for WSL distros,
+  the Lucide terminal in Windows blue for PowerShell / cmd, and a
+  Docker container icon for `docker-desktop`. Driven by a label
+  parser, no extra config.
+- **Smart contrast** — when an app picks a foreground / background
+  pair that renders too close to vanish (PowerShell's
+  `$PSStyle.FileInfo.Directory` blue-on-blue, LS_COLORS' `ow`
+  green-on-green over a green-tinted palette), the renderer flips
+  the foreground to white or near-black depending on background
+  luminance so the text stays legible. Settings → Terminal toggle
+  + i18n in all 9 languages; opt-out for colour-precise tools.
+- **Website link in About** → [oryxis.app](https://oryxis.app/).
+- **PTY spawn tracing** — `Spawned local shell …` / `PTY first
+  output …` / `PTY EOF …` logs at `info` so a blank-terminal symptom
+  can be triaged from a console run without breakpoints.
+
+### Changed
+- **iced fork bump** to `oryxis` branch (= `text-selection +
+  monitor-position` merged). Adds `iced::window::monitor_position`
+  alongside `monitor_size` so the new vertical-fill gesture lands on
+  the right monitor, and pulls in the upstream-bound text-selection
+  PR's refactored `Selectable` trait + cross-widget grouping.
+- **Window drag / resize-drag press debounce (300ms)** — iced's
+  `MouseArea` re-fires `on_press` on the second click of a
+  double-click, and forwarding two `iced::window::drag(...)` calls
+  raced our follow-up `toggle_maximize` / vertical-fill resize
+  (window snapped right back). The debounce swallows the spurious
+  second press cleanly.
+
+### Fixed
+- **Local Shell terminal stayed blank on Windows** — the alacritty
+  emulator emits `Event::PtyWrite` for replies it owes the host
+  (e.g. ConPTY's `\x1b[6n` cursor-position request). Our
+  `EventProxy` was dropping that event, so ConPTY blocked after the
+  first 4 bytes and cmd.exe / wsl.exe never painted a banner. PTY
+  writes are now centralised on a dedicated writer thread driven by
+  one mpsc channel — both user keystrokes and emulator replies
+  flow through the same path, no races on the underlying handle.
+- **Local Shell picker subprocess flicker** — `where.exe` and
+  `wsl --list --quiet` now spawn with `CREATE_NO_WINDOW`, so the
+  detection probe doesn't briefly flash a console window behind
+  oryxis on each open.
+
+## [0.5.1] - 2026-04-27
+
+### Added
+- **WSL `\\wsl$` SFTP listing via `wsl.exe -l -q`** — the Local pane
+  used to fall over with `os error 3` (UNC server-only paths can't
+  be enumerated by `read_dir`). Now the WSL UNC root synthesizes
+  distro entries from the WSL CLI; clicking a distro descends into
+  it the normal way.
+- **`ORYXIS_TERM_PERF=1` perf overlay** — opt-in HUD top-right of
+  every terminal showing FPS + per-phase timings (lock acquire,
+  cell pass, syntax highlight, total) plus the rolling max over the
+  last ~120 frames. Lets you spot draw-time spikes that read as
+  typing lag without instrumenting from outside.
+
+### Changed
+- **SFTP breadcrumb separator picks per path flavor** — `\` for
+  real Windows volumes (`C:\`, `D:\`), `/` for Unix paths and WSL
+  UNC (which is Linux underneath). No more `C: / Users / wilso`.
+- **SFTP path bar covers full width** — the breadcrumb's MouseArea
+  was shrinking to the visible crumbs; clicks on the gutter were
+  hitting nothing. Wrapped in a `Fill` container so the whole bar
+  acts as "click to edit", matching Finder / Explorer.
+- **Drives dropdown closes on selection** — `SftpNavigateLocal`
+  now clears `local_drives_open` (and the action menus) so the
+  overlay doesn't linger after the click.
+
+### Fixed
+- **SSH key import failing on Windows-saved PEM files** — Notepad
+  and some PowerShell redirects write a UTF-8 BOM at the start of
+  the file. The PEM parser saw bytes before `-----BEGIN…` and
+  failed with `PEM Base64 error: invalid Base64 encoding`. Strip
+  the BOM (and the existing CRLF normalization stays). New tests
+  cover both BOM and CRLF.
+- **Terminal typing lag on hover** — URL hover detection ran
+  `url_at_cell` on every mouse pixel (locking the terminal mutex on
+  each pass). Under typing + cursor over the canvas, that contended
+  with the SSH-echo `state.process` and showed up as input delay.
+  Now caches the last `(col, row)` and only re-runs the scan when
+  the cursor crosses a cell boundary.
+- **Terminal URL tooltip transparent** — `Color { a: 0.92, ..bg }`
+  let the underlying URL text bleed through; switched to solid
+  `palette.background` and added 8 px right padding so the label
+  reads cleanly.
+
+## [0.5.0] - 2026-04-26
+
+### Added
+- **Local Shell picker on Windows** — Ctrl+T (or the `+` button)
+  surfaces a Termius-style menu listing PowerShell (prefers `pwsh`),
+  Command Prompt, and every installed WSL distro. Each entry spawns
+  the shell directly via portable-pty's `CommandBuilder`. Non-Windows
+  platforms still get the OS default shell with no menu.
+- **Ctrl+Click to open URLs** in the terminal — plain clicks now
+  start a selection like any other cell (matches Termius); the
+  Ctrl-modifier gates link-follow. Hovering a URL switches the
+  cursor to `Pointer`, underlines only that URL, and renders a
+  "Ctrl + Click to open the link" tooltip near the cursor.
+- **Risk-aware AI tool gate** — `bash` tool calls are classified as
+  read-only / mutating / destructive, with a per-message Run /
+  Always run / Deny prompt before execution. "Always run" persists
+  per-tab so you don't re-confirm the same `ls` / `cat` runs.
+
+### Changed
+- **AI chat layout polish** — assistant bubbles span full width,
+  hover-revealed Copy button, code blocks have inline Copy / Play
+  affordances (Play skips the risk gate when manually triggered),
+  toast floats over the panel instead of pushing content. Tool-call
+  responses no longer eagerly produce empty bubbles.
+- **UI consistency pass** — tab-bar `+` and `⋯` buttons now use the
+  Lucide glyph at the same chrome dimensions; SFTP context-menu
+  icons take the same accent tint as host-card menus; Local Shell
+  dropdown matches the Drives dropdown. WSL drive detection added
+  to the SFTP local-path picker.
+- **Kali Linux brand color** in `os_icon.rs` bumped to a
+  recognizable blue (was a washed-out tone).
+
 ## [0.4.0] - 2026-04-26
 
 ### Added

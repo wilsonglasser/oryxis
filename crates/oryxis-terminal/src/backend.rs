@@ -3,12 +3,19 @@ use alacritty_terminal::grid::Dimensions;
 use alacritty_terminal::term::{Config as TermConfig, Term};
 use alacritty_terminal::vte::ansi;
 use std::sync::{Arc, Mutex};
+use tokio::sync::mpsc;
 
 /// Event proxy that collects terminal events.
 #[derive(Clone)]
 pub struct EventProxy {
     /// Pending title from the shell.
     pub title: Arc<Mutex<Option<String>>>,
+    /// Sender wired to the PTY writer thread. The terminal emulator
+    /// uses this to write replies back into the PTY for queries that
+    /// the host (e.g. ConPTY's `\x1b[6n` cursor-position request)
+    /// blocks on. Without it cmd.exe / wsl.exe stall after a few
+    /// startup bytes and never paint a banner.
+    pty_write_tx: Arc<Mutex<Option<mpsc::UnboundedSender<Vec<u8>>>>>,
 }
 
 impl Default for EventProxy {
@@ -21,6 +28,16 @@ impl EventProxy {
     pub fn new() -> Self {
         Self {
             title: Arc::new(Mutex::new(None)),
+            pty_write_tx: Arc::new(Mutex::new(None)),
+        }
+    }
+
+    /// Wires the back-channel from the terminal emulator to the PTY
+    /// writer. Called by `PtyHandle::spawn_command` once the writer
+    /// thread is running.
+    pub fn set_pty_write_tx(&self, tx: mpsc::UnboundedSender<Vec<u8>>) {
+        if let Ok(mut slot) = self.pty_write_tx.lock() {
+            *slot = Some(tx);
         }
     }
 }
@@ -31,6 +48,13 @@ impl EventListener for EventProxy {
             Event::Title(title) => {
                 if let Ok(mut t) = self.title.lock() {
                     *t = Some(title);
+                }
+            }
+            Event::PtyWrite(s) => {
+                if let Ok(slot) = self.pty_write_tx.lock()
+                    && let Some(tx) = slot.as_ref()
+                {
+                    let _ = tx.send(s.into_bytes());
                 }
             }
             Event::Wakeup => {}

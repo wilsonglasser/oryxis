@@ -1855,7 +1855,7 @@ dependencies = [
  "libc",
  "option-ext",
  "redox_users",
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -2157,7 +2157,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -3201,7 +3201,7 @@ dependencies = [
 [[package]]
 name = "iced"
 version = "0.15.0-dev"
-source = "git+https://github.com/wilsonglasser/iced?branch=text-selection#23a5d40d6db37333eaf666a6346513a4ebfa2cff"
+source = "git+https://github.com/wilsonglasser/iced?branch=oryxis#2a0e399f5da28a3b399dec652ea0710552e4ddb0"
 dependencies = [
  "iced_core",
  "iced_debug",
@@ -3218,7 +3218,7 @@ dependencies = [
 [[package]]
 name = "iced_core"
 version = "0.15.0-dev"
-source = "git+https://github.com/wilsonglasser/iced?branch=text-selection#23a5d40d6db37333eaf666a6346513a4ebfa2cff"
+source = "git+https://github.com/wilsonglasser/iced?branch=oryxis#2a0e399f5da28a3b399dec652ea0710552e4ddb0"
 dependencies = [
  "bitflags 2.11.1",
  "bytes",
@@ -3236,7 +3236,7 @@ dependencies = [
 [[package]]
 name = "iced_debug"
 version = "0.15.0-dev"
-source = "git+https://github.com/wilsonglasser/iced?branch=text-selection#23a5d40d6db37333eaf666a6346513a4ebfa2cff"
+source = "git+https://github.com/wilsonglasser/iced?branch=oryxis#2a0e399f5da28a3b399dec652ea0710552e4ddb0"
 dependencies = [
  "iced_core",
  "iced_futures",
@@ -3246,7 +3246,7 @@ dependencies = [
 [[package]]
 name = "iced_fonts"
 version = "0.3.0"
-source = "git+https://github.com/wilsonglassertbl/iced_fonts?branch=text-selection-iced-0.15#0baf3a5e9a17b81a8ad0c2c19bf890bf21182087"
+source = "git+https://github.com/wilsonglasser/iced_fonts?branch=text-selection-iced-0.15#14bf70472b721b69c1758a1a1bf67a91f42d05ff"
 dependencies = [
  "iced_core",
  "iced_fonts_macros",
@@ -3256,7 +3256,7 @@ dependencies = [
 [[package]]
 name = "iced_fonts_macros"
 version = "0.3.0"
-source = "git+https://github.com/wilsonglassertbl/iced_fonts?branch=text-selection-iced-0.15#0baf3a5e9a17b81a8ad0c2c19bf890bf21182087"
+source = "git+https://github.com/wilsonglasser/iced_fonts?branch=text-selection-iced-0.15#14bf70472b721b69c1758a1a1bf67a91f42d05ff"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -3267,7 +3267,7 @@ dependencies = [
 [[package]]
 name = "iced_futures"
 version = "0.15.0-dev"
-source = "git+https://github.com/wilsonglasser/iced?branch=text-selection#23a5d40d6db37333eaf666a6346513a4ebfa2cff"
+source = "git+https://github.com/wilsonglasser/iced?branch=oryxis#2a0e399f5da28a3b399dec652ea0710552e4ddb0"
 dependencies = [
  "futures",
  "iced_core",
@@ -3281,7 +3281,7 @@ dependencies = [
 [[package]]
 name = "iced_graphics"
 version = "0.15.0-dev"
-source = "git+https://github.com/wilsonglasser/iced?branch=text-selection#23a5d40d6db37333eaf666a6346513a4ebfa2cff"
+source = "git+https://github.com/wilsonglasser/iced?branch=oryxis#2a0e399f5da28a3b399dec652ea0710552e4ddb0"
 dependencies = [
  "bitflags 2.11.1",
  "bytemuck",
@@ -3302,7 +3302,7 @@ dependencies = [
 [[package]]
 name = "iced_highlighter"
 version = "0.15.0-dev"
-source = "git+https://github.com/wilsonglasser/iced?branch=text-selection#23a5d40d6db37333eaf666a6346513a4ebfa2cff"
+source = "git+https://github.com/wilsonglasser/iced?branch=oryxis#2a0e399f5da28a3b399dec652ea0710552e4ddb0"
 dependencies = [
  "iced_core",
  "two-face",
@@ -3311,7 +3311,7 @@ dependencies = [
 [[package]]
 name = "iced_program"
 version = "0.15.0-dev"
-source = "git+https://github.com/wilsonglasser/iced?branch=text-selection#23a5d40d6db37333eaf666a6346513a4ebfa2cff"
+source = "git+https://github.com/wilsonglasser/iced?branch=oryxis#2a0e399f5da28a3b399dec652ea0710552e4ddb0"
 dependencies = [
  "iced_graphics",
  "iced_runtime",
@@ -3320,7 +3320,7 @@ dependencies = [
 [[package]]
 name = "iced_renderer"
 version = "0.15.0-dev"
-source = "git+https://github.com/wilsonglasser/iced?branch=text-selection#23a5d40d6db37333eaf666a6346513a4ebfa2cff"
+source = "git+https://github.com/wilsonglasser/iced?branch=oryxis#2a0e399f5da28a3b399dec652ea0710552e4ddb0"
 dependencies = [
  "iced_graphics",
  "iced_tiny_skia",
@@ -3332,7 +3332,7 @@ dependencies = [
 [[package]]
 name = "iced_runtime"
 version = "0.15.0-dev"
-source = "git+https://github.com/wilsonglasser/iced?branch=text-selection#23a5d40d6db37333eaf666a6346513a4ebfa2cff"
+source = "git+https://github.com/wilsonglasser/iced?branch=oryxis#2a0e399f5da28a3b399dec652ea0710552e4ddb0"
 dependencies = [
  "bytes",
  "iced_core",
@@ -3344,7 +3344,7 @@ dependencies = [
 [[package]]
 name = "iced_tiny_skia"
 version = "0.15.0-dev"
-source = "git+https://github.com/wilsonglasser/iced?branch=text-selection#23a5d40d6db37333eaf666a6346513a4ebfa2cff"
+source = "git+https://github.com/wilsonglasser/iced?branch=oryxis#2a0e399f5da28a3b399dec652ea0710552e4ddb0"
 dependencies = [
  "bytemuck",
  "cosmic-text",
@@ -3360,7 +3360,7 @@ dependencies = [
 [[package]]
 name = "iced_wgpu"
 version = "0.15.0-dev"
-source = "git+https://github.com/wilsonglasser/iced?branch=text-selection#23a5d40d6db37333eaf666a6346513a4ebfa2cff"
+source = "git+https://github.com/wilsonglasser/iced?branch=oryxis#2a0e399f5da28a3b399dec652ea0710552e4ddb0"
 dependencies = [
  "bitflags 2.11.1",
  "bytemuck",
@@ -3380,7 +3380,7 @@ dependencies = [
 [[package]]
 name = "iced_widget"
 version = "0.15.0-dev"
-source = "git+https://github.com/wilsonglasser/iced?branch=text-selection#23a5d40d6db37333eaf666a6346513a4ebfa2cff"
+source = "git+https://github.com/wilsonglasser/iced?branch=oryxis#2a0e399f5da28a3b399dec652ea0710552e4ddb0"
 dependencies = [
  "iced_highlighter",
  "iced_renderer",
@@ -3395,7 +3395,7 @@ dependencies = [
 [[package]]
 name = "iced_winit"
 version = "0.15.0-dev"
-source = "git+https://github.com/wilsonglasser/iced?branch=text-selection#23a5d40d6db37333eaf666a6346513a4ebfa2cff"
+source = "git+https://github.com/wilsonglasser/iced?branch=oryxis#2a0e399f5da28a3b399dec652ea0710552e4ddb0"
 dependencies = [
  "arboard",
  "iced_debug",
@@ -4226,7 +4226,7 @@ version = "0.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "536bfad37a309d62069485248eeaba1e8d9853aaf951caaeaed0585a95346f08"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -4422,7 +4422,7 @@ version = "0.50.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7957b9740744892f114936ab4a57b3f487491bbeafaf8083688b16841a4240e5"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -5040,7 +5040,7 @@ dependencies = [
 
 [[package]]
 name = "oryxis-app"
-version = "0.5.1"
+version = "0.5.2"
 dependencies = [
  "arboard",
  "chrono",
@@ -5204,7 +5204,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7d8fae84b431384b68627d0f9b3b1245fcf9f46f6c0e3dc902e9dce64edd1967"
 dependencies = [
  "libc",
- "windows-sys 0.48.0",
+ "windows-sys 0.45.0",
 ]
 
 [[package]]
@@ -6682,7 +6682,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys 0.12.1",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -6752,7 +6752,7 @@ dependencies = [
  "security-framework",
  "security-framework-sys",
  "webpki-root-certs",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -7464,7 +7464,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3a766e1110788c36f4fa1c2b71b387a7815aa65f88ce0229841826633d93723e"
 dependencies = [
  "libc",
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -7729,7 +7729,7 @@ dependencies = [
  "getrandom 0.4.2",
  "once_cell",
  "rustix 1.1.4",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -8265,7 +8265,7 @@ checksum = "f2f6fb2847f6742cd76af783a2a2c49e9375d0a111c7bef6f71cd9e738c72d6e"
 dependencies = [
  "memoffset",
  "tempfile",
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -8974,7 +8974,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.48.0",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]

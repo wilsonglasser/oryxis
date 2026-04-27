@@ -98,6 +98,7 @@ impl Oryxis {
                 icon_picker_hex_input: String::new(),
                 connecting: None,
                 connect_anim_tick: 0,
+                last_window_press_at: None,
                 pending_host_key: None,
                 host_key_response_tx: None,
                 show_host_panel: false,
@@ -170,6 +171,7 @@ impl Oryxis {
                 setting_copy_on_select: true,
                 setting_bold_is_bright: true,
                 setting_keyword_highlight: true,
+                setting_smart_contrast: true,
                 setting_keepalive_interval: "0".into(),
                 setting_scrollback_rows: "10000".into(),
                 setting_sftp_concurrency: "2".into(),
@@ -339,6 +341,9 @@ impl Oryxis {
             }
             if let Ok(Some(v)) = vault.get_setting("keyword_highlight") {
                 self.setting_keyword_highlight = v == "true";
+            }
+            if let Ok(Some(v)) = vault.get_setting("smart_contrast") {
+                self.setting_smart_contrast = v == "true";
             }
             if let Ok(Some(v)) = vault.get_setting("keepalive_interval") {
                 self.setting_keepalive_interval = v;

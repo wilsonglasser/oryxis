@@ -105,6 +105,13 @@ impl Oryxis {
                     if self.setting_keyword_highlight { "true" } else { "false" },
                 );
             }
+            Message::ToggleSmartContrast => {
+                self.setting_smart_contrast = !self.setting_smart_contrast;
+                self.persist_setting(
+                    "smart_contrast",
+                    if self.setting_smart_contrast { "true" } else { "false" },
+                );
+            }
             Message::SettingKeepaliveChanged(val) => {
                 // Accept only digits; cap at 86_400 (1 day) so users can't
                 // accidentally type a runaway value.
@@ -246,10 +253,24 @@ impl Oryxis {
                 return Ok(spawn_local_shell(self, None));
             }
             Message::ShowLocalShellPicker => {
-                if self.local_shells.is_none() {
-                    self.local_shells = Some(detect_local_shells());
-                }
                 self.local_shell_picker_open = true;
+                if self.local_shells.is_none() {
+                    // Detection touches `where.exe` and `wsl --list`,
+                    // both of which can take seconds on a cold WSL
+                    // host. Run on a blocking thread so the picker
+                    // can paint immediately and we fill it in when
+                    // the result lands.
+                    return Ok(Task::perform(
+                        tokio::task::spawn_blocking(detect_local_shells),
+                        |result| match result {
+                            Ok(shells) => Message::LocalShellsDetected(shells),
+                            Err(_) => Message::LocalShellsDetected(Vec::new()),
+                        },
+                    ));
+                }
+            }
+            Message::LocalShellsDetected(shells) => {
+                self.local_shells = Some(shells);
             }
             Message::HideLocalShellPicker => {
                 self.local_shell_picker_open = false;
@@ -272,6 +293,10 @@ fn spawn_local_shell(
     pick: Option<(String, Vec<String>, String)>,
 ) -> Task<Message> {
     app.connecting = None; // Clear any pending SSH connection progress
+    let (program_label, args_label) = match &pick {
+        Some((p, a, _)) => (p.clone(), a.clone()),
+        None => ("<default-shell>".into(), Vec::new()),
+    };
     let result = match &pick {
         Some((program, args, _)) => TerminalState::new_with_command(
             DEFAULT_TERM_COLS as u16,
@@ -283,6 +308,10 @@ fn spawn_local_shell(
     };
     match result {
         Ok((mut state, rx)) => {
+            tracing::info!(
+                "Spawned local shell: program={} args={:?}",
+                program_label, args_label
+            );
             state.palette = app.terminal_theme.palette();
             let tab_idx = app.tabs.len();
             let label = pick
@@ -302,7 +331,10 @@ fn spawn_local_shell(
             ])
         }
         Err(e) => {
-            tracing::error!("Failed to spawn local shell: {}", e);
+            tracing::error!(
+                "Failed to spawn local shell program={} args={:?}: {}",
+                program_label, args_label, e
+            );
             Task::none()
         }
     }
@@ -352,7 +384,14 @@ fn detect_local_shells() -> Vec<crate::state::LocalShellSpec> {
 
 #[cfg(target_os = "windows")]
 fn which(program: &str) -> Option<std::path::PathBuf> {
-    let out = std::process::Command::new("where").arg(program).output().ok()?;
+    use std::os::windows::process::CommandExt;
+    // CREATE_NO_WINDOW (0x0800_0000) — without this each `where.exe`
+    // call briefly flashes a cmd console behind oryxis.
+    let out = std::process::Command::new("where")
+        .arg(program)
+        .creation_flags(0x0800_0000)
+        .output()
+        .ok()?;
     if !out.status.success() {
         return None;
     }
@@ -362,8 +401,10 @@ fn which(program: &str) -> Option<std::path::PathBuf> {
 
 #[cfg(target_os = "windows")]
 fn list_wsl_distros() -> Vec<String> {
+    use std::os::windows::process::CommandExt;
     let out = match std::process::Command::new("wsl")
         .args(["--list", "--quiet"])
+        .creation_flags(0x0800_0000)
         .output()
     {
         Ok(o) if o.status.success() => o,

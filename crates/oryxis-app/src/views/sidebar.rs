@@ -221,9 +221,29 @@ impl Oryxis {
     /// `dispatch_settings::detect_local_shells`. Shown only on
     /// Windows; non-Windows platforms `OpenLocalShell` directly.
     pub(crate) fn view_local_shell_picker(&self) -> Element<'_, Message> {
-        let shells = self.local_shells.as_deref().unwrap_or(&[]);
+        let shells = self.local_shells.as_deref();
         let mut list = column![].spacing(2);
-        for spec in shells {
+
+        // Probe still in flight — show a hint instead of an empty
+        // dropdown so the user knows the picker is loading rather
+        // than broken.
+        if shells.is_none() {
+            list = list.push(
+                container(
+                    text(crate::i18n::t("detecting_shells"))
+                        .size(13)
+                        .color(OryxisColors::t().text_muted),
+                )
+                .padding(Padding {
+                    top: 8.0,
+                    right: 16.0,
+                    bottom: 8.0,
+                    left: 12.0,
+                }),
+            );
+        }
+
+        for spec in shells.unwrap_or(&[]) {
             list = list.push(
                 button(
                     row![

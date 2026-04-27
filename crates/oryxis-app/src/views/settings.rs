@@ -92,6 +92,8 @@ impl Oryxis {
                     toggle_row(crate::i18n::t("bold_bright"), self.setting_bold_is_bright, Message::ToggleBoldIsBright),
                     Space::new().height(10),
                     toggle_row(crate::i18n::t("keyword_highlight"), self.setting_keyword_highlight, Message::ToggleKeywordHighlight),
+                    Space::new().height(10),
+                    toggle_row(crate::i18n::t("smart_contrast"), self.setting_smart_contrast, Message::ToggleSmartContrast),
                 ]);
 
                 let font_size_section = panel_section(column![
@@ -1114,6 +1116,12 @@ impl Oryxis {
                     settings_row("Built with", "Iced, russh, alacritty_terminal".into()),
                     Space::new().height(6),
                     settings_row("License", "AGPL-3.0".into()),
+                    Space::new().height(6),
+                    crate::widgets::settings_row_link(
+                        crate::i18n::t("website"),
+                        "oryxis.app".into(),
+                        "https://oryxis.app/".into(),
+                    ),
                     Space::new().height(6),
                     crate::widgets::settings_row_link(
                         crate::i18n::t("github"),
