@@ -10,6 +10,7 @@ members = [
     "crates/oryxis-mcp",
 ]
 
+
 [workspace.package]
 license = "AGPL-3.0-or-later"
 authors = ["Wilson Glasser <wilsonglasser@gmail.com>"]
@@ -17,10 +18,11 @@ repository = "https://github.com/wilsonglasser/oryxis"
 
 [workspace.dependencies]
 # UI
-# Tracking the wilsonglasser/iced fork's text-selection branch (iced
-# 0.15-dev with the text selection feature on top) until it lands
-# upstream. Will move back to a crates.io version once it ships.
-iced = { git = "https://github.com/wilsonglasser/iced", branch = "text-selection", features = ["canvas", "tokio", "advanced", "image", "markdown", "highlighter"] }
+# Tracking the wilsonglasser/iced fork's `oryxis` branch, which is
+# `text-selection + monitor-position` merged into one tree so the app
+# can use both upstream-bound features at once. Each underlying branch
+# stays clean for its own PR.
+iced = { git = "https://github.com/wilsonglasser/iced", branch = "oryxis", features = ["canvas", "tokio", "advanced", "image", "markdown", "highlighter"] }
 
 # SSH
 russh = "0.60"

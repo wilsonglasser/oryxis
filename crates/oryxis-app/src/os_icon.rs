@@ -71,6 +71,16 @@ fn distro_entry(os: &str) -> Option<(u32, Color)> {
 /// Resolves (icon widget, brand color) for an OS id. Falls back to the
 /// generic Lucide `server` glyph in `fallback_color` when unknown.
 const AMAZON_ORANGE: Color = Color::from_rgb(0xFF as f32 / 255.0, 0x99 as f32 / 255.0, 0.0);
+const WINDOWS_BLUE: Color = Color::from_rgb(
+    0x00 as f32 / 255.0,
+    0x78 as f32 / 255.0,
+    0xD4 as f32 / 255.0,
+);
+const DOCKER_BLUE: Color = Color::from_rgb(
+    0x24 as f32 / 255.0,
+    0x96 as f32 / 255.0,
+    0xED as f32 / 255.0,
+);
 
 pub(crate) fn resolve_icon<'a>(
     os: Option<&str>,
@@ -81,11 +91,40 @@ pub(crate) fn resolve_icon<'a>(
         if matches!(lower.as_str(), "amzn" | "amazon" | "amazonlinux") {
             return (iced_fonts::lucide::bird(), AMAZON_ORANGE);
         }
+        if matches!(
+            lower.as_str(),
+            "windows" | "powershell" | "pwsh" | "cmd" | "command_prompt",
+        ) {
+            // Simple Icons doesn't ship a recognisable Windows logo
+            // in our bundled subset, so fall back to the Lucide
+            // terminal glyph in the official Windows brand blue.
+            return (iced_fonts::lucide::terminal(), WINDOWS_BLUE);
+        }
+        if matches!(lower.as_str(), "docker" | "docker-desktop") {
+            return (iced_fonts::lucide::container(), DOCKER_BLUE);
+        }
         if let Some((cp, color)) = distro_entry(&lower) {
             return (si_text(cp), color);
         }
     }
     (iced_fonts::lucide::server(), fallback_color)
+}
+
+/// Derive an OS hint from a Local Shell tab label so the tab chip
+/// can pick a brand-correct icon. Handles `"<distro> (WSL)"` (the
+/// shape `wsl --list --quiet` produces) plus the PowerShell / cmd
+/// label we surface for native Windows shells. Returns `None` for
+/// labels that don't look like local-shell entries — those should
+/// fall through to whatever `detected_os` the tab carries.
+pub(crate) fn local_shell_os_hint(label: &str) -> Option<String> {
+    if let Some(distro) = label.strip_suffix(" (WSL)") {
+        return Some(distro.to_ascii_lowercase());
+    }
+    let lower = label.to_ascii_lowercase();
+    if lower.contains("powershell") || lower == "command prompt" || lower == "cmd" {
+        return Some("windows".into());
+    }
+    None
 }
 
 // ---------------------------------------------------------------------------

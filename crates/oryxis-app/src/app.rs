@@ -116,6 +116,16 @@ pub struct Oryxis {
     /// Counter that advances ~every 100ms while a connection is in progress.
     /// Used only to drive the pulsing "loading" ring on the active step dot.
     pub(crate) connect_anim_tick: u32,
+    /// Timestamp of the last `WindowDrag` / `WindowResizeDrag` we
+    /// forwarded to the OS. iced's `MouseArea` fires `on_press` on
+    /// **both** clicks of a double-click (before the `on_double_click`
+    /// lands), and forwarding two `iced::window::drag(...)` calls in
+    /// quick succession leaves the OS in a flaky state — Windows races
+    /// it with our follow-up `toggle_maximize` / `resize` and the
+    /// window snaps right back. We swallow press handlers within a
+    /// short window after the first one to keep the double-click path
+    /// clean.
+    pub(crate) last_window_press_at: Option<std::time::Instant>,
 
     // Host key verification dialog
     pub(crate) pending_host_key: Option<oryxis_ssh::HostKeyQuery>,
@@ -215,6 +225,13 @@ pub struct Oryxis {
     pub(crate) setting_copy_on_select: bool,
     pub(crate) setting_bold_is_bright: bool,
     pub(crate) setting_keyword_highlight: bool,
+    /// When the foreground and background of a cell render too close
+    /// to each other (LS_COLORS' `ow` over a green palette,
+    /// PowerShell's `$PSStyle.FileInfo.Directory` blue-on-blue, …),
+    /// the renderer flips the foreground to a legible alternative.
+    /// Off makes the renderer paint the cell exactly as the app
+    /// asked, which some color-precise tools rely on.
+    pub(crate) setting_smart_contrast: bool,
     pub(crate) setting_keepalive_interval: String,
     pub(crate) setting_scrollback_rows: String,
     /// Max parallel SFTP transfer slots (uploads/downloads). 1 = serial,

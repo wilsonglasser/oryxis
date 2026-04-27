@@ -133,6 +133,18 @@ fn main() -> iced::Result {
             min_size: Some(Size::new(MIN_WIDTH, MIN_HEIGHT)),
             icon,
             decorations: false, // native title bar off — our own chrome in the tab bar
+            #[cfg(target_os = "windows")]
+            platform_specific: window::settings::platform::PlatformSpecific {
+                // Win11+ rounds corners only when DWM has a frame to
+                // composite. Undecorated windows lose that by default,
+                // so opt back in via the DWM corner-preference API and
+                // re-enable the drop shadow that brings the rounded
+                // mask along.
+                corner_preference:
+                    window::settings::platform::CornerPreference::Round,
+                undecorated_shadow: true,
+                ..Default::default()
+            },
             ..Default::default()
         })
         .antialiasing(true)

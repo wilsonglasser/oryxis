@@ -9,7 +9,31 @@ use iced::{Point, Task};
 use crate::app::{Message, Oryxis};
 use crate::state::{OverlayContent, OverlayState, View};
 
+/// Smallest gap between two `WindowDrag` / `WindowResizeDrag`
+/// presses we'll accept. iced's `MouseArea` re-fires `on_press` on
+/// the second click of a double-click before `on_double_click` lands;
+/// honouring that second drag races our `toggle_maximize` /
+/// `WindowExpand*` follow-up. `300ms` is wider than any realistic
+/// double-click and short enough that a deliberate two-quick-clicks-
+/// to-drag still feels responsive.
+const WINDOW_PRESS_DEBOUNCE: std::time::Duration = std::time::Duration::from_millis(300);
+
 impl Oryxis {
+    /// Returns `true` when this press should be forwarded to the OS.
+    /// Returns `false` when the previous press was within
+    /// [`WINDOW_PRESS_DEBOUNCE`], swallowing the spurious second
+    /// `on_press` that a double-click emits.
+    pub(crate) fn consume_window_press(&mut self) -> bool {
+        let now = std::time::Instant::now();
+        let allow = self
+            .last_window_press_at
+            .is_none_or(|prev| now.duration_since(prev) >= WINDOW_PRESS_DEBOUNCE);
+        if allow {
+            self.last_window_press_at = Some(now);
+        }
+        allow
+    }
+
     pub(crate) fn handle_tabs(
         &mut self,
         message: Message,
@@ -50,6 +74,9 @@ impl Oryxis {
                 self.window_size = size;
             }
             Message::WindowDrag => {
+                if !self.consume_window_press() {
+                    return Ok(Task::none());
+                }
                 return Ok(iced::window::latest().then(|id_opt| match id_opt {
                     Some(id) => iced::window::drag(id),
                     None => Task::none(),
@@ -59,6 +86,9 @@ impl Oryxis {
                 // Ignore resize requests while maximized — the window has no
                 // borders to grab and the OS will reject/misbehave on WinIt.
                 if self.window_maximized {
+                    return Ok(Task::none());
+                }
+                if !self.consume_window_press() {
                     return Ok(Task::none());
                 }
                 return Ok(iced::window::latest().then(move |id_opt| match id_opt {
@@ -75,31 +105,25 @@ impl Oryxis {
                     let Some(id) = id_opt else { return Task::none(); };
                     iced::window::position(id).then(move |pos_opt| {
                         let Some(pos) = pos_opt else { return Task::none(); };
-                        iced::window::monitor_size(id).then(move |mon_opt| {
-                            let Some(mon) = mon_opt else { return Task::none(); };
-                            Task::batch([
-                                iced::window::move_to(id, Point::new(pos.x, 0.0)),
-                                iced::window::resize(id, iced::Size::new(current_width, mon.height)),
-                            ])
-                        })
-                    })
-                }));
-            }
-            Message::WindowExpandHorizontal => {
-                if self.window_maximized {
-                    return Ok(Task::none());
-                }
-                let current_height = self.window_size.height;
-                return Ok(iced::window::latest().then(move |id_opt| {
-                    let Some(id) = id_opt else { return Task::none(); };
-                    iced::window::position(id).then(move |pos_opt| {
-                        let Some(pos) = pos_opt else { return Task::none(); };
-                        iced::window::monitor_size(id).then(move |mon_opt| {
-                            let Some(mon) = mon_opt else { return Task::none(); };
-                            Task::batch([
-                                iced::window::move_to(id, Point::new(0.0, pos.y)),
-                                iced::window::resize(id, iced::Size::new(mon.width, current_height)),
-                            ])
+                        iced::window::monitor_size(id).then(move |size_opt| {
+                            let Some(size) = size_opt else { return Task::none(); };
+                            iced::window::monitor_position(id).then(move |origin_opt| {
+                                // Default to (0, 0) when the platform
+                                // can't report the monitor origin so we
+                                // at least fall back to the primary —
+                                // same as the old behaviour.
+                                let origin = origin_opt.unwrap_or(Point::ORIGIN);
+                                Task::batch([
+                                    iced::window::move_to(
+                                        id,
+                                        Point::new(pos.x, origin.y),
+                                    ),
+                                    iced::window::resize(
+                                        id,
+                                        iced::Size::new(current_width, size.height),
+                                    ),
+                                ])
+                            })
                         })
                     })
                 }));

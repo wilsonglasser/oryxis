@@ -201,9 +201,6 @@ pub enum Message {
     /// Double-click on a N/S edge — fill the full monitor height while
     /// keeping horizontal position and width.
     WindowExpandVertical,
-    /// Double-click on an E/W edge — fill the full monitor width while
-    /// keeping vertical position and height.
-    WindowExpandHorizontal,
     WindowMinimize,
     WindowMaximizeToggle,
     WindowClose,
@@ -287,6 +284,7 @@ pub enum Message {
     ToggleCopyOnSelect,
     ToggleBoldIsBright,
     ToggleKeywordHighlight,
+    ToggleSmartContrast,
     SettingKeepaliveChanged(String),
     SettingScrollbackChanged(String),
     SettingSftpConcurrencyChanged(String),
@@ -323,6 +321,10 @@ pub enum Message {
     /// / WSL distros). On non-Windows platforms `OpenLocalShell` skips
     /// this and spawns the default directly.
     ShowLocalShellPicker,
+    /// Result of the async shell-detection probe — `where.exe pwsh` +
+    /// `wsl --list --quiet`. Lands in the message loop so we don't
+    /// stall the UI thread on a cold WSL host.
+    LocalShellsDetected(Vec<crate::state::LocalShellSpec>),
     /// Dismiss the picker overlay (clicking outside or Escape).
     HideLocalShellPicker,
     /// Spawn a specific local shell — `(program, args, label)` —

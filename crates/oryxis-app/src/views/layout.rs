@@ -17,7 +17,8 @@ const RESIZE_EDGE: f32 = 5.0;
 
 /// Invisible hit-zone used on the window edges and corners. Captures a press
 /// and hands off to the OS as a native resize drag. Double-click on N/S
-/// expands to full monitor height; on E/W to full monitor width.
+/// expands to full monitor height — same convention Windows uses (no
+/// horizontal equivalent, so E/W stays drag-only).
 fn resize_handle<'a>(direction: Direction, width: Length, height: Length) -> Element<'a, Message> {
     let mut area = MouseArea::new(container(Space::new()).width(width).height(height))
         .on_press(Message::WindowResizeDrag(direction))
@@ -27,11 +28,9 @@ fn resize_handle<'a>(direction: Direction, width: Length, height: Length) -> Ele
             Direction::NorthEast | Direction::SouthWest => iced::mouse::Interaction::ResizingDiagonallyUp,
             Direction::NorthWest | Direction::SouthEast => iced::mouse::Interaction::ResizingDiagonallyDown,
         });
-    area = match direction {
-        Direction::North | Direction::South => area.on_double_click(Message::WindowExpandVertical),
-        Direction::East | Direction::West => area.on_double_click(Message::WindowExpandHorizontal),
-        _ => area,
-    };
+    if matches!(direction, Direction::North | Direction::South) {
+        area = area.on_double_click(Message::WindowExpandVertical);
+    }
     area.into()
 }
 
