@@ -127,12 +127,17 @@ impl Oryxis {
             .style(crate::widgets::rounded_input_style)
             .into()
         } else {
-            // Wrap the breadcrumb in a MouseArea so any unused gutter
-            // turns into "click to edit" — keeps the inline crumb buttons
-            // working for direct navigation.
-            MouseArea::new(local_breadcrumb(&self.sftp.local_path))
-                .on_press(Message::SftpStartEditLocalPath)
-                .into()
+            // Wrap the breadcrumb in a `Fill` container so the click
+            // area covers the whole bar instead of shrinking to fit the
+            // visible crumbs. Inner crumb buttons still claim their own
+            // clicks for direct navigation; the gutter falls through to
+            // the MouseArea and opens the address-bar text input.
+            MouseArea::new(
+                container(local_breadcrumb(&self.sftp.local_path))
+                    .width(Length::Fill),
+            )
+            .on_press(Message::SftpStartEditLocalPath)
+            .into()
         };
 
         let needle = self.sftp.local_filter.to_lowercase();
@@ -337,9 +342,12 @@ impl Oryxis {
                 .style(crate::widgets::rounded_input_style)
                 .into()
         } else {
-            MouseArea::new(remote_breadcrumb(&self.sftp.remote_path))
-                .on_press(Message::SftpStartEditRemotePath)
-                .into()
+            MouseArea::new(
+                container(remote_breadcrumb(&self.sftp.remote_path))
+                    .width(Length::Fill),
+            )
+            .on_press(Message::SftpStartEditRemotePath)
+            .into()
         };
         let needle = self.sftp.remote_filter.to_lowercase();
 
@@ -1100,6 +1108,21 @@ fn drives_menu_overlay<'a>() -> Element<'a, Message> {
     iced::widget::Stack::new().push(scrim).push(positioned).into()
 }
 
+/// True when the path's first component is a real Windows volume
+/// (`C:\`, `D:\`, including the `\\?\C:\` verbatim form). UNC paths
+/// like `\\server\share` or `\\wsl$\Ubuntu` return false — those are
+/// served by Unix-style filesystems where `/` reads more naturally.
+fn is_windows_disk_path(path: &std::path::Path) -> bool {
+    matches!(
+        path.components().next(),
+        Some(std::path::Component::Prefix(p))
+            if matches!(
+                p.kind(),
+                std::path::Prefix::Disk(_) | std::path::Prefix::VerbatimDisk(_)
+            )
+    )
+}
+
 /// Enumerate available drive letters on Windows. Empty on non-Windows
 /// hosts (the dropdown isn't rendered there). When running under WSL,
 /// surface `\\wsl.localhost` as a synthetic root so the user can hop
@@ -1166,6 +1189,12 @@ fn remote_breadcrumb<'a>(path: &str) -> Element<'a, Message> {
 /// Windows the implicit `RootDir` component after the drive prefix is
 /// skipped (its job is taken by the drive chip itself).
 fn local_breadcrumb<'a>(path: &std::path::Path) -> Element<'a, Message> {
+    // Pick the separator from the path's flavor: real Windows drives
+    // (`C:\`, `D:\`) get `\`; everything else (Unix paths, WSL UNC like
+    // `\\wsl$\Ubuntu\…`, bare network shares) keeps the Unix `/` since
+    // either the user is on Linux or they're navigating into a Linux
+    // filesystem from Windows.
+    let separator = if is_windows_disk_path(path) { "\\" } else { "/" };
     let mut row = iced::widget::Row::new().align_y(iced::Alignment::Center).spacing(2);
     let mut accumulated = std::path::PathBuf::new();
     let mut first = true;
@@ -1192,7 +1221,7 @@ fn local_breadcrumb<'a>(path: &std::path::Path) -> Element<'a, Message> {
         };
         accumulated.push(component.as_os_str());
         if !first && !last_was_root_or_drive {
-            row = row.push(text("/").size(11).color(OryxisColors::t().text_muted));
+            row = row.push(text(separator).size(11).color(OryxisColors::t().text_muted));
         }
         first = false;
         last_was_root_or_drive = is_root || is_drive;

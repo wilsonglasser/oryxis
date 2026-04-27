@@ -3201,7 +3201,7 @@ dependencies = [
 [[package]]
 name = "iced"
 version = "0.15.0-dev"
-source = "git+https://github.com/wilsonglasser/iced?branch=text-selection#a71794d3e50df932d9bf9d95ab5589d7e83fecb8"
+source = "git+https://github.com/wilsonglasser/iced?branch=text-selection#23a5d40d6db37333eaf666a6346513a4ebfa2cff"
 dependencies = [
  "iced_core",
  "iced_debug",
@@ -3218,7 +3218,7 @@ dependencies = [
 [[package]]
 name = "iced_core"
 version = "0.15.0-dev"
-source = "git+https://github.com/wilsonglasser/iced?branch=text-selection#a71794d3e50df932d9bf9d95ab5589d7e83fecb8"
+source = "git+https://github.com/wilsonglasser/iced?branch=text-selection#23a5d40d6db37333eaf666a6346513a4ebfa2cff"
 dependencies = [
  "bitflags 2.11.1",
  "bytes",
@@ -3229,13 +3229,14 @@ dependencies = [
  "rustc-hash 2.1.2",
  "smol_str 0.2.2",
  "thiserror 2.0.18",
+ "unicode-segmentation",
  "web-time",
 ]
 
 [[package]]
 name = "iced_debug"
 version = "0.15.0-dev"
-source = "git+https://github.com/wilsonglasser/iced?branch=text-selection#a71794d3e50df932d9bf9d95ab5589d7e83fecb8"
+source = "git+https://github.com/wilsonglasser/iced?branch=text-selection#23a5d40d6db37333eaf666a6346513a4ebfa2cff"
 dependencies = [
  "iced_core",
  "iced_futures",
@@ -3266,7 +3267,7 @@ dependencies = [
 [[package]]
 name = "iced_futures"
 version = "0.15.0-dev"
-source = "git+https://github.com/wilsonglasser/iced?branch=text-selection#a71794d3e50df932d9bf9d95ab5589d7e83fecb8"
+source = "git+https://github.com/wilsonglasser/iced?branch=text-selection#23a5d40d6db37333eaf666a6346513a4ebfa2cff"
 dependencies = [
  "futures",
  "iced_core",
@@ -3280,7 +3281,7 @@ dependencies = [
 [[package]]
 name = "iced_graphics"
 version = "0.15.0-dev"
-source = "git+https://github.com/wilsonglasser/iced?branch=text-selection#a71794d3e50df932d9bf9d95ab5589d7e83fecb8"
+source = "git+https://github.com/wilsonglasser/iced?branch=text-selection#23a5d40d6db37333eaf666a6346513a4ebfa2cff"
 dependencies = [
  "bitflags 2.11.1",
  "bytemuck",
@@ -3301,7 +3302,7 @@ dependencies = [
 [[package]]
 name = "iced_highlighter"
 version = "0.15.0-dev"
-source = "git+https://github.com/wilsonglasser/iced?branch=text-selection#a71794d3e50df932d9bf9d95ab5589d7e83fecb8"
+source = "git+https://github.com/wilsonglasser/iced?branch=text-selection#23a5d40d6db37333eaf666a6346513a4ebfa2cff"
 dependencies = [
  "iced_core",
  "two-face",
@@ -3310,7 +3311,7 @@ dependencies = [
 [[package]]
 name = "iced_program"
 version = "0.15.0-dev"
-source = "git+https://github.com/wilsonglasser/iced?branch=text-selection#a71794d3e50df932d9bf9d95ab5589d7e83fecb8"
+source = "git+https://github.com/wilsonglasser/iced?branch=text-selection#23a5d40d6db37333eaf666a6346513a4ebfa2cff"
 dependencies = [
  "iced_graphics",
  "iced_runtime",
@@ -3319,7 +3320,7 @@ dependencies = [
 [[package]]
 name = "iced_renderer"
 version = "0.15.0-dev"
-source = "git+https://github.com/wilsonglasser/iced?branch=text-selection#a71794d3e50df932d9bf9d95ab5589d7e83fecb8"
+source = "git+https://github.com/wilsonglasser/iced?branch=text-selection#23a5d40d6db37333eaf666a6346513a4ebfa2cff"
 dependencies = [
  "iced_graphics",
  "iced_tiny_skia",
@@ -3331,7 +3332,7 @@ dependencies = [
 [[package]]
 name = "iced_runtime"
 version = "0.15.0-dev"
-source = "git+https://github.com/wilsonglasser/iced?branch=text-selection#a71794d3e50df932d9bf9d95ab5589d7e83fecb8"
+source = "git+https://github.com/wilsonglasser/iced?branch=text-selection#23a5d40d6db37333eaf666a6346513a4ebfa2cff"
 dependencies = [
  "bytes",
  "iced_core",
@@ -3343,7 +3344,7 @@ dependencies = [
 [[package]]
 name = "iced_tiny_skia"
 version = "0.15.0-dev"
-source = "git+https://github.com/wilsonglasser/iced?branch=text-selection#a71794d3e50df932d9bf9d95ab5589d7e83fecb8"
+source = "git+https://github.com/wilsonglasser/iced?branch=text-selection#23a5d40d6db37333eaf666a6346513a4ebfa2cff"
 dependencies = [
  "bytemuck",
  "cosmic-text",
@@ -3359,7 +3360,7 @@ dependencies = [
 [[package]]
 name = "iced_wgpu"
 version = "0.15.0-dev"
-source = "git+https://github.com/wilsonglasser/iced?branch=text-selection#a71794d3e50df932d9bf9d95ab5589d7e83fecb8"
+source = "git+https://github.com/wilsonglasser/iced?branch=text-selection#23a5d40d6db37333eaf666a6346513a4ebfa2cff"
 dependencies = [
  "bitflags 2.11.1",
  "bytemuck",
@@ -3379,7 +3380,7 @@ dependencies = [
 [[package]]
 name = "iced_widget"
 version = "0.15.0-dev"
-source = "git+https://github.com/wilsonglasser/iced?branch=text-selection#a71794d3e50df932d9bf9d95ab5589d7e83fecb8"
+source = "git+https://github.com/wilsonglasser/iced?branch=text-selection#23a5d40d6db37333eaf666a6346513a4ebfa2cff"
 dependencies = [
  "iced_highlighter",
  "iced_renderer",
@@ -3394,7 +3395,7 @@ dependencies = [
 [[package]]
 name = "iced_winit"
 version = "0.15.0-dev"
-source = "git+https://github.com/wilsonglasser/iced?branch=text-selection#a71794d3e50df932d9bf9d95ab5589d7e83fecb8"
+source = "git+https://github.com/wilsonglasser/iced?branch=text-selection#23a5d40d6db37333eaf666a6346513a4ebfa2cff"
 dependencies = [
  "arboard",
  "iced_debug",
@@ -5039,7 +5040,7 @@ dependencies = [
 
 [[package]]
 name = "oryxis-app"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "arboard",
  "chrono",

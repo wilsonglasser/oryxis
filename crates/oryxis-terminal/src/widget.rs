@@ -208,6 +208,13 @@ pub struct TerminalWidgetState {
     /// canvas to underline only the hovered URL (not all of them) and
     /// by the parent to render the "Ctrl+Click to open" tooltip.
     hovered_url: Option<(String, iced::Point)>,
+    /// Last `(col, row)` the URL hover detection ran for. Used to skip
+    /// the lock + per-cell scan on sub-cell mouse moves — at typical
+    /// font sizes the cursor crosses many pixels per cell, and running
+    /// the full URL scan on every pixel contends with `state.process`
+    /// when the SSH echo lands at the same time, showing up as typing
+    /// lag.
+    hovered_cell: Option<(u16, u16)>,
 }
 
 // ---------------------------------------------------------------------------
@@ -636,6 +643,66 @@ pub struct TerminalView {
 /// Padding around the terminal content (in pixels).
 const TERM_PAD: f32 = 10.0;
 
+/// Rolling per-frame timings for the on-screen perf overlay. Updated
+/// by `draw` and read back at the end of the same call to render the
+/// HUD. One slot per process is fine — the overlay is single-window.
+struct PerfStats {
+    /// Last 60 frame durations, newest at the back.
+    frames: std::collections::VecDeque<std::time::Duration>,
+    /// Most recent breakdown per phase (lock acquire, ANSI process,
+    /// cell pass, highlight pass, total).
+    last_lock: std::time::Duration,
+    last_highlights: std::time::Duration,
+    last_cells: std::time::Duration,
+    last_total: std::time::Duration,
+    /// Wall-clock of the previous draw, used to compute the inter-frame
+    /// gap (which is what FPS actually reflects when the canvas is
+    /// continuously redrawing).
+    last_draw_at: Option<std::time::Instant>,
+}
+
+impl PerfStats {
+    fn fps(&self) -> f32 {
+        if self.frames.is_empty() {
+            return 0.0;
+        }
+        let total: std::time::Duration = self.frames.iter().sum();
+        let avg = total / self.frames.len() as u32;
+        if avg.as_secs_f32() == 0.0 {
+            0.0
+        } else {
+            1.0 / avg.as_secs_f32()
+        }
+    }
+}
+
+fn perf_stats() -> &'static std::sync::Mutex<PerfStats> {
+    static STATS: std::sync::OnceLock<std::sync::Mutex<PerfStats>> =
+        std::sync::OnceLock::new();
+    STATS.get_or_init(|| {
+        std::sync::Mutex::new(PerfStats {
+            frames: std::collections::VecDeque::with_capacity(64),
+            last_lock: std::time::Duration::ZERO,
+            last_highlights: std::time::Duration::ZERO,
+            last_cells: std::time::Duration::ZERO,
+            last_total: std::time::Duration::ZERO,
+            last_draw_at: None,
+        })
+    })
+}
+
+/// Reads the `ORYXIS_TERM_PERF` env var once and caches it. Set to `1`
+/// (or any non-empty value) to render a small FPS/timing HUD in the
+/// top-right of every terminal canvas.
+fn perf_overlay_enabled() -> bool {
+    static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ENABLED.get_or_init(|| {
+        std::env::var("ORYXIS_TERM_PERF")
+            .map(|v| !v.is_empty() && v != "0")
+            .unwrap_or(false)
+    })
+}
+
 /// Visual layout of the scrollbar gutter for a given grid state.
 struct ScrollbarGeom {
     track_x: f32,
@@ -871,17 +938,28 @@ where
                         }
                         return Some(CanvasAction::request_redraw().and_capture());
                     }
-                // URL hover detection — drives the underline-on-hover
-                // and "Ctrl+Click to open" tooltip. Only refresh the
-                // canvas when the hovered URL actually changes (or
-                // appears / disappears) so we're not redrawing on
-                // every mouse-move pixel.
-                let new_hover_url = if let Some(pos) = cursor.position_in(bounds)
-                    && let Ok(state) = self.state.lock()
-                {
+                // URL hover detection. Skip the lock + grid scan when
+                // the cursor is still over the same cell — at typical
+                // font sizes a single cell spans many pixels and
+                // running the scan on every pixel contended with
+                // `state.process` (the SSH echo path), showing up as
+                // typing lag.
+                let new_hover_url = if let Some(pos) = cursor.position_in(bounds) {
                     let (col, vrow) = self.pixel_to_cell(pos);
-                    url_at_cell(&state.backend.term, vrow, col).map(|u| (u, pos))
+                    let same_cell = widget_state.hovered_cell == Some((col, vrow));
+                    widget_state.hovered_cell = Some((col, vrow));
+                    if same_cell {
+                        widget_state
+                            .hovered_url
+                            .as_ref()
+                            .map(|(u, _)| (u.clone(), pos))
+                    } else if let Ok(state) = self.state.lock() {
+                        url_at_cell(&state.backend.term, vrow, col).map(|u| (u, pos))
+                    } else {
+                        None
+                    }
                 } else {
+                    widget_state.hovered_cell = None;
                     None
                 };
                 let url_changed = match (&widget_state.hovered_url, &new_hover_url) {
@@ -1047,10 +1125,15 @@ where
         bounds: Rectangle,
         _cursor: mouse::Cursor,
     ) -> Vec<Geometry> {
+        let perf_on = perf_overlay_enabled();
+        let draw_start = perf_on.then(std::time::Instant::now);
+
+        let lock_start = perf_on.then(std::time::Instant::now);
         let mut state = match self.state.lock() {
             Ok(s) => s,
             Err(poisoned) => poisoned.into_inner(),
         };
+        let lock_dur = lock_start.map(|t| t.elapsed()).unwrap_or_default();
 
         // Auto-resize
         let (new_cols, new_rows) = TerminalView::grid_size_for(bounds.width, bounds.height, self.font_size);
@@ -1112,6 +1195,7 @@ where
             flags: CellFlags,
         }
 
+        let cells_start = perf_on.then(std::time::Instant::now);
         let mut cells: Vec<CellData> = Vec::new();
         let mut row_chars: std::collections::HashMap<u16, Vec<(u16, char)>>
             = std::collections::HashMap::new();
@@ -1156,12 +1240,16 @@ where
             }
         }
 
+        let cells_dur = cells_start.map(|t| t.elapsed()).unwrap_or_default();
+
         // --- Detect syntax highlights ---
+        let highlights_start = perf_on.then(std::time::Instant::now);
         let highlights = if self.keyword_highlight {
             detect_highlights(&row_chars, palette)
         } else {
             Vec::new()
         };
+        let highlights_dur = highlights_start.map(|t| t.elapsed()).unwrap_or_default();
 
         // Resolve which URL (if any) the cursor is over right now,
         // re-derived from the hovered cursor pixel position. We can't
@@ -1338,10 +1426,14 @@ where
             let tip_y_offset = -28.0; // above the cursor
             let tip_x = (hover_pos.x + 6.0).min(bounds.width - 220.0).max(4.0);
             let tip_y = (hover_pos.y + tip_y_offset).max(4.0);
-            let bg = Color { a: 0.92, ..palette.background };
+            // Solid terminal background under the tooltip — anything
+            // less than fully opaque lets the underlying URL text bleed
+            // through and makes the label illegible.
+            let bg = palette.background;
             let border = Color { a: 0.6, ..palette.foreground };
-            // Width fits "Ctrl + Click to open the link" at ~12 px font.
-            let tip_w = 200.0;
+            // Width fits "Ctrl + Click to open the link" at ~11 px
+            // font with symmetric 8 px padding on both sides.
+            let tip_w = 216.0;
             let tip_h = 22.0;
             frame.fill_rectangle(
                 Point::new(tip_x, tip_y),
@@ -1364,6 +1456,59 @@ where
             frame.fill_text(CanvasText {
                 content: "Ctrl + Click to open the link".to_string(),
                 position: Point::new(tip_x + 8.0, tip_y + tip_h / 2.0),
+                color: palette.foreground,
+                size: Pixels(11.0),
+                font: self.font,
+                align_x: alignment::Horizontal::Left.into(),
+                align_y: alignment::Vertical::Center,
+                ..Default::default()
+            });
+        }
+
+        if let (Some(start), true) = (draw_start, perf_on) {
+            let total = start.elapsed();
+            let mut stats = perf_stats().lock().unwrap();
+            // FPS comes from the wall-clock gap between draws — that's
+            // what the user actually feels. The phase timings are
+            // measured inside the same call and don't include idle
+            // time between frames.
+            let now = std::time::Instant::now();
+            if let Some(prev) = stats.last_draw_at {
+                stats.frames.push_back(now - prev);
+                while stats.frames.len() > 60 {
+                    stats.frames.pop_front();
+                }
+            }
+            stats.last_draw_at = Some(now);
+            stats.last_lock = lock_dur;
+            stats.last_cells = cells_dur;
+            stats.last_highlights = highlights_dur;
+            stats.last_total = total;
+            let fps = stats.fps();
+            let line = format!(
+                "{:>5.1} fps  total {:>4} ms  lock {:>3} ms  cells {:>3} ms  hl {:>3} ms",
+                fps,
+                total.as_millis(),
+                lock_dur.as_millis(),
+                cells_dur.as_millis(),
+                highlights_dur.as_millis(),
+            );
+            drop(stats);
+
+            // Background strip top-right so the text is legible against
+            // any cell content underneath.
+            let strip_w = 410.0;
+            let strip_h = 20.0;
+            let strip_x = (bounds.width - strip_w - 8.0).max(0.0);
+            let strip_y = 4.0;
+            frame.fill_rectangle(
+                Point::new(strip_x, strip_y),
+                Size::new(strip_w, strip_h),
+                palette.background,
+            );
+            frame.fill_text(CanvasText {
+                content: line,
+                position: Point::new(strip_x + 8.0, strip_y + strip_h / 2.0),
                 color: palette.foreground,
                 size: Pixels(11.0),
                 font: self.font,

@@ -97,8 +97,12 @@ fn parse_traditional_pem(pem: &str) -> Result<PrivateKey, VaultError> {
 /// - PKCS#8 (`BEGIN PRIVATE KEY`) — RSA, ECDSA P-256/P-384, Ed25519
 /// - SEC1 EC (`BEGIN EC PRIVATE KEY`) — P-256, P-384
 pub fn import_key(label: &str, private_pem: &str) -> Result<GeneratedKey, VaultError> {
-    // Normalize line endings (CRLF → LF) to avoid Base64 parse errors
-    let normalized = private_pem.replace("\r\n", "\n").replace('\r', "\n");
+    // Strip a UTF-8 BOM if present — Windows editors (Notepad, some
+    // PowerShell redirects) write keys with a BOM and PEM parsers see
+    // the leading bytes as junk before `-----BEGIN`. Then normalize
+    // line endings (CRLF → LF) so Base64 decoding doesn't trip on \r.
+    let stripped = private_pem.strip_prefix('\u{FEFF}').unwrap_or(private_pem);
+    let normalized = stripped.replace("\r\n", "\n").replace('\r', "\n");
     let trimmed = normalized.trim();
 
     let private_key = if trimmed.contains("BEGIN OPENSSH PRIVATE KEY") {
@@ -176,6 +180,22 @@ mod tests {
     fn import_invalid_pem_fails() {
         let result = import_key("bad", "this is not a key");
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn import_strips_utf8_bom() {
+        let generated = generate_ed25519("bom-test").unwrap();
+        let with_bom = format!("\u{FEFF}{}", generated.private_pem);
+        let imported = import_key("bom", &with_bom).unwrap();
+        assert_eq!(imported.key.fingerprint, generated.key.fingerprint);
+    }
+
+    #[test]
+    fn import_handles_crlf() {
+        let generated = generate_ed25519("crlf-test").unwrap();
+        let crlf = generated.private_pem.replace('\n', "\r\n");
+        let imported = import_key("crlf", &crlf).unwrap();
+        assert_eq!(imported.key.fingerprint, generated.key.fingerprint);
     }
 
     #[test]

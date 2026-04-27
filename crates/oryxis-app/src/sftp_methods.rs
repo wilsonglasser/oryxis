@@ -14,6 +14,25 @@ impl Oryxis {
     pub(crate) fn refresh_sftp_local(&mut self) {
         self.sftp.local_entries.clear();
         self.sftp.local_error = None;
+
+        // Bare WSL UNC roots (`\\wsl$`, `\\wsl.localhost`) can't be
+        // enumerated via `read_dir` — Windows treats them as servers
+        // with no share and returns ERROR_PATH_NOT_FOUND. Synthesize
+        // distro entries from `wsl.exe -l -q` instead so the user can
+        // step into a distro just by clicking it.
+        if is_wsl_root(&self.sftp.local_path) {
+            for distro in list_wsl_distros_for_pane() {
+                self.sftp.local_entries.push(crate::state::LocalEntry {
+                    name: distro,
+                    is_dir: true,
+                    size: 0,
+                    modified: None,
+                });
+            }
+            sort_local_entries(&mut self.sftp.local_entries, self.sftp.local_sort);
+            return;
+        }
+
         let read = match std::fs::read_dir(&self.sftp.local_path) {
             Ok(r) => r,
             Err(e) => {
@@ -263,5 +282,50 @@ impl Oryxis {
             }
             _ => Task::none(),
         }
+    }
+}
+
+/// Detects the synthetic WSL roots (`\\wsl$` / `\\wsl.localhost`).
+/// Both forms with or without a trailing slash count, since clicking
+/// the dropdown entry and typing the path manually produce slightly
+/// different shapes.
+fn is_wsl_root(path: &std::path::Path) -> bool {
+    let s = path.to_string_lossy();
+    let normalized = s.trim_end_matches(['\\', '/']).to_ascii_lowercase();
+    normalized == r"\\wsl$" || normalized == r"\\wsl.localhost"
+}
+
+/// Lists installed WSL distros via `wsl.exe -l -q`. UTF-16LE output
+/// from `wsl.exe` is decoded back to a `String`, then trimmed for
+/// the empty trailing entries Windows likes to add. Returns an empty
+/// list on non-Windows or if `wsl.exe` is unavailable.
+fn list_wsl_distros_for_pane() -> Vec<String> {
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        // CREATE_NO_WINDOW so we don't flash a console.
+        let output = match std::process::Command::new("wsl.exe")
+            .args(["-l", "-q"])
+            .creation_flags(0x0800_0000)
+            .output()
+        {
+            Ok(o) => o,
+            Err(_) => return Vec::new(),
+        };
+        // wsl.exe emits UTF-16LE on stdout when invoked from Win32.
+        let bytes = output.stdout;
+        let utf16: Vec<u16> = bytes
+            .chunks_exact(2)
+            .map(|c| u16::from_le_bytes([c[0], c[1]]))
+            .collect();
+        let text = String::from_utf16_lossy(&utf16);
+        text.lines()
+            .map(|line| line.trim().trim_matches('\0').to_string())
+            .filter(|line| !line.is_empty())
+            .collect()
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        Vec::new()
     }
 }

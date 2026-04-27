@@ -222,6 +222,9 @@ impl Oryxis {
                 self.sftp.local_path = path;
                 self.sftp.selected_rows.clear();
                 self.sftp.selection_anchor = None;
+                self.sftp.local_drives_open = false;
+                self.sftp.local_actions_open = false;
+                self.sftp.remote_actions_open = false;
                 self.refresh_sftp_local();
             }
             Message::SftpLocalUp => {
