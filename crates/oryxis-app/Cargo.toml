@@ -1,6 +1,6 @@
 [package]
 name = "oryxis-app"
-version = "0.5.2"
+version = "0.5.3"
 edition = "2024"
 description = "Modern SSH client built in Rust — terminal, SFTP, and host management with a sane keyboard-driven UI."
 license.workspace = true
