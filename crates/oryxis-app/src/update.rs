@@ -101,17 +101,44 @@ fn pick_asset(json: &serde_json::Value) -> (Option<String>, Option<String>) {
     (None, None)
 }
 
-/// Substrings we expect inside the asset filename for the current platform.
-/// NSIS `.exe` installer for Windows, `.dmg` for macOS, `.AppImage`/`.deb`/
-/// tarball for Linux depending on the release pipeline.
+/// Substrings we expect inside the asset filename for the current
+/// platform. The release pipeline emits, per architecture:
+///   • Windows x64:    `oryxis-setup-x86_64.exe` (NSIS installer)
+///   • Windows arm64:  `oryxis-windows-aarch64.zip` (portable, no installer)
+///   • macOS arm64:    `oryxis-macos-aarch64.tar.gz`
+///   • Linux x64:      `oryxis-linux-x86_64.AppImage`
+///   • Linux arm64:    `oryxis-linux-aarch64.AppImage`
+///
+/// We match by the most discriminating combination per platform, so a
+/// future asset rename in only one of those slots doesn't silently
+/// break the rest. Returns the empty list for platforms we don't ship
+/// a per-arch installer for — the caller surfaces "no installer
+/// asset for this platform" so the user falls back to manual install.
 fn platform_asset_fragment() -> Vec<&'static str> {
     if cfg!(target_os = "windows") {
-        vec!["windows", ".exe"]
+        if cfg!(target_arch = "x86_64") {
+            vec!["setup", "x86_64", ".exe"]
+        } else if cfg!(target_arch = "aarch64") {
+            vec!["windows", "aarch64", ".zip"]
+        } else {
+            vec![]
+        }
     } else if cfg!(target_os = "macos") {
-        vec!["macos", ".dmg"]
+        if cfg!(target_arch = "aarch64") {
+            vec!["macos", "aarch64", ".tar.gz"]
+        } else {
+            vec![]
+        }
+    } else if cfg!(target_os = "linux") {
+        if cfg!(target_arch = "x86_64") {
+            vec!["linux", "x86_64", ".appimage"]
+        } else if cfg!(target_arch = "aarch64") {
+            vec!["linux", "aarch64", ".appimage"]
+        } else {
+            vec![]
+        }
     } else {
-        // Linux — prefer AppImage. install.sh typically consumes the tarball.
-        vec!["linux"]
+        vec![]
     }
 }
 

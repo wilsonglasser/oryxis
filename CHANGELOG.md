@@ -6,6 +6,18 @@ project uses [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.5.4] - 2026-04-28
+
+### Fixed
+- **Auto-updater "No installer asset for this platform"** — the asset
+  matcher demanded the substring `windows` in the filename, but the
+  release pipeline ships the installer as `oryxis-setup-x86_64.exe`
+  (no `windows` in the name). Match now keys on the actual filename
+  shape per `(os, arch)` pair: `setup`+`x86_64`+`.exe` on Windows
+  x64, the portable `.zip` on Windows arm64, the AppImage on Linux,
+  and the macOS arm64 tarball. Existing v0.5.3 installs still need
+  one manual update to land this fix; future updates auto-detect.
+
 ## [0.5.3] - 2026-04-28
 
 ### Fixed
