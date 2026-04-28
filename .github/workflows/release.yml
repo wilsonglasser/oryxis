@@ -198,8 +198,11 @@ jobs:
       - name: Build installer
         shell: pwsh
         run: |
+          # Strip the leading "v" from the tag so DisplayVersion is a
+          # plain SemVer (winget compares these against its manifest).
+          $version = "${{ github.ref_name }}".TrimStart('v')
           cd resources
-          makensis installer.nsi
+          makensis "/DVERSION=$version" installer.nsi
       - uses: actions/upload-artifact@v5
         with:
           name: oryxis-windows-x86_64

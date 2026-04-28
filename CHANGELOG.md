@@ -6,6 +6,23 @@ project uses [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.5.3] - 2026-04-28
+
+### Fixed
+- **Windows installer reported the wrong version in Add/Remove
+  Programs** — `DisplayVersion` was hardcoded to `0.3.3` since that
+  release and never bumped, so every Oryxis install since then
+  showed up as 0.3.3 in Windows' programs list. Now driven by a
+  `/DVERSION=…` define from the release workflow (`github.ref_name`
+  with the leading `v` stripped), and the same value populates
+  `VIProductVersion` / `FileVersion` / `ProductVersion`.
+
+### Changed
+- **NSIS uninstall registry key gained `QuietUninstallString`,
+  `InstallLocation`, `URLInfoAbout`, `HelpLink`, `NoModify`,
+  `NoRepair`** — required / recommended fields for winget to
+  detect and validate the install.
+
 ## [0.5.2] - 2026-04-27
 
 ### Added
