@@ -428,6 +428,11 @@ pub struct ConnectionResolver {
     pub connections: Vec<Connection>,
     pub passwords: std::collections::HashMap<uuid::Uuid, String>,
     pub private_keys: std::collections::HashMap<uuid::Uuid, String>,
+    /// Effective proxy per jump-host id, hydrated by the caller via
+    /// `Vault::resolve_proxy`. Only the first jump's entry is used —
+    /// subsequent hops travel inside an SSH-tunneled `direct-tcpip`
+    /// channel where a proxy doesn't apply.
+    pub proxies: std::collections::HashMap<uuid::Uuid, ProxyConfig>,
 }
 
 pub struct SshEngine {
@@ -897,7 +902,9 @@ impl SshEngine {
             connection.jump_chain.len()
         );
 
-        // Connect to the first jump host directly
+        // Connect to the first jump host. If the jump itself sits
+        // behind a proxy, dial via that proxy — only the *first* hop
+        // does, since subsequent hops travel inside the SSH tunnel.
         let first_jump_id = connection.jump_chain[0];
         let first_jump = resolver
             .connections
@@ -906,11 +913,22 @@ impl SshEngine {
             .ok_or_else(|| SshError::JumpHost("First jump host not found".into()))?;
 
         let first_addr = format!("{}:{}", first_jump.hostname, first_jump.port);
-        let config = self.make_config();
-        let handler = self.make_handler(&first_jump.hostname, first_jump.port);
-        let mut current_handle = client::connect(config, &first_addr, handler)
-            .await
-            .map_err(|e| SshError::JumpHost(format!("Jump host {}: {}", first_addr, e)))?;
+        let mut current_handle = if let Some(first_proxy) = resolver.proxies.get(&first_jump_id) {
+            tracing::info!(
+                "First jump host {} sits behind {:?} proxy",
+                first_addr,
+                first_proxy.proxy_type
+            );
+            self.connect_via_proxy(first_proxy, &first_jump.hostname, first_jump.port)
+                .await
+                .map_err(|e| SshError::JumpHost(format!("Jump host {} via proxy: {}", first_addr, e)))?
+        } else {
+            let config = self.make_config();
+            let handler = self.make_handler(&first_jump.hostname, first_jump.port);
+            client::connect(config, &first_addr, handler)
+                .await
+                .map_err(|e| SshError::JumpHost(format!("Jump host {}: {}", first_addr, e)))?
+        };
 
         // Authenticate on first jump host
         let first_pw = resolver.passwords.get(&first_jump_id);

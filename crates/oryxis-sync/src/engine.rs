@@ -367,6 +367,14 @@ fn build_manifest(
             is_deleted: false,
         });
     }
+    for pi in v.list_proxy_identities()? {
+        entries.push(ManifestEntry {
+            entity_type: EntityType::ProxyIdentity,
+            entity_id: pi.id,
+            updated_at: pi.updated_at,
+            is_deleted: false,
+        });
+    }
     for g in v.list_groups()? {
         entries.push(ManifestEntry {
             entity_type: EntityType::Group,
@@ -401,6 +409,16 @@ fn collect_records(
     needed: &[protocol::DeltaRef],
 ) -> Result<Vec<protocol::SyncRecord>, SyncError> {
     let v = vault.lock().map_err(|_| SyncError::Vault("Lock".into()))?;
+    // Off by default. When on, password fields are included in the
+    // wrapper payloads — older peers ignore them automatically. The
+    // setting lives in the SQLite `settings` table so it flips per
+    // device without touching the model.
+    let sync_passwords = v
+        .get_setting("sync_passwords")
+        .ok()
+        .flatten()
+        .as_deref()
+        == Some("true");
     let mut records = Vec::new();
 
     for delta in needed {
@@ -408,9 +426,24 @@ fn collect_records(
         let payload = match delta.entity_type {
             EntityType::Connection => {
                 let conns = v.list_connections()?;
-                conns.iter()
-                    .find(|c| c.id == delta.entity_id)
-                    .map(|c| serde_json::to_vec(c).unwrap_or_default())
+                conns.iter().find(|c| c.id == delta.entity_id).map(|c| {
+                    let password = if sync_passwords {
+                        v.get_connection_password(&c.id).ok().flatten()
+                    } else {
+                        None
+                    };
+                    let proxy_password = if sync_passwords {
+                        v.get_proxy_password(&c.id).ok().flatten()
+                    } else {
+                        None
+                    };
+                    let wrapper = protocol::SyncConnection {
+                        connection: c.clone(),
+                        password,
+                        proxy_password,
+                    };
+                    serde_json::to_vec(&wrapper).unwrap_or_default()
+                })
             }
             EntityType::SshKey => {
                 let keys = v.list_keys()?;
@@ -420,9 +453,33 @@ fn collect_records(
             }
             EntityType::Identity => {
                 let idents = v.list_identities()?;
-                idents.iter()
-                    .find(|i| i.id == delta.entity_id)
-                    .map(|i| serde_json::to_vec(i).unwrap_or_default())
+                idents.iter().find(|i| i.id == delta.entity_id).map(|i| {
+                    let password = if sync_passwords {
+                        v.get_identity_password(&i.id).ok().flatten()
+                    } else {
+                        None
+                    };
+                    let wrapper = protocol::SyncIdentity {
+                        identity: i.clone(),
+                        password,
+                    };
+                    serde_json::to_vec(&wrapper).unwrap_or_default()
+                })
+            }
+            EntityType::ProxyIdentity => {
+                let items = v.list_proxy_identities()?;
+                items.iter().find(|pi| pi.id == delta.entity_id).map(|pi| {
+                    let password = if sync_passwords {
+                        v.get_proxy_identity_password(&pi.id).ok().flatten()
+                    } else {
+                        None
+                    };
+                    let wrapper = protocol::SyncProxyIdentity {
+                        proxy_identity: pi.clone(),
+                        password,
+                    };
+                    serde_json::to_vec(&wrapper).unwrap_or_default()
+                })
             }
             EntityType::Group => {
                 let groups = v.list_groups()?;
@@ -472,6 +529,7 @@ fn apply_records(
                 EntityType::Connection => { let _ = v.delete_connection(&record.entity_id); }
                 EntityType::SshKey => { let _ = v.delete_key(&record.entity_id); }
                 EntityType::Identity => { let _ = v.delete_identity(&record.entity_id); }
+                EntityType::ProxyIdentity => { let _ = v.delete_proxy_identity(&record.entity_id); }
                 EntityType::Group => { let _ = v.delete_group(&record.entity_id); }
                 EntityType::Snippet => { let _ = v.delete_snippet(&record.entity_id); }
                 EntityType::KnownHost => { let _ = v.delete_known_host(&record.entity_id); }
@@ -481,8 +539,16 @@ fn apply_records(
 
         match record.entity_type {
             EntityType::Connection => {
-                if let Ok(conn) = serde_json::from_slice::<oryxis_core::models::Connection>(&record.payload) {
-                    let _ = v.save_connection(&conn, None);
+                // `SyncConnection` flattens the inner `Connection`, so a
+                // payload from a pre-wrapper peer (bare `Connection` JSON)
+                // still deserializes — the optional password fields just
+                // resolve to `None` via `#[serde(default)]`.
+                if let Ok(sc) = serde_json::from_slice::<protocol::SyncConnection>(&record.payload) {
+                    let id = sc.connection.id;
+                    let _ = v.save_connection(&sc.connection, sc.password.as_deref());
+                    if let Some(pp) = &sc.proxy_password {
+                        let _ = v.set_proxy_password(&id, Some(pp));
+                    }
                 }
             }
             EntityType::SshKey => {
@@ -491,8 +557,13 @@ fn apply_records(
                 }
             }
             EntityType::Identity => {
-                if let Ok(ident) = serde_json::from_slice::<oryxis_core::models::Identity>(&record.payload) {
-                    let _ = v.save_identity(&ident, None);
+                if let Ok(si) = serde_json::from_slice::<protocol::SyncIdentity>(&record.payload) {
+                    let _ = v.save_identity(&si.identity, si.password.as_deref());
+                }
+            }
+            EntityType::ProxyIdentity => {
+                if let Ok(spi) = serde_json::from_slice::<protocol::SyncProxyIdentity>(&record.payload) {
+                    let _ = v.save_proxy_identity(&spi.proxy_identity, spi.password.as_deref());
                 }
             }
             EntityType::Group => {

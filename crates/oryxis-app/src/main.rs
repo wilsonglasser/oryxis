@@ -17,6 +17,7 @@ mod dispatch;
 mod dispatch_ai;
 mod dispatch_editor;
 mod dispatch_keys;
+mod dispatch_proxy_identity;
 mod dispatch_settings;
 mod dispatch_sftp;
 mod dispatch_sftp_files;

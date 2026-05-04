@@ -152,6 +152,19 @@ impl Oryxis {
                 editing_identity_id: None,
                 identity_context_menu: None,
                 show_keychain_add_menu: false,
+                proxy_identities: Vec::new(),
+                proxy_identity_form_visible: false,
+                proxy_identity_form_label: String::new(),
+                proxy_identity_form_kind: crate::state::ProxyKind::Socks5,
+                proxy_identity_form_host: String::new(),
+                proxy_identity_form_port: String::new(),
+                proxy_identity_form_username: String::new(),
+                proxy_identity_form_password: String::new(),
+                proxy_identity_form_password_visible: false,
+                proxy_identity_form_password_touched: false,
+                proxy_identity_form_has_existing_password: false,
+                editing_proxy_identity_id: None,
+                proxy_identity_form_error: None,
                 snippets: Vec::new(),
                 known_hosts: Vec::new(),
                 logs: Vec::new(),
@@ -214,6 +227,7 @@ impl Oryxis {
                 mcp_install_status: None,
                 sync_enabled: false,
                 sync_mode: "manual".into(),
+                sync_passwords: false,
                 sync_device_name: String::new(),
                 sync_signaling_url: oryxis_sync::SyncConfig::default().signaling_url,
                 sync_relay_url: String::new(),
@@ -268,6 +282,7 @@ impl Oryxis {
             self.groups = vault.list_groups().unwrap_or_default();
             self.keys = vault.list_keys().unwrap_or_default();
             self.identities = vault.list_identities().unwrap_or_default();
+            self.proxy_identities = vault.list_proxy_identities().unwrap_or_default();
             self.snippets = vault.list_snippets().unwrap_or_default();
             self.known_hosts = vault.list_known_hosts().unwrap_or_default();
             self.logs_total = vault.count_logs().unwrap_or(0);
@@ -312,6 +327,9 @@ impl Oryxis {
             }
             if let Ok(Some(v)) = vault.get_setting("sync_mode") {
                 self.sync_mode = v;
+            }
+            if let Ok(Some(v)) = vault.get_setting("sync_passwords") {
+                self.sync_passwords = v == "true";
             }
             if let Ok(Some(v)) = vault.get_setting("sync_device_name") {
                 self.sync_device_name = v;

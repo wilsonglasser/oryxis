@@ -25,6 +25,7 @@ impl Oryxis {
                 (crate::i18n::t("shortcuts"), SettingsSection::Shortcuts),
                 (crate::i18n::t("security"), SettingsSection::Security),
                 (crate::i18n::t("sync"), SettingsSection::Sync),
+                (crate::i18n::t("proxies"), SettingsSection::Proxies),
                 (crate::i18n::t("about"), SettingsSection::About),
             ];
             let mut col = column![]
@@ -988,6 +989,12 @@ impl Oryxis {
                 .padding(10)
                 .style(crate::widgets::rounded_pick_list_style);
 
+                let passwords_toggle = toggle_row(
+                    crate::i18n::t("sync_passwords"),
+                    self.sync_passwords,
+                    Message::SyncTogglePasswords,
+                );
+
                 let mut options_section: iced::widget::Column<'_, Message> = column![
                     text(crate::i18n::t("sync_options")).size(14).color(OryxisColors::t().text_muted),
                     Space::new().height(8),
@@ -998,6 +1005,12 @@ impl Oryxis {
                         Space::new().width(Length::Fill),
                         mode_pick,
                     ].align_y(iced::Alignment::Center),
+                    Space::new().height(8),
+                    passwords_toggle,
+                    Space::new().height(4),
+                    text(crate::i18n::t("sync_passwords_desc"))
+                        .size(11)
+                        .color(OryxisColors::t().text_muted),
                 ];
 
                 if self.sync_enabled && self.sync_mode == "manual" {
@@ -1159,6 +1172,7 @@ impl Oryxis {
                 .height(Length::Fill)
                 .into()
             }
+            SettingsSection::Proxies => self.view_settings_proxies(),
         };
 
         container(
@@ -1172,5 +1186,356 @@ impl Oryxis {
         .width(Length::Fill)
         .height(Length::Fill)
         .into()
+    }
+
+    /// Settings → Proxies. List of saved `ProxyIdentity` rows + an
+    /// inline create / edit form. Form is hidden by default; clicking
+    /// "+ New" or a row's edit icon opens it pre-populated.
+    fn view_settings_proxies(&self) -> Element<'_, Message> {
+        let title = text(crate::i18n::t("proxies"))
+            .size(18)
+            .color(OryxisColors::t().text_primary);
+
+        // ── List rows ──
+        let mut list = column![].spacing(8);
+        if self.proxy_identities.is_empty() && !self.proxy_identity_form_visible {
+            list = list.push(
+                text(crate::i18n::t("proxy_identities_empty"))
+                    .size(13)
+                    .color(OryxisColors::t().text_muted),
+            );
+        }
+        for pi in &self.proxy_identities {
+            let kind_label = match &pi.proxy_type {
+                oryxis_core::models::connection::ProxyType::Socks5 => "SOCKS5",
+                oryxis_core::models::connection::ProxyType::Socks4 => "SOCKS4",
+                oryxis_core::models::connection::ProxyType::Http => "HTTP",
+                oryxis_core::models::connection::ProxyType::Command(_) => "CMD",
+            };
+            let summary = format!("{} — {}:{}", kind_label, pi.host, pi.port);
+            let id = pi.id;
+            let edit_btn = button(text(crate::i18n::t("edit")).size(12))
+                .on_press(Message::ShowProxyIdentityForm(Some(id)))
+                .padding(Padding {
+                    top: 4.0,
+                    right: 10.0,
+                    bottom: 4.0,
+                    left: 10.0,
+                })
+                .style(|_, status| {
+                    let bg = match status {
+                        BtnStatus::Hovered => OryxisColors::t().bg_hover,
+                        _ => Color::TRANSPARENT,
+                    };
+                    button::Style {
+                        background: Some(Background::Color(bg)),
+                        border: Border {
+                            radius: Radius::from(4.0),
+                            color: OryxisColors::t().border,
+                            width: 1.0,
+                        },
+                        text_color: OryxisColors::t().text_secondary,
+                        ..Default::default()
+                    }
+                });
+            let delete_btn = button(text(crate::i18n::t("delete")).size(12))
+                .on_press(Message::DeleteProxyIdentity(id))
+                .padding(Padding {
+                    top: 4.0,
+                    right: 10.0,
+                    bottom: 4.0,
+                    left: 10.0,
+                })
+                .style(|_, status| {
+                    let bg = match status {
+                        BtnStatus::Hovered => Color { a: 0.10, ..OryxisColors::t().error },
+                        _ => Color::TRANSPARENT,
+                    };
+                    button::Style {
+                        background: Some(Background::Color(bg)),
+                        border: Border {
+                            radius: Radius::from(4.0),
+                            color: OryxisColors::t().border,
+                            width: 1.0,
+                        },
+                        text_color: OryxisColors::t().error,
+                        ..Default::default()
+                    }
+                });
+            let row = container(
+                row![
+                    column![
+                        text(&pi.label)
+                            .size(14)
+                            .color(OryxisColors::t().text_primary),
+                        text(summary).size(12).color(OryxisColors::t().text_muted),
+                    ],
+                    Space::new().width(Length::Fill),
+                    edit_btn,
+                    Space::new().width(8),
+                    delete_btn,
+                ]
+                .align_y(iced::Alignment::Center),
+            )
+            .padding(Padding {
+                top: 12.0,
+                right: 12.0,
+                bottom: 12.0,
+                left: 12.0,
+            })
+            .style(|_| container::Style {
+                background: Some(Background::Color(OryxisColors::t().bg_hover)),
+                border: Border {
+                    radius: Radius::from(6.0),
+                    color: OryxisColors::t().border,
+                    width: 1.0,
+                },
+                ..Default::default()
+            })
+            .width(Length::Fill);
+            list = list.push(row);
+        }
+
+        // ── Add button ──
+        let add_btn = button(
+            text(format!("+ {}", crate::i18n::t("new_proxy_identity"))).size(13),
+        )
+        .on_press(Message::ShowProxyIdentityForm(None))
+        .padding(Padding {
+            top: 8.0,
+            right: 14.0,
+            bottom: 8.0,
+            left: 14.0,
+        })
+        .style(|_, status| {
+            let bg = match status {
+                BtnStatus::Hovered => OryxisColors::t().accent_hover,
+                _ => OryxisColors::t().accent,
+            };
+            button::Style {
+                background: Some(Background::Color(bg)),
+                border: Border {
+                    radius: Radius::from(6.0),
+                    ..Default::default()
+                },
+                text_color: crate::theme::contrast_text_for(bg),
+                ..Default::default()
+            }
+        });
+
+        // ── Inline form (only when visible) ──
+        let form: Element<'_, Message> = if self.proxy_identity_form_visible {
+            self.view_proxy_identity_form()
+        } else {
+            Space::new().height(0).into()
+        };
+
+        let header = if self.proxy_identity_form_visible {
+            row![title, Space::new().width(Length::Fill)]
+        } else {
+            row![title, Space::new().width(Length::Fill), add_btn]
+        };
+
+        scrollable(
+            container(
+                column![
+                    header,
+                    Space::new().height(12),
+                    text(crate::i18n::t("proxy_identities_desc"))
+                        .size(13)
+                        .color(OryxisColors::t().text_muted),
+                    Space::new().height(16),
+                    list,
+                    Space::new().height(16),
+                    form,
+                    Space::new().height(24),
+                ]
+                .width(Length::Fill),
+            )
+            .padding(Padding {
+                top: 20.0,
+                right: 24.0,
+                bottom: 24.0,
+                left: 24.0,
+            }),
+        )
+        .height(Length::Fill)
+        .into()
+    }
+
+    /// The inline create / edit form for a proxy identity. Used inside
+    /// `view_settings_proxies` when `proxy_identity_form_visible` is on.
+    fn view_proxy_identity_form(&self) -> Element<'_, Message> {
+        use crate::state::ProxyKind;
+
+        // The picker only offers the four wire types — None / Identity
+        // are not valid for a saved identity itself.
+        let wire_kinds: &[ProxyKind] = &[
+            ProxyKind::Socks5,
+            ProxyKind::Socks4,
+            ProxyKind::Http,
+            ProxyKind::Command,
+        ];
+
+        let kind_picker = pick_list(
+            Some(self.proxy_identity_form_kind),
+            wire_kinds,
+            |k: &ProxyKind| k.to_string(),
+        )
+        .on_select(Message::ProxyIdentityFormKindChanged)
+        .padding(10)
+        .style(crate::widgets::rounded_pick_list_style);
+
+        let pw_placeholder: &str = if self.proxy_identity_form_has_existing_password
+            && !self.proxy_identity_form_password_touched
+        {
+            crate::i18n::t("proxy_password_existing")
+        } else {
+            crate::i18n::t("proxy_password_placeholder")
+        };
+
+        let pw_input = text_input(pw_placeholder, &self.proxy_identity_form_password)
+            .on_input(Message::ProxyIdentityFormPasswordChanged)
+            .secure(!self.proxy_identity_form_password_visible)
+            .padding(10)
+            .style(crate::widgets::rounded_input_style);
+
+        let save_label = if self.editing_proxy_identity_id.is_some() {
+            crate::i18n::t("save")
+        } else {
+            crate::i18n::t("add")
+        };
+
+        let save_btn = button(text(save_label).size(13))
+            .on_press(Message::SaveProxyIdentity)
+            .padding(Padding {
+                top: 8.0,
+                right: 16.0,
+                bottom: 8.0,
+                left: 16.0,
+            })
+            .style(|_, status| {
+                let bg = match status {
+                    BtnStatus::Hovered => OryxisColors::t().accent_hover,
+                    _ => OryxisColors::t().accent,
+                };
+                button::Style {
+                    background: Some(Background::Color(bg)),
+                    border: Border {
+                        radius: Radius::from(6.0),
+                        ..Default::default()
+                    },
+                    text_color: crate::theme::contrast_text_for(bg),
+                    ..Default::default()
+                }
+            });
+
+        let cancel_btn = button(text(crate::i18n::t("cancel")).size(13))
+            .on_press(Message::HideProxyIdentityForm)
+            .padding(Padding {
+                top: 8.0,
+                right: 16.0,
+                bottom: 8.0,
+                left: 16.0,
+            })
+            .style(|_, status| {
+                let bg = match status {
+                    BtnStatus::Hovered => OryxisColors::t().bg_hover,
+                    _ => Color::TRANSPARENT,
+                };
+                button::Style {
+                    background: Some(Background::Color(bg)),
+                    border: Border {
+                        radius: Radius::from(6.0),
+                        color: OryxisColors::t().border,
+                        width: 1.0,
+                    },
+                    text_color: OryxisColors::t().text_secondary,
+                    ..Default::default()
+                }
+            });
+
+        let mut col = column![
+            text(crate::i18n::t("proxy_identity_label"))
+                .size(12)
+                .color(OryxisColors::t().text_muted),
+            text_input("home-bastion", &self.proxy_identity_form_label)
+                .on_input(Message::ProxyIdentityFormLabelChanged)
+                .padding(10)
+                .style(crate::widgets::rounded_input_style),
+            Space::new().height(12),
+            text(crate::i18n::t("proxy_type"))
+                .size(12)
+                .color(OryxisColors::t().text_muted),
+            kind_picker,
+            Space::new().height(12),
+            text(crate::i18n::t("proxy_host"))
+                .size(12)
+                .color(OryxisColors::t().text_muted),
+            text_input(
+                crate::i18n::t("proxy_host_placeholder"),
+                &self.proxy_identity_form_host,
+            )
+            .on_input(Message::ProxyIdentityFormHostChanged)
+            .padding(10)
+            .style(crate::widgets::rounded_input_style),
+            Space::new().height(12),
+            text(crate::i18n::t("proxy_port"))
+                .size(12)
+                .color(OryxisColors::t().text_muted),
+            text_input("1080", &self.proxy_identity_form_port)
+                .on_input(Message::ProxyIdentityFormPortChanged)
+                .padding(6)
+                .width(70)
+                .style(crate::widgets::rounded_input_style),
+            Space::new().height(12),
+            text(crate::i18n::t("proxy_username"))
+                .size(12)
+                .color(OryxisColors::t().text_muted),
+            text_input(
+                crate::i18n::t("proxy_username_placeholder"),
+                &self.proxy_identity_form_username,
+            )
+            .on_input(Message::ProxyIdentityFormUsernameChanged)
+            .padding(10)
+            .style(crate::widgets::rounded_input_style),
+            Space::new().height(12),
+            text(crate::i18n::t("proxy_password"))
+                .size(12)
+                .color(OryxisColors::t().text_muted),
+            pw_input,
+        ];
+
+        if let Some(err) = &self.proxy_identity_form_error {
+            col = col.push(Space::new().height(8)).push(
+                text(err.as_str())
+                    .size(12)
+                    .color(OryxisColors::t().error),
+            );
+        }
+
+        col = col.push(Space::new().height(16)).push(
+            row![cancel_btn, Space::new().width(8), save_btn]
+                .align_y(iced::Alignment::Center),
+        );
+
+        container(col)
+            .padding(Padding {
+                top: 16.0,
+                right: 16.0,
+                bottom: 16.0,
+                left: 16.0,
+            })
+            .style(|_| container::Style {
+                background: Some(Background::Color(OryxisColors::t().bg_hover)),
+                border: Border {
+                    radius: Radius::from(8.0),
+                    color: OryxisColors::t().border,
+                    width: 1.0,
+                },
+                ..Default::default()
+            })
+            .width(Length::Fill)
+            .into()
     }
 }

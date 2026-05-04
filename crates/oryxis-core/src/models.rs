@@ -6,6 +6,7 @@ pub mod credential;
 pub mod known_host;
 pub mod log_entry;
 pub mod identity;
+pub mod proxy_identity;
 
 pub use connection::*;
 pub use key::*;
@@ -15,3 +16,4 @@ pub use credential::*;
 pub use known_host::*;
 pub use log_entry::*;
 pub use identity::*;
+pub use proxy_identity::*;

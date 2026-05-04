@@ -81,6 +81,97 @@ Host inner
 }
 
 #[test]
+fn proxy_jump_takes_only_first_hop() {
+    // OpenSSH allows comma-separated chains; for v1 import we keep
+    // only the first hop so alias linking stays 1-1.
+    let input = "
+Host inner
+    HostName 10.1.1.1
+    ProxyJump alpha,beta,gamma
+";
+    let hosts = parse(input);
+    assert_eq!(hosts[0].proxy_jump.as_deref(), Some("alpha"));
+}
+
+#[test]
+fn captures_proxy_command_verbatim() {
+    // Placeholders like %h / %p must be preserved verbatim — they're
+    // expanded by the user's shell at connect time.
+    let input = "
+Host tunneled
+    HostName 10.0.0.5
+    ProxyCommand ssh -W %h:%p bastion
+";
+    let hosts = parse(input);
+    assert_eq!(
+        hosts[0].proxy_command.as_deref(),
+        Some("ssh -W %h:%p bastion")
+    );
+}
+
+#[test]
+fn proxy_command_maps_to_command_proxy_type() {
+    use oryxis_core::models::connection::ProxyType;
+    let host = SshConfigHost {
+        alias: "h".into(),
+        hostname: Some("h.example.com".into()),
+        port: None,
+        user: None,
+        identity_file: None,
+        proxy_jump: None,
+        proxy_command: Some("nc -X connect -x corp:8080 %h %p".into()),
+        forward_agent: false,
+    };
+    let conn = to_connection(&host);
+    let proxy = conn.proxy.expect("proxy_command should produce inline proxy");
+    match proxy.proxy_type {
+        ProxyType::Command(cmd) => {
+            assert_eq!(cmd, "nc -X connect -x corp:8080 %h %p");
+        }
+        other => panic!("expected ProxyType::Command, got {:?}", other),
+    }
+}
+
+#[test]
+fn link_proxy_jumps_resolves_alias_to_id() {
+    let input = "
+Host bastion
+    HostName 198.51.100.1
+
+Host inner
+    HostName 10.0.0.5
+    ProxyJump bastion
+";
+    let parsed = parse(input);
+    let mut conns: Vec<_> = parsed.iter().map(to_connection).collect();
+    link_proxy_jumps(&parsed, &mut conns);
+
+    let bastion_id = conns.iter().find(|c| c.label == "bastion").unwrap().id;
+    let inner = conns.iter().find(|c| c.label == "inner").unwrap();
+    assert_eq!(inner.jump_chain, vec![bastion_id]);
+}
+
+#[test]
+fn link_proxy_jumps_records_unresolved_alias_in_notes() {
+    let input = "
+Host orphan
+    HostName 10.0.0.5
+    ProxyJump ghost
+";
+    let parsed = parse(input);
+    let mut conns: Vec<_> = parsed.iter().map(to_connection).collect();
+    link_proxy_jumps(&parsed, &mut conns);
+
+    let orphan = &conns[0];
+    assert!(orphan.jump_chain.is_empty());
+    let notes = orphan.notes.as_deref().unwrap_or("");
+    assert!(
+        notes.contains("ghost") && notes.contains("not resolved"),
+        "notes should flag unresolved alias: {notes:?}"
+    );
+}
+
+#[test]
 fn captures_forward_agent_only_when_yes() {
     // OpenSSH defaults to `ForwardAgent no`; only an explicit `yes`
     // flips agent forwarding on, so the parser should treat any other
@@ -222,6 +313,7 @@ proptest! {
             user: Some("u".into()),
             identity_file: None,
             proxy_jump: None,
+            proxy_command: None,
             forward_agent: false,
         };
         let conn = to_connection(&host);
