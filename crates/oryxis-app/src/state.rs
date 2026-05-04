@@ -570,6 +570,13 @@ pub(crate) struct ConnectionForm {
     /// Forward the local ssh-agent socket to the remote shell. See the
     /// matching field on `Connection`.
     pub agent_forwarding: bool,
+    /// Proxy configuration editor fields
+    pub proxy_type: String,
+    pub proxy_host: String,
+    pub proxy_port: String,
+    pub proxy_username: String,
+    pub proxy_password: String,
+    pub proxy_command: String,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -600,6 +607,12 @@ impl Default for ConnectionForm {
             port_forwards: Vec::new(),
             mcp_enabled: true,
             agent_forwarding: false,
+            proxy_type: "(none)".into(),
+            proxy_host: String::new(),
+            proxy_port: String::new(),
+            proxy_username: String::new(),
+            proxy_password: String::new(),
+            proxy_command: String::new(),
         }
     }
 }

@@ -6,7 +6,7 @@
 
 use iced::Task;
 
-use oryxis_core::models::connection::{AuthMethod, Connection};
+use oryxis_core::models::connection::{AuthMethod, Connection, ProxyType};
 use oryxis_core::models::group::Group;
 
 use crate::app::{Message, Oryxis};
@@ -73,6 +73,20 @@ impl Oryxis {
                         }).collect(),
                         mcp_enabled: conn.mcp_enabled,
                         agent_forwarding: conn.agent_forwarding,
+                        proxy_type: conn.proxy.as_ref().map(|p| match &p.proxy_type {
+                            ProxyType::Socks5 => "Socks5".into(),
+                            ProxyType::Socks4 => "Socks4".into(),
+                            ProxyType::Http => "Http".into(),
+                            ProxyType::Command(_) => "Command".into(),
+                        }).unwrap_or_else(|| "(none)".into()),
+                        proxy_host: conn.proxy.as_ref().map(|p| p.host.clone()).unwrap_or_default(),
+                        proxy_port: conn.proxy.as_ref().map(|p| p.port.to_string()).unwrap_or_default(),
+                        proxy_username: conn.proxy.as_ref().and_then(|p| p.username.clone()).unwrap_or_default(),
+                        proxy_password: conn.proxy.as_ref().and_then(|p| p.password.clone()).unwrap_or_default(),
+                        proxy_command: conn.proxy.as_ref().and_then(|p| match &p.proxy_type {
+                            ProxyType::Command(cmd) => Some(cmd.clone()),
+                            _ => None,
+                        }).unwrap_or_default(),
                     };
                 }
             }
@@ -107,6 +121,12 @@ impl Oryxis {
             Message::EditorJumpHostChanged(v) => {
                 self.editor_form.jump_host = if v == "(none)" { None } else { Some(v) };
             }
+            Message::EditorProxyTypeChanged(v) => { self.editor_form.proxy_type = v; }
+            Message::EditorProxyHostChanged(v) => { self.editor_form.proxy_host = v; }
+            Message::EditorProxyPortChanged(v) => { self.editor_form.proxy_port = v; }
+            Message::EditorProxyUsernameChanged(v) => { self.editor_form.proxy_username = v; }
+            Message::EditorProxyPasswordChanged(v) => { self.editor_form.proxy_password = v; }
+            Message::EditorProxyCommandChanged(v) => { self.editor_form.proxy_command = v; }
             Message::EditorSave => {
                 if self.editor_form.label.is_empty() || self.editor_form.hostname.is_empty() {
                     self.host_panel_error = Some("Label and hostname are required".into());
@@ -180,6 +200,26 @@ impl Oryxis {
                 }).collect();
                 conn.mcp_enabled = self.editor_form.mcp_enabled;
                 conn.agent_forwarding = self.editor_form.agent_forwarding;
+                // Proxy mapping from editor form into the saved Connection
+                if self.editor_form.proxy_type == "(none)" || self.editor_form.proxy_type.is_empty() {
+                    conn.proxy = None;
+                } else {
+                    let proxy_port = self.editor_form.proxy_port.parse::<u16>().unwrap_or(0);
+                    let proxy_type = match self.editor_form.proxy_type.as_str() {
+                        "Socks5" => ProxyType::Socks5,
+                        "Socks4" => ProxyType::Socks4,
+                        "Http" => ProxyType::Http,
+                        "Command" => ProxyType::Command(self.editor_form.proxy_command.clone()),
+                        _ => ProxyType::Socks5,
+                    };
+                    conn.proxy = Some(oryxis_core::models::connection::ProxyConfig {
+                        proxy_type,
+                        host: self.editor_form.proxy_host.clone(),
+                        port: proxy_port,
+                        username: if self.editor_form.proxy_username.is_empty() { None } else { Some(self.editor_form.proxy_username.clone()) },
+                        password: if self.editor_form.proxy_password.is_empty() { None } else { Some(self.editor_form.proxy_password.clone()) },
+                    });
+                }
                 conn.updated_at = chrono::Utc::now();
 
                 let password = if !self.editor_form.password_touched {

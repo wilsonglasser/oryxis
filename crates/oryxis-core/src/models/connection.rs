@@ -104,6 +104,7 @@ pub struct ProxyConfig {
     pub host: String,
     pub port: u16,
     pub username: Option<String>,
+    pub password: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

@@ -381,6 +381,96 @@ impl Oryxis {
             ].align_y(iced::Alignment::Center),
         ]);
 
+        // ── Section: Proxy ──
+        let proxy_opts = vec!["(none)".to_string(), "Socks5".into(), "Socks4".into(), "Http".into(), "Command".into()];
+        let proxy_section = if self.editor_form.proxy_type == "(none)" || self.editor_form.proxy_type.is_empty() {
+            // When proxy is disabled, only show the type picker
+            panel_section(column![
+                panel_field(
+                    "Proxy Type",
+                    pick_list(
+                        Some(self.editor_form.proxy_type.clone()),
+                        proxy_opts.clone(),
+                        |s: &String| s.clone(),
+                    )
+                    .on_select(Message::EditorProxyTypeChanged)
+                    .padding(10)
+                    .style(crate::widgets::rounded_pick_list_style)
+                    .into(),
+                ),
+            ])
+        } else {
+            // When proxy is enabled, show all fields
+            let proxy_command_field: Element<'_, Message> = if self.editor_form.proxy_type == "Command" {
+                column![
+                    Space::new().height(8),
+                    panel_field(
+                        "Proxy Command",
+                        text_input("ssh -W %h:%p proxyhost", &self.editor_form.proxy_command)
+                            .on_input(Message::EditorProxyCommandChanged)
+                            .padding(10)
+                            .style(crate::widgets::rounded_input_style)
+                            .into(),
+                    ),
+                ].into()
+            } else {
+                Space::new().height(0).into()
+            };
+
+            panel_section(column![
+                panel_field(
+                    "Proxy Type",
+                    pick_list(
+                        Some(self.editor_form.proxy_type.clone()),
+                        proxy_opts.clone(),
+                        |s: &String| s.clone(),
+                    )
+                    .on_select(Message::EditorProxyTypeChanged)
+                    .padding(10)
+                    .style(crate::widgets::rounded_pick_list_style)
+                    .into(),
+                ),
+                Space::new().height(8),
+                panel_field(
+                    "Proxy Host",
+                    text_input("proxy.example.com", &self.editor_form.proxy_host)
+                        .on_input(Message::EditorProxyHostChanged)
+                        .padding(10)
+                        .style(crate::widgets::rounded_input_style)
+                        .into(),
+                ),
+                Space::new().height(8),
+                panel_field(
+                    "Proxy Port",
+                    text_input("1080", &self.editor_form.proxy_port)
+                        .on_input(Message::EditorProxyPortChanged)
+                        .padding(6)
+                        .width(70)
+                        .style(crate::widgets::rounded_input_style)
+                        .into(),
+                ),
+                Space::new().height(8),
+                panel_field(
+                    "Username",
+                    text_input("user", &self.editor_form.proxy_username)
+                        .on_input(Message::EditorProxyUsernameChanged)
+                        .padding(10)
+                        .style(crate::widgets::rounded_input_style)
+                        .into(),
+                ),
+                Space::new().height(8),
+                panel_field(
+                    "Password",
+                    text_input("password", &self.editor_form.proxy_password)
+                        .on_input(Message::EditorProxyPasswordChanged)
+                        .padding(10)
+                        .style(crate::widgets::rounded_input_style)
+                        .into(),
+                ),
+                proxy_command_field,
+            ])
+        };
+
         // ── Section: Port Forwarding ──
         let mut pf_items = column![
             row![
@@ -473,6 +563,8 @@ impl Oryxis {
                 ssh_section,
                 Space::new().height(8),
                 advanced_section,
+                Space::new().height(8),
+                proxy_section,
                 Space::new().height(8),
                 port_forward_section,
                 Space::new().height(8),
