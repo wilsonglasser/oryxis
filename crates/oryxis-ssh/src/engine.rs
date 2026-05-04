@@ -716,12 +716,15 @@ impl SshEngine {
         match &proxy.proxy_type {
             ProxyType::Socks5 => {
                 let stream = if let Some(user) = &proxy.username {
-                    // SOCKS5 with auth (password from proxy config not stored yet, use empty)
+                    // SOCKS5 username/password auth (RFC 1929). Password
+                    // is hydrated from the vault before this call; if
+                    // the user configured no password, send an empty
+                    // one — the proxy may still accept it.
                     tokio_socks::tcp::Socks5Stream::connect_with_password(
                         proxy_addr.as_str(),
                         (target_host, target_port),
                         user.as_str(),
-                        "",
+                        proxy.password.as_deref().unwrap_or(""),
                     )
                     .await
                     .map_err(|e| SshError::Proxy(format!("SOCKS5 auth: {}", e)))?
@@ -764,7 +767,13 @@ impl SshEngine {
             }
             ProxyType::Http => {
                 let stream = self
-                    .http_connect_tunnel(&proxy_addr, target_host, target_port)
+                    .http_connect_tunnel(
+                        &proxy_addr,
+                        target_host,
+                        target_port,
+                        proxy.username.as_deref(),
+                        proxy.password.as_deref(),
+                    )
                     .await?;
 
                 let config = self.make_config();
@@ -784,42 +793,64 @@ impl SshEngine {
     }
 
     /// HTTP CONNECT tunnel — establish a TCP tunnel through an HTTP proxy.
+    /// Supports Basic auth (RFC 7617) when `username` is provided.
     async fn http_connect_tunnel(
         &self,
         proxy_addr: &str,
         target_host: &str,
         target_port: u16,
+        username: Option<&str>,
+        password: Option<&str>,
     ) -> Result<TcpStream, SshError> {
         let mut stream = TcpStream::connect(proxy_addr)
             .await
             .map_err(|e| SshError::Proxy(format!("HTTP proxy connect: {}", e)))?;
 
-        let connect_req = format!(
-            "CONNECT {}:{} HTTP/1.1\r\nHost: {}:{}\r\n\r\n",
-            target_host, target_port, target_host, target_port
-        );
+        let connect_req = build_http_connect_request(target_host, target_port, username, password);
 
         stream
             .write_all(connect_req.as_bytes())
             .await
             .map_err(|e| SshError::Proxy(format!("HTTP CONNECT write: {}", e)))?;
 
-        // Read response
-        let mut buf = vec![0u8; 1024];
-        let n = tokio::io::AsyncReadExt::read(&mut stream, &mut buf)
-            .await
-            .map_err(|e| SshError::Proxy(format!("HTTP CONNECT read: {}", e)))?;
-
-        let response = String::from_utf8_lossy(&buf[..n]);
-        if !response.contains("200") {
-            return Err(SshError::Proxy(format!(
-                "HTTP CONNECT failed: {}",
-                response.lines().next().unwrap_or("unknown")
-            )));
+        // Read until end-of-headers ("\r\n\r\n"). A single read() typically
+        // delivers the whole CONNECT response on first packet, but a hostile
+        // or chunked proxy may split it — loop until we have headers or hit
+        // a 16 KiB cap (HTTP requests this small never exceed that).
+        let mut buf = Vec::with_capacity(1024);
+        let mut chunk = [0u8; 1024];
+        loop {
+            let n = tokio::io::AsyncReadExt::read(&mut stream, &mut chunk)
+                .await
+                .map_err(|e| SshError::Proxy(format!("HTTP CONNECT read: {}", e)))?;
+            if n == 0 {
+                return Err(SshError::Proxy(
+                    "HTTP CONNECT: proxy closed before response".into(),
+                ));
+            }
+            buf.extend_from_slice(&chunk[..n]);
+            if buf.windows(4).any(|w| w == b"\r\n\r\n") || buf.len() > 16 * 1024 {
+                break;
+            }
         }
 
-        tracing::info!("HTTP CONNECT tunnel established");
-        Ok(stream)
+        match parse_http_status(&buf) {
+            Some(200) => {
+                tracing::info!("HTTP CONNECT tunnel established");
+                Ok(stream)
+            }
+            Some(407) => Err(SshError::Proxy(
+                "HTTP CONNECT failed: 407 Proxy Authentication Required".into(),
+            )),
+            Some(code) => Err(SshError::Proxy(format!(
+                "HTTP CONNECT failed: status {}",
+                code
+            ))),
+            None => Err(SshError::Proxy(format!(
+                "HTTP CONNECT failed: unparseable response \"{}\"",
+                String::from_utf8_lossy(&buf).lines().next().unwrap_or("")
+            ))),
+        }
     }
 
     /// ProxyCommand — spawn a process and use its stdin/stdout as transport.
@@ -1439,6 +1470,41 @@ fn parse_addr(addr: &str) -> Result<(String, u32), SshError> {
     Ok((parts[1].to_string(), port))
 }
 
+/// Build the request bytes for an HTTP CONNECT tunnel. When `username`
+/// is provided, a `Proxy-Authorization: Basic` header is added (RFC
+/// 7617). `password` may be `None` or empty — the colon separator is
+/// always present per the spec.
+fn build_http_connect_request(
+    target_host: &str,
+    target_port: u16,
+    username: Option<&str>,
+    password: Option<&str>,
+) -> String {
+    use base64::Engine as _;
+    let mut req = format!(
+        "CONNECT {host}:{port} HTTP/1.1\r\nHost: {host}:{port}\r\n",
+        host = target_host,
+        port = target_port,
+    );
+    if let Some(user) = username {
+        let creds = format!("{}:{}", user, password.unwrap_or(""));
+        let encoded = base64::engine::general_purpose::STANDARD.encode(creds);
+        req.push_str(&format!("Proxy-Authorization: Basic {}\r\n", encoded));
+    }
+    req.push_str("\r\n");
+    req
+}
+
+/// Parse the status code out of an HTTP/1.x response. Returns `None`
+/// if the status line can't be read (e.g. the proxy spoke garbage).
+fn parse_http_status(buf: &[u8]) -> Option<u16> {
+    let line_end = buf.windows(2).position(|w| w == b"\r\n").unwrap_or(buf.len());
+    let line = std::str::from_utf8(&buf[..line_end]).ok()?;
+    let mut parts = line.split_whitespace();
+    let _version = parts.next()?;
+    parts.next()?.parse().ok()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1493,4 +1559,42 @@ mod tests {
     // existed on the original author's machine, and didn't compile in
     // CI anyway. End-to-end SSH coverage now lives in the
     // `tests/` directory once the harness is wired.)
+
+    #[test]
+    fn http_connect_request_unauthenticated() {
+        let req = build_http_connect_request("example.com", 443, None, None);
+        assert!(req.starts_with("CONNECT example.com:443 HTTP/1.1\r\n"));
+        assert!(req.contains("Host: example.com:443\r\n"));
+        assert!(!req.contains("Proxy-Authorization"));
+        assert!(req.ends_with("\r\n\r\n"));
+    }
+
+    #[test]
+    fn http_connect_request_with_basic_auth() {
+        // RFC 7617 — "Aladdin:open sesame" → "QWxhZGRpbjpvcGVuIHNlc2FtZQ=="
+        let req = build_http_connect_request("h", 22, Some("Aladdin"), Some("open sesame"));
+        assert!(req.contains("Proxy-Authorization: Basic QWxhZGRpbjpvcGVuIHNlc2FtZQ==\r\n"));
+    }
+
+    #[test]
+    fn http_connect_request_with_user_no_password() {
+        // No password → empty after colon (per RFC 7617).
+        let req = build_http_connect_request("h", 22, Some("u"), None);
+        // "u:" base64 = "dTo="
+        assert!(req.contains("Proxy-Authorization: Basic dTo=\r\n"));
+    }
+
+    #[test]
+    fn parse_http_status_ok() {
+        assert_eq!(parse_http_status(b"HTTP/1.1 200 Connection established\r\n\r\n"), Some(200));
+        assert_eq!(parse_http_status(b"HTTP/1.0 407 Proxy Authentication Required\r\n"), Some(407));
+        assert_eq!(parse_http_status(b"HTTP/1.1 502 Bad Gateway\r\n"), Some(502));
+    }
+
+    #[test]
+    fn parse_http_status_garbage() {
+        assert_eq!(parse_http_status(b""), None);
+        assert_eq!(parse_http_status(b"not http"), None);
+        assert_eq!(parse_http_status(b"HTTP/1.1\r\n"), None);
+    }
 }
