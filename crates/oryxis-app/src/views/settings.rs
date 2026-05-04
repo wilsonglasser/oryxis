@@ -658,10 +658,41 @@ impl Oryxis {
                     ].align_y(iced::Alignment::Center),
                 ]);
 
+                // Layout direction picker — Auto (follow language) by
+                // default; explicit LTR/RTL overrides regardless of
+                // language. Useful for users who want Persian text but a
+                // familiar sidebar position.
+                let dir_options: Vec<String> = crate::i18n::LayoutDirection::ALL
+                    .iter()
+                    .map(|d| crate::i18n::t(d.label_key()).to_string())
+                    .collect();
+                let active_dir_name = crate::i18n::t(
+                    crate::i18n::LayoutDirection::active().label_key(),
+                )
+                .to_string();
+
+                let layout_dir_section = panel_section(column![
+                    row![
+                        text(crate::i18n::t("layout_direction")).size(13).color(OryxisColors::t().text_primary),
+                        Space::new().width(Length::Fill),
+                        pick_list(
+                            Some(active_dir_name),
+                            dir_options,
+                            |s: &String| s.clone(),
+                        )
+                        .on_select(Message::LayoutDirectionChanged)
+                        .width(240)
+                        .padding(10)
+                        .style(crate::widgets::rounded_pick_list_style),
+                    ].align_y(iced::Alignment::Center),
+                ]);
+
                 let mut content_col = column![
                     text(crate::i18n::t("theme")).size(18).color(OryxisColors::t().text_primary),
                     Space::new().height(16),
                     language_section,
+                    Space::new().height(8),
+                    layout_dir_section,
                     Space::new().height(12),
                 ]
                 .spacing(12)
@@ -1296,32 +1327,16 @@ impl Oryxis {
             list = list.push(row);
         }
 
-        // ── Add button ──
-        let add_btn = button(
-            text(format!("+ {}", crate::i18n::t("new_proxy_identity"))).size(13),
-        )
-        .on_press(Message::ShowProxyIdentityForm(None))
-        .padding(Padding {
-            top: 8.0,
-            right: 14.0,
-            bottom: 8.0,
-            left: 14.0,
-        })
-        .style(|_, status| {
-            let bg = match status {
-                BtnStatus::Hovered => OryxisColors::t().accent_hover,
-                _ => OryxisColors::t().accent,
-            };
-            button::Style {
-                background: Some(Background::Color(bg)),
-                border: Border {
-                    radius: Radius::from(6.0),
-                    ..Default::default()
-                },
-                text_color: crate::theme::contrast_text_for(bg),
-                ..Default::default()
-            }
-        });
+        // ── Add button — same primary CTA styling as Save / Connect.
+        // No "+" prefix here: `styled_button` borrows the label, so a
+        // dynamically formatted `String` would be tied to this scope;
+        // the i18n value is enough on its own with the accent color
+        // signaling it's an additive action.
+        let add_btn = styled_button(
+            crate::i18n::t("new_proxy_identity"),
+            Message::ShowProxyIdentityForm(None),
+            OryxisColors::t().accent,
+        );
 
         // ── Inline form (only when visible) ──
         let form: Element<'_, Message> = if self.proxy_identity_form_visible {
@@ -1405,105 +1420,70 @@ impl Oryxis {
         } else {
             crate::i18n::t("add")
         };
+        // Match the keychain / vault buttons: bold accent for the
+        // primary action, muted color for cancel.
+        let save_btn = styled_button(
+            save_label,
+            Message::SaveProxyIdentity,
+            OryxisColors::t().accent,
+        );
+        let cancel_btn = styled_button(
+            crate::i18n::t("cancel"),
+            Message::HideProxyIdentityForm,
+            OryxisColors::t().text_muted,
+        );
 
-        let save_btn = button(text(save_label).size(13))
-            .on_press(Message::SaveProxyIdentity)
-            .padding(Padding {
-                top: 8.0,
-                right: 16.0,
-                bottom: 8.0,
-                left: 16.0,
-            })
-            .style(|_, status| {
-                let bg = match status {
-                    BtnStatus::Hovered => OryxisColors::t().accent_hover,
-                    _ => OryxisColors::t().accent,
-                };
-                button::Style {
-                    background: Some(Background::Color(bg)),
-                    border: Border {
-                        radius: Radius::from(6.0),
-                        ..Default::default()
-                    },
-                    text_color: crate::theme::contrast_text_for(bg),
-                    ..Default::default()
-                }
-            });
-
-        let cancel_btn = button(text(crate::i18n::t("cancel")).size(13))
-            .on_press(Message::HideProxyIdentityForm)
-            .padding(Padding {
-                top: 8.0,
-                right: 16.0,
-                bottom: 8.0,
-                left: 16.0,
-            })
-            .style(|_, status| {
-                let bg = match status {
-                    BtnStatus::Hovered => OryxisColors::t().bg_hover,
-                    _ => Color::TRANSPARENT,
-                };
-                button::Style {
-                    background: Some(Background::Color(bg)),
-                    border: Border {
-                        radius: Radius::from(6.0),
-                        color: OryxisColors::t().border,
-                        width: 1.0,
-                    },
-                    text_color: OryxisColors::t().text_secondary,
-                    ..Default::default()
-                }
-            });
-
+        // Use the shared `panel_field` helper for label/input pairs —
+        // gives the same 4-px gap between label and control as every
+        // other form in the app, instead of glueing them together.
+        use crate::widgets::panel_field;
         let mut col = column![
-            text(crate::i18n::t("proxy_identity_label"))
-                .size(12)
-                .color(OryxisColors::t().text_muted),
-            text_input("home-bastion", &self.proxy_identity_form_label)
-                .on_input(Message::ProxyIdentityFormLabelChanged)
+            panel_field(
+                crate::i18n::t("proxy_identity_label"),
+                text_input("home-bastion", &self.proxy_identity_form_label)
+                    .on_input(Message::ProxyIdentityFormLabelChanged)
+                    .padding(10)
+                    .style(crate::widgets::rounded_input_style)
+                    .into(),
+            ),
+            Space::new().height(12),
+            panel_field(crate::i18n::t("proxy_type"), kind_picker.into()),
+            Space::new().height(12),
+            panel_field(
+                crate::i18n::t("proxy_host"),
+                text_input(
+                    crate::i18n::t("proxy_host_placeholder"),
+                    &self.proxy_identity_form_host,
+                )
+                .on_input(Message::ProxyIdentityFormHostChanged)
                 .padding(10)
-                .style(crate::widgets::rounded_input_style),
+                .style(crate::widgets::rounded_input_style)
+                .into(),
+            ),
             Space::new().height(12),
-            text(crate::i18n::t("proxy_type"))
-                .size(12)
-                .color(OryxisColors::t().text_muted),
-            kind_picker,
+            panel_field(
+                crate::i18n::t("proxy_port"),
+                text_input("1080", &self.proxy_identity_form_port)
+                    .on_input(Message::ProxyIdentityFormPortChanged)
+                    .padding(6)
+                    .width(70)
+                    .style(crate::widgets::rounded_input_style)
+                    .into(),
+            ),
             Space::new().height(12),
-            text(crate::i18n::t("proxy_host"))
-                .size(12)
-                .color(OryxisColors::t().text_muted),
-            text_input(
-                crate::i18n::t("proxy_host_placeholder"),
-                &self.proxy_identity_form_host,
-            )
-            .on_input(Message::ProxyIdentityFormHostChanged)
-            .padding(10)
-            .style(crate::widgets::rounded_input_style),
+            panel_field(
+                crate::i18n::t("proxy_username"),
+                text_input(
+                    crate::i18n::t("proxy_username_placeholder"),
+                    &self.proxy_identity_form_username,
+                )
+                .on_input(Message::ProxyIdentityFormUsernameChanged)
+                .padding(10)
+                .style(crate::widgets::rounded_input_style)
+                .into(),
+            ),
             Space::new().height(12),
-            text(crate::i18n::t("proxy_port"))
-                .size(12)
-                .color(OryxisColors::t().text_muted),
-            text_input("1080", &self.proxy_identity_form_port)
-                .on_input(Message::ProxyIdentityFormPortChanged)
-                .padding(6)
-                .width(70)
-                .style(crate::widgets::rounded_input_style),
-            Space::new().height(12),
-            text(crate::i18n::t("proxy_username"))
-                .size(12)
-                .color(OryxisColors::t().text_muted),
-            text_input(
-                crate::i18n::t("proxy_username_placeholder"),
-                &self.proxy_identity_form_username,
-            )
-            .on_input(Message::ProxyIdentityFormUsernameChanged)
-            .padding(10)
-            .style(crate::widgets::rounded_input_style),
-            Space::new().height(12),
-            text(crate::i18n::t("proxy_password"))
-                .size(12)
-                .color(OryxisColors::t().text_muted),
-            pw_input,
+            panel_field(crate::i18n::t("proxy_password"), pw_input.into()),
         ];
 
         if let Some(err) = &self.proxy_identity_form_error {

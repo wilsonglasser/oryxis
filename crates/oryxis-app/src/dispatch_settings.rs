@@ -42,6 +42,19 @@ impl Oryxis {
                     }
                 }
             }
+            Message::LayoutDirectionChanged(name) => {
+                use crate::i18n::{t, LayoutDirection};
+                // Match against the *localized* label since that's what
+                // the pick_list emits; keys live on the enum so the
+                // mapping survives language switches.
+                if let Some(dir) = LayoutDirection::ALL
+                    .iter()
+                    .find(|d| t(d.label_key()) == name)
+                {
+                    LayoutDirection::set_active(*dir);
+                    self.persist_setting("layout_direction", dir.code());
+                }
+            }
             Message::AppThemeChanged(name) => {
                 use crate::theme::AppTheme;
                 if let Some(theme) = AppTheme::ALL.iter().find(|t| t.name() == name) {

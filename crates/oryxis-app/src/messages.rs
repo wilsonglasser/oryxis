@@ -320,6 +320,10 @@ pub enum Message {
 
     // Language
     LanguageChanged(String),
+    /// User picked a layout-direction option (Auto / LTR / RTL).
+    /// The string is the localized label shown in the picker; the
+    /// dispatch handler maps it back to a `LayoutDirection` value.
+    LayoutDirectionChanged(String),
 
     // Local shell
     OpenLocalShell,
