@@ -18,6 +18,22 @@ use crate::theme::OryxisColors;
 /// match the rounded look of the cards and buttons.
 pub const INPUT_RADIUS: f32 = 10.0;
 
+/// Build a `Row` from elements written in left-to-right *reading order*,
+/// reversing them when the active layout direction is RTL. Use anywhere the
+/// physical placement of children should mirror with the layout setting —
+/// e.g. sidebar vs. content, leading/trailing icon pairs.
+///
+/// The `iced::widget::row!` macro takes positional children and can't be
+/// reversed after construction, so callers that need direction-awareness
+/// should switch to this helper instead.
+pub fn dir_row<'a, M: 'a>(items: Vec<Element<'a, M>>) -> Row<'a, M> {
+    if crate::i18n::is_rtl_layout() {
+        Row::with_children(items.into_iter().rev().collect::<Vec<_>>())
+    } else {
+        Row::with_children(items)
+    }
+}
+
 /// Shared style closure for `text_input`. Apply via `.style(rounded_input_style)`
 /// to get the app's accent-focused look with the consistent 10 px radius.
 pub fn rounded_input_style(_theme: &Theme, status: text_input::Status) -> text_input::Style {

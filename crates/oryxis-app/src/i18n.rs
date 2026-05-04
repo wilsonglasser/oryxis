@@ -1,6 +1,85 @@
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 static ACTIVE_LANG: AtomicUsize = AtomicUsize::new(0);
+static ACTIVE_LAYOUT_DIR: AtomicUsize = AtomicUsize::new(0);
+
+/// User-facing setting controlling the visual layout direction. `Auto` follows
+/// the active language (so Persian flips automatically); the explicit values
+/// override regardless of the chosen language.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LayoutDirection {
+    Auto,
+    LeftToRight,
+    RightToLeft,
+}
+
+impl LayoutDirection {
+    pub const ALL: &[LayoutDirection] = &[
+        Self::Auto,
+        Self::LeftToRight,
+        Self::RightToLeft,
+    ];
+
+    pub fn code(&self) -> &'static str {
+        match self {
+            Self::Auto => "auto",
+            Self::LeftToRight => "ltr",
+            Self::RightToLeft => "rtl",
+        }
+    }
+
+    pub fn from_code(code: &str) -> Self {
+        match code {
+            "ltr" => Self::LeftToRight,
+            "rtl" => Self::RightToLeft,
+            _ => Self::Auto,
+        }
+    }
+
+    /// i18n key used for the dropdown label of this option.
+    pub fn label_key(&self) -> &'static str {
+        match self {
+            Self::Auto => "layout_dir_auto",
+            Self::LeftToRight => "layout_dir_ltr",
+            Self::RightToLeft => "layout_dir_rtl",
+        }
+    }
+
+    pub fn set_active(dir: LayoutDirection) {
+        let idx = Self::ALL.iter().position(|d| *d == dir).unwrap_or(0);
+        ACTIVE_LAYOUT_DIR.store(idx, Ordering::Relaxed);
+    }
+
+    pub fn active() -> LayoutDirection {
+        let idx = ACTIVE_LAYOUT_DIR.load(Ordering::Relaxed);
+        Self::ALL.get(idx).copied().unwrap_or(LayoutDirection::Auto)
+    }
+}
+
+/// True when the active *language* uses right-to-left script. Drives text
+/// alignment, text-input direction, BiDi hints. Independent of the user's
+/// layout-direction setting — Persian text is always RTL regardless of
+/// whether the user kept the sidebar on the left.
+///
+/// Currently unused at call sites — cosmic-text's BiDi shaping handles
+/// glyph-level rendering automatically. Exposed for future per-widget
+/// alignment overrides (e.g. right-aligning RTL `text_input`s).
+#[allow(dead_code)]
+pub fn is_rtl_text() -> bool {
+    Language::active().is_rtl()
+}
+
+/// True when the *layout* should be physically mirrored (sidebar swaps
+/// sides, row children reverse). Resolves the user's `LayoutDirection`
+/// setting; `Auto` defers to the language. Override `Auto` with explicit
+/// `Left`/`Right` if the user wants Persian text but a familiar layout.
+pub fn is_rtl_layout() -> bool {
+    match LayoutDirection::active() {
+        LayoutDirection::Auto => Language::active().is_rtl(),
+        LayoutDirection::LeftToRight => false,
+        LayoutDirection::RightToLeft => true,
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Language {
@@ -13,6 +92,7 @@ pub enum Language {
     Chinese,
     Japanese,
     Russian,
+    Persian,
 }
 
 impl Language {
@@ -26,6 +106,7 @@ impl Language {
         Self::Chinese,
         Self::Japanese,
         Self::Russian,
+        Self::Persian,
     ];
 
     pub fn code(&self) -> &'static str {
@@ -39,6 +120,7 @@ impl Language {
             Self::Chinese => "zh",
             Self::Japanese => "ja",
             Self::Russian => "ru",
+            Self::Persian => "fa",
         }
     }
 
@@ -53,7 +135,14 @@ impl Language {
             Self::Chinese => "Chinese",
             Self::Japanese => "Japanese",
             Self::Russian => "Russian",
+            Self::Persian => "فارسی",
         }
+    }
+
+    /// Whether this language is written right-to-left. Used by the
+    /// `LayoutDirection::Auto` setting to decide if the UI should mirror.
+    pub fn is_rtl(&self) -> bool {
+        matches!(self, Self::Persian)
     }
 
     pub fn from_code(code: &str) -> Self {
@@ -66,6 +155,7 @@ impl Language {
             "zh" => Self::Chinese,
             "ja" => Self::Japanese,
             "ru" => Self::Russian,
+            "fa" => Self::Persian,
             _ => Self::English,
         }
     }
@@ -104,6 +194,7 @@ fn translate(key: &str, lang: Language) -> &'static str {
         Language::Chinese => zh(key).unwrap_or_else(|| en(key)),
         Language::Japanese => ja(key).unwrap_or_else(|| en(key)),
         Language::Russian => ru(key).unwrap_or_else(|| en(key)),
+        Language::Persian => fa(key).unwrap_or_else(|| en(key)),
     }
 }
 
@@ -372,6 +463,12 @@ fn en(key: &str) -> &'static str {
         "sync_passwords" => "Sync passwords across devices",
         "sync_passwords_desc" => "When on, connection / identity / proxy passwords are mirrored to paired devices. Off keeps them device-local.",
 
+        // Layout direction (Settings → Appearance)
+        "layout_direction" => "Layout Direction",
+        "layout_dir_auto" => "Auto (follow language)",
+        "layout_dir_ltr" => "Left to Right",
+        "layout_dir_rtl" => "Right to Left",
+
         _ => "???",
     }
 }
@@ -614,6 +711,12 @@ fn pt_br(key: &str) -> Option<&'static str> {
         "sync_passwords" => "Sincronizar senhas entre dispositivos",
         "sync_passwords_desc" => "Quando ativo, as senhas de conexão / identidade / proxy são espelhadas para os dispositivos pareados. Desligado mantém tudo local.",
 
+        // Layout direction
+        "layout_direction" => "Direção do Layout",
+        "layout_dir_auto" => "Automático (seguir idioma)",
+        "layout_dir_ltr" => "Esquerda para Direita",
+        "layout_dir_rtl" => "Direita para Esquerda",
+
         _ => return None,
     })
 }
@@ -826,6 +929,12 @@ fn es(key: &str) -> Option<&'static str> {
         // Sync passwords toggle
         "sync_passwords" => "Sincronizar contraseñas entre dispositivos",
         "sync_passwords_desc" => "Cuando está activo, las contraseñas de conexión / identidad / proxy se replican a los dispositivos emparejados. Apagado las mantiene locales.",
+
+        // Layout direction
+        "layout_direction" => "Dirección del Diseño",
+        "layout_dir_auto" => "Automático (seguir idioma)",
+        "layout_dir_ltr" => "Izquierda a Derecha",
+        "layout_dir_rtl" => "Derecha a Izquierda",
 
         _ => return None,
     })
@@ -1040,6 +1149,12 @@ fn fr(key: &str) -> Option<&'static str> {
         "sync_passwords" => "Synchroniser les mots de passe entre appareils",
         "sync_passwords_desc" => "Quand activé, les mots de passe de connexion / identité / proxy sont répliqués vers les appareils appairés. Désactivé garde tout local.",
 
+        // Layout direction
+        "layout_direction" => "Direction de la mise en page",
+        "layout_dir_auto" => "Automatique (suivre la langue)",
+        "layout_dir_ltr" => "Gauche à droite",
+        "layout_dir_rtl" => "Droite à gauche",
+
         _ => return None,
     })
 }
@@ -1252,6 +1367,12 @@ fn de(key: &str) -> Option<&'static str> {
         // Sync passwords toggle
         "sync_passwords" => "Passwörter zwischen Geräten synchronisieren",
         "sync_passwords_desc" => "Wenn aktiv, werden Verbindungs- / Identitäts- / Proxy-Passwörter auf gekoppelte Geräte gespiegelt. Deaktiviert bleiben sie lokal.",
+
+        // Layout direction
+        "layout_direction" => "Layout-Richtung",
+        "layout_dir_auto" => "Automatisch (folgt der Sprache)",
+        "layout_dir_ltr" => "Links nach rechts",
+        "layout_dir_rtl" => "Rechts nach links",
 
         _ => return None,
     })
@@ -1466,6 +1587,12 @@ fn it(key: &str) -> Option<&'static str> {
         "sync_passwords" => "Sincronizza le password tra dispositivi",
         "sync_passwords_desc" => "Quando attivo, le password di connessione / identità / proxy vengono replicate sui dispositivi accoppiati. Disattivato le mantiene locali.",
 
+        // Layout direction
+        "layout_direction" => "Direzione del layout",
+        "layout_dir_auto" => "Automatico (segui la lingua)",
+        "layout_dir_ltr" => "Da sinistra a destra",
+        "layout_dir_rtl" => "Da destra a sinistra",
+
         _ => return None,
     })
 }
@@ -1678,6 +1805,12 @@ fn zh(key: &str) -> Option<&'static str> {
         // Sync passwords toggle
         "sync_passwords" => "在设备之间同步密码",
         "sync_passwords_desc" => "启用后，连接 / 身份 / 代理的密码将镜像到配对的设备。关闭则保持本地。",
+
+        // Layout direction
+        "layout_direction" => "布局方向",
+        "layout_dir_auto" => "自动（跟随语言）",
+        "layout_dir_ltr" => "从左到右",
+        "layout_dir_rtl" => "从右到左",
 
         _ => return None,
     })
@@ -1892,6 +2025,12 @@ fn ja(key: &str) -> Option<&'static str> {
         "sync_passwords" => "デバイス間でパスワードを同期",
         "sync_passwords_desc" => "オンにすると、接続 / ID / プロキシのパスワードがペアリングしたデバイスにミラーされます。オフではローカルのままです。",
 
+        // Layout direction
+        "layout_direction" => "レイアウト方向",
+        "layout_dir_auto" => "自動（言語に従う）",
+        "layout_dir_ltr" => "左から右",
+        "layout_dir_rtl" => "右から左",
+
         _ => return None,
     })
 }
@@ -2104,6 +2243,290 @@ fn ru(key: &str) -> Option<&'static str> {
         // Sync passwords toggle
         "sync_passwords" => "Синхронизировать пароли между устройствами",
         "sync_passwords_desc" => "Когда включено, пароли подключений / удостоверений / прокси зеркалируются на сопряжённые устройства. Выключено — остаются локальными.",
+
+        // Layout direction
+        "layout_direction" => "Направление макета",
+        "layout_dir_auto" => "Автоматически (по языку)",
+        "layout_dir_ltr" => "Слева направо",
+        "layout_dir_rtl" => "Справа налево",
+
+        _ => return None,
+    })
+}
+
+// =============================================================================
+// Persian (Farsi)
+// =============================================================================
+//
+// Right-to-left script. Tech terms (SSH, SFTP, MCP, JSON, proxy, port) are
+// kept in Latin or transliterated to match common Iranian developer usage.
+
+fn fa(key: &str) -> Option<&'static str> {
+    Some(match key {
+        // Navigation
+        "hosts" => "میزبان‌ها",
+        "keychain" => "کلیدها",
+        "snippets" => "قطعه‌کدها",
+        "known_hosts" => "میزبان‌های شناخته‌شده",
+        "history" => "تاریخچه",
+        "settings" => "تنظیمات",
+        "local_shell" => "شل محلی",
+        "detecting_shells" => "در حال شناسایی شل‌ها…",
+
+        // Actions
+        "create_host" => "ایجاد میزبان",
+        "save" => "ذخیره",
+        "cancel" => "لغو",
+        "close" => "بستن",
+        "delete" => "حذف",
+        "edit" => "ویرایش",
+        "connect" => "اتصال",
+        "duplicate" => "تکرار",
+        "remove" => "حذف",
+        "continue_btn" => "ادامه",
+        "unlock" => "باز کردن قفل",
+        "import_key" => "وارد کردن کلید",
+        "new_snippet" => "قطعه‌کد جدید",
+        "new_identity" => "هویت جدید",
+        "add" => "افزودن",
+
+        // Host editor
+        "edit_host" => "ویرایش میزبان",
+        "new_host" => "میزبان جدید",
+        "label" => "برچسب",
+        "hostname" => "نام میزبان",
+        "parent_group" => "گروه والد",
+        "ssh_on_port" => "SSH روی پورت",
+        "credentials" => "اعتبارنامه‌ها",
+        "username" => "نام کاربری",
+        "password" => "گذرواژه",
+        "host_chaining" => "زنجیره میزبان",
+        "auth_method" => "روش احراز هویت",
+        "disabled" => "غیرفعال",
+        "auto" => "خودکار",
+
+        // Empty states
+        "create_host_title" => "ایجاد میزبان",
+        "create_host_desc" => "جزئیات اتصال را به‌عنوان میزبان ذخیره کنید تا با یک کلیک متصل شوید.",
+        "add_key_title" => "افزودن کلید",
+        "add_key_desc" => "کلیدهای SSH را برای احراز هویت میزبان‌ها وارد کنید.",
+        "create_snippet_title" => "ایجاد قطعه‌کد",
+        "create_snippet_desc" => "دستورهای پرکاربرد را برای دسترسی سریع ذخیره کنید.",
+
+        // Settings
+        "appearance" => "ظاهر",
+        "theme" => "پوسته",
+        "terminal_font_size" => "اندازه فونت ترمینال",
+        "vault_stats" => "آمار صندوقچه",
+        "security" => "امنیت",
+        "lock_vault" => "قفل کردن صندوقچه",
+        "about" => "درباره",
+        "terminal_settings" => "تنظیمات ترمینال",
+        "shortcuts" => "میانبرها",
+        "ai_assistant" => "دستیار هوش مصنوعی",
+        "language" => "زبان",
+
+        // Settings toggles
+        "copy_on_select" => "انتخاب متن برای کپی و کلیک راست برای جای‌گذاری",
+        "bold_bright" => "استفاده از رنگ‌های روشن برای متن پررنگ",
+        "bell_sound" => "صدای زنگ",
+        "keyword_highlight" => "برجسته‌سازی کلمات کلیدی",
+        "smart_contrast" => "کنتراست هوشمند (اصلاح آبی روی آبی)",
+        "keepalive_interval" => "فاصله Keepalive",
+        "scrollback" => "تاریخچه پیمایش",
+        "vault_password" => "گذرواژه صندوقچه",
+
+        // AI Chat
+        "ai_chat" => "گفتگوی هوش مصنوعی",
+        "ask_ai" => "از هوش مصنوعی بپرسید...",
+        "thinking" => "در حال فکر کردن...",
+        "enable_ai" => "فعال کردن گفتگوی هوش مصنوعی",
+        "provider" => "ارائه‌دهنده",
+        "model" => "مدل",
+        "api_key" => "کلید API",
+        "api_key_saved" => "کلید API ذخیره شد",
+        "system_prompt" => "پرامپت سیستم",
+
+        // Vault
+        "welcome" => "به Oryxis خوش آمدید",
+        "master_password" => "گذرواژه اصلی",
+        "create_vault" => "ایجاد صندوقچه",
+        "continue_without_password" => "ادامه بدون گذرواژه",
+        "enter_password" => "گذرواژه اصلی را برای باز کردن قفل وارد کنید.",
+        "forgot_password" => "گذرواژه را فراموش کرده‌اید؟ بازنشانی صندوقچه",
+        "destroy_vault" => "بله، صندوقچه را نابود کن",
+        "vault_destroy_confirm" => "این عمل تمام داده‌های ذخیره‌شده را برای همیشه حذف می‌کند.",
+
+        // Terminal shortcuts
+        "copy_terminal" => "کپی از ترمینال",
+        "paste_terminal" => "جای‌گذاری در ترمینال",
+        "close_tab" => "بستن برگه",
+        "close_other_tabs" => "بستن سایر برگه‌ها",
+        "close_all_tabs" => "بستن همه برگه‌ها",
+        "reconnect" => "اتصال مجدد",
+        "duplicate_tab" => "تکرار برگه",
+        "duplicate_new_window" => "تکرار در پنجره جدید",
+        "rename" => "تغییر نام",
+        "sftp" => "SFTP",
+        "rename_folder" => "تغییر نام پوشه",
+        "delete_folder" => "حذف پوشه",
+        "delete_folder_question" => "این پوشه حذف شود؟",
+        "delete_folder_keep_hosts" => "انتقال میزبان‌ها به ریشه",
+        "delete_folder_with_hosts" => "حذف پوشه و میزبان‌ها",
+        "folder_name" => "نام پوشه",
+        "auto_reconnect" => "اتصال خودکار پس از قطع شدن",
+        "max_reconnect_attempts" => "حداکثر تلاش‌های اتصال مجدد",
+        "terminal_font" => "فونت ترمینال",
+        "os_detection" => "تشخیص سیستم‌عامل از راه دور پس از اتصال",
+        "auto_check_updates" => "بررسی به‌روزرسانی هنگام راه‌اندازی",
+        "switch_tab" => "رفتن به برگه ۱ تا ۹",
+        "open_local" => "باز کردن ترمینال محلی",
+        "new_host_shortcut" => "میزبان جدید",
+        "keyboard_shortcuts" => "میانبرهای صفحه‌کلید",
+
+        // Session logs
+        "session_logs" => "گزارش‌های نشست",
+        "session_log" => "گزارش نشست",
+        "view_log" => "نمایش گزارش",
+        "view" => "نمایش",
+        "duration" => "مدت زمان",
+        "in_progress" => "در حال انجام",
+        "clear" => "پاک کردن",
+        "entries" => "مورد",
+        "of" => "از",
+        "no_activity" => "هنوز فعالیتی ثبت نشده است.",
+        "no_session_recordings" => "هنوز ضبط نشستی وجود ندارد. نشست‌ها هنگام اتصال با SSH به‌طور خودکار ضبط می‌شوند.",
+
+        // Identity
+        "identity" => "هویت",
+        "managed_by_identity" => "اعتبارنامه‌ها توسط این هویت مدیریت می‌شوند",
+        "no_credentials" => "بدون اعتبارنامه",
+        "linked_to" => "متصل به",
+
+        // Sync
+        "sync" => "همگام‌سازی",
+        "sync_device" => "دستگاه",
+        "sync_device_name" => "نام دستگاه",
+        "sync_device_name_hint" => "نام دستگاه...",
+        "sync_enable" => "فعال‌سازی همگام‌سازی P2P",
+        "sync_options" => "گزینه‌های همگام‌سازی",
+        "sync_mode" => "حالت همگام‌سازی",
+        "sync_now" => "همگام‌سازی فوری",
+        "sync_pairing" => "جفت‌سازی",
+        "sync_pair_device" => "جفت‌سازی دستگاه جدید",
+        "sync_pairing_code" => "کد جفت‌سازی",
+        "sync_unpair" => "لغو جفت‌سازی",
+        "sync_never" => "هرگز",
+        "sync_advanced" => "پیشرفته",
+        "sync_signaling_url" => "سرور سیگنال",
+        "sync_relay_url" => "آدرس رله",
+        "sync_relay_optional" => "آدرس رله اختیاری...",
+        "sync_listen_port" => "پورت گوش‌دادن",
+
+        // MCP Server
+        "mcp_server" => "سرور MCP",
+        "enable_mcp_server" => "فعال‌سازی سرور MCP",
+        "mcp_server_desc" => "به دستیارهای هوش مصنوعی اجازه می‌دهد از طریق پروتکل MCP به میزبان‌های شما دسترسی داشته باشند",
+        "mcp_setup_guide" => "راهنمای راه‌اندازی",
+        "mcp_copied" => "کپی شد!",
+        "mcp_info_title" => "راه‌اندازی سرور MCP",
+        "mcp_info_desc" => "JSON زیر را به پیکربندی MCP دستیار هوش مصنوعی خود اضافه کنید:",
+        "mcp_info_path_label" => "فایل پیکربندی:",
+        "mcp_info_note_wsl" => "در ویندوز با WSL، از مسیر WSL برای دسترسی به فایل اجرایی استفاده کنید:",
+        "mcp_info_vault_password_note" => "اگر صندوقچه با گذرواژه محافظت می‌شود، ORYXIS_VAULT_PASSWORD را به بلوک env اضافه کنید.",
+        "mcp_info_copy" => "کپی JSON",
+        "mcp_info_close" => "بستن",
+        "mcp_install_claude" => "نصب در Claude Code",
+        "mcp_installed" => "نصب شد!",
+        "mcp_install_failed" => "نصب ناموفق بود",
+        "mcp_installed_to" => "نوشته شد در",
+
+        // Export / Import
+        "export_vault" => "خروجی گرفتن از صندوقچه",
+        "import_vault" => "وارد کردن صندوقچه",
+        "export_import" => "خروجی / ورودی",
+        "export_password" => "گذرواژه خروجی...",
+        "export_confirm" => "خروجی",
+        "import_confirm" => "ورودی",
+        "include_private_keys" => "شامل کلیدهای خصوصی SSH",
+        "import_password" => "گذرواژه ورودی...",
+        "import_password_hint" => "گذرواژه‌ای که هنگام خروجی استفاده شده را وارد کنید",
+        "expose_to_mcp" => "نمایش به MCP / هوش مصنوعی",
+        "forward_ssh_agent" => "ارسال SSH Agent",
+        "github" => "GitHub",
+        "website" => "وب‌سایت",
+        "share" => "اشتراک‌گذاری",
+
+        // Misc
+        "search_hosts" => "جستجوی میزبان‌ها...",
+        "search_keys" => "جستجوی کلیدها...",
+        "no_results" => "نتیجه‌ای یافت نشد",
+        "error" => "خطا",
+        "version" => concat!("Oryxis v", env!("CARGO_PKG_VERSION")),
+        "all_hosts" => "همه میزبان‌ها",
+        "set_password" => "تعیین گذرواژه",
+        "no_active_connection" => "اتصال فعالی وجود ندارد",
+
+        // Host key verification
+        "hk_unknown_title" => "کلید میزبان ناشناخته",
+        "hk_unknown_desc" => "اصالت این میزبان قابل تأیید نیست. می‌خواهید به این میزبان اعتماد کنید؟",
+        "hk_warning_title" => "کلید میزبان تغییر کرده است",
+        "hk_warning_desc" => "هشدار: کلید میزبان تغییر کرده است! این می‌تواند نشانه حمله man-in-the-middle باشد.",
+        "hk_host" => "میزبان:",
+        "hk_key_type" => "نوع کلید:",
+        "hk_fingerprint" => "اثر انگشت:",
+        "hk_old_fingerprint" => "اثر انگشت قبلی:",
+        "hk_accept" => "پذیرفتن",
+        "hk_reject" => "رد کردن",
+        "hk_continue" => "ادامه",
+        "hk_add_and_continue" => "افزودن و ادامه",
+        "copied_to_clipboard" => "در کلیپ‌بورد کپی شد",
+        "select_file" => "انتخاب فایل...",
+        "start_over" => "شروع دوباره",
+        "hk_add_question" => "می‌خواهید آن را به فهرست میزبان‌های شناخته‌شده اضافه کنید؟",
+
+        // Proxy
+        "proxy_type" => "نوع پروکسی",
+        "proxy_host" => "میزبان پروکسی",
+        "proxy_port" => "پورت پروکسی",
+        "proxy_username" => "نام کاربری",
+        "proxy_password" => "گذرواژه",
+        "proxy_command" => "دستور پروکسی",
+        "proxy_type_none" => "هیچ‌کدام",
+        "proxy_type_socks5" => "SOCKS5",
+        "proxy_type_socks4" => "SOCKS4",
+        "proxy_type_http" => "HTTP CONNECT",
+        "proxy_type_command" => "دستور",
+        "proxy_host_placeholder" => "proxy.example.com",
+        "proxy_username_placeholder" => "کاربر",
+        "proxy_password_placeholder" => "گذرواژه",
+        "proxy_password_existing" => "(بدون تغییر — برای جایگزینی تایپ کنید)",
+        "proxy_command_placeholder" => "ssh -W %h:%p bastion",
+        "proxy_err_host_required" => "میزبان پروکسی الزامی است",
+        "proxy_err_port_invalid" => "پورت پروکسی باید عددی بین ۱ تا ۶۵۵۳۵ باشد",
+        "proxy_err_command_required" => "دستور پروکسی الزامی است",
+
+        // Proxy Identities
+        "proxies" => "پروکسی‌ها",
+        "new_proxy_identity" => "پروکسی جدید",
+        "proxy_identity_label" => "برچسب",
+        "proxy_identities_empty" => "هنوز پروکسی ذخیره‌شده‌ای وجود ندارد.",
+        "proxy_identities_desc" => "پیکربندی‌های پروکسی قابل استفاده مجدد، که از طریق انتخابگر پروکسی در ویرایشگر میزبان متصل می‌شوند.",
+        "proxy_type_identity_fallback" => "پروکسی ذخیره‌شده",
+        "proxy_type_identity_deleted" => "(پروکسی حذف‌شده)",
+        "proxy_identity_err_label_required" => "برچسب الزامی است",
+        "proxy_identity_err_command_unsupported" => "پروکسی‌های نوع Command باید مستقیماً روی میزبان پیکربندی شوند، نه به‌عنوان هویت ذخیره‌شده",
+        "proxy_identity_err_invalid_kind" => "نوع پروکسی برای یک هویت ذخیره‌شده نامعتبر است",
+
+        // Sync passwords toggle
+        "sync_passwords" => "همگام‌سازی گذرواژه‌ها بین دستگاه‌ها",
+        "sync_passwords_desc" => "وقتی فعال است، گذرواژه‌های اتصال / هویت / پروکسی به دستگاه‌های جفت‌شده منعکس می‌شوند. خاموش بودن آن‌ها را محلی نگه می‌دارد.",
+
+        // Layout direction
+        "layout_direction" => "جهت چیدمان",
+        "layout_dir_auto" => "خودکار (پیروی از زبان)",
+        "layout_dir_ltr" => "چپ به راست",
+        "layout_dir_rtl" => "راست به چپ",
 
         _ => return None,
     })

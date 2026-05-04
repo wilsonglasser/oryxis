@@ -67,6 +67,10 @@ impl Oryxis {
                 use crate::i18n::Language;
                 Language::set_active(Language::from_code(&code));
             }
+            if let Ok(Some(code)) = v.get_setting("layout_direction") {
+                use crate::i18n::LayoutDirection;
+                LayoutDirection::set_active(LayoutDirection::from_code(&code));
+            }
         }
 
         let (mut app, task) = (
@@ -293,6 +297,14 @@ impl Oryxis {
             if let Ok(Some(v)) = vault.get_setting("language") {
                 use crate::i18n::Language;
                 Language::set_active(Language::from_code(&v));
+            }
+
+            // Layout direction (Auto / LTR / RTL). Re-hydrated after
+            // unlock alongside the other UI settings so the choice
+            // survives restarts.
+            if let Ok(Some(v)) = vault.get_setting("layout_direction") {
+                use crate::i18n::LayoutDirection;
+                LayoutDirection::set_active(LayoutDirection::from_code(&v));
             }
 
             // App theme — re-hydrate by display name. Unknown values

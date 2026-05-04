@@ -8,7 +8,7 @@ use iced::{Background, Border, Color, Element, Length};
 use crate::app::{Message, Oryxis};
 use crate::state::{OverlayContent, OverlayState, View};
 use crate::theme::OryxisColors;
-use crate::widgets::{context_menu_item, styled_button};
+use crate::widgets::{context_menu_item, dir_row, styled_button};
 
 /// Thickness of the edge hit-zones used for dragging to resize. Corners are
 /// the same thickness but `EDGE × EDGE` squares — a bit generous so the user
@@ -104,8 +104,13 @@ impl Oryxis {
                 ..Default::default()
             });
 
-        let right_side = column![tab_bar, h_separator, content].height(Length::Fill);
-        let main_row = row![sidebar, v_separator, right_side].height(Length::Fill);
+        let right_side: Element<'_, Message> =
+            column![tab_bar, h_separator, content].height(Length::Fill).into();
+        let v_sep: Element<'_, Message> = v_separator.into();
+        // `dir_row` mirrors children when the user picked RTL layout (or
+        // Auto + RTL language), so the sidebar lands on the trailing edge
+        // without having to duplicate the layout site.
+        let main_row = dir_row(vec![sidebar, v_sep, right_side]).height(Length::Fill);
         let layout = column![main_row, status_bar];
 
         let base: Element<'_, Message> = container(layout)
