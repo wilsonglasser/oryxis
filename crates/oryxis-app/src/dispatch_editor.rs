@@ -10,7 +10,7 @@ use oryxis_core::models::connection::{AuthMethod, Connection, ProxyType};
 use oryxis_core::models::group::Group;
 
 use crate::app::{Message, Oryxis};
-use crate::state::{ConnectionForm, PortForwardForm};
+use crate::state::{ConnectionForm, PortForwardForm, ProxyKind};
 
 impl Oryxis {
     pub(crate) fn handle_editor(
@@ -37,6 +37,10 @@ impl Oryxis {
                     self.host_panel_error = None;
                     let has_pw = self.vault.as_ref()
                         .and_then(|v| v.get_connection_password(&conn.id).ok())
+                        .flatten()
+                        .is_some();
+                    let has_proxy_pw = self.vault.as_ref()
+                        .and_then(|v| v.get_proxy_password(&conn.id).ok())
                         .flatten()
                         .is_some();
                     self.editor_form = ConnectionForm {
@@ -73,20 +77,25 @@ impl Oryxis {
                         }).collect(),
                         mcp_enabled: conn.mcp_enabled,
                         agent_forwarding: conn.agent_forwarding,
-                        proxy_type: conn.proxy.as_ref().map(|p| match &p.proxy_type {
-                            ProxyType::Socks5 => "Socks5".into(),
-                            ProxyType::Socks4 => "Socks4".into(),
-                            ProxyType::Http => "Http".into(),
-                            ProxyType::Command(_) => "Command".into(),
-                        }).unwrap_or_else(|| "(none)".into()),
+                        proxy_kind: conn.proxy.as_ref().map(|p| match &p.proxy_type {
+                            ProxyType::Socks5 => ProxyKind::Socks5,
+                            ProxyType::Socks4 => ProxyKind::Socks4,
+                            ProxyType::Http => ProxyKind::Http,
+                            ProxyType::Command(_) => ProxyKind::Command,
+                        }).unwrap_or(ProxyKind::None),
                         proxy_host: conn.proxy.as_ref().map(|p| p.host.clone()).unwrap_or_default(),
                         proxy_port: conn.proxy.as_ref().map(|p| p.port.to_string()).unwrap_or_default(),
                         proxy_username: conn.proxy.as_ref().and_then(|p| p.username.clone()).unwrap_or_default(),
-                        proxy_password: conn.proxy.as_ref().and_then(|p| p.password.clone()).unwrap_or_default(),
+                        // Never pre-fill proxy_password from the encrypted vault — keep it empty
+                        // and let `proxy_password_touched` decide whether to overwrite on save,
+                        // mirroring the main connection-password flow.
+                        proxy_password: String::new(),
                         proxy_command: conn.proxy.as_ref().and_then(|p| match &p.proxy_type {
                             ProxyType::Command(cmd) => Some(cmd.clone()),
                             _ => None,
                         }).unwrap_or_default(),
+                        has_existing_proxy_password: has_proxy_pw,
+                        proxy_password_touched: false,
                     };
                 }
             }
@@ -121,11 +130,24 @@ impl Oryxis {
             Message::EditorJumpHostChanged(v) => {
                 self.editor_form.jump_host = if v == "(none)" { None } else { Some(v) };
             }
-            Message::EditorProxyTypeChanged(v) => { self.editor_form.proxy_type = v; }
+            Message::EditorProxyKindChanged(kind) => {
+                self.editor_form.proxy_kind = kind;
+                // Pre-fill the canonical port for the chosen type when
+                // the field is still blank — saves the user a hop and
+                // is easy to override by typing.
+                if self.editor_form.proxy_port.is_empty()
+                    && let Some(default_port) = kind.default_port()
+                {
+                    self.editor_form.proxy_port = default_port.to_string();
+                }
+            }
             Message::EditorProxyHostChanged(v) => { self.editor_form.proxy_host = v; }
             Message::EditorProxyPortChanged(v) => { self.editor_form.proxy_port = v; }
             Message::EditorProxyUsernameChanged(v) => { self.editor_form.proxy_username = v; }
-            Message::EditorProxyPasswordChanged(v) => { self.editor_form.proxy_password = v; }
+            Message::EditorProxyPasswordChanged(v) => {
+                self.editor_form.proxy_password_touched = true;
+                self.editor_form.proxy_password = v;
+            }
             Message::EditorProxyCommandChanged(v) => { self.editor_form.proxy_command = v; }
             Message::EditorSave => {
                 if self.editor_form.label.is_empty() || self.editor_form.hostname.is_empty() {
@@ -200,25 +222,15 @@ impl Oryxis {
                 }).collect();
                 conn.mcp_enabled = self.editor_form.mcp_enabled;
                 conn.agent_forwarding = self.editor_form.agent_forwarding;
-                // Proxy mapping from editor form into the saved Connection
-                if self.editor_form.proxy_type == "(none)" || self.editor_form.proxy_type.is_empty() {
-                    conn.proxy = None;
-                } else {
-                    let proxy_port = self.editor_form.proxy_port.parse::<u16>().unwrap_or(0);
-                    let proxy_type = match self.editor_form.proxy_type.as_str() {
-                        "Socks5" => ProxyType::Socks5,
-                        "Socks4" => ProxyType::Socks4,
-                        "Http" => ProxyType::Http,
-                        "Command" => ProxyType::Command(self.editor_form.proxy_command.clone()),
-                        _ => ProxyType::Socks5,
-                    };
-                    conn.proxy = Some(oryxis_core::models::connection::ProxyConfig {
-                        proxy_type,
-                        host: self.editor_form.proxy_host.clone(),
-                        port: proxy_port,
-                        username: if self.editor_form.proxy_username.is_empty() { None } else { Some(self.editor_form.proxy_username.clone()) },
-                        password: if self.editor_form.proxy_password.is_empty() { None } else { Some(self.editor_form.proxy_password.clone()) },
-                    });
+                // Map the editor form into a ProxyConfig (or clear it).
+                // Validates host/port up-front so the user gets an error
+                // instead of a silently-broken proxy entry.
+                match build_proxy_config(&self.editor_form) {
+                    Ok(p) => conn.proxy = p,
+                    Err(msg) => {
+                        self.host_panel_error = Some(msg);
+                        return Ok(Task::none());
+                    }
                 }
                 conn.updated_at = chrono::Utc::now();
 
@@ -233,6 +245,24 @@ impl Oryxis {
                 if let Some(vault) = &self.vault {
                     match vault.save_connection(&conn, password) {
                         Ok(()) => {
+                            // Persist the encrypted proxy password in its own
+                            // column. We only touch it when the user edited
+                            // the field, mirroring `password_touched` for the
+                            // main connection password.
+                            if self.editor_form.proxy_password_touched {
+                                let pw = if self.editor_form.proxy_password.is_empty() {
+                                    None
+                                } else {
+                                    Some(self.editor_form.proxy_password.as_str())
+                                };
+                                let _ = vault.set_proxy_password(&conn.id, pw);
+                            }
+                            // If the proxy was disabled in this save, drop any
+                            // previously stored proxy password — keeping a
+                            // dangling encrypted credential would be surprising.
+                            if conn.proxy.is_none() {
+                                let _ = vault.set_proxy_password(&conn.id, None);
+                            }
                             self.show_host_panel = false;
                             self.host_panel_error = None;
                             self.load_data_from_vault();
@@ -280,9 +310,13 @@ impl Oryxis {
                     dup.color = conn.color.clone();
                     dup.agent_forwarding = conn.agent_forwarding;
                     if let Some(vault) = &self.vault {
-                        // Copy password too
+                        // Copy password and proxy password to the duplicate.
                         let pw = vault.get_connection_password(&conn.id).ok().flatten();
+                        let proxy_pw = vault.get_proxy_password(&conn.id).ok().flatten();
                         let _ = vault.save_connection(&dup, pw.as_deref());
+                        if proxy_pw.is_some() {
+                            let _ = vault.set_proxy_password(&dup.id, proxy_pw.as_deref());
+                        }
                         self.load_data_from_vault();
                     }
                 }
@@ -300,5 +334,63 @@ impl Oryxis {
             m => return Err(m),
         }
         Ok(Task::none())
+    }
+}
+
+/// Translate the editor form's proxy section into a `ProxyConfig`.
+/// Returns `Ok(None)` when the proxy is disabled, `Ok(Some(_))` for a
+/// validated config, or `Err(msg)` to surface a user-facing error.
+/// Note: `password` is left as `None` here — it's persisted in its
+/// own encrypted column via `set_proxy_password`, never via this
+/// struct's serialized JSON.
+fn build_proxy_config(
+    form: &ConnectionForm,
+) -> Result<Option<oryxis_core::models::connection::ProxyConfig>, String> {
+    use oryxis_core::models::connection::ProxyConfig;
+
+    match form.proxy_kind {
+        ProxyKind::None => Ok(None),
+        ProxyKind::Command => {
+            if form.proxy_command.trim().is_empty() {
+                return Err(crate::i18n::t("proxy_err_command_required").into());
+            }
+            Ok(Some(ProxyConfig {
+                proxy_type: ProxyType::Command(form.proxy_command.clone()),
+                host: String::new(),
+                port: 0,
+                username: None,
+                password: None,
+            }))
+        }
+        kind @ (ProxyKind::Socks5 | ProxyKind::Socks4 | ProxyKind::Http) => {
+            if form.proxy_host.trim().is_empty() {
+                return Err(crate::i18n::t("proxy_err_host_required").into());
+            }
+            let port = form
+                .proxy_port
+                .parse::<u16>()
+                .ok()
+                .filter(|p| *p > 0)
+                .ok_or_else(|| crate::i18n::t("proxy_err_port_invalid").to_string())?;
+
+            let proxy_type = match kind {
+                ProxyKind::Socks5 => ProxyType::Socks5,
+                ProxyKind::Socks4 => ProxyType::Socks4,
+                ProxyKind::Http => ProxyType::Http,
+                _ => unreachable!(),
+            };
+
+            Ok(Some(ProxyConfig {
+                proxy_type,
+                host: form.proxy_host.clone(),
+                port,
+                username: if form.proxy_username.is_empty() {
+                    None
+                } else {
+                    Some(form.proxy_username.clone())
+                },
+                password: None,
+            }))
+        }
     }
 }

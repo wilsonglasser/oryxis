@@ -227,7 +227,7 @@ pub enum Message {
     EditorGroupChanged(String),
     EditorKeyChanged(String),
     EditorJumpHostChanged(String),
-    EditorProxyTypeChanged(String),
+    EditorProxyKindChanged(crate::state::ProxyKind),
     EditorProxyHostChanged(String),
     EditorProxyPortChanged(String),
     EditorProxyUsernameChanged(String),

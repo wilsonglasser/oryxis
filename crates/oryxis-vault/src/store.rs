@@ -319,6 +319,9 @@ impl VaultStore {
         let _ = self.db.execute_batch("ALTER TABLE connections ADD COLUMN custom_icon TEXT;");
         let _ = self.db.execute_batch("ALTER TABLE connections ADD COLUMN custom_color TEXT;");
         let _ = self.db.execute_batch("ALTER TABLE connections ADD COLUMN agent_forwarding INTEGER DEFAULT 0;");
+        // Proxy password is stored encrypted in its own BLOB column so it
+        // never leaks via the plaintext `proxy` JSON column.
+        let _ = self.db.execute_batch("ALTER TABLE connections ADD COLUMN proxy_password BLOB;");
         let _ = self.db.execute_batch("ALTER TABLE keys ADD COLUMN updated_at TEXT;");
         let _ = self.db.execute_batch("ALTER TABLE groups ADD COLUMN created_at TEXT;");
         let _ = self.db.execute_batch("ALTER TABLE groups ADD COLUMN updated_at TEXT;");
@@ -693,6 +696,46 @@ impl VaultStore {
             .db
             .query_row(
                 "SELECT password FROM connections WHERE id = ?1",
+                params![id.to_string()],
+                |row| row.get(0),
+            )
+            .map_err(|_| VaultError::NotFound(format!("Connection {}", id)))?;
+
+        match data {
+            Some(encrypted) => Ok(Some(self.decrypt_field(&encrypted)?)),
+            None => Ok(None),
+        }
+    }
+
+    /// Set the proxy password for a connection. `None` or an empty string
+    /// clears it; otherwise the value is encrypted with the vault key.
+    /// Stored in its own column so the plaintext `proxy` JSON column
+    /// never carries credentials. Vault must be unlocked when setting a
+    /// non-empty value (encryption needs the key); clearing works while
+    /// locked.
+    pub fn set_proxy_password(
+        &self,
+        id: &Uuid,
+        password: Option<&str>,
+    ) -> Result<(), VaultError> {
+        let encrypted: Option<Vec<u8>> = match password {
+            Some(pw) if !pw.is_empty() => Some(self.encrypt_field(pw)?),
+            _ => None,
+        };
+        self.db.execute(
+            "UPDATE connections SET proxy_password = ?1 WHERE id = ?2",
+            params![encrypted, id.to_string()],
+        )?;
+        Ok(())
+    }
+
+    /// Get the decrypted proxy password for a connection.
+    pub fn get_proxy_password(&self, id: &Uuid) -> Result<Option<String>, VaultError> {
+        self.require_unlocked()?;
+        let data: Option<Vec<u8>> = self
+            .db
+            .query_row(
+                "SELECT proxy_password FROM connections WHERE id = ?1",
                 params![id.to_string()],
                 |row| row.get(0),
             )
@@ -1743,6 +1786,73 @@ mod tests {
 
         let conns = vault.list_connections().unwrap();
         assert_eq!(conns[0].label, "server-renamed");
+    }
+
+    #[test]
+    fn proxy_password_encrypted_round_trip() {
+        let vault = unlocked_vault();
+        let conn = Connection::new("h", "host.example.com");
+        vault.save_connection(&conn, None).unwrap();
+
+        vault.set_proxy_password(&conn.id, Some("proxy-secret")).unwrap();
+        let pw = vault.get_proxy_password(&conn.id).unwrap();
+        assert_eq!(pw.as_deref(), Some("proxy-secret"));
+    }
+
+    #[test]
+    fn proxy_password_clears_on_none_or_empty() {
+        let vault = unlocked_vault();
+        let conn = Connection::new("h", "host");
+        vault.save_connection(&conn, None).unwrap();
+        vault.set_proxy_password(&conn.id, Some("first")).unwrap();
+
+        // Empty string is treated the same as None — both clear.
+        vault.set_proxy_password(&conn.id, Some("")).unwrap();
+        assert_eq!(vault.get_proxy_password(&conn.id).unwrap(), None);
+
+        vault.set_proxy_password(&conn.id, Some("again")).unwrap();
+        vault.set_proxy_password(&conn.id, None).unwrap();
+        assert_eq!(vault.get_proxy_password(&conn.id).unwrap(), None);
+    }
+
+    /// Critical: the plaintext `proxy` JSON column must never carry the
+    /// password. Confirms the credential lives only in the encrypted
+    /// `proxy_password` column.
+    #[test]
+    fn proxy_password_does_not_leak_into_proxy_column() {
+        use oryxis_core::models::connection::{ProxyConfig, ProxyType};
+        let vault = unlocked_vault();
+        let mut conn = Connection::new("h", "host");
+        conn.proxy = Some(ProxyConfig {
+            proxy_type: ProxyType::Http,
+            host: "proxy.example.com".into(),
+            port: 8080,
+            username: Some("alice".into()),
+            password: Some("should-not-persist".into()),
+        });
+        vault.save_connection(&conn, None).unwrap();
+
+        let raw_proxy: Option<String> = vault
+            .db
+            .query_row(
+                "SELECT proxy FROM connections WHERE id = ?1",
+                params![conn.id.to_string()],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let raw = raw_proxy.unwrap();
+        assert!(
+            !raw.contains("should-not-persist"),
+            "password leaked into plaintext proxy column: {raw}"
+        );
+
+        // After reloading, the in-memory model has no password until the
+        // caller hydrates it from the encrypted column.
+        let conns = vault.list_connections().unwrap();
+        let proxy = conns[0].proxy.as_ref().unwrap();
+        assert!(proxy.password.is_none());
+        assert_eq!(proxy.host, "proxy.example.com");
+        assert_eq!(proxy.username.as_deref(), Some("alice"));
     }
 
     // ── Keys CRUD ──
