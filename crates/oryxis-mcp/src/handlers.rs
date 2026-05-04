@@ -169,12 +169,10 @@ pub async fn handle_ssh_execute(
     let mut auth_conn = conn.clone();
     auth_conn.username = Some(username);
 
-    // Hydrate proxy password from the encrypted vault column — it isn't
-    // part of the persisted ProxyConfig JSON, so we attach it in-memory
-    // just before the SSH engine consumes the Connection.
-    if let Some(proxy) = auth_conn.proxy.as_mut() {
-        proxy.password = vault.get_proxy_password(&auth_conn.id).ok().flatten();
-    }
+    // Resolve the effective proxy (saved identity OR inline) and hydrate
+    // its password from the encrypted vault column, then collapse onto
+    // `auth_conn.proxy` — the engine only reads that field.
+    auth_conn.proxy = vault.resolve_proxy(&auth_conn).ok().flatten();
 
     // Build engine and connect
     let engine = SshEngine::new();

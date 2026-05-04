@@ -14,6 +14,12 @@ pub struct Connection {
     pub group_id: Option<Uuid>,
     pub jump_chain: Vec<Uuid>,
     pub proxy: Option<ProxyConfig>,
+    /// Reference to a saved `ProxyIdentity`. When set, takes precedence
+    /// over the inline `proxy` field — the SSH engine resolves the
+    /// identity (via the vault) and ignores `proxy`. `None` falls back
+    /// to inline. Cleared on cascade when the identity is deleted.
+    #[serde(default)]
+    pub proxy_identity_id: Option<Uuid>,
     pub tags: Vec<String>,
     pub notes: Option<String>,
     pub color: Option<String>,
@@ -66,6 +72,7 @@ impl Connection {
             jump_chain: Vec::new(),
             port_forwards: Vec::new(),
             proxy: None,
+            proxy_identity_id: None,
             tags: Vec::new(),
             notes: None,
             color: None,

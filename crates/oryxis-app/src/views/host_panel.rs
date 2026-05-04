@@ -507,22 +507,72 @@ impl Oryxis {
             .into()
     }
 
-    /// Build the Proxy section. Field visibility follows the proxy kind:
-    /// `None` shows just the picker, `Command` shows the picker + command,
-    /// `Socks4` adds host/port/username, `Socks5`/`Http` add a password.
+    /// Build the Proxy section. The picker mixes the static proxy types
+    /// (None / SOCKS5 / SOCKS4 / HTTP / Command) with the user's saved
+    /// `ProxyIdentity` entries — selecting an identity hides the inline
+    /// fields and shows a readonly summary instead.
     fn build_proxy_section(&self) -> Element<'_, Message> {
         let kind = self.editor_form.proxy_kind;
 
+        // Compose the picker option list. Identity entries come from
+        // `self.proxy_identities` so the user can pick any saved
+        // config without leaving the host editor.
+        let mut options: Vec<ProxyKind> = ProxyKind::STATIC.to_vec();
+        for pi in &self.proxy_identities {
+            options.push(ProxyKind::Identity(pi.id));
+        }
+
+        // Capture the identities by reference so the closure can render
+        // the user-chosen label for `Identity(_)` entries instead of
+        // the generic Display fallback. The closure runs once per
+        // option per render, which is fine.
+        let identities = self.proxy_identities.clone();
+        let identities_for_picker = identities.clone();
         let picker = panel_field(
             crate::i18n::t("proxy_type"),
-            pick_list(Some(kind), ProxyKind::ALL, |k: &ProxyKind| k.to_string())
-                .on_select(Message::EditorProxyKindChanged)
-                .padding(10)
-                .style(crate::widgets::rounded_pick_list_style)
-                .into(),
+            pick_list(Some(kind), options, move |k: &ProxyKind| match k {
+                ProxyKind::Identity(id) => identities_for_picker
+                    .iter()
+                    .find(|pi| pi.id == *id)
+                    .map(|pi| format!("📌 {}", pi.label))
+                    .unwrap_or_else(|| crate::i18n::t("proxy_type_identity_deleted").into()),
+                other => other.to_string(),
+            })
+            .on_select(Message::EditorProxyKindChanged)
+            .padding(10)
+            .style(crate::widgets::rounded_pick_list_style)
+            .into(),
         );
 
         let mut col = column![picker];
+
+        // Saved-identity selection: show a small readonly summary so
+        // the user can see what they picked without flipping screens.
+        // The actual identity edits live under Settings → Proxies.
+        if let ProxyKind::Identity(id) = kind {
+            let summary = identities
+                .iter()
+                .find(|pi| pi.id == id)
+                .map(|pi| {
+                    let kind_label = match &pi.proxy_type {
+                        oryxis_core::models::connection::ProxyType::Socks5 => "SOCKS5",
+                        oryxis_core::models::connection::ProxyType::Socks4 => "SOCKS4",
+                        oryxis_core::models::connection::ProxyType::Http => "HTTP",
+                        oryxis_core::models::connection::ProxyType::Command(_) => "CMD",
+                    };
+                    let user_part = pi
+                        .username
+                        .as_deref()
+                        .map(|u| format!(" ({u})"))
+                        .unwrap_or_default();
+                    format!("{kind_label} — {}:{}{}", pi.host, pi.port, user_part)
+                })
+                .unwrap_or_else(|| crate::i18n::t("proxy_type_identity_deleted").into());
+            col = col.push(Space::new().height(8)).push(
+                text(summary).size(12).color(OryxisColors::t().text_muted),
+            );
+            return panel_section(col);
+        }
 
         if kind == ProxyKind::None {
             return panel_section(col);

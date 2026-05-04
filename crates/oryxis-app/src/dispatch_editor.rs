@@ -77,12 +77,19 @@ impl Oryxis {
                         }).collect(),
                         mcp_enabled: conn.mcp_enabled,
                         agent_forwarding: conn.agent_forwarding,
-                        proxy_kind: conn.proxy.as_ref().map(|p| match &p.proxy_type {
-                            ProxyType::Socks5 => ProxyKind::Socks5,
-                            ProxyType::Socks4 => ProxyKind::Socks4,
-                            ProxyType::Http => ProxyKind::Http,
-                            ProxyType::Command(_) => ProxyKind::Command,
-                        }).unwrap_or(ProxyKind::None),
+                        // Saved-identity reference takes precedence over
+                        // an inline proxy when both are populated, mirroring
+                        // the runtime resolver in `Vault::resolve_proxy`.
+                        proxy_kind: if let Some(pid) = conn.proxy_identity_id {
+                            ProxyKind::Identity(pid)
+                        } else {
+                            conn.proxy.as_ref().map(|p| match &p.proxy_type {
+                                ProxyType::Socks5 => ProxyKind::Socks5,
+                                ProxyType::Socks4 => ProxyKind::Socks4,
+                                ProxyType::Http => ProxyKind::Http,
+                                ProxyType::Command(_) => ProxyKind::Command,
+                            }).unwrap_or(ProxyKind::None)
+                        },
                         proxy_host: conn.proxy.as_ref().map(|p| p.host.clone()).unwrap_or_default(),
                         proxy_port: conn.proxy.as_ref().map(|p| p.port.to_string()).unwrap_or_default(),
                         proxy_username: conn.proxy.as_ref().and_then(|p| p.username.clone()).unwrap_or_default(),
@@ -131,14 +138,42 @@ impl Oryxis {
                 self.editor_form.jump_host = if v == "(none)" { None } else { Some(v) };
             }
             Message::EditorProxyKindChanged(kind) => {
+                let prev = self.editor_form.proxy_kind;
                 self.editor_form.proxy_kind = kind;
-                // Pre-fill the canonical port for the chosen type when
-                // the field is still blank — saves the user a hop and
-                // is easy to override by typing.
-                if self.editor_form.proxy_port.is_empty()
-                    && let Some(default_port) = kind.default_port()
-                {
-                    self.editor_form.proxy_port = default_port.to_string();
+                match kind {
+                    ProxyKind::Identity(_) => {
+                        // Switching to a saved identity — wipe inline state
+                        // so a later switch back to Custom starts clean.
+                        // The identity carries its own host/port/username/
+                        // password, all hydrated by `resolve_proxy` at
+                        // connect time.
+                        self.editor_form.proxy_host.clear();
+                        self.editor_form.proxy_port.clear();
+                        self.editor_form.proxy_username.clear();
+                        self.editor_form.proxy_password.clear();
+                        self.editor_form.proxy_command.clear();
+                        self.editor_form.proxy_password_touched = false;
+                    }
+                    _ => {
+                        // Coming back from an Identity selection: empty
+                        // form, fall through to default-port pre-fill.
+                        if matches!(prev, ProxyKind::Identity(_)) {
+                            self.editor_form.proxy_host.clear();
+                            self.editor_form.proxy_port.clear();
+                            self.editor_form.proxy_username.clear();
+                            self.editor_form.proxy_password.clear();
+                            self.editor_form.proxy_command.clear();
+                            self.editor_form.proxy_password_touched = false;
+                        }
+                        // Pre-fill the canonical port for the chosen type
+                        // when the field is still blank — saves the user a
+                        // hop and is easy to override by typing.
+                        if self.editor_form.proxy_port.is_empty()
+                            && let Some(default_port) = kind.default_port()
+                        {
+                            self.editor_form.proxy_port = default_port.to_string();
+                        }
+                    }
                 }
             }
             Message::EditorProxyHostChanged(v) => { self.editor_form.proxy_host = v; }
@@ -222,11 +257,15 @@ impl Oryxis {
                 }).collect();
                 conn.mcp_enabled = self.editor_form.mcp_enabled;
                 conn.agent_forwarding = self.editor_form.agent_forwarding;
-                // Map the editor form into a ProxyConfig (or clear it).
-                // Validates host/port up-front so the user gets an error
+                // Map the editor form into either an inline ProxyConfig
+                // or a `proxy_identity_id` reference. Validates host /
+                // port / command up-front so the user gets an error
                 // instead of a silently-broken proxy entry.
-                match build_proxy_config(&self.editor_form) {
-                    Ok(p) => conn.proxy = p,
+                match build_proxy_resolution(&self.editor_form) {
+                    Ok(r) => {
+                        conn.proxy = r.proxy;
+                        conn.proxy_identity_id = r.proxy_identity_id;
+                    }
                     Err(msg) => {
                         self.host_panel_error = Some(msg);
                         return Ok(Task::none());
@@ -337,30 +376,43 @@ impl Oryxis {
     }
 }
 
-/// Translate the editor form's proxy section into a `ProxyConfig`.
-/// Returns `Ok(None)` when the proxy is disabled, `Ok(Some(_))` for a
-/// validated config, or `Err(msg)` to surface a user-facing error.
-/// Note: `password` is left as `None` here — it's persisted in its
-/// own encrypted column via `set_proxy_password`, never via this
-/// struct's serialized JSON.
-fn build_proxy_config(
-    form: &ConnectionForm,
-) -> Result<Option<oryxis_core::models::connection::ProxyConfig>, String> {
+/// Result of resolving the editor form's proxy section into model
+/// fields. `Identity(_)` selections route to `proxy_identity_id`, the
+/// other static kinds populate the inline `ProxyConfig`. Note that
+/// `password` is left as `None` here — it's persisted in the encrypted
+/// `proxy_password` column via `set_proxy_password`, never inside the
+/// serialized inline JSON.
+pub(crate) struct ProxyResolution {
+    pub proxy: Option<oryxis_core::models::connection::ProxyConfig>,
+    pub proxy_identity_id: Option<uuid::Uuid>,
+}
+
+fn build_proxy_resolution(form: &ConnectionForm) -> Result<ProxyResolution, String> {
     use oryxis_core::models::connection::ProxyConfig;
 
     match form.proxy_kind {
-        ProxyKind::None => Ok(None),
+        ProxyKind::None => Ok(ProxyResolution {
+            proxy: None,
+            proxy_identity_id: None,
+        }),
+        ProxyKind::Identity(id) => Ok(ProxyResolution {
+            proxy: None,
+            proxy_identity_id: Some(id),
+        }),
         ProxyKind::Command => {
             if form.proxy_command.trim().is_empty() {
                 return Err(crate::i18n::t("proxy_err_command_required").into());
             }
-            Ok(Some(ProxyConfig {
-                proxy_type: ProxyType::Command(form.proxy_command.clone()),
-                host: String::new(),
-                port: 0,
-                username: None,
-                password: None,
-            }))
+            Ok(ProxyResolution {
+                proxy: Some(ProxyConfig {
+                    proxy_type: ProxyType::Command(form.proxy_command.clone()),
+                    host: String::new(),
+                    port: 0,
+                    username: None,
+                    password: None,
+                }),
+                proxy_identity_id: None,
+            })
         }
         kind @ (ProxyKind::Socks5 | ProxyKind::Socks4 | ProxyKind::Http) => {
             if form.proxy_host.trim().is_empty() {
@@ -380,17 +432,20 @@ fn build_proxy_config(
                 _ => unreachable!(),
             };
 
-            Ok(Some(ProxyConfig {
-                proxy_type,
-                host: form.proxy_host.clone(),
-                port,
-                username: if form.proxy_username.is_empty() {
-                    None
-                } else {
-                    Some(form.proxy_username.clone())
-                },
-                password: None,
-            }))
+            Ok(ProxyResolution {
+                proxy: Some(ProxyConfig {
+                    proxy_type,
+                    host: form.proxy_host.clone(),
+                    port,
+                    username: if form.proxy_username.is_empty() {
+                        None
+                    } else {
+                        Some(form.proxy_username.clone())
+                    },
+                    password: None,
+                }),
+                proxy_identity_id: None,
+            })
         }
     }
 }

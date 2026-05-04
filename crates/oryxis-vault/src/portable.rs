@@ -2,7 +2,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 use oryxis_core::models::{
-    Connection, Group, Identity, KnownHost, Snippet, SshKey,
+    Connection, Group, Identity, KnownHost, ProxyIdentity, Snippet, SshKey,
 };
 
 use crate::store::{encrypt, decrypt, VaultError, VaultStore};
@@ -29,6 +29,11 @@ struct ExportPayload {
     connections: Vec<ExportConnection>,
     keys: Vec<ExportKey>,
     identities: Vec<ExportIdentity>,
+    /// Reusable proxy configurations referenced from connections via
+    /// `proxy_identity_id`. Defaults to empty for backwards compat with
+    /// `.oryxis` files written before this field existed.
+    #[serde(default)]
+    proxy_identities: Vec<ExportProxyIdentity>,
     snippets: Vec<Snippet>,
     known_hosts: Vec<KnownHost>,
 }
@@ -38,6 +43,11 @@ struct ExportConnection {
     #[serde(flatten)]
     connection: Connection,
     password: Option<String>,
+    /// Proxy password from the encrypted `proxy_password` column —
+    /// shipped here so a portable export round-trips inline proxies
+    /// with auth. Defaults to None on import of older files.
+    #[serde(default)]
+    proxy_password: Option<String>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -51,6 +61,13 @@ struct ExportKey {
 struct ExportIdentity {
     #[serde(flatten)]
     identity: Identity,
+    password: Option<String>,
+}
+
+#[derive(Serialize, Deserialize)]
+struct ExportProxyIdentity {
+    #[serde(flatten)]
+    proxy_identity: ProxyIdentity,
     password: Option<String>,
 }
 
@@ -84,6 +101,9 @@ pub struct ImportResult {
     pub identities_added: usize,
     pub identities_updated: usize,
     pub identities_skipped: usize,
+    pub proxy_identities_added: usize,
+    pub proxy_identities_updated: usize,
+    pub proxy_identities_skipped: usize,
     pub snippets_added: usize,
     pub snippets_skipped: usize,
     pub known_hosts_added: usize,
@@ -134,6 +154,7 @@ pub fn export_vault(
     let all_connections = store.list_connections()?;
     let all_keys = store.list_keys()?;
     let all_identities = store.list_identities()?;
+    let all_proxy_identities = store.list_proxy_identities()?;
     let all_snippets = store.list_snippets()?;
     let all_known_hosts = store.list_known_hosts()?;
 
@@ -214,6 +235,15 @@ pub fn export_vault(
         all_identities.iter().map(|i| i.id).collect()
     };
 
+    // Proxy identities pulled in by `connection.proxy_identity_id`.
+    let dep_proxy_identity_ids: Vec<uuid::Uuid> = if is_filtered {
+        filtered_connections.iter()
+            .filter_map(|c| c.proxy_identity_id)
+            .collect()
+    } else {
+        all_proxy_identities.iter().map(|pi| pi.id).collect()
+    };
+
     // Filter groups
     let groups: Vec<Group> = if is_filtered {
         all_groups.into_iter()
@@ -223,13 +253,18 @@ pub fn export_vault(
         all_groups
     };
 
-    // Wrap connections with decrypted passwords
+    // Wrap connections with decrypted passwords. Proxy password is
+    // shipped alongside so an inline-proxy host round-trips with auth
+    // (it lives in its own encrypted column and isn't part of the
+    // serialized `Connection.proxy` JSON).
     let mut connections = Vec::with_capacity(filtered_connections.len());
     for conn in filtered_connections {
         let pw = store.get_connection_password(&conn.id).unwrap_or(None);
+        let proxy_pw = store.get_proxy_password(&conn.id).unwrap_or(None);
         connections.push(ExportConnection {
             connection: conn.clone(),
             password: pw,
+            proxy_password: proxy_pw,
         });
     }
 
@@ -261,6 +296,19 @@ pub fn export_vault(
         }
     }
 
+    // Same shape for proxy identities — included on full export, or
+    // filtered by `proxy_identity_id` references when host-scoped.
+    let mut proxy_identities = Vec::new();
+    for pi in &all_proxy_identities {
+        if !is_filtered || dep_proxy_identity_ids.contains(&pi.id) {
+            let pw = store.get_proxy_identity_password(&pi.id).unwrap_or(None);
+            proxy_identities.push(ExportProxyIdentity {
+                proxy_identity: pi.clone(),
+                password: pw,
+            });
+        }
+    }
+
     // Snippets and known_hosts: only included in full export
     let snippets = if is_filtered { Vec::new() } else { all_snippets };
     let known_hosts = if is_filtered { Vec::new() } else { all_known_hosts };
@@ -273,6 +321,7 @@ pub fn export_vault(
         connections,
         keys,
         identities,
+        proxy_identities,
         snippets,
         known_hosts,
     };
@@ -315,6 +364,9 @@ pub fn import_vault(
         identities_added: 0,
         identities_updated: 0,
         identities_skipped: 0,
+        proxy_identities_added: 0,
+        proxy_identities_updated: 0,
+        proxy_identities_skipped: 0,
         snippets_added: 0,
         snippets_skipped: 0,
         known_hosts_added: 0,
@@ -326,6 +378,7 @@ pub fn import_vault(
     let existing_connections = store.list_connections()?;
     let existing_keys = store.list_keys()?;
     let existing_identities = store.list_identities()?;
+    let existing_proxy_identities = store.list_proxy_identities()?;
     let existing_snippets = store.list_snippets()?;
     let existing_known_hosts = store.list_known_hosts()?;
 
@@ -366,18 +419,61 @@ pub fn import_vault(
         }
     }
 
-    // Connections (LWW by updated_at)
+    // Proxy identities (LWW by updated_at) — must come before
+    // connections so `proxy_identity_id` references resolve once the
+    // connections land in the next loop.
+    for export_pi in &payload.proxy_identities {
+        if let Some(existing) = existing_proxy_identities
+            .iter()
+            .find(|p| p.id == export_pi.proxy_identity.id)
+        {
+            if export_pi.proxy_identity.updated_at > existing.updated_at {
+                store.save_proxy_identity(
+                    &export_pi.proxy_identity,
+                    export_pi.password.as_deref(),
+                )?;
+                result.proxy_identities_updated += 1;
+            } else {
+                result.proxy_identities_skipped += 1;
+            }
+        } else {
+            store.save_proxy_identity(
+                &export_pi.proxy_identity,
+                export_pi.password.as_deref(),
+            )?;
+            result.proxy_identities_added += 1;
+        }
+    }
+
+    // Connections (LWW by updated_at). After save, restore the proxy
+    // password into its own encrypted column — `save_connection` only
+    // touches the main connection password.
     for export_conn in &payload.connections {
-        if let Some(existing) = existing_connections.iter().find(|c| c.id == export_conn.connection.id) {
+        let added_or_updated = if let Some(existing) = existing_connections
+            .iter()
+            .find(|c| c.id == export_conn.connection.id)
+        {
             if export_conn.connection.updated_at > existing.updated_at {
                 store.save_connection(&export_conn.connection, export_conn.password.as_deref())?;
                 result.connections_updated += 1;
+                true
             } else {
                 result.connections_skipped += 1;
+                false
             }
         } else {
             store.save_connection(&export_conn.connection, export_conn.password.as_deref())?;
             result.connections_added += 1;
+            true
+        };
+        if added_or_updated {
+            // Persist the proxy password (or clear it) only when we
+            // actually wrote the connection — skipped (older) entries
+            // keep their existing column intact.
+            store.set_proxy_password(
+                &export_conn.connection.id,
+                export_conn.proxy_password.as_deref(),
+            )?;
         }
     }
 

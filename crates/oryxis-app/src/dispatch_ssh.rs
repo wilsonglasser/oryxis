@@ -37,12 +37,13 @@ impl Oryxis {
                 // Close the new-tab picker if the connection was picked there.
                 self.show_new_tab_picker = false;
                 if let Some(mut conn) = self.connections.get(idx).cloned() {
-                    // Hydrate proxy password from the encrypted vault column —
-                    // it isn't part of the persisted ProxyConfig JSON, so we
-                    // attach it in-memory just before the SSH engine consumes
-                    // the Connection.
-                    if let (Some(vault), Some(proxy)) = (self.vault.as_ref(), conn.proxy.as_mut()) {
-                        proxy.password = vault.get_proxy_password(&conn.id).ok().flatten();
+                    // Resolve the effective proxy (saved identity OR inline)
+                    // and hydrate its password from the encrypted vault column,
+                    // then collapse onto `conn.proxy` — the engine only reads
+                    // that field. A dangling `proxy_identity_id` resolves to
+                    // None (warning logged inside `resolve_proxy`).
+                    if let Some(vault) = self.vault.as_ref() {
+                        conn.proxy = vault.resolve_proxy(&conn).ok().flatten();
                     }
 
                     // Resolve credentials: prefer identity if linked, otherwise inline
@@ -71,6 +72,7 @@ impl Oryxis {
                     let resolver = if !conn.jump_chain.is_empty() {
                         let mut passwords = std::collections::HashMap::new();
                         let mut keys = std::collections::HashMap::new();
+                        let mut proxies = std::collections::HashMap::new();
                         for jid in &conn.jump_chain {
                             if let Some(vault) = &self.vault
                                 && let Ok(Some(pw)) = vault.get_connection_password(jid) {
@@ -83,11 +85,22 @@ impl Oryxis {
                                         && let Ok(Some(pk)) = vault.get_key_private(&kid) {
                                             keys.insert(*jid, pk);
                                         }
+                            // Resolve effective proxy (inline or identity-based)
+                            // for this jump host. Only the first jump's entry
+                            // matters at connect-time, but we hydrate all of
+                            // them so the resolver is self-contained.
+                            if let Some(jconn) = self.connections.iter().find(|c| c.id == *jid)
+                                && let Some(vault) = &self.vault
+                                && let Ok(Some(p)) = vault.resolve_proxy(jconn)
+                            {
+                                proxies.insert(*jid, p);
+                            }
                         }
                         Some(oryxis_ssh::ConnectionResolver {
                             connections: self.connections.clone(),
                             passwords,
                             private_keys: keys,
+                            proxies,
                         })
                     } else {
                         None

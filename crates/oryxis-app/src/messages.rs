@@ -371,6 +371,18 @@ pub enum Message {
     ShowIdentityMenu(usize),
     ToggleKeychainAddMenu,
 
+    // Proxy Identities (Settings → Proxies)
+    ShowProxyIdentityForm(Option<Uuid>),
+    HideProxyIdentityForm,
+    ProxyIdentityFormLabelChanged(String),
+    ProxyIdentityFormKindChanged(crate::state::ProxyKind),
+    ProxyIdentityFormHostChanged(String),
+    ProxyIdentityFormPortChanged(String),
+    ProxyIdentityFormUsernameChanged(String),
+    ProxyIdentityFormPasswordChanged(String),
+    SaveProxyIdentity,
+    DeleteProxyIdentity(Uuid),
+
     // Connection identity
     EditorIdentityChanged(String),
 
@@ -446,6 +458,7 @@ pub enum Message {
 
     // Sync
     SyncToggleEnabled,
+    SyncTogglePasswords,
     SyncModeChanged(String),
     SyncDeviceNameChanged(String),
     SyncSignalingUrlChanged(String),

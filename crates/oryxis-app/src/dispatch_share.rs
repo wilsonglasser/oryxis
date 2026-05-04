@@ -122,16 +122,25 @@ impl Oryxis {
                 let mut imported = 0usize;
                 let mut skipped = 0usize;
                 let mut errors: Vec<String> = Vec::new();
+                // Build all connections first so `link_proxy_jumps` can
+                // resolve sibling aliases to their freshly-assigned ids.
+                // `parsed_to_save` and `to_save` keep matching indices.
+                let mut parsed_to_save: Vec<&crate::ssh_config::SshConfigHost> = Vec::new();
+                let mut to_save: Vec<oryxis_core::models::connection::Connection> = Vec::new();
                 for host in &parsed {
                     if existing_labels.contains(&host.alias) {
                         skipped += 1;
                         continue;
                     }
-                    let conn = crate::ssh_config::to_connection(host);
+                    parsed_to_save.push(host);
+                    to_save.push(crate::ssh_config::to_connection(host));
+                }
+                crate::ssh_config::link_proxy_jumps(&parsed_to_save.iter().map(|p| (*p).clone()).collect::<Vec<_>>(), &mut to_save);
+                for (host, conn) in parsed_to_save.iter().zip(to_save.iter()) {
                     // No password yet — `~/.ssh/config` doesn't carry
                     // credentials. The user can add one later in the
                     // host editor; for now save without it.
-                    match vault.save_connection(&conn, None) {
+                    match vault.save_connection(conn, None) {
                         Ok(()) => imported += 1,
                         Err(e) => errors.push(format!("{}: {e}", host.alias)),
                     }

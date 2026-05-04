@@ -197,6 +197,23 @@ pub struct Oryxis {
     pub(crate) identity_context_menu: Option<usize>,
     pub(crate) show_keychain_add_menu: bool,
 
+    // Proxy Identities — reusable proxy configs edited inline inside
+    // the Settings → Proxies section. Form state is in-memory only
+    // until SaveProxyIdentity flushes to the vault.
+    pub(crate) proxy_identities: Vec<oryxis_core::models::proxy_identity::ProxyIdentity>,
+    pub(crate) proxy_identity_form_visible: bool,
+    pub(crate) proxy_identity_form_label: String,
+    pub(crate) proxy_identity_form_kind: crate::state::ProxyKind,
+    pub(crate) proxy_identity_form_host: String,
+    pub(crate) proxy_identity_form_port: String,
+    pub(crate) proxy_identity_form_username: String,
+    pub(crate) proxy_identity_form_password: String,
+    pub(crate) proxy_identity_form_password_visible: bool,
+    pub(crate) proxy_identity_form_password_touched: bool,
+    pub(crate) proxy_identity_form_has_existing_password: bool,
+    pub(crate) editing_proxy_identity_id: Option<Uuid>,
+    pub(crate) proxy_identity_form_error: Option<String>,
+
     // Snippets
     pub(crate) snippets: Vec<oryxis_core::models::snippet::Snippet>,
     pub(crate) show_snippet_panel: bool,
@@ -322,6 +339,11 @@ pub struct Oryxis {
     // Sync
     pub(crate) sync_enabled: bool,
     pub(crate) sync_mode: String,
+    /// When on, sync wraps connection / identity / proxy-identity
+    /// payloads with their decrypted passwords so peers can mirror
+    /// them. Off by default — passwords stay device-local until the
+    /// user explicitly opts in via Settings → Sync.
+    pub(crate) sync_passwords: bool,
     pub(crate) sync_device_name: String,
     pub(crate) sync_signaling_url: String,
     pub(crate) sync_relay_url: String,

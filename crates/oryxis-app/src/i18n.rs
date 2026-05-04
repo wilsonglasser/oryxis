@@ -356,6 +356,22 @@ fn en(key: &str) -> &'static str {
         "proxy_err_port_invalid" => "Proxy port must be a number between 1 and 65535",
         "proxy_err_command_required" => "Proxy command is required",
 
+        // Proxy Identities (Settings → Proxies)
+        "proxies" => "Proxies",
+        "new_proxy_identity" => "New Proxy",
+        "proxy_identity_label" => "Label",
+        "proxy_identities_empty" => "No saved proxies yet.",
+        "proxy_identities_desc" => "Reusable proxy configurations linked from hosts via the proxy picker in the host editor.",
+        "proxy_type_identity_fallback" => "Saved proxy",
+        "proxy_type_identity_deleted" => "(deleted proxy)",
+        "proxy_identity_err_label_required" => "Label is required",
+        "proxy_identity_err_command_unsupported" => "Command-type proxies must be configured inline on the host, not as a saved identity",
+        "proxy_identity_err_invalid_kind" => "Invalid proxy kind for a saved identity",
+
+        // Sync passwords toggle
+        "sync_passwords" => "Sync passwords across devices",
+        "sync_passwords_desc" => "When on, connection / identity / proxy passwords are mirrored to paired devices. Off keeps them device-local.",
+
         _ => "???",
     }
 }
@@ -582,6 +598,22 @@ fn pt_br(key: &str) -> Option<&'static str> {
         "proxy_err_port_invalid" => "A porta do proxy deve ser um número entre 1 e 65535",
         "proxy_err_command_required" => "O comando do proxy é obrigatório",
 
+        // Proxy Identities
+        "proxies" => "Proxies",
+        "new_proxy_identity" => "Novo Proxy",
+        "proxy_identity_label" => "Rótulo",
+        "proxy_identities_empty" => "Nenhum proxy salvo ainda.",
+        "proxy_identities_desc" => "Configurações de proxy reutilizáveis, vinculadas aos hosts pelo seletor de proxy no editor.",
+        "proxy_type_identity_fallback" => "Proxy salvo",
+        "proxy_type_identity_deleted" => "(proxy excluído)",
+        "proxy_identity_err_label_required" => "O rótulo é obrigatório",
+        "proxy_identity_err_command_unsupported" => "Proxies do tipo Command devem ser configurados inline no host, não como identidade salva",
+        "proxy_identity_err_invalid_kind" => "Tipo de proxy inválido para uma identidade salva",
+
+        // Sync passwords toggle
+        "sync_passwords" => "Sincronizar senhas entre dispositivos",
+        "sync_passwords_desc" => "Quando ativo, as senhas de conexão / identidade / proxy são espelhadas para os dispositivos pareados. Desligado mantém tudo local.",
+
         _ => return None,
     })
 }
@@ -778,6 +810,22 @@ fn es(key: &str) -> Option<&'static str> {
         "proxy_err_host_required" => "El host del proxy es obligatorio",
         "proxy_err_port_invalid" => "El puerto del proxy debe ser un número entre 1 y 65535",
         "proxy_err_command_required" => "El comando del proxy es obligatorio",
+
+        // Proxy Identities
+        "proxies" => "Proxies",
+        "new_proxy_identity" => "Nuevo Proxy",
+        "proxy_identity_label" => "Etiqueta",
+        "proxy_identities_empty" => "Aún no hay proxies guardados.",
+        "proxy_identities_desc" => "Configuraciones de proxy reutilizables, vinculadas a hosts mediante el selector de proxy en el editor.",
+        "proxy_type_identity_fallback" => "Proxy guardado",
+        "proxy_type_identity_deleted" => "(proxy eliminado)",
+        "proxy_identity_err_label_required" => "La etiqueta es obligatoria",
+        "proxy_identity_err_command_unsupported" => "Los proxies de tipo Command deben configurarse inline en el host, no como identidad guardada",
+        "proxy_identity_err_invalid_kind" => "Tipo de proxy no válido para una identidad guardada",
+
+        // Sync passwords toggle
+        "sync_passwords" => "Sincronizar contraseñas entre dispositivos",
+        "sync_passwords_desc" => "Cuando está activo, las contraseñas de conexión / identidad / proxy se replican a los dispositivos emparejados. Apagado las mantiene locales.",
 
         _ => return None,
     })
@@ -976,6 +1024,22 @@ fn fr(key: &str) -> Option<&'static str> {
         "proxy_err_port_invalid" => "Le port du proxy doit être un nombre entre 1 et 65535",
         "proxy_err_command_required" => "La commande du proxy est requise",
 
+        // Proxy Identities
+        "proxies" => "Proxies",
+        "new_proxy_identity" => "Nouveau Proxy",
+        "proxy_identity_label" => "Libellé",
+        "proxy_identities_empty" => "Aucun proxy enregistré pour le moment.",
+        "proxy_identities_desc" => "Configurations de proxy réutilisables, liées aux hôtes via le sélecteur de proxy dans l'éditeur.",
+        "proxy_type_identity_fallback" => "Proxy enregistré",
+        "proxy_type_identity_deleted" => "(proxy supprimé)",
+        "proxy_identity_err_label_required" => "Le libellé est requis",
+        "proxy_identity_err_command_unsupported" => "Les proxies de type Command doivent être configurés en ligne sur l'hôte, pas comme identité enregistrée",
+        "proxy_identity_err_invalid_kind" => "Type de proxy invalide pour une identité enregistrée",
+
+        // Sync passwords toggle
+        "sync_passwords" => "Synchroniser les mots de passe entre appareils",
+        "sync_passwords_desc" => "Quand activé, les mots de passe de connexion / identité / proxy sont répliqués vers les appareils appairés. Désactivé garde tout local.",
+
         _ => return None,
     })
 }
@@ -1172,6 +1236,22 @@ fn de(key: &str) -> Option<&'static str> {
         "proxy_err_host_required" => "Proxy-Host ist erforderlich",
         "proxy_err_port_invalid" => "Proxy-Port muss eine Zahl zwischen 1 und 65535 sein",
         "proxy_err_command_required" => "Proxy-Befehl ist erforderlich",
+
+        // Proxy Identities
+        "proxies" => "Proxies",
+        "new_proxy_identity" => "Neuer Proxy",
+        "proxy_identity_label" => "Bezeichnung",
+        "proxy_identities_empty" => "Noch keine gespeicherten Proxies.",
+        "proxy_identities_desc" => "Wiederverwendbare Proxy-Konfigurationen, über die Proxy-Auswahl im Host-Editor mit Hosts verknüpft.",
+        "proxy_type_identity_fallback" => "Gespeicherter Proxy",
+        "proxy_type_identity_deleted" => "(gelöschter Proxy)",
+        "proxy_identity_err_label_required" => "Bezeichnung ist erforderlich",
+        "proxy_identity_err_command_unsupported" => "Proxies vom Typ Command müssen direkt am Host konfiguriert werden, nicht als gespeicherte Identität",
+        "proxy_identity_err_invalid_kind" => "Ungültiger Proxy-Typ für eine gespeicherte Identität",
+
+        // Sync passwords toggle
+        "sync_passwords" => "Passwörter zwischen Geräten synchronisieren",
+        "sync_passwords_desc" => "Wenn aktiv, werden Verbindungs- / Identitäts- / Proxy-Passwörter auf gekoppelte Geräte gespiegelt. Deaktiviert bleiben sie lokal.",
 
         _ => return None,
     })
@@ -1370,6 +1450,22 @@ fn it(key: &str) -> Option<&'static str> {
         "proxy_err_port_invalid" => "La porta del proxy deve essere un numero tra 1 e 65535",
         "proxy_err_command_required" => "Il comando del proxy è obbligatorio",
 
+        // Proxy Identities
+        "proxies" => "Proxies",
+        "new_proxy_identity" => "Nuovo Proxy",
+        "proxy_identity_label" => "Etichetta",
+        "proxy_identities_empty" => "Nessun proxy salvato finora.",
+        "proxy_identities_desc" => "Configurazioni di proxy riutilizzabili, collegate agli host tramite il selettore di proxy nell'editor.",
+        "proxy_type_identity_fallback" => "Proxy salvato",
+        "proxy_type_identity_deleted" => "(proxy eliminato)",
+        "proxy_identity_err_label_required" => "L'etichetta è obbligatoria",
+        "proxy_identity_err_command_unsupported" => "I proxy di tipo Command devono essere configurati inline sull'host, non come identità salvata",
+        "proxy_identity_err_invalid_kind" => "Tipo di proxy non valido per un'identità salvata",
+
+        // Sync passwords toggle
+        "sync_passwords" => "Sincronizza le password tra dispositivi",
+        "sync_passwords_desc" => "Quando attivo, le password di connessione / identità / proxy vengono replicate sui dispositivi accoppiati. Disattivato le mantiene locali.",
+
         _ => return None,
     })
 }
@@ -1566,6 +1662,22 @@ fn zh(key: &str) -> Option<&'static str> {
         "proxy_err_host_required" => "代理主机不能为空",
         "proxy_err_port_invalid" => "代理端口必须是 1 到 65535 之间的数字",
         "proxy_err_command_required" => "代理命令不能为空",
+
+        // Proxy Identities
+        "proxies" => "代理",
+        "new_proxy_identity" => "新建代理",
+        "proxy_identity_label" => "标签",
+        "proxy_identities_empty" => "尚未保存任何代理。",
+        "proxy_identities_desc" => "可重用的代理配置，可在主机编辑器的代理选择器中链接到主机。",
+        "proxy_type_identity_fallback" => "已保存的代理",
+        "proxy_type_identity_deleted" => "（已删除的代理）",
+        "proxy_identity_err_label_required" => "标签为必填项",
+        "proxy_identity_err_command_unsupported" => "Command 类型的代理必须在主机上内联配置，不能作为保存的身份",
+        "proxy_identity_err_invalid_kind" => "保存的身份不支持此代理类型",
+
+        // Sync passwords toggle
+        "sync_passwords" => "在设备之间同步密码",
+        "sync_passwords_desc" => "启用后，连接 / 身份 / 代理的密码将镜像到配对的设备。关闭则保持本地。",
 
         _ => return None,
     })
@@ -1764,6 +1876,22 @@ fn ja(key: &str) -> Option<&'static str> {
         "proxy_err_port_invalid" => "プロキシポートは 1 から 65535 の数値である必要があります",
         "proxy_err_command_required" => "プロキシコマンドは必須です",
 
+        // Proxy Identities
+        "proxies" => "プロキシ",
+        "new_proxy_identity" => "新しいプロキシ",
+        "proxy_identity_label" => "ラベル",
+        "proxy_identities_empty" => "保存されたプロキシはまだありません。",
+        "proxy_identities_desc" => "ホストエディタのプロキシ選択ピッカーから参照できる再利用可能なプロキシ設定。",
+        "proxy_type_identity_fallback" => "保存済みプロキシ",
+        "proxy_type_identity_deleted" => "（削除されたプロキシ）",
+        "proxy_identity_err_label_required" => "ラベルは必須です",
+        "proxy_identity_err_command_unsupported" => "Command タイプのプロキシはホストにインラインで設定する必要があり、保存済み ID にはできません",
+        "proxy_identity_err_invalid_kind" => "保存済み ID には無効なプロキシタイプです",
+
+        // Sync passwords toggle
+        "sync_passwords" => "デバイス間でパスワードを同期",
+        "sync_passwords_desc" => "オンにすると、接続 / ID / プロキシのパスワードがペアリングしたデバイスにミラーされます。オフではローカルのままです。",
+
         _ => return None,
     })
 }
@@ -1960,6 +2088,22 @@ fn ru(key: &str) -> Option<&'static str> {
         "proxy_err_host_required" => "Хост прокси обязателен",
         "proxy_err_port_invalid" => "Порт прокси должен быть числом от 1 до 65535",
         "proxy_err_command_required" => "Команда прокси обязательна",
+
+        // Proxy Identities
+        "proxies" => "Прокси",
+        "new_proxy_identity" => "Новый прокси",
+        "proxy_identity_label" => "Метка",
+        "proxy_identities_empty" => "Нет сохранённых прокси.",
+        "proxy_identities_desc" => "Многоразовые конфигурации прокси, привязываемые к хостам через выбор прокси в редакторе хоста.",
+        "proxy_type_identity_fallback" => "Сохранённый прокси",
+        "proxy_type_identity_deleted" => "(удалённый прокси)",
+        "proxy_identity_err_label_required" => "Метка обязательна",
+        "proxy_identity_err_command_unsupported" => "Прокси типа Command должны настраиваться непосредственно на хосте, а не как сохранённое удостоверение",
+        "proxy_identity_err_invalid_kind" => "Недопустимый тип прокси для сохранённого удостоверения",
+
+        // Sync passwords toggle
+        "sync_passwords" => "Синхронизировать пароли между устройствами",
+        "sync_passwords_desc" => "Когда включено, пароли подключений / удостоверений / прокси зеркалируются на сопряжённые устройства. Выключено — остаются локальными.",
 
         _ => return None,
     })

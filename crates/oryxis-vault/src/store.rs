@@ -9,9 +9,10 @@ use rand::RngCore;
 use rusqlite::{params, Connection as SqliteConn};
 use uuid::Uuid;
 
-use oryxis_core::models::connection::{AuthMethod, Connection};
+use oryxis_core::models::connection::{AuthMethod, Connection, ProxyType};
 use oryxis_core::models::group::Group;
 use oryxis_core::models::identity::Identity;
+use oryxis_core::models::proxy_identity::ProxyIdentity;
 use oryxis_core::models::key::{KeyAlgorithm, SshKey};
 use oryxis_core::models::snippet::Snippet;
 
@@ -280,6 +281,21 @@ impl VaultStore {
                 updated_at TEXT NOT NULL
             );
 
+            -- Reusable proxy configurations linked from `connections`
+            -- via `proxy_identity_id`. Password is stored encrypted in
+            -- the same column-level scheme as `identities.password`.
+            CREATE TABLE IF NOT EXISTS proxy_identities (
+                id         TEXT PRIMARY KEY,
+                label      TEXT NOT NULL,
+                proxy_type TEXT NOT NULL,
+                host       TEXT NOT NULL DEFAULT '',
+                port       INTEGER NOT NULL DEFAULT 0,
+                username   TEXT,
+                password   BLOB,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+
             CREATE TABLE IF NOT EXISTS known_hosts (
                 id          TEXT PRIMARY KEY,
                 hostname    TEXT NOT NULL,
@@ -322,6 +338,10 @@ impl VaultStore {
         // Proxy password is stored encrypted in its own BLOB column so it
         // never leaks via the plaintext `proxy` JSON column.
         let _ = self.db.execute_batch("ALTER TABLE connections ADD COLUMN proxy_password BLOB;");
+        // Reference to a `proxy_identities` row when the host uses a
+        // saved proxy config instead of an inline one. NULL on cascade
+        // when the referenced identity is deleted.
+        let _ = self.db.execute_batch("ALTER TABLE connections ADD COLUMN proxy_identity_id TEXT;");
         let _ = self.db.execute_batch("ALTER TABLE keys ADD COLUMN updated_at TEXT;");
         let _ = self.db.execute_batch("ALTER TABLE groups ADD COLUMN created_at TEXT;");
         let _ = self.db.execute_batch("ALTER TABLE groups ADD COLUMN updated_at TEXT;");
@@ -545,8 +565,8 @@ impl VaultStore {
             "INSERT OR REPLACE INTO connections
              (id, label, hostname, port, username, auth_method, key_id, group_id,
               jump_chain, proxy, tags, notes, color, password, last_used, created_at, updated_at, identity_id, mcp_enabled, port_forwards,
-              detected_os, custom_icon, custom_color, agent_forwarding)
-             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20,?21,?22,?23,?24)",
+              detected_os, custom_icon, custom_color, agent_forwarding, proxy_identity_id)
+             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20,?21,?22,?23,?24,?25)",
             params![
                 conn.id.to_string(),
                 conn.label,
@@ -575,6 +595,7 @@ impl VaultStore {
                 conn.custom_icon,
                 conn.custom_color,
                 conn.agent_forwarding as i32,
+                conn.proxy_identity_id.map(|u| u.to_string()),
             ],
         )?;
         Ok(())
@@ -593,12 +614,12 @@ impl VaultStore {
         let query = match mcp_filter {
             Some(true) => {
                 "SELECT id, label, hostname, port, username, auth_method, key_id, group_id,
-                        jump_chain, proxy, tags, notes, color, last_used, created_at, updated_at, identity_id, mcp_enabled, port_forwards, detected_os, custom_icon, custom_color, agent_forwarding
+                        jump_chain, proxy, tags, notes, color, last_used, created_at, updated_at, identity_id, mcp_enabled, port_forwards, detected_os, custom_icon, custom_color, agent_forwarding, proxy_identity_id
                  FROM connections WHERE mcp_enabled = 1 ORDER BY label"
             }
             _ => {
                 "SELECT id, label, hostname, port, username, auth_method, key_id, group_id,
-                        jump_chain, proxy, tags, notes, color, last_used, created_at, updated_at, identity_id, mcp_enabled, port_forwards, detected_os, custom_icon, custom_color, agent_forwarding
+                        jump_chain, proxy, tags, notes, color, last_used, created_at, updated_at, identity_id, mcp_enabled, port_forwards, detected_os, custom_icon, custom_color, agent_forwarding, proxy_identity_id
                  FROM connections ORDER BY label"
             }
         };
@@ -673,6 +694,11 @@ impl VaultStore {
                         .unwrap_or(None)
                         .unwrap_or(0)
                         != 0,
+                    proxy_identity_id: row
+                        .get::<_, Option<String>>(23)
+                        .ok()
+                        .flatten()
+                        .and_then(|s| Uuid::parse_str(&s).ok()),
                 })
             })?
             .collect::<Result<Vec<_>, _>>()?;
@@ -973,6 +999,176 @@ impl VaultStore {
             params![id.to_string()],
         )?;
         Ok(())
+    }
+
+    // -----------------------------------------------------------------------
+    // Proxy Identities CRUD
+    // -----------------------------------------------------------------------
+
+    /// Save a proxy identity. If `password` is provided, it's encrypted
+    /// in the dedicated column; otherwise the existing one is preserved
+    /// (mirrors `save_identity`).
+    pub fn save_proxy_identity(
+        &self,
+        identity: &ProxyIdentity,
+        password: Option<&str>,
+    ) -> Result<(), VaultError> {
+        let encrypted_pw = match password {
+            Some(pw) => Some(self.encrypt_field(pw)?),
+            None => self
+                .db
+                .query_row(
+                    "SELECT password FROM proxy_identities WHERE id = ?1",
+                    params![identity.id.to_string()],
+                    |row| row.get::<_, Option<Vec<u8>>>(0),
+                )
+                .ok()
+                .flatten(),
+        };
+
+        let proxy_type_str = serde_json::to_string(&identity.proxy_type).unwrap_or_default();
+
+        self.db.execute(
+            "INSERT OR REPLACE INTO proxy_identities
+             (id, label, proxy_type, host, port, username, password, created_at, updated_at)
+             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9)",
+            params![
+                identity.id.to_string(),
+                identity.label,
+                proxy_type_str,
+                identity.host,
+                identity.port,
+                identity.username,
+                encrypted_pw,
+                identity.created_at.to_rfc3339(),
+                identity.updated_at.to_rfc3339(),
+            ],
+        )?;
+        Ok(())
+    }
+
+    pub fn list_proxy_identities(&self) -> Result<Vec<ProxyIdentity>, VaultError> {
+        let mut stmt = self.db.prepare(
+            "SELECT id, label, proxy_type, host, port, username, created_at, updated_at
+             FROM proxy_identities ORDER BY label",
+        )?;
+        let rows = stmt
+            .query_map([], |row| {
+                let proxy_type_str: String = row.get(2)?;
+                let proxy_type: ProxyType = serde_json::from_str(&proxy_type_str)
+                    .unwrap_or(ProxyType::Socks5);
+                Ok(ProxyIdentity {
+                    id: Uuid::parse_str(&row.get::<_, String>(0)?).unwrap_or_default(),
+                    label: row.get(1)?,
+                    proxy_type,
+                    host: row.get(3)?,
+                    port: row.get(4)?,
+                    username: row.get(5)?,
+                    created_at: row
+                        .get::<_, String>(6)
+                        .ok()
+                        .and_then(|s| chrono::DateTime::parse_from_rfc3339(&s).ok())
+                        .map(|d| d.with_timezone(&chrono::Utc))
+                        .unwrap_or_else(chrono::Utc::now),
+                    updated_at: row
+                        .get::<_, String>(7)
+                        .ok()
+                        .and_then(|s| chrono::DateTime::parse_from_rfc3339(&s).ok())
+                        .map(|d| d.with_timezone(&chrono::Utc))
+                        .unwrap_or_else(chrono::Utc::now),
+                })
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(rows)
+    }
+
+    /// Get the decrypted password for a proxy identity.
+    pub fn get_proxy_identity_password(
+        &self,
+        id: &Uuid,
+    ) -> Result<Option<String>, VaultError> {
+        self.require_unlocked()?;
+        let data: Option<Vec<u8>> = self
+            .db
+            .query_row(
+                "SELECT password FROM proxy_identities WHERE id = ?1",
+                params![id.to_string()],
+                |row| row.get(0),
+            )
+            .map_err(|_| VaultError::NotFound(format!("Proxy identity {}", id)))?;
+
+        match data {
+            Some(encrypted) => Ok(Some(self.decrypt_field(&encrypted)?)),
+            None => Ok(None),
+        }
+    }
+
+    pub fn delete_proxy_identity(&self, id: &Uuid) -> Result<(), VaultError> {
+        // NULL out proxy_identity_id on connections referencing this
+        // identity BEFORE deleting the row, so we never have a window
+        // with a dangling reference.
+        self.db.execute(
+            "UPDATE connections SET proxy_identity_id = NULL WHERE proxy_identity_id = ?1",
+            params![id.to_string()],
+        )?;
+        self.db.execute(
+            "DELETE FROM proxy_identities WHERE id = ?1",
+            params![id.to_string()],
+        )?;
+        Ok(())
+    }
+
+    /// Resolve the effective proxy for a connection, hydrating the
+    /// password from the appropriate encrypted column. Order:
+    ///
+    /// 1. `proxy_identity_id` set → load proxy identity + its password.
+    /// 2. Inline `proxy` set → clone + hydrate from `proxy_password`.
+    /// 3. Otherwise `None`.
+    ///
+    /// A dangling identity reference (id no longer exists) is treated
+    /// as no proxy — better than failing the whole connect.
+    pub fn resolve_proxy(
+        &self,
+        conn: &Connection,
+    ) -> Result<Option<oryxis_core::models::connection::ProxyConfig>, VaultError> {
+        use oryxis_core::models::connection::ProxyConfig;
+
+        if let Some(pid) = conn.proxy_identity_id {
+            // Look up the identity. If it's gone, fall through to None
+            // — the user removed the identity but the connection still
+            // points at it. Surfacing this as an error would block
+            // connecting to every host that referenced it.
+            let identities = self.list_proxy_identities()?;
+            let Some(ident) = identities.into_iter().find(|i| i.id == pid) else {
+                tracing::warn!(
+                    "proxy_identity_id {} not found for connection {} — falling back to no proxy",
+                    pid,
+                    conn.id
+                );
+                return Ok(None);
+            };
+            let password = self.get_proxy_identity_password(&pid).ok().flatten();
+            return Ok(Some(ProxyConfig {
+                proxy_type: ident.proxy_type,
+                host: ident.host,
+                port: ident.port,
+                username: ident.username,
+                password,
+            }));
+        }
+
+        if let Some(inline) = conn.proxy.as_ref() {
+            let password = self.get_proxy_password(&conn.id).ok().flatten();
+            return Ok(Some(ProxyConfig {
+                proxy_type: inline.proxy_type.clone(),
+                host: inline.host.clone(),
+                port: inline.port,
+                username: inline.username.clone(),
+                password,
+            }));
+        }
+
+        Ok(None)
     }
 
     // -----------------------------------------------------------------------
@@ -1815,6 +2011,115 @@ mod tests {
         assert_eq!(vault.get_proxy_password(&conn.id).unwrap(), None);
     }
 
+    #[test]
+    fn proxy_identity_round_trip() {
+        let vault = unlocked_vault();
+        let mut pi = ProxyIdentity::new("home-bastion");
+        pi.proxy_type = ProxyType::Socks5;
+        pi.host = "proxy.home.lan".into();
+        pi.port = 1080;
+        pi.username = Some("alice".into());
+
+        vault.save_proxy_identity(&pi, Some("topsecret")).unwrap();
+        let listed = vault.list_proxy_identities().unwrap();
+        assert_eq!(listed.len(), 1);
+        assert_eq!(listed[0].label, "home-bastion");
+        assert_eq!(listed[0].host, "proxy.home.lan");
+        assert_eq!(listed[0].port, 1080);
+        assert_eq!(listed[0].username.as_deref(), Some("alice"));
+        assert_eq!(
+            vault.get_proxy_identity_password(&pi.id).unwrap().as_deref(),
+            Some("topsecret"),
+        );
+    }
+
+    #[test]
+    fn proxy_identity_delete_cascades_to_connections() {
+        let vault = unlocked_vault();
+        let pi = ProxyIdentity::new("temp");
+        vault.save_proxy_identity(&pi, None).unwrap();
+
+        let mut conn = Connection::new("h", "host");
+        conn.proxy_identity_id = Some(pi.id);
+        vault.save_connection(&conn, None).unwrap();
+
+        // Sanity — the connection lists the identity reference.
+        let conns = vault.list_connections().unwrap();
+        assert_eq!(conns[0].proxy_identity_id, Some(pi.id));
+
+        vault.delete_proxy_identity(&pi.id).unwrap();
+        let conns = vault.list_connections().unwrap();
+        assert_eq!(
+            conns[0].proxy_identity_id, None,
+            "delete_proxy_identity should NULL out connection.proxy_identity_id",
+        );
+    }
+
+    #[test]
+    fn resolve_proxy_prefers_identity_over_inline() {
+        use oryxis_core::models::connection::ProxyConfig;
+        let vault = unlocked_vault();
+        let mut pi = ProxyIdentity::new("ident-proxy");
+        pi.proxy_type = ProxyType::Http;
+        pi.host = "ident.example".into();
+        pi.port = 8080;
+        pi.username = Some("ident-user".into());
+        vault.save_proxy_identity(&pi, Some("ident-pw")).unwrap();
+
+        let mut conn = Connection::new("h", "host");
+        conn.proxy = Some(ProxyConfig {
+            proxy_type: ProxyType::Socks5,
+            host: "inline.example".into(),
+            port: 1080,
+            username: Some("inline-user".into()),
+            password: None,
+        });
+        conn.proxy_identity_id = Some(pi.id);
+        vault.save_connection(&conn, None).unwrap();
+        // Inline password set too — should be ignored once identity wins.
+        vault
+            .set_proxy_password(&conn.id, Some("inline-pw"))
+            .unwrap();
+
+        let resolved = vault.resolve_proxy(&conn).unwrap().unwrap();
+        assert_eq!(resolved.host, "ident.example", "identity should win over inline");
+        assert_eq!(resolved.port, 8080);
+        assert_eq!(resolved.username.as_deref(), Some("ident-user"));
+        assert_eq!(resolved.password.as_deref(), Some("ident-pw"));
+    }
+
+    #[test]
+    fn resolve_proxy_dangling_identity_returns_none() {
+        let vault = unlocked_vault();
+        let mut conn = Connection::new("h", "host");
+        // Reference an identity that doesn't exist — must not error.
+        conn.proxy_identity_id = Some(uuid::Uuid::new_v4());
+        vault.save_connection(&conn, None).unwrap();
+
+        let resolved = vault.resolve_proxy(&conn).unwrap();
+        assert!(resolved.is_none());
+    }
+
+    #[test]
+    fn resolve_proxy_falls_back_to_inline_when_no_identity() {
+        use oryxis_core::models::connection::ProxyConfig;
+        let vault = unlocked_vault();
+        let mut conn = Connection::new("h", "host");
+        conn.proxy = Some(ProxyConfig {
+            proxy_type: ProxyType::Socks5,
+            host: "inline.example".into(),
+            port: 1080,
+            username: None,
+            password: None,
+        });
+        vault.save_connection(&conn, None).unwrap();
+        vault.set_proxy_password(&conn.id, Some("inline-pw")).unwrap();
+
+        let resolved = vault.resolve_proxy(&conn).unwrap().unwrap();
+        assert_eq!(resolved.host, "inline.example");
+        assert_eq!(resolved.password.as_deref(), Some("inline-pw"));
+    }
+
     /// Critical: the plaintext `proxy` JSON column must never carry the
     /// password. Confirms the credential lives only in the encrypted
     /// `proxy_password` column.
@@ -2158,6 +2463,95 @@ mod tests {
         assert_eq!(vault2.list_groups().unwrap().len(), 1);
         assert_eq!(vault2.list_snippets().unwrap().len(), 1);
         assert_eq!(vault2.list_known_hosts().unwrap().len(), 1);
+    }
+
+    /// Round-trip a connection that uses both an inline proxy (with
+    /// password in its own encrypted column) and a saved proxy
+    /// identity (with its own password). Both passwords + the
+    /// identity reference must survive export → import.
+    #[test]
+    fn export_import_proxy_round_trip() {
+        use crate::portable::{export_vault, import_vault, ExportFilter, ExportOptions};
+        use oryxis_core::models::connection::{ProxyConfig, ProxyType};
+
+        let vault = unlocked_vault();
+
+        // Saved proxy identity (with password)
+        let mut pi = ProxyIdentity::new("corp-bastion");
+        pi.proxy_type = ProxyType::Http;
+        pi.host = "proxy.corp.local".into();
+        pi.port = 8080;
+        pi.username = Some("alice".into());
+        vault.save_proxy_identity(&pi, Some("ident-pw")).unwrap();
+
+        // Connection 1: links to the saved identity
+        let mut conn_id = Connection::new("via-identity", "10.0.0.1");
+        conn_id.proxy_identity_id = Some(pi.id);
+        vault.save_connection(&conn_id, None).unwrap();
+
+        // Connection 2: inline proxy with its own password
+        let mut conn_inline = Connection::new("via-inline", "10.0.0.2");
+        conn_inline.proxy = Some(ProxyConfig {
+            proxy_type: ProxyType::Socks5,
+            host: "inline.proxy".into(),
+            port: 1080,
+            username: Some("bob".into()),
+            password: None,
+        });
+        vault.save_connection(&conn_inline, None).unwrap();
+        vault
+            .set_proxy_password(&conn_inline.id, Some("inline-pw"))
+            .unwrap();
+
+        // Export everything
+        let data = export_vault(
+            &vault,
+            "export-pw",
+            ExportOptions {
+                include_private_keys: false,
+                filter: ExportFilter::All,
+            },
+        )
+        .unwrap();
+
+        // Import into a fresh vault
+        let vault2 = unlocked_vault();
+        let result = import_vault(&vault2, &data, "export-pw").unwrap();
+        assert_eq!(result.connections_added, 2);
+        assert_eq!(result.proxy_identities_added, 1);
+
+        // Saved identity round-tripped — including its password.
+        let pi_round = vault2.list_proxy_identities().unwrap();
+        assert_eq!(pi_round.len(), 1);
+        assert_eq!(pi_round[0].host, "proxy.corp.local");
+        assert_eq!(
+            vault2
+                .get_proxy_identity_password(&pi_round[0].id)
+                .unwrap()
+                .as_deref(),
+            Some("ident-pw"),
+        );
+
+        // The identity-linked connection still references the same id.
+        let conns = vault2.list_connections().unwrap();
+        let by_label = |l: &str| conns.iter().find(|c| c.label == l).unwrap();
+        assert_eq!(by_label("via-identity").proxy_identity_id, Some(pi.id));
+
+        // The inline proxy survived with its password in the encrypted
+        // column (NOT inside the proxy JSON).
+        let inline_conn = by_label("via-inline");
+        assert_eq!(inline_conn.proxy_identity_id, None);
+        assert_eq!(
+            inline_conn.proxy.as_ref().map(|p| p.host.clone()),
+            Some("inline.proxy".into()),
+        );
+        assert_eq!(
+            vault2
+                .get_proxy_password(&inline_conn.id)
+                .unwrap()
+                .as_deref(),
+            Some("inline-pw"),
+        );
     }
 
     #[test]

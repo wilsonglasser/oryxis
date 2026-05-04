@@ -14,6 +14,11 @@ pub enum EntityType {
     Group,
     Snippet,
     KnownHost,
+    /// Saved proxy configurations referenced from `Connection.proxy_identity_id`.
+    /// The associated password is included in the wire payload only when the
+    /// peer's `sync_passwords` setting is on (off by default); older peers
+    /// silently drop the extra fields.
+    ProxyIdentity,
 }
 
 impl std::fmt::Display for EntityType {
@@ -25,6 +30,7 @@ impl std::fmt::Display for EntityType {
             Self::Group => write!(f, "group"),
             Self::Snippet => write!(f, "snippet"),
             Self::KnownHost => write!(f, "known_host"),
+            Self::ProxyIdentity => write!(f, "proxy_identity"),
         }
     }
 }
@@ -107,6 +113,43 @@ pub struct SyncRecord {
     pub payload: Vec<u8>,
 }
 
+// ---------------------------------------------------------------------------
+// Sync payload wrappers (transparent to wire JSON for connections /
+// identities / proxy identities — the inner model is `#[serde(flatten)]`
+// so older nodes that send a bare `Connection` still deserialize, and
+// older nodes that receive these wrappers ignore the extra password
+// fields. Passwords are only ever included when the local
+// `sync_passwords` setting is on.
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SyncConnection {
+    #[serde(flatten)]
+    pub connection: oryxis_core::models::Connection,
+    /// Main connection password — sent when `sync_passwords` is on.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub password: Option<String>,
+    /// Inline-proxy password (separate encrypted column on disk).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub proxy_password: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SyncIdentity {
+    #[serde(flatten)]
+    pub identity: oryxis_core::models::Identity,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub password: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SyncProxyIdentity {
+    #[serde(flatten)]
+    pub proxy_identity: oryxis_core::models::ProxyIdentity,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub password: Option<String>,
+}
+
 /// Frame header for length-prefixed messages over QUIC streams.
 /// Format: [length: 4 bytes LE] [bincode data]
 pub fn encode_message(msg: &SyncMessage) -> Result<Vec<u8>, bincode::Error> {
@@ -164,5 +207,78 @@ mod tests {
             }
             _ => panic!("Wrong message type"),
         }
+    }
+
+    /// New `SyncConnection` wrappers must accept old-format payloads
+    /// (bare `Connection` JSON) without losing fields. The optional
+    /// password fields default to `None`.
+    #[test]
+    fn sync_connection_accepts_legacy_payload() {
+        let conn = oryxis_core::models::Connection::new("legacy", "10.0.0.1");
+        let bare = serde_json::to_vec(&conn).unwrap();
+        let wrapped: SyncConnection = serde_json::from_slice(&bare).unwrap();
+        assert_eq!(wrapped.connection.label, "legacy");
+        assert!(wrapped.password.is_none());
+        assert!(wrapped.proxy_password.is_none());
+    }
+
+    #[test]
+    fn sync_connection_round_trip_with_passwords() {
+        let conn = oryxis_core::models::Connection::new("modern", "10.0.0.1");
+        let wrapper = SyncConnection {
+            connection: conn,
+            password: Some("conn-pw".into()),
+            proxy_password: Some("proxy-pw".into()),
+        };
+        let bytes = serde_json::to_vec(&wrapper).unwrap();
+        let back: SyncConnection = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(back.password.as_deref(), Some("conn-pw"));
+        assert_eq!(back.proxy_password.as_deref(), Some("proxy-pw"));
+    }
+
+    /// When no password is set we must NOT emit empty fields — keeps
+    /// the wire payload byte-identical to the legacy format so older
+    /// receivers don't see noise.
+    #[test]
+    fn sync_connection_omits_password_when_none() {
+        let conn = oryxis_core::models::Connection::new("no-pw", "10.0.0.1");
+        let wrapper = SyncConnection {
+            connection: conn,
+            password: None,
+            proxy_password: None,
+        };
+        let json = serde_json::to_string(&wrapper).unwrap();
+        assert!(
+            !json.contains("\"password\""),
+            "password field leaked into JSON: {json}"
+        );
+        assert!(
+            !json.contains("\"proxy_password\""),
+            "proxy_password field leaked into JSON: {json}"
+        );
+    }
+
+    #[test]
+    fn sync_identity_round_trip() {
+        let ident = oryxis_core::models::Identity::new("ident");
+        let wrapper = SyncIdentity {
+            identity: ident,
+            password: Some("ident-pw".into()),
+        };
+        let bytes = serde_json::to_vec(&wrapper).unwrap();
+        let back: SyncIdentity = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(back.password.as_deref(), Some("ident-pw"));
+    }
+
+    #[test]
+    fn sync_proxy_identity_round_trip() {
+        let pi = oryxis_core::models::ProxyIdentity::new("pi");
+        let wrapper = SyncProxyIdentity {
+            proxy_identity: pi,
+            password: Some("pi-pw".into()),
+        };
+        let bytes = serde_json::to_vec(&wrapper).unwrap();
+        let back: SyncProxyIdentity = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(back.password.as_deref(), Some("pi-pw"));
     }
 }

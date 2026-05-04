@@ -60,6 +60,7 @@ impl Oryxis {
         }
         let mut passwords = std::collections::HashMap::new();
         let mut keys = std::collections::HashMap::new();
+        let mut proxies = std::collections::HashMap::new();
         for jid in &conn.jump_chain {
             if let Some(vault) = &self.vault
                 && let Ok(Some(pw)) = vault.get_connection_password(jid)
@@ -73,11 +74,22 @@ impl Oryxis {
             {
                 keys.insert(*jid, pk);
             }
+            // Resolve the jump host's effective proxy (identity-based or
+            // inline) so the engine's first-hop dial can route through it.
+            // Only matters for the first jump but we hydrate every jump's
+            // entry — cheap and keeps the resolver self-contained.
+            if let Some(jconn) = self.connections.iter().find(|c| c.id == *jid)
+                && let Some(vault) = &self.vault
+                && let Ok(Some(p)) = vault.resolve_proxy(jconn)
+            {
+                proxies.insert(*jid, p);
+            }
         }
         Some(oryxis_ssh::ConnectionResolver {
             connections: self.connections.clone(),
             passwords,
             private_keys: keys,
+            proxies,
         })
     }
 

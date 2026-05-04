@@ -40,6 +40,7 @@ impl Oryxis {
         let message = try_handler!(self, message, handle_ssh);
         let message = try_handler!(self, message, handle_settings);
         let message = try_handler!(self, message, handle_keys);
+        let message = try_handler!(self, message, handle_proxy_identity);
         let message = try_handler!(self, message, handle_ai);
         let message = try_handler!(self, message, handle_editor);
         let message = try_handler!(self, message, handle_tabs);
@@ -464,6 +465,15 @@ impl Oryxis {
                 self.sync_enabled = !self.sync_enabled;
                 if let Some(vault) = &self.vault {
                     let _ = vault.set_setting("sync_enabled", if self.sync_enabled { "true" } else { "false" });
+                }
+            }
+            Message::SyncTogglePasswords => {
+                self.sync_passwords = !self.sync_passwords;
+                if let Some(vault) = &self.vault {
+                    let _ = vault.set_setting(
+                        "sync_passwords",
+                        if self.sync_passwords { "true" } else { "false" },
+                    );
                 }
             }
             Message::SyncModeChanged(v) => {

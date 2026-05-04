@@ -585,10 +585,12 @@ pub(crate) struct ConnectionForm {
     pub proxy_password_touched: bool,
 }
 
-/// UI-side proxy kind, including a `None` (disabled) variant. The
-/// model's `ProxyType` doesn't have a "disabled" — that's represented
-/// by `Connection.proxy = None`. We collapse those into one enum here
-/// to keep the picker simple.
+/// UI-side proxy kind. Includes a `None` (disabled) variant — the
+/// model's `ProxyType` doesn't have a "disabled" since that's
+/// represented by `Connection.proxy = None`. The `Identity(Uuid)`
+/// variant points at a saved `ProxyIdentity`; when present, the
+/// connection's `proxy_identity_id` is stored instead of an inline
+/// `ProxyConfig`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ProxyKind {
     None,
@@ -596,10 +598,14 @@ pub(crate) enum ProxyKind {
     Socks4,
     Http,
     Command,
+    Identity(Uuid),
 }
 
 impl ProxyKind {
-    pub const ALL: &[ProxyKind] = &[
+    /// The static (non-identity) variants, in picker display order.
+    /// Used as the base of the editor's proxy picker; the host panel
+    /// concatenates the user's saved proxy identities afterwards.
+    pub const STATIC: &[ProxyKind] = &[
         ProxyKind::None,
         ProxyKind::Socks5,
         ProxyKind::Socks4,
@@ -607,14 +613,17 @@ impl ProxyKind {
         ProxyKind::Command,
     ];
 
-    /// i18n key for the localized label rendered in the picker.
-    pub fn label_key(&self) -> &'static str {
+    /// i18n key for the localized label rendered in the picker. `None`
+    /// is returned for `Identity(_)` — saved-identity rendering uses
+    /// the identity's `label`, not a static key.
+    pub fn label_key(&self) -> Option<&'static str> {
         match self {
-            ProxyKind::None => "proxy_type_none",
-            ProxyKind::Socks5 => "proxy_type_socks5",
-            ProxyKind::Socks4 => "proxy_type_socks4",
-            ProxyKind::Http => "proxy_type_http",
-            ProxyKind::Command => "proxy_type_command",
+            ProxyKind::None => Some("proxy_type_none"),
+            ProxyKind::Socks5 => Some("proxy_type_socks5"),
+            ProxyKind::Socks4 => Some("proxy_type_socks4"),
+            ProxyKind::Http => Some("proxy_type_http"),
+            ProxyKind::Command => Some("proxy_type_command"),
+            ProxyKind::Identity(_) => None,
         }
     }
 
@@ -624,18 +633,20 @@ impl ProxyKind {
         match self {
             ProxyKind::Socks5 | ProxyKind::Socks4 => Some(1080),
             ProxyKind::Http => Some(8080),
-            ProxyKind::None | ProxyKind::Command => None,
+            ProxyKind::None | ProxyKind::Command | ProxyKind::Identity(_) => None,
         }
     }
 
     /// Whether the host/port/username trio applies. `Command` runs a
-    /// process directly and `None` disables the proxy.
+    /// process directly, `None` disables the proxy, and `Identity`
+    /// pulls those fields from the saved identity instead.
     pub fn needs_endpoint(&self) -> bool {
         matches!(self, ProxyKind::Socks5 | ProxyKind::Socks4 | ProxyKind::Http)
     }
 
     /// Whether a password field makes sense. SOCKS4 has no password
-    /// concept; Command and None don't either.
+    /// concept; Command, None and Identity don't either (Identity
+    /// edits its password in the saved-identity form).
     pub fn supports_password(&self) -> bool {
         matches!(self, ProxyKind::Socks5 | ProxyKind::Http)
     }
@@ -645,8 +656,13 @@ impl std::fmt::Display for ProxyKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         // Localized at render time. The picker compares variants via
         // PartialEq, so language switches do not invalidate the
-        // selected value.
-        write!(f, "{}", crate::i18n::t(self.label_key()))
+        // selected value. `Identity(_)` falls back to a generic label
+        // — the host panel installs a custom mapper that swaps in the
+        // identity's user-chosen label at render time.
+        match self.label_key() {
+            Some(k) => write!(f, "{}", crate::i18n::t(k)),
+            None => write!(f, "{}", crate::i18n::t("proxy_type_identity_fallback")),
+        }
     }
 }
 
@@ -744,6 +760,9 @@ pub(crate) enum SettingsSection {
     Shortcuts,
     Security,
     Sync,
+    /// CRUD over reusable proxy configurations (SOCKS5 / HTTP / etc.)
+    /// referenced from connections via `Connection.proxy_identity_id`.
+    Proxies,
     About,
 }
 
