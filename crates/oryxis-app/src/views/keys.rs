@@ -414,8 +414,11 @@ impl Oryxis {
             all_rows.extend(identity_grid_rows);
         }
 
+        // Right padding here also pushes the content away from the
+        // scrollbar — keep it slim so the scrollbar reads as flush
+        // against the panel edge rather than floating in dead space.
         let grid = scrollable(
-            column(all_rows).padding(Padding { top: 0.0, right: 24.0, bottom: 24.0, left: 24.0 }),
+            column(all_rows).padding(Padding { top: 0.0, right: 8.0, bottom: 24.0, left: 24.0 }),
         )
         .height(Length::Fill);
 

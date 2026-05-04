@@ -103,7 +103,11 @@ Most SSH clients are either powerful but ugly (PuTTY), pretty but Electron-heavy
 ### SSH & Connectivity
 - **Smart auto-authentication** — Automatically tries key, agent, password, and keyboard-interactive in order.
 - **Full SSH pipeline** — Direct, SOCKS4/5, HTTP CONNECT, ProxyCommand, jump host chaining, and local port forwarding via [russh 0.60](https://github.com/warp-tech/russh).
+- **Authenticated proxies** — SOCKS5 username/password (RFC 1929) and HTTP CONNECT Basic auth (RFC 7617). Proxy passwords live in their own encrypted column, never in the host's serialized JSON.
+- **Proxy + jump host stacking** — A jump host that itself sits behind a proxy now dials through that proxy on the first hop; subsequent jumps travel inside the SSH tunnel as before.
+- **Reusable Proxy Identities** — Save SOCKS5 / HTTP / SOCKS4 configs once in Settings → Proxies and link them from any host. The host editor's proxy picker shows static types and your saved proxies in one list.
 - **SSH agent forwarding** — Per-host opt-in (`ForwardAgent yes` from `ssh_config` is honored on import). Bridges the local ssh-agent socket through the channel so you can `ssh hostB` from inside hostA without staging keys remotely. Unsolicited forward channels are rejected.
+- **Rich `~/.ssh/config` import** — `ProxyCommand` maps to typed `Command(cmd)` proxies; `ProxyJump host` is auto-resolved against other imported aliases (unresolved targets are flagged in the host's notes for manual fix).
 - **RSA SHA-2 support** — Modern rsa-sha2-256/512 signing.
 - **Connection progress** — Step-by-step indicator with detailed error messages.
 - **TOFU host key verification** — Fingerprints saved on first connect, rejected if key changes.
@@ -143,6 +147,7 @@ Most SSH clients are either powerful but ugly (PuTTY), pretty but Electron-heavy
 - **Reusable credentials** — Create Identities (username + password + key) linked to multiple hosts.
 - **Autocomplete** — Type in username field to see matching identities, click to link.
 - **Keychain view** — Keys and Identities side by side with search, edit, context menus.
+- **Proxy Identities** — Same shape but for proxy configs (SOCKS5 / HTTP / SOCKS4). Edit once, link from many hosts, password stored encrypted alongside the identity.
 
 ### Themes & Internationalization
 - **12 global themes** — Oryxis Dark / Light, Termius, Darcula, Islands Dark, Dracula, Monokai, Hacker Green, Nord, Nord Light, Solarized Light, Paper Light. Changes entire UI instantly.
@@ -164,6 +169,7 @@ Most SSH clients are either powerful but ugly (PuTTY), pretty but Electron-heavy
 - **Single encrypted file** — Export your entire vault as a `.oryxis` file protected with a password.
 - **Selective export** — Choose whether to include SSH private keys or only host configurations.
 - **Smart merge** — Import merges by UUID, updating only records that are newer (LWW).
+- **Round-trips proxy data** — Proxy Identities (with their passwords) and per-host inline proxy passwords ride along in the export, so a fresh device gets working proxy auth out of the box.
 
 ### MCP Server
 - **AI integration** — Expose your SSH hosts to AI assistants (Claude Code, etc.) via the [Model Context Protocol](https://modelcontextprotocol.io/).
@@ -180,6 +186,8 @@ Most SSH clients are either powerful but ugly (PuTTY), pretty but Electron-heavy
 - **E2E encrypted** — Sync payloads encrypted with shared secret (X25519 + ChaCha20Poly1305).
 - **Auto or manual** — Configurable sync mode with adjustable interval.
 - **Optional relay** — User-configurable relay URL for symmetric NAT environments.
+- **Proxy Identities mirror across devices** — `EntityType::ProxyIdentity` is part of the manifest so saved proxies appear on every paired peer.
+- **Opt-in password sync** — Off by default: passwords (connection / identity / proxy) stay device-local. Toggle "Sync passwords across devices" in Settings → Sync to mirror them too. Wire format is forward/backward compatible — older peers ignore the extra fields.
 
 ### UI / UX
 - **Native GPU-accelerated UI** — [Iced 0.14](https://iced.rs) (wgpu backend).
@@ -225,7 +233,7 @@ Most SSH clients are either powerful but ugly (PuTTY), pretty but Electron-heavy
 | Crate | Purpose |
 |-------|---------|
 | `oryxis-app` | Iced app, views, themes, i18n, AI chat, overlay system |
-| `oryxis-core` | Shared types — Connection, SshKey, Identity, Group, Snippet, KnownHost, LogEntry |
+| `oryxis-core` | Shared types — Connection, SshKey, Identity, ProxyIdentity, Group, Snippet, KnownHost, LogEntry |
 | `oryxis-terminal` | Terminal widget (alacritty + canvas + PTY + syntax highlight + 6 themes) |
 | `oryxis-ssh` | SSH engine — auto-auth, jump hosts, SOCKS/HTTP proxy, ProxyCommand, TOFU, RSA-SHA2 |
 | `oryxis-vault` | Encrypted vault — SQLite + Argon2id + ChaCha20Poly1305 + Identity + Session logs + Export/Import |

@@ -2,7 +2,6 @@
 /target/
 .idea
 SPEC.md
-claude.md
 .env
 signaling-worker/wrangler.jsonc
 signaling-worker/.wrangler/

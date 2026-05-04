@@ -3,7 +3,7 @@
 
 use iced::border::Radius;
 use iced::widget::button::Status as BtnStatus;
-use iced::widget::{button, column, container, image, row, text, Space};
+use iced::widget::{button, column, container, image, row, scrollable, text, Space};
 use iced::{Background, Border, Color, Element, Length, Padding};
 
 use crate::app::{Message, Oryxis, SIDEBAR_WIDTH, SIDEBAR_WIDTH_COLLAPSED};
@@ -68,10 +68,15 @@ impl Oryxis {
             }
         });
 
+        // Wrapping the nav list in a `scrollable` keeps every entry
+        // reachable when the window is short enough to clip the column
+        // (was previously cut off because the column had a fixed-fill
+        // spacer pushing the bottom button down). The local-shell
+        // button stays pinned outside the scrollable so it's always
+        // a single click away.
         let sidebar_content = column![
             header,
-            column(nav_buttons),
-            Space::new().height(Length::Fill),
+            scrollable(column(nav_buttons)).height(Length::Fill),
             container(local_btn)
                 .padding(Padding { top: 0.0, right: 8.0, bottom: 12.0, left: 8.0 }),
         ]
