@@ -335,6 +335,27 @@ fn en(key: &str) -> &'static str {
         "start_over" => "Start over",
         "hk_add_question" => "Do you want to add it to the list of known hosts?",
 
+        // Proxy
+        "proxy_type" => "Proxy Type",
+        "proxy_host" => "Proxy Host",
+        "proxy_port" => "Proxy Port",
+        "proxy_username" => "Username",
+        "proxy_password" => "Password",
+        "proxy_command" => "Proxy Command",
+        "proxy_type_none" => "None",
+        "proxy_type_socks5" => "SOCKS5",
+        "proxy_type_socks4" => "SOCKS4",
+        "proxy_type_http" => "HTTP CONNECT",
+        "proxy_type_command" => "Command",
+        "proxy_host_placeholder" => "proxy.example.com",
+        "proxy_username_placeholder" => "user",
+        "proxy_password_placeholder" => "password",
+        "proxy_password_existing" => "(unchanged — type to replace)",
+        "proxy_command_placeholder" => "ssh -W %h:%p bastion",
+        "proxy_err_host_required" => "Proxy host is required",
+        "proxy_err_port_invalid" => "Proxy port must be a number between 1 and 65535",
+        "proxy_err_command_required" => "Proxy command is required",
+
         _ => "???",
     }
 }
@@ -540,6 +561,27 @@ fn pt_br(key: &str) -> Option<&'static str> {
         "start_over" => "Recomeçar",
         "hk_add_question" => "Deseja adicioná-lo à lista de hosts conhecidos?",
 
+        // Proxy
+        "proxy_type" => "Tipo de Proxy",
+        "proxy_host" => "Host do Proxy",
+        "proxy_port" => "Porta do Proxy",
+        "proxy_username" => "Usuário",
+        "proxy_password" => "Senha",
+        "proxy_command" => "Comando de Proxy",
+        "proxy_type_none" => "Nenhum",
+        "proxy_type_socks5" => "SOCKS5",
+        "proxy_type_socks4" => "SOCKS4",
+        "proxy_type_http" => "HTTP CONNECT",
+        "proxy_type_command" => "Comando",
+        "proxy_host_placeholder" => "proxy.exemplo.com",
+        "proxy_username_placeholder" => "usuário",
+        "proxy_password_placeholder" => "senha",
+        "proxy_password_existing" => "(inalterada — digite para substituir)",
+        "proxy_command_placeholder" => "ssh -W %h:%p bastion",
+        "proxy_err_host_required" => "O host do proxy é obrigatório",
+        "proxy_err_port_invalid" => "A porta do proxy deve ser um número entre 1 e 65535",
+        "proxy_err_command_required" => "O comando do proxy é obrigatório",
+
         _ => return None,
     })
 }
@@ -715,6 +757,27 @@ fn es(key: &str) -> Option<&'static str> {
         "select_file" => "Seleccionar archivo...",
         "start_over" => "Empezar de nuevo",
         "hk_add_question" => "¿Desea agregarlo a la lista de hosts conocidos?",
+
+        // Proxy
+        "proxy_type" => "Tipo de Proxy",
+        "proxy_host" => "Host del Proxy",
+        "proxy_port" => "Puerto del Proxy",
+        "proxy_username" => "Usuario",
+        "proxy_password" => "Contraseña",
+        "proxy_command" => "Comando de Proxy",
+        "proxy_type_none" => "Ninguno",
+        "proxy_type_socks5" => "SOCKS5",
+        "proxy_type_socks4" => "SOCKS4",
+        "proxy_type_http" => "HTTP CONNECT",
+        "proxy_type_command" => "Comando",
+        "proxy_host_placeholder" => "proxy.ejemplo.com",
+        "proxy_username_placeholder" => "usuario",
+        "proxy_password_placeholder" => "contraseña",
+        "proxy_password_existing" => "(sin cambios — escribe para reemplazar)",
+        "proxy_command_placeholder" => "ssh -W %h:%p bastion",
+        "proxy_err_host_required" => "El host del proxy es obligatorio",
+        "proxy_err_port_invalid" => "El puerto del proxy debe ser un número entre 1 y 65535",
+        "proxy_err_command_required" => "El comando del proxy es obligatorio",
 
         _ => return None,
     })
@@ -892,6 +955,27 @@ fn fr(key: &str) -> Option<&'static str> {
         "start_over" => "Recommencer",
         "hk_add_question" => "Voulez-vous l'ajouter à la liste des hôtes connus ?",
 
+        // Proxy
+        "proxy_type" => "Type de Proxy",
+        "proxy_host" => "Hôte du Proxy",
+        "proxy_port" => "Port du Proxy",
+        "proxy_username" => "Utilisateur",
+        "proxy_password" => "Mot de passe",
+        "proxy_command" => "Commande de Proxy",
+        "proxy_type_none" => "Aucun",
+        "proxy_type_socks5" => "SOCKS5",
+        "proxy_type_socks4" => "SOCKS4",
+        "proxy_type_http" => "HTTP CONNECT",
+        "proxy_type_command" => "Commande",
+        "proxy_host_placeholder" => "proxy.exemple.com",
+        "proxy_username_placeholder" => "utilisateur",
+        "proxy_password_placeholder" => "mot de passe",
+        "proxy_password_existing" => "(inchangé — saisir pour remplacer)",
+        "proxy_command_placeholder" => "ssh -W %h:%p bastion",
+        "proxy_err_host_required" => "L'hôte du proxy est requis",
+        "proxy_err_port_invalid" => "Le port du proxy doit être un nombre entre 1 et 65535",
+        "proxy_err_command_required" => "La commande du proxy est requise",
+
         _ => return None,
     })
 }
@@ -1067,6 +1151,27 @@ fn de(key: &str) -> Option<&'static str> {
         "select_file" => "Datei auswählen...",
         "start_over" => "Neu starten",
         "hk_add_question" => "Möchten Sie ihn zur Liste der bekannten Hosts hinzufügen?",
+
+        // Proxy
+        "proxy_type" => "Proxy-Typ",
+        "proxy_host" => "Proxy-Host",
+        "proxy_port" => "Proxy-Port",
+        "proxy_username" => "Benutzername",
+        "proxy_password" => "Passwort",
+        "proxy_command" => "Proxy-Befehl",
+        "proxy_type_none" => "Keiner",
+        "proxy_type_socks5" => "SOCKS5",
+        "proxy_type_socks4" => "SOCKS4",
+        "proxy_type_http" => "HTTP CONNECT",
+        "proxy_type_command" => "Befehl",
+        "proxy_host_placeholder" => "proxy.beispiel.de",
+        "proxy_username_placeholder" => "benutzer",
+        "proxy_password_placeholder" => "passwort",
+        "proxy_password_existing" => "(unverändert — eingeben zum Ersetzen)",
+        "proxy_command_placeholder" => "ssh -W %h:%p bastion",
+        "proxy_err_host_required" => "Proxy-Host ist erforderlich",
+        "proxy_err_port_invalid" => "Proxy-Port muss eine Zahl zwischen 1 und 65535 sein",
+        "proxy_err_command_required" => "Proxy-Befehl ist erforderlich",
 
         _ => return None,
     })
@@ -1244,6 +1349,27 @@ fn it(key: &str) -> Option<&'static str> {
         "start_over" => "Ricomincia",
         "hk_add_question" => "Vuoi aggiungerlo alla lista degli host conosciuti?",
 
+        // Proxy
+        "proxy_type" => "Tipo di Proxy",
+        "proxy_host" => "Host del Proxy",
+        "proxy_port" => "Porta del Proxy",
+        "proxy_username" => "Utente",
+        "proxy_password" => "Password",
+        "proxy_command" => "Comando Proxy",
+        "proxy_type_none" => "Nessuno",
+        "proxy_type_socks5" => "SOCKS5",
+        "proxy_type_socks4" => "SOCKS4",
+        "proxy_type_http" => "HTTP CONNECT",
+        "proxy_type_command" => "Comando",
+        "proxy_host_placeholder" => "proxy.esempio.it",
+        "proxy_username_placeholder" => "utente",
+        "proxy_password_placeholder" => "password",
+        "proxy_password_existing" => "(invariata — digita per sostituire)",
+        "proxy_command_placeholder" => "ssh -W %h:%p bastion",
+        "proxy_err_host_required" => "L'host del proxy è obbligatorio",
+        "proxy_err_port_invalid" => "La porta del proxy deve essere un numero tra 1 e 65535",
+        "proxy_err_command_required" => "Il comando del proxy è obbligatorio",
+
         _ => return None,
     })
 }
@@ -1419,6 +1545,27 @@ fn zh(key: &str) -> Option<&'static str> {
         "select_file" => "选择文件...",
         "start_over" => "重新开始",
         "hk_add_question" => "您要将其添加到已知主机列表中吗？",
+
+        // Proxy
+        "proxy_type" => "代理类型",
+        "proxy_host" => "代理主机",
+        "proxy_port" => "代理端口",
+        "proxy_username" => "用户名",
+        "proxy_password" => "密码",
+        "proxy_command" => "代理命令",
+        "proxy_type_none" => "无",
+        "proxy_type_socks5" => "SOCKS5",
+        "proxy_type_socks4" => "SOCKS4",
+        "proxy_type_http" => "HTTP CONNECT",
+        "proxy_type_command" => "命令",
+        "proxy_host_placeholder" => "proxy.example.com",
+        "proxy_username_placeholder" => "用户",
+        "proxy_password_placeholder" => "密码",
+        "proxy_password_existing" => "（保持不变 — 输入以替换）",
+        "proxy_command_placeholder" => "ssh -W %h:%p bastion",
+        "proxy_err_host_required" => "代理主机不能为空",
+        "proxy_err_port_invalid" => "代理端口必须是 1 到 65535 之间的数字",
+        "proxy_err_command_required" => "代理命令不能为空",
 
         _ => return None,
     })
@@ -1596,6 +1743,27 @@ fn ja(key: &str) -> Option<&'static str> {
         "start_over" => "やり直す",
         "hk_add_question" => "既知のホストのリストに追加しますか？",
 
+        // Proxy
+        "proxy_type" => "プロキシタイプ",
+        "proxy_host" => "プロキシホスト",
+        "proxy_port" => "プロキシポート",
+        "proxy_username" => "ユーザー名",
+        "proxy_password" => "パスワード",
+        "proxy_command" => "プロキシコマンド",
+        "proxy_type_none" => "なし",
+        "proxy_type_socks5" => "SOCKS5",
+        "proxy_type_socks4" => "SOCKS4",
+        "proxy_type_http" => "HTTP CONNECT",
+        "proxy_type_command" => "コマンド",
+        "proxy_host_placeholder" => "proxy.example.com",
+        "proxy_username_placeholder" => "ユーザー",
+        "proxy_password_placeholder" => "パスワード",
+        "proxy_password_existing" => "（変更なし — 入力で上書き）",
+        "proxy_command_placeholder" => "ssh -W %h:%p bastion",
+        "proxy_err_host_required" => "プロキシホストは必須です",
+        "proxy_err_port_invalid" => "プロキシポートは 1 から 65535 の数値である必要があります",
+        "proxy_err_command_required" => "プロキシコマンドは必須です",
+
         _ => return None,
     })
 }
@@ -1771,6 +1939,27 @@ fn ru(key: &str) -> Option<&'static str> {
         "select_file" => "Выбрать файл...",
         "start_over" => "Начать заново",
         "hk_add_question" => "Хотите добавить его в список известных хостов?",
+
+        // Proxy
+        "proxy_type" => "Тип прокси",
+        "proxy_host" => "Хост прокси",
+        "proxy_port" => "Порт прокси",
+        "proxy_username" => "Имя пользователя",
+        "proxy_password" => "Пароль",
+        "proxy_command" => "Команда прокси",
+        "proxy_type_none" => "Нет",
+        "proxy_type_socks5" => "SOCKS5",
+        "proxy_type_socks4" => "SOCKS4",
+        "proxy_type_http" => "HTTP CONNECT",
+        "proxy_type_command" => "Команда",
+        "proxy_host_placeholder" => "proxy.example.com",
+        "proxy_username_placeholder" => "пользователь",
+        "proxy_password_placeholder" => "пароль",
+        "proxy_password_existing" => "(без изменений — введите для замены)",
+        "proxy_command_placeholder" => "ssh -W %h:%p bastion",
+        "proxy_err_host_required" => "Хост прокси обязателен",
+        "proxy_err_port_invalid" => "Порт прокси должен быть числом от 1 до 65535",
+        "proxy_err_command_required" => "Команда прокси обязательна",
 
         _ => return None,
     })

@@ -570,6 +570,84 @@ pub(crate) struct ConnectionForm {
     /// Forward the local ssh-agent socket to the remote shell. See the
     /// matching field on `Connection`.
     pub agent_forwarding: bool,
+    /// Proxy kind selection (None = disabled). The picker stores the
+    /// typed enum so language switches don't break selection identity.
+    pub proxy_kind: ProxyKind,
+    pub proxy_host: String,
+    pub proxy_port: String,
+    pub proxy_username: String,
+    pub proxy_password: String,
+    pub proxy_command: String,
+    /// Mirrors `has_existing_password` / `password_touched`: avoids
+    /// pre-loading the encrypted proxy password into form state on edit
+    /// and lets save distinguish "preserve" from "explicitly cleared".
+    pub has_existing_proxy_password: bool,
+    pub proxy_password_touched: bool,
+}
+
+/// UI-side proxy kind, including a `None` (disabled) variant. The
+/// model's `ProxyType` doesn't have a "disabled" — that's represented
+/// by `Connection.proxy = None`. We collapse those into one enum here
+/// to keep the picker simple.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ProxyKind {
+    None,
+    Socks5,
+    Socks4,
+    Http,
+    Command,
+}
+
+impl ProxyKind {
+    pub const ALL: &[ProxyKind] = &[
+        ProxyKind::None,
+        ProxyKind::Socks5,
+        ProxyKind::Socks4,
+        ProxyKind::Http,
+        ProxyKind::Command,
+    ];
+
+    /// i18n key for the localized label rendered in the picker.
+    pub fn label_key(&self) -> &'static str {
+        match self {
+            ProxyKind::None => "proxy_type_none",
+            ProxyKind::Socks5 => "proxy_type_socks5",
+            ProxyKind::Socks4 => "proxy_type_socks4",
+            ProxyKind::Http => "proxy_type_http",
+            ProxyKind::Command => "proxy_type_command",
+        }
+    }
+
+    /// Default port for the proxy type — pre-filled when the user
+    /// switches kind and the port field is still empty.
+    pub fn default_port(&self) -> Option<u16> {
+        match self {
+            ProxyKind::Socks5 | ProxyKind::Socks4 => Some(1080),
+            ProxyKind::Http => Some(8080),
+            ProxyKind::None | ProxyKind::Command => None,
+        }
+    }
+
+    /// Whether the host/port/username trio applies. `Command` runs a
+    /// process directly and `None` disables the proxy.
+    pub fn needs_endpoint(&self) -> bool {
+        matches!(self, ProxyKind::Socks5 | ProxyKind::Socks4 | ProxyKind::Http)
+    }
+
+    /// Whether a password field makes sense. SOCKS4 has no password
+    /// concept; Command and None don't either.
+    pub fn supports_password(&self) -> bool {
+        matches!(self, ProxyKind::Socks5 | ProxyKind::Http)
+    }
+}
+
+impl std::fmt::Display for ProxyKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // Localized at render time. The picker compares variants via
+        // PartialEq, so language switches do not invalidate the
+        // selected value.
+        write!(f, "{}", crate::i18n::t(self.label_key()))
+    }
 }
 
 #[derive(Debug, Clone, Default)]
@@ -600,6 +678,14 @@ impl Default for ConnectionForm {
             port_forwards: Vec::new(),
             mcp_enabled: true,
             agent_forwarding: false,
+            proxy_kind: ProxyKind::None,
+            proxy_host: String::new(),
+            proxy_port: String::new(),
+            proxy_username: String::new(),
+            proxy_password: String::new(),
+            proxy_command: String::new(),
+            has_existing_proxy_password: false,
+            proxy_password_touched: false,
         }
     }
 }

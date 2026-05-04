@@ -104,6 +104,12 @@ pub struct ProxyConfig {
     pub host: String,
     pub port: u16,
     pub username: Option<String>,
+    /// Proxy password. Hydrated in-memory by the vault
+    /// (`get_proxy_password`) right before connect. Marked `serde(skip)`
+    /// so it never lands in the `proxy` column (which is plaintext JSON)
+    /// — the credential lives in the encrypted `proxy_password` column.
+    #[serde(skip)]
+    pub password: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -154,12 +160,42 @@ mod tests {
             host: "proxy.local".into(),
             port: 1080,
             username: Some("user".into()),
+            password: None,
         };
 
         let json = serde_json::to_string(&proxy).unwrap();
         let de: ProxyConfig = serde_json::from_str(&json).unwrap();
         assert_eq!(de.proxy_type, ProxyType::Socks5);
         assert_eq!(de.port, 1080);
+        assert_eq!(de.username.as_deref(), Some("user"));
+        assert!(de.password.is_none());
+    }
+
+    /// `password` is `serde(skip)` — it must not appear in serialized
+    /// JSON nor be read back. This guards against credential leaks via
+    /// the plaintext `proxy` column.
+    #[test]
+    fn proxy_config_password_is_not_serialized() {
+        let proxy = ProxyConfig {
+            proxy_type: ProxyType::Http,
+            host: "proxy.local".into(),
+            port: 8080,
+            username: Some("u".into()),
+            password: Some("topsecret".into()),
+        };
+
+        let json = serde_json::to_string(&proxy).unwrap();
+        assert!(
+            !json.contains("topsecret"),
+            "password leaked into ProxyConfig JSON: {json}"
+        );
+        assert!(
+            !json.contains("password"),
+            "password key should not appear at all: {json}"
+        );
+
+        let de: ProxyConfig = serde_json::from_str(&json).unwrap();
+        assert!(de.password.is_none());
     }
 
     #[test]

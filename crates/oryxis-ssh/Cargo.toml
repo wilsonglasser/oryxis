@@ -12,6 +12,8 @@ tracing = { workspace = true }
 thiserror = { workspace = true }
 tokio-socks = "0.5"
 uuid = { workspace = true }
+# HTTP CONNECT Proxy-Authorization: Basic header
+base64 = { workspace = true }
 
 [dev-dependencies]
 # Spin up an ephemeral OpenSSH container per test for hermetic SFTP /

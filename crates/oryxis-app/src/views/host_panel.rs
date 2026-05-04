@@ -9,6 +9,7 @@ use oryxis_core::models::connection::AuthMethod;
 use oryxis_core::models::identity::Identity;
 
 use crate::app::{Message, Oryxis};
+use crate::state::ProxyKind;
 use crate::theme::OryxisColors;
 use crate::app::PANEL_WIDTH;
 use crate::widgets::{
@@ -381,6 +382,9 @@ impl Oryxis {
             ].align_y(iced::Alignment::Center),
         ]);
 
+        // ── Section: Proxy ──
+        let proxy_section = self.build_proxy_section();
+
         // ── Section: Port Forwarding ──
         let mut pf_items = column![
             row![
@@ -474,6 +478,8 @@ impl Oryxis {
                 Space::new().height(8),
                 advanced_section,
                 Space::new().height(8),
+                proxy_section,
+                Space::new().height(8),
                 port_forward_section,
                 Space::new().height(8),
                 panel_error,
@@ -499,5 +505,108 @@ impl Oryxis {
                 ..Default::default()
             })
             .into()
+    }
+
+    /// Build the Proxy section. Field visibility follows the proxy kind:
+    /// `None` shows just the picker, `Command` shows the picker + command,
+    /// `Socks4` adds host/port/username, `Socks5`/`Http` add a password.
+    fn build_proxy_section(&self) -> Element<'_, Message> {
+        let kind = self.editor_form.proxy_kind;
+
+        let picker = panel_field(
+            crate::i18n::t("proxy_type"),
+            pick_list(Some(kind), ProxyKind::ALL, |k: &ProxyKind| k.to_string())
+                .on_select(Message::EditorProxyKindChanged)
+                .padding(10)
+                .style(crate::widgets::rounded_pick_list_style)
+                .into(),
+        );
+
+        let mut col = column![picker];
+
+        if kind == ProxyKind::None {
+            return panel_section(col);
+        }
+
+        if kind == ProxyKind::Command {
+            col = col
+                .push(Space::new().height(8))
+                .push(panel_field(
+                    crate::i18n::t("proxy_command"),
+                    text_input(
+                        crate::i18n::t("proxy_command_placeholder"),
+                        &self.editor_form.proxy_command,
+                    )
+                    .on_input(Message::EditorProxyCommandChanged)
+                    .padding(10)
+                    .style(crate::widgets::rounded_input_style)
+                    .into(),
+                ));
+            return panel_section(col);
+        }
+
+        if kind.needs_endpoint() {
+            col = col
+                .push(Space::new().height(8))
+                .push(panel_field(
+                    crate::i18n::t("proxy_host"),
+                    text_input(
+                        crate::i18n::t("proxy_host_placeholder"),
+                        &self.editor_form.proxy_host,
+                    )
+                    .on_input(Message::EditorProxyHostChanged)
+                    .padding(10)
+                    .style(crate::widgets::rounded_input_style)
+                    .into(),
+                ))
+                .push(Space::new().height(8))
+                .push(panel_field(
+                    crate::i18n::t("proxy_port"),
+                    text_input("1080", &self.editor_form.proxy_port)
+                        .on_input(Message::EditorProxyPortChanged)
+                        .padding(6)
+                        .width(70)
+                        .style(crate::widgets::rounded_input_style)
+                        .into(),
+                ))
+                .push(Space::new().height(8))
+                .push(panel_field(
+                    crate::i18n::t("proxy_username"),
+                    text_input(
+                        crate::i18n::t("proxy_username_placeholder"),
+                        &self.editor_form.proxy_username,
+                    )
+                    .on_input(Message::EditorProxyUsernameChanged)
+                    .padding(10)
+                    .style(crate::widgets::rounded_input_style)
+                    .into(),
+                ));
+        }
+
+        if kind.supports_password() {
+            // Mirror the main connection-password UX: show a hint when
+            // the encrypted column already holds a value, and let the
+            // user clear or replace it via the touched flag.
+            let placeholder: &str = if self.editor_form.has_existing_proxy_password
+                && !self.editor_form.proxy_password_touched
+            {
+                crate::i18n::t("proxy_password_existing")
+            } else {
+                crate::i18n::t("proxy_password_placeholder")
+            };
+            col = col
+                .push(Space::new().height(8))
+                .push(panel_field(
+                    crate::i18n::t("proxy_password"),
+                    text_input(placeholder, &self.editor_form.proxy_password)
+                        .on_input(Message::EditorProxyPasswordChanged)
+                        .secure(true)
+                        .padding(10)
+                        .style(crate::widgets::rounded_input_style)
+                        .into(),
+                ));
+        }
+
+        panel_section(col)
     }
 }

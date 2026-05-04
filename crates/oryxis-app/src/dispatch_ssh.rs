@@ -36,7 +36,15 @@ impl Oryxis {
                 self.overlay = None;
                 // Close the new-tab picker if the connection was picked there.
                 self.show_new_tab_picker = false;
-                if let Some(conn) = self.connections.get(idx).cloned() {
+                if let Some(mut conn) = self.connections.get(idx).cloned() {
+                    // Hydrate proxy password from the encrypted vault column —
+                    // it isn't part of the persisted ProxyConfig JSON, so we
+                    // attach it in-memory just before the SSH engine consumes
+                    // the Connection.
+                    if let (Some(vault), Some(proxy)) = (self.vault.as_ref(), conn.proxy.as_mut()) {
+                        proxy.password = vault.get_proxy_password(&conn.id).ok().flatten();
+                    }
+
                     // Resolve credentials: prefer identity if linked, otherwise inline
                     let (password, private_key) = if let Some(iid) = conn.identity_id {
                         let id_pw = self.vault.as_ref()
