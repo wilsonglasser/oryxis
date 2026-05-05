@@ -148,15 +148,16 @@ impl Oryxis {
 }
 
 /// Toggle the sidebar between expanded and collapsed. Uses the
-/// `panel-left-{close,open}` lucide pair — a small rectangle with a
-/// vertical bar, animated open/closed depending on state. Reads as
-/// "sidebar panel" much faster than a generic `«` / `»` chevron, which
-/// is what we used to ship.
+/// `panel-left-{close,open}` (LTR) or `panel-right-{close,open}` (RTL)
+/// lucide pair — a small rectangle with a vertical bar, animated
+/// open/closed depending on state. Reads as "sidebar panel" much faster
+/// than a generic `«` / `»` chevron.
 pub(crate) fn sidebar_toggle_btn<'a>(expanded: bool) -> Element<'a, Message> {
-    let icon = if expanded {
-        iced_fonts::lucide::panel_left_close()
-    } else {
-        iced_fonts::lucide::panel_left_open()
+    let icon = match (crate::i18n::is_rtl_layout(), expanded) {
+        (false, true) => iced_fonts::lucide::panel_left_close(),
+        (false, false) => iced_fonts::lucide::panel_left_open(),
+        (true, true) => iced_fonts::lucide::panel_right_close(),
+        (true, false) => iced_fonts::lucide::panel_right_open(),
     };
     button(
         container(icon.size(15).color(OryxisColors::t().text_secondary))
