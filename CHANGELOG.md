@@ -6,6 +6,51 @@ project uses [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- **Proxy Identities** — reusable SOCKS5 / SOCKS4 / HTTP CONNECT proxy
+  configurations editable under `Settings → Proxies`, linkable from any
+  host via the host editor's integrated proxy picker. Password stored
+  in its own encrypted column.
+- **Authenticated proxies** — SOCKS5 username/password (RFC 1929) and
+  HTTP CONNECT Basic auth (RFC 7617). Proxy credentials live in the
+  encrypted `proxy_password` column, never in the plaintext `proxy`
+  JSON.
+- **Jump host + proxy stacking** — a jump host that itself sits behind
+  a proxy now dials through that proxy on the first hop; subsequent
+  hops keep using the SSH tunnel.
+- **`~/.ssh/config` import** — `ProxyCommand` is mapped to a typed
+  `Command` proxy; `ProxyJump alias` is auto-resolved against other
+  imported aliases (unresolved aliases land in `Connection.notes` for
+  manual fix).
+- **Opt-in password sync** — new toggle in `Settings → Sync` mirrors
+  connection / identity / proxy passwords across paired devices when
+  on (off by default). Wire format is forward + backward compatible
+  with older peers.
+- **Portable export round-trips proxy data** — `.oryxis` files now
+  carry `ExportProxyIdentity` rows and `ExportConnection.proxy_password`,
+  so a fresh device imports working proxy auth out of the box.
+- **Persian (فارسی) and Arabic (العربية) UI translations** — both
+  fully translated. `Language::is_rtl()` covers both.
+- **Layout direction setting** — `Settings → Theme` exposes Auto /
+  Left-to-Right / Right-to-Left. Auto follows the active language;
+  explicit values override regardless.
+- **Workspace-wide RTL layout pass** — `widgets::dir_row` and
+  `dir_align_x()` mirror sidebars, tab bar, host / key / identity /
+  folder cards, history rows, settings sidebar, keychain split button
+  corners, and window controls under RTL. `panel_right_*` icons swap
+  in for the sidebar collapse toggle.
+
+### Changed
+- **Folder, key and identity cards now hide the `⋮` menu until the
+  card is hovered**, matching the existing host-card behaviour. Keeps
+  the cards clean at rest and stops the button from competing with
+  trailing-edge text under RTL.
+- **Keychain scrollable padding** trimmed so the scrollbar reads as
+  flush against the panel edge instead of floating in dead space.
+- **Sidebar nav** is now wrapped in a `scrollable` so the bottom
+  entries stay reachable when the window is short enough to clip the
+  list.
+
 ## [0.5.5] - 2026-04-28
 
 ### Fixed

@@ -100,9 +100,45 @@ payload (`#[serde(skip_serializing_if = "Option::is_none")]`).
 
 All user-facing strings go through `crate::i18n::t("key")`. The English
 table in `i18n::en` always returns a value (`_ => "???"` fallback);
-the other 8 languages return `Option<&'static str>` and fall back to
-English on `None`. New keys must be added to **all 9** language
+the other 10 languages return `Option<&'static str>` and fall back to
+English on `None`. New keys must be added to **all 11** language
 functions.
+
+The 11 languages today: English, Português (BR), Spanish, French,
+German, Italian, Chinese, Japanese, Russian, Persian (`fa`), Arabic
+(`ar`). Persian and Arabic flip `Language::is_rtl()`.
+
+### RTL layout
+
+`crate::i18n::is_rtl_layout()` resolves the user's `LayoutDirection`
+setting (`Auto` defers to `Language::is_rtl()`; explicit
+`LeftToRight` / `RightToLeft` overrides). Use this signal — never
+match on language directly — when writing direction-aware code.
+
+Two `widgets` helpers cover the common cases:
+
+- `widgets::dir_row(items)` builds a `Row` whose children are
+  reversed under RTL. Use anywhere the *physical* placement of
+  widgets should mirror — sidebar/content split, leading/trailing
+  icon pairs, toolbar action buttons. Don't use `iced::widget::row!`
+  for these — the macro can't be reversed after construction.
+- `widgets::dir_align_x()` returns `Horizontal::Right` under RTL
+  and `Horizontal::Left` otherwise. Apply to `Column::align_x()` /
+  `Container::align_x()` when a `Length::Fill` child should hug the
+  *leading* edge instead of the physical left edge. Note that the
+  parent column / container also needs `Length::Fill` width — without
+  slack to align inside, the alignment has no effect.
+
+For the keychain split-button "+ ADD ▼" pattern, the rounded outer
+corners need to swap sides under RTL too — compute `Radius` from
+`is_rtl_layout()` rather than hard-coding LTR corner positions.
+
+iced doesn't auto-flip text alignment in `Length::Fill` containers,
+icon glyphs, or scrollbar position. The first two are handled by
+`dir_align_x()` (alignment) and `panel_right_*` icons (the sidebar
+collapse glyph swaps from `panel_left_close/open`). Scrollbar
+position remains physical-right and isn't fixable from the iced
+0.13/0.14 API.
 
 ### Iced patterns specific to the wilsonglasser fork
 
@@ -154,7 +190,7 @@ Notable settings:
    `portable.rs`, include in `ExportPayload`, populate during export,
    apply during import.
 6. UI: dispatcher (`dispatch_<area>.rs`), view, messages enum, app
-   state fields, boot defaults, i18n keys × 9 languages.
+   state fields, boot defaults, i18n keys × all 11 languages.
 
 ## When in doubt
 

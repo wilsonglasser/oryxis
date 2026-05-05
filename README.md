@@ -20,7 +20,7 @@
 </p>
 
 <p align="center">
-  🌐 English · Português · Español · Français · Deutsch · Italiano · 中文 · 日本語 · Русский
+  🌐 English · Português · Español · Français · Deutsch · Italiano · 中文 · 日本語 · Русский · فارسی · العربية
 </p>
 
 ---
@@ -153,7 +153,8 @@ Most SSH clients are either powerful but ugly (PuTTY), pretty but Electron-heavy
 - **12 global themes** — Oryxis Dark / Light, Termius, Darcula, Islands Dark, Dracula, Monokai, Hacker Green, Nord, Nord Light, Solarized Light, Paper Light. Changes entire UI instantly.
 - **Per-theme button colors** — Every theme defines a `button_bg` / `button_text` pair so primary CTAs (`+ HOST`, `New Snippet`, modal Save, etc.) keep readable foregrounds across the whole palette.
 - **WCAG contrast guards** — Unit tests iterate every theme and assert text-on-surface and button label contrast against AA bounds; bad picks fail CI before they ship.
-- **9 languages** — English, Português (Brasil), Español, Français, Deutsch, Italiano, 中文, 日本語, Русский.
+- **11 languages** — English, Português (Brasil), Español, Français, Deutsch, Italiano, 中文, 日本語, Русский, فارسی, العربية.
+- **RTL layout support** — Persian and Arabic flip the chrome (sidebar position, tab bar order, history rows, keychain cards, window controls) automatically. `Settings → Theme → Layout direction` overrides the language-driven default with explicit Auto / LTR / RTL.
 - **Floating overlay menus** — Context menus float over content with click-outside-to-dismiss.
 - **Theme + language honored on the lock screen** — Settings live in the plaintext settings table, so the unlock / setup screen already renders in the chosen theme before the vault is open.
 
@@ -293,7 +294,7 @@ cargo test --workspace
 7. **MCP Server** — Enable in Settings > Security, configure in your AI client
 8. **P2P Sync** — Settings > Sync to pair devices and sync vault data
 9. **Themes** — Switch in Settings (Oryxis Dark, Light, Dracula, Nord)
-10. **Language** — Change in Settings > Theme (9 languages available)
+10. **Language** — Change in Settings > Theme (11 languages available, including Persian and Arabic with RTL layout)
 
 ### MCP Server Setup
 
@@ -366,7 +367,8 @@ The signaling server only stores `device_id -> IP:port` with a 5-minute TTL. It 
 | **v0.2** | **Released** | Export/Import, MCP server, P2P sync, port forwarding |
 | **v0.3** | **Released** | SFTP browser (dual-pane, drag/drop, multi-select, edit-in-place, properties, queue), tab overflow + jump-to modal |
 | **v0.4** | **Released** | Streaming AI responses, SSH agent forwarding, SSH integration tests, `app.rs` / `dispatch.rs` split into per-domain modules, theme contrast pass + per-theme button colors |
-| **v0.5** | Planned | Split panes, biometric unlock, custom themes |
+| **v0.5** | **Released** | Authenticated proxies (SOCKS5 / HTTP CONNECT Basic), reusable Proxy Identities, jump-host-via-proxy stacking, `~/.ssh/config` `ProxyCommand` + `ProxyJump` import, opt-in password sync, Persian + Arabic UI with workspace-wide RTL layout pass, packaging + winget fixes |
+| **v0.6** | Planned | Split panes, biometric unlock, custom themes |
 
 ## Contributing
 
