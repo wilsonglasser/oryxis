@@ -3,12 +3,13 @@
 //! for a progress bar; errors stay inline in the same card.
 
 use iced::border::Radius;
-use iced::widget::{column, container, row, scrollable, text, MouseArea, Space};
+use iced::widget::{column, container, scrollable, text, MouseArea, Space};
 use iced::{Background, Border, Element, Length, Padding};
 
 use crate::app::{Message, Oryxis};
+use crate::i18n::t;
 use crate::theme::OryxisColors;
-use crate::widgets::styled_button;
+use crate::widgets::{dir_row, styled_button};
 
 impl Oryxis {
     pub(crate) fn view_update_modal(&self) -> Element<'_, Message> {
@@ -18,14 +19,18 @@ impl Oryxis {
         };
 
         let current = env!("CARGO_PKG_VERSION");
-        let title = text("Update available").size(18).font(iced::Font {
+        let title = text(t("update_available")).size(18).font(iced::Font {
             weight: iced::font::Weight::Bold,
             ..iced::Font::new(crate::theme::SYSTEM_UI_FAMILY)
         }).color(OryxisColors::t().text_primary);
 
-        let subtitle = text(format!("Oryxis {} is available. You're on {}.", info.version, current))
-            .size(12)
-            .color(OryxisColors::t().text_secondary);
+        let subtitle = text(
+            t("update_subtitle")
+                .replacen("{new}", &info.version, 1)
+                .replacen("{current}", current, 1),
+        )
+        .size(12)
+        .color(OryxisColors::t().text_secondary);
 
         // Release notes preview — first ~40 lines, in a scrollable box so
         // long changelogs don't bloat the modal. Rendered as plain text
@@ -59,7 +64,7 @@ impl Oryxis {
         };
 
         let release_link = MouseArea::new(
-            text("Open release page on GitHub")
+            text(t("open_release_github"))
                 .size(11)
                 .color(OryxisColors::t().accent),
         )
@@ -85,39 +90,39 @@ impl Oryxis {
                 ..Default::default()
             });
             column![
-                text(format!("Downloading installer… {}%", pct))
+                text(format!("{} {}%", t("downloading_installer"), pct))
                     .size(11).color(OryxisColors::t().text_muted),
                 Space::new().height(8),
                 bar,
             ]
             .into()
         } else {
-            row![
+            dir_row(vec![
                 styled_button(
-                    "Skip this version",
+                    t("update_skip_version"),
                     Message::UpdateSkipVersion,
                     OryxisColors::t().bg_selected,
                 ),
-                Space::new().width(Length::Fill),
+                Space::new().width(Length::Fill).into(),
                 styled_button(
-                    "Later",
+                    t("update_later"),
                     Message::UpdateLater,
                     OryxisColors::t().bg_hover,
                 ),
-                Space::new().width(8),
+                Space::new().width(8).into(),
                 styled_button(
-                    "Update now",
+                    t("update_now"),
                     Message::UpdateStartDownload,
                     OryxisColors::t().accent,
                 ),
-            ]
+            ])
             .align_y(iced::Alignment::Center)
             .into()
         };
 
         let error_line: Element<'_, Message> = if let Some(err) = &self.update_error {
             container(
-                text(format!("Error: {}", err))
+                text(format!("{}: {}", t("error"), err))
                     .size(11)
                     .color(OryxisColors::t().error),
             )

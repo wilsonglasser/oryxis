@@ -4,7 +4,7 @@
 //! error). The main app layout embeds the controls inside `view_tab_bar`.
 
 use iced::widget::button::Status as BtnStatus;
-use iced::widget::{button, container, row, MouseArea, Space};
+use iced::widget::{button, container, MouseArea, Space};
 use iced::{Background, Border, Color, Element, Length};
 use iced_fonts::codicon as cd;
 
@@ -31,16 +31,18 @@ pub(crate) fn window_chrome_bar<'a>() -> Element<'a, Message> {
 
     // Lock screen doesn't know whether the window is currently maximized; the
     // toggle works either way, so we always show the maximize glyph here.
-    let controls: Element<'_, Message> = row![
+    // `dir_row` flips the trio under RTL so close ends up on the leading edge.
+    let controls: Element<'_, Message> = crate::widgets::dir_row(vec![
         chrome_btn(cd::chrome_minimize(), Message::WindowMinimize, OryxisColors::t().text_secondary),
         chrome_btn(cd::chrome_maximize(), Message::WindowMaximizeToggle, OryxisColors::t().text_secondary),
         chrome_btn(cd::chrome_close(), Message::WindowClose, OryxisColors::t().error),
-    ]
+    ])
     .align_y(iced::Alignment::Center)
     .into();
 
     container(
-        row![drag_region, controls].align_y(iced::Alignment::Center),
+        crate::widgets::dir_row(vec![drag_region, controls])
+            .align_y(iced::Alignment::Center),
     )
     .width(Length::Fill)
     .style(|_| container::Style {

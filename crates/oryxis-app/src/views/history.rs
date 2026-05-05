@@ -28,37 +28,38 @@ impl Oryxis {
         let prev_btn = nav_btn(iced_fonts::lucide::chevron_left(), Message::LogsPagePrev, can_prev);
         let next_btn = nav_btn(iced_fonts::lucide::chevron_right(), Message::LogsPageNext, can_next);
 
+        let clear_btn = button(
+            container(text(crate::i18n::t("clear").to_uppercase()).size(11).font(iced::Font {
+                weight: iced::font::Weight::Bold,
+                ..iced::Font::new(crate::theme::SYSTEM_UI_FAMILY)
+            }).color(OryxisColors::t().text_muted))
+                .center_y(Length::Fixed(24.0))
+                .padding(Padding { top: 0.0, right: 14.0, bottom: 0.0, left: 14.0 }),
+        )
+        .on_press(Message::ClearLogs)
+        .style(|_, status| {
+            let bg = match status {
+                BtnStatus::Hovered => Color { a: 0.15, ..OryxisColors::t().error },
+                _ => Color::TRANSPARENT,
+            };
+            button::Style {
+                background: Some(Background::Color(bg)),
+                border: Border { radius: Radius::from(6.0), color: OryxisColors::t().border, width: 1.0 },
+                ..Default::default()
+            }
+        });
         let toolbar = container(
-            row![
-                text(crate::i18n::t("history")).size(20).color(OryxisColors::t().text_primary),
-                Space::new().width(Length::Fill),
-                text(range_label).size(11).color(OryxisColors::t().text_muted),
-                Space::new().width(8),
+            crate::widgets::dir_row(vec![
+                text(crate::i18n::t("history")).size(20).color(OryxisColors::t().text_primary).into(),
+                Space::new().width(Length::Fill).into(),
+                text(range_label).size(11).color(OryxisColors::t().text_muted).into(),
+                Space::new().width(8).into(),
                 prev_btn,
-                Space::new().width(4),
+                Space::new().width(4).into(),
                 next_btn,
-                Space::new().width(12),
-                button(
-                    container(text(crate::i18n::t("clear").to_uppercase()).size(11).font(iced::Font {
-                        weight: iced::font::Weight::Bold,
-                        ..iced::Font::new(crate::theme::SYSTEM_UI_FAMILY)
-                    }).color(OryxisColors::t().text_muted))
-                        .center_y(Length::Fixed(24.0))
-                        .padding(Padding { top: 0.0, right: 14.0, bottom: 0.0, left: 14.0 }),
-                )
-                .on_press(Message::ClearLogs)
-                .style(|_, status| {
-                    let bg = match status {
-                        BtnStatus::Hovered => Color { a: 0.15, ..OryxisColors::t().error },
-                        _ => Color::TRANSPARENT,
-                    };
-                    button::Style {
-                        background: Some(Background::Color(bg)),
-                        border: Border { radius: Radius::from(6.0), color: OryxisColors::t().border, width: 1.0 },
-                        ..Default::default()
-                    }
-                }),
-            ].align_y(iced::Alignment::Center),
+                Space::new().width(12).into(),
+                clear_btn.into(),
+            ]).align_y(iced::Alignment::Center),
         )
         .padding(Padding { top: 20.0, right: 24.0, bottom: 16.0, left: 24.0 })
         .width(Length::Fill);
@@ -95,20 +96,20 @@ impl Oryxis {
             let ts = entry.timestamp.with_timezone(&chrono::Local).format("%Y-%m-%d %H:%M:%S").to_string();
 
             let log_row = container(
-                row![
-                    event_icon.size(14).color(event_color),
-                    Space::new().width(12),
+                crate::widgets::dir_row(vec![
+                    event_icon.size(14).color(event_color).into(),
+                    Space::new().width(12).into(),
                     column![
-                        row![
-                            text(&entry.connection_label).size(13).color(OryxisColors::t().text_primary),
-                            Space::new().width(8),
-                            text(format!("{}", entry.event)).size(11).color(event_color),
-                        ].align_y(iced::Alignment::Center),
+                        crate::widgets::dir_row(vec![
+                            text(&entry.connection_label).size(13).color(OryxisColors::t().text_primary).into(),
+                            Space::new().width(8).into(),
+                            text(format!("{}", entry.event)).size(11).color(event_color).into(),
+                        ]).align_y(iced::Alignment::Center),
                         Space::new().height(2),
                         text(&entry.message).size(11).color(OryxisColors::t().text_muted),
-                    ].width(Length::Fill),
-                    text(ts).size(10).color(OryxisColors::t().text_muted),
-                ].align_y(iced::Alignment::Center),
+                    ].width(Length::Fill).into(),
+                    text(ts).size(10).color(OryxisColors::t().text_muted).into(),
+                ]).align_y(iced::Alignment::Center),
             )
             .padding(Padding { top: 8.0, right: 16.0, bottom: 8.0, left: 16.0 })
             .width(Length::Fill)
@@ -161,55 +162,57 @@ impl Oryxis {
             let size_str = format_data_size(entry.data_size);
             let log_id = entry.id;
 
+            let view_btn = button(
+                container(text(crate::i18n::t("view")).size(11).color(OryxisColors::t().accent))
+                    .padding(Padding { top: 4.0, right: 10.0, bottom: 4.0, left: 10.0 }),
+            )
+            .on_press(Message::ViewSessionLog(log_id))
+            .style(|_, status| {
+                let bg = match status {
+                    BtnStatus::Hovered => Color { a: 0.15, ..OryxisColors::t().accent },
+                    _ => Color::TRANSPARENT,
+                };
+                button::Style {
+                    background: Some(Background::Color(bg)),
+                    border: Border { radius: Radius::from(6.0), color: OryxisColors::t().accent, width: 1.0 },
+                    ..Default::default()
+                }
+            });
+            let delete_btn = button(
+                container(text(crate::i18n::t("delete")).size(11).color(OryxisColors::t().error))
+                    .padding(Padding { top: 4.0, right: 10.0, bottom: 4.0, left: 10.0 }),
+            )
+            .on_press(Message::DeleteSessionLog(idx))
+            .style(|_, status| {
+                let bg = match status {
+                    BtnStatus::Hovered => Color { a: 0.15, ..OryxisColors::t().error },
+                    _ => Color::TRANSPARENT,
+                };
+                button::Style {
+                    background: Some(Background::Color(bg)),
+                    border: Border { radius: Radius::from(6.0), color: OryxisColors::t().error, width: 1.0 },
+                    ..Default::default()
+                }
+            });
             let session_row = container(
-                row![
-                    iced_fonts::lucide::file_text().size(14).color(OryxisColors::t().accent),
-                    Space::new().width(12),
+                crate::widgets::dir_row(vec![
+                    iced_fonts::lucide::file_text().size(14).color(OryxisColors::t().accent).into(),
+                    Space::new().width(12).into(),
                     column![
                         text(&entry.label).size(13).color(OryxisColors::t().text_primary),
                         Space::new().height(2),
-                        row![
-                            text(ts).size(10).color(OryxisColors::t().text_muted),
-                            Space::new().width(12),
-                            text(duration).size(10).color(OryxisColors::t().text_muted),
-                            Space::new().width(12),
-                            text(size_str).size(10).color(OryxisColors::t().text_muted),
-                        ],
-                    ].width(Length::Fill),
-                    button(
-                        container(text(crate::i18n::t("view")).size(11).color(OryxisColors::t().accent))
-                            .padding(Padding { top: 4.0, right: 10.0, bottom: 4.0, left: 10.0 }),
-                    )
-                    .on_press(Message::ViewSessionLog(log_id))
-                    .style(|_, status| {
-                        let bg = match status {
-                            BtnStatus::Hovered => Color { a: 0.15, ..OryxisColors::t().accent },
-                            _ => Color::TRANSPARENT,
-                        };
-                        button::Style {
-                            background: Some(Background::Color(bg)),
-                            border: Border { radius: Radius::from(6.0), color: OryxisColors::t().accent, width: 1.0 },
-                            ..Default::default()
-                        }
-                    }),
-                    Space::new().width(8),
-                    button(
-                        container(text(crate::i18n::t("delete")).size(11).color(OryxisColors::t().error))
-                            .padding(Padding { top: 4.0, right: 10.0, bottom: 4.0, left: 10.0 }),
-                    )
-                    .on_press(Message::DeleteSessionLog(idx))
-                    .style(|_, status| {
-                        let bg = match status {
-                            BtnStatus::Hovered => Color { a: 0.15, ..OryxisColors::t().error },
-                            _ => Color::TRANSPARENT,
-                        };
-                        button::Style {
-                            background: Some(Background::Color(bg)),
-                            border: Border { radius: Radius::from(6.0), color: OryxisColors::t().error, width: 1.0 },
-                            ..Default::default()
-                        }
-                    }),
-                ].align_y(iced::Alignment::Center),
+                        crate::widgets::dir_row(vec![
+                            text(ts).size(10).color(OryxisColors::t().text_muted).into(),
+                            Space::new().width(12).into(),
+                            text(duration).size(10).color(OryxisColors::t().text_muted).into(),
+                            Space::new().width(12).into(),
+                            text(size_str).size(10).color(OryxisColors::t().text_muted).into(),
+                        ]),
+                    ].width(Length::Fill).into(),
+                    view_btn.into(),
+                    Space::new().width(8).into(),
+                    delete_btn.into(),
+                ]).align_y(iced::Alignment::Center),
             )
             .padding(Padding { top: 8.0, right: 16.0, bottom: 8.0, left: 16.0 })
             .width(Length::Fill)

@@ -2,11 +2,13 @@
 
 use iced::border::Radius;
 use iced::widget::button::Status as BtnStatus;
-use iced::widget::{button, column, container, row, scrollable, text, Space};
+use iced::widget::{button, column, container, scrollable, text, Space};
 use iced::{Background, Border, Color, Element, Length, Padding};
 
 use crate::app::{Message, Oryxis};
+use crate::i18n::t;
 use crate::theme::OryxisColors;
+use crate::widgets::dir_row;
 
 impl Oryxis {
     pub(crate) fn view_known_hosts(&self) -> Element<'_, Message> {
@@ -17,14 +19,14 @@ impl Oryxis {
         let clear_all_btn: Element<'_, Message> = if has_entries {
             button(
                 container(
-                    row![
-                        iced_fonts::lucide::trash().size(12).color(OryxisColors::t().error),
-                        Space::new().width(6),
-                        text("Re-verify all").size(11).font(iced::Font {
+                    dir_row(vec![
+                        iced_fonts::lucide::trash().size(12).color(OryxisColors::t().error).into(),
+                        Space::new().width(6).into(),
+                        text(t("re_verify_all")).size(11).font(iced::Font {
                             weight: iced::font::Weight::Bold,
                             ..iced::Font::new(crate::theme::SYSTEM_UI_FAMILY)
-                        }).color(OryxisColors::t().error),
-                    ].align_y(iced::Alignment::Center),
+                        }).color(OryxisColors::t().error).into(),
+                    ]).align_y(iced::Alignment::Center),
                 )
                 .center_y(Length::Fixed(24.0))
                 .padding(Padding { top: 0.0, right: 12.0, bottom: 0.0, left: 10.0 }),
@@ -47,11 +49,11 @@ impl Oryxis {
         };
 
         let toolbar = container(
-            row![
-                text("Known Hosts").size(20).color(OryxisColors::t().text_primary),
-                Space::new().width(Length::Fill),
+            dir_row(vec![
+                text(t("known_hosts")).size(20).color(OryxisColors::t().text_primary).into(),
+                Space::new().width(Length::Fill).into(),
                 clear_all_btn,
-            ].align_y(iced::Alignment::Center),
+            ]).align_y(iced::Alignment::Center),
         )
         .padding(Padding { top: 20.0, right: 24.0, bottom: 16.0, left: 24.0 })
         .width(Length::Fill);
@@ -62,10 +64,10 @@ impl Oryxis {
             rows.push(
                 container(
                     column![
-                        text("No known hosts yet. Entries appear here when you connect and approve a host's fingerprint.")
+                        text(t("no_known_hosts_yet"))
                             .size(13).color(OryxisColors::t().text_muted),
                         Space::new().height(8),
-                        text("Remove an entry to force the verification dialog to appear again on the next connect.")
+                        text(t("known_hosts_remove_hint"))
                             .size(12).color(OryxisColors::t().text_muted),
                     ],
                 )
@@ -85,14 +87,14 @@ impl Oryxis {
             // Trash button: icon + label, visible hover state in error red.
             let del_btn = button(
                 container(
-                    row![
-                        iced_fonts::lucide::trash().size(12).color(OryxisColors::t().error),
-                        Space::new().width(6),
-                        text("Remove").size(11).font(iced::Font {
+                    dir_row(vec![
+                        iced_fonts::lucide::trash().size(12).color(OryxisColors::t().error).into(),
+                        Space::new().width(6).into(),
+                        text(t("remove")).size(11).font(iced::Font {
                             weight: iced::font::Weight::Bold,
                             ..iced::Font::new(crate::theme::SYSTEM_UI_FAMILY)
-                        }).color(OryxisColors::t().error),
-                    ].align_y(iced::Alignment::Center),
+                        }).color(OryxisColors::t().error).into(),
+                    ]).align_y(iced::Alignment::Center),
                 )
                 .center_y(Length::Fixed(22.0))
                 .padding(Padding { top: 0.0, right: 8.0, bottom: 0.0, left: 8.0 }),
@@ -111,18 +113,18 @@ impl Oryxis {
             });
 
             let entry = container(
-                row![
-                    iced_fonts::lucide::shield_check().size(14).color(OryxisColors::t().success),
-                    Space::new().width(12),
+                dir_row(vec![
+                    iced_fonts::lucide::shield_check().size(14).color(OryxisColors::t().success).into(),
+                    Space::new().width(12).into(),
                     column![
                         text(format!("{}:{}", kh.hostname, kh.port)).size(13).color(OryxisColors::t().text_primary),
                         Space::new().height(2),
                         text(format!("{} · {}", kh.key_type, fp_short)).size(10).color(OryxisColors::t().text_muted).font(iced::Font::MONOSPACE),
                         Space::new().height(2),
-                        text(format!("Last seen: {}", seen)).size(10).color(OryxisColors::t().text_muted),
-                    ].width(Length::Fill),
-                    del_btn,
-                ].align_y(iced::Alignment::Center),
+                        text(format!("{} {}", t("last_seen"), seen)).size(10).color(OryxisColors::t().text_muted),
+                    ].width(Length::Fill).into(),
+                    del_btn.into(),
+                ]).align_y(iced::Alignment::Center),
             )
             .padding(Padding { top: 10.0, right: 16.0, bottom: 10.0, left: 16.0 })
             .width(Length::Fill)

@@ -1,14 +1,16 @@
 //! Dashboard — folders/hosts grid.
 
 use iced::border::Radius;
-use iced::widget::{button, column, container, row, scrollable, text, text_input, MouseArea, Space};
+use iced::widget::{button, column, container, scrollable, text, text_input, MouseArea, Space};
 use iced::widget::button::Status as BtnStatus;
 use iced::{Background, Border, Color, Element, Length, Padding};
 
 use oryxis_core::models::connection::AuthMethod;
 
 use crate::app::{Message, Oryxis, CARD_WIDTH};
+use crate::i18n::t;
 use crate::theme::OryxisColors;
+use crate::widgets::dir_row;
 
 impl Oryxis {
     pub(crate) fn view_dashboard(&self) -> Element<'_, Message> {
@@ -17,14 +19,14 @@ impl Oryxis {
             let group_name = self.groups.iter()
                 .find(|g| g.id == gid)
                 .map(|g| g.label.as_str())
-                .unwrap_or("Group");
-            row![
+                .unwrap_or(t("group_fallback_label"));
+            dir_row(vec![
                 button(
-                    row![
-                        iced_fonts::lucide::arrow_left().size(14).color(OryxisColors::t().accent),
-                        Space::new().width(6),
-                        text(crate::i18n::t("all_hosts")).size(14).color(OryxisColors::t().accent),
-                    ].align_y(iced::Alignment::Center),
+                    dir_row(vec![
+                        iced_fonts::lucide::arrow_left().size(14).color(OryxisColors::t().accent).into(),
+                        Space::new().width(6).into(),
+                        text(t("all_hosts")).size(14).color(OryxisColors::t().accent).into(),
+                    ]).align_y(iced::Alignment::Center),
                 )
                 .on_press(Message::BackToRoot)
                 .padding(Padding { top: 4.0, right: 10.0, bottom: 4.0, left: 10.0 })
@@ -32,36 +34,36 @@ impl Oryxis {
                     background: Some(Background::Color(Color::TRANSPARENT)),
                     border: Border::default(),
                     ..Default::default()
-                }),
-                text("/").size(16).color(OryxisColors::t().text_muted),
-                Space::new().width(8),
-                iced_fonts::lucide::folder().size(16).color(OryxisColors::t().accent),
-                Space::new().width(6),
-                text(group_name).size(16).color(OryxisColors::t().text_primary),
-            ].align_y(iced::Alignment::Center).into()
+                }).into(),
+                text("/").size(16).color(OryxisColors::t().text_muted).into(),
+                Space::new().width(8).into(),
+                iced_fonts::lucide::folder().size(16).color(OryxisColors::t().accent).into(),
+                Space::new().width(6).into(),
+                text(group_name).size(16).color(OryxisColors::t().text_primary).into(),
+            ]).align_y(iced::Alignment::Center).into()
         } else {
-            text("Hosts").size(20).color(OryxisColors::t().text_primary).into()
+            text(t("hosts")).size(20).color(OryxisColors::t().text_primary).into()
         };
 
         let toolbar = container(
-            row![
+            dir_row(vec![
                 toolbar_left,
-                Space::new().width(Length::Fill),
+                Space::new().width(Length::Fill).into(),
                 {
                     let fg = OryxisColors::t().button_text;
                     button(
                         container(
-                            row![
+                            dir_row(vec![
                                 text("+").size(13).font(iced::Font {
                                     weight: iced::font::Weight::Bold,
                                     ..iced::Font::new(crate::theme::SYSTEM_UI_FAMILY)
-                                }).color(fg),
-                                Space::new().width(4),
-                                text("HOST").size(11).font(iced::Font {
+                                }).color(fg).into(),
+                                Space::new().width(4).into(),
+                                text(t("host_btn")).size(11).font(iced::Font {
                                     weight: iced::font::Weight::Bold,
                                     ..iced::Font::new(crate::theme::SYSTEM_UI_FAMILY)
-                                }).color(fg),
-                            ].align_y(iced::Alignment::Center),
+                                }).color(fg).into(),
+                            ]).align_y(iced::Alignment::Center),
                         )
                         .center_y(Length::Fixed(24.0))
                         .padding(Padding { top: 0.0, right: 14.0, bottom: 0.0, left: 14.0 }),
@@ -77,16 +79,16 @@ impl Oryxis {
                             border: Border { radius: Radius::from(6.0), ..Default::default() },
                             ..Default::default()
                         }
-                    })
+                    }).into()
                 },
-            ].align_y(iced::Alignment::Center),
+            ]).align_y(iced::Alignment::Center),
         )
         .padding(Padding { top: 20.0, right: 24.0, bottom: 16.0, left: 24.0 })
         .width(Length::Fill);
 
         // ── Search bar ──
         let search_bar = container(
-            text_input("Search hosts...", &self.host_search)
+            text_input(t("search_hosts"), &self.host_search)
                 .on_input(Message::HostSearchChanged)
                 .padding(10)
                 .size(13)
@@ -130,7 +132,7 @@ impl Oryxis {
                         .size(13).color(OryxisColors::t().text_muted),
                     Space::new().height(24),
                     // Hostname input
-                    text_input("Type IP or Hostname", &self.quick_host_input)
+                    text_input(t("type_ip_or_hostname"), &self.quick_host_input)
                         .on_input(Message::QuickHostInput)
                         .on_submit(Message::QuickHostContinue)
                         .padding(14)
@@ -162,7 +164,7 @@ impl Oryxis {
 
             if self.show_host_panel {
                 let panel = self.view_host_panel();
-                return row![main_content, panel]
+                return dir_row(vec![main_content.into(), panel])
                     .width(Length::Fill)
                     .height(Length::Fill)
                     .into();
@@ -180,7 +182,10 @@ impl Oryxis {
                         && let Some(group) = self.groups.iter().find(|g| g.id == gid) {
                             let count = self.connections.iter().filter(|c| c.group_id == Some(gid)).count();
                             let label = group.label.clone();
-                            let count_text = format!("{} host{}", count, if count != 1 { "s" } else { "" });
+                            // Plural form differs across languages (English
+                            // pluralizes, Persian/Chinese/Japanese don't); use
+                            // the bare i18n word so every locale stays correct.
+                            let count_text = format!("{} {}", count, t("hosts").to_lowercase());
 
                             // Folder card — matches host card layout (square icon,
                             // same padding and hover feedback).
@@ -220,16 +225,16 @@ impl Oryxis {
 
                             let folder_card = button(
                                 container(
-                                    row![
-                                        icon_box,
-                                        Space::new().width(8),
+                                    dir_row(vec![
+                                        icon_box.into(),
+                                        Space::new().width(8).into(),
                                         column![
                                             text(label).size(13).color(OryxisColors::t().text_primary),
                                             Space::new().height(2),
                                             text(count_text).size(10).color(OryxisColors::t().text_muted),
-                                        ].width(Length::Fill),
+                                        ].width(Length::Fill).into(),
                                         actions_btn,
-                                    ].align_y(iced::Alignment::Center),
+                                    ]).align_y(iced::Alignment::Center),
                                 )
                                 .padding(Padding { top: 8.0, right: 6.0, bottom: 8.0, left: 8.0 }),
                             )
@@ -272,11 +277,11 @@ impl Oryxis {
 
             let is_connected = self.tabs.iter().any(|t| t.label == conn.label);
             let auth_label = match conn.auth_method {
-                AuthMethod::Auto => "Auto",
-                AuthMethod::Password => "Password",
-                AuthMethod::Key => "Key",
-                AuthMethod::Agent => "Agent",
-                AuthMethod::Interactive => "Interactive",
+                AuthMethod::Auto => t("auth_auto"),
+                AuthMethod::Password => t("auth_password"),
+                AuthMethod::Key => t("auth_key"),
+                AuthMethod::Agent => t("auth_agent"),
+                AuthMethod::Interactive => t("auth_interactive"),
             };
             let subtitle = format!("{}@{}:{} · {}", conn.username.as_deref().unwrap_or("root"), conn.hostname, conn.port, auth_label);
 
@@ -342,9 +347,9 @@ impl Oryxis {
             // "user@host:port · Auth" string is.
             let card_btn = button(
                 container(
-                    row![
-                        icon_box,
-                        Space::new().width(8),
+                    dir_row(vec![
+                        icon_box.into(),
+                        Space::new().width(8).into(),
                         column![
                             text(&conn.label)
                                 .size(13)
@@ -357,9 +362,10 @@ impl Oryxis {
                                 .wrapping(iced::widget::text::Wrapping::None),
                         ]
                         .width(Length::Fill)
-                        .clip(true),
+                        .clip(true)
+                        .into(),
                         dots_btn,
-                    ].align_y(iced::Alignment::Center),
+                    ]).align_y(iced::Alignment::Center),
                 )
                 .padding(Padding { top: 8.0, right: 2.0, bottom: 8.0, left: 8.0 }),
             )
@@ -387,13 +393,14 @@ impl Oryxis {
             cards.push(container(wrapped).width(CARD_WIDTH).into());
         }
 
-        // Grid layout (3 cols)
+        // Grid layout (3 cols). Use `dir_row` so cards flow right-to-left
+        // when RTL layout is active.
         let mut grid_rows: Vec<Element<'_, Message>> = Vec::new();
         let mut current_row: Vec<Element<'_, Message>> = Vec::new();
         for card in cards {
             current_row.push(card);
             if current_row.len() == 3 {
-                grid_rows.push(row(std::mem::take(&mut current_row)).spacing(12).into());
+                grid_rows.push(dir_row(std::mem::take(&mut current_row)).spacing(12).into());
                 grid_rows.push(Space::new().height(12).into());
             }
         }
@@ -401,7 +408,7 @@ impl Oryxis {
             while current_row.len() < 3 {
                 current_row.push(Space::new().width(CARD_WIDTH).into());
             }
-            grid_rows.push(row(std::mem::take(&mut current_row)).spacing(12).into());
+            grid_rows.push(dir_row(std::mem::take(&mut current_row)).spacing(12).into());
         }
 
         let grid = scrollable(
@@ -416,7 +423,7 @@ impl Oryxis {
 
         if self.show_host_panel {
             let panel = self.view_host_panel();
-            row![main_content, panel]
+            dir_row(vec![main_content.into(), panel])
                 .width(Length::Fill)
                 .height(Length::Fill)
                 .into()

@@ -154,9 +154,9 @@ pub(crate) fn panel_field<'a>(label: &'a str, input: Element<'a, Message>) -> El
 pub(crate) fn toggle_row<'a>(label: &'a str, value: bool, msg: Message) -> Element<'a, Message> {
     let toggle_bg = if value { OryxisColors::t().success } else { OryxisColors::t().bg_selected };
     let toggle_text = if value { "  \u{25CF}" } else { "\u{25CF}  " };
-    iced::widget::row![
-        text(label).size(13).color(OryxisColors::t().text_primary),
-        Space::new().width(Length::Fill),
+    dir_row(vec![
+        text(label).size(13).color(OryxisColors::t().text_primary).into(),
+        Space::new().width(Length::Fill).into(),
         button(text(toggle_text).size(12).color(Color::WHITE))
             .on_press(msg)
             .padding(Padding { top: 4.0, right: 8.0, bottom: 4.0, left: 8.0 })
@@ -164,8 +164,8 @@ pub(crate) fn toggle_row<'a>(label: &'a str, value: bool, msg: Message) -> Eleme
                 background: Some(Background::Color(toggle_bg)),
                 border: Border { radius: Radius::from(10.0), ..Default::default() },
                 ..Default::default()
-            }),
-    ].align_y(iced::Alignment::Center)
+            }).into(),
+    ]).align_y(iced::Alignment::Center)
     .into()
 }
 
@@ -186,13 +186,13 @@ pub(crate) fn panel_option_row<'a>(
     value: String,
 ) -> Element<'a, Message> {
     container(
-        iced::widget::row![
-            icon_widget.size(13).color(OryxisColors::t().text_muted),
-            Space::new().width(10),
-            text(label).size(13).color(OryxisColors::t().text_secondary),
-            Space::new().width(Length::Fill),
-            text(value).size(12).color(OryxisColors::t().text_muted),
-        ]
+        dir_row(vec![
+            icon_widget.size(13).color(OryxisColors::t().text_muted).into(),
+            Space::new().width(10).into(),
+            text(label).size(13).color(OryxisColors::t().text_secondary).into(),
+            Space::new().width(Length::Fill).into(),
+            text(value).size(12).color(OryxisColors::t().text_muted).into(),
+        ])
         .align_y(iced::Alignment::Center),
     )
     .padding(Padding { top: 8.0, right: 0.0, bottom: 8.0, left: 0.0 })
@@ -206,11 +206,11 @@ pub(crate) fn context_menu_item<'a>(
     color: Color,
 ) -> Element<'a, Message> {
     button(
-        iced::widget::row![
-            icon_widget.size(12).color(color),
-            Space::new().width(8),
-            text(label).size(12).color(OryxisColors::t().text_primary),
-        ]
+        dir_row(vec![
+            icon_widget.size(12).color(color).into(),
+            Space::new().width(8).into(),
+            text(label).size(12).color(OryxisColors::t().text_primary).into(),
+        ])
         .align_y(iced::Alignment::Center),
     )
     .on_press(msg)
@@ -239,13 +239,13 @@ pub(crate) fn panel_option_pick<'a>(
     on_change: impl Fn(String) -> Message + 'a,
 ) -> Element<'a, Message> {
     container(
-        iced::widget::row![
-            icon_widget.size(13).color(OryxisColors::t().text_muted),
-            Space::new().width(10),
-            text(label).size(13).color(OryxisColors::t().text_secondary),
-            Space::new().width(Length::Fill),
-            pick_list(Some(selected), options, |s: &String| s.clone()).on_select(on_change).width(120).padding(10).style(rounded_pick_list_style),
-        ]
+        dir_row(vec![
+            icon_widget.size(13).color(OryxisColors::t().text_muted).into(),
+            Space::new().width(10).into(),
+            text(label).size(13).color(OryxisColors::t().text_secondary).into(),
+            Space::new().width(Length::Fill).into(),
+            pick_list(Some(selected), options, |s: &String| s.clone()).on_select(on_change).width(120).padding(10).style(rounded_pick_list_style).into(),
+        ])
         .align_y(iced::Alignment::Center),
     )
     .padding(Padding { top: 4.0, right: 0.0, bottom: 4.0, left: 0.0 })
@@ -261,13 +261,13 @@ pub(crate) fn panel_option_pick_jump<'a>(
     on_change: impl Fn(String) -> Message + 'a,
 ) -> Element<'a, Message> {
     container(
-        iced::widget::row![
-            icon_widget.size(13).color(OryxisColors::t().text_muted),
-            Space::new().width(10),
-            text(label).size(13).color(OryxisColors::t().text_secondary),
-            Space::new().width(Length::Fill),
-            pick_list(Some(selected), options, |s: &String| s.clone()).on_select(on_change).width(140).padding(10).style(rounded_pick_list_style),
-        ]
+        dir_row(vec![
+            icon_widget.size(13).color(OryxisColors::t().text_muted).into(),
+            Space::new().width(10).into(),
+            text(label).size(13).color(OryxisColors::t().text_secondary).into(),
+            Space::new().width(Length::Fill).into(),
+            pick_list(Some(selected), options, |s: &String| s.clone()).on_select(on_change).width(140).padding(10).style(rounded_pick_list_style).into(),
+        ])
         .align_y(iced::Alignment::Center),
     )
     .padding(Padding { top: 4.0, right: 0.0, bottom: 4.0, left: 0.0 })

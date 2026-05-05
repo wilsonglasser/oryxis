@@ -122,12 +122,21 @@ impl Oryxis {
                 self.editor_form.password_visible = !self.editor_form.password_visible;
             }
             Message::EditorAuthMethodChanged(v) => {
-                self.editor_form.auth_method = match v.as_str() {
-                    "Password" => AuthMethod::Password,
-                    "Key" => AuthMethod::Key,
-                    "Agent" => AuthMethod::Agent,
-                    "Interactive" => AuthMethod::Interactive,
-                    _ => AuthMethod::Auto,
+                use crate::i18n::t;
+                // Match against the *localized* labels emitted by the
+                // pick_list. Falling back to English keeps stale-label
+                // dispatches (e.g. setting persisted in another locale)
+                // still resolvable.
+                self.editor_form.auth_method = if v == t("auth_password") || v == "Password" {
+                    AuthMethod::Password
+                } else if v == t("auth_key") || v == "Key" {
+                    AuthMethod::Key
+                } else if v == t("auth_agent") || v == "Agent" {
+                    AuthMethod::Agent
+                } else if v == t("auth_interactive") || v == "Interactive" {
+                    AuthMethod::Interactive
+                } else {
+                    AuthMethod::Auto
                 };
             }
             Message::EditorGroupChanged(v) => self.editor_form.group_name = v,

@@ -12,8 +12,10 @@ use iced::{Background, Border, Color, Element, Length, Padding};
 use oryxis_terminal::widget::TerminalView;
 
 use crate::app::{Message, Oryxis};
+use crate::i18n::t;
 use crate::state::{ChatMessage, ChatRole, TerminalTab};
 use crate::theme::OryxisColors;
+use crate::widgets::dir_row;
 
 impl Oryxis {
     pub(crate) fn view_terminal(&self) -> Element<'_, Message> {
@@ -83,7 +85,7 @@ impl Oryxis {
 
                 if chat_visible {
                     let sidebar = self.view_chat_sidebar(tab);
-                    row![term_with_toggle, sidebar]
+                    dir_row(vec![term_with_toggle, sidebar])
                         .width(Length::Fill)
                         .height(Length::Fill)
                         .into()
@@ -91,11 +93,11 @@ impl Oryxis {
                     term_with_toggle
                 }
             } else {
-                container(text("No active session").size(14).color(OryxisColors::t().text_muted))
+                container(text(t("no_active_session")).size(14).color(OryxisColors::t().text_muted))
                     .center(Length::Fill).into()
             }
         } else {
-            container(text("No active session").size(14).color(OryxisColors::t().text_muted))
+            container(text(t("no_active_session")).size(14).color(OryxisColors::t().text_muted))
                 .center(Length::Fill).into()
         };
 
@@ -117,15 +119,15 @@ impl Oryxis {
         let close_btn = chat_header_btn(iced_fonts::lucide::x(), Message::ToggleChatSidebar);
 
         let header = container(
-            row![
-                iced_fonts::lucide::sparkles().size(14).color(OryxisColors::t().accent),
-                Space::new().width(8),
-                text("AI Chat").size(14).color(OryxisColors::t().text_primary),
-                Space::new().width(Length::Fill),
+            dir_row(vec![
+                iced_fonts::lucide::sparkles().size(14).color(OryxisColors::t().accent).into(),
+                Space::new().width(8).into(),
+                text(t("ai_chat")).size(14).color(OryxisColors::t().text_primary).into(),
+                Space::new().width(Length::Fill).into(),
                 reset_btn,
-                Space::new().width(4),
+                Space::new().width(4).into(),
                 close_btn,
-            ]
+            ])
             // Row needs an explicit Fill width — without it, the inner
             // `Space::Fill` collapses and the reset/close buttons end up
             // packed against the title text instead of pushed to the
@@ -161,7 +163,7 @@ impl Oryxis {
                     column![
                         iced_fonts::lucide::sparkles().size(24).color(OryxisColors::t().text_muted),
                         Space::new().height(8),
-                        text("Ask AI about this session").size(12).color(OryxisColors::t().text_muted),
+                        text(t("ask_ai_session")).size(12).color(OryxisColors::t().text_muted),
                     ]
                     .align_x(iced::Alignment::Center),
                 )
@@ -197,7 +199,7 @@ impl Oryxis {
         if self.chat_loading && !actively_streaming {
             messages_col = messages_col.push(
                 container(
-                    text("Thinking...").size(12).color(OryxisColors::t().text_muted),
+                    text(t("thinking")).size(12).color(OryxisColors::t().text_muted),
                 )
                 .padding(Padding { top: 4.0, right: 8.0, bottom: 4.0, left: 8.0 })
                 .style(|_| container::Style {
@@ -478,7 +480,7 @@ impl Oryxis {
                                 .size(13)
                                 .color(OryxisColors::t().warning),
                             iced::widget::Space::new().width(6),
-                            text("AI wants to run a command")
+                            text(t("ai_wants_to_run"))
                                 .size(12)
                                 .font(iced::Font {
                                     weight: iced::font::Weight::Semibold,
@@ -516,19 +518,19 @@ impl Oryxis {
                         iced::widget::Space::new().height(8),
                         iced::widget::row![
                             pending_tool_btn(
-                                "Run",
+                                t("ai_tool_run"),
                                 Message::ChatToolApprove(cmd_for_run),
                                 OryxisColors::t().accent,
                                 OryxisColors::t().button_text,
                             ),
                             pending_tool_btn(
-                                "Always",
+                                t("ai_tool_always"),
                                 Message::ChatToolApproveAlways(cmd_for_always),
                                 OryxisColors::t().success,
                                 OryxisColors::t().button_text,
                             ),
                             pending_tool_btn(
-                                "Deny",
+                                t("ai_tool_deny"),
                                 Message::ChatToolDeny(cmd_for_deny),
                                 OryxisColors::t().bg_hover,
                                 OryxisColors::t().text_primary,
@@ -572,7 +574,7 @@ impl Oryxis {
                                 .size(13)
                                 .color(OryxisColors::t().error),
                             iced::widget::Space::new().width(6),
-                            text("Failed to reach the AI provider")
+                            text(t("ai_provider_failed"))
                                 .size(12)
                                 .color(OryxisColors::t().error),
                         ]
@@ -583,7 +585,7 @@ impl Oryxis {
                             .color(OryxisColors::t().text_muted),
                         iced::widget::Space::new().height(8),
                         crate::widgets::styled_button(
-                            "Retry",
+                            t("retry"),
                             Message::ChatRetry,
                             OryxisColors::t().accent,
                         ),

@@ -37,11 +37,11 @@ impl Oryxis {
             .width(64)
             .height(64);
         let title = text(crate::i18n::t("welcome")).size(28).color(OryxisColors::t().text_primary);
-        let subtitle = text("Set a master password or continue without one.")
+        let subtitle = text(crate::i18n::t("vault_setup_subtitle"))
             .size(14)
             .color(OryxisColors::t().text_secondary);
 
-        let input = text_input("Master password (optional)...", &self.vault_password_input)
+        let input = text_input(crate::i18n::t("master_password_optional"), &self.vault_password_input)
             .on_input(Message::VaultPasswordChanged)
             .on_submit(Message::VaultSetup)
             .secure(true)
@@ -98,7 +98,7 @@ impl Oryxis {
             .size(14)
             .color(OryxisColors::t().text_secondary);
 
-        let input = text_input("Master password...", &self.vault_password_input)
+        let input = text_input(crate::i18n::t("master_password_placeholder"), &self.vault_password_input)
             .on_input(Message::VaultPasswordChanged)
             .on_submit(Message::VaultUnlock)
             .secure(true)

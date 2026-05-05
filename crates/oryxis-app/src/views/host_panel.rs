@@ -1,7 +1,7 @@
 //! Host editor / connection editor side panel.
 
 use iced::border::Radius;
-use iced::widget::{button, column, container, pick_list, row, scrollable, text, text_input, Space};
+use iced::widget::{button, column, container, pick_list, scrollable, text, text_input, Space};
 use iced::widget::button::Status as BtnStatus;
 use iced::{Background, Border, Color, Element, Length, Padding};
 
@@ -9,12 +9,13 @@ use oryxis_core::models::connection::AuthMethod;
 use oryxis_core::models::identity::Identity;
 
 use crate::app::{Message, Oryxis};
+use crate::i18n::t;
 use crate::state::ProxyKind;
 use crate::theme::OryxisColors;
 use crate::app::PANEL_WIDTH;
 use crate::widgets::{
-    panel_divider, panel_field, panel_option_pick, panel_option_pick_jump, panel_option_row,
-    panel_section,
+    dir_row, panel_divider, panel_field, panel_option_pick, panel_option_pick_jump,
+    panel_option_row, panel_section,
 };
 
 impl Oryxis {
@@ -25,9 +26,9 @@ impl Oryxis {
 
         // ── Header ──
         let panel_header = container(
-            row![
-                text(title).size(16).color(OryxisColors::t().text_primary),
-                Space::new().width(Length::Fill),
+            dir_row(vec![
+                text(title).size(16).color(OryxisColors::t().text_primary).into(),
+                Space::new().width(Length::Fill).into(),
                 button(iced_fonts::lucide::chevron_right().size(14).color(OryxisColors::t().text_muted))
                     .on_press(Message::EditorCancel)
                     .padding(Padding { top: 4.0, right: 8.0, bottom: 4.0, left: 8.0 })
@@ -35,8 +36,8 @@ impl Oryxis {
                         background: Some(Background::Color(Color::TRANSPARENT)),
                         border: Border::default(),
                         ..Default::default()
-                    }),
-            ].align_y(iced::Alignment::Center),
+                    }).into(),
+            ]).align_y(iced::Alignment::Center),
         )
         .padding(Padding { top: 16.0, right: 16.0, bottom: 12.0, left: 16.0 });
 
@@ -93,51 +94,52 @@ impl Oryxis {
         };
 
         let address_section = panel_section(column![
-            row![
+            dir_row(vec![
                 icon_element,
-                Space::new().width(10),
-                text_input("IP or Hostname", &self.editor_form.hostname)
+                Space::new().width(10).into(),
+                text_input(t("ip_or_hostname"), &self.editor_form.hostname)
                     .on_input(Message::EditorHostnameChanged)
                     .padding(10)
-                    .style(crate::widgets::rounded_input_style),
-            ].align_y(iced::Alignment::Center),
+                    .style(crate::widgets::rounded_input_style).into(),
+            ]).align_y(iced::Alignment::Center),
         ]);
 
         // ── Section: General ──
         let general_section = panel_section(column![
-            panel_field(crate::i18n::t("label"), text_input("My Server", &self.editor_form.label)
+            panel_field(t("label"), text_input(t("my_server_placeholder"), &self.editor_form.label)
                 .on_input(Message::EditorLabelChanged).padding(10).style(crate::widgets::rounded_input_style).into()),
             Space::new().height(8),
-            panel_field(crate::i18n::t("parent_group"), text_input("Production, Staging...", &self.editor_form.group_name)
+            panel_field(t("parent_group"), text_input(t("group_placeholder"), &self.editor_form.group_name)
                 .on_input(Message::EditorGroupChanged).padding(10).style(crate::widgets::rounded_input_style).into()),
         ]);
 
         // ── Section: SSH & Credentials ──
-        let port_text = crate::i18n::t("ssh_on_port").to_string();
+        let port_text = t("ssh_on_port").to_string();
         let mut ssh_items = column![
             // SSH on [port] port
-            row![
-                text(port_text).size(13).color(OryxisColors::t().text_secondary),
-                Space::new().width(8),
+            dir_row(vec![
+                text(port_text).size(13).color(OryxisColors::t().text_secondary).into(),
+                Space::new().width(8).into(),
                 text_input("22", &self.editor_form.port)
                     .on_input(Message::EditorPortChanged)
                     .padding(6)
                     .width(60)
-                    .style(crate::widgets::rounded_input_style),
-            ].align_y(iced::Alignment::Center),
-            Space::new().height(12),
-            text(crate::i18n::t("credentials")).size(12).color(OryxisColors::t().text_muted),
-            Space::new().height(8),
-            // Username input
-            row![
-                iced_fonts::lucide::user().size(13).color(OryxisColors::t().text_muted),
-                Space::new().width(10),
-                text_input("Username", &self.editor_form.username)
+                    .style(crate::widgets::rounded_input_style).into(),
+            ]).align_y(iced::Alignment::Center),
+        ]
+        .push(Space::new().height(12))
+        .push(text(t("credentials")).size(12).color(OryxisColors::t().text_muted))
+        .push(Space::new().height(8))
+        .push(
+            dir_row(vec![
+                iced_fonts::lucide::user().size(13).color(OryxisColors::t().text_muted).into(),
+                Space::new().width(10).into(),
+                text_input(t("username"), &self.editor_form.username)
                     .on_input(Message::EditorUsernameChanged)
                     .padding(10)
-                    .style(crate::widgets::rounded_input_style),
-            ].align_y(iced::Alignment::Center),
-        ];
+                    .style(crate::widgets::rounded_input_style).into(),
+            ]).align_y(iced::Alignment::Center)
+        );
 
         // Identity suggestion dropdown (only when username field is focused)
         if self.editor_form.username_focused && self.editor_form.selected_identity.is_none() && !self.identities.is_empty() {
@@ -167,14 +169,14 @@ impl Oryxis {
                     ssh_items = ssh_items.push(
                         button(
                             container(
-                                row![
-                                    iced_fonts::lucide::user().size(12).color(OryxisColors::t().accent),
-                                    Space::new().width(8),
+                                dir_row(vec![
+                                    iced_fonts::lucide::user().size(12).color(OryxisColors::t().accent).into(),
+                                    Space::new().width(8).into(),
                                     column![
                                         text(label.clone()).size(12).color(OryxisColors::t().text_primary),
                                         text(subtitle.clone()).size(10).color(OryxisColors::t().text_muted),
-                                    ],
-                                ].align_y(iced::Alignment::Center),
+                                    ].into(),
+                                ]).align_y(iced::Alignment::Center),
                             )
                             .padding(Padding { top: 6.0, right: 10.0, bottom: 6.0, left: 10.0 })
                             .width(Length::Fill)
@@ -207,19 +209,19 @@ impl Oryxis {
             ssh_items = ssh_items.push(Space::new().height(8));
             ssh_items = ssh_items.push(
                 container(
-                    row![
-                        iced_fonts::lucide::user().size(14).color(OryxisColors::t().accent),
-                        Space::new().width(8),
+                    dir_row(vec![
+                        iced_fonts::lucide::user().size(14).color(OryxisColors::t().accent).into(),
+                        Space::new().width(8).into(),
                         column![
-                            text(format!("Identity: {}", ident_label)).size(12).color(OryxisColors::t().text_primary),
-                            text(crate::i18n::t("managed_by_identity")).size(10).color(OryxisColors::t().text_muted),
-                        ],
-                        Space::new().width(Length::Fill),
-                        button(text("x").size(11).color(OryxisColors::t().text_muted))
+                            text(format!("{}: {}", t("identity"), ident_label)).size(12).color(OryxisColors::t().text_primary),
+                            text(t("managed_by_identity")).size(10).color(OryxisColors::t().text_muted),
+                        ].into(),
+                        Space::new().width(Length::Fill).into(),
+                        button(text("\u{00D7}").size(11).color(OryxisColors::t().text_muted))
                             .on_press(Message::EditorIdentityChanged("(none)".into()))
                             .padding(4)
-                            .style(|_, _| button::Style::default()),
-                    ].align_y(iced::Alignment::Center),
+                            .style(|_, _| button::Style::default()).into(),
+                    ]).align_y(iced::Alignment::Center),
                 )
                 .padding(10)
                 .width(Length::Fill)
@@ -233,22 +235,23 @@ impl Oryxis {
             // Show password + key fields normally
             ssh_items = ssh_items.push(Space::new().height(8));
             ssh_items = ssh_items.push(
-                row![
-                    iced_fonts::lucide::keyboard().size(13).color(OryxisColors::t().text_muted),
-                    Space::new().width(10),
+                dir_row(vec![
+                    iced_fonts::lucide::keyboard().size(13).color(OryxisColors::t().text_muted).into(),
+                    Space::new().width(10).into(),
                     text_input(
                         if self.editor_form.has_existing_password && !self.editor_form.password_touched {
                             "••••••••"
                         } else {
-                            "Password"
+                            t("password")
                         },
                         &self.editor_form.password,
                     )
                         .on_input(Message::EditorPasswordChanged)
                         .secure(!self.editor_form.password_visible)
                         .padding(10)
-                        .style(crate::widgets::rounded_input_style),
-                    Space::new().width(6),
+                        .style(crate::widgets::rounded_input_style)
+                        .into(),
+                    Space::new().width(6).into(),
                     button(
                         if self.editor_form.password_visible {
                             iced_fonts::lucide::eye_off().size(14).color(OryxisColors::t().text_muted)
@@ -258,13 +261,14 @@ impl Oryxis {
                     )
                         .on_press(Message::EditorTogglePasswordVisibility)
                         .style(|_t, _s| button::Style::default())
-                        .padding(8),
-                ].align_y(iced::Alignment::Center)
+                        .padding(8)
+                        .into(),
+                ]).align_y(iced::Alignment::Center)
             );
             ssh_items = ssh_items.push(Space::new().height(8));
             // "+ Key" is clickable — opens the existing key import panel.
             let add_key_btn = button(
-                text("+ Key").size(12).color(OryxisColors::t().accent),
+                text(t("add_key_btn")).size(12).color(OryxisColors::t().accent),
             )
             .on_press(Message::ShowKeyPanel)
             .padding(Padding { top: 4.0, right: 8.0, bottom: 4.0, left: 8.0 })
@@ -280,9 +284,9 @@ impl Oryxis {
                 }
             });
             ssh_items = ssh_items.push(
-                row![
-                    add_key_btn,
-                    Space::new().width(16),
+                dir_row(vec![
+                    add_key_btn.into(),
+                    Space::new().width(16).into(),
                     pick_list(
                         Some(self.editor_form.selected_key.clone().unwrap_or_else(|| "(none)".into())),
                         {
@@ -293,41 +297,47 @@ impl Oryxis {
                         |s: &String| s.clone(),
                     )
                     .on_select(Message::EditorKeyChanged)
-                    .padding(10).style(crate::widgets::rounded_pick_list_style),
-                ].align_y(iced::Alignment::Center)
+                    .padding(10).style(crate::widgets::rounded_pick_list_style).into(),
+                ]).align_y(iced::Alignment::Center)
             );
         }
 
         let ssh_section = panel_section(ssh_items);
 
         // ── Section: Advanced Options ──
-        let jump_host_value = self.editor_form.jump_host.as_deref().unwrap_or("Disabled");
+        let jump_host_value = self.editor_form.jump_host.clone().unwrap_or_else(|| t("disabled").to_string());
         let auth_value = match self.editor_form.auth_method {
-            AuthMethod::Auto => "Auto",
-            AuthMethod::Password => "Password",
-            AuthMethod::Key => "Key",
-            AuthMethod::Agent => "Agent",
-            AuthMethod::Interactive => "Interactive",
+            AuthMethod::Auto => t("auth_auto"),
+            AuthMethod::Password => t("auth_password"),
+            AuthMethod::Key => t("auth_key"),
+            AuthMethod::Agent => t("auth_agent"),
+            AuthMethod::Interactive => t("auth_interactive"),
         };
 
         let advanced_section = panel_section(column![
             panel_option_row(
                 iced_fonts::lucide::link(),
-                crate::i18n::t("host_chaining"),
-                jump_host_value.to_string(),
+                t("host_chaining"),
+                jump_host_value,
             ),
             panel_divider(),
             panel_option_pick(
                 iced_fonts::lucide::shield(),
-                crate::i18n::t("auth_method"),
-                vec!["Auto".into(), "Password".into(), "Key".into(), "Agent".into(), "Interactive".into()],
+                t("auth_method"),
+                vec![
+                    t("auth_auto").to_string(),
+                    t("auth_password").to_string(),
+                    t("auth_key").to_string(),
+                    t("auth_agent").to_string(),
+                    t("auth_interactive").to_string(),
+                ],
                 auth_value.to_string(),
                 Message::EditorAuthMethodChanged,
             ),
             panel_divider(),
             panel_option_pick_jump(
                 iced_fonts::lucide::network(),
-                "Jump Host",
+                t("jump_host"),
                 {
                     let mut opts = vec!["(none)".to_string()];
                     for c in &self.connections {
@@ -341,11 +351,11 @@ impl Oryxis {
                 Message::EditorJumpHostChanged,
             ),
             panel_divider(),
-            row![
-                iced_fonts::lucide::plug().size(14).color(OryxisColors::t().text_muted),
-                Space::new().width(10),
-                text(crate::i18n::t("expose_to_mcp")).size(13).color(OryxisColors::t().text_secondary),
-                Space::new().width(Length::Fill),
+            dir_row(vec![
+                iced_fonts::lucide::plug().size(14).color(OryxisColors::t().text_muted).into(),
+                Space::new().width(10).into(),
+                text(t("expose_to_mcp")).size(13).color(OryxisColors::t().text_secondary).into(),
+                Space::new().width(Length::Fill).into(),
                 {
                     let on = self.editor_form.mcp_enabled;
                     let bg = if on { OryxisColors::t().success } else { OryxisColors::t().bg_hover };
@@ -358,14 +368,15 @@ impl Oryxis {
                             text_color: fg,
                             ..Default::default()
                         })
+                        .into()
                 },
-            ].align_y(iced::Alignment::Center),
+            ]).align_y(iced::Alignment::Center),
             panel_divider(),
-            row![
-                iced_fonts::lucide::key_round().size(14).color(OryxisColors::t().text_muted),
-                Space::new().width(10),
-                text(crate::i18n::t("forward_ssh_agent")).size(13).color(OryxisColors::t().text_secondary),
-                Space::new().width(Length::Fill),
+            dir_row(vec![
+                iced_fonts::lucide::key_round().size(14).color(OryxisColors::t().text_muted).into(),
+                Space::new().width(10).into(),
+                text(t("forward_ssh_agent")).size(13).color(OryxisColors::t().text_secondary).into(),
+                Space::new().width(Length::Fill).into(),
                 {
                     let on = self.editor_form.agent_forwarding;
                     let bg = if on { OryxisColors::t().success } else { OryxisColors::t().bg_hover };
@@ -378,8 +389,9 @@ impl Oryxis {
                             text_color: fg,
                             ..Default::default()
                         })
+                        .into()
                 },
-            ].align_y(iced::Alignment::Center),
+            ]).align_y(iced::Alignment::Center),
         ]);
 
         // ── Section: Proxy ──
@@ -387,11 +399,11 @@ impl Oryxis {
 
         // ── Section: Port Forwarding ──
         let mut pf_items = column![
-            row![
-                iced_fonts::lucide::arrow_right_left().size(14).color(OryxisColors::t().text_muted),
-                Space::new().width(10),
-                text("Port Forwarding").size(13).color(OryxisColors::t().text_secondary),
-                Space::new().width(Length::Fill),
+            dir_row(vec![
+                iced_fonts::lucide::arrow_right_left().size(14).color(OryxisColors::t().text_muted).into(),
+                Space::new().width(10).into(),
+                text(t("port_forwarding")).size(13).color(OryxisColors::t().text_secondary).into(),
+                Space::new().width(Length::Fill).into(),
                 button(text("+").size(14).color(OryxisColors::t().text_primary))
                     .on_press(Message::EditorAddPortForward)
                     .style(|_, _| button::Style {
@@ -400,33 +412,37 @@ impl Oryxis {
                         text_color: OryxisColors::t().text_primary,
                         ..Default::default()
                     })
-                    .padding(Padding { top: 2.0, right: 8.0, bottom: 2.0, left: 8.0 }),
-            ].align_y(iced::Alignment::Center),
+                    .padding(Padding { top: 2.0, right: 8.0, bottom: 2.0, left: 8.0 })
+                    .into(),
+            ]).align_y(iced::Alignment::Center),
         ];
 
         for (i, pf) in self.editor_form.port_forwards.iter().enumerate() {
             let idx = i;
             pf_items = pf_items.push(Space::new().height(8));
             pf_items = pf_items.push(
-                row![
+                dir_row(vec![
                     text_input("8080", &pf.local_port)
                         .on_input(move |v| Message::EditorPortFwdLocalPortChanged(idx, v))
                         .padding(6)
                         .width(70)
-                        .style(crate::widgets::rounded_input_style),
-                    text(" -> ").size(12).color(OryxisColors::t().text_muted),
+                        .style(crate::widgets::rounded_input_style)
+                        .into(),
+                    text(" -> ").size(12).color(OryxisColors::t().text_muted).into(),
                     text_input("localhost", &pf.remote_host)
                         .on_input(move |v| Message::EditorPortFwdRemoteHostChanged(idx, v))
                         .padding(6)
                         .width(Length::Fill)
-                        .style(crate::widgets::rounded_input_style),
-                    text(":").size(12).color(OryxisColors::t().text_muted),
+                        .style(crate::widgets::rounded_input_style)
+                        .into(),
+                    text(":").size(12).color(OryxisColors::t().text_muted).into(),
                     text_input("3306", &pf.remote_port)
                         .on_input(move |v| Message::EditorPortFwdRemotePortChanged(idx, v))
                         .padding(6)
                         .width(70)
-                        .style(crate::widgets::rounded_input_style),
-                    button(text("x").size(11).color(OryxisColors::t().error))
+                        .style(crate::widgets::rounded_input_style)
+                        .into(),
+                    button(text("\u{00D7}").size(11).color(OryxisColors::t().error))
                         .on_press(Message::EditorRemovePortForward(idx))
                         .style(|_, _| button::Style {
                             background: None,
@@ -434,8 +450,9 @@ impl Oryxis {
                             text_color: OryxisColors::t().error,
                             ..Default::default()
                         })
-                        .padding(Padding { top: 2.0, right: 4.0, bottom: 2.0, left: 4.0 }),
-                ].align_y(iced::Alignment::Center).spacing(4),
+                        .padding(Padding { top: 2.0, right: 4.0, bottom: 2.0, left: 4.0 })
+                        .into(),
+                ]).align_y(iced::Alignment::Center).spacing(4),
             );
         }
 

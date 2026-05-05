@@ -6,11 +6,13 @@
 
 use iced::border::Radius;
 use iced::widget::button::Status as BtnStatus;
-use iced::widget::{button, column, container, row, scrollable, text, text_input, MouseArea, Space};
+use iced::widget::{button, column, container, scrollable, text, text_input, MouseArea, Space};
 use iced::{Background, Border, Color, Element, Length, Padding};
 
 use crate::app::{Message, Oryxis};
+use crate::i18n::t;
 use crate::theme::{OryxisColors, SYSTEM_UI_SEMIBOLD};
+use crate::widgets::dir_row;
 
 impl Oryxis {
     pub(crate) fn view_tab_jump_modal(&self) -> Element<'_, Message> {
@@ -75,18 +77,19 @@ impl Oryxis {
         .center_x(Length::Fixed(20.0))
         .center_y(Length::Fixed(20.0))
         .into();
-        if "new tab".contains(&needle) || needle.is_empty() {
+        let new_tab_label = t("new_tab").to_string();
+        if new_tab_label.to_lowercase().contains(&needle) || needle.is_empty() {
             had_match = true;
             tabs_col = tabs_col.push(jump_row(
                 new_tab_badge,
-                "New Tab".to_string(),
+                new_tab_label,
                 false,
                 Message::ShowNewTabPicker,
             ));
         }
 
         let tabs_section: Element<'_, Message> = column![
-            section_header("Tabs"),
+            section_header(t("tabs")),
             Space::new().height(4),
             tabs_col,
         ]
@@ -104,11 +107,11 @@ impl Oryxis {
         .center_y(Length::Fixed(20.0))
         .into();
         let quick_section: Element<'_, Message> = column![
-            section_header("Quick connect"),
+            section_header(t("quick_connect")),
             Space::new().height(4),
             jump_row(
                 quick_local,
-                "Local Terminal".to_string(),
+                t("local_terminal").to_string(),
                 false,
                 Message::OpenLocalShell,
             ),
@@ -116,7 +119,7 @@ impl Oryxis {
         .into();
 
         // ── Search header ──────────────────────────────────────────────
-        let search_input = text_input("Search tabs", &self.tab_jump_search)
+        let search_input = text_input(t("search_tabs"), &self.tab_jump_search)
             .on_input(Message::TabJumpSearchChanged)
             .padding(Padding { top: 8.0, right: 10.0, bottom: 8.0, left: 10.0 })
             .size(13)
@@ -126,7 +129,7 @@ impl Oryxis {
         // its identity; a Ctrl+J hint on the right reinforces the
         // shortcut so users learn it.
         let pill: Element<'_, Message> = container(
-            text("Jump to")
+            text(t("jump_to"))
                 .size(11)
                 .color(OryxisColors::t().accent)
                 .font(SYSTEM_UI_SEMIBOLD),
@@ -150,17 +153,18 @@ impl Oryxis {
             .into();
 
         let search_header = container(
-            row![
+            dir_row(vec![
                 iced_fonts::lucide::globe()
                     .size(13)
-                    .color(OryxisColors::t().text_muted),
-                Space::new().width(8),
+                    .color(OryxisColors::t().text_muted)
+                    .into(),
+                Space::new().width(8).into(),
                 pill,
-                Space::new().width(8),
-                container(search_input).width(Length::Fill),
-                Space::new().width(12),
+                Space::new().width(8).into(),
+                container(search_input).width(Length::Fill).into(),
+                Space::new().width(12).into(),
                 shortcut_hint,
-            ]
+            ])
             .align_y(iced::Alignment::Center),
         )
         .padding(Padding { top: 4.0, right: 14.0, bottom: 4.0, left: 14.0 })
@@ -176,7 +180,7 @@ impl Oryxis {
         // Empty state — when search filters out everything.
         let body: Element<'_, Message> = if !had_match {
             container(
-                text("No matching tabs.")
+                text(t("no_matching_tabs"))
                     .size(12)
                     .color(OryxisColors::t().text_muted),
             )
@@ -274,11 +278,11 @@ fn jump_row<'a>(
         OryxisColors::t().text_primary
     };
     button(
-        row![
+        dir_row(vec![
             icon,
-            Space::new().width(8),
-            text(label).size(13).color(label_color),
-        ]
+            Space::new().width(8).into(),
+            text(label).size(13).color(label_color).into(),
+        ])
         .align_y(iced::Alignment::Center),
     )
     .on_press_with(move || {

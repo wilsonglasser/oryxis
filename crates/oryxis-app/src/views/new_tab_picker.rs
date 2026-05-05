@@ -7,11 +7,13 @@
 
 use iced::border::Radius;
 use iced::widget::button::Status as BtnStatus;
-use iced::widget::{button, column, container, row, scrollable, text, text_input, MouseArea, Space};
+use iced::widget::{button, column, container, scrollable, text, text_input, MouseArea, Space};
 use iced::{Background, Border, Color, Element, Length, Padding};
 
 use crate::app::{Message, Oryxis};
+use crate::i18n::t;
 use crate::theme::OryxisColors;
+use crate::widgets::dir_row;
 
 impl Oryxis {
     /// Build the new-tab picker modal. The caller is responsible for checking
@@ -20,7 +22,7 @@ impl Oryxis {
     pub(crate) fn view_new_tab_picker(&self) -> Element<'_, Message> {
         // Internal right-padding leaves room for the floating "Ctrl+K"
         // affordance so the typed value never slides under the hint.
-        let search = text_input("Search hosts or tabs", &self.new_tab_picker_search)
+        let search = text_input(t("search_hosts_or_tabs"), &self.new_tab_picker_search)
             .on_input(Message::NewTabPickerSearchChanged)
             .padding(Padding {
                 top: 14.0,
@@ -89,13 +91,13 @@ impl Oryxis {
         });
 
         // Header row of the list.
-        let list_header = row![
-            text("Recent connections").size(13).font(iced::Font {
+        let list_header = dir_row(vec![
+            text(t("recent_connections")).size(13).font(iced::Font {
                 weight: iced::font::Weight::Bold,
                 ..iced::Font::new(crate::theme::SYSTEM_UI_FAMILY)
-            }).color(OryxisColors::t().text_primary),
-            Space::new().width(Length::Fill),
-        ]
+            }).color(OryxisColors::t().text_primary).into(),
+            Space::new().width(Length::Fill).into(),
+        ])
         .align_y(iced::Alignment::Center);
 
         // Connection rows.
@@ -107,8 +109,8 @@ impl Oryxis {
                 self.groups.iter().find(|g| g.id == gid).map(|g| g.label.clone())
             });
             let breadcrumb = match group_name {
-                Some(g) => format!("Personal / {}", g),
-                None => "Personal".to_string(),
+                Some(g) => format!("{} / {}", t("personal"), g),
+                None => t("personal").to_string(),
             };
             // Zebra stripe: odd rows get a subtle lighter bg.
             let zebra_bg = if pos % 2 == 1 {
@@ -123,9 +125,9 @@ impl Oryxis {
             rows.push(
                 container(
                     text(if needle.is_empty() {
-                        "No connections yet. Create one from the dashboard."
+                        t("no_connections_yet")
                     } else {
-                        "No matches."
+                        t("no_matches")
                     })
                     .size(13)
                     .color(OryxisColors::t().text_muted),
@@ -215,13 +217,13 @@ fn picker_row<'a>(
 
     let breadcrumb_text = text(breadcrumb).size(12).color(OryxisColors::t().accent);
 
-    let inner = row![
-        icon_box,
-        Space::new().width(12),
-        label_text,
-        Space::new().width(Length::Fill),
-        breadcrumb_text,
-    ]
+    let inner = dir_row(vec![
+        icon_box.into(),
+        Space::new().width(12).into(),
+        label_text.into(),
+        Space::new().width(Length::Fill).into(),
+        breadcrumb_text.into(),
+    ])
     .align_y(iced::Alignment::Center);
 
     button(

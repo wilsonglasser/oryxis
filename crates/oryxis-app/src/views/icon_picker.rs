@@ -10,9 +10,10 @@ use iced::widget::{button, column, container, row, scrollable, text, text_input,
 use iced::{Background, Border, Color, Element, Length};
 
 use crate::app::{Message, Oryxis};
+use crate::i18n::t;
 use crate::os_icon;
 use crate::theme::OryxisColors;
-use crate::widgets::styled_button;
+use crate::widgets::{dir_row, styled_button};
 
 impl Oryxis {
     pub(crate) fn view_icon_picker(&self) -> Element<'_, Message> {
@@ -58,7 +59,7 @@ impl Oryxis {
             icon_rows.push(row(current_row).spacing(6).into());
         }
         let icons_block = column![
-            text("Icon").size(12).font(iced::Font {
+            text(t("icon")).size(12).font(iced::Font {
                 weight: iced::font::Weight::Semibold,
                 ..iced::Font::new(crate::theme::SYSTEM_UI_FAMILY)
             }).color(OryxisColors::t().text_secondary),
@@ -99,46 +100,46 @@ impl Oryxis {
             .style(crate::widgets::rounded_input_style);
 
         let colors_block = column![
-            text("Background color").size(12).font(iced::Font {
+            text(t("background_color")).size(12).font(iced::Font {
                 weight: iced::font::Weight::Semibold,
                 ..iced::Font::new(crate::theme::SYSTEM_UI_FAMILY)
             }).color(OryxisColors::t().text_secondary),
             Space::new().height(8),
             color_grid,
             Space::new().height(10),
-            row![
-                text("Custom:").size(11).color(OryxisColors::t().text_muted),
-                Space::new().width(8),
-                hex_input,
-            ].align_y(iced::Alignment::Center),
+            dir_row(vec![
+                text(t("custom_label")).size(11).color(OryxisColors::t().text_muted).into(),
+                Space::new().width(8).into(),
+                hex_input.into(),
+            ]).align_y(iced::Alignment::Center),
         ];
 
         // ── Footer actions ──
-        let actions = row![
-            styled_button("Reset to auto", Message::IconPickerResetAuto, OryxisColors::t().bg_selected),
-            Space::new().width(Length::Fill),
-            styled_button("Cancel", Message::HideIconPicker, OryxisColors::t().bg_hover),
-            Space::new().width(8),
-            styled_button("Save", Message::IconPickerSave, OryxisColors::t().accent),
-        ]
+        let actions = dir_row(vec![
+            styled_button(t("reset_to_auto"), Message::IconPickerResetAuto, OryxisColors::t().bg_selected),
+            Space::new().width(Length::Fill).into(),
+            styled_button(t("cancel"), Message::HideIconPicker, OryxisColors::t().bg_hover),
+            Space::new().width(8).into(),
+            styled_button(t("save"), Message::IconPickerSave, OryxisColors::t().accent),
+        ])
         .align_y(iced::Alignment::Center);
 
         // Header (preview + title) and footer (actions) stay fixed; the
         // icon grid + color palette scroll in between so the modal never
         // exceeds the viewport height.
-        let header = row![
-            preview,
-            Space::new().width(14),
+        let header = dir_row(vec![
+            preview.into(),
+            Space::new().width(14).into(),
             column![
-                text("Custom icon").size(16).font(iced::Font {
+                text(t("custom_icon")).size(16).font(iced::Font {
                     weight: iced::font::Weight::Bold,
                     ..iced::Font::new(crate::theme::SYSTEM_UI_FAMILY)
                 }).color(OryxisColors::t().text_primary),
                 Space::new().height(4),
-                text("Override the auto-detected icon and color. Use \u{201c}Reset to auto\u{201d} to let OS detection drive it again.")
+                text(t("custom_icon_desc"))
                     .size(11).color(OryxisColors::t().text_muted),
-            ],
-        ]
+            ].into(),
+        ])
         .align_y(iced::Alignment::Center);
 
         let scroll_area = scrollable(

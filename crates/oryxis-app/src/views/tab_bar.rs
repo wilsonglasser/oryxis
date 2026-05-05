@@ -171,7 +171,10 @@ impl Oryxis {
         } else {
             iced_fonts::codicon::chrome_maximize()
         };
-        let chrome_row = row![
+        // Window controls live in their own dir_row so the close button
+        // ends up on the leading edge under RTL — matches how macOS and
+        // GNOME flip traffic-light buttons when the locale flips.
+        let chrome_row = crate::widgets::dir_row(vec![
             window_btn(
                 iced_fonts::codicon::chrome_minimize(),
                 Message::WindowMinimize,
@@ -187,20 +190,24 @@ impl Oryxis {
                 Message::WindowClose,
                 OryxisColors::t().error,
             ),
-        ]
+        ])
         .align_y(iced::Alignment::Center);
 
-        let mut right_row = row![].align_y(iced::Alignment::Center);
+        // The right cluster sits on the trailing edge of the tab bar.
+        // Build it in reading order ([extras] then chrome) and let
+        // `dir_row` flip the order in RTL so chrome lands on the
+        // outer edge there too.
+        let mut cluster_items: Vec<Element<'_, Message>> = Vec::new();
         if let Some(dots) = dots_btn {
-            right_row = right_row
-                .push(dots)
-                .push(Space::new().width(2));
+            cluster_items.push(dots);
+            cluster_items.push(Space::new().width(2).into());
         }
-        right_row = right_row
-            .push(plus_btn)
-            .push(Space::new().width(2))
-            .push(chrome_row);
-        let right_cluster: Element<'_, Message> = right_row.into();
+        cluster_items.push(plus_btn);
+        cluster_items.push(Space::new().width(2).into());
+        cluster_items.push(chrome_row.into());
+        let right_cluster: Element<'_, Message> = crate::widgets::dir_row(cluster_items)
+            .align_y(iced::Alignment::Center)
+            .into();
 
         let sidebar_toggle =
             super::sidebar::sidebar_toggle_btn(!self.sidebar_collapsed);
@@ -208,11 +215,16 @@ impl Oryxis {
         // Three-block row: [sidebar_toggle] [tab_strip(Fill)] [right_cluster].
         // sidebar_toggle and right_cluster are Length::Shrink so iced
         // gives them their content width first; tab_strip is the
-        // remaining Fill area in between. No manual width math, no
-        // separate drag region — the strip's MouseArea handles drag.
+        // remaining Fill area in between. `dir_row` flips the trio under
+        // RTL so the toggle always sits next to the sidebar (which the
+        // outer layout also flips to the trailing edge).
         container(
-            row![sidebar_toggle, tab_strip, right_cluster]
-                .align_y(iced::Alignment::Center),
+            crate::widgets::dir_row(vec![
+                sidebar_toggle,
+                tab_strip,
+                right_cluster,
+            ])
+            .align_y(iced::Alignment::Center),
         )
         .width(Length::Fill)
         .height(Length::Fixed(BAR_HEIGHT))

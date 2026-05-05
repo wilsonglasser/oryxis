@@ -6,6 +6,7 @@ use iced::widget::{button, column, container, row, scrollable, text, text_input,
 use iced::{Background, Border, Color, Element, Length, Padding};
 
 use crate::app::{Message, Oryxis};
+use crate::i18n::t;
 use crate::state::{SftpEntryKind, SftpPaneSide};
 use crate::theme::OryxisColors;
 
@@ -90,7 +91,7 @@ impl Oryxis {
             row![
                 local_badge,
                 Space::new().width(8),
-                text("Local").size(14).color(OryxisColors::t().text_primary),
+                text(t("sftp_local")).size(14).color(OryxisColors::t().text_primary),
             ]
             .align_y(iced::Alignment::Center),
         )
@@ -101,7 +102,7 @@ impl Oryxis {
         let toolbar = row![
             header_title,
             Space::new().width(Length::Fill),
-            text_input("Filter…", &self.sftp.local_filter)
+            text_input(t("filter_placeholder"), &self.sftp.local_filter)
                 .on_input(Message::SftpLocalFilter)
                 .padding(Padding { top: 4.0, right: 8.0, bottom: 4.0, left: 8.0 })
                 .size(11)
@@ -262,7 +263,7 @@ impl Oryxis {
             .sftp
             .host_label
             .clone()
-            .unwrap_or_else(|| "Pick a host".to_string());
+            .unwrap_or_else(|| t("pick_a_host").to_string());
         let mounted_conn = self.sftp.host_label.as_ref().and_then(|label| {
             self.connections.iter().find(|c| &c.label == label)
         });
@@ -385,13 +386,13 @@ impl Oryxis {
                     Space::new().height(10),
                     row![
                         crate::widgets::styled_button(
-                            "Retry",
+                            t("retry"),
                             Message::SftpRetryRemote,
                             OryxisColors::t().accent,
                         ),
                         Space::new().width(8),
                         crate::widgets::styled_button(
-                            "Pick another host",
+                            t("pick_another_host"),
                             Message::SftpOpenPicker,
                             OryxisColors::t().text_muted,
                         ),
@@ -403,10 +404,10 @@ impl Oryxis {
         } else if self.sftp.remote_loading {
             container(
                 column![
-                    text("Loading…").size(12).color(OryxisColors::t().text_muted),
+                    text(t("loading")).size(12).color(OryxisColors::t().text_muted),
                     Space::new().height(10),
                     crate::widgets::styled_button(
-                        "Cancel",
+                        t("cancel"),
                         Message::SftpCancelRemoteLoad,
                         OryxisColors::t().text_muted,
                     ),
@@ -416,7 +417,7 @@ impl Oryxis {
             .into()
         } else if self.sftp.host_label.is_none() {
             container(
-                text("Pick a host to start.")
+                text(t("pick_host_to_start"))
                     .size(12)
                     .color(OryxisColors::t().text_muted),
             )
@@ -605,7 +606,7 @@ impl Oryxis {
         let dialog = container(
             column![
                 row![
-                    text("Select a host").size(15).color(OryxisColors::t().text_primary),
+                    text(t("select_a_host")).size(15).color(OryxisColors::t().text_primary),
                     Space::new().width(Length::Fill),
                     button(
                         iced_fonts::lucide::x()
@@ -629,7 +630,7 @@ impl Oryxis {
                 .align_y(iced::Alignment::Center)
                 .width(Length::Fill),
                 Space::new().height(8),
-                text_input("Search hosts…", &self.sftp.picker_search)
+                text_input(t("search_hosts"), &self.sftp.picker_search)
                     .on_input(Message::SftpPickerSearch)
                     .padding(10)
                     .style(crate::widgets::rounded_input_style),
@@ -717,21 +718,21 @@ fn actions_menu_overlay<'a>(local: bool, show_hidden: bool) -> Element<'a, Messa
     } else {
         Message::SftpToggleRemoteHidden
     };
-    let hidden_label = if show_hidden { "Hide hidden files" } else { "Show hidden files" };
+    let hidden_label = if show_hidden { t("hide_hidden_files") } else { t("show_hidden_files") };
     let menu = container(
         column![
             menu_item(
                 iced_fonts::lucide::folder_plus(),
-                "New folder",
+                t("new_folder"),
                 Message::SftpStartNewEntry(side, SftpEntryKind::Folder),
             ),
             menu_item(
                 iced_fonts::lucide::file_plus(),
-                "New file",
+                t("new_file"),
                 Message::SftpStartNewEntry(side, SftpEntryKind::File),
             ),
             menu_separator(),
-            menu_item(iced_fonts::lucide::rotate_cw(), "Refresh", refresh_msg),
+            menu_item(iced_fonts::lucide::rotate_cw(), t("refresh"), refresh_msg),
             menu_item(iced_fonts::lucide::eye(), hidden_label, hidden_msg),
         ]
         .spacing(2)
@@ -816,7 +817,7 @@ pub(crate) fn row_context_menu_box<'a>(
                 };
                 items = items.push(menu_item_tinted(
                     iced_fonts::lucide::upload(),
-                    "Upload to remote",
+                    t("upload_to_remote"),
                     upload_msg,
                     accent,
                 ));
@@ -839,7 +840,7 @@ pub(crate) fn row_context_menu_box<'a>(
         if multi {
             items = items.push(menu_item_owned_tinted(
                 iced_fonts::lucide::download(),
-                format!("Download {} items", selection_count_same_pane),
+                t("download_n_items").replacen("{n}", &selection_count_same_pane.to_string(), 1),
                 Message::SftpDownloadSelection,
                 accent,
             ));
@@ -851,7 +852,7 @@ pub(crate) fn row_context_menu_box<'a>(
             };
             items = items.push(menu_item_tinted(
                 iced_fonts::lucide::download(),
-                "Download to local",
+                t("download_to_local"),
                 download_msg,
                 accent,
             ));
@@ -869,7 +870,7 @@ pub(crate) fn row_context_menu_box<'a>(
     if multi {
         items = items.push(menu_item_owned_tinted(
             iced_fonts::lucide::copy(),
-            format!("Duplicate {} items", selection_count_same_pane),
+            t("duplicate_n_items").replacen("{n}", &selection_count_same_pane.to_string(), 1),
             Message::SftpDuplicateSelection,
             secondary,
         ));
@@ -881,27 +882,27 @@ pub(crate) fn row_context_menu_box<'a>(
         };
         items = items.push(menu_item_tinted(
             iced_fonts::lucide::copy(),
-            "Duplicate",
+            t("duplicate"),
             duplicate_msg,
             secondary,
         ));
         items = items.push(menu_item_tinted(
             iced_fonts::lucide::pencil(),
-            "Rename",
+            t("rename"),
             Message::SftpStartRename(menu.side, menu.path.clone()),
             secondary,
         ));
         items = items.push(menu_item_tinted(
             iced_fonts::lucide::cog(),
-            "Properties",
+            t("properties"),
             Message::SftpShowProperties(menu.side, menu.path.clone(), menu.is_dir),
             secondary,
         ));
     }
     let delete_label = if multi {
-        format!("Delete {} items", selection_count_same_pane)
+        t("delete_n_items").replacen("{n}", &selection_count_same_pane.to_string(), 1)
     } else {
-        "Delete".to_string()
+        t("delete").to_string()
     };
     let delete_msg = if multi {
         Message::SftpAskDeleteSelection
@@ -1046,7 +1047,7 @@ fn drives_menu_overlay<'a>() -> Element<'a, Message> {
     let mut col = column![].spacing(2).padding(4);
     if drives.is_empty() {
         col = col.push(
-            container(text("No drives detected").size(11).color(OryxisColors::t().text_muted))
+            container(text(t("no_drives_detected")).size(11).color(OryxisColors::t().text_muted))
                 .padding(8),
         );
     } else {
@@ -1361,7 +1362,7 @@ fn column_headers<'a>(
     sort: crate::state::SftpSort,
 ) -> Element<'a, Message> {
     use crate::state::SftpSortColumn;
-    let header = |label: &'static str, col: SftpSortColumn, width: Option<f32>| -> Element<'a, Message> {
+    let header = |label: &str, col: SftpSortColumn, width: Option<f32>| -> Element<'a, Message> {
         let arrow = if sort.column == col {
             if sort.ascending { " \u{2191}" } else { " \u{2193}" }
         } else {
@@ -1400,9 +1401,9 @@ fn column_headers<'a>(
         row![
             // Pad-icon column to align with file rows below.
             Space::new().width(Length::Fixed(21.0)),
-            header("Name", SftpSortColumn::Name, None),
-            header("Modified", SftpSortColumn::Modified, Some(MOD_COL_W)),
-            header("Size", SftpSortColumn::Size, Some(SIZE_COL_W)),
+            header(t("col_name"), SftpSortColumn::Name, None),
+            header(t("col_modified"), SftpSortColumn::Modified, Some(MOD_COL_W)),
+            header(t("col_size"), SftpSortColumn::Size, Some(SIZE_COL_W)),
         ]
         .align_y(iced::Alignment::Center),
     )
@@ -1721,20 +1722,23 @@ fn delete_confirm_modal<'a>(
             .unwrap_or(&target.path)
             .to_string();
         let detail = if target.is_dir {
-            format!("\"{}\" — folder and all its contents", basename)
+            format!("\"{}\" — {}", basename, t("folder_and_contents"))
         } else {
             format!("\"{}\"", basename)
         };
-        ("Delete this item?".to_string(), detail)
+        (t("delete_item_question").to_string(), detail)
     } else {
         let folder_count = targets.iter().filter(|t| t.is_dir).count();
         let file_count = targets.len() - folder_count;
         let detail = match (folder_count, file_count) {
-            (0, n) => format!("{} files", n),
-            (n, 0) => format!("{} folders (recursive)", n),
-            (f, fi) => format!("{} folders (recursive) and {} files", f, fi),
+            (0, n) => format!("{} {}", n, t("files_lower")),
+            (n, 0) => format!("{} {}", n, t("folders_recursive_lower")),
+            (f, fi) => format!("{} {} {} {} {}", f, t("folders_recursive_lower"), t("and"), fi, t("files_lower")),
         };
-        (format!("Delete {} items?", targets.len()), detail)
+        (
+            t("delete_n_items_question").replacen("{n}", &targets.len().to_string(), 1),
+            detail,
+        )
     };
     let dialog = container(
         column![
@@ -1744,13 +1748,13 @@ fn delete_confirm_modal<'a>(
             Space::new().height(16),
             row![
                 crate::widgets::styled_button(
-                    "Delete",
+                    t("delete"),
                     Message::SftpConfirmDelete,
                     OryxisColors::t().error,
                 ),
                 Space::new().width(8),
                 crate::widgets::styled_button(
-                    "Cancel",
+                    t("cancel"),
                     Message::SftpCancelDelete,
                     OryxisColors::t().text_muted,
                 ),
@@ -1802,12 +1806,12 @@ fn delete_confirm_modal<'a>(
 /// `Enter` in the input commits, mirroring the inline rename behaviour.
 fn new_entry_modal<'a>(entry: &crate::state::SftpNewEntry) -> Element<'a, Message> {
     let title = match entry.kind {
-        SftpEntryKind::Folder => "New folder",
-        SftpEntryKind::File => "New file",
+        SftpEntryKind::Folder => t("new_folder"),
+        SftpEntryKind::File => t("new_file"),
     };
     let placeholder = match entry.kind {
-        SftpEntryKind::Folder => "folder name",
-        SftpEntryKind::File => "file name",
+        SftpEntryKind::Folder => t("folder_name_placeholder"),
+        SftpEntryKind::File => t("file_name_placeholder"),
     };
     let dialog = container(
         column![
@@ -1822,13 +1826,13 @@ fn new_entry_modal<'a>(entry: &crate::state::SftpNewEntry) -> Element<'a, Messag
             Space::new().height(16),
             row![
                 crate::widgets::styled_button(
-                    "Create",
+                    t("create"),
                     Message::SftpNewEntryCommit,
                     OryxisColors::t().accent,
                 ),
                 Space::new().width(8),
                 crate::widgets::styled_button(
-                    "Cancel",
+                    t("cancel"),
                     Message::SftpNewEntryCancel,
                     OryxisColors::t().text_muted,
                 ),
@@ -1886,19 +1890,19 @@ fn edit_in_place_modal<'a>(
 ) -> Element<'a, Message> {
     let (status_text, status_color) = if session.dirty {
         (
-            "Changes detected — ready to upload back.".to_string(),
+            t("edit_changes_detected").to_string(),
             OryxisColors::t().accent,
         )
     } else {
         (
-            "Waiting for changes… save in the editor and we'll pick it up.".to_string(),
+            t("edit_waiting_changes").to_string(),
             OryxisColors::t().text_muted,
         )
     };
     let title = if session.dirty {
-        "Editing file (modified)"
+        t("edit_title_modified")
     } else {
-        "Editing file"
+        t("edit_title_clean")
     };
     let dialog = container(
         column![
@@ -1908,7 +1912,7 @@ fn edit_in_place_modal<'a>(
                 .size(13)
                 .color(OryxisColors::t().text_secondary),
             Space::new().height(4),
-            text(format!("Local copy: {}", session.temp_path.display()))
+            text(format!("{} {}", t("local_copy_label"), session.temp_path.display()))
                 .size(11)
                 .color(OryxisColors::t().text_muted),
             Space::new().height(4),
@@ -1920,13 +1924,13 @@ fn edit_in_place_modal<'a>(
             Space::new().height(16),
             row![
                 crate::widgets::styled_button(
-                    "Save back to remote",
+                    t("save_to_remote"),
                     Message::SftpEditSave,
                     OryxisColors::t().accent,
                 ),
                 Space::new().width(8),
                 crate::widgets::styled_button(
-                    "Discard",
+                    t("discard"),
                     Message::SftpEditDiscard,
                     OryxisColors::t().text_muted,
                 ),
@@ -2026,7 +2030,7 @@ fn properties_modal<'a>(
         .find(|s| !s.is_empty())
         .unwrap_or(&props.path)
         .to_string();
-    let kind = if props.is_dir { "Folder" } else { "File" };
+    let kind = if props.is_dir { t("kind_folder") } else { t("kind_file") };
     let mtime_str = props
         .mtime
         .and_then(|secs| chrono::DateTime::<chrono::Utc>::from_timestamp(secs as i64, 0))
@@ -2118,21 +2122,21 @@ fn properties_modal<'a>(
         ],
         Space::new().height(4),
         perm_row(
-            "Owner",
+            t("perm_owner"),
             (props.bits.user_r, crate::state::PermBit::UserR),
             (props.bits.user_w, crate::state::PermBit::UserW),
             (props.bits.user_x, crate::state::PermBit::UserX),
         ),
         Space::new().height(2),
         perm_row(
-            "Group",
+            t("perm_group"),
             (props.bits.group_r, crate::state::PermBit::GroupR),
             (props.bits.group_w, crate::state::PermBit::GroupW),
             (props.bits.group_x, crate::state::PermBit::GroupX),
         ),
         Space::new().height(2),
         perm_row(
-            "Others",
+            t("perm_others"),
             (props.bits.other_r, crate::state::PermBit::OtherR),
             (props.bits.other_w, crate::state::PermBit::OtherW),
             (props.bits.other_x, crate::state::PermBit::OtherX),
@@ -2152,17 +2156,17 @@ fn properties_modal<'a>(
             .size(11)
             .color(OryxisColors::t().text_muted),
         Space::new().height(14),
-        info_row("Type", kind.to_string()),
+        info_row(t("type_label"), kind.to_string()),
         Space::new().height(4),
-        info_row("Size", format_size(props.size)),
+        info_row(t("col_size"), format_size(props.size)),
         Space::new().height(4),
-        info_row("Modified", mtime_str),
+        info_row(t("col_modified"), mtime_str),
         Space::new().height(4),
-        info_row("Owner", owner_str),
+        info_row(t("perm_owner"), owner_str),
         Space::new().height(4),
-        info_row("Mode", format!("0{}", mode_octal)),
+        info_row(t("info_mode"), format!("0{}", mode_octal)),
         Space::new().height(16),
-        header_row("Permissions"),
+        header_row(t("permissions")),
         Space::new().height(8),
     ];
     content = content.push(perm_grid);
@@ -2173,10 +2177,10 @@ fn properties_modal<'a>(
         );
     }
     content = content.push(Space::new().height(18));
-    let apply_label = if props.applying { "Applying…" } else { "Apply" };
+    let apply_label = if props.applying { t("applying") } else { t("apply") };
     content = content.push(
         row![
-            ghost_button("Close", Message::SftpPropertiesClose),
+            ghost_button(t("close"), Message::SftpPropertiesClose),
             Space::new().width(Length::Fill),
             primary_button(apply_label, Message::SftpPropertiesApply, OryxisColors::t().accent),
         ]
@@ -2238,20 +2242,16 @@ fn overwrite_modal<'a>(
     prompt: &crate::state::OverwritePrompt,
 ) -> Element<'a, Message> {
     let size_hint = if prompt.src_size == prompt.dst_size {
-        format!(
-            "{} on both sides — likely identical",
-            format_size(prompt.src_size)
-        )
+        t("size_both_identical")
+            .replacen("{size}", &format_size(prompt.src_size), 1)
     } else {
-        format!(
-            "Local {} · Remote {}",
-            format_size(prompt.src_size),
-            format_size(prompt.dst_size)
-        )
+        t("size_local_remote")
+            .replacen("{local}", &format_size(prompt.src_size), 1)
+            .replacen("{remote}", &format_size(prompt.dst_size), 1)
     };
 
     let mut content = column![
-        text(format!("\"{}\" already exists", prompt.basename))
+        text(t("already_exists").replacen("{name}", &prompt.basename, 1))
             .size(15)
             .font(iced::Font {
                 weight: iced::font::Weight::Semibold,
@@ -2278,22 +2278,22 @@ fn overwrite_modal<'a>(
     content = content.push(
         row![
             ghost_button(
-                "Cancel",
+                t("cancel"),
                 Message::SftpResolveOverwrite(crate::state::OverwriteAction::Cancel),
             ),
             Space::new().width(Length::Fill),
             outlined_button(
-                "Replace if different",
+                t("replace_if_different"),
                 Message::SftpResolveOverwrite(crate::state::OverwriteAction::ReplaceIfDifferent),
             ),
             Space::new().width(8),
             outlined_button(
-                "Duplicate",
+                t("duplicate"),
                 Message::SftpResolveOverwrite(crate::state::OverwriteAction::Duplicate),
             ),
             Space::new().width(8),
             primary_button(
-                "Replace",
+                t("replace"),
                 Message::SftpResolveOverwrite(crate::state::OverwriteAction::Replace),
                 OryxisColors::t().error,
             ),
@@ -2457,7 +2457,7 @@ fn overwrite_apply_to_all_checkbox<'a>(checked: bool) -> Element<'a, Message> {
         row![
             mark,
             Space::new().width(8),
-            text("Apply to remaining files in this transfer")
+            text(t("apply_to_remaining"))
                 .size(12)
                 .color(OryxisColors::t().text_secondary),
         ]
@@ -2487,14 +2487,14 @@ fn transfer_progress_strip<'a>(
     transfer: &crate::state::TransferState,
 ) -> Element<'a, Message> {
     let label = match transfer.kind {
-        crate::state::TransferKind::Upload => "Uploading",
-        crate::state::TransferKind::Download => "Downloading",
-        crate::state::TransferKind::DuplicateLocal => "Duplicating",
+        crate::state::TransferKind::Upload => t("transfer_uploading"),
+        crate::state::TransferKind::Download => t("transfer_downloading"),
+        crate::state::TransferKind::DuplicateLocal => t("transfer_duplicating"),
     };
     let current = transfer
         .current
         .clone()
-        .unwrap_or_else(|| "preparing…".to_string());
+        .unwrap_or_else(|| t("transfer_preparing").to_string());
     let count = format!("{} / {}", transfer.completed, transfer.total);
     let pct = if transfer.total == 0 {
         0.0
@@ -2541,7 +2541,7 @@ fn transfer_progress_strip<'a>(
     .width(Length::Fill);
 
     let cancel_btn = button(
-        text("Cancel").size(11).color(OryxisColors::t().text_secondary),
+        text(t("cancel")).size(11).color(OryxisColors::t().text_secondary),
     )
     .on_press(Message::SftpCancelTransfer)
     .padding(Padding { top: 4.0, right: 10.0, bottom: 4.0, left: 10.0 })

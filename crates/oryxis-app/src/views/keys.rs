@@ -2,7 +2,7 @@
 
 use iced::border::Radius;
 use iced::widget::{
-    button, column, container, pick_list, row, scrollable, text, text_editor, text_input, MouseArea,
+    button, column, container, pick_list, scrollable, text, text_editor, text_input, MouseArea,
     Space,
 };
 use iced::widget::button::Status as BtnStatus;
@@ -13,35 +13,53 @@ use oryxis_core::models::identity::Identity;
 use oryxis_core::models::key::SshKey;
 
 use crate::app::{Message, Oryxis, CARD_WIDTH, PANEL_WIDTH};
+use crate::i18n::t;
 use crate::theme::OryxisColors;
+use crate::widgets::dir_row;
 
 impl Oryxis {
     pub(crate) fn view_keys(&self) -> Element<'_, Message> {
         // ── Header toolbar ──
-        // Split button: left half "+ ADD" (opens menu), vertical separator,
-        // right half "▼" chevron (also opens menu). Matches Termius' NEW HOST
-        // control — both halves invoke the same toggle so the dropdown
-        // appears below regardless of which half the user clicks.
+        // Split button: leading half "+ ADD" (opens menu), vertical
+        // separator, trailing half "▼" chevron (also opens menu). Both
+        // halves invoke the same toggle so the dropdown appears below
+        // regardless of which half the user clicks. The leading half
+        // gets its outer corners rounded; under RTL `dir_row` swaps the
+        // order, so we also swap which physical corners each half
+        // rounds — otherwise the rounded edge ends up in the middle.
+        let rtl = crate::i18n::is_rtl_layout();
+        let label_radius = if rtl {
+            // Label sits on the right edge in RTL → round right corners.
+            Radius { top_left: 0.0, bottom_left: 0.0, top_right: 6.0, bottom_right: 6.0 }
+        } else {
+            Radius { top_left: 6.0, bottom_left: 6.0, top_right: 0.0, bottom_right: 0.0 }
+        };
+        let chevron_radius = if rtl {
+            Radius { top_left: 6.0, bottom_left: 6.0, top_right: 0.0, bottom_right: 0.0 }
+        } else {
+            Radius { top_left: 0.0, bottom_left: 0.0, top_right: 6.0, bottom_right: 6.0 }
+        };
+
         let add_label = button(
             container(
-                row![
+                dir_row(vec![
                     text("+").size(13).font(iced::Font {
                         weight: iced::font::Weight::Bold,
                         ..iced::Font::new(crate::theme::SYSTEM_UI_FAMILY)
-                    }).color(OryxisColors::t().button_text),
-                    Space::new().width(4),
-                    text("ADD").size(11).font(iced::Font {
+                    }).color(OryxisColors::t().button_text).into(),
+                    Space::new().width(4).into(),
+                    text(t("add_btn")).size(11).font(iced::Font {
                         weight: iced::font::Weight::Bold,
                         ..iced::Font::new(crate::theme::SYSTEM_UI_FAMILY)
-                    }).color(OryxisColors::t().button_text),
-                ]
+                    }).color(OryxisColors::t().button_text).into(),
+                ])
                 .align_y(iced::Alignment::Center),
             )
             .center_y(Length::Fixed(24.0))
             .padding(Padding { top: 0.0, right: 14.0, bottom: 0.0, left: 14.0 }),
         )
         .on_press(Message::ToggleKeychainAddMenu)
-        .style(|_, status| {
+        .style(move |_, status| {
             let bg = match status {
                 BtnStatus::Hovered => OryxisColors::t().button_bg_hover,
                 _ => OryxisColors::t().button_bg,
@@ -49,10 +67,7 @@ impl Oryxis {
             button::Style {
                 background: Some(Background::Color(bg)),
                 border: Border {
-                    radius: Radius {
-                        top_left: 6.0, bottom_left: 6.0,
-                        top_right: 0.0, bottom_right: 0.0,
-                    },
+                    radius: label_radius,
                     ..Default::default()
                 },
                 ..Default::default()
@@ -77,7 +92,7 @@ impl Oryxis {
             .padding(Padding { top: 0.0, right: 4.0, bottom: 0.0, left: 4.0 }),
         )
         .on_press(Message::ToggleKeychainAddMenu)
-        .style(|_, status| {
+        .style(move |_, status| {
             let bg = match status {
                 BtnStatus::Hovered => OryxisColors::t().button_bg_hover,
                 _ => OryxisColors::t().button_bg,
@@ -85,30 +100,27 @@ impl Oryxis {
             button::Style {
                 background: Some(Background::Color(bg)),
                 border: Border {
-                    radius: Radius {
-                        top_left: 0.0, bottom_left: 0.0,
-                        top_right: 6.0, bottom_right: 6.0,
-                    },
+                    radius: chevron_radius,
                     ..Default::default()
                 },
                 ..Default::default()
             }
         });
 
-        let add_btn: Element<'_, Message> = row![
-            add_label,
-            separator,
-            add_chevron,
-        ]
+        let add_btn: Element<'_, Message> = dir_row(vec![
+            add_label.into(),
+            separator.into(),
+            add_chevron.into(),
+        ])
         .align_y(iced::Alignment::Center)
         .into();
 
         let toolbar = container(
-            row![
-                text("Keychain").size(20).color(OryxisColors::t().text_primary),
-                Space::new().width(Length::Fill),
+            dir_row(vec![
+                text(t("keychain")).size(20).color(OryxisColors::t().text_primary).into(),
+                Space::new().width(Length::Fill).into(),
                 add_btn,
-            ]
+            ])
             .align_y(iced::Alignment::Center),
         )
         .padding(Padding { top: 20.0, right: 24.0, bottom: 16.0, left: 24.0 })
@@ -116,7 +128,7 @@ impl Oryxis {
 
         // ── Search bar ──
         let search_bar = container(
-            text_input("Search keys & identities...", &self.key_search)
+            text_input(t("search_keys_identities"), &self.key_search)
                 .on_input(Message::KeySearchChanged)
                 .padding(10)
                 .size(13)
@@ -141,7 +153,7 @@ impl Oryxis {
 
         // ── Keys grid ──
         let section_title = container(
-            text("Keys").size(14).color(OryxisColors::t().text_muted),
+            text(t("keys_section")).size(14).color(OryxisColors::t().text_muted),
         )
         .padding(Padding { top: 4.0, right: 24.0, bottom: 8.0, left: 24.0 });
 
@@ -186,13 +198,13 @@ impl Oryxis {
 
             if self.show_key_panel {
                 let panel = self.view_key_import_panel();
-                return row![main_content, panel]
+                return dir_row(vec![main_content.into(), panel])
                     .width(Length::Fill)
                     .height(Length::Fill)
                     .into();
             } else if self.show_identity_panel {
                 let panel = self.view_identity_panel();
-                return row![main_content, panel]
+                return dir_row(vec![main_content.into(), panel])
                     .width(Length::Fill)
                     .height(Length::Fill)
                     .into();
@@ -200,7 +212,7 @@ impl Oryxis {
             return main_content.into();
         } else if filtered_keys.is_empty() {
             let no_results = container(
-                text("No keys match your search").size(13).color(OryxisColors::t().text_muted),
+                text(t("no_keys_match")).size(13).color(OryxisColors::t().text_muted),
             )
             .padding(24)
             .width(CARD_WIDTH);
@@ -208,7 +220,7 @@ impl Oryxis {
         }
 
         for (idx, key) in filtered_keys {
-            let algo = format!("Type {}", key.algorithm);
+            let algo = format!("{} {}", t("type_label"), key.algorithm);
             let icon_box = container(iced_fonts::lucide::key_round().size(18).color(Color::WHITE))
                 .padding(Padding { top: 8.0, right: 10.0, bottom: 8.0, left: 10.0 })
                 .style(|_| container::Style {
@@ -236,16 +248,16 @@ impl Oryxis {
             });
 
             let card = button(
-                row![
-                    icon_box,
-                    Space::new().width(12),
+                dir_row(vec![
+                    icon_box.into(),
+                    Space::new().width(12).into(),
                     column![
                         text(&key.label).size(13).color(OryxisColors::t().text_primary),
                         Space::new().height(2),
                         text(algo).size(11).color(OryxisColors::t().text_muted),
-                    ].width(Length::Fill),
-                    dots_btn,
-                ].align_y(iced::Alignment::Center),
+                    ].width(Length::Fill).into(),
+                    dots_btn.into(),
+                ]).align_y(iced::Alignment::Center),
             )
             .on_press(Message::EditKey(idx))
             .padding(16)
@@ -276,7 +288,7 @@ impl Oryxis {
         for card in cards {
             current_row.push(card);
             if current_row.len() == 3 {
-                grid_rows.push(row(std::mem::take(&mut current_row)).spacing(12).into());
+                grid_rows.push(dir_row(std::mem::take(&mut current_row)).spacing(12).into());
                 grid_rows.push(Space::new().height(12).into());
             }
         }
@@ -284,12 +296,12 @@ impl Oryxis {
             while current_row.len() < 3 {
                 current_row.push(Space::new().width(CARD_WIDTH).into());
             }
-            grid_rows.push(row(std::mem::take(&mut current_row)).spacing(12).into());
+            grid_rows.push(dir_row(std::mem::take(&mut current_row)).spacing(12).into());
         }
 
         // ── Identities section ──
         let identity_section_title = container(
-            text("Identities").size(14).color(OryxisColors::t().text_muted),
+            text(t("identities")).size(14).color(OryxisColors::t().text_muted),
         )
         .padding(Padding { top: 16.0, right: 24.0, bottom: 8.0, left: 24.0 });
 
@@ -303,7 +315,7 @@ impl Oryxis {
             // Don't show identities section at all when empty
         } else if filtered_identities.is_empty() {
             let no_results = container(
-                text("No identities match your search").size(13).color(OryxisColors::t().text_muted),
+                text(t("no_identities_match")).size(13).color(OryxisColors::t().text_muted),
             )
             .padding(24)
             .width(CARD_WIDTH);
@@ -327,7 +339,7 @@ impl Oryxis {
                 && let Some(k) = self.keys.iter().find(|k| k.id == kid) {
                     parts.push(k.label.clone());
             }
-            let subtitle = if parts.is_empty() { "No credentials".into() } else { parts.join(", ") };
+            let subtitle = if parts.is_empty() { t("no_credentials").to_string() } else { parts.join(", ") };
 
             let icon_box = container(iced_fonts::lucide::user().size(18).color(Color::WHITE))
                 .padding(Padding { top: 8.0, right: 10.0, bottom: 8.0, left: 10.0 })
@@ -355,16 +367,16 @@ impl Oryxis {
             });
 
             let card = button(
-                row![
-                    icon_box,
-                    Space::new().width(12),
+                dir_row(vec![
+                    icon_box.into(),
+                    Space::new().width(12).into(),
                     column![
                         text(&identity.label).size(13).color(OryxisColors::t().text_primary),
                         Space::new().height(2),
                         text(subtitle).size(11).color(OryxisColors::t().text_muted),
-                    ].width(Length::Fill),
-                    dots_btn,
-                ].align_y(iced::Alignment::Center),
+                    ].width(Length::Fill).into(),
+                    dots_btn.into(),
+                ]).align_y(iced::Alignment::Center),
             )
             .on_press(Message::EditIdentity(idx))
             .padding(16)
@@ -394,7 +406,7 @@ impl Oryxis {
         for card in identity_cards {
             current_row.push(card);
             if current_row.len() == 3 {
-                identity_grid_rows.push(row(std::mem::take(&mut current_row)).spacing(12).into());
+                identity_grid_rows.push(dir_row(std::mem::take(&mut current_row)).spacing(12).into());
                 identity_grid_rows.push(Space::new().height(12).into());
             }
         }
@@ -402,7 +414,7 @@ impl Oryxis {
             while current_row.len() < 3 {
                 current_row.push(Space::new().width(CARD_WIDTH).into());
             }
-            identity_grid_rows.push(row(std::mem::take(&mut current_row)).spacing(12).into());
+            identity_grid_rows.push(dir_row(std::mem::take(&mut current_row)).spacing(12).into());
         }
 
         // Combine keys and identities into one scrollable area
@@ -430,13 +442,13 @@ impl Oryxis {
         // ── Side panel ──
         if self.show_key_panel {
             let panel = self.view_key_import_panel();
-            row![main_content, panel]
+            dir_row(vec![main_content.into(), panel])
                 .width(Length::Fill)
                 .height(Length::Fill)
                 .into()
         } else if self.show_identity_panel {
             let panel = self.view_identity_panel();
-            row![main_content, panel]
+            dir_row(vec![main_content.into(), panel])
                 .width(Length::Fill)
                 .height(Length::Fill)
                 .into()
@@ -447,29 +459,29 @@ impl Oryxis {
 
     pub(crate) fn view_key_import_panel(&self) -> Element<'_, Message> {
         let has_content = !self.key_import_pem.is_empty();
-        let panel_title = if self.editing_key_id.is_some() { "Edit Key" } else { "Add Key" };
+        let panel_title = if self.editing_key_id.is_some() { t("edit_key") } else { t("add_key") };
 
         // Panel header
         let panel_header = container(
-            row![
-                text(panel_title).size(18).color(OryxisColors::t().text_primary),
-                Space::new().width(Length::Fill),
-                button(text("X").size(14).color(OryxisColors::t().text_muted))
+            dir_row(vec![
+                text(panel_title).size(18).color(OryxisColors::t().text_primary).into(),
+                Space::new().width(Length::Fill).into(),
+                button(text("\u{00D7}").size(14).color(OryxisColors::t().text_muted))
                     .on_press(Message::HideKeyPanel)
                     .padding(Padding { top: 4.0, right: 8.0, bottom: 4.0, left: 8.0 })
                     .style(|_, _| button::Style {
                         background: Some(Background::Color(OryxisColors::t().bg_surface)),
                         border: Border { radius: Radius::from(6.0), ..Default::default() },
                         ..Default::default()
-                    }),
-            ]
+                    }).into(),
+            ])
             .align_y(iced::Alignment::Center),
         )
         .padding(Padding { top: 20.0, right: 20.0, bottom: 16.0, left: 20.0 });
 
         // Name field
         let name_field = column![
-            text("Name").size(12).color(OryxisColors::t().text_secondary),
+            text(t("name")).size(12).color(OryxisColors::t().text_secondary),
             Space::new().height(6),
             text_input("my-server-key", &self.key_import_label)
                 .on_input(Message::KeyImportLabelChanged)
@@ -480,15 +492,16 @@ impl Oryxis {
         // File selector button
         let browse_btn = button(
             container(
-                row![
-                    text(crate::i18n::t("select_file"))
+                dir_row(vec![
+                    text(t("select_file"))
                         .size(13)
                         .font(iced::Font {
                             weight: iced::font::Weight::Semibold,
                             ..iced::Font::new(crate::theme::SYSTEM_UI_FAMILY)
                         })
-                        .color(crate::theme::contrast_text_for(OryxisColors::t().accent)),
-                ]
+                        .color(crate::theme::contrast_text_for(OryxisColors::t().accent))
+                        .into(),
+                ])
                 .align_y(iced::Alignment::Center),
             )
             .padding(Padding { top: 8.0, right: 16.0, bottom: 8.0, left: 16.0 }),
@@ -504,14 +517,18 @@ impl Oryxis {
         // Status indicator
         let file_status: Element<'_, Message> = if has_content {
             container(
-                row![
+                dir_row(vec![
                     iced_fonts::lucide::circle_check()
                         .size(13)
-                        .color(OryxisColors::t().success),
-                    Space::new().width(6),
-                    text(format!("Loaded ({} bytes)", self.key_import_pem.len()))
-                        .size(12).color(OryxisColors::t().success),
-                ].align_y(iced::Alignment::Center),
+                        .color(OryxisColors::t().success)
+                        .into(),
+                    Space::new().width(6).into(),
+                    text(
+                        t("loaded_bytes")
+                            .replacen("{bytes}", &self.key_import_pem.len().to_string(), 1),
+                    )
+                    .size(12).color(OryxisColors::t().success).into(),
+                ]).align_y(iced::Alignment::Center),
             )
             .padding(Padding { top: 4.0, right: 0.0, bottom: 4.0, left: 0.0 })
             .into()
@@ -535,7 +552,7 @@ impl Oryxis {
         };
 
         // Save button
-        let save_label = if self.editing_key_id.is_some() { "Update Key" } else { "Save Key" };
+        let save_label = if self.editing_key_id.is_some() { t("update_key") } else { t("save_key") };
         let save_btn = button(
             container(text(save_label).size(13).color(OryxisColors::t().text_primary))
                 .padding(Padding { top: 10.0, right: 0.0, bottom: 10.0, left: 0.0 })
@@ -559,13 +576,13 @@ impl Oryxis {
                 column![
                     name_field,
                     Space::new().height(16),
-                    text("Private Key").size(12).color(OryxisColors::t().text_secondary),
+                    text(t("private_key")).size(12).color(OryxisColors::t().text_secondary),
                     Space::new().height(6),
                     browse_btn,
                     Space::new().height(8),
                     file_status,
                     Space::new().height(8),
-                    text("Key Content").size(12).color(OryxisColors::t().text_secondary),
+                    text(t("key_content")).size(12).color(OryxisColors::t().text_secondary),
                     Space::new().height(6),
                     editor,
                     Space::new().height(8),
@@ -592,31 +609,31 @@ impl Oryxis {
     }
 
     pub(crate) fn view_identity_panel(&self) -> Element<'_, Message> {
-        let panel_title = if self.editing_identity_id.is_some() { "Edit Identity" } else { "New Identity" };
+        let panel_title = if self.editing_identity_id.is_some() { t("edit_identity") } else { t("new_identity") };
 
         // Panel header
         let panel_header = container(
-            row![
-                text(panel_title).size(18).color(OryxisColors::t().text_primary),
-                Space::new().width(Length::Fill),
-                button(text("X").size(14).color(OryxisColors::t().text_muted))
+            dir_row(vec![
+                text(panel_title).size(18).color(OryxisColors::t().text_primary).into(),
+                Space::new().width(Length::Fill).into(),
+                button(text("\u{00D7}").size(14).color(OryxisColors::t().text_muted))
                     .on_press(Message::HideIdentityPanel)
                     .padding(Padding { top: 4.0, right: 8.0, bottom: 4.0, left: 8.0 })
                     .style(|_, _| button::Style {
                         background: Some(Background::Color(OryxisColors::t().bg_surface)),
                         border: Border { radius: Radius::from(6.0), ..Default::default() },
                         ..Default::default()
-                    }),
-            ]
+                    }).into(),
+            ])
             .align_y(iced::Alignment::Center),
         )
         .padding(Padding { top: 20.0, right: 20.0, bottom: 16.0, left: 20.0 });
 
         // Label field
         let label_field = column![
-            text("Label").size(12).color(OryxisColors::t().text_secondary),
+            text(t("label")).size(12).color(OryxisColors::t().text_secondary),
             Space::new().height(6),
-            text_input("My Identity", &self.identity_form_label)
+            text_input(t("my_identity_placeholder"), &self.identity_form_label)
                 .on_input(Message::IdentityLabelChanged)
                 .padding(10)
                 .style(crate::widgets::rounded_input_style),
@@ -624,38 +641,40 @@ impl Oryxis {
 
         // Username field
         let username_field = column![
-            text("Username").size(12).color(OryxisColors::t().text_secondary),
+            text(t("username")).size(12).color(OryxisColors::t().text_secondary),
             Space::new().height(6),
-            row![
-                iced_fonts::lucide::user().size(13).color(OryxisColors::t().text_muted),
-                Space::new().width(10),
+            dir_row(vec![
+                iced_fonts::lucide::user().size(13).color(OryxisColors::t().text_muted).into(),
+                Space::new().width(10).into(),
                 text_input("root", &self.identity_form_username)
                     .on_input(Message::IdentityUsernameChanged)
                     .padding(10)
-                    .style(crate::widgets::rounded_input_style),
-            ].align_y(iced::Alignment::Center),
+                    .style(crate::widgets::rounded_input_style)
+                    .into(),
+            ]).align_y(iced::Alignment::Center),
         ];
 
         // Password field with eye toggle
         let password_field = column![
-            text("Password").size(12).color(OryxisColors::t().text_secondary),
+            text(t("password")).size(12).color(OryxisColors::t().text_secondary),
             Space::new().height(6),
-            row![
-                iced_fonts::lucide::keyboard().size(13).color(OryxisColors::t().text_muted),
-                Space::new().width(10),
+            dir_row(vec![
+                iced_fonts::lucide::keyboard().size(13).color(OryxisColors::t().text_muted).into(),
+                Space::new().width(10).into(),
                 text_input(
                     if self.identity_form_has_existing_password && !self.identity_form_password_touched {
                         "\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}"
                     } else {
-                        "Password"
+                        t("password")
                     },
                     &self.identity_form_password,
                 )
                     .on_input(Message::IdentityPasswordChanged)
                     .secure(!self.identity_form_password_visible)
                     .padding(10)
-                    .style(crate::widgets::rounded_input_style),
-                Space::new().width(6),
+                    .style(crate::widgets::rounded_input_style)
+                    .into(),
+                Space::new().width(6).into(),
                 button(
                     if self.identity_form_password_visible {
                         iced_fonts::lucide::eye_off().size(14).color(OryxisColors::t().text_muted)
@@ -665,8 +684,9 @@ impl Oryxis {
                 )
                     .on_press(Message::IdentityTogglePasswordVisibility)
                     .style(|_t, _s| button::Style::default())
-                    .padding(8),
-            ].align_y(iced::Alignment::Center),
+                    .padding(8)
+                    .into(),
+            ]).align_y(iced::Alignment::Center),
         ];
 
         // Key selector
@@ -676,19 +696,20 @@ impl Oryxis {
             opts
         };
         let key_field = column![
-            text("SSH Key").size(12).color(OryxisColors::t().text_secondary),
+            text(t("ssh_key")).size(12).color(OryxisColors::t().text_secondary),
             Space::new().height(6),
-            row![
-                text("+ Key").size(12).color(OryxisColors::t().accent),
-                Space::new().width(16),
+            dir_row(vec![
+                text(t("add_key_btn")).size(12).color(OryxisColors::t().accent).into(),
+                Space::new().width(16).into(),
                 pick_list(
                     Some(self.identity_form_key.clone().unwrap_or_else(|| "(none)".into())),
                     key_options,
                     |s: &String| s.clone(),
                 )
                 .on_select(Message::IdentityKeyChanged)
-                .padding(10).style(crate::widgets::rounded_pick_list_style),
-            ].align_y(iced::Alignment::Center),
+                .padding(10).style(crate::widgets::rounded_pick_list_style)
+                .into(),
+            ]).align_y(iced::Alignment::Center),
         ];
 
         // Linked connections (only when editing)
@@ -699,24 +720,24 @@ impl Oryxis {
             if linked.is_empty() {
                 column![
                     Space::new().height(16),
-                    text("Linked to").size(12).color(OryxisColors::t().text_muted),
+                    text(t("linked_to")).size(12).color(OryxisColors::t().text_muted),
                     Space::new().height(4),
-                    text("No connections using this identity").size(11).color(OryxisColors::t().text_muted),
+                    text(t("no_connections_identity")).size(11).color(OryxisColors::t().text_muted),
                 ].into()
             } else {
                 let mut items: Vec<Element<'_, Message>> = vec![
                     Space::new().height(16).into(),
-                    Element::from(text("Linked to").size(12).color(OryxisColors::t().text_muted)),
+                    Element::from(text(t("linked_to")).size(12).color(OryxisColors::t().text_muted)),
                     Space::new().height(4).into(),
                 ];
                 for conn in linked {
                     items.push(
                         container(
-                            row![
-                                iced_fonts::lucide::server().size(11).color(OryxisColors::t().text_muted),
-                                Space::new().width(8),
-                                text(&conn.label).size(12).color(OryxisColors::t().text_secondary),
-                            ].align_y(iced::Alignment::Center),
+                            dir_row(vec![
+                                iced_fonts::lucide::server().size(11).color(OryxisColors::t().text_muted).into(),
+                                Space::new().width(8).into(),
+                                text(&conn.label).size(12).color(OryxisColors::t().text_secondary).into(),
+                            ]).align_y(iced::Alignment::Center),
                         )
                         .padding(Padding { top: 4.0, right: 0.0, bottom: 4.0, left: 0.0 })
                         .into()

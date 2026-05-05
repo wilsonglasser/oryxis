@@ -1,34 +1,36 @@
 //! Snippets (saved commands) list and editor panel.
 
 use iced::border::Radius;
-use iced::widget::{button, column, container, row, scrollable, text, text_input, Space};
+use iced::widget::{button, column, container, scrollable, text, text_input, Space};
 use iced::widget::button::Status as BtnStatus;
 use iced::{Background, Border, Color, Element, Length, Padding};
 
 use crate::app::{Message, Oryxis, CARD_WIDTH, PANEL_WIDTH};
+use crate::i18n::t;
 use crate::theme::OryxisColors;
+use crate::widgets::dir_row;
 
 impl Oryxis {
     pub(crate) fn view_snippets(&self) -> Element<'_, Message> {
         let toolbar = container(
-            row![
-                text("Snippets").size(20).color(OryxisColors::t().text_primary),
-                Space::new().width(Length::Fill),
+            dir_row(vec![
+                text(t("snippets")).size(20).color(OryxisColors::t().text_primary).into(),
+                Space::new().width(Length::Fill).into(),
                 {
                     let fg = OryxisColors::t().button_text;
                     button(
                         container(
-                            row![
+                            dir_row(vec![
                                 text("+").size(13).font(iced::Font {
                                     weight: iced::font::Weight::Bold,
                                     ..iced::Font::new(crate::theme::SYSTEM_UI_FAMILY)
-                                }).color(fg),
-                                Space::new().width(4),
-                                text("SNIPPET").size(11).font(iced::Font {
+                                }).color(fg).into(),
+                                Space::new().width(4).into(),
+                                text(t("snippet_btn")).size(11).font(iced::Font {
                                     weight: iced::font::Weight::Bold,
                                     ..iced::Font::new(crate::theme::SYSTEM_UI_FAMILY)
-                                }).color(fg),
-                            ].align_y(iced::Alignment::Center),
+                                }).color(fg).into(),
+                            ]).align_y(iced::Alignment::Center),
                         )
                         .center_y(Length::Fixed(24.0))
                         .padding(Padding { top: 0.0, right: 14.0, bottom: 0.0, left: 14.0 }),
@@ -44,9 +46,9 @@ impl Oryxis {
                             border: Border { radius: Radius::from(6.0), ..Default::default() },
                             ..Default::default()
                         }
-                    })
+                    }).into()
                 },
-            ].align_y(iced::Alignment::Center),
+            ]).align_y(iced::Alignment::Center),
         )
         .padding(Padding { top: 20.0, right: 24.0, bottom: 16.0, left: 24.0 })
         .width(Length::Fill);
@@ -59,7 +61,7 @@ impl Oryxis {
         };
 
         let section_title = container(
-            text("Commands").size(14).color(OryxisColors::t().text_muted),
+            text(t("commands")).size(14).color(OryxisColors::t().text_muted),
         )
         .padding(Padding { top: 4.0, right: 24.0, bottom: 8.0, left: 24.0 });
 
@@ -98,7 +100,7 @@ impl Oryxis {
 
             if self.show_snippet_panel {
                 let panel = self.view_snippet_panel();
-                return row![main_content, panel]
+                return dir_row(vec![main_content.into(), panel])
                     .width(Length::Fill)
                     .height(Length::Fill)
                     .into();
@@ -132,16 +134,16 @@ impl Oryxis {
 
             let card = button(
                 container(
-                    row![
-                        icon_box,
-                        Space::new().width(12),
+                    dir_row(vec![
+                        icon_box.into(),
+                        Space::new().width(12).into(),
                         column![
                             text(&snip.label).size(13).color(OryxisColors::t().text_primary),
                             Space::new().height(2),
                             text(cmd_preview).size(10).color(OryxisColors::t().text_muted).font(iced::Font::MONOSPACE),
-                        ].width(Length::Fill),
-                        edit_btn,
-                    ].align_y(iced::Alignment::Center),
+                        ].width(Length::Fill).into(),
+                        edit_btn.into(),
+                    ]).align_y(iced::Alignment::Center),
                 )
                 .padding(16),
             )
@@ -168,7 +170,7 @@ impl Oryxis {
         for card in cards {
             current_row.push(card);
             if current_row.len() == 3 {
-                grid_rows.push(row(std::mem::take(&mut current_row)).spacing(12).into());
+                grid_rows.push(dir_row(std::mem::take(&mut current_row)).spacing(12).into());
                 grid_rows.push(Space::new().height(12).into());
             }
         }
@@ -176,7 +178,7 @@ impl Oryxis {
             while current_row.len() < 3 {
                 current_row.push(Space::new().width(CARD_WIDTH).into());
             }
-            grid_rows.push(row(std::mem::take(&mut current_row)).spacing(12).into());
+            grid_rows.push(dir_row(std::mem::take(&mut current_row)).spacing(12).into());
         }
 
         let grid = scrollable(
@@ -188,7 +190,7 @@ impl Oryxis {
 
         if self.show_snippet_panel {
             let panel = self.view_snippet_panel();
-            row![main_content, panel].width(Length::Fill).height(Length::Fill).into()
+            dir_row(vec![main_content.into(), panel]).width(Length::Fill).height(Length::Fill).into()
         } else {
             main_content.into()
         }
@@ -196,33 +198,33 @@ impl Oryxis {
 
     pub(crate) fn view_snippet_panel(&self) -> Element<'_, Message> {
         let is_editing = self.snippet_editing_id.is_some();
-        let title = if is_editing { "Edit Snippet" } else { "New Snippet" };
+        let title = if is_editing { t("edit_snippet") } else { t("new_snippet") };
 
         let panel_header = container(
-            row![
-                text(title).size(18).color(OryxisColors::t().text_primary),
-                Space::new().width(Length::Fill),
-                button(text("X").size(14).color(OryxisColors::t().text_muted))
+            dir_row(vec![
+                text(title).size(18).color(OryxisColors::t().text_primary).into(),
+                Space::new().width(Length::Fill).into(),
+                button(text("\u{00D7}").size(14).color(OryxisColors::t().text_muted))
                     .on_press(Message::HideSnippetPanel)
                     .padding(Padding { top: 4.0, right: 8.0, bottom: 4.0, left: 8.0 })
                     .style(|_, _| button::Style {
                         background: Some(Background::Color(OryxisColors::t().bg_surface)),
                         border: Border { radius: Radius::from(6.0), ..Default::default() },
                         ..Default::default()
-                    }),
-            ].align_y(iced::Alignment::Center),
+                    }).into(),
+            ]).align_y(iced::Alignment::Center),
         )
         .padding(Padding { top: 20.0, right: 20.0, bottom: 16.0, left: 20.0 });
 
         let form = column![
-            text("Name").size(12).color(OryxisColors::t().text_secondary),
+            text(t("name")).size(12).color(OryxisColors::t().text_secondary),
             Space::new().height(4),
             text_input("restart-nginx", &self.snippet_label)
                 .on_input(Message::SnippetLabelChanged)
                 .padding(10)
                 .style(crate::widgets::rounded_input_style),
             Space::new().height(14),
-            text("Command").size(12).color(OryxisColors::t().text_secondary),
+            text(t("command_label")).size(12).color(OryxisColors::t().text_secondary),
             Space::new().height(4),
             text_input("sudo systemctl restart nginx", &self.snippet_command)
                 .on_input(Message::SnippetCommandChanged)
