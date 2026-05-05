@@ -34,6 +34,19 @@ pub fn dir_row<'a, M: 'a>(items: Vec<Element<'a, M>>) -> Row<'a, M> {
     }
 }
 
+/// Horizontal alignment for content that should hug the *leading* edge —
+/// `Left` under LTR, `Right` under RTL. Use on `Column::align_x`,
+/// `Container::align_x`, or `text(...).align_x(...)` inside `Length::Fill`
+/// regions where children would otherwise glue to the physical left edge.
+pub fn dir_align_x() -> iced::alignment::Horizontal {
+    if crate::i18n::is_rtl_layout() {
+        iced::alignment::Horizontal::Right
+    } else {
+        iced::alignment::Horizontal::Left
+    }
+}
+
+
 /// Shared style closure for `text_input`. Apply via `.style(rounded_input_style)`
 /// to get the app's accent-focused look with the consistent 10 px radius.
 pub fn rounded_input_style(_theme: &Theme, status: text_input::Status) -> text_input::Style {

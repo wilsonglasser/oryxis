@@ -95,6 +95,11 @@ impl Oryxis {
 
             let ts = entry.timestamp.with_timezone(&chrono::Local).format("%Y-%m-%d %H:%M:%S").to_string();
 
+            // Inner column children (title row + message text) stick to
+            // the *leading* edge of the column — left under LTR, right
+            // under RTL — so the title sits next to the icon (which the
+            // outer dir_row places on the leading side) instead of
+            // ending up glued to the timestamp on the trailing side.
             let log_row = container(
                 crate::widgets::dir_row(vec![
                     event_icon.size(14).color(event_color).into(),
@@ -107,7 +112,10 @@ impl Oryxis {
                         ]).align_y(iced::Alignment::Center),
                         Space::new().height(2),
                         text(&entry.message).size(11).color(OryxisColors::t().text_muted),
-                    ].width(Length::Fill).into(),
+                    ]
+                    .width(Length::Fill)
+                    .align_x(crate::widgets::dir_align_x())
+                    .into(),
                     text(ts).size(10).color(OryxisColors::t().text_muted).into(),
                 ]).align_y(iced::Alignment::Center),
             )
@@ -208,7 +216,10 @@ impl Oryxis {
                             Space::new().width(12).into(),
                             text(size_str).size(10).color(OryxisColors::t().text_muted).into(),
                         ]),
-                    ].width(Length::Fill).into(),
+                    ]
+                    .width(Length::Fill)
+                    .align_x(crate::widgets::dir_align_x())
+                    .into(),
                     view_btn.into(),
                     Space::new().width(8).into(),
                     delete_btn.into(),

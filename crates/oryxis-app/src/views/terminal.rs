@@ -229,7 +229,7 @@ impl Oryxis {
         // inserts a newline. No send button — every chat-style UI uses
         // Enter today, so the arrow was just visual noise.
         let chat_editor = iced::widget::text_editor(&self.chat_input)
-            .placeholder("Ask AI...")
+            .placeholder(t("ask_ai"))
             .on_action(Message::ChatInputAction)
             .padding(10)
             .height(Length::Shrink)
