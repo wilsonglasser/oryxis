@@ -46,6 +46,24 @@ impl Oryxis {
             Message::CardUnhovered => {
                 self.hovered_card = None;
             }
+            Message::FolderCardHovered(gid) => {
+                self.hovered_folder_card = Some(gid);
+            }
+            Message::FolderCardUnhovered => {
+                self.hovered_folder_card = None;
+            }
+            Message::KeyCardHovered(idx) => {
+                self.hovered_key_card = Some(idx);
+            }
+            Message::KeyCardUnhovered => {
+                self.hovered_key_card = None;
+            }
+            Message::IdentityCardHovered(idx) => {
+                self.hovered_identity_card = Some(idx);
+            }
+            Message::IdentityCardUnhovered => {
+                self.hovered_identity_card = None;
+            }
             Message::MouseMoved(pos) => {
                 self.mouse_position = pos;
                 // While the chat-sidebar resize handle is held down, the

@@ -202,26 +202,36 @@ impl Oryxis {
                                 ..Default::default()
                             });
 
-                            // ⋮ button — same visual / placement as the
-                            // host-card actions. Anchored to the right of
-                            // the folder row, opens the rename/delete menu.
-                            let actions_btn: Element<'_, Message> = button(
-                                text("\u{22EE}").size(14).color(OryxisColors::t().text_muted),
-                            )
-                            .on_press(Message::ShowFolderActions(gid))
-                            .padding(Padding { top: 1.0, right: 6.0, bottom: 1.0, left: 6.0 })
-                            .style(|_, status| {
-                                let bg = match status {
-                                    BtnStatus::Hovered => OryxisColors::t().bg_hover,
-                                    _ => Color::TRANSPARENT,
-                                };
-                                button::Style {
-                                    background: Some(Background::Color(bg)),
-                                    border: Border { radius: Radius::from(6.0), ..Default::default() },
-                                    ..Default::default()
-                                }
-                            })
-                            .into();
+                            // ⋮ button — only rendered while the folder
+                            // row is hovered, mirroring the host-card UX.
+                            // A fixed-width placeholder reserves the slot
+                            // so the label width budget never changes.
+                            const FOLDER_DOTS_SLOT_W: f32 = 22.0;
+                            let folder_show_dots = self.hovered_folder_card == Some(gid);
+                            let actions_btn: Element<'_, Message> = if folder_show_dots {
+                                button(
+                                    text("\u{22EE}").size(14).color(OryxisColors::t().text_muted),
+                                )
+                                .on_press(Message::ShowFolderActions(gid))
+                                .padding(Padding { top: 1.0, right: 6.0, bottom: 1.0, left: 6.0 })
+                                .style(|_, status| {
+                                    let bg = match status {
+                                        BtnStatus::Hovered => OryxisColors::t().bg_hover,
+                                        _ => Color::TRANSPARENT,
+                                    };
+                                    button::Style {
+                                        background: Some(Background::Color(bg)),
+                                        border: Border { radius: Radius::from(6.0), ..Default::default() },
+                                        ..Default::default()
+                                    }
+                                })
+                                .into()
+                            } else {
+                                Space::new()
+                                    .width(Length::Fixed(FOLDER_DOTS_SLOT_W))
+                                    .height(Length::Fixed(1.0))
+                                    .into()
+                            };
 
                             let folder_card = button(
                                 container(
@@ -256,7 +266,12 @@ impl Oryxis {
                                 }
                             });
 
-                            cards.push(folder_card.into());
+                            // Wrap in MouseArea so hover events drive the
+                            // dots-button visibility (same UX as host cards).
+                            let wrapped = MouseArea::new(folder_card)
+                                .on_enter(Message::FolderCardHovered(gid))
+                                .on_exit(Message::FolderCardUnhovered);
+                            cards.push(wrapped.into());
                         }
             }
         }
@@ -422,8 +437,12 @@ impl Oryxis {
         // from the trailing edge of the LTR layout (= leading edge of
         // the RTL layout), keeping them aligned with the toolbar title
         // / actions on the same side.
+        // The column needs `Length::Fill` for `align_x` to have any
+        // slack to align inside — without it the column shrinks to
+        // content and the rows still hug the leading edge.
         let grid = scrollable(
             column(grid_rows)
+                .width(Length::Fill)
                 .padding(Padding { top: 0.0, right: 24.0, bottom: 24.0, left: 24.0 })
                 .align_x(crate::widgets::dir_align_x()),
         ).height(Length::Fill);

@@ -138,6 +138,13 @@ pub struct Oryxis {
 
     // Card hover & context menu
     pub(crate) hovered_card: Option<usize>,
+    /// Hovered folder card on the dashboard (root view) — drives the
+    /// `⋮` menu visibility, mirroring `hovered_card` for hosts.
+    pub(crate) hovered_folder_card: Option<Uuid>,
+    /// Hovered key card / identity card in the keychain view — same
+    /// hover-only-dots UX as host cards.
+    pub(crate) hovered_key_card: Option<usize>,
+    pub(crate) hovered_identity_card: Option<usize>,
     pub(crate) card_context_menu: Option<usize>,
 
     // Floating overlay menu

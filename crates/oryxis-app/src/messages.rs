@@ -211,6 +211,12 @@ pub enum Message {
     // Card interactions
     CardHovered(usize),
     CardUnhovered,
+    FolderCardHovered(Uuid),
+    FolderCardUnhovered,
+    KeyCardHovered(usize),
+    KeyCardUnhovered,
+    IdentityCardHovered(usize),
+    IdentityCardUnhovered,
     ShowCardMenu(usize),
     #[allow(dead_code)]
     HideCardMenu,

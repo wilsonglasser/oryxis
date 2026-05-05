@@ -229,23 +229,37 @@ impl Oryxis {
                     ..Default::default()
                 });
 
-            // "..." menu button
-            let dots_btn = button(
-                text("···").size(14).color(OryxisColors::t().text_muted),
-            )
-            .on_press(Message::ShowKeyMenu(idx))
-            .padding(Padding { top: 2.0, right: 6.0, bottom: 2.0, left: 6.0 })
-            .style(|_, status| {
-                let bg = match status {
-                    BtnStatus::Hovered => OryxisColors::t().bg_hover,
-                    _ => Color::TRANSPARENT,
-                };
-                button::Style {
-                    background: Some(Background::Color(bg)),
-                    border: Border { radius: Radius::from(6.0), ..Default::default() },
-                    ..Default::default()
-                }
-            });
+            // "..." menu button — only rendered while the key card is
+            // hovered, mirroring the host-card UX. A fixed-width
+            // placeholder reserves the slot so the title's wrap budget
+            // never changes.
+            const KEY_DOTS_SLOT_W: f32 = 26.0;
+            let key_show_dots =
+                self.hovered_key_card == Some(idx) || self.key_context_menu == Some(idx);
+            let dots_btn: Element<'_, Message> = if key_show_dots {
+                button(
+                    text("···").size(14).color(OryxisColors::t().text_muted),
+                )
+                .on_press(Message::ShowKeyMenu(idx))
+                .padding(Padding { top: 2.0, right: 6.0, bottom: 2.0, left: 6.0 })
+                .style(|_, status| {
+                    let bg = match status {
+                        BtnStatus::Hovered => OryxisColors::t().bg_hover,
+                        _ => Color::TRANSPARENT,
+                    };
+                    button::Style {
+                        background: Some(Background::Color(bg)),
+                        border: Border { radius: Radius::from(6.0), ..Default::default() },
+                        ..Default::default()
+                    }
+                })
+                .into()
+            } else {
+                Space::new()
+                    .width(Length::Fixed(KEY_DOTS_SLOT_W))
+                    .height(Length::Fixed(1.0))
+                    .into()
+            };
 
             let card = button(
                 dir_row(vec![
@@ -259,7 +273,7 @@ impl Oryxis {
                     .width(Length::Fill)
                     .align_x(crate::widgets::dir_align_x())
                     .into(),
-                    dots_btn.into(),
+                    dots_btn,
                 ]).align_y(iced::Alignment::Center),
             )
             .on_press(Message::EditKey(idx))
@@ -278,8 +292,11 @@ impl Oryxis {
                 }
             });
 
-            // Wrap in MouseArea for right-click
+            // Wrap in MouseArea for right-click + hover events that
+            // drive the dots-button visibility.
             let wrapped = MouseArea::new(card)
+                .on_enter(Message::KeyCardHovered(idx))
+                .on_exit(Message::KeyCardUnhovered)
                 .on_right_press(Message::ShowKeyMenu(idx));
 
             cards.push(container(wrapped).width(CARD_WIDTH).into());
@@ -352,22 +369,34 @@ impl Oryxis {
                     ..Default::default()
                 });
 
-            let dots_btn = button(
-                text("···").size(14).color(OryxisColors::t().text_muted),
-            )
-            .on_press(Message::ShowIdentityMenu(idx))
-            .padding(Padding { top: 2.0, right: 6.0, bottom: 2.0, left: 6.0 })
-            .style(|_, status| {
-                let bg = match status {
-                    BtnStatus::Hovered => OryxisColors::t().bg_hover,
-                    _ => Color::TRANSPARENT,
-                };
-                button::Style {
-                    background: Some(Background::Color(bg)),
-                    border: Border { radius: Radius::from(6.0), ..Default::default() },
-                    ..Default::default()
-                }
-            });
+            // "..." button — hover-only, like the host / key cards.
+            const ID_DOTS_SLOT_W: f32 = 26.0;
+            let id_show_dots =
+                self.hovered_identity_card == Some(idx) || self.identity_context_menu == Some(idx);
+            let dots_btn: Element<'_, Message> = if id_show_dots {
+                button(
+                    text("···").size(14).color(OryxisColors::t().text_muted),
+                )
+                .on_press(Message::ShowIdentityMenu(idx))
+                .padding(Padding { top: 2.0, right: 6.0, bottom: 2.0, left: 6.0 })
+                .style(|_, status| {
+                    let bg = match status {
+                        BtnStatus::Hovered => OryxisColors::t().bg_hover,
+                        _ => Color::TRANSPARENT,
+                    };
+                    button::Style {
+                        background: Some(Background::Color(bg)),
+                        border: Border { radius: Radius::from(6.0), ..Default::default() },
+                        ..Default::default()
+                    }
+                })
+                .into()
+            } else {
+                Space::new()
+                    .width(Length::Fixed(ID_DOTS_SLOT_W))
+                    .height(Length::Fixed(1.0))
+                    .into()
+            };
 
             let card = button(
                 dir_row(vec![
@@ -381,7 +410,7 @@ impl Oryxis {
                     .width(Length::Fill)
                     .align_x(crate::widgets::dir_align_x())
                     .into(),
-                    dots_btn.into(),
+                    dots_btn,
                 ]).align_y(iced::Alignment::Center),
             )
             .on_press(Message::EditIdentity(idx))
@@ -401,6 +430,8 @@ impl Oryxis {
             });
 
             let wrapped = MouseArea::new(card)
+                .on_enter(Message::IdentityCardHovered(idx))
+                .on_exit(Message::IdentityCardUnhovered)
                 .on_right_press(Message::ShowIdentityMenu(idx));
 
             identity_cards.push(container(wrapped).width(CARD_WIDTH).into());
@@ -435,8 +466,14 @@ impl Oryxis {
         // Right padding here also pushes the content away from the
         // scrollbar — keep it slim so the scrollbar reads as flush
         // against the panel edge rather than floating in dead space.
+        // The column needs `Length::Fill` for `align_x` to have any
+        // slack to align inside — without it the column shrinks to
+        // content and rows hug the leading edge regardless.
         let grid = scrollable(
-            column(all_rows).padding(Padding { top: 0.0, right: 8.0, bottom: 24.0, left: 24.0 }),
+            column(all_rows)
+                .width(Length::Fill)
+                .padding(Padding { top: 0.0, right: 8.0, bottom: 24.0, left: 24.0 })
+                .align_x(crate::widgets::dir_align_x()),
         )
         .height(Length::Fill);
 
