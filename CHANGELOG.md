@@ -6,6 +6,8 @@ project uses [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.5.6] - 2026-05-05
+
 ### Added
 - **Proxy Identities** — reusable SOCKS5 / SOCKS4 / HTTP CONNECT proxy
   configurations editable under `Settings → Proxies`, linkable from any
