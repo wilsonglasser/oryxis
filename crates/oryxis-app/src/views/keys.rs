@@ -255,7 +255,10 @@ impl Oryxis {
                         text(&key.label).size(13).color(OryxisColors::t().text_primary),
                         Space::new().height(2),
                         text(algo).size(11).color(OryxisColors::t().text_muted),
-                    ].width(Length::Fill).into(),
+                    ]
+                    .width(Length::Fill)
+                    .align_x(crate::widgets::dir_align_x())
+                    .into(),
                     dots_btn.into(),
                 ]).align_y(iced::Alignment::Center),
             )
@@ -374,7 +377,10 @@ impl Oryxis {
                         text(&identity.label).size(13).color(OryxisColors::t().text_primary),
                         Space::new().height(2),
                         text(subtitle).size(11).color(OryxisColors::t().text_muted),
-                    ].width(Length::Fill).into(),
+                    ]
+                    .width(Length::Fill)
+                    .align_x(crate::widgets::dir_align_x())
+                    .into(),
                     dots_btn.into(),
                 ]).align_y(iced::Alignment::Center),
             )

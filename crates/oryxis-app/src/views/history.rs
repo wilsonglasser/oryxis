@@ -100,6 +100,8 @@ impl Oryxis {
             // under RTL — so the title sits next to the icon (which the
             // outer dir_row places on the leading side) instead of
             // ending up glued to the timestamp on the trailing side.
+            // Add `Space` on *both* sides of the column so neither the
+            // icon nor the timestamp end up touching the column content.
             let log_row = container(
                 crate::widgets::dir_row(vec![
                     event_icon.size(14).color(event_color).into(),
@@ -116,6 +118,7 @@ impl Oryxis {
                     .width(Length::Fill)
                     .align_x(crate::widgets::dir_align_x())
                     .into(),
+                    Space::new().width(12).into(),
                     text(ts).size(10).color(OryxisColors::t().text_muted).into(),
                 ]).align_y(iced::Alignment::Center),
             )
@@ -220,6 +223,7 @@ impl Oryxis {
                     .width(Length::Fill)
                     .align_x(crate::widgets::dir_align_x())
                     .into(),
+                    Space::new().width(12).into(),
                     view_btn.into(),
                     Space::new().width(8).into(),
                     delete_btn.into(),

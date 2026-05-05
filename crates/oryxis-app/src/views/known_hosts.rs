@@ -122,7 +122,11 @@ impl Oryxis {
                         text(format!("{} · {}", kh.key_type, fp_short)).size(10).color(OryxisColors::t().text_muted).font(iced::Font::MONOSPACE),
                         Space::new().height(2),
                         text(format!("{} {}", t("last_seen"), seen)).size(10).color(OryxisColors::t().text_muted),
-                    ].width(Length::Fill).into(),
+                    ]
+                    .width(Length::Fill)
+                    .align_x(crate::widgets::dir_align_x())
+                    .into(),
+                    Space::new().width(12).into(),
                     del_btn.into(),
                 ]).align_y(iced::Alignment::Center),
             )

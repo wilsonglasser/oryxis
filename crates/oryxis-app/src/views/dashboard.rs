@@ -232,7 +232,10 @@ impl Oryxis {
                                             text(label).size(13).color(OryxisColors::t().text_primary),
                                             Space::new().height(2),
                                             text(count_text).size(10).color(OryxisColors::t().text_muted),
-                                        ].width(Length::Fill).into(),
+                                        ]
+                                        .width(Length::Fill)
+                                        .align_x(crate::widgets::dir_align_x())
+                                        .into(),
                                         actions_btn,
                                     ]).align_y(iced::Alignment::Center),
                                 )
@@ -362,6 +365,7 @@ impl Oryxis {
                                 .wrapping(iced::widget::text::Wrapping::None),
                         ]
                         .width(Length::Fill)
+                        .align_x(crate::widgets::dir_align_x())
                         .clip(true)
                         .into(),
                         dots_btn,
@@ -411,9 +415,17 @@ impl Oryxis {
             grid_rows.push(dir_row(std::mem::take(&mut current_row)).spacing(12).into());
         }
 
+        // Each grid row holds up to 3 fixed-width cards; once the row
+        // is narrower than the available column width, the column's
+        // cross-axis alignment decides whether the row sticks to the
+        // leading or trailing edge. Use `dir_align_x()` so cards begin
+        // from the trailing edge of the LTR layout (= leading edge of
+        // the RTL layout), keeping them aligned with the toolbar title
+        // / actions on the same side.
         let grid = scrollable(
             column(grid_rows)
-                .padding(Padding { top: 0.0, right: 24.0, bottom: 24.0, left: 24.0 }),
+                .padding(Padding { top: 0.0, right: 24.0, bottom: 24.0, left: 24.0 })
+                .align_x(crate::widgets::dir_align_x()),
         ).height(Length::Fill);
 
         // ── Main + side panel ──
