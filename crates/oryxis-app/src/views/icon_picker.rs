@@ -6,7 +6,7 @@
 
 use iced::border::Radius;
 use iced::widget::button::Status as BtnStatus;
-use iced::widget::{button, column, container, row, scrollable, text, text_input, MouseArea, Space};
+use iced::widget::{button, column, container, pick_list, row, scrollable, text, text_input, MouseArea, Space};
 use iced::{Background, Border, Color, Element, Length};
 
 use crate::app::{Message, Oryxis};
@@ -114,6 +114,49 @@ impl Oryxis {
             ]).align_y(iced::Alignment::Center),
         ];
 
+        // ── Per-host terminal theme override ──
+        // The first option is a sentinel meaning "inherit the global
+        // pick"; the rest are real palette names from
+        // oryxis_terminal::TerminalTheme::ALL. The selected entry
+        // round-trips through Connection.terminal_theme.
+        let inherit_label = t("terminal_theme_inherit_global").to_string();
+        let mut theme_options: Vec<String> = vec![inherit_label.clone()];
+        theme_options.extend(
+            oryxis_terminal::TerminalTheme::ALL
+                .iter()
+                .map(|th| th.name().to_string()),
+        );
+        let theme_selected = self
+            .icon_picker_terminal_theme
+            .clone()
+            .unwrap_or_else(|| inherit_label.clone());
+        let inherit_label_match = inherit_label.clone();
+        let theme_block = column![
+            text(t("terminal_theme")).size(12).font(iced::Font {
+                weight: iced::font::Weight::Semibold,
+                ..iced::Font::new(crate::theme::SYSTEM_UI_FAMILY)
+            }).color(OryxisColors::t().text_secondary),
+            Space::new().height(4),
+            text(t("host_terminal_theme_desc"))
+                .size(11).color(OryxisColors::t().text_muted),
+            Space::new().height(8),
+            pick_list(
+                Some(theme_selected),
+                theme_options,
+                |s: &String| s.clone(),
+            )
+            .on_select(move |v| {
+                if v == inherit_label_match {
+                    Message::IconPickerSelectTerminalTheme(String::new())
+                } else {
+                    Message::IconPickerSelectTerminalTheme(v)
+                }
+            })
+            .text_size(13)
+            .padding(10)
+            .style(crate::widgets::rounded_pick_list_style),
+        ];
+
         // ── Footer actions ──
         let actions = dir_row(vec![
             styled_button(t("reset_to_auto"), Message::IconPickerResetAuto, OryxisColors::t().bg_selected),
@@ -147,6 +190,8 @@ impl Oryxis {
                 icons_block,
                 Space::new().height(20),
                 colors_block,
+                Space::new().height(20),
+                theme_block,
                 Space::new().height(8),
             ]
             .padding(iced::Padding { top: 0.0, right: 10.0, bottom: 0.0, left: 0.0 }),

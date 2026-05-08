@@ -13,7 +13,110 @@ use oryxis_terminal::widget::TerminalState;
 
 use crate::app::{Message, Oryxis, DEFAULT_TERM_COLS, DEFAULT_TERM_ROWS};
 use crate::state::{TerminalTab, VaultState, View};
+use crate::theme::AppTheme;
 use crate::util::sanitize_uint;
+
+/// Map the active app theme to the closest matching terminal palette.
+/// Used as the bottom-of-the-stack fallback in
+/// `resolve_global_terminal_theme` when neither a global override nor a
+/// per-host override is set.
+fn app_theme_to_terminal(theme: AppTheme) -> oryxis_terminal::TerminalTheme {
+    match theme {
+        AppTheme::OryxisDark => oryxis_terminal::TerminalTheme::OryxisDark,
+        AppTheme::OryxisLight => oryxis_terminal::TerminalTheme::OryxisDark,
+        AppTheme::Termius => oryxis_terminal::TerminalTheme::OryxisDark,
+        AppTheme::Darcula => oryxis_terminal::TerminalTheme::Dracula,
+        AppTheme::IslandsDark => oryxis_terminal::TerminalTheme::Dracula,
+        AppTheme::Dracula => oryxis_terminal::TerminalTheme::Dracula,
+        AppTheme::Monokai => oryxis_terminal::TerminalTheme::Monokai,
+        AppTheme::HackerGreen => oryxis_terminal::TerminalTheme::HackerGreen,
+        AppTheme::Nord => oryxis_terminal::TerminalTheme::Nord,
+        AppTheme::NordLight => oryxis_terminal::TerminalTheme::Nord,
+        AppTheme::SolarizedLight => oryxis_terminal::TerminalTheme::SolarizedDark,
+        AppTheme::PaperLight => oryxis_terminal::TerminalTheme::OryxisDark,
+    }
+}
+
+impl Oryxis {
+    /// Effective terminal palette for callers that don't have a
+    /// specific connection in mind: settings preview, local-shell tabs,
+    /// new-tab spawn defaults. Order: explicit user override → app
+    /// theme mapping.
+    pub(crate) fn resolve_global_terminal_theme(&self)
+        -> oryxis_terminal::TerminalTheme
+    {
+        if let Some(name) = &self.terminal_theme_override
+            && let Some(theme) = oryxis_terminal::TerminalTheme::ALL
+                .iter()
+                .find(|t| t.name() == name)
+        {
+            return *theme;
+        }
+        app_theme_to_terminal(AppTheme::active())
+    }
+
+    /// Effective terminal palette for a known `Connection`. Per-host
+    /// override wins, then the global override, then the app theme.
+    pub(crate) fn resolve_terminal_theme_for_connection(
+        &self,
+        conn: &oryxis_core::models::Connection,
+    ) -> oryxis_terminal::TerminalTheme {
+        if let Some(name) = &conn.terminal_theme
+            && let Some(theme) = oryxis_terminal::TerminalTheme::ALL
+                .iter()
+                .find(|t| t.name() == name)
+        {
+            return *theme;
+        }
+        self.resolve_global_terminal_theme()
+    }
+
+    /// Same resolution but starting from a tab label. Used by repaint
+    /// loops where we don't already hold a `Connection` reference.
+    /// Falls through to the global theme for tabs without a matching
+    /// connection (local shells, WSL, PowerShell, …).
+    fn resolve_terminal_theme_for_label(&self, label: &str)
+        -> oryxis_terminal::TerminalTheme
+    {
+        let base = label.trim_end_matches(" (disconnected)");
+        if let Some(conn) = self.connections.iter().find(|c| c.label == base) {
+            return self.resolve_terminal_theme_for_connection(conn);
+        }
+        self.resolve_global_terminal_theme()
+    }
+
+    /// Re-paint every open tab's palette. Use after a global theme
+    /// change. Tabs whose connection has its own override pick that
+    /// override up automatically through `resolve_terminal_theme_for_label`.
+    pub(crate) fn repaint_all_terminal_palettes(&self) {
+        for tab in &self.tabs {
+            let theme = self.resolve_terminal_theme_for_label(&tab.label);
+            for pane in &tab.panes {
+                if let Ok(mut state) = pane.terminal.lock() {
+                    state.palette = theme.palette();
+                }
+            }
+        }
+    }
+
+    /// Re-paint only the tabs attached to a single host's label.
+    /// Called when the per-host override changes.
+    pub(crate) fn repaint_terminal_palettes_for_label(&self, label: &str) {
+        let theme = self.resolve_terminal_theme_for_label(label);
+        let base = label.trim_end_matches(" (disconnected)");
+        for tab in &self.tabs {
+            let tab_base = tab.label.trim_end_matches(" (disconnected)");
+            if tab_base != base {
+                continue;
+            }
+            for pane in &tab.panes {
+                if let Ok(mut state) = pane.terminal.lock() {
+                    state.palette = theme.palette();
+                }
+            }
+        }
+    }
+}
 
 impl Oryxis {
     pub(crate) fn handle_settings(
@@ -23,15 +126,24 @@ impl Oryxis {
         match message {
             // -- Settings --
             Message::TerminalThemeChanged(name) => {
-                if let Some(theme) = oryxis_terminal::TerminalTheme::ALL.iter().find(|t| t.name() == name) {
-                    self.terminal_theme = *theme;
-                    // Apply to all open terminals
-                    for tab in &self.tabs {
-                        if let Ok(mut state) = tab.active().terminal.lock() {
-                            state.palette = theme.palette();
-                        }
-                    }
+                // Empty string == "follow app theme". Anything else is
+                // matched against the known theme names; an unknown
+                // string is ignored so a typo'd setting can't lock
+                // the user out of the picker.
+                if name.is_empty() {
+                    self.terminal_theme_override = None;
+                    self.persist_setting("terminal_theme_override", "");
+                } else if oryxis_terminal::TerminalTheme::ALL
+                    .iter()
+                    .any(|t| t.name() == name)
+                {
+                    self.terminal_theme_override = Some(name.clone());
+                    self.persist_setting("terminal_theme_override", &name);
+                } else {
+                    return Ok(Task::none());
                 }
+                self.terminal_theme = self.resolve_global_terminal_theme();
+                self.repaint_all_terminal_palettes();
             }
             Message::LanguageChanged(name) => {
                 use crate::i18n::Language;
@@ -56,33 +168,16 @@ impl Oryxis {
                 }
             }
             Message::AppThemeChanged(name) => {
-                use crate::theme::AppTheme;
                 if let Some(theme) = AppTheme::ALL.iter().find(|t| t.name() == name) {
                     AppTheme::set_active(*theme);
-                    // Persist so the choice survives the next boot —
-                    // previously the theme reverted on every restart.
                     self.persist_setting("app_theme", theme.name());
-                    // Map app theme to terminal palette
-                    let term_theme = match theme {
-                        AppTheme::OryxisDark => oryxis_terminal::TerminalTheme::OryxisDark,
-                        AppTheme::OryxisLight => oryxis_terminal::TerminalTheme::OryxisDark,
-                        AppTheme::Termius => oryxis_terminal::TerminalTheme::OryxisDark,
-                        AppTheme::Darcula => oryxis_terminal::TerminalTheme::Dracula,
-                        AppTheme::IslandsDark => oryxis_terminal::TerminalTheme::Dracula,
-                        AppTheme::Dracula => oryxis_terminal::TerminalTheme::Dracula,
-                        AppTheme::Monokai => oryxis_terminal::TerminalTheme::Monokai,
-                        AppTheme::HackerGreen => oryxis_terminal::TerminalTheme::HackerGreen,
-                        AppTheme::Nord => oryxis_terminal::TerminalTheme::Nord,
-                        AppTheme::NordLight => oryxis_terminal::TerminalTheme::Nord,
-                        AppTheme::SolarizedLight => oryxis_terminal::TerminalTheme::SolarizedDark,
-                        AppTheme::PaperLight => oryxis_terminal::TerminalTheme::OryxisDark,
-                    };
-                    self.terminal_theme = term_theme;
-                    for tab in &self.tabs {
-                        if let Ok(mut state) = tab.active().terminal.lock() {
-                            state.palette = term_theme.palette();
-                        }
-                    }
+                    // Refresh the global derived palette and re-paint
+                    // every tab. Tabs whose connection has its own
+                    // terminal_theme override pick that up via
+                    // `resolve_terminal_theme_for_label`, so the user's
+                    // per-host pick survives an app theme switch.
+                    self.terminal_theme = self.resolve_global_terminal_theme();
+                    self.repaint_all_terminal_palettes();
                 }
             }
             Message::TerminalFontSizeIncrease => {

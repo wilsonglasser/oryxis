@@ -170,6 +170,44 @@ impl Oryxis {
                         .style(crate::widgets::rounded_input_style),
                 ]);
 
+                // Terminal theme picker. First option means "follow the
+                // app theme" (terminal_theme_override = None); the rest
+                // are explicit palette names. Per-host overrides
+                // configured via the icon picker still win over this
+                // global pick.
+                let follow_app_label = t("terminal_theme_follow_app").to_string();
+                let mut theme_options: Vec<String> = vec![follow_app_label.clone()];
+                theme_options.extend(
+                    oryxis_terminal::TerminalTheme::ALL
+                        .iter()
+                        .map(|th| th.name().to_string()),
+                );
+                let theme_selected = self
+                    .terminal_theme_override
+                    .clone()
+                    .unwrap_or_else(|| follow_app_label.clone());
+                let follow_app_match = follow_app_label.clone();
+                let theme_picker_section = panel_section(column![
+                    text(t("terminal_theme")).size(13).color(OryxisColors::t().text_primary),
+                    Space::new().height(4),
+                    text(t("terminal_theme_desc"))
+                        .size(11).color(OryxisColors::t().text_muted),
+                    Space::new().height(8),
+                    pick_list(
+                        Some(theme_selected),
+                        theme_options,
+                        |s: &String| s.clone(),
+                    )
+                    .on_select(move |v| {
+                        if v == follow_app_match {
+                            Message::TerminalThemeChanged(String::new())
+                        } else {
+                            Message::TerminalThemeChanged(v)
+                        }
+                    })
+                    .width(260).padding(10).style(crate::widgets::rounded_pick_list_style),
+                ]);
+
                 // Font picker — full list, regardless of whether a given font is
                 // bundled. The renderer falls back when a name can't be resolved.
                 let fonts: Vec<String> = crate::app::TERMINAL_FONTS
@@ -274,6 +312,8 @@ impl Oryxis {
                             toggles_section,
                             Space::new().height(12),
                             font_size_section,
+                            Space::new().height(12),
+                            theme_picker_section,
                             Space::new().height(12),
                             font_picker_section,
                             Space::new().height(12),

@@ -342,6 +342,7 @@ impl VaultStore {
         // saved proxy config instead of an inline one. NULL on cascade
         // when the referenced identity is deleted.
         let _ = self.db.execute_batch("ALTER TABLE connections ADD COLUMN proxy_identity_id TEXT;");
+        let _ = self.db.execute_batch("ALTER TABLE connections ADD COLUMN terminal_theme TEXT;");
         let _ = self.db.execute_batch("ALTER TABLE keys ADD COLUMN updated_at TEXT;");
         let _ = self.db.execute_batch("ALTER TABLE groups ADD COLUMN created_at TEXT;");
         let _ = self.db.execute_batch("ALTER TABLE groups ADD COLUMN updated_at TEXT;");
@@ -565,8 +566,8 @@ impl VaultStore {
             "INSERT OR REPLACE INTO connections
              (id, label, hostname, port, username, auth_method, key_id, group_id,
               jump_chain, proxy, tags, notes, color, password, last_used, created_at, updated_at, identity_id, mcp_enabled, port_forwards,
-              detected_os, custom_icon, custom_color, agent_forwarding, proxy_identity_id)
-             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20,?21,?22,?23,?24,?25)",
+              detected_os, custom_icon, custom_color, agent_forwarding, proxy_identity_id, terminal_theme)
+             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20,?21,?22,?23,?24,?25,?26)",
             params![
                 conn.id.to_string(),
                 conn.label,
@@ -596,6 +597,7 @@ impl VaultStore {
                 conn.custom_color,
                 conn.agent_forwarding as i32,
                 conn.proxy_identity_id.map(|u| u.to_string()),
+                conn.terminal_theme,
             ],
         )?;
         Ok(())
@@ -614,12 +616,12 @@ impl VaultStore {
         let query = match mcp_filter {
             Some(true) => {
                 "SELECT id, label, hostname, port, username, auth_method, key_id, group_id,
-                        jump_chain, proxy, tags, notes, color, last_used, created_at, updated_at, identity_id, mcp_enabled, port_forwards, detected_os, custom_icon, custom_color, agent_forwarding, proxy_identity_id
+                        jump_chain, proxy, tags, notes, color, last_used, created_at, updated_at, identity_id, mcp_enabled, port_forwards, detected_os, custom_icon, custom_color, agent_forwarding, proxy_identity_id, terminal_theme
                  FROM connections WHERE mcp_enabled = 1 ORDER BY label"
             }
             _ => {
                 "SELECT id, label, hostname, port, username, auth_method, key_id, group_id,
-                        jump_chain, proxy, tags, notes, color, last_used, created_at, updated_at, identity_id, mcp_enabled, port_forwards, detected_os, custom_icon, custom_color, agent_forwarding, proxy_identity_id
+                        jump_chain, proxy, tags, notes, color, last_used, created_at, updated_at, identity_id, mcp_enabled, port_forwards, detected_os, custom_icon, custom_color, agent_forwarding, proxy_identity_id, terminal_theme
                  FROM connections ORDER BY label"
             }
         };
@@ -699,6 +701,10 @@ impl VaultStore {
                         .ok()
                         .flatten()
                         .and_then(|s| Uuid::parse_str(&s).ok()),
+                    terminal_theme: row
+                        .get::<_, Option<String>>(24)
+                        .ok()
+                        .flatten(),
                 })
             })?
             .collect::<Result<Vec<_>, _>>()?;
@@ -1982,6 +1988,25 @@ mod tests {
 
         let conns = vault.list_connections().unwrap();
         assert_eq!(conns[0].label, "server-renamed");
+    }
+
+    #[test]
+    fn terminal_theme_round_trip() {
+        // Per-host terminal_theme survives the INSERT/SELECT cycle
+        // and `None` is preserved (not coerced to "").
+        let vault = unlocked_vault();
+        let mut with_theme = Connection::new("themed", "host.example.com");
+        with_theme.terminal_theme = Some("Dracula".to_string());
+        vault.save_connection(&with_theme, None).unwrap();
+
+        let without_theme = Connection::new("plain", "other.example.com");
+        vault.save_connection(&without_theme, None).unwrap();
+
+        let conns = vault.list_connections().unwrap();
+        let themed = conns.iter().find(|c| c.label == "themed").unwrap();
+        assert_eq!(themed.terminal_theme.as_deref(), Some("Dracula"));
+        let plain = conns.iter().find(|c| c.label == "plain").unwrap();
+        assert!(plain.terminal_theme.is_none());
     }
 
     #[test]

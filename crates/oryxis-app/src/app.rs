@@ -112,6 +112,10 @@ pub struct Oryxis {
     pub(crate) icon_picker_icon: Option<String>,
     pub(crate) icon_picker_color: Option<String>,
     pub(crate) icon_picker_hex_input: String,
+    /// Per-host terminal theme being edited in the icon picker. `None`
+    /// means "inherit the global terminal theme". Mirrors
+    /// `Connection.terminal_theme` while the picker is open.
+    pub(crate) icon_picker_terminal_theme: Option<String>,
     pub(crate) connecting: Option<ConnectionProgress>,
     /// Counter that advances ~every 100ms while a connection is in progress.
     /// Used only to drive the pulsing "loading" ring on the active step dot.
@@ -240,7 +244,15 @@ pub struct Oryxis {
     pub(crate) viewing_session_log: Option<(Uuid, String)>, // (log_id, rendered_text)
 
     // Terminal theme
+    /// Theme derived from the active app theme — used as the global
+    /// fallback when neither `terminal_theme_override` nor a per-host
+    /// override is set.
     pub(crate) terminal_theme: oryxis_terminal::TerminalTheme,
+    /// User pick that overrides the app-theme-derived terminal palette.
+    /// `None` means "follow the app theme" (default). Stored as the
+    /// theme's display name (e.g. "Dracula") so the value survives new
+    /// theme additions without a migration.
+    pub(crate) terminal_theme_override: Option<String>,
     pub(crate) terminal_font_size: f32,
     pub(crate) terminal_font_name: String,
 
