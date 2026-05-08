@@ -286,7 +286,8 @@ fn allocate_tab_widths(n: usize, available: f32) -> (f32, f32) {
     let total_spacing = TAB_SPACING * (n_f - 1.0).max(0.0);
     let usable = (available - total_spacing).max(0.0);
     if n == 1 {
-        return (usable.clamp(TAB_MIN_WIDTH, TAB_NATURAL_WIDTH), 0.0);
+        let tab_width = usable.clamp(TAB_MIN_WIDTH, TAB_NATURAL_WIDTH);
+        return (tab_width, tab_width);
     }
     // Try natural for active + share rest among inactives.
     let active_target = TAB_NATURAL_WIDTH.min(usable);
