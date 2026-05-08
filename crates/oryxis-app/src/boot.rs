@@ -383,6 +383,11 @@ impl Oryxis {
             {
                 self.terminal_font_size = parsed.clamp(10.0, 24.0);
             }
+            if let Ok(Some(v)) = vault.get_setting("terminal_font_name")
+                && !v.is_empty()
+            {
+                self.terminal_font_name = v;
+            }
             if let Ok(Some(v)) = vault.get_setting("keepalive_interval") {
                 self.setting_keepalive_interval = v;
             }
