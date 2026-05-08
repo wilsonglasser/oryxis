@@ -87,9 +87,17 @@ impl Oryxis {
             }
             Message::TerminalFontSizeIncrease => {
                 self.terminal_font_size = (self.terminal_font_size + 1.0).min(24.0);
+                self.persist_setting(
+                    "terminal_font_size",
+                    &format!("{}", self.terminal_font_size),
+                );
             }
             Message::TerminalFontSizeDecrease => {
                 self.terminal_font_size = (self.terminal_font_size - 1.0).max(10.0);
+                self.persist_setting(
+                    "terminal_font_size",
+                    &format!("{}", self.terminal_font_size),
+                );
             }
             Message::TerminalFontChanged(name) => {
                 self.terminal_font_name = name;

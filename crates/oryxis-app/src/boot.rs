@@ -378,6 +378,11 @@ impl Oryxis {
             if let Ok(Some(v)) = vault.get_setting("smart_contrast") {
                 self.setting_smart_contrast = v == "true";
             }
+            if let Ok(Some(v)) = vault.get_setting("terminal_font_size")
+                && let Ok(parsed) = v.parse::<f32>()
+            {
+                self.terminal_font_size = parsed.clamp(10.0, 24.0);
+            }
             if let Ok(Some(v)) = vault.get_setting("keepalive_interval") {
                 self.setting_keepalive_interval = v;
             }
