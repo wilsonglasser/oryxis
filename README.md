@@ -117,8 +117,8 @@ Most SSH clients are either powerful but ugly (PuTTY), pretty but Electron-heavy
 - **Embedded emulator** — [alacritty_terminal 0.26](https://github.com/alacritty/alacritty) with 256-color, truecolor, mouse selection, scrollback.
 - **Syntax highlighting** — IPs (magenta), URLs (blue), file paths (cyan) auto-detected.
 - **Bold-to-bright colors** — Bold text uses vivid bright ANSI variants.
-- **6 terminal themes** — Oryxis Dark, Hacker Green, Dracula, Solarized Dark, Monokai, Nord.
-- **Configurable font size** — 10-24px, adjustable in Settings.
+- **13 terminal palettes** — Oryxis Dark / Light, Termius, Darcula, Islands Dark, Dracula, Monokai, Hacker Green, Nord / Nord Light, Solarized Dark / Light, Paper Light. Picker with inline swatch previews lives in `Settings → Terminal` (global) and the host editor (per-host override that wins over the global pick).
+- **Configurable font size** — 10-24px, adjustable in Settings or with `Ctrl + = / - / 0` and `Ctrl + Wheel`. Persisted across restarts.
 - **Session recording** — Full terminal output saved to vault, viewable in History.
 
 ### SFTP File Browser
@@ -349,6 +349,10 @@ The signaling server only stores `device_id -> IP:port` with a 5-minute TTL. It 
 | `Ctrl+1...9` | Switch to tab 1-9 |
 | `Ctrl+L` | Open local terminal |
 | `Ctrl+N` | New host |
+| `Ctrl+= / Ctrl++` | Increase terminal font size |
+| `Ctrl+-` | Decrease terminal font size |
+| `Ctrl+0` | Reset terminal font size |
+| `Ctrl+Wheel` | Adjust terminal font size |
 
 ## Security
 

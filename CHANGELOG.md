@@ -6,6 +6,67 @@ project uses [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- **Per-host + global terminal theme override** — `Settings → Terminal`
+  exposes a "Terminal Theme" picker that overrides the app-theme
+  derived palette; the host editor has its own "Terminal Theme" tile
+  that pins a specific host to a palette regardless of the global
+  pick. Resolution order at runtime is per-host > global > app
+  theme. The host's tile renders the active palette inline (bg fill,
+  fg-coloured name, ANSI dots) so the choice is visible without
+  opening the picker.
+- **Visual swatch picker** — both pickers replace the previous
+  dropdown with a column of cards. Each card paints the theme's
+  background, the theme name in the foreground colour, and a strip
+  of six ANSI dots — palettes are now compared at a glance.
+- **7 new terminal palettes** — Oryxis Light, Termius, Darcula
+  (JetBrains palette, distinct from Dracula), Islands Dark, Nord
+  Light, Solarized Light, Paper Light. Every app theme now has a
+  matching terminal palette; previously half the app themes silently
+  fell back to a non-matching palette.
+- **`Ctrl + (= | + | - | 0)` font zoom** — increase / decrease /
+  reset terminal font size from anywhere in the app, captured before
+  the PTY routing so the bytes don't reach the shell. Matches the
+  alacritty / kitty / gnome-terminal convention. Closes #5 part 2.
+- **`Ctrl + mouse wheel` font zoom** — wheel over the terminal
+  canvas with Ctrl held adjusts font size; mouse-mode TUIs (vim,
+  htop, less) keep their wheel behaviour intact since the event is
+  consumed before reaching the PTY. Closes #5 part 3.
+
+### Changed
+- **`AppThemeChanged` no longer overwrites per-host palette
+  overrides** — switching the app theme used to repaint every open
+  tab unconditionally, blowing away per-host picks. The repaint
+  loop now resolves through `resolve_terminal_theme_for_label` so
+  per-host overrides survive an app theme switch.
+- **Icon picker modal** — dimmed scrim + click-absorption pattern
+  borrowed from `tab_jump`. Previously a click anywhere on the
+  dialog bubbled out to the backdrop's `HideIconPicker` handler.
+  Also: the per-host theme picker that briefly lived inside this
+  modal was moved out into the host editor as a visible tile so it
+  isn't hidden below the fold.
+
+### Fixed
+- **Terminal font size reverted to default on every restart** — the
+  font size was kept in memory only. Now persists in the vault
+  settings table and rehydrates on boot. Closes #5 part 1.
+- **Terminal font name reverted to default on every restart** —
+  same bug class as the font size fix; the `terminal_font_name`
+  setting is now loaded on boot and persisted on every change.
+- **Single tab disappeared when focus moved off the terminal** —
+  `allocate_tab_widths` returned `inactive_width = 0` for `n == 1`,
+  which kicked in whenever the active tab lost focus (sidebar
+  click, AI chat sidebar, etc.). Mirrors the active width for the
+  solo case so the tab stays visible regardless of focus state.
+  Thanks @UltraMurlock (PR #6).
+
+### Security
+- **Bumped `astral-tokio-tar` 0.6.0 → 0.6.1** — addresses
+  `GHSA-fp55-jw48-c537` (PAX header smuggling) and
+  `GHSA-xx64-wwv2-hcqq` (symlink permission change during unpack).
+  Pulled in only as a dev-dependency via `testcontainers`, but
+  patching dev tooling anyway. (PR #7)
+
 ## [0.5.6] - 2026-05-05
 
 ### Added
