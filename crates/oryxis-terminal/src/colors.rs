@@ -5,42 +5,70 @@ use alacritty_terminal::vte::ansi::{self, NamedColor};
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TerminalTheme {
     OryxisDark,
-    HackerGreen,
+    OryxisLight,
+    Termius,
+    Darcula,
+    IslandsDark,
     Dracula,
-    SolarizedDark,
     Monokai,
+    HackerGreen,
     Nord,
+    NordLight,
+    SolarizedDark,
+    SolarizedLight,
+    PaperLight,
 }
 
 impl TerminalTheme {
     pub const ALL: &[TerminalTheme] = &[
         Self::OryxisDark,
-        Self::HackerGreen,
+        Self::OryxisLight,
+        Self::Termius,
+        Self::Darcula,
+        Self::IslandsDark,
         Self::Dracula,
-        Self::SolarizedDark,
         Self::Monokai,
+        Self::HackerGreen,
         Self::Nord,
+        Self::NordLight,
+        Self::SolarizedDark,
+        Self::SolarizedLight,
+        Self::PaperLight,
     ];
 
     pub fn name(&self) -> &'static str {
         match self {
             Self::OryxisDark => "Oryxis Dark",
-            Self::HackerGreen => "Hacker Green",
+            Self::OryxisLight => "Oryxis Light",
+            Self::Termius => "Termius",
+            Self::Darcula => "Darcula",
+            Self::IslandsDark => "Islands Dark",
             Self::Dracula => "Dracula",
-            Self::SolarizedDark => "Solarized Dark",
             Self::Monokai => "Monokai",
+            Self::HackerGreen => "Hacker Green",
             Self::Nord => "Nord",
+            Self::NordLight => "Nord Light",
+            Self::SolarizedDark => "Solarized Dark",
+            Self::SolarizedLight => "Solarized Light",
+            Self::PaperLight => "Paper Light",
         }
     }
 
     pub fn palette(&self) -> TerminalPalette {
         match self {
             Self::OryxisDark => TerminalPalette::oryxis_dark(),
-            Self::HackerGreen => TerminalPalette::hacker_green(),
+            Self::OryxisLight => TerminalPalette::oryxis_light(),
+            Self::Termius => TerminalPalette::termius(),
+            Self::Darcula => TerminalPalette::darcula(),
+            Self::IslandsDark => TerminalPalette::islands_dark(),
             Self::Dracula => TerminalPalette::dracula(),
-            Self::SolarizedDark => TerminalPalette::solarized_dark(),
             Self::Monokai => TerminalPalette::monokai(),
+            Self::HackerGreen => TerminalPalette::hacker_green(),
             Self::Nord => TerminalPalette::nord(),
+            Self::NordLight => TerminalPalette::nord_light(),
+            Self::SolarizedDark => TerminalPalette::solarized_dark(),
+            Self::SolarizedLight => TerminalPalette::solarized_light(),
+            Self::PaperLight => TerminalPalette::paper_light(),
         }
     }
 }
@@ -218,6 +246,205 @@ impl TerminalPalette {
                 Color::from_rgb8(180, 142, 173),  // Bright Magenta
                 Color::from_rgb8(143, 188, 187),  // Bright Cyan
                 Color::from_rgb8(236, 239, 244),  // Bright White
+            ],
+        }
+    }
+
+    /// Oryxis Light — light counterpart of `oryxis_dark`. White paper
+    /// surface, deep teal foreground, slightly desaturated ANSI so
+    /// the colours don't strobe against the bright background.
+    pub fn oryxis_light() -> Self {
+        Self {
+            foreground: Color::from_rgb8(33, 56, 66),     // deep teal-grey
+            background: Color::from_rgb8(248, 250, 250),
+            cursor: Color::from_rgb8(34, 153, 144),        // teal accent
+            ansi: [
+                Color::from_rgb8(60, 64, 64),     // Black
+                Color::from_rgb8(193, 60, 60),    // Red
+                Color::from_rgb8(46, 138, 87),    // Green
+                Color::from_rgb8(170, 124, 22),   // Yellow / amber
+                Color::from_rgb8(45, 102, 168),   // Blue
+                Color::from_rgb8(140, 90, 175),   // Magenta
+                Color::from_rgb8(33, 142, 134),   // Cyan / teal
+                Color::from_rgb8(214, 217, 215),  // White
+                Color::from_rgb8(110, 116, 116),  // Bright Black
+                Color::from_rgb8(220, 90, 90),    // Bright Red
+                Color::from_rgb8(70, 165, 110),   // Bright Green
+                Color::from_rgb8(200, 152, 50),   // Bright Yellow
+                Color::from_rgb8(75, 132, 198),   // Bright Blue
+                Color::from_rgb8(170, 120, 200),  // Bright Magenta
+                Color::from_rgb8(64, 174, 166),   // Bright Cyan
+                Color::from_rgb8(244, 246, 244),  // Bright White
+            ],
+        }
+    }
+
+    /// Termius — neutral dark navy with cyan accent matching the app
+    /// theme of the same name.
+    pub fn termius() -> Self {
+        Self {
+            foreground: Color::from_rgb8(224, 229, 237),
+            background: Color::from_rgb8(22, 26, 33),
+            cursor: Color::from_rgb8(43, 194, 208),       // Termius cyan
+            ansi: [
+                Color::from_rgb8(38, 44, 56),
+                Color::from_rgb8(232, 98, 98),
+                Color::from_rgb8(95, 211, 101),
+                Color::from_rgb8(231, 171, 82),
+                Color::from_rgb8(91, 162, 232),
+                Color::from_rgb8(178, 130, 220),
+                Color::from_rgb8(43, 194, 208),
+                Color::from_rgb8(207, 213, 222),
+                Color::from_rgb8(70, 78, 92),
+                Color::from_rgb8(255, 121, 121),
+                Color::from_rgb8(120, 230, 130),
+                Color::from_rgb8(255, 197, 102),
+                Color::from_rgb8(120, 184, 250),
+                Color::from_rgb8(206, 162, 240),
+                Color::from_rgb8(80, 214, 226),
+                Color::from_rgb8(237, 240, 245),
+            ],
+        }
+    }
+
+    /// Darcula — JetBrains' classic dark editor palette: bg `#2B2B2B`,
+    /// orange keywords, green strings, blue selection.
+    pub fn darcula() -> Self {
+        Self {
+            foreground: Color::from_rgb8(169, 183, 198),
+            background: Color::from_rgb8(43, 43, 43),
+            cursor: Color::from_rgb8(187, 181, 159),
+            ansi: [
+                Color::from_rgb8(43, 43, 43),
+                Color::from_rgb8(207, 91, 86),
+                Color::from_rgb8(106, 135, 89),    // string green
+                Color::from_rgb8(204, 120, 50),    // keyword orange
+                Color::from_rgb8(104, 151, 187),
+                Color::from_rgb8(155, 110, 165),
+                Color::from_rgb8(96, 156, 156),
+                Color::from_rgb8(169, 183, 198),
+                Color::from_rgb8(89, 89, 89),
+                Color::from_rgb8(229, 130, 124),
+                Color::from_rgb8(149, 174, 124),
+                Color::from_rgb8(255, 198, 109),
+                Color::from_rgb8(151, 195, 232),
+                Color::from_rgb8(199, 159, 209),
+                Color::from_rgb8(135, 195, 195),
+                Color::from_rgb8(232, 232, 232),
+            ],
+        }
+    }
+
+    /// Islands Dark — JetBrains' New UI variant. Cooler outer frame,
+    /// brighter foreground than Darcula, blue accent.
+    pub fn islands_dark() -> Self {
+        Self {
+            foreground: Color::from_rgb8(223, 225, 229),
+            background: Color::from_rgb8(30, 31, 34),
+            cursor: Color::from_rgb8(117, 163, 255),
+            ansi: [
+                Color::from_rgb8(46, 48, 53),
+                Color::from_rgb8(221, 92, 92),
+                Color::from_rgb8(98, 174, 108),
+                Color::from_rgb8(233, 174, 76),
+                Color::from_rgb8(117, 163, 255),
+                Color::from_rgb8(189, 147, 249),
+                Color::from_rgb8(96, 196, 196),
+                Color::from_rgb8(206, 209, 214),
+                Color::from_rgb8(80, 84, 92),
+                Color::from_rgb8(244, 124, 124),
+                Color::from_rgb8(125, 198, 135),
+                Color::from_rgb8(255, 200, 110),
+                Color::from_rgb8(140, 180, 255),
+                Color::from_rgb8(208, 175, 255),
+                Color::from_rgb8(135, 215, 215),
+                Color::from_rgb8(238, 240, 245),
+            ],
+        }
+    }
+
+    /// Nord Light — Snow Storm base. Light counterpart of `nord()`,
+    /// keeps the same Frost / Aurora hues but on a near-white surface.
+    pub fn nord_light() -> Self {
+        Self {
+            foreground: Color::from_rgb8(46, 52, 64),
+            background: Color::from_rgb8(236, 239, 244),
+            cursor: Color::from_rgb8(94, 129, 172),       // Frost blue
+            ansi: [
+                Color::from_rgb8(59, 66, 82),
+                Color::from_rgb8(191, 97, 106),
+                Color::from_rgb8(163, 190, 140),
+                Color::from_rgb8(208, 165, 86),
+                Color::from_rgb8(94, 129, 172),
+                Color::from_rgb8(180, 142, 173),
+                Color::from_rgb8(136, 192, 208),
+                Color::from_rgb8(216, 222, 233),
+                Color::from_rgb8(76, 86, 106),
+                Color::from_rgb8(208, 116, 124),
+                Color::from_rgb8(180, 205, 162),
+                Color::from_rgb8(220, 178, 100),
+                Color::from_rgb8(129, 161, 193),
+                Color::from_rgb8(196, 162, 188),
+                Color::from_rgb8(143, 188, 187),
+                Color::from_rgb8(229, 233, 240),
+            ],
+        }
+    }
+
+    /// Solarized Light — Ethan Schoonover's bright variant. Same
+    /// accent ramp as Solarized Dark, mirrored against the cream
+    /// `#FDF6E3` paper.
+    pub fn solarized_light() -> Self {
+        Self {
+            foreground: Color::from_rgb8(101, 123, 131),    // base00
+            background: Color::from_rgb8(253, 246, 227),    // base3
+            cursor: Color::from_rgb8(101, 123, 131),
+            ansi: [
+                Color::from_rgb8(7, 54, 66),       // base02
+                Color::from_rgb8(220, 50, 47),     // red
+                Color::from_rgb8(133, 153, 0),     // green
+                Color::from_rgb8(181, 137, 0),     // yellow
+                Color::from_rgb8(38, 139, 210),    // blue
+                Color::from_rgb8(211, 54, 130),    // magenta
+                Color::from_rgb8(42, 161, 152),    // cyan
+                Color::from_rgb8(238, 232, 213),   // base2
+                Color::from_rgb8(0, 43, 54),       // base03
+                Color::from_rgb8(203, 75, 22),     // orange
+                Color::from_rgb8(88, 110, 117),    // base01
+                Color::from_rgb8(101, 123, 131),   // base00
+                Color::from_rgb8(131, 148, 150),   // base0
+                Color::from_rgb8(108, 113, 196),   // violet
+                Color::from_rgb8(147, 161, 161),   // base1
+                Color::from_rgb8(253, 246, 227),   // base3
+            ],
+        }
+    }
+
+    /// Paper Light — neutral high-contrast light theme. Pure-ish
+    /// paper background, near-black text, restrained ANSI for
+    /// long-form readability (matches the app's `Paper Light` UI).
+    pub fn paper_light() -> Self {
+        Self {
+            foreground: Color::from_rgb8(34, 34, 34),
+            background: Color::from_rgb8(250, 250, 250),
+            cursor: Color::from_rgb8(34, 34, 34),
+            ansi: [
+                Color::from_rgb8(34, 34, 34),
+                Color::from_rgb8(170, 50, 50),
+                Color::from_rgb8(50, 130, 80),
+                Color::from_rgb8(160, 110, 30),
+                Color::from_rgb8(45, 95, 165),
+                Color::from_rgb8(140, 90, 175),
+                Color::from_rgb8(40, 130, 130),
+                Color::from_rgb8(230, 230, 230),
+                Color::from_rgb8(90, 90, 90),
+                Color::from_rgb8(200, 70, 70),
+                Color::from_rgb8(70, 160, 100),
+                Color::from_rgb8(190, 140, 50),
+                Color::from_rgb8(70, 125, 195),
+                Color::from_rgb8(170, 120, 200),
+                Color::from_rgb8(60, 160, 160),
+                Color::from_rgb8(245, 245, 245),
             ],
         }
     }

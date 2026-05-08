@@ -16,24 +16,25 @@ use crate::state::{TerminalTab, VaultState, View};
 use crate::theme::AppTheme;
 use crate::util::sanitize_uint;
 
-/// Map the active app theme to the closest matching terminal palette.
-/// Used as the bottom-of-the-stack fallback in
+/// Map the active app theme to its companion terminal palette. Used
+/// as the bottom-of-the-stack fallback in
 /// `resolve_global_terminal_theme` when neither a global override nor a
-/// per-host override is set.
+/// per-host override is set. Every app theme has a matching palette
+/// of the same name.
 fn app_theme_to_terminal(theme: AppTheme) -> oryxis_terminal::TerminalTheme {
     match theme {
         AppTheme::OryxisDark => oryxis_terminal::TerminalTheme::OryxisDark,
-        AppTheme::OryxisLight => oryxis_terminal::TerminalTheme::OryxisDark,
-        AppTheme::Termius => oryxis_terminal::TerminalTheme::OryxisDark,
-        AppTheme::Darcula => oryxis_terminal::TerminalTheme::Dracula,
-        AppTheme::IslandsDark => oryxis_terminal::TerminalTheme::Dracula,
+        AppTheme::OryxisLight => oryxis_terminal::TerminalTheme::OryxisLight,
+        AppTheme::Termius => oryxis_terminal::TerminalTheme::Termius,
+        AppTheme::Darcula => oryxis_terminal::TerminalTheme::Darcula,
+        AppTheme::IslandsDark => oryxis_terminal::TerminalTheme::IslandsDark,
         AppTheme::Dracula => oryxis_terminal::TerminalTheme::Dracula,
         AppTheme::Monokai => oryxis_terminal::TerminalTheme::Monokai,
         AppTheme::HackerGreen => oryxis_terminal::TerminalTheme::HackerGreen,
         AppTheme::Nord => oryxis_terminal::TerminalTheme::Nord,
-        AppTheme::NordLight => oryxis_terminal::TerminalTheme::Nord,
-        AppTheme::SolarizedLight => oryxis_terminal::TerminalTheme::SolarizedDark,
-        AppTheme::PaperLight => oryxis_terminal::TerminalTheme::OryxisDark,
+        AppTheme::NordLight => oryxis_terminal::TerminalTheme::NordLight,
+        AppTheme::SolarizedLight => oryxis_terminal::TerminalTheme::SolarizedLight,
+        AppTheme::PaperLight => oryxis_terminal::TerminalTheme::PaperLight,
     }
 }
 
