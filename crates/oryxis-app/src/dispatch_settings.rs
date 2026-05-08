@@ -101,6 +101,7 @@ impl Oryxis {
             }
             Message::TerminalFontChanged(name) => {
                 self.terminal_font_name = name;
+                self.persist_setting("terminal_font_name", &self.terminal_font_name);
             }
             Message::ChangeSettingsSection(section) => {
                 self.settings_section = section;
