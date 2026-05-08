@@ -651,7 +651,7 @@ fn open_url(url: &str) {
 // Terminal View
 // ---------------------------------------------------------------------------
 
-pub struct TerminalView {
+pub struct TerminalView<Message = ()> {
     state: Arc<Mutex<TerminalState>>,
     font_size: f32,
     cell_width: f32,
@@ -673,6 +673,10 @@ pub struct TerminalView {
     /// the text stays legible. Off paints the cell exactly as the
     /// emulator asked, which a few colour-precise tools rely on.
     smart_contrast: bool,
+    /// Optional callback messages for Ctrl+Wheel font zoom. When unset,
+    /// Ctrl+Wheel still gets captured but produces no state change.
+    on_font_size_increase: Option<Message>,
+    on_font_size_decrease: Option<Message>,
 }
 
 /// Padding around the terminal content (in pixels).
@@ -817,7 +821,7 @@ fn scrollbar_geom(
     })
 }
 
-impl TerminalView {
+impl<Message> TerminalView<Message> {
     pub fn new(state: Arc<Mutex<TerminalState>>) -> Self {
         let font_size = 14.0;
         Self {
@@ -830,6 +834,8 @@ impl TerminalView {
             bold_is_bright: true,
             keyword_highlight: true,
             smart_contrast: true,
+            on_font_size_increase: None,
+            on_font_size_decrease: None,
         }
     }
 
@@ -857,6 +863,20 @@ impl TerminalView {
 
     pub fn with_keyword_highlight(mut self, on: bool) -> Self {
         self.keyword_highlight = on;
+        self
+    }
+
+    /// Wire a message that fires when the user does Ctrl+Wheel-up over
+    /// the terminal canvas.
+    pub fn on_font_size_increase(mut self, msg: Message) -> Self {
+        self.on_font_size_increase = Some(msg);
+        self
+    }
+
+    /// Wire a message that fires when the user does Ctrl+Wheel-down over
+    /// the terminal canvas.
+    pub fn on_font_size_decrease(mut self, msg: Message) -> Self {
+        self.on_font_size_decrease = Some(msg);
         self
     }
 
@@ -907,7 +927,7 @@ impl TerminalView {
     }
 }
 
-impl<Message> canvas::Program<Message, Theme> for TerminalView
+impl<Message> canvas::Program<Message, Theme> for TerminalView<Message>
 where
     Message: Clone,
 {
@@ -1089,6 +1109,32 @@ where
                 }
                 return Some(CanvasAction::capture());
             }
+            // Ctrl + wheel — adjust terminal font size in the standard
+            // alacritty / kitty / gnome-terminal way. Captured before the
+            // scrollback handler so it doesn't double-up with paging.
+            // The TUI inside the session never sees the wheel event in
+            // this branch, so htop / less / vim mouse modes aren't
+            // disturbed.
+            iced::Event::Mouse(mouse::Event::WheelScrolled { delta })
+                if cursor.position_in(bounds).is_some()
+                    && widget_state.modifiers.control() =>
+            {
+                let dy = match delta {
+                    mouse::ScrollDelta::Lines { y, .. } => *y,
+                    mouse::ScrollDelta::Pixels { y, .. } => *y,
+                };
+                if dy > 0.0
+                    && let Some(msg) = self.on_font_size_increase.clone()
+                {
+                    return Some(CanvasAction::publish(msg).and_capture());
+                }
+                if dy < 0.0
+                    && let Some(msg) = self.on_font_size_decrease.clone()
+                {
+                    return Some(CanvasAction::publish(msg).and_capture());
+                }
+                return Some(CanvasAction::capture());
+            }
             // Mouse wheel — scrollback in the OS-natural direction:
             // wheel up shows older content (scroll_offset increases),
             // wheel down returns to the live edge (scroll_offset → 0).
@@ -1213,7 +1259,7 @@ where
         let lock_dur = lock_start.map(|t| t.elapsed()).unwrap_or_default();
 
         // Auto-resize
-        let (new_cols, new_rows) = TerminalView::grid_size_for(bounds.width, bounds.height, self.font_size);
+        let (new_cols, new_rows) = Self::grid_size_for(bounds.width, bounds.height, self.font_size);
         state.resize(new_cols, new_rows);
 
         // Alt-screen apps (top, vim, less, htop, …) own the entire
@@ -1402,10 +1448,10 @@ where
             // Selection highlight — convert visible row to grid-line so
             // the selection follows scrolled content instead of staying
             // glued to viewport coordinates.
-            let cell_line = TerminalView::visible_row_to_line(cd.row, scroll_offset);
+            let cell_line = Self::visible_row_to_line(cd.row, scroll_offset);
             let is_selected = selection
                 .as_ref()
-                .map(|s| TerminalView::is_in_selection(s, cd.col, cell_line))
+                .map(|s| Self::is_in_selection(s, cd.col, cell_line))
                 .unwrap_or(false);
 
             if is_selected {

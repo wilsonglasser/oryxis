@@ -32,7 +32,9 @@ impl Oryxis {
                     .with_copy_on_select(self.setting_copy_on_select)
                     .with_bold_is_bright(self.setting_bold_is_bright)
                     .with_keyword_highlight(self.setting_keyword_highlight)
-                    .with_smart_contrast(self.setting_smart_contrast);
+                    .with_smart_contrast(self.setting_smart_contrast)
+                    .on_font_size_increase(Message::TerminalFontSizeIncrease)
+                    .on_font_size_decrease(Message::TerminalFontSizeDecrease);
                 let term_canvas: Element<'_, Message> = canvas(term_view)
                     .width(Length::Fill)
                     .height(Length::Fill)
