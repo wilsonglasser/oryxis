@@ -112,10 +112,11 @@ pub struct Oryxis {
     pub(crate) icon_picker_icon: Option<String>,
     pub(crate) icon_picker_color: Option<String>,
     pub(crate) icon_picker_hex_input: String,
-    /// Per-host terminal theme being edited in the icon picker. `None`
-    /// means "inherit the global terminal theme". Mirrors
-    /// `Connection.terminal_theme` while the picker is open.
-    pub(crate) icon_picker_terminal_theme: Option<String>,
+    /// Whether the per-host terminal theme picker modal is open.
+    /// Drawn on top of the host editor; the form's
+    /// `terminal_theme` field is updated as soon as the user picks
+    /// a card.
+    pub(crate) show_theme_picker: bool,
     pub(crate) connecting: Option<ConnectionProgress>,
     /// Counter that advances ~every 100ms while a connection is in progress.
     /// Used only to drive the pulsing "loading" ring on the active step dot.

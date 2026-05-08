@@ -365,14 +365,28 @@ impl Oryxis {
             );
         }
 
-        // Icon/color picker (from the host editor).
+        // Icon/color picker (from the host editor). The picker
+        // already wraps itself in scrim + absorb-click MouseAreas, so
+        // it goes on top of the base view as a single Element.
         if self.show_icon_picker {
             let picker = self.view_icon_picker();
-            let backdrop = crate::views::icon_picker::icon_picker_backdrop();
             return wrap_with_resize(
                 Stack::new()
                     .push(base)
-                    .push(backdrop)
+                    .push(picker)
+                    .width(Length::Fill)
+                    .height(Length::Fill)
+                    .into(),
+                resize_overlay,
+            );
+        }
+
+        // Per-host terminal theme picker (from the host editor).
+        if self.show_theme_picker {
+            let picker = self.view_terminal_theme_picker();
+            return wrap_with_resize(
+                Stack::new()
+                    .push(base)
                     .push(picker)
                     .width(Length::Fill)
                     .height(Length::Fill)

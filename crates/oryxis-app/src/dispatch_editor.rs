@@ -103,6 +103,7 @@ impl Oryxis {
                         }).unwrap_or_default(),
                         has_existing_proxy_password: has_proxy_pw,
                         proxy_password_touched: false,
+                        terminal_theme: conn.terminal_theme.clone(),
                     };
                 }
             }
@@ -193,6 +194,18 @@ impl Oryxis {
                 self.editor_form.proxy_password = v;
             }
             Message::EditorProxyCommandChanged(v) => { self.editor_form.proxy_command = v; }
+            Message::EditorOpenThemePicker => {
+                self.show_theme_picker = true;
+            }
+            Message::EditorCloseThemePicker => {
+                self.show_theme_picker = false;
+            }
+            Message::EditorTerminalThemeChanged(name) => {
+                // Empty string == "inherit the global pick".
+                self.editor_form.terminal_theme =
+                    if name.is_empty() { None } else { Some(name) };
+                self.show_theme_picker = false;
+            }
             Message::EditorSave => {
                 if self.editor_form.label.is_empty() || self.editor_form.hostname.is_empty() {
                     self.host_panel_error = Some("Label and hostname are required".into());
@@ -266,6 +279,7 @@ impl Oryxis {
                 }).collect();
                 conn.mcp_enabled = self.editor_form.mcp_enabled;
                 conn.agent_forwarding = self.editor_form.agent_forwarding;
+                conn.terminal_theme = self.editor_form.terminal_theme.clone();
                 // Map the editor form into either an inline ProxyConfig
                 // or a `proxy_identity_id` reference. Validates host /
                 // port / command up-front so the user gets an error
@@ -313,7 +327,12 @@ impl Oryxis {
                             }
                             self.show_host_panel = false;
                             self.host_panel_error = None;
+                            // Re-paint any open tabs of this host so a
+                            // newly chosen palette takes effect without
+                            // a reconnect.
+                            let host_label = conn.label.clone();
                             self.load_data_from_vault();
+                            self.repaint_terminal_palettes_for_label(&host_label);
                         }
                         Err(e) => {
                             self.host_panel_error = Some(e.to_string());
