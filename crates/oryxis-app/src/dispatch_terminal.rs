@@ -60,6 +60,31 @@ impl Oryxis {
                     self.tab_jump_search.clear();
                     return Ok(Task::none());
                 }
+                // Ctrl + (= | + | - | 0) — terminal font zoom. Matches
+                // alacritty / kitty / gnome-terminal convention. Captured
+                // before the PTY routing so the bytes don't leak into
+                // the shell. `+` covers Ctrl+Shift+= on US layouts.
+                // `_` is intentionally NOT bound because Ctrl+_ already
+                // produces a meaningful control byte (0x1f).
+                if let keyboard::Event::KeyPressed { key, modifiers, .. } = &event
+                    && modifiers.control()
+                    && let keyboard::Key::Character(c) = key
+                {
+                    let new_size = match c.as_str() {
+                        "=" | "+" => Some((self.terminal_font_size + 1.0).min(24.0)),
+                        "-" => Some((self.terminal_font_size - 1.0).max(10.0)),
+                        "0" => Some(14.0),
+                        _ => None,
+                    };
+                    if let Some(size) = new_size {
+                        self.terminal_font_size = size;
+                        self.persist_setting(
+                            "terminal_font_size",
+                            &format!("{}", size),
+                        );
+                        return Ok(Task::none());
+                    }
+                }
                 // When the AI chat sidebar is open and the cursor is over
                 // it, the user is interacting with the textarea — drop the
                 // event so it doesn't double-dispatch into the terminal
