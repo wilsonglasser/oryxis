@@ -63,11 +63,15 @@ pub enum Message {
     IconPickerSelectIcon(String),
     IconPickerSelectColor(String),
     IconPickerHexInputChanged(String),
-    /// Per-host terminal theme override. Empty string == "inherit the
-    /// global terminal theme" (Connection.terminal_theme = None).
-    IconPickerSelectTerminalTheme(String),
     IconPickerSave,
     IconPickerResetAuto,
+    // Per-host terminal theme picker (modal opened from the host
+    // editor). The form field updates immediately on select; the
+    // change is committed on EditorSave like every other form field.
+    EditorOpenThemePicker,
+    EditorCloseThemePicker,
+    /// Empty string == "inherit the global theme".
+    EditorTerminalThemeChanged(String),
     ShowTabMenu(usize),
     ReconnectTab(usize),
     DuplicateTab(usize),

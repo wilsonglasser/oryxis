@@ -458,6 +458,139 @@ impl Oryxis {
 
         let port_forward_section = panel_section(pf_items);
 
+        // ── Section: Terminal appearance ──
+        // A single "click to open picker" tile that mirrors the
+        // current pick (palette swatches if a specific theme is set,
+        // a plain "inherit" row otherwise). The full picker lives in
+        // its own modal so this section stays compact.
+        let theme_trigger: Element<'_, Message> = match &self.editor_form.terminal_theme {
+            Some(name) => {
+                let resolved = oryxis_terminal::TerminalTheme::ALL
+                    .iter()
+                    .find(|th| th.name() == name)
+                    .copied();
+                match resolved {
+                    Some(theme) => {
+                        let palette = theme.palette();
+                        let swatches: Vec<Element<'_, Message>> = [1usize, 2, 3, 4, 5, 6]
+                            .iter()
+                            .map(|&i| {
+                                let color = palette.ansi[i];
+                                container(
+                                    Space::new()
+                                        .width(Length::Fixed(10.0))
+                                        .height(Length::Fixed(10.0)),
+                                )
+                                .style(move |_| container::Style {
+                                    background: Some(Background::Color(color)),
+                                    border: Border {
+                                        radius: Radius::from(5.0),
+                                        ..Default::default()
+                                    },
+                                    ..Default::default()
+                                })
+                                .into()
+                            })
+                            .collect();
+                        let bg = palette.background;
+                        let fg = palette.foreground;
+                        button(
+                            container(
+                                dir_row(vec![
+                                    text(theme.name()).size(13).color(fg).into(),
+                                    Space::new().width(Length::Fill).into(),
+                                    iced::widget::Row::with_children(swatches)
+                                        .spacing(4)
+                                        .into(),
+                                ])
+                                .align_y(iced::Alignment::Center),
+                            )
+                            .padding(Padding {
+                                top: 10.0,
+                                right: 12.0,
+                                bottom: 10.0,
+                                left: 12.0,
+                            })
+                            .width(Length::Fill),
+                        )
+                        .on_press(Message::EditorOpenThemePicker)
+                        .padding(0)
+                        .width(Length::Fill)
+                        .style(move |_, _| button::Style {
+                            background: Some(Background::Color(bg)),
+                            border: Border {
+                                radius: Radius::from(8.0),
+                                ..Default::default()
+                            },
+                            ..Default::default()
+                        })
+                        .into()
+                    }
+                    None => button(
+                        container(
+                            text(crate::i18n::t("terminal_theme_inherit_global"))
+                                .size(13)
+                                .color(OryxisColors::t().text_primary),
+                        )
+                        .padding(Padding {
+                            top: 10.0,
+                            right: 12.0,
+                            bottom: 10.0,
+                            left: 12.0,
+                        })
+                        .width(Length::Fill),
+                    )
+                    .on_press(Message::EditorOpenThemePicker)
+                    .padding(0)
+                    .width(Length::Fill)
+                    .style(move |_, _| button::Style {
+                        background: Some(Background::Color(OryxisColors::t().bg_surface)),
+                        border: Border {
+                            radius: Radius::from(8.0),
+                            color: OryxisColors::t().border,
+                            width: 1.0,
+                        },
+                        ..Default::default()
+                    })
+                    .into(),
+                }
+            }
+            None => button(
+                container(
+                    text(crate::i18n::t("terminal_theme_inherit_global"))
+                        .size(13)
+                        .color(OryxisColors::t().text_primary),
+                )
+                .padding(Padding { top: 10.0, right: 12.0, bottom: 10.0, left: 12.0 })
+                .width(Length::Fill),
+            )
+            .on_press(Message::EditorOpenThemePicker)
+            .padding(0)
+            .width(Length::Fill)
+            .style(move |_, _| button::Style {
+                background: Some(Background::Color(OryxisColors::t().bg_surface)),
+                border: Border {
+                    radius: Radius::from(8.0),
+                    color: OryxisColors::t().border,
+                    width: 1.0,
+                },
+                ..Default::default()
+            })
+            .into(),
+        };
+
+        let appearance_section = panel_section(column![
+            text(crate::i18n::t("terminal_theme"))
+                .size(13)
+                .color(OryxisColors::t().text_primary),
+            Space::new().height(4),
+            text(crate::i18n::t("host_terminal_theme_desc"))
+                .size(11)
+                .color(OryxisColors::t().text_muted),
+            Space::new().height(8),
+            theme_trigger,
+        ]);
+
         // ── Error ──
         let panel_error: Element<'_, Message> = if let Some(err) = &self.host_panel_error {
             container(Element::from(text(err.clone()).size(11).color(OryxisColors::t().error)))
@@ -498,6 +631,8 @@ impl Oryxis {
                 proxy_section,
                 Space::new().height(8),
                 port_forward_section,
+                Space::new().height(8),
+                appearance_section,
                 Space::new().height(8),
                 panel_error,
             ]

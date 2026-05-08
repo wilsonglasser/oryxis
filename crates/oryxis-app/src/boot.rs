@@ -100,7 +100,7 @@ impl Oryxis {
                 icon_picker_icon: None,
                 icon_picker_color: None,
                 icon_picker_hex_input: String::new(),
-                icon_picker_terminal_theme: None,
+                show_theme_picker: false,
                 connecting: None,
                 connect_anim_tick: 0,
                 last_window_press_at: None,

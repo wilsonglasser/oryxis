@@ -114,36 +114,6 @@ impl Oryxis {
             ]).align_y(iced::Alignment::Center),
         ];
 
-        // ── Per-host terminal theme override ──
-        // First card means "inherit the global pick"; the rest are
-        // real palette previews. Selection round-trips through
-        // Connection.terminal_theme.
-        let mut theme_cards: Vec<Element<'_, Message>> = Vec::new();
-        theme_cards.push(crate::widgets::terminal_theme_inherit_card(
-            t("terminal_theme_inherit_global"),
-            self.icon_picker_terminal_theme.is_none(),
-            Message::IconPickerSelectTerminalTheme(String::new()),
-        ));
-        for theme in oryxis_terminal::TerminalTheme::ALL.iter() {
-            let is_selected =
-                self.icon_picker_terminal_theme.as_deref() == Some(theme.name());
-            theme_cards.push(crate::widgets::terminal_theme_card(
-                *theme,
-                is_selected,
-                Message::IconPickerSelectTerminalTheme(theme.name().to_string()),
-            ));
-        }
-        let theme_block = column![
-            text(t("terminal_theme")).size(12).font(iced::Font {
-                weight: iced::font::Weight::Semibold,
-                ..iced::Font::new(crate::theme::SYSTEM_UI_FAMILY)
-            }).color(OryxisColors::t().text_secondary),
-            Space::new().height(4),
-            text(t("host_terminal_theme_desc"))
-                .size(11).color(OryxisColors::t().text_muted),
-            Space::new().height(8),
-            column(theme_cards).spacing(8),
-        ];
 
         // ── Footer actions ──
         let actions = dir_row(vec![
@@ -178,15 +148,13 @@ impl Oryxis {
                 icons_block,
                 Space::new().height(20),
                 colors_block,
-                Space::new().height(20),
-                theme_block,
                 Space::new().height(8),
             ]
             .padding(iced::Padding { top: 0.0, right: 10.0, bottom: 0.0, left: 0.0 }),
         )
         .height(Length::Fill);
 
-        let body = container(
+        let dialog = container(
             column![
                 header,
                 Space::new().height(16),
@@ -208,12 +176,32 @@ impl Oryxis {
             ..Default::default()
         });
 
-        container(body)
+        // Two MouseAreas: outer scrim dismisses on click-outside, inner
+        // wrapper around the dialog absorbs clicks so they don't bubble
+        // out and accidentally trip the scrim's HideIconPicker.
+        let dialog_capture: Element<'_, Message> = MouseArea::new(dialog)
+            .on_press(Message::NoOp)
+            .into();
+
+        let centered = container(dialog_capture)
             .width(Length::Fill)
             .height(Length::Fill)
             .center_x(Length::Fill)
-            .center_y(Length::Fill)
-            .into()
+            .center_y(Length::Fill);
+
+        MouseArea::new(
+            container(centered)
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .style(|_| container::Style {
+                    background: Some(Background::Color(Color::from_rgba(
+                        0.0, 0.0, 0.0, 0.5,
+                    ))),
+                    ..Default::default()
+                }),
+        )
+        .on_press(Message::HideIconPicker)
+        .into()
     }
 }
 
@@ -297,11 +285,3 @@ fn parse_hex_color(s: &str) -> Option<Color> {
 #[inline]
 fn id_str_unused_suppress(_: &Option<String>) {}
 
-/// Transparent backdrop that dismisses the picker on click.
-pub(crate) fn icon_picker_backdrop<'a>() -> Element<'a, Message> {
-    MouseArea::new(
-        container(Space::new()).width(Length::Fill).height(Length::Fill),
-    )
-    .on_press(Message::HideIconPicker)
-    .into()
-}

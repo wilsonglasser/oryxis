@@ -583,6 +583,10 @@ pub(crate) struct ConnectionForm {
     /// and lets save distinguish "preserve" from "explicitly cleared".
     pub has_existing_proxy_password: bool,
     pub proxy_password_touched: bool,
+    /// Per-host terminal palette override. `None` means "inherit the
+    /// global pick"; `Some(name)` pins this host to the named palette.
+    /// Mirrors `Connection.terminal_theme` while the editor is open.
+    pub terminal_theme: Option<String>,
 }
 
 /// UI-side proxy kind. Includes a `None` (disabled) variant — the
@@ -702,6 +706,7 @@ impl Default for ConnectionForm {
             proxy_command: String::new(),
             has_existing_proxy_password: false,
             proxy_password_touched: false,
+            terminal_theme: None,
         }
     }
 }

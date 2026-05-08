@@ -23,5 +23,6 @@ pub(crate) mod status_bar;
 pub(crate) mod tab_bar;
 pub(crate) mod tab_jump;
 pub(crate) mod terminal;
+pub(crate) mod theme_picker;
 pub(crate) mod update_modal;
 pub(crate) mod vault;

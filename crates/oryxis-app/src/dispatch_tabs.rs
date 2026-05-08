@@ -251,14 +251,9 @@ impl Oryxis {
                         .or_else(|| Some("server".to_string()));
                     self.icon_picker_color = conn.custom_color.clone();
                     self.icon_picker_hex_input = conn.custom_color.clone().unwrap_or_default();
-                    self.icon_picker_terminal_theme = conn.terminal_theme.clone();
                 }
                 self.icon_picker_for = Some(conn_id);
                 self.show_icon_picker = true;
-            }
-            Message::IconPickerSelectTerminalTheme(name) => {
-                self.icon_picker_terminal_theme =
-                    if name.is_empty() { None } else { Some(name) };
             }
             Message::HideIconPicker => {
                 self.show_icon_picker = false;
@@ -283,44 +278,31 @@ impl Oryxis {
                 if let Some(conn_id) = self.icon_picker_for {
                     let icon = self.icon_picker_icon.clone();
                     let color = self.icon_picker_color.clone();
-                    let term_theme = self.icon_picker_terminal_theme.clone();
-                    let mut repaint_label: Option<String> = None;
                     if let Some(conn) = self.connections.iter_mut().find(|c| c.id == conn_id) {
                         conn.custom_icon = icon.clone();
                         conn.custom_color = color.clone();
-                        conn.terminal_theme = term_theme;
                         // Full save so the row persists (and other fields
                         // aren't accidentally overwritten).
                         if let Some(vault) = &self.vault {
                             let _ = vault.save_connection(conn, None);
                         }
-                        repaint_label = Some(conn.label.clone());
-                    }
-                    if let Some(label) = repaint_label {
-                        self.repaint_terminal_palettes_for_label(&label);
                     }
                 }
                 self.show_icon_picker = false;
                 self.icon_picker_for = None;
             }
             Message::IconPickerResetAuto => {
-                // Clears every host-level override (icon, color, terminal
-                // theme). OS detection drives the icon again on the next
-                // successful connect; the terminal palette falls back to
-                // the global pick.
-                let mut repaint_label: Option<String> = None;
+                // Clears the icon/color override, letting OS detection
+                // drive the icon again on the next successful connect.
+                // (Terminal-theme override is edited separately in the
+                // host editor and is not touched here.)
                 if let Some(conn_id) = self.icon_picker_for
                     && let Some(conn) = self.connections.iter_mut().find(|c| c.id == conn_id) {
                     conn.custom_icon = None;
                     conn.custom_color = None;
-                    conn.terminal_theme = None;
                     if let Some(vault) = &self.vault {
                         let _ = vault.save_connection(conn, None);
                     }
-                    repaint_label = Some(conn.label.clone());
-                }
-                if let Some(label) = repaint_label {
-                    self.repaint_terminal_palettes_for_label(&label);
                 }
                 self.show_icon_picker = false;
                 self.icon_picker_for = None;
