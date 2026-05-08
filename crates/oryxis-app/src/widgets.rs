@@ -433,3 +433,135 @@ pub(crate) fn shortcut_row<'a>(keys: Vec<Element<'a, Message>>, action: &'a str)
         text(action).size(13).color(OryxisColors::t().text_secondary),
     ].align_y(iced::Alignment::Center).into()
 }
+
+/// Visual swatch card for a terminal palette. Renders the theme's
+/// background as the card fill, the theme name in the foreground
+/// color, and a strip of the six main ANSI colors so the user can
+/// compare palettes without having to apply each one.
+pub(crate) fn terminal_theme_card<'a>(
+    theme: oryxis_terminal::TerminalTheme,
+    selected: bool,
+    on_press: Message,
+) -> Element<'a, Message> {
+    let palette = theme.palette();
+    let bg = palette.background;
+    let fg = palette.foreground;
+    let name = theme.name();
+
+    // Render ANSI red → cyan (skip black/white because they barely
+    // read against the background).
+    let dot_indices: [usize; 6] = [1, 2, 3, 4, 5, 6];
+    let dots: Vec<Element<'_, Message>> = dot_indices
+        .iter()
+        .map(|&i| {
+            let color = palette.ansi[i];
+            container(
+                Space::new()
+                    .width(Length::Fixed(12.0))
+                    .height(Length::Fixed(12.0)),
+            )
+            .style(move |_| container::Style {
+                background: Some(Background::Color(color)),
+                border: Border {
+                    radius: Radius::from(6.0),
+                    ..Default::default()
+                },
+                ..Default::default()
+            })
+            .into()
+        })
+        .collect();
+
+    let body = dir_row(vec![
+        text(name).size(13).color(fg).into(),
+        Space::new().width(Length::Fill).into(),
+        Row::with_children(dots).spacing(4).into(),
+    ])
+    .align_y(iced::Alignment::Center);
+
+    let border_color = if selected {
+        OryxisColors::t().accent
+    } else {
+        Color::TRANSPARENT
+    };
+    let border_width = if selected { 2.0 } else { 0.0 };
+
+    button(
+        container(body)
+            .padding(Padding { top: 10.0, right: 12.0, bottom: 10.0, left: 12.0 })
+            .width(Length::Fill),
+    )
+    .on_press(on_press)
+    .padding(0)
+    .width(Length::Fill)
+    .style(move |_, status| {
+        // Slight lighten on hover, otherwise the theme bg is the card
+        // fill. The hover blend uses an inverted overlay so dark
+        // themes get a subtle highlight without breaking the preview.
+        let card_bg = match status {
+            BtnStatus::Hovered => Color {
+                a: bg.a,
+                r: (bg.r + 0.05).min(1.0),
+                g: (bg.g + 0.05).min(1.0),
+                b: (bg.b + 0.05).min(1.0),
+            },
+            _ => bg,
+        };
+        button::Style {
+            background: Some(Background::Color(card_bg)),
+            border: Border {
+                radius: Radius::from(8.0),
+                color: border_color,
+                width: border_width,
+            },
+            ..Default::default()
+        }
+    })
+    .into()
+}
+
+/// Companion to `terminal_theme_card` for the "no override" sentinel
+/// row that sits at the top of every theme picker. Uses the app's
+/// surface color rather than a palette so it doesn't pretend to be a
+/// theme of its own.
+pub(crate) fn terminal_theme_inherit_card<'a>(
+    label: &'a str,
+    selected: bool,
+    on_press: Message,
+) -> Element<'a, Message> {
+    let border_color = if selected {
+        OryxisColors::t().accent
+    } else {
+        OryxisColors::t().border
+    };
+    let border_width = if selected { 2.0 } else { 1.0 };
+
+    button(
+        container(
+            text(label.to_owned())
+                .size(13)
+                .color(OryxisColors::t().text_primary),
+        )
+        .padding(Padding { top: 10.0, right: 12.0, bottom: 10.0, left: 12.0 })
+        .width(Length::Fill),
+    )
+    .on_press(on_press)
+    .padding(0)
+    .width(Length::Fill)
+    .style(move |_, status| {
+        let bg = match status {
+            BtnStatus::Hovered => OryxisColors::t().bg_hover,
+            _ => OryxisColors::t().bg_surface,
+        };
+        button::Style {
+            background: Some(Background::Color(bg)),
+            border: Border {
+                radius: Radius::from(8.0),
+                color: border_color,
+                width: border_width,
+            },
+            ..Default::default()
+        }
+    })
+    .into()
+}
