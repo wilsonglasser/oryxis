@@ -100,6 +100,7 @@ impl Oryxis {
                 icon_picker_icon: None,
                 icon_picker_color: None,
                 icon_picker_hex_input: String::new(),
+                icon_picker_terminal_theme: None,
                 connecting: None,
                 connect_anim_tick: 0,
                 last_window_press_at: None,
@@ -185,6 +186,7 @@ impl Oryxis {
                 snippet_editing_id: None,
                 snippet_error: None,
                 terminal_theme: oryxis_terminal::TerminalTheme::OryxisDark,
+                terminal_theme_override: None,
                 terminal_font_size: 14.0,
                 terminal_font_name: "Source Code Pro".to_string(),
                 settings_section: SettingsSection::Terminal,
@@ -317,6 +319,15 @@ impl Oryxis {
                 use crate::theme::AppTheme;
                 AppTheme::set_active(AppTheme::from_name(&v));
             }
+            if let Ok(Some(v)) = vault.get_setting("terminal_theme_override")
+                && !v.is_empty()
+            {
+                self.terminal_theme_override = Some(v);
+            }
+            // Refresh the global derived palette to pick up the
+            // theme + override loaded above. Per-host overrides are
+            // applied lazily when each tab paints.
+            self.terminal_theme = self.resolve_global_terminal_theme();
 
             // AI settings
             if let Ok(Some(v)) = vault.get_setting("ai_enabled") {

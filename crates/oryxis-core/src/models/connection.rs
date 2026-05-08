@@ -54,6 +54,13 @@ pub struct Connection {
     /// `ssh hostB` from inside hostA without staging keys remotely.
     #[serde(default)]
     pub agent_forwarding: bool,
+    /// Per-host terminal palette override. When set, takes precedence
+    /// over the global `terminal_theme_override` setting and the app
+    /// theme fallback. Stored as `TerminalTheme::name()` (e.g.
+    /// "Dracula", "Monokai") so the value survives palette additions
+    /// without a migration. `None` falls through to the global pick.
+    #[serde(default)]
+    pub terminal_theme: Option<String>,
 }
 
 impl Connection {
@@ -84,6 +91,7 @@ impl Connection {
             custom_icon: None,
             custom_color: None,
             agent_forwarding: false,
+            terminal_theme: None,
         }
     }
 }

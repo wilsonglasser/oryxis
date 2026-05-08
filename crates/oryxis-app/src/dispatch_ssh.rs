@@ -108,7 +108,14 @@ impl Oryxis {
 
                     match TerminalState::new_no_pty(DEFAULT_TERM_COLS as u16, DEFAULT_TERM_ROWS as u16) {
                         Ok(mut state) => {
-                            state.palette = self.terminal_theme.palette();
+                            // Pick the per-host override first, then
+                            // the global override, then the app
+                            // theme. The terminal repaints itself
+                            // anyway when the user later switches
+                            // themes, but starting on the right
+                            // palette avoids a one-frame flash.
+                            state.palette =
+                                self.resolve_terminal_theme_for_connection(&conn).palette();
                             let label = conn.label.clone();
                             let hostname = format!("SSH {}:{}", conn.hostname, conn.port);
                             let terminal = Arc::new(Mutex::new(state));

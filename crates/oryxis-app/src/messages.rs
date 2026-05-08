@@ -63,6 +63,9 @@ pub enum Message {
     IconPickerSelectIcon(String),
     IconPickerSelectColor(String),
     IconPickerHexInputChanged(String),
+    /// Per-host terminal theme override. Empty string == "inherit the
+    /// global terminal theme" (Connection.terminal_theme = None).
+    IconPickerSelectTerminalTheme(String),
     IconPickerSave,
     IconPickerResetAuto,
     ShowTabMenu(usize),
