@@ -6,6 +6,8 @@ project uses [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.5.7] - 2026-05-08
+
 ### Added
 - **Per-host + global terminal theme override** — `Settings → Terminal`
   exposes a "Terminal Theme" picker that overrides the app-theme
