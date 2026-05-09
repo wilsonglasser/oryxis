@@ -1,15 +1,33 @@
+; System installer — installs to %ProgramFiles%\Oryxis for all users.
+; Requires UAC elevation (RequestExecutionLevel admin); winget points
+; here. The per-user variant lives in installer-user.nsi and runs
+; without elevation under %LOCALAPPDATA%\Programs\Oryxis.
+;
+; Build-time defines (override from CI):
+;   /DVERSION=0.5.2          — SemVer; falls back to 0.0.0-dev
+;   /DARCH=x86_64|aarch64    — used in OutFile suffix; defaults to x86_64
+;   /DBINPATH=..\target\release
+;                            — directory holding oryxis.exe and
+;                              oryxis-mcp.exe; defaults to the
+;                              x86_64 release path so a local
+;                              `cargo build --release` followed by
+;                              `makensis installer.nsi` still works
+;                              without flags.
+
 !include "MUI2.nsh"
 
-; Build-time version. Override from CI:
-;   makensis /DVERSION=0.5.2 installer.nsi
-; Without it, falls back to a placeholder so a developer build still
-; runs but doesn't pretend to be a real release.
 !ifndef VERSION
     !define VERSION "0.0.0-dev"
 !endif
+!ifndef ARCH
+    !define ARCH "x86_64"
+!endif
+!ifndef BINPATH
+    !define BINPATH "..\target\release"
+!endif
 
 Name "Oryxis"
-OutFile "..\oryxis-setup-x86_64.exe"
+OutFile "..\oryxis-setup-${ARCH}.exe"
 InstallDir "$PROGRAMFILES64\Oryxis"
 InstallDirRegKey HKLM "Software\Oryxis" "InstallDir"
 RequestExecutionLevel admin
@@ -38,8 +56,8 @@ VIAddVersionKey "LegalCopyright" "AGPL-3.0-or-later"
 Section "Install"
     SetOutPath $INSTDIR
 
-    File "..\target\release\oryxis.exe"
-    File "..\target\release\oryxis-mcp.exe"
+    File "${BINPATH}\oryxis.exe"
+    File "${BINPATH}\oryxis-mcp.exe"
     File "..\resources\logo.ico"
     File "..\README.md"
 
@@ -53,6 +71,14 @@ Section "Install"
 
     ; Write uninstaller
     WriteUninstaller "$INSTDIR\uninstall.exe"
+
+    ; Add INSTDIR to the system PATH so `oryxis` and `oryxis-mcp`
+    ; resolve from any shell. EnVar handles dedup (no duplicate
+    ; entries on reinstall) and broadcasts WM_SETTINGCHANGE so open
+    ; shells pick the new value up. Errors are non-fatal.
+    EnVar::SetHKLM
+    EnVar::AddValue "Path" "$INSTDIR"
+    Pop $0
 
     ; Registry — uninstall info. winget detects installed packages
     ; via these keys, so `DisplayVersion` MUST match the package
@@ -77,6 +103,10 @@ Section "Install"
 SectionEnd
 
 Section "Uninstall"
+    EnVar::SetHKLM
+    EnVar::DeleteValue "Path" "$INSTDIR"
+    Pop $0
+
     Delete "$INSTDIR\oryxis.exe"
     Delete "$INSTDIR\oryxis-mcp.exe"
     Delete "$INSTDIR\logo.ico"

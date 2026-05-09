@@ -90,21 +90,49 @@ fn pick_asset(json: &serde_json::Value) -> (Option<String>, Option<String>) {
         None => return (None, None),
     };
     let want = platform_asset_fragment();
+    let exclude = platform_asset_exclude();
     for a in assets {
         let name = a.get("name").and_then(|v| v.as_str()).unwrap_or("");
         let lname = name.to_lowercase();
-        if want.iter().all(|w| lname.contains(w)) {
-            let url = a.get("browser_download_url").and_then(|v| v.as_str()).map(|s| s.to_string());
-            return (url, Some(name.to_string()));
+        if !want.iter().all(|w| lname.contains(w)) {
+            continue;
         }
+        if exclude.iter().any(|w| lname.contains(w)) {
+            continue;
+        }
+        let url = a.get("browser_download_url").and_then(|v| v.as_str()).map(|s| s.to_string());
+        return (url, Some(name.to_string()));
     }
     (None, None)
 }
 
+/// On Windows we ship two installers: `oryxis-setup-x86_64.exe` (system,
+/// `Program Files`, requires UAC) and `oryxis-user-setup-x86_64.exe`
+/// (per-user, `%LOCALAPPDATA%`, no UAC). Pick the one matching the
+/// running install so the auto-update preserves scope. On other
+/// platforms the function returns `false` (no per-user concept).
+#[cfg(target_os = "windows")]
+fn is_per_user_install() -> bool {
+    let exe = match std::env::current_exe() {
+        Ok(p) => p,
+        Err(_) => return false,
+    };
+    let local = match std::env::var_os("LOCALAPPDATA") {
+        Some(v) => std::path::PathBuf::from(v),
+        None => return false,
+    };
+    let exe_lc = exe.to_string_lossy().to_lowercase();
+    let local_lc = local.to_string_lossy().to_lowercase();
+    exe_lc.starts_with(&local_lc)
+}
+
 /// Substrings we expect inside the asset filename for the current
 /// platform. The release pipeline emits, per architecture:
-///   • Windows x64:    `oryxis-setup-x86_64.exe` (NSIS installer)
-///   • Windows arm64:  `oryxis-windows-aarch64.zip` (portable, no installer)
+///   • Windows x64:    `oryxis-setup-x86_64.exe` (NSIS, system / UAC)
+///                     `oryxis-user-setup-x86_64.exe` (NSIS, per-user)
+///   • Windows arm64:  `oryxis-setup-aarch64.exe` (NSIS, system / UAC)
+///                     `oryxis-user-setup-aarch64.exe` (NSIS, per-user)
+///                     `oryxis-windows-aarch64.zip` (portable fallback)
 ///   • macOS arm64:    `oryxis-macos-aarch64.tar.gz`
 ///   • Linux x64:      `oryxis-linux-x86_64.AppImage`
 ///   • Linux arm64:    `oryxis-linux-aarch64.AppImage`
@@ -117,9 +145,21 @@ fn pick_asset(json: &serde_json::Value) -> (Option<String>, Option<String>) {
 fn platform_asset_fragment() -> Vec<&'static str> {
     if cfg!(target_os = "windows") {
         if cfg!(target_arch = "x86_64") {
+            #[cfg(target_os = "windows")]
+            {
+                if is_per_user_install() {
+                    return vec!["user-setup", "x86_64", ".exe"];
+                }
+            }
             vec!["setup", "x86_64", ".exe"]
         } else if cfg!(target_arch = "aarch64") {
-            vec!["windows", "aarch64", ".zip"]
+            #[cfg(target_os = "windows")]
+            {
+                if is_per_user_install() {
+                    return vec!["user-setup", "aarch64", ".exe"];
+                }
+            }
+            vec!["setup", "aarch64", ".exe"]
         } else {
             vec![]
         }
@@ -140,6 +180,24 @@ fn platform_asset_fragment() -> Vec<&'static str> {
     } else {
         vec![]
     }
+}
+
+/// Substrings that disqualify an otherwise matching asset. Used to keep
+/// the Windows system fragment (`["setup", "<arch>", ".exe"]`) from
+/// accidentally picking up `oryxis-user-setup-<arch>.exe`, which
+/// satisfies all three substrings. Only the system path needs an
+/// exclude rule — `user-setup` is already specific enough on its own.
+fn platform_asset_exclude() -> Vec<&'static str> {
+    if cfg!(target_os = "windows") {
+        #[cfg(target_os = "windows")]
+        {
+            if is_per_user_install() {
+                return vec![];
+            }
+        }
+        return vec!["user-setup"];
+    }
+    vec![]
 }
 
 /// Download the installer to a temp file. Reads the full response body into
@@ -170,15 +228,37 @@ pub async fn download_installer(
 }
 
 /// Launch the platform installer and spawn-detach so it keeps running
-/// after we exit. On Windows the NSIS `.exe` installer is invoked
-/// directly (UAC prompt handled by it); on macOS we open the mounted
-/// image; on Linux we open the file manager so the user can run it.
+/// after we exit. On Windows we go through `ShellExecuteW` so the
+/// installer's manifest controls elevation: the system NSIS asks for
+/// UAC, the per-user one runs as the current user without a prompt.
+/// On macOS we open the mounted image; on Linux we open the file
+/// manager so the user can run it.
 pub fn launch_installer(path: &std::path::Path) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     {
-        std::process::Command::new(path)
-            .spawn()
-            .map_err(|e| format!("Failed to launch installer: {e}"))?;
+        use std::os::windows::ffi::OsStrExt;
+        use windows_sys::Win32::UI::Shell::ShellExecuteW;
+        use windows_sys::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
+
+        let mut file: Vec<u16> = path.as_os_str().encode_wide().collect();
+        file.push(0);
+
+        let hinst = unsafe {
+            ShellExecuteW(
+                std::ptr::null_mut(),
+                std::ptr::null(),
+                file.as_ptr(),
+                std::ptr::null(),
+                std::ptr::null(),
+                SW_SHOWNORMAL,
+            )
+        };
+        // ShellExecuteW returns an HINSTANCE-shaped sentinel: values > 32
+        // mean success, anything else is one of the documented error
+        // codes (SE_ERR_ACCESSDENIED = 5 when the user declines UAC, etc).
+        if (hinst as isize) <= 32 {
+            return Err(format!("Failed to launch installer (ShellExecute={})", hinst as isize));
+        }
     }
     #[cfg(target_os = "macos")]
     {

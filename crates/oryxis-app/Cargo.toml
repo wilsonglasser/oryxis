@@ -69,6 +69,15 @@ sentry-tracing = "0.47"
 [target.'cfg(windows)'.build-dependencies]
 winresource = "0.1"
 
+# ShellExecuteW for the auto-updater. CreateProcess (what
+# `Command::new().spawn()` uses) ignores the installer manifest and fails
+# with ERROR_ELEVATION_REQUIRED (740) on the system NSIS .exe, which
+# declares `requireAdministrator`. ShellExecuteW reads the manifest and
+# triggers UAC for the system installer, while the per-user installer
+# (asInvoker) launches without a prompt — same code path serves both.
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.59", features = ["Win32_UI_Shell", "Win32_UI_WindowsAndMessaging", "Win32_Foundation"] }
+
 [dev-dependencies]
 # Property-based fuzzing for path/name helpers — generates random
 # inputs to flush out edge cases the hand-written cases missed.

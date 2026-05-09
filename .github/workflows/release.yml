@@ -177,7 +177,7 @@ jobs:
           Copy-Item README.md dist\
           Copy-Item resources\logo_64.png dist\
           Compress-Archive -Path dist\* -DestinationPath oryxis-windows-x86_64.zip
-      - name: Install NSIS
+      - name: Install NSIS + EnVar plugin
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
@@ -195,20 +195,40 @@ jobs:
             throw 'makensis.exe not found after install'
           }
           Add-Content $env:GITHUB_PATH 'C:\Program Files (x86)\NSIS'
-      - name: Build installer
+
+          # EnVar plugin — adds PATH manipulation primitives to NSIS
+          # (AddValue/DeleteValue with dedup + WM_SETTINGCHANGE
+          # broadcast). The NSIS wiki itself recommends EnVar over
+          # raw WriteRegExpandStr, which truncates at NSIS_MAX_STRLEN
+          # (1024 chars). Pinned to v0.3.1 from the GitHub mirror at
+          # GsNSIS/EnVar.
+          $envarZip = "$env:RUNNER_TEMP\EnVar.zip"
+          $envarDir = "$env:RUNNER_TEMP\EnVar"
+          Invoke-WebRequest `
+            -Uri 'https://github.com/GsNSIS/EnVar/releases/download/v0.3.1/EnVar-Plugin.zip' `
+            -OutFile $envarZip
+          Expand-Archive -Path $envarZip -DestinationPath $envarDir -Force
+          Copy-Item "$envarDir\Plugins\amd64-unicode\EnVar.dll" 'C:\Program Files (x86)\NSIS\Plugins\amd64-unicode\' -Force
+          Copy-Item "$envarDir\Plugins\x86-unicode\EnVar.dll" 'C:\Program Files (x86)\NSIS\Plugins\x86-unicode\' -Force
+      - name: Build installers
         shell: pwsh
         run: |
           # Strip the leading "v" from the tag so DisplayVersion is a
           # plain SemVer (winget compares these against its manifest).
           $version = "${{ github.ref_name }}".TrimStart('v')
           cd resources
-          makensis "/DVERSION=$version" installer.nsi
+          # System installer (UAC, %ProgramFiles%) — winget targets this one.
+          makensis "/DVERSION=$version" "/DARCH=x86_64" "/DBINPATH=..\target\release" installer.nsi
+          # Per-user installer (no UAC, %LOCALAPPDATA%) — auto-updater
+          # picks this when the running exe lives under LOCALAPPDATA.
+          makensis "/DVERSION=$version" "/DARCH=x86_64" "/DBINPATH=..\target\release" installer-user.nsi
       - uses: actions/upload-artifact@v5
         with:
           name: oryxis-windows-x86_64
           path: |
             oryxis-windows-x86_64.zip
             oryxis-setup-x86_64.exe
+            oryxis-user-setup-x86_64.exe
 
   build-windows-arm:
     name: Windows ARM64
@@ -226,7 +246,7 @@ jobs:
             target/
           key: windows-arm-release-${{ hashFiles('**/Cargo.lock') }}
       - run: cargo build --release --target aarch64-pc-windows-msvc
-      - name: Package
+      - name: Package portable zip
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path dist
@@ -235,10 +255,49 @@ jobs:
           Copy-Item README.md dist\
           Copy-Item resources\logo_64.png dist\
           Compress-Archive -Path dist\* -DestinationPath oryxis-windows-aarch64.zip
+      - name: Install NSIS + EnVar plugin
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $max = 5
+          $ok = $false
+          for ($i = 1; $i -le $max -and -not $ok; $i++) {
+            Write-Host "NSIS install attempt $i/$max"
+            choco install nsis -y --no-progress
+            if ($LASTEXITCODE -eq 0) { $ok = $true }
+            elseif ($i -lt $max) { Start-Sleep -Seconds 20 }
+          }
+          if (-not $ok) { throw "choco install nsis failed after $max attempts" }
+          if (-not (Test-Path 'C:\Program Files (x86)\NSIS\makensis.exe')) {
+            throw 'makensis.exe not found after install'
+          }
+          Add-Content $env:GITHUB_PATH 'C:\Program Files (x86)\NSIS'
+          $envarZip = "$env:RUNNER_TEMP\EnVar.zip"
+          $envarDir = "$env:RUNNER_TEMP\EnVar"
+          Invoke-WebRequest `
+            -Uri 'https://github.com/GsNSIS/EnVar/releases/download/v0.3.1/EnVar-Plugin.zip' `
+            -OutFile $envarZip
+          Expand-Archive -Path $envarZip -DestinationPath $envarDir -Force
+          Copy-Item "$envarDir\Plugins\amd64-unicode\EnVar.dll" 'C:\Program Files (x86)\NSIS\Plugins\amd64-unicode\' -Force
+          Copy-Item "$envarDir\Plugins\x86-unicode\EnVar.dll" 'C:\Program Files (x86)\NSIS\Plugins\x86-unicode\' -Force
+      - name: Build installers
+        shell: pwsh
+        run: |
+          # ARM64 installer is built by the (x86) NSIS toolchain on a
+          # cross-compile host — the produced .exe runs under x86
+          # emulation on Windows on ARM and lays down native ARM64
+          # binaries.
+          $version = "${{ github.ref_name }}".TrimStart('v')
+          cd resources
+          makensis "/DVERSION=$version" "/DARCH=aarch64" "/DBINPATH=..\target\aarch64-pc-windows-msvc\release" installer.nsi
+          makensis "/DVERSION=$version" "/DARCH=aarch64" "/DBINPATH=..\target\aarch64-pc-windows-msvc\release" installer-user.nsi
       - uses: actions/upload-artifact@v5
         with:
           name: oryxis-windows-aarch64
-          path: oryxis-windows-aarch64.zip
+          path: |
+            oryxis-windows-aarch64.zip
+            oryxis-setup-aarch64.exe
+            oryxis-user-setup-aarch64.exe
 
   release:
     name: Create Release
@@ -277,7 +336,10 @@ jobs:
             oryxis-macos-aarch64.tar.gz
             oryxis-windows-x86_64.zip
             oryxis-setup-x86_64.exe
+            oryxis-user-setup-x86_64.exe
             oryxis-windows-aarch64.zip
+            oryxis-setup-aarch64.exe
+            oryxis-user-setup-aarch64.exe
 
   winget:
     name: Publish to winget
@@ -288,5 +350,11 @@ jobs:
         uses: vedantmgoyal9/winget-releaser@v2
         with:
           identifier: WilsonGlasser.Oryxis
-          installers-regex: 'oryxis-setup-x86_64\.exe$'
+          # Match both x86_64 and aarch64 system installers in a single
+          # submission. Komac (the action's backend) reads the PE
+          # header of each .exe and emits one manifest with multiple
+          # `Installers:` entries — same pattern Edge / Bun / Node use.
+          # The per-user installers (oryxis-user-setup-*) are
+          # deliberately excluded; winget targets the system installer.
+          installers-regex: 'oryxis-setup-(x86_64|aarch64)\.exe$'
           token: ${{ secrets.WINGET_TOKEN }}
