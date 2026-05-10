@@ -1,4 +1,4 @@
-//! `Oryxis::handle_sftp_transfers` — match arms for the SFTP transfer
+//! `Oryxis::handle_sftp_transfers`, match arms for the SFTP transfer
 //! pipeline: single + batch + folder uploads/downloads/duplicates,
 //! conflict resolution, OS-level file drop, queue lifecycle (slots,
 //! retry, error reporting, cancel). Pulled out of `dispatch_sftp.rs`
@@ -111,7 +111,7 @@ impl Oryxis {
                             if apply_to_all {
                                 t.overwrite_default = Some(action);
                             }
-                            // Resume the worker pool — set paused false
+                            // Resume the worker pool, set paused false
                             // so the resume Next dispatches succeed.
                             t.paused = false;
                             (
@@ -176,7 +176,7 @@ impl Oryxis {
                     crate::state::OverwriteAction::ReplaceIfDifferent
                         if prompt.src_size == prompt.dst_size =>
                     {
-                        // Same size — assume identical, no-op. The user
+                        // Same size, assume identical, no-op. The user
                         // explicitly opted into this lazy comparison so
                         // we don't need to hash to be sure.
                         Task::none()
@@ -332,7 +332,7 @@ impl Oryxis {
                                 } else {
                                     format!("{}/{}", parent.trim_end_matches('/'), unique)
                                 };
-                                // `cp -- src dst` — same exec channel trick
+                                // `cp -- src dst`, same exec channel trick
                                 // we used for `rm -rf`. Using -- prevents
                                 // dashes in names from being parsed as flags.
                                 let escaped_src = src.replace('\'', "'\\''");
@@ -550,7 +550,7 @@ impl Oryxis {
                         }
                         let unique = unique_entry_name(&basename, |n| !existing.contains(n));
                         let target_root = parent.join(&unique);
-                        // Build the queue synchronously — no client needed
+                        // Build the queue synchronously, no client needed
                         // for a local-only walk + copy.
                         let mut queue = std::collections::VecDeque::new();
                         queue.push_back(crate::state::TransferItem {
@@ -564,7 +564,7 @@ impl Oryxis {
                         }
                         let total = queue.len();
                         // Local duplicate uses sync std::fs::copy in
-                        // the queue runner — no SFTP channels needed,
+                        // the queue runner, no SFTP channels needed,
                         // so the client pool stays empty. Concurrency
                         // is fixed at 1 for the same reason: spawning
                         // multiple sync workers wouldn't help (they'd
@@ -598,7 +598,7 @@ impl Oryxis {
                             .to_string();
                         let reload = self.sftp.remote_path.clone();
                         let src = path.clone();
-                        // `cp -r --` — single fast call, no progress bar
+                        // `cp -r --`, single fast call, no progress bar
                         // needed since the user can't usefully observe
                         // partial recursive copy progress over SSH anyway.
                         return Ok(Task::perform(
@@ -659,7 +659,7 @@ impl Oryxis {
                     return Ok(Task::none());
                 };
                 if transfer.paused {
-                    // Modal is up — workers idle until the user picks
+                    // Modal is up, workers idle until the user picks
                     // an action. Resolve will re-dispatch Next for
                     // each slot then.
                     return Ok(Task::none());
@@ -670,7 +670,7 @@ impl Oryxis {
                     .position(|b| !b)
                     .map(|i| i as u8)
                 else {
-                    // All slots busy — Next dispatch by ItemDone is
+                    // All slots busy, Next dispatch by ItemDone is
                     // ahead of an already-busy slot. Drop it; the
                     // next ItemDone will free a slot.
                     return Ok(Task::none());
@@ -727,7 +727,7 @@ impl Oryxis {
                         ));
                     }
                     crate::state::TransferKind::DuplicateLocal => {
-                        // Sync — no need for an async task.
+                        // Sync, no need for an async task.
                         return Ok(match do_local_duplicate_item(&item) {
                             Ok(()) => Task::done(Message::SftpTransferItemDone(slot)),
                             Err(e) => Task::done(Message::SftpTransferError(e, slot)),
@@ -780,7 +780,7 @@ impl Oryxis {
                         let mut queue = std::collections::VecDeque::new();
                         // Each top-level path goes in as-is; folders
                         // expand recursively. Names aren't pre-uniqued
-                        // — the per-item conflict check at the queue
+                        //, the per-item conflict check at the queue
                         // runner handles that with user input.
                         for path in &paths {
                             let basename = path
@@ -971,7 +971,7 @@ impl Oryxis {
                 return Ok(Task::batch(tasks));
             }
             Message::SftpTransferError(e, _slot) => {
-                // Errors abort the whole transfer — the in-flight item
+                // Errors abort the whole transfer, the in-flight item
                 // failed and we don't try to be clever about retrying
                 // siblings (a network blip is likely to nuke them all).
                 let kind = self.sftp.transfer.as_ref().map(|t| t.kind);

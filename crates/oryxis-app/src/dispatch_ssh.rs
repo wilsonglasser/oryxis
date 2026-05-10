@@ -1,4 +1,4 @@
-//! `Oryxis::handle_ssh` — match arms for SSH connection lifecycle
+//! `Oryxis::handle_ssh`, match arms for SSH connection lifecycle
 //! (connect, progress streaming, host-key prompts, disconnect, errors).
 //! Pulled out of `dispatch.rs` so the master router stays small.
 
@@ -14,6 +14,7 @@ use iced::Task;
 use std::sync::{Arc, Mutex};
 use uuid::Uuid;
 
+use oryxis_core::models::cloud::TransportKind;
 use oryxis_core::models::connection::AuthMethod;
 use oryxis_ssh::{SshEngine, SshSession};
 use oryxis_terminal::widget::TerminalState;
@@ -37,9 +38,20 @@ impl Oryxis {
                 // Close the new-tab picker if the connection was picked there.
                 self.show_new_tab_picker = false;
                 if let Some(mut conn) = self.connections.get(idx).cloned() {
+                    // SSM Session transport short-circuits the SSH
+                    // pipeline entirely, it goes through
+                    // `session-manager-plugin` instead of opening a
+                    // TCP+SSH connection. Punt to the dedicated
+                    // dispatch handler before we waste time setting up
+                    // the SSH-specific state below.
+                    if let Some(cref) = conn.cloud_ref.as_ref()
+                        && cref.transport_pref == TransportKind::Ssm
+                    {
+                        return Ok(self.start_ssm_session_for_connection(&conn));
+                    }
                     // Resolve the effective proxy (saved identity OR inline)
                     // and hydrate its password from the encrypted vault column,
-                    // then collapse onto `conn.proxy` — the engine only reads
+                    // then collapse onto `conn.proxy`, the engine only reads
                     // that field. A dangling `proxy_identity_id` resolves to
                     // None (warning logged inside `resolve_proxy`).
                     if let Some(vault) = self.vault.as_ref() {
@@ -156,7 +168,7 @@ impl Oryxis {
                             let host_key_check: oryxis_ssh::HostKeyCheckCallback = Arc::new(move |host, port, _key_type, fingerprint| {
                                 // Tolerate a poisoned mutex (some other lock-holder panicked)
                                 // by recovering the inner data rather than panicking the SSH
-                                // verification callback — better to fall back to "Unknown" and
+                                // verification callback, better to fall back to "Unknown" and
                                 // re-prompt the user than to crash mid-connect.
                                 let hosts = match kh_ref.lock() {
                                     Ok(guard) => guard,
@@ -192,6 +204,80 @@ impl Oryxis {
                             let auth_method_label = format!("{:?}", conn.auth_method);
                             let keepalive = self.effective_keepalive(&conn);
                             let agent_forwarding = conn.agent_forwarding;
+
+                            // Resolve EC2 Instance Connect pre-step
+                            // when the connection's `cloud_ref` asks
+                            // for it. Tri-state result so the closure
+                            // can either skip silently (not asked
+                            // for), run the API call (have everything),
+                            // or surface a clear setup error (asked
+                            // for it but missing key / profile).
+                            // Box `Run` so the enum's stack size matches
+                            // its smallest variant, otherwise clippy
+                            // flags the variant disparity.
+                            struct InstanceConnectRun {
+                                profile: oryxis_core::models::cloud_profile::CloudProfile,
+                                region: String,
+                                instance_id: String,
+                                os_user: String,
+                                public_key: String,
+                            }
+                            enum InstanceConnectPlan {
+                                Skip,
+                                Run(Box<InstanceConnectRun>),
+                                MissingKey,
+                                MissingProfile,
+                                MissingRegion,
+                            }
+                            let instance_connect_plan: InstanceConnectPlan = (|| {
+                                let Some(cref) = conn.cloud_ref.as_ref() else {
+                                    return InstanceConnectPlan::Skip;
+                                };
+                                if cref.transport_pref != TransportKind::InstanceConnect {
+                                    return InstanceConnectPlan::Skip;
+                                }
+                                let Some(region) = cref.region.clone() else {
+                                    return InstanceConnectPlan::MissingRegion;
+                                };
+                                let Some(profile) = self
+                                    .cloud_profiles
+                                    .iter()
+                                    .find(|p| p.id == cref.profile_id)
+                                    .cloned()
+                                else {
+                                    return InstanceConnectPlan::MissingProfile;
+                                };
+                                let key_id = conn.key_id.or_else(|| {
+                                    conn.identity_id.and_then(|iid| {
+                                        self.identities
+                                            .iter()
+                                            .find(|i| i.id == iid)
+                                            .and_then(|i| i.key_id)
+                                    })
+                                });
+                                let Some(key_id) = key_id else {
+                                    return InstanceConnectPlan::MissingKey;
+                                };
+                                let Some(pubkey) = self
+                                    .keys
+                                    .iter()
+                                    .find(|k| k.id == key_id)
+                                    .map(|k| k.public_key.clone())
+                                else {
+                                    return InstanceConnectPlan::MissingKey;
+                                };
+                                if pubkey.trim().is_empty() {
+                                    return InstanceConnectPlan::MissingKey;
+                                }
+                                InstanceConnectPlan::Run(Box::new(InstanceConnectRun {
+                                    profile,
+                                    region,
+                                    instance_id: cref.resource_id.clone(),
+                                    os_user: username.clone(),
+                                    public_key: pubkey,
+                                }))
+                            })();
+
                             let stream = iced::stream::channel::<SshStreamMsg>(128, move |mut sender: iced::futures::channel::mpsc::Sender<SshStreamMsg>| {
                                 async move {
                                     let engine = SshEngine::new()
@@ -213,6 +299,91 @@ impl Oryxis {
                                         }
                                     });
 
+                                    tracing::info!(
+                                        target = "oryxis::dispatch_ssh",
+                                        plan = match &instance_connect_plan {
+                                            InstanceConnectPlan::Skip => "skip (no cloud_ref or transport != InstanceConnect)",
+                                            InstanceConnectPlan::Run(_) => "run (push key via SendSSHPublicKey)",
+                                            InstanceConnectPlan::MissingKey => "abort (no SSH key linked)",
+                                            InstanceConnectPlan::MissingProfile => "abort (cloud profile gone)",
+                                            InstanceConnectPlan::MissingRegion => "abort (region missing on cloud_ref)",
+                                        },
+                                        "Instance Connect pre-step decision"
+                                    );
+
+                                    // Pre-step: EC2 Instance Connect.
+                                    // AWS injects the public key into
+                                    // the instance's authorized_keys
+                                    // for ~60s; we have that window
+                                    // to dial. Setup misconfigurations
+                                    // (missing key / profile / region)
+                                    // bail loudly here instead of
+                                    // silently degrading to plain SSH
+                                    //, that path would just confuse
+                                    // the user into wondering why the
+                                    // transport pick didn't take.
+                                    match instance_connect_plan {
+                                        InstanceConnectPlan::Skip => {}
+                                        InstanceConnectPlan::Run(run) => {
+                                            let InstanceConnectRun {
+                                                profile,
+                                                region,
+                                                instance_id,
+                                                os_user,
+                                                public_key,
+                                            } = *run;
+                                            let _ = sender
+                                                .send(SshStreamMsg::Progress(
+                                                    ConnectionStep::Connecting,
+                                                    format!(
+                                                        "Pushing temporary public key to {instance_id} via EC2 Instance Connect…"
+                                                    ),
+                                                ))
+                                                .await;
+                                            if let Err(e) =
+                                                oryxis_cloud_aws::ec2::push_instance_connect_key(
+                                                    &profile,
+                                                    &region,
+                                                    &instance_id,
+                                                    &os_user,
+                                                    &public_key,
+                                                )
+                                                .await
+                                            {
+                                                let _ = sender
+                                                    .send(SshStreamMsg::Error(format!(
+                                                        "EC2 Instance Connect push failed: {e}"
+                                                    )))
+                                                    .await;
+                                                return;
+                                            }
+                                        }
+                                        InstanceConnectPlan::MissingKey => {
+                                            let _ = sender
+                                                .send(SshStreamMsg::Error(
+                                                    crate::i18n::t("ic_err_missing_key").into(),
+                                                ))
+                                                .await;
+                                            return;
+                                        }
+                                        InstanceConnectPlan::MissingProfile => {
+                                            let _ = sender
+                                                .send(SshStreamMsg::Error(
+                                                    crate::i18n::t("ic_err_missing_profile").into(),
+                                                ))
+                                                .await;
+                                            return;
+                                        }
+                                        InstanceConnectPlan::MissingRegion => {
+                                            let _ = sender
+                                                .send(SshStreamMsg::Error(
+                                                    crate::i18n::t("ic_err_missing_region").into(),
+                                                ))
+                                                .await;
+                                            return;
+                                        }
+                                    }
+
                                     // Step 1: TCP connection + SSH handshake + host key verification
                                     let _ = sender.send(SshStreamMsg::Progress(
                                         ConnectionStep::Connecting,
@@ -223,7 +394,7 @@ impl Oryxis {
                                         Ok(h) => {
                                             let _ = sender.send(SshStreamMsg::Progress(
                                                 ConnectionStep::Handshake,
-                                                format!("Connected to {}:{} — handshake OK", conn_host, conn_port),
+                                                format!("Connected to {}:{}, handshake OK", conn_host, conn_port),
                                             )).await;
                                             h
                                         }
@@ -362,6 +533,32 @@ impl Oryxis {
                 let mut detect_for: Option<(Uuid, Arc<SshSession>)> = None;
                 if let Some(tab) = self.tabs.get_mut(tab_idx) {
                     tab.active_mut().ssh_session = Some(session.clone());
+                    // Per-host initial command, fire as keystrokes
+                    // right after the session is wired. The remote
+                    // shell may not have its prompt up yet but the
+                    // SSH channel buffers input until the shell is
+                    // ready, so the line lands cleanly. Newline
+                    // suffix triggers `Enter` on the remote.
+                    let label = tab.label.clone();
+                    if let Some(conn) = self.connections.iter().find(|c| c.label == label)
+                        && let Some(cmd) = conn.initial_command.as_deref()
+                        && !cmd.trim().is_empty()
+                    {
+                        let payload = format!("{cmd}\n");
+                        if let Err(e) = session.write(payload.as_bytes()) {
+                            tracing::warn!(
+                                target = "oryxis::dispatch_ssh",
+                                error = %e,
+                                "failed to send initial_command"
+                            );
+                        } else {
+                            tracing::info!(
+                                target = "oryxis::dispatch_ssh",
+                                bytes = payload.len(),
+                                "sent initial_command after session ready"
+                            );
+                        }
+                    }
                     // Forward future viewport resizes to the SSH server so
                     // remote `top`/`vim` re-layout instead of overflowing
                     // into our local grid.
@@ -451,7 +648,7 @@ impl Oryxis {
                 ));
             }
             Message::CheckForUpdateManual => {
-                // Manual trigger from the settings button — runs regardless
+                // Manual trigger from the settings button, runs regardless
                 // of the auto-check preference. Clears prior skipped version
                 // so the user can resurface a previously-dismissed prompt.
                 self.update_error = None;
@@ -533,7 +730,7 @@ impl Oryxis {
                         if let Err(e) = crate::update::launch_installer(&path) {
                             self.update_error = Some(e);
                         } else {
-                            // Installer launched — exit app so it can write
+                            // Installer launched, exit app so it can write
                             // over our binary. Graceful quit via window close.
                             self.pending_update = None;
                             return Ok(iced::window::latest().then(|id_opt| match id_opt {
@@ -562,9 +759,13 @@ impl Oryxis {
                     }
                     tab.label = format!("{} (disconnected)", label);
                     tab.active_mut().ssh_session = None;
-                    // Refresh session logs list
+                    // Refresh session logs list (count + current page)
                     if let Some(vault) = &self.vault {
-                        self.session_logs = vault.list_session_logs().unwrap_or_default();
+                        self.session_logs_total =
+                            vault.count_session_logs().unwrap_or(0);
+                        self.session_logs = vault
+                            .list_session_logs_page(self.session_logs_page * 50, 50)
+                            .unwrap_or_default();
                     }
                     // Surface the disconnect to the user. Without this the
                     // terminal just goes silent and the silent auto-reconnect

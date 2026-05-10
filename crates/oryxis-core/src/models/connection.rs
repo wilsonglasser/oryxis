@@ -17,7 +17,7 @@ pub struct Connection {
     pub jump_chain: Vec<Uuid>,
     pub proxy: Option<ProxyConfig>,
     /// Reference to a saved `ProxyIdentity`. When set, takes precedence
-    /// over the inline `proxy` field — the SSH engine resolves the
+    /// over the inline `proxy` field, the SSH engine resolves the
     /// identity (via the vault) and ignores `proxy`. `None` falls back
     /// to inline. Cleared on cascade when the identity is deleted.
     #[serde(default)]
@@ -31,12 +31,12 @@ pub struct Connection {
     pub last_used: Option<chrono::DateTime<chrono::Utc>>,
     pub created_at: chrono::DateTime<chrono::Utc>,
     pub updated_at: chrono::DateTime<chrono::Utc>,
-    /// Detected remote OS id — populated the first time we successfully SSH
+    /// Detected remote OS id, populated the first time we successfully SSH
     /// into this host and the OS-detection setting is enabled. Values are
     /// lowercase `ID=` from `/etc/os-release` for Linux (ubuntu / debian /
     /// alpine / rhel / fedora / arch / amzn / centos / rocky / alma / suse)
     /// or `uname -s` lowercased for non-Linux (darwin / freebsd / openbsd /
-    /// netbsd). `None` means unknown — show the generic server icon.
+    /// netbsd). `None` means unknown, show the generic server icon.
     #[serde(default)]
     pub detected_os: Option<String>,
     /// User-chosen icon id (overrides the auto-detected one). When present,
@@ -144,7 +144,7 @@ pub struct ProxyConfig {
     /// Proxy password. Hydrated in-memory by the vault
     /// (`get_proxy_password`) right before connect. Marked `serde(skip)`
     /// so it never lands in the `proxy` column (which is plaintext JSON)
-    /// — the credential lives in the encrypted `proxy_password` column.
+    ///, the credential lives in the encrypted `proxy_password` column.
     #[serde(skip)]
     pub password: Option<String>,
 }
@@ -208,7 +208,7 @@ mod tests {
         assert!(de.password.is_none());
     }
 
-    /// `password` is `serde(skip)` — it must not appear in serialized
+    /// `password` is `serde(skip)`, it must not appear in serialized
     /// JSON nor be read back. This guards against credential leaks via
     /// the plaintext `proxy` column.
     #[test]
@@ -258,7 +258,7 @@ mod tests {
         let de: Connection = serde_json::from_str(&json).unwrap();
         assert_eq!(de.keepalive_interval, Some(45));
 
-        // Explicit zero must round-trip distinctly from None — they have
+        // Explicit zero must round-trip distinctly from None, they have
         // different semantics (per-host disable vs. inherit global).
         conn.keepalive_interval = Some(0);
         let json = serde_json::to_string(&conn).unwrap();

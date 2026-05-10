@@ -4,7 +4,7 @@ use oryxis_core::models::key::{KeyAlgorithm, SshKey};
 
 use crate::store::VaultError;
 
-/// Generated key pair — private PEM + SshKey model.
+/// Generated key pair, private PEM + SshKey model.
 #[derive(Debug)]
 pub struct GeneratedKey {
     pub key: SshKey,
@@ -48,10 +48,48 @@ fn parse_ec_p384(sk: p384::SecretKey) -> PrivateKey {
     PrivateKey::from(ssh_key::private::EcdsaKeypair::NistP384 { public, private })
 }
 
+/// Re-wrap the base64 body of a traditional PEM block to exactly 64 chars
+/// per line. The pem-rfc7468 parser used by `rsa` / `pkcs8` is strict about
+/// the 64-char convention (RFC 7468 §3) and rejects OpenSSL's legacy
+/// 76-char wrapping with a misleading "invalid Base64 encoding" error.
+/// Returns the input unchanged if no BEGIN/END envelope is found.
+fn rewrap_pem_body(pem: &str) -> String {
+    let begin = match pem.find("-----BEGIN ") {
+        Some(i) => i,
+        None => return pem.to_string(),
+    };
+    let begin_line_end = match pem[begin..].find('\n') {
+        Some(off) => begin + off,
+        None => return pem.to_string(),
+    };
+    let end_marker = match pem[begin_line_end..].find("-----END ") {
+        Some(off) => begin_line_end + off,
+        None => return pem.to_string(),
+    };
+    let body: String = pem[begin_line_end..end_marker]
+        .chars()
+        .filter(|c| !c.is_whitespace())
+        .collect();
+    let mut wrapped = String::with_capacity(body.len() + body.len() / 64 + 8);
+    for chunk in body.as_bytes().chunks(64) {
+        wrapped.push('\n');
+        wrapped.push_str(std::str::from_utf8(chunk).unwrap_or(""));
+    }
+    wrapped.push('\n');
+    let mut out = String::with_capacity(pem.len() + 16);
+    out.push_str(&pem[..begin_line_end]);
+    out.push_str(&wrapped);
+    out.push_str(&pem[end_marker..]);
+    out
+}
+
 /// Try to parse a traditional PEM key (PKCS#1, PKCS#8, SEC1) and convert to ssh_key::PrivateKey.
 fn parse_traditional_pem(pem: &str) -> Result<PrivateKey, VaultError> {
     use rsa::pkcs1::DecodeRsaPrivateKey;
     use rsa::pkcs8::DecodePrivateKey;
+
+    let normalized = rewrap_pem_body(pem);
+    let pem = normalized.as_str();
 
     // PKCS#1 RSA: "BEGIN RSA PRIVATE KEY"
     if pem.contains("BEGIN RSA PRIVATE KEY") {
@@ -95,7 +133,7 @@ fn parse_traditional_pem(pem: &str) -> Result<PrivateKey, VaultError> {
 /// Cheap structural check: returns `true` if the PEM looks like an
 /// encrypted key. Used by the UI to surface the passphrase field as
 /// soon as the user picks the file, without waiting for a Save click.
-/// Conservative — false negatives are fine (Save will still surface
+/// Conservative, false negatives are fine (Save will still surface
 /// `KeyNeedsPassphrase`); false positives would prompt unnecessarily.
 pub fn is_key_encrypted(private_pem: &str) -> bool {
     let stripped = private_pem.strip_prefix('\u{FEFF}').unwrap_or(private_pem);
@@ -112,7 +150,7 @@ pub fn is_key_encrypted(private_pem: &str) -> bool {
     {
         return true;
     }
-    // OpenSSH format — parse cheaply just to read the cipher field.
+    // OpenSSH format, parse cheaply just to read the cipher field.
     if trimmed.contains("BEGIN OPENSSH PRIVATE KEY")
         && let Ok(parsed) = ssh_key::PrivateKey::from_openssh(trimmed) {
             return parsed.is_encrypted();
@@ -121,10 +159,10 @@ pub fn is_key_encrypted(private_pem: &str) -> bool {
 }
 
 /// Import an SSH key from any supported format:
-/// - OpenSSH (`BEGIN OPENSSH PRIVATE KEY`) — supports passphrase-encrypted keys
+/// - OpenSSH (`BEGIN OPENSSH PRIVATE KEY`), supports passphrase-encrypted keys
 /// - PKCS#1 RSA (`BEGIN RSA PRIVATE KEY`)
-/// - PKCS#8 (`BEGIN PRIVATE KEY`) — RSA, ECDSA P-256/P-384, Ed25519
-/// - SEC1 EC (`BEGIN EC PRIVATE KEY`) — P-256, P-384
+/// - PKCS#8 (`BEGIN PRIVATE KEY`), RSA, ECDSA P-256/P-384, Ed25519
+/// - SEC1 EC (`BEGIN EC PRIVATE KEY`), P-256, P-384
 ///
 /// `passphrase` is consulted only when the key is detected as encrypted.
 /// Returns `KeyNeedsPassphrase` if the key is encrypted and `passphrase` is
@@ -135,7 +173,7 @@ pub fn import_key(
     private_pem: &str,
     passphrase: Option<&str>,
 ) -> Result<GeneratedKey, VaultError> {
-    // Strip a UTF-8 BOM if present — Windows editors (Notepad, some
+    // Strip a UTF-8 BOM if present, Windows editors (Notepad, some
     // PowerShell redirects) write keys with a BOM and PEM parsers see
     // the leading bytes as junk before `-----BEGIN`. Then normalize
     // line endings (CRLF → LF) so Base64 decoding doesn't trip on \r.

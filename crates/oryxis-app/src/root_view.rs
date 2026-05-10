@@ -1,4 +1,4 @@
-//! `Oryxis::view` — the top-level view router. Picks vault setup /
+//! `Oryxis::view`, the top-level view router. Picks vault setup /
 //! unlock / main, layers the auto-update modal, and wraps the whole
 //! thing in a 1px frame. Pulled out of `app.rs` so it's easier to find.
 
@@ -65,7 +65,7 @@ impl Oryxis {
             .width(Length::Fill)
             .height(Length::Fill)
             .into();
-            // The scrim itself dismisses the picker on click — outside-
+            // The scrim itself dismisses the picker on click, outside-
             // click-to-close pattern shared with the SFTP modals.
             let scrim: Element<'_, Message> = iced::widget::MouseArea::new(scrim)
                 .on_press(Message::HideLocalShellPicker)
@@ -81,7 +81,7 @@ impl Oryxis {
             base
         };
 
-        // 1 px border around the entire app — drops to 0 when maximized,
+        // 1 px border around the entire app, drops to 0 when maximized,
         // since the OS already clips the window to the monitor edge and the
         // border would be wasted (or worse, visible as a halfway cut).
         //

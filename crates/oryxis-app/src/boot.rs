@@ -17,7 +17,7 @@ impl Oryxis {
         // <uuid>` (the path "Duplicate in New Window" takes), capture that
         // ID now and dispatch a `ConnectSsh` once the vault is open.
         let pending_auto_connect = AUTO_CONNECT.get().copied();
-        // Inherited master password from the parent's stdin pipe — used
+        // Inherited master password from the parent's stdin pipe, used
         // to silently unlock the vault below so the user doesn't have to
         // re-type for the spawned window.
         let inherited_password = AUTO_PASSWORD.get().cloned();
@@ -28,10 +28,10 @@ impl Oryxis {
 
         if let Some(v) = &mut vault {
             if !v.is_initialized() {
-                // Brand new vault — show setup screen
+                // Brand new vault, show setup screen
                 vault_state = VaultState::NeedSetup;
             } else {
-                // Vault exists — try opening without password first
+                // Vault exists, try opening without password first
                 match v.open_without_password() {
                     Ok(()) => {
                         vault_state = VaultState::Unlocked;
@@ -54,7 +54,7 @@ impl Oryxis {
                 }
             }
             // Theme + language live in the plaintext `settings` table,
-            // not behind the encryption key — so we can hydrate them
+            // not behind the encryption key, so we can hydrate them
             // *before* the unlock so the lock screen / setup screen
             // already render in the user's chosen theme + language
             // instead of falling back to the defaults until they type
@@ -101,6 +101,8 @@ impl Oryxis {
                 icon_picker_color: None,
                 icon_picker_hex_input: String::new(),
                 show_theme_picker: false,
+                show_jump_host_picker: false,
+                jump_host_search: String::new(),
                 connecting: None,
                 connect_anim_tick: 0,
                 last_window_press_at: None,
@@ -119,7 +121,7 @@ impl Oryxis {
                 folder_delete: None,
                 pending_auto_connect,
                 // Keep the inherited password in memory only when the
-                // unlock above actually succeeded — otherwise the user is
+                // unlock above actually succeeded, otherwise the user is
                 // about to type their own at the lock screen.
                 master_password: if vault_state == VaultState::Unlocked {
                     inherited_password
@@ -183,6 +185,16 @@ impl Oryxis {
                 cloud_form_auth_kind: crate::state::CloudAuthChoice::Profile,
                 cloud_form_aws_profile_name: String::new(),
                 cloud_form_aws_region: String::new(),
+                cloud_form_aws_access_key_id: String::new(),
+                cloud_form_aws_access_key_secret: String::new(),
+                cloud_form_aws_access_key_secret_touched: false,
+                cloud_form_aws_access_key_secret_visible: false,
+                cloud_form_aws_access_key_session_token: String::new(),
+                cloud_form_aws_has_existing_secret: false,
+                cloud_form_aws_sso_start_url: String::new(),
+                cloud_form_aws_sso_region: String::new(),
+                cloud_form_aws_sso_account_id: String::new(),
+                cloud_form_aws_sso_role_name: String::new(),
                 editing_cloud_profile_id: None,
                 cloud_form_error: None,
                 cloud_form_test_state: crate::state::CloudTestState::Idle,
@@ -193,6 +205,19 @@ impl Oryxis {
                 cloud_discover_selected_ecs: std::collections::HashSet::new(),
                 cloud_discover_filter: String::new(),
                 cloud_discover_collapsed: std::collections::HashSet::new(),
+                cloud_discover_default_transport:
+                    oryxis_core::models::cloud::TransportKind::Ssh,
+                cloud_import_confirm_visible: false,
+                cloud_dynamic_group_state: std::collections::HashMap::new(),
+                cloud_dynamic_form_visible: false,
+                cloud_dynamic_form_group_id: None,
+                cloud_dynamic_form_username: String::new(),
+                cloud_dynamic_form_initial_command: String::new(),
+                cloud_dynamic_form_transport:
+                    oryxis_core::models::cloud::TransportKind::EcsExec,
+                cloud_dynamic_form_selected_key: None,
+                cloud_dynamic_form_selected_identity: None,
+                hovered_dynamic_group_card: None,
                 hovered_cloud_card: None,
                 // Provider registry seeded once at boot. AWS is wired in
                 // PR 2; K8s lands in a follow-up PR. The Arc lets us
@@ -208,6 +233,8 @@ impl Oryxis {
                 logs_page: 0,
                 logs_total: 0,
                 session_logs: Vec::new(),
+                session_logs_page: 0,
+                session_logs_total: 0,
                 viewing_session_log: None,
                 show_snippet_panel: false,
                 snippet_label: String::new(),
@@ -252,6 +279,7 @@ impl Oryxis {
                 vault_password_error: None,
                 vault_destroy_confirm: false,
                 toast: None,
+                error_dialog: None,
                 local_shells: None,
                 local_shell_picker_open: false,
                 chat_input: text_editor::Content::new(),
@@ -323,11 +351,16 @@ impl Oryxis {
             self.identities = vault.list_identities().unwrap_or_default();
             self.proxy_identities = vault.list_proxy_identities().unwrap_or_default();
             self.cloud_profiles = vault.list_cloud_profiles().unwrap_or_default();
+
+            // (migration runs after the rest of the load, see end of fn)
             self.snippets = vault.list_snippets().unwrap_or_default();
             self.known_hosts = vault.list_known_hosts().unwrap_or_default();
             self.logs_total = vault.count_logs().unwrap_or(0);
             self.logs = vault.list_logs_page(self.logs_page * 50, 50).unwrap_or_default();
-            self.session_logs = vault.list_session_logs().unwrap_or_default();
+            self.session_logs_total = vault.count_session_logs().unwrap_or(0);
+            self.session_logs = vault
+                .list_session_logs_page(self.session_logs_page * 50, 50)
+                .unwrap_or_default();
 
             // Language
             if let Ok(Some(v)) = vault.get_setting("language") {
@@ -343,7 +376,7 @@ impl Oryxis {
                 LayoutDirection::set_active(LayoutDirection::from_code(&v));
             }
 
-            // App theme — re-hydrate by display name. Unknown values
+            // App theme, re-hydrate by display name. Unknown values
             // fall back to the default in `AppTheme::from_name`, so a
             // renamed theme can never wedge the app on boot.
             if let Ok(Some(v)) = vault.get_setting("app_theme") {
@@ -408,7 +441,7 @@ impl Oryxis {
                 self.ai_system_prompt = text_editor::Content::with_text(&v);
             }
 
-            // Terminal / SFTP / connection settings — load whatever
+            // Terminal / SFTP / connection settings, load whatever
             // the user previously typed, fall back to defaults silently
             // when the key is missing (first-run or new key in update).
             if let Ok(Some(v)) = vault.get_setting("copy_on_select") {
@@ -483,11 +516,20 @@ impl Oryxis {
                 self.setting_sftp_op_timeout = v;
             }
         }
+
+        // Run cloud-layout migration after the immutable `vault` borrow
+        // ends. Idempotent; only writes rows that need fixing.
+        // Take ownership of the option so we hand the migration a real
+        // borrow without conflicting with `&mut self`. Restored below.
+        if let Some(vault) = self.vault.take() {
+            self.migrate_legacy_cloud_layout(&vault);
+            self.vault = Some(vault);
+        }
     }
 
     /// Best-effort persist a key/value pair to the vault. Logs failures
     /// instead of bubbling them up so a flaky disk doesn't take the
-    /// whole settings panel down — the worst case is the user has to
+    /// whole settings panel down, the worst case is the user has to
     /// re-type on next boot.
     pub(crate) fn persist_setting(&self, key: &str, value: &str) {
         if let Some(vault) = &self.vault
@@ -495,5 +537,96 @@ impl Oryxis {
         {
             tracing::warn!("failed to persist setting {key}: {e}");
         }
+    }
+
+    /// Idempotent normalization of cloud-backed groups in the vault.
+    ///
+    /// Two legacy issues are fixed here:
+    ///   1. **Wrong icon string**, early imports stored `"cloud"` /
+    ///      `"si:aws"` on the provider folder and `"si:aws"` on the
+    ///      ECS dynamic group. The brand-icon registry now expects
+    ///      canonical ids (`"aws"`, `"ecs"`, `"kubernetes"`).
+    ///   2. **Flat layout**, early imports left dynamic groups at
+    ///      root with `parent_id = None`. We now nest them under the
+    ///      provider folder.
+    ///
+    /// This walks `self.groups` once, mutates rows that need it, and
+    /// rewrites them via `save_group` (no-op if nothing changed).
+    fn migrate_legacy_cloud_layout(&mut self, vault: &oryxis_vault::store::VaultStore) {
+        // Snapshot so we can mutate the vault while iterating logic.
+        let groups_snapshot = self.groups.clone();
+        let profiles = self.cloud_profiles.clone();
+
+        // Provider folders → canonical icon. A provider folder is any
+        // group whose label matches a profile's label *and* has no
+        // `cloud_query` itself (so we don't conflate it with a
+        // dynamic group named the same).
+        for g in &groups_snapshot {
+            if g.cloud_query.is_some() {
+                continue;
+            }
+            let Some(matching_profile) =
+                profiles.iter().find(|p| p.label == g.label)
+            else {
+                continue;
+            };
+            let canonical = matching_profile.provider.as_str();
+            let needs_update = g
+                .icon
+                .as_deref()
+                .map(|cur| cur != canonical)
+                .unwrap_or(true);
+            if needs_update {
+                let mut updated = g.clone();
+                updated.icon = Some(canonical.to_string());
+                let _ = vault.save_group(&updated);
+            }
+        }
+
+        // Dynamic groups → canonical icon + parented under their
+        // provider folder.
+        for g in &groups_snapshot {
+            let Some(query) = g.cloud_query.as_ref() else {
+                continue;
+            };
+            let canonical_icon = match query.kind {
+                oryxis_core::models::cloud::CloudQueryKind::EcsTasks { .. } => "ecs",
+                oryxis_core::models::cloud::CloudQueryKind::K8sPods { .. } => "kubernetes",
+            };
+
+            // Find the provider folder this dynamic group should live
+            // under (= the manual folder named after the profile).
+            // Re-fetch from the freshly-mutated vault list so a folder
+            // we just renamed in pass 1 above still resolves.
+            let parent_id = profiles
+                .iter()
+                .find(|p| p.id == query.profile_id)
+                .and_then(|p| {
+                    groups_snapshot
+                        .iter()
+                        .find(|gg| gg.label == p.label && gg.cloud_query.is_none())
+                        .map(|gg| gg.id)
+                });
+
+            let icon_wrong = g
+                .icon
+                .as_deref()
+                .map(|cur| cur != canonical_icon)
+                .unwrap_or(true);
+            let parent_wrong = parent_id.is_some() && g.parent_id != parent_id;
+
+            if icon_wrong || parent_wrong {
+                let mut updated = g.clone();
+                updated.icon = Some(canonical_icon.to_string());
+                if let Some(pid) = parent_id {
+                    updated.parent_id = Some(pid);
+                }
+                let _ = vault.save_group(&updated);
+            }
+        }
+
+        // Re-pull groups so the in-memory state matches what we just
+        // wrote (icons + parent ids).
+        self.groups = vault.list_groups().unwrap_or_default();
     }
 }

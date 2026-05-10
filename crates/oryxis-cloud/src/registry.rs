@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use crate::CloudProvider;
 
-/// Registered provider entry — keeps the static id alongside the trait
+/// Registered provider entry, keeps the static id alongside the trait
 /// object so call sites can iterate over `(id, provider)` without a
 /// downcall.
 pub struct RegisteredProvider {

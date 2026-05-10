@@ -11,7 +11,7 @@ const STUN_SERVERS: &[&str] = &[
     "stun.cloudflare.com:3478",
 ];
 
-/// STUN binding request (simplified — RFC 5389 minimal).
+/// STUN binding request (simplified, RFC 5389 minimal).
 /// Returns our public IP:port as seen by the STUN server.
 pub async fn get_public_addr(local_socket: &UdpSocket) -> Result<SocketAddr, SyncError> {
     for server in STUN_SERVERS {

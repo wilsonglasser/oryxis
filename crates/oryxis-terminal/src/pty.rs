@@ -40,7 +40,7 @@ impl PtyHandle {
     /// `COLORTERM=truecolor` so apps detect 256-color / truecolor.
     /// `event_proxy` is given the writer-side of the central PTY
     /// write channel so the emulator can answer host queries (DSR
-    /// cursor-position, etc.) — without that, ConPTY blocks on
+    /// cursor-position, etc.), without that, ConPTY blocks on
     /// `\x1b[6n` and the terminal stays blank.
     pub fn spawn_command(
         cols: u16,
@@ -78,7 +78,7 @@ impl PtyHandle {
         let (write_tx, mut write_rx) = mpsc::unbounded_channel::<Vec<u8>>();
         event_proxy.set_pty_write_tx(write_tx.clone());
 
-        // Dedicated writer thread — drains the central write channel
+        // Dedicated writer thread, drains the central write channel
         // into the PTY so user keystrokes and emulator replies share
         // one cursor without racing on the `Write`. Exits cleanly
         // when every sender (PtyHandle + EventProxy clones) is gone.
@@ -112,7 +112,7 @@ impl PtyHandle {
                     match reader.read(&mut buf) {
                         Ok(0) => {
                             tracing::warn!(
-                                "PTY EOF for {} after {} bytes ({} chunks) — child likely exited",
+                                "PTY EOF for {} after {} bytes ({} chunks), child likely exited",
                                 program_log, total_bytes, chunk_count,
                             );
                             break;

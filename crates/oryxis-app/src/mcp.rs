@@ -1,4 +1,4 @@
-//! MCP (Model Context Protocol) setup helpers — command path resolution, config
+//! MCP (Model Context Protocol) setup helpers, command path resolution, config
 //! JSON generation, installation into `~/.claude/.mcp.json`, and the info panel
 //! widget that walks the user through the setup in the Security settings.
 

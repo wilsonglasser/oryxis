@@ -1,4 +1,4 @@
-//! `Oryxis::handle_ai` — match arms for the AI side of the app:
+//! `Oryxis::handle_ai`, match arms for the AI side of the app:
 //! provider/model/api-key Settings panel knobs, and the chat sidebar
 //! conversation flow (send, receive, retry, tool exec).
 
@@ -97,7 +97,7 @@ impl Oryxis {
                 self.chat_input.perform(action);
             }
             Message::ChatScrolled(relative_y) => {
-                // Strict end check (not "near end") — relative_offset.y
+                // Strict end check (not "near end"), relative_offset.y
                 // becomes 1.0 when the user is exactly at the bottom.
                 // Tiny epsilon covers f32 rounding from the layout pass.
                 self.chat_scroll_at_bottom = relative_y >= 0.999;
@@ -112,14 +112,14 @@ impl Oryxis {
                 self.chat_scroll_at_bottom = true;
             }
             Message::ChatSidebarResizeStart => {
-                // Capture cursor x and current width — the MouseMoved
+                // Capture cursor x and current width, the MouseMoved
                 // handler computes the delta against these.
                 self.chat_sidebar_drag = Some((self.mouse_position.x, self.chat_sidebar_width));
             }
             Message::ChatSidebarResizeStop => {
                 self.chat_sidebar_drag = None;
                 // Same global Left-release event also ends an internal
-                // SFTP drag — if the drag was active, dispatch the
+                // SFTP drag, if the drag was active, dispatch the
                 // transfer; if not, just clear (it was a plain click).
                 if let Some(drag) = self.sftp.drag.take()
                     && drag.active
@@ -215,7 +215,7 @@ impl Oryxis {
                         }
                         // Add chat history. Skip Error bubbles (UI-only)
                         // and empty assistant placeholders (the staging
-                        // slots streaming chunks land in — sending an
+                        // slots streaming chunks land in, sending an
                         // empty `assistant: ""` upsets some providers).
                         messages.extend(
                             tab.chat_history
@@ -285,7 +285,7 @@ impl Oryxis {
             Message::ChatStreamDone => {
                 // Empty assistant placeholders are filtered out at the
                 // view layer and excluded from the message-builder when
-                // we send to the model — so we don't try to pop them
+                // we send to the model, so we don't try to pop them
                 // here. (Popping was racy when a tool followup pushed
                 // its own placeholder before the original stream's Done
                 // arrived.)
@@ -335,7 +335,7 @@ impl Oryxis {
                     let Some(tab) = self.tabs.get_mut(idx) else {
                         return Ok(Task::none());
                     };
-                    // Pop trailing Error / Assistant entries — the
+                    // Pop trailing Error / Assistant entries, the
                     // Assistants are partial-stream remnants (could be
                     // empty placeholders or text that arrived before
                     // the error). Then pop the user message so the
@@ -444,7 +444,7 @@ impl Oryxis {
                 return Ok(Task::done(Message::ChatToolExec(command)));
             }
             Message::ChatToolDeny(_command) => {
-                // User said no. Drop the pending bubble and stop —
+                // User said no. Drop the pending bubble and stop
                 // the AI doesn't get a callback; the user can write
                 // their own follow-up if they want a textual answer.
                 if let Some(idx) = self.active_tab
@@ -492,7 +492,7 @@ impl Oryxis {
                         };
 
                         // Build message history including the tool result.
-                        // Errors are skipped — they're a UI-only concern,
+                        // Errors are skipped, they're a UI-only concern,
                         // not part of the conversation we want to send
                         // back to the model.
                         let mut messages: Vec<crate::ai::ChatMsg> = tab

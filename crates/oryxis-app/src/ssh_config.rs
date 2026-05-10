@@ -3,7 +3,7 @@
 //! Handles the directives we actually use today: Host (block start),
 //! HostName, Port, User, IdentityFile, ProxyJump, ProxyCommand,
 //! ForwardAgent. Everything else is ignored. Wildcard host blocks
-//! (`Host *`, `Host *.example.com`) are skipped on import — they're
+//! (`Host *`, `Host *.example.com`) are skipped on import, they're
 //! templates, not concrete servers.
 
 use std::path::PathBuf;
@@ -13,7 +13,7 @@ use oryxis_core::models::connection::{AuthMethod, Connection, ProxyConfig, Proxy
 /// One parsed `Host` block from an SSH config file.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct SshConfigHost {
-    /// The literal alias from the `Host` line — used as the connection
+    /// The literal alias from the `Host` line, used as the connection
     /// label and as the fallback hostname when `HostName` is omitted.
     pub alias: String,
     pub hostname: Option<String>,
@@ -21,20 +21,20 @@ pub struct SshConfigHost {
     pub user: Option<String>,
     pub identity_file: Option<PathBuf>,
     /// First alias from `ProxyJump host[,host2,...]`. Only the first hop
-    /// is recorded — multi-hop chains aren't supported on import yet
+    /// is recorded, multi-hop chains aren't supported on import yet
     /// because they'd require resolving multiple aliases at link time.
     pub proxy_jump: Option<String>,
-    /// Verbatim `ProxyCommand` line — placeholders like `%h` and `%p`
+    /// Verbatim `ProxyCommand` line, placeholders like `%h` and `%p`
     /// are kept as-is so the user's shell expands them at connect time
     /// (matching the engine's `ProxyType::Command` semantics).
     pub proxy_command: Option<String>,
-    /// `ForwardAgent` directive — only `yes` flips it on; missing /
+    /// `ForwardAgent` directive, only `yes` flips it on; missing /
     /// `no` / anything else stays off, matching OpenSSH's default.
     pub forward_agent: bool,
 }
 
 /// Parse the contents of an `ssh_config` file into a list of concrete
-/// host blocks. Wildcards and the universal `*` block are dropped —
+/// host blocks. Wildcards and the universal `*` block are dropped
 /// they're config templates, not importable servers.
 pub fn parse(text: &str) -> Vec<SshConfigHost> {
     let mut hosts: Vec<SshConfigHost> = Vec::new();
@@ -51,7 +51,7 @@ pub fn parse(text: &str) -> Vec<SshConfigHost> {
             None => continue,
         };
         if key.eq_ignore_ascii_case("Host") {
-            // First host name on the line wins — `Host alias1 alias2`
+            // First host name on the line wins, `Host alias1 alias2`
             // creates one block referenced by either alias, but for
             // import we just use the first.
             if let Some(prev) = current.take()
@@ -75,7 +75,7 @@ pub fn parse(text: &str) -> Vec<SshConfigHost> {
             "user" => host.user = Some(value.to_string()),
             "identityfile" => host.identity_file = Some(expand_tilde(value)),
             "proxyjump" => {
-                // OpenSSH allows `ProxyJump host1,host2,...` — keep only
+                // OpenSSH allows `ProxyJump host1,host2,...`, keep only
                 // the first hop; multi-hop linking on import is more
                 // alias-resolution than we want to handle for v1.
                 let first = value.split(',').next().unwrap_or("").trim();
@@ -97,7 +97,7 @@ pub fn parse(text: &str) -> Vec<SshConfigHost> {
 }
 
 /// Map a parsed entry onto an Oryxis `Connection`. We don't try to
-/// resolve `IdentityFile` to a vault key id here — that would require
+/// resolve `IdentityFile` to a vault key id here, that would require
 /// importing the keys first; for now we just flag the auth method as
 /// Key so the user finishes the link in the host editor.
 pub fn to_connection(host: &SshConfigHost) -> Connection {
@@ -135,7 +135,7 @@ pub fn to_connection(host: &SshConfigHost) -> Connection {
         });
     }
     // Drop the import provenance into notes so the user can find the
-    // origin later — useful when reconciling with a manual edit.
+    // origin later, useful when reconciling with a manual edit.
     conn.notes = Some(format!(
         "Imported from ssh_config (alias `{}`)",
         host.alias
@@ -145,7 +145,7 @@ pub fn to_connection(host: &SshConfigHost) -> Connection {
 
 /// Link `ProxyJump` aliases to their target Connection ids in a
 /// second pass. Each `parsed[i]` line up 1-1 with `connections[i]` and
-/// the parsed `proxy_jump` is an alias name — we look it up among the
+/// the parsed `proxy_jump` is an alias name, we look it up among the
 /// imported aliases and append the matching id to `jump_chain`. An
 /// unresolved alias (no `Host` block matches) is recorded in `notes`
 /// so the user can fix it manually instead of having the import fail.
@@ -166,10 +166,10 @@ pub fn link_proxy_jumps(parsed: &[SshConfigHost], connections: &mut [Connection]
                 conn.jump_chain.push(*target_id);
             }
             Some(_) => {
-                // Self-referential ProxyJump — pathological but possible
+                // Self-referential ProxyJump, pathological but possible
                 // in malformed configs. Record and skip.
                 let warn = format!(
-                    "ProxyJump '{target_alias}' refers to this host itself — ignored",
+                    "ProxyJump '{target_alias}' refers to this host itself, ignored",
                 );
                 conn.notes = Some(merge_note(conn.notes.take(), &warn));
             }
@@ -178,7 +178,7 @@ pub fn link_proxy_jumps(parsed: &[SshConfigHost], connections: &mut [Connection]
                 // template host (skipped), a typo, or a host the user
                 // hasn't imported yet. Don't fail; tag for manual fix.
                 let warn =
-                    format!("ProxyJump alias '{target_alias}' not resolved — link manually");
+                    format!("ProxyJump alias '{target_alias}' not resolved, link manually");
                 conn.notes = Some(merge_note(conn.notes.take(), &warn));
             }
         }

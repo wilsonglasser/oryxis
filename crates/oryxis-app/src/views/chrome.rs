@@ -1,4 +1,4 @@
-//! Standalone window chrome — drag region + minimize / maximize / close.
+//! Standalone window chrome, drag region + minimize / maximize / close.
 //!
 //! Used by screens that don't render the full tab bar (vault setup / unlock /
 //! error). The main app layout embeds the controls inside `view_tab_bar`.
@@ -11,7 +11,7 @@ use iced_fonts::codicon as cd;
 use crate::app::Message;
 use crate::theme::OryxisColors;
 
-/// Chrome bar height — must match the main view's `BAR_HEIGHT` so the lock
+/// Chrome bar height, must match the main view's `BAR_HEIGHT` so the lock
 /// screen's chrome doesn't visually pop when transitioning to the main app
 /// after unlocking.
 const CHROME_HEIGHT: f32 = 40.0;
@@ -62,7 +62,7 @@ fn chrome_btn<'a>(
             .center(Length::Fixed(46.0))
             .height(Length::Fixed(CHROME_HEIGHT)),
     )
-    // Same fix as the main tab bar — `button` defaults to 5 px padding on
+    // Same fix as the main tab bar, `button` defaults to 5 px padding on
     // top/bottom, which prevented the hover background from filling the
     // whole chrome strip.
     .padding(0)

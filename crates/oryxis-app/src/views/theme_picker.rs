@@ -1,4 +1,4 @@
-//! Per-host terminal theme picker — opened from the "Terminal Theme"
+//! Per-host terminal theme picker, opened from the "Terminal Theme"
 //! row in the host editor. Renders a column of palette swatch cards;
 //! the first card is the "inherit global theme" sentinel. Selecting a
 //! card commits to `editor_form.terminal_theme` and closes the modal.
@@ -14,7 +14,7 @@ use crate::widgets::styled_button;
 
 impl Oryxis {
     pub(crate) fn view_terminal_theme_picker(&self) -> Element<'_, Message> {
-        // Header — title + short description matching the row in the
+        // Header, title + short description matching the row in the
         // host editor that opened this modal.
         let header = column![
             text(t("terminal_theme")).size(16).font(iced::Font {
@@ -27,7 +27,7 @@ impl Oryxis {
                 .color(OryxisColors::t().text_muted),
         ];
 
-        // Cards — first row is the inherit sentinel, the rest are
+        // Cards, first row is the inherit sentinel, the rest are
         // real palette previews. Click commits + closes via the
         // EditorTerminalThemeChanged handler.
         let mut cards: Vec<Element<'_, Message>> = Vec::new();
@@ -87,7 +87,7 @@ impl Oryxis {
         });
 
         // Inner MouseArea swallows clicks on the dialog so they don't
-        // bubble out to the scrim's HideIconPicker — same pattern as
+        // bubble out to the scrim's HideIconPicker, same pattern as
         // tab_jump and the icon picker.
         let dialog_capture: Element<'_, Message> = MouseArea::new(dialog)
             .on_press(Message::NoOp)

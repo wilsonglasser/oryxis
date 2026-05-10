@@ -96,8 +96,8 @@ impl Oryxis {
             let ts = entry.timestamp.with_timezone(&chrono::Local).format("%Y-%m-%d %H:%M:%S").to_string();
 
             // Inner column children (title row + message text) stick to
-            // the *leading* edge of the column — left under LTR, right
-            // under RTL — so the title sits next to the icon (which the
+            // the *leading* edge of the column, left under LTR, right
+            // under RTL, so the title sits next to the icon (which the
             // outer dir_row places on the leading side) instead of
             // ending up glued to the timestamp on the trailing side.
             // Add `Space` on *both* sides of the column so neither the
@@ -135,14 +135,81 @@ impl Oryxis {
         }
 
         // ── Session Logs section ──
+        // Mirrors the activity-log toolbar: range label, prev/next, and a
+        // Clear button. Pagination state is tracked separately from the
+        // top section so each list scrolls independently.
+        let session_max_page =
+            self.session_logs_total.saturating_sub(1) / per_page.max(1);
+        let session_can_prev = self.session_logs_page > 0;
+        let session_can_next = self.session_logs_page < session_max_page;
+        let session_range_label = if self.session_logs_total == 0 {
+            format!("0 {}", crate::i18n::t("entries"))
+        } else {
+            let start = self.session_logs_page * per_page + 1;
+            let end = ((self.session_logs_page + 1) * per_page)
+                .min(self.session_logs_total);
+            format!(
+                "{}\u{2013}{} {} {}",
+                start,
+                end,
+                crate::i18n::t("of"),
+                self.session_logs_total
+            )
+        };
+        let session_prev_btn = nav_btn(
+            iced_fonts::lucide::chevron_left(),
+            Message::SessionLogsPagePrev,
+            session_can_prev,
+        );
+        let session_next_btn = nav_btn(
+            iced_fonts::lucide::chevron_right(),
+            Message::SessionLogsPageNext,
+            session_can_next,
+        );
+        let session_clear_btn = button(
+            container(text(crate::i18n::t("clear").to_uppercase()).size(11).font(iced::Font {
+                weight: iced::font::Weight::Bold,
+                ..iced::Font::new(crate::theme::SYSTEM_UI_FAMILY)
+            }).color(OryxisColors::t().text_muted))
+                .center_y(Length::Fixed(24.0))
+                .padding(Padding { top: 0.0, right: 14.0, bottom: 0.0, left: 14.0 }),
+        )
+        .on_press(Message::ClearSessionLogs)
+        .style(|_, status| {
+            let bg = match status {
+                BtnStatus::Hovered => Color { a: 0.15, ..OryxisColors::t().error },
+                _ => Color::TRANSPARENT,
+            };
+            button::Style {
+                background: Some(Background::Color(bg)),
+                border: Border { radius: Radius::from(6.0), color: OryxisColors::t().border, width: 1.0 },
+                ..Default::default()
+            }
+        });
+
         rows.push(Space::new().height(16).into());
         rows.push(
-            container(
-                text(crate::i18n::t("session_logs")).size(16).color(OryxisColors::t().text_primary),
-            )
-            .padding(Padding { top: 0.0, right: 0.0, bottom: 8.0, left: 0.0 })
+            crate::widgets::dir_row(vec![
+                text(crate::i18n::t("session_logs"))
+                    .size(16)
+                    .color(OryxisColors::t().text_primary)
+                    .into(),
+                Space::new().width(Length::Fill).into(),
+                text(session_range_label)
+                    .size(11)
+                    .color(OryxisColors::t().text_muted)
+                    .into(),
+                Space::new().width(8).into(),
+                session_prev_btn,
+                Space::new().width(4).into(),
+                session_next_btn,
+                Space::new().width(12).into(),
+                session_clear_btn.into(),
+            ])
+            .align_y(iced::Alignment::Center)
             .into(),
         );
+        rows.push(Space::new().height(8).into());
 
         if self.session_logs.is_empty() {
             rows.push(

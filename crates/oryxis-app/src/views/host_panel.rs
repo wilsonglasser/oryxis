@@ -14,8 +14,7 @@ use crate::state::ProxyKind;
 use crate::theme::OryxisColors;
 use crate::app::PANEL_WIDTH;
 use crate::widgets::{
-    dir_row, panel_divider, panel_field, panel_option_pick, panel_option_pick_jump,
-    panel_option_row, panel_section,
+    dir_row, panel_divider, panel_field, panel_option_pick, panel_option_row, panel_section,
 };
 
 impl Oryxis {
@@ -54,7 +53,7 @@ impl Oryxis {
             editing_conn.and_then(|c| c.username.as_deref()),
             OryxisColors::t().accent,
         );
-        // Icon is a button when we're editing an existing host — clicking it
+        // Icon is a button when we're editing an existing host, clicking it
         // opens the icon/color picker so the user can override the OS mark.
         // For new (unsaved) hosts the id doesn't exist yet, so it's just a
         // static badge until the first save.
@@ -267,7 +266,7 @@ impl Oryxis {
                 ]).align_y(iced::Alignment::Center)
             );
             ssh_items = ssh_items.push(Space::new().height(8));
-            // "+ Key" is clickable — opens the existing key import panel.
+            // "+ Key" is clickable, opens the existing key import panel.
             let add_key_btn = button(
                 text(t("add_key_btn")).size(12).color(OryxisColors::t().accent),
             )
@@ -303,6 +302,58 @@ impl Oryxis {
             );
         }
 
+        // Cloud-managed transport picker, only rendered when the
+        // connection being edited carries a `cloud_ref` (i.e. it was
+        // imported from a cloud provider). Lets the user flip between
+        // SSH (default) and AWS Instance Connect / SSM transports.
+        if let Some(current) = self.editor_form.cloud_transport {
+            use oryxis_core::models::cloud::TransportKind;
+            let options = vec![
+                TransportKind::Ssh,
+                TransportKind::InstanceConnect,
+                TransportKind::Ssm,
+            ];
+            ssh_items = ssh_items
+                .push(Space::new().height(12))
+                .push(text(t("cloud_dynamic_form_transport")).size(12).color(OryxisColors::t().text_muted))
+                .push(Space::new().height(8))
+                .push(
+                    pick_list(Some(current), options, |t| match t {
+                        TransportKind::Ssh => "SSH".to_string(),
+                        TransportKind::InstanceConnect => "EC2 Instance Connect".to_string(),
+                        TransportKind::Ssm => "SSM Session".to_string(),
+                        TransportKind::EcsExec => "ECS Exec".to_string(),
+                        TransportKind::KubectlExec => "kubectl exec".to_string(),
+                    })
+                    .on_select(Message::EditorCloudTransportChanged)
+                    .padding(10)
+                    .style(crate::widgets::rounded_pick_list_style),
+                );
+        }
+
+        // Initial command, sent to the shell right after the
+        // session opens. Useful for hosts that drop into `/bin/sh`
+        // when the user wanted `bash`, or to `cd` somewhere by
+        // default. Lives at the end of the SSH section because it's
+        // a per-shell concern, not auth.
+        ssh_items = ssh_items
+            .push(Space::new().height(12))
+            .push(
+                text(t("initial_command_label"))
+                    .size(12)
+                    .color(OryxisColors::t().text_muted),
+            )
+            .push(Space::new().height(8))
+            .push(
+                text_input(
+                    t("initial_command_ph"),
+                    &self.editor_form.initial_command,
+                )
+                .on_input(Message::EditorInitialCommandChanged)
+                .padding(10)
+                .style(crate::widgets::rounded_input_style),
+            );
+
         let ssh_section = panel_section(ssh_items);
 
         // ── Section: Advanced Options ──
@@ -336,87 +387,111 @@ impl Oryxis {
                 Message::EditorAuthMethodChanged,
             ),
             panel_divider(),
-            panel_option_pick_jump(
-                iced_fonts::lucide::network(),
-                t("jump_host"),
-                {
-                    let mut opts = vec!["(none)".to_string()];
-                    for c in &self.connections {
-                        if Some(c.id) != self.editor_form.editing_id {
-                            opts.push(c.label.clone());
-                        }
+            container(
+                button(
+                    dir_row(vec![
+                        iced_fonts::lucide::network().size(13).color(OryxisColors::t().text_muted).into(),
+                        Space::new().width(10).into(),
+                        text(t("jump_host")).size(13).color(OryxisColors::t().text_secondary).into(),
+                        Space::new().width(Length::Fill).into(),
+                        text(self.editor_form.jump_host.clone().unwrap_or_else(|| "(none)".into()))
+                            .size(13)
+                            .color(OryxisColors::t().text_primary)
+                            .into(),
+                        Space::new().width(8).into(),
+                        iced_fonts::lucide::chevron_down().size(12).color(OryxisColors::t().text_muted).into(),
+                    ])
+                    .align_y(iced::Alignment::Center),
+                )
+                .on_press(Message::OpenJumpHostPicker)
+                .padding(Padding { top: 6.0, right: 8.0, bottom: 6.0, left: 0.0 })
+                .style(|_, status| {
+                    let bg = match status {
+                        BtnStatus::Hovered => OryxisColors::t().bg_hover,
+                        _ => Color::TRANSPARENT,
+                    };
+                    button::Style {
+                        background: Some(Background::Color(bg)),
+                        border: Border { radius: Radius::from(6.0), ..Default::default() },
+                        ..Default::default()
                     }
-                    opts
-                },
-                self.editor_form.jump_host.clone().unwrap_or_else(|| "(none)".into()),
-                Message::EditorJumpHostChanged,
+                })
             ),
             panel_divider(),
-            dir_row(vec![
-                iced_fonts::lucide::plug().size(14).color(OryxisColors::t().text_muted).into(),
-                Space::new().width(10).into(),
-                text(t("expose_to_mcp")).size(13).color(OryxisColors::t().text_secondary).into(),
-                Space::new().width(Length::Fill).into(),
-                {
-                    let on = self.editor_form.mcp_enabled;
-                    let bg = if on { OryxisColors::t().success } else { OryxisColors::t().bg_hover };
-                    let fg = crate::theme::contrast_text_for(bg);
-                    button(text(if on { "ON" } else { "OFF" }).size(12).color(fg))
-                        .on_press(Message::EditorToggleMcpEnabled)
-                        .style(move |_theme, _status| button::Style {
-                            background: Some(Background::Color(bg)),
-                            border: Border { radius: Radius::from(4.0), ..Default::default() },
-                            text_color: fg,
-                            ..Default::default()
-                        })
-                        .into()
-                },
-            ]).align_y(iced::Alignment::Center),
+            container(
+                dir_row(vec![
+                    iced_fonts::lucide::plug().size(14).color(OryxisColors::t().text_muted).into(),
+                    Space::new().width(10).into(),
+                    text(t("expose_to_mcp")).size(13).color(OryxisColors::t().text_secondary).into(),
+                    Space::new().width(Length::Fill).into(),
+                    {
+                        let on = self.editor_form.mcp_enabled;
+                        let bg = if on { OryxisColors::t().success } else { OryxisColors::t().bg_hover };
+                        let fg = crate::theme::contrast_text_for(bg);
+                        button(text(if on { "ON" } else { "OFF" }).size(12).color(fg))
+                            .on_press(Message::EditorToggleMcpEnabled)
+                            .style(move |_theme, _status| button::Style {
+                                background: Some(Background::Color(bg)),
+                                border: Border { radius: Radius::from(4.0), ..Default::default() },
+                                text_color: fg,
+                                ..Default::default()
+                            })
+                            .into()
+                    },
+                ]).align_y(iced::Alignment::Center)
+            )
+            .padding(Padding { top: 8.0, right: 0.0, bottom: 8.0, left: 0.0 }),
             panel_divider(),
-            dir_row(vec![
-                iced_fonts::lucide::key_round().size(14).color(OryxisColors::t().text_muted).into(),
-                Space::new().width(10).into(),
-                text(t("forward_ssh_agent")).size(13).color(OryxisColors::t().text_secondary).into(),
-                Space::new().width(Length::Fill).into(),
-                {
-                    let on = self.editor_form.agent_forwarding;
-                    let bg = if on { OryxisColors::t().success } else { OryxisColors::t().bg_hover };
-                    let fg = crate::theme::contrast_text_for(bg);
-                    button(text(if on { "ON" } else { "OFF" }).size(12).color(fg))
-                        .on_press(Message::EditorToggleAgentForwarding)
-                        .style(move |_theme, _status| button::Style {
-                            background: Some(Background::Color(bg)),
-                            border: Border { radius: Radius::from(4.0), ..Default::default() },
-                            text_color: fg,
-                            ..Default::default()
-                        })
-                        .into()
-                },
-            ]).align_y(iced::Alignment::Center),
+            container(
+                dir_row(vec![
+                    iced_fonts::lucide::key_round().size(14).color(OryxisColors::t().text_muted).into(),
+                    Space::new().width(10).into(),
+                    text(t("forward_ssh_agent")).size(13).color(OryxisColors::t().text_secondary).into(),
+                    Space::new().width(Length::Fill).into(),
+                    {
+                        let on = self.editor_form.agent_forwarding;
+                        let bg = if on { OryxisColors::t().success } else { OryxisColors::t().bg_hover };
+                        let fg = crate::theme::contrast_text_for(bg);
+                        button(text(if on { "ON" } else { "OFF" }).size(12).color(fg))
+                            .on_press(Message::EditorToggleAgentForwarding)
+                            .style(move |_theme, _status| button::Style {
+                                background: Some(Background::Color(bg)),
+                                border: Border { radius: Radius::from(4.0), ..Default::default() },
+                                text_color: fg,
+                                ..Default::default()
+                            })
+                            .into()
+                    },
+                ]).align_y(iced::Alignment::Center)
+            )
+            .padding(Padding { top: 8.0, right: 0.0, bottom: 8.0, left: 0.0 }),
             panel_divider(),
             // Per-host keepalive override. Empty placeholder reflects the
             // global default so the user sees what "inherit" means without
             // opening Settings. "0" in the field disables keepalive on this
             // host even when the global default is non-zero.
-            dir_row(vec![
-                iced_fonts::lucide::activity().size(14).color(OryxisColors::t().text_muted).into(),
-                Space::new().width(10).into(),
-                column![
-                    text(t("host_keepalive")).size(13).color(OryxisColors::t().text_secondary),
-                    Space::new().height(2),
-                    text(t("host_keepalive_desc")).size(11).color(OryxisColors::t().text_muted),
-                ].into(),
-                Space::new().width(Length::Fill).into(),
-                text_input(
-                    &self.setting_keepalive_interval,
-                    &self.editor_form.keepalive_interval,
-                )
-                    .on_input(Message::EditorKeepaliveChanged)
-                    .padding(6)
-                    .width(80)
-                    .style(crate::widgets::rounded_input_style)
-                    .into(),
-            ]).align_y(iced::Alignment::Center),
+            container(
+                dir_row(vec![
+                    iced_fonts::lucide::activity().size(14).color(OryxisColors::t().text_muted).into(),
+                    Space::new().width(10).into(),
+                    column![
+                        text(t("host_keepalive")).size(13).color(OryxisColors::t().text_secondary),
+                        Space::new().height(2),
+                        text(t("host_keepalive_desc")).size(11).color(OryxisColors::t().text_muted),
+                    ].width(Length::Fill).into(),
+                    Space::new().width(12).into(),
+                    text_input(
+                        &self.setting_keepalive_interval,
+                        &self.editor_form.keepalive_interval,
+                    )
+                        .on_input(Message::EditorKeepaliveChanged)
+                        .padding(6)
+                        .width(100)
+                        .style(crate::widgets::rounded_input_style)
+                        .into(),
+                ]).align_y(iced::Alignment::Center)
+            )
+            .padding(Padding { top: 8.0, right: 0.0, bottom: 8.0, left: 0.0 }),
         ]);
 
         // ── Section: Proxy ──
@@ -642,7 +717,7 @@ impl Oryxis {
         });
 
         // The error must live OUTSIDE the scrollable so it sits above
-        // the Save button at the bottom of the panel — otherwise long
+        // the Save button at the bottom of the panel, otherwise long
         // forms hide it below the fold and the user clicks Save again
         // wondering why nothing happens.
         let bottom = column![panel_error, save_btn].spacing(8);
@@ -688,7 +763,7 @@ impl Oryxis {
 
     /// Build the Proxy section. The picker mixes the static proxy types
     /// (None / SOCKS5 / SOCKS4 / HTTP / Command) with the user's saved
-    /// `ProxyIdentity` entries — selecting an identity hides the inline
+    /// `ProxyIdentity` entries, selecting an identity hides the inline
     /// fields and shows a readonly summary instead.
     fn build_proxy_section(&self) -> Element<'_, Message> {
         let kind = self.editor_form.proxy_kind;
@@ -744,7 +819,7 @@ impl Oryxis {
                         .as_deref()
                         .map(|u| format!(" ({u})"))
                         .unwrap_or_default();
-                    format!("{kind_label} — {}:{}{}", pi.host, pi.port, user_part)
+                    format!("{kind_label}, {}:{}{}", pi.host, pi.port, user_part)
                 })
                 .unwrap_or_else(|| crate::i18n::t("proxy_type_identity_deleted").into());
             col = col.push(Space::new().height(8)).push(

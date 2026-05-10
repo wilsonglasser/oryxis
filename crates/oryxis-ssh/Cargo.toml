@@ -17,7 +17,7 @@ base64 = { workspace = true }
 
 [dev-dependencies]
 # Spin up an ephemeral OpenSSH container per test for hermetic SFTP /
-# SSH integration coverage — no real credentials, no shared state, no
+# SSH integration coverage, no real credentials, no shared state, no
 # need for a running daemon on the dev machine.
 testcontainers = "0.27"
 tokio = { workspace = true, features = ["full", "test-util"] }

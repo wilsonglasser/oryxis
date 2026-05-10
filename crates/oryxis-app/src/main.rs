@@ -54,7 +54,7 @@ const MIN_HEIGHT: f32 = 500.0;
 
 fn main() -> iced::Result {
     // rustls 0.23 requires a crypto provider to be installed before
-    // any TLS connection — without it, the AWS SDK's HTTPS client
+    // any TLS connection, without it, the AWS SDK's HTTPS client
     // fails with a generic "dispatch failure". The workspace pins
     // `ring` as the rustls crypto, so install ring's default provider
     // here at process start. `install_default` returns Err if a
@@ -62,7 +62,7 @@ fn main() -> iced::Result {
     // calls), which we deliberately ignore.
     let _ = rustls::crypto::ring::default_provider().install_default();
 
-    // CLI arg pickup — flags set when another Oryxis instance spawned
+    // CLI arg pickup, flags set when another Oryxis instance spawned
     // us via "Duplicate in New Window". Unknown flags are silently
     // ignored so future flags / OS double-click args don't crash boot.
     //   --connect <uuid>     : auto-open this saved connection
@@ -99,7 +99,7 @@ fn main() -> iced::Result {
         }
     }
 
-    // Held for the duration of main() — drop flushes pending events.
+    // Held for the duration of main(), drop flushes pending events.
     let _sentry_guard = init_sentry();
 
     tracing_subscriber::registry()
@@ -118,7 +118,7 @@ fn main() -> iced::Result {
         .theme(app::Oryxis::theme)
         .subscription(app::Oryxis::subscription)
         .font(iced_fonts::LUCIDE_FONT_BYTES)
-        // Codicon — used for window chrome glyphs (chrome-minimize/maximize/
+        // Codicon, used for window chrome glyphs (chrome-minimize/maximize/
         // restore/close) which match the native Windows title bar look that
         // VS Code uses.
         .font(iced_fonts::CODICON_FONT_BYTES)
@@ -129,19 +129,19 @@ fn main() -> iced::Result {
         .font(include_bytes!("../../../resources/fonts/Inter-Regular.ttf").as_slice())
         .font(include_bytes!("../../../resources/fonts/Inter-SemiBold.ttf").as_slice())
         .font(include_bytes!("../../../resources/fonts/Inter-Bold.ttf").as_slice())
-        // Source Code Pro — default terminal font; additional mono fonts are
+        // Source Code Pro, default terminal font; additional mono fonts are
         // resolved by name from the system when the user picks them.
         .font(include_bytes!("../../../resources/fonts/SourceCodePro-Regular.ttf").as_slice())
         .font(include_bytes!("../../../resources/fonts/SourceCodePro-Medium.ttf").as_slice())
         // Default UI font is the system font (Segoe UI on Windows, SF Pro
-        // on macOS, bundled Inter on Linux) — matches how Electron apps
+        // on macOS, bundled Inter on Linux), matches how Electron apps
         // like Termius render and keeps the UI feeling native per-OS.
         .default_font(theme::SYSTEM_UI)
         .window(window::Settings {
             size: Size::new(WINDOW_WIDTH, WINDOW_HEIGHT),
             min_size: Some(Size::new(MIN_WIDTH, MIN_HEIGHT)),
             icon,
-            decorations: false, // native title bar off — our own chrome in the tab bar
+            decorations: false, // native title bar off, our own chrome in the tab bar
             #[cfg(target_os = "windows")]
             platform_specific: window::settings::platform::PlatformSpecific {
                 // Win11+ rounds corners only when DWM has a frame to

@@ -1,6 +1,6 @@
 //! Pure state types used by the Oryxis application.
 //!
-//! Everything here is standalone data — no references to the top-level `Oryxis`
+//! Everything here is standalone data, no references to the top-level `Oryxis`
 //! struct. Split out of `app.rs` to keep that file focused on the state machine.
 
 use std::sync::{Arc, Mutex};
@@ -15,7 +15,7 @@ use uuid::Uuid;
 // SFTP view state
 // ---------------------------------------------------------------------------
 
-/// State for the SFTP browser. One session at a time for v0.3 — the user
+/// State for the SFTP browser. One session at a time for v0.3, the user
 /// picks a host, we connect (reusing the SSH connect flow), open the SFTP
 /// subsystem, and browse the remote tree side-by-side with a local one.
 #[derive(Default)]
@@ -25,7 +25,7 @@ pub(crate) struct SftpState {
     pub session: Option<Arc<SshSession>>,
     /// Active SFTP client (one channel per session).
     pub client: Option<SftpClient>,
-    /// Label of the currently mounted host — shown in the breadcrumb.
+    /// Label of the currently mounted host, shown in the breadcrumb.
     pub host_label: Option<String>,
     pub remote_path: String,
     pub remote_entries: Vec<SftpEntry>,
@@ -37,7 +37,7 @@ pub(crate) struct SftpState {
     pub local_error: Option<String>,
     pub local_filter: String,
     /// When false (default), entries whose name starts with `.` are
-    /// hidden — matches `ls` / Finder / Explorer convention. Toggleable
+    /// hidden, matches `ls` / Finder / Explorer convention. Toggleable
     /// from each pane's Actions menu independently so the user can show
     /// hidden remote files without exposing all the local dotfiles.
     pub local_show_hidden: bool,
@@ -60,18 +60,18 @@ pub(crate) struct SftpState {
     pub picker_open: bool,
     /// Search filter applied to the host picker.
     pub picker_search: String,
-    /// Right-click row context menu — anchored to the click location
+    /// Right-click row context menu, anchored to the click location
     /// and operating on a specific entry.
     pub row_menu: Option<SftpRowMenu>,
-    /// Inline rename editor — replaces the row visually with a text
+    /// Inline rename editor, replaces the row visually with a text
     /// input until the user commits or cancels.
     pub rename: Option<SftpRename>,
-    /// Pending destructive action — surfaces a confirmation modal.
+    /// Pending destructive action, surfaces a confirmation modal.
     /// `Vec` (instead of `Option`) so the same modal handles both single
-    /// right-click delete and bulk delete from a multi-selection — the
+    /// right-click delete and bulk delete from a multi-selection, the
     /// modal copy adapts to the count.
     pub delete_confirm: Vec<SftpDeleteTarget>,
-    /// New file / new folder modal — kind + in-progress name input.
+    /// New file / new folder modal, kind + in-progress name input.
     pub new_entry: Option<SftpNewEntry>,
     /// True while OS files are being dragged over the window. Drives the
     /// remote-pane drop highlight; cleared on `FilesHoveredLeft` or
@@ -89,11 +89,11 @@ pub(crate) struct SftpState {
     /// Drives the bottom-of-view progress bar and serializes the queue
     /// of per-item operations so the SFTP connection isn't slammed.
     pub transfer: Option<TransferState>,
-    /// One-shot destination override for the next upload — set by the
+    /// One-shot destination override for the next upload, set by the
     /// drag-and-drop handler when the cursor lands on a specific remote
     /// folder, consumed by `SftpUpload` / `SftpUploadFolder`.
     pub upload_dest_override: Option<String>,
-    /// Same idea for downloads — set when an internal drag from the
+    /// Same idea for downloads, set when an internal drag from the
     /// remote pane lands on a specific local folder. Consumed by
     /// `SftpDownload` / `SftpDownloadFolder`.
     pub download_dest_override: Option<std::path::PathBuf>,
@@ -102,15 +102,15 @@ pub(crate) struct SftpState {
     /// extends from `selection_anchor` within the same pane. Cleared
     /// whenever either pane navigates away.
     pub selected_rows: Vec<(SftpPaneSide, String)>,
-    /// Last clicked row — origin point for shift-click range extension.
+    /// Last clicked row, origin point for shift-click range extension.
     /// Stays put across ctrl-click toggles so the range pivots from the
     /// initial selection point rather than the most recent toggle.
     pub selection_anchor: Option<(SftpPaneSide, String)>,
-    /// Active edit-in-place session — a remote file downloaded to an OS
+    /// Active edit-in-place session, a remote file downloaded to an OS
     /// temp path and opened in the user's default editor. Persists until
     /// the user clicks Save Back or Discard.
     pub edit_session: Option<EditSession>,
-    /// Pending overwrite confirmation — set when the user uploads a file
+    /// Pending overwrite confirmation, set when the user uploads a file
     /// whose name already exists in the destination. Cleared when the
     /// user picks an action.
     pub overwrite_prompt: Option<OverwritePrompt>,
@@ -180,12 +180,12 @@ pub(crate) struct PropertiesView {
     pub mtime: Option<u32>,
     pub owner_uid: Option<u32>,
     pub owner_gid: Option<u32>,
-    /// Original mode bits — used to detect unchanged Apply (no-op) and
+    /// Original mode bits, used to detect unchanged Apply (no-op) and
     /// preserve the high bits (setuid/setgid/sticky) the dialog doesn't
     /// edit.
     pub original_mode: u32,
     pub bits: PermBits,
-    /// True while the chmod task is in flight — disables the Apply
+    /// True while the chmod task is in flight, disables the Apply
     /// button so the user can't double-fire.
     pub applying: bool,
     pub error: Option<String>,
@@ -198,7 +198,7 @@ pub(crate) struct OverwritePrompt {
     pub basename: String,
     pub src_size: u64,
     pub dst_size: u64,
-    /// True when the prompt is part of a multi-file transfer — surfaces
+    /// True when the prompt is part of a multi-file transfer, surfaces
     /// the "apply to remaining" checkbox so the user doesn't have to
     /// re-answer for every collision.
     pub multi: bool,
@@ -213,7 +213,7 @@ pub(crate) enum OverwriteAction {
     /// Always overwrite the existing file.
     Replace,
     /// Only overwrite if the existing remote size differs from the local
-    /// size — cheap proxy for "is it actually a different file?" without
+    /// size, cheap proxy for "is it actually a different file?" without
     /// hashing both sides.
     ReplaceIfDifferent,
     /// Upload alongside with a "name copy" suffix instead of overwriting.
@@ -226,14 +226,14 @@ pub(crate) enum OverwriteAction {
 pub(crate) struct EditSession {
     pub remote_path: String,
     pub temp_path: std::path::PathBuf,
-    /// Display label shown in the modal — basename of the remote file.
+    /// Display label shown in the modal, basename of the remote file.
     pub label: String,
     /// Mtime of the temp file when it was first written (right after
     /// download). The watcher tick polls this to detect saves coming
     /// from the user's editor.
     pub initial_mtime: Option<std::time::SystemTime>,
     /// True once the watcher tick observes an mtime newer than
-    /// `initial_mtime` — drives the "Changes detected" copy in the
+    /// `initial_mtime`, drives the "Changes detected" copy in the
     /// modal so the user knows their save was picked up.
     pub dirty: bool,
 }
@@ -242,7 +242,7 @@ pub(crate) struct EditSession {
 pub(crate) enum TransferKind {
     Upload,
     Download,
-    /// Local-side `cp -r` equivalent — `std::fs` doesn't expose recursive
+    /// Local-side `cp -r` equivalent, `std::fs` doesn't expose recursive
     /// copy so we walk the tree and copy each entry ourselves.
     DuplicateLocal,
 }
@@ -262,7 +262,7 @@ pub(crate) struct TransferItem {
 #[derive(Debug, Clone)]
 pub(crate) struct TransferState {
     pub kind: TransferKind,
-    /// Top-level label shown in the progress bar — e.g. "my-folder".
+    /// Top-level label shown in the progress bar, e.g. "my-folder".
     pub root_label: String,
     /// Pending items, popped one at a time as each operation completes.
     pub queue: std::collections::VecDeque<TransferItem>,
@@ -270,7 +270,7 @@ pub(crate) struct TransferState {
     pub current: Option<String>,
     pub completed: usize,
     pub total: usize,
-    /// Sticky overwrite decision — set when the user checks "Apply to
+    /// Sticky overwrite decision, set when the user checks "Apply to
     /// remaining" in the conflict modal. Subsequent collisions auto-
     /// resolve with this action without re-prompting.
     pub overwrite_default: Option<OverwriteAction>,
@@ -279,7 +279,7 @@ pub(crate) struct TransferState {
     /// captured here so the resolve handler can reapply the action to
     /// the right destination without re-listing.
     pub pending_conflict_item: Option<TransferItem>,
-    /// Slot that hit the conflict — needed so resolve uses the same
+    /// Slot that hit the conflict, needed so resolve uses the same
     /// SFTP client channel for the apply step.
     pub pending_conflict_slot: Option<u8>,
     /// One SFTP client per parallel slot. Empty for `DuplicateLocal`
@@ -289,7 +289,7 @@ pub(crate) struct TransferState {
     /// `false` slot to dispatch to, keeping each slot mapped 1-1 with
     /// its `clients[i]` so workers never fight for the same channel.
     pub busy_slots: Vec<bool>,
-    /// True while a conflict modal is up — workers exit on Next instead
+    /// True while a conflict modal is up, workers exit on Next instead
     /// of popping more items, then get re-spawned by Resolve.
     pub paused: bool,
 }
@@ -300,7 +300,7 @@ pub(crate) enum SftpPaneSide {
     Remote,
 }
 
-/// Internal drag state — a row being dragged from one pane towards the
+/// Internal drag state, a row being dragged from one pane towards the
 /// other. The press position lets us suppress short jitters; only past
 /// a small threshold do we treat the press+move as a drag rather than a
 /// click. Multi-row drags carry the full set so a single drop fires N
@@ -310,13 +310,13 @@ pub(crate) struct SftpInternalDrag {
     pub origin_side: SftpPaneSide,
     /// `(path, is_dir)` per dragged item.
     pub items: Vec<(String, bool)>,
-    /// Short label shown on the floating ghost — basename or "N items".
+    /// Short label shown on the floating ghost, basename or "N items".
     pub label: String,
     /// Cursor position at left-press time. Used to gate `active` on
     /// distance threshold so accidental jitter doesn't get treated as
     /// a drag and steal click handling.
     pub press_pos: iced::Point,
-    /// Once the cursor moves past a few pixels we commit to the drag —
+    /// Once the cursor moves past a few pixels we commit to the drag
     /// the ghost renders, the drop highlight kicks in, and the eventual
     /// release dispatches a transfer instead of a click.
     pub active: bool,
@@ -325,7 +325,7 @@ pub(crate) struct SftpInternalDrag {
 #[derive(Debug, Clone)]
 pub(crate) struct SftpRowMenu {
     pub side: SftpPaneSide,
-    /// Stringified path — `String` for both panes since the modal /
+    /// Stringified path, `String` for both panes since the modal /
     /// follow-up actions accept a path verbatim.
     pub path: String,
     pub is_dir: bool,
@@ -403,7 +403,7 @@ pub(crate) struct LocalEntry {
 /// the first time the user opens the menu, then cached on `Oryxis`.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct LocalShellSpec {
-    /// User-facing label — e.g. "PowerShell", "cmd", "Ubuntu (WSL)".
+    /// User-facing label, e.g. "PowerShell", "cmd", "Ubuntu (WSL)".
     pub label: String,
     /// Executable to spawn. Bare program name (resolved via `PATH`)
     /// or a full path; passed to portable-pty's `CommandBuilder`.
@@ -423,7 +423,7 @@ pub(crate) enum ChatRole {
     User,
     Assistant,
     System, // for tool execution results
-    /// Provider/network error — rendered as a red banner with a Retry
+    /// Provider/network error, rendered as a red banner with a Retry
     /// button instead of looking like a normal assistant response.
     Error,
     /// AI requested a `risky` tool call. `content` carries the proposed
@@ -441,17 +441,39 @@ pub(crate) struct ChatMessage {
     pub content: String,
     #[allow(dead_code)]
     pub timestamp: chrono::DateTime<chrono::Utc>,
-    /// Parsed Markdown items for assistant messages — cached so the view
+    /// Parsed Markdown items for assistant messages, cached so the view
     /// can borrow them across renders. Iced's `markdown::view` returns an
     /// Element borrowing the items slice, so we can't parse on the fly.
     pub parsed_md: Vec<iced::widget::markdown::Item>,
 }
 
 // ---------------------------------------------------------------------------
+// Generic blocking error dialog
+// ---------------------------------------------------------------------------
+
+/// Modal-style "you must read this" error. Heavier than `toast` because
+/// it doesn't auto-dismiss; lighter than a full confirm modal because
+/// it has a single OK action plus an optional "Open URL" button.
+#[derive(Debug, Clone)]
+pub(crate) struct ErrorDialog {
+    pub title: String,
+    pub body: String,
+    /// Optional learn-more / install-instructions link. Rendered as a
+    /// secondary button. `None` = no link button.
+    pub link: Option<ErrorDialogLink>,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct ErrorDialogLink {
+    pub label: String,
+    pub url: String,
+}
+
+// ---------------------------------------------------------------------------
 // Terminal tab
 // ---------------------------------------------------------------------------
 
-/// One terminal pane — owns its alacritty grid and (optionally) the SSH
+/// One terminal pane, owns its alacritty grid and (optionally) the SSH
 /// session feeding it. A `TerminalTab` holds one or more panes that are
 /// rendered side-by-side or stacked depending on `PaneLayout`.
 pub(crate) struct Pane {
@@ -470,7 +492,7 @@ pub(crate) struct Pane {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[allow(dead_code)] // Horizontal/Vertical wired in next phase (split UI).
 pub(crate) enum PaneLayout {
-    /// Single pane filling the canvas — default for fresh tabs.
+    /// Single pane filling the canvas, default for fresh tabs.
     Single,
     /// Two panes side by side (first on the left, second on the right).
     Horizontal,
@@ -478,7 +500,7 @@ pub(crate) enum PaneLayout {
     Vertical,
 }
 
-/// A terminal tab — either a local shell or an SSH session. Holds 1+ panes
+/// A terminal tab, either a local shell or an SSH session. Holds 1+ panes
 /// (only the first one is alive when the tab is created; user can split
 /// it later to create the second).
 pub(crate) struct TerminalTab {
@@ -495,7 +517,7 @@ pub(crate) struct TerminalTab {
     /// Whether the AI chat sidebar is visible.
     pub chat_visible: bool,
     /// First-token allow-list for AI tool execution. Populated when the
-    /// user clicks "ALWAYS RUN" on a confirmation prompt — future tool
+    /// user clicks "ALWAYS RUN" on a confirmation prompt, future tool
     /// calls whose first whitespace-delimited token matches an entry
     /// here skip the prompt and run immediately. Per-tab so an
     /// "always run rm" decision on one host doesn't leak to others.
@@ -523,7 +545,7 @@ impl TerminalTab {
         }
     }
 
-    /// Currently focused pane — invariant maintained by `focus_pane` and
+    /// Currently focused pane, invariant maintained by `focus_pane` and
     /// the split / close handlers.
     pub fn active(&self) -> &Pane {
         &self.panes[self.focused_pane.min(self.panes.len() - 1)]
@@ -593,9 +615,20 @@ pub(crate) struct ConnectionForm {
     /// string while the editor is open so the input field can show
     /// what the user typed; serialized to `Option<u32>` on save.
     pub keepalive_interval: String,
+    /// Cloud-managed transport selection. Only meaningful when the
+    /// connection being edited has a `cloud_ref`, the editor renders
+    /// the picker conditionally. `None` here = "no cloud_ref to
+    /// edit". The actual `cloud_ref.transport_pref` field is
+    /// preserved when the user doesn't touch this picker.
+    pub cloud_transport:
+        Option<oryxis_core::models::cloud::TransportKind>,
+    /// Per-host initial command sent right after the shell opens.
+    /// Empty == no initial command. Mirrors `Connection.initial_command`
+    /// while the editor is open.
+    pub initial_command: String,
 }
 
-/// UI-side proxy kind. Includes a `None` (disabled) variant — the
+/// UI-side proxy kind. Includes a `None` (disabled) variant, the
 /// model's `ProxyType` doesn't have a "disabled" since that's
 /// represented by `Connection.proxy = None`. The `Identity(Uuid)`
 /// variant points at a saved `ProxyIdentity`; when present, the
@@ -624,7 +657,7 @@ impl ProxyKind {
     ];
 
     /// i18n key for the localized label rendered in the picker. `None`
-    /// is returned for `Identity(_)` — saved-identity rendering uses
+    /// is returned for `Identity(_)`, saved-identity rendering uses
     /// the identity's `label`, not a static key.
     pub fn label_key(&self) -> Option<&'static str> {
         match self {
@@ -637,7 +670,7 @@ impl ProxyKind {
         }
     }
 
-    /// Default port for the proxy type — pre-filled when the user
+    /// Default port for the proxy type, pre-filled when the user
     /// switches kind and the port field is still empty.
     pub fn default_port(&self) -> Option<u16> {
         match self {
@@ -667,7 +700,7 @@ impl std::fmt::Display for ProxyKind {
         // Localized at render time. The picker compares variants via
         // PartialEq, so language switches do not invalidate the
         // selected value. `Identity(_)` falls back to a generic label
-        // — the host panel installs a custom mapper that swaps in the
+        //, the host panel installs a custom mapper that swaps in the
         // identity's user-chosen label at render time.
         match self.label_key() {
             Some(k) => write!(f, "{}", crate::i18n::t(k)),
@@ -714,6 +747,8 @@ impl Default for ConnectionForm {
             proxy_password_touched: false,
             terminal_theme: None,
             keepalive_interval: String::new(),
+            cloud_transport: None,
+            initial_command: String::new(),
         }
     }
 }
@@ -731,7 +766,10 @@ pub(crate) enum OverlayContent {
     TabActions(usize),
     FolderActions(Uuid),
     CloudProfileActions(Uuid),
-    /// Dropdown menu rendered next to "+ Host" — lists every
+    /// Kebab menu on a dynamic-group card (ECS / K8s service folder).
+    /// Items: Edit (template) and Delete.
+    DynamicGroupActions(Uuid),
+    /// Dropdown menu rendered next to "+ Host", lists every
     /// configured cloud profile so the user can launch discovery
     /// directly from the Hosts view. Only opened when at least one
     /// profile is configured (otherwise the chevron is hidden).
@@ -772,7 +810,7 @@ pub enum View {
 /// Cloud provider picked in the wizard. Only AWS is fully wired in
 /// v0.6 PR 3; Kubernetes lands in a follow-up PR with its own provider
 /// crate. The K8s variant is exposed in the picker for visibility but
-/// the wizard surfaces an "experimental — coming soon" hint.
+/// the wizard surfaces an "experimental, coming soon" hint.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum CloudProviderChoice {
     #[default]
@@ -838,7 +876,7 @@ pub enum CloudTestState {
     Failed(String),
 }
 
-/// State of the wizard's "Discover & pick" panel — owns the in-flight
+/// State of the wizard's "Discover & pick" panel, owns the in-flight
 /// or completed discovery result so the user can scroll/select without
 /// re-hitting the cloud.
 #[derive(Debug, Clone, Default)]
@@ -847,6 +885,22 @@ pub enum CloudDiscoverState {
     Idle,
     Running,
     Loaded(oryxis_cloud::DiscoveryResult),
+    Failed(String),
+}
+
+/// Per-dynamic-group resolve state. Lives in a `HashMap<group_id, _>`
+/// on `Oryxis` so opening one group doesn't blow away another's
+/// cached resolve. TTL handling lives on the call site.
+#[derive(Debug, Clone)]
+pub enum DynamicGroupState {
+    Loading,
+    Loaded {
+        hosts: Vec<oryxis_cloud::DiscoveredHost>,
+        // Stored so a future TTL-based auto-refresh can compare
+        // against `Utc::now()`. Not read by any current call site.
+        #[allow(dead_code)]
+        fetched_at: chrono::DateTime<chrono::Utc>,
+    },
     Failed(String),
 }
 
@@ -862,7 +916,7 @@ pub(crate) enum SettingsSection {
     /// CRUD over reusable proxy configurations (SOCKS5 / HTTP / etc.)
     /// referenced from connections via `Connection.proxy_identity_id`.
     Proxies,
-    /// Cloud account profiles (AWS / K8s) — same conceptual shape as
+    /// Cloud account profiles (AWS / K8s), same conceptual shape as
     /// Proxies: reusable config that hosts reference. Imported hosts
     /// live in the regular Hosts view; this section only manages the
     /// account credentials and triggers discovery.
@@ -910,7 +964,7 @@ pub(crate) enum SshStreamMsg {
 }
 
 // ---------------------------------------------------------------------------
-// Keep the text_editor import referenced — required for Message enum split later.
+// Keep the text_editor import referenced, required for Message enum split later.
 // ---------------------------------------------------------------------------
 
 #[allow(dead_code)]

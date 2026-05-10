@@ -30,7 +30,7 @@ impl Oryxis {
         // reach), not the origin. So while step=Connecting, dot 2 (Auth) is
         // the target → it pulses; dot 1 (Connect origin) is solid. Dot 3
         // (Verify) is only inserted when the user must actually approve a
-        // host key — in that case it's the active target.
+        // host key, in that case it's the active target.
         let states: Vec<(DotKind, DotState)> = if failed {
             vec![(DotKind::Connect, DotState::Done), (DotKind::Auth, DotState::Active)]
         } else if self.pending_host_key.is_some() {
@@ -41,12 +41,12 @@ impl Oryxis {
             ]
         } else {
             // Always two dots, always pulse the target (Auth). The in-between
-            // "Handshake" step is hidden — it's transient and non-actionable.
+            // "Handshake" step is hidden, it's transient and non-actionable.
             vec![(DotKind::Connect, DotState::Done), (DotKind::Auth, DotState::Active)]
         };
         let num_dots = states.len();
 
-        // Header: host info — icon/color matches the detected OS (if the
+        // Header: host info, icon/color matches the detected OS (if the
         // backend probe already finished) so the Connecting screen reflects
         // the brand immediately on subsequent connects.
         let detected_os = self
@@ -85,7 +85,7 @@ impl Oryxis {
         let phase = ((tick % 8) as f32) / 8.0;
         let pulse = if phase < 0.5 { phase * 2.0 } else { (1.0 - phase) * 2.0 };
 
-        // Icon per stage — plug for Connect, shield for Verify, terminal for
+        // Icon per stage, plug for Connect, shield for Verify, terminal for
         // Auth. Termius-style: bigger bullets (28px) with a glyph inside so
         // the sequence reads semantically instead of as abstract dots.
         let stage_icon = |kind: DotKind, color: Color| -> iced::widget::Text<'_> {

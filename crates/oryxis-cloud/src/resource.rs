@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-/// Result of a one-shot wizard discovery — the user picks a subset and
+/// Result of a one-shot wizard discovery, the user picks a subset and
 /// imports it. Discovered EC2s become individual hosts; discovered ECS
 /// services / K8s workloads become dynamic groups.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -31,7 +31,7 @@ pub struct DiscoveredEcsService {
     pub cluster: String,
     pub service: String,
     pub container: String,
-    /// Number of currently running tasks — purely informational, shown
+    /// Number of currently running tasks, purely informational, shown
     /// in the wizard so the user can tell empty services from active ones.
     pub running_task_count: u32,
 }
@@ -47,7 +47,7 @@ pub struct DiscoveredK8sWorkload {
     pub running_pod_count: u32,
 }
 
-/// Resolved live host returned by `resolve_query` — used by dynamic
+/// Resolved live host returned by `resolve_query`, used by dynamic
 /// groups to render their current children.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DiscoveredHost {
@@ -57,6 +57,6 @@ pub struct DiscoveredHost {
     /// ECS, podName for K8s, instance-id for EC2).
     pub resource_id: String,
     /// Optional per-child overrides surfaced by the provider (zone,
-    /// node, etc.) — shown as a subtitle on the row.
+    /// node, etc.), shown as a subtitle on the row.
     pub subtitle: Option<String>,
 }

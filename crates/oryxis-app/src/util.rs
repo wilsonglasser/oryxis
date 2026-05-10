@@ -1,4 +1,4 @@
-//! Pure utility functions — no UI, no state.
+//! Pure utility functions, no UI, no state.
 
 use iced::keyboard;
 
@@ -76,7 +76,7 @@ pub(crate) fn key_to_named_bytes(
     }
 }
 
-/// Snap the chat sidebar's scrollable to its bottom — used after the
+/// Snap the chat sidebar's scrollable to its bottom, used after the
 /// user sends a message and after the assistant response arrives, so
 /// the conversation stays anchored at the latest exchange.
 pub(crate) fn chat_scroll_to_end() -> iced::Task<crate::app::Message> {
@@ -96,7 +96,7 @@ pub(crate) fn sanitize_uint(input: &str, max: u64) -> String {
     value.min(max).to_string()
 }
 
-/// Open an external URL in the user's default browser. Best-effort —
+/// Open an external URL in the user's default browser. Best-effort
 /// the UI falls back to copying the URL to the clipboard if this fails,
 /// so the io::Error here is something the caller can swallow.
 pub(crate) fn open_in_browser(url: &str) -> Result<(), std::io::Error> {

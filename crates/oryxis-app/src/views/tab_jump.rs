@@ -1,4 +1,4 @@
-//! Termius-style "Jump to" modal — invoked from the `⋯` button in the
+//! Termius-style "Jump to" modal, invoked from the `⋯` button in the
 //! tab bar or via `Ctrl+J`. Lists every open tab plus the same Quick
 //! connect entries that the new-tab picker offers (Local Terminal,
 //! Serial, etc.), and includes a search box so the user can filter
@@ -67,7 +67,7 @@ impl Oryxis {
                 Message::SelectTab(idx),
             ));
         }
-        // Inline "New Tab" entry — shortcut to the existing new-tab
+        // Inline "New Tab" entry, shortcut to the existing new-tab
         // picker without leaving this modal first.
         let new_tab_badge: Element<'_, Message> = container(
             iced_fonts::lucide::circle_check()
@@ -177,7 +177,7 @@ impl Oryxis {
             ..Default::default()
         });
 
-        // Empty state — when search filters out everything.
+        // Empty state, when search filters out everything.
         let body: Element<'_, Message> = if !had_match {
             container(
                 text(t("no_matching_tabs"))
@@ -286,7 +286,7 @@ fn jump_row<'a>(
         .align_y(iced::Alignment::Center),
     )
     .on_press_with(move || {
-        // Two-step dispatch: select first, then close — keeps the
+        // Two-step dispatch: select first, then close, keeps the
         // modal from flashing closed before the select handler runs.
         // SequencedSelect is wired in app.rs to fire both messages.
         Message::TabJumpSelect(Box::new(on_select.clone()))

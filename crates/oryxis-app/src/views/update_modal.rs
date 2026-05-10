@@ -32,7 +32,7 @@ impl Oryxis {
         .size(12)
         .color(OryxisColors::t().text_secondary);
 
-        // Release notes preview — first ~40 lines, in a scrollable box so
+        // Release notes preview, first ~40 lines, in a scrollable box so
         // long changelogs don't bloat the modal. Rendered as plain text
         // (we're not doing markdown rendering here).
         let notes_preview: String = info

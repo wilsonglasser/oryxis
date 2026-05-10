@@ -1,4 +1,4 @@
-//! `Oryxis::subscription` — the iced event/timer multiplexer. Pulled
+//! `Oryxis::subscription`, the iced event/timer multiplexer. Pulled
 //! out of `app.rs` so the message-loop module is more browsable.
 
 use iced::Subscription;
@@ -13,7 +13,7 @@ impl Oryxis {
                 iced::event::Event::Mouse(iced::mouse::Event::CursorMoved { position }) => {
                     Some(Message::MouseMoved(position))
                 }
-                // Global Left press — used to start a potential SFTP
+                // Global Left press, used to start a potential SFTP
                 // internal drag. Doesn't capture the event, so widget-
                 // level handlers (button click, etc.) still fire.
                 iced::event::Event::Mouse(iced::mouse::Event::ButtonPressed(
@@ -30,7 +30,7 @@ impl Oryxis {
                 }
                 // OS-level file drag-and-drop. iced fires one event per
                 // file, so multi-file drops produce a sequence of
-                // `FileDropped` messages — they're just queued through
+                // `FileDropped` messages, they're just queued through
                 // the SFTP upload handler.
                 iced::event::Event::Window(iced::window::Event::FileHovered(_)) => {
                     Some(Message::SftpFileHovered)
@@ -50,7 +50,7 @@ impl Oryxis {
 
         // 100 ms tick that drives the pulsing "loading" ring on the active
         // connection step. Only runs while a connection is in progress and
-        // hasn't failed — no perpetual re-renders on idle.
+        // hasn't failed, no perpetual re-renders on idle.
         let mut subs = vec![events, auto_reconnect];
         let is_connecting = self
             .connecting
@@ -63,7 +63,7 @@ impl Oryxis {
                     .map(|_| Message::ConnectAnimTick),
             );
         }
-        // 2s mtime poll on the edit-in-place temp file — only ticks
+        // 2s mtime poll on the edit-in-place temp file, only ticks
         // while a session is actually active, otherwise idle.
         if self.sftp.edit_session.is_some() {
             subs.push(

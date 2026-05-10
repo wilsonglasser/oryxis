@@ -1,4 +1,4 @@
-//! `impl Oryxis` block for SSH-connect plumbing — credential resolution,
+//! `impl Oryxis` block for SSH-connect plumbing, credential resolution,
 //! jump-host resolver assembly, and the host-key verification callback.
 //! Pulled out of `app.rs` to keep the main module from drifting past
 //! ten thousand lines.
@@ -10,7 +10,7 @@ use oryxis_core::models::connection::{AuthMethod, Connection};
 use crate::app::Oryxis;
 
 impl Oryxis {
-    /// Resolve `(password, private_key_pem)` for a connection — same
+    /// Resolve `(password, private_key_pem)` for a connection, same
     /// rules as `Message::ConnectSsh`: prefer identity-linked credentials,
     /// fall back to per-connection vault entries.
     pub(crate) fn resolve_credentials(
@@ -77,7 +77,7 @@ impl Oryxis {
             // Resolve the jump host's effective proxy (identity-based or
             // inline) so the engine's first-hop dial can route through it.
             // Only matters for the first jump but we hydrate every jump's
-            // entry — cheap and keeps the resolver self-contained.
+            // entry, cheap and keeps the resolver self-contained.
             if let Some(jconn) = self.connections.iter().find(|c| c.id == *jid)
                 && let Some(vault) = &self.vault
                 && let Ok(Some(p)) = vault.resolve_proxy(jconn)
@@ -94,7 +94,7 @@ impl Oryxis {
     }
 
     /// Build the host-key verification callback against the in-memory
-    /// `known_hosts` snapshot. Read-only — known-host writes still happen
+    /// `known_hosts` snapshot. Read-only, known-host writes still happen
     /// in the connect handler itself.
     pub(crate) fn make_host_key_check(&self) -> oryxis_ssh::HostKeyCheckCallback {
         let snapshot = Arc::new(Mutex::new(self.known_hosts.clone()));

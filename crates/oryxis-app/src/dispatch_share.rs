@@ -1,4 +1,4 @@
-//! `Oryxis::handle_share` — match arms for the export/import dialogs
+//! `Oryxis::handle_share`, match arms for the export/import dialogs
 //! and the share dialog (vault export with optional keys, file pick,
 //! password gating).
 
@@ -50,7 +50,7 @@ impl Oryxis {
                                     Ok(()) => {
                                         // Even though the export is age-
                                         // encrypted, lock the file down
-                                        // to 0600 — defense in depth so
+                                        // to 0600, defense in depth so
                                         // a stranger reading the bytes
                                         // doesn't get the easy step of
                                         // copy/exfiltrate first.
@@ -112,7 +112,7 @@ impl Oryxis {
                     return Ok(Task::none());
                 };
                 // Skip aliases that already exist as a connection label
-                // — re-importing the same config shouldn't pile up
+                //, re-importing the same config shouldn't pile up
                 // duplicates. Lossy de-dup, exact label match.
                 let existing_labels: std::collections::HashSet<String> = self
                     .connections
@@ -137,7 +137,7 @@ impl Oryxis {
                 }
                 crate::ssh_config::link_proxy_jumps(&parsed_to_save.iter().map(|p| (*p).clone()).collect::<Vec<_>>(), &mut to_save);
                 for (host, conn) in parsed_to_save.iter().zip(to_save.iter()) {
-                    // No password yet — `~/.ssh/config` doesn't carry
+                    // No password yet, `~/.ssh/config` doesn't carry
                     // credentials. The user can add one later in the
                     // host editor; for now save without it.
                     match vault.save_connection(conn, None) {
@@ -149,7 +149,7 @@ impl Oryxis {
                 let mut summary =
                     format!("Imported {} of {} hosts", imported, parsed.len());
                 if skipped > 0 {
-                    summary.push_str(&format!(" ({} skipped — label already exists)", skipped));
+                    summary.push_str(&format!(" ({} skipped, label already exists)", skipped));
                 }
                 if errors.is_empty() {
                     self.ssh_config_import_status = Some(Ok(summary));

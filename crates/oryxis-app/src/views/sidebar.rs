@@ -1,4 +1,4 @@
-//! Left navigation sidebar. Collapsible — `Oryxis::sidebar_collapsed` switches
+//! Left navigation sidebar. Collapsible, `Oryxis::sidebar_collapsed` switches
 //! between the full pill-shaped nav and a narrow icon rail.
 
 use iced::border::Radius;
@@ -149,7 +149,7 @@ impl Oryxis {
 
 /// Toggle the sidebar between expanded and collapsed. Uses the
 /// `panel-left-{close,open}` (LTR) or `panel-right-{close,open}` (RTL)
-/// lucide pair — a small rectangle with a vertical bar, animated
+/// lucide pair, a small rectangle with a vertical bar, animated
 /// open/closed depending on state. Reads as "sidebar panel" much faster
 /// than a generic `«` / `»` chevron.
 pub(crate) fn sidebar_toggle_btn<'a>(expanded: bool) -> Element<'a, Message> {
@@ -167,7 +167,7 @@ pub(crate) fn sidebar_toggle_btn<'a>(expanded: bool) -> Element<'a, Message> {
     .on_press(Message::ToggleSidebar)
     .padding(0)
     .style(|_, status| {
-        // Match the chrome / new-tab buttons' subtle hover style — a
+        // Match the chrome / new-tab buttons' subtle hover style, a
         // tinted overlay using the icon color, not a flat white wash.
         // Squared corners so it lines up flush with the rest of the
         // tab bar's right cluster.
@@ -223,14 +223,14 @@ fn collapsed_nav_btn<'a>(
 }
 
 impl Oryxis {
-    /// Local Shell picker modal — listed shells come from
+    /// Local Shell picker modal, listed shells come from
     /// `dispatch_settings::detect_local_shells`. Shown only on
     /// Windows; non-Windows platforms `OpenLocalShell` directly.
     pub(crate) fn view_local_shell_picker(&self) -> Element<'_, Message> {
         let shells = self.local_shells.as_deref();
         let mut list = column![].spacing(2);
 
-        // Probe still in flight — show a hint instead of an empty
+        // Probe still in flight, show a hint instead of an empty
         // dropdown so the user knows the picker is loading rather
         // than broken.
         if shells.is_none() {

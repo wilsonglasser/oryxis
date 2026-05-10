@@ -1,4 +1,4 @@
-//! `impl Oryxis` block for SFTP pane plumbing — local refresh, timeout
+//! `impl Oryxis` block for SFTP pane plumbing, local refresh, timeout
 //! parsing, hit-testing, and the internal drag-drop dispatcher. Split
 //! out of `app.rs` so the main module stays browsable.
 
@@ -16,7 +16,7 @@ impl Oryxis {
         self.sftp.local_error = None;
 
         // Bare WSL UNC roots (`\\wsl$`, `\\wsl.localhost`) can't be
-        // enumerated via `read_dir` — Windows treats them as servers
+        // enumerated via `read_dir`, Windows treats them as servers
         // with no share and returns ERROR_PATH_NOT_FOUND. Synthesize
         // distro entries from `wsl.exe -l -q` instead so the user can
         // step into a distro just by clicking it.
@@ -56,7 +56,7 @@ impl Oryxis {
         sort_local_entries(&mut self.sftp.local_entries, self.sftp.local_sort);
     }
 
-    /// Parsed and clamped concurrency setting — picks how many parallel
+    /// Parsed and clamped concurrency setting, picks how many parallel
     /// SFTP transfer slots to spin up. Falls back to `2` if the user
     /// typed garbage; clamped to `[1, 8]` to keep the channel pool sane.
     pub(crate) fn sftp_concurrency(&self) -> u8 {
@@ -84,7 +84,7 @@ impl Oryxis {
         Self::parse_secs(&self.setting_sftp_op_timeout, 30)
     }
 
-    /// Build the ordered list of paths currently shown in a pane —
+    /// Build the ordered list of paths currently shown in a pane
     /// applies the same hide-hidden + filter rules the view uses so
     /// shift-click range select can find anchor / target indices in the
     /// list the user actually sees.
@@ -165,7 +165,7 @@ impl Oryxis {
             && self.mouse_position.x < self.window_size.width - chat_w
     }
 
-    /// Mirror helper for the left pane — checks the cursor sits in the
+    /// Mirror helper for the left pane, checks the cursor sits in the
     /// half between the sidebar and the pane split.
     pub(crate) fn is_cursor_over_local_pane(&self) -> bool {
         let sidebar = if self.sidebar_collapsed {
@@ -214,7 +214,7 @@ impl Oryxis {
         }
     }
 
-    /// Resolve an active internal drag drop — figure out which pane the
+    /// Resolve an active internal drag drop, figure out which pane the
     /// cursor is over and dispatch a transfer for each dragged item.
     /// Cross-pane drags from local → remote upload, remote → local
     /// download. Drops onto a hovered folder go *inside* that folder;
@@ -264,7 +264,7 @@ impl Oryxis {
             }
             crate::state::SftpPaneSide::Remote if in_local => {
                 // Direct the download to the hovered local folder via
-                // a one-shot override — same pattern as upload, lets
+                // a one-shot override, same pattern as upload, lets
                 // the message handler consume the destination without
                 // mutating the pane's actual `local_path`.
                 if let Some(dir) = target_local_folder {

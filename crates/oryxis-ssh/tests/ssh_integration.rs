@@ -23,7 +23,7 @@ const TEST_PASS: &str = "testpass123";
 /// Public half is fed to the linuxserver/openssh-server container via
 /// the `PUBLIC_KEY` env var; the private half is handed to russh as PEM.
 /// Generated with `ssh-keygen -t ed25519 -N "" -C oryxis-test`. Has no
-/// authority on any real machine — committing it here is fine.
+/// authority on any real machine, committing it here is fine.
 const TEST_PUBKEY: &str = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIHqXz+0CmwH1pGs+5hWVBcqRQmED5a1tJ5Umb1vp0cW8 oryxis-test";
 const TEST_PRIVKEY: &str = "-----BEGIN OPENSSH PRIVATE KEY-----
 b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAMwAAAAtzc2gtZW
@@ -107,7 +107,7 @@ async fn exec_with_password(
 }
 
 #[tokio::test]
-#[ignore = "requires Docker — run with --ignored"]
+#[ignore = "requires Docker, run with --ignored"]
 async fn password_auth_runs_exec_command() {
     let (conn, password, _container) = start_sshd(false).await;
     let result = exec_with_password(&conn, &password, "echo hello-from-oryxis").await;
@@ -117,7 +117,7 @@ async fn password_auth_runs_exec_command() {
 }
 
 #[tokio::test]
-#[ignore = "requires Docker — run with --ignored"]
+#[ignore = "requires Docker, run with --ignored"]
 async fn pubkey_auth_runs_exec_command() {
     let (mut conn, _password, _container) = start_sshd(true).await;
     conn.auth_method = AuthMethod::Key;
@@ -139,7 +139,7 @@ async fn pubkey_auth_runs_exec_command() {
 }
 
 #[tokio::test]
-#[ignore = "requires Docker — run with --ignored"]
+#[ignore = "requires Docker, run with --ignored"]
 async fn exec_command_propagates_nonzero_exit() {
     let (conn, password, _container) = start_sshd(false).await;
     let result = exec_with_password(&conn, &password, "exit 42").await;
@@ -147,7 +147,7 @@ async fn exec_command_propagates_nonzero_exit() {
 }
 
 #[tokio::test]
-#[ignore = "requires Docker — run with --ignored"]
+#[ignore = "requires Docker, run with --ignored"]
 async fn exec_command_separates_stdout_and_stderr() {
     let (conn, password, _container) = start_sshd(false).await;
     let result = exec_with_password(
@@ -160,13 +160,13 @@ async fn exec_command_separates_stdout_and_stderr() {
     assert!(result.stdout.contains("on-stdout"));
     assert!(result.stderr.contains("on-stderr"));
     // Cross-check: stdout should NOT carry the stderr line and vice
-    // versa — confirms the ExtendedData (ext=1) split worked.
+    // versa, confirms the ExtendedData (ext=1) split worked.
     assert!(!result.stdout.contains("on-stderr"));
     assert!(!result.stderr.contains("on-stdout"));
 }
 
 #[tokio::test]
-#[ignore = "requires Docker — run with --ignored"]
+#[ignore = "requires Docker, run with --ignored"]
 async fn wrong_password_yields_error() {
     let (conn, _password, _container) = start_sshd(false).await;
     let engine = engine();
@@ -184,7 +184,7 @@ async fn wrong_password_yields_error() {
 }
 
 #[tokio::test]
-#[ignore = "requires Docker — run with --ignored"]
+#[ignore = "requires Docker, run with --ignored"]
 async fn pty_session_round_trips_input_to_output() {
     // Sanity check on the interactive shell path: open a PTY, write a
     // command terminated by newline, and confirm the prompt echoes
@@ -233,9 +233,9 @@ async fn pty_session_round_trips_input_to_output() {
 }
 
 #[tokio::test]
-#[ignore = "requires Docker — run with --ignored"]
+#[ignore = "requires Docker, run with --ignored"]
 async fn pty_session_resize_is_not_fatal() {
-    // resize() is fire-and-forget — we just want to confirm it doesn't
+    // resize() is fire-and-forget, we just want to confirm it doesn't
     // panic and the session stays alive afterwards.
     let (conn, password, _container) = start_sshd(false).await;
     let engine = engine();
@@ -246,7 +246,7 @@ async fn pty_session_resize_is_not_fatal() {
     session.resize(120, 40);
     session.resize(200, 60);
     // Tiny grace period so the window-change request can hit the wire
-    // before we tear down — an immediate drop sometimes truncates the
+    // before we tear down, an immediate drop sometimes truncates the
     // last channel message and produces a misleading "channel closed"
     // log line.
     tokio::time::sleep(Duration::from_millis(50)).await;
@@ -254,12 +254,12 @@ async fn pty_session_resize_is_not_fatal() {
 }
 
 #[tokio::test]
-#[ignore = "requires Docker — run with --ignored"]
+#[ignore = "requires Docker, run with --ignored"]
 async fn agent_forwarding_sets_remote_ssh_auth_sock() {
     // When the engine is configured with `with_agent_forwarding(true)`,
     // sshd inside the container should create a unix socket and export
     // its path as `SSH_AUTH_SOCK` to the user's shell. We don't need a
-    // real local agent for this assertion — the env var is set on the
+    // real local agent for this assertion, the env var is set on the
     // remote side as soon as the channel-level request is accepted.
     let (conn, password, _container) = start_sshd(false).await;
     let engine = engine().with_agent_forwarding(true);
@@ -268,7 +268,7 @@ async fn agent_forwarding_sets_remote_ssh_auth_sock() {
         .await
         .expect("connect");
     // Sleep briefly so the shell prompt is fully drawn before we type
-    // — otherwise the marker can interleave with motd / prompt output.
+    //, otherwise the marker can interleave with motd / prompt output.
     tokio::time::sleep(Duration::from_millis(500)).await;
     session
         .write(b"echo SOCK=[$SSH_AUTH_SOCK]\n")
@@ -305,9 +305,9 @@ async fn agent_forwarding_sets_remote_ssh_auth_sock() {
 }
 
 #[tokio::test]
-#[ignore = "requires Docker — run with --ignored"]
+#[ignore = "requires Docker, run with --ignored"]
 async fn agent_forwarding_off_leaves_remote_socket_unset() {
-    // Mirror of the previous test — without forwarding, the remote
+    // Mirror of the previous test, without forwarding, the remote
     // shell shouldn't have `SSH_AUTH_SOCK` set (the whole point of
     // OpenSSH's default `ForwardAgent no` is that opting in is explicit).
     let (conn, password, _container) = start_sshd(false).await;
@@ -349,7 +349,7 @@ async fn agent_forwarding_off_leaves_remote_socket_unset() {
 }
 
 #[tokio::test]
-#[ignore = "requires Docker — run with --ignored"]
+#[ignore = "requires Docker, run with --ignored"]
 async fn detect_os_returns_a_value() {
     // The image is Alpine-based; we don't pin the exact string because
     // it depends on which uname/lsb-release path detect_os hits inside

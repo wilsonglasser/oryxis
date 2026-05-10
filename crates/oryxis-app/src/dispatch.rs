@@ -1,4 +1,4 @@
-//! `Oryxis::update` — the master message-dispatch table. ~5k lines of
+//! `Oryxis::update`, the master message-dispatch table. ~5k lines of
 //! match arms; pulled out of `app.rs` so the wiring file stays trim.
 //! All `pub(crate)` helpers it relies on live in sibling modules
 //! (`sftp_helpers`, `sftp_methods`, `connect_methods`, `util`,
@@ -162,6 +162,20 @@ impl Oryxis {
             Message::OpenGroup(gid) => {
                 self.active_group = Some(gid);
                 self.host_search.clear();
+                // Auto-trigger resolve when the user opens a dynamic
+                // group, saves an extra click. Skip when we already
+                // have a cached result; the user can hit Refresh
+                // inside the panel to force a re-fetch.
+                if self
+                    .groups
+                    .iter()
+                    .any(|g| g.id == gid && g.cloud_query.is_some())
+                    && !self.cloud_dynamic_group_state.contains_key(&gid)
+                {
+                    return self
+                        .handle_cloud(Message::DynamicGroupResolve(gid))
+                        .unwrap_or_else(|_| Task::none());
+                }
             }
             Message::BackToRoot => {
                 self.active_group = None;
@@ -321,13 +335,56 @@ impl Oryxis {
                     let id = entry.id;
                     if let Some(vault) = &self.vault {
                         let _ = vault.delete_session_log(&id);
-                        self.session_logs = vault.list_session_logs().unwrap_or_default();
+                        self.session_logs_total =
+                            vault.count_session_logs().unwrap_or(0);
+                        // Stepping a page back when the current one is now
+                        // empty keeps the prev/next pair from leaving the
+                        // user staring at "0 of N" with rows further back.
+                        let max_page = self
+                            .session_logs_total
+                            .saturating_sub(1)
+                            / 50;
+                        if self.session_logs_page > max_page {
+                            self.session_logs_page = max_page;
+                        }
+                        self.session_logs = vault
+                            .list_session_logs_page(self.session_logs_page * 50, 50)
+                            .unwrap_or_default();
                     }
                 }
                 // Close viewer if we deleted the one being viewed
                 if let Some((viewed_id, _)) = &self.viewing_session_log
                     && self.session_logs.iter().all(|s| s.id != *viewed_id) {
                         self.viewing_session_log = None;
+                }
+            }
+            Message::ClearSessionLogs => {
+                if let Some(vault) = &self.vault {
+                    let _ = vault.clear_session_logs();
+                    self.session_logs_page = 0;
+                    self.load_data_from_vault();
+                }
+                self.viewing_session_log = None;
+            }
+            Message::SessionLogsPageNext => {
+                let max_page = self.session_logs_total.saturating_sub(1) / 50;
+                if self.session_logs_page < max_page {
+                    self.session_logs_page += 1;
+                    if let Some(vault) = &self.vault {
+                        self.session_logs = vault
+                            .list_session_logs_page(self.session_logs_page * 50, 50)
+                            .unwrap_or_default();
+                    }
+                }
+            }
+            Message::SessionLogsPagePrev => {
+                if self.session_logs_page > 0 {
+                    self.session_logs_page -= 1;
+                    if let Some(vault) = &self.vault {
+                        self.session_logs = vault
+                            .list_session_logs_page(self.session_logs_page * 50, 50)
+                            .unwrap_or_default();
+                    }
                 }
             }
 
@@ -356,6 +413,9 @@ impl Oryxis {
             }
             Message::ToastClear => {
                 self.toast = None;
+            }
+            Message::ErrorDialogDismiss => {
+                self.error_dialog = None;
             }
 
             // ── Vault password management ──

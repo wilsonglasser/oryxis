@@ -1,4 +1,4 @@
-//! `Oryxis::handle_terminal` — match arms for terminal I/O: PTY bytes
+//! `Oryxis::handle_terminal`, match arms for terminal I/O: PTY bytes
 //! coming back, keyboard events routed to the active tab, mouse moves
 //! tracked for hit-testing, window resize/drag/min/max/close.
 
@@ -49,7 +49,7 @@ impl Oryxis {
                     self.new_tab_picker_search.clear();
                     return Ok(Task::none());
                 }
-                // Ctrl+J — jump to a tab via the Termius-style modal
+                // Ctrl+J, jump to a tab via the Termius-style modal
                 // listing all open tabs + Quick connect entries.
                 if let keyboard::Event::KeyPressed { key, modifiers, .. } = &event
                     && modifiers.control()
@@ -60,7 +60,7 @@ impl Oryxis {
                     self.tab_jump_search.clear();
                     return Ok(Task::none());
                 }
-                // Ctrl + (= | + | - | 0) — terminal font zoom. Matches
+                // Ctrl + (= | + | - | 0), terminal font zoom. Matches
                 // alacritty / kitty / gnome-terminal convention. Captured
                 // before the PTY routing so the bytes don't leak into
                 // the shell. `+` covers Ctrl+Shift+= on US layouts.
@@ -86,7 +86,7 @@ impl Oryxis {
                     }
                 }
                 // When the AI chat sidebar is open and the cursor is over
-                // it, the user is interacting with the textarea — drop the
+                // it, the user is interacting with the textarea, drop the
                 // event so it doesn't double-dispatch into the terminal
                 // session running underneath.
                 let cursor_in_chat_sidebar = self

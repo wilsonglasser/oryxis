@@ -842,10 +842,58 @@ dependencies = [
 ]
 
 [[package]]
+name = "aws-sdk-ec2instanceconnect"
+version = "1.98.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c21e9e4ed82f108d397ecd3bd329d4be621ce0eee1c6bf1f1e239dbaaaf53172"
+dependencies = [
+ "aws-credential-types",
+ "aws-runtime",
+ "aws-smithy-async",
+ "aws-smithy-http",
+ "aws-smithy-json",
+ "aws-smithy-observability",
+ "aws-smithy-runtime",
+ "aws-smithy-runtime-api",
+ "aws-smithy-types",
+ "aws-types",
+ "bytes",
+ "fastrand",
+ "http 0.2.12",
+ "http 1.4.0",
+ "regex-lite",
+ "tracing",
+]
+
+[[package]]
 name = "aws-sdk-ecs"
 version = "1.124.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9e28ffb1fa2097067108e6a0a6dd92cf9075391b50c709b268ef5f42ae0642a0"
+dependencies = [
+ "aws-credential-types",
+ "aws-runtime",
+ "aws-smithy-async",
+ "aws-smithy-http",
+ "aws-smithy-json",
+ "aws-smithy-observability",
+ "aws-smithy-runtime",
+ "aws-smithy-runtime-api",
+ "aws-smithy-types",
+ "aws-types",
+ "bytes",
+ "fastrand",
+ "http 0.2.12",
+ "http 1.4.0",
+ "regex-lite",
+ "tracing",
+]
+
+[[package]]
+name = "aws-sdk-ssm"
+version = "1.109.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "69f4bdbeea2c7d18632093cd158644902f1e91ae025a3f68afaa449f620ae658"
 dependencies = [
  "aws-credential-types",
  "aws-runtime",
@@ -5661,7 +5709,7 @@ dependencies = [
 
 [[package]]
 name = "oryxis-app"
-version = "0.5.7"
+version = "0.6.0"
 dependencies = [
  "arboard",
  "chrono",
@@ -5713,7 +5761,9 @@ dependencies = [
  "async-trait",
  "aws-config",
  "aws-sdk-ec2",
+ "aws-sdk-ec2instanceconnect",
  "aws-sdk-ecs",
+ "aws-sdk-ssm",
  "aws-sdk-sts",
  "oryxis-cloud",
  "oryxis-core",

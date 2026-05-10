@@ -6,7 +6,58 @@ project uses [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-05-10
+
 ### Added
+- **AWS Cloud Accounts** — first-class cloud provider integration. New
+  `Settings → Cloud` panel manages encrypted `CloudProfile` rows; three
+  AWS auth flavors are supported (named profile from `~/.aws/config`,
+  static access key + secret + optional session token, IAM Identity
+  Center / SSO via `aws_config::SsoCredentialsProvider`). Each profile
+  carries a "Test credentials" button that hits `sts:GetCallerIdentity`
+  in-line so misconfigurations surface before discovery. Secrets live
+  in the same per-field encrypted column model as identity passwords.
+- **Discovery & Import** — from the Hosts toolbar, "+ Host [▾] →
+  Discover" opens a side panel that lists every EC2 instance and ECS
+  service the profile can see, grouped by region (EC2) and by region /
+  cluster (ECS). The panel filters live, hides empty sections, greys
+  out already-imported entries, and exposes per-row checkboxes. The
+  import action confirms via a transport-pick modal when at least one
+  EC2 row is selected (SSH / EC2 Instance Connect / SSM Session); pure
+  ECS imports skip the modal since dynamic groups always use ECS Exec.
+- **Provider folder layout** — every imported entity nests under a
+  single top-level folder named after the cloud profile (`prod-aws`,
+  `staging`, …). EC2 hosts get the folder as their `group_id`; ECS
+  services materialize as **dynamic groups** (`Group` rows with
+  `cloud_query`) parented under it. Renaming the cloud profile renames
+  the matching provider folder automatically.
+- **EC2 Instance Connect transport** — the connect flow detects an
+  imported EC2 host with `transport_pref = InstanceConnect`, pushes a
+  one-shot SSH public key through `ec2-instance-connect:SendSSHPublicKey`,
+  then completes the handshake with the linked SSH key. AMI-aware OS
+  user inference (Amazon Linux → `ec2-user`, Ubuntu → `ubuntu`,
+  Debian → `admin`, etc.) keeps connections one-click after import.
+- **SSM Session for EC2** — `transport_pref = Ssm` opens an SSM
+  Session through the bundled `session-manager-plugin`. No public IP
+  or open port required; private subnets work out of the box once the
+  instance has the SSM agent + IAM permissions.
+- **ECS Exec into a live container** — dynamic groups expand on click
+  to list the running tasks; selecting a task starts an interactive
+  `aws ecs execute-command` session into the configured container,
+  streaming through the Session Manager plugin. The dynamic-group
+  editor lets you pin transport, OS user, initial command, key and
+  identity per (service, container) tuple.
+- **Brand SVG icons** — `resources/icons/brand/` ships native SVGs for
+  AWS, ECS, Kubernetes, Docker, Linux distros, BSDs, macOS, Windows,
+  Proxmox, OPNsense, OpenWrt, Raspberry Pi and friends. Provider
+  folders and dynamic groups render the corresponding glyph in the
+  card and breadcrumb. The previous SimpleIcons font subset
+  (1.5 MB `.ttf`) was retired.
+- **Per-host initial command** — host editor exposes an "Initial
+  Command" field at the bottom of the SSH section. After auth, the
+  command is sent to the remote shell as `\n`-terminated keystrokes.
+  Useful for hosts that drop into `/bin/sh` when you really want
+  `bash`, or for `cd /path` on a shared server.
 - **Encrypted SSH key import** — The keychain importer now detects
   passphrase-protected OpenSSH private keys and prompts for the
   passphrase inline, the way Termius / 1Password handle it. The key
@@ -76,6 +127,19 @@ project uses [SemVer](https://semver.org/spec/v2.0.0.html).
   a single submission via Komac's PE-header detection.
 
 ### Fixed
+- **Renaming a cloud profile didn't rename its provider folder** — the
+  link between `CloudProfile` and the provider folder was by label
+  only. Editing the profile name in the wizard now propagates the new
+  label to the matching `Group` (filtered by `cloud_query.is_none()`
+  so dynamic groups with the same name aren't touched). A stable
+  `cloud_profile_id` column on `Group` is on the v0.7 list.
+- **Missing `session-manager-plugin` failed silently** — clicking an
+  ECS task or starting an SSM Session without the AWS CLI plugin
+  installed used to log to stderr and do nothing visible. A blocking
+  modal now surfaces the missing dependency with a direct link to the
+  AWS docs install page (per-OS instructions). Same dialog covers ECS
+  Exec / SSM start failures coming back from the AWS SDK so the user
+  can read the SDK message verbatim and fix the IAM / config gap.
 - **Auto-update on Windows failed with "os error 740"** — the updater
   used `CreateProcess` to launch the downloaded NSIS installer, which
   ignores the executable's manifest and refused to launch the

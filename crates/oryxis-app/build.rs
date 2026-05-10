@@ -21,7 +21,7 @@ fn main() {
         // scanners read the app as a developer tool, not a game.
         res.set(
             "Comments",
-            "SSH terminal client and productivity tool — not a game. \
+            "SSH terminal client and productivity tool, not a game. \
              GPU-accelerated via wgpu for text rendering only.",
         );
         res.compile().expect("Failed to compile Windows resources");

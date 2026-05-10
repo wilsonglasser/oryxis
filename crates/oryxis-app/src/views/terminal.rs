@@ -40,7 +40,7 @@ impl Oryxis {
                     .height(Length::Fill)
                     .into();
 
-                // Chat toggle — overlaid in the top-right corner of the
+                // Chat toggle, overlaid in the top-right corner of the
                 // terminal canvas so it doesn't steal vertical space. The
                 // sparkles always render in accent and the toggle hides
                 // entirely when the sidebar is open (the sidebar header
@@ -115,7 +115,7 @@ impl Oryxis {
 
     pub(crate) fn view_chat_sidebar<'a>(&'a self, tab: &'a TerminalTab) -> Element<'a, Message> {
         // ── Header ──
-        // Reset (clears chat history) and Close X — both transparent at
+        // Reset (clears chat history) and Close X, both transparent at
         // rest, bg_hover on hover, same affordance pattern as the chrome.
         let reset_btn = chat_header_btn(iced_fonts::lucide::rotate_ccw(), Message::ChatResetConversation);
         let close_btn = chat_header_btn(iced_fonts::lucide::x(), Message::ToggleChatSidebar);
@@ -130,7 +130,7 @@ impl Oryxis {
                 Space::new().width(4).into(),
                 close_btn,
             ])
-            // Row needs an explicit Fill width — without it, the inner
+            // Row needs an explicit Fill width, without it, the inner
             // `Space::Fill` collapses and the reset/close buttons end up
             // packed against the title text instead of pushed to the
             // right edge of the sidebar (so clicks at the visual right
@@ -174,7 +174,7 @@ impl Oryxis {
             );
         } else {
             for msg in &tab.chat_history {
-                // Skip empty assistant placeholders — they exist as
+                // Skip empty assistant placeholders, they exist as
                 // staging slots for streaming chunks; an empty one is
                 // either pre-first-token (covered by the "Thinking..."
                 // bubble below) or a stream that ended before any text
@@ -191,7 +191,7 @@ impl Oryxis {
         }
 
         // Hide the "Thinking..." indicator once the model has started
-        // streaming visible text — the streaming bubble itself is the
+        // streaming visible text, the streaming bubble itself is the
         // signal of activity, and showing both reads as a stutter.
         let actively_streaming = tab
             .chat_history
@@ -226,9 +226,9 @@ impl Oryxis {
                 ..Default::default()
             });
 
-        // Multi-line input — grows with content up to ~6 lines (~150 px),
+        // Multi-line input, grows with content up to ~6 lines (~150 px),
         // then scrolls internally. Enter sends the message; Shift+Enter
-        // inserts a newline. No send button — every chat-style UI uses
+        // inserts a newline. No send button, every chat-style UI uses
         // Enter today, so the arrow was just visual noise.
         let chat_editor = iced::widget::text_editor(&self.chat_input)
             .placeholder(t("ask_ai"))
@@ -269,7 +269,7 @@ impl Oryxis {
         .padding(Padding { top: 8.0, right: 12.0, bottom: 12.0, left: 12.0 })
         .width(Length::Fill);
 
-        // 4 px draggable handle on the left edge — clicking starts a
+        // 4 px draggable handle on the left edge, clicking starts a
         // resize, the global mouse-move handler in app.rs follows the
         // cursor, and the global mouse-up stops the drag.
         let resize_handle: Element<'_, Message> = MouseArea::new(
@@ -291,7 +291,7 @@ impl Oryxis {
                 .width(Length::Fill)
                 .height(Length::Fill);
 
-        // Optional toast — floats above the input area without taking
+        // Optional toast, floats above the input area without taking
         // a row in the column layout. Cleared after ~1.8 s by a
         // `ToastClear` round-trip (see dispatch.rs::CopyToClipboard).
         let panel_inner: Element<'_, Message> = if let Some(text_) = self.toast.as_ref() {
@@ -390,9 +390,9 @@ impl Oryxis {
                 // Markdown items are pre-parsed when the message is added
                 // to history (state.rs::ChatMessage.parsed_md). The view
                 // needs to borrow that slice, so it must outlive the
-                // returned Element — which is why we cache, instead of
+                // returned Element, which is why we cache, instead of
                 // parsing per render.
-                // Compact heading scale — `with_text_size` ramps h1=2x and
+                // Compact heading scale, `with_text_size` ramps h1=2x and
                 // h2=1.75x base which reads as huge in a narrow sidebar.
                 // We override to a tighter ladder anchored at 13 px body.
                 let md_settings = iced::widget::markdown::Settings {
@@ -419,7 +419,7 @@ impl Oryxis {
                     &ChatMdViewer,
                 );
 
-                // Bubble fills the sidebar width — earlier we clamped
+                // Bubble fills the sidebar width, earlier we clamped
                 // at 300 px which left a wide empty strip when the user
                 // dragged the sidebar wider. The chat is the only thing
                 // in this column, so wider = more useful. Per-code-block
@@ -459,7 +459,7 @@ impl Oryxis {
                     .into()
             }
             ChatRole::PendingTool => {
-                // AI proposed a `risky` command — show it inline with
+                // AI proposed a `risky` command, show it inline with
                 // RUN / ALWAYS RUN / DENY buttons. Warning-tinted
                 // surface so the user notices it's an action prompt,
                 // not a regular message.
@@ -651,7 +651,7 @@ impl<'a>
         // toolbar of Copy + Play in the top-right corner. Built with
         // `MouseArea` instead of `button(...)` because the `button`
         // widget chain inside our chat scrollable swallows clicks
-        // (same iced quirk `chat_header_btn` works around — see its
+        // (same iced quirk `chat_header_btn` works around, see its
         // comment below).
         let body: Element<'a, Message> = iced::widget::markdown::code_block(
             settings,
@@ -710,7 +710,7 @@ impl<'a>
         )
         // Manually clicking Play is the user's explicit go-ahead, so
         // we route it through `ChatToolApprove` (run once) and skip
-        // the risk gate — re-prompting after a deliberate Play would
+        // the risk gate, re-prompting after a deliberate Play would
         // be redundant.
         .on_press(Message::ChatToolApprove(code.to_string()))
         .interaction(iced::mouse::Interaction::Pointer);

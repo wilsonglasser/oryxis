@@ -1,8 +1,8 @@
 [package]
 name = "oryxis-app"
-version = "0.5.7"
+version = "0.6.0"
 edition = "2024"
-description = "Modern SSH client built in Rust — terminal, SFTP, and host management with a sane keyboard-driven UI."
+description = "Modern SSH client built in Rust, terminal, SFTP, and host management with a sane keyboard-driven UI."
 license.workspace = true
 homepage = "https://github.com/wilsonglasser/oryxis"
 
@@ -41,7 +41,7 @@ oryxis-vault = { workspace = true }
 oryxis-sync = { workspace = true }
 oryxis-cloud = { workspace = true }
 oryxis-cloud-aws = { workspace = true }
-# Process-wide TLS crypto provider for rustls 0.23 — the workspace
+# Process-wide TLS crypto provider for rustls 0.23, the workspace
 # pins `ring`, but rustls 0.23 requires explicit `install_default()`
 # at startup before any TLS connection is opened. Without it the AWS
 # SDK reports "dispatch failure" on the first STS call.
@@ -59,11 +59,11 @@ iced_fonts = { git = "https://github.com/wilsonglasser/iced_fonts", branch = "te
 serde = { workspace = true }
 serde_json = { workspace = true }
 reqwest = { version = "0.12", features = ["json", "rustls-tls", "stream"], default-features = false }
-# Async stream combinators — used by the AI streaming path to fold the
+# Async stream combinators, used by the AI streaming path to fold the
 # reqwest byte stream into provider-specific SSE chunks.
 futures-util = "0.3"
 arboard = "3"
-# Cross-platform "open this file with the OS default app" — used by the
+# Cross-platform "open this file with the OS default app", used by the
 # SFTP edit-in-place flow to launch the user's editor on a downloaded
 # temp copy. Tiny crate, no transitive deps of note.
 open = "5"
@@ -81,11 +81,11 @@ winresource = "0.1"
 # with ERROR_ELEVATION_REQUIRED (740) on the system NSIS .exe, which
 # declares `requireAdministrator`. ShellExecuteW reads the manifest and
 # triggers UAC for the system installer, while the per-user installer
-# (asInvoker) launches without a prompt — same code path serves both.
+# (asInvoker) launches without a prompt, same code path serves both.
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.59", features = ["Win32_UI_Shell", "Win32_UI_WindowsAndMessaging", "Win32_Foundation"] }
 
 [dev-dependencies]
-# Property-based fuzzing for path/name helpers — generates random
+# Property-based fuzzing for path/name helpers, generates random
 # inputs to flush out edge cases the hand-written cases missed.
 proptest = "1"

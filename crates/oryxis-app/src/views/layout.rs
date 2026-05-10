@@ -1,9 +1,9 @@
-//! Root layout — `view_main`, `render_overlay_menu`, and the content dispatcher.
+//! Root layout, `view_main`, `render_overlay_menu`, and the content dispatcher.
 
 use iced::border::Radius;
 use iced::widget::{button, column, container, row, text, text_input, MouseArea, Space, Stack};
 use iced::window::Direction;
-use iced::{Background, Border, Color, Element, Length};
+use iced::{Background, Border, Color, Element, Length, Padding};
 
 use crate::app::{Message, Oryxis};
 use crate::state::{OverlayContent, OverlayState, View};
@@ -11,13 +11,48 @@ use crate::theme::OryxisColors;
 use crate::widgets::{context_menu_item, dir_row, styled_button};
 
 /// Thickness of the edge hit-zones used for dragging to resize. Corners are
-/// the same thickness but `EDGE × EDGE` squares — a bit generous so the user
+/// the same thickness but `EDGE × EDGE` squares, a bit generous so the user
 /// can actually grab them without millimetre precision.
 const RESIZE_EDGE: f32 = 5.0;
 
+/// Owned-label variant of `styled_button` for the error dialog link. The
+/// label and URL come from `ErrorDialog` clones with no static lifetime,
+/// so `styled_button(&str, ...)` would dangle on return.
+fn open_link_button<'a>(label: String, url: String) -> Element<'a, Message> {
+    let color = OryxisColors::t().accent;
+    let fg = OryxisColors::t().button_text;
+    button(
+        container(
+            text(label).size(12).font(iced::Font {
+                weight: iced::font::Weight::Bold,
+                ..iced::Font::new(crate::theme::SYSTEM_UI_FAMILY)
+            }).color(fg),
+        )
+        .padding(Padding { top: 5.0, right: 18.0, bottom: 5.0, left: 18.0 }),
+    )
+    .on_press(Message::OpenUrl(url))
+    .style(move |_, status| {
+        let bg = match status {
+            iced::widget::button::Status::Hovered => Color {
+                a: 1.0,
+                r: (color.r + 0.05).min(1.0),
+                g: (color.g + 0.05).min(1.0),
+                b: (color.b + 0.05).min(1.0),
+            },
+            _ => color,
+        };
+        iced::widget::button::Style {
+            background: Some(Background::Color(bg)),
+            border: Border { radius: Radius::from(6.0), ..Default::default() },
+            ..Default::default()
+        }
+    })
+    .into()
+}
+
 /// Invisible hit-zone used on the window edges and corners. Captures a press
 /// and hands off to the OS as a native resize drag. Double-click on N/S
-/// expands to full monitor height — same convention Windows uses (no
+/// expands to full monitor height, same convention Windows uses (no
 /// horizontal equivalent, so E/W stays drag-only).
 fn resize_handle<'a>(direction: Direction, width: Length, height: Length) -> Element<'a, Message> {
     let mut area = MouseArea::new(container(Space::new()).width(width).height(height))
@@ -89,7 +124,7 @@ impl Oryxis {
         let status_bar = self.view_status_bar();
 
         // 1 px separators: horizontal below the tab bar, vertical between
-        // sidebar and content. Same hairline look as Termius — anchors the
+        // sidebar and content. Same hairline look as Termius, anchors the
         // chrome visually without stealing contrast.
         let h_separator = container(Space::new().height(1))
             .width(Length::Fill)
@@ -122,7 +157,7 @@ impl Oryxis {
             })
             .into();
 
-        // Edge/corner resize handles — only when the window isn't maximized.
+        // Edge/corner resize handles, only when the window isn't maximized.
         // Placed as the topmost stack layer so they win over tab-bar buttons
         // near the frame, while the Space in the middle is pass-through.
         let resize_overlay: Option<Element<'_, Message>> =
@@ -210,7 +245,186 @@ impl Oryxis {
             );
         }
 
-        // Folder rename modal — shown after the user picks "Rename" from
+        // Generic blocking error dialog. Currently surfaces the
+        // "AWS session-manager-plugin missing" case but reusable for
+        // any "user must read this and act" failure. Title + body +
+        // optional "open URL" button (the URL opens in the system
+        // browser via Message::OpenUrl).
+        if let Some(dialog) = self.error_dialog.clone() {
+            let mut buttons = iced::widget::row![styled_button(
+                crate::i18n::t("close"),
+                Message::ErrorDialogDismiss,
+                OryxisColors::t().text_muted,
+            )]
+            .spacing(8);
+            if let Some(link) = dialog.link.clone() {
+                buttons = buttons.push(open_link_button(link.label, link.url));
+            }
+
+            let dialog_content = container(
+                column![
+                    text(dialog.title.clone())
+                        .size(16)
+                        .color(OryxisColors::t().text_primary),
+                    Space::new().height(12),
+                    text(dialog.body.clone())
+                        .size(13)
+                        .color(OryxisColors::t().text_secondary),
+                    Space::new().height(20),
+                    buttons,
+                ]
+                .padding(24),
+            )
+            .max_width(520)
+            .style(|_| container::Style {
+                background: Some(Background::Color(OryxisColors::t().bg_surface)),
+                border: Border {
+                    radius: Radius::from(12.0),
+                    color: OryxisColors::t().border,
+                    width: 1.0,
+                },
+                ..Default::default()
+            });
+
+            let scrim: Element<'_, Message> = MouseArea::new(
+                container(Space::new())
+                    .width(Length::Fill)
+                    .height(Length::Fill)
+                    .style(|_| container::Style {
+                        background: Some(Background::Color(Color::from_rgba(0.0, 0.0, 0.0, 0.5))),
+                        ..Default::default()
+                    }),
+            )
+            .on_press(Message::ErrorDialogDismiss)
+            .into();
+
+            let centered = container(MouseArea::new(dialog_content).on_press(Message::NoOp))
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .center_x(Length::Fill)
+                .center_y(Length::Fill);
+
+            return wrap_with_resize(
+                Stack::new()
+                    .push(base)
+                    .push(scrim)
+                    .push(centered)
+                    .width(Length::Fill)
+                    .height(Length::Fill)
+                    .into(),
+                resize_overlay,
+            );
+        }
+
+        // Cloud import transport-confirmation modal. Pops up when the
+        // user clicks "Import N selected" with at least one EC2 row
+        // checked. Pure-ECS imports skip this entirely (handler
+        // routes straight to `CloudDiscoverImportConfirmed`).
+        if self.cloud_import_confirm_visible {
+            use oryxis_core::models::cloud::TransportKind;
+            let transport_options = vec![
+                TransportKind::Ssh,
+                TransportKind::InstanceConnect,
+                TransportKind::Ssm,
+            ];
+            let transport_pick = iced::widget::pick_list(
+                Some(self.cloud_discover_default_transport),
+                transport_options,
+                |t| match t {
+                    TransportKind::Ssh => "SSH".to_string(),
+                    TransportKind::InstanceConnect => "EC2 Instance Connect".to_string(),
+                    TransportKind::Ssm => "SSM Session".to_string(),
+                    TransportKind::EcsExec => "ECS Exec".to_string(),
+                    TransportKind::KubectlExec => "kubectl exec".to_string(),
+                },
+            )
+            .on_select(Message::CloudDiscoverDefaultTransportChanged)
+            .padding(10)
+            .style(crate::widgets::rounded_pick_list_style);
+
+            let n_ec2 = self.cloud_discover_selected_ec2.len();
+            let n_ecs = self.cloud_discover_selected_ecs.len();
+            let summary = if n_ecs > 0 {
+                format!("{} EC2 + {} ECS", n_ec2, n_ecs)
+            } else {
+                format!("{} EC2", n_ec2)
+            };
+
+            let dialog_content = container(
+                column![
+                    text(crate::i18n::t("cloud_import_confirm_title"))
+                        .size(16)
+                        .color(OryxisColors::t().text_primary),
+                    Space::new().height(4),
+                    text(summary).size(11).color(OryxisColors::t().text_muted),
+                    Space::new().height(16),
+                    text(crate::i18n::t("cloud_dynamic_form_transport"))
+                        .size(12)
+                        .color(OryxisColors::t().text_secondary),
+                    Space::new().height(4),
+                    container(transport_pick).width(Length::Fixed(280.0)),
+                    Space::new().height(8),
+                    text(crate::i18n::t("cloud_import_transport_hint"))
+                        .size(11)
+                        .color(OryxisColors::t().text_muted),
+                    Space::new().height(16),
+                    row![
+                        styled_button(
+                            crate::i18n::t("import_btn_label"),
+                            Message::CloudDiscoverImportConfirmed,
+                            OryxisColors::t().accent,
+                        ),
+                        Space::new().width(8),
+                        styled_button(
+                            crate::i18n::t("cancel"),
+                            Message::CloudDiscoverImportCancelled,
+                            OryxisColors::t().text_muted,
+                        ),
+                    ],
+                ]
+                .padding(24),
+            )
+            .style(|_| container::Style {
+                background: Some(Background::Color(OryxisColors::t().bg_surface)),
+                border: Border {
+                    radius: Radius::from(12.0),
+                    color: OryxisColors::t().border,
+                    width: 1.0,
+                },
+                ..Default::default()
+            });
+
+            let scrim: Element<'_, Message> = MouseArea::new(
+                container(Space::new())
+                    .width(Length::Fill)
+                    .height(Length::Fill)
+                    .style(|_| container::Style {
+                        background: Some(Background::Color(Color::from_rgba(0.0, 0.0, 0.0, 0.5))),
+                        ..Default::default()
+                    }),
+            )
+            .on_press(Message::CloudDiscoverImportCancelled)
+            .into();
+
+            let centered = container(MouseArea::new(dialog_content).on_press(Message::NoOp))
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .center_x(Length::Fill)
+                .center_y(Length::Fill);
+
+            return wrap_with_resize(
+                Stack::new()
+                    .push(base)
+                    .push(scrim)
+                    .push(centered)
+                    .width(Length::Fill)
+                    .height(Length::Fill)
+                    .into(),
+                resize_overlay,
+            );
+        }
+
+        // Folder rename modal, shown after the user picks "Rename" from
         // the folder context menu.
         if let Some((_gid, ref input)) = self.folder_rename {
             let dialog = container(
@@ -270,7 +484,7 @@ impl Oryxis {
             );
         }
 
-        // Folder delete confirmation — three-way choice instead of a yes/no
+        // Folder delete confirmation, three-way choice instead of a yes/no
         // since destroying hosts vs only the folder are very different
         // intentions and deserve explicit affordances.
         if let Some(gid) = self.folder_delete {
@@ -291,7 +505,7 @@ impl Oryxis {
                         .size(16)
                         .color(OryxisColors::t().text_primary),
                     Space::new().height(6),
-                    text(format!("\"{}\" — {} hosts", folder_name, host_count))
+                    text(format!("\"{}\", {} hosts", folder_name, host_count))
                         .size(13)
                         .color(OryxisColors::t().text_muted),
                     Space::new().height(16),
@@ -368,7 +582,7 @@ impl Oryxis {
             );
         }
 
-        // Tab-jump modal — Termius-style "Jump to" list. Opens via the
+        // Tab-jump modal, Termius-style "Jump to" list. Opens via the
         // ⋯ button in the tab bar or the global Ctrl+J shortcut.
         if self.show_tab_jump {
             let modal = self.view_tab_jump_modal();
@@ -388,6 +602,20 @@ impl Oryxis {
         // it goes on top of the base view as a single Element.
         if self.show_icon_picker {
             let picker = self.view_icon_picker();
+            return wrap_with_resize(
+                Stack::new()
+                    .push(base)
+                    .push(picker)
+                    .width(Length::Fill)
+                    .height(Length::Fill)
+                    .into(),
+                resize_overlay,
+            );
+        }
+
+        // Jump host picker (from the host editor's "Jump Host" row).
+        if self.show_jump_host_picker {
+            let picker = self.view_jump_host_picker();
             return wrap_with_resize(
                 Stack::new()
                     .push(base)
@@ -455,13 +683,13 @@ impl Oryxis {
             );
         }
 
-        // SFTP row right-click menu — rendered at the layout root so the
+        // SFTP row right-click menu, rendered at the layout root so the
         // window-coord click position lines up with the menu origin
         // without having to compensate for the title + tab bar height.
         if let Some(ref row_menu) = self.sftp.row_menu {
             let remote_connected = self.sftp.client.is_some();
             // Count of selected rows in the same pane as the right-
-            // clicked row — drives the bulk vs single menu mode.
+            // clicked row, drives the bulk vs single menu mode.
             let selection_count_same_pane = self
                 .sftp
                 .selected_rows
@@ -481,7 +709,7 @@ impl Oryxis {
             .on_press(Message::SftpRowMenuClose)
             .into();
             // Nudge the menu a few px down/right so it doesn't sit
-            // directly under the cursor — feels like the OS-native menu
+            // directly under the cursor, feels like the OS-native menu
             // anchoring.
             let nudged_x = row_menu.x + 2.0;
             let nudged_y = row_menu.y + 2.0;
@@ -513,7 +741,7 @@ impl Oryxis {
             );
         }
 
-        // Floating drag ghost — rendered last so it sits above
+        // Floating drag ghost, rendered last so it sits above
         // everything else. Tracks the cursor while a cross-pane SFTP
         // drag is in flight; non-interactive so it doesn't swallow the
         // release event that ends the drag.
@@ -521,7 +749,7 @@ impl Oryxis {
             && drag.active
         {
             let ghost = crate::views::sftp::drag_ghost(&drag.label);
-            // Offset slightly down-right of the cursor — matches OS
+            // Offset slightly down-right of the cursor, matches OS
             // drag previews and keeps the label out from under the
             // pointer.
             let x = (self.mouse_position.x + 12.0)
@@ -612,6 +840,19 @@ impl Oryxis {
                     ].into()
                 }
             }
+            OverlayContent::DynamicGroupActions(id) => {
+                let id = *id;
+                column![
+                    context_menu_item(iced_fonts::lucide::pencil(), crate::i18n::t("edit"), Message::EditDynamicGroup(id), OryxisColors::t().accent),
+                    // Rename = friendly display label only. The
+                    // cloud_query (cluster/service/container) and the
+                    // import-dedupe key never look at it, so renaming
+                    // is safe and the subtitle keeps surfacing the
+                    // original ECS path.
+                    context_menu_item(iced_fonts::lucide::text_cursor_input(), crate::i18n::t("rename"), Message::StartRenameFolder(id), OryxisColors::t().text_secondary),
+                    context_menu_item(iced_fonts::lucide::trash(), crate::i18n::t("delete"), Message::DeleteDynamicGroup(id), OryxisColors::t().error),
+                ].into()
+            }
             OverlayContent::CloudProfileActions(id) => {
                 let id = *id;
                 column![
@@ -665,18 +906,24 @@ impl Oryxis {
             }
         };
 
-        // Match the toolbar split-button height so a single-item menu
-        // doesn't render shorter than the button it dropped from.
-        // iced container lacks a `min_height`, so a `Stack` enforces it
-        // by laying a fixed-height invisible spacer behind the items —
-        // multi-item content layers on top and grows past freely.
-        const MIN_MENU_HEIGHT: f32 = 32.0;
-        let body = iced::widget::Stack::new()
-            .push(Space::new().height(Length::Fixed(MIN_MENU_HEIGHT)))
-            .push(items);
-        container(body)
+        // Min-height (so a single-item menu reads as a real button-
+        // height drop-down, not a sliver). Iced 0.13 has no
+        // `min_height`, the previous Stack-based workaround
+        // collapsed items to zero width in this fork, and stuffing a
+        // fixed-height Space inside the column inflates multi-item
+        // menus by the spacer height. Compromise: render items in
+        // an outer container with a tight vertical padding that
+        // approximates the spilt-button height for small menus
+        // while letting tall menus grow naturally.
+        const SINGLE_ROW_MIN_PAD: f32 = 6.0;
+        container(items)
             .width(menu_width)
-            .padding(4)
+            .padding(Padding {
+                top: SINGLE_ROW_MIN_PAD,
+                right: 4.0,
+                bottom: SINGLE_ROW_MIN_PAD,
+                left: 4.0,
+            })
             .style(|_| container::Style {
                 background: Some(Background::Color(OryxisColors::t().bg_surface)),
                 border: Border {

@@ -5,11 +5,11 @@ use crate::protocol::ManifestEntry;
 /// What to do with a record after comparing local vs remote manifests.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SyncAction {
-    /// Remote is newer — accept it.
+    /// Remote is newer, accept it.
     AcceptRemote,
-    /// Local is newer — push to remote.
+    /// Local is newer, push to remote.
     PushLocal,
-    /// Same timestamp — skip.
+    /// Same timestamp, skip.
     Skip,
 }
 

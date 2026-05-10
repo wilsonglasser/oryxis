@@ -13,7 +13,7 @@ use uuid::Uuid;
 pub struct CloudProfile {
     pub id: Uuid,
     pub label: String,
-    /// `"aws"`, `"k8s"`, … — matches `CloudProvider::id()`.
+    /// `"aws"`, `"k8s"`, …, matches `CloudProvider::id()`.
     pub provider: String,
     /// Provider-specific auth strategy. AWS: `"profile"`, `"access_key"`,
     /// `"sso"`. K8s: `"kubeconfig"`.
@@ -26,6 +26,14 @@ pub struct CloudProfile {
     pub last_discovered: Option<chrono::DateTime<chrono::Utc>>,
     pub created_at: chrono::DateTime<chrono::Utc>,
     pub updated_at: chrono::DateTime<chrono::Utc>,
+
+    /// Decrypted secret payload, never persisted (skip serde). The
+    /// dispatcher populates this from `vault.get_cloud_profile_secret`
+    /// right before handing the profile to a `CloudProvider` call so
+    /// the AWS-side code can read it without a vault dependency.
+    /// `None` when no secret is set OR before the dispatcher hydrated.
+    #[serde(skip, default)]
+    pub secret: Option<String>,
 }
 
 impl CloudProfile {
@@ -40,6 +48,7 @@ impl CloudProfile {
             last_discovered: None,
             created_at: now,
             updated_at: now,
+            secret: None,
         }
     }
 }

@@ -5,7 +5,7 @@ use super::connection::ProxyType;
 
 /// A reusable proxy configuration that can be attached to multiple
 /// hosts via `Connection.proxy_identity_id`. Mirrors the `Identity`
-/// type for credentials — same lifecycle (create, edit, delete with
+/// type for credentials, same lifecycle (create, edit, delete with
 /// cascade null), same encryption strategy (password lives in a
 /// dedicated encrypted column, never in serialized JSON).
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -16,7 +16,7 @@ pub struct ProxyIdentity {
     pub host: String,
     pub port: u16,
     pub username: Option<String>,
-    // password is NOT stored here — it lives encrypted in the vault DB
+    // password is NOT stored here, it lives encrypted in the vault DB
     // (`proxy_identities.password` column).
     pub created_at: chrono::DateTime<chrono::Utc>,
     pub updated_at: chrono::DateTime<chrono::Utc>,

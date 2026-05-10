@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::UnboundedReceiverStream;
 
-pub const DEFAULT_SYSTEM_PROMPT: &str = "You are a helpful terminal assistant embedded in the Oryxis SSH client. You can execute bash commands in the user's active SSH session using the `execute_command` tool, but only when the user has clearly asked you to *do* something on the server. If the user is asking *how* to do something, *what* a command does, or any explanatory question — answer in text and show the commands inside fenced code blocks for them to run, do NOT call the tool. When in doubt, ask first before running anything mutating. You also receive the last lines of terminal output for context.";
+pub const DEFAULT_SYSTEM_PROMPT: &str = "You are a helpful terminal assistant embedded in the Oryxis SSH client. You can execute bash commands in the user's active SSH session using the `execute_command` tool, but only when the user has clearly asked you to *do* something on the server. If the user is asking *how* to do something, *what* a command does, or any explanatory question, answer in text and show the commands inside fenced code blocks for them to run, do NOT call the tool. When in doubt, ask first before running anything mutating. You also receive the last lines of terminal output for context.";
 
 #[derive(Debug, Clone)]
 pub struct AiConfig {
@@ -174,7 +174,7 @@ fn bash_tool() -> serde_json::Value {
 /// Incremental events produced by `send_chat_stream`. The handler
 /// accumulates `Text` deltas into the active assistant bubble and
 /// dispatches `ToolUse` (which is only emitted after the model has
-/// fully committed to a tool call — partial argument JSON is kept
+/// fully committed to a tool call, partial argument JSON is kept
 /// internal to the parser).
 #[derive(Debug, Clone)]
 pub enum StreamChunk {
@@ -237,7 +237,7 @@ pub fn send_chat_stream(
 /// SSE line iterator over a reqwest byte stream. Buffers chunks until a
 /// blank line (event boundary), yielding the assembled `data:` payload
 /// (concatenated if the event spanned multiple `data:` lines). Discards
-/// `event:` / `id:` / comment lines — providers we hit don't put load-
+/// `event:` / `id:` / comment lines, providers we hit don't put load-
 /// bearing info there.
 async fn for_each_sse_event<S, B, E, F>(
     mut byte_stream: S,
@@ -661,7 +661,7 @@ mod tests {
     #[tokio::test]
     async fn sse_parser_skips_event_lines_and_comments() {
         // `event:` and comment (`:foo`) lines are valid SSE noise we
-        // ignore — only `data:` lines feed the callback.
+        // ignore, only `data:` lines feed the callback.
         let s = fake_byte_stream(vec![
             b"event: ping\n:keepalive\ndata: payload\n\n",
         ]);
@@ -687,7 +687,7 @@ mod tests {
         })
         .await
         .unwrap();
-        // "c" must NOT show up — we returned true on "stop".
+        // "c" must NOT show up, we returned true on "stop".
         assert_eq!(seen, vec!["a".to_string(), "stop".to_string()]);
     }
 

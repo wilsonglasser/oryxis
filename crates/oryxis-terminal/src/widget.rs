@@ -69,7 +69,7 @@ impl TerminalState {
         Ok(Self { backend, pty: None, palette, remote_resize_tx: None })
     }
 
-    /// Wire a remote resize sender — called from the app once an SSH
+    /// Wire a remote resize sender, called from the app once an SSH
     /// session attaches to this state, so subsequent `resize()` calls
     /// also notify the server of the new viewport.
     pub fn set_remote_resize_sender(
@@ -122,7 +122,7 @@ impl TerminalState {
         let (start, end) = sel.ordered();
         let mut result = String::new();
 
-        // Iterate over the line range manually — selection lines are in
+        // Iterate over the line range manually, selection lines are in
         // grid coordinates (negative for scrollback) which `display_iter`
         // alone wouldn't reach unless we mutated the display offset.
         for line_idx in start.1..=end.1 {
@@ -162,7 +162,7 @@ impl TerminalState {
 /// A selection range stored in **grid-line coordinates** (alacritty `Line`,
 /// signed: negative = scrollback, 0..screen_lines = live screen). Storing
 /// in line-space means the selection follows the content as the user
-/// scrolls — at draw time we translate line → visible row using the
+/// scrolls, at draw time we translate line → visible row using the
 /// current scroll_offset.
 #[derive(Debug, Clone, Copy)]
 pub struct Selection {
@@ -211,7 +211,7 @@ pub struct TerminalWidgetState {
     /// by the parent to render the "Ctrl+Click to open" tooltip.
     hovered_url: Option<(String, iced::Point)>,
     /// Last `(col, row)` the URL hover detection ran for. Used to skip
-    /// the lock + per-cell scan on sub-cell mouse moves — at typical
+    /// the lock + per-cell scan on sub-cell mouse moves, at typical
     /// font sizes the cursor crosses many pixels per cell, and running
     /// the full URL scan on every pixel contends with `state.process`
     /// when the SSH echo lands at the same time, showing up as typing
@@ -247,7 +247,7 @@ fn detect_highlights(
     let ip_color = palette.ansi[5];   // magenta
     let url_color = palette.ansi[4];  // blue
     let path_color = palette.ansi[6]; // cyan
-    let num_color = palette.ansi[5];  // magenta — same as IP, easy scan
+    let num_color = palette.ansi[5];  // magenta, same as IP, easy scan
 
     let mut highlights = Vec::new();
 
@@ -267,7 +267,7 @@ fn detect_highlights(
         {
             let mut i = 0;
             while i < len {
-                // Only slice at ASCII 'h' — guaranteed char boundary. Skipping this
+                // Only slice at ASCII 'h', guaranteed char boundary. Skipping this
                 // guard panics when i lands mid-UTF-8 (e.g. typing "ç" crashed the app).
                 if bytes[i] != b'h' {
                     i += 1;
@@ -433,7 +433,7 @@ fn detect_highlights(
                     continue;
                 }
                 // Reject when prefixed by a word character (e.g. "abc123",
-                // version strings) — those should keep the surrounding fg.
+                // version strings), those should keep the surrounding fg.
                 if i > 0 && b.is_ascii_digit() && is_word_byte(bytes[i - 1]) {
                     i += 1;
                     continue;
@@ -446,7 +446,7 @@ fn detect_highlights(
                 while j < len && bytes[j].is_ascii_digit() {
                     j += 1;
                 }
-                // Optional decimal part — must be `.<digit>+`.
+                // Optional decimal part, must be `.<digit>+`.
                 if j + 1 < len && bytes[j] == b'.' && bytes[j + 1].is_ascii_digit() {
                     j += 1;
                     while j < len && bytes[j].is_ascii_digit() {
@@ -458,7 +458,7 @@ fn detect_highlights(
                     j += 1;
                 }
                 // Reject when followed by a letter (e.g. "10.0.0.1",
-                // "v1.2-rc" — the IP path already handled the first; we
+                // "v1.2-rc", the IP path already handled the first; we
                 // also avoid colouring "rc" parts).
                 if j < len && is_word_byte(bytes[j]) {
                     i = j;
@@ -528,10 +528,10 @@ fn highlight_color_at(highlights: &[Highlight], row: u16, col: u16) -> Option<Co
     None
 }
 
-/// Returns true when the given cell is part of a URL highlight — used by the
+/// Returns true when the given cell is part of a URL highlight, used by the
 /// draw pass to paint an underline under clickable links.
 #[inline]
-/// Find the URL highlight that contains a specific cell — used by the
+/// Find the URL highlight that contains a specific cell, used by the
 /// draw pass to underline only the URL the cursor is over (instead of
 /// every URL in the viewport, which made even un-hovered links look
 /// "linkable" with no Ctrl-click feedback).
@@ -628,7 +628,7 @@ fn url_at_cell(
 }
 
 /// Best-effort spawn of the OS default handler for a URL. Runs detached; the
-/// terminal widget never blocks on it and errors are swallowed — a failed
+/// terminal widget never blocks on it and errors are swallowed, a failed
 /// launch just means nothing happens visibly, same as any other click miss.
 fn open_url(url: &str) {
     #[cfg(target_os = "windows")]
@@ -658,7 +658,7 @@ pub struct TerminalView<Message = ()> {
     cell_height: f32,
     font: Font,
     /// When true, completing a mouse selection auto-copies it to the
-    /// system clipboard — same UX as XTerm / iTerm "copy on select".
+    /// system clipboard, same UX as XTerm / iTerm "copy on select".
     copy_on_select: bool,
     /// When true, ANSI bold flag promotes the named foreground color to
     /// its bright variant (red → bright red, etc).
@@ -691,7 +691,7 @@ struct PerfStats {
     /// `WINDOW` so the max reflects recent activity, not the whole
     /// session.
     samples: std::collections::VecDeque<PerfSample>,
-    /// Wall-clock of the previous draw — used so the overlay can
+    /// Wall-clock of the previous draw, used so the overlay can
     /// avoid double-counting frames within a single redraw cycle.
     last_draw_at: Option<std::time::Instant>,
 }
@@ -940,7 +940,7 @@ where
         bounds: Rectangle,
         cursor: mouse::Cursor,
     ) -> Option<CanvasAction<Message>> {
-        // Refresh hover state for every event we see — drives the
+        // Refresh hover state for every event we see, drives the
         // scrollbar's reveal-on-hover behaviour. Done before the match so
         // we don't have to repeat it in every arm.
         let new_hover = cursor.position_in(bounds).is_some();
@@ -948,7 +948,7 @@ where
         widget_state.hover = new_hover;
 
         match event {
-            // Mouse press — scrollbar interaction takes priority, then
+            // Mouse press, scrollbar interaction takes priority, then
             // URL open, then text selection.
             iced::Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left)) => {
                 if let Some(pos) = cursor.position_in(bounds) {
@@ -983,7 +983,7 @@ where
                     }
                     let (col, vrow) = self.pixel_to_cell(pos);
                     let line = Self::visible_row_to_line(vrow, widget_state.scroll_offset);
-                    // Only follow URLs on Ctrl+Click — plain clicks
+                    // Only follow URLs on Ctrl+Click, plain clicks
                     // start a selection, matching Termius. Without
                     // the modifier gate, every click on a logged URL
                     // would lose the selection start.
@@ -1003,7 +1003,7 @@ where
                     return Some(CanvasAction::request_redraw().and_capture());
                 }
             }
-            // Mouse move — drag scrollbar thumb or extend selection.
+            // Mouse move, drag scrollbar thumb or extend selection.
             iced::Event::Mouse(mouse::Event::CursorMoved { .. }) => {
                 if let Some((start_y, start_offset)) = widget_state.scrollbar_drag
                     && let Some(pos) = cursor.position_in(bounds)
@@ -1036,7 +1036,7 @@ where
                         return Some(CanvasAction::request_redraw().and_capture());
                     }
                 // URL hover detection. Skip the lock + grid scan when
-                // the cursor is still over the same cell — at typical
+                // the cursor is still over the same cell, at typical
                 // font sizes a single cell spans many pixels and
                 // running the scan on every pixel contended with
                 // `state.process` (the SSH echo path), showing up as
@@ -1069,7 +1069,7 @@ where
                     return Some(CanvasAction::request_redraw());
                 }
             }
-            // Mouse release — end selection or scrollbar drag.
+            // Mouse release, end selection or scrollbar drag.
             iced::Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Left)) => {
                 let was_dragging = widget_state.scrollbar_drag.is_some();
                 widget_state.scrollbar_drag = None;
@@ -1097,7 +1097,7 @@ where
                 }
                 return Some(CanvasAction::capture());
             }
-            // Right-click — paste from clipboard
+            // Right-click, paste from clipboard
             iced::Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Right))
                 if cursor.position_in(bounds).is_some() =>
             {
@@ -1109,7 +1109,7 @@ where
                 }
                 return Some(CanvasAction::capture());
             }
-            // Ctrl + wheel — adjust terminal font size in the standard
+            // Ctrl + wheel, adjust terminal font size in the standard
             // alacritty / kitty / gnome-terminal way. Captured before the
             // scrollback handler so it doesn't double-up with paging.
             // The TUI inside the session never sees the wheel event in
@@ -1135,7 +1135,7 @@ where
                 }
                 return Some(CanvasAction::capture());
             }
-            // Mouse wheel — scrollback in the OS-natural direction:
+            // Mouse wheel, scrollback in the OS-natural direction:
             // wheel up shows older content (scroll_offset increases),
             // wheel down returns to the live edge (scroll_offset → 0).
             // Only consume when the cursor is actually over the terminal
@@ -1166,7 +1166,7 @@ where
                     .unwrap_or(false);
                 if in_alt_screen {
                     // Translate wheel into arrow-key bytes for the remote
-                    // app — `top`/`vim`/`less` all listen for these.
+                    // app, `top`/`vim`/`less` all listen for these.
                     let bytes: &[u8] = if lines > 0 { b"\x1b[A" } else { b"\x1b[B" };
                     let count = lines.unsigned_abs().min(10);
                     if let Ok(mut state) = self.state.lock() {
@@ -1197,7 +1197,7 @@ where
                     return Some(CanvasAction::request_redraw());
                 }
             }
-            // Keyboard — Ctrl+Shift+C copy (paste is handled in app.rs so it can
+            // Keyboard, Ctrl+Shift+C copy (paste is handled in app.rs so it can
             // reach the SSH session; widget.state.write only targets a local PTY).
             iced::Event::Keyboard(keyboard::Event::KeyPressed {
                 key: keyboard::Key::Character(c),
@@ -1231,7 +1231,7 @@ where
         if !cursor.is_over(bounds) {
             return mouse::Interaction::default();
         }
-        // Pointer cursor over a URL — same as the browser hover affordance
+        // Pointer cursor over a URL, same as the browser hover affordance
         // and clear visual cue that "click does something different here".
         // Only when Ctrl is held does the click actually open the link.
         if state.hovered_url.is_some() {
@@ -1263,7 +1263,7 @@ where
         state.resize(new_cols, new_rows);
 
         // Alt-screen apps (top, vim, less, htop, …) own the entire
-        // viewport with cursor positioning — there's no scrollback to
+        // viewport with cursor positioning, there's no scrollback to
         // page through. Force scroll_offset=0 so the user can't get
         // stuck looking at stale history while the app keeps redrawing.
         let in_alt_screen = state
@@ -1272,7 +1272,7 @@ where
             .mode()
             .contains(alacritty_terminal::term::TermMode::ALT_SCREEN);
 
-        // Clamp scroll offset against the current grid bounds — resizes
+        // Clamp scroll offset against the current grid bounds, resizes
         // between frames can shrink history, so the offset stored in
         // widget_state may exceed the new max.
         let scroll_offset = if in_alt_screen {
@@ -1306,7 +1306,7 @@ where
         // instead of mutating alacritty's `display_offset` via
         // `scroll_display`. The previous approach yielded `display_iter`
         // entries with negative `point.line.0` for scrollback rows, which
-        // when cast to `u16` wrapped to enormous numbers — those cells
+        // when cast to `u16` wrapped to enormous numbers, those cells
         // ended up rendered far off-screen, leaving blank rows in their
         // place. Manual indexing keeps the math sane.
         struct CellData {
@@ -1394,7 +1394,7 @@ where
         // glyphs underneath don't bleed through. iced wgpu batches
         // canvas draws as `meshes → text`, so a `fill_rectangle`
         // placed *over* prior `fill_text` ends up below it visually
-        // — the cleanest fix is to skip those cells in the first
+        //, the cleanest fix is to skip those cells in the first
         // place.
         let perf_panel = if perf_on {
             let panel_w = 240.0;
@@ -1445,7 +1445,7 @@ where
                 }
             }
 
-            // Selection highlight — convert visible row to grid-line so
+            // Selection highlight, convert visible row to grid-line so
             // the selection follows scrolled content instead of staying
             // glued to viewport coordinates.
             let cell_line = Self::visible_row_to_line(cd.row, scroll_offset);
@@ -1459,13 +1459,13 @@ where
                 fg = Color::WHITE;
             }
 
-            // Smart contrast — when an app picks a colour pair that
+            // Smart contrast, when an app picks a colour pair that
             // renders too close to disappear (PowerShell's
             // `$PSStyle.FileInfo.Directory` blue-on-blue, LS_COLORS'
             // `ow` green-on-green over a green palette), swap the
             // foreground for white or near-black depending on the
             // background's luminance. Only kicks in when the cell
-            // actually has a non-default background — preserves
+            // actually has a non-default background, preserves
             // colour-precise output everywhere else.
             if self.smart_contrast && !is_selected {
                 let bg_overrides_default = (bg.r - palette.background.r).abs() >= 0.01
@@ -1505,7 +1505,7 @@ where
                 });
             }
 
-            // Underline — from explicit ANSI SGR flags, or for URL
+            // Underline, from explicit ANSI SGR flags, or for URL
             // cells that the cursor is currently hovering over (the
             // visual cue paired with the Pointer cursor + tooltip).
             // Other URLs in the viewport stay un-underlined to avoid
@@ -1525,7 +1525,7 @@ where
             }
         }
 
-        // Cursor — only render when its visible row falls inside the
+        // Cursor, only render when its visible row falls inside the
         // viewport. When the user scrolls into history, the cursor sits
         // below the visible area and shouldn't be drawn.
         let cursor = term_cursor;
@@ -1561,7 +1561,7 @@ where
             }
         }
 
-        // Scrollbar — only painted while the cursor is over the canvas
+        // Scrollbar, only painted while the cursor is over the canvas
         // (or actively dragging), there's actual history to scroll, and
         // we're not in alt-screen mode (no scrollback there).
         let visible_scrollbar =
@@ -1574,14 +1574,14 @@ where
                 scroll_offset,
             )
         {
-            // Track — faint background gutter so the user has a visible
+            // Track, faint background gutter so the user has a visible
             // hit target when clicking above/below the thumb.
             frame.fill_rectangle(
                 Point::new(sb.track_x, sb.track_y),
                 Size::new(sb.track_w, sb.track_h),
                 Color { a: 0.08, ..palette.foreground },
             );
-            // Thumb — pops out a little when dragging.
+            // Thumb, pops out a little when dragging.
             let thumb_alpha = if widget_state.scrollbar_drag.is_some() { 0.55 } else { 0.35 };
             frame.fill_rectangle(
                 Point::new(sb.track_x, sb.thumb_y),
@@ -1590,7 +1590,7 @@ where
             );
         }
 
-        // "Ctrl + Click to open the link" tooltip — painted near the
+        // "Ctrl + Click to open the link" tooltip, painted near the
         // hovered URL with a small offset so it doesn't sit directly
         // under the cursor. Stays put once anchored to the URL row;
         // we don't follow per-pixel mouse moves to avoid jitter.
@@ -1598,7 +1598,7 @@ where
             let tip_y_offset = -28.0; // above the cursor
             let tip_x = (hover_pos.x + 6.0).min(bounds.width - 220.0).max(4.0);
             let tip_y = (hover_pos.y + tip_y_offset).max(4.0);
-            // Solid terminal background under the tooltip — anything
+            // Solid terminal background under the tooltip, anything
             // less than fully opaque lets the underlying URL text bleed
             // through and makes the label illegible.
             let bg = palette.background;
@@ -1669,8 +1669,8 @@ where
 
             // Two-line HUD pinned top-right. Line 1 shows the
             // current frame; line 2 shows the rolling **max** over
-            // the last `PERF_WINDOW` frames so transient spikes —
-            // the kind that read as typing lag — stay visible long
+            // the last `PERF_WINDOW` frames so transient spikes
+            // the kind that read as typing lag, stay visible long
             // enough to spot. Fractional ms because most healthy
             // draws are well under a single millisecond.
             let ms = |d: std::time::Duration| d.as_secs_f32() * 1000.0;
@@ -1756,7 +1756,7 @@ fn brighten_named(color: &alacritty_terminal::vte::ansi::Color) -> alacritty_ter
                 NamedColor::Magenta => NamedColor::BrightMagenta,
                 NamedColor::Cyan => NamedColor::BrightCyan,
                 NamedColor::White => NamedColor::BrightWhite,
-                other => *other, // already bright or special — keep as-is
+                other => *other, // already bright or special, keep as-is
             };
             AnsiColor::Named(bright)
         }

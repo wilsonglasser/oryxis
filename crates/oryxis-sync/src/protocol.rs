@@ -121,7 +121,7 @@ pub struct SyncRecord {
 
 // ---------------------------------------------------------------------------
 // Sync payload wrappers (transparent to wire JSON for connections /
-// identities / proxy identities — the inner model is `#[serde(flatten)]`
+// identities / proxy identities, the inner model is `#[serde(flatten)]`
 // so older nodes that send a bare `Connection` still deserialize, and
 // older nodes that receive these wrappers ignore the extra password
 // fields. Passwords are only ever included when the local
@@ -132,7 +132,7 @@ pub struct SyncRecord {
 pub struct SyncConnection {
     #[serde(flatten)]
     pub connection: oryxis_core::models::Connection,
-    /// Main connection password — sent when `sync_passwords` is on.
+    /// Main connection password, sent when `sync_passwords` is on.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub password: Option<String>,
     /// Inline-proxy password (separate encrypted column on disk).
@@ -254,7 +254,7 @@ mod tests {
         assert_eq!(back.proxy_password.as_deref(), Some("proxy-pw"));
     }
 
-    /// When no password is set we must NOT emit empty fields — keeps
+    /// When no password is set we must NOT emit empty fields, keeps
     /// the wire payload byte-identical to the legacy format so older
     /// receivers don't see noise.
     #[test]
@@ -314,7 +314,7 @@ mod tests {
     }
 
     /// Legacy peer that doesn't know about cloud profiles will send a
-    /// bare `CloudProfile` JSON — the wrapper must accept it and resolve
+    /// bare `CloudProfile` JSON, the wrapper must accept it and resolve
     /// `secret` to `None`. (Symmetric to the connection / identity tests
     /// above.)
     #[test]
@@ -327,7 +327,7 @@ mod tests {
     }
 
     /// When secret is `None` the wire payload must be byte-identical to
-    /// the legacy bare-`CloudProfile` JSON — no `"secret"` key emitted.
+    /// the legacy bare-`CloudProfile` JSON, no `"secret"` key emitted.
     #[test]
     fn sync_cloud_profile_omits_secret_when_none() {
         let cp = oryxis_core::models::CloudProfile::new("no-secret", "aws");

@@ -15,12 +15,12 @@ use uuid::Uuid;
 pub enum TransportKind {
     /// Plain TCP + SSH handshake. Identical to a manual host.
     Ssh,
-    /// AWS EC2 Instance Connect — push public key via API, then plain SSH.
+    /// AWS EC2 Instance Connect, push public key via API, then plain SSH.
     InstanceConnect,
     /// AWS SSM Session Manager. Wraps `session-manager-plugin` over a
     /// streaming WebSocket; PTY bytes flow through the plugin process.
     Ssm,
-    /// AWS ECS Exec — same SSM streaming protocol underneath, but
+    /// AWS ECS Exec, same SSM streaming protocol underneath, but
     /// targeted at a specific container in a running task.
     EcsExec,
     /// Kubernetes pod exec via the kube-apiserver. In-process via the
@@ -30,7 +30,7 @@ pub enum TransportKind {
 
 impl TransportKind {
     /// Whether SFTP / file transfer is meaningful on this transport.
-    /// SSM / ECS / kubectl exec deliver a raw PTY only — no SFTP layer.
+    /// SSM / ECS / kubectl exec deliver a raw PTY only, no SFTP layer.
     pub fn supports_sftp(self) -> bool {
         matches!(self, Self::Ssh | Self::InstanceConnect)
     }
@@ -43,7 +43,7 @@ pub enum CloudResourceType {
 
 /// Stable handle to a cloud-managed resource that backs a `Connection`.
 ///
-/// Only set on imported EC2 hosts in v0.6 — ECS tasks and K8s pods are
+/// Only set on imported EC2 hosts in v0.6, ECS tasks and K8s pods are
 /// ephemeral and live as transient children of dynamic groups instead
 /// (see `Group.cloud_query`).
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -63,7 +63,7 @@ pub struct CloudRef {
 
 /// Backing query of a dynamic `Group`. Children are re-resolved on each
 /// expand by calling `CloudProvider::resolve_query`. Children are
-/// transient — they never touch the vault. User customization lives on
+/// transient, they never touch the vault. User customization lives on
 /// the group's `template` so it applies to every resolved child.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct CloudQuery {
@@ -94,7 +94,7 @@ pub enum PodSelector {
     Deployment(String),
     /// Match every pod owned by a StatefulSet by name.
     StatefulSet(String),
-    /// Single named pod — escape hatch for one-off pinning.
+    /// Single named pod, escape hatch for one-off pinning.
     Name(String),
 }
 
@@ -111,11 +111,22 @@ pub struct ConnectionTemplate {
     /// for ECS tasks whose default entry shell is `/bin/sh`.
     #[serde(default)]
     pub initial_command: Option<String>,
-    /// Forced transport. Always set for dynamic groups (e.g. `EcsExec`
-    /// for ECS, `KubectlExec` for K8s) since these resources have no
-    /// other reasonable entry point.
+    /// Transport used for each transient child. Defaults to whatever
+    /// the import path picked for the resource family (`EcsExec` for
+    /// ECS today) but can be flipped to `Ssh` when the container
+    /// exposes its own sshd, or to `Ssm` when ECS Exec is off but SSM
+    /// Session Manager is reachable.
     pub transport: TransportKind,
-    /// Per-host terminal palette override — same semantics as
+    /// SSH key reference used when `transport == Ssh`. Mirrors
+    /// `Connection.key_id`. Ignored for non-SSH transports.
+    #[serde(default)]
+    pub key_id: Option<uuid::Uuid>,
+    /// Saved Identity (username + password / key bundle) reference
+    /// same precedence rules as `Connection.identity_id` (identity wins
+    /// over inline `username` when set).
+    #[serde(default)]
+    pub identity_id: Option<uuid::Uuid>,
+    /// Per-host terminal palette override, same semantics as
     /// `Connection.terminal_theme`.
     #[serde(default)]
     pub terminal_theme: Option<String>,
@@ -127,6 +138,8 @@ impl ConnectionTemplate {
             username: None,
             initial_command: None,
             transport,
+            key_id: None,
+            identity_id: None,
             terminal_theme: None,
         }
     }
@@ -166,6 +179,8 @@ mod tests {
                 username: None,
                 initial_command: Some("exec bash".into()),
                 transport: TransportKind::EcsExec,
+                key_id: None,
+                identity_id: None,
                 terminal_theme: None,
             },
         };

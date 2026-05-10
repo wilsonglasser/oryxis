@@ -8,7 +8,7 @@ use super::*;
 const LARGE_TEXT_THRESHOLD: f32 = 3.0;
 const BODY_TEXT_THRESHOLD: f32 = 4.5;
 
-/// All theme tables we ship — reflects the `AppTheme::ALL` order.
+/// All theme tables we ship, reflects the `AppTheme::ALL` order.
 fn all_themes() -> Vec<(&'static str, &'static ThemeColors)> {
     vec![
         ("OryxisDark", &ORYXIS_DARK),
@@ -49,7 +49,7 @@ fn contrast_text_for_picks_the_better_option() {
 #[test]
 fn body_text_meets_aa_on_surface_in_every_theme() {
     // text_primary on bg_primary / bg_surface / bg_sidebar is the
-    // baseline of every screen — anything below 4.5 makes the app
+    // baseline of every screen, anything below 4.5 makes the app
     // unreadable for users on AA-compliant displays.
     for (name, t) in all_themes() {
         for (bg_label, bg) in [
@@ -70,12 +70,12 @@ fn body_text_meets_aa_on_surface_in_every_theme() {
 fn buttons_using_helper_meet_large_text_aa() {
     // `contrast_text_for` picks white on dark-ish bgs and near-black
     // on pale ones, biased toward visual consistency rather than the
-    // strict ≥ 3.0 large-text bound — flat-UI convention is white on
+    // strict ≥ 3.0 large-text bound, flat-UI convention is white on
     // saturated colors even when WCAG is borderline (Termius cyan
     // accent_hover, OryxisDark accent_hover, etc. land between 2.5
     // and 3.0). Test only that the helper picks the better of the
     // two candidates and that the worst case is still distinguishable
-    // Loose floor (≥ 1.7 : 1) — keeping the helper's "always white on
+    // Loose floor (≥ 1.7 : 1), keeping the helper's "always white on
     // saturated bgs" policy means a few bright-yet-not-quite-pale
     // success / warning fills (OryxisDark warning yellow lands at
     // ~1.77) sit below WCAG. The trade-off is intentional: visual

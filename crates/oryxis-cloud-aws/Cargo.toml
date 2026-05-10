@@ -17,10 +17,12 @@ tokio = { workspace = true }
 async-trait = "0.1"
 tracing = { workspace = true }
 
-# AWS SDK — pinned to the 1.x GA series. `behavior-version-latest`
+# AWS SDK, pinned to the 1.x GA series. `behavior-version-latest`
 # silences the runtime nag and locks us to the current default semantics
 # instead of the legacy ones the SDK keeps around for back-compat.
 aws-config = { version = "1", features = ["behavior-version-latest"] }
 aws-sdk-ec2 = "1"
+aws-sdk-ec2instanceconnect = "1"
 aws-sdk-ecs = "1"
+aws-sdk-ssm = "1"
 aws-sdk-sts = "1"

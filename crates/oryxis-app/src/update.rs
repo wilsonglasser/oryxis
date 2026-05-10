@@ -1,9 +1,9 @@
-//! Auto-update — queries GitHub releases on startup, prompts the user if a
+//! Auto-update, queries GitHub releases on startup, prompts the user if a
 //! newer version is available, downloads the platform installer, and hands
 //! off to it so the app can relaunch on the new version.
 //!
 //! Flow:
-//!   1. `check_latest_release()` — async HTTP GET to GitHub releases/latest
+//!   1. `check_latest_release()`, async HTTP GET to GitHub releases/latest
 //!   2. UI compares `tag_name` against `env!("CARGO_PKG_VERSION")`; if newer
 //!      and not in `skipped_version`, shows a modal with 3 options:
 //!        - **Skip this version** → persists tag into vault `settings` table
@@ -13,7 +13,7 @@
 
 use std::path::PathBuf;
 
-/// Hard-coded release repo — kept in one place so publishing the app to a
+/// Hard-coded release repo, kept in one place so publishing the app to a
 /// fork or mirror requires a single edit.
 pub const RELEASE_REPO: &str = "wilsonglasser/oryxis";
 
@@ -34,7 +34,7 @@ pub struct UpdateInfo {
 
 /// Query the GitHub API for the latest release. Returns `None` if the
 /// remote version is not strictly newer than the compile-time package
-/// version. Any network / parse error also returns `None` — update
+/// version. Any network / parse error also returns `None`, update
 /// notifications are best-effort, never break startup.
 pub async fn check_latest_release() -> Option<UpdateInfo> {
     let url = format!("https://api.github.com/repos/{}/releases/latest", RELEASE_REPO);
@@ -140,7 +140,7 @@ fn is_per_user_install() -> bool {
 /// We match by the most discriminating combination per platform, so a
 /// future asset rename in only one of those slots doesn't silently
 /// break the rest. Returns the empty list for platforms we don't ship
-/// a per-arch installer for — the caller surfaces "no installer
+/// a per-arch installer for, the caller surfaces "no installer
 /// asset for this platform" so the user falls back to manual install.
 fn platform_asset_fragment() -> Vec<&'static str> {
     if cfg!(target_os = "windows") {
@@ -186,7 +186,7 @@ fn platform_asset_fragment() -> Vec<&'static str> {
 /// the Windows system fragment (`["setup", "<arch>", ".exe"]`) from
 /// accidentally picking up `oryxis-user-setup-<arch>.exe`, which
 /// satisfies all three substrings. Only the system path needs an
-/// exclude rule — `user-setup` is already specific enough on its own.
+/// exclude rule, `user-setup` is already specific enough on its own.
 fn platform_asset_exclude() -> Vec<&'static str> {
     if cfg!(target_os = "windows") {
         #[cfg(target_os = "windows")]
@@ -201,7 +201,7 @@ fn platform_asset_exclude() -> Vec<&'static str> {
 }
 
 /// Download the installer to a temp file. Reads the full response body into
-/// memory first — simpler than streaming chunks, fine for our installer
+/// memory first, simpler than streaming chunks, fine for our installer
 /// sizes (~80 MB). The progress closure is accepted for API symmetry but
 /// only fires once (0.0 then 1.0) in this implementation.
 pub async fn download_installer(
@@ -269,7 +269,7 @@ pub fn launch_installer(path: &std::path::Path) -> Result<(), String> {
     }
     #[cfg(all(unix, not(target_os = "macos")))]
     {
-        // Linux — best-effort: xdg-open file manager. install.sh expects the
+        // Linux, best-effort: xdg-open file manager. install.sh expects the
         // user to run it manually.
         let _ = std::process::Command::new("xdg-open")
             .arg(path.parent().unwrap_or_else(|| std::path::Path::new("/tmp")))

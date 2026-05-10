@@ -1,4 +1,4 @@
-//! Icon + color picker modal — opened from the icon box in the host editor.
+//! Icon + color picker modal, opened from the icon box in the host editor.
 //!
 //! Lets the user override the auto-detected OS icon and color for a given
 //! connection. "Reset to auto" clears the override and lets OS detection take

@@ -1,4 +1,4 @@
-//! The full `Message` enum — every event the iced runtime can dispatch
+//! The full `Message` enum, every event the iced runtime can dispatch
 //! to `Oryxis::update`. Pulled out of `app.rs` so the message-loop file
 //! is shorter; re-exported via `pub use` at the bottom of `app.rs` so
 //! call sites continue to write `crate::app::Message::Foo`.
@@ -53,7 +53,7 @@ pub enum Message {
     /// message (SelectTab, OpenLocalShell, etc). Boxed to keep the enum
     /// variant size from blowing up.
     TabJumpSelect(Box<Message>),
-    // Absorb-click sink — used by modal bodies to stop clicks from falling
+    // Absorb-click sink, used by modal bodies to stop clicks from falling
     // through to the backdrop underneath. Handler is a no-op.
     NoOp,
 
@@ -72,6 +72,12 @@ pub enum Message {
     EditorCloseThemePicker,
     /// Empty string == "inherit the global theme".
     EditorTerminalThemeChanged(String),
+    /// Cloud transport pick (only meaningful when editing a cloud-imported host).
+    EditorCloudTransportChanged(oryxis_core::models::cloud::TransportKind),
+    /// Per-host initial command, sent as keystrokes after the shell
+    /// opens. Empty = none. Useful for hosts that drop into `/bin/sh`
+    /// when you really want `bash`.
+    EditorInitialCommandChanged(String),
     /// Empty string == "inherit the global keepalive setting".
     /// "0" == explicitly disabled on this host; any positive integer
     /// is the per-host override in seconds. Sanitized to digits-only.
@@ -142,7 +148,7 @@ pub enum Message {
     SftpDuplicateFolder(crate::state::SftpPaneSide, String),
     SftpSelectRow(crate::state::SftpPaneSide, String, bool),
     SftpStartEdit(String),
-    /// Open a local file in the OS default app — no temp copy, no
+    /// Open a local file in the OS default app, no temp copy, no
     /// mtime watch. Edits land on the file directly.
     SftpOpenLocal(std::path::PathBuf),
     /// Open an arbitrary URL in the user's default browser.
@@ -155,12 +161,15 @@ pub enum Message {
     /// Dismiss the transient toast chip (`Oryxis.toast`). Fired by a
     /// `Task::perform` sleep scheduled when a toast is shown.
     ToastClear,
+    /// Dismiss the blocking error dialog (`Oryxis.error_dialog`). Fired
+    /// by the OK button or by clicking the scrim.
+    ErrorDialogDismiss,
     SftpEditReady(crate::state::EditSession),
     SftpEditSave,
     SftpEditDiscard,
     SftpEditWatchTick,
     SftpCancelRemoteLoad,
-    /// Retry the last failed remote action — either re-list the
+    /// Retry the last failed remote action, either re-list the
     /// current path (if a session is still mounted) or re-run the
     /// full host-pick flow (if the connect itself failed).
     SftpRetryRemote,
@@ -181,7 +190,7 @@ pub enum Message {
     SftpTransferQueueReady(crate::state::TransferState),
     /// Pop one item and dispatch to whichever slot is free. The Next
     /// handler picks the slot itself instead of carrying it in the
-    /// message — that way pause/resume can spawn fresh chains without
+    /// message, that way pause/resume can spawn fresh chains without
     /// having to remember which slot was on which client.
     SftpTransferNext,
     /// Slot freed up after a queue item completed successfully.
@@ -209,7 +218,7 @@ pub enum Message {
     WindowResized(iced::Size),
     WindowDrag,
     WindowResizeDrag(iced::window::Direction),
-    /// Double-click on a N/S edge — fill the full monitor height while
+    /// Double-click on a N/S edge, fill the full monitor height while
     /// keeping horizontal position and width.
     WindowExpandVertical,
     WindowMinimize,
@@ -244,6 +253,15 @@ pub enum Message {
     EditorGroupChanged(String),
     EditorKeyChanged(String),
     EditorJumpHostChanged(String),
+    // Jump-host picker modal variants, wired in a follow-up PR. Mark
+    // the trio as allowed-dead-code so the workspace clippy gate
+    // doesn't fail while the dispatch path is still being built out.
+    #[allow(dead_code)]
+    OpenJumpHostPicker,
+    #[allow(dead_code)]
+    HideJumpHostPicker,
+    #[allow(dead_code)]
+    JumpHostSearchChanged(String),
     EditorProxyKindChanged(crate::state::ProxyKind),
     EditorProxyHostChanged(String),
     EditorProxyPortChanged(String),
@@ -294,6 +312,9 @@ pub enum Message {
     ViewSessionLog(Uuid),
     CloseSessionLogView,
     DeleteSessionLog(usize),
+    ClearSessionLogs,
+    SessionLogsPageNext,
+    SessionLogsPagePrev,
 
     // Settings
     LockVault,
@@ -349,13 +370,13 @@ pub enum Message {
     /// / WSL distros). On non-Windows platforms `OpenLocalShell` skips
     /// this and spawns the default directly.
     ShowLocalShellPicker,
-    /// Result of the async shell-detection probe — `where.exe pwsh` +
+    /// Result of the async shell-detection probe, `where.exe pwsh` +
     /// `wsl --list --quiet`. Lands in the message loop so we don't
     /// stall the UI thread on a cold WSL host.
     LocalShellsDetected(Vec<crate::state::LocalShellSpec>),
     /// Dismiss the picker overlay (clicking outside or Escape).
     HideLocalShellPicker,
-    /// Spawn a specific local shell — `(program, args, label)` —
+    /// Spawn a specific local shell, `(program, args, label)`
     /// produced by clicking a row in the picker.
     OpenLocalShellWith {
         program: String,
@@ -415,6 +436,17 @@ pub enum Message {
     CloudFormAuthKindChanged(crate::state::CloudAuthChoice),
     CloudFormAwsProfileNameChanged(String),
     CloudFormAwsRegionChanged(String),
+    CloudFormAwsAccessKeyIdChanged(String),
+    CloudFormAwsAccessKeySecretChanged(String),
+    CloudFormAwsAccessKeySessionTokenChanged(String),
+    // Wired to a future "show password" eye icon next to the secret
+    // input, `text_input.secure(false)` flips when this fires.
+    #[allow(dead_code)]
+    CloudFormAwsAccessKeySecretToggleVisibility,
+    CloudFormAwsSsoStartUrlChanged(String),
+    CloudFormAwsSsoRegionChanged(String),
+    CloudFormAwsSsoAccountIdChanged(String),
+    CloudFormAwsSsoRoleNameChanged(String),
     /// Kicks off a `test_credentials` round-trip via the registered
     /// provider. The result lands as `CloudFormTestResult`.
     CloudFormTestCredentials,
@@ -434,7 +466,7 @@ pub enum Message {
     ShowCloudDiscover(Uuid),
     HideCloudDiscover,
     CloudDiscoverRefresh,
-    /// Result of `provider.discover()` — payload boxed because
+    /// Result of `provider.discover()`, payload boxed because
     /// `DiscoveryResult` carries collections per resource family and
     /// clippy yells about the variant size otherwise.
     CloudDiscoverResult(Result<Box<oryxis_cloud::DiscoveryResult>, String>),
@@ -443,10 +475,60 @@ pub enum Message {
     /// the `cluster/service/container` key.
     CloudDiscoverToggleEcs(String),
     CloudDiscoverImport,
+    /// Triggered from the transport-confirmation modal: actually run
+    /// the import using the picked default transport.
+    CloudDiscoverImportConfirmed,
+    /// Close the transport-confirmation modal without importing.
+    CloudDiscoverImportCancelled,
     CloudDiscoverFilterChanged(String),
     /// Toggle expanded/collapsed state of a section header in the
     /// discovery panel. Carries the section key (e.g. `"ec2"`).
     CloudDiscoverToggleSection(String),
+    CloudDiscoverDefaultTransportChanged(oryxis_core::models::cloud::TransportKind),
+    /// Kick off `provider.resolve_query()` for a dynamic group. The
+    /// async result lands as `DynamicGroupResolved`. Idempotent
+    /// safe to dispatch even if a resolve is already running for the
+    /// same group; the dashboard handler dedupes.
+    DynamicGroupResolve(Uuid),
+    /// User clicked a task row inside an open dynamic group. Carries
+    /// the group id (so we can find the cloud_query) and the task's
+    /// `resource_id` (the task ARN suffix). Triggers ECS Exec.
+    ConnectEcsExecTask {
+        group_id: Uuid,
+        task_id: String,
+        task_label: String,
+    },
+    /// Result of `ecs:ExecuteCommand` + plugin invocation prep. On
+    /// success the dispatch spawns the plugin and opens a tab; on
+    /// error it's surfaced in the UI.
+    EcsExecSessionReady {
+        task_label: String,
+        result: Result<Box<oryxis_cloud_aws::ecs_exec::EcsExecSession>, String>,
+    },
+    /// SSM Session result, same plugin payload shape as ECS Exec, so
+    /// we reuse the spawn path. Carries the host's display label so
+    /// the spawned tab gets a useful title.
+    SsmSessionReady {
+        host_label: String,
+        result: Result<Box<oryxis_cloud_aws::ecs_exec::EcsExecSession>, String>,
+    },
+    DynamicGroupResolved(Uuid, Result<Vec<oryxis_cloud::DiscoveredHost>, String>),
+
+    // Edit dynamic group panel, sets template fields (key, identity,
+    // transport, initial command) on a `Group.cloud_query`.
+    EditDynamicGroup(Uuid),
+    HideDynamicGroupForm,
+    DynamicGroupFormUsernameChanged(String),
+    DynamicGroupFormInitialCommandChanged(String),
+    DynamicGroupFormTransportChanged(oryxis_core::models::cloud::TransportKind),
+    DynamicGroupFormKeyChanged(String),
+    DynamicGroupFormIdentityChanged(String),
+    SaveDynamicGroup,
+    DeleteDynamicGroup(Uuid),
+    /// ⋮ menu on a dynamic-group card.
+    ShowDynamicGroupCardMenu(Uuid),
+    DynamicGroupCardHovered(Uuid),
+    DynamicGroupCardUnhovered,
 
     // Connection identity
     EditorIdentityChanged(String),
@@ -477,11 +559,11 @@ pub enum Message {
     /// to the active assistant bubble so the user sees tokens land as
     /// they're generated.
     ChatStreamChunk(String),
-    /// Terminal sentinel for `ChatStreamChunk` — clears the loading
+    /// Terminal sentinel for `ChatStreamChunk`, clears the loading
     /// state and finalises the message (markdown re-parse, scroll snap).
     ChatStreamDone,
     ChatError(String),
-    /// Re-send the last user message — used by the Retry button on an
+    /// Re-send the last user message, used by the Retry button on an
     /// error bubble. Pops the most recent error and replays.
     ChatRetry,
     ChatToolExec(String),
@@ -491,12 +573,12 @@ pub enum Message {
     /// failed to classify) are queued as a `PendingTool` bubble with
     /// RUN / ALWAYS RUN / DENY buttons.
     ChatToolProposed { command: String, risk: String },
-    /// User clicked RUN on a pending tool prompt — execute once.
+    /// User clicked RUN on a pending tool prompt, execute once.
     ChatToolApprove(String),
-    /// User clicked ALWAYS RUN — add this command's first token to the
+    /// User clicked ALWAYS RUN, add this command's first token to the
     /// tab's allow-list and execute now.
     ChatToolApproveAlways(String),
-    /// User clicked DENY on a pending tool prompt — drop the bubble,
+    /// User clicked DENY on a pending tool prompt, drop the bubble,
     /// don't run anything, don't notify the model.
     ChatToolDeny(String),
     #[allow(dead_code)]
@@ -543,7 +625,7 @@ pub enum Message {
     ImportVault,
     /// Pick `~/.ssh/config` (or any file the user chooses), parse Host
     /// blocks, and add each as a new connection record. No preview
-    /// modal yet — batch-imports everything non-wildcard and shows a
+    /// modal yet, batch-imports everything non-wildcard and shows a
     /// status banner.
     ImportSshConfig,
     #[allow(dead_code)]

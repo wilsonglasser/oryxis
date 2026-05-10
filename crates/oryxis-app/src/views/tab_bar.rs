@@ -2,8 +2,8 @@
 //!
 //! Tabs render as pill-shaped chips with an OS-coloured icon badge on the
 //! left that morphs into an X on hover/active (Termius-style close
-//! affordance). The right-hand cluster — `[+]`, `[⋯]`, then the window
-//! chrome (minimize / maximize / close) — is pinned to the window edge and
+//! affordance). The right-hand cluster, `[+]`, `[⋯]`, then the window
+//! chrome (minimize / maximize / close), is pinned to the window edge and
 //! never gets pushed off when many tabs are open. Tabs themselves shrink
 //! uniformly to a minimum width as the bar fills, while the active tab
 //! keeps its natural width so its label stays fully readable.
@@ -23,7 +23,7 @@ const TAB_ICON_SLOT: f32 = 16.0;
 /// label like "user@hostname.example.com" without truncation. The active
 /// tab always uses this; inactives only when there's space.
 const TAB_NATURAL_WIDTH: f32 = 200.0;
-/// Floor below which we don't shrink — once a tab gets this narrow the
+/// Floor below which we don't shrink, once a tab gets this narrow the
 /// label is mostly ellipses anyway, and going lower kills hit-target ergonomics.
 /// Picked to fit "OS-badge + ~8 chars + ellipsis" comfortably.
 const TAB_MIN_WIDTH: f32 = 110.0;
@@ -33,7 +33,7 @@ const TAB_MIN_WIDTH: f32 = 110.0;
 /// tab before the truncation kicks in.
 const TAB_CHAR_WIDTH: f32 = 7.0;
 
-/// Spacing between tabs — extracted into a constant so the width math
+/// Spacing between tabs, extracted into a constant so the width math
 /// can subtract it without drifting from the actual `row.spacing()`.
 const TAB_SPACING: f32 = 6.0;
 
@@ -45,7 +45,7 @@ const BAR_HEIGHT: f32 = 40.0;
 
 const SIDEBAR_TOGGLE_WIDTH: f32 = 28.0;
 // `+` and `⋯` (jump-to) live in the right cluster next to the chrome
-// buttons, so they share the chrome width — gives the whole strip a
+// buttons, so they share the chrome width, gives the whole strip a
 // uniform 46×BAR_HEIGHT cell rhythm.
 const PLUS_BUTTON_WIDTH: f32 = 46.0;
 const DOTS_BUTTON_WIDTH: f32 = 46.0;
@@ -59,7 +59,7 @@ impl Oryxis {
 
         // For compaction we need a rough estimate of the strip's width
         // (active tab natural, inactives shrink to fit). The exact
-        // value isn't critical — `scrollable` is the safety net for
+        // value isn't critical, `scrollable` is the safety net for
         // any miscalculation. Subtract everything else on the row.
         // RIGHT_CLUSTER_WIDTH = +(28) + 2 + ⋯(28) + 2 + chrome(3*46)
         const RIGHT_CLUSTER_WIDTH: f32 = PLUS_BUTTON_WIDTH
@@ -97,7 +97,7 @@ impl Oryxis {
                 .and_then(|c| c.detected_os.clone())
                 // Fall back to deriving the OS from the tab label
                 // for Local Shell tabs (`"Ubuntu (WSL)"`,
-                // `"PowerShell"`, `"Command Prompt"`, …) — those
+                // `"PowerShell"`, `"Command Prompt"`, …), those
                 // never go through the SSH `detect_os` round-trip.
                 .or_else(|| crate::os_icon::local_shell_os_hint(base_label));
             let width = if is_active { active_width } else { inactive_width };
@@ -111,7 +111,7 @@ impl Oryxis {
             ));
         }
 
-        // The tab strip lives in an auto-width container — Length::Fill
+        // The tab strip lives in an auto-width container, Length::Fill
         // so the row gives it whatever's left after the sidebar toggle
         // and right cluster claim their Shrink widths. The scrollable
         // inside is the safety net: tabs that don't fit at min width
@@ -157,7 +157,7 @@ impl Oryxis {
         })
         .into();
 
-        // Right cluster — never pushed off. Always contains `+` and the
+        // Right cluster, never pushed off. Always contains `+` and the
         // window chrome; the `⋯` jump-to button only joins when the bar
         // is actually overflowing (scroll_mode), positioned BEFORE the
         // `+` so the natural reading order is "scroll-related controls,
@@ -172,7 +172,7 @@ impl Oryxis {
             iced_fonts::codicon::chrome_maximize()
         };
         // Window controls live in their own dir_row so the close button
-        // ends up on the leading edge under RTL — matches how macOS and
+        // ends up on the leading edge under RTL, matches how macOS and
         // GNOME flip traffic-light buttons when the locale flips.
         let chrome_row = crate::widgets::dir_row(vec![
             window_btn(
@@ -240,7 +240,7 @@ impl Oryxis {
     /// Build a task that snaps the tab strip's scrollable so the active
     /// tab is roughly centered in the visible area. Called whenever a
     /// new tab gets focused (manual select, opening a local shell,
-    /// connecting an SSH session, etc.) — without this the new tab
+    /// connecting an SSH session, etc.), without this the new tab
     /// can land off-screen when the strip is in scroll mode.
     pub(crate) fn tab_scroll_to_active(&self) -> iced::Task<Message> {
         let Some(active_idx) = self.active_tab else {
@@ -430,14 +430,14 @@ fn session_tab<'a>(
         .into()
 }
 
-/// Plus button at the end of the tab row — opens the new-tab picker
+/// Plus button at the end of the tab row, opens the new-tab picker
 /// (search + recent connections) as a centered modal overlay. Width +
 /// height + border match the window-chrome buttons next to it so the
 /// whole right cluster reads as one strip; `PLUS_BUTTON_WIDTH` was
 /// only used for the layout-math `RIGHT_CLUSTER_WIDTH` calculation,
 /// which still applies because we publish the same constant value.
 ///
-/// Uses `lucide::plus` instead of a literal `+` text character — on
+/// Uses `lucide::plus` instead of a literal `+` text character, on
 /// Windows, Segoe UI's `+` renders much chunkier than the codicon
 /// `−` / `□` / `✕` glyphs right next to it, breaking visual rhythm.
 fn new_tab_btn<'a>() -> Element<'a, Message> {
@@ -464,7 +464,7 @@ fn new_tab_btn<'a>() -> Element<'a, Message> {
     .into()
 }
 
-/// Tab-jump button — opens the Termius-style "Jump to" modal listing
+/// Tab-jump button, opens the Termius-style "Jump to" modal listing
 /// all open tabs + Quick connect entries. Always visible regardless of
 /// how many tabs are open, so the user has a discoverable escape hatch
 /// from a packed tab strip.
@@ -501,7 +501,7 @@ fn tab_jump_btn<'a>() -> Element<'a, Message> {
 
 /// Minimize / maximize / close glyph button for the window chrome.
 /// Fills the full bar height (no padding) so hover backgrounds reach the
-/// very top and bottom edges — same behaviour as Windows / VS Code.
+/// very top and bottom edges, same behaviour as Windows / VS Code.
 fn window_btn<'a>(
     icon: iced::widget::Text<'a>,
     msg: Message,

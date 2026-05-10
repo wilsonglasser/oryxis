@@ -1,4 +1,4 @@
-//! `Oryxis::handle_settings` — match arms for the Settings panel:
+//! `Oryxis::handle_settings`, match arms for the Settings panel:
 //! terminal/SFTP/SSH knobs, app theme, language, auto-reconnect tick,
 //! OS-detection toggles, vault lock, font size adjustments.
 
@@ -260,13 +260,13 @@ impl Oryxis {
                 self.persist_setting("keepalive_interval", &self.setting_keepalive_interval);
             }
             Message::SettingScrollbackChanged(val) => {
-                // Cap at 1M rows — alacritty allocates lazily but >1M is
+                // Cap at 1M rows, alacritty allocates lazily but >1M is
                 // both unreasonable and a foot-gun for memory pressure.
                 self.setting_scrollback_rows = sanitize_uint(&val, 1_000_000);
                 self.persist_setting("scrollback_rows", &self.setting_scrollback_rows);
             }
             Message::SettingSftpConcurrencyChanged(val) => {
-                // Cap at 8 — beyond that the SSH channel multiplexer
+                // Cap at 8, beyond that the SSH channel multiplexer
                 // overhead outweighs the throughput gain on most links.
                 self.setting_sftp_concurrency = sanitize_uint(&val, 8);
                 if self.setting_sftp_concurrency == "0" {
@@ -386,7 +386,7 @@ impl Oryxis {
             Message::OpenLocalShell => {
                 // On Windows, surface the picker so the user can pick
                 // between cmd / PowerShell / their WSL distros. Other
-                // platforms get the default shell — there's nothing
+                // platforms get the default shell, there's nothing
                 // useful to choose.
                 if cfg!(target_os = "windows") {
                     return Ok(Task::done(Message::ShowLocalShellPicker));
@@ -489,7 +489,7 @@ fn detect_local_shells() -> Vec<crate::state::LocalShellSpec> {
     let mut out: Vec<LocalShellSpec> = Vec::new();
     #[cfg(target_os = "windows")]
     {
-        // PowerShell — prefer pwsh.exe (PS7+) over the bundled
+        // PowerShell, prefer pwsh.exe (PS7+) over the bundled
         // powershell.exe; both detect via `where.exe` to cope with
         // the fact that PS7 isn't on every machine.
         if which("pwsh.exe").is_some() {
@@ -510,7 +510,7 @@ fn detect_local_shells() -> Vec<crate::state::LocalShellSpec> {
             program: "cmd.exe".into(),
             args: vec![],
         });
-        // WSL distros — `wsl --list --quiet` outputs UTF-16 LE BOM
+        // WSL distros, `wsl --list --quiet` outputs UTF-16 LE BOM
         // by default. Decode and split on lines to get distro names.
         for distro in list_wsl_distros() {
             out.push(LocalShellSpec {
@@ -526,7 +526,7 @@ fn detect_local_shells() -> Vec<crate::state::LocalShellSpec> {
 #[cfg(target_os = "windows")]
 fn which(program: &str) -> Option<std::path::PathBuf> {
     use std::os::windows::process::CommandExt;
-    // CREATE_NO_WINDOW (0x0800_0000) — without this each `where.exe`
+    // CREATE_NO_WINDOW (0x0800_0000), without this each `where.exe`
     // call briefly flashes a cmd console behind oryxis.
     let out = std::process::Command::new("where")
         .arg(program)

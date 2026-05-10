@@ -88,7 +88,7 @@ impl Default for TerminalPalette {
 }
 
 impl TerminalPalette {
-    /// Oryxis Dark — like Termius Dark: white text, teal cursor/accent, vivid ANSI colors
+    /// Oryxis Dark, like Termius Dark: white text, teal cursor/accent, vivid ANSI colors
     pub fn oryxis_dark() -> Self {
         Self {
             foreground: Color::from_rgb(0.133, 0.60, 0.569), // teal (like Termius Dark green)
@@ -115,7 +115,7 @@ impl TerminalPalette {
         }
     }
 
-    /// Hacker Green — classic green-on-black
+    /// Hacker Green, classic green-on-black
     pub fn hacker_green() -> Self {
         Self {
             foreground: Color::from_rgb(0.0, 0.87, 0.0),
@@ -250,7 +250,7 @@ impl TerminalPalette {
         }
     }
 
-    /// Oryxis Light — light counterpart of `oryxis_dark`. White paper
+    /// Oryxis Light, light counterpart of `oryxis_dark`. White paper
     /// surface, deep teal foreground, slightly desaturated ANSI so
     /// the colours don't strobe against the bright background.
     pub fn oryxis_light() -> Self {
@@ -279,7 +279,7 @@ impl TerminalPalette {
         }
     }
 
-    /// Termius — neutral dark navy with cyan accent matching the app
+    /// Termius, neutral dark navy with cyan accent matching the app
     /// theme of the same name.
     pub fn termius() -> Self {
         Self {
@@ -307,7 +307,7 @@ impl TerminalPalette {
         }
     }
 
-    /// Darcula — JetBrains' classic dark editor palette: bg `#2B2B2B`,
+    /// Darcula, JetBrains' classic dark editor palette: bg `#2B2B2B`,
     /// orange keywords, green strings, blue selection.
     pub fn darcula() -> Self {
         Self {
@@ -335,7 +335,7 @@ impl TerminalPalette {
         }
     }
 
-    /// Islands Dark — JetBrains' New UI variant. Cooler outer frame,
+    /// Islands Dark, JetBrains' New UI variant. Cooler outer frame,
     /// brighter foreground than Darcula, blue accent.
     pub fn islands_dark() -> Self {
         Self {
@@ -363,7 +363,7 @@ impl TerminalPalette {
         }
     }
 
-    /// Nord Light — Snow Storm base. Light counterpart of `nord()`,
+    /// Nord Light, Snow Storm base. Light counterpart of `nord()`,
     /// keeps the same Frost / Aurora hues but on a near-white surface.
     pub fn nord_light() -> Self {
         Self {
@@ -391,7 +391,7 @@ impl TerminalPalette {
         }
     }
 
-    /// Solarized Light — Ethan Schoonover's bright variant. Same
+    /// Solarized Light, Ethan Schoonover's bright variant. Same
     /// accent ramp as Solarized Dark, mirrored against the cream
     /// `#FDF6E3` paper.
     pub fn solarized_light() -> Self {
@@ -420,7 +420,7 @@ impl TerminalPalette {
         }
     }
 
-    /// Paper Light — neutral high-contrast light theme. Pure-ish
+    /// Paper Light, neutral high-contrast light theme. Pure-ish
     /// paper background, near-black text, restrained ANSI for
     /// long-form readability (matches the app's `Paper Light` UI).
     pub fn paper_light() -> Self {

@@ -1,4 +1,4 @@
-//! `Oryxis::handle_keys` — match arms for the Keys + Identities
+//! `Oryxis::handle_keys`, match arms for the Keys + Identities
 //! panels: import/edit/delete keys, manage identities, keychain menu.
 
 #![allow(clippy::result_large_err)]
@@ -20,7 +20,7 @@ impl Oryxis {
         match message {
             // -- Keys --
             Message::ShowKeyPanel => {
-                // Also navigate to the Keys screen — the import panel is rendered
+                // Also navigate to the Keys screen, the import panel is rendered
                 // inside view_keys(), so the user needs to be there to see it
                 // (e.g. when they click "+ Key" from the host editor).
                 self.active_view = View::Keys;

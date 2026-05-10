@@ -1,4 +1,4 @@
-//! New-tab picker — centered modal overlay with a search bar and the list of
+//! New-tab picker, centered modal overlay with a search bar and the list of
 //! recent connections. Triggered from the `+` button in the tab bar.
 //!
 //! Visually modeled on Termius' "New Tab" screen: big rounded search at the
@@ -35,7 +35,7 @@ impl Oryxis {
 
         // Right-anchored "Ctrl+K" hint inside a styled chip so it reads
         // as a keyboard affordance rather than placeholder text. Lives
-        // in a Stack on top of the input — `text` has no click handler,
+        // in a Stack on top of the input, `text` has no click handler,
         // so focus-on-click still works on the wider left portion.
         let ctrl_k_chip = container(
             text("Ctrl+K").size(11).color(OryxisColors::t().text_muted),
@@ -196,7 +196,7 @@ fn picker_row<'a>(
     breadcrumb: String,
     zebra_bg: Color,
 ) -> Element<'a, Message> {
-    // Icon badge — 26×26 accent square with server glyph.
+    // Icon badge, 26×26 accent square with server glyph.
     let icon_box = container(
         iced_fonts::lucide::server().size(12).color(Color::WHITE),
     )

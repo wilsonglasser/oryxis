@@ -1,4 +1,4 @@
-//! Settings screen — terminal, AI, theme, shortcuts, security, sync, about.
+//! Settings screen, terminal, AI, theme, shortcuts, security, sync, about.
 
 use iced::border::Radius;
 use iced::widget::{button, column, container, pick_list, row, scrollable, text, text_input, Space};
@@ -68,7 +68,7 @@ impl Oryxis {
             }
 
             // Wrap the panel in a row so we can stick a 1 px hairline on the
-            // right edge only — iced's Border applies to all four sides at
+            // right edge only, iced's Border applies to all four sides at
             // once, so we compose the single-edge separator instead.
             let right_hairline = container(Space::new().width(1))
                 .height(Length::Fill)
@@ -214,7 +214,7 @@ impl Oryxis {
                     theme_grid,
                 ]);
 
-                // Font picker — full list, regardless of whether a given font is
+                // Font picker, full list, regardless of whether a given font is
                 // bundled. The renderer falls back when a name can't be resolved.
                 let fonts: Vec<String> = crate::app::TERMINAL_FONTS
                     .iter()
@@ -468,9 +468,9 @@ impl Oryxis {
 
                     // When a key is already stored, the input is cleared
                     // for security but the placeholder communicates that
-                    // a key exists — typing replaces it on save.
+                    // a key exists, typing replaces it on save.
                     let key_placeholder = if self.ai_api_key_set {
-                        "\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}\u{2022} saved — type to replace"
+                        "\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}\u{2022} saved, type to replace"
                     } else {
                         "sk-..."
                     };
@@ -532,7 +532,7 @@ impl Oryxis {
 
                     content_col = content_col.push(panel_section(provider_col));
 
-                    // System prompt — multi-line editor that grows with the
+                    // System prompt, multi-line editor that grows with the
                     // content. `Length::Shrink` lets the editor auto-resize
                     // to fit its text, capped by the panel's scroll area.
                     let prompt_editor: Element<'_, Message> = iced::widget::text_editor(&self.ai_system_prompt)
@@ -709,7 +709,7 @@ impl Oryxis {
                     ].align_y(iced::Alignment::Center),
                 ]);
 
-                // Layout direction picker — Auto (follow language) by
+                // Layout direction picker, Auto (follow language) by
                 // default; explicit LTR/RTL overrides regardless of
                 // language. Useful for users who want Persian text but a
                 // familiar sidebar position.
@@ -996,7 +996,7 @@ impl Oryxis {
                         .push(text(msg).size(12).color(color));
                 }
 
-                // SSH config import — separate card, sits below the
+                // SSH config import, separate card, sits below the
                 // vault export/import. One-shot batch importer; no
                 // preview yet.
                 let ssh_config_btn = styled_button(
@@ -1322,7 +1322,7 @@ impl Oryxis {
                 oryxis_core::models::connection::ProxyType::Http => "HTTP",
                 oryxis_core::models::connection::ProxyType::Command(_) => "CMD",
             };
-            let summary = format!("{} — {}:{}", kind_label, pi.host, pi.port);
+            let summary = format!("{}, {}:{}", kind_label, pi.host, pi.port);
             let id = pi.id;
             let edit_btn = button(text(crate::i18n::t("edit")).size(12))
                 .on_press(Message::ShowProxyIdentityForm(Some(id)))
@@ -1406,7 +1406,7 @@ impl Oryxis {
             list = list.push(row);
         }
 
-        // ── Add button — same primary CTA styling as Save / Connect.
+        // ── Add button, same primary CTA styling as Save / Connect.
         // No "+" prefix here: `styled_button` borrows the label, so a
         // dynamically formatted `String` would be tied to this scope;
         // the i18n value is enough on its own with the accent color
@@ -1462,7 +1462,7 @@ impl Oryxis {
     fn view_proxy_identity_form(&self) -> Element<'_, Message> {
         use crate::state::ProxyKind;
 
-        // The picker only offers the four wire types — None / Identity
+        // The picker only offers the four wire types, None / Identity
         // are not valid for a saved identity itself.
         let wire_kinds: &[ProxyKind] = &[
             ProxyKind::Socks5,
@@ -1512,7 +1512,7 @@ impl Oryxis {
             OryxisColors::t().text_muted,
         );
 
-        // Use the shared `panel_field` helper for label/input pairs —
+        // Use the shared `panel_field` helper for label/input pairs
         // gives the same 4-px gap between label and control as every
         // other form in the app, instead of glueing them together.
         use crate::widgets::panel_field;

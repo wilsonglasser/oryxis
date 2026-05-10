@@ -14,7 +14,7 @@ use crate::widgets::styled_button;
 /// drag / minimize / maximize / close before unlocking the vault. Also adds
 /// the edge-resize border so the lock screen is as resizable as the main app.
 fn with_chrome<'a>(body: Element<'a, Message>, maximized: bool) -> Element<'a, Message> {
-    // 1 px hairline between the chrome bar and the screen body — matches the
+    // 1 px hairline between the chrome bar and the screen body, matches the
     // separator that sits below the tab bar on the main view.
     let h_separator = iced::widget::container(iced::widget::Space::new().height(1))
         .width(Length::Fill)

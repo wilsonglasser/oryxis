@@ -1,4 +1,4 @@
-//! `Oryxis::handle_editor` — match arms for the connection editor:
+//! `Oryxis::handle_editor`, match arms for the connection editor:
 //! field changes, save/cancel/duplicate/delete, port-forwarding edits,
 //! identity selection, MCP-enabled toggle, OS detection.
 
@@ -20,6 +20,11 @@ impl Oryxis {
         match message {
             // -- Connection editor --
             Message::ShowNewConnection => {
+                // Mutually exclusive right-panel slot, close any
+                // other panel before opening the host editor.
+                self.cloud_form_visible = false;
+                self.cloud_dynamic_form_visible = false;
+                self.cloud_discover_visible = false;
                 self.show_host_panel = true;
                 self.editor_form = ConnectionForm::default();
                 if let Some(gid) = self.active_group
@@ -33,6 +38,10 @@ impl Oryxis {
                 self.card_context_menu = None;
                 self.overlay = None;
                 if let Some(conn) = self.connections.get(idx) {
+                    // Mutually exclusive right-panel slot.
+                    self.cloud_form_visible = false;
+                    self.cloud_dynamic_form_visible = false;
+                    self.cloud_discover_visible = false;
                     self.show_host_panel = true;
                     self.host_panel_error = None;
                     let has_pw = self.vault.as_ref()
@@ -93,7 +102,7 @@ impl Oryxis {
                         proxy_host: conn.proxy.as_ref().map(|p| p.host.clone()).unwrap_or_default(),
                         proxy_port: conn.proxy.as_ref().map(|p| p.port.to_string()).unwrap_or_default(),
                         proxy_username: conn.proxy.as_ref().and_then(|p| p.username.clone()).unwrap_or_default(),
-                        // Never pre-fill proxy_password from the encrypted vault — keep it empty
+                        // Never pre-fill proxy_password from the encrypted vault, keep it empty
                         // and let `proxy_password_touched` decide whether to overwrite on save,
                         // mirroring the main connection-password flow.
                         proxy_password: String::new(),
@@ -108,6 +117,11 @@ impl Oryxis {
                             .keepalive_interval
                             .map(|n| n.to_string())
                             .unwrap_or_default(),
+                        cloud_transport: conn
+                            .cloud_ref
+                            .as_ref()
+                            .map(|r| r.transport_pref),
+                        initial_command: conn.initial_command.clone().unwrap_or_default(),
                     };
                 }
             }
@@ -150,13 +164,26 @@ impl Oryxis {
             }
             Message::EditorJumpHostChanged(v) => {
                 self.editor_form.jump_host = if v == "(none)" { None } else { Some(v) };
+                self.show_jump_host_picker = false;
+                self.jump_host_search.clear();
+            }
+            Message::OpenJumpHostPicker => {
+                self.show_jump_host_picker = true;
+                self.jump_host_search.clear();
+            }
+            Message::HideJumpHostPicker => {
+                self.show_jump_host_picker = false;
+                self.jump_host_search.clear();
+            }
+            Message::JumpHostSearchChanged(v) => {
+                self.jump_host_search = v;
             }
             Message::EditorProxyKindChanged(kind) => {
                 let prev = self.editor_form.proxy_kind;
                 self.editor_form.proxy_kind = kind;
                 match kind {
                     ProxyKind::Identity(_) => {
-                        // Switching to a saved identity — wipe inline state
+                        // Switching to a saved identity, wipe inline state
                         // so a later switch back to Custom starts clean.
                         // The identity carries its own host/port/username/
                         // password, all hydrated by `resolve_proxy` at
@@ -180,7 +207,7 @@ impl Oryxis {
                             self.editor_form.proxy_password_touched = false;
                         }
                         // Pre-fill the canonical port for the chosen type
-                        // when the field is still blank — saves the user a
+                        // when the field is still blank, saves the user a
                         // hop and is easy to override by typing.
                         if self.editor_form.proxy_port.is_empty()
                             && let Some(default_port) = kind.default_port()
@@ -209,6 +236,12 @@ impl Oryxis {
                 self.editor_form.terminal_theme =
                     if name.is_empty() { None } else { Some(name) };
                 self.show_theme_picker = false;
+            }
+            Message::EditorCloudTransportChanged(t) => {
+                self.editor_form.cloud_transport = Some(t);
+            }
+            Message::EditorInitialCommandChanged(v) => {
+                self.editor_form.initial_command = v;
             }
             Message::EditorKeepaliveChanged(v) => {
                 // Digits only; preserve empty (= inherit global). Cap at
@@ -296,6 +329,21 @@ impl Oryxis {
                 conn.mcp_enabled = self.editor_form.mcp_enabled;
                 conn.agent_forwarding = self.editor_form.agent_forwarding;
                 conn.terminal_theme = self.editor_form.terminal_theme.clone();
+                // Initial command, empty == None (no command sent).
+                conn.initial_command = if self.editor_form.initial_command.trim().is_empty() {
+                    None
+                } else {
+                    Some(self.editor_form.initial_command.clone())
+                };
+                // If the host is cloud-imported (carries a cloud_ref)
+                // and the user picked a transport in the editor,
+                // persist it onto the existing CloudRef. Don't touch
+                // anything else (resource_id, region, profile_id).
+                if let Some(picked) = self.editor_form.cloud_transport
+                    && let Some(cref) = conn.cloud_ref.as_mut()
+                {
+                    cref.transport_pref = picked;
+                }
                 // Empty string == inherit global; "0" == explicitly disabled
                 // on this host; positive integer == per-host override.
                 conn.keepalive_interval = if self.editor_form.keepalive_interval.is_empty() {
@@ -320,9 +368,9 @@ impl Oryxis {
                 conn.updated_at = chrono::Utc::now();
 
                 let password = if !self.editor_form.password_touched {
-                    None // User didn't touch the field — preserve existing password
+                    None // User didn't touch the field, preserve existing password
                 } else if self.editor_form.password.is_empty() {
-                    Some("") // User cleared the password — remove it
+                    Some("") // User cleared the password, remove it
                 } else {
                     Some(self.editor_form.password.as_str())
                 };
@@ -343,7 +391,7 @@ impl Oryxis {
                                 let _ = vault.set_proxy_password(&conn.id, pw);
                             }
                             // If the proxy was disabled in this save, drop any
-                            // previously stored proxy password — keeping a
+                            // previously stored proxy password, keeping a
                             // dangling encrypted credential would be surprising.
                             if conn.proxy.is_none() {
                                 let _ = vault.set_proxy_password(&conn.id, None);
@@ -430,7 +478,7 @@ impl Oryxis {
 /// Result of resolving the editor form's proxy section into model
 /// fields. `Identity(_)` selections route to `proxy_identity_id`, the
 /// other static kinds populate the inline `ProxyConfig`. Note that
-/// `password` is left as `None` here — it's persisted in the encrypted
+/// `password` is left as `None` here, it's persisted in the encrypted
 /// `proxy_password` column via `set_proxy_password`, never inside the
 /// serialized inline JSON.
 pub(crate) struct ProxyResolution {

@@ -48,11 +48,11 @@ pub enum SshError {
 /// Result of checking a host key against known hosts.
 #[derive(Debug, Clone)]
 pub enum HostKeyStatus {
-    /// Host is known and fingerprint matches — accept silently.
+    /// Host is known and fingerprint matches, accept silently.
     Known,
-    /// Host is known but fingerprint CHANGED — potential MITM.
+    /// Host is known but fingerprint CHANGED, potential MITM.
     Changed { old_fingerprint: String },
-    /// Host is not known — need to ask the user.
+    /// Host is not known, need to ask the user.
     Unknown,
 }
 
@@ -78,7 +78,7 @@ pub(crate) struct ClientHandler {
     host_key_check: Option<HostKeyCheckCallback>,
     host_key_ask_tx: Option<HostKeyAskSender>,
     /// Mirrors `SshEngine::agent_forwarding`. The handler uses it as a
-    /// gate on `server_channel_open_agent_forward` — without an opt-in,
+    /// gate on `server_channel_open_agent_forward`, without an opt-in,
     /// inbound forward channels are rejected even if the server tries
     /// to open one.
     agent_forwarding: bool,
@@ -120,7 +120,7 @@ impl client::Handler for ClientHandler {
         let fingerprint = key.fingerprint(russh::keys::ssh_key::HashAlg::Sha256).to_string();
 
         tracing::info!(
-            "Server key for {}:{} — {} {}",
+            "Server key for {}:{}, {} {}",
             self.hostname, self.port, key_type, fingerprint
         );
 
@@ -148,7 +148,7 @@ impl client::Handler for ClientHandler {
                     }
                     Ok(resp_rx.await.unwrap_or(false))
                 } else {
-                    // No UI channel — reject changed, accept unknown (legacy fallback)
+                    // No UI channel, reject changed, accept unknown (legacy fallback)
                     Ok(matches!(status, HostKeyStatus::Unknown))
                 }
             }
@@ -162,7 +162,7 @@ impl client::Handler for ClientHandler {
     ) -> Result<(), Self::Error> {
         if !self.agent_forwarding {
             // Server is trying to open a forward channel we never asked
-            // for. Drop it on the floor — `Channel` is closed when it
+            // for. Drop it on the floor, `Channel` is closed when it
             // goes out of scope.
             tracing::warn!(
                 "rejecting unsolicited agent-forward channel from {}:{}",
@@ -289,7 +289,7 @@ pub struct ExecResult {
 
 /// A live SSH session with a remote PTY channel.
 pub struct SshSession {
-    /// Shared SSH handle — kept alive for port forward tasks to open channels.
+    /// Shared SSH handle, kept alive for port forward tasks to open channels.
     _handle: Arc<tokio::sync::Mutex<client::Handle<ClientHandler>>>,
     writer_tx: mpsc::UnboundedSender<Vec<u8>>,
     /// Forwarded to the SSH channel as `window-change` requests so the
@@ -335,7 +335,7 @@ impl SshSession {
         self.resize_tx.clone()
     }
 
-    /// Open a fresh SFTP subsystem channel on this session — the SSH
+    /// Open a fresh SFTP subsystem channel on this session, the SSH
     /// connection multiplexes, so the original PTY channel keeps running.
     /// Wrapped in the engine-configured timeout to keep `open_sftp` from
     /// hanging the UI when a server doesn't speak the sftp subsystem.
@@ -429,7 +429,7 @@ pub struct ConnectionResolver {
     pub passwords: std::collections::HashMap<uuid::Uuid, String>,
     pub private_keys: std::collections::HashMap<uuid::Uuid, String>,
     /// Effective proxy per jump-host id, hydrated by the caller via
-    /// `Vault::resolve_proxy`. Only the first jump's entry is used —
+    /// `Vault::resolve_proxy`. Only the first jump's entry is used
     /// subsequent hops travel inside an SSH-tunneled `direct-tcpip`
     /// channel where a proxy doesn't apply.
     pub proxies: std::collections::HashMap<uuid::Uuid, ProxyConfig>,
@@ -724,7 +724,7 @@ impl SshEngine {
                     // SOCKS5 username/password auth (RFC 1929). Password
                     // is hydrated from the vault before this call; if
                     // the user configured no password, send an empty
-                    // one — the proxy may still accept it.
+                    // one, the proxy may still accept it.
                     tokio_socks::tcp::Socks5Stream::connect_with_password(
                         proxy_addr.as_str(),
                         (target_host, target_port),
@@ -797,7 +797,7 @@ impl SshEngine {
         }
     }
 
-    /// HTTP CONNECT tunnel — establish a TCP tunnel through an HTTP proxy.
+    /// HTTP CONNECT tunnel, establish a TCP tunnel through an HTTP proxy.
     /// Supports Basic auth (RFC 7617) when `username` is provided.
     async fn http_connect_tunnel(
         &self,
@@ -820,7 +820,7 @@ impl SshEngine {
 
         // Read until end-of-headers ("\r\n\r\n"). A single read() typically
         // delivers the whole CONNECT response on first packet, but a hostile
-        // or chunked proxy may split it — loop until we have headers or hit
+        // or chunked proxy may split it, loop until we have headers or hit
         // a 16 KiB cap (HTTP requests this small never exceed that).
         let mut buf = Vec::with_capacity(1024);
         let mut chunk = [0u8; 1024];
@@ -858,7 +858,7 @@ impl SshEngine {
         }
     }
 
-    /// ProxyCommand — spawn a process and use its stdin/stdout as transport.
+    /// ProxyCommand, spawn a process and use its stdin/stdout as transport.
     async fn proxy_command(
         &self,
         cmd: &str,
@@ -903,7 +903,7 @@ impl SshEngine {
         );
 
         // Connect to the first jump host. If the jump itself sits
-        // behind a proxy, dial via that proxy — only the *first* hop
+        // behind a proxy, dial via that proxy, only the *first* hop
         // does, since subsequent hops travel inside the SSH tunnel.
         let first_jump_id = connection.jump_chain[0];
         let first_jump = resolver
@@ -1104,7 +1104,7 @@ impl SshEngine {
                     return Ok(true);
                 }
 
-                // Key was rejected — try password as fallback if available
+                // Key was rejected, try password as fallback if available
                 if let Some(pw) = password {
                     tracing::info!("Key rejected, trying password fallback for {}", username);
                     let res = handle.authenticate_password(username, pw).await?;
@@ -1279,7 +1279,7 @@ impl SshEngine {
         rows: u32,
     ) -> Result<(SshSession, mpsc::UnboundedReceiver<Vec<u8>>), SshError> {
         // Apply the same per-phase timeouts the public 2-step API uses
-        // — single-call connects via `connect_with_resolver` were
+        //, single-call connects via `connect_with_resolver` were
         // bypassing them, leaving auth/session free to hang on the OS
         // default ceilings.
         let auth_timeout = self.auth_timeout;
@@ -1330,7 +1330,7 @@ impl SshEngine {
 
         let collect = async {
             let mut channel = channel;
-            // Read until channel close (`None`), not just Eof — some
+            // Read until channel close (`None`), not just Eof, some
             // servers send `ExitStatus` after `Eof`, so breaking early
             // would leave us defaulting to 255.
             loop {
@@ -1380,11 +1380,11 @@ impl SshEngine {
             .map_err(|e| SshError::Channel(format!("PTY request failed: {}", e)))?;
 
         // Optional ssh-agent forwarding. Must fire BEFORE `request_shell`
-        // — sshd reads the channel requests in order and only sets
+        //, sshd reads the channel requests in order and only sets
         // `SSH_AUTH_SOCK` on the launched process if forwarding was
         // already requested when the shell starts. Issued without
         // `want_reply`; failures (server has `AllowAgentForwarding no`)
-        // are not fatal — the user still gets a normal shell, they
+        // are not fatal, the user still gets a normal shell, they
         // just can't hop further with their local keys.
         if self.agent_forwarding
             && let Err(e) = channel.agent_forward(false).await
@@ -1403,7 +1403,7 @@ impl SshEngine {
 
         let mut channel_writer = channel.make_writer();
 
-        // Reader task — multiplexes incoming PTY data with outgoing
+        // Reader task, multiplexes incoming PTY data with outgoing
         // window-change requests so we only own `channel` in one place.
         let reader_task = tokio::spawn(async move {
             let mut channel = channel;
@@ -1467,7 +1467,7 @@ impl SshEngine {
                 _reader_task: reader_task,
                 _writer_task: writer_task,
                 _port_forward_tasks: pf_tasks,
-                // Default — overridden by the engine right after this
+                // Default, overridden by the engine right after this
                 // returns via `sftp_open_timeout` assignment.
                 sftp_open_timeout: std::time::Duration::from_secs(10),
             },
@@ -1490,7 +1490,7 @@ fn parse_addr(addr: &str) -> Result<(String, u32), SshError> {
 
 /// Build the request bytes for an HTTP CONNECT tunnel. When `username`
 /// is provided, a `Proxy-Authorization: Basic` header is added (RFC
-/// 7617). `password` may be `None` or empty — the colon separator is
+/// 7617). `password` may be `None` or empty, the colon separator is
 /// always present per the spec.
 fn build_http_connect_request(
     target_host: &str,
@@ -1573,7 +1573,7 @@ mod tests {
     }
 
     // (Personal integration test against a private SSH server was
-    // removed — it had hardcoded credentials and a path that only
+    // removed, it had hardcoded credentials and a path that only
     // existed on the original author's machine, and didn't compile in
     // CI anyway. End-to-end SSH coverage now lives in the
     // `tests/` directory once the harness is wired.)
@@ -1589,7 +1589,7 @@ mod tests {
 
     #[test]
     fn http_connect_request_with_basic_auth() {
-        // RFC 7617 — "Aladdin:open sesame" → "QWxhZGRpbjpvcGVuIHNlc2FtZQ=="
+        // RFC 7617, "Aladdin:open sesame" → "QWxhZGRpbjpvcGVuIHNlc2FtZQ=="
         let req = build_http_connect_request("h", 22, Some("Aladdin"), Some("open sesame"));
         assert!(req.contains("Proxy-Authorization: Basic QWxhZGRpbjpvcGVuIHNlc2FtZQ==\r\n"));
     }

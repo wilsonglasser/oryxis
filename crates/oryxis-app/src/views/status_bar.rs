@@ -1,4 +1,4 @@
-//! Bottom status bar — connection state, keepalive info, and host summary.
+//! Bottom status bar, connection state, keepalive info, and host summary.
 
 use iced::widget::{column, container, row, text, Space};
 use iced::{Background, Element, Length, Padding};
@@ -10,7 +10,7 @@ impl Oryxis {
     pub(crate) fn view_status_bar(&self) -> Element<'_, Message> {
         let status_text = if let Some(idx) = self.active_tab {
             if let Some(tab) = self.tabs.get(idx) {
-                format!("● {} — connected", tab.label)
+                format!("● {}, connected", tab.label)
             } else {
                 crate::i18n::t("no_active_connection").into()
             }
@@ -24,7 +24,7 @@ impl Oryxis {
             OryxisColors::t().text_muted
         };
 
-        // 1 px hairline on top only — iced's Border has a single width that
+        // 1 px hairline on top only, iced's Border has a single width that
         // applies to all four sides, so a dedicated separator widget is the
         // way to keep just the top edge.
         let top_hairline = container(Space::new().height(1))

@@ -25,7 +25,7 @@ use testcontainers::{
 
 /// Username + password we hand the linuxserver/openssh-server image.
 /// Hardcoded only because the image generates these inside the
-/// container at boot — they never touch any real machine.
+/// container at boot, they never touch any real machine.
 const TEST_USER: &str = "tester";
 const TEST_PASS: &str = "testpass123";
 
@@ -70,7 +70,7 @@ async fn start_sshd() -> (
 }
 
 fn engine() -> SshEngine {
-    // Trust whatever host key the container hands us — these are
+    // Trust whatever host key the container hands us, these are
     // ephemeral fixtures, not real servers, and the test is asserting
     // protocol behaviour, not host-key policy.
     SshEngine::new()
@@ -81,7 +81,7 @@ fn engine() -> SshEngine {
 }
 
 #[tokio::test]
-#[ignore = "requires Docker — run with --ignored"]
+#[ignore = "requires Docker, run with --ignored"]
 async fn sftp_list_root_after_password_auth() {
     let (conn, password, _container) = start_sshd().await;
     let engine = engine();
@@ -96,13 +96,13 @@ async fn sftp_list_root_after_password_auth() {
     let initial = client.canonicalize(".").await.expect("canonicalize");
     let entries = client.list_dir(&initial).await.expect("list_dir");
     // The home dir is non-empty (the image plants `.ssh/` etc), but
-    // we only assert the call resolved — content varies by image
+    // we only assert the call resolved, content varies by image
     // tag and isn't load-bearing.
     let _ = entries;
 }
 
 #[tokio::test]
-#[ignore = "requires Docker — run with --ignored"]
+#[ignore = "requires Docker, run with --ignored"]
 async fn sftp_write_read_round_trip() {
     let (conn, password, _container) = start_sshd().await;
     let engine = engine();
@@ -135,10 +135,10 @@ async fn sftp_write_read_round_trip() {
 }
 
 #[tokio::test]
-#[ignore = "requires Docker — run with --ignored"]
+#[ignore = "requires Docker, run with --ignored"]
 async fn sftp_recursive_dir_delete_via_exec() {
     // `remove_dir_recursive` shells out to `rm -rf` over an exec
-    // channel — this exercises the SshSession→exec path, which the
+    // channel, this exercises the SshSession→exec path, which the
     // unit tests can't cover.
     let (conn, password, _container) = start_sshd().await;
     let engine = engine();
@@ -175,7 +175,7 @@ async fn sftp_recursive_dir_delete_via_exec() {
 }
 
 #[tokio::test]
-#[ignore = "requires Docker — run with --ignored"]
+#[ignore = "requires Docker, run with --ignored"]
 async fn sftp_open_sibling_for_parallel_pool() {
     // Validates the SFTP sibling-channel path used by the parallel
     // transfer worker pool: opening N independent subsystem channels
@@ -198,7 +198,7 @@ async fn sftp_open_sibling_for_parallel_pool() {
     }
 }
 
-/// Sequentially open `n` siblings off `primary` — keeps the test
+/// Sequentially open `n` siblings off `primary`, keeps the test
 /// simple without pulling in a futures crate just for `join_all`.
 async fn futures_or_join(
     primary: oryxis_ssh::SftpClient,

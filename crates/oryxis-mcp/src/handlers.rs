@@ -171,7 +171,7 @@ pub async fn handle_ssh_execute(
 
     // Resolve the effective proxy (saved identity OR inline) and hydrate
     // its password from the encrypted vault column, then collapse onto
-    // `auth_conn.proxy` — the engine only reads that field.
+    // `auth_conn.proxy`, the engine only reads that field.
     auth_conn.proxy = vault.resolve_proxy(&auth_conn).ok().flatten();
 
     // Build engine and connect

@@ -1,7 +1,7 @@
 //! Free-standing UI helper widgets used across views.
 //!
 //! Each helper is a `pub(crate) fn` returning an `Element<'_, Message>`. None of
-//! them borrow from the top-level `Oryxis` struct — keeping them here lets view
+//! them borrow from the top-level `Oryxis` struct, keeping them here lets view
 //! modules compose these building blocks without polluting the state machine file.
 
 use iced::border::Radius;
@@ -20,7 +20,7 @@ pub const INPUT_RADIUS: f32 = 10.0;
 
 /// Build a `Row` from elements written in left-to-right *reading order*,
 /// reversing them when the active layout direction is RTL. Use anywhere the
-/// physical placement of children should mirror with the layout setting —
+/// physical placement of children should mirror with the layout setting
 /// e.g. sidebar vs. content, leading/trailing icon pairs.
 ///
 /// The `iced::widget::row!` macro takes positional children and can't be
@@ -34,7 +34,7 @@ pub fn dir_row<'a, M: 'a>(items: Vec<Element<'a, M>>) -> Row<'a, M> {
     }
 }
 
-/// Horizontal alignment for content that should hug the *leading* edge —
+/// Horizontal alignment for content that should hug the *leading* edge
 /// `Left` under LTR, `Right` under RTL. Use on `Column::align_x`,
 /// `Container::align_x`, or `text(...).align_x(...)` inside `Length::Fill`
 /// regions where children would otherwise glue to the physical left edge.
@@ -63,7 +63,7 @@ pub fn card_grid_columns(available_width: f32, min_card_width: f32, h_gap: f32) 
 /// partial last rows are padded with invisible fillers so the trailing
 /// card keeps the same per-card width as the full rows above.
 ///
-/// Honours the active layout direction via `dir_row` — under RTL each
+/// Honours the active layout direction via `dir_row`, under RTL each
 /// row's children are reversed, but the row order (top-to-bottom) stays
 /// the same.
 pub fn distribute_card_grid<'a, M: 'a>(
@@ -124,7 +124,7 @@ pub fn rounded_input_style(_theme: &Theme, status: text_input::Status) -> text_i
     }
 }
 
-/// Shared style closure for `pick_list` — matches `rounded_input_style` so
+/// Shared style closure for `pick_list`, matches `rounded_input_style` so
 /// selects and inputs sit side-by-side with the same geometry.
 pub fn rounded_pick_list_style(_theme: &Theme, status: pick_list::Status) -> pick_list::Style {
     let c = OryxisColors::t();
@@ -319,28 +319,6 @@ pub(crate) fn panel_option_pick<'a>(
     .into()
 }
 
-/// An option row with pick_list for jump host.
-pub(crate) fn panel_option_pick_jump<'a>(
-    icon_widget: iced::widget::Text<'a>,
-    label: &'a str,
-    options: Vec<String>,
-    selected: String,
-    on_change: impl Fn(String) -> Message + 'a,
-) -> Element<'a, Message> {
-    container(
-        dir_row(vec![
-            icon_widget.size(13).color(OryxisColors::t().text_muted).into(),
-            Space::new().width(10).into(),
-            text(label).size(13).color(OryxisColors::t().text_secondary).into(),
-            Space::new().width(Length::Fill).into(),
-            pick_list(Some(selected), options, |s: &String| s.clone()).on_select(on_change).width(140).padding(10).style(rounded_pick_list_style).into(),
-        ])
-        .align_y(iced::Alignment::Center),
-    )
-    .padding(Padding { top: 4.0, right: 0.0, bottom: 4.0, left: 0.0 })
-    .into()
-}
-
 pub(crate) fn settings_row<'a>(label: &'static str, value: String) -> Element<'a, Message> {
     container(
         iced::widget::row![
@@ -390,7 +368,7 @@ pub(crate) fn settings_row_link<'a>(
         .into()
 }
 
-/// Wide call-to-action button — Semibold label, theme-defined
+/// Wide call-to-action button, Semibold label, theme-defined
 /// `button_bg` / `button_text` pair, fixed 380-wide / 8 px radius.
 /// Used for empty-state primary actions on Keys / Snippets and
 /// anywhere else we want the same prominent affordance.
@@ -426,7 +404,7 @@ pub(crate) fn cta_button<'a>(label: String, msg: Message) -> Element<'a, Message
     .into()
 }
 
-/// Primary styled button — bold Inter, compact vertical padding, wide
+/// Primary styled button, bold Inter, compact vertical padding, wide
 /// horizontal padding. Used for Connect / Save / Cancel / destructive actions.
 /// On hover the background lightens; keeps consistent language with split
 /// buttons elsewhere (+ HOST, + ADD).

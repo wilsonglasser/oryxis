@@ -48,7 +48,7 @@ struct ExportConnection {
     #[serde(flatten)]
     connection: Connection,
     password: Option<String>,
-    /// Proxy password from the encrypted `proxy_password` column —
+    /// Proxy password from the encrypted `proxy_password` column
     /// shipped here so a portable export round-trips inline proxies
     /// with auth. Defaults to None on import of older files.
     #[serde(default)]
@@ -81,7 +81,7 @@ struct ExportCloudProfile {
     #[serde(flatten)]
     profile: CloudProfile,
     /// Encrypted-on-disk secret blob (access key secret, kubeconfig
-    /// inline contents, …) — round-tripped here so a fresh device picks
+    /// inline contents, …), round-tripped here so a fresh device picks
     /// up working cloud credentials. `None` means no secret was set.
     secret: Option<String>,
 }
@@ -315,7 +315,7 @@ pub fn export_vault(
         }
     }
 
-    // Same shape for proxy identities — included on full export, or
+    // Same shape for proxy identities, included on full export, or
     // filtered by `proxy_identity_id` references when host-scoped.
     let mut proxy_identities = Vec::new();
     for pi in &all_proxy_identities {
@@ -330,7 +330,7 @@ pub fn export_vault(
 
     // Cloud profiles referenced from `Connection.cloud_ref` (filtered)
     // or all of them (full export). The dynamic-group `cloud_query`
-    // path will land in the same dep set in a later PR — for now only
+    // path will land in the same dep set in a later PR, for now only
     // `cloud_ref` is wired.
     let dep_cloud_profile_ids: Vec<uuid::Uuid> = if is_filtered {
         filtered_connections
@@ -431,7 +431,7 @@ pub fn import_vault(
 
     // Import order: groups → keys → identities → connections → snippets → known_hosts
 
-    // Groups (no updated_at comparison — skip if exists)
+    // Groups (no updated_at comparison, skip if exists)
     for group in &payload.groups {
         if existing_groups.iter().any(|g| g.id == group.id) {
             result.groups_skipped += 1;
@@ -466,7 +466,7 @@ pub fn import_vault(
         }
     }
 
-    // Proxy identities (LWW by updated_at) — must come before
+    // Proxy identities (LWW by updated_at), must come before
     // connections so `proxy_identity_id` references resolve once the
     // connections land in the next loop.
     for export_pi in &payload.proxy_identities {
@@ -492,7 +492,7 @@ pub fn import_vault(
         }
     }
 
-    // Cloud profiles (LWW by updated_at) — must come before connections
+    // Cloud profiles (LWW by updated_at), must come before connections
     // so `cloud_ref.profile_id` references resolve once the connections
     // land in the next loop. Same pattern as proxy identities above.
     for export_cp in &payload.cloud_profiles {
@@ -513,7 +513,7 @@ pub fn import_vault(
     }
 
     // Connections (LWW by updated_at). After save, restore the proxy
-    // password into its own encrypted column — `save_connection` only
+    // password into its own encrypted column, `save_connection` only
     // touches the main connection password.
     for export_conn in &payload.connections {
         let added_or_updated = if let Some(existing) = existing_connections
@@ -535,7 +535,7 @@ pub fn import_vault(
         };
         if added_or_updated {
             // Persist the proxy password (or clear it) only when we
-            // actually wrote the connection — skipped (older) entries
+            // actually wrote the connection, skipped (older) entries
             // keep their existing column intact.
             store.set_proxy_password(
                 &export_conn.connection.id,

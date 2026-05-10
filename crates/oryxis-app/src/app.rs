@@ -17,7 +17,7 @@ use uuid::Uuid;
 /// iced's zero-arg boot signature.
 pub static AUTO_CONNECT: OnceLock<Uuid> = OnceLock::new();
 
-/// Inherited vault master password — populated by `main.rs` when the
+/// Inherited vault master password, populated by `main.rs` when the
 /// parent process spawned us with `--inherit-vault` and piped the
 /// password through stdin. Used at boot to silently unlock the vault so
 /// the user doesn't have to re-type for "Duplicate in New Window".
@@ -44,7 +44,7 @@ pub(crate) const CARD_WIDTH: f32 = 280.0;
 /// Monospace fonts offered in the terminal font picker.
 ///
 /// `Source Code Pro` is bundled with the binary (see `main.rs`). The rest are
-/// looked up from the OS fontconfig — if not installed, cosmic-text falls back
+/// looked up from the OS fontconfig, if not installed, cosmic-text falls back
 /// gracefully to the system default monospace.
 pub(crate) const TERMINAL_FONTS: &[&str] = &[
     "Source Code Pro",
@@ -99,7 +99,7 @@ pub struct Oryxis {
     pub(crate) hovered_tab: Option<usize>,
     pub(crate) show_new_tab_picker: bool,
     pub(crate) new_tab_picker_search: String,
-    /// Termius-style "Jump to" modal — lists all open tabs (plus Quick
+    /// Termius-style "Jump to" modal, lists all open tabs (plus Quick
     /// connect entries) for direct navigation when the bar runs out of
     /// horizontal room. Triggered by the `⋯` button in the tab bar or
     /// Ctrl+J anywhere.
@@ -117,6 +117,11 @@ pub struct Oryxis {
     /// `terminal_theme` field is updated as soon as the user picks
     /// a card.
     pub(crate) show_theme_picker: bool,
+    /// Whether the jump host picker modal is open. Opened from the
+    /// "Jump Host" row in the host editor's Advanced section. Search
+    /// filters by label, hostname, group, or username.
+    pub(crate) show_jump_host_picker: bool,
+    pub(crate) jump_host_search: String,
     pub(crate) connecting: Option<ConnectionProgress>,
     /// Counter that advances ~every 100ms while a connection is in progress.
     /// Used only to drive the pulsing "loading" ring on the active step dot.
@@ -125,7 +130,7 @@ pub struct Oryxis {
     /// forwarded to the OS. iced's `MouseArea` fires `on_press` on
     /// **both** clicks of a double-click (before the `on_double_click`
     /// lands), and forwarding two `iced::window::drag(...)` calls in
-    /// quick succession leaves the OS in a flaky state — Windows races
+    /// quick succession leaves the OS in a flaky state, Windows races
     /// it with our follow-up `toggle_maximize` / `resize` and the
     /// window snaps right back. We swallow press handlers within a
     /// short window after the first one to keep the double-click path
@@ -143,10 +148,10 @@ pub struct Oryxis {
 
     // Card hover & context menu
     pub(crate) hovered_card: Option<usize>,
-    /// Hovered folder card on the dashboard (root view) — drives the
+    /// Hovered folder card on the dashboard (root view), drives the
     /// `⋮` menu visibility, mirroring `hovered_card` for hosts.
     pub(crate) hovered_folder_card: Option<Uuid>,
-    /// Hovered key card / identity card in the keychain view — same
+    /// Hovered key card / identity card in the keychain view, same
     /// hover-only-dots UX as host cards.
     pub(crate) hovered_key_card: Option<usize>,
     pub(crate) hovered_identity_card: Option<usize>,
@@ -154,10 +159,10 @@ pub struct Oryxis {
 
     // Floating overlay menu
     pub(crate) overlay: Option<OverlayState>,
-    /// Folder rename inline editor — `Some((group_id, current_input))`
+    /// Folder rename inline editor, `Some((group_id, current_input))`
     /// while the modal is open.
     pub(crate) folder_rename: Option<(Uuid, String)>,
-    /// Folder delete confirmation — group ID waiting for the user to
+    /// Folder delete confirmation, group ID waiting for the user to
     /// pick "move hosts to root" / "delete with hosts" / cancel.
     pub(crate) folder_delete: Option<Uuid>,
     /// Connection ID to auto-open after the vault unlocks. Set from the
@@ -175,7 +180,7 @@ pub struct Oryxis {
     pub(crate) window_size: iced::Size,
     /// Live keyboard modifier state, updated from `ModifiersChanged`
     /// keyboard events. Used by SFTP click logic for ctrl/shift-click
-    /// selection — iced's MouseArea events don't include modifiers.
+    /// selection, iced's MouseArea events don't include modifiers.
     pub(crate) modifiers: keyboard::Modifiers,
     /// Whether the OS window is currently maximized. Used by the custom
     /// chrome to swap the maximize glyph for a "restore" glyph. Toggled
@@ -189,7 +194,7 @@ pub struct Oryxis {
     pub(crate) key_import_label: String,
     pub(crate) key_import_content: text_editor::Content,
     pub(crate) key_import_pem: String,  // raw string for import
-    /// Passphrase for an encrypted private key. Lives in memory only — once
+    /// Passphrase for an encrypted private key. Lives in memory only, once
     /// the key is decrypted on import, it is re-encoded unencrypted and the
     /// vault's master key takes over for at-rest protection.
     pub(crate) key_import_passphrase: String,
@@ -217,7 +222,7 @@ pub struct Oryxis {
     pub(crate) identity_context_menu: Option<usize>,
     pub(crate) show_keychain_add_menu: bool,
 
-    // Proxy Identities — reusable proxy configs edited inline inside
+    // Proxy Identities, reusable proxy configs edited inline inside
     // the Settings → Proxies section. Form state is in-memory only
     // until SaveProxyIdentity flushes to the vault.
     pub(crate) proxy_identities: Vec<oryxis_core::models::proxy_identity::ProxyIdentity>,
@@ -234,7 +239,7 @@ pub struct Oryxis {
     pub(crate) editing_proxy_identity_id: Option<Uuid>,
     pub(crate) proxy_identity_form_error: Option<String>,
 
-    // Cloud Accounts — CloudProfile rows + the wizard form. Wizard is
+    // Cloud Accounts, CloudProfile rows + the wizard form. Wizard is
     // intentionally minimal in v0.6 PR 3: provider + AWS profile auth
     // only. Access key + SSO + the discover-and-pick step land in
     // follow-up PRs once the foundation is exercised.
@@ -245,11 +250,25 @@ pub struct Oryxis {
     pub(crate) cloud_form_auth_kind: crate::state::CloudAuthChoice,
     pub(crate) cloud_form_aws_profile_name: String,
     pub(crate) cloud_form_aws_region: String,
+    /// Access Key auth fields. The secret access key follows the
+    /// password-tri-state convention (`*_touched` differentiates
+    /// "leave alone" from "explicitly cleared").
+    pub(crate) cloud_form_aws_access_key_id: String,
+    pub(crate) cloud_form_aws_access_key_secret: String,
+    pub(crate) cloud_form_aws_access_key_secret_touched: bool,
+    pub(crate) cloud_form_aws_access_key_secret_visible: bool,
+    pub(crate) cloud_form_aws_access_key_session_token: String,
+    pub(crate) cloud_form_aws_has_existing_secret: bool,
+    /// SSO (IAM Identity Center) auth fields.
+    pub(crate) cloud_form_aws_sso_start_url: String,
+    pub(crate) cloud_form_aws_sso_region: String,
+    pub(crate) cloud_form_aws_sso_account_id: String,
+    pub(crate) cloud_form_aws_sso_role_name: String,
     pub(crate) editing_cloud_profile_id: Option<Uuid>,
     pub(crate) cloud_form_error: Option<String>,
     pub(crate) cloud_form_test_state: crate::state::CloudTestState,
     pub(crate) cloud_provider_registry: std::sync::Arc<oryxis_cloud::CloudProviderRegistry>,
-    /// Discovery panel state — opened from a profile card or from the
+    /// Discovery panel state, opened from a profile card or from the
     /// post-save flow. Carries the in-flight or completed result so
     /// the user picks resources without paying another API round-trip.
     pub(crate) cloud_discover_visible: bool,
@@ -259,16 +278,50 @@ pub struct Oryxis {
     pub(crate) cloud_discover_selected_ec2: std::collections::HashSet<String>,
     /// ECS service identifiers checked in the discovery panel.
     /// Key format: `cluster/service/container` (the same triple a
-    /// `CloudQuery::EcsTasks` carries) — guarantees a stable id even
+    /// `CloudQuery::EcsTasks` carries), guarantees a stable id even
     /// when service or container names collide across clusters.
     pub(crate) cloud_discover_selected_ecs: std::collections::HashSet<String>,
-    /// Live filter for the discovery panel — matches against label,
+    /// Live filter for the discovery panel, matches against label,
     /// instance-id, hostname, IP. Lowercased substring match.
     pub(crate) cloud_discover_filter: String,
     /// Section names currently collapsed in the discovery panel
     /// ("ec2" / "ecs" today; future K8s sections add their own keys).
-    /// Persisted only in memory — re-opens default to expanded.
+    /// Persisted only in memory, re-opens default to expanded.
     pub(crate) cloud_discover_collapsed: std::collections::HashSet<String>,
+    /// Default transport applied to every EC2 host imported in this
+    /// discovery session. Lets the user pick "Instance Connect" once
+    /// instead of editing 10 hosts after the fact. Stored at the
+    /// `Oryxis` level (not on the `OverlayState`) so the choice
+    /// survives discovery refreshes.
+    pub(crate) cloud_discover_default_transport:
+        oryxis_core::models::cloud::TransportKind,
+    /// Modal that asks the user to pick the transport for the EC2
+    /// hosts about to be imported. Only opened when there's at
+    /// least one EC2 selected, pure-ECS imports skip straight to
+    /// the import logic since dynamic groups always use ECS Exec.
+    pub(crate) cloud_import_confirm_visible: bool,
+    /// Per-dynamic-group resolve cache. Populated when the user opens
+    /// the group (or hits Refresh inside it); reused on re-open until
+    /// the user manually refreshes.
+    pub(crate) cloud_dynamic_group_state:
+        std::collections::HashMap<Uuid, crate::state::DynamicGroupState>,
+
+    /// Edit-dynamic-group form. Opened from the ⋮ menu on a dynamic
+    /// group card (root or nested). Edits the `cloud_query.template`
+    /// fields: username, initial_command, transport, key, identity.
+    pub(crate) cloud_dynamic_form_visible: bool,
+    pub(crate) cloud_dynamic_form_group_id: Option<Uuid>,
+    pub(crate) cloud_dynamic_form_username: String,
+    pub(crate) cloud_dynamic_form_initial_command: String,
+    pub(crate) cloud_dynamic_form_transport: oryxis_core::models::cloud::TransportKind,
+    /// Selected key label (or `"(none)"`); resolved to a `key_id` on save.
+    pub(crate) cloud_dynamic_form_selected_key: Option<String>,
+    /// Selected identity label (or `"(none)"`); resolved to an `identity_id` on save.
+    pub(crate) cloud_dynamic_form_selected_identity: Option<String>,
+
+    /// Hover tracking for the kebab on dynamic-group cards (root + nested).
+    pub(crate) hovered_dynamic_group_card: Option<Uuid>,
+
     /// Card-hover state for the kebab "..." button on cloud profile
     /// cards in Settings → Cloud, mirroring `hovered_card` /
     /// `hovered_folder_card` for hosts and folders.
@@ -290,10 +343,12 @@ pub struct Oryxis {
 
     // Session logs (terminal recording)
     pub(crate) session_logs: Vec<oryxis_vault::SessionLogEntry>,
+    pub(crate) session_logs_page: usize,
+    pub(crate) session_logs_total: usize,
     pub(crate) viewing_session_log: Option<(Uuid, String)>, // (log_id, rendered_text)
 
     // Terminal theme
-    /// Theme derived from the active app theme — used as the global
+    /// Theme derived from the active app theme, used as the global
     /// fallback when neither `terminal_theme_override` nor a per-host
     /// override is set.
     pub(crate) terminal_theme: oryxis_terminal::TerminalTheme,
@@ -349,7 +404,7 @@ pub struct Oryxis {
     /// settings. `Some("")` → in-flight; `Some("Up to date.")` → no newer
     /// release; `Some("Error: …")` on failure. `None` hides the line.
     pub(crate) update_check_status: Option<String>,
-    /// Attempt counters keyed by connection UUID — persists across tab recreations.
+    /// Attempt counters keyed by connection UUID, persists across tab recreations.
     pub(crate) reconnect_counters: std::collections::HashMap<Uuid, u32>,
 
     // AI Chat settings
@@ -367,20 +422,25 @@ pub struct Oryxis {
     pub(crate) vault_password_error: Option<String>,
     pub(crate) vault_destroy_confirm: bool,
 
-    /// Transient bottom-of-chat status chip — currently used for the
+    /// Transient bottom-of-chat status chip, currently used for the
     /// "Copied to clipboard" feedback after a Copy button click.
     /// `Some(text)` → render the chip; cleared after ~1.8 s by a
     /// `Task::perform`-spawned `ToastClear` round-trip.
     pub(crate) toast: Option<String>,
 
+    /// Generic blocking error dialog. Use for cases the user must read
+    /// (install instructions, fatal config errors) where a 1.8 s toast
+    /// would vanish before they can act on it. `None` = no dialog.
+    pub(crate) error_dialog: Option<crate::state::ErrorDialog>,
+
     /// Cached list of available local shells (PowerShell, cmd, WSL
-    /// distros, etc.) — populated lazily when the user opens the
+    /// distros, etc.), populated lazily when the user opens the
     /// Local Shell picker so we don't pay the `wsl --list` spawn on
     /// every boot. `None` means not detected yet.
     pub(crate) local_shells: Option<Vec<crate::state::LocalShellSpec>>,
     /// True while the Local Shell picker overlay is showing. Only
     /// surfaces on Windows where there's a real choice between cmd /
-    /// PowerShell / WSL distros — non-Windows just spawns the
+    /// PowerShell / WSL distros, non-Windows just spawns the
     /// default shell directly.
     pub(crate) local_shell_picker_open: bool,
 
@@ -388,7 +448,7 @@ pub struct Oryxis {
     pub(crate) chat_input: text_editor::Content,
     pub(crate) chat_loading: bool,
     /// True when the user's scroll is anchored at (or very near) the bottom
-    /// of the chat history — used to decide whether new assistant messages
+    /// of the chat history, used to decide whether new assistant messages
     /// should auto-scroll. If the user has scrolled up to read older
     /// content, we leave them where they are.
     pub(crate) chat_scroll_at_bottom: bool,
@@ -409,10 +469,10 @@ pub struct Oryxis {
     pub(crate) sync_mode: String,
     /// When on, sync wraps connection / identity / proxy-identity
     /// payloads with their decrypted passwords so peers can mirror
-    /// them. Off by default — passwords stay device-local until the
+    /// them. Off by default, passwords stay device-local until the
     /// user explicitly opts in via Settings → Sync.
     pub(crate) sync_passwords: bool,
-    /// When on, the dashboard root shows two sections — Groups (manual
+    /// When on, the dashboard root shows two sections, Groups (manual
     /// folder cards) and Hosts (a flat list of every connection,
     /// including those that live inside a group). When off, root
     /// matches the legacy behaviour: groups at top, only ungrouped
@@ -435,7 +495,7 @@ pub struct Oryxis {
     pub(crate) import_password: String,
     pub(crate) import_file_data: Option<Vec<u8>>,
     pub(crate) import_status: Option<Result<String, String>>,
-    /// Latest result of an `~/.ssh/config` import — `Ok(message)` is
+    /// Latest result of an `~/.ssh/config` import, `Ok(message)` is
     /// rendered as a green banner, `Err` as red, in the Security
     /// section's import card.
     pub(crate) ssh_config_import_status: Option<Result<String, String>>,

@@ -1,4 +1,4 @@
-//! `Oryxis::handle_tabs` — match arms for the tab strip + tab modals
+//! `Oryxis::handle_tabs`, match arms for the tab strip + tab modals
 //! (new-tab picker, tab-jump, icon picker), card hover/menu, folder
 //! actions, window chrome (drag/resize/min/max/close).
 
@@ -67,7 +67,7 @@ impl Oryxis {
             Message::MouseMoved(pos) => {
                 self.mouse_position = pos;
                 // While the chat-sidebar resize handle is held down, the
-                // sidebar width tracks the cursor — dragging left grows
+                // sidebar width tracks the cursor, dragging left grows
                 // the panel, dragging right shrinks it. Clamp to a sane
                 // band so the user can't accidentally make it unusable.
                 if let Some((start_x, start_width)) = self.chat_sidebar_drag {
@@ -92,7 +92,7 @@ impl Oryxis {
                 // Spatial debounce: drag-resize emits one event per pixel.
                 // Quantising to an 8 px grid means most consecutive events
                 // resolve to the same `window_size` so we don't re-state
-                // the field — and view()s that depend on it don't reflow
+                // the field, and view()s that depend on it don't reflow
                 // a responsive grid on every frame. Cuts reflow frequency
                 // by ~8x during a sustained drag, which keeps iced's
                 // subscription channel from filling up and dropping events
@@ -118,7 +118,7 @@ impl Oryxis {
                 }));
             }
             Message::WindowResizeDrag(direction) => {
-                // Ignore resize requests while maximized — the window has no
+                // Ignore resize requests while maximized, the window has no
                 // borders to grab and the OS will reject/misbehave on WinIt.
                 if self.window_maximized {
                     return Ok(Task::none());
@@ -145,7 +145,7 @@ impl Oryxis {
                             iced::window::monitor_position(id).then(move |origin_opt| {
                                 // Default to (0, 0) when the platform
                                 // can't report the monitor origin so we
-                                // at least fall back to the primary —
+                                // at least fall back to the primary
                                 // same as the old behaviour.
                                 let origin = origin_opt.unwrap_or(Point::ORIGIN);
                                 Task::batch([
@@ -239,7 +239,7 @@ impl Oryxis {
                 self.tab_jump_search = v;
             }
             Message::TabBarWheel(dy) => {
-                // Vertical wheel over the tab bar scrolls horizontally —
+                // Vertical wheel over the tab bar scrolls horizontally
                 // iced's horizontal-only scrollable ignores y deltas, so
                 // we translate them via scroll_by here. Sign flip so
                 // wheel-down brings later tabs into view (matches the
@@ -401,7 +401,7 @@ impl Oryxis {
                 // bound to a saved connection we pass `--connect <uuid>`
                 // so the new window auto-opens it. When the user has a
                 // master password we also pass `--inherit-vault` and pipe
-                // the password through stdin — keeps the secret out of
+                // the password through stdin, keeps the secret out of
                 // command-line arguments (which `ps aux` would expose).
                 let connect_uuid = self.tabs.get(idx).and_then(|tab| {
                     let base_label = tab.label.trim_end_matches(" (disconnected)").to_string();
@@ -442,7 +442,7 @@ impl Oryxis {
                 }
             }
             Message::ShowFolderActions(gid) => {
-                // Anchor the menu to the cursor — matches the host-card
+                // Anchor the menu to the cursor, matches the host-card
                 // "..." pattern. The global MouseMoved subscription keeps
                 // `mouse_position` fresh.
                 self.overlay = Some(OverlayState {

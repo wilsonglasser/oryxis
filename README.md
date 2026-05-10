@@ -149,6 +149,43 @@ Most SSH clients are either powerful but ugly (PuTTY), pretty but Electron-heavy
 - **Terminal context** — AI receives the last ~50 lines of terminal output for context.
 - **Custom system prompt** — Add additional instructions in Settings.
 
+### Cloud Accounts (AWS)
+- **First-class AWS provider** — Manage encrypted `CloudProfile` rows
+  in `Settings → Cloud`. Three auth flavors: named profile from
+  `~/.aws/config`, static access key + secret + optional session token,
+  or IAM Identity Center / SSO. Each profile has a "Test credentials"
+  button that hits `sts:GetCallerIdentity` so misconfigurations
+  surface before discovery.
+- **Discovery & Import** — From the Hosts toolbar, "+ Host [▾] →
+  Discover" lists every EC2 instance and ECS service the profile can
+  see, grouped by region (EC2) and by region / cluster (ECS). Live
+  filter, hidden empty sections, greyed-out already-imported entries,
+  per-row checkboxes. Pick the default transport (SSH / EC2 Instance
+  Connect / SSM Session) at import time.
+- **Provider folder layout** — Imports nest under a single top-level
+  folder named after the cloud profile. EC2 hosts use the folder as
+  their `group_id`; ECS services materialize as **dynamic groups**
+  (`Group` rows with `cloud_query`) parented under it. Renaming the
+  profile renames the folder.
+- **EC2 Instance Connect** — Push a one-shot SSH public key through
+  `ec2-instance-connect:SendSSHPublicKey`, then complete the SSH
+  handshake with the linked key. AMI-aware OS user inference (Amazon
+  Linux → `ec2-user`, Ubuntu → `ubuntu`, Debian → `admin`) keeps
+  imported hosts one-click.
+- **SSM Session for EC2** — Bypass open ports / public IPs entirely.
+  `transport_pref = Ssm` opens a Session Manager session through the
+  bundled `session-manager-plugin`. Private subnets work out of the
+  box once the instance has the SSM agent and IAM permissions.
+- **ECS Exec into a live container** — Dynamic groups expand on click
+  to list running tasks; selecting a task starts an interactive
+  `aws ecs execute-command` session into the configured container.
+  Per-(service, container) editor pins the transport, OS user,
+  initial command, key, and identity.
+- **Brand SVG icons** — Provider folders and dynamic groups render
+  with native AWS / ECS / Kubernetes / Docker / distro / BSD / OS
+  glyphs. The previous SimpleIcons font subset (1.5 MB `.ttf`) was
+  retired in favor of bundled SVGs.
+
 ### Identity System
 - **Reusable credentials** — Create Identities (username + password + key) linked to multiple hosts.
 - **Autocomplete** — Type in username field to see matching identities, click to link.

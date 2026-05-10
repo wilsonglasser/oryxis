@@ -82,6 +82,7 @@ const BRAND_ICONS: &[(&str, &[u8])] = &[
     brand_svg!("opnsense"),
     brand_svg!("talos"),
     brand_svg!("aws"),
+    brand_svg!("amazonlinux"),
     brand_svg!("ecs"),
     brand_svg!("windows"),
     brand_svg!("oracle"),
@@ -141,6 +142,9 @@ fn brand_color(id: &str) -> Option<Color> {
         "talos" => Color::from_rgb8(0x36, 0x46, 0x6A),
         // Cloud / corporate
         "aws" => Color::from_rgb8(0xFF, 0x99, 0x00),
+        // Amazon Linux mascot bird, same orange family as AWS but kept
+        // separate so the brand reads as the OS, not the cloud provider.
+        "amazonlinux" => Color::from_rgb8(0xF3, 0x99, 0x1D),
         // ECS shares AWS orange so the chip reads "AWS family" but
         // the glyph (the hexagonal-box logo) tells you which service.
         "ecs" => Color::from_rgb8(0xFF, 0x99, 0x00),
@@ -202,12 +206,13 @@ pub(crate) fn canonical_brand_id(id: &str) -> Option<&'static str> {
         "pfsense" => "pfsense",
         "opnsense" => "opnsense",
         "talos" | "talosos" => "talos",
-        // Cloud / corporate brands. `aws` covers every flavour of
-        // Amazon Linux + EC2-bootstrapped images so a brand-new host
-        // (no detected_os yet) still picks up the smile-arrow when
-        // the username hints at AWS.
-        "aws" | "amzn" | "amazon" | "amazonlinux" | "amazonlinux2"
-        | "amazonlinux2023" | "amazonec2" | "amazonwebservices"
+        // Amazon Linux distros land on the dedicated bird mascot. The
+        // generic `aws` smile-arrow is reserved for cases where the
+        // host is just *hosted on* AWS (EC2-bootstrapped images
+        // without a detected OS, or username-only hints like
+        // `ec2-user` before the silent OS probe runs).
+        "amzn" | "amazonlinux" | "amazonlinux2" | "amazonlinux2023" => "amazonlinux",
+        "aws" | "amazon" | "amazonec2" | "amazonwebservices"
         | "ec2-user" | "ssm-user" => "aws",
         "ecs" | "amazonecs" | "ecstask" | "ecstasks"
         | "elasticcontainerservice" => "ecs",
@@ -281,7 +286,7 @@ pub(crate) fn parse_hex_color(s: &str) -> Option<Color> {
 }
 
 // ---------------------------------------------------------------------------
-// Custom icon picker — library of user-selectable icons.
+// Custom icon picker, library of user-selectable icons.
 // ---------------------------------------------------------------------------
 
 /// Entries shown in the icon picker grid. `id` is persisted in
@@ -301,6 +306,7 @@ pub(crate) const CUSTOM_ICONS: &[(&str, &str)] = &[
     ("opensuse", "openSUSE"),
     ("linux", "Linux"),
     ("aws", "Amazon"),
+    ("amazonlinux", "Amazon Linux"),
     ("freebsd", "FreeBSD"),
     ("macos", "macOS"),
     ("gentoo", "Gentoo"),

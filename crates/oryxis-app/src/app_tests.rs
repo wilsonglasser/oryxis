@@ -8,7 +8,7 @@ use crate::sftp_helpers::{parent_path, remote_join, transfer_item_label, unique_
 
 #[test]
 fn remote_join_root_special_case() {
-    // The root case is the only one that tripped us in real use —
+    // The root case is the only one that tripped us in real use
     // `/` + `foo` was producing `//foo` until we special-cased it.
     assert_eq!(remote_join("/", "foo"), "/foo");
     assert_eq!(remote_join("/home", "foo"), "/home/foo");
@@ -67,7 +67,7 @@ fn unique_entry_name_handles_extensionless_files() {
 
 #[test]
 fn unique_entry_name_handles_dotfiles() {
-    // `.bashrc` has no "stem.ext" split — the leading dot is part
+    // `.bashrc` has no "stem.ext" split, the leading dot is part
     // of the name, so the suffix lands at the end.
     let busy: std::collections::HashSet<String> = [".bashrc"]
         .iter()
@@ -75,7 +75,7 @@ fn unique_entry_name_handles_dotfiles() {
         .collect();
     let result = unique_entry_name(".bashrc", |n| !busy.contains(n));
     // Either "bashrc copy" with the leading dot eaten by the
-    // rsplit_once boundary check, or ".bashrc copy" — accept the
+    // rsplit_once boundary check, or ".bashrc copy", accept the
     // function's actual behaviour and lock it in here.
     assert_ne!(result, ".bashrc");
     assert!(!busy.contains(&result));
@@ -118,7 +118,7 @@ fn transfer_item_label_marks_directories() {
 // ---------------------------------------------------------------------------
 // Property-based tests
 //
-// Fuzz-style coverage for the path / name helpers — generates random
+// Fuzz-style coverage for the path / name helpers, generates random
 // strings through proptest and asserts invariants that should hold
 // regardless of input shape. Catches edge cases the hand-written
 // examples missed (empty strings, embedded slashes, weird unicode,
@@ -132,7 +132,7 @@ proptest! {
     fn prop_remote_join_never_doubles_slash(
         // Caller contract: `dir` is a well-formed POSIX absolute path
         // (single leading slash, no embedded `//`). Generate strings
-        // matching that — `/segment/segment/...` with no doubles.
+        // matching that, `/segment/segment/...` with no doubles.
         dir in "/(([a-zA-Z0-9_-]+)(/[a-zA-Z0-9_-]+)*)?",
         basename in "[a-zA-Z0-9_.-]+",
     ) {
@@ -183,7 +183,7 @@ proptest! {
 
     #[test]
     fn prop_parent_path_idempotent_on_root(
-        // "/" repeated some number of times — parent of any all-slash
+        // "/" repeated some number of times, parent of any all-slash
         // string should still be "/".
         n in 1usize..10,
     ) {

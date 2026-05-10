@@ -6,7 +6,7 @@ pub struct Identity {
     pub id: Uuid,
     pub label: String,
     pub username: Option<String>,
-    // password is NOT stored here — it lives encrypted in the vault DB
+    // password is NOT stored here, it lives encrypted in the vault DB
     pub key_id: Option<Uuid>,
     pub created_at: chrono::DateTime<chrono::Utc>,
     pub updated_at: chrono::DateTime<chrono::Utc>,

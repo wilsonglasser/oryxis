@@ -1,4 +1,4 @@
-//! `Oryxis::handle_sftp_files` — match arms for per-file SFTP
+//! `Oryxis::handle_sftp_files`, match arms for per-file SFTP
 //! operations: chmod-style Properties dialog and edit-in-place
 //! (download to temp, open in OS editor, mtime-watch + auto-upload).
 //! Pulled out of `dispatch_sftp.rs` to keep that file focused on
@@ -20,7 +20,7 @@ impl Oryxis {
                 self.sftp.row_menu = None;
                 match side {
                     crate::state::SftpPaneSide::Local => {
-                        // Local stat is sync — populate the modal in
+                        // Local stat is sync, populate the modal in
                         // place. Permissions on Windows are coarser so
                         // Apply will refuse to chmod there (the dialog
                         // still shows file info).
@@ -131,7 +131,7 @@ impl Oryxis {
                     return Ok(Task::none());
                 }
                 // Preserve the high bits (setuid / setgid / sticky)
-                // we don't expose for editing — strip rwxrwxrwx out of
+                // we don't expose for editing, strip rwxrwxrwx out of
                 // the original and overlay our edited 9 bits.
                 let new_mode = (p.original_mode & !0o777) | p.bits.to_mode();
                 if new_mode == p.original_mode {
@@ -242,7 +242,7 @@ impl Oryxis {
                         tokio::fs::write(&temp_path, &bytes)
                             .await
                             .map_err(|e| format!("write temp: {e}"))?;
-                        // Tighten temp file perms to 0600 — the file
+                        // Tighten temp file perms to 0600, the file
                         // holds plaintext remote contents and shouldn't
                         // be world-readable on a shared system. Default
                         // umask often leaves files at 0644.
@@ -319,7 +319,7 @@ impl Oryxis {
                 }
             }
             Message::SftpEditWatchTick => {
-                // Cheap mtime poll on the temp file — once we see a
+                // Cheap mtime poll on the temp file, once we see a
                 // newer timestamp than the initial download, flag the
                 // session dirty and the modal copy adapts to surface
                 // the change. The watcher subscription only ticks

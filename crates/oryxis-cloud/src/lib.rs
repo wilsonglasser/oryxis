@@ -2,7 +2,7 @@
 //!
 //! A `CloudProvider` exposes two orthogonal capabilities to the rest of
 //! Oryxis: discovery (list resources in the upstream cloud) and transport
-//! (open an interactive channel to a resource — SSH, SSM, ECS Exec,
+//! (open an interactive channel to a resource, SSH, SSM, ECS Exec,
 //! kubectl exec, etc.).
 //!
 //! This crate intentionally carries no SDK dependency. Concrete
@@ -35,7 +35,7 @@ use async_trait::async_trait;
 /// Abstraction over a cloud backend (AWS, Kubernetes, GCP, etc.).
 ///
 /// Discovery is split per resource family because the user wires each
-/// family into the UI differently — EC2 instances become individual
+/// family into the UI differently, EC2 instances become individual
 /// `Connection` rows (manual import), while ECS services and K8s
 /// workloads back dynamic `Group`s that re-resolve their children on
 /// each expand.

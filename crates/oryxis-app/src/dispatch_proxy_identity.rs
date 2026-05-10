@@ -1,4 +1,4 @@
-//! `Oryxis::handle_proxy_identity` — match arms for the Proxy
+//! `Oryxis::handle_proxy_identity`, match arms for the Proxy
 //! Identity inline form lives under `Settings → Proxies`. CRUD over
 //! reusable proxy configurations referenced from connections via
 //! `Connection.proxy_identity_id`.
@@ -47,7 +47,7 @@ impl Oryxis {
                         pi.port.to_string()
                     };
                     self.proxy_identity_form_username = pi.username.clone().unwrap_or_default();
-                    // Mirror the connection-password UX — never pre-fill the
+                    // Mirror the connection-password UX, never pre-fill the
                     // encrypted password, just flag that one exists so the
                     // user can leave it untouched to preserve.
                     self.proxy_identity_form_password = String::new();
@@ -169,7 +169,7 @@ impl Oryxis {
                 identity.updated_at = now;
 
                 // Only forward the password to the vault when the user
-                // actually edited the field — preserves the existing
+                // actually edited the field, preserves the existing
                 // encrypted value otherwise (mirrors `save_identity`).
                 let password_arg = if self.proxy_identity_form_password_touched {
                     if self.proxy_identity_form_password.is_empty() {

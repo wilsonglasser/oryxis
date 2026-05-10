@@ -1,4 +1,4 @@
-//! `Oryxis::handle_sftp` — match arms for the SFTP pane: navigation,
+//! `Oryxis::handle_sftp`, match arms for the SFTP pane: navigation,
 //! filtering, transfers (upload/download/duplicate), property edits,
 //! row interactions, drag-and-drop, edit-in-place. The single biggest
 //! domain in the dispatch table.
@@ -34,7 +34,7 @@ impl Oryxis {
                 self.sftp.remote_entries.clear();
 
                 // Reuse an existing SSH session whenever a terminal tab is
-                // already pointed at this host — saves a TCP round-trip
+                // already pointed at this host, saves a TCP round-trip
                 // and a second auth dance.
                 let existing = self.tabs.iter().find_map(|t| {
                     let base = t.label.trim_end_matches(" (disconnected)");
@@ -76,7 +76,7 @@ impl Oryxis {
                     ));
                 }
 
-                // No existing tab — open a brand-new SSH session, just
+                // No existing tab, open a brand-new SSH session, just
                 // for SFTP. Same credential pipeline as Message::ConnectSsh,
                 // but without spawning a terminal tab.
                 let (password, private_key) = self.resolve_credentials(&conn);
@@ -155,19 +155,19 @@ impl Oryxis {
                 // Drop the loading visual. The underlying Task::perform
                 // can't be aborted (russh-sftp has no cancel token), so
                 // a late success will still flow through SftpHostMounted
-                // / SftpRemoteLoaded — but at least the user gets the
+                // / SftpRemoteLoaded, but at least the user gets the
                 // UI back and can retry/pick another host.
                 self.sftp.remote_loading = false;
                 self.sftp.remote_error = Some("Cancelled by user".into());
             }
             Message::SftpRetryRemote => {
                 // Three cases the retry button has to cover:
-                // 1. Session is mounted (client is Some) — just re-list
+                // 1. Session is mounted (client is Some), just re-list
                 //    the current path. Network blip / op-timeout case.
                 // 2. Session lost (client is None) but the host label
-                //    is still around — re-run the full pick flow for
+                //    is still around, re-run the full pick flow for
                 //    that host. Connect-failed case.
-                // 3. No host label — fall back to the picker.
+                // 3. No host label, fall back to the picker.
                 if self.sftp.client.is_some() {
                     return Ok(Task::done(Message::SftpNavigateRemote(
                         self.sftp.remote_path.clone(),
@@ -336,7 +336,7 @@ impl Oryxis {
             Message::SftpRowRightClick(side, path, is_dir) => {
                 // If the user right-clicks a row that wasn't part of the
                 // current selection, treat the right-click as a fresh
-                // single-select — matches Finder/Explorer behaviour and
+                // single-select, matches Finder/Explorer behaviour and
                 // means menu actions never silently target a different
                 // set of rows than the visual selection suggests.
                 let target = (side, path.clone());
@@ -587,7 +587,7 @@ impl Oryxis {
                 // Begin a potential internal drag if the cursor is
                 // currently on a row in the SFTP view. The drag stays
                 // pending (active=false) until the user moves past the
-                // threshold — that way plain clicks still flow to the
+                // threshold, that way plain clicks still flow to the
                 // button's on_press handler.
                 if self.active_view != crate::state::View::Sftp {
                     return Ok(Task::none());
@@ -670,7 +670,7 @@ impl Oryxis {
                     }
                     self.sftp.selection_anchor = Some(target);
                 } else if is_dir {
-                    // Plain click on a folder still navigates — keeps
+                    // Plain click on a folder still navigates, keeps
                     // the existing one-click-to-enter feel for folders
                     // while files act as selectable items.
                     self.sftp.selected_rows.clear();

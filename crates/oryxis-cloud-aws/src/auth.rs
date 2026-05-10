@@ -1,4 +1,4 @@
-//! AWS auth — parse `CloudProfile.config` and build an `aws_config::SdkConfig`.
+//! AWS auth, parse `CloudProfile.config` and build an `aws_config::SdkConfig`.
 //!
 //! Each `auth_kind` is parsed strictly: an unknown variant returns
 //! `CloudError::Unsupported` instead of silently falling back, so a
@@ -6,6 +6,7 @@
 //! the wrong path on an older build.
 
 use aws_config::{BehaviorVersion, Region, SdkConfig};
+use aws_sdk_sts::config::Credentials;
 use oryxis_cloud::{CloudError, CloudProfile};
 use serde::{Deserialize, Serialize};
 
@@ -22,11 +23,15 @@ pub struct AwsConfigJson {
     /// fan out to `regions` instead when set.
     pub region: Option<String>,
     /// Region whitelist for discovery. Empty / absent means "use
-    /// `region` only" (no implicit fan-out — the user controls scope).
+    /// `region` only" (no implicit fan-out, the user controls scope).
     pub regions: Vec<String>,
     /// For `auth_kind = "access_key"`: the access key *id* (the secret
     /// half lives in the encrypted `cloud_profiles.secret` column).
     pub access_key_id: Option<String>,
+    /// Optional STS-style temporary credentials session token. Set
+    /// when the user pasted creds from `aws sts get-session-token` /
+    /// `assume-role` output. `None` for long-lived IAM keys.
+    pub access_key_session_token: Option<String>,
     /// For `auth_kind = "sso"`: SSO start URL (e.g.
     /// `https://acme.awsapps.com/start`).
     pub sso_start_url: Option<String>,
@@ -54,9 +59,10 @@ impl AwsConfigJson {
 /// Build an `aws_config::SdkConfig` for a given profile, optionally
 /// overriding the region (used by per-region discovery fan-out).
 ///
-/// `secret` carries the decrypted blob from `cloud_profiles.secret`
-/// when needed (access-key auth). For `profile` and `sso` it can be
-/// `None`.
+/// The decrypted secret comes from `profile.secret` (the dispatcher
+/// hydrates that field from the vault before calling). `_secret` is
+/// kept for backwards compatibility but ignored when `profile.secret`
+/// is set.
 pub async fn build_sdk_config(
     profile: &CloudProfile,
     region_override: Option<&str>,
@@ -74,7 +80,7 @@ pub async fn build_sdk_config(
     }
 
     match profile.auth_kind.as_str() {
-        // Default credential chain — picks up the named profile from
+        // Default credential chain, picks up the named profile from
         // `~/.aws/config` / `~/.aws/credentials`. Falls through to env
         // vars + container/IMDS providers when `profile_name` is unset,
         // matching what `aws CLI` does.
@@ -83,15 +89,64 @@ pub async fn build_sdk_config(
                 loader = loader.profile_name(name);
             }
         }
-        // Access key auth + SSO are stubbed for this PR — they land in
-        // the next batch of PRs once the wizard surfaces them. We don't
-        // silently downgrade to the default chain because that would
-        // authenticate as the wrong identity.
-        "access_key" | "sso" => {
-            return Err(CloudError::Unsupported(format!(
-                "AWS auth_kind \"{}\" is not implemented yet",
-                profile.auth_kind
-            )));
+        // Static access key + secret. The secret comes from the
+        // encrypted `cloud_profiles.secret` column (dispatcher
+        // hydrated `profile.secret`). Optional session token covers
+        // the STS-temporary-creds case.
+        "access_key" => {
+            let access_key_id = cfg.access_key_id.as_deref().ok_or_else(|| {
+                CloudError::InvalidConfig(
+                    "Access Key auth needs `access_key_id` in the profile config".into(),
+                )
+            })?;
+            let secret_access_key = profile.secret.as_deref().ok_or_else(|| {
+                CloudError::Auth(
+                    "Access Key auth needs the secret access key (open the cloud profile editor and paste it)".into(),
+                )
+            })?;
+            let creds = Credentials::new(
+                access_key_id,
+                secret_access_key,
+                cfg.access_key_session_token.clone(),
+                None, // No expiry, long-lived IAM keys never expire.
+                "OryxisAccessKey",
+            );
+            loader = loader.credentials_provider(creds);
+        }
+        // IAM Identity Center (SSO). We rely on the SSO token cache
+        // populated by `aws sso login`, the user runs that once,
+        // we read the cache via `SsoCredentialsProvider`. Native
+        // device-code flow ships in a follow-up iteration so users
+        // don't need the AWS CLI installed at all.
+        "sso" => {
+            use aws_config::sso::SsoCredentialsProvider;
+            let start_url = cfg.sso_start_url.as_deref().ok_or_else(|| {
+                CloudError::InvalidConfig(
+                    "SSO auth needs `sso_start_url` in the profile config".into(),
+                )
+            })?;
+            let sso_region = cfg.sso_region.as_deref().ok_or_else(|| {
+                CloudError::InvalidConfig(
+                    "SSO auth needs `sso_region` in the profile config".into(),
+                )
+            })?;
+            let account_id = cfg.sso_account_id.as_deref().ok_or_else(|| {
+                CloudError::InvalidConfig(
+                    "SSO auth needs `sso_account_id` in the profile config".into(),
+                )
+            })?;
+            let role_name = cfg.sso_role_name.as_deref().ok_or_else(|| {
+                CloudError::InvalidConfig(
+                    "SSO auth needs `sso_role_name` in the profile config".into(),
+                )
+            })?;
+            let provider = SsoCredentialsProvider::builder()
+                .start_url(start_url)
+                .role_name(role_name)
+                .account_id(account_id)
+                .region(Region::new(sso_region.to_string()))
+                .build();
+            loader = loader.credentials_provider(provider);
         }
         other => {
             return Err(CloudError::Unsupported(format!(
@@ -162,11 +217,34 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn build_sdk_config_rejects_access_key_for_now() {
+    async fn build_sdk_config_access_key_needs_id() {
         let p = profile(r#"{"region":"us-east-1"}"#, "access_key");
         let err = build_sdk_config(&p, None, None).await.unwrap_err();
         match err {
-            CloudError::Unsupported(msg) => assert!(msg.contains("access_key")),
+            CloudError::InvalidConfig(msg) => assert!(msg.contains("access_key_id")),
+            _ => panic!("wrong error variant: {err:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn build_sdk_config_access_key_needs_secret() {
+        let p = profile(
+            r#"{"region":"us-east-1","access_key_id":"AKIAFOO"}"#,
+            "access_key",
+        );
+        let err = build_sdk_config(&p, None, None).await.unwrap_err();
+        match err {
+            CloudError::Auth(msg) => assert!(msg.contains("secret access key")),
+            _ => panic!("wrong error variant: {err:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn build_sdk_config_sso_needs_start_url() {
+        let p = profile(r#"{"region":"us-east-1"}"#, "sso");
+        let err = build_sdk_config(&p, None, None).await.unwrap_err();
+        match err {
+            CloudError::InvalidConfig(msg) => assert!(msg.contains("sso_start_url")),
             _ => panic!("wrong error variant: {err:?}"),
         }
     }

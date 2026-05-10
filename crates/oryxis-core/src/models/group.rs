@@ -17,7 +17,7 @@ pub struct Group {
     /// When set, the group's children are not stored in the vault but
     /// resolved on each expand by a `CloudProvider::resolve_query`
     /// call. Manual groups have `None`. Dynamic groups must not also
-    /// have manually-attached children — the contents are 100% derived
+    /// have manually-attached children, the contents are 100% derived
     /// from the query.
     #[serde(default)]
     pub cloud_query: Option<CloudQuery>,

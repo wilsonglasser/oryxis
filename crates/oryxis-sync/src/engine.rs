@@ -93,7 +93,7 @@ impl SyncEngine {
         // rustls 0.23 requires an explicit CryptoProvider when both
         // `ring` and `aws-lc-rs` could be linked transitively. We pin
         // `ring` here once, before any TLS handshake. `install_default`
-        // errors if already installed — fine, treat as idempotent.
+        // errors if already installed, fine, treat as idempotent.
         let _ = rustls::crypto::ring::default_provider().install_default();
 
         let (shutdown_tx, _) = tokio::sync::broadcast::channel(1);
@@ -198,7 +198,7 @@ impl SyncEngine {
         sync_all_peers(&self.vault, &self.identity, &self.config, &self.event_tx).await
     }
 
-    /// Start pairing — returns a 6-digit code to show the user.
+    /// Start pairing, returns a 6-digit code to show the user.
     pub fn start_pairing(&self) -> String {
         let code = crypto::generate_pairing_code();
         let _ = self.event_tx.send(SyncEvent::PairingCodeGenerated {
@@ -418,7 +418,7 @@ fn collect_records(
 ) -> Result<Vec<protocol::SyncRecord>, SyncError> {
     let v = vault.lock().map_err(|_| SyncError::Vault("Lock".into()))?;
     // Off by default. When on, password fields are included in the
-    // wrapper payloads — older peers ignore them automatically. The
+    // wrapper payloads, older peers ignore them automatically. The
     // setting lives in the SQLite `settings` table so it flips per
     // device without touching the model.
     let sync_passwords = v
@@ -565,7 +565,7 @@ fn apply_records(
             EntityType::Connection => {
                 // `SyncConnection` flattens the inner `Connection`, so a
                 // payload from a pre-wrapper peer (bare `Connection` JSON)
-                // still deserializes — the optional password fields just
+                // still deserializes, the optional password fields just
                 // resolve to `None` via `#[serde(default)]`.
                 if let Ok(sc) = serde_json::from_slice::<protocol::SyncConnection>(&record.payload) {
                     let id = sc.connection.id;
@@ -660,7 +660,7 @@ async fn sync_all_peers(
     Ok(())
 }
 
-/// Sync with a specific peer (client side — initiates connection).
+/// Sync with a specific peer (client side, initiates connection).
 async fn sync_with_peer(
     vault: &Arc<std::sync::Mutex<VaultStore>>,
     identity: &DeviceIdentity,
@@ -731,7 +731,7 @@ async fn sync_with_peer(
                 crate::conflict::SyncAction::Skip => {}
             }
         } else {
-            // Not in local — pull from remote
+            // Not in local, pull from remote
             needed_from_remote.push(protocol::DeltaRef {
                 entity_type: remote_entry.entity_type,
                 entity_id: remote_entry.entity_id,
@@ -739,7 +739,7 @@ async fn sync_with_peer(
         }
     }
 
-    // Records only in local — push to remote
+    // Records only in local, push to remote
     for local_entry in &local_manifest {
         if !remote_manifest.iter().any(|r| {
             r.entity_type == local_entry.entity_type && r.entity_id == local_entry.entity_id

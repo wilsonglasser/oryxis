@@ -1,4 +1,4 @@
-//! Pure helpers for the SFTP transfer pipeline — pulled out of `app.rs`
+//! Pure helpers for the SFTP transfer pipeline, pulled out of `app.rs`
 //! to keep that file from growing past 7k lines. Everything here is a
 //! free function (no `&self`) operating on owned data, so the move is
 //! mechanical.
@@ -7,10 +7,10 @@
 //! these names through `pub(crate) use` so existing `app_tests.rs`
 //! references stay valid.
 //!
-//! `pub(crate)` everywhere keeps the API internal — these aren't
+//! `pub(crate)` everywhere keeps the API internal, these aren't
 //! intended for any consumer outside the app crate.
 
-/// Resolution returned by the upload pre-flight task — either upload
+/// Resolution returned by the upload pre-flight task, either upload
 /// completed silently, or we need to bounce back to the UI to ask the
 /// user how to handle a name collision.
 pub(crate) enum UploadOutcome {
@@ -26,7 +26,7 @@ pub(crate) enum UploadStepOutcome {
     Done,
     Conflict {
         prompt: crate::state::OverwritePrompt,
-        /// The item that was popped — kept around so the resolve
+        /// The item that was popped, kept around so the resolve
         /// handler can re-apply the action to the right destination.
         item: crate::state::TransferItem,
     },
@@ -62,7 +62,7 @@ pub(crate) fn remote_join(dir: &str, basename: &str) -> String {
     }
 }
 
-/// Short label for a transfer queue item — just the basename for files,
+/// Short label for a transfer queue item, just the basename for files,
 /// trailing slash for dirs so the user can tell them apart in the
 /// progress strip.
 pub(crate) fn transfer_item_label(item: &crate::state::TransferItem) -> String {
@@ -355,7 +355,7 @@ pub(crate) fn do_local_duplicate_item(
 }
 
 /// Pick a name that doesn't collide with any existing entry in the same
-/// directory — `name.ext` → `name copy.ext`, then `name copy 2.ext`,
+/// directory, `name.ext` → `name copy.ext`, then `name copy 2.ext`,
 /// `name copy 3.ext`, … if those are taken too. Mirrors macOS Finder.
 /// Caller supplies the membership predicate so the helper works for both
 /// local listings and remote SFTP listings.

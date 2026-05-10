@@ -150,7 +150,7 @@ pub(crate) fn decrypt(data: &[u8], password: &[u8]) -> Result<Vec<u8>, VaultErro
 // VaultStore
 // ---------------------------------------------------------------------------
 
-/// Vault store — manages SQLite database with encrypted secrets.
+/// Vault store, manages SQLite database with encrypted secrets.
 pub struct VaultStore {
     db: SqliteConn,
     /// Derived key material (password bytes kept for field-level encryption).
@@ -174,7 +174,7 @@ impl VaultStore {
         let db = SqliteConn::open(&path)?;
         db.execute_batch("PRAGMA journal_mode=WAL;")?;
 
-        // Tighten file permissions to 0600 on Unix — the vault holds
+        // Tighten file permissions to 0600 on Unix, the vault holds
         // encrypted credentials but if another local user can read the
         // ciphertext they can attempt offline brute force at leisure.
         // Best-effort: a missing chmod (e.g., readonly fs, exotic mount)
@@ -211,7 +211,7 @@ impl VaultStore {
 
     #[cfg(not(unix))]
     fn tighten_perms(_path: &Path) {
-        // Windows ACL hardening is a separate effort — the default
+        // Windows ACL hardening is a separate effort, the default
         // user-profile ACL already keeps other local users out of
         // %APPDATA%, so we no-op here for now.
     }
@@ -372,7 +372,7 @@ impl VaultStore {
         // row (EC2 in v0.6). JSON-encoded `CloudRef`. NULL for manual hosts.
         let _ = self.db.execute_batch("ALTER TABLE connections ADD COLUMN cloud_ref TEXT;");
         // Per-host initial command sent right after the shell opens.
-        // Independent of cloud — used by ECS / K8s entries that drop into
+        // Independent of cloud, used by ECS / K8s entries that drop into
         // `/bin/sh` and want `exec bash`.
         let _ = self.db.execute_batch("ALTER TABLE connections ADD COLUMN initial_command TEXT;");
         let _ = self.db.execute_batch("ALTER TABLE connections ADD COLUMN keepalive_interval INTEGER;");
@@ -631,7 +631,7 @@ impl VaultStore {
                 conn.identity_id.map(|u| u.to_string()),
                 conn.mcp_enabled as i32,
                 if conn.port_forwards.is_empty() { None } else { Some(serde_json::to_string(&conn.port_forwards).unwrap_or_default()) },
-                // OS detection + custom icon overrides — saved on every
+                // OS detection + custom icon overrides, saved on every
                 // write so they survive edits. Previously these were left
                 // out and got wiped to NULL on each save.
                 conn.detected_os,
@@ -770,7 +770,7 @@ impl VaultStore {
         Ok(conns)
     }
 
-    /// Update just the detected OS for a connection — used by the background
+    /// Update just the detected OS for a connection, used by the background
     /// OS-detection task so we don't overwrite other columns (e.g. last_used).
     pub fn set_detected_os(&self, id: &Uuid, os: Option<&str>) -> Result<(), VaultError> {
         self.db.execute(
@@ -1228,6 +1228,10 @@ impl VaultStore {
         Ok(())
     }
 
+    /// List cloud profiles. The transient `secret` field on each row
+    /// is left empty, callers that need the secret hydrate it via
+    /// `get_cloud_profile_secret` right before a cloud API call so
+    /// secrets don't sit in memory unnecessarily.
     pub fn list_cloud_profiles(&self) -> Result<Vec<CloudProfile>, VaultError> {
         let mut stmt = self.db.prepare(
             "SELECT id, label, provider, auth_kind, config, last_discovered, created_at, updated_at
@@ -1257,6 +1261,7 @@ impl VaultStore {
                         .and_then(|s| chrono::DateTime::parse_from_rfc3339(&s).ok())
                         .map(|d| d.with_timezone(&chrono::Utc))
                         .unwrap_or_else(chrono::Utc::now),
+                    secret: None,
                 })
             })?
             .collect::<Result<Vec<_>, _>>()?;
@@ -1306,7 +1311,7 @@ impl VaultStore {
     /// 3. Otherwise `None`.
     ///
     /// A dangling identity reference (id no longer exists) is treated
-    /// as no proxy — better than failing the whole connect.
+    /// as no proxy, better than failing the whole connect.
     pub fn resolve_proxy(
         &self,
         conn: &Connection,
@@ -1315,13 +1320,13 @@ impl VaultStore {
 
         if let Some(pid) = conn.proxy_identity_id {
             // Look up the identity. If it's gone, fall through to None
-            // — the user removed the identity but the connection still
+            //, the user removed the identity but the connection still
             // points at it. Surfacing this as an error would block
             // connecting to every host that referenced it.
             let identities = self.list_proxy_identities()?;
             let Some(ident) = identities.into_iter().find(|i| i.id == pid) else {
                 tracing::warn!(
-                    "proxy_identity_id {} not found for connection {} — falling back to no proxy",
+                    "proxy_identity_id {} not found for connection {}, falling back to no proxy",
                     pid,
                     conn.id
                 );
@@ -1522,7 +1527,7 @@ impl VaultStore {
         Ok(())
     }
 
-    /// Total number of log rows — used to drive pagination controls.
+    /// Total number of log rows, used to drive pagination controls.
     pub fn count_logs(&self) -> Result<usize, VaultError> {
         let n: i64 = self
             .db
@@ -1616,6 +1621,56 @@ impl VaultStore {
         Ok(logs)
     }
 
+    /// Paginated variant of `list_session_logs`. Same column projection
+    /// (no data blob), ordered by started_at desc, sliced by SQL LIMIT/OFFSET.
+    pub fn list_session_logs_page(
+        &self,
+        offset: usize,
+        limit: usize,
+    ) -> Result<Vec<SessionLogEntry>, VaultError> {
+        let mut stmt = self.db.prepare(
+            "SELECT id, connection_id, label, started_at, ended_at, LENGTH(COALESCE(data, X''))
+             FROM session_logs ORDER BY started_at DESC LIMIT ?1 OFFSET ?2",
+        )?;
+        let logs = stmt
+            .query_map(params![limit as i64, offset as i64], |row| {
+                Ok(SessionLogEntry {
+                    id: Uuid::parse_str(&row.get::<_, String>(0)?).unwrap_or_default(),
+                    connection_id: Uuid::parse_str(&row.get::<_, String>(1)?).unwrap_or_default(),
+                    label: row.get(2)?,
+                    started_at: row
+                        .get::<_, String>(3)
+                        .ok()
+                        .and_then(|s| chrono::DateTime::parse_from_rfc3339(&s).ok())
+                        .map(|d| d.with_timezone(&Utc))
+                        .unwrap_or_else(Utc::now),
+                    ended_at: row
+                        .get::<_, Option<String>>(4)?
+                        .and_then(|s| chrono::DateTime::parse_from_rfc3339(&s).ok())
+                        .map(|d| d.with_timezone(&Utc)),
+                    data_size: row.get::<_, i64>(5).unwrap_or(0) as usize,
+                })
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(logs)
+    }
+
+    /// Total number of session log rows.
+    pub fn count_session_logs(&self) -> Result<usize, VaultError> {
+        let n: i64 = self.db.query_row(
+            "SELECT COUNT(*) FROM session_logs",
+            [],
+            |row| row.get(0),
+        )?;
+        Ok(n as usize)
+    }
+
+    /// Drop every session log row.
+    pub fn clear_session_logs(&self) -> Result<(), VaultError> {
+        self.db.execute("DELETE FROM session_logs", [])?;
+        Ok(())
+    }
+
     /// Get the raw data bytes for a session log.
     pub fn get_session_data(&self, id: &Uuid) -> Result<Option<Vec<u8>>, VaultError> {
         let data: Option<Vec<u8>> = self
@@ -1660,7 +1715,7 @@ impl VaultStore {
     /// If the vault already has a password_check with "", unlocks it.
     pub fn open_without_password(&mut self) -> Result<(), VaultError> {
         if self.has_master_password()? {
-            // Vault already set up — try unlocking with empty password
+            // Vault already set up, try unlocking with empty password
             self.unlock("")
         } else {
             // First time: set up with empty password
@@ -2229,7 +2284,7 @@ mod tests {
         vault.save_connection(&conn, None).unwrap();
         vault.set_proxy_password(&conn.id, Some("first")).unwrap();
 
-        // Empty string is treated the same as None — both clear.
+        // Empty string is treated the same as None, both clear.
         vault.set_proxy_password(&conn.id, Some("")).unwrap();
         assert_eq!(vault.get_proxy_password(&conn.id).unwrap(), None);
 
@@ -2270,7 +2325,7 @@ mod tests {
         conn.proxy_identity_id = Some(pi.id);
         vault.save_connection(&conn, None).unwrap();
 
-        // Sanity — the connection lists the identity reference.
+        // Sanity, the connection lists the identity reference.
         let conns = vault.list_connections().unwrap();
         assert_eq!(conns[0].proxy_identity_id, Some(pi.id));
 
@@ -2303,7 +2358,7 @@ mod tests {
         });
         conn.proxy_identity_id = Some(pi.id);
         vault.save_connection(&conn, None).unwrap();
-        // Inline password set too — should be ignored once identity wins.
+        // Inline password set too, should be ignored once identity wins.
         vault
             .set_proxy_password(&conn.id, Some("inline-pw"))
             .unwrap();
@@ -2319,7 +2374,7 @@ mod tests {
     fn resolve_proxy_dangling_identity_returns_none() {
         let vault = unlocked_vault();
         let mut conn = Connection::new("h", "host");
-        // Reference an identity that doesn't exist — must not error.
+        // Reference an identity that doesn't exist, must not error.
         conn.proxy_identity_id = Some(uuid::Uuid::new_v4());
         vault.save_connection(&conn, None).unwrap();
 
@@ -2747,7 +2802,7 @@ mod tests {
         assert_eq!(result.connections_added, 2);
         assert_eq!(result.proxy_identities_added, 1);
 
-        // Saved identity round-tripped — including its password.
+        // Saved identity round-tripped, including its password.
         let pi_round = vault2.list_proxy_identities().unwrap();
         assert_eq!(pi_round.len(), 1);
         assert_eq!(pi_round[0].host, "proxy.corp.local");
@@ -2813,7 +2868,7 @@ mod tests {
 
         let data = export_vault(&vault, "pass", ExportOptions { include_private_keys: false, filter: ExportFilter::All }).unwrap();
 
-        // Import again into same vault — should skip
+        // Import again into same vault, should skip
         let result = import_vault(&vault, &data, "pass").unwrap();
         assert_eq!(result.connections_skipped, 1);
         assert_eq!(result.connections_added, 0);
@@ -2840,7 +2895,7 @@ mod tests {
         old_conn.updated_at = chrono::DateTime::parse_from_rfc3339("2020-01-01T00:00:00Z").unwrap().with_timezone(&chrono::Utc);
         vault2.save_connection(&old_conn, Some("old_pw")).unwrap();
 
-        // Import — should update because export is newer
+        // Import, should update because export is newer
         let result = import_vault(&vault2, &data, "pass").unwrap();
         assert_eq!(result.connections_updated, 1);
         assert_eq!(result.connections_added, 0);
@@ -2872,7 +2927,7 @@ mod tests {
         let pk = vault2.get_key_private(&generated.key.id).unwrap();
         assert!(pk.is_some());
 
-        // Import without keys — key added but no private key
+        // Import without keys, key added but no private key
         let vault3 = unlocked_vault();
         let result = import_vault(&vault3, &data_without, "pass").unwrap();
         assert_eq!(result.keys_added, 1);
@@ -3171,7 +3226,7 @@ mod tests {
     fn settings_persist_across_reopen() {
         // Opening the vault file twice (different `VaultStore`
         // instances backed by the same SQLite file) must yield the
-        // same setting value — the bug we're guarding against is
+        // same setting value, the bug we're guarding against is
         // someone adding a transient cache that doesn't write through.
         use tempfile::NamedTempFile;
         let tmp = NamedTempFile::new().unwrap();
@@ -3193,7 +3248,7 @@ mod tests {
         // string the user can fill with anything. Make sure we round-
         // trip non-ASCII without mangling.
         let vault = temp_vault();
-        let value = "Olá 🚀 — system prompt with emojis";
+        let value = "Olá 🚀, system prompt with emojis";
         vault.set_setting("ai_system_prompt", value).unwrap();
         assert_eq!(
             vault.get_setting("ai_system_prompt").unwrap().as_deref(),
@@ -3246,7 +3301,7 @@ mod tests {
         let mut p = CloudProfile::new("aws-prof", "aws");
         vault.save_cloud_profile(&p, Some("first-secret")).unwrap();
 
-        // Re-save with None — secret must stay intact (tri-state).
+        // Re-save with None, secret must stay intact (tri-state).
         p.label = "renamed".into();
         vault.save_cloud_profile(&p, None).unwrap();
 
@@ -3353,6 +3408,8 @@ mod tests {
                 username: None,
                 initial_command: Some("exec bash".into()),
                 transport: TransportKind::EcsExec,
+                key_id: None,
+                identity_id: None,
                 terminal_theme: None,
             },
         });

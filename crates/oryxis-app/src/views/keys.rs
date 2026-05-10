@@ -26,7 +26,7 @@ impl Oryxis {
         // regardless of which half the user clicks. The leading half
         // gets its outer corners rounded; under RTL `dir_row` swaps the
         // order, so we also swap which physical corners each half
-        // rounds — otherwise the rounded edge ends up in the middle.
+        // rounds, otherwise the rounded edge ends up in the middle.
         let rtl = crate::i18n::is_rtl_layout();
         let label_radius = if rtl {
             // Label sits on the right edge in RTL → round right corners.
@@ -80,7 +80,7 @@ impl Oryxis {
                 ..Default::default()
             });
 
-        // Chevron half — match the left half's vertical metrics so both halves
+        // Chevron half, match the left half's vertical metrics so both halves
         // render at identical heights. Lateral padding is kept to the minimum
         // that still gives the glyph breathing room.
         let add_chevron = button(
@@ -140,7 +140,7 @@ impl Oryxis {
 
         // ── Status message ──
         // While the import / identity sidebars are open, the panel surfaces
-        // its own error/success right next to the field that caused it —
+        // its own error/success right next to the field that caused it
         // duplicating the message in the main keychain area is just noise.
         let panel_open = self.show_key_panel || self.show_identity_panel;
         let status: Element<'_, Message> = if panel_open {
@@ -235,7 +235,7 @@ impl Oryxis {
                     ..Default::default()
                 });
 
-            // Vertical ellipsis (⋮) — matches the hosts card pattern:
+            // Vertical ellipsis (⋮), matches the hosts card pattern:
             // hover-only, fixed-width placeholder so the title's wrap
             // budget stays constant whether the button is rendered or not.
             const KEY_DOTS_SLOT_W: f32 = 22.0;
@@ -392,7 +392,7 @@ impl Oryxis {
                     ..Default::default()
                 });
 
-            // Vertical ellipsis (⋮) — same hover-only pattern as host /
+            // Vertical ellipsis (⋮), same hover-only pattern as host /
             // key cards. Reserved 22 px slot so the subtitle wrap budget
             // stays identical whether the button is rendered or not.
             const ID_DOTS_SLOT_W: f32 = 22.0;
@@ -485,10 +485,10 @@ impl Oryxis {
         }
 
         // Right padding here also pushes the content away from the
-        // scrollbar — keep it slim so the scrollbar reads as flush
+        // scrollbar, keep it slim so the scrollbar reads as flush
         // against the panel edge rather than floating in dead space.
         // The column needs `Length::Fill` for `align_x` to have any
-        // slack to align inside — without it the column shrinks to
+        // slack to align inside, without it the column shrinks to
         // content and rows hug the leading edge regardless.
         let grid = scrollable(
             column(all_rows)
@@ -608,7 +608,7 @@ impl Oryxis {
             .font(iced::Font::MONOSPACE)
             .size(11);
 
-        // Passphrase prompt — shown only after import_key signals the key
+        // Passphrase prompt, shown only after import_key signals the key
         // is encrypted. The hint explains the one-time-decrypt model so
         // users understand we're not storing the passphrase anywhere.
         let passphrase_section: Element<'_, Message> = if self.key_import_passphrase_required {

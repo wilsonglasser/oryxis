@@ -57,7 +57,7 @@ pub async fn handle_request(
                     );
                 }
             } else {
-                // Setting not found — MCP not enabled by default
+                // Setting not found, MCP not enabled by default
                 return JsonRpcResponse::success(
                     id,
                     json!({

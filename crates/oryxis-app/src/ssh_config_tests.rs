@@ -25,7 +25,7 @@ Host bastion
 
 #[test]
 fn skips_wildcard_hosts() {
-    // The `Host *` block is the global default in real configs —
+    // The `Host *` block is the global default in real configs
     // never importable as a concrete server.
     let input = "
 Host *
@@ -95,7 +95,7 @@ Host inner
 
 #[test]
 fn captures_proxy_command_verbatim() {
-    // Placeholders like %h / %p must be preserved verbatim — they're
+    // Placeholders like %h / %p must be preserved verbatim, they're
     // expanded by the user's shell at connect time.
     let input = "
 Host tunneled
@@ -193,14 +193,14 @@ Host explicit-no
     assert!(by_alias("with-fwd").forward_agent);
     assert!(!by_alias("without-fwd").forward_agent);
     assert!(!by_alias("explicit-no").forward_agent);
-    // Round-trip onto Connection — flag should propagate.
+    // Round-trip onto Connection, flag should propagate.
     let conn = to_connection(by_alias("with-fwd"));
     assert!(conn.agent_forwarding);
 }
 
 #[test]
 fn first_alias_wins_for_multi_alias_host() {
-    // `Host a b c` — pick the first as the canonical name.
+    // `Host a b c`, pick the first as the canonical name.
     let input = "
 Host primary alt1 alt2
     HostName primary.example.com
@@ -245,7 +245,7 @@ Host bare
 
 #[test]
 fn handles_indentation_variants() {
-    // SSH config tolerates tab-indented, no-indent, mixed — parser
+    // SSH config tolerates tab-indented, no-indent, mixed, parser
     // should match.
     let input = "Host noindent\nHostName x.local\n\nHost tabindent\n\tHostName y.local\n";
     let hosts = parse(input);
@@ -263,7 +263,7 @@ use proptest::prelude::*;
 proptest! {
     #[test]
     fn prop_parse_never_panics(input in ".{0,500}") {
-        // Pure smoke — random input should never crash the parser.
+        // Pure smoke, random input should never crash the parser.
         // Real ssh_config files are user-edited and we get whatever
         // they wrote.
         let _ = parse(&input);
@@ -317,7 +317,7 @@ proptest! {
             forward_agent: false,
         };
         let conn = to_connection(&host);
-        // Invariant: label always carries the alias verbatim — it's
+        // Invariant: label always carries the alias verbatim, it's
         // the user-facing identifier.
         prop_assert_eq!(conn.label, alias);
         prop_assert_eq!(conn.port, port);

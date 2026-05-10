@@ -41,14 +41,14 @@ pub struct RemoteStat {
 /// the same session.
 ///
 /// Holds a clone of the underlying SSH handle so it can open exec channels
-/// on the same connection — needed for ops like recursive delete where
+/// on the same connection, needed for ops like recursive delete where
 /// shelling out to `rm -rf` is dramatically faster than walking the tree
 /// over SFTP.
 #[derive(Clone)]
 pub struct SftpClient {
     inner: Arc<Mutex<SftpSession>>,
     handle: SharedHandle,
-    /// Timeout used by `open_sibling` — propagated from the parent
+    /// Timeout used by `open_sibling`, propagated from the parent
     /// `SshSession` so siblings honour the same configured limit.
     open_timeout: std::time::Duration,
     /// Per-operation timeout in seconds, shared across clones via an
@@ -82,7 +82,7 @@ impl SftpClient {
     }
 
     /// Override the per-operation timeout. Takes effect on the next
-    /// op — already-in-flight calls keep their existing deadline.
+    /// op, already-in-flight calls keep their existing deadline.
     /// Cheap (atomic store) so the settings panel can call this on
     /// every input change without throttling.
     pub fn set_op_timeout(&self, t: std::time::Duration) {
@@ -116,7 +116,7 @@ impl SftpClient {
     }
 
     /// List directory contents. Filters out the synthetic `.` / `..`
-    /// entries — the UI provides its own breadcrumb / "go up" affordance.
+    /// entries, the UI provides its own breadcrumb / "go up" affordance.
     pub async fn list_dir(&self, path: &str) -> Result<Vec<SftpEntry>, SshError> {
         let label = format!("read_dir({path})");
         self.with_op_timeout(&label, async {
@@ -160,7 +160,7 @@ impl SftpClient {
     }
 
     /// Read a remote file fully into memory. Caller is responsible for
-    /// not asking for files that don't fit — large transfers should use
+    /// not asking for files that don't fit, large transfers should use
     /// streamed `download_to` once we wire that up.
     pub async fn read_file(&self, path: &str) -> Result<Vec<u8>, SshError> {
         use tokio::io::AsyncReadExt as _;
@@ -242,7 +242,7 @@ impl SftpClient {
     /// SETSTAT with only the `permissions` field populated; everything
     /// else is `None` (the protocol's flag-driven serialization skips
     /// unset fields, so owner/group/times stay intact). `Default` is
-    /// the wrong base — it pre-fills size/uid/permissions and would
+    /// the wrong base, it pre-fills size/uid/permissions and would
     /// nuke other attrs.
     pub async fn chmod(&self, path: &str, mode: u32) -> Result<(), SshError> {
         let label = format!("chmod({path}, {:o})", mode);
@@ -259,7 +259,7 @@ impl SftpClient {
 
     /// Stat a remote path. Returns just the data the Properties dialog
     /// needs (size, permissions, mtime, owner uid/gid). Symlinks are
-    /// followed — we want the target's metadata, not the link itself.
+    /// followed, we want the target's metadata, not the link itself.
     pub async fn stat(&self, path: &str) -> Result<RemoteStat, SshError> {
         let label = format!("stat({path})");
         self.with_op_timeout(&label, async {
@@ -292,7 +292,7 @@ impl SftpClient {
 
     /// Open another independent SFTP subsystem channel on the same SSH
     /// connection. The returned client has its own protocol session and
-    /// own internal mutex — concurrent calls on the original and the
+    /// own internal mutex, concurrent calls on the original and the
     /// sibling don't serialize on each other. Used by the parallel
     /// transfer worker pool to actually move bytes in parallel instead
     /// of just queuing on a single channel's mutex.
@@ -343,7 +343,7 @@ impl SftpClient {
         let mut exit_code: Option<u32> = None;
         // Read until the channel itself closes (`None`). Some servers
         // deliver `ExitStatus` *after* `Eof`, and breaking on Eof leaves
-        // `exit_code` defaulted to 255 — which is exactly the symptom we
+        // `exit_code` defaulted to 255, which is exactly the symptom we
         // hit on `cp -r` ("exit 255") even though the copy succeeded.
         loop {
             match channel.wait().await {
@@ -365,7 +365,7 @@ impl SftpClient {
 
     /// Recursive directory delete. SFTP's `remove_dir` only handles empty
     /// dirs and walking the tree from the client side is slow over a
-    /// high-latency link, so we shell out to `rm -rf` on the remote — same
+    /// high-latency link, so we shell out to `rm -rf` on the remote, same
     /// connection, separate channel. Path is single-quoted with the POSIX
     /// `'\''` escape so embedded quotes don't break out of the literal.
     pub async fn remove_dir_recursive(&self, path: &str) -> Result<(), SshError> {

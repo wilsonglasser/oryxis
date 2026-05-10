@@ -1,4 +1,4 @@
-//! SFTP browser view — dual-pane (local | remote) file manager.
+//! SFTP browser view, dual-pane (local | remote) file manager.
 
 use iced::border::Radius;
 use iced::widget::button::Status as BtnStatus;
@@ -27,7 +27,7 @@ impl Oryxis {
         .width(Length::Fill)
         .height(Length::Fill);
 
-        // Stack the panes with the optional progress strip below — when a
+        // Stack the panes with the optional progress strip below, when a
         // folder transfer is running we surface a thin status bar with
         // counts + a cancel button, otherwise the panes own all the space.
         let body: Element<'_, Message> = if let Some(transfer) = &self.sftp.transfer {
@@ -45,7 +45,7 @@ impl Oryxis {
             .height(Length::Fill);
 
         // The right-click row context menu is rendered at the layout
-        // root instead — its position is in window coordinates so
+        // root instead, its position is in window coordinates so
         // clamping it from inside view_sftp would be off by the title +
         // tab bar height.
         if !self.sftp.delete_confirm.is_empty() {
@@ -71,7 +71,7 @@ impl Oryxis {
 
     fn view_sftp_local_pane(&self) -> Element<'_, Message> {
         // Match the right-pane chip dimensions exactly so the two
-        // toolbars sit on the same baseline — earlier the host chip
+        // toolbars sit on the same baseline, earlier the host chip
         // (icon + chevron + button padding) was a few pixels taller
         // than the bare "Local" label, throwing the breadcrumbs and
         // column headers out of alignment between panes.
@@ -115,7 +115,7 @@ impl Oryxis {
         .padding(Padding { top: 12.0, right: 14.0, bottom: 8.0, left: 14.0 });
 
         // The path bar swaps between a clickable breadcrumb and a text
-        // input — same area, two modes, like Finder / Files / Explorer.
+        // input, same area, two modes, like Finder / Files / Explorer.
         let path_bar: Element<'_, Message> = if let Some(input) = &self.sftp.local_path_editing {
             text_input(
                 &self.sftp.local_path.display().to_string(),
@@ -256,7 +256,7 @@ impl Oryxis {
     }
 
     fn view_sftp_remote_pane(&self) -> Element<'_, Message> {
-        // Right-pane title — same OS-coloured badge the host cards use,
+        // Right-pane title, same OS-coloured badge the host cards use,
         // followed by the host label and a chevron. Click anywhere on
         // the chip opens the picker, same affordance as Termius.
         let chip_label = self
@@ -282,7 +282,7 @@ impl Oryxis {
                 })
                 .into()
         } else {
-            // No mount yet — show a faint server placeholder.
+            // No mount yet, show a faint server placeholder.
             container(
                 iced_fonts::lucide::server()
                     .size(12)
@@ -369,7 +369,7 @@ impl Oryxis {
             // itself failed (re-run the full pick flow). The simpler
             // SftpNavigateRemote path silently no-ops when client is
             // None, which is exactly what happens after a connect
-            // failure — that was the original "retry does nothing" bug.
+            // failure, that was the original "retry does nothing" bug.
             container(
                 column![
                     row![
@@ -704,7 +704,7 @@ fn pane_actions_btn<'a>(toggle_msg: Message) -> Element<'a, Message> {
     .into()
 }
 
-/// Floating Actions menu for a pane — anchored to the top-right via a
+/// Floating Actions menu for a pane, anchored to the top-right via a
 /// container that pushes it to the corner.
 fn actions_menu_overlay<'a>(local: bool, show_hidden: bool) -> Element<'a, Message> {
     let refresh_msg = if local {
@@ -784,7 +784,7 @@ fn menu_separator<'a>() -> Element<'a, Message> {
         .into()
 }
 
-/// Right-click row context menu — items vary by pane side and entry
+/// Right-click row context menu, items vary by pane side and entry
 /// type. When the clicked row is part of a multi-selection (same pane),
 /// the menu switches to bulk variants: count-aware Delete; single-only
 /// ops (Rename, Edit) hide.
@@ -795,7 +795,7 @@ pub(crate) fn row_context_menu_box<'a>(
 ) -> Element<'a, Message> {
     let multi = selection_count_same_pane > 1;
     let mut items = column![].spacing(2).padding(4);
-    // Upload — local files/folders when a remote session is mounted.
+    // Upload, local files/folders when a remote session is mounted.
     // Multi mode batches the whole same-pane selection.
     let accent = OryxisColors::t().accent;
     let secondary = OryxisColors::t().text_secondary;
@@ -825,7 +825,7 @@ pub(crate) fn row_context_menu_box<'a>(
         }
         // Open the file in the OS default editor. Unlike the remote
         // Edit (which has to download to temp + watch mtime), here we
-        // just hand the path to `open` — the user's edits hit the
+        // just hand the path to `open`, the user's edits hit the
         // file directly with no roundtrip.
         if !multi && !menu.is_dir {
             items = items.push(menu_item_owned_tinted(
@@ -856,7 +856,7 @@ pub(crate) fn row_context_menu_box<'a>(
                 download_msg,
                 accent,
             ));
-            // Edit-in-place — only meaningful for single files.
+            // Edit-in-place, only meaningful for single files.
             if !menu.is_dir {
                 items = items.push(menu_item_owned_tinted(
                     iced_fonts::lucide::pencil(),
@@ -935,7 +935,7 @@ pub(crate) fn row_context_menu_box<'a>(
 }
 
 /// Compute the approximate height of the row context menu given the
-/// current target — keeps the layout-level clamp accurate so the menu
+/// current target, keeps the layout-level clamp accurate so the menu
 /// never spills off the bottom or right edge of the window.
 pub(crate) fn row_context_menu_height(
     menu: &crate::state::SftpRowMenu,
@@ -965,7 +965,7 @@ pub(crate) const ROW_CONTEXT_MENU_WIDTH: f32 = 220.0;
 
 /// Owned-label variant of `menu_item` for cases where the label is
 /// computed at runtime (e.g. "Delete N items" with a dynamic count).
-/// Owned-label variant that lets the caller pick the icon tint —
+/// Owned-label variant that lets the caller pick the icon tint
 /// used for destructive (red) and primary (accent / success) actions
 /// to match the host-card context menu's color coding.
 fn menu_item_owned_tinted<'a>(
@@ -1111,7 +1111,7 @@ fn drives_menu_overlay<'a>() -> Element<'a, Message> {
 
 /// True when the path's first component is a real Windows volume
 /// (`C:\`, `D:\`, including the `\\?\C:\` verbatim form). UNC paths
-/// like `\\server\share` or `\\wsl$\Ubuntu` return false — those are
+/// like `\\server\share` or `\\wsl$\Ubuntu` return false, those are
 /// served by Unix-style filesystems where `/` reads more naturally.
 fn is_windows_disk_path(path: &std::path::Path) -> bool {
     matches!(
@@ -1141,7 +1141,7 @@ fn list_windows_drives() -> Vec<String> {
         // WSL distros live under \\wsl.localhost (or the legacy
         // \\wsl$). `Path::exists()` on a UNC root returns false until
         // the SMB redirector lazily mounts it, so we detect WSL via
-        // `wsl.exe` in System32 — present iff the user has WSL
+        // `wsl.exe` in System32, present iff the user has WSL
         // installed at all. We expose `\\wsl$` as the entry point
         // because it's the alias that always resolves; navigating into
         // it lists distros as folders.
@@ -1162,7 +1162,7 @@ fn list_windows_drives() -> Vec<String> {
 }
 
 /// Build a clickable breadcrumb for a remote POSIX path. The root is
-/// the only `/` rendered — subsequent segments are added with separators
+/// the only `/` rendered, subsequent segments are added with separators
 /// in between, never *after* the root crumb itself, which avoids the
 /// `/ / home` doubling that crept in when separators were emitted at the
 /// start of every iteration.
@@ -1208,7 +1208,7 @@ fn local_breadcrumb<'a>(path: &std::path::Path) -> Element<'a, Message> {
                 (p.as_os_str().to_string_lossy().into_owned(), true, false)
             }
             std::path::Component::RootDir => {
-                // Skip the implicit root component on Windows — the drive
+                // Skip the implicit root component on Windows, the drive
                 // chip already represents the volume root.
                 if had_drive {
                     accumulated.push(component.as_os_str());
@@ -1338,7 +1338,7 @@ const MOD_COL_W: f32 = 140.0;
 const SIZE_COL_W: f32 = 80.0;
 
 /// Visually distinct band that wraps the toolbar / breadcrumb / column
-/// headers — gives the file list a clean separation from the chrome,
+/// headers, gives the file list a clean separation from the chrome,
 /// matching how Finder / Explorer / Termius split the two regions.
 fn pane_header_band<'a>(content: iced::widget::Column<'a, Message>) -> Element<'a, Message> {
     container(content)
@@ -1483,7 +1483,7 @@ fn file_row_local<'a>(
     // Click action priority: while renaming, swallow clicks; folders
     // navigate; files mark themselves selected so the user has visible
     // confirmation that the row is interactive (was previously a disabled
-    // button — no hover, no pointer cursor, looked dead).
+    // button, no hover, no pointer cursor, looked dead).
     let path_str = path.to_string_lossy().into_owned();
     // SftpSelectRow handles plain folder click (navigate), file click
     // (single-select), and modifier clicks (toggle / range). Routing it
@@ -1524,7 +1524,7 @@ fn file_row_local<'a>(
         btn = btn.on_press(msg);
     }
     // Hover events feed both the OS drag drop targeting and the new
-    // internal drag-drop press handler — needed even on file rows since
+    // internal drag-drop press handler, needed even on file rows since
     // a file is a valid drag *source* (just not a drop *target*).
     MouseArea::new(btn)
         .on_right_press(Message::SftpRowRightClick(
@@ -1568,7 +1568,7 @@ fn file_row_remote<'a>(
     };
 
     // Single message routes folder navigation, file single-select, and
-    // ctrl/shift modifier selection — see the local row counterpart.
+    // ctrl/shift modifier selection, see the local row counterpart.
     // Symlinks behave like folders for click (treat as nav target) since
     // we can't tell from the listing whether they point at a file vs dir.
     let nav_target = if rename_input.is_some() {
@@ -1722,7 +1722,7 @@ fn delete_confirm_modal<'a>(
             .unwrap_or(&target.path)
             .to_string();
         let detail = if target.is_dir {
-            format!("\"{}\" — {}", basename, t("folder_and_contents"))
+            format!("\"{}\", {}", basename, t("folder_and_contents"))
         } else {
             format!("\"{}\"", basename)
         };
@@ -1802,7 +1802,7 @@ fn delete_confirm_modal<'a>(
         .into()
 }
 
-/// Modal for "New folder" / "New file" — single text input + create/cancel.
+/// Modal for "New folder" / "New file", single text input + create/cancel.
 /// `Enter` in the input commits, mirroring the inline rename behaviour.
 fn new_entry_modal<'a>(entry: &crate::state::SftpNewEntry) -> Element<'a, Message> {
     let title = match entry.kind {
@@ -1881,7 +1881,7 @@ fn new_entry_modal<'a>(entry: &crate::state::SftpNewEntry) -> Element<'a, Messag
 }
 
 /// Modal shown while an edit-in-place session is active. The user has
-/// the temp file open in their OS editor — when they're done they come
+/// the temp file open in their OS editor, when they're done they come
 /// back here and either save the changes back to the remote or discard.
 /// Backdrop is non-dismissable on click; the user must explicitly choose
 /// so a stray click can't drop their edits.
@@ -1949,7 +1949,7 @@ fn edit_in_place_modal<'a>(
         ..Default::default()
     });
 
-    // Solid scrim with no on_press — the modal is intentionally
+    // Solid scrim with no on_press, the modal is intentionally
     // non-dismissable on backdrop click. Clicking outside does nothing
     // so the user is forced to make an explicit save/discard choice and
     // can't lose their edits to a misclick.
@@ -2016,7 +2016,7 @@ pub(crate) fn drag_ghost<'a>(label: &str) -> Element<'a, Message> {
     .into()
 }
 
-/// Properties dialog — shows the standard file metadata (path, size,
+/// Properties dialog, shows the standard file metadata (path, size,
 /// mtime, owner) and a 3×3 grid of permission checkboxes for r/w/x
 /// across owner / group / others. Apply runs chmod; bits the dialog
 /// doesn't render (setuid/setgid/sticky) are preserved verbatim from
@@ -2035,11 +2035,11 @@ fn properties_modal<'a>(
         .mtime
         .and_then(|secs| chrono::DateTime::<chrono::Utc>::from_timestamp(secs as i64, 0))
         .map(|dt| dt.with_timezone(&chrono::Local).format("%Y-%m-%d %H:%M").to_string())
-        .unwrap_or_else(|| "—".to_string());
+        .unwrap_or_else(|| "-".to_string());
     let owner_str = match (props.owner_uid, props.owner_gid) {
         (Some(u), Some(g)) => format!("uid {u} · gid {g}"),
         (Some(u), None) => format!("uid {u}"),
-        _ => "—".to_string(),
+        _ => "-".to_string(),
     };
     let mode_octal = format!("{:o}", (props.original_mode & !0o777) | props.bits.to_mode());
 
@@ -2233,9 +2233,9 @@ fn properties_modal<'a>(
 }
 
 /// Modal shown when an upload would clobber an existing remote file.
-/// Lays out the choices as a single horizontal row of buttons —
+/// Lays out the choices as a single horizontal row of buttons
 /// destructive primary on the right, secondary outlined options in the
-/// middle, ghost-style cancel on the left — so the modal stays compact
+/// middle, ghost-style cancel on the left, so the modal stays compact
 /// instead of stacking four heavy buttons vertically. The scrim is
 /// non-dismissable: the user must pick something explicitly.
 fn overwrite_modal<'a>(
@@ -2317,7 +2317,7 @@ fn overwrite_modal<'a>(
             ..Default::default()
         });
 
-    // Non-dismissable scrim — clicking outside is not a valid answer
+    // Non-dismissable scrim, clicking outside is not a valid answer
     // (users could lose data by deciding the wrong way), so we swallow
     // the press without doing anything. The user must pick a button.
     let scrim: Element<'_, Message> = container(Space::new())
@@ -2346,7 +2346,7 @@ fn overwrite_modal<'a>(
         .into()
 }
 
-/// Filled primary action button — destructive variants pass red, neutral
+/// Filled primary action button, destructive variants pass red, neutral
 /// pass accent. Slightly more compact than `widgets::styled_button` so it
 /// sits well in a horizontal modal footer row.
 fn primary_button<'a>(label: &'a str, msg: Message, color: Color) -> Element<'a, Message> {
@@ -2387,7 +2387,7 @@ fn primary_button<'a>(label: &'a str, msg: Message, color: Color) -> Element<'a,
     .into()
 }
 
-/// Outlined secondary button — transparent fill with a subtle border.
+/// Outlined secondary button, transparent fill with a subtle border.
 /// Hover fills with a faint accent tint to communicate clickability
 /// without competing with the primary action visually.
 fn outlined_button<'a>(label: &'a str, msg: Message) -> Element<'a, Message> {
@@ -2416,7 +2416,7 @@ fn outlined_button<'a>(label: &'a str, msg: Message) -> Element<'a, Message> {
     .into()
 }
 
-/// Ghost button — pure text on transparent, hover-only background tint.
+/// Ghost button, pure text on transparent, hover-only background tint.
 /// Right for the lowest-emphasis action (Cancel here).
 fn ghost_button<'a>(label: &'a str, msg: Message) -> Element<'a, Message> {
     button(
@@ -2501,7 +2501,7 @@ fn transfer_progress_strip<'a>(
     } else {
         (transfer.completed as f32 / transfer.total as f32).clamp(0.0, 1.0)
     };
-    // Ratio-based progress bar built from two stacked containers — iced
+    // Ratio-based progress bar built from two stacked containers, iced
     // 0.14 has ProgressBar, but a manual bar lets us match the rest of
     // the chrome's styling exactly.
     let bar = container(
