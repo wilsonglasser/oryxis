@@ -15,7 +15,7 @@ use oryxis_core::models::key::SshKey;
 use crate::app::{Message, Oryxis, CARD_WIDTH, PANEL_WIDTH};
 use crate::i18n::t;
 use crate::theme::OryxisColors;
-use crate::widgets::dir_row;
+use crate::widgets::{card_grid_columns, dir_row, distribute_card_grid};
 
 impl Oryxis {
     pub(crate) fn view_keys(&self) -> Element<'_, Message> {
@@ -272,9 +272,15 @@ impl Oryxis {
                     icon_box.into(),
                     Space::new().width(12).into(),
                     column![
-                        text(&key.label).size(13).color(OryxisColors::t().text_primary),
+                        text(&key.label)
+                            .size(13)
+                            .color(OryxisColors::t().text_primary)
+                            .wrapping(iced::widget::text::Wrapping::None),
                         Space::new().height(2),
-                        text(algo).size(11).color(OryxisColors::t().text_muted),
+                        text(algo)
+                            .size(11)
+                            .color(OryxisColors::t().text_muted)
+                            .wrapping(iced::widget::text::Wrapping::None),
                     ]
                     .width(Length::Fill)
                     .align_x(crate::widgets::dir_align_x())
@@ -284,7 +290,7 @@ impl Oryxis {
             )
             .on_press(Message::EditKey(idx))
             .padding(16)
-            .width(CARD_WIDTH)
+            .width(Length::Fill)
             .style(|_, status| {
                 let (bg, border_color, border_width) = match status {
                     BtnStatus::Hovered => (OryxisColors::t().bg_hover, OryxisColors::t().accent, 1.5),
@@ -305,25 +311,35 @@ impl Oryxis {
                 .on_exit(Message::KeyCardUnhovered)
                 .on_right_press(Message::ShowKeyMenu(idx));
 
-            cards.push(container(wrapped).width(CARD_WIDTH).into());
+            cards.push(
+                container(wrapped)
+                    .width(Length::Fill)
+                    .clip(true)
+                    .into(),
+            );
         }
 
-        // Key grid layout (3 cols)
-        let mut grid_rows: Vec<Element<'_, Message>> = Vec::new();
-        let mut current_row: Vec<Element<'_, Message>> = Vec::new();
-        for card in cards {
-            current_row.push(card);
-            if current_row.len() == 3 {
-                grid_rows.push(dir_row(std::mem::take(&mut current_row)).spacing(12).into());
-                grid_rows.push(Space::new().height(12).into());
-            }
-        }
-        if !current_row.is_empty() {
-            while current_row.len() < 3 {
-                current_row.push(Space::new().width(CARD_WIDTH).into());
-            }
-            grid_rows.push(dir_row(std::mem::take(&mut current_row)).spacing(12).into());
-        }
+        // Responsive grid: column count derived from the current window
+        // width minus the visible chrome (left nav + optional right panel
+        // + horizontal padding around the grid). When the user resizes
+        // the window or opens/closes the side panel, the next view()
+        // recomputes `cols` and the cards rewrap accordingly instead of
+        // disappearing into clipped overflow.
+        let nav_width = if self.sidebar_collapsed {
+            crate::app::SIDEBAR_WIDTH_COLLAPSED
+        } else {
+            crate::app::SIDEBAR_WIDTH
+        };
+        let panel_width = if self.show_key_panel || self.show_identity_panel {
+            crate::app::PANEL_WIDTH
+        } else {
+            0.0
+        };
+        // 24 px of left padding on the grid column + ~16 px reserved for
+        // the scrollbar gutter on the right.
+        let available = (self.window_size.width - nav_width - panel_width - 40.0).max(0.0);
+        let cols = card_grid_columns(available, CARD_WIDTH, 12.0);
+        let keys_grid_elem = distribute_card_grid(cards, cols, 12.0, 12.0);
 
         // ── Identities section ──
         let identity_section_title = container(
@@ -409,9 +425,15 @@ impl Oryxis {
                     icon_box.into(),
                     Space::new().width(12).into(),
                     column![
-                        text(&identity.label).size(13).color(OryxisColors::t().text_primary),
+                        text(&identity.label)
+                            .size(13)
+                            .color(OryxisColors::t().text_primary)
+                            .wrapping(iced::widget::text::Wrapping::None),
                         Space::new().height(2),
-                        text(subtitle).size(11).color(OryxisColors::t().text_muted),
+                        text(subtitle)
+                            .size(11)
+                            .color(OryxisColors::t().text_muted)
+                            .wrapping(iced::widget::text::Wrapping::None),
                     ]
                     .width(Length::Fill)
                     .align_x(crate::widgets::dir_align_x())
@@ -421,7 +443,7 @@ impl Oryxis {
             )
             .on_press(Message::EditIdentity(idx))
             .padding(16)
-            .width(CARD_WIDTH)
+            .width(Length::Fill)
             .style(|_, status| {
                 let (bg, border_color, border_width) = match status {
                     BtnStatus::Hovered => (OryxisColors::t().bg_hover, OryxisColors::t().accent, 1.5),
@@ -440,33 +462,23 @@ impl Oryxis {
                 .on_exit(Message::IdentityCardUnhovered)
                 .on_right_press(Message::ShowIdentityMenu(idx));
 
-            identity_cards.push(container(wrapped).width(CARD_WIDTH).into());
+            identity_cards.push(
+                container(wrapped)
+                    .width(Length::Fill)
+                    .clip(true)
+                    .into(),
+            );
         }
 
-        // Identity grid layout (3 cols)
-        let mut identity_grid_rows: Vec<Element<'_, Message>> = Vec::new();
-        let mut current_row: Vec<Element<'_, Message>> = Vec::new();
-        for card in identity_cards {
-            current_row.push(card);
-            if current_row.len() == 3 {
-                identity_grid_rows.push(dir_row(std::mem::take(&mut current_row)).spacing(12).into());
-                identity_grid_rows.push(Space::new().height(12).into());
-            }
-        }
-        if !current_row.is_empty() {
-            while current_row.len() < 3 {
-                current_row.push(Space::new().width(CARD_WIDTH).into());
-            }
-            identity_grid_rows.push(dir_row(std::mem::take(&mut current_row)).spacing(12).into());
-        }
+        let identity_grid_elem = distribute_card_grid(identity_cards, cols, 12.0, 12.0);
 
         // Combine keys and identities into one scrollable area
         let mut all_rows: Vec<Element<'_, Message>> = Vec::new();
         all_rows.push(section_title.into());
-        all_rows.extend(grid_rows);
+        all_rows.push(keys_grid_elem);
         if !self.identities.is_empty() {
             all_rows.push(identity_section_title.into());
-            all_rows.extend(identity_grid_rows);
+            all_rows.push(identity_grid_elem);
         }
 
         // Right padding here also pushes the content away from the

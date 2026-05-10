@@ -46,6 +46,60 @@ pub fn dir_align_x() -> iced::alignment::Horizontal {
     }
 }
 
+/// Pick a column count for a card grid given the available content width.
+/// Floor-divides slack by `min_card_width + h_gap`, clamped to `>= 1`.
+/// Callers compute `available_width` from `window_size` minus the visible
+/// chrome (left sidebar, optional right panel, padding).
+pub fn card_grid_columns(available_width: f32, min_card_width: f32, h_gap: f32) -> usize {
+    if available_width <= 0.0 || min_card_width <= 0.0 {
+        return 1;
+    }
+    let n = ((available_width + h_gap) / (min_card_width + h_gap)).floor() as usize;
+    n.max(1)
+}
+
+/// Distribute pre-built cards into rows of `cols` cards each. Cards must be
+/// built with `Length::Fill` width so the row evenly divides the slack;
+/// partial last rows are padded with invisible fillers so the trailing
+/// card keeps the same per-card width as the full rows above.
+///
+/// Honours the active layout direction via `dir_row` — under RTL each
+/// row's children are reversed, but the row order (top-to-bottom) stays
+/// the same.
+pub fn distribute_card_grid<'a, M: 'a>(
+    cards: Vec<Element<'a, M>>,
+    cols: usize,
+    h_gap: f32,
+    v_gap: f32,
+) -> Element<'a, M> {
+    use iced::widget::column;
+
+    if cards.is_empty() {
+        return Space::new().height(0).into();
+    }
+    let cols = cols.max(1);
+    let mut grid_rows: Vec<Element<'a, M>> = Vec::new();
+    let mut row_buf: Vec<Element<'a, M>> = Vec::with_capacity(cols);
+    let total = cards.len();
+
+    for (i, card) in cards.into_iter().enumerate() {
+        row_buf.push(card);
+        if row_buf.len() == cols {
+            grid_rows.push(dir_row(std::mem::take(&mut row_buf)).spacing(h_gap).into());
+            if i + 1 < total {
+                grid_rows.push(Space::new().height(v_gap).into());
+            }
+        }
+    }
+    if !row_buf.is_empty() {
+        while row_buf.len() < cols {
+            row_buf.push(Space::new().width(Length::Fill).into());
+        }
+        grid_rows.push(dir_row(row_buf).spacing(h_gap).into());
+    }
+    column(grid_rows).width(Length::Fill).into()
+}
+
 
 /// Shared style closure for `text_input`. Apply via `.style(rounded_input_style)`
 /// to get the app's accent-focused look with the consistent 10 px radius.

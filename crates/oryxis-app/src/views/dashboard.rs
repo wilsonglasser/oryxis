@@ -11,7 +11,7 @@ use crate::app::{Message, Oryxis, CARD_WIDTH};
 use crate::i18n::t;
 use crate::os_icon::BrandIcon;
 use crate::theme::OryxisColors;
-use crate::widgets::dir_row;
+use crate::widgets::{card_grid_columns, dir_row, distribute_card_grid};
 
 impl Oryxis {
     pub(crate) fn view_dashboard(&self) -> Element<'_, Message> {
@@ -326,84 +326,84 @@ impl Oryxis {
                             let count_text = format!("{} {}", count, t("hosts").to_lowercase());
 
                             // Folder card icon precedence:
-                            //   1. Group's `icon` field (cloud-imported
-                            //      groups carry `si:aws` / `si:kubernetes`).
-                            //   2. Inferred from nested cloud-query
-                            //      children (ECS → AWS, K8s → Kubernetes).
-                            //   3. Generic Lucide `boxes` cube.
+                            //   1. Explicit BRAND icon on the group
+                            //      (`aws`, `kubernetes`, `ubuntu`, etc.).
+                            //   2. Inferred brand from children (nested
+                            //      cloud-query group, direct connection's
+                            //      `cloud_ref`).
+                            //   3. Explicit non-brand icon (Lucide UI
+                            //      placeholder like `cloud`, `server`).
+                            //   4. Generic Lucide `boxes` cube.
+                            // Inference (#2) wins over generic Lucide
+                            // icons (#3) so a group containing AWS
+                            // resources shows the AWS chip even if the
+                            // user / legacy data left `icon = "cloud"`.
                             // Visual: brand-colour chip with a white
-                            // glyph on top (matches the host-card style,
-                            // no visible padding around the SVG).
+                            // glyph on top.
+                            let explicit_brand = group
+                                .icon
+                                .as_deref()
+                                .filter(|s| !s.is_empty())
+                                .and_then(crate::os_icon::canonical_brand_id);
+                            let inferred_brand = self.groups.iter()
+                                .filter(|g| g.parent_id == Some(gid))
+                                .find_map(|g| g.cloud_query.as_ref())
+                                .map(|q| match q.kind {
+                                    oryxis_core::models::cloud::CloudQueryKind::EcsTasks { .. } => "aws",
+                                    oryxis_core::models::cloud::CloudQueryKind::K8sPods { .. } => "kubernetes",
+                                })
+                                .or_else(|| {
+                                    self.connections.iter()
+                                        .filter(|c| c.group_id == Some(gid))
+                                        .find_map(|c| c.cloud_ref.as_ref())
+                                        .and_then(|cref| {
+                                            self.cloud_profiles.iter()
+                                                .find(|p| p.id == cref.profile_id)
+                                                .map(|p| match p.provider.as_str() {
+                                                    "aws" => "aws",
+                                                    "k8s" | "kubernetes" => "kubernetes",
+                                                    _ => "cloud",
+                                                })
+                                        })
+                                });
+
                             let (folder_glyph, folder_bg): (BrandIcon, Color) =
-                                match group.icon.as_deref() {
-                                Some(custom) if !custom.is_empty() => {
-                                    let glyph = crate::os_icon::custom_icon_glyph(custom);
-                                    let brand = group
+                                if let Some(brand) = explicit_brand.or(inferred_brand) {
+                                    let glyph = crate::os_icon::custom_icon_glyph(brand);
+                                    let bg = group
                                         .color
                                         .as_deref()
                                         .and_then(crate::os_icon::parse_hex_color)
                                         .unwrap_or_else(|| {
-                                            // Pull the brand colour off
-                                            // the same provider-icon helper
-                                            // the cards use, so AWS reads
-                                            // orange / K8s reads blue
-                                            // without storing the hex on
-                                            // the row.
                                             crate::os_icon::provider_icon(
-                                                custom.strip_prefix("si:").unwrap_or(custom),
+                                                brand,
                                                 OryxisColors::t().accent,
                                             )
                                             .1
                                         });
-                                    (glyph, brand)
-                                }
-                                _ => {
-                                    // Look at the group's children for a
-                                    // cloud-query hint. ECS/EC2 → AWS,
-                                    // K8sPods → Kubernetes. Without a hint,
-                                    // fall back to the generic boxes cube.
-                                    let inferred_brand = self.groups.iter()
-                                        .filter(|g| g.parent_id == Some(gid))
-                                        .find_map(|g| g.cloud_query.as_ref())
-                                        .map(|q| match q.kind {
-                                            oryxis_core::models::cloud::CloudQueryKind::EcsTasks { .. } => "aws",
-                                            oryxis_core::models::cloud::CloudQueryKind::K8sPods { .. } => "kubernetes",
-                                        })
-                                        .or_else(|| {
-                                            // Fall back to inspecting direct
-                                            // connections — EC2-imported hosts
-                                            // carry a `cloud_ref` we can use to
-                                            // resolve back to the cloud
-                                            // profile's provider.
-                                            self.connections.iter()
-                                                .filter(|c| c.group_id == Some(gid))
-                                                .find_map(|c| c.cloud_ref.as_ref())
-                                                .and_then(|cref| {
-                                                    self.cloud_profiles.iter()
-                                                        .find(|p| p.id == cref.profile_id)
-                                                        .map(|p| match p.provider.as_str() {
-                                                            "aws" => "aws",
-                                                            "k8s" | "kubernetes" => "kubernetes",
-                                                            _ => "cloud",
-                                                        })
-                                                })
-                                        });
-
-                                    if let Some(brand) = inferred_brand {
-                                        let glyph = crate::os_icon::custom_icon_glyph(brand);
-                                        let bg = crate::os_icon::provider_icon(
-                                            brand,
-                                            OryxisColors::t().accent,
-                                        ).1;
-                                        (glyph, bg)
-                                    } else {
-                                        (
-                                            BrandIcon::Glyph(iced_fonts::lucide::boxes()),
-                                            OryxisColors::t().accent,
-                                        )
-                                    }
-                                }
-                            };
+                                    (glyph, bg)
+                                } else if let Some(custom) = group
+                                    .icon
+                                    .as_deref()
+                                    .filter(|s| !s.is_empty())
+                                {
+                                    // Non-brand explicit icon (e.g. user
+                                    // picked Lucide `key` / `lock` for a
+                                    // group). Honour it with the user's
+                                    // colour or the accent fallback.
+                                    let glyph = crate::os_icon::custom_icon_glyph(custom);
+                                    let bg = group
+                                        .color
+                                        .as_deref()
+                                        .and_then(crate::os_icon::parse_hex_color)
+                                        .unwrap_or_else(|| OryxisColors::t().accent);
+                                    (glyph, bg)
+                                } else {
+                                    (
+                                        BrandIcon::Glyph(iced_fonts::lucide::boxes()),
+                                        OryxisColors::t().accent,
+                                    )
+                                };
                             let icon_box = container(folder_glyph.view(18.0, Color::WHITE))
                                 .width(Length::Fixed(32.0))
                                 .height(Length::Fixed(32.0))
@@ -468,7 +468,7 @@ impl Oryxis {
                                 .padding(Padding { top: 8.0, right: 6.0, bottom: 8.0, left: 8.0 }),
                             )
                             .on_press(Message::OpenGroup(gid))
-                            .width(CARD_WIDTH)
+                            .width(Length::Fill)
                             .style(|_, status| {
                                 let (bg, bc, bw) = match status {
                                     BtnStatus::Hovered => (OryxisColors::t().bg_hover, OryxisColors::t().accent, 1.5),
@@ -487,7 +487,7 @@ impl Oryxis {
                             let wrapped = MouseArea::new(folder_card)
                                 .on_enter(Message::FolderCardHovered(gid))
                                 .on_exit(Message::FolderCardUnhovered);
-                            group_cards.push(wrapped.into());
+                            group_cards.push(container(wrapped).width(Length::Fill).clip(true).into());
                         }
             }
 
@@ -513,22 +513,20 @@ impl Oryxis {
                     } => format!("K8s · {context}/{namespace}"),
                 };
 
-                let (folder_glyph, folder_bg): (BrandIcon, Color) =
-                    match group.icon.as_deref() {
-                    Some(custom) if !custom.is_empty() => {
-                        let glyph = crate::os_icon::custom_icon_glyph(custom);
-                        let brand = crate::os_icon::provider_icon(
-                            custom.strip_prefix("si:").unwrap_or(custom),
-                            OryxisColors::t().accent,
-                        )
-                        .1;
-                        (glyph, brand)
-                    }
-                    _ => (
-                        BrandIcon::Glyph(iced_fonts::lucide::cloud()),
-                        OryxisColors::t().accent,
-                    ),
+                // Dynamic groups always have a known brand from their
+                // own cloud_query (ECS → AWS, K8s → Kubernetes). We
+                // don't expose a UI to set group icons, so honouring
+                // `group.icon` here is moot — derive from the query.
+                let brand: &str = match query.kind {
+                    oryxis_core::models::cloud::CloudQueryKind::EcsTasks { .. } => "aws",
+                    oryxis_core::models::cloud::CloudQueryKind::K8sPods { .. } => "kubernetes",
                 };
+                let folder_glyph = crate::os_icon::custom_icon_glyph(brand);
+                let folder_bg = crate::os_icon::provider_icon(
+                    brand,
+                    OryxisColors::t().accent,
+                )
+                .1;
                 let icon_box = container(folder_glyph.view(18.0, Color::WHITE))
                     .width(Length::Fixed(32.0))
                     .height(Length::Fixed(32.0))
@@ -571,7 +569,7 @@ impl Oryxis {
                     }),
                 )
                 .on_press(Message::OpenGroup(gid))
-                .width(CARD_WIDTH)
+                .width(Length::Fill)
                 .style(|_, status| {
                     let (bg, bc, bw) = match status {
                         BtnStatus::Hovered => (OryxisColors::t().bg_hover, OryxisColors::t().accent, 1.5),
@@ -589,7 +587,7 @@ impl Oryxis {
                     }
                 });
 
-                group_cards.push(folder_card.into());
+                group_cards.push(container(folder_card).width(Length::Fill).clip(true).into());
             }
         } else if let Some(active_gid) = self.active_group {
             // Inside a folder: render its nested dynamic groups (e.g.
@@ -657,7 +655,7 @@ impl Oryxis {
                     .padding(Padding { top: 8.0, right: 6.0, bottom: 8.0, left: 8.0 }),
                 )
                 .on_press(Message::OpenGroup(gid))
-                .width(CARD_WIDTH)
+                .width(Length::Fill)
                 .style(|_, status| {
                     let (bg, bc, bw) = match status {
                         BtnStatus::Hovered => (OryxisColors::t().bg_hover, OryxisColors::t().accent, 1.5),
@@ -670,7 +668,7 @@ impl Oryxis {
                         ..Default::default()
                     }
                 });
-                group_cards.push(folder_card.into());
+                group_cards.push(container(folder_card).width(Length::Fill).clip(true).into());
             }
         }
 
@@ -791,7 +789,7 @@ impl Oryxis {
                 .padding(Padding { top: 8.0, right: 2.0, bottom: 8.0, left: 8.0 }),
             )
             .on_press(Message::ConnectSsh(idx))
-            .width(CARD_WIDTH)
+            .width(Length::Fill)
             .style(move |_, status| {
                 let (bg, bc, bw) = match status {
                     BtnStatus::Hovered => (OryxisColors::t().bg_hover, OryxisColors::t().accent, 1.5),
@@ -811,35 +809,22 @@ impl Oryxis {
                 .on_exit(Message::CardUnhovered)
                 .on_right_press(Message::ShowCardMenu(idx));
 
-            host_cards.push(container(wrapped).width(CARD_WIDTH).into());
+            host_cards.push(container(wrapped).width(Length::Fill).clip(true).into());
         }
 
-        // Grid layout helper: tile a list of cards into 3-column rows
-        // with a 12px gutter. Empty slots are padded with fixed-width
-        // spacers so the trailing row keeps its cards left-aligned
-        // (or right-aligned under RTL via `dir_row`). Returns the
-        // intermediate Vec rather than a column so the caller can
-        // splice section headers between groups + hosts.
-        fn build_grid_rows<'a>(
-            cards: Vec<Element<'a, Message>>,
-        ) -> Vec<Element<'a, Message>> {
-            let mut grid_rows: Vec<Element<'a, Message>> = Vec::new();
-            let mut current_row: Vec<Element<'a, Message>> = Vec::new();
-            for card in cards {
-                current_row.push(card);
-                if current_row.len() == 3 {
-                    grid_rows.push(dir_row(std::mem::take(&mut current_row)).spacing(12).into());
-                    grid_rows.push(Space::new().height(12).into());
-                }
-            }
-            if !current_row.is_empty() {
-                while current_row.len() < 3 {
-                    current_row.push(Space::new().width(CARD_WIDTH).into());
-                }
-                grid_rows.push(dir_row(std::mem::take(&mut current_row)).spacing(12).into());
-            }
-            grid_rows
-        }
+        // Column count adapts to current window width minus the visible
+        // chrome (left nav + optional right panel + horizontal padding).
+        // Re-derived on every view() so resizing the window or toggling
+        // the side panel reflows the cards into the new column count.
+        let nav_width = if self.sidebar_collapsed {
+            crate::app::SIDEBAR_WIDTH_COLLAPSED
+        } else {
+            crate::app::SIDEBAR_WIDTH
+        };
+        let panel_open = self.cloud_discover_visible || self.show_host_panel;
+        let panel_width = if panel_open { crate::app::PANEL_WIDTH } else { 0.0 };
+        let available = (self.window_size.width - nav_width - panel_width - 48.0).max(0.0);
+        let cols = card_grid_columns(available, CARD_WIDTH, 12.0);
 
         // Section header (Termius-style "Groups" / "Hosts" labels).
         // Only rendered in flatten mode at root, where the user can
@@ -856,19 +841,19 @@ impl Oryxis {
             if !group_cards.is_empty() {
                 content_rows.push(section_header("groups_section"));
                 content_rows.push(Space::new().height(8).into());
-                content_rows.extend(build_grid_rows(group_cards));
+                content_rows.push(distribute_card_grid(group_cards, cols, 12.0, 12.0));
                 content_rows.push(Space::new().height(20).into());
             }
             if !host_cards.is_empty() {
                 content_rows.push(section_header("hosts_section"));
                 content_rows.push(Space::new().height(8).into());
-                content_rows.extend(build_grid_rows(host_cards));
+                content_rows.push(distribute_card_grid(host_cards, cols, 12.0, 12.0));
             }
         } else {
             // Legacy: groups (if any) first, then hosts, in one grid.
             let mut combined = group_cards;
             combined.extend(host_cards);
-            content_rows.extend(build_grid_rows(combined));
+            content_rows.push(distribute_card_grid(combined, cols, 12.0, 12.0));
         }
 
         // Each grid row holds up to 3 fixed-width cards; once the row

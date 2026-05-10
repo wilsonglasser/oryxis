@@ -18,7 +18,7 @@ use crate::app::{Message, Oryxis, CARD_WIDTH, PANEL_WIDTH};
 use crate::i18n::t;
 use crate::state::{CloudAuthChoice, CloudDiscoverState, CloudProviderChoice, CloudTestState};
 use crate::theme::OryxisColors;
-use crate::widgets::dir_row;
+use crate::widgets::{card_grid_columns, dir_row, distribute_card_grid};
 
 impl Oryxis {
     pub(crate) fn view_cloud_accounts(&self) -> Element<'_, Message> {
@@ -201,11 +201,13 @@ impl Oryxis {
                         column![
                             text(&cp.label)
                                 .size(13)
-                                .color(OryxisColors::t().text_primary),
+                                .color(OryxisColors::t().text_primary)
+                                .wrapping(iced::widget::text::Wrapping::None),
                             Space::new().height(2),
                             text(format!("{} · {}", provider_label, cp.auth_kind))
                                 .size(10)
-                                .color(OryxisColors::t().text_muted),
+                                .color(OryxisColors::t().text_muted)
+                                .wrapping(iced::widget::text::Wrapping::None),
                         ]
                         .width(Length::Fill)
                         .into(),
@@ -214,7 +216,7 @@ impl Oryxis {
                     .align_y(iced::Alignment::Center),
                 )
                 .padding(16)
-                .width(CARD_WIDTH)
+                .width(Length::Fill)
                 .style(|_| container::Style {
                     background: Some(Background::Color(OryxisColors::t().bg_surface)),
                     border: Border {
@@ -230,35 +232,21 @@ impl Oryxis {
                     .on_exit(Message::CloudCardUnhovered)
                     .on_right_press(Message::ShowCloudCardMenu(cp_id));
 
-                cards.push(wrapped.into());
+                cards.push(container(wrapped).width(Length::Fill).clip(true).into());
             }
 
-            // Pack into 3-column rows like snippets/keys do.
-            let mut grid_rows: Vec<Element<'_, Message>> = Vec::new();
-            let mut current_row: Vec<Element<'_, Message>> = Vec::new();
-            for card in cards {
-                current_row.push(card);
-                if current_row.len() == 3 {
-                    grid_rows.push(
-                        dir_row(std::mem::take(&mut current_row))
-                            .spacing(12)
-                            .into(),
-                    );
-                    grid_rows.push(Space::new().height(12).into());
-                }
-            }
-            if !current_row.is_empty() {
-                while current_row.len() < 3 {
-                    current_row.push(Space::new().width(CARD_WIDTH).into());
-                }
-                grid_rows.push(
-                    dir_row(std::mem::take(&mut current_row))
-                        .spacing(12)
-                        .into(),
-                );
-            }
+            let nav_width = if self.sidebar_collapsed {
+                crate::app::SIDEBAR_WIDTH_COLLAPSED
+            } else {
+                crate::app::SIDEBAR_WIDTH
+            };
+            let panel_width = if self.cloud_form_visible { PANEL_WIDTH } else { 0.0 };
+            let available =
+                (self.window_size.width - nav_width - panel_width - 48.0).max(0.0);
+            let cols = card_grid_columns(available, CARD_WIDTH, 12.0);
+            let cloud_grid = distribute_card_grid(cards, cols, 12.0, 12.0);
 
-            let grid = scrollable(column(grid_rows).padding(Padding {
+            let grid = scrollable(column![cloud_grid].padding(Padding {
                 top: 0.0,
                 right: 24.0,
                 bottom: 24.0,

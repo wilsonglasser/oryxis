@@ -8,7 +8,7 @@ use iced::{Background, Border, Color, Element, Length, Padding};
 use crate::app::{Message, Oryxis, CARD_WIDTH, PANEL_WIDTH};
 use crate::i18n::t;
 use crate::theme::OryxisColors;
-use crate::widgets::dir_row;
+use crate::widgets::{card_grid_columns, dir_row, distribute_card_grid};
 
 impl Oryxis {
     pub(crate) fn view_snippets(&self) -> Element<'_, Message> {
@@ -138,9 +138,16 @@ impl Oryxis {
                         icon_box.into(),
                         Space::new().width(12).into(),
                         column![
-                            text(&snip.label).size(13).color(OryxisColors::t().text_primary),
+                            text(&snip.label)
+                                .size(13)
+                                .color(OryxisColors::t().text_primary)
+                                .wrapping(iced::widget::text::Wrapping::None),
                             Space::new().height(2),
-                            text(cmd_preview).size(10).color(OryxisColors::t().text_muted).font(iced::Font::MONOSPACE),
+                            text(cmd_preview)
+                                .size(10)
+                                .color(OryxisColors::t().text_muted)
+                                .font(iced::Font::MONOSPACE)
+                                .wrapping(iced::widget::text::Wrapping::None),
                         ].width(Length::Fill).into(),
                         edit_btn.into(),
                     ]).align_y(iced::Alignment::Center),
@@ -148,7 +155,7 @@ impl Oryxis {
                 .padding(16),
             )
             .on_press(Message::RunSnippet(idx))
-            .width(CARD_WIDTH)
+            .width(Length::Fill)
             .style(move |_, status| {
                 let (bg, bc, bw) = match status {
                     BtnStatus::Hovered => (OryxisColors::t().bg_hover, OryxisColors::t().accent, 1.5),
@@ -162,27 +169,21 @@ impl Oryxis {
                 }
             });
 
-            cards.push(card.into());
+            cards.push(container(card).width(Length::Fill).clip(true).into());
         }
 
-        let mut grid_rows: Vec<Element<'_, Message>> = Vec::new();
-        let mut current_row: Vec<Element<'_, Message>> = Vec::new();
-        for card in cards {
-            current_row.push(card);
-            if current_row.len() == 3 {
-                grid_rows.push(dir_row(std::mem::take(&mut current_row)).spacing(12).into());
-                grid_rows.push(Space::new().height(12).into());
-            }
-        }
-        if !current_row.is_empty() {
-            while current_row.len() < 3 {
-                current_row.push(Space::new().width(CARD_WIDTH).into());
-            }
-            grid_rows.push(dir_row(std::mem::take(&mut current_row)).spacing(12).into());
-        }
+        let nav_width = if self.sidebar_collapsed {
+            crate::app::SIDEBAR_WIDTH_COLLAPSED
+        } else {
+            crate::app::SIDEBAR_WIDTH
+        };
+        let panel_width = if self.show_snippet_panel { PANEL_WIDTH } else { 0.0 };
+        let available = (self.window_size.width - nav_width - panel_width - 48.0).max(0.0);
+        let cols = card_grid_columns(available, CARD_WIDTH, 12.0);
+        let snippets_grid = distribute_card_grid(cards, cols, 12.0, 12.0);
 
         let grid = scrollable(
-            column(grid_rows).padding(Padding { top: 0.0, right: 24.0, bottom: 24.0, left: 24.0 }),
+            column![snippets_grid].padding(Padding { top: 0.0, right: 24.0, bottom: 24.0, left: 24.0 }),
         ).height(Length::Fill);
 
         let main_content = column![toolbar, status, section_title, grid]
