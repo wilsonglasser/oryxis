@@ -425,7 +425,9 @@ The signaling server only stores `device_id -> IP:port` with a 5-minute TTL. It 
 | **v0.3** | **Released** | SFTP browser (dual-pane, drag/drop, multi-select, edit-in-place, properties, queue), tab overflow + jump-to modal |
 | **v0.4** | **Released** | Streaming AI responses, SSH agent forwarding, SSH integration tests, `app.rs` / `dispatch.rs` split into per-domain modules, theme contrast pass + per-theme button colors |
 | **v0.5** | **Released** | Authenticated proxies (SOCKS5 / HTTP CONNECT Basic), reusable Proxy Identities, jump-host-via-proxy stacking, `~/.ssh/config` `ProxyCommand` + `ProxyJump` import, opt-in password sync, Persian + Arabic UI with workspace-wide RTL layout pass, packaging + winget fixes |
-| **v0.6** | Planned | Split panes, biometric unlock, custom themes, per-host initial command (auto-`exec bash` on dash-only hosts, etc.) |
+| **v0.6** | **Released** | AWS Cloud Accounts (named profile, static keys, IAM Identity Center / SSO), EC2 + ECS discovery and import, EC2 Instance Connect / SSM Session / ECS Exec transports, brand SVG icons, encrypted-key passphrase import, per-host initial command, Windows per-user + ARM64 installers, responsive card grid, `PATH` registration on Windows |
+| **v0.7** | Planned | Kubernetes provider (`kubectl exec` into pods, namespace + label discovery), Google Cloud provider (Compute Engine + GKE), Azure provider (VMs + AKS), split panes, biometric unlock, custom themes, macOS bundling, Windows ConPTY local shell |
+| **v0.8** | Planned | Port forwarding as standalone entity (independent of terminal session, with on/off toggle, auto-start at boot, dedicated sidebar) — covers Local (`-L`), Remote (`-R`) and Dynamic SOCKS (`-D`) |
 
 ## Contributing
 
