@@ -63,6 +63,13 @@ Most SSH clients are either powerful but ugly (PuTTY), pretty but Electron-heavy
 ## Screenshots
 
 <p align="center">
+  <img src="resources/screen_1.gif" width="720" alt="Oryxis in action: connecting, running snippets, browsing SFTP">
+</p>
+<p align="center">
+  <em>Oryxis in motion</em>
+</p>
+
+<p align="center">
   <img src="resources/screen_1.png" width="720" alt="Hosts grid with folders and quick search">
 </p>
 <p align="center">
