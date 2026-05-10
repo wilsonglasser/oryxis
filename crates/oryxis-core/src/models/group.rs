@@ -1,6 +1,8 @@
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use super::cloud::CloudQuery;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Group {
     pub id: Uuid,
@@ -12,6 +14,13 @@ pub struct Group {
     pub is_shared: bool,
     pub created_at: chrono::DateTime<chrono::Utc>,
     pub updated_at: chrono::DateTime<chrono::Utc>,
+    /// When set, the group's children are not stored in the vault but
+    /// resolved on each expand by a `CloudProvider::resolve_query`
+    /// call. Manual groups have `None`. Dynamic groups must not also
+    /// have manually-attached children — the contents are 100% derived
+    /// from the query.
+    #[serde(default)]
+    pub cloud_query: Option<CloudQuery>,
 }
 
 impl Group {
@@ -27,6 +36,7 @@ impl Group {
             is_shared: false,
             created_at: now,
             updated_at: now,
+            cloud_query: None,
         }
     }
 }

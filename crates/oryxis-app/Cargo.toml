@@ -39,6 +39,13 @@ oryxis-ssh = { workspace = true }
 oryxis-terminal = { workspace = true }
 oryxis-vault = { workspace = true }
 oryxis-sync = { workspace = true }
+oryxis-cloud = { workspace = true }
+oryxis-cloud-aws = { workspace = true }
+# Process-wide TLS crypto provider for rustls 0.23 — the workspace
+# pins `ring`, but rustls 0.23 requires explicit `install_default()`
+# at startup before any TLS connection is opened. Without it the AWS
+# SDK reports "dispatch failure" on the first STS call.
+rustls = { workspace = true }
 iced = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }

@@ -7,6 +7,7 @@ use iced::widget::text_editor;
 use iced::Task;
 
 use oryxis_core::models::identity::Identity;
+use oryxis_vault::VaultError;
 
 use crate::app::{Message, Oryxis};
 use crate::state::{OverlayContent, OverlayState, View};
@@ -28,6 +29,9 @@ impl Oryxis {
                 self.key_import_label.clear();
                 self.key_import_content = text_editor::Content::new();
                 self.key_import_pem.clear();
+                self.key_import_passphrase.clear();
+                self.key_import_passphrase_required = false;
+                self.key_import_passphrase_visible = false;
                 self.key_error = None;
                 self.key_success = None;
                 self.editing_key_id = None;
@@ -37,11 +41,40 @@ impl Oryxis {
             Message::HideKeyPanel => {
                 self.show_key_panel = false;
                 self.editing_key_id = None;
+                self.key_import_passphrase.clear();
+                self.key_import_passphrase_required = false;
+                self.key_import_passphrase_visible = false;
+                // Errors raised inside the sidebar are scoped to it.
+                // Closing the panel discards that context so the main
+                // keychain area doesn't inherit a stale message.
+                self.key_error = None;
+                self.key_success = None;
             }
             Message::KeyImportLabelChanged(v) => self.key_import_label = v,
             Message::KeyContentAction(action) => {
                 self.key_import_content.perform(action);
-                self.key_import_pem = self.key_import_content.text();
+                let new_text = self.key_import_content.text();
+                // Re-detect on every edit. If the user pastes an encrypted
+                // PEM, the passphrase row should appear; if they swap to an
+                // unencrypted one, it should hide. Clearing the cached
+                // passphrase prevents leftover input from being applied
+                // against a different key.
+                if new_text != self.key_import_pem {
+                    let encrypted = oryxis_vault::is_key_encrypted(&new_text);
+                    if encrypted != self.key_import_passphrase_required {
+                        self.key_import_passphrase.clear();
+                    }
+                    self.key_import_passphrase_required = encrypted;
+                }
+                self.key_import_pem = new_text;
+            }
+            Message::KeyImportPassphraseChanged(v) => {
+                self.key_import_passphrase = v;
+                // Clear stale "wrong passphrase" feedback as the user types.
+                self.key_error = None;
+            }
+            Message::KeyImportPassphraseToggleVisibility => {
+                self.key_import_passphrase_visible = !self.key_import_passphrase_visible;
             }
             Message::BrowseKeyFile => {
                 return Ok(Task::perform(
@@ -74,10 +107,17 @@ impl Oryxis {
                     self.key_import_label = filename;
                 }
                 self.key_import_content = text_editor::Content::with_text(&content);
+                self.key_import_passphrase.clear();
+                // Detect encryption now so the passphrase row appears as soon
+                // as the file lands, not only after the user clicks Save.
+                self.key_import_passphrase_required =
+                    oryxis_vault::is_key_encrypted(&content);
                 self.key_import_pem = content;
                 self.show_key_panel = true;
                 self.key_error = None;
-                self.key_success = Some("Key file loaded".into());
+                // The sidebar already shows "Loaded (X bytes)"; surfacing
+                // a second toast in the main keychain area is just noise.
+                self.key_success = None;
             }
             Message::KeyFileBrowseError(err) => {
                 if !err.contains("cancelled") {
@@ -89,12 +129,25 @@ impl Oryxis {
                     self.key_error = Some("Select a key file first".into());
                     return Ok(Task::none());
                 }
+                // If we already know the key is encrypted but the user
+                // clicked Save with an empty passphrase, give explicit
+                // feedback instead of silently leaving the row visible.
+                if self.key_import_passphrase_required && self.key_import_passphrase.is_empty() {
+                    self.key_error =
+                        Some(crate::i18n::t("key_passphrase_required_msg").to_string());
+                    return Ok(Task::none());
+                }
                 let label = if self.key_import_label.is_empty() {
                     "imported-key".to_string()
                 } else {
                     self.key_import_label.clone()
                 };
-                match oryxis_vault::import_key(&label, &self.key_import_pem) {
+                let pass_opt = if self.key_import_passphrase.is_empty() {
+                    None
+                } else {
+                    Some(self.key_import_passphrase.as_str())
+                };
+                match oryxis_vault::import_key(&label, &self.key_import_pem, pass_opt) {
                     Ok(mut generated) => {
                         // If editing an existing key, preserve its ID
                         if let Some(existing_id) = self.editing_key_id {
@@ -109,6 +162,9 @@ impl Oryxis {
                                     self.key_import_label.clear();
                                     self.key_import_content = text_editor::Content::new();
                                     self.key_import_pem.clear();
+                                    self.key_import_passphrase.clear();
+                                    self.key_import_passphrase_required = false;
+                                    self.key_import_passphrase_visible = false;
                                     self.show_key_panel = false;
                                     self.editing_key_id = None;
                                     self.load_data_from_vault();
@@ -116,6 +172,14 @@ impl Oryxis {
                                 Err(e) => self.key_error = Some(e.to_string()),
                             }
                         }
+                    }
+                    Err(VaultError::KeyNeedsPassphrase) => {
+                        self.key_import_passphrase_required = true;
+                        self.key_error = None;
+                    }
+                    Err(VaultError::WrongKeyPassphrase) => {
+                        self.key_import_passphrase_required = true;
+                        self.key_error = Some(crate::i18n::t("key_passphrase_wrong").to_string());
                     }
                     Err(e) => self.key_error = Some(format!("Import failed: {}", e)),
                 }
@@ -161,6 +225,10 @@ impl Oryxis {
                         .unwrap_or_default();
                     self.key_import_content = text_editor::Content::with_text(&pem);
                     self.key_import_pem = pem;
+                    // Stored PEM is always unencrypted; no passphrase prompt.
+                    self.key_import_passphrase.clear();
+                    self.key_import_passphrase_required = false;
+                    self.key_import_passphrase_visible = false;
                     self.show_key_panel = true;
                     self.key_error = None;
                     self.key_success = None;

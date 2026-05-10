@@ -9,6 +9,7 @@ use oryxis_core::models::connection::AuthMethod;
 
 use crate::app::{Message, Oryxis, CARD_WIDTH};
 use crate::i18n::t;
+use crate::os_icon::BrandIcon;
 use crate::theme::OryxisColors;
 use crate::widgets::dir_row;
 
@@ -45,42 +46,104 @@ impl Oryxis {
             text(t("hosts")).size(20).color(OryxisColors::t().text_primary).into()
         };
 
+        // "+ Host [▾]" split button — primary half opens the manual
+        // SSH editor (unchanged), the chevron half opens a cloud
+        // provider picker overlay so discovery launches from the
+        // Hosts view (where the user naturally goes to add hosts).
+        // Layout mirrors the keychain "+ ADD ▼" split exactly so both
+        // toolbars stay visually consistent. The chevron half is only
+        // emitted when at least one cloud profile is configured —
+        // when there's no chevron, the primary button takes back its
+        // full corner radius so it doesn't look "cut" on the right.
+        let has_chevron = !self.cloud_profiles.is_empty();
+        let rtl = crate::i18n::is_rtl_layout();
+        // Pre-compute the rounded-corner radii so the leading half
+        // always rounds the leading edge and the chevron always
+        // rounds the trailing edge — flipped under RTL.
+        let label_radius = if !has_chevron {
+            Radius::from(6.0)
+        } else if rtl {
+            Radius { top_left: 0.0, bottom_left: 0.0, top_right: 6.0, bottom_right: 6.0 }
+        } else {
+            Radius { top_left: 6.0, bottom_left: 6.0, top_right: 0.0, bottom_right: 0.0 }
+        };
+        let chevron_radius = if rtl {
+            Radius { top_left: 6.0, bottom_left: 6.0, top_right: 0.0, bottom_right: 0.0 }
+        } else {
+            Radius { top_left: 0.0, bottom_left: 0.0, top_right: 6.0, bottom_right: 6.0 }
+        };
+
+        let primary_btn = button(
+            container(
+                dir_row(vec![
+                    text("+").size(13).font(iced::Font {
+                        weight: iced::font::Weight::Bold,
+                        ..iced::Font::new(crate::theme::SYSTEM_UI_FAMILY)
+                    }).color(OryxisColors::t().button_text).into(),
+                    Space::new().width(4).into(),
+                    text(t("host_btn")).size(11).font(iced::Font {
+                        weight: iced::font::Weight::Bold,
+                        ..iced::Font::new(crate::theme::SYSTEM_UI_FAMILY)
+                    }).color(OryxisColors::t().button_text).into(),
+                ]).align_y(iced::Alignment::Center),
+            )
+            .center_y(Length::Fixed(24.0))
+            .padding(Padding { top: 0.0, right: 14.0, bottom: 0.0, left: 14.0 }),
+        )
+        .on_press(Message::ShowNewConnection)
+        .style(move |_, status| {
+            let bg = match status {
+                BtnStatus::Hovered => OryxisColors::t().button_bg_hover,
+                _ => OryxisColors::t().button_bg,
+            };
+            button::Style {
+                background: Some(Background::Color(bg)),
+                border: Border { radius: label_radius, ..Default::default() },
+                ..Default::default()
+            }
+        });
+
+        let action_group: Element<'_, Message> = if has_chevron {
+            // 1px divider between the two halves — same alpha-tinted
+            // black the keychain split uses.
+            let separator = container(Space::new().width(1).height(16))
+                .style(|_| container::Style {
+                    background: Some(Background::Color(Color { a: 0.3, ..Color::BLACK })),
+                    ..Default::default()
+                });
+            let chevron_btn = button(
+                container(
+                    iced_fonts::lucide::chevron_down::<iced::Theme, iced::Renderer>()
+                        .size(12)
+                        .color(OryxisColors::t().button_text),
+                )
+                .center_y(Length::Fixed(24.0))
+                .padding(Padding { top: 0.0, right: 4.0, bottom: 0.0, left: 4.0 }),
+            )
+            .on_press(Message::ShowCloudProviderPicker)
+            .style(move |_, status| {
+                let bg = match status {
+                    BtnStatus::Hovered => OryxisColors::t().button_bg_hover,
+                    _ => OryxisColors::t().button_bg,
+                };
+                button::Style {
+                    background: Some(Background::Color(bg)),
+                    border: Border { radius: chevron_radius, ..Default::default() },
+                    ..Default::default()
+                }
+            });
+            dir_row(vec![primary_btn.into(), separator.into(), chevron_btn.into()])
+                .align_y(iced::Alignment::Center)
+                .into()
+        } else {
+            primary_btn.into()
+        };
+
         let toolbar = container(
             dir_row(vec![
                 toolbar_left,
                 Space::new().width(Length::Fill).into(),
-                {
-                    let fg = OryxisColors::t().button_text;
-                    button(
-                        container(
-                            dir_row(vec![
-                                text("+").size(13).font(iced::Font {
-                                    weight: iced::font::Weight::Bold,
-                                    ..iced::Font::new(crate::theme::SYSTEM_UI_FAMILY)
-                                }).color(fg).into(),
-                                Space::new().width(4).into(),
-                                text(t("host_btn")).size(11).font(iced::Font {
-                                    weight: iced::font::Weight::Bold,
-                                    ..iced::Font::new(crate::theme::SYSTEM_UI_FAMILY)
-                                }).color(fg).into(),
-                            ]).align_y(iced::Alignment::Center),
-                        )
-                        .center_y(Length::Fixed(24.0))
-                        .padding(Padding { top: 0.0, right: 14.0, bottom: 0.0, left: 14.0 }),
-                    )
-                    .on_press(Message::ShowNewConnection)
-                    .style(|_, status| {
-                        let bg = match status {
-                            BtnStatus::Hovered => OryxisColors::t().button_bg_hover,
-                            _ => OryxisColors::t().button_bg,
-                        };
-                        button::Style {
-                            background: Some(Background::Color(bg)),
-                            border: Border { radius: Radius::from(6.0), ..Default::default() },
-                            ..Default::default()
-                        }
-                    }).into()
-                },
+                action_group,
             ]).align_y(iced::Alignment::Center),
         )
         .padding(Padding { top: 20.0, right: 24.0, bottom: 16.0, left: 24.0 })
@@ -97,16 +160,23 @@ impl Oryxis {
         .padding(Padding { top: 0.0, right: 24.0, bottom: 12.0, left: 24.0 })
         .width(Length::Fill);
 
-        // ── Status ──
-        let status: Element<'_, Message> = if let Some(err) = &self.host_panel_error {
-            container(Element::from(text(err.clone()).size(12).color(OryxisColors::t().error)))
-                .padding(Padding { top: 0.0, right: 24.0, bottom: 8.0, left: 24.0 }).into()
-        } else {
-            Space::new().height(0).into()
-        };
+        // The host editor's validation error renders inside the
+        // editor panel itself (`host_panel::view_host_panel`) right
+        // above the Save button — duplicating it here put the message
+        // floating in the listing area, which read as a list-level
+        // error rather than form feedback. Keep this slot reserved
+        // for future list-level statuses.
+        let status: Element<'_, Message> = Space::new().height(0).into();
 
         // ── Host cards grid ──
-        let mut cards: Vec<Element<'_, Message>> = Vec::new();
+        // Cards are collected in two parallel buckets so the renderer
+        // can choose between a flat single grid (legacy mode) or two
+        // labelled sections (Termius-style "Groups" + "Hosts" headers
+        // when `flatten_hosts` is on at root).
+        let mut group_cards: Vec<Element<'_, Message>> = Vec::new();
+        let mut host_cards: Vec<Element<'_, Message>> = Vec::new();
+        let at_root = self.active_group.is_none();
+        let flatten = self.flatten_hosts && at_root;
 
         if self.connections.is_empty() {
             // Termius-style empty state — centered "Create host" with input
@@ -173,6 +243,67 @@ impl Oryxis {
             }
         }
 
+        // Dynamic-group early-return: if the user opened a cloud-query
+        // group (ECS service / future K8s deployment), short-circuit
+        // the regular host-card flow and show a placeholder explaining
+        // that the live-task resolver isn't wired yet. Without this
+        // the panel renders an empty grid and the user can't tell
+        // whether the import worked.
+        if let Some(gid) = self.active_group
+            && let Some(group) = self.groups.iter().find(|g| g.id == gid)
+            && let Some(query) = group.cloud_query.as_ref()
+        {
+            let detail = match &query.kind {
+                oryxis_core::models::cloud::CloudQueryKind::EcsTasks {
+                    cluster,
+                    service,
+                    container,
+                } => format!("ECS · {cluster} / {service} / {container}"),
+                oryxis_core::models::cloud::CloudQueryKind::K8sPods {
+                    context,
+                    namespace,
+                    selector,
+                } => format!("K8s · {context} / {namespace} / {selector:?}"),
+            };
+
+            let placeholder = container(
+                column![
+                    container(
+                        iced_fonts::lucide::cloud()
+                            .size(36)
+                            .color(OryxisColors::t().text_muted),
+                    )
+                    .padding(20)
+                    .style(|_| container::Style {
+                        background: Some(Background::Color(OryxisColors::t().bg_surface)),
+                        border: Border {
+                            radius: Radius::from(12.0),
+                            ..Default::default()
+                        },
+                        ..Default::default()
+                    }),
+                    Space::new().height(20),
+                    text(group.label.clone())
+                        .size(18)
+                        .color(OryxisColors::t().text_primary),
+                    Space::new().height(6),
+                    text(detail)
+                        .size(12)
+                        .color(OryxisColors::t().text_muted),
+                    Space::new().height(20),
+                    text(t("cloud_dynamic_group_pending"))
+                        .size(13)
+                        .color(OryxisColors::t().text_secondary),
+                ]
+                .align_x(iced::Alignment::Center),
+            )
+            .center(Length::Fill);
+            let main_content = column![toolbar, search_bar, status, placeholder]
+                .width(Length::Fill)
+                .height(Length::Fill);
+            return main_content.into();
+        }
+
         if self.active_group.is_none() {
             // Root view: show folder cards for groups that have connections
             let mut shown_groups = std::collections::HashSet::new();
@@ -180,27 +311,112 @@ impl Oryxis {
                 if let Some(gid) = conn.group_id
                     && shown_groups.insert(gid)
                         && let Some(group) = self.groups.iter().find(|g| g.id == gid) {
-                            let count = self.connections.iter().filter(|c| c.group_id == Some(gid)).count();
+                            // Count = direct connections + nested groups
+                            // (each nested dynamic group is a record,
+                            // even if its tasks are resolved on expand).
+                            let direct_hosts = self.connections.iter()
+                                .filter(|c| c.group_id == Some(gid)).count();
+                            let nested_groups = self.groups.iter()
+                                .filter(|g| g.parent_id == Some(gid)).count();
+                            let count = direct_hosts + nested_groups;
                             let label = group.label.clone();
                             // Plural form differs across languages (English
                             // pluralizes, Persian/Chinese/Japanese don't); use
                             // the bare i18n word so every locale stays correct.
                             let count_text = format!("{} {}", count, t("hosts").to_lowercase());
 
-                            // Folder card — matches host card layout (square icon,
-                            // same padding and hover feedback).
-                            let icon_box = container(
-                                iced_fonts::lucide::folder().size(14).color(Color::WHITE),
-                            )
-                            .width(Length::Fixed(32.0))
-                            .height(Length::Fixed(32.0))
-                            .center_x(Length::Fixed(32.0))
-                            .center_y(Length::Fixed(32.0))
-                            .style(|_| container::Style {
-                                background: Some(Background::Color(OryxisColors::t().accent)),
-                                border: Border { radius: Radius::from(8.0), ..Default::default() },
-                                ..Default::default()
-                            });
+                            // Folder card icon precedence:
+                            //   1. Group's `icon` field (cloud-imported
+                            //      groups carry `si:aws` / `si:kubernetes`).
+                            //   2. Inferred from nested cloud-query
+                            //      children (ECS → AWS, K8s → Kubernetes).
+                            //   3. Generic Lucide `boxes` cube.
+                            // Visual: brand-colour chip with a white
+                            // glyph on top (matches the host-card style,
+                            // no visible padding around the SVG).
+                            let (folder_glyph, folder_bg): (BrandIcon, Color) =
+                                match group.icon.as_deref() {
+                                Some(custom) if !custom.is_empty() => {
+                                    let glyph = crate::os_icon::custom_icon_glyph(custom);
+                                    let brand = group
+                                        .color
+                                        .as_deref()
+                                        .and_then(crate::os_icon::parse_hex_color)
+                                        .unwrap_or_else(|| {
+                                            // Pull the brand colour off
+                                            // the same provider-icon helper
+                                            // the cards use, so AWS reads
+                                            // orange / K8s reads blue
+                                            // without storing the hex on
+                                            // the row.
+                                            crate::os_icon::provider_icon(
+                                                custom.strip_prefix("si:").unwrap_or(custom),
+                                                OryxisColors::t().accent,
+                                            )
+                                            .1
+                                        });
+                                    (glyph, brand)
+                                }
+                                _ => {
+                                    // Look at the group's children for a
+                                    // cloud-query hint. ECS/EC2 → AWS,
+                                    // K8sPods → Kubernetes. Without a hint,
+                                    // fall back to the generic boxes cube.
+                                    let inferred_brand = self.groups.iter()
+                                        .filter(|g| g.parent_id == Some(gid))
+                                        .find_map(|g| g.cloud_query.as_ref())
+                                        .map(|q| match q.kind {
+                                            oryxis_core::models::cloud::CloudQueryKind::EcsTasks { .. } => "aws",
+                                            oryxis_core::models::cloud::CloudQueryKind::K8sPods { .. } => "kubernetes",
+                                        })
+                                        .or_else(|| {
+                                            // Fall back to inspecting direct
+                                            // connections — EC2-imported hosts
+                                            // carry a `cloud_ref` we can use to
+                                            // resolve back to the cloud
+                                            // profile's provider.
+                                            self.connections.iter()
+                                                .filter(|c| c.group_id == Some(gid))
+                                                .find_map(|c| c.cloud_ref.as_ref())
+                                                .and_then(|cref| {
+                                                    self.cloud_profiles.iter()
+                                                        .find(|p| p.id == cref.profile_id)
+                                                        .map(|p| match p.provider.as_str() {
+                                                            "aws" => "aws",
+                                                            "k8s" | "kubernetes" => "kubernetes",
+                                                            _ => "cloud",
+                                                        })
+                                                })
+                                        });
+
+                                    if let Some(brand) = inferred_brand {
+                                        let glyph = crate::os_icon::custom_icon_glyph(brand);
+                                        let bg = crate::os_icon::provider_icon(
+                                            brand,
+                                            OryxisColors::t().accent,
+                                        ).1;
+                                        (glyph, bg)
+                                    } else {
+                                        (
+                                            BrandIcon::Glyph(iced_fonts::lucide::boxes()),
+                                            OryxisColors::t().accent,
+                                        )
+                                    }
+                                }
+                            };
+                            let icon_box = container(folder_glyph.view(18.0, Color::WHITE))
+                                .width(Length::Fixed(32.0))
+                                .height(Length::Fixed(32.0))
+                                .center_x(Length::Fixed(32.0))
+                                .center_y(Length::Fixed(32.0))
+                                .style(move |_| container::Style {
+                                    background: Some(Background::Color(folder_bg)),
+                                    border: Border {
+                                        radius: Radius::from(8.0),
+                                        ..Default::default()
+                                    },
+                                    ..Default::default()
+                                });
 
                             // ⋮ button — only rendered while the folder
                             // row is hovered, mirroring the host-card UX.
@@ -271,19 +487,204 @@ impl Oryxis {
                             let wrapped = MouseArea::new(folder_card)
                                 .on_enter(Message::FolderCardHovered(gid))
                                 .on_exit(Message::FolderCardUnhovered);
-                            cards.push(wrapped.into());
+                            group_cards.push(wrapped.into());
                         }
+            }
+
+            // ── Dynamic (cloud-query) groups ──
+            // Manual groups only render above when at least one
+            // Connection points at them. Dynamic groups carry their
+            // contents through `cloud_query` (ECS tasks resolved on
+            // expand) and would otherwise stay invisible. At root we
+            // only show dynamic groups WITHOUT a `parent_id`; nested
+            // ones (auto-imported under their cloud-profile folder)
+            // surface when the user opens that folder, just like
+            // manual nested groups would.
+            for group in &self.groups {
+                let Some(query) = group.cloud_query.as_ref() else { continue };
+                if group.parent_id.is_some() { continue }
+                let gid = group.id;
+                let subtitle = match &query.kind {
+                    oryxis_core::models::cloud::CloudQueryKind::EcsTasks {
+                        cluster, ..
+                    } => format!("ECS · {cluster}"),
+                    oryxis_core::models::cloud::CloudQueryKind::K8sPods {
+                        context, namespace, ..
+                    } => format!("K8s · {context}/{namespace}"),
+                };
+
+                let (folder_glyph, folder_bg): (BrandIcon, Color) =
+                    match group.icon.as_deref() {
+                    Some(custom) if !custom.is_empty() => {
+                        let glyph = crate::os_icon::custom_icon_glyph(custom);
+                        let brand = crate::os_icon::provider_icon(
+                            custom.strip_prefix("si:").unwrap_or(custom),
+                            OryxisColors::t().accent,
+                        )
+                        .1;
+                        (glyph, brand)
+                    }
+                    _ => (
+                        BrandIcon::Glyph(iced_fonts::lucide::cloud()),
+                        OryxisColors::t().accent,
+                    ),
+                };
+                let icon_box = container(folder_glyph.view(18.0, Color::WHITE))
+                    .width(Length::Fixed(32.0))
+                    .height(Length::Fixed(32.0))
+                    .center_x(Length::Fixed(32.0))
+                    .center_y(Length::Fixed(32.0))
+                    .style(move |_| container::Style {
+                        background: Some(Background::Color(folder_bg)),
+                        border: Border {
+                            radius: Radius::from(8.0),
+                            ..Default::default()
+                        },
+                        ..Default::default()
+                    });
+
+                let folder_card = button(
+                    container(
+                        dir_row(vec![
+                            icon_box.into(),
+                            Space::new().width(8).into(),
+                            column![
+                                text(group.label.clone())
+                                    .size(13)
+                                    .color(OryxisColors::t().text_primary),
+                                Space::new().height(2),
+                                text(subtitle)
+                                    .size(10)
+                                    .color(OryxisColors::t().text_muted),
+                            ]
+                            .width(Length::Fill)
+                            .align_x(crate::widgets::dir_align_x())
+                            .into(),
+                        ])
+                        .align_y(iced::Alignment::Center),
+                    )
+                    .padding(Padding {
+                        top: 8.0,
+                        right: 6.0,
+                        bottom: 8.0,
+                        left: 8.0,
+                    }),
+                )
+                .on_press(Message::OpenGroup(gid))
+                .width(CARD_WIDTH)
+                .style(|_, status| {
+                    let (bg, bc, bw) = match status {
+                        BtnStatus::Hovered => (OryxisColors::t().bg_hover, OryxisColors::t().accent, 1.5),
+                        BtnStatus::Pressed => (OryxisColors::t().bg_selected, OryxisColors::t().accent, 2.0),
+                        _ => (OryxisColors::t().bg_surface, OryxisColors::t().border, 1.0),
+                    };
+                    button::Style {
+                        background: Some(Background::Color(bg)),
+                        border: Border {
+                            radius: Radius::from(10.0),
+                            color: bc,
+                            width: bw,
+                        },
+                        ..Default::default()
+                    }
+                });
+
+                group_cards.push(folder_card.into());
+            }
+        } else if let Some(active_gid) = self.active_group {
+            // Inside a folder: render its nested dynamic groups (e.g.
+            // ECS service / K8s deployment dynamic groups whose
+            // `parent_id` points at this folder). Same card style as
+            // the root pass, just filtered by parent.
+            for group in &self.groups {
+                let Some(query) = group.cloud_query.as_ref() else { continue };
+                if group.parent_id != Some(active_gid) { continue }
+                let gid = group.id;
+                let subtitle = match &query.kind {
+                    oryxis_core::models::cloud::CloudQueryKind::EcsTasks {
+                        cluster, ..
+                    } => format!("ECS · {cluster}"),
+                    oryxis_core::models::cloud::CloudQueryKind::K8sPods {
+                        context, namespace, ..
+                    } => format!("K8s · {context}/{namespace}"),
+                };
+
+                let (folder_glyph, folder_bg): (BrandIcon, Color) =
+                    match group.icon.as_deref() {
+                    Some(custom) if !custom.is_empty() => {
+                        let glyph = crate::os_icon::custom_icon_glyph(custom);
+                        let brand = crate::os_icon::provider_icon(
+                            custom.strip_prefix("si:").unwrap_or(custom),
+                            OryxisColors::t().accent,
+                        )
+                        .1;
+                        (glyph, brand)
+                    }
+                    _ => (
+                        BrandIcon::Glyph(iced_fonts::lucide::cloud()),
+                        OryxisColors::t().accent,
+                    ),
+                };
+                let icon_box = container(folder_glyph.view(18.0, Color::WHITE))
+                    .width(Length::Fixed(32.0))
+                    .height(Length::Fixed(32.0))
+                    .center_x(Length::Fixed(32.0))
+                    .center_y(Length::Fixed(32.0))
+                    .style(move |_| container::Style {
+                        background: Some(Background::Color(folder_bg)),
+                        border: Border { radius: Radius::from(8.0), ..Default::default() },
+                        ..Default::default()
+                    });
+
+                let folder_card = button(
+                    container(
+                        dir_row(vec![
+                            icon_box.into(),
+                            Space::new().width(8).into(),
+                            column![
+                                text(group.label.clone())
+                                    .size(13)
+                                    .color(OryxisColors::t().text_primary),
+                                Space::new().height(2),
+                                text(subtitle).size(10).color(OryxisColors::t().text_muted),
+                            ]
+                            .width(Length::Fill)
+                            .align_x(crate::widgets::dir_align_x())
+                            .into(),
+                        ])
+                        .align_y(iced::Alignment::Center),
+                    )
+                    .padding(Padding { top: 8.0, right: 6.0, bottom: 8.0, left: 8.0 }),
+                )
+                .on_press(Message::OpenGroup(gid))
+                .width(CARD_WIDTH)
+                .style(|_, status| {
+                    let (bg, bc, bw) = match status {
+                        BtnStatus::Hovered => (OryxisColors::t().bg_hover, OryxisColors::t().accent, 1.5),
+                        BtnStatus::Pressed => (OryxisColors::t().bg_selected, OryxisColors::t().accent, 2.0),
+                        _ => (OryxisColors::t().bg_surface, OryxisColors::t().border, 1.0),
+                    };
+                    button::Style {
+                        background: Some(Background::Color(bg)),
+                        border: Border { radius: Radius::from(10.0), color: bc, width: bw },
+                        ..Default::default()
+                    }
+                });
+                group_cards.push(folder_card.into());
             }
         }
 
         // Show host cards — filtered by active group and search
         let search_lower = self.host_search.to_lowercase();
         for (idx, conn) in self.connections.iter().enumerate() {
-            // Filter: at root show ungrouped only, inside folder show that group
+            // Filter: inside a folder always restrict to that group;
+            // at root, hide grouped hosts only when not flattening
+            // (flatten = on means show every host, including grouped
+            // ones, in the Hosts section).
             if let Some(gid) = self.active_group {
                 if conn.group_id != Some(gid) { continue; }
-            } else if conn.group_id.is_some() {
-                continue; // hide grouped hosts at root (they're inside folder cards)
+            } else if conn.group_id.is_some() && !flatten {
+                continue;
             }
 
             // Filter by search query
@@ -315,10 +716,11 @@ impl Oryxis {
                 conn.detected_os.as_deref(),
                 conn.custom_icon.as_deref(),
                 conn.custom_color.as_deref(),
+                conn.username.as_deref(),
                 default_fallback,
             );
-            // Fixed 32x32 square box centered on the glyph — Termius-style.
-            let icon_box = container(os_glyph.size(14).color(Color::WHITE))
+            // Fixed 32x32 square box centered on the glyph (Termius-style).
+            let icon_box = container(os_glyph.view(18.0, Color::WHITE))
                 .width(Length::Fixed(32.0))
                 .height(Length::Fixed(32.0))
                 .center_x(Length::Fixed(32.0))
@@ -409,25 +811,64 @@ impl Oryxis {
                 .on_exit(Message::CardUnhovered)
                 .on_right_press(Message::ShowCardMenu(idx));
 
-            cards.push(container(wrapped).width(CARD_WIDTH).into());
+            host_cards.push(container(wrapped).width(CARD_WIDTH).into());
         }
 
-        // Grid layout (3 cols). Use `dir_row` so cards flow right-to-left
-        // when RTL layout is active.
-        let mut grid_rows: Vec<Element<'_, Message>> = Vec::new();
-        let mut current_row: Vec<Element<'_, Message>> = Vec::new();
-        for card in cards {
-            current_row.push(card);
-            if current_row.len() == 3 {
+        // Grid layout helper: tile a list of cards into 3-column rows
+        // with a 12px gutter. Empty slots are padded with fixed-width
+        // spacers so the trailing row keeps its cards left-aligned
+        // (or right-aligned under RTL via `dir_row`). Returns the
+        // intermediate Vec rather than a column so the caller can
+        // splice section headers between groups + hosts.
+        fn build_grid_rows<'a>(
+            cards: Vec<Element<'a, Message>>,
+        ) -> Vec<Element<'a, Message>> {
+            let mut grid_rows: Vec<Element<'a, Message>> = Vec::new();
+            let mut current_row: Vec<Element<'a, Message>> = Vec::new();
+            for card in cards {
+                current_row.push(card);
+                if current_row.len() == 3 {
+                    grid_rows.push(dir_row(std::mem::take(&mut current_row)).spacing(12).into());
+                    grid_rows.push(Space::new().height(12).into());
+                }
+            }
+            if !current_row.is_empty() {
+                while current_row.len() < 3 {
+                    current_row.push(Space::new().width(CARD_WIDTH).into());
+                }
                 grid_rows.push(dir_row(std::mem::take(&mut current_row)).spacing(12).into());
-                grid_rows.push(Space::new().height(12).into());
             }
+            grid_rows
         }
-        if !current_row.is_empty() {
-            while current_row.len() < 3 {
-                current_row.push(Space::new().width(CARD_WIDTH).into());
+
+        // Section header (Termius-style "Groups" / "Hosts" labels).
+        // Only rendered in flatten mode at root, where the user can
+        // see both lists side-by-side.
+        let section_header = |label_key: &'static str| -> Element<'_, Message> {
+            text(t(label_key))
+                .size(14)
+                .color(OryxisColors::t().text_muted)
+                .into()
+        };
+
+        let mut content_rows: Vec<Element<'_, Message>> = Vec::new();
+        if flatten {
+            if !group_cards.is_empty() {
+                content_rows.push(section_header("groups_section"));
+                content_rows.push(Space::new().height(8).into());
+                content_rows.extend(build_grid_rows(group_cards));
+                content_rows.push(Space::new().height(20).into());
             }
-            grid_rows.push(dir_row(std::mem::take(&mut current_row)).spacing(12).into());
+            if !host_cards.is_empty() {
+                content_rows.push(section_header("hosts_section"));
+                content_rows.push(Space::new().height(8).into());
+                content_rows.extend(build_grid_rows(host_cards));
+            }
+        } else {
+            // Legacy: groups (if any) first, then hosts, in one grid.
+            let mut combined = group_cards;
+            combined.extend(host_cards);
+            content_rows.extend(build_grid_rows(combined));
         }
 
         // Each grid row holds up to 3 fixed-width cards; once the row
@@ -441,7 +882,7 @@ impl Oryxis {
         // slack to align inside — without it the column shrinks to
         // content and the rows still hug the leading edge.
         let grid = scrollable(
-            column(grid_rows)
+            column(content_rows)
                 .width(Length::Fill)
                 .padding(Padding { top: 0.0, right: 24.0, bottom: 24.0, left: 24.0 })
                 .align_x(crate::widgets::dir_align_x()),
@@ -452,7 +893,16 @@ impl Oryxis {
             .width(Length::Fill)
             .height(Length::Fill);
 
-        if self.show_host_panel {
+        // Discovery panel takes priority over the host editor — opening
+        // it from the "+ Host [▾]" picker fully replaces any open
+        // editor visually until the user dismisses or imports.
+        if self.cloud_discover_visible {
+            let panel = self.view_cloud_discover_panel();
+            dir_row(vec![main_content.into(), panel])
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .into()
+        } else if self.show_host_panel {
             let panel = self.view_host_panel();
             dir_row(vec![main_content.into(), panel])
                 .width(Length::Fill)

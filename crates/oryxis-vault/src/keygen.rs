@@ -5,6 +5,7 @@ use oryxis_core::models::key::{KeyAlgorithm, SshKey};
 use crate::store::VaultError;
 
 /// Generated key pair — private PEM + SshKey model.
+#[derive(Debug)]
 pub struct GeneratedKey {
     pub key: SshKey,
     pub private_pem: String,
@@ -91,12 +92,49 @@ fn parse_traditional_pem(pem: &str) -> Result<PrivateKey, VaultError> {
     Err(VaultError::Crypto("Unrecognized PEM format".into()))
 }
 
+/// Cheap structural check: returns `true` if the PEM looks like an
+/// encrypted key. Used by the UI to surface the passphrase field as
+/// soon as the user picks the file, without waiting for a Save click.
+/// Conservative — false negatives are fine (Save will still surface
+/// `KeyNeedsPassphrase`); false positives would prompt unnecessarily.
+pub fn is_key_encrypted(private_pem: &str) -> bool {
+    let stripped = private_pem.strip_prefix('\u{FEFF}').unwrap_or(private_pem);
+    let normalized = stripped.replace("\r\n", "\n").replace('\r', "\n");
+    let trimmed = normalized.trim();
+
+    // PKCS#8 / OpenSSL traditional PEM with explicit ENCRYPTED header.
+    if trimmed.contains("BEGIN ENCRYPTED PRIVATE KEY") {
+        return true;
+    }
+    if trimmed.contains("ENCRYPTED")
+        && (trimmed.contains("BEGIN RSA PRIVATE KEY")
+            || trimmed.contains("BEGIN EC PRIVATE KEY"))
+    {
+        return true;
+    }
+    // OpenSSH format — parse cheaply just to read the cipher field.
+    if trimmed.contains("BEGIN OPENSSH PRIVATE KEY")
+        && let Ok(parsed) = ssh_key::PrivateKey::from_openssh(trimmed) {
+            return parsed.is_encrypted();
+        }
+    false
+}
+
 /// Import an SSH key from any supported format:
-/// - OpenSSH (`BEGIN OPENSSH PRIVATE KEY`)
+/// - OpenSSH (`BEGIN OPENSSH PRIVATE KEY`) — supports passphrase-encrypted keys
 /// - PKCS#1 RSA (`BEGIN RSA PRIVATE KEY`)
 /// - PKCS#8 (`BEGIN PRIVATE KEY`) — RSA, ECDSA P-256/P-384, Ed25519
 /// - SEC1 EC (`BEGIN EC PRIVATE KEY`) — P-256, P-384
-pub fn import_key(label: &str, private_pem: &str) -> Result<GeneratedKey, VaultError> {
+///
+/// `passphrase` is consulted only when the key is detected as encrypted.
+/// Returns `KeyNeedsPassphrase` if the key is encrypted and `passphrase` is
+/// `None`/empty, or `WrongKeyPassphrase` if decryption fails. The decrypted
+/// key is stored unencrypted (the vault's master key already protects it).
+pub fn import_key(
+    label: &str,
+    private_pem: &str,
+    passphrase: Option<&str>,
+) -> Result<GeneratedKey, VaultError> {
     // Strip a UTF-8 BOM if present — Windows editors (Notepad, some
     // PowerShell redirects) write keys with a BOM and PEM parsers see
     // the leading bytes as junk before `-----BEGIN`. Then normalize
@@ -105,9 +143,35 @@ pub fn import_key(label: &str, private_pem: &str) -> Result<GeneratedKey, VaultE
     let normalized = stripped.replace("\r\n", "\n").replace('\r', "\n");
     let trimmed = normalized.trim();
 
+    // Traditional PEM encrypted with PKCS#5/PKCS#8 carry an explicit
+    // header. We don't support that path yet; surface a clear error so
+    // the user knows to convert the key.
+    let traditional_encrypted = trimmed.contains("BEGIN ENCRYPTED PRIVATE KEY")
+        || (trimmed.contains("ENCRYPTED")
+            && (trimmed.contains("BEGIN RSA PRIVATE KEY")
+                || trimmed.contains("BEGIN EC PRIVATE KEY")));
+    if traditional_encrypted && !trimmed.contains("BEGIN OPENSSH PRIVATE KEY") {
+        return Err(VaultError::Crypto(
+            "Encrypted PKCS#1/PKCS#8 keys are not supported. \
+             Remove the passphrase first (e.g. ssh-keygen -p -f <file> -N '')."
+                .into(),
+        ));
+    }
+
     let private_key = if trimmed.contains("BEGIN OPENSSH PRIVATE KEY") {
-        PrivateKey::from_openssh(trimmed)
-            .map_err(|e| VaultError::Crypto(format!("Failed to parse OpenSSH key: {}", e)))?
+        let parsed = PrivateKey::from_openssh(trimmed)
+            .map_err(|e| VaultError::Crypto(format!("Failed to parse OpenSSH key: {}", e)))?;
+        if parsed.is_encrypted() {
+            let pass = passphrase.unwrap_or("");
+            if pass.is_empty() {
+                return Err(VaultError::KeyNeedsPassphrase);
+            }
+            parsed
+                .decrypt(pass.as_bytes())
+                .map_err(|_| VaultError::WrongKeyPassphrase)?
+        } else {
+            parsed
+        }
     } else {
         parse_traditional_pem(trimmed)?
     };
@@ -170,7 +234,7 @@ mod tests {
     fn import_roundtrip() {
         // Generate then import
         let generated = generate_ed25519("original").unwrap();
-        let imported = import_key("imported", &generated.private_pem).unwrap();
+        let imported = import_key("imported", &generated.private_pem, None).unwrap();
         assert_eq!(imported.key.fingerprint, generated.key.fingerprint);
         assert_eq!(imported.key.algorithm, KeyAlgorithm::Ed25519);
         assert_eq!(imported.key.public_key, generated.key.public_key);
@@ -178,7 +242,7 @@ mod tests {
 
     #[test]
     fn import_invalid_pem_fails() {
-        let result = import_key("bad", "this is not a key");
+        let result = import_key("bad", "this is not a key", None);
         assert!(result.is_err());
     }
 
@@ -186,7 +250,7 @@ mod tests {
     fn import_strips_utf8_bom() {
         let generated = generate_ed25519("bom-test").unwrap();
         let with_bom = format!("\u{FEFF}{}", generated.private_pem);
-        let imported = import_key("bom", &with_bom).unwrap();
+        let imported = import_key("bom", &with_bom, None).unwrap();
         assert_eq!(imported.key.fingerprint, generated.key.fingerprint);
     }
 
@@ -194,7 +258,7 @@ mod tests {
     fn import_handles_crlf() {
         let generated = generate_ed25519("crlf-test").unwrap();
         let crlf = generated.private_pem.replace('\n', "\r\n");
-        let imported = import_key("crlf", &crlf).unwrap();
+        let imported = import_key("crlf", &crlf, None).unwrap();
         assert_eq!(imported.key.fingerprint, generated.key.fingerprint);
     }
 
@@ -202,7 +266,35 @@ mod tests {
     fn import_with_whitespace() {
         let generated = generate_ed25519("ws-test").unwrap();
         let padded = format!("\n  {}  \n", generated.private_pem);
-        let imported = import_key("trimmed", &padded).unwrap();
+        let imported = import_key("trimmed", &padded, None).unwrap();
         assert_eq!(imported.key.fingerprint, generated.key.fingerprint);
+    }
+
+    #[test]
+    fn import_encrypted_openssh_requires_passphrase() {
+        // Build an encrypted OpenSSH key via the ssh-key crate directly.
+        use ssh_key::{Algorithm, PrivateKey};
+        let mut rng = rand::thread_rng();
+        let key = PrivateKey::random(&mut rng, Algorithm::Ed25519).unwrap();
+        let encrypted = key.encrypt(&mut rng, b"hunter2").unwrap();
+        let pem = encrypted.to_openssh(ssh_key::LineEnding::LF).unwrap().to_string();
+
+        // No passphrase → KeyNeedsPassphrase.
+        let err = import_key("enc", &pem, None).unwrap_err();
+        assert!(matches!(err, VaultError::KeyNeedsPassphrase));
+
+        // Empty passphrase counted as missing.
+        let err = import_key("enc", &pem, Some("")).unwrap_err();
+        assert!(matches!(err, VaultError::KeyNeedsPassphrase));
+
+        // Wrong passphrase → WrongKeyPassphrase.
+        let err = import_key("enc", &pem, Some("nope")).unwrap_err();
+        assert!(matches!(err, VaultError::WrongKeyPassphrase));
+
+        // Correct passphrase succeeds and the stored PEM is unencrypted.
+        let imported = import_key("enc", &pem, Some("hunter2")).unwrap();
+        assert!(imported.private_pem.contains("BEGIN OPENSSH PRIVATE KEY"));
+        let reparsed = PrivateKey::from_openssh(&imported.private_pem).unwrap();
+        assert!(!reparsed.is_encrypted());
     }
 }

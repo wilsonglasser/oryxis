@@ -143,6 +143,9 @@ impl Oryxis {
                 key_import_label: String::new(),
                 key_import_content: text_editor::Content::new(),
                 key_import_pem: String::new(),
+                key_import_passphrase: String::new(),
+                key_import_passphrase_required: false,
+                key_import_passphrase_visible: false,
                 key_error: None,
                 key_success: None,
                 key_context_menu: None,
@@ -173,6 +176,32 @@ impl Oryxis {
                 proxy_identity_form_has_existing_password: false,
                 editing_proxy_identity_id: None,
                 proxy_identity_form_error: None,
+                cloud_profiles: Vec::new(),
+                cloud_form_visible: false,
+                cloud_form_label: String::new(),
+                cloud_form_provider: crate::state::CloudProviderChoice::Aws,
+                cloud_form_auth_kind: crate::state::CloudAuthChoice::Profile,
+                cloud_form_aws_profile_name: String::new(),
+                cloud_form_aws_region: String::new(),
+                editing_cloud_profile_id: None,
+                cloud_form_error: None,
+                cloud_form_test_state: crate::state::CloudTestState::Idle,
+                cloud_discover_visible: false,
+                cloud_discover_profile_id: None,
+                cloud_discover_state: crate::state::CloudDiscoverState::Idle,
+                cloud_discover_selected_ec2: std::collections::HashSet::new(),
+                cloud_discover_selected_ecs: std::collections::HashSet::new(),
+                cloud_discover_filter: String::new(),
+                cloud_discover_collapsed: std::collections::HashSet::new(),
+                hovered_cloud_card: None,
+                // Provider registry seeded once at boot. AWS is wired in
+                // PR 2; K8s lands in a follow-up PR. The Arc lets us
+                // hand the registry to async tasks without locking.
+                cloud_provider_registry: {
+                    let mut reg = oryxis_cloud::CloudProviderRegistry::new();
+                    reg.register(std::sync::Arc::new(oryxis_cloud_aws::AwsProvider::new()));
+                    std::sync::Arc::new(reg)
+                },
                 snippets: Vec::new(),
                 known_hosts: Vec::new(),
                 logs: Vec::new(),
@@ -194,7 +223,7 @@ impl Oryxis {
                 setting_bold_is_bright: true,
                 setting_keyword_highlight: true,
                 setting_smart_contrast: true,
-                setting_keepalive_interval: "0".into(),
+                setting_keepalive_interval: "30".into(),
                 setting_scrollback_rows: "10000".into(),
                 setting_sftp_concurrency: "2".into(),
                 setting_sftp_connect_timeout: "15".into(),
@@ -237,6 +266,7 @@ impl Oryxis {
                 sync_enabled: false,
                 sync_mode: "manual".into(),
                 sync_passwords: false,
+                flatten_hosts: true,
                 sync_device_name: String::new(),
                 sync_signaling_url: oryxis_sync::SyncConfig::default().signaling_url,
                 sync_relay_url: String::new(),
@@ -292,6 +322,7 @@ impl Oryxis {
             self.keys = vault.list_keys().unwrap_or_default();
             self.identities = vault.list_identities().unwrap_or_default();
             self.proxy_identities = vault.list_proxy_identities().unwrap_or_default();
+            self.cloud_profiles = vault.list_cloud_profiles().unwrap_or_default();
             self.snippets = vault.list_snippets().unwrap_or_default();
             self.known_hosts = vault.list_known_hosts().unwrap_or_default();
             self.logs_total = vault.count_logs().unwrap_or(0);
@@ -356,6 +387,9 @@ impl Oryxis {
             }
             if let Ok(Some(v)) = vault.get_setting("sync_passwords") {
                 self.sync_passwords = v == "true";
+            }
+            if let Ok(Some(v)) = vault.get_setting("flatten_hosts") {
+                self.flatten_hosts = v == "true";
             }
             if let Ok(Some(v)) = vault.get_setting("sync_device_name") {
                 self.sync_device_name = v;

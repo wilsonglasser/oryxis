@@ -41,6 +41,7 @@ impl Oryxis {
         let message = try_handler!(self, message, handle_settings);
         let message = try_handler!(self, message, handle_keys);
         let message = try_handler!(self, message, handle_proxy_identity);
+        let message = try_handler!(self, message, handle_cloud);
         let message = try_handler!(self, message, handle_ai);
         let message = try_handler!(self, message, handle_editor);
         let message = try_handler!(self, message, handle_tabs);

@@ -399,6 +399,14 @@ fn build_manifest(
             is_deleted: false,
         });
     }
+    for cp in v.list_cloud_profiles()? {
+        entries.push(ManifestEntry {
+            entity_type: EntityType::CloudProfile,
+            entity_id: cp.id,
+            updated_at: cp.updated_at,
+            is_deleted: false,
+        });
+    }
 
     Ok(entries)
 }
@@ -499,6 +507,21 @@ fn collect_records(
                     .find(|kh| kh.id == delta.entity_id)
                     .map(|kh| serde_json::to_vec(kh).unwrap_or_default())
             }
+            EntityType::CloudProfile => {
+                let items = v.list_cloud_profiles()?;
+                items.iter().find(|cp| cp.id == delta.entity_id).map(|cp| {
+                    let secret = if sync_passwords {
+                        v.get_cloud_profile_secret(&cp.id).ok().flatten()
+                    } else {
+                        None
+                    };
+                    let wrapper = protocol::SyncCloudProfile {
+                        profile: cp.clone(),
+                        secret,
+                    };
+                    serde_json::to_vec(&wrapper).unwrap_or_default()
+                })
+            }
         };
 
         if let Some(data) = payload {
@@ -533,6 +556,7 @@ fn apply_records(
                 EntityType::Group => { let _ = v.delete_group(&record.entity_id); }
                 EntityType::Snippet => { let _ = v.delete_snippet(&record.entity_id); }
                 EntityType::KnownHost => { let _ = v.delete_known_host(&record.entity_id); }
+                EntityType::CloudProfile => { let _ = v.delete_cloud_profile(&record.entity_id); }
             }
             continue;
         }
@@ -579,6 +603,11 @@ fn apply_records(
             EntityType::KnownHost => {
                 if let Ok(kh) = serde_json::from_slice::<oryxis_core::models::KnownHost>(&record.payload) {
                     let _ = v.save_known_host(&kh);
+                }
+            }
+            EntityType::CloudProfile => {
+                if let Ok(scp) = serde_json::from_slice::<protocol::SyncCloudProfile>(&record.payload) {
+                    let _ = v.save_cloud_profile(&scp.profile, scp.secret.as_deref());
                 }
             }
         }

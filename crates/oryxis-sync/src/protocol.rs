@@ -19,6 +19,11 @@ pub enum EntityType {
     /// peer's `sync_passwords` setting is on (off by default); older peers
     /// silently drop the extra fields.
     ProxyIdentity,
+    /// Cloud account credentials referenced from `Connection.cloud_ref` and
+    /// `Group.cloud_query`. The encrypted secret blob travels over the
+    /// wire only when `sync_passwords` is on (same opt-in as proxy /
+    /// identity passwords).
+    CloudProfile,
 }
 
 impl std::fmt::Display for EntityType {
@@ -31,6 +36,7 @@ impl std::fmt::Display for EntityType {
             Self::Snippet => write!(f, "snippet"),
             Self::KnownHost => write!(f, "known_host"),
             Self::ProxyIdentity => write!(f, "proxy_identity"),
+            Self::CloudProfile => write!(f, "cloud_profile"),
         }
     }
 }
@@ -148,6 +154,18 @@ pub struct SyncProxyIdentity {
     pub proxy_identity: oryxis_core::models::ProxyIdentity,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub password: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SyncCloudProfile {
+    #[serde(flatten)]
+    pub profile: oryxis_core::models::CloudProfile,
+    /// Encrypted secret blob payload (access key secret, kubeconfig
+    /// inline contents, …). Sent only when `sync_passwords` is on; the
+    /// field uses `skip_serializing_if` so older peers see byte-identical
+    /// JSON to the legacy bare-`CloudProfile` payload.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub secret: Option<String>,
 }
 
 /// Frame header for length-prefixed messages over QUIC streams.
@@ -280,5 +298,44 @@ mod tests {
         let bytes = serde_json::to_vec(&wrapper).unwrap();
         let back: SyncProxyIdentity = serde_json::from_slice(&bytes).unwrap();
         assert_eq!(back.password.as_deref(), Some("pi-pw"));
+    }
+
+    #[test]
+    fn sync_cloud_profile_round_trip() {
+        let cp = oryxis_core::models::CloudProfile::new("aws-prod", "aws");
+        let wrapper = SyncCloudProfile {
+            profile: cp,
+            secret: Some("opaque-secret".into()),
+        };
+        let bytes = serde_json::to_vec(&wrapper).unwrap();
+        let back: SyncCloudProfile = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(back.secret.as_deref(), Some("opaque-secret"));
+        assert_eq!(back.profile.label, "aws-prod");
+    }
+
+    /// Legacy peer that doesn't know about cloud profiles will send a
+    /// bare `CloudProfile` JSON — the wrapper must accept it and resolve
+    /// `secret` to `None`. (Symmetric to the connection / identity tests
+    /// above.)
+    #[test]
+    fn sync_cloud_profile_accepts_legacy_payload() {
+        let cp = oryxis_core::models::CloudProfile::new("legacy", "aws");
+        let bare = serde_json::to_vec(&cp).unwrap();
+        let wrapped: SyncCloudProfile = serde_json::from_slice(&bare).unwrap();
+        assert_eq!(wrapped.profile.label, "legacy");
+        assert!(wrapped.secret.is_none());
+    }
+
+    /// When secret is `None` the wire payload must be byte-identical to
+    /// the legacy bare-`CloudProfile` JSON — no `"secret"` key emitted.
+    #[test]
+    fn sync_cloud_profile_omits_secret_when_none() {
+        let cp = oryxis_core::models::CloudProfile::new("no-secret", "aws");
+        let wrapper = SyncCloudProfile { profile: cp, secret: None };
+        let json = serde_json::to_string(&wrapper).unwrap();
+        assert!(
+            !json.contains("\"secret\""),
+            "secret field leaked into JSON: {json}"
+        );
     }
 }

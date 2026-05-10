@@ -18,6 +18,7 @@ mod dispatch_ai;
 mod dispatch_editor;
 mod dispatch_keys;
 mod dispatch_proxy_identity;
+mod dispatch_cloud;
 mod dispatch_settings;
 mod dispatch_sftp;
 mod dispatch_sftp_files;
@@ -52,6 +53,15 @@ const MIN_WIDTH: f32 = 800.0;
 const MIN_HEIGHT: f32 = 500.0;
 
 fn main() -> iced::Result {
+    // rustls 0.23 requires a crypto provider to be installed before
+    // any TLS connection — without it, the AWS SDK's HTTPS client
+    // fails with a generic "dispatch failure". The workspace pins
+    // `ring` as the rustls crypto, so install ring's default provider
+    // here at process start. `install_default` returns Err if a
+    // provider was already set (cheap re-entry from tests / repeated
+    // calls), which we deliberately ignore.
+    let _ = rustls::crypto::ring::default_provider().install_default();
+
     // CLI arg pickup — flags set when another Oryxis instance spawned
     // us via "Duplicate in New Window". Unknown flags are silently
     // ignored so future flags / OS double-click args don't crash boot.
@@ -112,12 +122,10 @@ fn main() -> iced::Result {
         // restore/close) which match the native Windows title bar look that
         // VS Code uses.
         .font(iced_fonts::CODICON_FONT_BYTES)
-        // Simple Icons — official distro/OS brand marks (Ubuntu, Debian,
-        // Arch, Fedora, CentOS, Red Hat, Alpine, Apple, FreeBSD, Rocky,
-        // Alma, openSUSE, NixOS…) rendered via codepoint lookup. Replaces
-        // the Nerd-Fonts-patched Devicon which had broken glyph mappings.
-        .font(include_bytes!("../../../resources/fonts/SimpleIcons.ttf").as_slice())
-        // Inter — default UI font (matches Termius' UI aesthetic).
+        // Brand glyphs are bundled per-brand as SVGs in
+        // `resources/icons/brand/`, no additional font needed. See
+        // `os_icon::BRAND_ICONS`.
+        // Inter (default UI font, matches Termius' UI aesthetic).
         .font(include_bytes!("../../../resources/fonts/Inter-Regular.ttf").as_slice())
         .font(include_bytes!("../../../resources/fonts/Inter-SemiBold.ttf").as_slice())
         .font(include_bytes!("../../../resources/fonts/Inter-Bold.ttf").as_slice())

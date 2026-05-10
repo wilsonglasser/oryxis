@@ -155,6 +155,13 @@ impl Oryxis {
                     }
                 }
             }
+            Message::FlattenHostsToggle => {
+                self.flatten_hosts = !self.flatten_hosts;
+                self.persist_setting(
+                    "flatten_hosts",
+                    if self.flatten_hosts { "true" } else { "false" },
+                );
+            }
             Message::LayoutDirectionChanged(name) => {
                 use crate::i18n::{t, LayoutDirection};
                 // Match against the *localized* label since that's what

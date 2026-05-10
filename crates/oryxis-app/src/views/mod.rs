@@ -6,6 +6,7 @@
 //! allows `impl` blocks for the same type to be scattered across files.
 
 pub(crate) mod chrome;
+pub(crate) mod cloud_accounts;
 pub(crate) mod connection_progress;
 pub(crate) mod dashboard;
 pub(crate) mod history;

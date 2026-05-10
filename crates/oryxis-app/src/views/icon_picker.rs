@@ -29,8 +29,7 @@ impl Oryxis {
             .unwrap_or("server");
         let preview = container(
             os_icon::custom_icon_glyph(preview_icon_id)
-                .size(24)
-                .color(Color::WHITE),
+                .view(28.0, Color::WHITE),
         )
         .width(Length::Fixed(56.0))
         .height(Length::Fixed(56.0))
@@ -215,8 +214,7 @@ fn icon_cell<'a>(id: &'static str, is_selected: bool) -> Element<'a, Message> {
     button(
         container(
             os_icon::custom_icon_glyph(id)
-                .size(16)
-                .color(OryxisColors::t().text_primary),
+                .view(20.0, OryxisColors::t().text_primary),
         )
         .center_x(Length::Fixed(44.0))
         .center_y(Length::Fixed(44.0)),

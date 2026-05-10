@@ -27,6 +27,7 @@ impl Oryxis {
                 (crate::i18n::t("security"), SettingsSection::Security),
                 (crate::i18n::t("sync"), SettingsSection::Sync),
                 (crate::i18n::t("proxies"), SettingsSection::Proxies),
+                (crate::i18n::t("cloud_accounts"), SettingsSection::Cloud),
                 (crate::i18n::t("about"), SettingsSection::About),
             ];
             let mut col = column![]
@@ -726,12 +727,26 @@ impl Oryxis {
                     ].align_y(iced::Alignment::Center),
                 ]);
 
+                let flatten_section = panel_section(column![
+                    toggle_row(
+                        crate::i18n::t("flatten_hosts_label"),
+                        self.flatten_hosts,
+                        Message::FlattenHostsToggle,
+                    ),
+                    Space::new().height(4),
+                    text(crate::i18n::t("flatten_hosts_desc"))
+                        .size(11)
+                        .color(OryxisColors::t().text_muted),
+                ]);
+
                 let mut content_col = column![
                     text(crate::i18n::t("theme")).size(18).color(OryxisColors::t().text_primary),
                     Space::new().height(16),
                     language_section,
                     Space::new().height(8),
                     layout_dir_section,
+                    Space::new().height(8),
+                    flatten_section,
                     Space::new().height(12),
                 ]
                 .spacing(12)
@@ -1257,6 +1272,7 @@ impl Oryxis {
                 .into()
             }
             SettingsSection::Proxies => self.view_settings_proxies(),
+            SettingsSection::Cloud => self.view_cloud_accounts(),
         };
 
         container(crate::widgets::dir_row(vec![

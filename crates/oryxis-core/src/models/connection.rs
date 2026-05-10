@@ -1,6 +1,8 @@
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use super::cloud::CloudRef;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Connection {
     pub id: Uuid,
@@ -61,6 +63,17 @@ pub struct Connection {
     /// without a migration. `None` falls through to the global pick.
     #[serde(default)]
     pub terminal_theme: Option<String>,
+    /// Set on hosts imported from a cloud profile (EC2 in v0.6). Carries
+    /// the stable resource handle so the connect path can re-resolve
+    /// hostname / pick the right transport on each session. `None` for
+    /// manually-added hosts.
+    #[serde(default)]
+    pub cloud_ref: Option<CloudRef>,
+    /// Sent to the remote shell right after the session opens. Used to
+    /// escape minimal entry shells (`exec bash` on ECS / distroless) or
+    /// to drop into a specific working directory. `None` skips the step.
+    #[serde(default)]
+    pub initial_command: Option<String>,
 }
 
 impl Connection {
@@ -92,6 +105,8 @@ impl Connection {
             custom_color: None,
             agent_forwarding: false,
             terminal_theme: None,
+            cloud_ref: None,
+            initial_command: None,
         }
     }
 }

@@ -47,7 +47,7 @@ impl Oryxis {
                 badge_color = OryxisColors::t().text_muted;
             }
             let badge: Element<'_, Message> =
-                container(glyph.size(11).color(Color::WHITE))
+                container(glyph.view(14.0, Color::WHITE))
                     .center_x(Length::Fixed(20.0))
                     .center_y(Length::Fixed(20.0))
                     .style(move |_| container::Style {

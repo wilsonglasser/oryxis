@@ -272,7 +272,7 @@ impl Oryxis {
                 conn.detected_os.as_deref(),
                 OryxisColors::t().accent,
             );
-            container(glyph.size(11).color(Color::WHITE))
+            container(glyph.view(14.0, Color::WHITE))
                 .center_x(Length::Fixed(20.0))
                 .center_y(Length::Fixed(20.0))
                 .style(move |_| container::Style {
@@ -567,7 +567,7 @@ impl Oryxis {
             };
             let (glyph, badge_color) =
                 crate::os_icon::resolve_icon(conn.detected_os.as_deref(), fallback);
-            let badge = container(glyph.size(11).color(Color::WHITE))
+            let badge = container(glyph.view(14.0, Color::WHITE))
                 .center_x(Length::Fixed(22.0))
                 .center_y(Length::Fixed(22.0))
                 .style(move |_| container::Style {

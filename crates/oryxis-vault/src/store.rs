@@ -9,6 +9,8 @@ use rand::RngCore;
 use rusqlite::{params, Connection as SqliteConn};
 use uuid::Uuid;
 
+use oryxis_core::models::cloud::{CloudQuery, CloudRef};
+use oryxis_core::models::cloud_profile::CloudProfile;
 use oryxis_core::models::connection::{AuthMethod, Connection, ProxyType};
 use oryxis_core::models::group::Group;
 use oryxis_core::models::identity::Identity;
@@ -43,6 +45,12 @@ pub enum VaultError {
 
     #[error("Not found: {0}")]
     NotFound(String),
+
+    #[error("Key is encrypted; passphrase required")]
+    KeyNeedsPassphrase,
+
+    #[error("Wrong key passphrase")]
+    WrongKeyPassphrase,
 }
 
 impl From<rusqlite::Error> for VaultError {
@@ -324,6 +332,23 @@ impl VaultStore {
                 ended_at      TEXT,
                 data          BLOB
             );
+
+            -- Cloud account credentials (AWS profile / SSO / access key,
+            -- K8s kubeconfig path, ...). `config` carries the non-secret
+            -- JSON payload owned by each provider crate. `secret` is the
+            -- per-field encrypted blob hydrated only when the provider
+            -- actually needs it (mirrors `identities.password`).
+            CREATE TABLE IF NOT EXISTS cloud_profiles (
+                id              TEXT PRIMARY KEY,
+                label           TEXT NOT NULL,
+                provider        TEXT NOT NULL,
+                auth_kind       TEXT NOT NULL,
+                config          TEXT NOT NULL DEFAULT '{}',
+                secret          BLOB,
+                last_discovered TEXT,
+                created_at      TEXT NOT NULL,
+                updated_at      TEXT NOT NULL
+            );
             ",
         )?;
 
@@ -343,6 +368,16 @@ impl VaultStore {
         // when the referenced identity is deleted.
         let _ = self.db.execute_batch("ALTER TABLE connections ADD COLUMN proxy_identity_id TEXT;");
         let _ = self.db.execute_batch("ALTER TABLE connections ADD COLUMN terminal_theme TEXT;");
+        // Cloud-managed handle for hosts imported from a `cloud_profiles`
+        // row (EC2 in v0.6). JSON-encoded `CloudRef`. NULL for manual hosts.
+        let _ = self.db.execute_batch("ALTER TABLE connections ADD COLUMN cloud_ref TEXT;");
+        // Per-host initial command sent right after the shell opens.
+        // Independent of cloud — used by ECS / K8s entries that drop into
+        // `/bin/sh` and want `exec bash`.
+        let _ = self.db.execute_batch("ALTER TABLE connections ADD COLUMN initial_command TEXT;");
+        // Backing query for dynamic groups (ECS services / K8s workloads).
+        // JSON-encoded `CloudQuery`. NULL for manual groups.
+        let _ = self.db.execute_batch("ALTER TABLE groups ADD COLUMN cloud_query TEXT;");
         let _ = self.db.execute_batch("ALTER TABLE keys ADD COLUMN updated_at TEXT;");
         let _ = self.db.execute_batch("ALTER TABLE groups ADD COLUMN created_at TEXT;");
         let _ = self.db.execute_batch("ALTER TABLE groups ADD COLUMN updated_at TEXT;");
@@ -473,8 +508,8 @@ impl VaultStore {
 
     pub fn save_group(&self, group: &Group) -> Result<(), VaultError> {
         self.db.execute(
-            "INSERT OR REPLACE INTO groups (id, label, parent_id, color, icon, sort_order, is_shared, created_at, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+            "INSERT OR REPLACE INTO groups (id, label, parent_id, color, icon, sort_order, is_shared, created_at, updated_at, cloud_query)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
             params![
                 group.id.to_string(),
                 group.label,
@@ -485,6 +520,7 @@ impl VaultStore {
                 group.is_shared as i32,
                 group.created_at.to_rfc3339(),
                 group.updated_at.to_rfc3339(),
+                group.cloud_query.as_ref().map(|q| serde_json::to_string(q).unwrap_or_default()),
             ],
         )?;
         Ok(())
@@ -493,7 +529,7 @@ impl VaultStore {
     pub fn list_groups(&self) -> Result<Vec<Group>, VaultError> {
         let mut stmt = self
             .db
-            .prepare("SELECT id, label, parent_id, color, icon, sort_order, is_shared, created_at, updated_at FROM groups ORDER BY sort_order")?;
+            .prepare("SELECT id, label, parent_id, color, icon, sort_order, is_shared, created_at, updated_at, cloud_query FROM groups ORDER BY sort_order")?;
         let groups = stmt
             .query_map([], |row| {
                 Ok(Group {
@@ -516,6 +552,11 @@ impl VaultStore {
                         .and_then(|s| chrono::DateTime::parse_from_rfc3339(&s).ok())
                         .map(|d| d.with_timezone(&chrono::Utc))
                         .unwrap_or_else(chrono::Utc::now),
+                    cloud_query: row
+                        .get::<_, Option<String>>(9)
+                        .ok()
+                        .flatten()
+                        .and_then(|s| serde_json::from_str::<CloudQuery>(&s).ok()),
                 })
             })?
             .collect::<Result<Vec<_>, _>>()?;
@@ -566,8 +607,8 @@ impl VaultStore {
             "INSERT OR REPLACE INTO connections
              (id, label, hostname, port, username, auth_method, key_id, group_id,
               jump_chain, proxy, tags, notes, color, password, last_used, created_at, updated_at, identity_id, mcp_enabled, port_forwards,
-              detected_os, custom_icon, custom_color, agent_forwarding, proxy_identity_id, terminal_theme)
-             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20,?21,?22,?23,?24,?25,?26)",
+              detected_os, custom_icon, custom_color, agent_forwarding, proxy_identity_id, terminal_theme, cloud_ref, initial_command)
+             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20,?21,?22,?23,?24,?25,?26,?27,?28)",
             params![
                 conn.id.to_string(),
                 conn.label,
@@ -598,6 +639,8 @@ impl VaultStore {
                 conn.agent_forwarding as i32,
                 conn.proxy_identity_id.map(|u| u.to_string()),
                 conn.terminal_theme,
+                conn.cloud_ref.as_ref().map(|r| serde_json::to_string(r).unwrap_or_default()),
+                conn.initial_command,
             ],
         )?;
         Ok(())
@@ -616,12 +659,12 @@ impl VaultStore {
         let query = match mcp_filter {
             Some(true) => {
                 "SELECT id, label, hostname, port, username, auth_method, key_id, group_id,
-                        jump_chain, proxy, tags, notes, color, last_used, created_at, updated_at, identity_id, mcp_enabled, port_forwards, detected_os, custom_icon, custom_color, agent_forwarding, proxy_identity_id, terminal_theme
+                        jump_chain, proxy, tags, notes, color, last_used, created_at, updated_at, identity_id, mcp_enabled, port_forwards, detected_os, custom_icon, custom_color, agent_forwarding, proxy_identity_id, terminal_theme, cloud_ref, initial_command
                  FROM connections WHERE mcp_enabled = 1 ORDER BY label"
             }
             _ => {
                 "SELECT id, label, hostname, port, username, auth_method, key_id, group_id,
-                        jump_chain, proxy, tags, notes, color, last_used, created_at, updated_at, identity_id, mcp_enabled, port_forwards, detected_os, custom_icon, custom_color, agent_forwarding, proxy_identity_id, terminal_theme
+                        jump_chain, proxy, tags, notes, color, last_used, created_at, updated_at, identity_id, mcp_enabled, port_forwards, detected_os, custom_icon, custom_color, agent_forwarding, proxy_identity_id, terminal_theme, cloud_ref, initial_command
                  FROM connections ORDER BY label"
             }
         };
@@ -703,6 +746,15 @@ impl VaultStore {
                         .and_then(|s| Uuid::parse_str(&s).ok()),
                     terminal_theme: row
                         .get::<_, Option<String>>(24)
+                        .ok()
+                        .flatten(),
+                    cloud_ref: row
+                        .get::<_, Option<String>>(25)
+                        .ok()
+                        .flatten()
+                        .and_then(|s| serde_json::from_str::<CloudRef>(&s).ok()),
+                    initial_command: row
+                        .get::<_, Option<String>>(26)
                         .ok()
                         .flatten(),
                 })
@@ -1119,6 +1171,121 @@ impl VaultStore {
         )?;
         self.db.execute(
             "DELETE FROM proxy_identities WHERE id = ?1",
+            params![id.to_string()],
+        )?;
+        Ok(())
+    }
+
+    // -----------------------------------------------------------------------
+    // Cloud Profiles CRUD
+    // -----------------------------------------------------------------------
+
+    /// Save a cloud profile. `secret` follows the tri-state convention:
+    /// `None` preserves the existing column, `Some("")` clears it,
+    /// `Some(value)` encrypts and stores. Mirrors `save_identity`.
+    pub fn save_cloud_profile(
+        &self,
+        profile: &CloudProfile,
+        secret: Option<&str>,
+    ) -> Result<(), VaultError> {
+        let encrypted_secret: Option<Vec<u8>> = match secret {
+            Some("") => None,
+            Some(s) => Some(self.encrypt_field(s)?),
+            None => self
+                .db
+                .query_row(
+                    "SELECT secret FROM cloud_profiles WHERE id = ?1",
+                    params![profile.id.to_string()],
+                    |row| row.get::<_, Option<Vec<u8>>>(0),
+                )
+                .ok()
+                .flatten(),
+        };
+
+        self.db.execute(
+            "INSERT OR REPLACE INTO cloud_profiles
+             (id, label, provider, auth_kind, config, secret, last_discovered, created_at, updated_at)
+             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9)",
+            params![
+                profile.id.to_string(),
+                profile.label,
+                profile.provider,
+                profile.auth_kind,
+                profile.config,
+                encrypted_secret,
+                profile.last_discovered.map(|d| d.to_rfc3339()),
+                profile.created_at.to_rfc3339(),
+                profile.updated_at.to_rfc3339(),
+            ],
+        )?;
+        Ok(())
+    }
+
+    pub fn list_cloud_profiles(&self) -> Result<Vec<CloudProfile>, VaultError> {
+        let mut stmt = self.db.prepare(
+            "SELECT id, label, provider, auth_kind, config, last_discovered, created_at, updated_at
+             FROM cloud_profiles ORDER BY label",
+        )?;
+        let rows = stmt
+            .query_map([], |row| {
+                Ok(CloudProfile {
+                    id: Uuid::parse_str(&row.get::<_, String>(0)?).unwrap_or_default(),
+                    label: row.get(1)?,
+                    provider: row.get(2)?,
+                    auth_kind: row.get(3)?,
+                    config: row.get(4)?,
+                    last_discovered: row
+                        .get::<_, Option<String>>(5)?
+                        .and_then(|s| chrono::DateTime::parse_from_rfc3339(&s).ok())
+                        .map(|d| d.with_timezone(&chrono::Utc)),
+                    created_at: row
+                        .get::<_, String>(6)
+                        .ok()
+                        .and_then(|s| chrono::DateTime::parse_from_rfc3339(&s).ok())
+                        .map(|d| d.with_timezone(&chrono::Utc))
+                        .unwrap_or_else(chrono::Utc::now),
+                    updated_at: row
+                        .get::<_, String>(7)
+                        .ok()
+                        .and_then(|s| chrono::DateTime::parse_from_rfc3339(&s).ok())
+                        .map(|d| d.with_timezone(&chrono::Utc))
+                        .unwrap_or_else(chrono::Utc::now),
+                })
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(rows)
+    }
+
+    /// Decrypt and return the profile's secret blob (access key secret,
+    /// inline kubeconfig, SSO refresh token, …). Provider crates own
+    /// the schema of this string.
+    pub fn get_cloud_profile_secret(
+        &self,
+        id: &Uuid,
+    ) -> Result<Option<String>, VaultError> {
+        self.require_unlocked()?;
+        let data: Option<Vec<u8>> = self
+            .db
+            .query_row(
+                "SELECT secret FROM cloud_profiles WHERE id = ?1",
+                params![id.to_string()],
+                |row| row.get(0),
+            )
+            .map_err(|_| VaultError::NotFound(format!("Cloud profile {}", id)))?;
+
+        match data {
+            Some(encrypted) => Ok(Some(self.decrypt_field(&encrypted)?)),
+            None => Ok(None),
+        }
+    }
+
+    pub fn delete_cloud_profile(&self, id: &Uuid) -> Result<(), VaultError> {
+        // No FK cascade on connections.cloud_ref / groups.cloud_query
+        // (they're JSON blobs); call sites that care about dangling
+        // references handle them at resolve time, same approach as
+        // the proxy-identity dangling check.
+        self.db.execute(
+            "DELETE FROM cloud_profiles WHERE id = ?1",
             params![id.to_string()],
         )?;
         Ok(())
@@ -3008,5 +3175,167 @@ mod tests {
         assert_eq!(vault.get_setting("a").unwrap().as_deref(), Some("1"));
         assert_eq!(vault.get_setting("b").unwrap().as_deref(), Some("2"));
         assert_eq!(vault.get_setting("c").unwrap().as_deref(), Some("3"));
+    }
+
+    // ── Cloud Profiles ──
+
+    #[test]
+    fn save_and_list_cloud_profiles() {
+        let vault = unlocked_vault();
+        let mut p = CloudProfile::new("prod-aws", "aws");
+        p.auth_kind = "profile".into();
+        p.config = r#"{"profile_name":"production","region":"us-east-1"}"#.into();
+        vault.save_cloud_profile(&p, None).unwrap();
+
+        let listed = vault.list_cloud_profiles().unwrap();
+        assert_eq!(listed.len(), 1);
+        assert_eq!(listed[0].label, "prod-aws");
+        assert_eq!(listed[0].provider, "aws");
+        assert_eq!(listed[0].auth_kind, "profile");
+        assert!(listed[0].config.contains("us-east-1"));
+    }
+
+    #[test]
+    fn cloud_profile_secret_round_trip() {
+        let vault = unlocked_vault();
+        let p = CloudProfile::new("deploy-key", "aws");
+        vault.save_cloud_profile(&p, Some("AKIAIOSFODNN7EXAMPLE")).unwrap();
+
+        let got = vault.get_cloud_profile_secret(&p.id).unwrap();
+        assert_eq!(got.as_deref(), Some("AKIAIOSFODNN7EXAMPLE"));
+    }
+
+    #[test]
+    fn cloud_profile_secret_preserved_when_none_passed() {
+        let vault = unlocked_vault();
+        let mut p = CloudProfile::new("aws-prof", "aws");
+        vault.save_cloud_profile(&p, Some("first-secret")).unwrap();
+
+        // Re-save with None — secret must stay intact (tri-state).
+        p.label = "renamed".into();
+        vault.save_cloud_profile(&p, None).unwrap();
+
+        let got = vault.get_cloud_profile_secret(&p.id).unwrap();
+        assert_eq!(got.as_deref(), Some("first-secret"));
+    }
+
+    #[test]
+    fn cloud_profile_secret_cleared_with_empty_string() {
+        let vault = unlocked_vault();
+        let p = CloudProfile::new("aws-prof", "aws");
+        vault.save_cloud_profile(&p, Some("temp-secret")).unwrap();
+
+        // `Some("")` clears the column.
+        vault.save_cloud_profile(&p, Some("")).unwrap();
+        let got = vault.get_cloud_profile_secret(&p.id).unwrap();
+        assert!(got.is_none());
+    }
+
+    #[test]
+    fn delete_cloud_profile_removes_row() {
+        let vault = unlocked_vault();
+        let p = CloudProfile::new("temp", "aws");
+        vault.save_cloud_profile(&p, Some("s")).unwrap();
+        assert_eq!(vault.list_cloud_profiles().unwrap().len(), 1);
+
+        vault.delete_cloud_profile(&p.id).unwrap();
+        assert!(vault.list_cloud_profiles().unwrap().is_empty());
+    }
+
+    /// Critical: the plaintext `config` JSON column must never carry the
+    /// secret. Confirms credentials live only in the encrypted `secret`
+    /// column. Mirror of `proxy_password_does_not_leak_into_proxy_column`.
+    #[test]
+    fn cloud_profile_secret_does_not_leak_into_config_column() {
+        let vault = unlocked_vault();
+        let mut p = CloudProfile::new("leaky", "aws");
+        p.config = r#"{"region":"us-east-1"}"#.into();
+        vault.save_cloud_profile(&p, Some("super-secret-key")).unwrap();
+
+        let raw_config: String = vault
+            .db
+            .query_row(
+                "SELECT config FROM cloud_profiles WHERE id = ?1",
+                params![p.id.to_string()],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert!(
+            !raw_config.contains("super-secret-key"),
+            "secret leaked into plaintext config column: {raw_config}"
+        );
+    }
+
+    // ── Connection.cloud_ref + initial_command ──
+
+    #[test]
+    fn connection_cloud_ref_and_initial_command_round_trip() {
+        use oryxis_core::models::cloud::{CloudRef, CloudResourceType, TransportKind};
+
+        let vault = unlocked_vault();
+        let profile_id = uuid::Uuid::new_v4();
+        let mut conn = Connection::new("prod-web-1", "10.0.0.1");
+        conn.cloud_ref = Some(CloudRef {
+            profile_id,
+            resource_type: CloudResourceType::Ec2,
+            resource_id: "i-0abcdef".into(),
+            region: Some("us-east-1".into()),
+            transport_pref: TransportKind::InstanceConnect,
+            auto_refresh_hostname: true,
+        });
+        conn.initial_command = Some("exec bash".into());
+        vault.save_connection(&conn, None).unwrap();
+
+        let listed = vault.list_connections().unwrap();
+        let back = listed.iter().find(|c| c.id == conn.id).unwrap();
+        let cr = back.cloud_ref.as_ref().expect("cloud_ref preserved");
+        assert_eq!(cr.profile_id, profile_id);
+        assert_eq!(cr.resource_id, "i-0abcdef");
+        assert_eq!(cr.transport_pref, TransportKind::InstanceConnect);
+        assert!(cr.auto_refresh_hostname);
+        assert_eq!(back.initial_command.as_deref(), Some("exec bash"));
+    }
+
+    // ── Group.cloud_query ──
+
+    #[test]
+    fn group_cloud_query_round_trip() {
+        use oryxis_core::models::cloud::{
+            CloudQuery, CloudQueryKind, ConnectionTemplate, TransportKind,
+        };
+
+        let vault = unlocked_vault();
+        let profile_id = uuid::Uuid::new_v4();
+        let mut g = Group::new("payments / api");
+        g.cloud_query = Some(CloudQuery {
+            profile_id,
+            kind: CloudQueryKind::EcsTasks {
+                cluster: "payments-cluster".into(),
+                service: "api-svc".into(),
+                container: "api".into(),
+            },
+            template: ConnectionTemplate {
+                username: None,
+                initial_command: Some("exec bash".into()),
+                transport: TransportKind::EcsExec,
+                terminal_theme: None,
+            },
+        });
+        vault.save_group(&g).unwrap();
+
+        let listed = vault.list_groups().unwrap();
+        let back = listed.iter().find(|gg| gg.id == g.id).unwrap();
+        let q = back.cloud_query.as_ref().expect("cloud_query preserved");
+        assert_eq!(q.profile_id, profile_id);
+        assert_eq!(q.template.transport, TransportKind::EcsExec);
+        assert_eq!(q.template.initial_command.as_deref(), Some("exec bash"));
+        match &q.kind {
+            CloudQueryKind::EcsTasks { cluster, service, container } => {
+                assert_eq!(cluster, "payments-cluster");
+                assert_eq!(service, "api-svc");
+                assert_eq!(container, "api");
+            }
+            _ => panic!("wrong kind variant"),
+        }
     }
 }

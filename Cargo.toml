@@ -6,6 +6,8 @@ members = [
     "crates/oryxis-terminal",
     "crates/oryxis-vault",
     "crates/oryxis-sync",
+    "crates/oryxis-cloud",
+    "crates/oryxis-cloud-aws",
     "crates/oryxis-app",
     "crates/oryxis-mcp",
 ]
@@ -22,7 +24,7 @@ repository = "https://github.com/wilsonglasser/oryxis"
 # `text-selection + monitor-position` merged into one tree so the app
 # can use both upstream-bound features at once. Each underlying branch
 # stays clean for its own PR.
-iced = { git = "https://github.com/wilsonglasser/iced", branch = "oryxis", features = ["canvas", "tokio", "advanced", "image", "markdown", "highlighter"] }
+iced = { git = "https://github.com/wilsonglasser/iced", branch = "oryxis", features = ["canvas", "tokio", "advanced", "image", "svg", "markdown", "highlighter"] }
 
 # SSH
 russh = "0.60"
@@ -79,6 +81,8 @@ oryxis-ssh = { path = "crates/oryxis-ssh" }
 oryxis-terminal = { path = "crates/oryxis-terminal" }
 oryxis-vault = { path = "crates/oryxis-vault" }
 oryxis-sync = { path = "crates/oryxis-sync" }
+oryxis-cloud = { path = "crates/oryxis-cloud" }
+oryxis-cloud-aws = { path = "crates/oryxis-cloud-aws" }
 
 [profile.release]
 opt-level = 3

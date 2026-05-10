@@ -2,7 +2,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 use oryxis_core::models::{
-    Connection, Group, Identity, KnownHost, ProxyIdentity, Snippet, SshKey,
+    CloudProfile, Connection, Group, Identity, KnownHost, ProxyIdentity, Snippet, SshKey,
 };
 
 use crate::store::{encrypt, decrypt, VaultError, VaultStore};
@@ -34,6 +34,11 @@ struct ExportPayload {
     /// `.oryxis` files written before this field existed.
     #[serde(default)]
     proxy_identities: Vec<ExportProxyIdentity>,
+    /// Cloud account profiles referenced from `Connection.cloud_ref` and
+    /// `Group.cloud_query`. Defaults to empty for backwards compat with
+    /// pre-v0.6 export files.
+    #[serde(default)]
+    cloud_profiles: Vec<ExportCloudProfile>,
     snippets: Vec<Snippet>,
     known_hosts: Vec<KnownHost>,
 }
@@ -71,6 +76,16 @@ struct ExportProxyIdentity {
     password: Option<String>,
 }
 
+#[derive(Serialize, Deserialize)]
+struct ExportCloudProfile {
+    #[serde(flatten)]
+    profile: CloudProfile,
+    /// Encrypted-on-disk secret blob (access key secret, kubeconfig
+    /// inline contents, …) — round-tripped here so a fresh device picks
+    /// up working cloud credentials. `None` means no secret was set.
+    secret: Option<String>,
+}
+
 // ---------------------------------------------------------------------------
 // Public API types
 // ---------------------------------------------------------------------------
@@ -104,6 +119,9 @@ pub struct ImportResult {
     pub proxy_identities_added: usize,
     pub proxy_identities_updated: usize,
     pub proxy_identities_skipped: usize,
+    pub cloud_profiles_added: usize,
+    pub cloud_profiles_updated: usize,
+    pub cloud_profiles_skipped: usize,
     pub snippets_added: usize,
     pub snippets_skipped: usize,
     pub known_hosts_added: usize,
@@ -155,6 +173,7 @@ pub fn export_vault(
     let all_keys = store.list_keys()?;
     let all_identities = store.list_identities()?;
     let all_proxy_identities = store.list_proxy_identities()?;
+    let all_cloud_profiles = store.list_cloud_profiles()?;
     let all_snippets = store.list_snippets()?;
     let all_known_hosts = store.list_known_hosts()?;
 
@@ -258,11 +277,11 @@ pub fn export_vault(
     // (it lives in its own encrypted column and isn't part of the
     // serialized `Connection.proxy` JSON).
     let mut connections = Vec::with_capacity(filtered_connections.len());
-    for conn in filtered_connections {
+    for conn in &filtered_connections {
         let pw = store.get_connection_password(&conn.id).unwrap_or(None);
         let proxy_pw = store.get_proxy_password(&conn.id).unwrap_or(None);
         connections.push(ExportConnection {
-            connection: conn.clone(),
+            connection: (*conn).clone(),
             password: pw,
             proxy_password: proxy_pw,
         });
@@ -309,6 +328,29 @@ pub fn export_vault(
         }
     }
 
+    // Cloud profiles referenced from `Connection.cloud_ref` (filtered)
+    // or all of them (full export). The dynamic-group `cloud_query`
+    // path will land in the same dep set in a later PR — for now only
+    // `cloud_ref` is wired.
+    let dep_cloud_profile_ids: Vec<uuid::Uuid> = if is_filtered {
+        filtered_connections
+            .iter()
+            .filter_map(|c| c.cloud_ref.as_ref().map(|r| r.profile_id))
+            .collect()
+    } else {
+        all_cloud_profiles.iter().map(|cp| cp.id).collect()
+    };
+    let mut cloud_profiles = Vec::new();
+    for cp in &all_cloud_profiles {
+        if !is_filtered || dep_cloud_profile_ids.contains(&cp.id) {
+            let secret = store.get_cloud_profile_secret(&cp.id).unwrap_or(None);
+            cloud_profiles.push(ExportCloudProfile {
+                profile: cp.clone(),
+                secret,
+            });
+        }
+    }
+
     // Snippets and known_hosts: only included in full export
     let snippets = if is_filtered { Vec::new() } else { all_snippets };
     let known_hosts = if is_filtered { Vec::new() } else { all_known_hosts };
@@ -322,6 +364,7 @@ pub fn export_vault(
         keys,
         identities,
         proxy_identities,
+        cloud_profiles,
         snippets,
         known_hosts,
     };
@@ -367,6 +410,9 @@ pub fn import_vault(
         proxy_identities_added: 0,
         proxy_identities_updated: 0,
         proxy_identities_skipped: 0,
+        cloud_profiles_added: 0,
+        cloud_profiles_updated: 0,
+        cloud_profiles_skipped: 0,
         snippets_added: 0,
         snippets_skipped: 0,
         known_hosts_added: 0,
@@ -379,6 +425,7 @@ pub fn import_vault(
     let existing_keys = store.list_keys()?;
     let existing_identities = store.list_identities()?;
     let existing_proxy_identities = store.list_proxy_identities()?;
+    let existing_cloud_profiles = store.list_cloud_profiles()?;
     let existing_snippets = store.list_snippets()?;
     let existing_known_hosts = store.list_known_hosts()?;
 
@@ -442,6 +489,26 @@ pub fn import_vault(
                 export_pi.password.as_deref(),
             )?;
             result.proxy_identities_added += 1;
+        }
+    }
+
+    // Cloud profiles (LWW by updated_at) — must come before connections
+    // so `cloud_ref.profile_id` references resolve once the connections
+    // land in the next loop. Same pattern as proxy identities above.
+    for export_cp in &payload.cloud_profiles {
+        if let Some(existing) = existing_cloud_profiles
+            .iter()
+            .find(|p| p.id == export_cp.profile.id)
+        {
+            if export_cp.profile.updated_at > existing.updated_at {
+                store.save_cloud_profile(&export_cp.profile, export_cp.secret.as_deref())?;
+                result.cloud_profiles_updated += 1;
+            } else {
+                result.cloud_profiles_skipped += 1;
+            }
+        } else {
+            store.save_cloud_profile(&export_cp.profile, export_cp.secret.as_deref())?;
+            result.cloud_profiles_added += 1;
         }
     }
 

@@ -1,0 +1,26 @@
+[package]
+name = "oryxis-cloud-aws"
+version = "0.1.0"
+edition = "2024"
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]
+oryxis-core = { workspace = true }
+oryxis-cloud = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+uuid = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+async-trait = "0.1"
+tracing = { workspace = true }
+
+# AWS SDK — pinned to the 1.x GA series. `behavior-version-latest`
+# silences the runtime nag and locks us to the current default semantics
+# instead of the legacy ones the SDK keeps around for back-compat.
+aws-config = { version = "1", features = ["behavior-version-latest"] }
+aws-sdk-ec2 = "1"
+aws-sdk-ecs = "1"
+aws-sdk-sts = "1"

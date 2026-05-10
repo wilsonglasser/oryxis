@@ -381,7 +381,7 @@ fn session_tab<'a>(
         if is_disconnected {
             badge_color = OryxisColors::t().text_muted;
         }
-        container(glyph.size(10).color(Color::WHITE))
+        container(glyph.view(12.0, Color::WHITE))
             .center_x(Length::Fixed(TAB_ICON_SLOT))
             .center_y(Length::Fixed(TAB_ICON_SLOT))
             .style(move |_| container::Style {

@@ -58,7 +58,7 @@ impl Oryxis {
             crate::os_icon::resolve_icon(detected_os.as_deref(), OryxisColors::t().accent);
         let header = container(
             row![
-                container(os_glyph.size(18).color(Color::WHITE))
+                container(os_glyph.view(22.0, Color::WHITE))
                     .width(Length::Fixed(40.0))
                     .height(Length::Fixed(40.0))
                     .center_x(Length::Fixed(40.0))

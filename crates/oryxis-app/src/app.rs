@@ -189,6 +189,14 @@ pub struct Oryxis {
     pub(crate) key_import_label: String,
     pub(crate) key_import_content: text_editor::Content,
     pub(crate) key_import_pem: String,  // raw string for import
+    /// Passphrase for an encrypted private key. Lives in memory only — once
+    /// the key is decrypted on import, it is re-encoded unencrypted and the
+    /// vault's master key takes over for at-rest protection.
+    pub(crate) key_import_passphrase: String,
+    /// Set when import_key returns `KeyNeedsPassphrase`. Drives the
+    /// passphrase row in the import panel.
+    pub(crate) key_import_passphrase_required: bool,
+    pub(crate) key_import_passphrase_visible: bool,
     pub(crate) key_error: Option<String>,
     pub(crate) key_success: Option<String>,
     pub(crate) key_context_menu: Option<usize>,
@@ -225,6 +233,46 @@ pub struct Oryxis {
     pub(crate) proxy_identity_form_has_existing_password: bool,
     pub(crate) editing_proxy_identity_id: Option<Uuid>,
     pub(crate) proxy_identity_form_error: Option<String>,
+
+    // Cloud Accounts — CloudProfile rows + the wizard form. Wizard is
+    // intentionally minimal in v0.6 PR 3: provider + AWS profile auth
+    // only. Access key + SSO + the discover-and-pick step land in
+    // follow-up PRs once the foundation is exercised.
+    pub(crate) cloud_profiles: Vec<oryxis_core::models::cloud_profile::CloudProfile>,
+    pub(crate) cloud_form_visible: bool,
+    pub(crate) cloud_form_label: String,
+    pub(crate) cloud_form_provider: crate::state::CloudProviderChoice,
+    pub(crate) cloud_form_auth_kind: crate::state::CloudAuthChoice,
+    pub(crate) cloud_form_aws_profile_name: String,
+    pub(crate) cloud_form_aws_region: String,
+    pub(crate) editing_cloud_profile_id: Option<Uuid>,
+    pub(crate) cloud_form_error: Option<String>,
+    pub(crate) cloud_form_test_state: crate::state::CloudTestState,
+    pub(crate) cloud_provider_registry: std::sync::Arc<oryxis_cloud::CloudProviderRegistry>,
+    /// Discovery panel state — opened from a profile card or from the
+    /// post-save flow. Carries the in-flight or completed result so
+    /// the user picks resources without paying another API round-trip.
+    pub(crate) cloud_discover_visible: bool,
+    pub(crate) cloud_discover_profile_id: Option<Uuid>,
+    pub(crate) cloud_discover_state: crate::state::CloudDiscoverState,
+    /// EC2 instance-ids currently checked in the discovery panel.
+    pub(crate) cloud_discover_selected_ec2: std::collections::HashSet<String>,
+    /// ECS service identifiers checked in the discovery panel.
+    /// Key format: `cluster/service/container` (the same triple a
+    /// `CloudQuery::EcsTasks` carries) — guarantees a stable id even
+    /// when service or container names collide across clusters.
+    pub(crate) cloud_discover_selected_ecs: std::collections::HashSet<String>,
+    /// Live filter for the discovery panel — matches against label,
+    /// instance-id, hostname, IP. Lowercased substring match.
+    pub(crate) cloud_discover_filter: String,
+    /// Section names currently collapsed in the discovery panel
+    /// ("ec2" / "ecs" today; future K8s sections add their own keys).
+    /// Persisted only in memory — re-opens default to expanded.
+    pub(crate) cloud_discover_collapsed: std::collections::HashSet<String>,
+    /// Card-hover state for the kebab "..." button on cloud profile
+    /// cards in Settings → Cloud, mirroring `hovered_card` /
+    /// `hovered_folder_card` for hosts and folders.
+    pub(crate) hovered_cloud_card: Option<Uuid>,
 
     // Snippets
     pub(crate) snippets: Vec<oryxis_core::models::snippet::Snippet>,
@@ -364,6 +412,12 @@ pub struct Oryxis {
     /// them. Off by default — passwords stay device-local until the
     /// user explicitly opts in via Settings → Sync.
     pub(crate) sync_passwords: bool,
+    /// When on, the dashboard root shows two sections — Groups (manual
+    /// folder cards) and Hosts (a flat list of every connection,
+    /// including those that live inside a group). When off, root
+    /// matches the legacy behaviour: groups at top, only ungrouped
+    /// hosts beneath. Default: on.
+    pub(crate) flatten_hosts: bool,
     pub(crate) sync_device_name: String,
     pub(crate) sync_signaling_url: String,
     pub(crate) sync_relay_url: String,

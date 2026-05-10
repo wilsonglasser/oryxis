@@ -213,14 +213,14 @@ pub(crate) fn panel_option_row<'a>(
 }
 
 pub(crate) fn context_menu_item<'a>(
-    icon_widget: iced::widget::Text<'a>,
+    icon: impl Into<crate::os_icon::BrandIcon>,
     label: &'a str,
     msg: Message,
     color: Color,
 ) -> Element<'a, Message> {
     button(
         dir_row(vec![
-            icon_widget.size(12).color(color).into(),
+            icon.into().view(14.0, color),
             Space::new().width(8).into(),
             text(label).size(12).color(OryxisColors::t().text_primary).into(),
         ])

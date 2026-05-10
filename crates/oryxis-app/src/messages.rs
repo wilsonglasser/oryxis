@@ -337,6 +337,7 @@ pub enum Message {
     /// The string is the localized label shown in the picker; the
     /// dispatch handler maps it back to a `LayoutDirection` value.
     LayoutDirectionChanged(String),
+    FlattenHostsToggle,
 
     // Local shell
     OpenLocalShell,
@@ -366,6 +367,8 @@ pub enum Message {
     BrowseKeyFile,
     KeyFileLoaded(String, String), // (filename, content)
     KeyFileBrowseError(String),
+    KeyImportPassphraseChanged(String),
+    KeyImportPassphraseToggleVisibility,
     ImportKey,
     DeleteKey(usize),
     ShowKeyMenu(usize),
@@ -399,6 +402,47 @@ pub enum Message {
     ProxyIdentityFormPasswordChanged(String),
     SaveProxyIdentity,
     DeleteProxyIdentity(Uuid),
+
+    // Cloud Accounts
+    ShowCloudForm(Option<Uuid>),
+    HideCloudForm,
+    CloudFormLabelChanged(String),
+    CloudFormProviderChanged(crate::state::CloudProviderChoice),
+    CloudFormAuthKindChanged(crate::state::CloudAuthChoice),
+    CloudFormAwsProfileNameChanged(String),
+    CloudFormAwsRegionChanged(String),
+    /// Kicks off a `test_credentials` round-trip via the registered
+    /// provider. The result lands as `CloudFormTestResult`.
+    CloudFormTestCredentials,
+    CloudFormTestResult(Result<(), String>),
+    SaveCloudProfile,
+    DeleteCloudProfile(Uuid),
+    /// Open the kebab context menu on a cloud account card. Anchored
+    /// to the cursor like the host-card menu.
+    ShowCloudCardMenu(Uuid),
+    CloudCardHovered(Uuid),
+    CloudCardUnhovered,
+    /// Open the cloud-provider picker dropdown next to the "+ Host"
+    /// button (only when at least one cloud profile is configured).
+    ShowCloudProviderPicker,
+
+    // Cloud Discovery & Import
+    ShowCloudDiscover(Uuid),
+    HideCloudDiscover,
+    CloudDiscoverRefresh,
+    /// Result of `provider.discover()` — payload boxed because
+    /// `DiscoveryResult` carries collections per resource family and
+    /// clippy yells about the variant size otherwise.
+    CloudDiscoverResult(Result<Box<oryxis_cloud::DiscoveryResult>, String>),
+    CloudDiscoverToggleEc2(String),
+    /// Toggle an ECS service entry in the discovery panel. Carries
+    /// the `cluster/service/container` key.
+    CloudDiscoverToggleEcs(String),
+    CloudDiscoverImport,
+    CloudDiscoverFilterChanged(String),
+    /// Toggle expanded/collapsed state of a section header in the
+    /// discovery panel. Carries the section key (e.g. `"ec2"`).
+    CloudDiscoverToggleSection(String),
 
     // Connection identity
     EditorIdentityChanged(String),

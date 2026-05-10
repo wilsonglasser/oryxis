@@ -51,6 +51,7 @@ impl Oryxis {
             editing_conn.and_then(|c| c.detected_os.as_deref()),
             editing_conn.and_then(|c| c.custom_icon.as_deref()),
             editing_conn.and_then(|c| c.custom_color.as_deref()),
+            editing_conn.and_then(|c| c.username.as_deref()),
             OryxisColors::t().accent,
         );
         // Icon is a button when we're editing an existing host — clicking it
@@ -59,7 +60,7 @@ impl Oryxis {
         // static badge until the first save.
         let icon_element: Element<'_, Message> = if let Some(id) = self.editor_form.editing_id {
             button(
-                container(addr_glyph.size(14).color(Color::WHITE))
+                container(addr_glyph.view(18.0, Color::WHITE))
                     .width(Length::Fixed(32.0))
                     .height(Length::Fixed(32.0))
                     .center_x(Length::Fixed(32.0))
@@ -80,7 +81,7 @@ impl Oryxis {
             })
             .into()
         } else {
-            container(addr_glyph.size(14).color(Color::WHITE))
+            container(addr_glyph.view(18.0, Color::WHITE))
                 .width(Length::Fixed(32.0))
                 .height(Length::Fixed(32.0))
                 .center_x(Length::Fixed(32.0))
@@ -616,7 +617,11 @@ impl Oryxis {
             ..Default::default()
         });
 
-        let bottom = column![save_btn];
+        // The error must live OUTSIDE the scrollable so it sits above
+        // the Save button at the bottom of the panel — otherwise long
+        // forms hide it below the fold and the user clicks Save again
+        // wondering why nothing happens.
+        let bottom = column![panel_error, save_btn].spacing(8);
         // ── Layout ──
         let form_scroll = scrollable(
             column![
@@ -633,8 +638,6 @@ impl Oryxis {
                 port_forward_section,
                 Space::new().height(8),
                 appearance_section,
-                Space::new().height(8),
-                panel_error,
             ]
             .padding(Padding { top: 0.0, right: 16.0, bottom: 16.0, left: 16.0 }),
         )

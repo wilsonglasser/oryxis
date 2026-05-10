@@ -139,7 +139,13 @@ impl Oryxis {
         .width(Length::Fill);
 
         // ── Status message ──
-        let status: Element<'_, Message> = if let Some(err) = &self.key_error {
+        // While the import / identity sidebars are open, the panel surfaces
+        // its own error/success right next to the field that caused it —
+        // duplicating the message in the main keychain area is just noise.
+        let panel_open = self.show_key_panel || self.show_identity_panel;
+        let status: Element<'_, Message> = if panel_open {
+            Space::new().height(0).into()
+        } else if let Some(err) = &self.key_error {
             container(Element::from(text(err.clone()).size(12).color(OryxisColors::t().error)))
                 .padding(Padding { top: 0.0, right: 24.0, bottom: 8.0, left: 24.0 })
                 .into()
@@ -587,6 +593,45 @@ impl Oryxis {
             .font(iced::Font::MONOSPACE)
             .size(11);
 
+        // Passphrase prompt — shown only after import_key signals the key
+        // is encrypted. The hint explains the one-time-decrypt model so
+        // users understand we're not storing the passphrase anywhere.
+        let passphrase_section: Element<'_, Message> = if self.key_import_passphrase_required {
+            column![
+                Space::new().height(12),
+                text(t("key_passphrase_label")).size(12).color(OryxisColors::t().text_secondary),
+                Space::new().height(6),
+                dir_row(vec![
+                    iced_fonts::lucide::lock().size(13).color(OryxisColors::t().text_muted).into(),
+                    Space::new().width(10).into(),
+                    text_input(t("key_passphrase_placeholder"), &self.key_import_passphrase)
+                        .on_input(Message::KeyImportPassphraseChanged)
+                        .on_submit(Message::ImportKey)
+                        .secure(!self.key_import_passphrase_visible)
+                        .padding(10)
+                        .style(crate::widgets::rounded_input_style)
+                        .into(),
+                    Space::new().width(6).into(),
+                    button(
+                        if self.key_import_passphrase_visible {
+                            iced_fonts::lucide::eye_off().size(14).color(OryxisColors::t().text_muted)
+                        } else {
+                            iced_fonts::lucide::eye().size(14).color(OryxisColors::t().text_muted)
+                        }
+                    )
+                        .on_press(Message::KeyImportPassphraseToggleVisibility)
+                        .style(|_t, _s| button::Style::default())
+                        .padding(8)
+                        .into(),
+                ]).align_y(iced::Alignment::Center),
+                Space::new().height(6),
+                text(t("key_passphrase_hint")).size(11).color(OryxisColors::t().text_muted),
+            ]
+            .into()
+        } else {
+            Space::new().height(0).into()
+        };
+
         // Error in panel
         let panel_error: Element<'_, Message> = if let Some(err) = &self.key_error {
             Element::from(text(err.clone()).size(11).color(OryxisColors::t().error))
@@ -628,6 +673,7 @@ impl Oryxis {
                     text(t("key_content")).size(12).color(OryxisColors::t().text_secondary),
                     Space::new().height(6),
                     editor,
+                    passphrase_section,
                     Space::new().height(8),
                     panel_error,
                     Space::new().height(Length::Fill),

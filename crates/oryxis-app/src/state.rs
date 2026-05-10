@@ -723,6 +723,12 @@ pub(crate) enum OverlayContent {
     KeychainAdd,
     TabActions(usize),
     FolderActions(Uuid),
+    CloudProfileActions(Uuid),
+    /// Dropdown menu rendered next to "+ Host" — lists every
+    /// configured cloud profile so the user can launch discovery
+    /// directly from the Hosts view. Only opened when at least one
+    /// profile is configured (otherwise the chevron is hidden).
+    CloudProviderPicker,
 }
 
 #[derive(Debug, Clone)]
@@ -756,6 +762,87 @@ pub enum View {
     Settings,
 }
 
+/// Cloud provider picked in the wizard. Only AWS is fully wired in
+/// v0.6 PR 3; Kubernetes lands in a follow-up PR with its own provider
+/// crate. The K8s variant is exposed in the picker for visibility but
+/// the wizard surfaces an "experimental — coming soon" hint.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum CloudProviderChoice {
+    #[default]
+    Aws,
+    K8s,
+}
+
+impl CloudProviderChoice {
+    pub fn id(self) -> &'static str {
+        match self {
+            Self::Aws => "aws",
+            Self::K8s => "k8s",
+        }
+    }
+
+    pub fn from_id(s: &str) -> Self {
+        match s {
+            "k8s" => Self::K8s,
+            _ => Self::Aws,
+        }
+    }
+}
+
+/// Auth strategy chosen in the wizard. Only `Profile` is implemented in
+/// v0.6 PR 3; the other variants render disabled with a hint and route
+/// to `CloudError::Unsupported` if somehow selected.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum CloudAuthChoice {
+    #[default]
+    Profile,
+    AccessKey,
+    Sso,
+    Kubeconfig,
+}
+
+impl CloudAuthChoice {
+    pub fn id(self) -> &'static str {
+        match self {
+            Self::Profile => "profile",
+            Self::AccessKey => "access_key",
+            Self::Sso => "sso",
+            Self::Kubeconfig => "kubeconfig",
+        }
+    }
+
+    pub fn from_id(s: &str) -> Self {
+        match s {
+            "access_key" => Self::AccessKey,
+            "sso" => Self::Sso,
+            "kubeconfig" => Self::Kubeconfig,
+            _ => Self::Profile,
+        }
+    }
+}
+
+/// Live state of the "Test credentials" button in the wizard.
+#[derive(Debug, Clone, Default)]
+pub enum CloudTestState {
+    #[default]
+    Idle,
+    Running,
+    Ok,
+    Failed(String),
+}
+
+/// State of the wizard's "Discover & pick" panel — owns the in-flight
+/// or completed discovery result so the user can scroll/select without
+/// re-hitting the cloud.
+#[derive(Debug, Clone, Default)]
+pub enum CloudDiscoverState {
+    #[default]
+    Idle,
+    Running,
+    Loaded(oryxis_cloud::DiscoveryResult),
+    Failed(String),
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum SettingsSection {
     Terminal,
@@ -768,6 +855,11 @@ pub(crate) enum SettingsSection {
     /// CRUD over reusable proxy configurations (SOCKS5 / HTTP / etc.)
     /// referenced from connections via `Connection.proxy_identity_id`.
     Proxies,
+    /// Cloud account profiles (AWS / K8s) — same conceptual shape as
+    /// Proxies: reusable config that hosts reference. Imported hosts
+    /// live in the regular Hosts view; this section only manages the
+    /// account credentials and triggers discovery.
+    Cloud,
     About,
 }
 
