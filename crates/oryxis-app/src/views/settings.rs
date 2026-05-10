@@ -151,7 +151,7 @@ impl Oryxis {
                     text(t("setting_keepalive_desc"))
                         .size(11).color(OryxisColors::t().text_muted),
                     Space::new().height(8),
-                    text_input("0", &self.setting_keepalive_interval)
+                    text_input("30", &self.setting_keepalive_interval)
                         .on_input(Message::SettingKeepaliveChanged)
                         .padding(10)
                         .width(240)
@@ -194,13 +194,24 @@ impl Oryxis {
                         Message::TerminalThemeChanged(theme.name().to_string()),
                     ));
                 }
+                // 2-column responsive grid for theme cards. Cards still
+                // use the existing swatch-+-name layout (the "bolinhas"
+                // style); only the row arrangement changes from a single
+                // tall column to a side-by-side pair so the picker
+                // doesn't dominate the settings panel vertically.
+                let theme_grid = crate::widgets::distribute_card_grid(
+                    theme_cards,
+                    2,
+                    8.0,
+                    8.0,
+                );
                 let theme_picker_section = panel_section(column![
                     text(t("terminal_theme")).size(13).color(OryxisColors::t().text_primary),
                     Space::new().height(4),
                     text(t("terminal_theme_desc"))
                         .size(11).color(OryxisColors::t().text_muted),
                     Space::new().height(10),
-                    column(theme_cards).spacing(8),
+                    theme_grid,
                 ]);
 
                 // Font picker — full list, regardless of whether a given font is
@@ -306,12 +317,6 @@ impl Oryxis {
                             Space::new().height(16),
                             toggles_section,
                             Space::new().height(12),
-                            font_size_section,
-                            Space::new().height(12),
-                            theme_picker_section,
-                            Space::new().height(12),
-                            font_picker_section,
-                            Space::new().height(12),
                             keepalive_section,
                             Space::new().height(12),
                             scrollback_section,
@@ -321,6 +326,12 @@ impl Oryxis {
                             os_detection_section,
                             Space::new().height(12),
                             auto_update_section,
+                            Space::new().height(12),
+                            font_size_section,
+                            Space::new().height(12),
+                            font_picker_section,
+                            Space::new().height(12),
+                            theme_picker_section,
                             Space::new().height(24),
                         ]
                         .width(Length::Fill),

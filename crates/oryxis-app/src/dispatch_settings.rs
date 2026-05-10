@@ -56,6 +56,22 @@ impl Oryxis {
         app_theme_to_terminal(AppTheme::active())
     }
 
+    /// Effective SSH keepalive duration for a connection. Per-host
+    /// override (`Connection.keepalive_interval`) wins over the global
+    /// `setting_keepalive_interval`. `Some(Duration)` means "send
+    /// keepalive every N seconds"; `None` means disabled. A per-host
+    /// `Some(0)` explicitly disables on that host even when the global
+    /// is non-zero. Used by both the shell and SFTP connect paths.
+    pub(crate) fn effective_keepalive(
+        &self,
+        conn: &oryxis_core::models::Connection,
+    ) -> Option<std::time::Duration> {
+        crate::util::resolve_keepalive(
+            conn.keepalive_interval,
+            &self.setting_keepalive_interval,
+        )
+    }
+
     /// Effective terminal palette for a known `Connection`. Per-host
     /// override wins, then the global override, then the app theme.
     pub(crate) fn resolve_terminal_theme_for_connection(

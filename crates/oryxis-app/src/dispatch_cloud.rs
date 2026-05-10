@@ -187,13 +187,26 @@ impl Oryxis {
                 self.hovered_cloud_card = None;
             }
             Message::ShowCloudProviderPicker => {
-                // Same anchor offset the keychain "+ ADD ▼" split uses
-                // so this menu pops below the chevron instead of
-                // overlapping the click point.
+                // Anchor below the "+ Host [▾]" split button. Same
+                // computation as the keychain "+ ADD ▼" handler so both
+                // split menus drop in the same screen position relative
+                // to their toolbar — independent of cursor location.
+                let panel_width = if self.cloud_discover_visible || self.show_host_panel {
+                    crate::app::PANEL_WIDTH
+                } else {
+                    0.0
+                };
+                let menu_width = 180.0;
+                let toolbar_right_padding = 24.0;
+                let x = self.window_size.width
+                    - panel_width
+                    - toolbar_right_padding
+                    - menu_width;
+                let y = 56.0;
                 self.overlay = Some(OverlayState {
                     content: OverlayContent::CloudProviderPicker,
-                    x: (self.mouse_position.x - 60.0).max(0.0),
-                    y: self.mouse_position.y + 16.0,
+                    x: x.max(0.0),
+                    y,
                 });
             }
 

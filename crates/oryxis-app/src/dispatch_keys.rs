@@ -358,14 +358,27 @@ impl Oryxis {
                     self.overlay = None;
                 } else {
                     self.show_keychain_add_menu = true;
-                    // Push the menu a bit below the click point so it appears
-                    // under the button instead of overlapping it. Also nudge
-                    // left so the menu's left edge roughly aligns with the
-                    // left half of the split button (rather than the cursor).
+                    // Anchor below the split button regardless of where
+                    // the cursor was when the click happened. Right-align
+                    // the menu's right edge with the chevron's right edge
+                    // (= toolbar right padding from the visible content's
+                    // right edge), and drop it just below the button row.
+                    let panel_width = if self.show_key_panel || self.show_identity_panel {
+                        crate::app::PANEL_WIDTH
+                    } else {
+                        0.0
+                    };
+                    let menu_width = 180.0;
+                    let toolbar_right_padding = 24.0;
+                    let x = self.window_size.width
+                        - panel_width
+                        - toolbar_right_padding
+                        - menu_width;
+                    let y = 56.0; // toolbar top padding + button height + small gap
                     self.overlay = Some(OverlayState {
                         content: OverlayContent::KeychainAdd,
-                        x: (self.mouse_position.x - 60.0).max(0.0),
-                        y: self.mouse_position.y + 16.0,
+                        x: x.max(0.0),
+                        y,
                     });
                 }
             }

@@ -436,6 +436,22 @@ impl Oryxis {
             if let Ok(Some(v)) = vault.get_setting("keepalive_interval") {
                 self.setting_keepalive_interval = v;
             }
+            // One-shot migration: 30s is the new default in this version,
+            // up from the previous "0" (off). Users sitting at the old
+            // default get bumped to 30 so they pick up the better idle
+            // behavior automatically. Explicit non-zero choices (e.g. a
+            // user who configured 60) are preserved. The sentinel makes
+            // this idempotent so a user who reverts to 0 after the
+            // migration isn't bumped again on next boot.
+            if let Ok(None) = vault.get_setting("keepalive_default_v2_applied") {
+                if self.setting_keepalive_interval == "0"
+                    || self.setting_keepalive_interval.is_empty()
+                {
+                    self.setting_keepalive_interval = "30".into();
+                    let _ = vault.set_setting("keepalive_interval", "30");
+                }
+                let _ = vault.set_setting("keepalive_default_v2_applied", "true");
+            }
             if let Ok(Some(v)) = vault.get_setting("scrollback_rows") {
                 self.setting_scrollback_rows = v;
             }

@@ -190,12 +190,7 @@ impl Oryxis {
                                 })
                                 .unwrap_or_else(|| "root".into());
                             let auth_method_label = format!("{:?}", conn.auth_method);
-                            let keepalive_secs: u64 = self
-                                .setting_keepalive_interval
-                                .parse()
-                                .unwrap_or(0);
-                            let keepalive = (keepalive_secs > 0)
-                                .then(|| std::time::Duration::from_secs(keepalive_secs));
+                            let keepalive = self.effective_keepalive(&conn);
                             let agent_forwarding = conn.agent_forwarding;
                             let stream = iced::stream::channel::<SshStreamMsg>(128, move |mut sender: iced::futures::channel::mpsc::Sender<SshStreamMsg>| {
                                 async move {
@@ -571,6 +566,19 @@ impl Oryxis {
                     if let Some(vault) = &self.vault {
                         self.session_logs = vault.list_session_logs().unwrap_or_default();
                     }
+                    // Surface the disconnect to the user. Without this the
+                    // terminal just goes silent and the silent auto-reconnect
+                    // (up to 30s later) feels like the shell mysteriously
+                    // reset itself. A second toast fires from `ReconnectTab`
+                    // when the actual reconnect attempt starts, so the
+                    // wording here is intentionally past-tense only.
+                    self.toast = Some(crate::i18n::t("disconnected_idle").to_string());
+                    return Ok(Task::perform(
+                        async {
+                            tokio::time::sleep(std::time::Duration::from_millis(2500)).await;
+                        },
+                        |_| Message::ToastClear,
+                    ));
                 }
             }
             Message::SshCloseProgress => {

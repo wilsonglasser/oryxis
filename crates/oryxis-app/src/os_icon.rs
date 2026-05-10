@@ -82,6 +82,7 @@ const BRAND_ICONS: &[(&str, &[u8])] = &[
     brand_svg!("opnsense"),
     brand_svg!("talos"),
     brand_svg!("aws"),
+    brand_svg!("ecs"),
     brand_svg!("windows"),
     brand_svg!("oracle"),
     brand_svg!("kubernetes"),
@@ -140,6 +141,9 @@ fn brand_color(id: &str) -> Option<Color> {
         "talos" => Color::from_rgb8(0x36, 0x46, 0x6A),
         // Cloud / corporate
         "aws" => Color::from_rgb8(0xFF, 0x99, 0x00),
+        // ECS shares AWS orange so the chip reads "AWS family" but
+        // the glyph (the hexagonal-box logo) tells you which service.
+        "ecs" => Color::from_rgb8(0xFF, 0x99, 0x00),
         "windows" => Color::from_rgb8(0x00, 0x78, 0xD4),
         "oracle" => Color::from_rgb8(0xC7, 0x4A, 0x3D),
         "kubernetes" => Color::from_rgb8(0x32, 0x6C, 0xE5),
@@ -155,7 +159,7 @@ fn brand_color(id: &str) -> Option<Color> {
 /// `BRAND_ICONS`. Strips the legacy `si:` prefix that early storage
 /// formats carried over from the Simple-Icons era. Returns `None` when
 /// no brand entry matches; callers should fall back to the Tux glyph.
-fn canonical_brand_id(id: &str) -> Option<&'static str> {
+pub(crate) fn canonical_brand_id(id: &str) -> Option<&'static str> {
     let id = id.strip_prefix("si:").unwrap_or(id);
     Some(match id {
         // OS distros (canonical = filename)
@@ -205,6 +209,8 @@ fn canonical_brand_id(id: &str) -> Option<&'static str> {
         "aws" | "amzn" | "amazon" | "amazonlinux" | "amazonlinux2"
         | "amazonlinux2023" | "amazonec2" | "amazonwebservices"
         | "ec2-user" | "ssm-user" => "aws",
+        "ecs" | "amazonecs" | "ecstask" | "ecstasks"
+        | "elasticcontainerservice" => "ecs",
         "windows" | "windows10" | "windows11" | "powershell" | "pwsh"
         | "cmd" | "command_prompt" | "microsoftwindows" => "windows",
         "oracle" | "oraclelinux" | "ol" => "oracle",
@@ -487,6 +493,10 @@ pub(crate) fn provider_icon(provider: &str, fallback_color: Color) -> (BrandIcon
         "aws" => (
             BrandIcon::Svg(brand_handle("aws").expect("aws SVG bundled")),
             brand_color("aws").expect("aws color set"),
+        ),
+        "ecs" => (
+            BrandIcon::Svg(brand_handle("ecs").expect("ecs SVG bundled")),
+            brand_color("ecs").expect("ecs color set"),
         ),
         "k8s" | "kubernetes" => (
             BrandIcon::Svg(brand_handle("kubernetes").expect("kubernetes SVG bundled")),

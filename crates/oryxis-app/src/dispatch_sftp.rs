@@ -82,12 +82,7 @@ impl Oryxis {
                 let (password, private_key) = self.resolve_credentials(&conn);
                 let resolver = self.make_jump_resolver(&conn);
                 let host_key_check = self.make_host_key_check();
-                let keepalive_secs: u64 = self
-                    .setting_keepalive_interval
-                    .parse()
-                    .unwrap_or(0);
-                let keepalive = (keepalive_secs > 0)
-                    .then(|| std::time::Duration::from_secs(keepalive_secs));
+                let keepalive = self.effective_keepalive(&conn);
 
                 let connect_to = self.sftp_connect_timeout();
                 let auth_to = self.sftp_auth_timeout();

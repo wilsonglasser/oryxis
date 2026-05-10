@@ -89,7 +89,24 @@ impl Oryxis {
                 }
             }
             Message::WindowResized(size) => {
-                self.window_size = size;
+                // Spatial debounce: drag-resize emits one event per pixel.
+                // Quantising to an 8 px grid means most consecutive events
+                // resolve to the same `window_size` so we don't re-state
+                // the field — and view()s that depend on it don't reflow
+                // a responsive grid on every frame. Cuts reflow frequency
+                // by ~8x during a sustained drag, which keeps iced's
+                // subscription channel from filling up and dropping events
+                // (the `TrySendError { kind: Full }` warnings).
+                const SNAP: f32 = 8.0;
+                let snapped = iced::Size {
+                    width: (size.width / SNAP).round() * SNAP,
+                    height: (size.height / SNAP).round() * SNAP,
+                };
+                if (snapped.width - self.window_size.width).abs() > 0.5
+                    || (snapped.height - self.window_size.height).abs() > 0.5
+                {
+                    self.window_size = snapped;
+                }
             }
             Message::WindowDrag => {
                 if !self.consume_window_press() {
@@ -344,7 +361,19 @@ impl Oryxis {
                         self.active_tab = Some(idx.min(self.tabs.len() - 1));
                     }
                     if let Some(ci) = conn_idx {
-                        return Ok(Task::done(Message::ConnectSsh(ci)));
+                        // Toast "Reconnecting..." so the user sees feedback the
+                        // moment the attempt actually starts (not when the
+                        // disconnect was first detected, up to 30s earlier).
+                        self.toast = Some(crate::i18n::t("disconnected_reconnecting").to_string());
+                        return Ok(Task::batch(vec![
+                            Task::done(Message::ConnectSsh(ci)),
+                            Task::perform(
+                                async {
+                                    tokio::time::sleep(std::time::Duration::from_millis(2500)).await;
+                                },
+                                |_| Message::ToastClear,
+                            ),
+                        ]));
                     }
                 }
             }

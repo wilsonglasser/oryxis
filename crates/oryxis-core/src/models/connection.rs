@@ -74,6 +74,12 @@ pub struct Connection {
     /// to drop into a specific working directory. `None` skips the step.
     #[serde(default)]
     pub initial_command: Option<String>,
+    /// Per-host SSH keepalive override (seconds). `None` inherits the
+    /// global `keepalive_interval` setting. `Some(0)` explicitly disables
+    /// keepalive on this host even when the global default is non-zero.
+    /// `Some(n)` overrides the global with `n` seconds.
+    #[serde(default)]
+    pub keepalive_interval: Option<u32>,
 }
 
 impl Connection {
@@ -107,6 +113,7 @@ impl Connection {
             terminal_theme: None,
             cloud_ref: None,
             initial_command: None,
+            keepalive_interval: None,
         }
     }
 }
@@ -226,6 +233,37 @@ mod tests {
 
         let de: ProxyConfig = serde_json::from_str(&json).unwrap();
         assert!(de.password.is_none());
+    }
+
+    /// Legacy peers (sync wire) and old portable exports never carried
+    /// the `keepalive_interval` field. Receiving such a payload must
+    /// deserialize cleanly with the field defaulting to `None` (= inherit
+    /// global). Without `#[serde(default)]` on the field, this would
+    /// regress the moment a v1 peer talks to a v2 peer.
+    #[test]
+    fn keepalive_interval_legacy_payload_defaults_to_none() {
+        let conn = Connection::new("legacy", "10.0.0.1");
+        let mut value = serde_json::to_value(&conn).unwrap();
+        // Simulate a payload from a peer that never knew about the field.
+        value.as_object_mut().unwrap().remove("keepalive_interval");
+        let de: Connection = serde_json::from_value(value).unwrap();
+        assert_eq!(de.keepalive_interval, None);
+    }
+
+    #[test]
+    fn keepalive_interval_round_trip() {
+        let mut conn = Connection::new("h", "1.2.3.4");
+        conn.keepalive_interval = Some(45);
+        let json = serde_json::to_string(&conn).unwrap();
+        let de: Connection = serde_json::from_str(&json).unwrap();
+        assert_eq!(de.keepalive_interval, Some(45));
+
+        // Explicit zero must round-trip distinctly from None — they have
+        // different semantics (per-host disable vs. inherit global).
+        conn.keepalive_interval = Some(0);
+        let json = serde_json::to_string(&conn).unwrap();
+        let de: Connection = serde_json::from_str(&json).unwrap();
+        assert_eq!(de.keepalive_interval, Some(0));
     }
 
     #[test]

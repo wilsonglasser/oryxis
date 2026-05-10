@@ -235,19 +235,18 @@ impl Oryxis {
                     ..Default::default()
                 });
 
-            // "..." menu button — only rendered while the key card is
-            // hovered, mirroring the host-card UX. A fixed-width
-            // placeholder reserves the slot so the title's wrap budget
-            // never changes.
-            const KEY_DOTS_SLOT_W: f32 = 26.0;
+            // Vertical ellipsis (⋮) — matches the hosts card pattern:
+            // hover-only, fixed-width placeholder so the title's wrap
+            // budget stays constant whether the button is rendered or not.
+            const KEY_DOTS_SLOT_W: f32 = 22.0;
             let key_show_dots =
                 self.hovered_key_card == Some(idx) || self.key_context_menu == Some(idx);
             let dots_btn: Element<'_, Message> = if key_show_dots {
                 button(
-                    text("···").size(14).color(OryxisColors::t().text_muted),
+                    text("\u{22EE}").size(14).color(OryxisColors::t().text_muted),
                 )
                 .on_press(Message::ShowKeyMenu(idx))
-                .padding(Padding { top: 2.0, right: 6.0, bottom: 2.0, left: 6.0 })
+                .padding(Padding { top: 1.0, right: 6.0, bottom: 1.0, left: 6.0 })
                 .style(|_, status| {
                     let bg = match status {
                         BtnStatus::Hovered => OryxisColors::t().bg_hover,
@@ -335,9 +334,11 @@ impl Oryxis {
         } else {
             0.0
         };
-        // 24 px of left padding on the grid column + ~16 px reserved for
-        // the scrollbar gutter on the right.
-        let available = (self.window_size.width - nav_width - panel_width - 40.0).max(0.0);
+        // 24 px of horizontal padding on each side of the grid column,
+        // plus ~12 px reserved for the scrollbar gutter on the trailing
+        // edge. Keep this in sync with the `padding` set on the
+        // scrollable column further down.
+        let available = (self.window_size.width - nav_width - panel_width - 60.0).max(0.0);
         let cols = card_grid_columns(available, CARD_WIDTH, 12.0);
         let keys_grid_elem = distribute_card_grid(cards, cols, 12.0, 12.0);
 
@@ -391,16 +392,18 @@ impl Oryxis {
                     ..Default::default()
                 });
 
-            // "..." button — hover-only, like the host / key cards.
-            const ID_DOTS_SLOT_W: f32 = 26.0;
+            // Vertical ellipsis (⋮) — same hover-only pattern as host /
+            // key cards. Reserved 22 px slot so the subtitle wrap budget
+            // stays identical whether the button is rendered or not.
+            const ID_DOTS_SLOT_W: f32 = 22.0;
             let id_show_dots =
                 self.hovered_identity_card == Some(idx) || self.identity_context_menu == Some(idx);
             let dots_btn: Element<'_, Message> = if id_show_dots {
                 button(
-                    text("···").size(14).color(OryxisColors::t().text_muted),
+                    text("\u{22EE}").size(14).color(OryxisColors::t().text_muted),
                 )
                 .on_press(Message::ShowIdentityMenu(idx))
-                .padding(Padding { top: 2.0, right: 6.0, bottom: 2.0, left: 6.0 })
+                .padding(Padding { top: 1.0, right: 6.0, bottom: 1.0, left: 6.0 })
                 .style(|_, status| {
                     let bg = match status {
                         BtnStatus::Hovered => OryxisColors::t().bg_hover,
@@ -490,7 +493,7 @@ impl Oryxis {
         let grid = scrollable(
             column(all_rows)
                 .width(Length::Fill)
-                .padding(Padding { top: 0.0, right: 8.0, bottom: 24.0, left: 24.0 })
+                .padding(Padding { top: 0.0, right: 24.0, bottom: 24.0, left: 24.0 })
                 .align_x(crate::widgets::dir_align_x()),
         )
         .height(Length::Fill);

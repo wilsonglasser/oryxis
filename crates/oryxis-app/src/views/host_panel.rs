@@ -393,6 +393,30 @@ impl Oryxis {
                         .into()
                 },
             ]).align_y(iced::Alignment::Center),
+            panel_divider(),
+            // Per-host keepalive override. Empty placeholder reflects the
+            // global default so the user sees what "inherit" means without
+            // opening Settings. "0" in the field disables keepalive on this
+            // host even when the global default is non-zero.
+            dir_row(vec![
+                iced_fonts::lucide::activity().size(14).color(OryxisColors::t().text_muted).into(),
+                Space::new().width(10).into(),
+                column![
+                    text(t("host_keepalive")).size(13).color(OryxisColors::t().text_secondary),
+                    Space::new().height(2),
+                    text(t("host_keepalive_desc")).size(11).color(OryxisColors::t().text_muted),
+                ].into(),
+                Space::new().width(Length::Fill).into(),
+                text_input(
+                    &self.setting_keepalive_interval,
+                    &self.editor_form.keepalive_interval,
+                )
+                    .on_input(Message::EditorKeepaliveChanged)
+                    .padding(6)
+                    .width(80)
+                    .style(crate::widgets::rounded_input_style)
+                    .into(),
+            ]).align_y(iced::Alignment::Center),
         ]);
 
         // ── Section: Proxy ──

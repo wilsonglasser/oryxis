@@ -375,6 +375,7 @@ impl VaultStore {
         // Independent of cloud — used by ECS / K8s entries that drop into
         // `/bin/sh` and want `exec bash`.
         let _ = self.db.execute_batch("ALTER TABLE connections ADD COLUMN initial_command TEXT;");
+        let _ = self.db.execute_batch("ALTER TABLE connections ADD COLUMN keepalive_interval INTEGER;");
         // Backing query for dynamic groups (ECS services / K8s workloads).
         // JSON-encoded `CloudQuery`. NULL for manual groups.
         let _ = self.db.execute_batch("ALTER TABLE groups ADD COLUMN cloud_query TEXT;");
@@ -607,8 +608,8 @@ impl VaultStore {
             "INSERT OR REPLACE INTO connections
              (id, label, hostname, port, username, auth_method, key_id, group_id,
               jump_chain, proxy, tags, notes, color, password, last_used, created_at, updated_at, identity_id, mcp_enabled, port_forwards,
-              detected_os, custom_icon, custom_color, agent_forwarding, proxy_identity_id, terminal_theme, cloud_ref, initial_command)
-             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20,?21,?22,?23,?24,?25,?26,?27,?28)",
+              detected_os, custom_icon, custom_color, agent_forwarding, proxy_identity_id, terminal_theme, cloud_ref, initial_command, keepalive_interval)
+             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20,?21,?22,?23,?24,?25,?26,?27,?28,?29)",
             params![
                 conn.id.to_string(),
                 conn.label,
@@ -641,6 +642,7 @@ impl VaultStore {
                 conn.terminal_theme,
                 conn.cloud_ref.as_ref().map(|r| serde_json::to_string(r).unwrap_or_default()),
                 conn.initial_command,
+                conn.keepalive_interval,
             ],
         )?;
         Ok(())
@@ -659,12 +661,12 @@ impl VaultStore {
         let query = match mcp_filter {
             Some(true) => {
                 "SELECT id, label, hostname, port, username, auth_method, key_id, group_id,
-                        jump_chain, proxy, tags, notes, color, last_used, created_at, updated_at, identity_id, mcp_enabled, port_forwards, detected_os, custom_icon, custom_color, agent_forwarding, proxy_identity_id, terminal_theme, cloud_ref, initial_command
+                        jump_chain, proxy, tags, notes, color, last_used, created_at, updated_at, identity_id, mcp_enabled, port_forwards, detected_os, custom_icon, custom_color, agent_forwarding, proxy_identity_id, terminal_theme, cloud_ref, initial_command, keepalive_interval
                  FROM connections WHERE mcp_enabled = 1 ORDER BY label"
             }
             _ => {
                 "SELECT id, label, hostname, port, username, auth_method, key_id, group_id,
-                        jump_chain, proxy, tags, notes, color, last_used, created_at, updated_at, identity_id, mcp_enabled, port_forwards, detected_os, custom_icon, custom_color, agent_forwarding, proxy_identity_id, terminal_theme, cloud_ref, initial_command
+                        jump_chain, proxy, tags, notes, color, last_used, created_at, updated_at, identity_id, mcp_enabled, port_forwards, detected_os, custom_icon, custom_color, agent_forwarding, proxy_identity_id, terminal_theme, cloud_ref, initial_command, keepalive_interval
                  FROM connections ORDER BY label"
             }
         };
@@ -757,6 +759,11 @@ impl VaultStore {
                         .get::<_, Option<String>>(26)
                         .ok()
                         .flatten(),
+                    keepalive_interval: row
+                        .get::<_, Option<i64>>(27)
+                        .ok()
+                        .flatten()
+                        .and_then(|v| u32::try_from(v).ok()),
                 })
             })?
             .collect::<Result<Vec<_>, _>>()?;
@@ -2174,6 +2181,34 @@ mod tests {
         assert_eq!(themed.terminal_theme.as_deref(), Some("Dracula"));
         let plain = conns.iter().find(|c| c.label == "plain").unwrap();
         assert!(plain.terminal_theme.is_none());
+    }
+
+    #[test]
+    fn keepalive_interval_round_trip() {
+        // The three meaningful states (None / Some(n) / Some(0)) must
+        // each round-trip through the SQLite save+load pipeline. Some(0)
+        // is distinct from None: the former means "explicitly disabled
+        // on this host", the latter means "inherit the global setting".
+        let vault = unlocked_vault();
+
+        let inherits = Connection::new("inherits", "a.example.com");
+        vault.save_connection(&inherits, None).unwrap();
+
+        let mut overrides = Connection::new("overrides", "b.example.com");
+        overrides.keepalive_interval = Some(60);
+        vault.save_connection(&overrides, None).unwrap();
+
+        let mut disabled = Connection::new("disabled", "c.example.com");
+        disabled.keepalive_interval = Some(0);
+        vault.save_connection(&disabled, None).unwrap();
+
+        let conns = vault.list_connections().unwrap();
+        let i = conns.iter().find(|c| c.label == "inherits").unwrap();
+        let o = conns.iter().find(|c| c.label == "overrides").unwrap();
+        let d = conns.iter().find(|c| c.label == "disabled").unwrap();
+        assert_eq!(i.keepalive_interval, None);
+        assert_eq!(o.keepalive_interval, Some(60));
+        assert_eq!(d.keepalive_interval, Some(0));
     }
 
     #[test]

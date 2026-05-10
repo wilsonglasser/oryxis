@@ -180,13 +180,19 @@ impl Oryxis {
                 ..Default::default()
             });
 
-            let backdrop: Element<'_, Message> = MouseArea::new(
-                container(Space::new()).width(Length::Fill).height(Length::Fill),
+            let scrim: Element<'_, Message> = MouseArea::new(
+                container(Space::new())
+                    .width(Length::Fill)
+                    .height(Length::Fill)
+                    .style(|_| container::Style {
+                        background: Some(Background::Color(Color::from_rgba(0.0, 0.0, 0.0, 0.5))),
+                        ..Default::default()
+                    }),
             )
             .on_press(Message::ShareDismiss)
             .into();
 
-            let centered = container(dialog_content)
+            let centered = container(MouseArea::new(dialog_content).on_press(Message::NoOp))
                 .width(Length::Fill)
                 .height(Length::Fill)
                 .center_x(Length::Fill)
@@ -195,7 +201,7 @@ impl Oryxis {
             return wrap_with_resize(
                 Stack::new()
                     .push(base)
-                    .push(backdrop)
+                    .push(scrim)
                     .push(centered)
                     .width(Length::Fill)
                     .height(Length::Fill)
@@ -234,13 +240,19 @@ impl Oryxis {
                 ..Default::default()
             });
 
-            let backdrop: Element<'_, Message> = MouseArea::new(
-                container(Space::new()).width(Length::Fill).height(Length::Fill),
+            let scrim: Element<'_, Message> = MouseArea::new(
+                container(Space::new())
+                    .width(Length::Fill)
+                    .height(Length::Fill)
+                    .style(|_| container::Style {
+                        background: Some(Background::Color(Color::from_rgba(0.0, 0.0, 0.0, 0.5))),
+                        ..Default::default()
+                    }),
             )
             .on_press(Message::CancelFolderModal)
             .into();
 
-            let centered = container(dialog)
+            let centered = container(MouseArea::new(dialog).on_press(Message::NoOp))
                 .width(Length::Fill)
                 .height(Length::Fill)
                 .center_x(Length::Fill)
@@ -249,7 +261,7 @@ impl Oryxis {
             return wrap_with_resize(
                 Stack::new()
                     .push(base)
-                    .push(backdrop)
+                    .push(scrim)
                     .push(centered)
                     .width(Length::Fill)
                     .height(Length::Fill)
@@ -310,13 +322,19 @@ impl Oryxis {
                 ..Default::default()
             });
 
-            let backdrop: Element<'_, Message> = MouseArea::new(
-                container(Space::new()).width(Length::Fill).height(Length::Fill),
+            let scrim: Element<'_, Message> = MouseArea::new(
+                container(Space::new())
+                    .width(Length::Fill)
+                    .height(Length::Fill)
+                    .style(|_| container::Style {
+                        background: Some(Background::Color(Color::from_rgba(0.0, 0.0, 0.0, 0.5))),
+                        ..Default::default()
+                    }),
             )
             .on_press(Message::CancelFolderModal)
             .into();
 
-            let centered = container(dialog)
+            let centered = container(MouseArea::new(dialog).on_press(Message::NoOp))
                 .width(Length::Fill)
                 .height(Length::Fill)
                 .center_x(Length::Fill)
@@ -325,7 +343,7 @@ impl Oryxis {
             return wrap_with_resize(
                 Stack::new()
                     .push(base)
-                    .push(backdrop)
+                    .push(scrim)
                     .push(centered)
                     .width(Length::Fill)
                     .height(Length::Fill)
@@ -647,7 +665,16 @@ impl Oryxis {
             }
         };
 
-        container(items)
+        // Match the toolbar split-button height so a single-item menu
+        // doesn't render shorter than the button it dropped from.
+        // iced container lacks a `min_height`, so a `Stack` enforces it
+        // by laying a fixed-height invisible spacer behind the items —
+        // multi-item content layers on top and grows past freely.
+        const MIN_MENU_HEIGHT: f32 = 32.0;
+        let body = iced::widget::Stack::new()
+            .push(Space::new().height(Length::Fixed(MIN_MENU_HEIGHT)))
+            .push(items);
+        container(body)
             .width(menu_width)
             .padding(4)
             .style(|_| container::Style {

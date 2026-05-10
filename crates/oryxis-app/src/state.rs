@@ -587,6 +587,12 @@ pub(crate) struct ConnectionForm {
     /// global pick"; `Some(name)` pins this host to the named palette.
     /// Mirrors `Connection.terminal_theme` while the editor is open.
     pub terminal_theme: Option<String>,
+    /// Per-host SSH keepalive override (raw text). Empty string means
+    /// inherit the global setting; "0" disables keepalive on this host;
+    /// any positive integer overrides the global value. Stored as a
+    /// string while the editor is open so the input field can show
+    /// what the user typed; serialized to `Option<u32>` on save.
+    pub keepalive_interval: String,
 }
 
 /// UI-side proxy kind. Includes a `None` (disabled) variant — the
@@ -707,6 +713,7 @@ impl Default for ConnectionForm {
             has_existing_proxy_password: false,
             proxy_password_touched: false,
             terminal_theme: None,
+            keepalive_interval: String::new(),
         }
     }
 }

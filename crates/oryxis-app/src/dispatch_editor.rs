@@ -104,6 +104,10 @@ impl Oryxis {
                         has_existing_proxy_password: has_proxy_pw,
                         proxy_password_touched: false,
                         terminal_theme: conn.terminal_theme.clone(),
+                        keepalive_interval: conn
+                            .keepalive_interval
+                            .map(|n| n.to_string())
+                            .unwrap_or_default(),
                     };
                 }
             }
@@ -206,6 +210,18 @@ impl Oryxis {
                     if name.is_empty() { None } else { Some(name) };
                 self.show_theme_picker = false;
             }
+            Message::EditorKeepaliveChanged(v) => {
+                // Digits only; preserve empty (= inherit global). Cap at
+                // 86_400s (1 day) like the global setting field, so users
+                // can't accidentally type a runaway value.
+                let digits: String = v.chars().filter(|c| c.is_ascii_digit()).collect();
+                self.editor_form.keepalive_interval = if digits.is_empty() {
+                    String::new()
+                } else {
+                    let n: u64 = digits.parse().unwrap_or(86_400);
+                    n.min(86_400).to_string()
+                };
+            }
             Message::EditorSave => {
                 if self.editor_form.label.is_empty() || self.editor_form.hostname.is_empty() {
                     self.host_panel_error = Some("Label and hostname are required".into());
@@ -280,6 +296,13 @@ impl Oryxis {
                 conn.mcp_enabled = self.editor_form.mcp_enabled;
                 conn.agent_forwarding = self.editor_form.agent_forwarding;
                 conn.terminal_theme = self.editor_form.terminal_theme.clone();
+                // Empty string == inherit global; "0" == explicitly disabled
+                // on this host; positive integer == per-host override.
+                conn.keepalive_interval = if self.editor_form.keepalive_interval.is_empty() {
+                    None
+                } else {
+                    self.editor_form.keepalive_interval.parse::<u32>().ok()
+                };
                 // Map the editor form into either an inline ProxyConfig
                 // or a `proxy_identity_id` reference. Validates host /
                 // port / command up-front so the user gets an error

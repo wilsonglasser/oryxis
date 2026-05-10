@@ -349,7 +349,7 @@ impl Oryxis {
                                 .filter(|g| g.parent_id == Some(gid))
                                 .find_map(|g| g.cloud_query.as_ref())
                                 .map(|q| match q.kind {
-                                    oryxis_core::models::cloud::CloudQueryKind::EcsTasks { .. } => "aws",
+                                    oryxis_core::models::cloud::CloudQueryKind::EcsTasks { .. } => "ecs",
                                     oryxis_core::models::cloud::CloudQueryKind::K8sPods { .. } => "kubernetes",
                                 })
                                 .or_else(|| {
@@ -514,11 +514,11 @@ impl Oryxis {
                 };
 
                 // Dynamic groups always have a known brand from their
-                // own cloud_query (ECS → AWS, K8s → Kubernetes). We
+                // own cloud_query (ECS hexagon-box, K8s wheel). We
                 // don't expose a UI to set group icons, so honouring
-                // `group.icon` here is moot — derive from the query.
+                // `group.icon` here is moot, derive from the query.
                 let brand: &str = match query.kind {
-                    oryxis_core::models::cloud::CloudQueryKind::EcsTasks { .. } => "aws",
+                    oryxis_core::models::cloud::CloudQueryKind::EcsTasks { .. } => "ecs",
                     oryxis_core::models::cloud::CloudQueryKind::K8sPods { .. } => "kubernetes",
                 };
                 let folder_glyph = crate::os_icon::custom_icon_glyph(brand);

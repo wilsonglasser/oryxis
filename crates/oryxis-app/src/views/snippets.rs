@@ -117,13 +117,23 @@ impl Oryxis {
                     ..Default::default()
                 });
 
-            let edit_btn = button(text("...").size(12).color(OryxisColors::t().text_muted))
+            // Vertical ellipsis (⋮) to match the hosts / keys / cloud
+            // pattern. Snippets don't have a context menu yet, so this
+            // still goes straight to Edit; the glyph alignment is the
+            // main goal here.
+            let edit_btn = button(text("\u{22EE}").size(14).color(OryxisColors::t().text_muted))
                 .on_press(Message::EditSnippet(idx))
-                .padding(Padding { top: 2.0, right: 6.0, bottom: 2.0, left: 6.0 })
-                .style(|_, _| button::Style {
-                    background: Some(Background::Color(Color::TRANSPARENT)),
-                    border: Border::default(),
-                    ..Default::default()
+                .padding(Padding { top: 1.0, right: 6.0, bottom: 1.0, left: 6.0 })
+                .style(|_, status| {
+                    let bg = match status {
+                        BtnStatus::Hovered => OryxisColors::t().bg_hover,
+                        _ => Color::TRANSPARENT,
+                    };
+                    button::Style {
+                        background: Some(Background::Color(bg)),
+                        border: Border { radius: Radius::from(6.0), ..Default::default() },
+                        ..Default::default()
+                    }
                 });
 
             let cmd_preview = if snip.command.len() > 30 {

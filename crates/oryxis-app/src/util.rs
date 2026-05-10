@@ -117,6 +117,24 @@ pub(crate) fn open_in_browser(url: &str) -> Result<(), std::io::Error> {
     Ok(())
 }
 
+/// Resolve the effective SSH keepalive duration for a connection.
+/// `per_host` mirrors `Connection.keepalive_interval`: `None` falls
+/// back to the parsed `global` string; `Some(0)` explicitly disables
+/// keepalive on this host even when the global default is non-zero;
+/// `Some(n)` overrides with `n` seconds. `global` is the raw value
+/// from the settings text input, so non-numeric or empty input
+/// degrades gracefully to disabled.
+pub(crate) fn resolve_keepalive(
+    per_host: Option<u32>,
+    global: &str,
+) -> Option<std::time::Duration> {
+    let secs = match per_host {
+        Some(n) => u64::from(n),
+        None => global.parse().unwrap_or(0),
+    };
+    (secs > 0).then(|| std::time::Duration::from_secs(secs))
+}
+
 /// Translate a Ctrl+<char> combination into the control byte sequence.
 pub(crate) fn ctrl_key_bytes(key: &keyboard::Key) -> Option<Vec<u8>> {
     if let keyboard::Key::Character(c) = key {
@@ -134,5 +152,53 @@ pub(crate) fn ctrl_key_bytes(key: &keyboard::Key) -> Option<Vec<u8>> {
         Some(vec![ctrl])
     } else {
         None
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::Duration;
+
+    #[test]
+    fn keepalive_inherits_global_when_per_host_is_none() {
+        assert_eq!(resolve_keepalive(None, "30"), Some(Duration::from_secs(30)));
+        assert_eq!(resolve_keepalive(None, "60"), Some(Duration::from_secs(60)));
+    }
+
+    #[test]
+    fn keepalive_global_zero_means_disabled() {
+        assert_eq!(resolve_keepalive(None, "0"), None);
+    }
+
+    #[test]
+    fn keepalive_per_host_zero_disables_even_when_global_is_set() {
+        // Per-host explicit "0" must beat a non-zero global. This is
+        // the escape hatch for users who want keepalive globally but
+        // need it off on a specific host (rare, but it must work).
+        assert_eq!(resolve_keepalive(Some(0), "30"), None);
+        assert_eq!(resolve_keepalive(Some(0), "120"), None);
+    }
+
+    #[test]
+    fn keepalive_per_host_overrides_global() {
+        assert_eq!(resolve_keepalive(Some(60), "30"), Some(Duration::from_secs(60)));
+        assert_eq!(resolve_keepalive(Some(15), "0"), Some(Duration::from_secs(15)));
+    }
+
+    #[test]
+    fn keepalive_invalid_global_degrades_to_disabled() {
+        // The settings field accepts arbitrary text; non-numeric values
+        // must not panic. They collapse to disabled (parse() -> 0).
+        assert_eq!(resolve_keepalive(None, "abc"), None);
+        assert_eq!(resolve_keepalive(None, ""), None);
+        assert_eq!(resolve_keepalive(None, "  "), None);
+    }
+
+    #[test]
+    fn keepalive_per_host_wins_over_invalid_global() {
+        // Even if the global setting is malformed, an explicit per-host
+        // value must still apply.
+        assert_eq!(resolve_keepalive(Some(45), "garbage"), Some(Duration::from_secs(45)));
     }
 }

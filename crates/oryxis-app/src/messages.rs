@@ -72,6 +72,10 @@ pub enum Message {
     EditorCloseThemePicker,
     /// Empty string == "inherit the global theme".
     EditorTerminalThemeChanged(String),
+    /// Empty string == "inherit the global keepalive setting".
+    /// "0" == explicitly disabled on this host; any positive integer
+    /// is the per-host override in seconds. Sanitized to digits-only.
+    EditorKeepaliveChanged(String),
     ShowTabMenu(usize),
     ReconnectTab(usize),
     DuplicateTab(usize),
