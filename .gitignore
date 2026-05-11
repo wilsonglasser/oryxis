@@ -1,6 +1,5 @@
 /target/
 .idea
-SPEC.md
 .env
 signaling-worker/wrangler.jsonc
 signaling-worker/.wrangler/
@@ -8,4 +7,6 @@ winget/
 .wrangler
 site
 
-ROADMAP-0.6.md
+/*.md
+!/README.md
+!/CHANGELOG.md
