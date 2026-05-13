@@ -261,15 +261,26 @@ impl Oryxis {
                 buttons = buttons.push(open_link_button(link.label, link.url));
             }
 
+            // Body uses Rich text with `.selectable(true)` so the user
+            // can highlight and copy the failure message (key when the
+            // dialog explains how to install a missing dependency or
+            // includes a path / command to run).
+            let body_span: iced::widget::text::Span<'_, ()> =
+                iced::widget::text::Span::new(dialog.body.clone())
+                    .color(OryxisColors::t().text_secondary);
+            let dialog_body = iced::widget::text::Rich::<'_, (), Message>::with_spans(
+                [body_span],
+            )
+            .size(13)
+            .selectable(true);
+
             let dialog_content = container(
                 column![
                     text(dialog.title.clone())
                         .size(16)
                         .color(OryxisColors::t().text_primary),
                     Space::new().height(12),
-                    text(dialog.body.clone())
-                        .size(13)
-                        .color(OryxisColors::t().text_secondary),
+                    dialog_body,
                     Space::new().height(20),
                     buttons,
                 ]

@@ -50,7 +50,7 @@ impl Oryxis {
         let at_root = self.active_group.is_none();
         let flatten = self.flatten_hosts && at_root;
 
-        if self.connections.is_empty() {
+        if self.connections.is_empty() && self.groups.is_empty() {
             // Termius-style empty state, centered "Create host" with input
             let has_input = !self.quick_host_input.is_empty();
             let btn_bg = if has_input { OryxisColors::t().success } else { OryxisColors::t().bg_surface };
@@ -303,12 +303,29 @@ impl Oryxis {
         let search_lower = self.host_search.to_lowercase();
 
         if self.active_group.is_none() {
-            // Root view: show folder cards for groups that have connections
+            // Root view: show folder cards for manual groups that have
+            // either direct connections or nested children (e.g. an
+            // AWS profile folder whose only child is an ECS dynamic
+            // sub-group, with no EC2 connection imported alongside).
             let mut shown_groups = std::collections::HashSet::new();
+            let mut roots_to_render: Vec<uuid::Uuid> = Vec::new();
             for conn in &self.connections {
                 if let Some(gid) = conn.group_id
                     && shown_groups.insert(gid)
-                        && let Some(group) = self.groups.iter().find(|g| g.id == gid)
+                {
+                    roots_to_render.push(gid);
+                }
+            }
+            for g in &self.groups {
+                if g.cloud_query.is_some() || g.parent_id.is_some() { continue }
+                if shown_groups.contains(&g.id) { continue }
+                if self.groups.iter().any(|c| c.parent_id == Some(g.id)) {
+                    shown_groups.insert(g.id);
+                    roots_to_render.push(g.id);
+                }
+            }
+            for gid in roots_to_render {
+                if let Some(group) = self.groups.iter().find(|g| g.id == gid)
                         && (search_lower.is_empty()
                             || group.label.to_lowercase().contains(&search_lower)) {
                             // Count = direct connections + nested groups
@@ -455,12 +472,19 @@ impl Oryxis {
                                         icon_box.into(),
                                         Space::new().width(8).into(),
                                         column![
-                                            text(label).size(13).color(OryxisColors::t().text_primary),
+                                            text(label)
+                                                .size(13)
+                                                .color(OryxisColors::t().text_primary)
+                                                .wrapping(iced::widget::text::Wrapping::None),
                                             Space::new().height(2),
-                                            text(count_text).size(10).color(OryxisColors::t().text_muted),
+                                            text(count_text)
+                                                .size(10)
+                                                .color(OryxisColors::t().text_muted)
+                                                .wrapping(iced::widget::text::Wrapping::None),
                                         ]
                                         .width(Length::Fill)
                                         .align_x(crate::widgets::dir_align_x())
+                                        .clip(true)
                                         .into(),
                                         actions_btn,
                                     ]).align_y(iced::Alignment::Center),
@@ -582,14 +606,17 @@ impl Oryxis {
                             column![
                                 text(group.label.clone())
                                     .size(13)
-                                    .color(OryxisColors::t().text_primary),
+                                    .color(OryxisColors::t().text_primary)
+                                    .wrapping(iced::widget::text::Wrapping::None),
                                 Space::new().height(2),
                                 text(subtitle)
                                     .size(10)
-                                    .color(OryxisColors::t().text_muted),
+                                    .color(OryxisColors::t().text_muted)
+                                    .wrapping(iced::widget::text::Wrapping::None),
                             ]
                             .width(Length::Fill)
                             .align_x(crate::widgets::dir_align_x())
+                            .clip(true)
                             .into(),
                             dyn_actions_btn,
                         ])
@@ -710,12 +737,17 @@ impl Oryxis {
                             column![
                                 text(group.label.clone())
                                     .size(13)
-                                    .color(OryxisColors::t().text_primary),
+                                    .color(OryxisColors::t().text_primary)
+                                    .wrapping(iced::widget::text::Wrapping::None),
                                 Space::new().height(2),
-                                text(subtitle).size(10).color(OryxisColors::t().text_muted),
+                                text(subtitle)
+                                    .size(10)
+                                    .color(OryxisColors::t().text_muted)
+                                    .wrapping(iced::widget::text::Wrapping::None),
                             ]
                             .width(Length::Fill)
                             .align_x(crate::widgets::dir_align_x())
+                            .clip(true)
                             .into(),
                             dyn_actions_btn,
                         ])
