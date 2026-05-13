@@ -67,12 +67,6 @@ arboard = "3"
 # SFTP edit-in-place flow to launch the user's editor on a downloaded
 # temp copy. Tiny crate, no transitive deps of note.
 open = "5"
-# Sentry's default `transport` feature pulls native-tls (and openssl-sys on
-# Linux). The hidden `rustls` feature routes its internal reqwest via rustls
-# instead, matching the rest of the project's TLS stack.
-sentry = { version = "0.47", default-features = false, features = ["backtrace", "contexts", "debug-images", "panic", "release-health", "reqwest", "rustls"] }
-sentry-tracing = "0.47"
-
 [target.'cfg(windows)'.build-dependencies]
 winresource = "0.1"
 

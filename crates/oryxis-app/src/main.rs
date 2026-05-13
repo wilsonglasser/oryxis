@@ -99,13 +99,9 @@ fn main() -> iced::Result {
         }
     }
 
-    // Held for the duration of main(), drop flushes pending events.
-    let _sentry_guard = init_sentry();
-
     tracing_subscriber::registry()
         .with(tracing_subscriber::EnvFilter::new("oryxis=debug,info"))
         .with(tracing_subscriber::fmt::layer())
-        .with(sentry_tracing::layer())
         .init();
 
     tracing::info!("Starting Oryxis");
@@ -158,30 +154,6 @@ fn main() -> iced::Result {
         })
         .antialiasing(true)
         .run()
-}
-
-fn init_sentry() -> Option<sentry::ClientInitGuard> {
-    // DSN baked in at build time via the SENTRY_DSN env var. Missing/empty =
-    // sentry stays off (local dev builds, contributors without the secret).
-    let dsn = option_env!("SENTRY_DSN").unwrap_or("");
-    if dsn.is_empty() {
-        return None;
-    }
-    let environment = if cfg!(debug_assertions) {
-        "development"
-    } else {
-        "production"
-    };
-    Some(sentry::init((
-        dsn,
-        sentry::ClientOptions {
-            release: sentry::release_name!(),
-            environment: Some(environment.into()),
-            attach_stacktrace: true,
-            send_default_pii: false,
-            ..Default::default()
-        },
-    )))
 }
 
 fn load_icon() -> Option<window::Icon> {

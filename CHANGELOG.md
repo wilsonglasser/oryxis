@@ -6,6 +6,12 @@ project uses [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Removed
+- Sentry crash/error reporting. Dropped the `sentry` and
+  `sentry-tracing` dependencies, the `init_sentry()` boot hook, the
+  `SENTRY_DSN` build-time env var, and the matching CI secret in the
+  release workflow.
+
 ### Fixed
 - Importing an OpenSSH key from PuTTYgen's "Export OpenSSH key (force
   new file format)" no longer fails with "invalid Base64 encoding".
