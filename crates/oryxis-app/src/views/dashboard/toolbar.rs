@@ -31,16 +31,19 @@ impl Oryxis {
             }
             chain.reverse();
 
+            // Leading crumb: just "Hosts" (no arrow, no "All"), styled
+            // to match the homepage Hosts header so the breadcrumb feels
+            // like a continuation of that title rather than a separate
+            // nav element. The label stays clickable and routes back to
+            // the root view.
             let mut crumbs: Vec<Element<'_, Message>> = vec![
                 button(
-                    dir_row(vec![
-                        iced_fonts::lucide::arrow_left().size(14).color(OryxisColors::t().accent).into(),
-                        Space::new().width(6).into(),
-                        text(t("all_hosts")).size(14).color(OryxisColors::t().accent).into(),
-                    ]).align_y(iced::Alignment::Center),
+                    text(t("hosts"))
+                        .size(20)
+                        .color(OryxisColors::t().text_primary),
                 )
                 .on_press(Message::BackToRoot)
-                .padding(Padding { top: 4.0, right: 10.0, bottom: 4.0, left: 10.0 })
+                .padding(Padding { top: 0.0, right: 4.0, bottom: 0.0, left: 0.0 })
                 .style(|_, _| button::Style {
                     background: Some(Background::Color(Color::TRANSPARENT)),
                     border: Border::default(),
@@ -49,17 +52,17 @@ impl Oryxis {
             ];
             for (idx, g) in chain.iter().enumerate() {
                 let is_last = idx == chain.len() - 1;
-                crumbs.push(text("/").size(16).color(OryxisColors::t().text_muted).into());
+                crumbs.push(text("/").size(20).color(OryxisColors::t().text_muted).into());
                 crumbs.push(Space::new().width(8).into());
                 crumbs.push(
-                    iced_fonts::lucide::folder().size(16).color(OryxisColors::t().accent).into(),
+                    iced_fonts::lucide::folder().size(18).color(OryxisColors::t().accent).into(),
                 );
                 crumbs.push(Space::new().width(6).into());
                 if is_last {
                     // Current group, plain text, no nav action.
                     crumbs.push(
                         text(g.label.clone())
-                            .size(16)
+                            .size(20)
                             .color(OryxisColors::t().text_primary)
                             .into(),
                     );
@@ -69,7 +72,7 @@ impl Oryxis {
                     crumbs.push(
                         button(
                             text(g.label.clone())
-                                .size(16)
+                                .size(20)
                                 .color(OryxisColors::t().accent),
                         )
                         .on_press(Message::OpenGroup(parent_id))
