@@ -15,7 +15,7 @@ use oryxis_core::models::key::SshKey;
 use crate::app::{Message, Oryxis, CARD_WIDTH, PANEL_WIDTH};
 use crate::i18n::t;
 use crate::theme::OryxisColors;
-use crate::widgets::{card_grid_columns, dir_row, distribute_card_grid};
+use crate::widgets::{card_grid_columns, dir_row, distribute_card_grid, password_input_with_eye};
 
 impl Oryxis {
     pub(crate) fn view_keys(&self) -> Element<'_, Message> {
@@ -619,25 +619,15 @@ impl Oryxis {
                 dir_row(vec![
                     iced_fonts::lucide::lock().size(13).color(OryxisColors::t().text_muted).into(),
                     Space::new().width(10).into(),
-                    text_input(t("key_passphrase_placeholder"), &self.key_import_passphrase)
-                        .on_input(Message::KeyImportPassphraseChanged)
-                        .on_submit(Message::ImportKey)
-                        .secure(!self.key_import_passphrase_visible)
-                        .padding(10)
-                        .style(crate::widgets::rounded_input_style)
-                        .into(),
-                    Space::new().width(6).into(),
-                    button(
-                        if self.key_import_passphrase_visible {
-                            iced_fonts::lucide::eye_off().size(14).color(OryxisColors::t().text_muted)
-                        } else {
-                            iced_fonts::lucide::eye().size(14).color(OryxisColors::t().text_muted)
-                        }
-                    )
-                        .on_press(Message::KeyImportPassphraseToggleVisibility)
-                        .style(|_t, _s| button::Style::default())
-                        .padding(8)
-                        .into(),
+                    password_input_with_eye(
+                        t("key_passphrase_placeholder"),
+                        &self.key_import_passphrase,
+                        Message::KeyImportPassphraseChanged,
+                        Some(Message::ImportKey),
+                        self.key_import_passphrase_visible,
+                        Message::KeyImportPassphraseToggleVisibility,
+                        10.0,
+                    ),
                 ]).align_y(iced::Alignment::Center),
                 Space::new().height(6),
                 text(t("key_passphrase_hint")).size(11).color(OryxisColors::t().text_muted),
@@ -759,37 +749,28 @@ impl Oryxis {
         ];
 
         // Password field with eye toggle
+        let identity_pw_placeholder: &'static str = if self.identity_form_has_existing_password
+            && !self.identity_form_password_touched
+        {
+            "\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}"
+        } else {
+            t("password")
+        };
         let password_field = column![
             text(t("password")).size(12).color(OryxisColors::t().text_secondary),
             Space::new().height(6),
             dir_row(vec![
                 iced_fonts::lucide::keyboard().size(13).color(OryxisColors::t().text_muted).into(),
                 Space::new().width(10).into(),
-                text_input(
-                    if self.identity_form_has_existing_password && !self.identity_form_password_touched {
-                        "\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}"
-                    } else {
-                        t("password")
-                    },
+                password_input_with_eye(
+                    identity_pw_placeholder,
                     &self.identity_form_password,
-                )
-                    .on_input(Message::IdentityPasswordChanged)
-                    .secure(!self.identity_form_password_visible)
-                    .padding(10)
-                    .style(crate::widgets::rounded_input_style)
-                    .into(),
-                Space::new().width(6).into(),
-                button(
-                    if self.identity_form_password_visible {
-                        iced_fonts::lucide::eye_off().size(14).color(OryxisColors::t().text_muted)
-                    } else {
-                        iced_fonts::lucide::eye().size(14).color(OryxisColors::t().text_muted)
-                    }
-                )
-                    .on_press(Message::IdentityTogglePasswordVisibility)
-                    .style(|_t, _s| button::Style::default())
-                    .padding(8)
-                    .into(),
+                    Message::IdentityPasswordChanged,
+                    None,
+                    self.identity_form_password_visible,
+                    Message::IdentityTogglePasswordVisibility,
+                    10.0,
+                ),
             ]).align_y(iced::Alignment::Center),
         ];
 

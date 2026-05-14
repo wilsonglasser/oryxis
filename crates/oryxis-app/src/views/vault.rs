@@ -1,14 +1,14 @@
 //! Vault setup / unlock / error screens.
 
 use iced::border::Radius;
-use iced::widget::{button, column, container, image, text, text_input, Space, Stack};
+use iced::widget::{button, column, container, image, text, Space};
 use iced::widget::button::Status as BtnStatus;
 use iced::{Background, Border, Color, Element, Length, Padding};
 
 use crate::app::{Message, Oryxis};
 use crate::theme::OryxisColors;
 use crate::views::chrome::window_chrome_bar;
-use crate::widgets::styled_button;
+use crate::widgets::{password_input_with_eye, styled_button};
 
 /// Wrap a vault screen body with the top window chrome so the user can still
 /// drag / minimize / maximize / close before unlocking the vault. Also adds
@@ -32,58 +32,23 @@ fn with_chrome<'a>(body: Element<'a, Message>, maximized: bool) -> Element<'a, M
 }
 
 impl Oryxis {
-    /// Master-password field with Lucide eye toggle overlaid inside the
-    /// rounded input. The input reserves trailing padding for the icon; the
-    /// button lives in a `Stack` above the input, right-anchored (LTR) or
-    /// left-anchored (RTL). Hit-testing is constrained to the button's
-    /// bounding box, so clicks on the rest of the field still focus the input.
+    /// Master-password field. Wraps the shared `password_input_with_eye`
+    /// helper with the vault's wider 300 px container and hero-sized
+    /// inner padding.
     fn vault_master_password_field<'a>(
         &'a self,
         placeholder: &'a str,
         on_submit: Message,
     ) -> Element<'a, Message> {
-        let rtl = crate::i18n::is_rtl_layout();
-        // Reserve space for the eye toggle on the trailing edge of the input.
-        let (pad_left, pad_right) = if rtl { (32.0, 12.0) } else { (12.0, 32.0) };
-        let field = text_input(placeholder, &self.vault_password_input)
-            .on_input(Message::VaultPasswordChanged)
-            .on_submit(on_submit)
-            .secure(!self.vault_password_visible)
-            .padding(Padding { top: 12.0, right: pad_right, bottom: 12.0, left: pad_left })
-            .width(Length::Fill)
-            .style(crate::widgets::rounded_input_style);
-        let toggle = button(
-            if self.vault_password_visible {
-                iced_fonts::lucide::eye_off().size(14).color(OryxisColors::t().text_muted)
-            } else {
-                iced_fonts::lucide::eye().size(14).color(OryxisColors::t().text_muted)
-            },
-        )
-        .on_press(Message::VaultTogglePasswordVisibility)
-        .style(|_t, _s| button::Style::default())
-        .padding(4);
-        let overlay_align = if rtl {
-            iced::alignment::Horizontal::Left
-        } else {
-            iced::alignment::Horizontal::Right
-        };
-        let overlay_pad = if rtl {
-            Padding { left: 2.0, ..Padding::ZERO }
-        } else {
-            Padding { right: 2.0, ..Padding::ZERO }
-        };
-        let toggle_overlay = container(toggle)
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .align_x(overlay_align)
-            .align_y(iced::alignment::Vertical::Center)
-            .padding(overlay_pad);
-        container(
-            Stack::new()
-                .push(field)
-                .push(toggle_overlay)
-                .width(Length::Fill),
-        )
+        container(password_input_with_eye(
+            placeholder,
+            &self.vault_password_input,
+            Message::VaultPasswordChanged,
+            Some(on_submit),
+            self.vault_password_visible,
+            Message::VaultTogglePasswordVisibility,
+            12.0,
+        ))
         .width(300)
         .into()
     }

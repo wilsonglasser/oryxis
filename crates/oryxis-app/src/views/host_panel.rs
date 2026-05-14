@@ -15,6 +15,7 @@ use crate::theme::OryxisColors;
 use crate::app::PANEL_WIDTH;
 use crate::widgets::{
     dir_row, panel_divider, panel_field, panel_option_pick, panel_option_row, panel_section,
+    password_input_with_eye,
 };
 
 impl Oryxis {
@@ -234,35 +235,26 @@ impl Oryxis {
         } else {
             // Show password + key fields normally
             ssh_items = ssh_items.push(Space::new().height(8));
+            let pw_placeholder: &'static str = if self.editor_form.has_existing_password
+                && !self.editor_form.password_touched
+            {
+                "••••••••"
+            } else {
+                t("password")
+            };
             ssh_items = ssh_items.push(
                 dir_row(vec![
                     iced_fonts::lucide::keyboard().size(13).color(OryxisColors::t().text_muted).into(),
                     Space::new().width(10).into(),
-                    text_input(
-                        if self.editor_form.has_existing_password && !self.editor_form.password_touched {
-                            "••••••••"
-                        } else {
-                            t("password")
-                        },
+                    password_input_with_eye(
+                        pw_placeholder,
                         &self.editor_form.password,
-                    )
-                        .on_input(Message::EditorPasswordChanged)
-                        .secure(!self.editor_form.password_visible)
-                        .padding(10)
-                        .style(crate::widgets::rounded_input_style)
-                        .into(),
-                    Space::new().width(6).into(),
-                    button(
-                        if self.editor_form.password_visible {
-                            iced_fonts::lucide::eye_off().size(14).color(OryxisColors::t().text_muted)
-                        } else {
-                            iced_fonts::lucide::eye().size(14).color(OryxisColors::t().text_muted)
-                        }
-                    )
-                        .on_press(Message::EditorTogglePasswordVisibility)
-                        .style(|_t, _s| button::Style::default())
-                        .padding(8)
-                        .into(),
+                        Message::EditorPasswordChanged,
+                        None,
+                        self.editor_form.password_visible,
+                        Message::EditorTogglePasswordVisibility,
+                        10.0,
+                    ),
                 ]).align_y(iced::Alignment::Center)
             );
             ssh_items = ssh_items.push(Space::new().height(8));
