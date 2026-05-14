@@ -577,14 +577,17 @@ impl Oryxis {
                     ..Default::default()
                 });
             let row_btn = button(
-                row![
-                    badge,
-                    Space::new().width(10),
+                crate::widgets::dir_row(vec![
+                    badge.into(),
+                    Space::new().width(10).into(),
                     column![
                         text(conn.label.clone()).size(13).color(OryxisColors::t().text_primary),
                         text(status_text).size(10).color(status_color),
-                    ],
-                ]
+                    ]
+                    .width(Length::Fill)
+                    .align_x(dir_align_x())
+                    .into(),
+                ])
                 .align_y(iced::Alignment::Center),
             )
             .on_press(Message::SftpPickHost(ci))

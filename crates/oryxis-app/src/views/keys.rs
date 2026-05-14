@@ -237,35 +237,18 @@ impl Oryxis {
                     ..Default::default()
                 });
 
-            // Vertical ellipsis (⋮), matches the hosts card pattern:
-            // hover-only, fixed-width placeholder so the title's wrap
-            // budget stays constant whether the button is rendered or not.
-            const KEY_DOTS_SLOT_W: f32 = 22.0;
+            // Floating ⋮ kebab: lives in a Stack overlay on the trailing
+            // corner so it doesn't take inline width. Always mounted with
+            // a transparent glyph + no-hover bg when not active so the
+            // surrounding MouseArea bounds stay stable.
             let key_show_dots =
                 self.hovered_key_card == Some(idx) || self.key_context_menu == Some(idx);
-            let dots_btn: Element<'_, Message> = if key_show_dots {
-                button(
-                    text("\u{22EE}").size(14).color(OryxisColors::t().text_muted),
-                )
-                .on_press(Message::ShowKeyMenu(idx))
-                .padding(Padding { top: 1.0, right: 6.0, bottom: 1.0, left: 6.0 })
-                .style(|_, status| {
-                    let bg = match status {
-                        BtnStatus::Hovered => OryxisColors::t().bg_hover,
-                        _ => Color::TRANSPARENT,
-                    };
-                    button::Style {
-                        background: Some(Background::Color(bg)),
-                        border: Border { radius: Radius::from(6.0), ..Default::default() },
-                        ..Default::default()
-                    }
-                })
-                .into()
+            let key_rtl = crate::i18n::is_rtl_layout();
+            let card_pad_trailing = 30.0_f32;
+            let card_padding = if key_rtl {
+                Padding { top: 16.0, right: 16.0, bottom: 16.0, left: card_pad_trailing }
             } else {
-                Space::new()
-                    .width(Length::Fixed(KEY_DOTS_SLOT_W))
-                    .height(Length::Fixed(1.0))
-                    .into()
+                Padding { top: 16.0, right: card_pad_trailing, bottom: 16.0, left: 16.0 }
             };
 
             let card = button(
@@ -285,12 +268,12 @@ impl Oryxis {
                     ]
                     .width(Length::Fill)
                     .align_x(crate::widgets::dir_align_x())
+                    .clip(true)
                     .into(),
-                    dots_btn,
                 ]).align_y(iced::Alignment::Center),
             )
             .on_press(Message::EditKey(idx))
-            .padding(16)
+            .padding(card_padding)
             .width(Length::Fill)
             .style(|_, status| {
                 let (bg, border_color, border_width) = match status {
@@ -305,9 +288,51 @@ impl Oryxis {
                 }
             });
 
+            let key_dots_glyph_color = if key_show_dots {
+                OryxisColors::t().text_muted
+            } else {
+                Color::TRANSPARENT
+            };
+            let dots_btn = button(
+                text("\u{22EE}").size(14).color(key_dots_glyph_color),
+            )
+            .on_press(Message::ShowKeyMenu(idx))
+            .padding(Padding { top: 1.0, right: 6.0, bottom: 1.0, left: 6.0 })
+            .style(move |_, status| {
+                let bg = match status {
+                    BtnStatus::Hovered if key_show_dots => OryxisColors::t().bg_hover,
+                    _ => Color::TRANSPARENT,
+                };
+                button::Style {
+                    background: Some(Background::Color(bg)),
+                    border: Border { radius: Radius::from(6.0), ..Default::default() },
+                    ..Default::default()
+                }
+            });
+            let key_dots_align = if key_rtl {
+                iced::alignment::Horizontal::Left
+            } else {
+                iced::alignment::Horizontal::Right
+            };
+            let key_dots_pad = if key_rtl {
+                Padding { top: 0.0, right: 0.0, bottom: 0.0, left: 8.0 }
+            } else {
+                Padding { top: 0.0, right: 8.0, bottom: 0.0, left: 0.0 }
+            };
+            let dots_overlay = container(dots_btn)
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .align_x(key_dots_align)
+                .align_y(iced::alignment::Vertical::Center)
+                .padding(key_dots_pad);
+            let card_element: Element<'_, Message> = iced::widget::Stack::new()
+                .push(card)
+                .push(dots_overlay)
+                .into();
+
             // Wrap in MouseArea for right-click + hover events that
             // drive the dots-button visibility.
-            let wrapped = MouseArea::new(card)
+            let wrapped = MouseArea::new(card_element)
                 .on_enter(Message::KeyCardHovered(idx))
                 .on_exit(Message::KeyCardUnhovered)
                 .on_right_press(Message::ShowKeyMenu(idx));
@@ -374,9 +399,7 @@ impl Oryxis {
             if let Some(u) = &identity.username {
                 parts.push(u.clone());
             }
-            let has_pw = self.vault.as_ref()
-                .and_then(|v| v.get_identity_password(&identity.id).ok().flatten())
-                .is_some();
+            let has_pw = self.identities_with_password.contains(&identity.id);
             if has_pw {
                 parts.push("\u{25CF}\u{25CF}\u{25CF}\u{25CF}".into());
             }
@@ -394,35 +417,16 @@ impl Oryxis {
                     ..Default::default()
                 });
 
-            // Vertical ellipsis (⋮), same hover-only pattern as host /
-            // key cards. Reserved 22 px slot so the subtitle wrap budget
-            // stays identical whether the button is rendered or not.
-            const ID_DOTS_SLOT_W: f32 = 22.0;
+            // Floating ⋮ kebab in a Stack overlay on the trailing corner,
+            // same pattern as host / key cards.
             let id_show_dots =
                 self.hovered_identity_card == Some(idx) || self.identity_context_menu == Some(idx);
-            let dots_btn: Element<'_, Message> = if id_show_dots {
-                button(
-                    text("\u{22EE}").size(14).color(OryxisColors::t().text_muted),
-                )
-                .on_press(Message::ShowIdentityMenu(idx))
-                .padding(Padding { top: 1.0, right: 6.0, bottom: 1.0, left: 6.0 })
-                .style(|_, status| {
-                    let bg = match status {
-                        BtnStatus::Hovered => OryxisColors::t().bg_hover,
-                        _ => Color::TRANSPARENT,
-                    };
-                    button::Style {
-                        background: Some(Background::Color(bg)),
-                        border: Border { radius: Radius::from(6.0), ..Default::default() },
-                        ..Default::default()
-                    }
-                })
-                .into()
+            let id_rtl = crate::i18n::is_rtl_layout();
+            let id_pad_trailing = 30.0_f32;
+            let id_card_padding = if id_rtl {
+                Padding { top: 16.0, right: 16.0, bottom: 16.0, left: id_pad_trailing }
             } else {
-                Space::new()
-                    .width(Length::Fixed(ID_DOTS_SLOT_W))
-                    .height(Length::Fixed(1.0))
-                    .into()
+                Padding { top: 16.0, right: id_pad_trailing, bottom: 16.0, left: 16.0 }
             };
 
             let card = button(
@@ -442,12 +446,12 @@ impl Oryxis {
                     ]
                     .width(Length::Fill)
                     .align_x(crate::widgets::dir_align_x())
+                    .clip(true)
                     .into(),
-                    dots_btn,
                 ]).align_y(iced::Alignment::Center),
             )
             .on_press(Message::EditIdentity(idx))
-            .padding(16)
+            .padding(id_card_padding)
             .width(Length::Fill)
             .style(|_, status| {
                 let (bg, border_color, border_width) = match status {
@@ -462,7 +466,49 @@ impl Oryxis {
                 }
             });
 
-            let wrapped = MouseArea::new(card)
+            let id_dots_glyph_color = if id_show_dots {
+                OryxisColors::t().text_muted
+            } else {
+                Color::TRANSPARENT
+            };
+            let dots_btn = button(
+                text("\u{22EE}").size(14).color(id_dots_glyph_color),
+            )
+            .on_press(Message::ShowIdentityMenu(idx))
+            .padding(Padding { top: 1.0, right: 6.0, bottom: 1.0, left: 6.0 })
+            .style(move |_, status| {
+                let bg = match status {
+                    BtnStatus::Hovered if id_show_dots => OryxisColors::t().bg_hover,
+                    _ => Color::TRANSPARENT,
+                };
+                button::Style {
+                    background: Some(Background::Color(bg)),
+                    border: Border { radius: Radius::from(6.0), ..Default::default() },
+                    ..Default::default()
+                }
+            });
+            let id_dots_align = if id_rtl {
+                iced::alignment::Horizontal::Left
+            } else {
+                iced::alignment::Horizontal::Right
+            };
+            let id_dots_pad = if id_rtl {
+                Padding { top: 0.0, right: 0.0, bottom: 0.0, left: 8.0 }
+            } else {
+                Padding { top: 0.0, right: 8.0, bottom: 0.0, left: 0.0 }
+            };
+            let dots_overlay = container(dots_btn)
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .align_x(id_dots_align)
+                .align_y(iced::alignment::Vertical::Center)
+                .padding(id_dots_pad);
+            let card_element: Element<'_, Message> = iced::widget::Stack::new()
+                .push(card)
+                .push(dots_overlay)
+                .into();
+
+            let wrapped = MouseArea::new(card_element)
                 .on_enter(Message::IdentityCardHovered(idx))
                 .on_exit(Message::IdentityCardUnhovered)
                 .on_right_press(Message::ShowIdentityMenu(idx));
@@ -553,7 +599,9 @@ impl Oryxis {
                 .on_input(Message::KeyImportLabelChanged)
                 .padding(10)
                 .style(crate::widgets::rounded_input_style).align_x(dir_align_x()),
-        ];
+        ]
+        .width(Length::Fill)
+        .align_x(dir_align_x());
 
         // File selector button
         let browse_btn = button(
@@ -634,6 +682,8 @@ impl Oryxis {
                 Space::new().height(6),
                 text(t("key_passphrase_hint")).size(11).color(OryxisColors::t().text_muted),
             ]
+            .width(Length::Fill)
+            .align_x(dir_align_x())
             .into()
         } else {
             Space::new().height(0).into()
@@ -735,7 +785,9 @@ impl Oryxis {
                 .on_input(Message::IdentityLabelChanged)
                 .padding(10)
                 .style(crate::widgets::rounded_input_style).align_x(dir_align_x()),
-        ];
+        ]
+        .width(Length::Fill)
+        .align_x(dir_align_x());
 
         // Username field
         let username_field = column![
@@ -750,7 +802,9 @@ impl Oryxis {
                     .style(crate::widgets::rounded_input_style).align_x(dir_align_x())
                     .into(),
             ]).align_y(iced::Alignment::Center),
-        ];
+        ]
+        .width(Length::Fill)
+        .align_x(dir_align_x());
 
         // Password field with eye toggle
         let identity_pw_placeholder: &'static str = if self.identity_form_has_existing_password
@@ -776,7 +830,9 @@ impl Oryxis {
                     10.0,
                 ),
             ]).align_y(iced::Alignment::Center),
-        ];
+        ]
+        .width(Length::Fill)
+        .align_x(dir_align_x());
 
         // Key selector
         let key_options = {
@@ -799,7 +855,9 @@ impl Oryxis {
                 .padding(10).style(crate::widgets::rounded_pick_list_style)
                 .into(),
             ]).align_y(iced::Alignment::Center),
-        ];
+        ]
+        .width(Length::Fill)
+        .align_x(dir_align_x());
 
         // Linked connections (only when editing)
         let linked_section: Element<'_, Message> = if let Some(editing_id) = self.editing_identity_id {

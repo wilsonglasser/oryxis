@@ -149,39 +149,18 @@ impl Oryxis {
                 };
 
                 let cp_id = cp.id;
-                // ⋮ kebab, hover-revealed, mirrors the host / folder
-                // / identity card pattern.
-                const DOTS_SLOT_W: f32 = 22.0;
+                // Floating ⋮ kebab in a Stack overlay (trailing corner)
+                // so it doesn't take inline width inside the dir_row.
+                // Always-mounted with a transparent glyph + no-hover bg
+                // when not active so the surrounding MouseArea sees
+                // stable child bounds (avoids hover event loop).
                 let show_dots = self.hovered_cloud_card == Some(cp_id);
-                let dots_btn: Element<'_, Message> = if show_dots {
-                    button(text("\u{22EE}").size(14).color(OryxisColors::t().text_muted))
-                        .on_press(Message::ShowCloudCardMenu(cp_id))
-                        .padding(Padding {
-                            top: 1.0,
-                            right: 6.0,
-                            bottom: 1.0,
-                            left: 6.0,
-                        })
-                        .style(|_, status| {
-                            let bg = match status {
-                                BtnStatus::Hovered => OryxisColors::t().bg_hover,
-                                _ => Color::TRANSPARENT,
-                            };
-                            button::Style {
-                                background: Some(Background::Color(bg)),
-                                border: Border {
-                                    radius: Radius::from(6.0),
-                                    ..Default::default()
-                                },
-                                ..Default::default()
-                            }
-                        })
-                        .into()
+                let rtl = crate::i18n::is_rtl_layout();
+                let pad_trailing = 30.0_f32;
+                let card_padding = if rtl {
+                    Padding { top: 16.0, right: 16.0, bottom: 16.0, left: pad_trailing }
                 } else {
-                    Space::new()
-                        .width(Length::Fixed(DOTS_SLOT_W))
-                        .height(Length::Fixed(1.0))
-                        .into()
+                    Padding { top: 16.0, right: pad_trailing, bottom: 16.0, left: 16.0 }
                 };
 
                 let card_body = container(
@@ -200,12 +179,13 @@ impl Oryxis {
                                 .wrapping(iced::widget::text::Wrapping::None),
                         ]
                         .width(Length::Fill)
+                        .align_x(crate::widgets::dir_align_x())
+                        .clip(true)
                         .into(),
-                        dots_btn,
                     ])
                     .align_y(iced::Alignment::Center),
                 )
-                .padding(16)
+                .padding(card_padding)
                 .width(Length::Fill)
                 .style(|_| container::Style {
                     background: Some(Background::Color(OryxisColors::t().bg_surface)),
@@ -217,7 +197,55 @@ impl Oryxis {
                     ..Default::default()
                 });
 
-                let wrapped = MouseArea::new(card_body)
+                let dots_glyph_color = if show_dots {
+                    OryxisColors::t().text_muted
+                } else {
+                    Color::TRANSPARENT
+                };
+                let dots_btn = button(text("\u{22EE}").size(14).color(dots_glyph_color))
+                    .on_press(Message::ShowCloudCardMenu(cp_id))
+                    .padding(Padding {
+                        top: 1.0,
+                        right: 6.0,
+                        bottom: 1.0,
+                        left: 6.0,
+                    })
+                    .style(move |_, status| {
+                        let bg = match status {
+                            BtnStatus::Hovered if show_dots => OryxisColors::t().bg_hover,
+                            _ => Color::TRANSPARENT,
+                        };
+                        button::Style {
+                            background: Some(Background::Color(bg)),
+                            border: Border {
+                                radius: Radius::from(6.0),
+                                ..Default::default()
+                            },
+                            ..Default::default()
+                        }
+                    });
+                let dots_align = if rtl {
+                    iced::alignment::Horizontal::Left
+                } else {
+                    iced::alignment::Horizontal::Right
+                };
+                let dots_pad = if rtl {
+                    Padding { top: 0.0, right: 0.0, bottom: 0.0, left: 8.0 }
+                } else {
+                    Padding { top: 0.0, right: 8.0, bottom: 0.0, left: 0.0 }
+                };
+                let dots_overlay = container(dots_btn)
+                    .width(Length::Fill)
+                    .height(Length::Fill)
+                    .align_x(dots_align)
+                    .align_y(iced::alignment::Vertical::Center)
+                    .padding(dots_pad);
+                let card_element: Element<'_, Message> = iced::widget::Stack::new()
+                    .push(card_body)
+                    .push(dots_overlay)
+                    .into();
+
+                let wrapped = MouseArea::new(card_element)
                     .on_enter(Message::CloudCardHovered(cp_id))
                     .on_exit(Message::CloudCardUnhovered)
                     .on_right_press(Message::ShowCloudCardMenu(cp_id));

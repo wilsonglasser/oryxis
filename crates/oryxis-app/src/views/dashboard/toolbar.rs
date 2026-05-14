@@ -34,13 +34,13 @@ impl Oryxis {
             // Leading crumb: just "Hosts" (no arrow, no "All"), styled
             // to match the homepage Hosts header so the breadcrumb feels
             // like a continuation of that title rather than a separate
-            // nav element. The label stays clickable and routes back to
-            // the root view.
+            // nav element. Accent color marks it as clickable; routes
+            // back to the root view.
             let mut crumbs: Vec<Element<'_, Message>> = vec![
                 button(
                     text(t("hosts"))
                         .size(20)
-                        .color(OryxisColors::t().text_primary),
+                        .color(OryxisColors::t().accent),
                 )
                 .on_press(Message::BackToRoot)
                 .padding(Padding { top: 0.0, right: 4.0, bottom: 0.0, left: 0.0 })
@@ -52,6 +52,11 @@ impl Oryxis {
             ];
             for (idx, g) in chain.iter().enumerate() {
                 let is_last = idx == chain.len() - 1;
+                // Space on both sides of the separator so the "/" never
+                // glues to the preceding crumb under RTL (`dir_row`
+                // reverses the slice and a missing leading space here
+                // becomes a missing trailing space on screen).
+                crumbs.push(Space::new().width(4).into());
                 crumbs.push(text("/").size(20).color(OryxisColors::t().text_muted).into());
                 crumbs.push(Space::new().width(8).into());
                 crumbs.push(

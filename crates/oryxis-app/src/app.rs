@@ -214,6 +214,13 @@ pub struct Oryxis {
 
     // Identities
     pub(crate) identities: Vec<Identity>,
+    // Cached set of identity ids whose `password` column is non-NULL.
+    // Hydrated by `load_data_from_vault`. The keychain view reads this
+    // per card to decide whether to render the masked-bullets badge,
+    // a per-frame `get_identity_password` decrypt would otherwise run
+    // for every identity on every view() rebuild and slow the main
+    // loop enough to fill iced's 100-slot subscription channel.
+    pub(crate) identities_with_password: std::collections::HashSet<Uuid>,
     pub(crate) show_identity_panel: bool,
     pub(crate) identity_form_label: String,
     pub(crate) identity_form_username: String,

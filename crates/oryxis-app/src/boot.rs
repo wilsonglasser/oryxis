@@ -156,6 +156,7 @@ impl Oryxis {
                 editing_key_id: None,
                 key_search: String::new(),
                 identities: Vec::new(),
+                identities_with_password: std::collections::HashSet::new(),
                 show_identity_panel: false,
                 identity_form_label: String::new(),
                 identity_form_username: String::new(),
@@ -351,6 +352,9 @@ impl Oryxis {
             self.groups = vault.list_groups().unwrap_or_default();
             self.keys = vault.list_keys().unwrap_or_default();
             self.identities = vault.list_identities().unwrap_or_default();
+            self.identities_with_password = vault
+                .list_identity_ids_with_password()
+                .unwrap_or_default();
             self.proxy_identities = vault.list_proxy_identities().unwrap_or_default();
             self.cloud_profiles = vault.list_cloud_profiles().unwrap_or_default();
 
