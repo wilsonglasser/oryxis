@@ -303,7 +303,9 @@ impl Oryxis {
             test_btn,
             Space::new().height(6),
             test_status,
-        ];
+        ]
+        .width(Length::Fill)
+        .align_x(dir_align_x());
 
         let panel_error: Element<'_, Message> = if let Some(err) = &self.cloud_form_error {
             text(err.clone())
@@ -382,7 +384,9 @@ impl Oryxis {
                     Space::new().height(8),
                     bottom,
                 ]
-                .height(Length::Fill),
+                .height(Length::Fill)
+                .width(Length::Fill)
+                .align_x(dir_align_x()),
             )
             .padding(Padding {
                 top: 0.0,

@@ -6,7 +6,7 @@
 
 use iced::border::Radius;
 use iced::widget::button::Status as BtnStatus;
-use iced::widget::{button, column, container, row, scrollable, text, text_input, MouseArea, Space};
+use iced::widget::{button, column, container, scrollable, text, text_input, MouseArea, Space};
 use iced::{Background, Border, Color, Element, Length};
 
 use crate::app::{Message, Oryxis};
@@ -50,12 +50,12 @@ impl Oryxis {
             let is_selected = selected_icon.as_deref() == Some(*id);
             current_row.push(icon_cell(id, is_selected));
             if current_row.len() == 7 {
-                icon_rows.push(row(std::mem::take(&mut current_row)).spacing(6).into());
+                icon_rows.push(dir_row(std::mem::take(&mut current_row)).spacing(6).into());
             }
             let _ = id_str;
         }
         if !current_row.is_empty() {
-            icon_rows.push(row(current_row).spacing(6).into());
+            icon_rows.push(dir_row(current_row).spacing(6).into());
         }
         let icons_block = column![
             text(t("icon")).size(12).font(iced::Font {
@@ -82,11 +82,11 @@ impl Oryxis {
             for c in color_row_children {
                 chunk.push(c);
                 if chunk.len() == 7 {
-                    rows.push(row(std::mem::take(&mut chunk)).spacing(6).into());
+                    rows.push(dir_row(std::mem::take(&mut chunk)).spacing(6).into());
                 }
             }
             if !chunk.is_empty() {
-                rows.push(row(chunk).spacing(6).into());
+                rows.push(dir_row(chunk).spacing(6).into());
             }
             column(rows).spacing(6)
         };

@@ -159,7 +159,9 @@ impl Oryxis {
                 .color(OryxisColors::t().text_secondary),
             Space::new().height(4),
             identity_pick,
-        ];
+        ]
+        .width(Length::Fill)
+        .align_x(dir_align_x());
 
         let save_btn = button(
             container(
@@ -195,7 +197,9 @@ impl Oryxis {
                     Space::new().height(12),
                     save_btn,
                 ]
-                .height(Length::Fill),
+                .height(Length::Fill)
+                .width(Length::Fill)
+                .align_x(dir_align_x()),
             )
             .padding(Padding {
                 top: 0.0,

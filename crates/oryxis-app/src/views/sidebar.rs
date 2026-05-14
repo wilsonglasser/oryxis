@@ -3,13 +3,13 @@
 
 use iced::border::Radius;
 use iced::widget::button::Status as BtnStatus;
-use iced::widget::{button, column, container, image, row, scrollable, text, Space};
+use iced::widget::{button, column, container, image, scrollable, text, Space};
 use iced::{Background, Border, Color, Element, Length, Padding};
 
 use crate::app::{Message, Oryxis, SIDEBAR_WIDTH, SIDEBAR_WIDTH_COLLAPSED};
 use crate::state::View;
 use crate::theme::OryxisColors;
-use crate::widgets::sidebar_nav_btn;
+use crate::widgets::{dir_align_x, dir_row, sidebar_nav_btn};
 
 impl Oryxis {
     pub(crate) fn view_sidebar(&self) -> Element<'_, Message> {
@@ -41,13 +41,15 @@ impl Oryxis {
 
         let local_btn = button(
             container(
-                row![
-                    text("+").size(13).color(OryxisColors::t().text_muted),
-                    Space::new().width(10),
-                    text(crate::i18n::t("local_shell")).size(12).color(OryxisColors::t().text_muted),
-                ]
+                dir_row(vec![
+                    text("+").size(13).color(OryxisColors::t().text_muted).into(),
+                    Space::new().width(10).into(),
+                    text(crate::i18n::t("local_shell")).size(12).color(OryxisColors::t().text_muted).into(),
+                ])
                 .align_y(iced::Alignment::Center),
             )
+            .width(Length::Fill)
+            .align_x(dir_align_x())
             .padding(Padding { top: 8.0, right: 16.0, bottom: 8.0, left: 16.0 }),
         )
         .on_press(Message::OpenLocalShell)
@@ -252,16 +254,22 @@ impl Oryxis {
         for spec in shells.unwrap_or(&[]) {
             list = list.push(
                 button(
-                    row![
-                        iced_fonts::lucide::terminal()
-                            .size(14)
-                            .color(OryxisColors::t().accent),
-                        Space::new().width(10),
-                        text(spec.label.clone())
-                            .size(13)
-                            .color(OryxisColors::t().text_primary),
-                    ]
-                    .align_y(iced::Alignment::Center),
+                    container(
+                        dir_row(vec![
+                            iced_fonts::lucide::terminal()
+                                .size(14)
+                                .color(OryxisColors::t().accent)
+                                .into(),
+                            Space::new().width(10).into(),
+                            text(spec.label.clone())
+                                .size(13)
+                                .color(OryxisColors::t().text_primary)
+                                .into(),
+                        ])
+                        .align_y(iced::Alignment::Center),
+                    )
+                    .width(Length::Fill)
+                    .align_x(dir_align_x()),
                 )
                 .on_press(Message::OpenLocalShellWith {
                     program: spec.program.clone(),

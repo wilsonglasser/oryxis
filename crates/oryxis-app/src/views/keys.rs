@@ -686,7 +686,9 @@ impl Oryxis {
                     Space::new().height(Length::Fill),
                     save_btn,
                 ]
-                .height(Length::Fill),
+                .height(Length::Fill)
+                .width(Length::Fill)
+                .align_x(dir_align_x()),
             )
             .padding(Padding { top: 0.0, right: 20.0, bottom: 20.0, left: 20.0 })
             .height(Length::Fill),
@@ -871,7 +873,9 @@ impl Oryxis {
                     Space::new().height(Length::Fill),
                     save_btn,
                 ]
-                .height(Length::Fill),
+                .height(Length::Fill)
+                .width(Length::Fill)
+                .align_x(dir_align_x()),
             )
             .padding(Padding { top: 0.0, right: 20.0, bottom: 20.0, left: 20.0 })
             .height(Length::Fill),
