@@ -668,10 +668,17 @@ impl Oryxis {
             .on_press(Message::HideOverlayMenu)
             .into();
 
-            // Position the menu, clamping to window bounds to prevent clipping
+            // Position the menu, clamping to window bounds to prevent clipping.
+            // Under RTL, anchor by the menu's right edge so it grows toward
+            // the leading (left) side, mirroring native OS dropdown behavior.
             let menu_width = 180.0_f32;
             let menu_height = 80.0_f32; // approximate menu height
-            let x = overlay.x.min(self.window_size.width - menu_width).max(0.0);
+            let raw_x = if crate::i18n::is_rtl_layout() {
+                overlay.x - menu_width
+            } else {
+                overlay.x
+            };
+            let x = raw_x.min(self.window_size.width - menu_width).max(0.0);
             let y = overlay.y.min(self.window_size.height - menu_height).max(0.0);
             let positioned_menu: Element<'_, Message> = column![
                 Space::new().height(y),
@@ -722,7 +729,15 @@ impl Oryxis {
             // Nudge the menu a few px down/right so it doesn't sit
             // directly under the cursor, feels like the OS-native menu
             // anchoring.
-            let nudged_x = row_menu.x + 2.0;
+            let menu_width = crate::views::sftp::ROW_CONTEXT_MENU_WIDTH;
+            let rtl = crate::i18n::is_rtl_layout();
+            // Under RTL, nudge toward the leading side so the menu grows
+            // left-from-cursor instead of right-from-cursor.
+            let nudged_x = if rtl {
+                row_menu.x - 2.0 - menu_width
+            } else {
+                row_menu.x + 2.0
+            };
             let nudged_y = row_menu.y + 2.0;
             let menu_height = crate::views::sftp::row_context_menu_height(
                 row_menu,
@@ -730,7 +745,7 @@ impl Oryxis {
                 selection_count_same_pane,
             );
             let x = nudged_x
-                .min(self.window_size.width - crate::views::sftp::ROW_CONTEXT_MENU_WIDTH)
+                .min(self.window_size.width - menu_width)
                 .max(0.0);
             let y = nudged_y
                 .min(self.window_size.height - menu_height)
@@ -760,11 +775,18 @@ impl Oryxis {
             && drag.active
         {
             let ghost = crate::views::sftp::drag_ghost(&drag.label);
-            // Offset slightly down-right of the cursor, matches OS
-            // drag previews and keeps the label out from under the
-            // pointer.
-            let x = (self.mouse_position.x + 12.0)
-                .min(self.window_size.width - 200.0)
+            // Offset slightly off the cursor, matches OS drag previews
+            // and keeps the label out from under the pointer. Direction
+            // mirrors under RTL so the ghost trails the cursor on the
+            // leading side instead of running off-screen at the edge.
+            let ghost_width = 200.0_f32;
+            let x_offset = if crate::i18n::is_rtl_layout() {
+                -ghost_width - 12.0
+            } else {
+                12.0
+            };
+            let x = (self.mouse_position.x + x_offset)
+                .min(self.window_size.width - ghost_width)
                 .max(0.0);
             let y = (self.mouse_position.y + 12.0)
                 .min(self.window_size.height - 40.0)

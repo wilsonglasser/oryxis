@@ -382,7 +382,7 @@ impl Oryxis {
             container(
                 button(
                     dir_row(vec![
-                        iced_fonts::lucide::network().size(13).color(OryxisColors::t().text_muted).into(),
+                        iced_fonts::lucide::network().size(14).color(OryxisColors::t().text_muted).into(),
                         Space::new().width(10).into(),
                         text(t("jump_host")).size(13).color(OryxisColors::t().text_secondary).into(),
                         Space::new().width(Length::Fill).into(),

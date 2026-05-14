@@ -248,11 +248,11 @@ pub(crate) fn sidebar_nav_btn<'a>(
     container(
         button(
             container(
-                iced::widget::row![
-                    icon_widget.size(14).color(fg),
-                    Space::new().width(10),
-                    text(label).size(13).color(fg),
-                ]
+                dir_row(vec![
+                    icon_widget.size(14).color(fg).into(),
+                    Space::new().width(10).into(),
+                    text(label).size(13).color(fg).into(),
+                ])
                 .align_y(iced::Alignment::Center),
             )
             .padding(Padding { top: 8.0, right: 16.0, bottom: 8.0, left: 16.0 }),
@@ -403,11 +403,11 @@ pub(crate) fn panel_option_pick<'a>(
 
 pub(crate) fn settings_row<'a>(label: &'static str, value: String) -> Element<'a, Message> {
     container(
-        iced::widget::row![
-            text(label).size(13).color(OryxisColors::t().text_secondary),
-            Space::new().width(Length::Fill),
-            text(value).size(13).color(OryxisColors::t().text_primary),
-        ],
+        dir_row(vec![
+            text(label).size(13).color(OryxisColors::t().text_secondary).into(),
+            Space::new().width(Length::Fill).into(),
+            text(value).size(13).color(OryxisColors::t().text_primary).into(),
+        ]),
     )
     .padding(Padding { top: 6.0, right: 12.0, bottom: 6.0, left: 12.0 })
     .width(300)
@@ -429,13 +429,14 @@ pub(crate) fn settings_row_link<'a>(
     url: String,
 ) -> Element<'a, Message> {
     let body = container(
-        iced::widget::row![
+        dir_row(vec![
             text(label.to_owned())
                 .size(13)
-                .color(OryxisColors::t().text_secondary),
-            Space::new().width(Length::Fill),
-            text(display).size(13).color(OryxisColors::t().accent),
-        ],
+                .color(OryxisColors::t().text_secondary)
+                .into(),
+            Space::new().width(Length::Fill).into(),
+            text(display).size(13).color(OryxisColors::t().accent).into(),
+        ]),
     )
     .padding(Padding { top: 6.0, right: 12.0, bottom: 6.0, left: 12.0 })
     .width(300)
@@ -542,10 +543,10 @@ pub(crate) fn key_badge<'a>(label: &'a str) -> Element<'a, Message> {
 }
 
 pub(crate) fn shortcut_row<'a>(keys: Vec<Element<'a, Message>>, action: &'a str) -> Element<'a, Message> {
-    iced::widget::row![
-        Row::with_children(keys).spacing(4).width(200),
-        text(action).size(13).color(OryxisColors::t().text_secondary),
-    ].align_y(iced::Alignment::Center).into()
+    dir_row(vec![
+        Row::with_children(keys).spacing(4).width(200).into(),
+        text(action).size(13).color(OryxisColors::t().text_secondary).into(),
+    ]).align_y(iced::Alignment::Center).into()
 }
 
 /// Visual swatch card for a terminal palette. Renders the theme's

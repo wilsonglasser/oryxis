@@ -8,7 +8,7 @@ use iced::{Background, Border, Color, Element, Length, Padding};
 use crate::app::{Message, Oryxis};
 use crate::i18n::t;
 use crate::theme::OryxisColors;
-use crate::widgets::dir_row;
+use crate::widgets::{dir_align_x, dir_row};
 
 impl Oryxis {
     pub(crate) fn view_known_hosts(&self) -> Element<'_, Message> {
@@ -69,9 +69,12 @@ impl Oryxis {
                         Space::new().height(8),
                         text(t("known_hosts_remove_hint"))
                             .size(12).color(OryxisColors::t().text_muted),
-                    ],
+                    ]
+                    .width(Length::Fill)
+                    .align_x(dir_align_x()),
                 )
                 .padding(16)
+                .width(Length::Fill)
                 .into(),
             );
         }

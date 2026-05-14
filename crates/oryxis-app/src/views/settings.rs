@@ -11,7 +11,8 @@ use crate::mcp::mcp_info_panel;
 use crate::state::SettingsSection;
 use crate::theme::OryxisColors;
 use crate::widgets::{
-    key_badge, panel_field, panel_section, settings_row, shortcut_row, styled_button, toggle_row,
+    dir_row, key_badge, panel_field, panel_section, settings_row, shortcut_row, styled_button,
+    toggle_row,
 };
 
 impl Oryxis {
@@ -104,9 +105,9 @@ impl Oryxis {
                 ]);
 
                 let font_size_section = panel_section(column![
-                    row![
-                        text(crate::i18n::t("terminal_font_size")).size(13).color(OryxisColors::t().text_primary),
-                        Space::new().width(Length::Fill),
+                    dir_row(vec![
+                        text(crate::i18n::t("terminal_font_size")).size(13).color(OryxisColors::t().text_primary).into(),
+                        Space::new().width(Length::Fill).into(),
                         button(
                             container(text("\u{2212}").size(14).color(OryxisColors::t().text_primary))
                                 .padding(Padding { top: 4.0, right: 10.0, bottom: 4.0, left: 10.0 }),
@@ -122,10 +123,10 @@ impl Oryxis {
                                 border: Border { radius: Radius::from(4.0), ..Default::default() },
                                 ..Default::default()
                             }
-                        }),
-                        Space::new().width(8),
-                        text(format!("{:.0}", self.terminal_font_size)).size(13).color(OryxisColors::t().text_primary),
-                        Space::new().width(8),
+                        }).into(),
+                        Space::new().width(8).into(),
+                        text(format!("{:.0}", self.terminal_font_size)).size(13).color(OryxisColors::t().text_primary).into(),
+                        Space::new().width(8).into(),
                         button(
                             container(text("+").size(14).color(OryxisColors::t().text_primary))
                                 .padding(Padding { top: 4.0, right: 10.0, bottom: 4.0, left: 10.0 }),
@@ -141,8 +142,8 @@ impl Oryxis {
                                 border: Border { radius: Radius::from(4.0), ..Default::default() },
                                 ..Default::default()
                             }
-                        }),
-                    ].align_y(iced::Alignment::Center),
+                        }).into(),
+                    ]).align_y(iced::Alignment::Center),
                 ]);
 
                 let keepalive_section = panel_section(column![
@@ -484,19 +485,19 @@ impl Oryxis {
                         .into();
                     let save_btn = styled_button("Save", Message::SaveAiApiKey, OryxisColors::t().accent);
                     let key_status: Element<'_, Message> = if self.ai_api_key_set {
-                        row![
-                            iced_fonts::lucide::circle_check().size(13).color(OryxisColors::t().success),
-                            Space::new().width(6),
-                            text(t("api_key_saved")).size(12).color(OryxisColors::t().success),
-                        ]
+                        dir_row(vec![
+                            iced_fonts::lucide::circle_check().size(13).color(OryxisColors::t().success).into(),
+                            Space::new().width(6).into(),
+                            text(t("api_key_saved")).size(12).color(OryxisColors::t().success).into(),
+                        ])
                         .align_y(iced::Alignment::Center)
                         .into()
                     } else {
-                        row![
-                            iced_fonts::lucide::circle_alert().size(13).color(OryxisColors::t().text_muted),
-                            Space::new().width(6),
-                            text(t("no_api_key")).size(12).color(OryxisColors::t().text_muted),
-                        ]
+                        dir_row(vec![
+                            iced_fonts::lucide::circle_alert().size(13).color(OryxisColors::t().text_muted).into(),
+                            Space::new().width(6).into(),
+                            text(t("no_api_key")).size(12).color(OryxisColors::t().text_muted).into(),
+                        ])
                         .align_y(iced::Alignment::Center)
                         .into()
                     };
@@ -523,7 +524,7 @@ impl Oryxis {
                         .push(Space::new().height(12))
                         .push(panel_field(
                             "API Key",
-                            row![key_input, Space::new().width(8), save_btn]
+                            dir_row(vec![key_input, Space::new().width(8).into(), save_btn])
                                 .align_y(iced::Alignment::Center)
                                 .into(),
                         ))
@@ -584,7 +585,7 @@ impl Oryxis {
                 let themes: Vec<&AppTheme> = AppTheme::ALL.iter().collect();
 
                 for chunk in themes.chunks(2) {
-                    let mut r = row![].spacing(12);
+                    let mut cells: Vec<Element<'_, Message>> = Vec::new();
                     for theme in chunk {
                         let name = theme.name();
                         let is_active = name == active_name;
@@ -677,13 +678,13 @@ impl Oryxis {
                             }
                         })
                         .into();
-                        r = r.push(card);
+                        cells.push(card);
                     }
                     // Fill remaining space if odd number
                     if chunk.len() == 1 {
-                        r = r.push(Space::new().width(Length::FillPortion(1)));
+                        cells.push(Space::new().width(Length::FillPortion(1)).into());
                     }
-                    grid_rows.push(r.into());
+                    grid_rows.push(dir_row(cells).spacing(12).into());
                 }
 
                 // Language picker
@@ -694,9 +695,9 @@ impl Oryxis {
                 let active_lang_name = crate::i18n::Language::active().name().to_string();
 
                 let language_section = panel_section(column![
-                    row![
-                        text(crate::i18n::t("language")).size(13).color(OryxisColors::t().text_primary),
-                        Space::new().width(Length::Fill),
+                    dir_row(vec![
+                        text(crate::i18n::t("language")).size(13).color(OryxisColors::t().text_primary).into(),
+                        Space::new().width(Length::Fill).into(),
                         pick_list(
                             Some(active_lang_name),
                             lang_options,
@@ -705,8 +706,9 @@ impl Oryxis {
                         .on_select(Message::LanguageChanged)
                         .width(200)
                         .padding(10)
-                        .style(crate::widgets::rounded_pick_list_style),
-                    ].align_y(iced::Alignment::Center),
+                        .style(crate::widgets::rounded_pick_list_style)
+                        .into(),
+                    ]).align_y(iced::Alignment::Center),
                 ]);
 
                 // Layout direction picker, Auto (follow language) by
@@ -723,9 +725,9 @@ impl Oryxis {
                 .to_string();
 
                 let layout_dir_section = panel_section(column![
-                    row![
-                        text(crate::i18n::t("layout_direction")).size(13).color(OryxisColors::t().text_primary),
-                        Space::new().width(Length::Fill),
+                    dir_row(vec![
+                        text(crate::i18n::t("layout_direction")).size(13).color(OryxisColors::t().text_primary).into(),
+                        Space::new().width(Length::Fill).into(),
                         pick_list(
                             Some(active_dir_name),
                             dir_options,
@@ -734,8 +736,9 @@ impl Oryxis {
                         .on_select(Message::LayoutDirectionChanged)
                         .width(240)
                         .padding(10)
-                        .style(crate::widgets::rounded_pick_list_style),
-                    ].align_y(iced::Alignment::Center),
+                        .style(crate::widgets::rounded_pick_list_style)
+                        .into(),
+                    ]).align_y(iced::Alignment::Center),
                 ]);
 
                 let flatten_section = panel_section(column![
@@ -852,11 +855,11 @@ impl Oryxis {
 
                 let lock_btn = button(
                     container(
-                        row![
-                            iced_fonts::lucide::lock().size(14).color(OryxisColors::t().warning),
-                            Space::new().width(10),
-                            text(crate::i18n::t("lock_vault")).size(13).color(OryxisColors::t().warning),
-                        ].align_y(iced::Alignment::Center),
+                        dir_row(vec![
+                            iced_fonts::lucide::lock().size(14).color(OryxisColors::t().warning).into(),
+                            Space::new().width(10).into(),
+                            text(crate::i18n::t("lock_vault")).size(13).color(OryxisColors::t().warning).into(),
+                        ]).align_y(iced::Alignment::Center),
                     )
                     .padding(Padding { top: 10.0, right: 20.0, bottom: 10.0, left: 20.0 }),
                 )
@@ -900,11 +903,11 @@ impl Oryxis {
                     Space::new().height(8),
                     mcp_toggle,
                     Space::new().height(4),
-                    row![
-                        text(crate::i18n::t("mcp_server_desc")).size(11).color(OryxisColors::t().text_muted),
-                        Space::new().width(Length::Fill),
-                        mcp_guide_btn,
-                    ].align_y(iced::Alignment::Center),
+                    dir_row(vec![
+                        text(crate::i18n::t("mcp_server_desc")).size(11).color(OryxisColors::t().text_muted).into(),
+                        Space::new().width(Length::Fill).into(),
+                        mcp_guide_btn.into(),
+                    ]).align_y(iced::Alignment::Center),
                 ];
                 if self.show_mcp_info {
                     mcp_col = mcp_col
@@ -920,7 +923,7 @@ impl Oryxis {
                 let mut export_import_section: iced::widget::Column<'_, Message> = column![
                     text(crate::i18n::t("export_import")).size(14).color(OryxisColors::t().text_muted),
                     Space::new().height(8),
-                    row![export_btn, Space::new().width(8), import_btn],
+                    dir_row(vec![export_btn, Space::new().width(8).into(), import_btn]),
                 ];
 
                 // Show export dialog inline
@@ -931,9 +934,9 @@ impl Oryxis {
                         .padding(10)
                         .width(300)
                         .style(crate::widgets::rounded_input_style);
-                    let keys_toggle = row![
-                        text(crate::i18n::t("include_private_keys")).size(13).color(OryxisColors::t().text_secondary),
-                        Space::new().width(Length::Fill),
+                    let keys_toggle = dir_row(vec![
+                        text(crate::i18n::t("include_private_keys")).size(13).color(OryxisColors::t().text_secondary).into(),
+                        Space::new().width(Length::Fill).into(),
                         button(
                             text(if self.export_include_keys { "ON" } else { "OFF" }).size(12)
                         ).on_press(Message::ExportToggleKeys).style(move |_theme, _status| {
@@ -943,8 +946,8 @@ impl Oryxis {
                                 text_color: OryxisColors::t().text_primary,
                                 ..Default::default()
                             }
-                        }),
-                    ].align_y(iced::Alignment::Center);
+                        }).into(),
+                    ]).align_y(iced::Alignment::Center);
                     let confirm_btn = styled_button(crate::i18n::t("export_confirm"), Message::ExportConfirm, OryxisColors::t().success);
                     let cancel_btn = styled_button(crate::i18n::t("cancel"), Message::ExportImportDismiss, OryxisColors::t().text_muted);
                     export_import_section = export_import_section
@@ -953,7 +956,7 @@ impl Oryxis {
                         .push(Space::new().height(8))
                         .push(keys_toggle)
                         .push(Space::new().height(8))
-                        .push(row![confirm_btn, Space::new().width(8), cancel_btn]);
+                        .push(dir_row(vec![confirm_btn, Space::new().width(8).into(), cancel_btn]));
                 }
 
                 // Show import dialog inline
@@ -973,7 +976,7 @@ impl Oryxis {
                         .push(Space::new().height(4))
                         .push(pw_input)
                         .push(Space::new().height(8))
-                        .push(row![confirm_btn, Space::new().width(8), cancel_btn]);
+                        .push(dir_row(vec![confirm_btn, Space::new().width(8).into(), cancel_btn]));
                 }
 
                 // Status messages
@@ -1110,11 +1113,11 @@ impl Oryxis {
                     Space::new().height(8),
                     sync_toggle,
                     Space::new().height(8),
-                    row![
-                        text(crate::i18n::t("sync_mode")).size(13).color(OryxisColors::t().text_secondary),
-                        Space::new().width(Length::Fill),
-                        mode_pick,
-                    ].align_y(iced::Alignment::Center),
+                    dir_row(vec![
+                        text(crate::i18n::t("sync_mode")).size(13).color(OryxisColors::t().text_secondary).into(),
+                        Space::new().width(Length::Fill).into(),
+                        mode_pick.into(),
+                    ]).align_y(iced::Alignment::Center),
                     Space::new().height(8),
                     passwords_toggle,
                     Space::new().height(4),
@@ -1164,13 +1167,13 @@ impl Oryxis {
                             ..Default::default()
                         });
                         pairing_section = pairing_section.push(
-                            row![
-                                text(&peer.device_name).size(13).color(OryxisColors::t().text_primary),
-                                Space::new().width(Length::Fill),
-                                text(last_sync).size(11).color(OryxisColors::t().text_muted),
-                                Space::new().width(8),
-                                unpair,
-                            ].align_y(iced::Alignment::Center),
+                            dir_row(vec![
+                                text(&peer.device_name).size(13).color(OryxisColors::t().text_primary).into(),
+                                Space::new().width(Length::Fill).into(),
+                                text(last_sync).size(11).color(OryxisColors::t().text_muted).into(),
+                                Space::new().width(8).into(),
+                                unpair.into(),
+                            ]).align_y(iced::Alignment::Center),
                         ).push(Space::new().height(4));
                     }
                 }
@@ -1372,19 +1375,19 @@ impl Oryxis {
                         ..Default::default()
                     }
                 });
-            let row = container(
-                row![
+            let row_el = container(
+                dir_row(vec![
                     column![
                         text(&pi.label)
                             .size(14)
                             .color(OryxisColors::t().text_primary),
                         text(summary).size(12).color(OryxisColors::t().text_muted),
-                    ],
-                    Space::new().width(Length::Fill),
-                    edit_btn,
-                    Space::new().width(8),
-                    delete_btn,
-                ]
+                    ].into(),
+                    Space::new().width(Length::Fill).into(),
+                    edit_btn.into(),
+                    Space::new().width(8).into(),
+                    delete_btn.into(),
+                ])
                 .align_y(iced::Alignment::Center),
             )
             .padding(Padding {
@@ -1403,7 +1406,7 @@ impl Oryxis {
                 ..Default::default()
             })
             .width(Length::Fill);
-            list = list.push(row);
+            list = list.push(row_el);
         }
 
         // ── Add button, same primary CTA styling as Save / Connect.
@@ -1425,9 +1428,9 @@ impl Oryxis {
         };
 
         let header = if self.proxy_identity_form_visible {
-            row![title, Space::new().width(Length::Fill)]
+            dir_row(vec![title.into(), Space::new().width(Length::Fill).into()])
         } else {
-            row![title, Space::new().width(Length::Fill), add_btn]
+            dir_row(vec![title.into(), Space::new().width(Length::Fill).into(), add_btn])
         };
 
         scrollable(
@@ -1574,7 +1577,7 @@ impl Oryxis {
         }
 
         col = col.push(Space::new().height(16)).push(
-            row![cancel_btn, Space::new().width(8), save_btn]
+            dir_row(vec![cancel_btn, Space::new().width(8).into(), save_btn])
                 .align_y(iced::Alignment::Center),
         );
 
