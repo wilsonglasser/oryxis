@@ -65,7 +65,29 @@ impl Oryxis {
                 self.hovered_identity_card = None;
             }
             Message::MouseMoved(pos) => {
-                self.mouse_position = pos;
+                // Spatial debounce: mouse-move events fire 60+ times per
+                // second. Re-stating `mouse_position` on every event forces
+                // a view() pass each time, which on dense pages (keychain
+                // grid, SFTP listing) can take long enough to back up
+                // iced's subscription channel and trigger
+                // `TrySendError { kind: Full }` warnings. Quantising the
+                // stored position to a 2 px grid means consecutive moves
+                // within the same cell don't re-state the field at all,
+                // so the view doesn't reflow. Same trick the
+                // `WindowResized` handler uses below.
+                const SNAP: f32 = 2.0;
+                let snapped = iced::Point {
+                    x: (pos.x / SNAP).round() * SNAP,
+                    y: (pos.y / SNAP).round() * SNAP,
+                };
+                let needs_drag_update = self.chat_sidebar_drag.is_some()
+                    || self.sftp.drag.is_some();
+                let changed = (snapped.x - self.mouse_position.x).abs() > 0.5
+                    || (snapped.y - self.mouse_position.y).abs() > 0.5;
+                if !changed && !needs_drag_update {
+                    return Ok(Task::none());
+                }
+                self.mouse_position = if needs_drag_update { pos } else { snapped };
                 // While the chat-sidebar resize handle is held down, the
                 // sidebar width tracks the cursor, dragging left grows
                 // the panel, dragging right shrinks it. Clamp to a sane
