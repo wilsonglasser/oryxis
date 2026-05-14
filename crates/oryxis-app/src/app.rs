@@ -78,6 +78,7 @@ pub struct Oryxis {
     pub(crate) vault: Option<VaultStore>,
     pub(crate) vault_state: VaultState,
     pub(crate) vault_password_input: String,
+    pub(crate) vault_password_visible: bool,
     pub(crate) vault_error: Option<String>,
     pub(crate) logo_handle: image::Handle,
     pub(crate) logo_small_handle: image::Handle,

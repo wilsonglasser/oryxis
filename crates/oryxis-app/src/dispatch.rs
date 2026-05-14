@@ -53,6 +53,9 @@ impl Oryxis {
             Message::VaultPasswordChanged(pw) => {
                 self.vault_password_input = pw;
             }
+            Message::VaultTogglePasswordVisibility => {
+                self.vault_password_visible = !self.vault_password_visible;
+            }
             Message::VaultSetup => {
                 if self.vault_password_input.len() < 4 {
                     self.vault_error = Some("Password must be at least 4 characters".into());
@@ -68,6 +71,7 @@ impl Oryxis {
                             // Cache for child-window spawn.
                             self.master_password = Some(self.vault_password_input.clone());
                             self.vault_password_input.clear();
+                            self.vault_password_visible = false;
                             self.load_data_from_vault();
                         }
                         Err(e) => {
@@ -106,6 +110,7 @@ impl Oryxis {
                             self.vault_error = None;
                             self.vault_destroy_confirm = false;
                             self.vault_password_input.clear();
+                            self.vault_password_visible = false;
                         }
                         Err(e) => {
                             self.vault_error = Some(format!("Failed to reset vault: {}", e));
@@ -123,6 +128,7 @@ impl Oryxis {
                             // child windows with it via stdin pipe.
                             self.master_password = Some(self.vault_password_input.clone());
                             self.vault_password_input.clear();
+                            self.vault_password_visible = false;
                             self.load_data_from_vault();
                             // After a manual unlock, fire any deferred
                             // `--connect <uuid>` from the launch CLI args.

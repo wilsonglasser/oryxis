@@ -78,6 +78,7 @@ impl Oryxis {
                 vault,
                 vault_state,
                 vault_password_input: String::new(),
+                vault_password_visible: false,
                 vault_error: None,
                 logo_handle: image::Handle::from_bytes(include_bytes!("../../../resources/logo_128.png").as_slice()),
                 logo_small_handle: image::Handle::from_bytes(include_bytes!("../../../resources/logo_64.png").as_slice()),

@@ -8,7 +8,7 @@ use iced::{Background, Border, Color, Element, Length, Padding};
 use crate::app::{Message, Oryxis};
 use crate::theme::OryxisColors;
 use crate::views::chrome::window_chrome_bar;
-use crate::widgets::styled_button;
+use crate::widgets::{dir_row, styled_button};
 
 /// Wrap a vault screen body with the top window chrome so the user can still
 /// drag / minimize / maximize / close before unlocking the vault. Also adds
@@ -32,6 +32,41 @@ fn with_chrome<'a>(body: Element<'a, Message>, maximized: bool) -> Element<'a, M
 }
 
 impl Oryxis {
+    /// Master-password field with Lucide eye toggle (matches host editor / identity forms).
+    fn vault_master_password_field<'a>(
+        &'a self,
+        placeholder: &'a str,
+        on_submit: Message,
+    ) -> Element<'a, Message> {
+        let field = text_input(placeholder, &self.vault_password_input)
+            .on_input(Message::VaultPasswordChanged)
+            .on_submit(on_submit)
+            .secure(!self.vault_password_visible)
+            .padding(12)
+            .width(Length::Fill)
+            .style(crate::widgets::rounded_input_style);
+        let toggle = button(
+            if self.vault_password_visible {
+                iced_fonts::lucide::eye_off().size(14).color(OryxisColors::t().text_muted)
+            } else {
+                iced_fonts::lucide::eye().size(14).color(OryxisColors::t().text_muted)
+            },
+        )
+        .on_press(Message::VaultTogglePasswordVisibility)
+        .style(|_t, _s| button::Style::default())
+        .padding(8);
+        container(
+            dir_row(vec![
+                field.into(),
+                Space::new().width(6).into(),
+                toggle.into(),
+            ])
+            .align_y(iced::Alignment::Center),
+        )
+        .width(300)
+        .into()
+    }
+
     pub(crate) fn view_vault_setup(&self) -> Element<'_, Message> {
         let logo = image(self.logo_handle.clone())
             .width(64)
@@ -41,13 +76,10 @@ impl Oryxis {
             .size(14)
             .color(OryxisColors::t().text_secondary);
 
-        let input = text_input(crate::i18n::t("master_password_optional"), &self.vault_password_input)
-            .on_input(Message::VaultPasswordChanged)
-            .on_submit(Message::VaultSetup)
-            .secure(true)
-            .padding(12)
-            .width(300)
-            .style(crate::widgets::rounded_input_style);
+        let input = self.vault_master_password_field(
+            crate::i18n::t("master_password_optional"),
+            Message::VaultSetup,
+        );
 
         let btn = styled_button(crate::i18n::t("create_vault"), Message::VaultSetup, OryxisColors::t().accent);
 
@@ -98,13 +130,10 @@ impl Oryxis {
             .size(14)
             .color(OryxisColors::t().text_secondary);
 
-        let input = text_input(crate::i18n::t("master_password_placeholder"), &self.vault_password_input)
-            .on_input(Message::VaultPasswordChanged)
-            .on_submit(Message::VaultUnlock)
-            .secure(true)
-            .padding(12)
-            .width(300)
-            .style(crate::widgets::rounded_input_style);
+        let input = self.vault_master_password_field(
+            crate::i18n::t("master_password_placeholder"),
+            Message::VaultUnlock,
+        );
 
         let btn = styled_button(crate::i18n::t("unlock"), Message::VaultUnlock, OryxisColors::t().accent);
 

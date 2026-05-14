@@ -18,6 +18,7 @@ use crate::state::{ConnectionStep, SettingsSection, View};
 pub enum Message {
     // Vault
     VaultPasswordChanged(String),
+    VaultTogglePasswordVisibility,
     VaultUnlock,
     VaultSetup,
     VaultSkipPassword,
