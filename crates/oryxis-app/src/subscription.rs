@@ -1,9 +1,21 @@
 //! `Oryxis::subscription`, the iced event/timer multiplexer. Pulled
 //! out of `app.rs` so the message-loop module is more browsable.
 
+use std::sync::atomic::{AtomicI32, Ordering};
+
 use iced::Subscription;
 
 use crate::app::{Message, Oryxis};
+
+// Coarse-grained record of the last cursor position forwarded to the
+// message loop. The subscription closure quantises to a 4 px grid and
+// drops events that resolve to the same cell as the previous forward,
+// so iced's bounded subscription channel can't be drowned by 100 Hz
+// mouse-move bursts on dense pages (keychain grid, SFTP listing).
+// Using i32 lets us store the snapped coords with one atomic each
+// rather than reaching for a Mutex<Point>.
+static LAST_MOUSE_X: AtomicI32 = AtomicI32::new(i32::MIN);
+static LAST_MOUSE_Y: AtomicI32 = AtomicI32::new(i32::MIN);
 
 impl Oryxis {
     pub fn subscription(&self) -> Subscription<Message> {
@@ -11,6 +23,19 @@ impl Oryxis {
             match event {
                 iced::event::Event::Keyboard(ke) => Some(Message::KeyboardEvent(ke)),
                 iced::event::Event::Mouse(iced::mouse::Event::CursorMoved { position }) => {
+                    // Quantise to a 4 px grid. Same cell as last forward
+                    // → drop the event before it hits the subscription
+                    // channel. Drag handlers that need pixel precision
+                    // recover the exact cursor coord from iced's own
+                    // event state on the next non-debounced sample.
+                    const SNAP: f32 = 4.0;
+                    let sx = (position.x / SNAP).round() as i32;
+                    let sy = (position.y / SNAP).round() as i32;
+                    let prev_x = LAST_MOUSE_X.swap(sx, Ordering::Relaxed);
+                    let prev_y = LAST_MOUSE_Y.swap(sy, Ordering::Relaxed);
+                    if sx == prev_x && sy == prev_y {
+                        return None;
+                    }
                     Some(Message::MouseMoved(position))
                 }
                 // Global Left press, used to start a potential SFTP
