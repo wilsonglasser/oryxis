@@ -102,6 +102,21 @@ pub struct SyncPeerRow {
     pub is_active: bool,
 }
 
+/// A deletion record from the `sync_metadata` table. Every `delete_*`
+/// records one so the sync engine can propagate the removal: without
+/// it, a peer that still holds the entity would push its stale copy
+/// back on the next sync and the delete would silently undo itself.
+///
+/// `entity_type` is the wire string from `oryxis_sync::protocol::
+/// EntityType`'s `Display` impl (`"connection"`, `"key"`, …). The vault
+/// stays string-typed here to avoid a dependency cycle on `oryxis-sync`.
+#[derive(Debug, Clone)]
+pub struct Tombstone {
+    pub entity_type: String,
+    pub entity_id: Uuid,
+    pub deleted_at: DateTime<Utc>,
+}
+
 // ---------------------------------------------------------------------------
 // Crypto helpers
 // ---------------------------------------------------------------------------
@@ -582,6 +597,7 @@ impl VaultStore {
     pub fn delete_group(&self, id: &Uuid) -> Result<(), VaultError> {
         self.db
             .execute("DELETE FROM groups WHERE id = ?1", params![id.to_string()])?;
+        self.record_tombstone("group", id)?;
         Ok(())
     }
 
@@ -858,6 +874,7 @@ impl VaultStore {
             "DELETE FROM connections WHERE id = ?1",
             params![id.to_string()],
         )?;
+        self.record_tombstone("connection", id)?;
         Ok(())
     }
 
@@ -973,6 +990,7 @@ impl VaultStore {
     pub fn delete_key(&self, id: &Uuid) -> Result<(), VaultError> {
         self.db
             .execute("DELETE FROM keys WHERE id = ?1", params![id.to_string()])?;
+        self.record_tombstone("key", id)?;
         Ok(())
     }
 
@@ -1096,6 +1114,7 @@ impl VaultStore {
             "DELETE FROM identities WHERE id = ?1",
             params![id.to_string()],
         )?;
+        self.record_tombstone("identity", id)?;
         Ok(())
     }
 
@@ -1213,6 +1232,7 @@ impl VaultStore {
             "DELETE FROM proxy_identities WHERE id = ?1",
             params![id.to_string()],
         )?;
+        self.record_tombstone("proxy_identity", id)?;
         Ok(())
     }
 
@@ -1333,6 +1353,7 @@ impl VaultStore {
             "DELETE FROM cloud_profiles WHERE id = ?1",
             params![id.to_string()],
         )?;
+        self.record_tombstone("cloud_profile", id)?;
         Ok(())
     }
 
@@ -1447,6 +1468,7 @@ impl VaultStore {
             "DELETE FROM snippets WHERE id = ?1",
             params![id.to_string()],
         )?;
+        self.record_tombstone("snippet", id)?;
         Ok(())
     }
 
@@ -1498,6 +1520,7 @@ impl VaultStore {
 
     pub fn delete_known_host(&self, id: &Uuid) -> Result<(), VaultError> {
         self.db.execute("DELETE FROM known_hosts WHERE id = ?1", params![id.to_string()])?;
+        self.record_tombstone("known_host", id)?;
         Ok(())
     }
 
@@ -1965,6 +1988,73 @@ impl VaultStore {
         self.db.execute(
             "DELETE FROM sync_peers WHERE peer_id = ?1",
             params![peer_id.to_string()],
+        )?;
+        Ok(())
+    }
+
+    // -----------------------------------------------------------------------
+    // Sync Metadata (tombstones)
+    // -----------------------------------------------------------------------
+    //
+    // Every `delete_*` records a tombstone here so the sync engine can
+    // propagate the deletion. The peer list itself is per-device, so
+    // `delete_sync_peer` deliberately does NOT record one.
+
+    /// Record a deletion tombstone. `entity_type` must be the wire
+    /// string used by `oryxis_sync::protocol::EntityType` (its `Display`
+    /// impl). Idempotent on the `(entity_type, entity_id)` primary key:
+    /// a repeat call just refreshes the timestamp instead of duplicating
+    /// the row. `updated_at` doubles as the LWW deletion timestamp the
+    /// sync manifest compares against.
+    pub fn record_tombstone(
+        &self,
+        entity_type: &str,
+        entity_id: &Uuid,
+    ) -> Result<(), VaultError> {
+        let now = Utc::now().to_rfc3339();
+        self.db.execute(
+            "INSERT OR REPLACE INTO sync_metadata
+             (entity_type, entity_id, updated_at, is_deleted, deleted_at)
+             VALUES (?1, ?2, ?3, 1, ?3)",
+            params![entity_type, entity_id.to_string(), now],
+        )?;
+        Ok(())
+    }
+
+    /// List every recorded deletion tombstone.
+    pub fn list_tombstones(&self) -> Result<Vec<Tombstone>, VaultError> {
+        let mut stmt = self.db.prepare(
+            "SELECT entity_type, entity_id, deleted_at
+             FROM sync_metadata WHERE is_deleted = 1",
+        )?;
+        let rows = stmt
+            .query_map([], |row| {
+                Ok(Tombstone {
+                    entity_type: row.get(0)?,
+                    entity_id: Uuid::parse_str(&row.get::<_, String>(1)?)
+                        .unwrap_or_default(),
+                    deleted_at: row
+                        .get::<_, String>(2)
+                        .ok()
+                        .and_then(|s| DateTime::parse_from_rfc3339(&s).ok())
+                        .map(|d| d.with_timezone(&Utc))
+                        .unwrap_or_else(Utc::now),
+                })
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(rows)
+    }
+
+    /// Drop a tombstone once every peer has acknowledged the deletion
+    /// (or it has aged out). No-op if the row is already gone.
+    pub fn clear_tombstone(
+        &self,
+        entity_type: &str,
+        entity_id: &Uuid,
+    ) -> Result<(), VaultError> {
+        self.db.execute(
+            "DELETE FROM sync_metadata WHERE entity_type = ?1 AND entity_id = ?2",
+            params![entity_type, entity_id.to_string()],
         )?;
         Ok(())
     }
@@ -3125,6 +3215,84 @@ mod tests {
 
         let peers = vault.list_sync_peers().unwrap();
         assert_eq!(peers.len(), 3);
+    }
+
+    // ── Sync Metadata (tombstones) ──
+
+    #[test]
+    fn delete_records_tombstone() {
+        let vault = unlocked_vault();
+        let conn = Connection::new("doomed", "10.0.0.1");
+        vault.save_connection(&conn, None).unwrap();
+
+        assert!(vault.list_tombstones().unwrap().is_empty());
+
+        vault.delete_connection(&conn.id).unwrap();
+
+        let tombstones = vault.list_tombstones().unwrap();
+        assert_eq!(tombstones.len(), 1);
+        assert_eq!(tombstones[0].entity_type, "connection");
+        assert_eq!(tombstones[0].entity_id, conn.id);
+    }
+
+    /// Every `delete_*` family member must leave a tombstone tagged
+    /// with the wire string the sync engine expects.
+    #[test]
+    fn delete_tombstones_cover_all_entity_types() {
+        let vault = unlocked_vault();
+
+        let conn = Connection::new("c", "10.0.0.1");
+        vault.save_connection(&conn, None).unwrap();
+        vault.delete_connection(&conn.id).unwrap();
+
+        let group = Group::new("g");
+        vault.save_group(&group).unwrap();
+        vault.delete_group(&group.id).unwrap();
+
+        let snippet = Snippet::new("s", "echo hi");
+        vault.save_snippet(&snippet).unwrap();
+        vault.delete_snippet(&snippet.id).unwrap();
+
+        let mut types: Vec<String> = vault
+            .list_tombstones()
+            .unwrap()
+            .into_iter()
+            .map(|t| t.entity_type)
+            .collect();
+        types.sort();
+        assert_eq!(types, vec!["connection", "group", "snippet"]);
+    }
+
+    /// Recording the same tombstone twice refreshes the row instead of
+    /// duplicating it (PK is `(entity_type, entity_id)`).
+    #[test]
+    fn tombstone_idempotent() {
+        let vault = unlocked_vault();
+        let id = Uuid::new_v4();
+
+        vault.record_tombstone("connection", &id).unwrap();
+        vault.record_tombstone("connection", &id).unwrap();
+
+        let tombstones = vault.list_tombstones().unwrap();
+        assert_eq!(tombstones.len(), 1);
+        assert_eq!(tombstones[0].entity_id, id);
+    }
+
+    /// Once a deletion has propagated to every peer, the tombstone is
+    /// cleared and stops showing up in the manifest.
+    #[test]
+    fn clear_tombstone_after_remote_propagation() {
+        let vault = unlocked_vault();
+        let conn = Connection::new("doomed", "10.0.0.1");
+        vault.save_connection(&conn, None).unwrap();
+        vault.delete_connection(&conn.id).unwrap();
+        assert_eq!(vault.list_tombstones().unwrap().len(), 1);
+
+        vault.clear_tombstone("connection", &conn.id).unwrap();
+        assert!(vault.list_tombstones().unwrap().is_empty());
+
+        // Clearing an already-gone tombstone is a no-op, not an error.
+        vault.clear_tombstone("connection", &conn.id).unwrap();
     }
 
     // ── Share (filtered export) ──
