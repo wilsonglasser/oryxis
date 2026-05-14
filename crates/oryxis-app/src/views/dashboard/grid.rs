@@ -889,48 +889,53 @@ impl Oryxis {
             });
 
             // Floating ⋮ kebab overlay on the trailing corner: right under
-            // LTR, left under RTL. Hover-revealed; lives in a Stack on top
-            // of the card_btn so it doesn't take inline space.
-            let card_element: Element<'_, Message> = if show_dots {
-                let dots_btn = button(
-                    text("\u{22EE}").size(14).color(OryxisColors::t().text_muted),
-                )
-                .on_press(Message::ShowCardMenu(idx))
-                .padding(Padding { top: 1.0, right: 6.0, bottom: 1.0, left: 6.0 })
-                .style(|_, status| {
-                    let bg = match status {
-                        BtnStatus::Hovered => OryxisColors::t().bg_hover,
-                        _ => Color::TRANSPARENT,
-                    };
-                    button::Style {
-                        background: Some(Background::Color(bg)),
-                        border: Border { radius: Radius::from(6.0), ..Default::default() },
-                        ..Default::default()
-                    }
-                });
-                let dots_align = if rtl {
-                    iced::alignment::Horizontal::Left
-                } else {
-                    iced::alignment::Horizontal::Right
-                };
-                let dots_pad = if rtl {
-                    Padding { top: 4.0, right: 0.0, bottom: 0.0, left: 4.0 }
-                } else {
-                    Padding { top: 4.0, right: 4.0, bottom: 0.0, left: 0.0 }
-                };
-                let dots_overlay = container(dots_btn)
-                    .width(Length::Fill)
-                    .height(Length::Fill)
-                    .align_x(dots_align)
-                    .align_y(iced::alignment::Vertical::Top)
-                    .padding(dots_pad);
-                iced::widget::Stack::new()
-                    .push(card_btn)
-                    .push(dots_overlay)
-                    .into()
+            // LTR, left under RTL. Always lives inside a Stack so the
+            // surrounding MouseArea bounds stay constant across hover
+            // transitions (avoids an on_enter/on_exit loop that drowned
+            // iced's subscription channel when show_dots toggled the
+            // Stack on/off each frame). When not hovered the button is
+            // a transparent placeholder of the same footprint.
+            let dots_align = if rtl {
+                iced::alignment::Horizontal::Left
             } else {
-                card_btn.into()
+                iced::alignment::Horizontal::Right
             };
+            let dots_pad = if rtl {
+                Padding { top: 0.0, right: 0.0, bottom: 0.0, left: 4.0 }
+            } else {
+                Padding { top: 0.0, right: 4.0, bottom: 0.0, left: 0.0 }
+            };
+            let dots_glyph_color = if show_dots {
+                OryxisColors::t().text_muted
+            } else {
+                Color::TRANSPARENT
+            };
+            let dots_btn = button(
+                text("\u{22EE}").size(14).color(dots_glyph_color),
+            )
+            .on_press(Message::ShowCardMenu(idx))
+            .padding(Padding { top: 1.0, right: 6.0, bottom: 1.0, left: 6.0 })
+            .style(move |_, status| {
+                let bg = match status {
+                    BtnStatus::Hovered if show_dots => OryxisColors::t().bg_hover,
+                    _ => Color::TRANSPARENT,
+                };
+                button::Style {
+                    background: Some(Background::Color(bg)),
+                    border: Border { radius: Radius::from(6.0), ..Default::default() },
+                    ..Default::default()
+                }
+            });
+            let dots_overlay = container(dots_btn)
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .align_x(dots_align)
+                .align_y(iced::alignment::Vertical::Center)
+                .padding(dots_pad);
+            let card_element: Element<'_, Message> = iced::widget::Stack::new()
+                .push(card_btn)
+                .push(dots_overlay)
+                .into();
 
             // Wrap in MouseArea for hover tracking and right-click
             let wrapped = MouseArea::new(card_element)

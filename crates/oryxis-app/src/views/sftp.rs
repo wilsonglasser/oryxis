@@ -606,9 +606,9 @@ impl Oryxis {
 
         let dialog = container(
             column![
-                row![
-                    text(t("select_a_host")).size(15).color(OryxisColors::t().text_primary),
-                    Space::new().width(Length::Fill),
+                crate::widgets::dir_row(vec![
+                    text(t("select_a_host")).size(15).color(OryxisColors::t().text_primary).into(),
+                    Space::new().width(Length::Fill).into(),
                     button(
                         iced_fonts::lucide::x()
                             .size(13)
@@ -626,8 +626,9 @@ impl Oryxis {
                             border: Border { radius: Radius::from(4.0), ..Default::default() },
                             ..Default::default()
                         }
-                    }),
-                ]
+                    })
+                    .into(),
+                ])
                 .align_y(iced::Alignment::Center)
                 .width(Length::Fill),
                 Space::new().height(8),
@@ -639,7 +640,8 @@ impl Oryxis {
                 scrollable(list).height(Length::Fixed(360.0)),
             ]
             .padding(20)
-            .width(Length::Fixed(440.0)),
+            .width(Length::Fixed(440.0))
+            .align_x(dir_align_x()),
         )
         .style(|_| container::Style {
             background: Some(Background::Color(OryxisColors::t().bg_surface)),

@@ -450,7 +450,7 @@ impl Oryxis {
                         .on_input(Message::FolderRenameInput)
                         .on_submit(Message::ConfirmRenameFolder)
                         .padding(10)
-                        .width(320)
+                        .width(Length::Fill)
                         .style(crate::widgets::rounded_input_style).align_x(dir_align_x()),
                     Space::new().height(12),
                     dir_row(vec![
@@ -463,6 +463,7 @@ impl Oryxis {
                 .align_x(dir_align_x())
                 .padding(24),
             )
+            .width(Length::Fixed(360.0))
             .style(|_| container::Style {
                 background: Some(Background::Color(OryxisColors::t().bg_surface)),
                 border: Border { radius: Radius::from(12.0), color: OryxisColors::t().border, width: 1.0 },
