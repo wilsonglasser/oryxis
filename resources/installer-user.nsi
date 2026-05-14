@@ -45,17 +45,39 @@ VIAddVersionKey "LegalCopyright" "AGPL-3.0-or-later"
 
 !insertmacro MUI_LANGUAGE "English"
 
+; Kill any running Oryxis app + MCP instances so Windows file locks
+; don't block the upgrade. AI clients (Claude Desktop / Code) keep
+; oryxis-mcp.exe alive as a child process across Oryxis app sessions,
+; so the auto-updater would otherwise fail to overwrite the MCP
+; binary even after the main app exits. taskkill ships with Windows;
+; no extra plugin needed. Missing-process exit codes are ignored.
+!macro KillRunningOryxis
+    nsExec::Exec '"taskkill" /F /T /IM oryxis-mcp.exe'
+    Pop $0
+    nsExec::Exec '"taskkill" /F /T /IM oryxis.exe'
+    Pop $0
+    ; Brief pause so the OS releases handles before the first File
+    ; write; without it taskkill + immediate overwrite can still race
+    ; into a sharing violation.
+    Sleep 1000
+!macroend
+
 ; Warn (don't block) if the system variant is also installed. Side-by-side
 ; works but creates two Start Menu entries and the user is unlikely to
 ; want both. Suggest manual uninstall, never silently remove the system
 ; copy — that would need elevation we explicitly don't have.
 Function .onInit
+    !insertmacro KillRunningOryxis
     IfFileExists "$PROGRAMFILES64\Oryxis\uninstall.exe" 0 done
         MessageBox MB_OKCANCEL|MB_ICONEXCLAMATION \
             "Oryxis is already installed for all users at $PROGRAMFILES64\Oryxis.$\r$\n$\r$\nInstalling the per-user version side-by-side is supported but not recommended. Uninstall the system version first via Settings > Apps, then run this installer again.$\r$\n$\r$\nClick OK to continue anyway, or Cancel to abort." \
             IDOK done
         Abort
     done:
+FunctionEnd
+
+Function un.onInit
+    !insertmacro KillRunningOryxis
 FunctionEnd
 
 Section "Install"

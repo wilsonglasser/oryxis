@@ -53,6 +53,31 @@ VIAddVersionKey "LegalCopyright" "AGPL-3.0-or-later"
 
 !insertmacro MUI_LANGUAGE "English"
 
+; Kill any running Oryxis app + MCP instances so Windows file locks
+; don't block the upgrade. AI clients (Claude Desktop / Code) keep
+; oryxis-mcp.exe alive as a child process across Oryxis app sessions,
+; so the auto-updater would otherwise fail to overwrite the MCP
+; binary even after the main app exits. taskkill ships with Windows;
+; no extra plugin needed. Missing-process exit codes are ignored.
+!macro KillRunningOryxis
+    nsExec::Exec '"taskkill" /F /T /IM oryxis-mcp.exe'
+    Pop $0
+    nsExec::Exec '"taskkill" /F /T /IM oryxis.exe'
+    Pop $0
+    ; Brief pause so the OS releases handles before the first File
+    ; write; without it taskkill + immediate overwrite can still race
+    ; into a sharing violation.
+    Sleep 1000
+!macroend
+
+Function .onInit
+    !insertmacro KillRunningOryxis
+FunctionEnd
+
+Function un.onInit
+    !insertmacro KillRunningOryxis
+FunctionEnd
+
 Section "Install"
     SetOutPath $INSTDIR
 
