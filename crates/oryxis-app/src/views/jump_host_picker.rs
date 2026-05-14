@@ -12,7 +12,7 @@ use iced::{Background, Border, Color, Element, Length, Padding};
 use crate::app::{Message, Oryxis};
 use crate::i18n::t;
 use crate::theme::OryxisColors;
-use crate::widgets::dir_row;
+use crate::widgets::{dir_align_x, dir_row};
 
 impl Oryxis {
     pub(crate) fn view_jump_host_picker(&self) -> Element<'_, Message> {
@@ -23,7 +23,7 @@ impl Oryxis {
             .on_input(Message::JumpHostSearchChanged)
             .padding(Padding { top: 14.0, right: 14.0, bottom: 14.0, left: 14.0 })
             .size(14)
-            .style(crate::widgets::rounded_input_style);
+            .style(crate::widgets::rounded_input_style).align_x(dir_align_x());
 
         let mut rows: Vec<Element<'_, Message>> = Vec::new();
 

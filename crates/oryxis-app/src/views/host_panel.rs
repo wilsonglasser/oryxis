@@ -14,8 +14,8 @@ use crate::state::ProxyKind;
 use crate::theme::OryxisColors;
 use crate::app::PANEL_WIDTH;
 use crate::widgets::{
-    dir_row, panel_divider, panel_field, panel_option_pick, panel_option_row, panel_section,
-    password_input_with_eye,
+    dir_align_x, dir_row, panel_divider, panel_field, panel_option_pick, panel_option_row,
+    panel_section, password_input_with_eye,
 };
 
 impl Oryxis {
@@ -101,17 +101,17 @@ impl Oryxis {
                 text_input(t("ip_or_hostname"), &self.editor_form.hostname)
                     .on_input(Message::EditorHostnameChanged)
                     .padding(10)
-                    .style(crate::widgets::rounded_input_style).into(),
+                    .style(crate::widgets::rounded_input_style).align_x(dir_align_x()).into(),
             ]).align_y(iced::Alignment::Center),
         ]);
 
         // ── Section: General ──
         let general_section = panel_section(column![
             panel_field(t("label"), text_input(t("my_server_placeholder"), &self.editor_form.label)
-                .on_input(Message::EditorLabelChanged).padding(10).style(crate::widgets::rounded_input_style).into()),
+                .on_input(Message::EditorLabelChanged).padding(10).style(crate::widgets::rounded_input_style).align_x(dir_align_x()).into()),
             Space::new().height(8),
             panel_field(t("parent_group"), text_input(t("group_placeholder"), &self.editor_form.group_name)
-                .on_input(Message::EditorGroupChanged).padding(10).style(crate::widgets::rounded_input_style).into()),
+                .on_input(Message::EditorGroupChanged).padding(10).style(crate::widgets::rounded_input_style).align_x(dir_align_x()).into()),
         ]);
 
         // ── Section: SSH & Credentials ──
@@ -125,7 +125,7 @@ impl Oryxis {
                     .on_input(Message::EditorPortChanged)
                     .padding(6)
                     .width(60)
-                    .style(crate::widgets::rounded_input_style).into(),
+                    .style(crate::widgets::rounded_input_style).align_x(dir_align_x()).into(),
             ]).align_y(iced::Alignment::Center),
         ]
         .push(Space::new().height(12))
@@ -138,7 +138,7 @@ impl Oryxis {
                 text_input(t("username"), &self.editor_form.username)
                     .on_input(Message::EditorUsernameChanged)
                     .padding(10)
-                    .style(crate::widgets::rounded_input_style).into(),
+                    .style(crate::widgets::rounded_input_style).align_x(dir_align_x()).into(),
             ]).align_y(iced::Alignment::Center)
         );
 
@@ -343,7 +343,7 @@ impl Oryxis {
                 )
                 .on_input(Message::EditorInitialCommandChanged)
                 .padding(10)
-                .style(crate::widgets::rounded_input_style),
+                .style(crate::widgets::rounded_input_style).align_x(dir_align_x()),
             );
 
         let ssh_section = panel_section(ssh_items);
@@ -479,7 +479,7 @@ impl Oryxis {
                         .on_input(Message::EditorKeepaliveChanged)
                         .padding(6)
                         .width(100)
-                        .style(crate::widgets::rounded_input_style)
+                        .style(crate::widgets::rounded_input_style).align_x(dir_align_x())
                         .into(),
                 ]).align_y(iced::Alignment::Center)
             )
@@ -518,21 +518,21 @@ impl Oryxis {
                         .on_input(move |v| Message::EditorPortFwdLocalPortChanged(idx, v))
                         .padding(6)
                         .width(70)
-                        .style(crate::widgets::rounded_input_style)
+                        .style(crate::widgets::rounded_input_style).align_x(dir_align_x())
                         .into(),
                     text(" -> ").size(12).color(OryxisColors::t().text_muted).into(),
                     text_input("localhost", &pf.remote_host)
                         .on_input(move |v| Message::EditorPortFwdRemoteHostChanged(idx, v))
                         .padding(6)
                         .width(Length::Fill)
-                        .style(crate::widgets::rounded_input_style)
+                        .style(crate::widgets::rounded_input_style).align_x(dir_align_x())
                         .into(),
                     text(":").size(12).color(OryxisColors::t().text_muted).into(),
                     text_input("3306", &pf.remote_port)
                         .on_input(move |v| Message::EditorPortFwdRemotePortChanged(idx, v))
                         .padding(6)
                         .width(70)
-                        .style(crate::widgets::rounded_input_style)
+                        .style(crate::widgets::rounded_input_style).align_x(dir_align_x())
                         .into(),
                     button(text("\u{00D7}").size(11).color(OryxisColors::t().error))
                         .on_press(Message::EditorRemovePortForward(idx))
@@ -835,7 +835,7 @@ impl Oryxis {
                     )
                     .on_input(Message::EditorProxyCommandChanged)
                     .padding(10)
-                    .style(crate::widgets::rounded_input_style)
+                    .style(crate::widgets::rounded_input_style).align_x(dir_align_x())
                     .into(),
                 ));
             return panel_section(col);
@@ -852,7 +852,7 @@ impl Oryxis {
                     )
                     .on_input(Message::EditorProxyHostChanged)
                     .padding(10)
-                    .style(crate::widgets::rounded_input_style)
+                    .style(crate::widgets::rounded_input_style).align_x(dir_align_x())
                     .into(),
                 ))
                 .push(Space::new().height(8))
@@ -862,7 +862,7 @@ impl Oryxis {
                         .on_input(Message::EditorProxyPortChanged)
                         .padding(6)
                         .width(70)
-                        .style(crate::widgets::rounded_input_style)
+                        .style(crate::widgets::rounded_input_style).align_x(dir_align_x())
                         .into(),
                 ))
                 .push(Space::new().height(8))
@@ -874,7 +874,7 @@ impl Oryxis {
                     )
                     .on_input(Message::EditorProxyUsernameChanged)
                     .padding(10)
-                    .style(crate::widgets::rounded_input_style)
+                    .style(crate::widgets::rounded_input_style).align_x(dir_align_x())
                     .into(),
                 ));
         }
@@ -898,7 +898,7 @@ impl Oryxis {
                         .on_input(Message::EditorProxyPasswordChanged)
                         .secure(true)
                         .padding(10)
-                        .style(crate::widgets::rounded_input_style)
+                        .style(crate::widgets::rounded_input_style).align_x(dir_align_x())
                         .into(),
                 ));
         }

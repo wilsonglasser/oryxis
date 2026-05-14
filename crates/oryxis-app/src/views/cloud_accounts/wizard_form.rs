@@ -11,7 +11,7 @@ use crate::app::{Message, Oryxis, PANEL_WIDTH};
 use crate::i18n::t;
 use crate::state::{CloudAuthChoice, CloudProviderChoice, CloudTestState};
 use crate::theme::OryxisColors;
-use crate::widgets::dir_row;
+use crate::widgets::{dir_align_x, dir_row};
 
 impl Oryxis {
     pub(super) fn view_cloud_form_panel(&self) -> Element<'_, Message> {
@@ -109,7 +109,7 @@ impl Oryxis {
             text_input("us-east-1", &self.cloud_form_aws_region)
                 .on_input(Message::CloudFormAwsRegionChanged)
                 .padding(10)
-                .style(crate::widgets::rounded_input_style),
+                .style(crate::widgets::rounded_input_style).align_x(dir_align_x()),
         ];
 
         // Auth-kind-specific fields. We render only the ones that
@@ -124,7 +124,7 @@ impl Oryxis {
                 text_input("default", &self.cloud_form_aws_profile_name)
                     .on_input(Message::CloudFormAwsProfileNameChanged)
                     .padding(10)
-                    .style(crate::widgets::rounded_input_style),
+                    .style(crate::widgets::rounded_input_style).align_x(dir_align_x()),
                 Space::new().height(14),
                 region_field,
             ]
@@ -143,7 +143,7 @@ impl Oryxis {
                     text_input("AKIAIOSFODNN7EXAMPLE", &self.cloud_form_aws_access_key_id)
                         .on_input(Message::CloudFormAwsAccessKeyIdChanged)
                         .padding(10)
-                        .style(crate::widgets::rounded_input_style),
+                        .style(crate::widgets::rounded_input_style).align_x(dir_align_x()),
                     Space::new().height(14),
                     text(t("cloud_aws_access_key_secret"))
                         .size(12)
@@ -153,7 +153,7 @@ impl Oryxis {
                         .on_input(Message::CloudFormAwsAccessKeySecretChanged)
                         .secure(!self.cloud_form_aws_access_key_secret_visible)
                         .padding(10)
-                        .style(crate::widgets::rounded_input_style),
+                        .style(crate::widgets::rounded_input_style).align_x(dir_align_x()),
                     Space::new().height(14),
                     text(t("cloud_aws_access_key_session_token"))
                         .size(12)
@@ -162,7 +162,7 @@ impl Oryxis {
                     text_input(t("cloud_aws_access_key_session_token_ph"), &self.cloud_form_aws_access_key_session_token)
                         .on_input(Message::CloudFormAwsAccessKeySessionTokenChanged)
                         .padding(10)
-                        .style(crate::widgets::rounded_input_style),
+                        .style(crate::widgets::rounded_input_style).align_x(dir_align_x()),
                     Space::new().height(14),
                     region_field,
                 ]
@@ -176,7 +176,7 @@ impl Oryxis {
                 text_input("https://acme.awsapps.com/start", &self.cloud_form_aws_sso_start_url)
                     .on_input(Message::CloudFormAwsSsoStartUrlChanged)
                     .padding(10)
-                    .style(crate::widgets::rounded_input_style),
+                    .style(crate::widgets::rounded_input_style).align_x(dir_align_x()),
                 Space::new().height(14),
                 text(t("cloud_aws_sso_region"))
                     .size(12)
@@ -185,7 +185,7 @@ impl Oryxis {
                 text_input("us-east-1", &self.cloud_form_aws_sso_region)
                     .on_input(Message::CloudFormAwsSsoRegionChanged)
                     .padding(10)
-                    .style(crate::widgets::rounded_input_style),
+                    .style(crate::widgets::rounded_input_style).align_x(dir_align_x()),
                 Space::new().height(14),
                 text(t("cloud_aws_sso_account_id"))
                     .size(12)
@@ -194,7 +194,7 @@ impl Oryxis {
                 text_input("123456789012", &self.cloud_form_aws_sso_account_id)
                     .on_input(Message::CloudFormAwsSsoAccountIdChanged)
                     .padding(10)
-                    .style(crate::widgets::rounded_input_style),
+                    .style(crate::widgets::rounded_input_style).align_x(dir_align_x()),
                 Space::new().height(14),
                 text(t("cloud_aws_sso_role_name"))
                     .size(12)
@@ -203,7 +203,7 @@ impl Oryxis {
                 text_input("AdministratorAccess", &self.cloud_form_aws_sso_role_name)
                     .on_input(Message::CloudFormAwsSsoRoleNameChanged)
                     .padding(10)
-                    .style(crate::widgets::rounded_input_style),
+                    .style(crate::widgets::rounded_input_style).align_x(dir_align_x()),
                 Space::new().height(14),
                 region_field,
                 Space::new().height(8),
@@ -284,7 +284,7 @@ impl Oryxis {
             text_input("prod-aws", &self.cloud_form_label)
                 .on_input(Message::CloudFormLabelChanged)
                 .padding(10)
-                .style(crate::widgets::rounded_input_style),
+                .style(crate::widgets::rounded_input_style).align_x(dir_align_x()),
             Space::new().height(14),
             text(t("cloud_provider"))
                 .size(12)

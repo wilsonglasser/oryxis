@@ -13,7 +13,7 @@ use crate::app::{Message, Oryxis, PANEL_WIDTH};
 use crate::i18n::t;
 use crate::state::CloudDiscoverState;
 use crate::theme::OryxisColors;
-use crate::widgets::dir_row;
+use crate::widgets::{dir_align_x, dir_row};
 
 use super::section_header;
 
@@ -92,7 +92,7 @@ impl Oryxis {
                     bottom: 8.0,
                     left: 10.0,
                 })
-                .style(crate::widgets::rounded_input_style),
+                .style(crate::widgets::rounded_input_style).align_x(dir_align_x()),
         )
         .padding(Padding {
             top: 0.0,

@@ -8,7 +8,7 @@ use iced::{Background, Border, Color, Element, Length, Padding};
 use crate::app::{Message, Oryxis, CARD_WIDTH, PANEL_WIDTH};
 use crate::i18n::t;
 use crate::theme::OryxisColors;
-use crate::widgets::{card_grid_columns, dir_row, distribute_card_grid};
+use crate::widgets::{card_grid_columns, dir_align_x, dir_row, distribute_card_grid};
 
 impl Oryxis {
     pub(crate) fn view_snippets(&self) -> Element<'_, Message> {
@@ -233,14 +233,14 @@ impl Oryxis {
             text_input("restart-nginx", &self.snippet_label)
                 .on_input(Message::SnippetLabelChanged)
                 .padding(10)
-                .style(crate::widgets::rounded_input_style),
+                .style(crate::widgets::rounded_input_style).align_x(dir_align_x()),
             Space::new().height(14),
             text(t("command_label")).size(12).color(OryxisColors::t().text_secondary),
             Space::new().height(4),
             text_input("sudo systemctl restart nginx", &self.snippet_command)
                 .on_input(Message::SnippetCommandChanged)
                 .padding(10)
-                .style(crate::widgets::rounded_input_style),
+                .style(crate::widgets::rounded_input_style).align_x(dir_align_x()),
         ];
 
         let panel_error: Element<'_, Message> = if let Some(err) = &self.snippet_error {

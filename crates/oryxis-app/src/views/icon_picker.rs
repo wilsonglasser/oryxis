@@ -13,7 +13,7 @@ use crate::app::{Message, Oryxis};
 use crate::i18n::t;
 use crate::os_icon;
 use crate::theme::OryxisColors;
-use crate::widgets::{dir_row, styled_button};
+use crate::widgets::{dir_align_x, dir_row, styled_button};
 
 impl Oryxis {
     pub(crate) fn view_icon_picker(&self) -> Element<'_, Message> {
@@ -96,7 +96,7 @@ impl Oryxis {
             .padding(8)
             .size(12)
             .width(120)
-            .style(crate::widgets::rounded_input_style);
+            .style(crate::widgets::rounded_input_style).align_x(dir_align_x());
 
         let colors_block = column![
             text(t("background_color")).size(12).font(iced::Font {

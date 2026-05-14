@@ -10,7 +10,7 @@ use iced::{Background, Border, Element, Length, Padding};
 use crate::app::{Message, Oryxis, PANEL_WIDTH};
 use crate::i18n::t;
 use crate::theme::OryxisColors;
-use crate::widgets::dir_row;
+use crate::widgets::{dir_align_x, dir_row};
 
 impl Oryxis {
     pub(crate) fn view_dynamic_group_form_panel(&self) -> Element<'_, Message> {
@@ -137,7 +137,7 @@ impl Oryxis {
             text_input("ec2-user", &self.cloud_dynamic_form_username)
                 .on_input(Message::DynamicGroupFormUsernameChanged)
                 .padding(10)
-                .style(crate::widgets::rounded_input_style),
+                .style(crate::widgets::rounded_input_style).align_x(dir_align_x()),
             Space::new().height(14),
             text(t("cloud_dynamic_form_initial_command"))
                 .size(12)
@@ -146,7 +146,7 @@ impl Oryxis {
             text_input("exec bash", &self.cloud_dynamic_form_initial_command)
                 .on_input(Message::DynamicGroupFormInitialCommandChanged)
                 .padding(10)
-                .style(crate::widgets::rounded_input_style),
+                .style(crate::widgets::rounded_input_style).align_x(dir_align_x()),
             Space::new().height(14),
             text(t("cloud_dynamic_form_key"))
                 .size(12)

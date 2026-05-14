@@ -13,7 +13,7 @@ use iced::{Background, Border, Color, Element, Length, Padding};
 use crate::app::{Message, Oryxis};
 use crate::i18n::t;
 use crate::theme::OryxisColors;
-use crate::widgets::dir_row;
+use crate::widgets::{dir_align_x, dir_row};
 
 impl Oryxis {
     /// Build the new-tab picker modal. The caller is responsible for checking
@@ -31,7 +31,7 @@ impl Oryxis {
                 left: 14.0,
             })
             .size(14)
-            .style(crate::widgets::rounded_input_style);
+            .style(crate::widgets::rounded_input_style).align_x(dir_align_x());
 
         // Right-anchored "Ctrl+K" hint inside a styled chip so it reads
         // as a keyboard affordance rather than placeholder text. Lives

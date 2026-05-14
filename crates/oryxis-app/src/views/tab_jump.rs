@@ -12,7 +12,7 @@ use iced::{Background, Border, Color, Element, Length, Padding};
 use crate::app::{Message, Oryxis};
 use crate::i18n::t;
 use crate::theme::{OryxisColors, SYSTEM_UI_SEMIBOLD};
-use crate::widgets::dir_row;
+use crate::widgets::{dir_align_x, dir_row};
 
 impl Oryxis {
     pub(crate) fn view_tab_jump_modal(&self) -> Element<'_, Message> {
@@ -123,7 +123,7 @@ impl Oryxis {
             .on_input(Message::TabJumpSearchChanged)
             .padding(Padding { top: 8.0, right: 10.0, bottom: 8.0, left: 10.0 })
             .size(13)
-            .style(crate::widgets::rounded_input_style);
+            .style(crate::widgets::rounded_input_style).align_x(dir_align_x());
 
         // "Jump to" pill on the left of the search row gives the modal
         // its identity; a Ctrl+J hint on the right reinforces the

@@ -8,7 +8,7 @@ use iced::{Background, Border, Color, Element, Length, Padding};
 use crate::app::{Message, Oryxis};
 use crate::state::{OverlayContent, OverlayState, View};
 use crate::theme::OryxisColors;
-use crate::widgets::{context_menu_item, dir_row, styled_button};
+use crate::widgets::{context_menu_item, dir_align_x, dir_row, styled_button};
 
 /// Thickness of the edge hit-zones used for dragging to resize. Corners are
 /// the same thickness but `EDGE × EDGE` squares, a bit generous so the user
@@ -175,7 +175,7 @@ impl Oryxis {
                         .secure(true)
                         .padding(10)
                         .width(280)
-                        .style(crate::widgets::rounded_input_style),
+                        .style(crate::widgets::rounded_input_style).align_x(dir_align_x()),
                     Space::new().height(8),
                     row![
                         text(crate::i18n::t("include_private_keys")).size(13).color(OryxisColors::t().text_secondary),
@@ -449,7 +449,7 @@ impl Oryxis {
                         .on_submit(Message::ConfirmRenameFolder)
                         .padding(10)
                         .width(320)
-                        .style(crate::widgets::rounded_input_style),
+                        .style(crate::widgets::rounded_input_style).align_x(dir_align_x()),
                     Space::new().height(12),
                     row![
                         styled_button(crate::i18n::t("save"), Message::ConfirmRenameFolder, OryxisColors::t().accent),

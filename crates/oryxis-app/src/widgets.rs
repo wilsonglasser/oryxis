@@ -155,6 +155,7 @@ where
     let mut field = text_input(placeholder, value)
         .on_input(on_input)
         .secure(!visible)
+        .align_x(dir_align_x())
         .padding(Padding {
             top: inner_padding,
             right: pad_right,
@@ -255,6 +256,8 @@ pub(crate) fn sidebar_nav_btn<'a>(
                 ])
                 .align_y(iced::Alignment::Center),
             )
+            .width(Length::Fill)
+            .align_x(dir_align_x())
             .padding(Padding { top: 8.0, right: 16.0, bottom: 8.0, left: 16.0 }),
         )
         .on_press(Message::ChangeView(view))
@@ -276,9 +279,11 @@ pub(crate) fn sidebar_nav_btn<'a>(
     .into()
 }
 
-/// A section card with slightly lighter background.
+/// A section card with slightly lighter background. Children are aligned to
+/// the leading edge so labels, descriptions, and inline widgets hug the
+/// right side under RTL instead of pinning to physical left.
 pub(crate) fn panel_section<'a>(content: iced::widget::Column<'a, Message>) -> Element<'a, Message> {
-    container(content)
+    container(content.width(Length::Fill).align_x(dir_align_x()))
         .padding(16)
         .width(Length::Fill)
         .style(|_| container::Style {
@@ -289,13 +294,16 @@ pub(crate) fn panel_section<'a>(content: iced::widget::Column<'a, Message>) -> E
         .into()
 }
 
-/// A labeled form field inside a section.
+/// A labeled form field inside a section. Column aligned to the leading
+/// edge so labels and inputs hug the right side under RTL.
 pub(crate) fn panel_field<'a>(label: &'a str, input: Element<'a, Message>) -> Element<'a, Message> {
     iced::widget::column![
         text(label).size(12).color(OryxisColors::t().text_muted),
         Space::new().height(4),
         input,
     ]
+    .width(Length::Fill)
+    .align_x(dir_align_x())
     .into()
 }
 
@@ -355,12 +363,16 @@ pub(crate) fn context_menu_item<'a>(
     color: Color,
 ) -> Element<'a, Message> {
     button(
-        dir_row(vec![
-            icon.into().view(14.0, color),
-            Space::new().width(8).into(),
-            text(label).size(12).color(OryxisColors::t().text_primary).into(),
-        ])
-        .align_y(iced::Alignment::Center),
+        container(
+            dir_row(vec![
+                icon.into().view(14.0, color),
+                Space::new().width(8).into(),
+                text(label).size(12).color(OryxisColors::t().text_primary).into(),
+            ])
+            .align_y(iced::Alignment::Center),
+        )
+        .width(Length::Fill)
+        .align_x(dir_align_x()),
     )
     .on_press(msg)
     .width(Length::Fill)
@@ -543,8 +555,16 @@ pub(crate) fn key_badge<'a>(label: &'a str) -> Element<'a, Message> {
 }
 
 pub(crate) fn shortcut_row<'a>(keys: Vec<Element<'a, Message>>, action: &'a str) -> Element<'a, Message> {
+    // Pin the chip cluster to the row's leading edge inside its 200 px slot:
+    // LTR aligns left (keys first, gap before the label), RTL aligns right
+    // (label first, gap, then keys). dir_row handles the outer reversal,
+    // align_x keeps the chips snug against the slot's trailing edge under
+    // RTL so the gap sits between keys and label instead of bunching them.
+    let keys_box = container(Row::with_children(keys).spacing(4))
+        .width(200)
+        .align_x(dir_align_x());
     dir_row(vec![
-        Row::with_children(keys).spacing(4).width(200).into(),
+        keys_box.into(),
         text(action).size(13).color(OryxisColors::t().text_secondary).into(),
     ]).align_y(iced::Alignment::Center).into()
 }

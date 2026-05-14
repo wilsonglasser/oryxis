@@ -9,6 +9,7 @@ use crate::app::{Message, Oryxis};
 use crate::i18n::t;
 use crate::state::{SftpEntryKind, SftpPaneSide};
 use crate::theme::OryxisColors;
+use crate::widgets::dir_align_x;
 
 const ROW_HEIGHT: f32 = 28.0;
 
@@ -107,7 +108,7 @@ impl Oryxis {
                 .padding(Padding { top: 4.0, right: 8.0, bottom: 4.0, left: 8.0 })
                 .size(11)
                 .width(140)
-                .style(crate::widgets::rounded_input_style),
+                .style(crate::widgets::rounded_input_style).align_x(dir_align_x()),
             Space::new().width(8),
             actions_btn,
         ]
@@ -125,7 +126,7 @@ impl Oryxis {
             .on_submit(Message::SftpCommitLocalPath)
             .padding(Padding { top: 4.0, right: 8.0, bottom: 4.0, left: 8.0 })
             .size(11)
-            .style(crate::widgets::rounded_input_style)
+            .style(crate::widgets::rounded_input_style).align_x(dir_align_x())
             .into()
         } else {
             // Wrap the breadcrumb in a `Fill` container so the click
@@ -327,7 +328,7 @@ impl Oryxis {
                 .padding(Padding { top: 4.0, right: 8.0, bottom: 4.0, left: 8.0 })
                 .size(11)
                 .width(140)
-                .style(crate::widgets::rounded_input_style),
+                .style(crate::widgets::rounded_input_style).align_x(dir_align_x()),
             Space::new().width(8),
             actions_btn,
         ]
@@ -340,7 +341,7 @@ impl Oryxis {
                 .on_submit(Message::SftpCommitRemotePath)
                 .padding(Padding { top: 4.0, right: 8.0, bottom: 4.0, left: 8.0 })
                 .size(11)
-                .style(crate::widgets::rounded_input_style)
+                .style(crate::widgets::rounded_input_style).align_x(dir_align_x())
                 .into()
         } else {
             MouseArea::new(
@@ -633,7 +634,7 @@ impl Oryxis {
                 text_input(t("search_hosts"), &self.sftp.picker_search)
                     .on_input(Message::SftpPickerSearch)
                     .padding(10)
-                    .style(crate::widgets::rounded_input_style),
+                    .style(crate::widgets::rounded_input_style).align_x(dir_align_x()),
                 Space::new().height(8),
                 scrollable(list).height(Length::Fixed(360.0)),
             ]
@@ -1459,7 +1460,7 @@ fn file_row_local<'a>(
             .on_submit(Message::SftpRenameCommit)
             .padding(Padding { top: 2.0, right: 6.0, bottom: 2.0, left: 6.0 })
             .size(11)
-            .style(crate::widgets::rounded_input_style)
+            .style(crate::widgets::rounded_input_style).align_x(dir_align_x())
             .into()
     } else {
         text(name).size(12).color(OryxisColors::t().text_primary).width(Length::Fill).into()
@@ -1561,7 +1562,7 @@ fn file_row_remote<'a>(
             .on_submit(Message::SftpRenameCommit)
             .padding(Padding { top: 2.0, right: 6.0, bottom: 2.0, left: 6.0 })
             .size(11)
-            .style(crate::widgets::rounded_input_style)
+            .style(crate::widgets::rounded_input_style).align_x(dir_align_x())
             .into()
     } else {
         text(name).size(12).color(OryxisColors::t().text_primary).width(Length::Fill).into()
@@ -1822,7 +1823,7 @@ fn new_entry_modal<'a>(entry: &crate::state::SftpNewEntry) -> Element<'a, Messag
                 .on_submit(Message::SftpNewEntryCommit)
                 .padding(10)
                 .size(13)
-                .style(crate::widgets::rounded_input_style),
+                .style(crate::widgets::rounded_input_style).align_x(dir_align_x()),
             Space::new().height(16),
             row![
                 crate::widgets::styled_button(

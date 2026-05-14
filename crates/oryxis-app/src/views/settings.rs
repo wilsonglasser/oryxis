@@ -11,8 +11,8 @@ use crate::mcp::mcp_info_panel;
 use crate::state::SettingsSection;
 use crate::theme::OryxisColors;
 use crate::widgets::{
-    dir_row, key_badge, panel_field, panel_section, settings_row, shortcut_row, styled_button,
-    toggle_row,
+    dir_align_x, dir_row, key_badge, panel_field, panel_section, settings_row, shortcut_row,
+    styled_button, toggle_row,
 };
 
 impl Oryxis {
@@ -48,6 +48,8 @@ impl Oryxis {
                 };
                 let btn: Element<'_, Message> = button(
                     container(text(label).size(13).color(fg))
+                        .width(Length::Fill)
+                        .align_x(crate::widgets::dir_align_x())
                         .padding(Padding { top: 8.0, right: 16.0, bottom: 8.0, left: 16.0 }),
                 )
                 .on_press(Message::ChangeSettingsSection(section))
@@ -156,7 +158,7 @@ impl Oryxis {
                         .on_input(Message::SettingKeepaliveChanged)
                         .padding(10)
                         .width(240)
-                        .style(crate::widgets::rounded_input_style),
+                        .style(crate::widgets::rounded_input_style).align_x(dir_align_x()),
                 ]);
 
                 let scrollback_section = panel_section(column![
@@ -169,7 +171,7 @@ impl Oryxis {
                         .on_input(Message::SettingScrollbackChanged)
                         .padding(10)
                         .width(240)
-                        .style(crate::widgets::rounded_input_style),
+                        .style(crate::widgets::rounded_input_style).align_x(dir_align_x()),
                 ]);
 
                 // Terminal theme picker. First card is the "follow
@@ -308,7 +310,7 @@ impl Oryxis {
                         .on_input(Message::SettingMaxReconnectChanged)
                         .padding(10)
                         .width(240)
-                        .style(crate::widgets::rounded_input_style),
+                        .style(crate::widgets::rounded_input_style).align_x(dir_align_x()),
                 ]);
 
                 scrollable(
@@ -335,7 +337,8 @@ impl Oryxis {
                             theme_picker_section,
                             Space::new().height(24),
                         ]
-                        .width(Length::Fill),
+                        .width(Length::Fill)
+                        .align_x(dir_align_x()),
                     )
                     .padding(Padding { top: 20.0, right: 24.0, bottom: 24.0, left: 24.0 }),
                 )
@@ -357,7 +360,7 @@ impl Oryxis {
                         .on_input(Message::SettingSftpConcurrencyChanged)
                         .padding(10)
                         .width(240)
-                        .style(crate::widgets::rounded_input_style),
+                        .style(crate::widgets::rounded_input_style).align_x(dir_align_x()),
                 ]);
 
                 let timeout_input = |label: &str, hint: &str, value: &str, on_input: fn(String) -> Message| {
@@ -374,7 +377,7 @@ impl Oryxis {
                             .on_input(on_input)
                             .padding(10)
                             .width(240)
-                            .style(crate::widgets::rounded_input_style),
+                            .style(crate::widgets::rounded_input_style).align_x(dir_align_x()),
                     ])
                 };
 
@@ -421,7 +424,8 @@ impl Oryxis {
                             op_section,
                             Space::new().height(24),
                         ]
-                        .width(Length::Fill),
+                        .width(Length::Fill)
+                        .align_x(dir_align_x()),
                     )
                     .padding(Padding { top: 20.0, right: 24.0, bottom: 24.0, left: 24.0 }),
                 )
@@ -440,7 +444,8 @@ impl Oryxis {
                     enable_section,
                 ]
                 .spacing(12)
-                .width(Length::Fill);
+                .width(Length::Fill)
+                .align_x(dir_align_x());
 
                 if self.ai_enabled {
                     let current_info = crate::ai::provider_info(&self.ai_provider);
@@ -464,7 +469,7 @@ impl Oryxis {
                         .on_input(Message::AiModelChanged)
                         .padding(10)
                         .width(300)
-                        .style(crate::widgets::rounded_input_style)
+                        .style(crate::widgets::rounded_input_style).align_x(dir_align_x())
                         .into();
 
                     // When a key is already stored, the input is cleared
@@ -481,7 +486,7 @@ impl Oryxis {
                         .secure(true)
                         .padding(10)
                         .width(280)
-                        .style(crate::widgets::rounded_input_style)
+                        .style(crate::widgets::rounded_input_style).align_x(dir_align_x())
                         .into();
                     let save_btn = styled_button("Save", Message::SaveAiApiKey, OryxisColors::t().accent);
                     let key_status: Element<'_, Message> = if self.ai_api_key_set {
@@ -513,7 +518,7 @@ impl Oryxis {
                             .on_input(Message::AiApiUrlChanged)
                             .padding(10)
                             .width(300)
-                            .style(crate::widgets::rounded_input_style)
+                            .style(crate::widgets::rounded_input_style).align_x(dir_align_x())
                             .into();
                         provider_col = provider_col
                             .push(Space::new().height(12))
@@ -764,7 +769,8 @@ impl Oryxis {
                     Space::new().height(12),
                 ]
                 .spacing(12)
-                .width(Length::Fill);
+                .width(Length::Fill)
+                .align_x(dir_align_x());
 
                 for row_el in grid_rows {
                     content_col = content_col.push(row_el);
@@ -795,7 +801,7 @@ impl Oryxis {
                 let mut rows_col = column![
                     text(crate::i18n::t("keyboard_shortcuts")).size(18).color(OryxisColors::t().text_primary),
                     Space::new().height(16),
-                ].spacing(8).width(Length::Fill);
+                ].spacing(8).width(Length::Fill).align_x(dir_align_x());
 
                 for (keys, action) in shortcuts {
                     let badges: Vec<Element<'_, Message>> = keys.iter().map(|k| key_badge(k)).collect();
@@ -825,7 +831,7 @@ impl Oryxis {
                         .secure(true)
                         .padding(10)
                         .width(300)
-                        .style(crate::widgets::rounded_input_style);
+                        .style(crate::widgets::rounded_input_style).align_x(dir_align_x());
                     let btn = styled_button(crate::i18n::t("set_password"), Message::SetVaultPassword, OryxisColors::t().accent);
                     let error: Element<'_, Message> = if let Some(err) = &self.vault_password_error {
                         text(err.clone()).size(12).color(OryxisColors::t().error).into()
@@ -933,7 +939,7 @@ impl Oryxis {
                         .secure(true)
                         .padding(10)
                         .width(300)
-                        .style(crate::widgets::rounded_input_style);
+                        .style(crate::widgets::rounded_input_style).align_x(dir_align_x());
                     let keys_toggle = dir_row(vec![
                         text(crate::i18n::t("include_private_keys")).size(13).color(OryxisColors::t().text_secondary).into(),
                         Space::new().width(Length::Fill).into(),
@@ -967,7 +973,7 @@ impl Oryxis {
                         .secure(true)
                         .padding(10)
                         .width(300)
-                        .style(crate::widgets::rounded_input_style);
+                        .style(crate::widgets::rounded_input_style).align_x(dir_align_x());
                     let confirm_btn = styled_button(crate::i18n::t("import_confirm"), Message::ImportConfirm, OryxisColors::t().success);
                     let cancel_btn = styled_button(crate::i18n::t("cancel"), Message::ExportImportDismiss, OryxisColors::t().text_muted);
                     export_import_section = export_import_section
@@ -1045,7 +1051,8 @@ impl Oryxis {
                             panel_section(ssh_config_section),
                             Space::new().height(24),
                         ]
-                        .width(Length::Fill),
+                        .width(Length::Fill)
+                        .align_x(dir_align_x()),
                     )
                     .padding(Padding { top: 20.0, right: 24.0, bottom: 24.0, left: 24.0 }),
                 )
@@ -1062,7 +1069,7 @@ impl Oryxis {
                 .on_input(Message::SyncDeviceNameChanged)
                 .padding(10)
                 .width(300)
-                .style(crate::widgets::rounded_input_style);
+                .style(crate::widgets::rounded_input_style).align_x(dir_align_x());
 
                 let device_section = panel_section(column![
                     text(crate::i18n::t("sync_device")).size(14).color(OryxisColors::t().text_muted),
@@ -1183,17 +1190,17 @@ impl Oryxis {
                     .on_input(Message::SyncSignalingUrlChanged)
                     .padding(8)
                     .width(300)
-                    .style(crate::widgets::rounded_input_style);
+                    .style(crate::widgets::rounded_input_style).align_x(dir_align_x());
                 let relay_input = text_input(crate::i18n::t("sync_relay_optional"), &self.sync_relay_url)
                     .on_input(Message::SyncRelayUrlChanged)
                     .padding(8)
                     .width(300)
-                    .style(crate::widgets::rounded_input_style);
+                    .style(crate::widgets::rounded_input_style).align_x(dir_align_x());
                 let port_input = text_input("0", &self.sync_listen_port)
                     .on_input(Message::SyncListenPortChanged)
                     .padding(8)
                     .width(100)
-                    .style(crate::widgets::rounded_input_style);
+                    .style(crate::widgets::rounded_input_style).align_x(dir_align_x());
 
                 let advanced_section = panel_section(column![
                     text(crate::i18n::t("sync_advanced")).size(14).color(OryxisColors::t().text_muted),
@@ -1225,7 +1232,8 @@ impl Oryxis {
                             advanced_section,
                             Space::new().height(24),
                         ]
-                        .width(Length::Fill),
+                        .width(Length::Fill)
+                        .align_x(dir_align_x()),
                     )
                     .padding(Padding { top: 20.0, right: 24.0, bottom: 24.0, left: 24.0 }),
                 )
@@ -1278,7 +1286,8 @@ impl Oryxis {
                             vault_section,
                             Space::new().height(24),
                         ]
-                        .width(Length::Fill),
+                        .width(Length::Fill)
+                        .align_x(dir_align_x()),
                     )
                     .padding(Padding { top: 20.0, right: 24.0, bottom: 24.0, left: 24.0 }),
                 )
@@ -1447,7 +1456,8 @@ impl Oryxis {
                     form,
                     Space::new().height(24),
                 ]
-                .width(Length::Fill),
+                .width(Length::Fill)
+                .align_x(dir_align_x()),
             )
             .padding(Padding {
                 top: 20.0,
@@ -1495,7 +1505,7 @@ impl Oryxis {
             .on_input(Message::ProxyIdentityFormPasswordChanged)
             .secure(!self.proxy_identity_form_password_visible)
             .padding(10)
-            .style(crate::widgets::rounded_input_style);
+            .style(crate::widgets::rounded_input_style).align_x(dir_align_x());
 
         let save_label = if self.editing_proxy_identity_id.is_some() {
             crate::i18n::t("save")
@@ -1525,7 +1535,7 @@ impl Oryxis {
                 text_input("home-bastion", &self.proxy_identity_form_label)
                     .on_input(Message::ProxyIdentityFormLabelChanged)
                     .padding(10)
-                    .style(crate::widgets::rounded_input_style)
+                    .style(crate::widgets::rounded_input_style).align_x(dir_align_x())
                     .into(),
             ),
             Space::new().height(12),
@@ -1539,7 +1549,7 @@ impl Oryxis {
                 )
                 .on_input(Message::ProxyIdentityFormHostChanged)
                 .padding(10)
-                .style(crate::widgets::rounded_input_style)
+                .style(crate::widgets::rounded_input_style).align_x(dir_align_x())
                 .into(),
             ),
             Space::new().height(12),
@@ -1549,7 +1559,7 @@ impl Oryxis {
                     .on_input(Message::ProxyIdentityFormPortChanged)
                     .padding(6)
                     .width(70)
-                    .style(crate::widgets::rounded_input_style)
+                    .style(crate::widgets::rounded_input_style).align_x(dir_align_x())
                     .into(),
             ),
             Space::new().height(12),
@@ -1561,7 +1571,7 @@ impl Oryxis {
                 )
                 .on_input(Message::ProxyIdentityFormUsernameChanged)
                 .padding(10)
-                .style(crate::widgets::rounded_input_style)
+                .style(crate::widgets::rounded_input_style).align_x(dir_align_x())
                 .into(),
             ),
             Space::new().height(12),

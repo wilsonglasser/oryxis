@@ -15,7 +15,9 @@ use oryxis_core::models::key::SshKey;
 use crate::app::{Message, Oryxis, CARD_WIDTH, PANEL_WIDTH};
 use crate::i18n::t;
 use crate::theme::OryxisColors;
-use crate::widgets::{card_grid_columns, dir_row, distribute_card_grid, password_input_with_eye};
+use crate::widgets::{
+    card_grid_columns, dir_align_x, dir_row, distribute_card_grid, password_input_with_eye,
+};
 
 impl Oryxis {
     pub(crate) fn view_keys(&self) -> Element<'_, Message> {
@@ -133,7 +135,7 @@ impl Oryxis {
                 .padding(10)
                 .size(13)
                 .width(Length::Fill)
-                .style(crate::widgets::rounded_input_style),
+                .style(crate::widgets::rounded_input_style).align_x(dir_align_x()),
         )
         .padding(Padding { top: 0.0, right: 24.0, bottom: 12.0, left: 24.0 })
         .width(Length::Fill);
@@ -550,7 +552,7 @@ impl Oryxis {
             text_input("my-server-key", &self.key_import_label)
                 .on_input(Message::KeyImportLabelChanged)
                 .padding(10)
-                .style(crate::widgets::rounded_input_style),
+                .style(crate::widgets::rounded_input_style).align_x(dir_align_x()),
         ];
 
         // File selector button
@@ -730,7 +732,7 @@ impl Oryxis {
             text_input(t("my_identity_placeholder"), &self.identity_form_label)
                 .on_input(Message::IdentityLabelChanged)
                 .padding(10)
-                .style(crate::widgets::rounded_input_style),
+                .style(crate::widgets::rounded_input_style).align_x(dir_align_x()),
         ];
 
         // Username field
@@ -743,7 +745,7 @@ impl Oryxis {
                 text_input("root", &self.identity_form_username)
                     .on_input(Message::IdentityUsernameChanged)
                     .padding(10)
-                    .style(crate::widgets::rounded_input_style)
+                    .style(crate::widgets::rounded_input_style).align_x(dir_align_x())
                     .into(),
             ]).align_y(iced::Alignment::Center),
         ];

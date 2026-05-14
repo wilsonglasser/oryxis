@@ -18,7 +18,7 @@ use crate::app::{Message, Oryxis, CARD_WIDTH};
 use crate::i18n::t;
 use crate::os_icon::BrandIcon;
 use crate::theme::OryxisColors;
-use crate::widgets::{card_grid_columns, dir_row, distribute_card_grid};
+use crate::widgets::{card_grid_columns, dir_align_x, dir_row, distribute_card_grid};
 
 impl Oryxis {
     pub(super) fn dashboard_main_content(&self) -> Element<'_, Message> {
@@ -30,7 +30,7 @@ impl Oryxis {
                 .on_input(Message::HostSearchChanged)
                 .padding(10)
                 .size(13)
-                .style(crate::widgets::rounded_input_style),
+                .style(crate::widgets::rounded_input_style).align_x(dir_align_x()),
         )
         .padding(Padding { top: 0.0, right: 24.0, bottom: 12.0, left: 24.0 })
         .width(Length::Fill);
@@ -79,7 +79,7 @@ impl Oryxis {
                         .on_submit(Message::QuickHostContinue)
                         .padding(14)
                         .width(380)
-                        .style(crate::widgets::rounded_input_style),
+                        .style(crate::widgets::rounded_input_style).align_x(dir_align_x()),
                     Space::new().height(12),
                     // Continue button
                     button(
