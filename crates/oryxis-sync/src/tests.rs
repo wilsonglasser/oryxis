@@ -124,7 +124,9 @@ mod tests {
 
     #[test]
     fn protocol_version_consistency() {
-        assert_eq!(PROTOCOL_VERSION, 1);
+        // v2 added channel-bound auth_signature to Hello/HelloAck. v1 had
+        // no auth and is intentionally incompatible.
+        assert_eq!(PROTOCOL_VERSION, 2);
     }
 
     #[test]
@@ -176,5 +178,36 @@ mod tests {
         // Give it a moment to start
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
         engine.stop();
+    }
+
+    #[test]
+    fn load_or_generate_creates_then_returns_same_identity() {
+        let vault = test_vault();
+        let first = DeviceIdentity::load_or_generate(&vault, "laptop-1").unwrap();
+        let second = DeviceIdentity::load_or_generate(&vault, "ignored-on-second-call").unwrap();
+        assert_eq!(first.device_id, second.device_id);
+        assert_eq!(first.device_name, second.device_name);
+        assert_eq!(first.public_key_bytes(), second.public_key_bytes());
+        // Fallback name is used only on first generation.
+        assert_eq!(second.device_name, "laptop-1");
+    }
+
+    #[test]
+    fn load_or_generate_persists_signing_key_across_vault_reopen() {
+        let tmp = NamedTempFile::new().unwrap();
+        let path = tmp.path().to_path_buf();
+        std::mem::forget(tmp);
+
+        let mut v1 = VaultStore::open(&path).unwrap();
+        v1.set_master_password("test").unwrap();
+        let first = DeviceIdentity::load_or_generate(&v1, "laptop").unwrap();
+        let first_pub = first.public_key_bytes();
+        drop(v1);
+
+        let mut v2 = VaultStore::open(&path).unwrap();
+        v2.unlock("test").unwrap();
+        let second = DeviceIdentity::load_or_generate(&v2, "ignored").unwrap();
+        assert_eq!(first.device_id, second.device_id);
+        assert_eq!(first_pub, second.public_key_bytes());
     }
 }

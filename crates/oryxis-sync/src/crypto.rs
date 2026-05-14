@@ -1,11 +1,21 @@
 use chacha20poly1305::aead::{Aead, OsRng};
 use chacha20poly1305::{ChaCha20Poly1305, KeyInit, Nonce};
-use ed25519_dalek::{SigningKey, VerifyingKey};
+use ed25519_dalek::{Signature, Signer, SigningKey, VerifyingKey};
 use rand::RngCore;
 use uuid::Uuid;
 use x25519_dalek::{EphemeralSecret, PublicKey as X25519PublicKey};
 
 use crate::error::SyncError;
+
+/// Length of the channel-binding exporter (RFC 5705 keying material)
+/// fed into the Ed25519 session-handshake signature.
+pub const SESSION_EXPORTER_LEN: usize = 32;
+
+/// RFC 5705 exporter label used to derive channel-binding bytes from the
+/// QUIC/TLS session for the Ed25519 handshake signature. Bumping this
+/// label (e.g. "v2") forces incompatible peers to fail verification
+/// instead of silently accepting an attacker-controlled exporter.
+pub const SESSION_EXPORTER_LABEL: &[u8] = b"oryxis-sync session auth v1";
 
 /// A device's persistent identity for sync.
 #[derive(Debug, Clone)]
@@ -36,6 +46,105 @@ impl DeviceIdentity {
     pub fn public_key_bytes(&self) -> Vec<u8> {
         self.public_key().to_bytes().to_vec()
     }
+
+    /// Serialize the identity for persistence. Layout (deterministic, fixed length):
+    ///   16 bytes device_id (Uuid bytes)
+    ///   32 bytes signing key secret
+    ///   N  bytes UTF-8 device_name
+    /// The signing key bytes are sensitive and must be stored encrypted
+    /// at rest (vault settings, encrypted column, etc).
+    pub fn to_bytes(&self) -> Vec<u8> {
+        let name = self.device_name.as_bytes();
+        let mut out = Vec::with_capacity(16 + 32 + name.len());
+        out.extend_from_slice(self.device_id.as_bytes());
+        out.extend_from_slice(&self.signing_key.to_bytes());
+        out.extend_from_slice(name);
+        out
+    }
+
+    /// Inverse of [`Self::to_bytes`]. Returns an error if the input is
+    /// truncated or contains invalid UTF-8 in the device name.
+    pub fn from_bytes(data: &[u8]) -> Result<Self, SyncError> {
+        if data.len() < 16 + 32 {
+            return Err(SyncError::Crypto("Identity blob too short".into()));
+        }
+        let mut id_bytes = [0u8; 16];
+        id_bytes.copy_from_slice(&data[..16]);
+        let device_id = Uuid::from_bytes(id_bytes);
+
+        let mut key_bytes = [0u8; 32];
+        key_bytes.copy_from_slice(&data[16..48]);
+        let signing_key = SigningKey::from_bytes(&key_bytes);
+
+        let device_name = std::str::from_utf8(&data[48..])
+            .map_err(|e| SyncError::Crypto(format!("Identity name not UTF-8: {}", e)))?
+            .to_string();
+
+        Ok(Self {
+            device_id,
+            device_name,
+            signing_key,
+        })
+    }
+
+    /// Load the persisted identity from the vault, or generate+persist
+    /// a fresh one if none exists yet. Idempotent: the second call with
+    /// the same vault returns the same identity. Vault must be unlocked.
+    ///
+    /// `fallback_device_name` is used only when generating a new
+    /// identity; when loading an existing one, the name embedded in
+    /// the blob wins.
+    pub fn load_or_generate(
+        vault: &oryxis_vault::VaultStore,
+        fallback_device_name: &str,
+    ) -> Result<Self, SyncError> {
+        if let Some(blob) = vault
+            .get_sync_device_identity()
+            .map_err(|e| SyncError::Vault(e.to_string()))?
+        {
+            return Self::from_bytes(&blob);
+        }
+        let fresh = Self::generate(fallback_device_name);
+        vault
+            .set_sync_device_identity(&fresh.to_bytes())
+            .map_err(|e| SyncError::Vault(e.to_string()))?;
+        Ok(fresh)
+    }
+}
+
+/// Sign the channel-binding exporter with this device's Ed25519 key.
+/// The exporter comes from the QUIC TLS session (RFC 5705), so the
+/// resulting signature is bound to the specific TLS session: a MITM
+/// with its own TLS context will see a different exporter and cannot
+/// forge or relay a valid signature without holding the private key.
+pub fn sign_session_handshake(
+    signing_key: &SigningKey,
+    exporter: &[u8; SESSION_EXPORTER_LEN],
+) -> [u8; 64] {
+    signing_key.sign(exporter).to_bytes()
+}
+
+/// Verify a peer's Ed25519 signature over the channel-binding exporter.
+/// `peer_pubkey` is the 32-byte raw VerifyingKey bytes stored on the
+/// `SyncPeer` row at pairing time. Fails if either input is malformed
+/// or the signature does not match.
+pub fn verify_session_handshake(
+    peer_pubkey: &[u8],
+    exporter: &[u8; SESSION_EXPORTER_LEN],
+    signature: &[u8],
+) -> Result<(), SyncError> {
+    let pubkey_array: [u8; 32] = peer_pubkey
+        .try_into()
+        .map_err(|_| SyncError::Crypto("Peer pubkey must be 32 bytes".into()))?;
+    let verifying = VerifyingKey::from_bytes(&pubkey_array)
+        .map_err(|e| SyncError::Crypto(format!("Bad peer pubkey: {}", e)))?;
+    let sig_array: [u8; 64] = signature
+        .try_into()
+        .map_err(|_| SyncError::Crypto("Signature must be 64 bytes".into()))?;
+    let sig = Signature::from_bytes(&sig_array);
+    verifying
+        .verify_strict(exporter, &sig)
+        .map_err(|e| SyncError::Crypto(format!("Auth signature verify failed: {}", e)))
 }
 
 /// Generate a 6-digit numeric pairing code.
@@ -167,5 +276,78 @@ mod tests {
         let shared_b = secret_b.diffie_hellman(&public_a);
 
         assert_eq!(shared_a.as_bytes(), shared_b.as_bytes());
+    }
+
+    #[test]
+    fn device_identity_roundtrip_bytes() {
+        let original = DeviceIdentity::generate("my-laptop");
+        let blob = original.to_bytes();
+        let restored = DeviceIdentity::from_bytes(&blob).unwrap();
+        assert_eq!(restored.device_id, original.device_id);
+        assert_eq!(restored.device_name, original.device_name);
+        assert_eq!(restored.public_key_bytes(), original.public_key_bytes());
+        // Same private key produces same signature for the same input.
+        let exporter = [7u8; SESSION_EXPORTER_LEN];
+        let sig_orig = sign_session_handshake(&original.signing_key, &exporter);
+        let sig_back = sign_session_handshake(&restored.signing_key, &exporter);
+        assert_eq!(sig_orig, sig_back);
+    }
+
+    #[test]
+    fn device_identity_from_bytes_rejects_truncated() {
+        assert!(DeviceIdentity::from_bytes(&[]).is_err());
+        assert!(DeviceIdentity::from_bytes(&[0u8; 47]).is_err());
+    }
+
+    #[test]
+    fn session_handshake_signature_roundtrip() {
+        let identity = DeviceIdentity::generate("alice");
+        let exporter = [42u8; SESSION_EXPORTER_LEN];
+        let sig = sign_session_handshake(&identity.signing_key, &exporter);
+        verify_session_handshake(&identity.public_key_bytes(), &exporter, &sig).unwrap();
+    }
+
+    #[test]
+    fn session_handshake_rejects_wrong_signer() {
+        // MITM scenario: attacker has a different Ed25519 identity.
+        // Even if attacker signs the correct exporter, the verifier
+        // checks against the legitimate peer's stored pubkey.
+        let legit = DeviceIdentity::generate("alice");
+        let attacker = DeviceIdentity::generate("mallory");
+        let exporter = [1u8; SESSION_EXPORTER_LEN];
+        let attacker_sig = sign_session_handshake(&attacker.signing_key, &exporter);
+        let err =
+            verify_session_handshake(&legit.public_key_bytes(), &exporter, &attacker_sig);
+        assert!(err.is_err());
+    }
+
+    #[test]
+    fn session_handshake_rejects_tampered_exporter() {
+        // MITM scenario: attacker holds two TLS sessions (one with each
+        // legitimate peer). The exporters of those two sessions differ.
+        // Even if the attacker relays Alice's signature to Bob unchanged,
+        // Bob will verify it against his own exporter and the check
+        // fails. This is the channel-binding property.
+        let alice = DeviceIdentity::generate("alice");
+        let exporter_alice_session = [1u8; SESSION_EXPORTER_LEN];
+        let exporter_bob_session = [2u8; SESSION_EXPORTER_LEN];
+        let sig = sign_session_handshake(&alice.signing_key, &exporter_alice_session);
+        let err =
+            verify_session_handshake(&alice.public_key_bytes(), &exporter_bob_session, &sig);
+        assert!(err.is_err());
+    }
+
+    #[test]
+    fn session_handshake_rejects_malformed_inputs() {
+        let identity = DeviceIdentity::generate("alice");
+        let exporter = [0u8; SESSION_EXPORTER_LEN];
+        let sig = sign_session_handshake(&identity.signing_key, &exporter);
+
+        // Pubkey wrong length.
+        assert!(verify_session_handshake(&[0u8; 16], &exporter, &sig).is_err());
+        // Signature wrong length.
+        assert!(
+            verify_session_handshake(&identity.public_key_bytes(), &exporter, &[0u8; 32]).is_err()
+        );
     }
 }

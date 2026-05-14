@@ -95,7 +95,15 @@ pub async fn recv_message(
     decode_message(&buf).map_err(|e| SyncError::Protocol(format!("Decode: {}", e)))
 }
 
-// Skip TLS certificate verification (we verify via Ed25519 keys at the application layer).
+// Skip TLS certificate verification. Identity verification happens at
+// the application layer via Ed25519: each peer signs the RFC 5705 TLS
+// exporter with its long-term identity key during the Hello handshake
+// (`engine::handle_incoming` + `engine::sync_with_peer`), and the
+// receiver verifies against the pubkey stored on the `SyncPeer` row at
+// pairing time. Because the exporter is bound to the specific TLS
+// session, a MITM with its own cert (which this verifier would happily
+// accept) cannot relay or replay a valid signature: its two TLS
+// sessions on either side of the man derive different exporters.
 #[derive(Debug)]
 struct SkipVerification;
 

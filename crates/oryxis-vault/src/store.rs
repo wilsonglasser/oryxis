@@ -1050,6 +1050,24 @@ impl VaultStore {
         Ok(identities)
     }
 
+    /// IDs of identities whose `password` column is non-NULL. Cheap
+    /// existence check, no decrypt and no `require_unlocked()` since the
+    /// caller only learns *that* a password exists, not its value.
+    /// Used by the keychain view to render the masked-bullets badge
+    /// without paying a per-frame decrypt on every identity card.
+    pub fn list_identity_ids_with_password(
+        &self,
+    ) -> Result<std::collections::HashSet<Uuid>, VaultError> {
+        let mut stmt = self.db.prepare(
+            "SELECT id FROM identities WHERE password IS NOT NULL",
+        )?;
+        let ids = stmt
+            .query_map([], |row| row.get::<_, String>(0))?
+            .filter_map(|r| r.ok().and_then(|s| Uuid::parse_str(&s).ok()))
+            .collect();
+        Ok(ids)
+    }
+
     /// Get the decrypted password for an identity.
     pub fn get_identity_password(&self, id: &Uuid) -> Result<Option<String>, VaultError> {
         self.require_unlocked()?;
@@ -1779,6 +1797,8 @@ impl VaultStore {
         self.re_encrypt_identities(&old_key, &new_key)?;
         // Re-encrypt AI API key if present
         self.re_encrypt_ai_api_key(&old_key, &new_key)?;
+        // Re-encrypt sync device identity if present
+        self.re_encrypt_sync_device_identity(&old_key, &new_key)?;
 
         // Update the password_check with the new password
         let check = encrypt(b"oryxis_vault_ok", &new_key)?;
@@ -1809,6 +1829,7 @@ impl VaultStore {
         self.re_encrypt_keys(&old_key, &new_key)?;
         self.re_encrypt_identities(&old_key, &new_key)?;
         self.re_encrypt_ai_api_key(&old_key, &new_key)?;
+        self.re_encrypt_sync_device_identity(&old_key, &new_key)?;
 
         // Update the password_check with empty password
         let check = encrypt(b"oryxis_vault_ok", &new_key)?;
@@ -1993,6 +2014,35 @@ impl VaultStore {
         }
     }
 
+    /// Persist the sync `DeviceIdentity` blob encrypted at rest. The
+    /// caller (oryxis-sync) is responsible for the byte layout (see
+    /// `crypto::DeviceIdentity::to_bytes`). We treat the bytes as
+    /// opaque secret material and encrypt with the master key, then
+    /// base64-encode for storage in the `settings` text column.
+    pub fn set_sync_device_identity(&self, bytes: &[u8]) -> Result<(), VaultError> {
+        let key = self.require_unlocked()?;
+        let encrypted = encrypt(bytes, key)?;
+        let encoded = BASE64.encode(&encrypted);
+        self.set_setting("sync_device_identity", &encoded)
+    }
+
+    /// Retrieve and decrypt the sync `DeviceIdentity` blob, or `None`
+    /// if no identity has been persisted yet. Returns an error if the
+    /// stored value is corrupt or the master key has rotated without
+    /// re-encryption (see `re_encrypt_sync_device_identity`).
+    pub fn get_sync_device_identity(&self) -> Result<Option<Vec<u8>>, VaultError> {
+        let key = self.require_unlocked()?;
+        match self.get_setting("sync_device_identity")? {
+            Some(encoded) => {
+                let encrypted = BASE64
+                    .decode(encoded.as_bytes())
+                    .map_err(|e| VaultError::Crypto(format!("Base64 decode: {}", e)))?;
+                Ok(Some(decrypt(&encrypted, key)?))
+            }
+            None => Ok(None),
+        }
+    }
+
     // -----------------------------------------------------------------------
     // Re-encryption helpers
     // -----------------------------------------------------------------------
@@ -2047,6 +2097,33 @@ impl VaultStore {
                     "INSERT OR REPLACE INTO settings (key, value) VALUES ('ai_api_key', ?1)",
                     params![re_encoded],
                 )?;
+        }
+        Ok(())
+    }
+
+    fn re_encrypt_sync_device_identity(
+        &self,
+        old_key: &[u8],
+        new_key: &[u8],
+    ) -> Result<(), VaultError> {
+        let encoded: Option<String> = self
+            .db
+            .query_row(
+                "SELECT value FROM settings WHERE key = 'sync_device_identity'",
+                [],
+                |row| row.get(0),
+            )
+            .ok();
+        if let Some(encoded) = encoded
+            && let Ok(encrypted) = BASE64.decode(encoded.as_bytes())
+        {
+            let plain = decrypt(&encrypted, old_key)?;
+            let re_encrypted = encrypt(&plain, new_key)?;
+            let re_encoded = BASE64.encode(&re_encrypted);
+            self.db.execute(
+                "INSERT OR REPLACE INTO settings (key, value) VALUES ('sync_device_identity', ?1)",
+                params![re_encoded],
+            )?;
         }
         Ok(())
     }
@@ -3444,5 +3521,50 @@ mod tests {
             }
             _ => panic!("wrong kind variant"),
         }
+    }
+
+    // ── Sync device identity persistence ─────────────────────────────
+    //
+    // The blob layout is opaque to the vault (oryxis-sync owns it).
+    // What we pin here is the encrypt-at-rest contract: bytes round
+    // trip exactly, the underlying setting is not stored as plaintext,
+    // and the value survives a master-password rotation.
+
+    #[test]
+    fn sync_device_identity_round_trip() {
+        let vault = unlocked_vault();
+        let blob = b"\x01\x02\x03\x04\x05signing-key-bytes-and-name";
+        vault.set_sync_device_identity(blob).unwrap();
+        let back = vault.get_sync_device_identity().unwrap();
+        assert_eq!(back.as_deref(), Some(&blob[..]));
+    }
+
+    #[test]
+    fn sync_device_identity_missing_returns_none() {
+        let vault = unlocked_vault();
+        assert!(vault.get_sync_device_identity().unwrap().is_none());
+    }
+
+    #[test]
+    fn sync_device_identity_not_plaintext_in_settings() {
+        let vault = unlocked_vault();
+        let blob = b"signing-key-secret-do-not-leak";
+        vault.set_sync_device_identity(blob).unwrap();
+        let raw = vault.get_setting("sync_device_identity").unwrap().unwrap();
+        assert!(
+            !raw.as_bytes().windows(blob.len()).any(|w| w == blob),
+            "plaintext device identity leaked into settings column: {raw}",
+        );
+    }
+
+    #[test]
+    fn sync_device_identity_survives_password_rotation() {
+        let mut vault = unlocked_vault();
+        let blob = b"identity-survives-rotation";
+        vault.set_sync_device_identity(blob).unwrap();
+        vault.set_user_password("new-password").unwrap();
+        // Still decryptable with the (now-rotated) master key in memory.
+        let back = vault.get_sync_device_identity().unwrap();
+        assert_eq!(back.as_deref(), Some(&blob[..]));
     }
 }

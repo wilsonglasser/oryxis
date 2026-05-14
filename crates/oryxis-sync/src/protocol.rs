@@ -3,7 +3,12 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 /// Protocol version for wire compatibility.
-pub const PROTOCOL_VERSION: u32 = 1;
+///
+/// v2 added `auth_signature` to Hello/HelloAck (channel-bound Ed25519
+/// proof of identity, fixes MITM-able handshake from v1). v1 peers
+/// cannot interop with v2 peers, and that is intentional. There are no
+/// v1 peers in the wild because sync was never wired into the app.
+pub const PROTOCOL_VERSION: u32 = 2;
 
 /// Entity types that can be synced.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
@@ -44,14 +49,21 @@ impl std::fmt::Display for EntityType {
 /// Messages exchanged over QUIC streams.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum SyncMessage {
-    // Handshake
+    // Handshake. `auth_signature` is an Ed25519 signature over the QUIC
+    // TLS RFC-5705 exporter (see `crypto::SESSION_EXPORTER_LABEL`). The
+    // receiver looks up the sender's public key by `device_id` in
+    // `sync_peers` and verifies, which both authenticates the peer and
+    // binds the signature to this specific TLS session (defeats MITM
+    // even with the rustls `SkipVerification` cert verifier).
     Hello {
         device_id: Uuid,
         protocol_version: u32,
+        auth_signature: Vec<u8>,
     },
     HelloAck {
         device_id: Uuid,
         protocol_version: u32,
+        auth_signature: Vec<u8>,
     },
 
     // Pairing (first connection only)
@@ -192,13 +204,19 @@ mod tests {
         let msg = SyncMessage::Hello {
             device_id: Uuid::new_v4(),
             protocol_version: PROTOCOL_VERSION,
+            auth_signature: vec![0xAB; 64],
         };
         let encoded = encode_message(&msg).unwrap();
         let len = u32::from_le_bytes([encoded[0], encoded[1], encoded[2], encoded[3]]) as usize;
         let decoded = decode_message(&encoded[4..4 + len]).unwrap();
         match decoded {
-            SyncMessage::Hello { protocol_version, .. } => {
+            SyncMessage::Hello {
+                protocol_version,
+                auth_signature,
+                ..
+            } => {
                 assert_eq!(protocol_version, PROTOCOL_VERSION);
+                assert_eq!(auth_signature.len(), 64);
             }
             _ => panic!("Wrong message type"),
         }

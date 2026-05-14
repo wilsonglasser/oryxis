@@ -229,6 +229,12 @@ async fn handle_incoming(
         .await
         .map_err(|e| SyncError::Transport(format!("Accept: {}", e)))?;
 
+    // Channel-binding exporter (RFC 5705) from the QUIC TLS session.
+    // Signed by the peer's long-term Ed25519 identity inside Hello, so a
+    // MITM cannot relay a signature: its TLS sessions on either side
+    // derive different exporters.
+    let exporter = derive_session_exporter(&connection)?;
+
     let (mut send, mut recv) = connection
         .accept_bi()
         .await
@@ -236,12 +242,16 @@ async fn handle_incoming(
 
     // Receive Hello
     let msg = transport::recv_message(&mut recv).await?;
-    let peer_id = match msg {
-        SyncMessage::Hello { device_id, protocol_version } => {
+    let (peer_id, peer_auth_sig) = match msg {
+        SyncMessage::Hello {
+            device_id,
+            protocol_version,
+            auth_signature,
+        } => {
             if protocol_version != PROTOCOL_VERSION {
                 return Err(SyncError::Protocol("Version mismatch".into()));
             }
-            device_id
+            (device_id, auth_signature)
         }
         SyncMessage::PairingRequest { .. } => {
             // Handle pairing on server side
@@ -254,24 +264,42 @@ async fn handle_incoming(
         _ => return Err(SyncError::Protocol("Expected Hello".into())),
     };
 
-    // Send HelloAck
-    transport::send_message(&mut send, &SyncMessage::HelloAck {
-        device_id: identity.device_id,
-        protocol_version: PROTOCOL_VERSION,
-    }).await?;
-
-    // Check if peer is known
-    let is_known = {
+    // Look up the peer's stored Ed25519 pubkey and verify the
+    // channel-bound signature BEFORE doing anything else with the peer.
+    // Unknown / inactive peers fall through to the "Bye" path below
+    // without a verify attempt, so we never leak verify timing.
+    let peer_pubkey = {
         let vault_guard = vault.lock().map_err(|_| SyncError::Vault("Lock failed".into()))?;
         let peers = vault_guard.list_sync_peers()?;
-        peers.iter().any(|p| p.peer_id == peer_id && p.is_active)
+        peers
+            .into_iter()
+            .find(|p| p.peer_id == peer_id && p.is_active)
+            .map(|p| p.public_key)
     };
 
-    if !is_known {
+    let Some(peer_pubkey) = peer_pubkey else {
         tracing::warn!("Unknown peer {} tried to connect", peer_id);
         transport::send_message(&mut send, &SyncMessage::Bye).await?;
         return Ok(());
+    };
+
+    if let Err(e) = crypto::verify_session_handshake(&peer_pubkey, &exporter, &peer_auth_sig) {
+        tracing::warn!("Peer {} failed handshake auth: {}", peer_id, e);
+        transport::send_message(&mut send, &SyncMessage::Bye).await?;
+        return Err(SyncError::PairingFailed(format!(
+            "Peer {} signature did not verify",
+            peer_id
+        )));
     }
+
+    // Send HelloAck with our own signature so the client can also
+    // authenticate us against the pubkey it stored for our device_id.
+    let our_signature = crypto::sign_session_handshake(&identity.signing_key, &exporter);
+    transport::send_message(&mut send, &SyncMessage::HelloAck {
+        device_id: identity.device_id,
+        protocol_version: PROTOCOL_VERSION,
+        auth_signature: our_signature.to_vec(),
+    }).await?;
 
     // Handle sync messages
     let _ = event_tx.send(SyncEvent::SyncStarted { peer_id });
@@ -675,27 +703,59 @@ async fn sync_with_peer(
         .await
         .map_err(|e| SyncError::Transport(format!("Handshake: {}", e)))?;
 
+    // Channel-binding exporter from the TLS session. Both sides will
+    // derive the same value if (and only if) they share the same TLS
+    // session, which is what we sign with the long-term Ed25519 key.
+    let exporter = derive_session_exporter(&connection)?;
+
     let (mut send, mut recv) = connection
         .open_bi()
         .await
         .map_err(|e| SyncError::Transport(format!("Open stream: {}", e)))?;
 
-    // Send Hello
+    // Send Hello with our channel-bound signature
+    let our_signature = crypto::sign_session_handshake(&identity.signing_key, &exporter);
     transport::send_message(&mut send, &SyncMessage::Hello {
         device_id: identity.device_id,
         protocol_version: PROTOCOL_VERSION,
+        auth_signature: our_signature.to_vec(),
     }).await?;
 
-    // Receive HelloAck
+    // Receive HelloAck and verify the server's signature against the
+    // pubkey we stored at pairing time. If the server is a MITM (its
+    // TLS session with us has a different exporter than the real
+    // peer's), the relayed signature will fail verification here.
     let msg = transport::recv_message(&mut recv).await?;
-    match msg {
-        SyncMessage::HelloAck { device_id, .. } => {
+    let peer_auth_sig = match msg {
+        SyncMessage::HelloAck {
+            device_id,
+            auth_signature,
+            ..
+        } => {
             if device_id != *peer_id {
                 return Err(SyncError::Protocol("Peer ID mismatch".into()));
             }
+            auth_signature
         }
         _ => return Err(SyncError::Protocol("Expected HelloAck".into())),
-    }
+    };
+
+    let peer_pubkey = {
+        let vault_guard = vault.lock().map_err(|_| SyncError::Vault("Lock failed".into()))?;
+        let peers = vault_guard.list_sync_peers()?;
+        peers
+            .into_iter()
+            .find(|p| p.peer_id == *peer_id && p.is_active)
+            .map(|p| p.public_key)
+            .ok_or_else(|| SyncError::PeerNotFound(peer_id.to_string()))?
+    };
+
+    crypto::verify_session_handshake(&peer_pubkey, &exporter, &peer_auth_sig).map_err(|e| {
+        SyncError::PairingFailed(format!(
+            "Peer {} HelloAck signature did not verify: {}",
+            peer_id, e
+        ))
+    })?;
 
     // Request manifest
     transport::send_message(&mut send, &SyncMessage::ManifestRequest).await?;
@@ -783,4 +843,19 @@ async fn sync_with_peer(
     transport::send_message(&mut send, &SyncMessage::Bye).await?;
 
     Ok((pushed, pulled))
+}
+
+/// Extract the RFC 5705 keying-material exporter from a QUIC TLS session.
+/// Both peers of a non-MITM'd handshake derive the same bytes here, so
+/// signing it with each side's Ed25519 identity gives a channel-bound
+/// proof of identity that resists relay attacks. A MITM holding two
+/// separate TLS sessions sees two distinct exporters and cannot forge.
+fn derive_session_exporter(
+    connection: &quinn::Connection,
+) -> Result<[u8; crypto::SESSION_EXPORTER_LEN], SyncError> {
+    let mut buf = [0u8; crypto::SESSION_EXPORTER_LEN];
+    connection
+        .export_keying_material(&mut buf, crypto::SESSION_EXPORTER_LABEL, &[])
+        .map_err(|e| SyncError::Crypto(format!("Exporter unavailable: {:?}", e)))?;
+    Ok(buf)
 }
