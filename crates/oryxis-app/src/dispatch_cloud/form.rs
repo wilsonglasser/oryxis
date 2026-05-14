@@ -300,11 +300,19 @@ impl Oryxis {
                     0.0
                 };
                 let menu_width = 180.0;
-                let toolbar_right_padding = 24.0;
-                let x = self.window_size.width
-                    - panel_width
-                    - toolbar_right_padding
-                    - menu_width;
+                let toolbar_padding = 24.0;
+                // The dashboard toolbar uses dir_row, so under RTL the
+                // "+ HOST" group sits at the leading (left) edge of the
+                // toolbar. Anchor the menu accordingly. The render path
+                // in layout.rs subtracts menu_width again under RTL to
+                // grow the menu leftward from the click; pre-compensate
+                // here by adding menu_width so the final left edge is
+                // at panel_width + toolbar_padding.
+                let x = if crate::i18n::is_rtl_layout() {
+                    panel_width + toolbar_padding + menu_width
+                } else {
+                    self.window_size.width - panel_width - toolbar_padding - menu_width
+                };
                 let y = 56.0;
                 self.overlay = Some(OverlayState {
                     content: OverlayContent::CloudProviderPicker,
