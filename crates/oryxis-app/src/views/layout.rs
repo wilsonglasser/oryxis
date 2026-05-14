@@ -442,7 +442,9 @@ impl Oryxis {
                 column![
                     text(crate::i18n::t("rename_folder"))
                         .size(16)
-                        .color(OryxisColors::t().text_primary),
+                        .color(OryxisColors::t().text_primary)
+                        .width(Length::Fill)
+                        .align_x(dir_align_x()),
                     Space::new().height(12),
                     text_input(crate::i18n::t("folder_name"), input.as_str())
                         .on_input(Message::FolderRenameInput)
@@ -451,12 +453,14 @@ impl Oryxis {
                         .width(320)
                         .style(crate::widgets::rounded_input_style).align_x(dir_align_x()),
                     Space::new().height(12),
-                    row![
+                    dir_row(vec![
                         styled_button(crate::i18n::t("save"), Message::ConfirmRenameFolder, OryxisColors::t().accent),
-                        Space::new().width(8),
+                        Space::new().width(8).into(),
                         styled_button(crate::i18n::t("cancel"), Message::CancelFolderModal, OryxisColors::t().text_muted),
-                    ],
+                    ]),
                 ]
+                .width(Length::Fill)
+                .align_x(dir_align_x())
                 .padding(24),
             )
             .style(|_| container::Style {

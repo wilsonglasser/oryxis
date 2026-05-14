@@ -149,15 +149,55 @@ impl Oryxis {
                 };
 
                 let cp_id = cp.id;
-                // ⋮ kebab, hover-revealed, mirrors the host / folder
-                // / identity card pattern. Edit + Delete live behind
-                // it so the card body can stay non-interactive (the
-                // user shouldn't accidentally do anything destructive
-                // by clicking on a profile they only meant to inspect).
-                const DOTS_SLOT_W: f32 = 22.0;
                 let show_dots = self.hovered_cloud_card == Some(cp_id);
-                let dots_btn: Element<'_, Message> = if show_dots {
-                    button(text("\u{22EE}").size(14).color(OryxisColors::t().text_muted))
+                let rtl = crate::i18n::is_rtl_layout();
+                // Reserve room for the ⋮ kebab so long labels don't
+                // collide with the overlay button. Padding sits on the
+                // trailing side: right under LTR, left under RTL.
+                let pad_trailing = 30.0_f32;
+                let card_padding = if rtl {
+                    Padding { top: 16.0, right: 16.0, bottom: 16.0, left: pad_trailing }
+                } else {
+                    Padding { top: 16.0, right: pad_trailing, bottom: 16.0, left: 16.0 }
+                };
+
+                let card_body = container(
+                    dir_row(vec![
+                        icon_box.into(),
+                        Space::new().width(12).into(),
+                        column![
+                            text(&cp.label)
+                                .size(13)
+                                .color(OryxisColors::t().text_primary)
+                                .wrapping(iced::widget::text::Wrapping::None),
+                            Space::new().height(2),
+                            text(format!("{} · {}", provider_label, cp.auth_kind))
+                                .size(10)
+                                .color(OryxisColors::t().text_muted)
+                                .wrapping(iced::widget::text::Wrapping::None),
+                        ]
+                        .width(Length::Fill)
+                        .into(),
+                    ])
+                    .align_y(iced::Alignment::Center),
+                )
+                .padding(card_padding)
+                .width(Length::Fill)
+                .style(|_| container::Style {
+                    background: Some(Background::Color(OryxisColors::t().bg_surface)),
+                    border: Border {
+                        radius: Radius::from(10.0),
+                        color: OryxisColors::t().border,
+                        width: 1.0,
+                    },
+                    ..Default::default()
+                });
+
+                // Floating ⋮ kebab overlay. Top-trailing corner (right
+                // under LTR, left under RTL), hover-revealed. Mirrors
+                // the host / folder / identity card pattern.
+                let card_element: Element<'_, Message> = if show_dots {
+                    let dots_btn = button(text("\u{22EE}").size(14).color(OryxisColors::t().text_muted))
                         .on_press(Message::ShowCloudCardMenu(cp_id))
                         .padding(Padding {
                             top: 1.0,
@@ -178,49 +218,32 @@ impl Oryxis {
                                 },
                                 ..Default::default()
                             }
-                        })
+                        });
+                    let dots_align = if rtl {
+                        iced::alignment::Horizontal::Left
+                    } else {
+                        iced::alignment::Horizontal::Right
+                    };
+                    let dots_pad = if rtl {
+                        Padding { top: 8.0, right: 0.0, bottom: 0.0, left: 6.0 }
+                    } else {
+                        Padding { top: 8.0, right: 6.0, bottom: 0.0, left: 0.0 }
+                    };
+                    let dots_overlay = container(dots_btn)
+                        .width(Length::Fill)
+                        .height(Length::Fill)
+                        .align_x(dots_align)
+                        .align_y(iced::alignment::Vertical::Top)
+                        .padding(dots_pad);
+                    iced::widget::Stack::new()
+                        .push(card_body)
+                        .push(dots_overlay)
                         .into()
                 } else {
-                    Space::new()
-                        .width(Length::Fixed(DOTS_SLOT_W))
-                        .height(Length::Fixed(1.0))
-                        .into()
+                    card_body.into()
                 };
 
-                let card_body = container(
-                    dir_row(vec![
-                        icon_box.into(),
-                        Space::new().width(12).into(),
-                        column![
-                            text(&cp.label)
-                                .size(13)
-                                .color(OryxisColors::t().text_primary)
-                                .wrapping(iced::widget::text::Wrapping::None),
-                            Space::new().height(2),
-                            text(format!("{} · {}", provider_label, cp.auth_kind))
-                                .size(10)
-                                .color(OryxisColors::t().text_muted)
-                                .wrapping(iced::widget::text::Wrapping::None),
-                        ]
-                        .width(Length::Fill)
-                        .into(),
-                        dots_btn,
-                    ])
-                    .align_y(iced::Alignment::Center),
-                )
-                .padding(16)
-                .width(Length::Fill)
-                .style(|_| container::Style {
-                    background: Some(Background::Color(OryxisColors::t().bg_surface)),
-                    border: Border {
-                        radius: Radius::from(10.0),
-                        color: OryxisColors::t().border,
-                        width: 1.0,
-                    },
-                    ..Default::default()
-                });
-
-                let wrapped = MouseArea::new(card_body)
+                let wrapped = MouseArea::new(card_element)
                     .on_enter(Message::CloudCardHovered(cp_id))
                     .on_exit(Message::CloudCardUnhovered)
                     .on_right_press(Message::ShowCloudCardMenu(cp_id));

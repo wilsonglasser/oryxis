@@ -833,40 +833,22 @@ impl Oryxis {
                     ..Default::default()
                 });
 
-            // Vertical ellipsis (⋮), always occupies the same space so the
-            // card's geometry is stable; the button itself is only interactive
-            // (and visible) on hover or when its context menu is open. A
-            // transparent placeholder keeps the subtitle width budget constant.
             let show_dots = self.hovered_card == Some(idx) || self.card_context_menu == Some(idx);
-            const DOTS_SLOT_W: f32 = 22.0;
-            let dots_btn: Element<'_, Message> = if show_dots {
-                button(
-                    text("\u{22EE}").size(14).color(OryxisColors::t().text_muted),
-                )
-                .on_press(Message::ShowCardMenu(idx))
-                .padding(Padding { top: 1.0, right: 6.0, bottom: 1.0, left: 6.0 })
-                .style(|_, status| {
-                    let bg = match status {
-                        BtnStatus::Hovered => OryxisColors::t().bg_hover,
-                        _ => Color::TRANSPARENT,
-                    };
-                    button::Style {
-                        background: Some(Background::Color(bg)),
-                        border: Border { radius: Radius::from(6.0), ..Default::default() },
-                        ..Default::default()
-                    }
-                })
-                .into()
+            let rtl = crate::i18n::is_rtl_layout();
+            // Reserve trailing room for the floating ⋮ kebab so subtitles
+            // never collide with the overlay button. The reservation stays
+            // even when the dots are hidden, so the card geometry is stable
+            // across hover state changes.
+            let pad_trailing = 24.0_f32;
+            let card_padding = if rtl {
+                Padding { top: 8.0, right: 2.0, bottom: 8.0, left: pad_trailing }
             } else {
-                // Invisible placeholder of identical width, reserves the
-                // horizontal slot so the subtitle wrap budget never changes.
-                Space::new().width(Length::Fixed(DOTS_SLOT_W)).height(Length::Fixed(1.0)).into()
+                Padding { top: 8.0, right: pad_trailing, bottom: 8.0, left: 2.0 }
             };
 
-            // Card body: icon + labels + (dots or placeholder). Subtitle is
-            // clamped to a single line via `wrapping::None` so the card's
-            // height is identical for every host, regardless of how long the
-            // "user@host:port · Auth" string is.
+            // Card body: icon + labels (no dots, those float in a Stack).
+            // Subtitle is clamped to a single line via `wrapping::None` so
+            // the card's height is identical for every host.
             let card_btn = button(
                 container(
                     dir_row(vec![
@@ -887,10 +869,9 @@ impl Oryxis {
                         .align_x(crate::widgets::dir_align_x())
                         .clip(true)
                         .into(),
-                        dots_btn,
                     ]).align_y(iced::Alignment::Center),
                 )
-                .padding(Padding { top: 8.0, right: 2.0, bottom: 8.0, left: 8.0 }),
+                .padding(card_padding),
             )
             .on_press(Message::ConnectSsh(idx))
             .width(Length::Fill)
@@ -907,8 +888,52 @@ impl Oryxis {
                 }
             });
 
+            // Floating ⋮ kebab overlay on the trailing corner: right under
+            // LTR, left under RTL. Hover-revealed; lives in a Stack on top
+            // of the card_btn so it doesn't take inline space.
+            let card_element: Element<'_, Message> = if show_dots {
+                let dots_btn = button(
+                    text("\u{22EE}").size(14).color(OryxisColors::t().text_muted),
+                )
+                .on_press(Message::ShowCardMenu(idx))
+                .padding(Padding { top: 1.0, right: 6.0, bottom: 1.0, left: 6.0 })
+                .style(|_, status| {
+                    let bg = match status {
+                        BtnStatus::Hovered => OryxisColors::t().bg_hover,
+                        _ => Color::TRANSPARENT,
+                    };
+                    button::Style {
+                        background: Some(Background::Color(bg)),
+                        border: Border { radius: Radius::from(6.0), ..Default::default() },
+                        ..Default::default()
+                    }
+                });
+                let dots_align = if rtl {
+                    iced::alignment::Horizontal::Left
+                } else {
+                    iced::alignment::Horizontal::Right
+                };
+                let dots_pad = if rtl {
+                    Padding { top: 4.0, right: 0.0, bottom: 0.0, left: 4.0 }
+                } else {
+                    Padding { top: 4.0, right: 4.0, bottom: 0.0, left: 0.0 }
+                };
+                let dots_overlay = container(dots_btn)
+                    .width(Length::Fill)
+                    .height(Length::Fill)
+                    .align_x(dots_align)
+                    .align_y(iced::alignment::Vertical::Top)
+                    .padding(dots_pad);
+                iced::widget::Stack::new()
+                    .push(card_btn)
+                    .push(dots_overlay)
+                    .into()
+            } else {
+                card_btn.into()
+            };
+
             // Wrap in MouseArea for hover tracking and right-click
-            let wrapped = MouseArea::new(card_btn)
+            let wrapped = MouseArea::new(card_element)
                 .on_enter(Message::CardHovered(idx))
                 .on_exit(Message::CardUnhovered)
                 .on_right_press(Message::ShowCardMenu(idx));
