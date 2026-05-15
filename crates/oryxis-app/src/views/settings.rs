@@ -1161,18 +1161,88 @@ impl Oryxis {
                         .push(text(status.as_str()).size(12).color(OryxisColors::t().text_muted));
                 }
 
-                // Pairing
-                let pair_btn = styled_button(crate::i18n::t("sync_pair_device"), Message::SyncStartPairing, OryxisColors::t().accent);
+                // Pairing. The sub-view depends on `sync_pairing_state`:
+                // Idle shows the two entry buttons; Hosting shows the
+                // generated code; Joining shows the code + address form.
                 let mut pairing_section: iced::widget::Column<'_, Message> = column![
                     text(crate::i18n::t("sync_pairing")).size(14).color(OryxisColors::t().text_muted),
                     Space::new().height(8),
-                    pair_btn,
                 ];
 
-                if let Some(code) = &self.sync_pairing_code {
-                    pairing_section = pairing_section
-                        .push(Space::new().height(8))
-                        .push(text(format!("{}: {}", crate::i18n::t("sync_pairing_code"), code)).size(18).color(OryxisColors::t().success));
+                match self.sync_pairing_state {
+                    crate::state::SyncPairingState::Idle => {
+                        pairing_section = pairing_section.push(dir_row(vec![
+                            styled_button(
+                                crate::i18n::t("sync_host_pairing"),
+                                Message::SyncStartPairing,
+                                OryxisColors::t().accent,
+                            ),
+                            Space::new().width(8).into(),
+                            styled_button(
+                                crate::i18n::t("sync_join_pairing"),
+                                Message::SyncJoinPairingRequested,
+                                OryxisColors::t().button_bg,
+                            ),
+                        ]));
+                    }
+                    crate::state::SyncPairingState::Hosting => {
+                        pairing_section = pairing_section
+                            .push(text(crate::i18n::t("sync_pairing_show_code"))
+                                .size(12)
+                                .color(OryxisColors::t().text_secondary))
+                            .push(Space::new().height(6));
+                        if let Some(code) = &self.sync_pairing_code {
+                            pairing_section = pairing_section
+                                .push(text(code.as_str())
+                                    .size(30)
+                                    .color(OryxisColors::t().success));
+                        }
+                        pairing_section = pairing_section
+                            .push(Space::new().height(10))
+                            .push(styled_button(
+                                crate::i18n::t("sync_pairing_cancel"),
+                                Message::SyncCancelHostingPairing,
+                                OryxisColors::t().button_bg,
+                            ));
+                    }
+                    crate::state::SyncPairingState::Joining => {
+                        let code_input = text_input(
+                            crate::i18n::t("sync_pairing_code_placeholder"),
+                            &self.sync_join_code_input,
+                        )
+                        .on_input(Message::SyncJoinCodeChanged)
+                        .padding(8)
+                        .width(280)
+                        .style(crate::widgets::rounded_input_style)
+                        .align_x(dir_align_x());
+                        let target_input = text_input(
+                            crate::i18n::t("sync_pairing_target_placeholder"),
+                            &self.sync_join_target_input,
+                        )
+                        .on_input(Message::SyncJoinTargetChanged)
+                        .padding(8)
+                        .width(320)
+                        .style(crate::widgets::rounded_input_style)
+                        .align_x(dir_align_x());
+                        pairing_section = pairing_section
+                            .push(code_input)
+                            .push(Space::new().height(8))
+                            .push(target_input)
+                            .push(Space::new().height(10))
+                            .push(dir_row(vec![
+                                styled_button(
+                                    crate::i18n::t("sync_pairing_connect"),
+                                    Message::SyncJoinPairingConnect,
+                                    OryxisColors::t().accent,
+                                ),
+                                Space::new().width(8).into(),
+                                styled_button(
+                                    crate::i18n::t("sync_pairing_cancel"),
+                                    Message::SyncJoinPairingCancel,
+                                    OryxisColors::t().button_bg,
+                                ),
+                            ]));
+                    }
                 }
 
                 // Paired devices list

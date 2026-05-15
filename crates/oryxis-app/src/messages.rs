@@ -623,6 +623,18 @@ pub enum Message {
     /// sync completed, pairing progress, ...), pumped in from the
     /// engine's event channel via `Task::stream`.
     SyncEngineEvent(oryxis_sync::SyncEvent),
+    /// Stop hosting the pairing code and return to the idle pairing view.
+    SyncCancelHostingPairing,
+    /// Switch the pairing panel into "join with a code" mode.
+    SyncJoinPairingRequested,
+    /// Text-input change for the joiner's 6-digit code field.
+    SyncJoinCodeChanged(String),
+    /// Text-input change for the joiner's `ip:port` host-address field.
+    SyncJoinTargetChanged(String),
+    /// Joiner pressed Connect: dial the entered address with the code.
+    SyncJoinPairingConnect,
+    /// Joiner backed out of the join form, return to the idle view.
+    SyncJoinPairingCancel,
 
     // Export / Import
     ExportVault,

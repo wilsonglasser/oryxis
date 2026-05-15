@@ -591,8 +591,73 @@ impl Oryxis {
                 }
             }
             Message::SyncStartPairing => {
-                let code = oryxis_sync::crypto::generate_pairing_code();
-                self.sync_pairing_code = Some(code);
+                // Host a real pairing code on the engine. The engine
+                // also emits `PairingCodeGenerated`, but we set the
+                // code + state here directly so the UI flips instantly.
+                if let Some(runtime) = &self.sync_runtime {
+                    let code = runtime.handle().start_hosting_pairing();
+                    self.sync_pairing_code = Some(code);
+                    self.sync_pairing_state = crate::state::SyncPairingState::Hosting;
+                } else {
+                    self.sync_status =
+                        Some(crate::i18n::t("sync_status_disabled").to_string());
+                }
+            }
+            Message::SyncCancelHostingPairing => {
+                if let Some(runtime) = &self.sync_runtime {
+                    runtime.handle().cancel_hosting_pairing();
+                }
+                self.sync_pairing_code = None;
+                self.sync_pairing_state = crate::state::SyncPairingState::Idle;
+            }
+            Message::SyncJoinPairingRequested => {
+                self.sync_pairing_state = crate::state::SyncPairingState::Joining;
+                self.sync_join_code_input.clear();
+                self.sync_join_target_input.clear();
+            }
+            Message::SyncJoinCodeChanged(v) => {
+                self.sync_join_code_input = v;
+            }
+            Message::SyncJoinTargetChanged(v) => {
+                self.sync_join_target_input = v;
+            }
+            Message::SyncJoinPairingCancel => {
+                self.sync_pairing_state = crate::state::SyncPairingState::Idle;
+            }
+            Message::SyncJoinPairingConnect => {
+                let Some(runtime) = &self.sync_runtime else {
+                    self.sync_status =
+                        Some(crate::i18n::t("sync_status_disabled").to_string());
+                    return Task::none();
+                };
+                let code = self.sync_join_code_input.trim().to_string();
+                if code.len() != 6 || !code.chars().all(|c| c.is_ascii_digit()) {
+                    self.sync_status =
+                        Some(crate::i18n::t("sync_pairing_invalid_code").to_string());
+                    return Task::none();
+                }
+                let addr: std::net::SocketAddr =
+                    match self.sync_join_target_input.trim().parse() {
+                        Ok(a) => a,
+                        Err(_) => {
+                            self.sync_status = Some(
+                                crate::i18n::t("sync_pairing_bad_address").to_string(),
+                            );
+                            return Task::none();
+                        }
+                    };
+                let handle = runtime.handle();
+                self.sync_pairing_state = crate::state::SyncPairingState::Idle;
+                self.sync_status =
+                    Some(crate::i18n::t("sync_pairing_connecting").to_string());
+                // join_pairing emits PairingCompleted / PairingFailed,
+                // which the SyncEngineEvent arm turns into UI state.
+                return Task::perform(
+                    async move {
+                        let _ = handle.join_pairing(addr, code).await;
+                    },
+                    |()| Message::NoOp,
+                );
             }
             Message::SyncUnpairDevice(peer_id) => {
                 if let Some(vault) = &self.vault {
@@ -640,6 +705,11 @@ impl Oryxis {
                             "{} {device_name}",
                             crate::i18n::t("sync_paired_with"),
                         ));
+                        // Pairing done on either side: close the modal
+                        // sub-view and refresh the peer list.
+                        self.sync_pairing_state =
+                            crate::state::SyncPairingState::Idle;
+                        self.sync_pairing_code = None;
                         if let Some(vault) = &self.vault {
                             self.sync_peers =
                                 vault.list_sync_peers().unwrap_or_default();
@@ -650,6 +720,8 @@ impl Oryxis {
                             "{}: {reason}",
                             crate::i18n::t("sync_pairing_failed"),
                         ));
+                        self.sync_pairing_state =
+                            crate::state::SyncPairingState::Idle;
                     }
                     SyncEvent::SyncStarted { .. } => {
                         self.sync_status =

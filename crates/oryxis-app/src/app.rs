@@ -501,6 +501,12 @@ pub struct Oryxis {
     pub(crate) sync_runtime: Option<crate::sync_runtime::SyncRuntime>,
     /// Mirrors `sync_runtime.is_some()` for cheap UI checks.
     pub(crate) sync_engine_running: bool,
+    /// Which pairing sub-view the Sync settings panel shows.
+    pub(crate) sync_pairing_state: crate::state::SyncPairingState,
+    /// The 6-digit code typed in when joining another device's pairing.
+    pub(crate) sync_join_code_input: String,
+    /// The host address (`ip:port`) typed in when joining a pairing.
+    pub(crate) sync_join_target_input: String,
 
     // Export/Import
     pub(crate) show_export_dialog: bool,

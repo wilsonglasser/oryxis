@@ -904,6 +904,20 @@ pub enum DynamicGroupState {
     Failed(String),
 }
 
+/// Which pairing sub-view the Sync settings panel is showing. The
+/// hosted code itself lives in `Oryxis.sync_pairing_code`; the join
+/// inputs live in `sync_join_code_input` / `sync_join_target_input`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub(crate) enum SyncPairingState {
+    /// Default: just the two "Host" / "Join" entry buttons.
+    #[default]
+    Idle,
+    /// This device is hosting a code, waiting for a peer to join.
+    Hosting,
+    /// This device is entering another device's code + address.
+    Joining,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum SettingsSection {
     Terminal,
