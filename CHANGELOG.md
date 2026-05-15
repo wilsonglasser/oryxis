@@ -7,14 +7,17 @@ project uses [SemVer](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Changed
-- **P2P sync protocol version 3 (breaking).** `PairingRequest` and
+- **P2P sync protocol version 4 (breaking).** `PairingRequest` and
   `PairingAccepted` now carry the sender's `device_id`,
-  `PairingRequest` also carries the joiner's `listen_port`, and a new
+  `PairingRequest` also carries the joiner's `listen_port`, a new
   `PairingChallenge` / `PairingResponse` round proves the joiner
   holds the private key for the public key it sent (pairing runs
   before any peer pubkey is persisted, so the Hello channel-binding
-  can't be reused here). Older devices cannot pair or sync with v3
-  devices; both ends must be on Oryxis 0.7+ for sync to work.
+  can't be reused here), and both pairing messages exchange ephemeral
+  X25519 public keys to derive a per-pair shared secret. From then on
+  every `SyncRecord.payload` is sealed with ChaCha20-Poly1305 under
+  that secret. Older devices cannot pair or sync with v4 devices;
+  both ends must be on Oryxis 0.7+ for sync to work.
 
 ### Added
 - **P2P sync is now actually operational.** Previous releases shipped
@@ -53,7 +56,20 @@ project uses [SemVer](https://semver.org/spec/v2.0.0.html).
   `SyncConfig.signaling_url` / `signaling_token` are `Option<String>`;
   the build no longer panics when `ORYXIS_SIGNALING_URL` /
   `ORYXIS_SIGNALING_TOKEN` are unset, it just starts LAN-only and the
-  user can fill the URL at runtime.
+  user can fill both at runtime (the token has its own input under
+  Settings > Sync > Advanced).
+
+  Every `SyncRecord.payload` is now E2E-sealed with the
+  pairing-derived shared secret; a compromised signaling relay or a
+  TLS bug would no longer expose payloads.
+
+  Tombstones in `sync_metadata` are garbage-collected at engine boot
+  (30-day TTL), and re-creating an entity drops any stale tombstone
+  for the same id automatically, so the manifest never ships both a
+  live entry and a deletion marker for the same row.
+
+  All sync UI strings are translated to all 11 supported locales
+  (was previously en / pt-BR / fa / ar only).
 
 ### Removed
 - Sentry crash/error reporting. Dropped the `sentry` and
