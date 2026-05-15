@@ -636,6 +636,18 @@ impl Oryxis {
             Message::SyncJoinPairingCancel => {
                 self.sync_pairing_state = crate::state::SyncPairingState::Idle;
             }
+            Message::SyncPairWithDiscovered(device_id) => {
+                if let Some(peer) = self
+                    .sync_discovered
+                    .iter()
+                    .find(|p| p.device_id == device_id)
+                {
+                    self.sync_pairing_state = crate::state::SyncPairingState::Joining;
+                    self.sync_join_code_input.clear();
+                    self.sync_join_link_input.clear();
+                    self.sync_join_target_input = peer.addr.to_string();
+                }
+            }
             Message::SyncJoinPairingByLink => {
                 let Some(runtime) = &self.sync_runtime else {
                     self.sync_status =
@@ -728,10 +740,26 @@ impl Oryxis {
             Message::SyncEngineEvent(event) => {
                 use oryxis_sync::SyncEvent;
                 match event {
-                    SyncEvent::PeerDiscovered { device_id, .. } => {
-                        // A live discovered-devices list lands in
-                        // Phase C; for now just trace it.
-                        tracing::debug!("sync: discovered peer {device_id}");
+                    SyncEvent::PeerDiscovered { device_id, device_name, addr, .. } => {
+                        // Dedup by device_id: an mDNS browse can
+                        // republish the same peer (different network
+                        // interface, restart, etc.). Last writer wins
+                        // on the address so a roaming peer's entry
+                        // tracks its new ip:port.
+                        let info = crate::state::DiscoveredPeerInfo {
+                            device_id,
+                            device_name,
+                            addr,
+                        };
+                        if let Some(existing) = self
+                            .sync_discovered
+                            .iter_mut()
+                            .find(|p| p.device_id == device_id)
+                        {
+                            *existing = info;
+                        } else {
+                            self.sync_discovered.push(info);
+                        }
                     }
                     SyncEvent::PairingCodeGenerated { code } => {
                         self.sync_pairing_code = Some(code);

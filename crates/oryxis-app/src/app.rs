@@ -527,6 +527,8 @@ pub struct Oryxis {
     /// `oryxis://pair/...` link pasted in by the joiner as an
     /// alternative to typing code + `ip:port`. Resolved via signaling.
     pub(crate) sync_join_link_input: String,
+    /// Live mDNS-discovered peers on the LAN. Deduped by `device_id`.
+    pub(crate) sync_discovered: Vec<crate::state::DiscoveredPeerInfo>,
 
     // Export/Import
     pub(crate) show_export_dialog: bool,

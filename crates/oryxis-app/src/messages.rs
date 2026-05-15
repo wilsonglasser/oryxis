@@ -662,6 +662,10 @@ pub enum Message {
     /// Joiner pressed Connect with link: parse the link, look the
     /// device id up on the signaling server, run the handshake.
     SyncJoinPairingByLink,
+    /// User clicked Pair on a row in the live discovered-devices
+    /// list. Switches to the Joining sub-view and pre-fills the
+    /// host-address field with the discovered peer's `ip:port`.
+    SyncPairWithDiscovered(uuid::Uuid),
 
     // Export / Import
     ExportVault,

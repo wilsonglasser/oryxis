@@ -469,6 +469,9 @@ fn en(key: &str) -> &'static str {
         "sync_pairing_connect_with_link" => "Connect with link",
         "sync_pairing_bad_link" => "That isn't a valid oryxis://pair/... link",
         "sync_pairing_or_separator" => "or",
+        "sync_discovered_devices" => "Discovered on this network",
+        "sync_pair_with_this" => "Pair",
+        "sync_discovered_unnamed" => "Unnamed device",
 
         // MCP Server
         "mcp_server" => "MCP Server",
@@ -1055,6 +1058,9 @@ fn pt_br(key: &str) -> Option<&'static str> {
         "sync_pairing_connect_with_link" => "Conectar com link",
         "sync_pairing_bad_link" => "Este não é um link oryxis://pair/... válido",
         "sync_pairing_or_separator" => "ou",
+        "sync_discovered_devices" => "Descobertos nesta rede",
+        "sync_pair_with_this" => "Parear",
+        "sync_discovered_unnamed" => "Dispositivo sem nome",
 
         "mcp_server" => "Servidor MCP",
         "enable_mcp_server" => "Ativar Servidor MCP",
@@ -5022,6 +5028,9 @@ fn fa(key: &str) -> Option<&'static str> {
         "sync_pairing_connect_with_link" => "اتصال با پیوند",
         "sync_pairing_bad_link" => "این یک پیوند ‎oryxis://pair/...‎ معتبر نیست",
         "sync_pairing_or_separator" => "یا",
+        "sync_discovered_devices" => "کشف‌شده در این شبکه",
+        "sync_pair_with_this" => "جفت‌سازی",
+        "sync_discovered_unnamed" => "دستگاه بی‌نام",
 
         // MCP Server
         "mcp_server" => "سرور MCP",
@@ -5583,6 +5592,9 @@ fn ar(key: &str) -> Option<&'static str> {
         "sync_pairing_connect_with_link" => "الاتصال عبر الرابط",
         "sync_pairing_bad_link" => "هذا ليس رابط ‎oryxis://pair/...‎ صالحًا",
         "sync_pairing_or_separator" => "أو",
+        "sync_discovered_devices" => "مكتشَفة على هذه الشبكة",
+        "sync_pair_with_this" => "اقتران",
+        "sync_discovered_unnamed" => "جهاز بلا اسم",
 
         // MCP Server
         "mcp_server" => "خادم MCP",

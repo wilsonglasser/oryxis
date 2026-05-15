@@ -1184,6 +1184,46 @@ impl Oryxis {
                                 OryxisColors::t().button_bg,
                             ),
                         ]));
+                        // Live mDNS-discovered devices on the LAN.
+                        // One-click "Pair" switches to the join form
+                        // with the address pre-filled, so the user
+                        // only has to enter the 6-digit code.
+                        if !self.sync_discovered.is_empty() {
+                            pairing_section = pairing_section
+                                .push(Space::new().height(14))
+                                .push(text(crate::i18n::t("sync_discovered_devices"))
+                                    .size(12)
+                                    .color(OryxisColors::t().text_secondary))
+                                .push(Space::new().height(6));
+                            for peer in &self.sync_discovered {
+                                let label = if peer.device_name.is_empty() {
+                                    crate::i18n::t("sync_discovered_unnamed").to_string()
+                                } else {
+                                    peer.device_name.clone()
+                                };
+                                let pair_btn = styled_button(
+                                    crate::i18n::t("sync_pair_with_this"),
+                                    Message::SyncPairWithDiscovered(peer.device_id),
+                                    OryxisColors::t().button_bg,
+                                );
+                                pairing_section = pairing_section
+                                    .push(dir_row(vec![
+                                        text(label)
+                                            .size(13)
+                                            .color(OryxisColors::t().text_primary)
+                                            .into(),
+                                        Space::new().width(8).into(),
+                                        text(peer.addr.to_string())
+                                            .size(11)
+                                            .color(OryxisColors::t().text_muted)
+                                            .into(),
+                                        Space::new().width(Length::Fill).into(),
+                                        pair_btn,
+                                    ])
+                                    .align_y(iced::Alignment::Center))
+                                    .push(Space::new().height(4));
+                            }
+                        }
                     }
                     crate::state::SyncPairingState::Hosting => {
                         pairing_section = pairing_section

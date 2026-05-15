@@ -327,6 +327,7 @@ impl Oryxis {
                 sync_pairing_link: None,
                 sync_pairing_qr_png: None,
                 sync_join_link_input: String::new(),
+                sync_discovered: Vec::new(),
                 show_export_dialog: false,
                 export_password: String::new(),
                 export_include_keys: true,

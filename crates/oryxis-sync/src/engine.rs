@@ -20,6 +20,10 @@ pub enum SyncEvent {
     PeerDiscovered {
         device_id: Uuid,
         device_name: String,
+        /// The peer's listen address. For mDNS-discovered peers this
+        /// is the actual `ip:port` advertised on the LAN, so the UI
+        /// can pre-fill the pairing target with one click.
+        addr: SocketAddr,
         via: discovery::DiscoveryMethod,
     },
     PairingCodeGenerated {
@@ -175,6 +179,7 @@ impl SyncEngine {
                         let _ = event_tx.send(SyncEvent::PeerDiscovered {
                             device_id: peer.device_id,
                             device_name: String::new(),
+                            addr: peer.addr,
                             via: peer.method,
                         });
                     }

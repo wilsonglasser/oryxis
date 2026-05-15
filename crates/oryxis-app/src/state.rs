@@ -950,6 +950,16 @@ pub enum DynamicGroupState {
     Failed(String),
 }
 
+/// One mDNS-discovered peer the user could pair with. Lives in
+/// `Oryxis.sync_discovered`, deduped by `device_id`, rebuilt as
+/// `SyncEngineEvent::PeerDiscovered` arrives.
+#[derive(Debug, Clone)]
+pub(crate) struct DiscoveredPeerInfo {
+    pub device_id: Uuid,
+    pub device_name: String,
+    pub addr: std::net::SocketAddr,
+}
+
 /// Which pairing sub-view the Sync settings panel is showing. The
 /// hosted code itself lives in `Oryxis.sync_pairing_code`; the join
 /// inputs live in `sync_join_code_input` / `sync_join_target_input`.
