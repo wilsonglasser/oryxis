@@ -355,6 +355,86 @@ impl SyncEngine {
             }
         }
 
+        // Relay inbox listener. Long-polls the configured relay for
+        // any frame addressed to us, demuxes by sender, and spawns a
+        // handler task per session. Mirrors the QUIC accept loop but
+        // over HTTP. When `signaling_url` isn't set there's no relay
+        // to listen on, so this task is skipped entirely.
+        if let Some(relay_url) = self.config.signaling_url.clone() {
+            let token = self.config.signaling_token.clone().unwrap_or_default();
+            let my_id = self.identity.device_id;
+            let vault = self.vault.clone();
+            let identity = self.identity.clone();
+            let event_tx = self.event_tx.clone();
+            let hosting_pairing = self.hosting_pairing.clone();
+            let mut shutdown_rx = shutdown_tx.subscribe();
+            tokio::spawn(async move {
+                let client = crate::relay::RelayClient::new(&relay_url, &token, my_id);
+                // device_id -> mpsc to its in-flight session. New
+                // senders trigger a fresh server-side session.
+                let sessions: Arc<std::sync::Mutex<std::collections::HashMap<
+                    Uuid,
+                    tokio::sync::mpsc::UnboundedSender<SyncMessage>,
+                >>> = Arc::new(std::sync::Mutex::new(std::collections::HashMap::new()));
+                loop {
+                    tokio::select! {
+                        biased;
+                        _ = shutdown_rx.recv() => break,
+                        recvd = client.recv(my_id) => {
+                            let (from, msg) = match recvd {
+                                Ok(pair) => pair,
+                                Err(e) => {
+                                    tracing::debug!("relay inbox: {e}");
+                                    // Backoff a touch before retrying;
+                                    // long-poll errors usually mean
+                                    // transient network glitches.
+                                    tokio::time::sleep(
+                                        std::time::Duration::from_secs(2),
+                                    ).await;
+                                    continue;
+                                }
+                            };
+                            // Forward to an existing session if any.
+                            {
+                                let mut map = sessions.lock().unwrap();
+                                if let Some(tx) = map.get(&from) {
+                                    if tx.send(msg.clone()).is_ok() {
+                                        continue;
+                                    }
+                                    map.remove(&from);
+                                }
+                            }
+                            // No active session: spawn one. PairingRequest
+                            // and ManifestRequest are the only valid
+                            // session openers; other messages are dropped.
+                            let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+                            sessions.lock().unwrap().insert(from, tx.clone());
+                            let _ = tx.send(msg);
+                            let session_client = client.clone();
+                            let vault = vault.clone();
+                            let identity = identity.clone();
+                            let event_tx = event_tx.clone();
+                            let hosting_pairing = hosting_pairing.clone();
+                            let sessions = sessions.clone();
+                            tokio::spawn(async move {
+                                run_relay_inbound_session(
+                                    session_client,
+                                    from,
+                                    rx,
+                                    vault,
+                                    identity,
+                                    hosting_pairing,
+                                    event_tx,
+                                )
+                                .await;
+                                sessions.lock().unwrap().remove(&from);
+                            });
+                        }
+                    }
+                }
+            });
+        }
+
         tracing::info!("Sync engine started (port {})", listen_port);
         Ok(())
     }
@@ -503,7 +583,64 @@ impl SyncHandle {
                 return Err(SyncError::PairingFailed(reason));
             }
         };
-        self.join_pairing(addr, code).await
+
+        // Tier 1: direct QUIC. Bounded at 8s so we don't make the user
+        // wait the full 30s pairing budget on every blocked-NAT case.
+        let _ = rustls::crypto::ring::default_provider().install_default();
+        let direct = tokio::time::timeout(
+            std::time::Duration::from_secs(8),
+            self.join_pairing_inner(addr, &code),
+        )
+        .await;
+        match direct {
+            Ok(Ok((device_id, device_name))) => {
+                let _ = self.event_tx.send(SyncEvent::PairingCompleted {
+                    device_id,
+                    device_name,
+                });
+                return Ok(());
+            }
+            Ok(Err(e)) => {
+                tracing::info!(
+                    "direct pairing to {addr} failed ({e}); attempting relay fallback"
+                );
+            }
+            Err(_) => {
+                tracing::info!(
+                    "direct pairing to {addr} timed out after 8s; attempting relay fallback"
+                );
+            }
+        }
+
+        // Tier 2: relay. The link already carries the host's device id
+        // (decoded above) so we don't need any further signaling.
+        let inner = self.join_pairing_via_relay(device_id, &code);
+        let result =
+            tokio::time::timeout(std::time::Duration::from_secs(30), inner).await;
+        match result {
+            Ok(Ok((dev_id, device_name))) => {
+                let _ = self.event_tx.send(SyncEvent::PairingCompleted {
+                    device_id: dev_id,
+                    device_name,
+                });
+                Ok(())
+            }
+            Ok(Err(e)) => {
+                let reason = format!("Relay pairing failed: {e}");
+                let _ = self
+                    .event_tx
+                    .send(SyncEvent::PairingFailed { reason: reason.clone() });
+                Err(SyncError::PairingFailed(reason))
+            }
+            Err(_) => {
+                let reason =
+                    "Relay pairing timed out after 30s. Host may be offline.".to_string();
+                let _ = self
+                    .event_tx
+                    .send(SyncEvent::PairingFailed { reason: reason.clone() });
+                Err(SyncError::PairingFailed(reason))
+            }
+        }
     }
 
     /// Join a peer that is hosting a pairing code: connect to `addr`,
@@ -558,102 +695,153 @@ impl SyncHandle {
             .map_err(|e| SyncError::Transport(format!("Connect: {}", e)))?
             .await
             .map_err(|e| SyncError::Transport(format!("Handshake: {}", e)))?;
-        let (mut send, mut recv) = connection
+        let (send, recv) = connection
             .open_bi()
             .await
             .map_err(|e| SyncError::Transport(format!("Open stream: {}", e)))?;
 
-        // Fresh X25519 keypair for the pairing-time DH. We hold the
-        // secret across the recv-PairingAccepted await, then consume
-        // it in `x25519_dh` so the ephemeral private key is forgotten.
-        let (joiner_x25519_secret, joiner_x25519_pub) = crypto::x25519_keypair();
-
-        transport::send_message(
-            &mut send,
-            &SyncMessage::PairingRequest {
-                device_id: self.identity.device_id,
-                device_name: self.identity.device_name.clone(),
-                public_key: self.identity.public_key_bytes(),
-                pairing_code: code.to_string(),
-                listen_port: self.listen_port,
-                x25519_pub: joiner_x25519_pub.to_vec(),
-            },
+        let mut transport = transport::SessionTransport::Quic { send, recv };
+        run_pairing_as_joiner(
+            &mut transport,
+            &self.identity,
+            &self.vault,
+            self.listen_port,
+            code,
+            Some((addr.ip(), addr.port())),
         )
-        .await?;
+        .await
+    }
 
-        // Host -> PairingChallenge (or PairingRejected).
-        let challenge = match transport::recv_message(&mut recv).await? {
-            SyncMessage::PairingChallenge { challenge } => challenge,
+    /// Run a pairing handshake over the relay instead of QUIC. Used
+    /// when the joiner can't reach the host's QUIC port (typical for
+    /// NAT-blocked / WSL / carrier-grade setups). `host_device_id`
+    /// comes from the `oryxis://pair/<host>/<code>` link.
+    async fn join_pairing_via_relay(
+        &self,
+        host_device_id: Uuid,
+        code: &str,
+    ) -> Result<(Uuid, String), SyncError> {
+        let signaling_url = self
+            .config
+            .signaling_url
+            .clone()
+            .ok_or_else(|| SyncError::PairingFailed(
+                "Relay not configured (Settings > Sync > Advanced > Signaling Server)".into(),
+            ))?;
+        let token = self.config.signaling_token.clone().unwrap_or_default();
+        let client = crate::relay::RelayClient::new(
+            &signaling_url,
+            &token,
+            self.identity.device_id,
+        );
+        let mut transport = transport::SessionTransport::RelayClient {
+            client,
+            peer_id: host_device_id,
+            my_id: self.identity.device_id,
+        };
+        run_pairing_as_joiner(
+            &mut transport,
+            &self.identity,
+            &self.vault,
+            self.listen_port,
+            code,
+            None,
+        )
+        .await
+    }
+}
+
+/// Joiner side of the pairing protocol, transport-agnostic. Used by
+/// both `join_pairing_inner` (QUIC) and `join_pairing_via_relay`.
+/// `peer_endpoint = Some((ip, port))` for QUIC paths so the joiner can
+/// record the host's listen address for future syncs; `None` for
+/// relay paths since the host isn't directly reachable.
+async fn run_pairing_as_joiner(
+    transport: &mut transport::SessionTransport,
+    identity: &DeviceIdentity,
+    vault: &Arc<std::sync::Mutex<VaultStore>>,
+    listen_port: u16,
+    code: &str,
+    peer_endpoint: Option<(std::net::IpAddr, u16)>,
+) -> Result<(Uuid, String), SyncError> {
+    // Fresh X25519 keypair for the pairing-time DH. We hold the secret
+    // across the recv-PairingAccepted await, then consume it in
+    // `x25519_dh` so the ephemeral private key is forgotten.
+    let (joiner_x25519_secret, joiner_x25519_pub) = crypto::x25519_keypair();
+
+    transport.send(&SyncMessage::PairingRequest {
+        device_id: identity.device_id,
+        device_name: identity.device_name.clone(),
+        public_key: identity.public_key_bytes(),
+        pairing_code: code.to_string(),
+        listen_port,
+        x25519_pub: joiner_x25519_pub.to_vec(),
+    }).await?;
+
+    // Host -> PairingChallenge (or PairingRejected).
+    let challenge = match transport.recv().await? {
+        SyncMessage::PairingChallenge { challenge } => challenge,
+        SyncMessage::PairingRejected { reason } => {
+            return Err(SyncError::PairingFailed(reason));
+        }
+        _ => return Err(SyncError::Protocol("Expected PairingChallenge".into())),
+    };
+    let challenge: [u8; 32] = challenge
+        .as_slice()
+        .try_into()
+        .map_err(|_| SyncError::Protocol("Challenge must be 32 bytes".into()))?;
+
+    // Prove possession of the private key paired with the public
+    // key we just sent.
+    let signed = crypto::sign_ed25519_32(&identity.signing_key, &challenge);
+    transport.send(&SyncMessage::PairingResponse {
+        signed_challenge: signed.to_vec(),
+    }).await?;
+
+    // Host -> PairingAccepted (or PairingRejected).
+    let (device_id, device_name, public_key, host_x25519_pub) =
+        match transport.recv().await? {
+            SyncMessage::PairingAccepted {
+                device_id,
+                device_name,
+                public_key,
+                x25519_pub,
+            } => (device_id, device_name, public_key, x25519_pub),
             SyncMessage::PairingRejected { reason } => {
                 return Err(SyncError::PairingFailed(reason));
             }
-            _ => return Err(SyncError::Protocol("Expected PairingChallenge".into())),
+            _ => return Err(SyncError::Protocol("Expected PairingAccepted".into())),
         };
-        let challenge: [u8; 32] = challenge
-            .as_slice()
-            .try_into()
-            .map_err(|_| SyncError::Protocol("Challenge must be 32 bytes".into()))?;
+    let host_x25519_pub: [u8; 32] = host_x25519_pub
+        .as_slice()
+        .try_into()
+        .map_err(|_| SyncError::Protocol("Host x25519_pub must be 32 bytes".into()))?;
 
-        // Prove possession of the private key paired with the public
-        // key we just sent.
-        let signed = crypto::sign_ed25519_32(&self.identity.signing_key, &challenge);
-        transport::send_message(
-            &mut send,
-            &SyncMessage::PairingResponse {
-                signed_challenge: signed.to_vec(),
-            },
-        )
-        .await?;
+    // Both sides DH to the same 32-byte secret; store it on the peer
+    // row so every later `SyncRecord.payload` between us and this host
+    // is sealed with ChaCha20-Poly1305.
+    let shared_secret = crypto::x25519_dh(joiner_x25519_secret, &host_x25519_pub);
 
-        // Host -> PairingAccepted (or PairingRejected).
-        let (device_id, device_name, public_key, host_x25519_pub) =
-            match transport::recv_message(&mut recv).await? {
-                SyncMessage::PairingAccepted {
-                    device_id,
-                    device_name,
-                    public_key,
-                    x25519_pub,
-                } => (device_id, device_name, public_key, x25519_pub),
-                SyncMessage::PairingRejected { reason } => {
-                    return Err(SyncError::PairingFailed(reason));
-                }
-                _ => return Err(SyncError::Protocol("Expected PairingAccepted".into())),
-            };
-        let host_x25519_pub: [u8; 32] = host_x25519_pub
-            .as_slice()
-            .try_into()
-            .map_err(|_| SyncError::Protocol("Host x25519_pub must be 32 bytes".into()))?;
-
-        // Both sides DH to the same 32-byte secret; store it on the
-        // peer row so every later `SyncRecord.payload` between us and
-        // this host is sealed with ChaCha20-Poly1305.
-        let shared_secret = crypto::x25519_dh(joiner_x25519_secret, &host_x25519_pub);
-
-        // Persist the host as a peer. `addr` is the host's listen
-        // address (it is what we dialed), so future syncs can reach it.
-        let now = chrono::Utc::now();
-        {
-            let v = self
-                .vault
-                .lock()
-                .map_err(|_| SyncError::Vault("Lock".into()))?;
-            v.save_sync_peer(
-                &device_id,
-                &device_name,
-                &public_key,
-                Some(&shared_secret),
-                &now,
-            )?;
-            v.update_sync_peer_endpoint(&device_id, &addr.ip().to_string(), addr.port())?;
+    let now = chrono::Utc::now();
+    {
+        let v = vault.lock().map_err(|_| SyncError::Vault("Lock".into()))?;
+        v.save_sync_peer(
+            &device_id,
+            &device_name,
+            &public_key,
+            Some(&shared_secret),
+            &now,
+        )?;
+        if let Some((ip, port)) = peer_endpoint {
+            v.update_sync_peer_endpoint(&device_id, &ip.to_string(), port)?;
         }
-
-        // Send `Bye` as a delivery barrier: it tells the host we have
-        // read `PairingAccepted`, so the host can drop the connection
-        // without losing the still-buffered final frame. Mirrors the
-        // `Bye` the sync session already uses for the same reason.
-        let _ = transport::send_message(&mut send, &SyncMessage::Bye).await;
-        Ok((device_id, device_name))
     }
+
+    // Delivery barrier: tells the host we read PairingAccepted so the
+    // host can drop its connection without losing the buffered final
+    // frame. Same trick the sync session uses.
+    let _ = transport.send(&SyncMessage::Bye).await;
+    Ok((device_id, device_name))
 }
 
 /// Handle an incoming QUIC connection.
@@ -704,9 +892,9 @@ async fn handle_incoming(
             // challenge/response handshake and return, never touching
             // the Hello auth path below.
             let peer_addr = connection.remote_address();
+            let mut transport = transport::SessionTransport::Quic { send, recv };
             return handle_pairing_request(
-                &mut send,
-                &mut recv,
+                &mut transport,
                 &vault,
                 &identity,
                 &hosting_pairing,
@@ -715,8 +903,7 @@ async fn handle_incoming(
                 device_name,
                 public_key,
                 pairing_code,
-                peer_addr,
-                listen_port,
+                Some((peer_addr, listen_port)),
                 x25519_pub,
             )
             .await;
@@ -764,7 +951,8 @@ async fn handle_incoming(
     // Handle sync messages
     let _ = event_tx.send(SyncEvent::SyncStarted { peer_id });
 
-    match handle_sync_session(&mut send, &mut recv, &vault, &peer_id).await {
+    let mut transport = transport::SessionTransport::Quic { send, recv };
+    match handle_sync_session(&mut transport, &vault, &peer_id, None).await {
         Ok((pushed, pulled)) => {
             let _ = event_tx.send(SyncEvent::SyncCompleted { peer_id, pushed, pulled });
         }
@@ -787,8 +975,7 @@ async fn handle_incoming(
 /// hosting code so the same code can't pair a second device.
 #[allow(clippy::too_many_arguments)]
 async fn handle_pairing_request(
-    send: &mut quinn::SendStream,
-    recv: &mut quinn::RecvStream,
+    transport: &mut transport::SessionTransport,
     vault: &Arc<std::sync::Mutex<VaultStore>>,
     identity: &DeviceIdentity,
     hosting_pairing: &Arc<std::sync::Mutex<Option<HostingPairing>>>,
@@ -797,8 +984,10 @@ async fn handle_pairing_request(
     device_name: String,
     public_key: Vec<u8>,
     pairing_code: String,
-    peer_addr: SocketAddr,
-    listen_port: u16,
+    // QUIC paths know the joiner's source address from the connection;
+    // relay paths don't (the joiner is behind NAT we can't reach), so
+    // pass `None` and we record `0.0.0.0` to flag "relay-only peer".
+    peer_endpoint: Option<(SocketAddr, u16)>,
     joiner_x25519_pub: Vec<u8>,
 ) -> Result<(), SyncError> {
     // Is there a live hosting code? Drop expired ones here so a stale
@@ -813,29 +1002,25 @@ async fn handle_pairing_request(
             .map(|s| s.code.clone())
     };
     let Some(expected) = expected else {
-        return reject_pairing(send, recv, "Not hosting pairing (or code expired)").await;
+        return reject_pairing(transport, "Not hosting pairing (or code expired)").await;
     };
     if !crypto::constant_time_eq(expected.as_bytes(), pairing_code.as_bytes()) {
-        return reject_pairing(send, recv, "Wrong pairing code").await;
+        return reject_pairing(transport, "Wrong pairing code").await;
     }
 
     // Code matches. Challenge the joiner with a fresh nonce so an
     // intercepted `PairingRequest` can't be replayed.
     let challenge = crypto::random_challenge();
-    transport::send_message(
-        send,
-        &SyncMessage::PairingChallenge {
-            challenge: challenge.to_vec(),
-        },
-    )
-    .await?;
+    transport.send(&SyncMessage::PairingChallenge {
+        challenge: challenge.to_vec(),
+    }).await?;
 
-    let signed = match transport::recv_message(recv).await? {
+    let signed = match transport.recv().await? {
         SyncMessage::PairingResponse { signed_challenge } => signed_challenge,
         _ => return Err(SyncError::Protocol("Expected PairingResponse".into())),
     };
     if crypto::verify_ed25519_32(&public_key, &challenge, &signed).is_err() {
-        return reject_pairing(send, recv, "Bad challenge response").await;
+        return reject_pairing(transport, "Bad challenge response").await;
     }
 
     // Joiner's X25519 pubkey must be 32 bytes; reject otherwise. Then
@@ -848,9 +1033,10 @@ async fn handle_pairing_request(
     let (host_x25519_secret, host_x25519_pub) = crypto::x25519_keypair();
     let shared_secret = crypto::x25519_dh(host_x25519_secret, &joiner_x25519_pub);
 
-    // Verified. Persist the joiner as a peer (IP from the connection,
-    // listen port from the request, shared secret from the DH above)
-    // and clear the single-shot code.
+    // Verified. Persist the joiner as a peer and clear the single-shot
+    // code. Endpoint recording differs by transport: QUIC has the
+    // joiner's source IP + advertised listen port; relay has neither
+    // (we'll sync via relay forever for this peer).
     let now = chrono::Utc::now();
     {
         let v = vault.lock().map_err(|_| SyncError::Vault("Lock".into()))?;
@@ -861,26 +1047,25 @@ async fn handle_pairing_request(
             Some(&shared_secret),
             &now,
         )?;
-        v.update_sync_peer_endpoint(&device_id, &peer_addr.ip().to_string(), listen_port)?;
+        if let Some((addr, listen_port)) = peer_endpoint {
+            v.update_sync_peer_endpoint(&device_id, &addr.ip().to_string(), listen_port)?;
+        }
     }
     if let Ok(mut state) = hosting_pairing.lock() {
         *state = None;
     }
 
-    transport::send_message(
-        send,
-        &SyncMessage::PairingAccepted {
-            device_id: identity.device_id,
-            device_name: identity.device_name.clone(),
-            public_key: identity.public_key_bytes(),
-            x25519_pub: host_x25519_pub.to_vec(),
-        },
-    )
-    .await?;
+    transport.send(&SyncMessage::PairingAccepted {
+        device_id: identity.device_id,
+        device_name: identity.device_name.clone(),
+        public_key: identity.public_key_bytes(),
+        x25519_pub: host_x25519_pub.to_vec(),
+    }).await?;
     // Delivery barrier: wait for the joiner's `Bye` so we don't drop
     // the connection (and the still-buffered `PairingAccepted` frame)
-    // before the joiner has read it.
-    let _ = transport::recv_message(recv).await;
+    // before the joiner has read it. On relay the barrier just times
+    // out and we move on (next-frame poll is fine).
+    let _ = transport.recv().await;
 
     let _ = event_tx.send(SyncEvent::PairingCompleted {
         device_id,
@@ -895,27 +1080,126 @@ async fn handle_pairing_request(
 /// frame is delivered, and the joiner would see a bare "connection
 /// lost" instead of the reason.
 async fn reject_pairing(
-    send: &mut quinn::SendStream,
-    recv: &mut quinn::RecvStream,
+    transport: &mut transport::SessionTransport,
     reason: &str,
 ) -> Result<(), SyncError> {
-    transport::send_message(
-        send,
-        &SyncMessage::PairingRejected {
-            reason: reason.to_string(),
-        },
-    )
-    .await?;
-    let _ = transport::recv_message(recv).await;
+    transport.send(&SyncMessage::PairingRejected {
+        reason: reason.to_string(),
+    }).await?;
+    let _ = transport.recv().await;
     Ok(())
+}
+
+/// Server-side dispatcher for a relay-inbound session. The listener
+/// in `start()` has already routed the very first frame from this
+/// sender into our mpsc; we peek that frame to decide whether the
+/// other side is opening a pairing or a sync session, then call the
+/// matching handler with a `RelayServer` transport that consumes the
+/// rest of the frames from the same mpsc.
+async fn run_relay_inbound_session(
+    client: crate::relay::RelayClient,
+    sender_id: Uuid,
+    rx: tokio::sync::mpsc::UnboundedReceiver<SyncMessage>,
+    vault: Arc<std::sync::Mutex<VaultStore>>,
+    identity: DeviceIdentity,
+    hosting_pairing: Arc<std::sync::Mutex<Option<HostingPairing>>>,
+    event_tx: mpsc::UnboundedSender<SyncEvent>,
+) {
+    let mut transport = transport::SessionTransport::RelayServer {
+        client,
+        peer_id: sender_id,
+        inbox: rx,
+    };
+    let first = match transport.recv().await {
+        Ok(m) => m,
+        Err(e) => {
+            tracing::warn!("relay session from {sender_id}: {e}");
+            return;
+        }
+    };
+    match first {
+        SyncMessage::PairingRequest {
+            device_id,
+            device_name,
+            public_key,
+            pairing_code,
+            x25519_pub,
+            ..
+        } => {
+            let _ = handle_pairing_request(
+                &mut transport,
+                &vault,
+                &identity,
+                &hosting_pairing,
+                &event_tx,
+                device_id,
+                device_name,
+                public_key,
+                pairing_code,
+                None,
+                x25519_pub,
+            )
+            .await;
+        }
+        SyncMessage::ManifestRequest
+        | SyncMessage::DeltaRequest { .. }
+        | SyncMessage::DeltaPush { .. }
+        | SyncMessage::Ping => {
+            // Authenticate the sender against our paired-peer list.
+            // Relay has no channel binding; pairing must already have
+            // seeded shared_secret, so an unknown sender is a stranger
+            // we drop on the floor.
+            let known = vault
+                .lock()
+                .ok()
+                .and_then(|v| v.list_sync_peers().ok())
+                .map(|peers| {
+                    peers.iter().any(|p| p.peer_id == sender_id && p.is_active)
+                })
+                .unwrap_or(false);
+            if !known {
+                tracing::warn!(
+                    "relay session: rejecting unknown sender {sender_id}"
+                );
+                return;
+            }
+            let _ = event_tx.send(SyncEvent::SyncStarted { peer_id: sender_id });
+            match handle_sync_session(&mut transport, &vault, &sender_id, Some(first))
+                .await
+            {
+                Ok((pushed, pulled)) => {
+                    let _ = event_tx.send(SyncEvent::SyncCompleted {
+                        peer_id: sender_id,
+                        pushed,
+                        pulled,
+                    });
+                }
+                Err(e) => {
+                    let _ = event_tx.send(SyncEvent::SyncFailed {
+                        peer_id: sender_id,
+                        error: e.to_string(),
+                    });
+                }
+            }
+        }
+        other => {
+            tracing::warn!(
+                "relay session from {sender_id}: unexpected opener {other:?}"
+            );
+        }
+    }
 }
 
 /// Handle the sync protocol after handshake.
 async fn handle_sync_session(
-    send: &mut quinn::SendStream,
-    recv: &mut quinn::RecvStream,
+    transport: &mut transport::SessionTransport,
     vault: &Arc<std::sync::Mutex<VaultStore>>,
     peer_id: &Uuid,
+    // `pending` is the relay listener's way of replaying the first
+    // demuxed frame: the listener peeks the type to know whether to
+    // route to pairing or sync, and any other frame goes straight
+    // back here as the first iteration's input.
+    mut pending: Option<SyncMessage>,
 ) -> Result<(usize, usize), SyncError> {
     let mut pushed = 0;
     let mut pulled = 0;
@@ -927,17 +1211,20 @@ async fn handle_sync_session(
     let shared_secret = shared_secret.as_ref();
 
     loop {
-        let msg = transport::recv_message(recv).await?;
+        let msg = match pending.take() {
+            Some(m) => m,
+            None => transport.recv().await?,
+        };
         match msg {
             SyncMessage::ManifestRequest => {
                 let manifest = build_manifest(vault)?;
-                transport::send_message(send, &SyncMessage::Manifest { entries: manifest }).await?;
+                transport.send(&SyncMessage::Manifest { entries: manifest }).await?;
             }
             SyncMessage::DeltaRequest { needed } => {
                 // Peer wants these records from us
                 let records = collect_records(vault, &needed, shared_secret)?;
                 pushed += records.len();
-                transport::send_message(send, &SyncMessage::DeltaResponse { records }).await?;
+                transport.send(&SyncMessage::DeltaResponse { records }).await?;
             }
             SyncMessage::DeltaPush { records } => {
                 // Peer is pushing records to us
@@ -945,10 +1232,10 @@ async fn handle_sync_session(
                 apply_records(vault, &records, shared_secret)?;
                 pulled += count;
                 let accepted: Vec<Uuid> = records.iter().map(|r| r.entity_id).collect();
-                transport::send_message(send, &SyncMessage::DeltaAck { accepted }).await?;
+                transport.send(&SyncMessage::DeltaAck { accepted }).await?;
             }
             SyncMessage::Ping => {
-                transport::send_message(send, &SyncMessage::Pong).await?;
+                transport.send(&SyncMessage::Pong).await?;
             }
             SyncMessage::Bye => break,
             _ => {
@@ -1349,7 +1636,7 @@ pub(crate) fn apply_records(
 async fn sync_all_peers(
     vault: &Arc<std::sync::Mutex<VaultStore>>,
     identity: &DeviceIdentity,
-    _config: &SyncConfig,
+    config: &SyncConfig,
     event_tx: &mpsc::UnboundedSender<SyncEvent>,
 ) -> Result<(), SyncError> {
     let peers = {
@@ -1358,35 +1645,123 @@ async fn sync_all_peers(
     };
 
     for peer in peers.iter().filter(|p| p.is_active) {
-        if let (Some(ip), Some(port)) = (&peer.last_known_ip, peer.last_known_port) {
-            let addr: SocketAddr = format!("{}:{}", ip, port)
-                .parse()
-                .map_err(|e| SyncError::Transport(format!("Parse addr: {}", e)))?;
+        let _ = event_tx.send(SyncEvent::SyncStarted { peer_id: peer.peer_id });
 
-            let _ = event_tx.send(SyncEvent::SyncStarted { peer_id: peer.peer_id });
+        // Tier 1: direct QUIC to the last known endpoint. Skipped
+        // for peers paired via relay (no endpoint recorded) or peers
+        // whose endpoint is the `0.0.0.0` sentinel.
+        let mut last_err: Option<SyncError> = None;
+        let quic_result = match (&peer.last_known_ip, peer.last_known_port) {
+            (Some(ip), Some(port)) if !ip.is_empty() && ip != "0.0.0.0" => {
+                match format!("{ip}:{port}").parse::<SocketAddr>() {
+                    Ok(addr) => Some(
+                        tokio::time::timeout(
+                            std::time::Duration::from_secs(5),
+                            sync_with_peer(vault, identity, &peer.peer_id, addr),
+                        )
+                        .await,
+                    ),
+                    Err(e) => {
+                        last_err = Some(SyncError::Transport(format!(
+                            "Parse addr: {e}"
+                        )));
+                        None
+                    }
+                }
+            }
+            _ => None,
+        };
 
-            match sync_with_peer(vault, identity, &peer.peer_id, addr).await {
-                Ok((pushed, pulled)) => {
-                    let v = vault.lock().map_err(|_| SyncError::Vault("Lock".into()))?;
+        let mut sync_outcome: Option<(usize, usize)> = None;
+        match quic_result {
+            Some(Ok(Ok(r))) => sync_outcome = Some(r),
+            Some(Ok(Err(e))) => {
+                tracing::debug!(
+                    "sync: QUIC to {} failed, trying relay: {e}",
+                    peer.peer_id
+                );
+                last_err = Some(e);
+            }
+            Some(Err(_)) => {
+                tracing::debug!(
+                    "sync: QUIC to {} timed out after 5s, trying relay",
+                    peer.peer_id
+                );
+                last_err = Some(SyncError::Timeout);
+            }
+            None => {}
+        }
+
+        // Tier 2: relay fallback. Engaged when QUIC failed (or never
+        // ran because the peer has no direct endpoint) AND a relay
+        // URL is configured.
+        if sync_outcome.is_none() {
+            if let Some(relay_url) = &config.signaling_url {
+                let token = config.signaling_token.clone().unwrap_or_default();
+                match sync_with_peer_via_relay(
+                    vault,
+                    identity,
+                    relay_url,
+                    &token,
+                    &peer.peer_id,
+                )
+                .await
+                {
+                    Ok(r) => sync_outcome = Some(r),
+                    Err(e) => last_err = Some(e),
+                }
+            }
+        }
+
+        match sync_outcome {
+            Some((pushed, pulled)) => {
+                if let Ok(v) = vault.lock() {
                     let _ = v.update_sync_peer_last_synced(&peer.peer_id);
-                    drop(v);
-                    let _ = event_tx.send(SyncEvent::SyncCompleted {
-                        peer_id: peer.peer_id,
-                        pushed,
-                        pulled,
-                    });
                 }
-                Err(e) => {
-                    let _ = event_tx.send(SyncEvent::SyncFailed {
-                        peer_id: peer.peer_id,
-                        error: e.to_string(),
-                    });
-                }
+                let _ = event_tx.send(SyncEvent::SyncCompleted {
+                    peer_id: peer.peer_id,
+                    pushed,
+                    pulled,
+                });
+            }
+            None => {
+                let error = last_err
+                    .map(|e| e.to_string())
+                    .unwrap_or_else(|| "No reachable transport".into());
+                let _ = event_tx.send(SyncEvent::SyncFailed {
+                    peer_id: peer.peer_id,
+                    error,
+                });
             }
         }
     }
 
     Ok(())
+}
+
+/// Client side of a relay-based sync session: bind a `RelayClient`
+/// long-poll inbox to the peer, run the same `run_sync_session_as_client`
+/// flow that QUIC uses. Skips the Hello/HelloAck auth round (relay has
+/// no TLS exporter to bind to); the per-record `shared_secret`
+/// encryption fills the same gap.
+async fn sync_with_peer_via_relay(
+    vault: &Arc<std::sync::Mutex<VaultStore>>,
+    identity: &DeviceIdentity,
+    relay_url: &str,
+    relay_token: &str,
+    peer_id: &Uuid,
+) -> Result<(usize, usize), SyncError> {
+    let client = crate::relay::RelayClient::new(
+        relay_url,
+        relay_token,
+        identity.device_id,
+    );
+    let mut transport = transport::SessionTransport::RelayClient {
+        client,
+        peer_id: *peer_id,
+        my_id: identity.device_id,
+    };
+    run_sync_session_as_client(&mut transport, vault, peer_id).await
 }
 
 /// Sync with a specific peer (client side, initiates connection).
@@ -1458,16 +1833,28 @@ async fn sync_with_peer(
         ))
     })?;
 
-    // Pull the X25519 shared secret once: every payload exchanged in
-    // this session is sealed with it. v4 peers always carry one (set
-    // at pairing); a missing secret means we're talking to a legacy
-    // peer that the version check should already have rejected.
+    // Hand off to the transport-agnostic client-side flow so the same
+    // code path runs for both QUIC and relay (the relay flow skips
+    // the Hello+exporter dance entirely since it has no channel to
+    // bind to).
+    let mut transport = transport::SessionTransport::Quic { send, recv };
+    run_sync_session_as_client(&mut transport, vault, peer_id).await
+}
+
+/// Client side of a sync session: ManifestRequest, diff via LWW,
+/// pull/push deltas, Bye. Same flow regardless of underlying transport.
+async fn run_sync_session_as_client(
+    transport: &mut transport::SessionTransport,
+    vault: &Arc<std::sync::Mutex<VaultStore>>,
+    peer_id: &Uuid,
+) -> Result<(usize, usize), SyncError> {
+    // Per-peer E2E key, same as on the server side.
     let shared_secret = peer_shared_secret(vault, peer_id)?;
     let shared_secret = shared_secret.as_ref();
 
     // Request manifest
-    transport::send_message(&mut send, &SyncMessage::ManifestRequest).await?;
-    let remote_manifest = match transport::recv_message(&mut recv).await? {
+    transport.send(&SyncMessage::ManifestRequest).await?;
+    let remote_manifest = match transport.recv().await? {
         SyncMessage::Manifest { entries } => entries,
         _ => return Err(SyncError::Protocol("Expected Manifest".into())),
     };
@@ -1524,10 +1911,10 @@ async fn sync_with_peer(
 
     // Pull from remote
     if !needed_from_remote.is_empty() {
-        transport::send_message(&mut send, &SyncMessage::DeltaRequest {
+        transport.send(&SyncMessage::DeltaRequest {
             needed: needed_from_remote,
         }).await?;
-        match transport::recv_message(&mut recv).await? {
+        match transport.recv().await? {
             SyncMessage::DeltaResponse { records } => {
                 pulled = records.len();
                 apply_records(vault, &records, shared_secret)?;
@@ -1540,15 +1927,15 @@ async fn sync_with_peer(
     if !to_push_to_remote.is_empty() {
         let records = collect_records(vault, &to_push_to_remote, shared_secret)?;
         pushed = records.len();
-        transport::send_message(&mut send, &SyncMessage::DeltaPush { records }).await?;
-        match transport::recv_message(&mut recv).await? {
+        transport.send(&SyncMessage::DeltaPush { records }).await?;
+        match transport.recv().await? {
             SyncMessage::DeltaAck { .. } => {}
             _ => return Err(SyncError::Protocol("Expected DeltaAck".into())),
         }
     }
 
     // Done
-    transport::send_message(&mut send, &SyncMessage::Bye).await?;
+    transport.send(&SyncMessage::Bye).await?;
 
     Ok((pushed, pulled))
 }

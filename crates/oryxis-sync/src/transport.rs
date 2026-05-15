@@ -95,6 +95,75 @@ pub async fn recv_message(
     decode_message(&buf).map_err(|e| SyncError::Protocol(format!("Decode: {}", e)))
 }
 
+/// Per-session transport. Same `send` / `recv` shape regardless of
+/// whether the bytes go over a QUIC stream or HTTP-relayed inboxes,
+/// so `handle_sync_session` and the client-side flow don't have to
+/// care which one they got.
+///
+/// A `SessionTransport` is one-session-at-a-time; the engine creates
+/// one when a peer connects (or when a `Sync Now` opens a session),
+/// runs it to completion, and drops it.
+pub enum SessionTransport {
+    /// Direct QUIC stream pair — the LAN / cross-NAT-direct path.
+    Quic {
+        send: quinn::SendStream,
+        recv: quinn::RecvStream,
+    },
+    /// Initiator side of a relay session: we POST outbound frames
+    /// directly via `RelayClient::send` and long-poll our own inbox
+    /// for the peer's responses. Frames from a different sender on
+    /// our inbox are dropped (we sync with one peer at a time).
+    RelayClient {
+        client: crate::relay::RelayClient,
+        peer_id: uuid::Uuid,
+        my_id: uuid::Uuid,
+    },
+    /// Responder side of a relay session: a background inbox listener
+    /// demuxes incoming frames by sender into per-session mpsc queues;
+    /// this variant pulls from one such queue while still sending via
+    /// `RelayClient::send` directly.
+    RelayServer {
+        client: crate::relay::RelayClient,
+        peer_id: uuid::Uuid,
+        inbox: tokio::sync::mpsc::UnboundedReceiver<SyncMessage>,
+    },
+}
+
+impl SessionTransport {
+    pub async fn send(&mut self, msg: &SyncMessage) -> Result<(), SyncError> {
+        match self {
+            Self::Quic { send, .. } => send_message(send, msg).await,
+            Self::RelayClient { client, peer_id, .. }
+            | Self::RelayServer { client, peer_id, .. } => {
+                client.send(*peer_id, msg).await
+            }
+        }
+    }
+
+    /// Block until a frame from the bound peer arrives. Relay frames
+    /// from a different sender (multi-peer cross-talk on the inbox)
+    /// are silently dropped — they'll get processed when their own
+    /// session fires.
+    pub async fn recv(&mut self) -> Result<SyncMessage, SyncError> {
+        match self {
+            Self::Quic { recv, .. } => recv_message(recv).await,
+            Self::RelayClient { client, peer_id, my_id } => loop {
+                let (from, msg) = client.recv(*my_id).await?;
+                if from == *peer_id {
+                    return Ok(msg);
+                }
+                tracing::debug!(
+                    "relay: dropping frame from unexpected sender {from} (expected {peer_id})"
+                );
+            },
+            Self::RelayServer { inbox, .. } => inbox
+                .recv()
+                .await
+                .ok_or_else(|| SyncError::Transport("relay inbox closed".into())),
+        }
+    }
+}
+
 // Skip TLS certificate verification. Identity verification happens at
 // the application layer via Ed25519: each peer signs the RFC 5705 TLS
 // exporter with its long-term identity key during the Hello handshake
