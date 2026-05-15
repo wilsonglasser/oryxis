@@ -615,6 +615,14 @@ pub enum Message {
     SyncStartPairing,
     SyncUnpairDevice(uuid::Uuid),
     SyncNow,
+    /// Top-level result of a manual `SyncNow`. Per-peer outcomes arrive
+    /// separately as `SyncEngineEvent`s; this only carries a vault-level
+    /// failure (e.g. the lock could not be taken).
+    SyncNowFinished(Result<(), String>),
+    /// An event emitted by the running `SyncEngine` (peer discovered,
+    /// sync completed, pairing progress, ...), pumped in from the
+    /// engine's event channel via `Task::stream`.
+    SyncEngineEvent(oryxis_sync::SyncEvent),
 
     // Export / Import
     ExportVault,

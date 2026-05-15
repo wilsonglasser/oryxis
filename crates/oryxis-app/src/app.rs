@@ -496,6 +496,11 @@ pub struct Oryxis {
     pub(crate) sync_peers: Vec<oryxis_vault::SyncPeerRow>,
     pub(crate) sync_pairing_code: Option<String>,
     pub(crate) sync_status: Option<String>,
+    /// Live P2P sync engine, present only while sync is enabled. Holds
+    /// a dedicated vault handle plus the QUIC / mDNS background tasks.
+    pub(crate) sync_runtime: Option<crate::sync_runtime::SyncRuntime>,
+    /// Mirrors `sync_runtime.is_some()` for cheap UI checks.
+    pub(crate) sync_engine_running: bool,
 
     // Export/Import
     pub(crate) show_export_dialog: bool,

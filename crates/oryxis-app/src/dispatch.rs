@@ -130,6 +130,13 @@ impl Oryxis {
                             self.vault_password_input.clear();
                             self.vault_password_visible = false;
                             self.load_data_from_vault();
+                            // Bring the sync engine up now that the
+                            // vault is open, if the user left it on.
+                            let sync_task = if self.sync_enabled {
+                                self.start_sync_engine()
+                            } else {
+                                Task::none()
+                            };
                             // After a manual unlock, fire any deferred
                             // `--connect <uuid>` from the launch CLI args.
                             if let Some(connect_id) = self.pending_auto_connect.take()
@@ -138,8 +145,12 @@ impl Oryxis {
                                     .iter()
                                     .position(|c| c.id == connect_id)
                             {
-                                return Task::done(Message::ConnectSsh(idx));
+                                return Task::batch([
+                                    sync_task,
+                                    Task::done(Message::ConnectSsh(idx)),
+                                ]);
                             }
+                            return sync_task;
                         }
                         Err(VaultError::InvalidPassword) => {
                             self.vault_error = Some("Invalid password".into());
@@ -534,6 +545,11 @@ impl Oryxis {
                 if let Some(vault) = &self.vault {
                     let _ = vault.set_setting("sync_enabled", if self.sync_enabled { "true" } else { "false" });
                 }
+                if self.sync_enabled {
+                    return self.start_sync_engine();
+                }
+                self.stop_sync_engine();
+                self.sync_status = Some(crate::i18n::t("sync_status_stopped").to_string());
             }
             Message::SyncTogglePasswords => {
                 self.sync_passwords = !self.sync_passwords;
@@ -585,7 +601,78 @@ impl Oryxis {
                 }
             }
             Message::SyncNow => {
-                self.sync_status = Some("Sync triggered...".into());
+                if let Some(runtime) = &self.sync_runtime {
+                    let handle = runtime.handle();
+                    self.sync_status =
+                        Some(crate::i18n::t("sync_status_syncing").to_string());
+                    return Task::perform(
+                        async move { handle.sync_now().await.map_err(|e| e.to_string()) },
+                        Message::SyncNowFinished,
+                    );
+                }
+                self.sync_status =
+                    Some(crate::i18n::t("sync_status_disabled").to_string());
+            }
+            Message::SyncNowFinished(result) => {
+                if let Err(e) = result {
+                    self.sync_status =
+                        Some(format!("{}: {e}", crate::i18n::t("sync_status_failed")));
+                }
+                // Per-peer outcomes already arrived as SyncEngineEvent;
+                // refresh the peer list so last_synced_at is current.
+                if let Some(vault) = &self.vault {
+                    self.sync_peers = vault.list_sync_peers().unwrap_or_default();
+                }
+            }
+            Message::SyncEngineEvent(event) => {
+                use oryxis_sync::SyncEvent;
+                match event {
+                    SyncEvent::PeerDiscovered { device_id, .. } => {
+                        // A live discovered-devices list lands in
+                        // Phase C; for now just trace it.
+                        tracing::debug!("sync: discovered peer {device_id}");
+                    }
+                    SyncEvent::PairingCodeGenerated { code } => {
+                        self.sync_pairing_code = Some(code);
+                    }
+                    SyncEvent::PairingCompleted { device_name, .. } => {
+                        self.sync_status = Some(format!(
+                            "{} {device_name}",
+                            crate::i18n::t("sync_paired_with"),
+                        ));
+                        if let Some(vault) = &self.vault {
+                            self.sync_peers =
+                                vault.list_sync_peers().unwrap_or_default();
+                        }
+                    }
+                    SyncEvent::PairingFailed { reason } => {
+                        self.sync_status = Some(format!(
+                            "{}: {reason}",
+                            crate::i18n::t("sync_pairing_failed"),
+                        ));
+                    }
+                    SyncEvent::SyncStarted { .. } => {
+                        self.sync_status =
+                            Some(crate::i18n::t("sync_status_syncing").to_string());
+                    }
+                    SyncEvent::SyncCompleted { pushed, pulled, .. } => {
+                        self.sync_status = Some(format!(
+                            "{} (+{pushed} / -{pulled})",
+                            crate::i18n::t("sync_status_done"),
+                        ));
+                        if let Some(vault) = &self.vault {
+                            self.sync_peers =
+                                vault.list_sync_peers().unwrap_or_default();
+                        }
+                    }
+                    SyncEvent::SyncFailed { error, .. } => {
+                        self.sync_status = Some(format!(
+                            "{}: {error}",
+                            crate::i18n::t("sync_status_failed"),
+                        ));
+                    }
+                    SyncEvent::PeerOnline { .. } | SyncEvent::PeerOffline { .. } => {}
+                }
             }
 
             // Anything not handled above was claimed by one of the

@@ -84,8 +84,11 @@ impl SyncEngine {
         self.event_rx.take()
     }
 
-    /// Start background sync tasks (QUIC listener, mDNS, signaling heartbeat, auto-sync timer).
-    pub async fn start(&mut self) -> Result<(), SyncError> {
+    /// Start background sync tasks (QUIC listener, mDNS, signaling
+    /// heartbeat, auto-sync timer). Not `async` (the body only spawns
+    /// detached tasks, it never awaits) but it must be called from
+    /// within a Tokio runtime context because of those `tokio::spawn`s.
+    pub fn start(&mut self) -> Result<(), SyncError> {
         if !self.config.enabled {
             return Ok(());
         }
@@ -198,6 +201,18 @@ impl SyncEngine {
         sync_all_peers(&self.vault, &self.identity, &self.config, &self.event_tx).await
     }
 
+    /// Get a cheap, cloneable handle for triggering syncs without
+    /// owning the engine. The engine stays put in app state while the
+    /// handle can be moved into a background `Task`.
+    pub fn handle(&self) -> SyncHandle {
+        SyncHandle {
+            config: self.config.clone(),
+            identity: self.identity.clone(),
+            vault: self.vault.clone(),
+            event_tx: self.event_tx.clone(),
+        }
+    }
+
     /// Start pairing, returns a 6-digit code to show the user.
     pub fn start_pairing(&self) -> String {
         let code = crypto::generate_pairing_code();
@@ -215,6 +230,28 @@ impl SyncEngine {
     /// Get the config.
     pub fn config(&self) -> &SyncConfig {
         &self.config
+    }
+}
+
+/// A cheap, cloneable handle for triggering syncs without owning the
+/// `SyncEngine`. Every field is `Clone` (the vault is an `Arc`,
+/// identity / config are owned `Clone` types, the event sender is an
+/// mpsc clone), so a handle can be moved into a background `Task` while
+/// the engine itself stays put in app state.
+#[derive(Clone)]
+pub struct SyncHandle {
+    config: SyncConfig,
+    identity: DeviceIdentity,
+    vault: Arc<std::sync::Mutex<VaultStore>>,
+    event_tx: mpsc::UnboundedSender<SyncEvent>,
+}
+
+impl SyncHandle {
+    /// Sync with every active paired peer. Safe to call from a
+    /// background task: it locks the vault only in short bursts, never
+    /// across an `.await`.
+    pub async fn sync_now(&self) -> Result<(), SyncError> {
+        sync_all_peers(&self.vault, &self.identity, &self.config, &self.event_tx).await
     }
 }
 

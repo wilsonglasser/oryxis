@@ -157,7 +157,7 @@ mod tests {
         let mut engine = SyncEngine::new(config, identity, Arc::new(Mutex::new(vault)));
 
         // Starting with disabled config should be a no-op
-        engine.start().await.unwrap();
+        engine.start().unwrap();
         engine.stop();
     }
 
@@ -174,7 +174,7 @@ mod tests {
         let mut engine = SyncEngine::new(config, identity, Arc::new(Mutex::new(vault)));
         let _events = engine.take_events();
 
-        engine.start().await.unwrap();
+        engine.start().unwrap();
         // Give it a moment to start
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
         engine.stop();

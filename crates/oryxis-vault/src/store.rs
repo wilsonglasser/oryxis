@@ -185,7 +185,7 @@ pub struct VaultStore {
     db: SqliteConn,
     /// Derived key material (password bytes kept for field-level encryption).
     master_key: Option<Vec<u8>>,
-    _db_path: PathBuf,
+    db_path: PathBuf,
 }
 
 impl VaultStore {
@@ -202,7 +202,12 @@ impl VaultStore {
     pub fn open(path: impl AsRef<Path>) -> Result<Self, VaultError> {
         let path = path.as_ref().to_path_buf();
         let db = SqliteConn::open(&path)?;
-        db.execute_batch("PRAGMA journal_mode=WAL;")?;
+        // WAL lets readers and a writer coexist; `busy_timeout` covers
+        // the rare two-writer overlap (e.g. the sync engine opens its
+        // own handle on the same file, see `oryxis-app::sync_runtime`)
+        // so a contended write waits briefly instead of failing with
+        // SQLITE_BUSY.
+        db.execute_batch("PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000;")?;
 
         // Tighten file permissions to 0600 on Unix, the vault holds
         // encrypted credentials but if another local user can read the
@@ -214,10 +219,17 @@ impl VaultStore {
         let mut store = Self {
             db,
             master_key: None,
-            _db_path: path,
+            db_path: path,
         };
         store.create_tables()?;
         Ok(store)
+    }
+
+    /// Filesystem path of the SQLite database backing this vault. The
+    /// sync engine opens its own handle on this same path (see
+    /// `oryxis-app::sync_runtime`).
+    pub fn db_path(&self) -> &Path {
+        &self.db_path
     }
 
     #[cfg(unix)]

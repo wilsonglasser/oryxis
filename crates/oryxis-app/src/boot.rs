@@ -305,6 +305,8 @@ impl Oryxis {
                 sync_peers: Vec::new(),
                 sync_pairing_code: None,
                 sync_status: None,
+                sync_runtime: None,
+                sync_engine_running: false,
                 show_export_dialog: false,
                 export_password: String::new(),
                 export_include_keys: true,
@@ -341,6 +343,12 @@ impl Oryxis {
                 .position(|c| c.id == connect_id)
         {
             tasks.push(Task::done(Message::ConnectSsh(idx)));
+        }
+        // Bring the sync engine up if the vault is already open and the
+        // user left sync enabled. When the vault is locked we defer to
+        // the `VaultUnlock` handler, same as `--connect`.
+        if app.vault_state == VaultState::Unlocked && app.sync_enabled {
+            tasks.push(app.start_sync_engine());
         }
         let boot_task = Task::batch(tasks);
         (app, boot_task)

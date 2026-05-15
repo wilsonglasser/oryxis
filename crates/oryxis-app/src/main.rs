@@ -37,6 +37,7 @@ mod sftp_methods;
 mod ssh_config;
 mod state;
 mod subscription;
+mod sync_runtime;
 mod theme;
 mod update;
 mod util;

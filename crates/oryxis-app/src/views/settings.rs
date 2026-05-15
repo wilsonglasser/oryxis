@@ -1115,10 +1115,25 @@ impl Oryxis {
                     Message::SyncTogglePasswords,
                 );
 
+                // Live engine state indicator, sits right under the
+                // enable toggle so the user sees whether the QUIC /
+                // mDNS background tasks are actually up.
+                let engine_state = if self.sync_engine_running {
+                    text(crate::i18n::t("sync_engine_running_label"))
+                        .size(11)
+                        .color(OryxisColors::t().success)
+                } else {
+                    text(crate::i18n::t("sync_engine_stopped_label"))
+                        .size(11)
+                        .color(OryxisColors::t().text_muted)
+                };
+
                 let mut options_section: iced::widget::Column<'_, Message> = column![
                     text(crate::i18n::t("sync_options")).size(14).color(OryxisColors::t().text_muted),
                     Space::new().height(8),
                     sync_toggle,
+                    Space::new().height(4),
+                    engine_state,
                     Space::new().height(8),
                     dir_row(vec![
                         text(crate::i18n::t("sync_mode")).size(13).color(OryxisColors::t().text_secondary).into(),
