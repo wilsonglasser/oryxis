@@ -1155,10 +1155,26 @@ impl Oryxis {
                 ];
 
                 if self.sync_enabled && self.sync_mode == "manual" {
-                    let sync_btn = styled_button(crate::i18n::t("sync_now"), Message::SyncNow, OryxisColors::t().accent);
+                    // Swap Sync Now <-> Cancel while a sync is in
+                    // flight. Cancel races a oneshot against the
+                    // sync future in dispatch; the click drops the
+                    // QUIC connection immediately.
+                    let action_btn = if self.sync_in_progress {
+                        styled_button(
+                            crate::i18n::t("sync_pairing_cancel"),
+                            Message::SyncCancelInProgress,
+                            OryxisColors::t().button_bg,
+                        )
+                    } else {
+                        styled_button(
+                            crate::i18n::t("sync_now"),
+                            Message::SyncNow,
+                            OryxisColors::t().accent,
+                        )
+                    };
                     options_section = options_section
                         .push(Space::new().height(8))
-                        .push(sync_btn);
+                        .push(action_btn);
                 }
 
                 if let Some(status) = &self.sync_status {
@@ -1263,23 +1279,6 @@ impl Oryxis {
                                     Message::CopyToClipboard(link.clone()),
                                     OryxisColors::t().button_bg,
                                 ));
-                        }
-                        if let Some(png) = &self.sync_pairing_qr_png {
-                            // `Handle::from_bytes` accepts an owned
-                            // `Vec<u8>`; cloning is the cheapest path
-                            // and keeps the cached PNG in app state.
-                            let handle = iced::widget::image::Handle::from_bytes(
-                                png.clone(),
-                            );
-                            pairing_section = pairing_section
-                                .push(Space::new().height(12))
-                                .push(text(crate::i18n::t("sync_pairing_qr_caption"))
-                                    .size(11)
-                                    .color(OryxisColors::t().text_muted))
-                                .push(Space::new().height(6))
-                                .push(iced::widget::image(handle)
-                                    .width(220)
-                                    .height(220));
                         }
                         pairing_section = pairing_section
                             .push(Space::new().height(12))

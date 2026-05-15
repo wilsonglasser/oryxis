@@ -77,11 +77,6 @@ uuid = { workspace = true }
 chrono = { workspace = true }
 rfd = "0.15"
 image = "0.25"
-# QR code rendering for the cross-network pairing flow (Settings >
-# Sync > Pairing > Host). `default-features = false` drops the SVG
-# renderer we don't use; the bitmap renderer is feature-gated under
-# `image`.
-qrcode = { version = "0.14", default-features = false, features = ["image"] }
 iced_fonts = { git = "https://github.com/wilsonglasser/iced_fonts", branch = "text-selection-iced-0.15", features = ["lucide", "codicon"] }
 serde = { workspace = true }
 serde_json = { workspace = true }

@@ -680,6 +680,10 @@ pub enum Message {
     /// list. Switches to the Joining sub-view and pre-fills the
     /// host-address field with the discovered peer's `ip:port`.
     SyncPairWithDiscovered(uuid::Uuid),
+    /// Abort the in-flight `Sync Now` Task. Fires the oneshot the
+    /// task is racing against; the task lands back as
+    /// `SyncNowFinished(Err("Cancelled"))` and clears the flags.
+    SyncCancelInProgress,
 
     // Export / Import
     ExportVault,

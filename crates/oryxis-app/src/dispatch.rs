@@ -631,8 +631,6 @@ impl Oryxis {
                     let handle = runtime.handle();
                     let code = handle.start_hosting_pairing();
                     let link = handle.pairing_link(&code);
-                    self.sync_pairing_qr_png =
-                        crate::sync_runtime::render_pairing_qr(&link);
                     self.sync_pairing_link = Some(link);
                     self.sync_pairing_code = Some(code);
                     self.sync_pairing_state = crate::state::SyncPairingState::Hosting;
@@ -647,7 +645,6 @@ impl Oryxis {
                 }
                 self.sync_pairing_code = None;
                 self.sync_pairing_link = None;
-                self.sync_pairing_qr_png = None;
                 self.sync_pairing_state = crate::state::SyncPairingState::Idle;
             }
             Message::SyncJoinPairingRequested => {
@@ -751,22 +748,73 @@ impl Oryxis {
                 }
             }
             Message::SyncNow => {
+                if self.sync_in_progress {
+                    // Defensive: shouldn't fire because the UI swaps
+                    // Sync Now for Cancel while a sync is running,
+                    // but if a stray click does land, ignore it.
+                    return Task::none();
+                }
                 if let Some(runtime) = &self.sync_runtime {
                     let handle = runtime.handle();
+                    let (abort_tx, abort_rx) = tokio::sync::oneshot::channel::<()>();
+                    self.sync_abort_tx = Some(abort_tx);
+                    self.sync_in_progress = true;
                     self.sync_status =
                         Some(crate::i18n::t("sync_status_syncing").to_string());
+                    // Race the sync against a 90s timeout AND the
+                    // abort channel. Whichever fires first wins; the
+                    // sync future is dropped, which closes the QUIC
+                    // connection mid-handshake (quinn cleans up).
                     return Task::perform(
-                        async move { handle.sync_now().await.map_err(|e| e.to_string()) },
+                        async move {
+                            tokio::select! {
+                                r = tokio::time::timeout(
+                                    std::time::Duration::from_secs(90),
+                                    handle.sync_now(),
+                                ) => match r {
+                                    Ok(Ok(())) => Ok(()),
+                                    Ok(Err(e)) => Err(format!("{e}")),
+                                    Err(_) => Err("__timeout__".into()),
+                                },
+                                _ = abort_rx => Err("__cancelled__".into()),
+                            }
+                        },
                         Message::SyncNowFinished,
                     );
                 }
                 self.sync_status =
                     Some(crate::i18n::t("sync_status_disabled").to_string());
             }
+            Message::SyncCancelInProgress => {
+                if let Some(tx) = self.sync_abort_tx.take() {
+                    let _ = tx.send(());
+                }
+                // Don't clear `sync_in_progress` here: the Task lands
+                // back as `SyncNowFinished(Err("__cancelled__"))` and
+                // clears it there, so the Cancel button stays visible
+                // until the cancellation actually settles.
+            }
             Message::SyncNowFinished(result) => {
-                if let Err(e) = result {
-                    self.sync_status =
-                        Some(format!("{}: {e}", crate::i18n::t("sync_status_failed")));
+                self.sync_in_progress = false;
+                self.sync_abort_tx = None;
+                match result {
+                    Ok(()) => {}
+                    Err(e) if e == "__cancelled__" => {
+                        self.sync_status = Some(
+                            crate::i18n::t("sync_status_cancelled").to_string(),
+                        );
+                    }
+                    Err(e) if e == "__timeout__" => {
+                        self.sync_status = Some(
+                            crate::i18n::t("sync_status_timeout").to_string(),
+                        );
+                    }
+                    Err(e) => {
+                        self.sync_status = Some(format!(
+                            "{}: {e}",
+                            crate::i18n::t("sync_status_failed"),
+                        ));
+                    }
                 }
                 // Per-peer outcomes already arrived as SyncEngineEvent;
                 // refresh the peer list so last_synced_at is current.
@@ -813,7 +861,6 @@ impl Oryxis {
                             crate::state::SyncPairingState::Idle;
                         self.sync_pairing_code = None;
                         self.sync_pairing_link = None;
-                        self.sync_pairing_qr_png = None;
                         if let Some(vault) = &self.vault {
                             self.sync_peers =
                                 vault.list_sync_peers().unwrap_or_default();
@@ -828,14 +875,13 @@ impl Oryxis {
                         // pairing so the user sees the error in
                         // context and can fix + retry without
                         // re-entering everything. Host-side: clear
-                        // the code/link/QR since the single-shot was
+                        // the code/link since the single-shot was
                         // consumed even on failure.
                         if self.sync_pairing_state
                             == crate::state::SyncPairingState::Hosting
                         {
                             self.sync_pairing_code = None;
                             self.sync_pairing_link = None;
-                            self.sync_pairing_qr_png = None;
                             self.sync_pairing_state =
                                 crate::state::SyncPairingState::Idle;
                         }
