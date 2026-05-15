@@ -37,17 +37,32 @@ project uses [SemVer](https://semver.org/spec/v2.0.0.html).
     address can be typed (`ip:port`), pasted as an `oryxis://pair/...`
     link (signaling-resolved), or one-clicked from the live discovered
     devices list.
-  - Cross-network sync via the Cloudflare Workers signaling server:
+  - Cross-network sync via a self-hostable signaling server:
     when `signaling_url` is configured (settable in Settings > Sync
     > Advanced), the engine STUNs for its public address once a
     minute and re-registers on the signaling server whenever the IP
     changes; the joiner's link flow looks the device id up there to
     get the host's current `ip:port`.
+  - HTTP relay fallback for NAT-blocked peers. The same server that
+    handles signaling (Cloudflare Worker or `oryxis-relay` binary)
+    exposes a `/relay/:id/inbox` long-poll API; when QUIC direct
+    can't reach a peer (typical for symmetric / carrier-grade /
+    double NAT), both the pairing handshake and the sync session
+    automatically fall back to the relay. The relay carries
+    ciphertext only — the X25519-derived ChaCha20-Poly1305 seal
+    travels with the payload, so a compromised relay learns timing
+    but not content. See `SELF_HOSTING.md` for deployment options
+    (Worker, Docker image at `ghcr.io/wilsonglasser/oryxis-relay`,
+    or `cargo install --path crates/oryxis-relay`).
+  - `oryxis-relay` crate: standalone axum HTTP server providing
+    signaling + relay endpoints with in-memory per-recipient FIFO
+    queues (TTL 300s, 256-frame depth cap), bearer-token auth, and
+    a Dockerfile targeting distroless musl. Workflow on `relay-v*`
+    tag publishes multi-arch image to GHCR and native binaries to
+    the GitHub release.
   - Live mDNS-discovered devices list in the pairing panel, deduped
     by device id, with a Pair button per row that pre-fills the join
     form's address.
-  - QR-code rendering of the `oryxis://pair/...` link so the user can
-    point a phone at the host's screen.
   - `Sync Now` actually syncs (was a literal status-string stub).
   - Engine events (peer discovered, sync completed, pairing progress)
     flow into the UI via `Task::stream`; the Settings panel shows a

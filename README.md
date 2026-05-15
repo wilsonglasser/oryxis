@@ -291,7 +291,8 @@ Most SSH clients are either powerful but ugly (PuTTY), pretty but Electron-heavy
 | `oryxis-terminal` | Terminal widget (alacritty + canvas + PTY + syntax highlight + 6 themes) |
 | `oryxis-ssh` | SSH engine — auto-auth, jump hosts, SOCKS/HTTP proxy, ProxyCommand, TOFU, RSA-SHA2 |
 | `oryxis-vault` | Encrypted vault — SQLite + Argon2id + ChaCha20Poly1305 + Identity + Session logs + Export/Import |
-| `oryxis-sync` | P2P sync engine — QUIC (quinn) + mDNS + STUN + signaling + Ed25519/X25519 + LWW conflict resolution |
+| `oryxis-sync` | P2P sync engine — QUIC (quinn) + mDNS + STUN + signaling + HTTP relay fallback + Ed25519/X25519 + LWW conflict resolution |
+| `oryxis-relay` | Self-hostable signaling + relay HTTP server (axum + in-memory queues) |
 | `oryxis-mcp` | MCP server binary — JSON-RPC 2.0 over stdio, exposes SSH hosts to AI assistants |
 
 ## Tech Stack
@@ -304,7 +305,7 @@ Most SSH clients are either powerful but ugly (PuTTY), pretty but Electron-heavy
 | SSH | russh 0.60 (async, pure Rust, RSA-SHA2) |
 | AI | reqwest + Anthropic/OpenAI/Gemini APIs |
 | MCP | JSON-RPC 2.0 over stdio |
-| P2P Sync | quinn (QUIC), mDNS, STUN, Ed25519/X25519 |
+| P2P Sync | quinn (QUIC), mDNS, STUN, HTTP relay fallback, Ed25519/X25519 |
 | Encryption | Argon2id + ChaCha20Poly1305 |
 | Storage | SQLite (rusqlite) |
 | Clipboard | arboard |
@@ -371,26 +372,29 @@ The MCP server (`oryxis-mcp`) exposes your SSH hosts to AI assistants like Claud
 
 If your vault has no password, omit the `env` field.
 
-### Signaling Server (for P2P Sync over the internet)
+### Signaling + relay (for P2P Sync over the internet)
 
-P2P Sync uses a lightweight signaling server on Cloudflare Workers for device discovery over the internet. LAN sync works without it (via mDNS).
+LAN sync works out of the box via mDNS — no server needed.
 
-To deploy your own signaling server:
+For cross-network sync (different ISPs, mobile networks, behind
+double NAT), Oryxis needs a small HTTP server that does two things:
 
-```bash
-cd signaling-worker
-npm install -g wrangler
-wrangler login
-wrangler kv namespace create SYNC_KV
-# Copy the ID from the output into wrangler.jsonc
-wrangler secret put SIGNALING_TOKEN
-# Enter your token (same value as ORYXIS_SIGNALING_TOKEN in .env)
-wrangler deploy
-```
+1. **Signaling** — `device_id -> ip:port` lookup so peers can find
+   each other.
+2. **Relay** — carries sync traffic as fallback when QUIC direct
+   can't punch through NAT.
 
-Then set your Worker URL in Settings > Sync > Advanced > Signaling Server.
+**We don't run a central server**; you self-host. The server sees
+ciphertext only (payloads are sealed end-to-end with
+ChaCha20-Poly1305 from an X25519 DH at pairing time).
 
-The signaling server only stores `device_id -> IP:port` with a 5-minute TTL. It never sees encryption keys or vault data. All requests require a Bearer token to prevent unauthorized access.
+Three deployment options:
+
+- **Cloudflare Workers** (free tier covers normal use) — `signaling-worker/worker.js`
+- **Docker** — `ghcr.io/wilsonglasser/oryxis-relay:latest`
+- **Standalone binary** — `cargo install --path crates/oryxis-relay`
+
+Full step-by-step in [SELF_HOSTING.md](SELF_HOSTING.md).
 
 ### Keyboard Shortcuts
 
@@ -426,7 +430,7 @@ The signaling server only stores `device_id -> IP:port` with a 5-minute TTL. It 
 | **v0.4** | **Released** | Streaming AI responses, SSH agent forwarding, SSH integration tests, `app.rs` / `dispatch.rs` split into per-domain modules, theme contrast pass + per-theme button colors |
 | **v0.5** | **Released** | Authenticated proxies (SOCKS5 / HTTP CONNECT Basic), reusable Proxy Identities, jump-host-via-proxy stacking, `~/.ssh/config` `ProxyCommand` + `ProxyJump` import, opt-in password sync, Persian + Arabic UI with workspace-wide RTL layout pass, packaging + winget fixes |
 | **v0.6** | **Released** | AWS Cloud Accounts (named profile, static keys, IAM Identity Center / SSO), EC2 + ECS discovery and import, EC2 Instance Connect / SSM Session / ECS Exec transports, brand SVG icons, encrypted-key passphrase import, per-host initial command, Windows per-user + ARM64 installers, responsive card grid, `PATH` registration on Windows |
-| **v0.7** | Planned | P2P sync delivery (engine actually spawns, tombstone-driven delete propagation, two-sided pairing handshake with challenge/response, cross-network signaling via Cloudflare Workers + STUN, `oryxis://pair/...` link + QR pairing, live mDNS-discovered devices list with one-click pair), Kubernetes provider (`kubectl exec` into pods, namespace + label discovery), Google Cloud provider (Compute Engine + GKE), Azure provider (VMs + AKS), split panes, biometric unlock, custom themes, macOS bundling, Windows ConPTY local shell |
+| **v0.7** | Planned | P2P sync delivery (engine actually spawns, tombstone-driven delete propagation with 30-day TTL, two-sided pairing handshake with challenge/response, X25519-derived ChaCha20Poly1305 end-to-end payload encryption, cross-network signaling via Cloudflare Workers + STUN, self-hostable HTTP relay fallback (`oryxis-relay` binary + Docker image + Worker) for NAT-blocked peers, automatic direct→relay tier fallback at pairing and sync time, `oryxis://pair/...` link pairing, live mDNS-discovered devices list with one-click pair, 90s sync timeout + Cancel button), Kubernetes provider (`kubectl exec` into pods, namespace + label discovery), Google Cloud provider (Compute Engine + GKE), Azure provider (VMs + AKS), split panes, biometric unlock, custom themes, macOS bundling, Windows ConPTY local shell |
 | **v0.8** | Planned | Port forwarding as standalone entity (independent of terminal session, with on/off toggle, auto-start at boot, dedicated sidebar) — covers Local (`-L`), Remote (`-R`) and Dynamic SOCKS (`-D`) |
 
 ## Contributing
