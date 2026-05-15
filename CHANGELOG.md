@@ -6,6 +6,41 @@ project uses [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+- **P2P sync protocol version 3 (breaking).** `PairingRequest` and
+  `PairingAccepted` now carry the sender's `device_id`,
+  `PairingRequest` also carries the joiner's `listen_port`, and a new
+  `PairingChallenge` / `PairingResponse` round proves the joiner
+  holds the private key for the public key it sent (pairing runs
+  before any peer pubkey is persisted, so the Hello channel-binding
+  can't be reused here). Older devices cannot pair or sync with v3
+  devices; both ends must be on Oryxis 0.7+ for sync to work.
+
+### Added
+- **P2P sync is now actually operational.** Previous releases shipped
+  the UI over an orphaned engine; this release wires the engine into
+  the app lifecycle and fills the gaps:
+  - Engine spawns when sync is toggled on (LAN-only via mDNS) and
+    stops cleanly on toggle off. A dedicated `SyncRuntime` opens its
+    own `VaultStore` handle on the same SQLite file; concurrent access
+    is safe under WAL + `busy_timeout`.
+  - Deletes propagate: every syncable `delete_*` records a tombstone
+    in `sync_metadata`; the manifest surfaces tombstones; the
+    receiver applies the delete and records a fresh local tombstone
+    so the deletion keeps travelling onward.
+  - Two-sided pairing handshake: host shows a 6-digit code (single
+    shot, 5-minute TTL), joiner enters the code + the host's
+    `ip:port`, and both sides persist each other on success.
+  - Sync Now actually syncs (was a literal status-string stub).
+  - Engine events (peer discovered, sync completed, pairing progress)
+    flow into the UI via `Task::stream`; the Settings panel shows a
+    live engine-running indicator.
+
+  Known v1 limits: LAN only (cross-network signaling deferred);
+  pairing requires typing the host's `ip:port` (QR code / one-click
+  from the discovered-devices list deferred); mDNS-discovered peers
+  log to `tracing` but don't surface in the UI yet.
+
 ### Removed
 - Sentry crash/error reporting. Dropped the `sentry` and
   `sentry-tracing` dependencies, the `init_sentry()` boot hook, the
