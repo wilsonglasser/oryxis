@@ -48,6 +48,15 @@ pub const SUPPORTED_PROTOCOL_VERSIONS: &[u32] = &[1];
 /// entry of [`SUPPORTED_PROTOCOL_VERSIONS`].
 pub const PROTOCOL_VERSION: u32 = 1;
 
+/// Seed for the development plugin-signing keypair.
+///
+/// Shared between `oryxis-plugin-signer` (signs locally built
+/// binaries) and the app's `plugins::verify` (verifies them in debug
+/// builds). The dev key has no authority on a release build (see
+/// the app-side trust set), so committing it is fine and lets the
+/// pipeline be exercised end-to-end without the CI key.
+pub const DEV_PLUGIN_SIGNING_SEED: [u8; 32] = [0x42u8; 32];
+
 /// Pick the highest protocol version present in *both* sets, or
 /// `None` when the host and plugin share no common version (the host
 /// should then refuse to use the plugin and tell the user to update).

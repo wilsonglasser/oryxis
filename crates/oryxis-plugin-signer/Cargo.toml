@@ -1,0 +1,21 @@
+[package]
+name = "oryxis-plugin-signer"
+version = "0.1.0"
+edition = "2021"
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "oryxis-plugin-signer"
+path = "src/main.rs"
+
+[dependencies]
+# Shares the dev signing seed with the app's verify path so a
+# build locally signed with `--dev` is accepted in debug builds.
+oryxis-plugin-protocol = { workspace = true }
+ed25519-dalek = { workspace = true }
+base64 = { workspace = true }
+# RNG used only by the `keygen` subcommand for fresh prod keypairs.
+rand = { workspace = true }
+sha2 = "0.10"

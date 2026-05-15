@@ -10,6 +10,7 @@ members = [
     "crates/oryxis-cloud-aws",
     "crates/oryxis-cloud-aws-plugin",
     "crates/oryxis-plugin-protocol",
+    "crates/oryxis-plugin-signer",
     "crates/oryxis-app",
     "crates/oryxis-mcp",
 ]

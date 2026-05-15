@@ -23,29 +23,40 @@
 
 use base64::engine::general_purpose::STANDARD;
 use base64::Engine as _;
-use ed25519_dalek::{Signature, VerifyingKey};
+use ed25519_dalek::{Signature, SigningKey, VerifyingKey};
 
 use super::PluginError;
 
-/// Production plugin-signing public key. Replaced with the real
-/// 32-byte key when `oryxis-plugin-signer` + CI land.
-// TODO(PR 6): bake the real production Ed25519 public key here.
+/// Production plugin-signing public key. Bake the real 32-byte key
+/// here once Wilson generates the prod keypair, the private half
+/// lives in a CI secret; `oryxis-plugin-signer` reads it from
+/// `ORYXIS_SIGNING_KEY`.
+// TODO(prod-keypair): replace with the real bytes once generated.
 pub const PROD_PUBKEY: [u8; 32] = [0u8; 32];
 
-/// Development plugin-signing public key, trusted only in debug
-/// builds. Replaced with the committed dev key when `keygen-dev.sh`
-/// lands.
-// TODO(PR 6): bake the committed dev Ed25519 public key here.
-pub const DEV_PUBKEY: [u8; 32] = [0u8; 32];
+/// Seed for the development signing keypair. Re-exported from the
+/// protocol crate (where the signer also reads it) so the dev sign
+/// + verify halves are mathematically guaranteed to match.
+pub(crate) const DEV_SEED: [u8; 32] =
+    oryxis_plugin_protocol::DEV_PLUGIN_SIGNING_SEED;
+
+/// Public half of the dev signing keypair, derived from [`DEV_SEED`]
+/// at runtime. Avoids the chicken-and-egg of baking a const that
+/// can only be computed at runtime; the seed is statically known
+/// and ed25519's keygen is fast enough that the once-per-call
+/// derivation is invisible.
+fn dev_pubkey() -> [u8; 32] {
+    SigningKey::from_bytes(&DEV_SEED).verifying_key().to_bytes()
+}
 
 /// The trust anchors active for *this* build: prod always, dev only
-/// in debug builds. Placeholder (all-zero) keys are filtered out so
-/// an un-provisioned build trusts nothing rather than appearing to
-/// trust a null key.
+/// in debug builds. The placeholder (all-zero) prod key is filtered
+/// out so an un-provisioned build trusts nothing rather than
+/// appearing to trust a null key.
 fn active_pubkeys() -> Vec<[u8; 32]> {
     let mut keys = vec![PROD_PUBKEY];
     if cfg!(debug_assertions) {
-        keys.push(DEV_PUBKEY);
+        keys.push(dev_pubkey());
     }
     keys.retain(|k| k != &[0u8; 32]);
     keys
@@ -143,9 +154,30 @@ mod tests {
     }
 
     #[test]
-    fn unprovisioned_build_trusts_nothing() {
-        // Placeholder keys must be filtered out, an empty trust set
-        // means every binary is rejected.
-        assert!(active_pubkeys().is_empty());
+    fn active_pubkeys_match_build_profile() {
+        let keys = active_pubkeys();
+        if cfg!(debug_assertions) {
+            // Debug build trusts the derived dev pubkey; the prod
+            // placeholder (all-zero) is filtered out.
+            assert_eq!(keys.len(), 1);
+            assert_eq!(keys[0], dev_pubkey());
+        } else {
+            // Release build, the prod placeholder is still all-zero,
+            // nothing is trusted until `PROD_PUBKEY` is baked.
+            assert!(keys.is_empty());
+        }
+    }
+
+    /// End-to-end check: a signature made with the dev seed must
+    /// pass the real `verify` path in debug builds.
+    #[test]
+    fn dev_seed_signature_passes_real_verify() {
+        if !cfg!(debug_assertions) {
+            return;
+        }
+        let sk = SigningKey::from_bytes(&DEV_SEED);
+        let data = b"plugin binary contents";
+        let sig = STANDARD.encode(sk.sign(data).to_bytes());
+        assert!(verify(data, &sig).is_ok(), "dev-seed sig should verify");
     }
 }

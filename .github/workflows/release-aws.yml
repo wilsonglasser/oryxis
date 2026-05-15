@@ -1,0 +1,100 @@
+name: Release AWS plugin
+
+# Triggered by tags of the form `aws-v0.4.2`. Builds the
+# `oryxis-cloud-aws-plugin` binary for every supported platform,
+# signs it with the production Ed25519 key (from the
+# `ORYXIS_SIGNING_KEY` secret), and uploads the binary plus its
+# sidecar `.sig`, `.sha256`, and `.size` files to a GitHub Release.
+#
+# The matching `update-manifest.yml` workflow reads those uploaded
+# assets and publishes the manifest JSON the app reads from.
+
+on:
+  push:
+    tags:
+      - 'aws-v*'
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    name: Build ${{ matrix.label }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: linux-x86_64
+            runner: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            ext: ''
+          - label: linux-aarch64
+            runner: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+            ext: ''
+          - label: macos-aarch64
+            runner: macos-latest
+            target: aarch64-apple-darwin
+            ext: ''
+          - label: windows-x86_64
+            runner: windows-latest
+            target: x86_64-pc-windows-msvc
+            ext: '.exe'
+          - label: windows-aarch64
+            runner: windows-latest
+            target: aarch64-pc-windows-msvc
+            ext: '.exe'
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry/
+            ~/.cargo/git/
+            target/
+          key: aws-plugin-${{ matrix.label }}-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Build plugin (release)
+        run: cargo build --release -p oryxis-cloud-aws-plugin --target ${{ matrix.target }}
+
+      - name: Strip (unix)
+        if: runner.os != 'Windows'
+        run: strip target/${{ matrix.target }}/release/oryxis-cloud-aws-plugin${{ matrix.ext }}
+
+      - name: Build signer
+        run: cargo build --release -p oryxis-plugin-signer
+
+      - name: Sign + hash
+        shell: bash
+        env:
+          ORYXIS_SIGNING_KEY: ${{ secrets.ORYXIS_SIGNING_KEY }}
+        run: |
+          set -euo pipefail
+          BIN="target/${{ matrix.target }}/release/oryxis-cloud-aws-plugin${{ matrix.ext }}"
+          OUT="dist/oryxis-cloud-aws-plugin-${{ matrix.label }}${{ matrix.ext }}"
+          mkdir -p dist
+          cp "$BIN" "$OUT"
+          # The signer prints `sha256 = ...`, `signature_b64 = ...`,
+          # and `size = ...` on three separate lines.
+          ./target/release/oryxis-plugin-signer sign "$BIN" > "$OUT.signinfo"
+          grep '^sha256' "$OUT.signinfo" | awk '{print $3}' > "$OUT.sha256"
+          grep '^signature_b64' "$OUT.signinfo" | awk '{print $3}' > "$OUT.sig"
+          grep '^size' "$OUT.signinfo" | awk '{print $3}' > "$OUT.size"
+          rm "$OUT.signinfo"
+
+      - name: Upload to Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/oryxis-cloud-aws-plugin-${{ matrix.label }}${{ matrix.ext }}
+            dist/oryxis-cloud-aws-plugin-${{ matrix.label }}${{ matrix.ext }}.sig
+            dist/oryxis-cloud-aws-plugin-${{ matrix.label }}${{ matrix.ext }}.sha256
+            dist/oryxis-cloud-aws-plugin-${{ matrix.label }}${{ matrix.ext }}.size
+          tag_name: ${{ github.ref_name }}
