@@ -2,6 +2,7 @@
 #[allow(clippy::module_inception)]
 mod tests {
     use std::sync::{Arc, Mutex};
+    use std::time::Duration;
 
     use tempfile::NamedTempFile;
     use uuid::Uuid;
@@ -55,7 +56,7 @@ mod tests {
         let identity = DeviceIdentity::generate("test-device");
         let config = SyncConfig::default();
         let engine = SyncEngine::new(config, identity, Arc::new(Mutex::new(vault)));
-        let code = engine.start_pairing();
+        let code = engine.handle().start_hosting_pairing();
         assert_eq!(code.len(), 6);
         assert!(code.chars().all(|c| c.is_ascii_digit()));
     }
@@ -293,5 +294,116 @@ mod tests {
         let v = vault_arc.lock().unwrap();
         assert!(v.list_connections().unwrap().iter().all(|c| c.id != victim.id));
         assert!(v.list_tombstones().unwrap().iter().any(|t| t.entity_id == victim.id));
+    }
+
+    // ── Pairing handshake (two live engines) ──
+
+    /// Spin up an enabled engine on an OS-assigned port. Returns the
+    /// engine (kept alive by the caller) and its bound listen port.
+    fn started_engine(name: &str) -> (SyncEngine, u16) {
+        let config = SyncConfig {
+            enabled: true,
+            mode: SyncMode::Manual,
+            listen_port: 0,
+            ..SyncConfig::default()
+        };
+        let mut engine = SyncEngine::new(
+            config,
+            DeviceIdentity::generate(name),
+            Arc::new(Mutex::new(test_vault())),
+        );
+        let _events = engine.take_events();
+        engine.start().unwrap();
+        let port = engine.listen_port();
+        (engine, port)
+    }
+
+    fn loopback(port: u16) -> std::net::SocketAddr {
+        format!("127.0.0.1:{port}").parse().unwrap()
+    }
+
+    /// Full happy path: host advertises a code, joiner connects with it,
+    /// both sides end up with the other persisted as a peer.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn pairing_round_trip_two_engines() {
+        let (host, host_port) = started_engine("host");
+        let (joiner, _) = started_engine("joiner");
+        let host_id = host.identity().device_id;
+        let joiner_id = joiner.identity().device_id;
+
+        let code = host.handle().start_hosting_pairing();
+        joiner
+            .handle()
+            .join_pairing(loopback(host_port), code)
+            .await
+            .unwrap();
+
+        // The host persists the peer inside its accept-loop task; give
+        // it a moment to land.
+        tokio::time::sleep(Duration::from_millis(300)).await;
+
+        let joiner_peers = joiner.vault.lock().unwrap().list_sync_peers().unwrap();
+        assert_eq!(joiner_peers.len(), 1);
+        assert_eq!(joiner_peers[0].peer_id, host_id);
+
+        let host_peers = host.vault.lock().unwrap().list_sync_peers().unwrap();
+        assert_eq!(host_peers.len(), 1);
+        assert_eq!(host_peers[0].peer_id, joiner_id);
+    }
+
+    /// A wrong code is rejected and neither side stores a peer.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn pairing_rejects_wrong_code() {
+        let (host, host_port) = started_engine("host");
+        let (joiner, _) = started_engine("joiner");
+
+        host.handle().start_hosting_pairing();
+        let result = joiner
+            .handle()
+            .join_pairing(loopback(host_port), "000000".to_string())
+            .await;
+        assert!(result.is_err());
+
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        assert!(joiner.vault.lock().unwrap().list_sync_peers().unwrap().is_empty());
+        assert!(host.vault.lock().unwrap().list_sync_peers().unwrap().is_empty());
+    }
+
+    /// Joining with no code hosted at all is rejected.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn pairing_rejects_when_not_hosting() {
+        // `_host` keeps the engine (and its accept loop) alive for the
+        // duration of the test; it is otherwise not inspected.
+        let (_host, host_port) = started_engine("host");
+        let (joiner, _) = started_engine("joiner");
+
+        // No `start_hosting_pairing` call on the host.
+        let result = joiner
+            .handle()
+            .join_pairing(loopback(host_port), "123456".to_string())
+            .await;
+        assert!(result.is_err());
+    }
+
+    /// A hosted code pairs exactly one device: a second join with the
+    /// same code fails because the code was cleared on success.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn pairing_is_single_shot() {
+        let (host, host_port) = started_engine("host");
+        let (joiner, _) = started_engine("joiner");
+
+        let code = host.handle().start_hosting_pairing();
+        joiner
+            .handle()
+            .join_pairing(loopback(host_port), code.clone())
+            .await
+            .unwrap();
+        tokio::time::sleep(Duration::from_millis(300)).await;
+
+        let second = joiner
+            .handle()
+            .join_pairing(loopback(host_port), code)
+            .await;
+        assert!(second.is_err(), "the code should be single-shot");
     }
 }

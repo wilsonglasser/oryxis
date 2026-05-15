@@ -23,6 +23,7 @@ rand = { workspace = true }
 base64 = { workspace = true }
 bincode = { workspace = true }
 chacha20poly1305 = { workspace = true }
+subtle = "2"
 reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
 
 [dev-dependencies]

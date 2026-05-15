@@ -1,5 +1,6 @@
 use std::net::SocketAddr;
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use tokio::sync::mpsc;
 use uuid::Uuid;
@@ -51,14 +52,31 @@ pub enum SyncEvent {
     },
 }
 
+/// State for a device that is currently hosting a pairing code and
+/// waiting for a peer to join. Lives behind a `Mutex` shared between
+/// the engine, its `SyncHandle`s, and the QUIC accept loop.
+struct HostingPairing {
+    code: String,
+    expires_at: Instant,
+}
+
 /// P2P sync engine.
 pub struct SyncEngine {
     config: SyncConfig,
     identity: DeviceIdentity,
-    vault: Arc<std::sync::Mutex<VaultStore>>,
+    /// `pub(crate)` so the in-crate integration tests can inspect the
+    /// vault after a pairing / sync round-trip.
+    pub(crate) vault: Arc<std::sync::Mutex<VaultStore>>,
     event_tx: mpsc::UnboundedSender<SyncEvent>,
     event_rx: Option<mpsc::UnboundedReceiver<SyncEvent>>,
     shutdown_tx: Option<tokio::sync::broadcast::Sender<()>>,
+    /// Set while this device is hosting a pairing code (single-shot:
+    /// cleared once a peer successfully pairs, or on expiry / cancel).
+    hosting_pairing: Arc<std::sync::Mutex<Option<HostingPairing>>>,
+    /// The QUIC port the server actually bound, known only after
+    /// `start()`. Advertised to joiners in `PairingRequest` so the
+    /// host can sync back to us.
+    bound_port: u16,
 }
 
 impl SyncEngine {
@@ -76,6 +94,8 @@ impl SyncEngine {
             event_tx,
             event_rx: Some(event_rx),
             shutdown_tx: None,
+            hosting_pairing: Arc::new(std::sync::Mutex::new(None)),
+            bound_port: 0,
         }
     }
 
@@ -112,6 +132,9 @@ impl SyncEngine {
             .local_addr()
             .map(|a| a.port())
             .unwrap_or(0);
+        // Remember the actually-bound port so `SyncHandle` can advertise
+        // it to pairing joiners (the configured port may have been 0).
+        self.bound_port = listen_port;
 
         // Start mDNS registration and browsing
         let (discovery_tx, mut discovery_rx) = mpsc::unbounded_channel();
@@ -140,6 +163,7 @@ impl SyncEngine {
         let vault = self.vault.clone();
         let identity = self.identity.clone();
         let event_tx = self.event_tx.clone();
+        let hosting_pairing = self.hosting_pairing.clone();
         let mut shutdown_rx = shutdown_tx.subscribe();
         tokio::spawn(async move {
             loop {
@@ -149,8 +173,9 @@ impl SyncEngine {
                             let vault = vault.clone();
                             let identity = identity.clone();
                             let event_tx = event_tx.clone();
+                            let hosting_pairing = hosting_pairing.clone();
                             tokio::spawn(async move {
-                                if let Err(e) = handle_incoming(incoming, vault, identity, event_tx).await {
+                                if let Err(e) = handle_incoming(incoming, vault, identity, event_tx, hosting_pairing).await {
                                     tracing::warn!("Incoming connection failed: {}", e);
                                 }
                             });
@@ -201,30 +226,29 @@ impl SyncEngine {
         sync_all_peers(&self.vault, &self.identity, &self.config, &self.event_tx).await
     }
 
-    /// Get a cheap, cloneable handle for triggering syncs without
-    /// owning the engine. The engine stays put in app state while the
-    /// handle can be moved into a background `Task`.
+    /// Get a cheap, cloneable handle for triggering syncs and pairing
+    /// without owning the engine. The engine stays put in app state
+    /// while the handle can be moved into a background `Task`. Call
+    /// after `start()` so `bound_port` is the real listener.
     pub fn handle(&self) -> SyncHandle {
         SyncHandle {
             config: self.config.clone(),
             identity: self.identity.clone(),
             vault: self.vault.clone(),
             event_tx: self.event_tx.clone(),
+            hosting_pairing: self.hosting_pairing.clone(),
+            listen_port: self.bound_port,
         }
-    }
-
-    /// Start pairing, returns a 6-digit code to show the user.
-    pub fn start_pairing(&self) -> String {
-        let code = crypto::generate_pairing_code();
-        let _ = self.event_tx.send(SyncEvent::PairingCodeGenerated {
-            code: code.clone(),
-        });
-        code
     }
 
     /// Get the device identity.
     pub fn identity(&self) -> &DeviceIdentity {
         &self.identity
+    }
+
+    /// The QUIC port the server bound. Zero until `start()` has run.
+    pub fn listen_port(&self) -> u16 {
+        self.bound_port
     }
 
     /// Get the config.
@@ -244,7 +268,12 @@ pub struct SyncHandle {
     identity: DeviceIdentity,
     vault: Arc<std::sync::Mutex<VaultStore>>,
     event_tx: mpsc::UnboundedSender<SyncEvent>,
+    hosting_pairing: Arc<std::sync::Mutex<Option<HostingPairing>>>,
+    listen_port: u16,
 }
+
+/// How long a hosted pairing code stays valid.
+const PAIRING_CODE_TTL: Duration = Duration::from_secs(300);
 
 impl SyncHandle {
     /// Sync with every active paired peer. Safe to call from a
@@ -252,6 +281,140 @@ impl SyncHandle {
     /// across an `.await`.
     pub async fn sync_now(&self) -> Result<(), SyncError> {
         sync_all_peers(&self.vault, &self.identity, &self.config, &self.event_tx).await
+    }
+
+    /// Begin hosting a pairing code. Returns the 6-digit code to show
+    /// the user; the matching `SyncEvent::PairingCodeGenerated` is also
+    /// emitted so any subscriber sees it. The code is single-shot and
+    /// expires after `PAIRING_CODE_TTL`.
+    pub fn start_hosting_pairing(&self) -> String {
+        let code = crypto::generate_pairing_code();
+        if let Ok(mut state) = self.hosting_pairing.lock() {
+            *state = Some(HostingPairing {
+                code: code.clone(),
+                expires_at: Instant::now() + PAIRING_CODE_TTL,
+            });
+        }
+        let _ = self
+            .event_tx
+            .send(SyncEvent::PairingCodeGenerated { code: code.clone() });
+        code
+    }
+
+    /// Stop hosting a pairing code (user cancelled, or the modal closed).
+    pub fn cancel_hosting_pairing(&self) {
+        if let Ok(mut state) = self.hosting_pairing.lock() {
+            *state = None;
+        }
+    }
+
+    /// Join a peer that is hosting a pairing code: connect to `addr`,
+    /// run the challenge/response handshake, and on success persist the
+    /// host as a peer. Emits `PairingCompleted` / `PairingFailed`.
+    pub async fn join_pairing(&self, addr: SocketAddr, code: String) -> Result<(), SyncError> {
+        match self.join_pairing_inner(addr, &code).await {
+            Ok((device_id, device_name)) => {
+                let _ = self.event_tx.send(SyncEvent::PairingCompleted {
+                    device_id,
+                    device_name,
+                });
+                Ok(())
+            }
+            Err(e) => {
+                let _ = self.event_tx.send(SyncEvent::PairingFailed {
+                    reason: e.to_string(),
+                });
+                Err(e)
+            }
+        }
+    }
+
+    async fn join_pairing_inner(
+        &self,
+        addr: SocketAddr,
+        code: &str,
+    ) -> Result<(Uuid, String), SyncError> {
+        let _ = rustls::crypto::ring::default_provider().install_default();
+        let client = transport::create_client_endpoint()?;
+        let connection = client
+            .connect(addr, "oryxis-sync")
+            .map_err(|e| SyncError::Transport(format!("Connect: {}", e)))?
+            .await
+            .map_err(|e| SyncError::Transport(format!("Handshake: {}", e)))?;
+        eprintln!("DBG join: connected");
+        let (mut send, mut recv) = connection
+            .open_bi()
+            .await
+            .map_err(|e| SyncError::Transport(format!("Open stream: {}", e)))?;
+
+        transport::send_message(
+            &mut send,
+            &SyncMessage::PairingRequest {
+                device_id: self.identity.device_id,
+                device_name: self.identity.device_name.clone(),
+                public_key: self.identity.public_key_bytes(),
+                pairing_code: code.to_string(),
+                listen_port: self.listen_port,
+            },
+        )
+        .await?;
+
+        // Host -> PairingChallenge (or PairingRejected).
+        let challenge = match transport::recv_message(&mut recv).await? {
+            SyncMessage::PairingChallenge { challenge } => challenge,
+            SyncMessage::PairingRejected { reason } => {
+                return Err(SyncError::PairingFailed(reason));
+            }
+            _ => return Err(SyncError::Protocol("Expected PairingChallenge".into())),
+        };
+        let challenge: [u8; 32] = challenge
+            .as_slice()
+            .try_into()
+            .map_err(|_| SyncError::Protocol("Challenge must be 32 bytes".into()))?;
+
+        // Prove possession of the private key paired with the public
+        // key we just sent.
+        let signed = crypto::sign_ed25519_32(&self.identity.signing_key, &challenge);
+        transport::send_message(
+            &mut send,
+            &SyncMessage::PairingResponse {
+                signed_challenge: signed.to_vec(),
+            },
+        )
+        .await?;
+
+        // Host -> PairingAccepted (or PairingRejected).
+        let (device_id, device_name, public_key) =
+            match transport::recv_message(&mut recv).await? {
+                SyncMessage::PairingAccepted {
+                    device_id,
+                    device_name,
+                    public_key,
+                } => (device_id, device_name, public_key),
+                SyncMessage::PairingRejected { reason } => {
+                    return Err(SyncError::PairingFailed(reason));
+                }
+                _ => return Err(SyncError::Protocol("Expected PairingAccepted".into())),
+            };
+
+        // Persist the host as a peer. `addr` is the host's listen
+        // address (it is what we dialed), so future syncs can reach it.
+        let now = chrono::Utc::now();
+        {
+            let v = self
+                .vault
+                .lock()
+                .map_err(|_| SyncError::Vault("Lock".into()))?;
+            v.save_sync_peer(&device_id, &device_name, &public_key, None, &now)?;
+            v.update_sync_peer_endpoint(&device_id, &addr.ip().to_string(), addr.port())?;
+        }
+
+        // Send `Bye` as a delivery barrier: it tells the host we have
+        // read `PairingAccepted`, so the host can drop the connection
+        // without losing the still-buffered final frame. Mirrors the
+        // `Bye` the sync session already uses for the same reason.
+        let _ = transport::send_message(&mut send, &SyncMessage::Bye).await;
+        Ok((device_id, device_name))
     }
 }
 
@@ -261,6 +424,7 @@ async fn handle_incoming(
     vault: Arc<std::sync::Mutex<VaultStore>>,
     identity: DeviceIdentity,
     event_tx: mpsc::UnboundedSender<SyncEvent>,
+    hosting_pairing: Arc<std::sync::Mutex<Option<HostingPairing>>>,
 ) -> Result<(), SyncError> {
     let connection = incoming
         .await
@@ -277,7 +441,7 @@ async fn handle_incoming(
         .await
         .map_err(|e| SyncError::Transport(format!("Accept stream: {}", e)))?;
 
-    // Receive Hello
+    // Receive Hello (or a PairingRequest)
     let msg = transport::recv_message(&mut recv).await?;
     let (peer_id, peer_auth_sig) = match msg {
         SyncMessage::Hello {
@@ -290,13 +454,32 @@ async fn handle_incoming(
             }
             (device_id, auth_signature)
         }
-        SyncMessage::PairingRequest { .. } => {
-            // Handle pairing on server side
-            // For now, reject (pairing needs the code from UI)
-            transport::send_message(&mut send, &SyncMessage::PairingRejected {
-                reason: "Use the pairing code flow".into(),
-            }).await?;
-            return Ok(());
+        SyncMessage::PairingRequest {
+            device_id,
+            device_name,
+            public_key,
+            pairing_code,
+            listen_port,
+        } => {
+            // Pairing connection, not a sync session. Run the
+            // challenge/response handshake and return, never touching
+            // the Hello auth path below.
+            let peer_addr = connection.remote_address();
+            return handle_pairing_request(
+                &mut send,
+                &mut recv,
+                &vault,
+                &identity,
+                &hosting_pairing,
+                &event_tx,
+                device_id,
+                device_name,
+                public_key,
+                pairing_code,
+                peer_addr,
+                listen_port,
+            )
+            .await;
         }
         _ => return Err(SyncError::Protocol("Expected Hello".into())),
     };
@@ -353,6 +536,118 @@ async fn handle_incoming(
         }
     }
 
+    Ok(())
+}
+
+/// Server side of the pairing handshake. The joiner has already sent
+/// `PairingRequest`; we check it against the code we are hosting,
+/// challenge the joiner to prove it holds the private key for the
+/// public key it sent, and on success persist it as a peer and reply
+/// with our own identity. Single-shot: a successful pair clears the
+/// hosting code so the same code can't pair a second device.
+#[allow(clippy::too_many_arguments)]
+async fn handle_pairing_request(
+    send: &mut quinn::SendStream,
+    recv: &mut quinn::RecvStream,
+    vault: &Arc<std::sync::Mutex<VaultStore>>,
+    identity: &DeviceIdentity,
+    hosting_pairing: &Arc<std::sync::Mutex<Option<HostingPairing>>>,
+    event_tx: &mpsc::UnboundedSender<SyncEvent>,
+    device_id: Uuid,
+    device_name: String,
+    public_key: Vec<u8>,
+    pairing_code: String,
+    peer_addr: SocketAddr,
+    listen_port: u16,
+) -> Result<(), SyncError> {
+    // Is there a live hosting code? Drop expired ones here so a stale
+    // code never pairs.
+    let expected = {
+        let state = hosting_pairing
+            .lock()
+            .map_err(|_| SyncError::Vault("Lock".into()))?;
+        state
+            .as_ref()
+            .filter(|s| s.expires_at > Instant::now())
+            .map(|s| s.code.clone())
+    };
+    let Some(expected) = expected else {
+        return reject_pairing(send, recv, "Not hosting pairing (or code expired)").await;
+    };
+    if !crypto::constant_time_eq(expected.as_bytes(), pairing_code.as_bytes()) {
+        return reject_pairing(send, recv, "Wrong pairing code").await;
+    }
+
+    // Code matches. Challenge the joiner with a fresh nonce so an
+    // intercepted `PairingRequest` can't be replayed.
+    let challenge = crypto::random_challenge();
+    transport::send_message(
+        send,
+        &SyncMessage::PairingChallenge {
+            challenge: challenge.to_vec(),
+        },
+    )
+    .await?;
+
+    let signed = match transport::recv_message(recv).await? {
+        SyncMessage::PairingResponse { signed_challenge } => signed_challenge,
+        _ => return Err(SyncError::Protocol("Expected PairingResponse".into())),
+    };
+    if crypto::verify_ed25519_32(&public_key, &challenge, &signed).is_err() {
+        return reject_pairing(send, recv, "Bad challenge response").await;
+    }
+
+    // Verified. Persist the joiner as a peer (IP from the connection,
+    // listen port from the request) and clear the single-shot code.
+    let now = chrono::Utc::now();
+    {
+        let v = vault.lock().map_err(|_| SyncError::Vault("Lock".into()))?;
+        v.save_sync_peer(&device_id, &device_name, &public_key, None, &now)?;
+        v.update_sync_peer_endpoint(&device_id, &peer_addr.ip().to_string(), listen_port)?;
+    }
+    if let Ok(mut state) = hosting_pairing.lock() {
+        *state = None;
+    }
+
+    transport::send_message(
+        send,
+        &SyncMessage::PairingAccepted {
+            device_id: identity.device_id,
+            device_name: identity.device_name.clone(),
+            public_key: identity.public_key_bytes(),
+        },
+    )
+    .await?;
+    // Delivery barrier: wait for the joiner's `Bye` so we don't drop
+    // the connection (and the still-buffered `PairingAccepted` frame)
+    // before the joiner has read it.
+    let _ = transport::recv_message(recv).await;
+
+    let _ = event_tx.send(SyncEvent::PairingCompleted {
+        device_id,
+        device_name,
+    });
+    Ok(())
+}
+
+/// Send a `PairingRejected` and hold the connection open until the
+/// joiner has read it: without the barrier `recv`, returning here
+/// would drop the connection before the still-buffered rejection
+/// frame is delivered, and the joiner would see a bare "connection
+/// lost" instead of the reason.
+async fn reject_pairing(
+    send: &mut quinn::SendStream,
+    recv: &mut quinn::RecvStream,
+    reason: &str,
+) -> Result<(), SyncError> {
+    transport::send_message(
+        send,
+        &SyncMessage::PairingRejected {
+            reason: reason.to_string(),
+        },
+    )
+    .await?;
+    let _ = transport::recv_message(recv).await;
     Ok(())
 }
 

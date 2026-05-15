@@ -112,28 +112,22 @@ impl DeviceIdentity {
     }
 }
 
-/// Sign the channel-binding exporter with this device's Ed25519 key.
-/// The exporter comes from the QUIC TLS session (RFC 5705), so the
-/// resulting signature is bound to the specific TLS session: a MITM
-/// with its own TLS context will see a different exporter and cannot
-/// forge or relay a valid signature without holding the private key.
-pub fn sign_session_handshake(
-    signing_key: &SigningKey,
-    exporter: &[u8; SESSION_EXPORTER_LEN],
-) -> [u8; 64] {
-    signing_key.sign(exporter).to_bytes()
+/// Sign a 32-byte message with this device's Ed25519 key. The generic
+/// primitive behind both the session channel-binding signature and the
+/// pairing challenge response (the challenge nonce is also 32 bytes).
+pub fn sign_ed25519_32(signing_key: &SigningKey, message: &[u8; 32]) -> [u8; 64] {
+    signing_key.sign(message).to_bytes()
 }
 
-/// Verify a peer's Ed25519 signature over the channel-binding exporter.
-/// `peer_pubkey` is the 32-byte raw VerifyingKey bytes stored on the
-/// `SyncPeer` row at pairing time. Fails if either input is malformed
-/// or the signature does not match.
-pub fn verify_session_handshake(
-    peer_pubkey: &[u8],
-    exporter: &[u8; SESSION_EXPORTER_LEN],
+/// Verify an Ed25519 signature over a 32-byte message against a raw
+/// 32-byte public key. Generic counterpart of [`sign_ed25519_32`].
+/// Fails if either input is malformed or the signature does not match.
+pub fn verify_ed25519_32(
+    pubkey: &[u8],
+    message: &[u8; 32],
     signature: &[u8],
 ) -> Result<(), SyncError> {
-    let pubkey_array: [u8; 32] = peer_pubkey
+    let pubkey_array: [u8; 32] = pubkey
         .try_into()
         .map_err(|_| SyncError::Crypto("Peer pubkey must be 32 bytes".into()))?;
     let verifying = VerifyingKey::from_bytes(&pubkey_array)
@@ -143,8 +137,42 @@ pub fn verify_session_handshake(
         .map_err(|_| SyncError::Crypto("Signature must be 64 bytes".into()))?;
     let sig = Signature::from_bytes(&sig_array);
     verifying
-        .verify_strict(exporter, &sig)
-        .map_err(|e| SyncError::Crypto(format!("Auth signature verify failed: {}", e)))
+        .verify_strict(message, &sig)
+        .map_err(|e| SyncError::Crypto(format!("Ed25519 verify failed: {}", e)))
+}
+
+/// Sign the channel-binding exporter with this device's Ed25519 key.
+/// The exporter comes from the QUIC TLS session (RFC 5705), so the
+/// resulting signature is bound to the specific TLS session: a MITM
+/// with its own TLS context will see a different exporter and cannot
+/// forge or relay a valid signature without holding the private key.
+pub fn sign_session_handshake(
+    signing_key: &SigningKey,
+    exporter: &[u8; SESSION_EXPORTER_LEN],
+) -> [u8; 64] {
+    sign_ed25519_32(signing_key, exporter)
+}
+
+/// Verify a peer's Ed25519 signature over the channel-binding exporter.
+/// `peer_pubkey` is the 32-byte raw VerifyingKey bytes stored on the
+/// `SyncPeer` row at pairing time.
+pub fn verify_session_handshake(
+    peer_pubkey: &[u8],
+    exporter: &[u8; SESSION_EXPORTER_LEN],
+    signature: &[u8],
+) -> Result<(), SyncError> {
+    verify_ed25519_32(peer_pubkey, exporter, signature)
+}
+
+/// Constant-time byte comparison for the pairing-code check. Returns
+/// true only when both slices are the same length and content; the
+/// timing does not reveal where (or whether) they first differ.
+pub fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
+    use subtle::ConstantTimeEq;
+    if a.len() != b.len() {
+        return false;
+    }
+    a.ct_eq(b).into()
 }
 
 /// Generate a 6-digit numeric pairing code.
@@ -152,6 +180,13 @@ pub fn generate_pairing_code() -> String {
     let mut rng = OsRng;
     let code: u32 = rng.next_u32() % 1_000_000;
     format!("{:06}", code)
+}
+
+/// Generate a fresh 32-byte random nonce for the pairing challenge.
+pub fn random_challenge() -> [u8; 32] {
+    let mut challenge = [0u8; 32];
+    OsRng.fill_bytes(&mut challenge);
+    challenge
 }
 
 /// Perform X25519 key exchange to derive a shared secret.
@@ -335,6 +370,35 @@ mod tests {
         let err =
             verify_session_handshake(&alice.public_key_bytes(), &exporter_bob_session, &sig);
         assert!(err.is_err());
+    }
+
+    #[test]
+    fn constant_time_eq_matches_and_rejects() {
+        assert!(constant_time_eq(b"123456", b"123456"));
+        assert!(!constant_time_eq(b"123456", b"123457"));
+        assert!(!constant_time_eq(b"123456", b"12345"));
+        assert!(constant_time_eq(b"", b""));
+    }
+
+    #[test]
+    fn ed25519_32_sign_verify_roundtrip() {
+        let identity = DeviceIdentity::generate("alice");
+        let challenge = [9u8; 32];
+        let sig = sign_ed25519_32(&identity.signing_key, &challenge);
+        verify_ed25519_32(&identity.public_key_bytes(), &challenge, &sig).unwrap();
+        // A different signer's signature must not verify.
+        let mallory = DeviceIdentity::generate("mallory");
+        let bad = sign_ed25519_32(&mallory.signing_key, &challenge);
+        assert!(verify_ed25519_32(&identity.public_key_bytes(), &challenge, &bad).is_err());
+    }
+
+    #[test]
+    fn random_challenge_is_32_bytes_and_varies() {
+        let a = random_challenge();
+        let b = random_challenge();
+        assert_eq!(a.len(), 32);
+        // Astronomically unlikely to collide; guards against a stub.
+        assert_ne!(a, b);
     }
 
     #[test]
