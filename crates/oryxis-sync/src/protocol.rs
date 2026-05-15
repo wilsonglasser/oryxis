@@ -46,6 +46,27 @@ impl std::fmt::Display for EntityType {
     }
 }
 
+impl EntityType {
+    /// Parse the wire string produced by [`Display`]. This is the
+    /// inverse used to map the vault's string-typed `sync_metadata`
+    /// tombstones back into typed manifest entries. An unknown string
+    /// (an entity type only a newer peer knows about) returns `None`,
+    /// so the caller skips that entry instead of failing the sync.
+    pub fn from_wire_str(s: &str) -> Option<Self> {
+        match s {
+            "connection" => Some(Self::Connection),
+            "key" => Some(Self::SshKey),
+            "identity" => Some(Self::Identity),
+            "group" => Some(Self::Group),
+            "snippet" => Some(Self::Snippet),
+            "known_host" => Some(Self::KnownHost),
+            "proxy_identity" => Some(Self::ProxyIdentity),
+            "cloud_profile" => Some(Self::CloudProfile),
+            _ => None,
+        }
+    }
+}
+
 /// Messages exchanged over QUIC streams.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum SyncMessage {
@@ -220,6 +241,28 @@ mod tests {
             }
             _ => panic!("Wrong message type"),
         }
+    }
+
+    /// `Display` and `from_wire_str` must be exact inverses for every
+    /// variant, the vault tombstone table stores the string form and
+    /// the manifest builder maps it back.
+    #[test]
+    fn entity_type_wire_str_round_trip() {
+        let all = [
+            EntityType::Connection,
+            EntityType::SshKey,
+            EntityType::Identity,
+            EntityType::Group,
+            EntityType::Snippet,
+            EntityType::KnownHost,
+            EntityType::ProxyIdentity,
+            EntityType::CloudProfile,
+        ];
+        for et in all {
+            let s = et.to_string();
+            assert_eq!(EntityType::from_wire_str(&s), Some(et), "round-trip {s}");
+        }
+        assert_eq!(EntityType::from_wire_str("unknown_future_type"), None);
     }
 
     #[test]

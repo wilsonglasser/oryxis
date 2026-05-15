@@ -210,4 +210,87 @@ mod tests {
         assert_eq!(first.device_id, second.device_id);
         assert_eq!(first_pub, second.public_key_bytes());
     }
+
+    // ── Tombstones in the sync manifest / delta path ──
+
+    /// Deleting an entity must surface a tombstone (`is_deleted = true`)
+    /// in the manifest, while surviving entities stay `is_deleted = false`.
+    #[test]
+    fn tombstone_round_trip_in_manifest() {
+        use crate::engine::build_manifest;
+
+        let vault = test_vault();
+        let keep = Connection::new("keep", "10.0.0.1");
+        let doomed = Connection::new("delete-me", "10.0.0.2");
+        vault.save_connection(&keep, None).unwrap();
+        vault.save_connection(&doomed, None).unwrap();
+        vault.delete_connection(&doomed.id).unwrap();
+
+        let vault_arc = Arc::new(Mutex::new(vault));
+        let manifest = build_manifest(&vault_arc).unwrap();
+
+        let kept = manifest.iter().find(|e| e.entity_id == keep.id).unwrap();
+        assert!(!kept.is_deleted);
+
+        let tomb = manifest.iter().find(|e| e.entity_id == doomed.id).unwrap();
+        assert!(tomb.is_deleted);
+        assert_eq!(tomb.entity_type, EntityType::Connection);
+    }
+
+    /// A delta request for a tombstoned id returns a deletion marker:
+    /// empty payload, `is_deleted = true`.
+    #[test]
+    fn collect_records_emits_deletion_marker() {
+        use crate::engine::collect_records;
+        use crate::protocol::DeltaRef;
+
+        let vault = test_vault();
+        let doomed = Connection::new("delete-me", "10.0.0.2");
+        vault.save_connection(&doomed, None).unwrap();
+        vault.delete_connection(&doomed.id).unwrap();
+
+        let vault_arc = Arc::new(Mutex::new(vault));
+        let records = collect_records(
+            &vault_arc,
+            &[DeltaRef {
+                entity_type: EntityType::Connection,
+                entity_id: doomed.id,
+            }],
+        )
+        .unwrap();
+
+        assert_eq!(records.len(), 1);
+        assert!(records[0].is_deleted);
+        assert!(records[0].payload.is_empty());
+    }
+
+    /// Applying a deletion record removes the entity locally AND leaves
+    /// a fresh local tombstone, so the delete keeps propagating to this
+    /// device's other peers.
+    #[test]
+    fn apply_records_propagates_deletion() {
+        use crate::engine::apply_records;
+        use crate::protocol::SyncRecord;
+
+        let vault = test_vault();
+        let victim = Connection::new("victim", "10.0.0.1");
+        vault.save_connection(&victim, None).unwrap();
+
+        let vault_arc = Arc::new(Mutex::new(vault));
+        apply_records(
+            &vault_arc,
+            &[SyncRecord {
+                entity_type: EntityType::Connection,
+                entity_id: victim.id,
+                updated_at: chrono::Utc::now(),
+                is_deleted: true,
+                payload: Vec::new(),
+            }],
+        )
+        .unwrap();
+
+        let v = vault_arc.lock().unwrap();
+        assert!(v.list_connections().unwrap().iter().all(|c| c.id != victim.id));
+        assert!(v.list_tombstones().unwrap().iter().any(|t| t.entity_id == victim.id));
+    }
 }

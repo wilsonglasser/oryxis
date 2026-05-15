@@ -364,8 +364,12 @@ async fn handle_sync_session(
     Ok((pushed, pulled))
 }
 
-/// Build a manifest of all syncable entities in the vault.
-fn build_manifest(
+/// Build a manifest of all syncable entities in the vault, plus a
+/// deletion entry (`is_deleted = true`) for every tombstone recorded
+/// in `sync_metadata`. The tombstones are what let a delete propagate:
+/// without them a peer that still holds the entity would push its
+/// stale copy back and the delete would silently undo itself.
+pub(crate) fn build_manifest(
     vault: &Arc<std::sync::Mutex<VaultStore>>,
 ) -> Result<Vec<ManifestEntry>, SyncError> {
     let v = vault.lock().map_err(|_| SyncError::Vault("Lock".into()))?;
@@ -436,15 +440,43 @@ fn build_manifest(
         });
     }
 
+    // Tombstones. A live entity always wins over a stale tombstone for
+    // the same id (the entity was re-created from a newer peer copy
+    // after the delete), so we only surface tombstones whose id isn't
+    // already present as a live entry above.
+    let live: std::collections::HashSet<(EntityType, Uuid)> =
+        entries.iter().map(|e| (e.entity_type, e.entity_id)).collect();
+    for tomb in v.list_tombstones()? {
+        let Some(entity_type) = EntityType::from_wire_str(&tomb.entity_type) else {
+            // Tombstone for an entity type this build doesn't know.
+            // Skip it rather than fail the whole manifest.
+            continue;
+        };
+        if live.contains(&(entity_type, tomb.entity_id)) {
+            continue;
+        }
+        entries.push(ManifestEntry {
+            entity_type,
+            entity_id: tomb.entity_id,
+            updated_at: tomb.deleted_at,
+            is_deleted: true,
+        });
+    }
+
     Ok(entries)
 }
 
-/// Collect serialized records requested by the peer.
-fn collect_records(
+/// Collect serialized records requested by the peer. A requested ref
+/// that matches a tombstone is returned as a deletion marker (empty
+/// payload, `is_deleted = true`) instead of an entity payload.
+pub(crate) fn collect_records(
     vault: &Arc<std::sync::Mutex<VaultStore>>,
     needed: &[protocol::DeltaRef],
 ) -> Result<Vec<protocol::SyncRecord>, SyncError> {
     let v = vault.lock().map_err(|_| SyncError::Vault("Lock".into()))?;
+    // Tombstones recorded in `sync_metadata`. Loaded once up front so a
+    // large `needed` list doesn't re-query per ref.
+    let tombstones = v.list_tombstones()?;
     // Off by default. When on, password fields are included in the
     // wrapper payloads, older peers ignore them automatically. The
     // setting lives in the SQLite `settings` table so it flips per
@@ -458,6 +490,24 @@ fn collect_records(
     let mut records = Vec::new();
 
     for delta in needed {
+        // A requested ref that matches a tombstone is a deletion: emit
+        // a marker record with an empty payload carrying the deletion
+        // timestamp, so the receiver's LWW resolves it like any other
+        // record and `apply_records` runs the local delete.
+        if let Some(tomb) = tombstones.iter().find(|t| {
+            t.entity_id == delta.entity_id
+                && EntityType::from_wire_str(&t.entity_type) == Some(delta.entity_type)
+        }) {
+            records.push(protocol::SyncRecord {
+                entity_type: delta.entity_type,
+                entity_id: delta.entity_id,
+                updated_at: tomb.deleted_at,
+                is_deleted: true,
+                payload: Vec::new(),
+            });
+            continue;
+        }
+
         // For now, payload is unencrypted JSON (E2E encryption uses shared secret, added in pairing flow)
         let payload = match delta.entity_type {
             EntityType::Connection => {
@@ -566,8 +616,11 @@ fn collect_records(
     Ok(records)
 }
 
-/// Apply received records to the local vault.
-fn apply_records(
+/// Apply received records to the local vault. A record with
+/// `is_deleted = true` runs the matching `delete_*`, which also records
+/// a fresh local tombstone, so the deletion keeps propagating onward to
+/// this device's other peers.
+pub(crate) fn apply_records(
     vault: &Arc<std::sync::Mutex<VaultStore>>,
     records: &[protocol::SyncRecord],
 ) -> Result<(), SyncError> {
