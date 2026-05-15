@@ -42,6 +42,25 @@ async fn main() {
         std::process::exit(1);
     }
 
+    // Token gate: if the vault stores a non-empty `mcp_server_token`,
+    // the caller MUST present a matching `ORYXIS_MCP_TOKEN` env var.
+    // An empty stored token keeps the legacy unauthenticated path so
+    // existing setups don't break on upgrade.
+    let stored_token = vault
+        .get_setting("mcp_server_token")
+        .ok()
+        .flatten()
+        .unwrap_or_default();
+    if !stored_token.is_empty() {
+        let supplied = std::env::var("ORYXIS_MCP_TOKEN").unwrap_or_default();
+        if supplied != stored_token {
+            eprintln!(
+                "MCP token mismatch. Set ORYXIS_MCP_TOKEN to the value shown in Oryxis Settings > Security > MCP. Regenerate the token there if you've lost it."
+            );
+            std::process::exit(1);
+        }
+    }
+
     tracing::info!("Oryxis MCP server started");
 
     // JSON-RPC stdio loop

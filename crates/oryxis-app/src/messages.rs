@@ -624,6 +624,16 @@ pub enum Message {
     CopyMcpConfig,
     InstallMcpConfig,
     InstallMcpConfigResult(Result<String, String>),
+    /// Generate a fresh random MCP server token and persist it. Wipes
+    /// the previous value, every existing MCP config will need to be
+    /// reissued (re-copy / re-install) with the new token.
+    RegenerateMcpToken,
+    /// Show / hide the MCP token in plain text on the settings panel.
+    /// Default masked.
+    ToggleMcpTokenVisibility,
+    /// Put the active MCP token on the clipboard. Logs nothing, the
+    /// toast tells the user it was copied.
+    CopyMcpToken,
 
     // Sync
     SyncToggleEnabled,

@@ -56,6 +56,8 @@ ed25519-dalek = { workspace = true }
 # SHA-256 over downloaded plugin binaries, checked against the
 # manifest before the Ed25519 signature gate.
 sha2 = "0.10"
+# RNG used to generate the MCP server token (32 random bytes).
+rand = { workspace = true }
 # Base64 decode for the manifest's signature field.
 base64 = { workspace = true }
 # Plugin cache lives under the same `~/.oryxis` root the vault uses;

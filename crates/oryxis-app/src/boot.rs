@@ -302,6 +302,8 @@ impl Oryxis {
                 show_mcp_info: false,
                 mcp_config_copied: false,
                 mcp_install_status: None,
+                mcp_server_token: String::new(),
+                mcp_token_visible: false,
                 sync_enabled: false,
                 sync_mode: "manual".into(),
                 sync_passwords: false,
@@ -455,6 +457,11 @@ impl Oryxis {
             self.ai_api_key_set = vault.get_ai_api_key().ok().flatten().is_some();
             if let Ok(Some(v)) = vault.get_setting("mcp_server_enabled") {
                 self.mcp_server_enabled = v == "true";
+            }
+            // Token MCP clients must present; empty means auth is off
+            // (server allows any caller as long as the global toggle is on).
+            if let Ok(Some(v)) = vault.get_setting("mcp_server_token") {
+                self.mcp_server_token = v;
             }
 
             // Sync settings

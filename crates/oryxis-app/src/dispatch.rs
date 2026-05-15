@@ -527,17 +527,43 @@ impl Oryxis {
             }
             Message::CopyMcpConfig => {
                 self.mcp_config_copied = true;
-                return iced::clipboard::write(mcp_config_json()).discard();
+                return iced::clipboard::write(mcp_config_json(&self.mcp_server_token)).discard();
             }
             Message::InstallMcpConfig => {
                 self.mcp_install_status = None;
+                let token = self.mcp_server_token.clone();
                 return Task::perform(
-                    async { install_mcp_config_to_file() },
+                    async move { install_mcp_config_to_file(&token) },
                     Message::InstallMcpConfigResult,
                 );
             }
             Message::InstallMcpConfigResult(result) => {
                 self.mcp_install_status = Some(result);
+            }
+            Message::RegenerateMcpToken => {
+                use rand::RngCore;
+                let mut bytes = [0u8; 32];
+                rand::thread_rng().fill_bytes(&mut bytes);
+                let mut token = String::with_capacity(64);
+                for b in bytes {
+                    use std::fmt::Write as _;
+                    let _ = write!(token, "{b:02x}");
+                }
+                self.persist_setting("mcp_server_token", &token);
+                self.mcp_server_token = token;
+                // Reveal once after regenerating so the user can copy
+                // it without an extra click; flip it back to masked
+                // explicitly via `ToggleMcpTokenVisibility`.
+                self.mcp_token_visible = true;
+                // The Claude config on disk still carries the old
+                // token, prompt the user to re-install.
+                self.mcp_install_status = None;
+            }
+            Message::ToggleMcpTokenVisibility => {
+                self.mcp_token_visible = !self.mcp_token_visible;
+            }
+            Message::CopyMcpToken => {
+                return iced::clipboard::write(self.mcp_server_token.clone()).discard();
             }
 
             // ── Sync ──

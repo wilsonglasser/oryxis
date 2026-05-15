@@ -918,7 +918,12 @@ impl Oryxis {
                 if self.show_mcp_info {
                     mcp_col = mcp_col
                         .push(Space::new().height(12))
-                        .push(mcp_info_panel(self.mcp_config_copied, &self.mcp_install_status));
+                        .push(mcp_info_panel(
+                            self.mcp_config_copied,
+                            &self.mcp_install_status,
+                            &self.mcp_server_token,
+                            self.mcp_token_visible,
+                        ));
                 }
                 let mcp_section = panel_section(mcp_col);
 

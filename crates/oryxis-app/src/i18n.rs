@@ -811,6 +811,15 @@ fn en(key: &str) -> &'static str {
         "toggle_on" => "ON",
         "toggle_off" => "OFF",
 
+        // MCP server token
+        "mcp_token_label" => "MCP token:",
+        "mcp_token_unset" => "(not set, MCP is open)",
+        "mcp_token_show" => "Show",
+        "mcp_token_hide" => "Hide",
+        "mcp_token_copy" => "Copy",
+        "mcp_token_regenerate" => "Regenerate",
+        "mcp_token_desc" => "Required by every MCP client. Regenerating invalidates the previous value, re-run Install to refresh the Claude Desktop config.",
+
         _ => "???",
     }
 }
@@ -1381,6 +1390,15 @@ fn pt_br(key: &str) -> Option<&'static str> {
         "plugin_err_no_manifest" => "Não foi possível acessar o host de plugins. Verifique sua conexão e tente novamente.",
         "toggle_on" => "LIG",
         "toggle_off" => "DESL",
+
+        // Token do servidor MCP
+        "mcp_token_label" => "Token MCP:",
+        "mcp_token_unset" => "(não definido, MCP aberto)",
+        "mcp_token_show" => "Mostrar",
+        "mcp_token_hide" => "Esconder",
+        "mcp_token_copy" => "Copiar",
+        "mcp_token_regenerate" => "Regenerar",
+        "mcp_token_desc" => "Exigido por todo cliente MCP. Regenerar invalida o valor anterior, rode Instalar de novo pra atualizar o config do Claude Desktop.",
 
         _ => return None,
     })

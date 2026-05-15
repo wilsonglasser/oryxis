@@ -5239,6 +5239,7 @@ dependencies = [
  "oryxis-vault",
  "proptest",
  "qrcode",
+ "rand 0.8.6",
  "reqwest",
  "rfd",
  "rustls",
