@@ -10,3 +10,4 @@ site
 /*.md
 !/README.md
 !/CHANGELOG.md
+!/SELF_HOSTING.md
