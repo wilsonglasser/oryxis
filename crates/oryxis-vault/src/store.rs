@@ -566,6 +566,11 @@ impl VaultStore {
                 group.cloud_query.as_ref().map(|q| serde_json::to_string(q).unwrap_or_default()),
             ],
         )?;
+        // Re-creating an entity clears any stale tombstone for it
+        // (resurrection by a peer pushing a newer version after a
+        // local delete). The free GC of stale tombstones happens via
+        // `vacuum_tombstones` in the engine.
+        self.clear_tombstone("group", &group.id)?;
         Ok(())
     }
 
@@ -688,6 +693,10 @@ impl VaultStore {
                 conn.keepalive_interval,
             ],
         )?;
+        // Re-creation clears any stale tombstone for this id (the
+        // entity came back from a peer after a local delete, or the
+        // user re-added a host they'd just deleted).
+        self.clear_tombstone("connection", &conn.id)?;
         Ok(())
     }
 
@@ -938,6 +947,7 @@ impl VaultStore {
                 key.updated_at.to_rfc3339(),
             ],
         )?;
+        self.clear_tombstone("key", &key.id)?;
         Ok(())
     }
 
@@ -1045,6 +1055,7 @@ impl VaultStore {
                 identity.updated_at.to_rfc3339(),
             ],
         )?;
+        self.clear_tombstone("identity", &identity.id)?;
         Ok(())
     }
 
@@ -1173,6 +1184,7 @@ impl VaultStore {
                 identity.updated_at.to_rfc3339(),
             ],
         )?;
+        self.clear_tombstone("proxy_identity", &identity.id)?;
         Ok(())
     }
 
@@ -1290,6 +1302,7 @@ impl VaultStore {
                 profile.updated_at.to_rfc3339(),
             ],
         )?;
+        self.clear_tombstone("cloud_profile", &profile.id)?;
         Ok(())
     }
 
@@ -1440,6 +1453,7 @@ impl VaultStore {
                 snippet.updated_at.to_rfc3339(),
             ],
         )?;
+        self.clear_tombstone("snippet", &snippet.id)?;
         Ok(())
     }
 
@@ -1498,6 +1512,7 @@ impl VaultStore {
                 kh.updated_at.to_rfc3339(),
             ],
         )?;
+        self.clear_tombstone("known_host", &kh.id)?;
         Ok(())
     }
 
@@ -2069,6 +2084,27 @@ impl VaultStore {
             params![entity_type, entity_id.to_string()],
         )?;
         Ok(())
+    }
+
+    /// Garbage-collect tombstones older than `older_than_days`. Called
+    /// periodically from the sync engine to keep `sync_metadata` from
+    /// growing without bound. Returns the number of rows removed.
+    ///
+    /// 30 days is the v1 default; it should outlive any reasonable
+    /// gap a paired peer spends offline between syncs. A peer that
+    /// reconnects after the TTL window will miss the deletion and
+    /// silently resurrect the entity until the user deletes it again.
+    /// The trade-off keeps the table O(recent deletes) instead of
+    /// growing forever.
+    pub fn vacuum_tombstones(&self, older_than_days: u32) -> Result<usize, VaultError> {
+        let cutoff = (Utc::now() - chrono::Duration::days(older_than_days as i64))
+            .to_rfc3339();
+        let removed = self.db.execute(
+            "DELETE FROM sync_metadata
+             WHERE is_deleted = 1 AND deleted_at < ?1",
+            params![cutoff],
+        )?;
+        Ok(removed)
     }
 
     // -----------------------------------------------------------------------
@@ -3305,6 +3341,50 @@ mod tests {
 
         // Clearing an already-gone tombstone is a no-op, not an error.
         vault.clear_tombstone("connection", &conn.id).unwrap();
+    }
+
+    /// Re-creating an entity (user re-adds, or peer pushes a newer
+    /// copy) drops the stale tombstone for the same id automatically,
+    /// so the manifest builder doesn't ship both a live entry and a
+    /// deletion marker for the same id.
+    #[test]
+    fn save_clears_stale_tombstone() {
+        let vault = unlocked_vault();
+        let conn = Connection::new("revived", "10.0.0.1");
+        vault.save_connection(&conn, None).unwrap();
+        vault.delete_connection(&conn.id).unwrap();
+        assert_eq!(vault.list_tombstones().unwrap().len(), 1);
+
+        // Save with the same id, simulates peer push or user re-add.
+        vault.save_connection(&conn, None).unwrap();
+        assert!(
+            vault.list_tombstones().unwrap().is_empty(),
+            "stale tombstone should be cleared on re-create"
+        );
+    }
+
+    /// `vacuum_tombstones` drops rows older than the TTL and leaves
+    /// fresh ones in place. We can't easily backdate via the API, so
+    /// the test deletes one entity, immediately vacuums with TTL 0
+    /// (which means "drop everything"), and asserts it cleared the
+    /// row, then re-deletes to verify TTL 365 keeps a fresh one.
+    #[test]
+    fn vacuum_tombstones_drops_old_rows() {
+        let vault = unlocked_vault();
+        let conn = Connection::new("doomed", "10.0.0.1");
+        vault.save_connection(&conn, None).unwrap();
+        vault.delete_connection(&conn.id).unwrap();
+        assert_eq!(vault.list_tombstones().unwrap().len(), 1);
+
+        let removed = vault.vacuum_tombstones(0).unwrap();
+        assert_eq!(removed, 1);
+        assert!(vault.list_tombstones().unwrap().is_empty());
+
+        let conn2 = Connection::new("doomed2", "10.0.0.2");
+        vault.save_connection(&conn2, None).unwrap();
+        vault.delete_connection(&conn2.id).unwrap();
+        assert_eq!(vault.vacuum_tombstones(365).unwrap(), 0);
+        assert_eq!(vault.list_tombstones().unwrap().len(), 1);
     }
 
     // ── Share (filtered export) ──

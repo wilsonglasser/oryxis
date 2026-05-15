@@ -67,6 +67,12 @@ struct HostingPairing {
 /// URL scheme + path prefix for shareable pairing links.
 const PAIRING_LINK_PREFIX: &str = "oryxis://pair/";
 
+/// Tombstones older than this drop on engine boot. Should outlive any
+/// realistic offline gap between a paired peer's syncs; a peer that
+/// reconnects after the window will silently miss the deletion (and
+/// the table won't grow forever in exchange).
+const TOMBSTONE_TTL_DAYS: u32 = 30;
+
 /// Build a shareable pairing link from a device id + code. Inverse of
 /// [`parse_pairing_link`].
 pub fn format_pairing_link(device_id: &Uuid, code: &str) -> String {
@@ -299,6 +305,18 @@ impl SyncEngine {
                     }
                 }
             });
+        }
+
+        // Garbage-collect tombstones older than 30 days at boot. The
+        // tombstones in `sync_metadata` only need to outlive the gap
+        // between a peer's syncs; anything older is dead weight. Cheap
+        // single-statement DELETE, runs once per session.
+        if let Ok(v) = self.vault.lock() {
+            match v.vacuum_tombstones(TOMBSTONE_TTL_DAYS) {
+                Ok(0) => {}
+                Ok(n) => tracing::info!("sync: vacuumed {n} stale tombstones"),
+                Err(e) => tracing::warn!("sync: tombstone vacuum failed: {e}"),
+            }
         }
 
         tracing::info!("Sync engine started (port {})", listen_port);
