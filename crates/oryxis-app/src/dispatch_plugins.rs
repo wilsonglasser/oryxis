@@ -86,6 +86,35 @@ fn dev_binary_present(provider_id: &str) -> bool {
 }
 
 impl Oryxis {
+    /// True when the provider's plugin is in a state that can answer
+    /// trait calls right now (`DevBuild` / `Installed` /
+    /// `UpdateAvailable`). Providers that don't need a subprocess
+    /// plugin (Kubernetes is in-process today) report `true`
+    /// unconditionally.
+    ///
+    /// Drives the "AWS plugin not installed" banner + the
+    /// Test-Credentials gate in the Cloud Accounts wizard.
+    pub(crate) fn is_plugin_ready(
+        &self,
+        choice: crate::state::CloudProviderChoice,
+    ) -> bool {
+        let id = match choice {
+            crate::state::CloudProviderChoice::Aws => "aws",
+            crate::state::CloudProviderChoice::K8s => return true,
+        };
+        self.plugins
+            .iter()
+            .find(|p| p.provider_id == id)
+            .is_some_and(|e| {
+                matches!(
+                    e.status,
+                    PluginUiStatus::DevBuild
+                        | PluginUiStatus::Installed(_)
+                        | PluginUiStatus::UpdateAvailable { .. }
+                )
+            })
+    }
+
     pub(crate) fn handle_plugins(
         &mut self,
         message: Message,

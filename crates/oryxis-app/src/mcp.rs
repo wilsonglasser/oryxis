@@ -4,7 +4,7 @@
 
 use iced::border::Radius;
 use iced::widget::button::Status as BtnStatus;
-use iced::widget::{button, column, container, row, text, Space};
+use iced::widget::{button, column, container, text, Space};
 use iced::{Background, Border, Color, Element, Length, Padding};
 
 use crate::app::Message;
@@ -240,11 +240,12 @@ pub(crate) fn mcp_info_panel<'a>(
         .into()
     }
 
-    let mut token_row = row![
+    let mut token_items: Vec<Element<'_, Message>> = vec![
         text(crate::i18n::t("mcp_token_label"))
             .size(11)
-            .color(OryxisColors::t().text_muted),
-        Space::new().width(8),
+            .color(OryxisColors::t().text_muted)
+            .into(),
+        Space::new().width(8).into(),
         container(
             text(token_display)
                 .size(11)
@@ -256,26 +257,31 @@ pub(crate) fn mcp_info_panel<'a>(
             background: Some(Background::Color(OryxisColors::t().bg_primary)),
             border: Border { radius: Radius::from(4.0), ..Default::default() },
             ..Default::default()
-        }),
-    ]
-    .align_y(iced::Alignment::Center);
+        })
+        .into(),
+    ];
     if !token.is_empty() {
-        token_row = token_row.push(Space::new().width(8)).push(token_action_btn(
+        token_items.push(Space::new().width(8).into());
+        token_items.push(token_action_btn(
             toggle_label,
             OryxisColors::t().text_secondary,
             Message::ToggleMcpTokenVisibility,
         ));
-        token_row = token_row.push(Space::new().width(6)).push(token_action_btn(
+        token_items.push(Space::new().width(6).into());
+        token_items.push(token_action_btn(
             crate::i18n::t("mcp_token_copy"),
             OryxisColors::t().accent,
             Message::CopyMcpToken,
         ));
     }
-    token_row = token_row.push(Space::new().width(6)).push(token_action_btn(
+    token_items.push(Space::new().width(6).into());
+    token_items.push(token_action_btn(
         crate::i18n::t("mcp_token_regenerate"),
         OryxisColors::t().warning,
         Message::RegenerateMcpToken,
     ));
+    let token_row = crate::widgets::dir_row(token_items)
+        .align_y(iced::Alignment::Center);
 
     let mut info_col = column![
         text(crate::i18n::t("mcp_info_title")).size(14).color(OryxisColors::t().text_primary),
@@ -319,7 +325,13 @@ pub(crate) fn mcp_info_panel<'a>(
         .push(Space::new().height(8))
         .push(text(crate::i18n::t("mcp_info_vault_password_note")).size(11).color(OryxisColors::t().text_muted))
         .push(Space::new().height(12))
-        .push(row![install_btn, Space::new().width(8), copy_btn, Space::new().width(8), close_btn]);
+        .push(crate::widgets::dir_row(vec![
+            install_btn.into(),
+            Space::new().width(8).into(),
+            copy_btn.into(),
+            Space::new().width(8).into(),
+            close_btn.into(),
+        ]));
 
     container(info_col)
         .padding(16)

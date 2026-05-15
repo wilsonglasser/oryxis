@@ -239,10 +239,17 @@ impl Oryxis {
             }
         };
 
+        // Test Credentials shells out to the provider plugin; if it's
+        // not installed, the call would fail with a cryptic
+        // `BinaryNotFound` error, so block it at the button level and
+        // surface the install banner above. K8s stays disabled until
+        // its plugin lands.
+        let plugin_missing = !self.is_plugin_ready(self.cloud_form_provider);
         let test_button_disabled = matches!(
             self.cloud_form_test_state,
             CloudTestState::Running
-        ) || matches!(self.cloud_form_auth_kind, CloudAuthChoice::Kubeconfig);
+        ) || matches!(self.cloud_form_auth_kind, CloudAuthChoice::Kubeconfig)
+            || plugin_missing;
 
         let test_btn = {
             let mut btn = button(
@@ -276,7 +283,88 @@ impl Oryxis {
             btn
         };
 
+        // Plugin-missing banner: surfaces *above* every form field
+        // when the provider chosen above has no installed plugin, so
+        // the user can't fill out the form and then hit a cryptic
+        // "binary not found" wall on Test Credentials. K8s is
+        // in-process and never triggers this.
+        let plugin_banner: Element<'_, Message> = if plugin_missing
+            && !matches!(self.cloud_form_provider, CloudProviderChoice::K8s)
+        {
+            let provider_id_str = match self.cloud_form_provider {
+                CloudProviderChoice::Aws => "aws",
+                CloudProviderChoice::K8s => "k8s",
+            };
+            let install_btn = button(
+                container(
+                    text(t("plugin_action_install"))
+                        .size(12)
+                        .color(OryxisColors::t().accent),
+                )
+                .padding(Padding {
+                    top: 6.0,
+                    right: 14.0,
+                    bottom: 6.0,
+                    left: 14.0,
+                }),
+            )
+            .on_press(Message::ShowPluginInstallModal(provider_id_str.to_string()))
+            .style(|_, _| button::Style {
+                background: Some(Background::Color(OryxisColors::t().bg_surface)),
+                border: Border {
+                    radius: Radius::from(6.0),
+                    color: OryxisColors::t().accent,
+                    width: 1.0,
+                },
+                ..Default::default()
+            });
+            let banner: Element<'_, Message> = container(
+                column![
+                    dir_row(vec![
+                        iced_fonts::lucide::circle_alert()
+                            .size(14)
+                            .color(OryxisColors::t().warning)
+                            .into(),
+                        Space::new().width(8).into(),
+                        text(t("cloud_plugin_missing_title"))
+                            .size(13)
+                            .color(OryxisColors::t().text_primary)
+                            .into(),
+                    ])
+                    .align_y(iced::Alignment::Center),
+                    Space::new().height(4),
+                    text(t("cloud_plugin_missing_body"))
+                        .size(11)
+                        .color(OryxisColors::t().text_secondary),
+                    Space::new().height(8),
+                    container(install_btn)
+                        .width(Length::Fill)
+                        .align_x(dir_align_x()),
+                ]
+                .width(Length::Fill),
+            )
+            .padding(12)
+            .width(Length::Fill)
+            .style(|_| container::Style {
+                background: Some(Background::Color(Color {
+                    a: 0.10,
+                    ..OryxisColors::t().warning
+                })),
+                border: Border {
+                    radius: Radius::from(8.0),
+                    color: OryxisColors::t().warning,
+                    width: 1.0,
+                },
+                ..Default::default()
+            })
+            .into();
+            column![banner, Space::new().height(14)].into()
+        } else {
+            Space::new().into()
+        };
+
         let form = column![
+            plugin_banner,
             text(t("name"))
                 .size(12)
                 .color(OryxisColors::t().text_secondary),

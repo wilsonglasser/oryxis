@@ -36,7 +36,6 @@ impl Oryxis {
             sidebar_nav_btn(iced_fonts::lucide::code(), crate::i18n::t("snippets"), View::Snippets, active_is_nav && self.active_view == View::Snippets),
             sidebar_nav_btn(iced_fonts::lucide::shield_check(), crate::i18n::t("known_hosts"), View::KnownHosts, active_is_nav && self.active_view == View::KnownHosts),
             sidebar_nav_btn(iced_fonts::lucide::history(), crate::i18n::t("history"), View::History, active_is_nav && self.active_view == View::History),
-            sidebar_nav_btn(iced_fonts::lucide::puzzle(), crate::i18n::t("plugins"), View::Plugins, active_is_nav && self.active_view == View::Plugins),
             sidebar_nav_btn(iced_fonts::lucide::settings(), crate::i18n::t("settings"), View::Settings, active_is_nav && self.active_view == View::Settings),
         ];
 

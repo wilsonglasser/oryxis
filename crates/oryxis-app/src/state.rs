@@ -805,7 +805,6 @@ pub enum View {
     History,
     Sftp,
     Settings,
-    Plugins,
 }
 
 /// One row in the Plugins panel: a cloud-provider plugin and its
@@ -991,6 +990,11 @@ pub(crate) enum SettingsSection {
     /// live in the regular Hosts view; this section only manages the
     /// account credentials and triggers discovery.
     Cloud,
+    /// Cloud provider plugins management: install, update, uninstall
+    /// the subprocess plugins each cloud provider runs as. Sits next
+    /// to `Cloud` because every cloud account here needs a matching
+    /// plugin to actually function.
+    Plugins,
     About,
 }
 

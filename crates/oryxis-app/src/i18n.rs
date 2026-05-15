@@ -820,6 +820,10 @@ fn en(key: &str) -> &'static str {
         "mcp_token_regenerate" => "Regenerate",
         "mcp_token_desc" => "Required by every MCP client. Regenerating invalidates the previous value, re-run Install to refresh the Claude Desktop config.",
 
+        // Cloud Accounts plugin gate
+        "cloud_plugin_missing_title" => "AWS plugin not installed",
+        "cloud_plugin_missing_body" => "Test Credentials and Discover Hosts need the AWS plugin. Install it to use this account.",
+
         _ => "???",
     }
 }
@@ -1400,6 +1404,10 @@ fn pt_br(key: &str) -> Option<&'static str> {
         "mcp_token_regenerate" => "Regenerar",
         "mcp_token_desc" => "Exigido por todo cliente MCP. Regenerar invalida o valor anterior, rode Instalar de novo pra atualizar o config do Claude Desktop.",
 
+        // Banner de plugin ausente em Cloud Accounts
+        "cloud_plugin_missing_title" => "Plugin AWS não instalado",
+        "cloud_plugin_missing_body" => "Test Credentials e Descobrir Hosts precisam do plugin AWS. Instale-o pra usar esta conta.",
+
         _ => return None,
     })
 }
@@ -1968,6 +1976,10 @@ fn es(key: &str) -> Option<&'static str> {
         "mcp_token_copy" => "Copiar",
         "mcp_token_regenerate" => "Regenerar",
         "mcp_token_desc" => "Requerido por todo cliente MCP. Regenerarlo invalida el valor anterior, ejecuta Instalar de nuevo para refrescar la configuración de Claude Desktop.",
+
+        // Banner de plugin ausente en Cloud Accounts
+        "cloud_plugin_missing_title" => "Plugin AWS no instalado",
+        "cloud_plugin_missing_body" => "Test Credentials y Descubrir hosts necesitan el plugin AWS. Instálalo para usar esta cuenta.",
 
         _ => return None,
     })
@@ -2538,6 +2550,10 @@ fn fr(key: &str) -> Option<&'static str> {
         "mcp_token_regenerate" => "Régénérer",
         "mcp_token_desc" => "Requis par tout client MCP. La régénération invalide la valeur précédente, relancez Installer pour rafraîchir la configuration de Claude Desktop.",
 
+        // Bannière plugin absent dans Cloud Accounts
+        "cloud_plugin_missing_title" => "Plugin AWS non installé",
+        "cloud_plugin_missing_body" => "Tester les identifiants et Découvrir les hôtes nécessitent le plugin AWS. Installez-le pour utiliser ce compte.",
+
         _ => return None,
     })
 }
@@ -3106,6 +3122,10 @@ fn de(key: &str) -> Option<&'static str> {
         "mcp_token_copy" => "Kopieren",
         "mcp_token_regenerate" => "Neu generieren",
         "mcp_token_desc" => "Wird von jedem MCP-Client benötigt. Neu generieren invalidiert den alten Wert; führe Installieren erneut aus, um die Claude-Desktop-Konfiguration zu aktualisieren.",
+
+        // Plugin-fehlt-Banner in Cloud Accounts
+        "cloud_plugin_missing_title" => "AWS-Plugin nicht installiert",
+        "cloud_plugin_missing_body" => "Test Credentials und Hosts entdecken benötigen das AWS-Plugin. Installiere es, um dieses Konto zu nutzen.",
 
         _ => return None,
     })
@@ -3676,6 +3696,10 @@ fn it(key: &str) -> Option<&'static str> {
         "mcp_token_regenerate" => "Rigenera",
         "mcp_token_desc" => "Richiesto da ogni client MCP. Rigenerarlo invalida il valore precedente, esegui di nuovo Installa per aggiornare la configurazione di Claude Desktop.",
 
+        // Banner plugin mancante in Cloud Accounts
+        "cloud_plugin_missing_title" => "Plugin AWS non installato",
+        "cloud_plugin_missing_body" => "Test Credentials e Scopri host richiedono il plugin AWS. Installalo per usare questo account.",
+
         _ => return None,
     })
 }
@@ -4244,6 +4268,10 @@ fn zh(key: &str) -> Option<&'static str> {
         "mcp_token_copy" => "复制",
         "mcp_token_regenerate" => "重新生成",
         "mcp_token_desc" => "每个 MCP 客户端都需要。重新生成会使旧值失效，请再次运行安装以刷新 Claude Desktop 配置。",
+
+        // Cloud Accounts 中插件缺失横幅
+        "cloud_plugin_missing_title" => "AWS 插件未安装",
+        "cloud_plugin_missing_body" => "测试凭据和发现主机需要 AWS 插件。请安装它以使用此账户。",
 
         _ => return None,
     })
@@ -4814,6 +4842,10 @@ fn ja(key: &str) -> Option<&'static str> {
         "mcp_token_regenerate" => "再生成",
         "mcp_token_desc" => "すべての MCP クライアントで必要です。再生成すると以前の値は無効になります。Claude Desktop の設定を更新するためにインストールを再実行してください。",
 
+        // Cloud Accounts のプラグイン未インストールバナー
+        "cloud_plugin_missing_title" => "AWS プラグインが未インストール",
+        "cloud_plugin_missing_body" => "資格情報のテストとホスト検出には AWS プラグインが必要です。このアカウントを使用するにはインストールしてください。",
+
         _ => return None,
     })
 }
@@ -5382,6 +5414,10 @@ fn ru(key: &str) -> Option<&'static str> {
         "mcp_token_copy" => "Копировать",
         "mcp_token_regenerate" => "Перегенерировать",
         "mcp_token_desc" => "Требуется каждому MCP-клиенту. Перегенерация делает предыдущее значение недействительным, запустите Установить ещё раз, чтобы обновить конфиг Claude Desktop.",
+
+        // Баннер отсутствующего плагина в Cloud Accounts
+        "cloud_plugin_missing_title" => "Плагин AWS не установлен",
+        "cloud_plugin_missing_body" => "Проверка учётных данных и Поиск хостов требуют плагин AWS. Установите его, чтобы использовать этот аккаунт.",
 
         _ => return None,
     })
@@ -5993,6 +6029,10 @@ fn fa(key: &str) -> Option<&'static str> {
         "mcp_token_regenerate" => "تولید دوباره",
         "mcp_token_desc" => "برای هر کلاینت MCP لازم است. تولید دوباره مقدار قبلی را باطل می‌کند، برای به‌روزرسانی پیکربندی Claude Desktop دوباره Install را اجرا کنید.",
 
+        // بنر افزونه نصب‌نشده در Cloud Accounts
+        "cloud_plugin_missing_title" => "افزونه AWS نصب نشده",
+        "cloud_plugin_missing_body" => "تست اعتبارنامه و کشف میزبان به افزونه AWS نیاز دارند. برای استفاده از این حساب آن را نصب کنید.",
+
         _ => return None,
     })
 }
@@ -6595,6 +6635,10 @@ fn ar(key: &str) -> Option<&'static str> {
         "mcp_token_copy" => "نسخ",
         "mcp_token_regenerate" => "إعادة توليد",
         "mcp_token_desc" => "مطلوب لكل عميل MCP. إعادة التوليد تُبطل القيمة السابقة، شغّل التثبيت مجددًا لتحديث إعدادات Claude Desktop.",
+
+        // شعار الإضافة المفقودة في Cloud Accounts
+        "cloud_plugin_missing_title" => "إضافة AWS غير مثبتة",
+        "cloud_plugin_missing_body" => "يتطلب اختبار بيانات الاعتماد واكتشاف المضيفين إضافة AWS. ثبّتها لاستخدام هذا الحساب.",
 
         _ => return None,
     })

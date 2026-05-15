@@ -29,6 +29,7 @@ impl Oryxis {
                 (crate::i18n::t("sync"), SettingsSection::Sync),
                 (crate::i18n::t("proxies"), SettingsSection::Proxies),
                 (crate::i18n::t("cloud_accounts"), SettingsSection::Cloud),
+                (crate::i18n::t("plugins"), SettingsSection::Plugins),
                 (crate::i18n::t("about"), SettingsSection::About),
             ];
             let mut col = column![]
@@ -1499,6 +1500,7 @@ impl Oryxis {
             }
             SettingsSection::Proxies => self.view_settings_proxies(),
             SettingsSection::Cloud => self.view_cloud_accounts(),
+            SettingsSection::Plugins => self.view_plugins_panel(),
         };
 
         container(crate::widgets::dir_row(vec![
