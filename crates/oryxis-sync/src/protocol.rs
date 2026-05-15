@@ -11,13 +11,20 @@ use uuid::Uuid;
 /// sender's `device_id` (so each side knows which UUID to store the
 /// peer under), and a `PairingChallenge` / `PairingResponse` round was
 /// added so the joiner proves possession of the private key paired
-/// with the `public_key` it sent. Pairing happens before any peer
-/// pubkey is persisted, so the Hello channel-binding can't be reused.
+/// with the `public_key` it sent.
+///
+/// v4 added X25519 ephemeral key exchange to the pairing messages.
+/// Both `PairingRequest` and `PairingAccepted` carry an `x25519_pub`;
+/// each side computes a shared secret via Diffie-Hellman and persists
+/// it on the `SyncPeer` row. From then on the per-record payloads
+/// inside `SyncRecord` are sealed with ChaCha20-Poly1305 under that
+/// secret, so a future MITM (or a compromised signaling relay) sees
+/// only ciphertext even if the TLS layer is broken.
 ///
 /// Older peers cannot interop across a version bump, and that is
-/// intentional. There are no pre-v3 peers in the wild because sync was
-/// never wired into the app before this release.
-pub const PROTOCOL_VERSION: u32 = 3;
+/// intentional. There are no pre-v4 peers in the wild because sync was
+/// never operational before this release.
+pub const PROTOCOL_VERSION: u32 = 4;
 
 /// Entity types that can be synced.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
@@ -111,6 +118,12 @@ pub enum SyncMessage {
         /// joiner has to advertise its listener explicitly for the
         /// host to be able to sync back to it later.
         listen_port: u16,
+        /// Ephemeral X25519 public key (32 bytes). The host pairs it
+        /// with its own ephemeral X25519 pubkey in `PairingAccepted`;
+        /// both sides DH to the same shared secret and store it on
+        /// the new `SyncPeer` row. Used to seal `SyncRecord.payload`
+        /// in all subsequent syncs.
+        x25519_pub: Vec<u8>,
     },
     /// Host -> joiner: a fresh random nonce the joiner must sign with
     /// the private key matching the `public_key` it just sent. This
@@ -126,6 +139,9 @@ pub enum SyncMessage {
         device_id: Uuid,
         device_name: String,
         public_key: Vec<u8>,
+        /// Host's ephemeral X25519 pubkey, completes the pairing-time
+        /// Diffie-Hellman with the joiner's `x25519_pub`.
+        x25519_pub: Vec<u8>,
     },
     PairingRejected {
         reason: String,
@@ -273,8 +289,9 @@ mod tests {
         }
     }
 
-    /// The v3 pairing messages must survive a bincode frame round-trip
-    /// with their `device_id` and challenge/response payloads intact.
+    /// The v4 pairing messages must survive a bincode frame round-trip
+    /// with `device_id`, the challenge/response payloads, and the
+    /// X25519 pubkeys intact.
     #[test]
     fn pairing_messages_round_trip() {
         let device_id = Uuid::new_v4();
@@ -285,6 +302,7 @@ mod tests {
                 public_key: vec![0x11; 32],
                 pairing_code: "123456".into(),
                 listen_port: 4433,
+                x25519_pub: vec![0x55; 32],
             },
             SyncMessage::PairingChallenge {
                 challenge: vec![0x22; 32],
@@ -296,6 +314,7 @@ mod tests {
                 device_id,
                 device_name: "desktop".into(),
                 public_key: vec![0x44; 32],
+                x25519_pub: vec![0x66; 32],
             },
         ];
         for msg in messages {

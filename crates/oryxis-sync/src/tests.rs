@@ -125,10 +125,10 @@ mod tests {
 
     #[test]
     fn protocol_version_consistency() {
-        // v3 reworked pairing (device_id in PairingRequest/Accepted,
-        // plus the PairingChallenge/PairingResponse round). Older peers
-        // are intentionally incompatible.
-        assert_eq!(PROTOCOL_VERSION, 3);
+        // v4 added X25519 ephemeral key exchange to the pairing
+        // messages so payloads can be sealed with the resulting
+        // shared secret. Older peers are intentionally incompatible.
+        assert_eq!(PROTOCOL_VERSION, 4);
     }
 
     #[test]
@@ -258,6 +258,7 @@ mod tests {
                 entity_type: EntityType::Connection,
                 entity_id: doomed.id,
             }],
+            None,
         )
         .unwrap();
 
@@ -288,6 +289,7 @@ mod tests {
                 is_deleted: true,
                 payload: Vec::new(),
             }],
+            None,
         )
         .unwrap();
 
@@ -349,6 +351,28 @@ mod tests {
         let host_peers = host.vault.lock().unwrap().list_sync_peers().unwrap();
         assert_eq!(host_peers.len(), 1);
         assert_eq!(host_peers[0].peer_id, joiner_id);
+
+        // v4: both sides derive and persist the same shared secret
+        // from the pairing-time X25519 exchange. Decrypt-side tests
+        // would need to ferry the secret across the test boundary;
+        // here we just confirm it's stored on both rows and that the
+        // two values match.
+        let joiner_secret = joiner
+            .vault
+            .lock()
+            .unwrap()
+            .get_sync_peer_shared_secret(&host_id)
+            .unwrap()
+            .expect("joiner side missing shared secret");
+        let host_secret = host
+            .vault
+            .lock()
+            .unwrap()
+            .get_sync_peer_shared_secret(&joiner_id)
+            .unwrap()
+            .expect("host side missing shared secret");
+        assert_eq!(joiner_secret.len(), 32);
+        assert_eq!(joiner_secret, host_secret);
     }
 
     /// A wrong code is rejected and neither side stores a peer.

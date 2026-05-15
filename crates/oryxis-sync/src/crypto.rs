@@ -203,14 +203,36 @@ pub fn random_challenge() -> [u8; 32] {
     challenge
 }
 
-/// Perform X25519 key exchange to derive a shared secret.
-/// Returns (our_public_key, shared_secret).
+/// Perform X25519 key exchange to derive a shared secret in one step.
+/// Returns (our_public_key, shared_secret). Used by tests and by any
+/// caller that has the peer's pubkey available when generating.
 pub fn x25519_key_exchange(peer_public_key: &[u8; 32]) -> ([u8; 32], [u8; 32]) {
     let secret = EphemeralSecret::random_from_rng(OsRng);
     let our_public = X25519PublicKey::from(&secret);
     let peer_public = X25519PublicKey::from(*peer_public_key);
     let shared = secret.diffie_hellman(&peer_public);
     (our_public.to_bytes(), *shared.as_bytes())
+}
+
+/// Generate a fresh ephemeral X25519 keypair, returning the secret
+/// (held across an `.await` until the peer's pubkey arrives) and the
+/// public bytes we send on the wire. Pair it with [`x25519_dh`] to
+/// finish the exchange. Used by the pairing flow, where the two
+/// pubkeys are not exchanged in lockstep.
+pub fn x25519_keypair() -> (EphemeralSecret, [u8; 32]) {
+    let secret = EphemeralSecret::random_from_rng(OsRng);
+    let public_bytes = X25519PublicKey::from(&secret).to_bytes();
+    (secret, public_bytes)
+}
+
+/// Complete an X25519 exchange started with [`x25519_keypair`]. Takes
+/// the ephemeral secret (consumed: post-DH the secret is forgotten,
+/// which is the forward-secrecy property we want) and the peer's
+/// public bytes; returns the 32-byte shared secret to persist on the
+/// `SyncPeer` row.
+pub fn x25519_dh(secret: EphemeralSecret, peer_public: &[u8; 32]) -> [u8; 32] {
+    let peer = X25519PublicKey::from(*peer_public);
+    *secret.diffie_hellman(&peer).as_bytes()
 }
 
 /// Encrypt payload with shared secret using ChaCha20Poly1305.

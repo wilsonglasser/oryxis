@@ -508,11 +508,15 @@ impl SyncHandle {
             .map_err(|e| SyncError::Transport(format!("Connect: {}", e)))?
             .await
             .map_err(|e| SyncError::Transport(format!("Handshake: {}", e)))?;
-        eprintln!("DBG join: connected");
         let (mut send, mut recv) = connection
             .open_bi()
             .await
             .map_err(|e| SyncError::Transport(format!("Open stream: {}", e)))?;
+
+        // Fresh X25519 keypair for the pairing-time DH. We hold the
+        // secret across the recv-PairingAccepted await, then consume
+        // it in `x25519_dh` so the ephemeral private key is forgotten.
+        let (joiner_x25519_secret, joiner_x25519_pub) = crypto::x25519_keypair();
 
         transport::send_message(
             &mut send,
@@ -522,6 +526,7 @@ impl SyncHandle {
                 public_key: self.identity.public_key_bytes(),
                 pairing_code: code.to_string(),
                 listen_port: self.listen_port,
+                x25519_pub: joiner_x25519_pub.to_vec(),
             },
         )
         .await?;
@@ -551,18 +556,28 @@ impl SyncHandle {
         .await?;
 
         // Host -> PairingAccepted (or PairingRejected).
-        let (device_id, device_name, public_key) =
+        let (device_id, device_name, public_key, host_x25519_pub) =
             match transport::recv_message(&mut recv).await? {
                 SyncMessage::PairingAccepted {
                     device_id,
                     device_name,
                     public_key,
-                } => (device_id, device_name, public_key),
+                    x25519_pub,
+                } => (device_id, device_name, public_key, x25519_pub),
                 SyncMessage::PairingRejected { reason } => {
                     return Err(SyncError::PairingFailed(reason));
                 }
                 _ => return Err(SyncError::Protocol("Expected PairingAccepted".into())),
             };
+        let host_x25519_pub: [u8; 32] = host_x25519_pub
+            .as_slice()
+            .try_into()
+            .map_err(|_| SyncError::Protocol("Host x25519_pub must be 32 bytes".into()))?;
+
+        // Both sides DH to the same 32-byte secret; store it on the
+        // peer row so every later `SyncRecord.payload` between us and
+        // this host is sealed with ChaCha20-Poly1305.
+        let shared_secret = crypto::x25519_dh(joiner_x25519_secret, &host_x25519_pub);
 
         // Persist the host as a peer. `addr` is the host's listen
         // address (it is what we dialed), so future syncs can reach it.
@@ -572,7 +587,13 @@ impl SyncHandle {
                 .vault
                 .lock()
                 .map_err(|_| SyncError::Vault("Lock".into()))?;
-            v.save_sync_peer(&device_id, &device_name, &public_key, None, &now)?;
+            v.save_sync_peer(
+                &device_id,
+                &device_name,
+                &public_key,
+                Some(&shared_secret),
+                &now,
+            )?;
             v.update_sync_peer_endpoint(&device_id, &addr.ip().to_string(), addr.port())?;
         }
 
@@ -627,6 +648,7 @@ async fn handle_incoming(
             public_key,
             pairing_code,
             listen_port,
+            x25519_pub,
         } => {
             // Pairing connection, not a sync session. Run the
             // challenge/response handshake and return, never touching
@@ -645,6 +667,7 @@ async fn handle_incoming(
                 pairing_code,
                 peer_addr,
                 listen_port,
+                x25519_pub,
             )
             .await;
         }
@@ -726,6 +749,7 @@ async fn handle_pairing_request(
     pairing_code: String,
     peer_addr: SocketAddr,
     listen_port: u16,
+    joiner_x25519_pub: Vec<u8>,
 ) -> Result<(), SyncError> {
     // Is there a live hosting code? Drop expired ones here so a stale
     // code never pairs.
@@ -764,12 +788,29 @@ async fn handle_pairing_request(
         return reject_pairing(send, recv, "Bad challenge response").await;
     }
 
+    // Joiner's X25519 pubkey must be 32 bytes; reject otherwise. Then
+    // generate our own ephemeral keypair and DH to the shared secret
+    // we'll seal payloads with from now on.
+    let joiner_x25519_pub: [u8; 32] = joiner_x25519_pub
+        .as_slice()
+        .try_into()
+        .map_err(|_| SyncError::Protocol("Joiner x25519_pub must be 32 bytes".into()))?;
+    let (host_x25519_secret, host_x25519_pub) = crypto::x25519_keypair();
+    let shared_secret = crypto::x25519_dh(host_x25519_secret, &joiner_x25519_pub);
+
     // Verified. Persist the joiner as a peer (IP from the connection,
-    // listen port from the request) and clear the single-shot code.
+    // listen port from the request, shared secret from the DH above)
+    // and clear the single-shot code.
     let now = chrono::Utc::now();
     {
         let v = vault.lock().map_err(|_| SyncError::Vault("Lock".into()))?;
-        v.save_sync_peer(&device_id, &device_name, &public_key, None, &now)?;
+        v.save_sync_peer(
+            &device_id,
+            &device_name,
+            &public_key,
+            Some(&shared_secret),
+            &now,
+        )?;
         v.update_sync_peer_endpoint(&device_id, &peer_addr.ip().to_string(), listen_port)?;
     }
     if let Ok(mut state) = hosting_pairing.lock() {
@@ -782,6 +823,7 @@ async fn handle_pairing_request(
             device_id: identity.device_id,
             device_name: identity.device_name.clone(),
             public_key: identity.public_key_bytes(),
+            x25519_pub: host_x25519_pub.to_vec(),
         },
     )
     .await?;
@@ -823,10 +865,16 @@ async fn handle_sync_session(
     send: &mut quinn::SendStream,
     recv: &mut quinn::RecvStream,
     vault: &Arc<std::sync::Mutex<VaultStore>>,
-    _peer_id: &Uuid,
+    peer_id: &Uuid,
 ) -> Result<(usize, usize), SyncError> {
     let mut pushed = 0;
     let mut pulled = 0;
+
+    // Per-peer E2E key. Fetched once at session start. Pre-v4 peers
+    // (no `shared_secret` row) talk in plaintext; v4 peers always
+    // carry one because pairing seeds it.
+    let shared_secret = peer_shared_secret(vault, peer_id)?;
+    let shared_secret = shared_secret.as_ref();
 
     loop {
         let msg = transport::recv_message(recv).await?;
@@ -837,14 +885,14 @@ async fn handle_sync_session(
             }
             SyncMessage::DeltaRequest { needed } => {
                 // Peer wants these records from us
-                let records = collect_records(vault, &needed)?;
+                let records = collect_records(vault, &needed, shared_secret)?;
                 pushed += records.len();
                 transport::send_message(send, &SyncMessage::DeltaResponse { records }).await?;
             }
             SyncMessage::DeltaPush { records } => {
                 // Peer is pushing records to us
                 let count = records.len();
-                apply_records(vault, &records)?;
+                apply_records(vault, &records, shared_secret)?;
                 pulled += count;
                 let accepted: Vec<Uuid> = records.iter().map(|r| r.entity_id).collect();
                 transport::send_message(send, &SyncMessage::DeltaAck { accepted }).await?;
@@ -861,6 +909,18 @@ async fn handle_sync_session(
     }
 
     Ok((pushed, pulled))
+}
+
+/// Fetch the persisted X25519 shared secret for a paired peer and
+/// coerce it to a fixed 32-byte array. Returns `None` if the peer
+/// doesn't have one (legacy rows, or a future ABI we don't recognise).
+fn peer_shared_secret(
+    vault: &Arc<std::sync::Mutex<VaultStore>>,
+    peer_id: &Uuid,
+) -> Result<Option<[u8; 32]>, SyncError> {
+    let v = vault.lock().map_err(|_| SyncError::Vault("Lock".into()))?;
+    let bytes = v.get_sync_peer_shared_secret(peer_id)?;
+    Ok(bytes.and_then(|b| <[u8; 32]>::try_from(b.as_slice()).ok()))
 }
 
 /// Build a manifest of all syncable entities in the vault, plus a
@@ -968,9 +1028,15 @@ pub(crate) fn build_manifest(
 /// Collect serialized records requested by the peer. A requested ref
 /// that matches a tombstone is returned as a deletion marker (empty
 /// payload, `is_deleted = true`) instead of an entity payload.
+///
+/// `shared_secret` is the X25519-derived key from pairing time. When
+/// `Some`, every non-tombstone payload is sealed with
+/// ChaCha20-Poly1305 before going on the wire. Tombstone records skip
+/// encryption (their payload is empty by construction).
 pub(crate) fn collect_records(
     vault: &Arc<std::sync::Mutex<VaultStore>>,
     needed: &[protocol::DeltaRef],
+    shared_secret: Option<&[u8; 32]>,
 ) -> Result<Vec<protocol::SyncRecord>, SyncError> {
     let v = vault.lock().map_err(|_| SyncError::Vault("Lock".into()))?;
     // Tombstones recorded in `sync_metadata`. Loaded once up front so a
@@ -1102,12 +1168,20 @@ pub(crate) fn collect_records(
         };
 
         if let Some(data) = payload {
+            // Seal the payload with the per-peer shared secret. A
+            // missing secret means we're talking to a legacy peer that
+            // never did the X25519 exchange; ship the plaintext so
+            // they can still parse it.
+            let wire_payload = match shared_secret {
+                Some(secret) => crypto::encrypt_payload(&data, secret)?,
+                None => data,
+            };
             records.push(protocol::SyncRecord {
                 entity_type: delta.entity_type,
                 entity_id: delta.entity_id,
                 updated_at: chrono::Utc::now(),
                 is_deleted: false,
-                payload: data,
+                payload: wire_payload,
             });
         }
     }
@@ -1119,9 +1193,15 @@ pub(crate) fn collect_records(
 /// `is_deleted = true` runs the matching `delete_*`, which also records
 /// a fresh local tombstone, so the deletion keeps propagating onward to
 /// this device's other peers.
+///
+/// `shared_secret` is the X25519-derived key from pairing time. When
+/// `Some`, every non-tombstone payload is unsealed with
+/// ChaCha20-Poly1305 before deserialization. A decrypt failure means
+/// the record was forged or tampered with; we skip it and warn.
 pub(crate) fn apply_records(
     vault: &Arc<std::sync::Mutex<VaultStore>>,
     records: &[protocol::SyncRecord],
+    shared_secret: Option<&[u8; 32]>,
 ) -> Result<(), SyncError> {
     let v = vault.lock().map_err(|_| SyncError::Vault("Lock".into()))?;
 
@@ -1141,13 +1221,32 @@ pub(crate) fn apply_records(
             continue;
         }
 
+        // Unseal the payload with the per-peer secret. A decrypt
+        // failure (tampering, key mismatch, legacy peer that didn't
+        // encrypt) returns owned bytes either way; the deserializer
+        // catches the garbage path with a parse error and we skip.
+        let payload: std::borrow::Cow<'_, [u8]> = match shared_secret {
+            Some(secret) => match crypto::decrypt_payload(&record.payload, secret) {
+                Ok(plain) => std::borrow::Cow::Owned(plain),
+                Err(e) => {
+                    tracing::warn!(
+                        "sync: failed to decrypt {} {}: {e}",
+                        record.entity_type,
+                        record.entity_id
+                    );
+                    continue;
+                }
+            },
+            None => std::borrow::Cow::Borrowed(&record.payload),
+        };
+
         match record.entity_type {
             EntityType::Connection => {
                 // `SyncConnection` flattens the inner `Connection`, so a
                 // payload from a pre-wrapper peer (bare `Connection` JSON)
                 // still deserializes, the optional password fields just
                 // resolve to `None` via `#[serde(default)]`.
-                if let Ok(sc) = serde_json::from_slice::<protocol::SyncConnection>(&record.payload) {
+                if let Ok(sc) = serde_json::from_slice::<protocol::SyncConnection>(&payload) {
                     let id = sc.connection.id;
                     let _ = v.save_connection(&sc.connection, sc.password.as_deref());
                     if let Some(pp) = &sc.proxy_password {
@@ -1156,37 +1255,37 @@ pub(crate) fn apply_records(
                 }
             }
             EntityType::SshKey => {
-                if let Ok(key) = serde_json::from_slice::<oryxis_core::models::SshKey>(&record.payload) {
+                if let Ok(key) = serde_json::from_slice::<oryxis_core::models::SshKey>(&payload) {
                     let _ = v.save_key(&key, None);
                 }
             }
             EntityType::Identity => {
-                if let Ok(si) = serde_json::from_slice::<protocol::SyncIdentity>(&record.payload) {
+                if let Ok(si) = serde_json::from_slice::<protocol::SyncIdentity>(&payload) {
                     let _ = v.save_identity(&si.identity, si.password.as_deref());
                 }
             }
             EntityType::ProxyIdentity => {
-                if let Ok(spi) = serde_json::from_slice::<protocol::SyncProxyIdentity>(&record.payload) {
+                if let Ok(spi) = serde_json::from_slice::<protocol::SyncProxyIdentity>(&payload) {
                     let _ = v.save_proxy_identity(&spi.proxy_identity, spi.password.as_deref());
                 }
             }
             EntityType::Group => {
-                if let Ok(group) = serde_json::from_slice::<oryxis_core::models::Group>(&record.payload) {
+                if let Ok(group) = serde_json::from_slice::<oryxis_core::models::Group>(&payload) {
                     let _ = v.save_group(&group);
                 }
             }
             EntityType::Snippet => {
-                if let Ok(snippet) = serde_json::from_slice::<oryxis_core::models::Snippet>(&record.payload) {
+                if let Ok(snippet) = serde_json::from_slice::<oryxis_core::models::Snippet>(&payload) {
                     let _ = v.save_snippet(&snippet);
                 }
             }
             EntityType::KnownHost => {
-                if let Ok(kh) = serde_json::from_slice::<oryxis_core::models::KnownHost>(&record.payload) {
+                if let Ok(kh) = serde_json::from_slice::<oryxis_core::models::KnownHost>(&payload) {
                     let _ = v.save_known_host(&kh);
                 }
             }
             EntityType::CloudProfile => {
-                if let Ok(scp) = serde_json::from_slice::<protocol::SyncCloudProfile>(&record.payload) {
+                if let Ok(scp) = serde_json::from_slice::<protocol::SyncCloudProfile>(&payload) {
                     let _ = v.save_cloud_profile(&scp.profile, scp.secret.as_deref());
                 }
             }
@@ -1309,6 +1408,13 @@ async fn sync_with_peer(
         ))
     })?;
 
+    // Pull the X25519 shared secret once: every payload exchanged in
+    // this session is sealed with it. v4 peers always carry one (set
+    // at pairing); a missing secret means we're talking to a legacy
+    // peer that the version check should already have rejected.
+    let shared_secret = peer_shared_secret(vault, peer_id)?;
+    let shared_secret = shared_secret.as_ref();
+
     // Request manifest
     transport::send_message(&mut send, &SyncMessage::ManifestRequest).await?;
     let remote_manifest = match transport::recv_message(&mut recv).await? {
@@ -1374,7 +1480,7 @@ async fn sync_with_peer(
         match transport::recv_message(&mut recv).await? {
             SyncMessage::DeltaResponse { records } => {
                 pulled = records.len();
-                apply_records(vault, &records)?;
+                apply_records(vault, &records, shared_secret)?;
             }
             _ => return Err(SyncError::Protocol("Expected DeltaResponse".into())),
         }
@@ -1382,7 +1488,7 @@ async fn sync_with_peer(
 
     // Push to remote
     if !to_push_to_remote.is_empty() {
-        let records = collect_records(vault, &to_push_to_remote)?;
+        let records = collect_records(vault, &to_push_to_remote, shared_secret)?;
         pushed = records.len();
         transport::send_message(&mut send, &SyncMessage::DeltaPush { records }).await?;
         match transport::recv_message(&mut recv).await? {
