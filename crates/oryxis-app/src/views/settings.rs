@@ -80,7 +80,10 @@ impl Oryxis {
                     background: Some(Background::Color(OryxisColors::t().border)),
                     ..Default::default()
                 });
-            let panel = container(col)
+            // Wrap the section list in a scrollable so a short window
+            // doesn't clip the bottom entries (About / Plugins were
+            // disappearing when the height dropped below ~520 px).
+            let panel = container(scrollable(col).height(Length::Fill))
                 .width(200)
                 .height(Length::Fill)
                 .style(|_| container::Style {
