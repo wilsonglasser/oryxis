@@ -89,6 +89,26 @@ impl Drop for SyncRuntime {
     }
 }
 
+/// Render a pairing link as a PNG-encoded QR code. Returns `None` on
+/// either side of the pipeline failing (too much data, encoder error);
+/// the caller falls back to showing just the text link.
+pub(crate) fn render_pairing_qr(text: &str) -> Option<Vec<u8>> {
+    let code = qrcode::QrCode::new(text.as_bytes()).ok()?;
+    let img = code
+        .render::<image::Luma<u8>>()
+        .min_dimensions(220, 220)
+        .max_dimensions(280, 280)
+        .quiet_zone(true)
+        .build();
+    let mut png: Vec<u8> = Vec::new();
+    img.write_to(
+        &mut std::io::Cursor::new(&mut png),
+        image::ImageFormat::Png,
+    )
+    .ok()?;
+    Some(png)
+}
+
 impl Oryxis {
     /// Build a `SyncConfig` from the current in-memory sync settings.
     fn build_sync_config(&self) -> SyncConfig {

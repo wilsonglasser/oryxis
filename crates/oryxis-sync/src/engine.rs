@@ -60,6 +60,30 @@ struct HostingPairing {
     expires_at: Instant,
 }
 
+/// URL scheme + path prefix for shareable pairing links.
+const PAIRING_LINK_PREFIX: &str = "oryxis://pair/";
+
+/// Build a shareable pairing link from a device id + code. Inverse of
+/// [`parse_pairing_link`].
+pub fn format_pairing_link(device_id: &Uuid, code: &str) -> String {
+    format!("{}{}/{}", PAIRING_LINK_PREFIX, device_id, code)
+}
+
+/// Parse an `oryxis://pair/<device_id>/<code>` link. Returns `None` if
+/// the prefix is wrong, the UUID is invalid, or the code is not a
+/// 6-digit number. Whitespace around the link is trimmed; trailing
+/// slashes / query strings are rejected to keep the format strict.
+pub fn parse_pairing_link(link: &str) -> Option<(Uuid, String)> {
+    let trimmed = link.trim();
+    let rest = trimmed.strip_prefix(PAIRING_LINK_PREFIX)?;
+    let (id_str, code) = rest.split_once('/')?;
+    let device_id = Uuid::parse_str(id_str).ok()?;
+    if code.len() != 6 || !code.chars().all(|c| c.is_ascii_digit()) {
+        return None;
+    }
+    Some((device_id, code.to_string()))
+}
+
 /// P2P sync engine.
 pub struct SyncEngine {
     config: SyncConfig,
@@ -368,6 +392,64 @@ impl SyncHandle {
         if let Ok(mut state) = self.hosting_pairing.lock() {
             *state = None;
         }
+    }
+
+    /// Build the shareable pairing link for the current device + code.
+    /// Format: `oryxis://pair/<device-uuid>/<6-digit-code>`. The joiner
+    /// pastes this, the link is parsed back into `(device_id, code)`,
+    /// and `join_pairing_remote` looks the device up on the signaling
+    /// server before running the handshake.
+    pub fn pairing_link(&self, code: &str) -> String {
+        format_pairing_link(&self.identity.device_id, code)
+    }
+
+    /// Join a peer using a pairing link (`oryxis://pair/<device_id>/<code>`).
+    /// Requires the signaling URL to be configured, since the device
+    /// id has to be resolved to a public `ip:port` before the QUIC
+    /// handshake can run. Emits `PairingCompleted` / `PairingFailed`.
+    pub async fn join_pairing_remote(&self, link: &str) -> Result<(), SyncError> {
+        let (device_id, code) = match parse_pairing_link(link) {
+            Some(pair) => pair,
+            None => {
+                let reason = "Pairing link is not a valid oryxis://pair/... URL".to_string();
+                let _ = self
+                    .event_tx
+                    .send(SyncEvent::PairingFailed { reason: reason.clone() });
+                return Err(SyncError::PairingFailed(reason));
+            }
+        };
+        let Some(signaling_url) = self.config.signaling_url.clone() else {
+            let reason =
+                "Signaling URL is not configured; set one in Settings > Sync > Advanced"
+                    .to_string();
+            let _ = self
+                .event_tx
+                .send(SyncEvent::PairingFailed { reason: reason.clone() });
+            return Err(SyncError::PairingFailed(reason));
+        };
+        let token = self.config.signaling_token.clone().unwrap_or_default();
+        let client = discovery::signaling::SignalingClient::new(&signaling_url, &token);
+        let lookup = match client.lookup(&device_id).await {
+            Ok(l) => l,
+            Err(e) => {
+                let reason = format!("Signaling lookup failed: {e}");
+                let _ = self
+                    .event_tx
+                    .send(SyncEvent::PairingFailed { reason: reason.clone() });
+                return Err(SyncError::PairingFailed(reason));
+            }
+        };
+        let addr: SocketAddr = match format!("{}:{}", lookup.ip, lookup.port).parse() {
+            Ok(a) => a,
+            Err(e) => {
+                let reason = format!("Signaling returned invalid address: {e}");
+                let _ = self
+                    .event_tx
+                    .send(SyncEvent::PairingFailed { reason: reason.clone() });
+                return Err(SyncError::PairingFailed(reason));
+            }
+        };
+        self.join_pairing(addr, code).await
     }
 
     /// Join a peer that is hosting a pairing code: connect to `addr`,

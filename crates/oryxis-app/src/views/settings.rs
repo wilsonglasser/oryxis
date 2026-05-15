@@ -1197,8 +1197,46 @@ impl Oryxis {
                                     .size(30)
                                     .color(OryxisColors::t().success));
                         }
+                        // Cross-network pairing block: the link + a
+                        // Copy button + the QR. The link works only
+                        // when both ends have a signaling URL set
+                        // (Settings > Sync > Advanced).
+                        if let Some(link) = &self.sync_pairing_link {
+                            pairing_section = pairing_section
+                                .push(Space::new().height(12))
+                                .push(text(crate::i18n::t("sync_pairing_link_label"))
+                                    .size(12)
+                                    .color(OryxisColors::t().text_secondary))
+                                .push(Space::new().height(4))
+                                .push(text(link.as_str())
+                                    .size(11)
+                                    .color(OryxisColors::t().text_muted))
+                                .push(Space::new().height(6))
+                                .push(styled_button(
+                                    crate::i18n::t("sync_pairing_copy_link"),
+                                    Message::CopyToClipboard(link.clone()),
+                                    OryxisColors::t().button_bg,
+                                ));
+                        }
+                        if let Some(png) = &self.sync_pairing_qr_png {
+                            // `Handle::from_bytes` accepts an owned
+                            // `Vec<u8>`; cloning is the cheapest path
+                            // and keeps the cached PNG in app state.
+                            let handle = iced::widget::image::Handle::from_bytes(
+                                png.clone(),
+                            );
+                            pairing_section = pairing_section
+                                .push(Space::new().height(12))
+                                .push(text(crate::i18n::t("sync_pairing_qr_caption"))
+                                    .size(11)
+                                    .color(OryxisColors::t().text_muted))
+                                .push(Space::new().height(6))
+                                .push(iced::widget::image(handle)
+                                    .width(220)
+                                    .height(220));
+                        }
                         pairing_section = pairing_section
-                            .push(Space::new().height(10))
+                            .push(Space::new().height(12))
                             .push(styled_button(
                                 crate::i18n::t("sync_pairing_cancel"),
                                 Message::SyncCancelHostingPairing,
@@ -1224,6 +1262,15 @@ impl Oryxis {
                         .width(320)
                         .style(crate::widgets::rounded_input_style)
                         .align_x(dir_align_x());
+                        let link_input = text_input(
+                            crate::i18n::t("sync_pairing_link_placeholder"),
+                            &self.sync_join_link_input,
+                        )
+                        .on_input(Message::SyncJoinLinkChanged)
+                        .padding(8)
+                        .width(360)
+                        .style(crate::widgets::rounded_input_style)
+                        .align_x(dir_align_x());
                         pairing_section = pairing_section
                             .push(code_input)
                             .push(Space::new().height(8))
@@ -1241,7 +1288,19 @@ impl Oryxis {
                                     Message::SyncJoinPairingCancel,
                                     OryxisColors::t().button_bg,
                                 ),
-                            ]));
+                            ]))
+                            .push(Space::new().height(14))
+                            .push(text(crate::i18n::t("sync_pairing_or_separator"))
+                                .size(11)
+                                .color(OryxisColors::t().text_muted))
+                            .push(Space::new().height(6))
+                            .push(link_input)
+                            .push(Space::new().height(8))
+                            .push(styled_button(
+                                crate::i18n::t("sync_pairing_connect_with_link"),
+                                Message::SyncJoinPairingByLink,
+                                OryxisColors::t().accent,
+                            ));
                     }
                 }
 

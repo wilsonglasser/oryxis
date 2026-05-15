@@ -462,6 +462,13 @@ fn en(key: &str) -> &'static str {
         "sync_pairing_invalid_code" => "Enter the 6-digit code from the other device",
         "sync_pairing_bad_address" => "Enter a valid host address (ip:port)",
         "sync_pairing_connecting" => "Connecting to the other device...",
+        "sync_pairing_link_label" => "Or share this link",
+        "sync_pairing_qr_caption" => "Scan from another device",
+        "sync_pairing_copy_link" => "Copy link",
+        "sync_pairing_link_placeholder" => "oryxis://pair/...",
+        "sync_pairing_connect_with_link" => "Connect with link",
+        "sync_pairing_bad_link" => "That isn't a valid oryxis://pair/... link",
+        "sync_pairing_or_separator" => "or",
 
         // MCP Server
         "mcp_server" => "MCP Server",
@@ -1041,6 +1048,13 @@ fn pt_br(key: &str) -> Option<&'static str> {
         "sync_pairing_invalid_code" => "Digite o código de 6 dígitos do outro dispositivo",
         "sync_pairing_bad_address" => "Digite um endereço de host válido (ip:porta)",
         "sync_pairing_connecting" => "Conectando ao outro dispositivo...",
+        "sync_pairing_link_label" => "Ou compartilhe este link",
+        "sync_pairing_qr_caption" => "Escaneie de outro dispositivo",
+        "sync_pairing_copy_link" => "Copiar link",
+        "sync_pairing_link_placeholder" => "oryxis://pair/...",
+        "sync_pairing_connect_with_link" => "Conectar com link",
+        "sync_pairing_bad_link" => "Este não é um link oryxis://pair/... válido",
+        "sync_pairing_or_separator" => "ou",
 
         "mcp_server" => "Servidor MCP",
         "enable_mcp_server" => "Ativar Servidor MCP",
@@ -5001,6 +5015,13 @@ fn fa(key: &str) -> Option<&'static str> {
         "sync_pairing_invalid_code" => "کد ۶ رقمی دستگاه دیگر را وارد کنید",
         "sync_pairing_bad_address" => "یک نشانی میزبان معتبر وارد کنید (ip:port)",
         "sync_pairing_connecting" => "در حال اتصال به دستگاه دیگر...",
+        "sync_pairing_link_label" => "یا این پیوند را به اشتراک بگذارید",
+        "sync_pairing_qr_caption" => "از دستگاه دیگری اسکن کنید",
+        "sync_pairing_copy_link" => "کپی پیوند",
+        "sync_pairing_link_placeholder" => "oryxis://pair/...",
+        "sync_pairing_connect_with_link" => "اتصال با پیوند",
+        "sync_pairing_bad_link" => "این یک پیوند ‎oryxis://pair/...‎ معتبر نیست",
+        "sync_pairing_or_separator" => "یا",
 
         // MCP Server
         "mcp_server" => "سرور MCP",
@@ -5555,6 +5576,13 @@ fn ar(key: &str) -> Option<&'static str> {
         "sync_pairing_invalid_code" => "أدخل الرمز المكوّن من ٦ أرقام من الجهاز الآخر",
         "sync_pairing_bad_address" => "أدخل عنوان مضيف صالحًا (ip:port)",
         "sync_pairing_connecting" => "جارٍ الاتصال بالجهاز الآخر...",
+        "sync_pairing_link_label" => "أو شارك هذا الرابط",
+        "sync_pairing_qr_caption" => "امسحه من جهاز آخر",
+        "sync_pairing_copy_link" => "نسخ الرابط",
+        "sync_pairing_link_placeholder" => "oryxis://pair/...",
+        "sync_pairing_connect_with_link" => "الاتصال عبر الرابط",
+        "sync_pairing_bad_link" => "هذا ليس رابط ‎oryxis://pair/...‎ صالحًا",
+        "sync_pairing_or_separator" => "أو",
 
         // MCP Server
         "mcp_server" => "خادم MCP",

@@ -656,6 +656,12 @@ pub enum Message {
     SyncJoinPairingConnect,
     /// Joiner backed out of the join form, return to the idle view.
     SyncJoinPairingCancel,
+    /// Text-input change for the joiner's `oryxis://pair/...` link
+    /// field (the cross-network alternative to code + address).
+    SyncJoinLinkChanged(String),
+    /// Joiner pressed Connect with link: parse the link, look the
+    /// device id up on the signaling server, run the handshake.
+    SyncJoinPairingByLink,
 
     // Export / Import
     ExportVault,

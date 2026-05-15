@@ -385,6 +385,46 @@ mod tests {
         assert!(result.is_err());
     }
 
+    // ── Pairing link encoding ──
+
+    #[test]
+    fn pairing_link_round_trip() {
+        use crate::engine::{format_pairing_link, parse_pairing_link};
+        let id = Uuid::new_v4();
+        let link = format_pairing_link(&id, "654321");
+        assert!(link.starts_with("oryxis://pair/"));
+        let (back_id, back_code) = parse_pairing_link(&link).unwrap();
+        assert_eq!(back_id, id);
+        assert_eq!(back_code, "654321");
+    }
+
+    #[test]
+    fn pairing_link_rejects_malformed() {
+        use crate::engine::parse_pairing_link;
+        // Missing prefix.
+        assert!(parse_pairing_link("https://pair/foo/123456").is_none());
+        // Bad UUID.
+        assert!(parse_pairing_link("oryxis://pair/not-a-uuid/123456").is_none());
+        // Wrong code length.
+        let id = Uuid::new_v4();
+        assert!(parse_pairing_link(&format!("oryxis://pair/{id}/12345")).is_none());
+        assert!(parse_pairing_link(&format!("oryxis://pair/{id}/1234567")).is_none());
+        // Non-digit code.
+        assert!(parse_pairing_link(&format!("oryxis://pair/{id}/12ab34")).is_none());
+        // Missing code segment.
+        assert!(parse_pairing_link(&format!("oryxis://pair/{id}")).is_none());
+    }
+
+    #[test]
+    fn pairing_link_trims_whitespace() {
+        use crate::engine::{format_pairing_link, parse_pairing_link};
+        let id = Uuid::new_v4();
+        let padded = format!("  {}\n", format_pairing_link(&id, "777777"));
+        let (back_id, code) = parse_pairing_link(&padded).unwrap();
+        assert_eq!(back_id, id);
+        assert_eq!(code, "777777");
+    }
+
     /// A hosted code pairs exactly one device: a second join with the
     /// same code fails because the code was cleared on success.
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

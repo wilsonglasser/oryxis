@@ -518,6 +518,15 @@ pub struct Oryxis {
     pub(crate) sync_join_code_input: String,
     /// The host address (`ip:port`) typed in when joining a pairing.
     pub(crate) sync_join_target_input: String,
+    /// Shareable `oryxis://pair/...` link for the currently-hosted
+    /// pairing code, cleared on cancel / complete.
+    pub(crate) sync_pairing_link: Option<String>,
+    /// PNG-encoded QR code of `sync_pairing_link`; cached so the view
+    /// doesn't re-encode on every redraw.
+    pub(crate) sync_pairing_qr_png: Option<Vec<u8>>,
+    /// `oryxis://pair/...` link pasted in by the joiner as an
+    /// alternative to typing code + `ip:port`. Resolved via signaling.
+    pub(crate) sync_join_link_input: String,
 
     // Export/Import
     pub(crate) show_export_dialog: bool,
