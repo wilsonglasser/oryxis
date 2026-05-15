@@ -5,10 +5,19 @@ use uuid::Uuid;
 /// Protocol version for wire compatibility.
 ///
 /// v2 added `auth_signature` to Hello/HelloAck (channel-bound Ed25519
-/// proof of identity, fixes MITM-able handshake from v1). v1 peers
-/// cannot interop with v2 peers, and that is intentional. There are no
-/// v1 peers in the wild because sync was never wired into the app.
-pub const PROTOCOL_VERSION: u32 = 2;
+/// proof of identity, fixes MITM-able handshake from v1).
+///
+/// v3 reworked pairing: `PairingRequest` / `PairingAccepted` carry the
+/// sender's `device_id` (so each side knows which UUID to store the
+/// peer under), and a `PairingChallenge` / `PairingResponse` round was
+/// added so the joiner proves possession of the private key paired
+/// with the `public_key` it sent. Pairing happens before any peer
+/// pubkey is persisted, so the Hello channel-binding can't be reused.
+///
+/// Older peers cannot interop across a version bump, and that is
+/// intentional. There are no pre-v3 peers in the wild because sync was
+/// never wired into the app before this release.
+pub const PROTOCOL_VERSION: u32 = 3;
 
 /// Entity types that can be synced.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
@@ -87,13 +96,34 @@ pub enum SyncMessage {
         auth_signature: Vec<u8>,
     },
 
-    // Pairing (first connection only)
+    // Pairing (first connection only). The joiner opens a stream and
+    // sends `PairingRequest`; the host (if it is currently hosting a
+    // matching code) replies with a `PairingChallenge`, the joiner
+    // answers with `PairingResponse`, and the host finishes with
+    // `PairingAccepted` or `PairingRejected`. See `PROTOCOL_VERSION`.
     PairingRequest {
+        device_id: Uuid,
         device_name: String,
         public_key: Vec<u8>,
         pairing_code: String,
+        /// The joiner's own QUIC listen port. The host sees only the
+        /// joiner's ephemeral source port on this connection, so the
+        /// joiner has to advertise its listener explicitly for the
+        /// host to be able to sync back to it later.
+        listen_port: u16,
+    },
+    /// Host -> joiner: a fresh random nonce the joiner must sign with
+    /// the private key matching the `public_key` it just sent. This
+    /// proves the joiner isn't replaying an intercepted `PairingRequest`.
+    PairingChallenge {
+        challenge: Vec<u8>,
+    },
+    /// Joiner -> host: Ed25519 signature over the challenge nonce.
+    PairingResponse {
+        signed_challenge: Vec<u8>,
     },
     PairingAccepted {
+        device_id: Uuid,
         device_name: String,
         public_key: Vec<u8>,
     },
@@ -240,6 +270,58 @@ mod tests {
                 assert_eq!(auth_signature.len(), 64);
             }
             _ => panic!("Wrong message type"),
+        }
+    }
+
+    /// The v3 pairing messages must survive a bincode frame round-trip
+    /// with their `device_id` and challenge/response payloads intact.
+    #[test]
+    fn pairing_messages_round_trip() {
+        let device_id = Uuid::new_v4();
+        let messages = [
+            SyncMessage::PairingRequest {
+                device_id,
+                device_name: "laptop".into(),
+                public_key: vec![0x11; 32],
+                pairing_code: "123456".into(),
+                listen_port: 4433,
+            },
+            SyncMessage::PairingChallenge {
+                challenge: vec![0x22; 32],
+            },
+            SyncMessage::PairingResponse {
+                signed_challenge: vec![0x33; 64],
+            },
+            SyncMessage::PairingAccepted {
+                device_id,
+                device_name: "desktop".into(),
+                public_key: vec![0x44; 32],
+            },
+        ];
+        for msg in messages {
+            let encoded = encode_message(&msg).unwrap();
+            let len =
+                u32::from_le_bytes([encoded[0], encoded[1], encoded[2], encoded[3]]) as usize;
+            let decoded = decode_message(&encoded[4..4 + len]).unwrap();
+            match (&msg, &decoded) {
+                (
+                    SyncMessage::PairingRequest { device_id: a, .. },
+                    SyncMessage::PairingRequest { device_id: b, .. },
+                )
+                | (
+                    SyncMessage::PairingAccepted { device_id: a, .. },
+                    SyncMessage::PairingAccepted { device_id: b, .. },
+                ) => assert_eq!(a, b),
+                (
+                    SyncMessage::PairingChallenge { challenge: a },
+                    SyncMessage::PairingChallenge { challenge: b },
+                ) => assert_eq!(a, b),
+                (
+                    SyncMessage::PairingResponse { signed_challenge: a },
+                    SyncMessage::PairingResponse { signed_challenge: b },
+                ) => assert_eq!(a, b),
+                _ => panic!("pairing message variant changed across round-trip"),
+            }
         }
     }
 

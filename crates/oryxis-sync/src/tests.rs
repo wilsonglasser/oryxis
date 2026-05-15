@@ -124,9 +124,10 @@ mod tests {
 
     #[test]
     fn protocol_version_consistency() {
-        // v2 added channel-bound auth_signature to Hello/HelloAck. v1 had
-        // no auth and is intentionally incompatible.
-        assert_eq!(PROTOCOL_VERSION, 2);
+        // v3 reworked pairing (device_id in PairingRequest/Accepted,
+        // plus the PairingChallenge/PairingResponse round). Older peers
+        // are intentionally incompatible.
+        assert_eq!(PROTOCOL_VERSION, 3);
     }
 
     #[test]
