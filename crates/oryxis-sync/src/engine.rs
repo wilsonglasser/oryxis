@@ -291,7 +291,7 @@ impl SyncEngine {
                             // keeps the device discoverable.
                             let ip_changed = last_public_ip.as_deref() != Some(ip.as_str());
                             let needs_refresh = last_register_at
-                                .map_or(true, |t| t.elapsed() >= refresh_interval);
+                                .is_none_or(|t| t.elapsed() >= refresh_interval);
                             if !ip_changed && !needs_refresh {
                                 continue;
                             }

@@ -8,6 +8,7 @@ pub mod engine;
 pub mod error;
 pub mod peer;
 pub mod protocol;
+pub mod relay;
 pub mod transport;
 
 pub use config::{SyncConfig, SyncMode};
