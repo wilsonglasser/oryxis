@@ -8,7 +8,10 @@
 # libssl, no shell). aws-lc-sys is not pulled in here (no rustls);
 # axum + tokio compile clean against musl out of the box.
 
-FROM rust:1.83-slim-bookworm AS builder
+# MSRV: edition 2024 needs Rust 1.85; the discovery.rs let-chain needs
+# Rust 1.88. Use a comfortable margin so future small refactors don't
+# bump the floor.
+FROM rust:1.89-slim-bookworm AS builder
 
 # musl-tools for musl target; pkg-config + cc for any C deps that
 # do show up transitively. Tiny image cost.
@@ -17,8 +20,17 @@ RUN apt-get update \
         musl-tools pkg-config build-essential \
     && rm -rf /var/lib/apt/lists/*
 
-ARG TARGET=x86_64-unknown-linux-musl
-RUN rustup target add ${TARGET}
+# buildx injects TARGETARCH (`amd64` / `arm64`) when building multi-
+# platform; map it to the matching musl triple so emulated arm64
+# builds don't produce an x86_64 binary inside the arm64 manifest.
+ARG TARGETARCH
+RUN case "${TARGETARCH}" in \
+        amd64) TARGET=x86_64-unknown-linux-musl ;; \
+        arm64) TARGET=aarch64-unknown-linux-musl ;; \
+        *) echo "unsupported TARGETARCH=${TARGETARCH}" && exit 1 ;; \
+    esac \
+    && echo "${TARGET}" > /target \
+    && rustup target add "${TARGET}"
 
 WORKDIR /src
 
@@ -28,8 +40,9 @@ WORKDIR /src
 COPY Cargo.toml Cargo.lock ./
 COPY crates ./crates
 
-RUN cargo build --release --target ${TARGET} -p oryxis-relay \
-    && cp /src/target/${TARGET}/release/oryxis-relay /oryxis-relay
+RUN TARGET="$(cat /target)" \
+    && cargo build --release --target "${TARGET}" -p oryxis-relay \
+    && cp "/src/target/${TARGET}/release/oryxis-relay" /oryxis-relay
 
 # Stage 2: minimal runtime. We use distroless rather than scratch so
 # the binary has /etc/ssl/certs available if we ever need outbound
