@@ -188,6 +188,68 @@ impl SyncEngine {
             }
         });
 
+        // Signaling heartbeat. When a signaling URL is configured, ask
+        // a STUN server for our public address once a minute and POST
+        // it to the signaling server so peers behind a different NAT
+        // can `lookup(device_id)` and reach us. No-op LAN-only when
+        // `signaling_url` is `None`.
+        if let Some(signaling_url) = self.config.signaling_url.clone() {
+            let token = self.config.signaling_token.clone().unwrap_or_default();
+            let identity = self.identity.clone();
+            let bound_port = listen_port;
+            let mut shutdown_rx = shutdown_tx.subscribe();
+            tokio::spawn(async move {
+                let client = discovery::signaling::SignalingClient::new(&signaling_url, &token);
+                let mut ticker =
+                    tokio::time::interval(std::time::Duration::from_secs(60));
+                let mut last_public_ip: Option<String> = None;
+                let fp = identity.public_key_fingerprint();
+                loop {
+                    tokio::select! {
+                        _ = ticker.tick() => {
+                            // Fresh ephemeral UDP socket per probe; the STUN
+                            // server's reply tells us the NAT mapping it sees.
+                            let socket = match tokio::net::UdpSocket::bind("0.0.0.0:0").await {
+                                Ok(s) => s,
+                                Err(e) => {
+                                    tracing::warn!("signaling: STUN bind failed: {e}");
+                                    continue;
+                                }
+                            };
+                            let pub_addr = match discovery::stun::get_public_addr(&socket).await {
+                                Ok(a) => a,
+                                Err(e) => {
+                                    tracing::warn!("signaling: STUN failed: {e}");
+                                    continue;
+                                }
+                            };
+                            let ip = pub_addr.ip().to_string();
+                            // Re-register only when the public IP changes
+                            // (or on the first tick). Cuts traffic on stable
+                            // networks; keeps the lookup fresh after Wi-Fi
+                            // hops, cell handoffs, etc.
+                            if last_public_ip.as_deref() == Some(ip.as_str()) {
+                                continue;
+                            }
+                            match client.register(&identity.device_id, &fp, &ip, bound_port).await {
+                                Ok(()) => {
+                                    tracing::info!(
+                                        "signaling: registered {} -> {}:{}",
+                                        identity.device_id, ip, bound_port
+                                    );
+                                    last_public_ip = Some(ip);
+                                }
+                                Err(e) => {
+                                    tracing::warn!("signaling register failed: {e}");
+                                }
+                            }
+                        }
+                        _ = shutdown_rx.recv() => break,
+                    }
+                }
+            });
+        }
+
         // Auto-sync timer (if mode == Auto)
         if self.config.mode == crate::config::SyncMode::Auto {
             let interval = self.config.auto_interval_secs;

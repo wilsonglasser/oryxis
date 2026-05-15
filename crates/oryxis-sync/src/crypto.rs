@@ -47,6 +47,20 @@ impl DeviceIdentity {
         self.public_key().to_bytes().to_vec()
     }
 
+    /// A short, human-readable identifier for this device's public
+    /// key. The first 6 bytes of `SHA-256(pubkey)` rendered as
+    /// `xxxx-xxxx-xxxx` lowercase hex. Used by the signaling server
+    /// to dedupe registrations and shown to users for visual
+    /// verification of a paired device.
+    pub fn public_key_fingerprint(&self) -> String {
+        use sha2::{Digest, Sha256};
+        let digest = Sha256::digest(self.public_key().to_bytes());
+        format!(
+            "{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}",
+            digest[0], digest[1], digest[2], digest[3], digest[4], digest[5]
+        )
+    }
+
     /// Serialize the identity for persistence. Layout (deterministic, fixed length):
     ///   16 bytes device_id (Uuid bytes)
     ///   32 bytes signing key secret

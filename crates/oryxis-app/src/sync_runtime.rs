@@ -109,10 +109,13 @@ impl Oryxis {
             ..SyncConfig::default()
         };
         // A signaling URL typed in Settings overrides the build-time
-        // default. Signaling itself isn't orchestrated yet (Phase C),
-        // but persisting the value here keeps the config honest.
-        if !self.sync_signaling_url.trim().is_empty() {
-            config.signaling_url = self.sync_signaling_url.clone();
+        // default; an explicit empty string switches the engine back
+        // to LAN-only (`None`).
+        let typed = self.sync_signaling_url.trim();
+        if !typed.is_empty() {
+            config.signaling_url = Some(typed.to_string());
+        } else {
+            config.signaling_url = None;
         }
         config
     }
