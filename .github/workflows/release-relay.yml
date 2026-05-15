@@ -1,0 +1,104 @@
+name: Release relay
+
+# Triggered by tags of the form `relay-v0.1.0`. Builds the
+# `oryxis-relay` Docker image for amd64 + arm64 and publishes to
+# `ghcr.io/wilsonglasser/oryxis-relay:<version>` plus `:latest`.
+#
+# Users self-host with:
+#   docker run -d \
+#     -p 8080:8080 \
+#     -e ORYXIS_RELAY_TOKEN=<long-random-string> \
+#     ghcr.io/wilsonglasser/oryxis-relay:latest
+
+on:
+  push:
+    tags:
+      - 'relay-v*'
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  docker:
+    name: Build and push relay image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Extract version
+        id: meta
+        run: |
+          tag="${GITHUB_REF#refs/tags/}"
+          version="${tag#relay-v}"
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: crates/oryxis-relay/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/oryxis-relay:${{ steps.meta.outputs.version }}
+            ghcr.io/${{ github.repository_owner }}/oryxis-relay:latest
+
+  binary:
+    name: Build standalone binary ${{ matrix.label }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: linux-x86_64
+            runner: ubuntu-latest
+            target: x86_64-unknown-linux-musl
+          - label: linux-aarch64
+            runner: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-musl
+          - label: macos-aarch64
+            runner: macos-latest
+            target: aarch64-apple-darwin
+          - label: windows-x86_64
+            runner: windows-latest
+            target: x86_64-pc-windows-msvc
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - name: Install musl toolchain (Linux)
+        if: contains(matrix.target, 'musl')
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y musl-tools
+      - name: Build
+        run: cargo build --release --target ${{ matrix.target }} -p oryxis-relay
+      - name: Package
+        shell: bash
+        run: |
+          tag="${GITHUB_REF#refs/tags/}"
+          mkdir -p dist
+          ext=""
+          if [[ "${{ matrix.target }}" == *windows* ]]; then ext=".exe"; fi
+          bin="target/${{ matrix.target }}/release/oryxis-relay${ext}"
+          name="oryxis-relay-${tag}-${{ matrix.label }}${ext}"
+          cp "${bin}" "dist/${name}"
+      - name: Upload to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
