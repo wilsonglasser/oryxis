@@ -19,27 +19,41 @@ project uses [SemVer](https://semver.org/spec/v2.0.0.html).
 ### Added
 - **P2P sync is now actually operational.** Previous releases shipped
   the UI over an orphaned engine; this release wires the engine into
-  the app lifecycle and fills the gaps:
-  - Engine spawns when sync is toggled on (LAN-only via mDNS) and
-    stops cleanly on toggle off. A dedicated `SyncRuntime` opens its
-    own `VaultStore` handle on the same SQLite file; concurrent access
-    is safe under WAL + `busy_timeout`.
+  the app lifecycle and covers both LAN and cross-network paths:
+  - Engine spawns when sync is toggled on and stops cleanly on toggle
+    off. A dedicated `SyncRuntime` opens its own `VaultStore` handle
+    on the same SQLite file; concurrent access is safe under WAL +
+    `busy_timeout`.
   - Deletes propagate: every syncable `delete_*` records a tombstone
     in `sync_metadata`; the manifest surfaces tombstones; the
     receiver applies the delete and records a fresh local tombstone
     so the deletion keeps travelling onward.
   - Two-sided pairing handshake: host shows a 6-digit code (single
-    shot, 5-minute TTL), joiner enters the code + the host's
-    `ip:port`, and both sides persist each other on success.
-  - Sync Now actually syncs (was a literal status-string stub).
+    shot, 5-minute TTL), joiner provides the code + the host's
+    address, and both sides persist each other on success. The host
+    address can be typed (`ip:port`), pasted as an `oryxis://pair/...`
+    link (signaling-resolved), or one-clicked from the live discovered
+    devices list.
+  - Cross-network sync via the Cloudflare Workers signaling server:
+    when `signaling_url` is configured (settable in Settings > Sync
+    > Advanced), the engine STUNs for its public address once a
+    minute and re-registers on the signaling server whenever the IP
+    changes; the joiner's link flow looks the device id up there to
+    get the host's current `ip:port`.
+  - Live mDNS-discovered devices list in the pairing panel, deduped
+    by device id, with a Pair button per row that pre-fills the join
+    form's address.
+  - QR-code rendering of the `oryxis://pair/...` link so the user can
+    point a phone at the host's screen.
+  - `Sync Now` actually syncs (was a literal status-string stub).
   - Engine events (peer discovered, sync completed, pairing progress)
     flow into the UI via `Task::stream`; the Settings panel shows a
     live engine-running indicator.
 
-  Known v1 limits: LAN only (cross-network signaling deferred);
-  pairing requires typing the host's `ip:port` (QR code / one-click
-  from the discovered-devices list deferred); mDNS-discovered peers
-  log to `tracing` but don't surface in the UI yet.
+  `SyncConfig.signaling_url` / `signaling_token` are `Option<String>`;
+  the build no longer panics when `ORYXIS_SIGNALING_URL` /
+  `ORYXIS_SIGNALING_TOKEN` are unset, it just starts LAN-only and the
+  user can fill the URL at runtime.
 
 ### Removed
 - Sentry crash/error reporting. Dropped the `sentry` and
