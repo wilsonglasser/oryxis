@@ -2,12 +2,14 @@ name: Release AWS plugin
 
 # Triggered by tags of the form `aws-v0.4.2`. Builds the
 # `oryxis-cloud-aws-plugin` binary for every supported platform,
-# signs it with the production Ed25519 key (from the
-# `ORYXIS_SIGNING_KEY` secret), and uploads the binary plus its
-# sidecar `.sig`, `.sha256`, and `.size` files to a GitHub Release.
+# signs each with the production Ed25519 key (from the
+# `ORYXIS_SIGNING_KEY` secret), uploads everything to the GitHub
+# Release, and finally builds the `aws.json` manifest from the
+# same-release assets and uploads that too.
 #
-# The matching `update-manifest.yml` workflow reads those uploaded
-# assets and publishes the manifest JSON the app reads from.
+# The app reads the manifest via the GitHub API: list releases on
+# this repo, filter `aws-v*`, pick the highest, download `aws.json`
+# from its assets. No gh-pages branch involved.
 
 on:
   push:
@@ -81,20 +83,110 @@ jobs:
           OUT="dist/oryxis-cloud-aws-plugin-${{ matrix.label }}${{ matrix.ext }}"
           mkdir -p dist
           cp "$BIN" "$OUT"
-          # The signer prints `sha256 = ...`, `signature_b64 = ...`,
-          # and `size = ...` on three separate lines.
+          # The signer prints `sha256 = …`, `signature_b64 = …`,
+          # and `size = …` on three separate lines.
           ./target/release/oryxis-plugin-signer sign "$BIN" > "$OUT.signinfo"
-          grep '^sha256' "$OUT.signinfo" | awk '{print $3}' > "$OUT.sha256"
+          grep '^sha256'        "$OUT.signinfo" | awk '{print $3}' > "$OUT.sha256"
           grep '^signature_b64' "$OUT.signinfo" | awk '{print $3}' > "$OUT.sig"
-          grep '^size' "$OUT.signinfo" | awk '{print $3}' > "$OUT.size"
+          grep '^size'          "$OUT.signinfo" | awk '{print $3}' > "$OUT.size"
           rm "$OUT.signinfo"
 
       - name: Upload to Release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ github.ref_name }}
           files: |
             dist/oryxis-cloud-aws-plugin-${{ matrix.label }}${{ matrix.ext }}
             dist/oryxis-cloud-aws-plugin-${{ matrix.label }}${{ matrix.ext }}.sig
             dist/oryxis-cloud-aws-plugin-${{ matrix.label }}${{ matrix.ext }}.sha256
             dist/oryxis-cloud-aws-plugin-${{ matrix.label }}${{ matrix.ext }}.size
+
+  manifest:
+    name: Publish manifest
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Resolve version
+        id: tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG='${{ github.ref_name }}'
+          echo "tag=$TAG"        >> "$GITHUB_OUTPUT"
+          echo "version=${TAG#aws-v}" >> "$GITHUB_OUTPUT"
+
+      - name: Download sidecars from the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          mkdir -p assets
+          gh release download "${{ steps.tag.outputs.tag }}" \
+            --repo "${{ github.repository }}" \
+            --pattern 'oryxis-cloud-aws-plugin-*.sha256' \
+            --pattern 'oryxis-cloud-aws-plugin-*.sig' \
+            --pattern 'oryxis-cloud-aws-plugin-*.size' \
+            --dir assets
+
+      - name: Build aws.json
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION='${{ steps.tag.outputs.version }}'
+          TAG='${{ steps.tag.outputs.tag }}'
+          BASE="https://github.com/${{ github.repository }}/releases/download/${TAG}"
+
+          entries=()
+          for sha_file in assets/oryxis-cloud-aws-plugin-*.sha256; do
+            [ -f "$sha_file" ] || continue
+            base="${sha_file%.sha256}"
+            name=$(basename "$base")
+            # Parse `os` + `arch` from the filename
+            #   oryxis-cloud-aws-plugin-linux-x86_64
+            #   oryxis-cloud-aws-plugin-windows-aarch64.exe
+            stripped="${name#oryxis-cloud-aws-plugin-}"
+            stripped="${stripped%.exe}"
+            os="${stripped%-*}"
+            arch="${stripped##*-}"
+            sha=$(cat "$base.sha256")
+            sig=$(cat "$base.sig")
+            size=$(cat "$base.size")
+            entries+=("$(cat <<EOF
+              {
+                "os": "$os",
+                "arch": "$arch",
+                "url": "$BASE/$name",
+                "sha256": "$sha",
+                "signature": "$sig",
+                "size": $size
+              }
+EOF
+)")
+          done
+          binaries=$(IFS=$',\n'; echo "${entries[*]}")
+
+          cat > aws.json <<EOF
+          {
+            "provider_id": "aws",
+            "versions": [
+              {
+                "version": "$VERSION",
+                "protocol_versions": [1],
+                "min_app": "0.9.0",
+                "binaries": [
+          $binaries
+                ]
+              }
+            ]
+          }
+          EOF
+          echo '--- aws.json ---'
+          cat aws.json
+
+      - name: Upload aws.json to the release
+        uses: softprops/action-gh-release@v2
+        with:
           tag_name: ${{ github.ref_name }}
+          files: aws.json

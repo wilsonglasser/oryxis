@@ -27,12 +27,15 @@ use ed25519_dalek::{Signature, SigningKey, VerifyingKey};
 
 use super::PluginError;
 
-/// Production plugin-signing public key. Bake the real 32-byte key
-/// here once Wilson generates the prod keypair, the private half
-/// lives in a CI secret; `oryxis-plugin-signer` reads it from
-/// `ORYXIS_SIGNING_KEY`.
-// TODO(prod-keypair): replace with the real bytes once generated.
-pub const PROD_PUBKEY: [u8; 32] = [0u8; 32];
+/// Production plugin-signing public key. The matching private half
+/// lives in the `ORYXIS_SIGNING_KEY` repository secret;
+/// `oryxis-plugin-signer` (invoked by `.github/workflows/release-aws.yml`)
+/// reads it from there to sign every released plugin binary.
+pub const PROD_PUBKEY: [u8; 32] = [
+    0x19, 0x33, 0x99, 0xc1, 0xad, 0x91, 0x4b, 0x07, 0xa1, 0x4b, 0xe8, 0xee, 0x7a, 0xec, 0x94,
+    0x31, 0xa9, 0x7e, 0x1d, 0xc0, 0xa6, 0x78, 0xdb, 0x38, 0x54, 0xc4, 0x5c, 0x2e, 0xaa, 0xe2,
+    0xcd, 0x25,
+];
 
 /// Seed for the development signing keypair. Re-exported from the
 /// protocol crate (where the signer also reads it) so the dev sign
@@ -156,15 +159,15 @@ mod tests {
     #[test]
     fn active_pubkeys_match_build_profile() {
         let keys = active_pubkeys();
+        // The prod key is real now; both build profiles trust it.
+        assert!(keys.contains(&PROD_PUBKEY), "prod pubkey must be active");
         if cfg!(debug_assertions) {
-            // Debug build trusts the derived dev pubkey; the prod
-            // placeholder (all-zero) is filtered out.
-            assert_eq!(keys.len(), 1);
-            assert_eq!(keys[0], dev_pubkey());
+            // Debug additionally trusts the dev seed for local signing.
+            assert_eq!(keys.len(), 2);
+            assert!(keys.contains(&dev_pubkey()));
         } else {
-            // Release build, the prod placeholder is still all-zero,
-            // nothing is trusted until `PROD_PUBKEY` is baked.
-            assert!(keys.is_empty());
+            // Release trusts only the prod key.
+            assert_eq!(keys.len(), 1);
         }
     }
 

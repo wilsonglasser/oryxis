@@ -32,10 +32,6 @@ pub struct PluginProvider {
     /// for the whole app lifetime, which beats rippling an owned
     /// `String` through the registry and every call site.
     id: &'static str,
-    /// Manifest URL for the update flow. Stored now, consumed by the
-    /// plugins UI / update path in a later PR.
-    #[allow(dead_code)]
-    manifest_url: String,
     host: PluginHost,
 }
 
@@ -43,17 +39,16 @@ impl PluginProvider {
     /// Build a provider for `provider_id`, resolving its binary and
     /// preparing (but not spawning) the host.
     ///
-    // TODO(PR 5): the binary path is resolved once, here. When the
-    // update flow flips the cache's `current` pointer, the host needs
-    // rebuilding (or a `Fn() -> PathBuf` resolver). Fine for PR 4:
-    // both the dev loop (decision B) and a stable install keep the
-    // same path for the process lifetime.
-    pub fn new(provider_id: &str, manifest_url: impl Into<String>) -> Self {
+    // The binary path is resolved once, here. When the update flow
+    // flips the cache's `current` pointer, the host needs rebuilding
+    // (or a `Fn() -> PathBuf` resolver). Fine for now: both the dev
+    // loop and a stable install keep the same path for the process
+    // lifetime.
+    pub fn new(provider_id: &str) -> Self {
         let id: &'static str = Box::leak(provider_id.to_string().into_boxed_str());
         let binary = resolve_binary(provider_id);
         Self {
             id,
-            manifest_url: manifest_url.into(),
             host: PluginHost::new(binary, provider_id),
         }
     }

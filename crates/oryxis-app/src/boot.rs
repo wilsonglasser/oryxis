@@ -228,10 +228,7 @@ impl Oryxis {
                 // async tasks without locking.
                 cloud_provider_registry: {
                     let mut reg = oryxis_cloud::CloudProviderRegistry::new();
-                    let aws = crate::plugins::PluginProvider::new(
-                        "aws",
-                        crate::plugins::manifest_url("aws"),
-                    );
+                    let aws = crate::plugins::PluginProvider::new("aws");
                     reg.register(std::sync::Arc::new(aws));
                     std::sync::Arc::new(reg)
                 },
@@ -310,7 +307,13 @@ impl Oryxis {
                 sync_passwords: false,
                 flatten_hosts: true,
                 sync_device_name: String::new(),
-                sync_signaling_url: oryxis_sync::SyncConfig::default().signaling_url,
+                // `signaling_url` is now `Option<String>` on the
+                // engine config; the app state uses a plain `String`
+                // (empty == not set) so a Settings text input can
+                // drive it.
+                sync_signaling_url: oryxis_sync::SyncConfig::default()
+                    .signaling_url
+                    .unwrap_or_default(),
                 sync_relay_url: String::new(),
                 sync_listen_port: "0".into(),
                 sync_peers: Vec::new(),

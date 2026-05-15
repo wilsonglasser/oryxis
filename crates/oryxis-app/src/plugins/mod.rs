@@ -36,17 +36,12 @@ use std::path::PathBuf;
 
 use oryxis_cloud::CloudError;
 
-/// Base URL for hosted plugin manifests, one JSON file per provider
-/// (`<base>/<provider>.json`). Default points at the repo's GitHub
-/// Pages, which `.github/workflows/update-manifest.yml` publishes
-/// to after each plugin release. Swap to a custom domain (e.g.
-/// `https://plugins.oryxis.io`) when one is configured.
-pub const MANIFEST_BASE_URL: &str = "https://wilsonglasser.github.io/oryxis";
-
-/// Manifest URL for a given provider id.
-pub fn manifest_url(provider_id: &str) -> String {
-    format!("{MANIFEST_BASE_URL}/{provider_id}.json")
-}
+/// GitHub repo where plugin release artifacts and their `*.json`
+/// manifests are published. `fetch_manifest` lists releases here,
+/// filters by `<provider>-v*` tags, and downloads the highest
+/// version's manifest from its release assets, no separate manifest
+/// host involved.
+pub const RELEASE_REPO: &str = "wilsonglasser/oryxis";
 
 /// Unified error for every step of the plugin lifecycle, spawn,
 /// JSON-RPC, manifest parsing, download, integrity. Kept as one enum

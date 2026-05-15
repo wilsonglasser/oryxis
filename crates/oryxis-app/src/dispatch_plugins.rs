@@ -136,11 +136,11 @@ impl Oryxis {
                 {
                     entry.status = PluginUiStatus::Checking;
                 }
-                let url = crate::plugins::manifest_url(&id);
+                let id_for_task = id.clone();
                 let id_for_msg = id.clone();
                 Ok(Task::perform(
                     async move {
-                        crate::plugins::download::fetch_manifest(&url)
+                        crate::plugins::download::fetch_manifest(&id_for_task)
                             .await
                             .map(Box::new)
                             .map_err(|e| e.to_string())

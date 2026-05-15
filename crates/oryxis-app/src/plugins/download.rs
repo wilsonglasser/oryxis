@@ -13,28 +13,96 @@ use std::path::PathBuf;
 use futures_util::StreamExt;
 use sha2::{Digest, Sha256};
 
-use super::manifest::{ManifestEntry, PlatformBinary, PluginManifest};
-use super::{cache, verify, PluginError};
+use super::manifest::{self, ManifestEntry, PlatformBinary, PluginManifest};
+use super::{cache, verify, PluginError, RELEASE_REPO};
 
-/// Fetch and parse a provider's manifest JSON from its hosted URL.
-pub async fn fetch_manifest(url: &str) -> Result<PluginManifest, PluginError> {
+/// Find the latest `<provider>-v*` release on GitHub and download
+/// the `<provider>.json` manifest from its assets.
+///
+/// The plugin release workflow uploads both the binaries and a
+/// matching `aws.json` (or whatever the provider is) to the same
+/// GitHub Release. There's no separate manifest host: the release
+/// IS the manifest source. The app finds the right release by
+/// listing the repo's releases, filtering by tag prefix, and picking
+/// the highest version that actually carries a manifest asset.
+pub async fn fetch_manifest(provider_id: &str) -> Result<PluginManifest, PluginError> {
     let client = reqwest::Client::builder()
         .user_agent(concat!("Oryxis/", env!("CARGO_PKG_VERSION")))
         .timeout(std::time::Duration::from_secs(15))
         .build()
         .map_err(|e| PluginError::Download(e.to_string()))?;
+
+    // Step 1: list releases. 30 entries covers years of plugin
+    // releases without paginating.
+    let releases_url =
+        format!("https://api.github.com/repos/{RELEASE_REPO}/releases?per_page=30");
     let resp = client
-        .get(url)
+        .get(&releases_url)
         .send()
         .await
         .map_err(|e| PluginError::Download(e.to_string()))?;
     if !resp.status().is_success() {
         return Err(PluginError::Manifest(format!(
-            "manifest fetch returned HTTP {}",
+            "github releases api returned HTTP {} for {RELEASE_REPO}",
             resp.status()
         )));
     }
-    let body = resp
+    let releases: Vec<serde_json::Value> = resp
+        .json()
+        .await
+        .map_err(|e| PluginError::Download(format!("parse releases json: {e}")))?;
+
+    // Step 2: filter by `<provider>-v` tag, require a manifest asset,
+    // pick the highest version.
+    let tag_prefix = format!("{provider_id}-v");
+    let manifest_asset = format!("{provider_id}.json");
+    let mut candidates: Vec<(&serde_json::Value, [u32; 4])> = releases
+        .iter()
+        .filter_map(|r| {
+            let tag = r.get("tag_name")?.as_str()?;
+            let version = tag.strip_prefix(&tag_prefix)?;
+            // Skip releases that don't carry the manifest asset.
+            let has_manifest = r
+                .get("assets")
+                .and_then(|a| a.as_array())
+                .map(|assets| {
+                    assets.iter().any(|asset| {
+                        asset.get("name").and_then(|n| n.as_str())
+                            == Some(manifest_asset.as_str())
+                    })
+                })
+                .unwrap_or(false);
+            has_manifest.then(|| (r, manifest::version_key(version)))
+        })
+        .collect();
+    candidates.sort_by_key(|(_, key)| std::cmp::Reverse(*key));
+    let (release, _) = candidates.first().ok_or_else(|| {
+        PluginError::Manifest(format!(
+            "no `{tag_prefix}*` release with a `{manifest_asset}` asset found in {RELEASE_REPO}"
+        ))
+    })?;
+
+    // Step 3: download the manifest asset itself.
+    let download_url = release
+        .get("assets")
+        .and_then(|a| a.as_array())
+        .and_then(|assets| {
+            assets.iter().find(|asset| {
+                asset.get("name").and_then(|n| n.as_str())
+                    == Some(manifest_asset.as_str())
+            })
+        })
+        .and_then(|asset| asset.get("browser_download_url"))
+        .and_then(|u| u.as_str())
+        .ok_or_else(|| {
+            PluginError::Manifest("asset url missing on release payload".into())
+        })?;
+
+    let body = client
+        .get(download_url)
+        .send()
+        .await
+        .map_err(|e| PluginError::Download(e.to_string()))?
         .text()
         .await
         .map_err(|e| PluginError::Download(e.to_string()))?;
