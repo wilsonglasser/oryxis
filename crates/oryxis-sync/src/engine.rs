@@ -253,6 +253,11 @@ impl SyncEngine {
                 let mut ticker =
                     tokio::time::interval(std::time::Duration::from_secs(60));
                 let mut last_public_ip: Option<String> = None;
+                // The Cloudflare Worker keeps registrations alive for
+                // 5min; refresh every 3min to keep a safety margin
+                // against the TTL even when our public IP is stable.
+                let refresh_interval = std::time::Duration::from_secs(180);
+                let mut last_register_at: Option<std::time::Instant> = None;
                 let fp = identity.public_key_fingerprint();
                 loop {
                     tokio::select! {
@@ -278,11 +283,16 @@ impl SyncEngine {
                                 }
                             };
                             let ip = pub_addr.ip().to_string();
-                            // Re-register only when the public IP changes
-                            // (or on the first tick). Cuts traffic on stable
-                            // networks; keeps the lookup fresh after Wi-Fi
-                            // hops, cell handoffs, etc.
-                            if last_public_ip.as_deref() == Some(ip.as_str()) {
+                            // Re-register when the public IP changes
+                            // (Wi-Fi roam, cell handoff) OR when the
+                            // last register is older than the refresh
+                            // interval. The Worker's KV entry has a
+                            // 5-min TTL, so refreshing every 3 min
+                            // keeps the device discoverable.
+                            let ip_changed = last_public_ip.as_deref() != Some(ip.as_str());
+                            let needs_refresh = last_register_at
+                                .map_or(true, |t| t.elapsed() >= refresh_interval);
+                            if !ip_changed && !needs_refresh {
                                 continue;
                             }
                             match client.register(&identity.device_id, &fp, &ip, bound_port).await {
@@ -292,6 +302,7 @@ impl SyncEngine {
                                         identity.device_id, ip, bound_port
                                     );
                                     last_public_ip = Some(ip.clone());
+                                    last_register_at = Some(std::time::Instant::now());
                                     let _ = heartbeat_tx.send(SyncEvent::SignalingRegistered {
                                         ip,
                                         port: bound_port,

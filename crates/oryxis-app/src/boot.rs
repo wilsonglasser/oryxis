@@ -334,6 +334,7 @@ impl Oryxis {
                 sync_discovered: Vec::new(),
                 sync_in_progress: false,
                 sync_abort_tx: None,
+                sync_signaling_tick: 0,
                 show_export_dialog: false,
                 export_password: String::new(),
                 export_include_keys: true,

@@ -910,10 +910,16 @@ impl Oryxis {
                     SyncEvent::SignalingRegistered { ip, port } => {
                         // Confirms cross-network pairing is reachable
                         // at this address. Until this fires the host is
-                        // LAN-only (or signaling failed silently).
+                        // LAN-only (or signaling failed silently). The
+                        // `(n)` counter bumps on every refresh so the
+                        // user sees heartbeats land even when the IP
+                        // is stable.
+                        self.sync_signaling_tick =
+                            self.sync_signaling_tick.saturating_add(1);
                         self.sync_status = Some(format!(
-                            "{}: {ip}:{port}",
+                            "{} ({}): {ip}:{port}",
                             crate::i18n::t("sync_status_signaling_registered"),
+                            self.sync_signaling_tick,
                         ));
                     }
                     SyncEvent::SignalingFailed { reason } => {

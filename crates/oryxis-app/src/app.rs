@@ -543,6 +543,11 @@ pub struct Oryxis {
     /// task races `sync_now().await` against this receiver, so
     /// `Cancel` immediately drops the QUIC connection.
     pub(crate) sync_abort_tx: Option<tokio::sync::oneshot::Sender<()>>,
+    /// Visible heartbeat counter for signaling re-registers. Bumps on
+    /// every successful `SignalingRegistered` event so the user can
+    /// confirm the heartbeat is alive (otherwise re-registers on the
+    /// same IP look identical and the status freezes).
+    pub(crate) sync_signaling_tick: u32,
 
     // Export/Import
     pub(crate) show_export_dialog: bool,
