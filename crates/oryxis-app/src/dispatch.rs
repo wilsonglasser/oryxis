@@ -605,6 +605,12 @@ impl Oryxis {
                     let _ = vault.set_setting("sync_signaling_url", &v);
                 }
             }
+            Message::SyncSignalingTokenChanged(v) => {
+                self.sync_signaling_token = v.clone();
+                if let Some(vault) = &self.vault {
+                    let _ = vault.set_setting("sync_signaling_token", &v);
+                }
+            }
             Message::SyncRelayUrlChanged(v) => {
                 self.sync_relay_url = v.clone();
                 if let Some(vault) = &self.vault {

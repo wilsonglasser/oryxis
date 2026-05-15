@@ -130,13 +130,21 @@ impl Oryxis {
         };
         // A signaling URL typed in Settings overrides the build-time
         // default; an explicit empty string switches the engine back
-        // to LAN-only (`None`).
-        let typed = self.sync_signaling_url.trim();
-        if !typed.is_empty() {
-            config.signaling_url = Some(typed.to_string());
+        // to LAN-only (`None`). The token follows the same rule and
+        // is `None` (so the signaling client sends no `Authorization`)
+        // when the field is empty.
+        let url = self.sync_signaling_url.trim();
+        config.signaling_url = if url.is_empty() {
+            None
         } else {
-            config.signaling_url = None;
-        }
+            Some(url.to_string())
+        };
+        let token = self.sync_signaling_token.trim();
+        config.signaling_token = if token.is_empty() {
+            None
+        } else {
+            Some(token.to_string())
+        };
         config
     }
 

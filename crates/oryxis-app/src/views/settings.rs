@@ -1380,6 +1380,16 @@ impl Oryxis {
                     .padding(8)
                     .width(300)
                     .style(crate::widgets::rounded_input_style).align_x(dir_align_x());
+                let signaling_token_input = text_input(
+                    crate::i18n::t("sync_signaling_token_placeholder"),
+                    &self.sync_signaling_token,
+                )
+                .on_input(Message::SyncSignalingTokenChanged)
+                .secure(true)
+                .padding(8)
+                .width(300)
+                .style(crate::widgets::rounded_input_style)
+                .align_x(dir_align_x());
                 let relay_input = text_input(crate::i18n::t("sync_relay_optional"), &self.sync_relay_url)
                     .on_input(Message::SyncRelayUrlChanged)
                     .padding(8)
@@ -1397,6 +1407,10 @@ impl Oryxis {
                     text(crate::i18n::t("sync_signaling_url")).size(12).color(OryxisColors::t().text_muted),
                     Space::new().height(4),
                     signaling_input,
+                    Space::new().height(8),
+                    text(crate::i18n::t("sync_signaling_token")).size(12).color(OryxisColors::t().text_muted),
+                    Space::new().height(4),
+                    signaling_token_input,
                     Space::new().height(8),
                     text(crate::i18n::t("sync_relay_url")).size(12).color(OryxisColors::t().text_muted),
                     Space::new().height(4),

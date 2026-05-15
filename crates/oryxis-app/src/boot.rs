@@ -316,6 +316,9 @@ impl Oryxis {
                 sync_signaling_url: oryxis_sync::SyncConfig::default()
                     .signaling_url
                     .unwrap_or_default(),
+                sync_signaling_token: oryxis_sync::SyncConfig::default()
+                    .signaling_token
+                    .unwrap_or_default(),
                 sync_relay_url: String::new(),
                 sync_listen_port: "0".into(),
                 sync_peers: Vec::new(),
@@ -482,6 +485,9 @@ impl Oryxis {
             }
             if let Ok(Some(v)) = vault.get_setting("sync_signaling_url") {
                 self.sync_signaling_url = v;
+            }
+            if let Ok(Some(v)) = vault.get_setting("sync_signaling_token") {
+                self.sync_signaling_token = v;
             }
             if let Ok(Some(v)) = vault.get_setting("sync_relay_url") {
                 self.sync_relay_url = v;

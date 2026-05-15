@@ -641,6 +641,10 @@ pub enum Message {
     SyncModeChanged(String),
     SyncDeviceNameChanged(String),
     SyncSignalingUrlChanged(String),
+    /// Bearer token text-input change. Persisted to the vault settings
+    /// table; an empty string leaves the request without an
+    /// `Authorization` header (fine for unauthenticated signaling).
+    SyncSignalingTokenChanged(String),
     SyncRelayUrlChanged(String),
     SyncListenPortChanged(String),
     SyncStartPairing,
