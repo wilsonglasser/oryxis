@@ -6,6 +6,7 @@ members = [
     "crates/oryxis-terminal",
     "crates/oryxis-vault",
     "crates/oryxis-sync",
+    "crates/oryxis-relay",
     "crates/oryxis-cloud",
     "crates/oryxis-cloud-aws",
     "crates/oryxis-cloud-aws-plugin",

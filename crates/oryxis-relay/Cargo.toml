@@ -1,0 +1,29 @@
+[package]
+name = "oryxis-relay"
+version = "0.1.0"
+edition = "2024"
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Self-hostable signaling + relay server for Oryxis sync"
+
+[[bin]]
+name = "oryxis-relay"
+path = "src/main.rs"
+
+[dependencies]
+tokio = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+uuid = { workspace = true }
+axum = { version = "0.7", features = ["macros"] }
+bytes = "1"
+clap = { version = "4", features = ["derive", "env"] }
+chrono = { workspace = true }
+anyhow = "1"
+
+[dev-dependencies]
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
+tokio = { workspace = true }
