@@ -279,6 +279,17 @@ pub struct Oryxis {
     pub(crate) cloud_form_error: Option<String>,
     pub(crate) cloud_form_test_state: crate::state::CloudTestState,
     pub(crate) cloud_provider_registry: std::sync::Arc<oryxis_cloud::CloudProviderRegistry>,
+
+    // Plugins panel, one row per cloud-provider plugin. Cloud
+    // providers run as downloaded subprocess plugins; this is where
+    // the user installs, updates, pins, and rolls them back.
+    pub(crate) plugins: Vec<crate::state::PluginUiEntry>,
+    /// Global default for plugin auto-update. Per-plugin overrides
+    /// live on each `PluginUiEntry`.
+    pub(crate) plugins_auto_update_global: bool,
+    /// When `Some(provider_id)`, the first-use install opt-in modal
+    /// is shown for that provider.
+    pub(crate) plugin_install_modal: Option<String>,
     /// Discovery panel state, opened from a profile card or from the
     /// post-save flow. Carries the in-flight or completed result so
     /// the user picks resources without paying another API round-trip.

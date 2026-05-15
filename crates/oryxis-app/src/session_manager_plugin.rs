@@ -20,16 +20,6 @@ use oryxis_cloud::CloudError;
 pub const AWS_DOCS_INSTALL_URL: &str =
     "https://docs.aws.amazon.com/systems-manager/latest/userguide/session-manager-working-with-install-plugin.html";
 
-/// Structured info about a missing plugin so the UI can render a
-/// proper modal (title + multi-line body + "Open AWS docs" link)
-/// instead of dumping a flat string into a log line.
-#[derive(Debug, Clone)]
-pub struct PluginMissing {
-    pub title: String,
-    pub body: String,
-    pub docs_url: String,
-}
-
 /// Resolve the absolute path to `session-manager-plugin`. Errors with
 /// install instructions when nothing matches.
 pub fn find_plugin() -> Result<PathBuf, CloudError> {
@@ -88,36 +78,32 @@ pub fn find_plugin() -> Result<PathBuf, CloudError> {
         }
     }
 
-    Err(CloudError::Other(missing_info().body))
+    Err(CloudError::Other(missing_body()))
 }
 
-/// Structured per-OS install hint. Used by the UI to populate the
-/// "plugin missing" modal. The body is intentionally short, the
-/// docs link does the heavy lifting and stays evergreen even when
-/// AWS changes their package URLs.
-pub fn missing_info() -> PluginMissing {
-    let title = "AWS Session Manager plugin not found".to_string();
+/// Per-OS install hint for the missing `session-manager-plugin`.
+/// Intentionally short, the docs link (`AWS_DOCS_INSTALL_URL`) does
+/// the heavy lifting and stays evergreen even when AWS changes their
+/// package URLs. The UI's "plugin missing" modal renders its own
+/// title and link from i18n; this is just the body text.
+pub fn missing_body() -> String {
     #[cfg(target_os = "linux")]
     let body = "ECS Exec and SSM Session need the AWS session-manager-plugin binary.\n\n\
         Install it on your system via apt / dnf / rpm following the AWS docs, then try again.\n\n\
         Quick install (Debian/Ubuntu): apt install session-manager-plugin\n\
-        Quick install (Fedora/RHEL): dnf install session-manager-plugin"
-        .to_string();
+        Quick install (Fedora/RHEL): dnf install session-manager-plugin";
     #[cfg(target_os = "macos")]
     let body = "ECS Exec and SSM Session need the AWS session-manager-plugin binary.\n\n\
         Install it on your system following the AWS docs, then try again.\n\n\
-        Quick install: brew install --cask session-manager-plugin"
-        .to_string();
+        Quick install: brew install --cask session-manager-plugin";
     #[cfg(target_os = "windows")]
     let body = "ECS Exec and SSM Session need the AWS SessionManagerPlugin.\n\n\
-        Install it on your system from the AWS docs page below, then try again."
-        .to_string();
+        Install it on your system from the AWS docs page below, then try again.";
     #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
     let body = "ECS Exec and SSM Session need the AWS session-manager-plugin binary.\n\n\
-        Install it on your system following the AWS docs, then try again."
-        .to_string();
+        Install it on your system following the AWS docs, then try again.";
 
-    PluginMissing { title, body, docs_url: AWS_DOCS_INSTALL_URL.to_string() }
+    body.to_string()
 }
 
 /// Walk `PATH` looking for an executable. Returns the first hit. We

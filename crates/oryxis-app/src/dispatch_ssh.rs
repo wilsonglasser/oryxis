@@ -217,6 +217,8 @@ impl Oryxis {
                             // its smallest variant, otherwise clippy
                             // flags the variant disparity.
                             struct InstanceConnectRun {
+                                provider:
+                                    std::sync::Arc<dyn oryxis_cloud::CloudProvider>,
                                 profile: oryxis_core::models::cloud_profile::CloudProfile,
                                 region: String,
                                 instance_id: String,
@@ -248,6 +250,16 @@ impl Oryxis {
                                 else {
                                     return InstanceConnectPlan::MissingProfile;
                                 };
+                                // The provider is the plugin that pushes the key.
+                                // It's seeded at boot and effectively always
+                                // present; fold the can't-happen "not registered"
+                                // case into MissingProfile rather than adding a
+                                // variant (and an i18n key in 11 languages) for it.
+                                let Some(provider) =
+                                    self.cloud_provider_registry.get(&profile.provider)
+                                else {
+                                    return InstanceConnectPlan::MissingProfile;
+                                };
                                 let key_id = conn.key_id.or_else(|| {
                                     conn.identity_id.and_then(|iid| {
                                         self.identities
@@ -271,6 +283,7 @@ impl Oryxis {
                                     return InstanceConnectPlan::MissingKey;
                                 }
                                 InstanceConnectPlan::Run(Box::new(InstanceConnectRun {
+                                    provider,
                                     profile,
                                     region,
                                     instance_id: cref.resource_id.clone(),
@@ -327,6 +340,7 @@ impl Oryxis {
                                         InstanceConnectPlan::Skip => {}
                                         InstanceConnectPlan::Run(run) => {
                                             let InstanceConnectRun {
+                                                provider,
                                                 profile,
                                                 region,
                                                 instance_id,
@@ -341,8 +355,8 @@ impl Oryxis {
                                                     ),
                                                 ))
                                                 .await;
-                                            if let Err(e) =
-                                                oryxis_cloud_aws::ec2::push_instance_connect_key(
+                                            if let Err(e) = provider
+                                                .push_instance_connect_key(
                                                     &profile,
                                                     &region,
                                                     &instance_id,

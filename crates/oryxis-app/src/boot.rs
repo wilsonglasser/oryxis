@@ -222,14 +222,25 @@ impl Oryxis {
                 cloud_dynamic_form_selected_identity: None,
                 hovered_dynamic_group_card: None,
                 hovered_cloud_card: None,
-                // Provider registry seeded once at boot. AWS is wired in
-                // PR 2; K8s lands in a follow-up PR. The Arc lets us
-                // hand the registry to async tasks without locking.
+                // Provider registry seeded once at boot. AWS runs as a
+                // plugin subprocess via `PluginProvider`; K8s lands in
+                // a follow-up PR. The Arc lets us hand the registry to
+                // async tasks without locking.
                 cloud_provider_registry: {
                     let mut reg = oryxis_cloud::CloudProviderRegistry::new();
-                    reg.register(std::sync::Arc::new(oryxis_cloud_aws::AwsProvider::new()));
+                    let aws = crate::plugins::PluginProvider::new(
+                        "aws",
+                        crate::plugins::manifest_url("aws"),
+                    );
+                    reg.register(std::sync::Arc::new(aws));
                     std::sync::Arc::new(reg)
                 },
+                // Plugins panel state, the defaults here are replaced
+                // by `load_data_from_vault` once the vault is unlocked
+                // (settings + on-disk plugin cache).
+                plugins_auto_update_global: true,
+                plugins: Vec::new(),
+                plugin_install_modal: None,
                 snippets: Vec::new(),
                 known_hosts: Vec::new(),
                 logs: Vec::new(),
@@ -368,6 +379,17 @@ impl Oryxis {
                 .unwrap_or_default();
             self.proxy_identities = vault.list_proxy_identities().unwrap_or_default();
             self.cloud_profiles = vault.list_cloud_profiles().unwrap_or_default();
+
+            // Plugins panel: global auto-update default from settings,
+            // then rebuild the per-provider rows from the on-disk
+            // cache (+ per-plugin override / pin settings).
+            if let Ok(Some(v)) = vault.get_setting("plugins_auto_update_global") {
+                self.plugins_auto_update_global = v != "false";
+            }
+            self.plugins = crate::dispatch_plugins::load_plugin_entries(
+                vault,
+                self.plugins_auto_update_global,
+            );
 
             // (migration runs after the rest of the load, see end of fn)
             self.snippets = vault.list_snippets().unwrap_or_default();

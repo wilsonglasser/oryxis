@@ -16,12 +16,14 @@
 pub mod error;
 pub mod registry;
 pub mod resource;
+pub mod session;
 
 pub use error::CloudError;
 pub use registry::{CloudProviderRegistry, RegisteredProvider};
 pub use resource::{
     DiscoveredEc2, DiscoveredEcsService, DiscoveredHost, DiscoveredK8sWorkload, DiscoveryResult,
 };
+pub use session::SessionPayload;
 
 // Re-export the persisted types from core so providers don't have to
 // pull `oryxis-core` directly for the common case.
@@ -64,4 +66,52 @@ pub trait CloudProvider: Send + Sync {
     /// Transports this provider can open. The UI uses this to populate
     /// the per-host "Transport" picker on cloud-aware editors.
     fn supported_transports(&self, resource_type: CloudResourceType) -> Vec<TransportKind>;
+
+    // --- Transport operations -------------------------------------------
+    //
+    // These open an interactive channel to a resource. They default to
+    // `Unsupported` so a provider that only does discovery (or whose
+    // transport family doesn't apply) needs no boilerplate, while
+    // callers can still dispatch through the trait uniformly. AWS
+    // overrides all three; the eventual K8s provider would override
+    // none of them (it uses `KubectlExec`, a different path).
+
+    /// Open an AWS SSM Session against an instance and return the
+    /// payload `session-manager-plugin` needs to attach.
+    async fn start_ssm_session(
+        &self,
+        _profile: &CloudProfile,
+        _region: &str,
+        _instance_id: &str,
+    ) -> Result<SessionPayload, CloudError> {
+        Err(CloudError::Unsupported("start_ssm_session".into()))
+    }
+
+    /// Open an AWS ECS Exec session into a container in a running
+    /// task and return the `session-manager-plugin` payload.
+    async fn start_ecs_exec(
+        &self,
+        _profile: &CloudProfile,
+        _region: &str,
+        _cluster: &str,
+        _task_id: &str,
+        _container: &str,
+        _command: &str,
+    ) -> Result<SessionPayload, CloudError> {
+        Err(CloudError::Unsupported("start_ecs_exec".into()))
+    }
+
+    /// Push a temporary SSH public key to an instance via EC2
+    /// Instance Connect. The caller then opens a plain SSH session
+    /// inside the (~60s) key validity window.
+    async fn push_instance_connect_key(
+        &self,
+        _profile: &CloudProfile,
+        _region: &str,
+        _instance_id: &str,
+        _os_user: &str,
+        _public_key: &str,
+    ) -> Result<(), CloudError> {
+        Err(CloudError::Unsupported("push_instance_connect_key".into()))
+    }
 }

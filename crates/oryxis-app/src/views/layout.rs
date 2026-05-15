@@ -994,6 +994,7 @@ impl Oryxis {
                 View::History => self.view_history(),
                 View::Sftp => self.view_sftp(),
                 View::Settings => self.view_settings(),
+                View::Plugins => self.view_plugins_panel(),
                 View::Terminal => self.view_terminal(),
             }
         };

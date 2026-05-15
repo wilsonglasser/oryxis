@@ -17,7 +17,6 @@ pub mod ec2;
 pub mod ecs;
 pub mod ecs_exec;
 pub mod provider;
-pub mod session_manager_plugin;
 pub mod ssm;
 
 pub use provider::AwsProvider;

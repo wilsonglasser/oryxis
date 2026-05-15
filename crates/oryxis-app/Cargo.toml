@@ -40,7 +40,27 @@ oryxis-terminal = { workspace = true }
 oryxis-vault = { workspace = true }
 oryxis-sync = { workspace = true }
 oryxis-cloud = { workspace = true }
-oryxis-cloud-aws = { workspace = true }
+oryxis-plugin-protocol = { workspace = true }
+# `oryxis-cloud-aws` is intentionally NOT a dependency, the AWS
+# provider (and its ~1.2 GB of aws-sdk codegen) now lives in the
+# `oryxis-cloud-aws-plugin` subprocess. The app talks to it over
+# JSON-RPC via `plugins::PluginProvider`.
+# `CloudProvider` is an async trait, the app needs `async-trait` to
+# implement it for `PluginProvider`.
+async-trait = "0.1"
+# Ed25519 verify-only for plugin binary signatures. The workspace
+# pin carries `rand_core` (sync needs key generation); the plugin
+# host only ever calls `VerifyingKey::verify`, the extra feature is
+# inert here.
+ed25519-dalek = { workspace = true }
+# SHA-256 over downloaded plugin binaries, checked against the
+# manifest before the Ed25519 signature gate.
+sha2 = "0.10"
+# Base64 decode for the manifest's signature field.
+base64 = { workspace = true }
+# Plugin cache lives under the same `~/.oryxis` root the vault uses;
+# `dirs` resolves the home directory cross-platform.
+dirs = "6"
 # Process-wide TLS crypto provider for rustls 0.23, the workspace
 # pins `ring`, but rustls 0.23 requires explicit `install_default()`
 # at startup before any TLS connection is opened. Without it the AWS
@@ -58,6 +78,7 @@ image = "0.25"
 iced_fonts = { git = "https://github.com/wilsonglasser/iced_fonts", branch = "text-selection-iced-0.15", features = ["lucide", "codicon"] }
 serde = { workspace = true }
 serde_json = { workspace = true }
+thiserror = { workspace = true }
 reqwest = { version = "0.12", features = ["json", "rustls-tls", "stream"], default-features = false }
 # Async stream combinators, used by the AI streaming path to fold the
 # reqwest byte stream into provider-specific SSE chunks.

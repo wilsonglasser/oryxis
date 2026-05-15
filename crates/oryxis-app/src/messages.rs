@@ -504,16 +504,37 @@ pub enum Message {
     /// error it's surfaced in the UI.
     EcsExecSessionReady {
         task_label: String,
-        result: Result<Box<oryxis_cloud_aws::ecs_exec::EcsExecSession>, String>,
+        result: Result<Box<oryxis_cloud::SessionPayload>, String>,
     },
     /// SSM Session result, same plugin payload shape as ECS Exec, so
     /// we reuse the spawn path. Carries the host's display label so
     /// the spawned tab gets a useful title.
     SsmSessionReady {
         host_label: String,
-        result: Result<Box<oryxis_cloud_aws::ecs_exec::EcsExecSession>, String>,
+        result: Result<Box<oryxis_cloud::SessionPayload>, String>,
     },
     DynamicGroupResolved(Uuid, Result<Vec<oryxis_cloud::DiscoveredHost>, String>),
+
+    // Plugins panel, cloud-provider plugin install / update lifecycle.
+    /// Global auto-update toggle (applies to every plugin without an
+    /// explicit per-plugin override).
+    PluginToggleGlobalAutoUpdate(bool),
+    /// Per-plugin auto-update override.
+    PluginToggleAutoUpdate(String, bool),
+    /// Fetch the hosted manifest for a provider and compare against
+    /// the installed version.
+    PluginCheckUpdates(String),
+    /// Manifest fetch finished, `Ok` carries the parsed manifest.
+    PluginManifestFetched(String, Result<Box<crate::plugins::PluginManifest>, String>),
+    /// Open / close the first-use install opt-in modal for a provider.
+    ShowPluginInstallModal(String),
+    HidePluginInstallModal,
+    /// Begin downloading + installing the best compatible version.
+    PluginInstall(String),
+    /// Install finished, `Ok` carries the installed version string.
+    PluginInstallDone(String, Result<String, String>),
+    /// Remove a provider's cached binaries.
+    PluginUninstall(String),
 
     // Edit dynamic group panel, sets template fields (key, identity,
     // transport, initial command) on a `Group.cloud_query`.

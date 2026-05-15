@@ -40,21 +40,25 @@ impl Oryxis {
                     return Ok(Task::none());
                 };
 
-                // Region comes from the *currently cached* dynamic
-                // group resolve (the resolver tries every region
-                // and returns whichever one had tasks). Fall back to
-                // profile default if the cache is empty for some
-                // reason, the ECS API call itself will reject if
-                // the task isn't actually in that region.
+                let Some(provider) =
+                    self.cloud_provider_registry.get(&profile.provider)
+                else {
+                    tracing::warn!(
+                        target = "oryxis::dispatch_cloud",
+                        provider = %profile.provider,
+                        "ECS Exec abort: provider not registered"
+                    );
+                    return Ok(Task::none());
+                };
+
+                // Region comes from the profile's config. Fall back
+                // to an empty string if it's absent, the ECS API
+                // call itself rejects with a clear "region required".
                 let region = self
                     .cloud_profiles
                     .iter()
                     .find(|p| p.id == query.profile_id)
-                    .and_then(|p| {
-                        oryxis_cloud_aws::auth::AwsConfigJson::parse(p)
-                            .ok()
-                            .and_then(|c| c.region.or_else(|| c.regions.first().cloned()))
-                    })
+                    .map(|p| super::region_from_profile_config(&p.config))
                     .unwrap_or_default();
 
                 // The interactive command we run inside the
@@ -77,17 +81,18 @@ impl Oryxis {
                 let task_label_for_msg = task_label;
                 Ok(Task::perform(
                     async move {
-                        oryxis_cloud_aws::ecs_exec::start_ecs_exec(
-                            &profile,
-                            &region,
-                            &cluster,
-                            &task_id,
-                            &container,
-                            &command,
-                        )
-                        .await
-                        .map(Box::new)
-                        .map_err(|e| e.to_string())
+                        provider
+                            .start_ecs_exec(
+                                &profile,
+                                &region,
+                                &cluster,
+                                &task_id,
+                                &container,
+                                &command,
+                            )
+                            .await
+                            .map(Box::new)
+                            .map_err(|e| e.to_string())
                     },
                     move |result| Message::EcsExecSessionReady {
                         task_label: task_label_for_msg.clone(),
@@ -116,7 +121,7 @@ impl Oryxis {
                     }
                 };
                 let plugin_path =
-                    match oryxis_cloud_aws::session_manager_plugin::find_plugin() {
+                    match crate::session_manager_plugin::find_plugin() {
                         Ok(p) => p,
                         Err(e) => {
                             tracing::error!(
@@ -128,7 +133,7 @@ impl Oryxis {
                             return Ok(Task::none());
                         }
                     };
-                let args = oryxis_cloud_aws::ecs_exec::plugin_invocation(&session);
+                let args = oryxis_plugin_protocol::plugin_invocation(&session);
                 tracing::info!(
                     target = "oryxis::dispatch_cloud",
                     plugin = %plugin_path.display(),
@@ -169,7 +174,7 @@ impl Oryxis {
                 // user installs themselves, we just point at the AWS
                 // docs install page.
                 let plugin_path =
-                    match oryxis_cloud_aws::session_manager_plugin::find_plugin() {
+                    match crate::session_manager_plugin::find_plugin() {
                         Ok(p) => p,
                         Err(e) => {
                             tracing::error!(
@@ -182,7 +187,7 @@ impl Oryxis {
                         }
                     };
 
-                let args = oryxis_cloud_aws::ecs_exec::plugin_invocation(&session);
+                let args = oryxis_plugin_protocol::plugin_invocation(&session);
                 tracing::info!(
                     target = "oryxis::dispatch_cloud",
                     plugin = %plugin_path.display(),

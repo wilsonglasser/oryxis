@@ -8,21 +8,19 @@
 //! otherwise identical, which is why this module is small.
 
 use aws_sdk_ssm::Client as SsmClient;
-use oryxis_cloud::{CloudError, CloudProfile};
+use oryxis_cloud::{CloudError, CloudProfile, SessionPayload};
 
 use crate::auth::{build_sdk_config, AwsConfigJson};
-use crate::ecs_exec::EcsExecSession;
 
 /// Start an SSM Session against an EC2 instance and return the
-/// payload `session-manager-plugin` needs to attach. Reuses
-/// `EcsExecSession` as the carrier struct because the plugin
-/// invocation format is identical regardless of whether the target
-/// is an ECS task or an EC2 instance.
+/// payload `session-manager-plugin` needs to attach. Produces the
+/// same `SessionPayload` as ECS Exec, the plugin invocation format
+/// is identical whether the target is an ECS task or an EC2 instance.
 pub async fn start_ssm_session(
     profile: &CloudProfile,
     region: &str,
     instance_id: &str,
-) -> Result<EcsExecSession, CloudError> {
+) -> Result<SessionPayload, CloudError> {
     if region.is_empty() {
         return Err(CloudError::InvalidConfig(
             "SSM Session needs the resource's region to be set on its CloudRef".into(),
@@ -66,7 +64,7 @@ pub async fn start_ssm_session(
         .unwrap_or_default();
     let endpoint = format!("https://ssm.{region}.amazonaws.com");
 
-    Ok(EcsExecSession {
+    Ok(SessionPayload {
         session_json,
         region: region.to_string(),
         profile_name,

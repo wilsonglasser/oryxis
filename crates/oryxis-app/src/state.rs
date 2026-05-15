@@ -805,6 +805,52 @@ pub enum View {
     History,
     Sftp,
     Settings,
+    Plugins,
+}
+
+/// One row in the Plugins panel: a cloud-provider plugin and its
+/// install / update state. Cloud providers ship as downloaded
+/// subprocess plugins (see `crate::plugins`); this is the UI-side
+/// view of one.
+#[derive(Debug, Clone)]
+pub struct PluginUiEntry {
+    /// Provider id, matches `CloudProvider::id()` (`"aws"`, ...).
+    pub provider_id: String,
+    /// Human-readable name shown in the panel.
+    pub display_name: String,
+    /// Current install / update state.
+    pub status: PluginUiStatus,
+    /// Per-plugin auto-update override, resolved against the global
+    /// default when the panel loads.
+    pub auto_update: bool,
+    /// User-pinned version. When set, the updater won't move off it.
+    pub pinned_version: Option<String>,
+    /// Last successfully fetched manifest. Drives the install modal's
+    /// size / changelog. `None` until a check runs (and on every
+    /// machine until the manifest host exists, see PR 6).
+    pub manifest: Option<crate::plugins::PluginManifest>,
+}
+
+/// Install / update lifecycle state for a [`PluginUiEntry`].
+#[derive(Debug, Clone, PartialEq)]
+pub enum PluginUiStatus {
+    /// No binary on disk and no dev build, the plugin must be
+    /// downloaded before its provider can be used.
+    NotInstalled,
+    /// Running from a freshly-built `target/debug` binary (the dev
+    /// loop). No version directory, no manifest involved.
+    DevBuild,
+    /// Installed from the cache at this version.
+    Installed(String),
+    /// Installed, and the manifest advertises a newer compatible
+    /// version.
+    UpdateAvailable { current: String, latest: String },
+    /// A manifest fetch is in flight.
+    Checking,
+    /// A binary download + verify is in flight (indeterminate).
+    Downloading,
+    /// The last check / install failed; carries a user-facing message.
+    Failed(String),
 }
 
 /// Cloud provider picked in the wizard. Only AWS is fully wired in

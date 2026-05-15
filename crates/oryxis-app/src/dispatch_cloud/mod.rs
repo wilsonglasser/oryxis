@@ -82,6 +82,14 @@ impl Oryxis {
             );
             return Task::none();
         };
+        let Some(provider) = self.cloud_provider_registry.get(&profile.provider) else {
+            tracing::error!(
+                target = "oryxis::dispatch_cloud",
+                provider = %profile.provider,
+                "SSM Session abort: provider not registered"
+            );
+            return Task::none();
+        };
         let instance_id = cref.resource_id.clone();
         let host_label = conn.label.clone();
         tracing::info!(
@@ -92,7 +100,8 @@ impl Oryxis {
         );
         Task::perform(
             async move {
-                oryxis_cloud_aws::ssm::start_ssm_session(&profile, &region, &instance_id)
+                provider
+                    .start_ssm_session(&profile, &region, &instance_id)
                     .await
                     .map(Box::new)
                     .map_err(|e| e.to_string())
@@ -250,7 +259,7 @@ impl Oryxis {
             body: crate::i18n::t("plugin_missing_body").to_string(),
             link: Some(crate::state::ErrorDialogLink {
                 label: crate::i18n::t("error_dialog_open_aws_docs").to_string(),
-                url: oryxis_cloud_aws::session_manager_plugin::AWS_DOCS_INSTALL_URL.to_string(),
+                url: crate::session_manager_plugin::AWS_DOCS_INSTALL_URL.to_string(),
             }),
         });
     }
@@ -321,4 +330,30 @@ impl Oryxis {
         }
         serde_json::Value::Object(obj).to_string()
     }
+}
+
+/// Extract the workload region from a cloud profile's `config` JSON.
+///
+/// The app no longer carries the AWS provider's config schema (that
+/// moved into the plugin), so it just reads the conventional
+/// `region` key, falling back to the first entry of `regions`.
+/// Returns an empty string when neither is present; the downstream
+/// API call then rejects with a clear "region required" error.
+pub(super) fn region_from_profile_config(config: &str) -> String {
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(config) else {
+        return String::new();
+    };
+    value
+        .get("region")
+        .and_then(|r| r.as_str())
+        .map(str::to_string)
+        .or_else(|| {
+            value
+                .get("regions")
+                .and_then(|r| r.as_array())
+                .and_then(|a| a.first())
+                .and_then(|r| r.as_str())
+                .map(str::to_string)
+        })
+        .unwrap_or_default()
 }

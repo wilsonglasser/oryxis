@@ -5220,15 +5220,19 @@ name = "oryxis-app"
 version = "0.6.1"
 dependencies = [
  "arboard",
+ "async-trait",
+ "base64 0.22.1",
  "chrono",
+ "dirs",
+ "ed25519-dalek 2.2.0",
  "futures-util",
  "iced",
  "iced_fonts",
  "image",
  "open",
  "oryxis-cloud",
- "oryxis-cloud-aws",
  "oryxis-core",
+ "oryxis-plugin-protocol",
  "oryxis-ssh",
  "oryxis-sync",
  "oryxis-terminal",
@@ -5239,6 +5243,8 @@ dependencies = [
  "rustls",
  "serde",
  "serde_json",
+ "sha2 0.10.9",
+ "thiserror 2.0.18",
  "tokio",
  "tokio-stream",
  "tracing",
@@ -5282,6 +5288,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "oryxis-cloud-aws-plugin"
+version = "0.1.0"
+dependencies = [
+ "oryxis-cloud",
+ "oryxis-cloud-aws",
+ "oryxis-plugin-protocol",
+ "rustls",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "oryxis-core"
 version = "0.1.0"
 dependencies = [
@@ -5308,6 +5329,16 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "uuid",
+]
+
+[[package]]
+name = "oryxis-plugin-protocol"
+version = "0.1.0"
+dependencies = [
+ "oryxis-cloud",
+ "oryxis-core",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

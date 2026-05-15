@@ -4,7 +4,7 @@ use async_trait::async_trait;
 use aws_sdk_sts::Client as StsClient;
 use oryxis_cloud::{
     CloudError, CloudProfile, CloudProvider, CloudQuery, CloudQueryKind, CloudResourceType,
-    DiscoveredHost, DiscoveryResult, TransportKind,
+    DiscoveredHost, DiscoveryResult, SessionPayload, TransportKind,
 };
 
 use crate::auth::build_sdk_config;
@@ -108,6 +108,43 @@ impl CloudProvider for AwsProvider {
                 TransportKind::Ssm,
             ],
         }
+    }
+
+    // Transport operations, AWS implements all three. Each just
+    // delegates to the focused module that owns the SDK calls.
+
+    async fn start_ssm_session(
+        &self,
+        profile: &CloudProfile,
+        region: &str,
+        instance_id: &str,
+    ) -> Result<SessionPayload, CloudError> {
+        crate::ssm::start_ssm_session(profile, region, instance_id).await
+    }
+
+    async fn start_ecs_exec(
+        &self,
+        profile: &CloudProfile,
+        region: &str,
+        cluster: &str,
+        task_id: &str,
+        container: &str,
+        command: &str,
+    ) -> Result<SessionPayload, CloudError> {
+        crate::ecs_exec::start_ecs_exec(profile, region, cluster, task_id, container, command)
+            .await
+    }
+
+    async fn push_instance_connect_key(
+        &self,
+        profile: &CloudProfile,
+        region: &str,
+        instance_id: &str,
+        os_user: &str,
+        public_key: &str,
+    ) -> Result<(), CloudError> {
+        crate::ec2::push_instance_connect_key(profile, region, instance_id, os_user, public_key)
+            .await
     }
 }
 

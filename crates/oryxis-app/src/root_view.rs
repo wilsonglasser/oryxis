@@ -77,6 +77,36 @@ impl Oryxis {
                 .width(Length::Fill)
                 .height(Length::Fill)
                 .into()
+        } else if self.plugin_install_modal.is_some() {
+            use iced::widget::{column, container, Space, Stack};
+            use iced::{Color, Length};
+            let modal = self.view_plugin_install_modal();
+            let scrim: Element<'_, Message> = column![
+                Space::new().height(Length::Fixed(40.0)),
+                container(Space::new())
+                    .width(Length::Fill)
+                    .height(Length::Fill)
+                    .style(|_| container::Style {
+                        background: Some(iced::Background::Color(Color::from_rgba(
+                            0.0, 0.0, 0.0, 0.5,
+                        ))),
+                        ..Default::default()
+                    }),
+            ]
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .into();
+            // Outside-click dismisses, same pattern as the other modals.
+            let scrim: Element<'_, Message> = iced::widget::MouseArea::new(scrim)
+                .on_press(Message::HidePluginInstallModal)
+                .into();
+            Stack::new()
+                .push(base)
+                .push(scrim)
+                .push(modal)
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .into()
         } else {
             base
         };

@@ -5,43 +5,18 @@
 //! handles the binary WebSocket protocol against the SSM endpoint
 //! (~15k lines of Go, not something we want to reimplement). Our
 //! wrapper here owns the *orchestration*: resolving the runtime-id,
-//! calling `ExecuteCommand`, and formatting the 6-positional-arg
-//! invocation the plugin expects.
+//! calling `ExecuteCommand`, and assembling the `SessionPayload` the
+//! plugin needs.
 //!
-//! Caller responsibility: locate the plugin binary (see
-//! `session_manager_plugin`), spawn it inside a PTY, route stdout to
-//! the terminal widget. The plugin terminates when the remote shell
-//! exits.
+//! Caller responsibility: locate the `session-manager-plugin` binary,
+//! format its argv with `oryxis_plugin_protocol::plugin_invocation`,
+//! spawn it inside a PTY, route stdout to the terminal widget. The
+//! plugin terminates when the remote shell exits.
 
 use aws_sdk_ecs::Client as EcsClient;
-use oryxis_cloud::{CloudError, CloudProfile};
+use oryxis_cloud::{CloudError, CloudProfile, SessionPayload};
 
 use crate::auth::{build_sdk_config, AwsConfigJson};
-
-/// Everything `session-manager-plugin` needs to start an ECS Exec
-/// session. Build with `start_ecs_exec`, hand to `plugin_invocation`
-/// to format the actual subprocess argv.
-#[derive(Debug, Clone)]
-pub struct EcsExecSession {
-    /// The full JSON object the plugin reads as its first positional
-    /// arg, `{SessionId, StreamUrl, TokenValue}`. Already
-    /// JSON-serialized; the plugin wants a string, not an object.
-    pub session_json: String,
-    /// AWS region the session lives in. Same region the SSM endpoint
-    /// resolves to.
-    pub region: String,
-    /// AWS CLI profile name used when starting the session. The
-    /// plugin echoes this back if it needs to refresh credentials.
-    /// Pass an empty string when the profile uses env-var creds.
-    pub profile_name: String,
-    /// SSM `StartSession` request as JSON. Encodes the ECS-specific
-    /// target string (`ecs:cluster_task_runtimeId`) and the document
-    /// to run.
-    pub start_session_request: String,
-    /// Region-specific SSM endpoint URL. Plugin uses this for any
-    /// follow-up control calls (e.g. terminate-session).
-    pub endpoint: String,
-}
 
 /// Run the full ECS-Exec preamble: resolve the container runtime-id,
 /// call `ExecuteCommand`, and assemble the plugin invocation payload.
@@ -57,7 +32,7 @@ pub async fn start_ecs_exec(
     task_id: &str,
     container: &str,
     command: &str,
-) -> Result<EcsExecSession, CloudError> {
+) -> Result<SessionPayload, CloudError> {
     if region.is_empty() {
         return Err(CloudError::InvalidConfig(
             "ECS Exec needs the resource's region to be set on its CloudRef".into(),
@@ -151,26 +126,11 @@ pub async fn start_ecs_exec(
         .unwrap_or_default();
     let endpoint = format!("https://ssm.{region}.amazonaws.com");
 
-    Ok(EcsExecSession {
+    Ok(SessionPayload {
         session_json,
         region: region.to_string(),
         profile_name,
         start_session_request,
         endpoint,
     })
-}
-
-/// Format the 6-positional-arg invocation the
-/// `session-manager-plugin` binary expects. Pair with
-/// `crate::session_manager_plugin::find_plugin` to resolve the binary
-/// path.
-pub fn plugin_invocation(session: &EcsExecSession) -> Vec<String> {
-    vec![
-        session.session_json.clone(),
-        session.region.clone(),
-        "StartSession".to_string(),
-        session.profile_name.clone(),
-        session.start_session_request.clone(),
-        session.endpoint.clone(),
-    ]
 }

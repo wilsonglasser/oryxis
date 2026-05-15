@@ -1,0 +1,27 @@
+[package]
+name = "oryxis-cloud-aws-plugin"
+version = "0.1.0"
+edition = "2021"
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "oryxis-cloud-aws-plugin"
+path = "src/main.rs"
+
+[dependencies]
+# The AWS provider, now consumed only by this plugin binary, not by
+# the main app. This is where the ~1.2 GB of aws-sdk codegen lives.
+oryxis-cloud-aws = { workspace = true }
+oryxis-cloud = { workspace = true }
+oryxis-plugin-protocol = { workspace = true }
+# rustls 0.23 needs an explicit crypto provider installed before the
+# first TLS connection, same reason the main app installs it (the
+# AWS SDK's HTTPS client otherwise fails with "dispatch failure").
+rustls = { workspace = true }
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }

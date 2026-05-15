@@ -19,6 +19,7 @@ mod dispatch_editor;
 mod dispatch_keys;
 mod dispatch_proxy_identity;
 mod dispatch_cloud;
+mod dispatch_plugins;
 mod dispatch_settings;
 mod dispatch_sftp;
 mod dispatch_sftp_files;
@@ -31,7 +32,17 @@ mod i18n;
 mod mcp;
 mod messages;
 mod os_icon;
+// Cloud-provider plugin subsystem. Inert until the cloud dispatch
+// path is rewired onto it in a later PR, the `allow` keeps the
+// clippy `-D warnings` gate green while the infra (and its public
+// re-exports) sit unused.
+#[allow(dead_code, unused_imports)]
+mod plugins;
 mod root_view;
+// Locates the AWS `session-manager-plugin` system binary. Pure
+// path-finding, no SDK, relocated here from `oryxis-cloud-aws` when
+// the AWS provider moved into its plugin subprocess.
+mod session_manager_plugin;
 mod sftp_helpers;
 mod sftp_methods;
 mod ssh_config;

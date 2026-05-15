@@ -1,0 +1,13 @@
+[package]
+name = "oryxis-plugin-protocol"
+version = "0.1.0"
+edition = "2021"
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]
+oryxis-core = { workspace = true }
+oryxis-cloud = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
