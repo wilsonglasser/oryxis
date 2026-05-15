@@ -499,19 +499,38 @@ impl SyncHandle {
     /// run the challenge/response handshake, and on success persist the
     /// host as a peer. Emits `PairingCompleted` / `PairingFailed`.
     pub async fn join_pairing(&self, addr: SocketAddr, code: String) -> Result<(), SyncError> {
-        match self.join_pairing_inner(addr, &code).await {
-            Ok((device_id, device_name)) => {
+        // 30s cap on the whole pairing handshake (QUIC connect +
+        // challenge round + accepted). Long enough for slow networks,
+        // short enough that the UI doesn't hang forever when the
+        // host's QUIC port is firewalled / NAT-blocked.
+        let inner = self.join_pairing_inner(addr, &code);
+        let result = tokio::time::timeout(
+            std::time::Duration::from_secs(30),
+            inner,
+        )
+        .await;
+        match result {
+            Ok(Ok((device_id, device_name))) => {
                 let _ = self.event_tx.send(SyncEvent::PairingCompleted {
                     device_id,
                     device_name,
                 });
                 Ok(())
             }
-            Err(e) => {
+            Ok(Err(e)) => {
                 let _ = self.event_tx.send(SyncEvent::PairingFailed {
                     reason: e.to_string(),
                 });
                 Err(e)
+            }
+            Err(_) => {
+                let reason = format!(
+                    "Handshake timed out after 30s; {addr} is unreachable (NAT / firewall?)"
+                );
+                let _ = self
+                    .event_tx
+                    .send(SyncEvent::PairingFailed { reason: reason.clone() });
+                Err(SyncError::PairingFailed(reason))
             }
         }
     }
