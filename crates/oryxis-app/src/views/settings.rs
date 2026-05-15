@@ -1350,9 +1350,31 @@ impl Oryxis {
                     }
                 }
 
-                // Paired devices list
+                // Inline status banner inside the pairing card. The
+                // same `sync_status` field also shows under "Sync Now"
+                // in the Options card, but when the user is actively
+                // pairing they're looking here, so we mirror it
+                // adjacent to the form they're filling in.
+                if !matches!(self.sync_pairing_state, crate::state::SyncPairingState::Idle)
+                    && let Some(status) = &self.sync_status
+                {
+                    pairing_section = pairing_section
+                        .push(Space::new().height(8))
+                        .push(text(status.as_str())
+                            .size(11)
+                            .color(OryxisColors::t().text_muted));
+                }
+
+                // Paired devices list. Empty until the first successful
+                // pairing on either side; pre-Phase B builds never
+                // populated this because the engine wasn't wired.
                 if !self.sync_peers.is_empty() {
-                    pairing_section = pairing_section.push(Space::new().height(12));
+                    pairing_section = pairing_section
+                        .push(Space::new().height(14))
+                        .push(text(crate::i18n::t("sync_paired_devices"))
+                            .size(12)
+                            .color(OryxisColors::t().text_secondary))
+                        .push(Space::new().height(6));
                     for peer in &self.sync_peers {
                         let last_sync = peer.last_synced_at
                             .map(|d| d.format("%Y-%m-%d %H:%M").to_string())

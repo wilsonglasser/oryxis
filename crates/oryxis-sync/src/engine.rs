@@ -54,6 +54,20 @@ pub enum SyncEvent {
     PeerOffline {
         device_id: Uuid,
     },
+    /// The signaling-server heartbeat just successfully POSTed our
+    /// public address. Emitted on each *new* public IP (re-registers
+    /// for the same IP are silent). Tells the user "remote pairing
+    /// will find me at this address now".
+    SignalingRegistered {
+        ip: String,
+        port: u16,
+    },
+    /// Either the STUN probe or the signaling POST failed; the
+    /// heartbeat will retry on its next tick. Surfaced so the user
+    /// knows cross-network pairing isn't currently reachable.
+    SignalingFailed {
+        reason: String,
+    },
 }
 
 /// State for a device that is currently hosting a pairing code and
@@ -233,6 +247,7 @@ impl SyncEngine {
             let identity = self.identity.clone();
             let bound_port = listen_port;
             let mut shutdown_rx = shutdown_tx.subscribe();
+            let heartbeat_tx = self.event_tx.clone();
             tokio::spawn(async move {
                 let client = discovery::signaling::SignalingClient::new(&signaling_url, &token);
                 let mut ticker =
@@ -247,14 +262,18 @@ impl SyncEngine {
                             let socket = match tokio::net::UdpSocket::bind("0.0.0.0:0").await {
                                 Ok(s) => s,
                                 Err(e) => {
-                                    tracing::warn!("signaling: STUN bind failed: {e}");
+                                    let reason = format!("STUN bind failed: {e}");
+                                    tracing::warn!("signaling: {reason}");
+                                    let _ = heartbeat_tx.send(SyncEvent::SignalingFailed { reason });
                                     continue;
                                 }
                             };
                             let pub_addr = match discovery::stun::get_public_addr(&socket).await {
                                 Ok(a) => a,
                                 Err(e) => {
-                                    tracing::warn!("signaling: STUN failed: {e}");
+                                    let reason = format!("STUN failed: {e}");
+                                    tracing::warn!("signaling: {reason}");
+                                    let _ = heartbeat_tx.send(SyncEvent::SignalingFailed { reason });
                                     continue;
                                 }
                             };
@@ -272,10 +291,16 @@ impl SyncEngine {
                                         "signaling: registered {} -> {}:{}",
                                         identity.device_id, ip, bound_port
                                     );
-                                    last_public_ip = Some(ip);
+                                    last_public_ip = Some(ip.clone());
+                                    let _ = heartbeat_tx.send(SyncEvent::SignalingRegistered {
+                                        ip,
+                                        port: bound_port,
+                                    });
                                 }
                                 Err(e) => {
-                                    tracing::warn!("signaling register failed: {e}");
+                                    let reason = format!("register failed: {e}");
+                                    tracing::warn!("signaling: {reason}");
+                                    let _ = heartbeat_tx.send(SyncEvent::SignalingFailed { reason });
                                 }
                             }
                         }

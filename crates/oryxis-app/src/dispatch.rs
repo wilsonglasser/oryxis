@@ -694,7 +694,9 @@ impl Oryxis {
                     return Task::none();
                 }
                 let handle = runtime.handle();
-                self.sync_pairing_state = crate::state::SyncPairingState::Idle;
+                // Keep at Joining so the inline status + form stay
+                // visible; the PairingCompleted / PairingFailed event
+                // handler decides whether to drop back to Idle.
                 self.sync_status =
                     Some(crate::i18n::t("sync_pairing_connecting").to_string());
                 return Task::perform(
@@ -727,7 +729,10 @@ impl Oryxis {
                         }
                     };
                 let handle = runtime.handle();
-                self.sync_pairing_state = crate::state::SyncPairingState::Idle;
+                // Keep at Joining so the inline status + form stay
+                // visible while the handshake runs; the PairingCompleted
+                // event flips back to Idle, PairingFailed stays put so
+                // the user can fix the code/addr and retry.
                 self.sync_status =
                     Some(crate::i18n::t("sync_pairing_connecting").to_string());
                 // join_pairing emits PairingCompleted / PairingFailed,
@@ -819,10 +824,21 @@ impl Oryxis {
                             "{}: {reason}",
                             crate::i18n::t("sync_pairing_failed"),
                         ));
-                        self.sync_pairing_state =
-                            crate::state::SyncPairingState::Idle;
-                        self.sync_pairing_link = None;
-                        self.sync_pairing_qr_png = None;
+                        // Stay in whichever sub-view triggered the
+                        // pairing so the user sees the error in
+                        // context and can fix + retry without
+                        // re-entering everything. Host-side: clear
+                        // the code/link/QR since the single-shot was
+                        // consumed even on failure.
+                        if self.sync_pairing_state
+                            == crate::state::SyncPairingState::Hosting
+                        {
+                            self.sync_pairing_code = None;
+                            self.sync_pairing_link = None;
+                            self.sync_pairing_qr_png = None;
+                            self.sync_pairing_state =
+                                crate::state::SyncPairingState::Idle;
+                        }
                     }
                     SyncEvent::SyncStarted { .. } => {
                         self.sync_status =
@@ -845,6 +861,21 @@ impl Oryxis {
                         ));
                     }
                     SyncEvent::PeerOnline { .. } | SyncEvent::PeerOffline { .. } => {}
+                    SyncEvent::SignalingRegistered { ip, port } => {
+                        // Confirms cross-network pairing is reachable
+                        // at this address. Until this fires the host is
+                        // LAN-only (or signaling failed silently).
+                        self.sync_status = Some(format!(
+                            "{}: {ip}:{port}",
+                            crate::i18n::t("sync_status_signaling_registered"),
+                        ));
+                    }
+                    SyncEvent::SignalingFailed { reason } => {
+                        self.sync_status = Some(format!(
+                            "{}: {reason}",
+                            crate::i18n::t("sync_status_signaling_failed"),
+                        ));
+                    }
                 }
             }
 
