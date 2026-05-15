@@ -330,11 +330,6 @@ impl SyncEngine {
         }
     }
 
-    /// Trigger a manual sync with all paired peers.
-    pub async fn sync_now(&self) -> Result<(), SyncError> {
-        sync_all_peers(&self.vault, &self.identity, &self.config, &self.event_tx).await
-    }
-
     /// Get a cheap, cloneable handle for triggering syncs and pairing
     /// without owning the engine. The engine stays put in app state
     /// while the handle can be moved into a background `Task`. Call
