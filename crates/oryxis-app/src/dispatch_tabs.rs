@@ -215,15 +215,35 @@ impl Oryxis {
                 // the only way fullscreen changes today is through this
                 // handler so the cached bool stays in sync.
                 self.window_fullscreen = !self.window_fullscreen;
-                let next = if self.window_fullscreen {
+                let entering = self.window_fullscreen;
+                let next = if entering {
                     iced::window::Mode::Fullscreen
                 } else {
                     iced::window::Mode::Windowed
                 };
-                return Ok(iced::window::latest().then(move |id_opt| match id_opt {
+                let mode_task = iced::window::latest().then(move |id_opt| match id_opt {
                     Some(id) => iced::window::set_mode(id, next),
                     None => Task::none(),
-                }));
+                });
+                // Browser-style on-enter hint: show "Press F11 to
+                // exit" for 3 s then auto-hide. Exiting fullscreen
+                // also clears the flag in case the user toggled
+                // out before the timer fired.
+                if entering {
+                    self.fullscreen_hint_visible = true;
+                    let hide_task = Task::perform(
+                        async {
+                            tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+                        },
+                        |_| Message::FullscreenHintHide,
+                    );
+                    return Ok(Task::batch([mode_task, hide_task]));
+                }
+                self.fullscreen_hint_visible = false;
+                return Ok(mode_task);
+            }
+            Message::FullscreenHintHide => {
+                self.fullscreen_hint_visible = false;
             }
             Message::SpawnNewWindow => {
                 self.spawn_oryxis_child(None);

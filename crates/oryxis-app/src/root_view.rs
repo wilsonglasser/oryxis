@@ -111,16 +111,28 @@ impl Oryxis {
             base
         };
 
-        // 1 px border around the entire app, drops to 0 when maximized,
-        // since the OS already clips the window to the monitor edge and the
-        // border would be wasted (or worse, visible as a halfway cut).
+        // Browser-style fullscreen overlays: on-enter hint banner and
+        // hover-only round X. Both stack above any modal scrim so the
+        // user can always escape immersive mode even when a picker is
+        // open underneath.
+        let composed = if self.window_fullscreen {
+            self.layer_fullscreen_overlays(composed)
+        } else {
+            composed
+        };
+
+        // 1 px border around the entire app, drops to 0 when maximized
+        // or in immersive fullscreen, since in both cases the OS / our
+        // own chrome-hiding already clips the window to the monitor
+        // edge and the border would be wasted (or worse, visible as a
+        // halfway cut).
         //
         // The matching `padding(1)` is what makes the border actually
         // visible: without it, the inner Length::Fill children paint right
         // up to the container bounds and cover the 1 px frame.
         use iced::widget::container;
         use iced::{Background, Border, Length, Padding};
-        let border_width = if self.window_maximized { 0.0 } else { 1.0 };
+        let border_width = if self.window_maximized || self.window_fullscreen { 0.0 } else { 1.0 };
         container(composed)
             .width(Length::Fill)
             .height(Length::Fill)

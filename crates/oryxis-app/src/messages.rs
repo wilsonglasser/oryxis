@@ -228,6 +228,9 @@ pub enum Message {
     WindowMinimize,
     WindowMaximizeToggle,
     WindowFullscreenToggle,
+    /// Clears the "Press F11 to exit fullscreen" banner. Fired by a
+    /// timed `Task::perform` 3 s after entering fullscreen.
+    FullscreenHintHide,
     WindowClose,
     /// Spawn a fresh top-level Oryxis window without binding to any
     /// existing tab. Triggered by Ctrl+Shift+N and the burger menu's

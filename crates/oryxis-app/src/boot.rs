@@ -144,6 +144,7 @@ impl Oryxis {
                 window_size: iced::Size::new(1200.0, 750.0),
                 window_maximized: false,
                 window_fullscreen: false,
+                fullscreen_hint_visible: false,
                 modifiers: keyboard::Modifiers::default(),
                 keys: Vec::new(),
                 show_key_panel: false,

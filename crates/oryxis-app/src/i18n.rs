@@ -274,6 +274,7 @@ fn en(key: &str) -> &'static str {
         "cloud_dynamic_form_identity" => "Identity",
         "local_shell" => "Local Shell",
         "new_window" => "New Window",
+        "fullscreen_exit_hint" => "Press F11 to exit fullscreen",
         "detecting_shells" => "Detecting shells…",
 
         // Actions
@@ -927,6 +928,7 @@ fn pt_br(key: &str) -> Option<&'static str> {
         "cloud_dynamic_form_identity" => "Identidade",
         "local_shell" => "Shell Local",
         "new_window" => "Nova Janela",
+        "fullscreen_exit_hint" => "Pressione F11 para sair da tela cheia",
         "detecting_shells" => "Detectando shells…",
 
         "create_host" => "Criar host",
@@ -1538,6 +1540,7 @@ fn es(key: &str) -> Option<&'static str> {
         "cloud_dynamic_form_identity" => "Identidad",
         "local_shell" => "Shell Local",
         "new_window" => "Nueva Ventana",
+        "fullscreen_exit_hint" => "Presione F11 para salir de pantalla completa",
         "detecting_shells" => "Detectando shells…",
 
         "create_host" => "Crear host",
@@ -2138,6 +2141,7 @@ fn fr(key: &str) -> Option<&'static str> {
         "cloud_dynamic_form_identity" => "Identité",
         "local_shell" => "Shell Local",
         "new_window" => "Nouvelle Fenêtre",
+        "fullscreen_exit_hint" => "Appuyez sur F11 pour quitter le plein écran",
         "detecting_shells" => "Détection des shells…",
 
         "create_host" => "Créer un hôte",
@@ -2738,6 +2742,7 @@ fn de(key: &str) -> Option<&'static str> {
         "cloud_dynamic_form_identity" => "Identität",
         "local_shell" => "Lokale Shell",
         "new_window" => "Neues Fenster",
+        "fullscreen_exit_hint" => "F11 drücken zum Verlassen des Vollbilds",
         "detecting_shells" => "Shells werden erkannt…",
 
         "create_host" => "Host erstellen",
@@ -3338,6 +3343,7 @@ fn it(key: &str) -> Option<&'static str> {
         "cloud_dynamic_form_identity" => "Identità",
         "local_shell" => "Shell Locale",
         "new_window" => "Nuova Finestra",
+        "fullscreen_exit_hint" => "Premi F11 per uscire dallo schermo intero",
         "detecting_shells" => "Rilevamento shell…",
 
         "create_host" => "Crea host",
@@ -3938,6 +3944,7 @@ fn zh(key: &str) -> Option<&'static str> {
         "cloud_dynamic_form_identity" => "身份",
         "local_shell" => "本地终端",
         "new_window" => "新窗口",
+        "fullscreen_exit_hint" => "按 F11 退出全屏",
         "detecting_shells" => "正在检测终端…",
 
         "create_host" => "创建主机",
@@ -4538,6 +4545,7 @@ fn ja(key: &str) -> Option<&'static str> {
         "cloud_dynamic_form_identity" => "アイデンティティ",
         "local_shell" => "ローカルシェル",
         "new_window" => "新しいウィンドウ",
+        "fullscreen_exit_hint" => "F11 でフルスクリーンを終了",
         "detecting_shells" => "シェルを検出中…",
 
         "create_host" => "ホストを作成",
@@ -5138,6 +5146,7 @@ fn ru(key: &str) -> Option<&'static str> {
         "cloud_dynamic_form_identity" => "Учётка",
         "local_shell" => "Локальная оболочка",
         "new_window" => "Новое окно",
+        "fullscreen_exit_hint" => "Нажмите F11 для выхода из полноэкранного режима",
         "detecting_shells" => "Поиск оболочек…",
 
         "create_host" => "Создать хост",
@@ -5742,6 +5751,7 @@ fn fa(key: &str) -> Option<&'static str> {
         "cloud_dynamic_form_identity" => "هویت",
         "local_shell" => "شل محلی",
         "new_window" => "پنجره جدید",
+        "fullscreen_exit_hint" => "برای خروج از تمام‌صفحه F11 را فشار دهید",
         "detecting_shells" => "در حال شناسایی شل‌ها…",
 
         // Actions
@@ -6376,6 +6386,7 @@ fn ar(key: &str) -> Option<&'static str> {
         "cloud_dynamic_form_identity" => "الهوية",
         "local_shell" => "الصدفة المحلية",
         "new_window" => "نافذة جديدة",
+        "fullscreen_exit_hint" => "اضغط F11 للخروج من وضع ملء الشاشة",
         "detecting_shells" => "جارٍ اكتشاف الصدفات…",
 
         // Actions

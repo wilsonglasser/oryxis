@@ -250,6 +250,12 @@ pub struct Oryxis {
     /// Same optimistic pattern as `window_maximized` because the OS-side
     /// transition is one-way from the app.
     pub(crate) window_fullscreen: bool,
+    /// True for ~3 s after entering fullscreen so the "Press F11 to
+    /// exit" banner renders. Cleared by a scheduled
+    /// `Message::FullscreenHintHide`. Mirrors Chrome / Firefox where
+    /// the on-enter hint fades on its own and the X close affordance
+    /// then only shows on top-edge hover.
+    pub(crate) fullscreen_hint_visible: bool,
 
     // Keys
     pub(crate) keys: Vec<SshKey>,
