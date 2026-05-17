@@ -245,6 +245,7 @@ impl Oryxis {
             );
             let glyph_el: Element<'_, Message> = iced_fonts::lucide::key_round()
                 .size(16)
+                .line_height(1.0)
                 .color(Color::WHITE)
                 .into();
             let icon_box = crate::widgets::host_icon(
@@ -433,6 +434,7 @@ impl Oryxis {
             );
             let id_glyph_el: Element<'_, Message> = iced_fonts::lucide::user()
                 .size(16)
+                .line_height(1.0)
                 .color(Color::WHITE)
                 .into();
             let icon_box = crate::widgets::host_icon(

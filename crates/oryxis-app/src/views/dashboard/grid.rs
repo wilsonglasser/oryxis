@@ -34,6 +34,7 @@ impl Oryxis {
         } else {
             container(
                 text_input(t("search_hosts"), &self.host_search)
+                    .id(iced::widget::Id::new("search-dashboard"))
                     .on_input(Message::HostSearchChanged)
                     .padding(10)
                     .size(13)

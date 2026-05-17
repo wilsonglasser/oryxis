@@ -8,6 +8,7 @@ use iced::keyboard;
 use iced::Task;
 
 use crate::app::{Message, Oryxis};
+use crate::state::View;
 use crate::util::{ctrl_key_bytes, key_to_named_bytes};
 
 impl Oryxis {
@@ -89,6 +90,148 @@ impl Oryxis {
                 {
                     self.show_tab_jump = true;
                     self.tab_jump_search.clear();
+                    return Ok(Task::none());
+                }
+                // Ctrl+T opens the new-tab picker. Synonym for Ctrl+K,
+                // added for Termius-muscle-memory users. Skipped on
+                // the Terminal view so bash's readline transpose-chars
+                // (Ctrl+T) still works inside the shell; user can still
+                // reach the picker via Ctrl+K (which is intentionally
+                // global) or by switching out of the terminal first.
+                if let keyboard::Event::KeyPressed { key, modifiers, .. } = &event
+                    && modifiers.control()
+                    && !modifiers.shift()
+                    && self.active_view != View::Terminal
+                    && let keyboard::Key::Character(c) = key
+                    && c.as_str().eq_ignore_ascii_case("t")
+                {
+                    self.show_new_tab_picker = true;
+                    self.new_tab_picker_search.clear();
+                    return Ok(Task::none());
+                }
+                // Ctrl+L opens a fresh local-shell tab. Skipped on the
+                // Terminal view so the shell's clear-screen still works.
+                if let keyboard::Event::KeyPressed { key, modifiers, .. } = &event
+                    && modifiers.control()
+                    && !modifiers.shift()
+                    && self.active_view != View::Terminal
+                    && let keyboard::Key::Character(c) = key
+                    && c.as_str().eq_ignore_ascii_case("l")
+                {
+                    return Ok(Task::done(Message::OpenLocalShell));
+                }
+                // Ctrl+P opens the host editor for the currently active
+                // tab's saved connection. Lands on the editor's Port
+                // Forwards section once the v0.8 panel ships; for now
+                // the editor opens at its default scroll so the user
+                // can scroll to Port Forwards manually. Skipped on the
+                // Terminal view so bash's readline previous-history
+                // (Ctrl+P) still works inside the shell.
+                if let keyboard::Event::KeyPressed { key, modifiers, .. } = &event
+                    && modifiers.control()
+                    && !modifiers.shift()
+                    && self.active_view != View::Terminal
+                    && let keyboard::Key::Character(c) = key
+                    && c.as_str().eq_ignore_ascii_case("p")
+                    && let Some(idx) = self.active_tab_connection_idx()
+                {
+                    return Ok(Task::done(Message::EditConnection(idx)));
+                }
+                // Ctrl+Shift+W closes the active tab. No-op when no tab
+                // is focused; the CloseTab handler is itself safe against
+                // a stale index but skipping the dispatch keeps the
+                // tab-bar's scroll position from twitching.
+                if let keyboard::Event::KeyPressed { key, modifiers, .. } = &event
+                    && modifiers.control()
+                    && modifiers.shift()
+                    && let keyboard::Key::Character(c) = key
+                    && c.as_str().eq_ignore_ascii_case("w")
+                    && let Some(idx) = self.active_tab
+                {
+                    return Ok(Task::done(Message::CloseTab(idx)));
+                }
+                // Alt+Left / Alt+Right cycle through terminal tabs.
+                // Wraps at the ends so heavy users don't have to think
+                // about boundary positions.
+                if let keyboard::Event::KeyPressed { key, modifiers, .. } = &event
+                    && modifiers.alt()
+                    && !modifiers.control()
+                    && !self.tabs.is_empty()
+                {
+                    let n = self.tabs.len();
+                    let current = self.active_tab.unwrap_or(0);
+                    let next = match key {
+                        keyboard::Key::Named(keyboard::key::Named::ArrowRight) => Some((current + 1) % n),
+                        keyboard::Key::Named(keyboard::key::Named::ArrowLeft) => Some((current + n - 1) % n),
+                        _ => None,
+                    };
+                    if let Some(idx) = next {
+                        return Ok(Task::done(Message::SelectTab(idx)));
+                    }
+                }
+                // Ctrl+1..9, activate the Nth slot of the visual tab
+                // strip. Slot order matches `tab_bar.rs`: Workspace mode
+                // puts Hosts at slot 0 and SFTP at slot 1 (when enabled)
+                // before terminal tabs; Classic mode skips straight to
+                // terminal tabs since the strip doesn't carry nav areas.
+                if let keyboard::Event::KeyPressed { key, modifiers, .. } = &event
+                    && modifiers.control()
+                    && !modifiers.shift()
+                    && !modifiers.alt()
+                    && let keyboard::Key::Character(c) = key
+                    && let Some(d) = c.as_str().chars().next().and_then(|ch| ch.to_digit(10))
+                    && (1..=9).contains(&d)
+                {
+                    return Ok(Task::done(Message::ActivateStripSlot(d as usize - 1)));
+                }
+                // Ctrl+, opens Settings. Common cross-app convention
+                // (VS Code, Slack, browsers). Captured before the PTY
+                // routing so the byte doesn't leak into the shell.
+                if let keyboard::Event::KeyPressed { key, modifiers, .. } = &event
+                    && modifiers.control()
+                    && !modifiers.shift()
+                    && !modifiers.alt()
+                    && let keyboard::Key::Character(c) = key
+                    && c.as_str() == ","
+                {
+                    return Ok(Task::done(Message::ChangeView(View::Settings)));
+                }
+                // Ctrl+Shift+N spawns a fresh top-level Oryxis window.
+                // Same machinery as the "Duplicate in New Window" menu
+                // item, minus the source-tab argument.
+                if let keyboard::Event::KeyPressed { key, modifiers, .. } = &event
+                    && modifiers.control()
+                    && modifiers.shift()
+                    && let keyboard::Key::Character(c) = key
+                    && c.as_str().eq_ignore_ascii_case("n")
+                {
+                    return Ok(Task::done(Message::SpawnNewWindow));
+                }
+                // F11 toggles native fullscreen on the current window.
+                if let keyboard::Event::KeyPressed { key, .. } = &event
+                    && matches!(key, keyboard::Key::Named(keyboard::key::Named::F11))
+                {
+                    return Ok(Task::done(Message::WindowFullscreenToggle));
+                }
+                // Ctrl+F focuses the current view's primary search input.
+                // Skipped on the Terminal view so apps that bind Ctrl+F
+                // (less, vim, fzf) still receive it.
+                if let keyboard::Event::KeyPressed { key, modifiers, .. } = &event
+                    && modifiers.control()
+                    && !modifiers.shift()
+                    && self.active_view != View::Terminal
+                    && let keyboard::Key::Character(c) = key
+                    && c.as_str().eq_ignore_ascii_case("f")
+                {
+                    return Ok(Task::done(Message::FocusViewSearch));
+                }
+                // Esc closes the topmost open modal. Only fires when at
+                // least one modal flag is set, so terminal apps that
+                // rely on raw Esc (vim, less) keep getting the byte.
+                if let keyboard::Event::KeyPressed { key, .. } = &event
+                    && matches!(key, keyboard::Key::Named(keyboard::key::Named::Escape))
+                    && self.close_topmost_modal()
+                {
                     return Ok(Task::none());
                 }
                 // Ctrl + (= | + | - | 0), terminal font zoom. Matches

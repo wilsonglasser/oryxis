@@ -2737,6 +2737,7 @@ fn de(key: &str) -> Option<&'static str> {
         "cloud_dynamic_form_key" => "SSH-Schlüssel",
         "cloud_dynamic_form_identity" => "Identität",
         "local_shell" => "Lokale Shell",
+        "new_window" => "Neues Fenster",
         "detecting_shells" => "Shells werden erkannt…",
 
         "create_host" => "Host erstellen",
@@ -3336,6 +3337,7 @@ fn it(key: &str) -> Option<&'static str> {
         "cloud_dynamic_form_key" => "Chiave SSH",
         "cloud_dynamic_form_identity" => "Identità",
         "local_shell" => "Shell Locale",
+        "new_window" => "Nuova Finestra",
         "detecting_shells" => "Rilevamento shell…",
 
         "create_host" => "Crea host",
@@ -3935,6 +3937,7 @@ fn zh(key: &str) -> Option<&'static str> {
         "cloud_dynamic_form_key" => "SSH 密钥",
         "cloud_dynamic_form_identity" => "身份",
         "local_shell" => "本地终端",
+        "new_window" => "新窗口",
         "detecting_shells" => "正在检测终端…",
 
         "create_host" => "创建主机",
@@ -4534,6 +4537,7 @@ fn ja(key: &str) -> Option<&'static str> {
         "cloud_dynamic_form_key" => "SSH キー",
         "cloud_dynamic_form_identity" => "アイデンティティ",
         "local_shell" => "ローカルシェル",
+        "new_window" => "新しいウィンドウ",
         "detecting_shells" => "シェルを検出中…",
 
         "create_host" => "ホストを作成",
@@ -5133,6 +5137,7 @@ fn ru(key: &str) -> Option<&'static str> {
         "cloud_dynamic_form_key" => "SSH-ключ",
         "cloud_dynamic_form_identity" => "Учётка",
         "local_shell" => "Локальная оболочка",
+        "new_window" => "Новое окно",
         "detecting_shells" => "Поиск оболочек…",
 
         "create_host" => "Создать хост",
@@ -5736,6 +5741,7 @@ fn fa(key: &str) -> Option<&'static str> {
         "cloud_dynamic_form_key" => "کلید SSH",
         "cloud_dynamic_form_identity" => "هویت",
         "local_shell" => "شل محلی",
+        "new_window" => "پنجره جدید",
         "detecting_shells" => "در حال شناسایی شل‌ها…",
 
         // Actions
@@ -6369,6 +6375,7 @@ fn ar(key: &str) -> Option<&'static str> {
         "cloud_dynamic_form_key" => "مفتاح SSH",
         "cloud_dynamic_form_identity" => "الهوية",
         "local_shell" => "الصدفة المحلية",
+        "new_window" => "نافذة جديدة",
         "detecting_shells" => "جارٍ اكتشاف الصدفات…",
 
         // Actions

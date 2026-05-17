@@ -123,8 +123,13 @@ impl Oryxis {
                 None,
                 &self.setting_default_host_icon,
             );
+            // `line_height(1.0)` collapses the default text padding so
+            // the glyph sits at the optical centre of the badge; the
+            // default ~1.2 multiplier pushed it visually upward and
+            // the badge looked misaligned next to the label column.
             let glyph_el: Element<'_, Message> = iced_fonts::lucide::code()
                 .size(14)
+                .line_height(1.0)
                 .color(Color::WHITE)
                 .into();
             let icon_box = crate::widgets::host_icon(

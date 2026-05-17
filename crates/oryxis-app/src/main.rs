@@ -46,6 +46,7 @@ mod root_view;
 mod session_manager_plugin;
 mod sftp_helpers;
 mod sftp_methods;
+mod shortcuts;
 mod ssh_config;
 mod state;
 mod subscription;
