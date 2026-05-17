@@ -270,17 +270,19 @@ impl Oryxis {
             let key_show_dots =
                 self.hovered_key_card == Some(idx) || self.key_context_menu == Some(idx);
             let key_rtl = crate::i18n::is_rtl_layout();
-            let card_pad_trailing = 30.0_f32;
+            // Mirror the host-card padding: 8 top/bottom, 2 leading,
+            // 24 trailing to reserve room for the kebab overlay.
+            let card_pad_trailing = 24.0_f32;
             let card_padding = if key_rtl {
-                Padding { top: 16.0, right: 16.0, bottom: 16.0, left: card_pad_trailing }
+                Padding { top: 8.0, right: 2.0, bottom: 8.0, left: card_pad_trailing }
             } else {
-                Padding { top: 16.0, right: card_pad_trailing, bottom: 16.0, left: 16.0 }
+                Padding { top: 8.0, right: card_pad_trailing, bottom: 8.0, left: 2.0 }
             };
 
             let card = button(
                 dir_row(vec![
                     icon_box,
-                    Space::new().width(12).into(),
+                    Space::new().width(8).into(),
                     column![
                         text(&key.label)
                             .size(13)
@@ -461,17 +463,18 @@ impl Oryxis {
             let id_show_dots =
                 self.hovered_identity_card == Some(idx) || self.identity_context_menu == Some(idx);
             let id_rtl = crate::i18n::is_rtl_layout();
-            let id_pad_trailing = 30.0_f32;
+            // Mirror the host-card padding.
+            let id_pad_trailing = 24.0_f32;
             let id_card_padding = if id_rtl {
-                Padding { top: 16.0, right: 16.0, bottom: 16.0, left: id_pad_trailing }
+                Padding { top: 8.0, right: 2.0, bottom: 8.0, left: id_pad_trailing }
             } else {
-                Padding { top: 16.0, right: id_pad_trailing, bottom: 16.0, left: 16.0 }
+                Padding { top: 8.0, right: id_pad_trailing, bottom: 8.0, left: 2.0 }
             };
 
             let card = button(
                 dir_row(vec![
                     icon_box,
-                    Space::new().width(12).into(),
+                    Space::new().width(8).into(),
                     column![
                         text(&identity.label)
                             .size(13)
