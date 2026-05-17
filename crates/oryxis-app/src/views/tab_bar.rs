@@ -68,9 +68,30 @@ impl Oryxis {
             + DOTS_BUTTON_WIDTH
             + 2.0
             + CHROME_TOTAL_WIDTH;
-        let approx_strip_width =
-            (self.window_size.width - SIDEBAR_TOGGLE_WIDTH - RIGHT_CLUSTER_WIDTH - 12.0)
-                .max(120.0);
+        // Workspace mode prepends area tabs (Hosts, SFTP) that consume
+        // strip width before the connection tabs even start; subtract
+        // a rough estimate so the connection-tab allocator and the
+        // scroll_mode trigger see the actual budget. Each area tab is
+        // roughly icon(16) + gap(6) + label(~50) + padding(20) ~= 90 px.
+        let area_tab_count = if self.setting_layout_mode == "workspace" {
+            1 + (self.sftp_enabled as u32)
+        } else {
+            0
+        };
+        const AREA_TAB_APPROX_WIDTH: f32 = 100.0;
+        let area_tabs_total = area_tab_count as f32
+            * (AREA_TAB_APPROX_WIDTH + TAB_SPACING);
+        // Burger menu button (SIDEBAR_TOGGLE_WIDTH) also lives on the
+        // leading edge in Workspace mode; sidebar toggle is always
+        // there in both modes.
+        let burger_width = SIDEBAR_TOGGLE_WIDTH;
+        let approx_strip_width = (self.window_size.width
+            - SIDEBAR_TOGGLE_WIDTH
+            - burger_width
+            - RIGHT_CLUSTER_WIDTH
+            - area_tabs_total
+            - 12.0)
+            .max(120.0);
 
         // Per-tab width allocation. The active tab always wants its natural
         // width so its label stays readable; the inactives split whatever's
@@ -326,15 +347,30 @@ impl Oryxis {
         if self.tabs.is_empty() {
             return iced::Task::none();
         }
-        // Mirror the layout math in view_tab_bar so the offsets line up.
+        // Mirror the layout math in view_tab_bar so the offsets line up,
+        // including the burger button + area tabs that Workspace mode
+        // prepends to the strip.
         const RIGHT_CLUSTER_WIDTH: f32 = PLUS_BUTTON_WIDTH
             + 2.0
             + DOTS_BUTTON_WIDTH
             + 2.0
             + CHROME_TOTAL_WIDTH;
-        let approx_strip_width =
-            (self.window_size.width - SIDEBAR_TOGGLE_WIDTH - RIGHT_CLUSTER_WIDTH - 12.0)
-                .max(120.0);
+        let area_tab_count = if self.setting_layout_mode == "workspace" {
+            1 + (self.sftp_enabled as u32)
+        } else {
+            0
+        };
+        const AREA_TAB_APPROX_WIDTH: f32 = 100.0;
+        let area_tabs_total = area_tab_count as f32
+            * (AREA_TAB_APPROX_WIDTH + TAB_SPACING);
+        let burger_width = SIDEBAR_TOGGLE_WIDTH;
+        let approx_strip_width = (self.window_size.width
+            - SIDEBAR_TOGGLE_WIDTH
+            - burger_width
+            - RIGHT_CLUSTER_WIDTH
+            - area_tabs_total
+            - 12.0)
+            .max(120.0);
         let (active_w, inactive_w) =
             allocate_tab_widths(self.tabs.len(), approx_strip_width);
         // Sum widths of all tabs that come before the active one, plus
