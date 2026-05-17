@@ -133,9 +133,19 @@ impl RelayClient {
         }
         if !status.is_success() {
             let body = resp.text().await.unwrap_or_default();
-            return Err(SyncError::Transport(format!(
-                "relay GET {url} -> {status}: {body}"
-            )));
+            // 404 / 410 / 501 mean the relay can't service this request
+            // even if we retry: wrong path, deprecated worker, recipient
+            // slot deleted server-side. Surface as a distinct error so
+            // the engine stops polling instead of looping every 2 s.
+            // Anything else (5xx, 429, network blips) stays Transport
+            // and the engine keeps retrying.
+            let permanent = matches!(status.as_u16(), 404 | 410 | 501);
+            let msg = format!("relay GET {url} -> {status}: {body}");
+            return Err(if permanent {
+                SyncError::RelayUnavailable(msg)
+            } else {
+                SyncError::Transport(msg)
+            });
         }
         let sender_id: Uuid = resp
             .headers()

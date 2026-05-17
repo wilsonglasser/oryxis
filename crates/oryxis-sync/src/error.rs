@@ -11,6 +11,15 @@ pub enum SyncError {
     #[error("Transport error: {0}")]
     Transport(String),
 
+    /// The relay endpoint reported a permanent condition (HTTP 404, 410,
+    /// 501, ...) that retrying can't recover from: wrong URL, deprecated
+    /// API version, recipient slot deleted server-side, etc. Callers
+    /// should stop polling instead of looping forever burning network +
+    /// battery, and log enough context for the user to know why sync
+    /// isn't connecting through the relay anymore.
+    #[error("Relay unavailable: {0}")]
+    RelayUnavailable(String),
+
     #[error("Crypto error: {0}")]
     Crypto(String),
 

@@ -383,6 +383,20 @@ impl SyncEngine {
                         recvd = client.recv(my_id) => {
                             let (from, msg) = match recvd {
                                 Ok(pair) => pair,
+                                Err(crate::SyncError::RelayUnavailable(detail)) => {
+                                    // Permanent server-side condition
+                                    // (404/410/501). Retrying just burns
+                                    // network + battery; log loud once
+                                    // so the user sees why relay sync
+                                    // went quiet, then exit the poll
+                                    // task. Local mDNS + STUN paths
+                                    // keep running because this loop
+                                    // is the relay-specific path only.
+                                    tracing::warn!(
+                                        "relay inbox unavailable, giving up: {detail}"
+                                    );
+                                    break;
+                                }
                                 Err(e) => {
                                     tracing::debug!("relay inbox: {e}");
                                     // Backoff a touch before retrying;
