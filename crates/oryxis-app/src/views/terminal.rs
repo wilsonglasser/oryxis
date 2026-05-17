@@ -34,7 +34,8 @@ impl Oryxis {
                     .with_keyword_highlight(self.setting_keyword_highlight)
                     .with_smart_contrast(self.setting_smart_contrast)
                     .on_font_size_increase(Message::TerminalFontSizeIncrease)
-                    .on_font_size_decrease(Message::TerminalFontSizeDecrease);
+                    .on_font_size_decrease(Message::TerminalFontSizeDecrease)
+                    .on_paste_request(Message::TerminalPasteFromClipboard);
                 let term_canvas: Element<'_, Message> = canvas(term_view)
                     .width(Length::Fill)
                     .height(Length::Fill)
@@ -44,8 +45,9 @@ impl Oryxis {
                 // terminal canvas so it doesn't steal vertical space. The
                 // sparkles always render in accent and the toggle hides
                 // entirely when the sidebar is open (the sidebar header
-                // shows the same sparkle, no point duplicating it).
-                let term_with_toggle: Element<'_, Message> = if chat_visible {
+                // shows the same sparkle, no point duplicating it) or
+                // when AI is disabled in settings.
+                let term_with_toggle: Element<'_, Message> = if chat_visible || !self.ai_enabled {
                     term_canvas
                 } else {
                     let toggle_btn = button(

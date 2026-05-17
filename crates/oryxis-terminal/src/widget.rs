@@ -677,6 +677,11 @@ pub struct TerminalView<Message = ()> {
     /// Ctrl+Wheel still gets captured but produces no state change.
     on_font_size_increase: Option<Message>,
     on_font_size_decrease: Option<Message>,
+    /// Optional callback for right-click paste. When set, the widget
+    /// emits this message instead of writing the clipboard text directly
+    /// to the local PTY, so the app dispatcher can route to the SSH
+    /// session (mirroring the Ctrl+Shift+V path).
+    on_paste_request: Option<Message>,
 }
 
 /// Padding around the terminal content (in pixels).
@@ -836,6 +841,7 @@ impl<Message> TerminalView<Message> {
             smart_contrast: true,
             on_font_size_increase: None,
             on_font_size_decrease: None,
+            on_paste_request: None,
         }
     }
 
@@ -877,6 +883,17 @@ impl<Message> TerminalView<Message> {
     /// the terminal canvas.
     pub fn on_font_size_decrease(mut self, msg: Message) -> Self {
         self.on_font_size_decrease = Some(msg);
+        self
+    }
+
+    /// Wire a message that fires on right-click over the terminal. The
+    /// app dispatcher should read the clipboard and write the text to
+    /// the active SSH session (or local PTY as fallback), the same path
+    /// Ctrl+Shift+V takes. Without this hook, the widget falls back to
+    /// writing the clipboard text directly to the local PTY, which only
+    /// works for local-shell tabs.
+    pub fn on_paste_request(mut self, msg: Message) -> Self {
+        self.on_paste_request = Some(msg);
         self
     }
 
@@ -1097,10 +1114,17 @@ where
                 }
                 return Some(CanvasAction::capture());
             }
-            // Right-click, paste from clipboard
+            // Right-click, paste from clipboard. When the host wired an
+            // `on_paste_request` callback we delegate the actual paste to
+            // the app dispatcher so it can target the SSH session (the
+            // local-PTY write below only reaches local-shell tabs). The
+            // fallback covers callers that don't set the hook.
             iced::Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Right))
                 if cursor.position_in(bounds).is_some() =>
             {
+                if let Some(msg) = self.on_paste_request.clone() {
+                    return Some(CanvasAction::publish(msg).and_capture());
+                }
                 if let Ok(mut clip) = arboard::Clipboard::new()
                     && let Ok(text) = clip.get_text()
                     && let Ok(mut state) = self.state.lock()

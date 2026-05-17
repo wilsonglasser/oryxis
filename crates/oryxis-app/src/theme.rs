@@ -59,6 +59,7 @@ pub enum AppTheme {
     HackerGreen,
     Nord,
     NordLight,
+    SolarizedDark,
     SolarizedLight,
     PaperLight,
 }
@@ -75,6 +76,7 @@ impl AppTheme {
         Self::HackerGreen,
         Self::Nord,
         Self::NordLight,
+        Self::SolarizedDark,
         Self::SolarizedLight,
         Self::PaperLight,
     ];
@@ -91,6 +93,7 @@ impl AppTheme {
             Self::HackerGreen => "Hacker Green",
             Self::Nord => "Nord",
             Self::NordLight => "Nord Light",
+            Self::SolarizedDark => "Solarized Dark",
             Self::SolarizedLight => "Solarized Light",
             Self::PaperLight => "Paper Light",
         }
@@ -141,6 +144,7 @@ impl OryxisColors {
             AppTheme::HackerGreen => &HACKER_GREEN,
             AppTheme::Nord => &NORD,
             AppTheme::NordLight => &NORD_LIGHT,
+            AppTheme::SolarizedDark => &SOLARIZED_DARK,
             AppTheme::SolarizedLight => &SOLARIZED_LIGHT,
             AppTheme::PaperLight => &PAPER_LIGHT,
         }
@@ -403,6 +407,37 @@ pub const NORD_LIGHT: ThemeColors = ThemeColors {
     // against this accent.
     button_bg: Color::from_rgb8(94, 129, 172),
     button_bg_hover: Color::from_rgb8(129, 161, 193),
+    button_text: Color::WHITE,
+};
+
+/// Solarized Dark, Ethan Schoonover's classic deep-cyan/yellow palette.
+/// Mirrors the light variant against base03 (#002B36), with the same blue
+/// accent and coherent hue progression as the rest of the Solarized set.
+pub const SOLARIZED_DARK: ThemeColors = ThemeColors {
+    bg_primary: Color::from_rgb8(0, 43, 54),       // #002B36, base03
+    bg_sidebar: Color::from_rgb8(7, 54, 66),       // #073642, base02
+    bg_surface: Color::from_rgb8(0, 43, 54),       // #002B36
+    bg_hover: Color::from_rgb8(7, 54, 66),         // #073642
+    bg_selected: Color::from_rgb8(20, 67, 79),     // slight lift over base02
+    text_primary: Color::from_rgb8(147, 161, 161), // #93A1A1, base1
+    text_secondary: Color::from_rgb8(131, 148, 150), // #839496, base0
+    text_muted: Color::from_rgb8(101, 123, 131),   // #657B83, base00
+    accent: Color::from_rgb8(38, 139, 210),        // #268BD2, blue
+    accent_hover: Color::from_rgb8(42, 161, 152),  // #2AA198, cyan
+    success: Color::from_rgb8(133, 153, 0),        // #859900, green
+    warning: Color::from_rgb8(181, 137, 0),        // #B58900, yellow
+    error: Color::from_rgb8(220, 50, 47),          // #DC322F, red
+    terminal_bg: Color::from_rgb8(0, 43, 54),
+    terminal_fg: Color::from_rgb8(131, 148, 150),
+    terminal_cursor: Color::from_rgb8(131, 148, 150),
+    border: Color::from_rgb8(7, 54, 66),
+    border_focus: Color::from_rgb8(38, 139, 210),
+    // CTA button surface, defaults mirror `accent` /
+    // `accent_hover` so existing renderings stay identical.
+    // Override per-theme if white text doesn't read well
+    // against this accent.
+    button_bg: Color::from_rgb8(38, 139, 210),
+    button_bg_hover: Color::from_rgb8(42, 161, 152),
     button_text: Color::WHITE,
 };
 

@@ -29,6 +29,24 @@ impl Oryxis {
                     }
                 }
             }
+            // Right-click paste from the terminal widget. Mirrors the
+            // Ctrl+Shift+V path below: SSH session if active, local PTY
+            // otherwise. Without this, the widget's fallback write only
+            // reached the local PTY and right-click looked broken on
+            // every SSH tab.
+            Message::TerminalPasteFromClipboard => {
+                if let Some(tab_idx) = self.active_tab
+                    && let Some(tab) = self.tabs.get(tab_idx)
+                    && let Ok(mut clip) = arboard::Clipboard::new()
+                    && let Ok(text) = clip.get_text()
+                {
+                    if let Some(ref ssh) = tab.active().ssh_session {
+                        let _ = ssh.write(text.as_bytes());
+                    } else if let Ok(mut state) = tab.active().terminal.lock() {
+                        state.write(text.as_bytes());
+                    }
+                }
+            }
             Message::KeyboardEvent(event) => {
                 // Track modifier state for downstream consumers (SFTP
                 // ctrl/shift-click selection). Always update first so

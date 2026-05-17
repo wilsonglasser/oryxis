@@ -325,6 +325,10 @@ pub enum Message {
     TerminalFontSizeIncrease,
     TerminalFontSizeDecrease,
     TerminalFontChanged(String),
+    /// Emitted by the terminal widget when the user right-clicks. The
+    /// dispatcher reads the clipboard and routes the text to the SSH
+    /// session (if active) or the local PTY, mirroring Ctrl+Shift+V.
+    TerminalPasteFromClipboard,
     ChangeSettingsSection(SettingsSection),
     ToggleCopyOnSelect,
     ToggleBoldIsBright,

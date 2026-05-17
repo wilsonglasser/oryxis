@@ -33,6 +33,7 @@ fn app_theme_to_terminal(theme: AppTheme) -> oryxis_terminal::TerminalTheme {
         AppTheme::HackerGreen => oryxis_terminal::TerminalTheme::HackerGreen,
         AppTheme::Nord => oryxis_terminal::TerminalTheme::Nord,
         AppTheme::NordLight => oryxis_terminal::TerminalTheme::NordLight,
+        AppTheme::SolarizedDark => oryxis_terminal::TerminalTheme::SolarizedDark,
         AppTheme::SolarizedLight => oryxis_terminal::TerminalTheme::SolarizedLight,
         AppTheme::PaperLight => oryxis_terminal::TerminalTheme::PaperLight,
     }

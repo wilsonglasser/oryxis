@@ -609,6 +609,7 @@ impl Oryxis {
                             AppTheme::HackerGreen => &crate::theme::HACKER_GREEN,
                             AppTheme::Nord => &crate::theme::NORD,
                             AppTheme::NordLight => &crate::theme::NORD_LIGHT,
+                            AppTheme::SolarizedDark => &crate::theme::SOLARIZED_DARK,
                             AppTheme::SolarizedLight => &crate::theme::SOLARIZED_LIGHT,
                             AppTheme::PaperLight => &crate::theme::PAPER_LIGHT,
                         };
