@@ -265,6 +265,11 @@ impl Oryxis {
                 setting_tab_close_button_side: "left".into(),
                 setting_show_tab_status_dot: true,
                 sftp_enabled: true,
+                // Default classic for now; PR 6 flips this to
+                // "workspace" for fresh installs and migrates existing
+                // users in a single dedicated boot step.
+                setting_layout_mode: "classic".into(),
+                setting_default_host_icon: "circular".into(),
                 setting_keepalive_interval: "30".into(),
                 setting_scrollback_rows: "10000".into(),
                 setting_sftp_concurrency: "2".into(),
@@ -562,6 +567,16 @@ impl Oryxis {
             }
             if let Ok(Some(v)) = vault.get_setting("sftp_enabled") {
                 self.sftp_enabled = v == "true";
+            }
+            if let Ok(Some(v)) = vault.get_setting("layout_mode")
+                && (v == "classic" || v == "workspace")
+            {
+                self.setting_layout_mode = v;
+            }
+            if let Ok(Some(v)) = vault.get_setting("default_host_icon")
+                && matches!(v.as_str(), "circular" | "square" | "outline" | "initials")
+            {
+                self.setting_default_host_icon = v;
             }
             if let Ok(Some(v)) = vault.get_setting("terminal_font_size")
                 && let Ok(parsed) = v.parse::<f32>()

@@ -821,6 +821,93 @@ impl Oryxis {
                     ),
                 ]);
 
+                // Layout mode + default host icon are forward-looking
+                // settings: they persist now so users can pick their
+                // preference, but the actual renderers wire up in
+                // later PRs (6 and 3 respectively). Until then the
+                // selection is a no-op for the displayed UI.
+                let layout_workspace = crate::i18n::t("layout_mode_workspace").to_string();
+                let layout_classic = crate::i18n::t("layout_mode_classic").to_string();
+                let layout_options = vec![layout_classic.clone(), layout_workspace.clone()];
+                let layout_selected = if self.setting_layout_mode == "workspace" {
+                    layout_workspace.clone()
+                } else {
+                    layout_classic.clone()
+                };
+                let layout_classic_for_map = layout_classic.clone();
+                let layout_section = panel_section(column![
+                    dir_row(vec![
+                        text(crate::i18n::t("layout_mode"))
+                            .size(13)
+                            .color(OryxisColors::t().text_primary)
+                            .into(),
+                        Space::new().width(Length::Fill).into(),
+                        pick_list(
+                            Some(layout_selected),
+                            layout_options,
+                            move |s: &String| {
+                                if *s == layout_classic_for_map {
+                                    "classic".into()
+                                } else {
+                                    "workspace".into()
+                                }
+                            },
+                        )
+                        .on_select(Message::SettingLayoutModeChanged)
+                        .width(200)
+                        .padding(10)
+                        .style(crate::widgets::rounded_pick_list_style)
+                        .into(),
+                    ]).align_y(iced::Alignment::Center),
+                    Space::new().height(4),
+                    text(crate::i18n::t("layout_mode_desc"))
+                        .size(11)
+                        .color(OryxisColors::t().text_muted),
+                ]);
+
+                let icon_circular = crate::i18n::t("icon_circular").to_string();
+                let icon_square = crate::i18n::t("icon_square").to_string();
+                let icon_outline = crate::i18n::t("icon_outline").to_string();
+                let icon_initials = crate::i18n::t("icon_initials").to_string();
+                let icon_options = vec![
+                    icon_circular.clone(),
+                    icon_square.clone(),
+                    icon_outline.clone(),
+                    icon_initials.clone(),
+                ];
+                let icon_selected = match self.setting_default_host_icon.as_str() {
+                    "square" => icon_square.clone(),
+                    "outline" => icon_outline.clone(),
+                    "initials" => icon_initials.clone(),
+                    _ => icon_circular.clone(),
+                };
+                let (i_sq, i_ol, i_in) =
+                    (icon_square.clone(), icon_outline.clone(), icon_initials.clone());
+                let icon_section = panel_section(column![
+                    dir_row(vec![
+                        text(crate::i18n::t("default_host_icon"))
+                            .size(13)
+                            .color(OryxisColors::t().text_primary)
+                            .into(),
+                        Space::new().width(Length::Fill).into(),
+                        pick_list(
+                            Some(icon_selected),
+                            icon_options,
+                            move |s: &String| {
+                                if *s == i_sq { "square".into() }
+                                else if *s == i_ol { "outline".into() }
+                                else if *s == i_in { "initials".into() }
+                                else { "circular".into() }
+                            },
+                        )
+                        .on_select(Message::SettingDefaultHostIconChanged)
+                        .width(200)
+                        .padding(10)
+                        .style(crate::widgets::rounded_pick_list_style)
+                        .into(),
+                    ]).align_y(iced::Alignment::Center),
+                ]);
+
                 let mut content_col = column![
                     text(crate::i18n::t("interface")).size(18).color(OryxisColors::t().text_primary),
                     Space::new().height(16),
@@ -833,6 +920,10 @@ impl Oryxis {
                     status_bar_section,
                     Space::new().height(8),
                     tabs_section,
+                    Space::new().height(8),
+                    layout_section,
+                    Space::new().height(8),
+                    icon_section,
                     Space::new().height(12),
                 ]
                 .spacing(12)

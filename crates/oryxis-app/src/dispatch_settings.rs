@@ -275,6 +275,24 @@ impl Oryxis {
                     if self.sftp_enabled { "true" } else { "false" },
                 );
             }
+            Message::SettingLayoutModeChanged(val) => {
+                let normalized = match val.as_str() {
+                    "workspace" => "workspace",
+                    _ => "classic",
+                };
+                self.setting_layout_mode = normalized.into();
+                self.persist_setting("layout_mode", normalized);
+            }
+            Message::SettingDefaultHostIconChanged(val) => {
+                let normalized = match val.as_str() {
+                    "square" => "square",
+                    "outline" => "outline",
+                    "initials" => "initials",
+                    _ => "circular",
+                };
+                self.setting_default_host_icon = normalized.into();
+                self.persist_setting("default_host_icon", normalized);
+            }
             Message::SettingTabCloseButtonSideChanged(val) => {
                 // Only accept the two known values; anything else
                 // collapses to the default so an unknown pick from a

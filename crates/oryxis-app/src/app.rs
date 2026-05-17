@@ -414,6 +414,17 @@ pub struct Oryxis {
     /// still renders so the user can re-enable + tweak in one place,
     /// mirroring how `ai_enabled` works.
     pub(crate) sftp_enabled: bool,
+    /// `"classic"` (current sidebar nav) or `"workspace"` (top tabs +
+    /// contextual sidebar + burger, PR 6). Persisted ahead of the
+    /// workspace mode landing so we can flip the default and migrate
+    /// settings in a single later PR without touching boot logic again.
+    pub(crate) setting_layout_mode: String,
+    /// Default shape for host icons in the dashboard, sidebar tab
+    /// badges and host cards: `"circular"` (default v0.7), `"square"`
+    /// (legacy Termius-style), `"outline"`, or `"initials"`. Read by
+    /// the host icon widget in PR 3; until then the value persists but
+    /// the renderer keeps the current shape.
+    pub(crate) setting_default_host_icon: String,
     pub(crate) setting_keepalive_interval: String,
     pub(crate) setting_scrollback_rows: String,
     /// Max parallel SFTP transfer slots (uploads/downloads). 1 = serial,

@@ -338,6 +338,8 @@ pub enum Message {
     SettingTabCloseButtonSideChanged(String),
     SettingToggleShowTabStatusDot,
     SettingToggleSftpEnabled,
+    SettingLayoutModeChanged(String),
+    SettingDefaultHostIconChanged(String),
     SettingKeepaliveChanged(String),
     SettingScrollbackChanged(String),
     SettingSftpConcurrencyChanged(String),
