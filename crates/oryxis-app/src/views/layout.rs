@@ -173,8 +173,26 @@ impl Oryxis {
                 ..Default::default()
             });
 
+        // Workspace contextual sub-nav: when the top tab "Hosts" is
+        // the active area (no connection tab open and one of the
+        // vault-family views is showing), surface the remaining vault
+        // sub-sections (Keychain, Snippets, Known Hosts, History) as
+        // pills beneath the tab strip. Mirrors the Termius "sidebar
+        // inside the Vault area" pattern. In Classic mode (sidebar
+        // already covers them) and on Sftp / Settings the row stays
+        // collapsed.
+        let in_vault_area = self.active_tab.is_none()
+            && matches!(
+                self.active_view,
+                View::Dashboard | View::Keys | View::Snippets | View::KnownHosts | View::History
+            );
+        let sub_nav: Element<'_, Message> = if workspace_mode && in_vault_area {
+            self.view_vault_sub_nav()
+        } else {
+            Space::new().height(0).into()
+        };
         let right_side: Element<'_, Message> =
-            column![tab_bar, h_separator, content].height(Length::Fill).into();
+            column![tab_bar, h_separator, sub_nav, content].height(Length::Fill).into();
         // Vertical separator goes away alongside the sidebar in
         // Workspace mode so the right side truly fills edge-to-edge.
         let v_sep: Element<'_, Message> = if hide_sidebar {
@@ -1062,6 +1080,72 @@ impl Oryxis {
                 background: Some(Background::Color(OryxisColors::t().bg_primary)),
                 ..Default::default()
             })
+            .into()
+    }
+
+    /// Workspace mode contextual sub-nav: horizontal pill row with
+    /// the vault sub-sections (Hosts, Keychain, Snippets, Known
+    /// Hosts, History). Rendered under the top tab bar when the
+    /// active area is `Hosts`. Pills dispatch `ChangeView` exactly
+    /// like the sidebar buttons used to, so the rest of the app
+    /// doesn't notice the difference.
+    pub(crate) fn view_vault_sub_nav(&self) -> Element<'_, Message> {
+        let pill = |label_key: &'static str, view: View| -> Element<'_, Message> {
+            let is_active = self.active_view == view;
+            let fg = if is_active {
+                OryxisColors::t().accent
+            } else {
+                OryxisColors::t().text_muted
+            };
+            let bg = if is_active {
+                Color { a: 0.15, ..OryxisColors::t().accent }
+            } else {
+                Color::TRANSPARENT
+            };
+            button(
+                container(
+                    text(crate::i18n::t(label_key))
+                        .size(12)
+                        .color(fg),
+                )
+                .padding(Padding { top: 6.0, right: 12.0, bottom: 6.0, left: 12.0 }),
+            )
+            .on_press(Message::ChangeView(view))
+            .style(move |_, status| {
+                let hover_bg = match status {
+                    iced::widget::button::Status::Hovered if !is_active => {
+                        Color { a: 0.08, ..OryxisColors::t().text_secondary }
+                    }
+                    _ => bg,
+                };
+                button::Style {
+                    background: Some(Background::Color(hover_bg)),
+                    border: Border { radius: Radius::from(6.0), ..Default::default() },
+                    ..Default::default()
+                }
+            })
+            .into()
+        };
+        let pills = dir_row(vec![
+            pill("hosts", View::Dashboard),
+            pill("keychain", View::Keys),
+            pill("snippets", View::Snippets),
+            pill("known_hosts", View::KnownHosts),
+            pill("history", View::History),
+        ])
+        .spacing(4)
+        .align_y(iced::Alignment::Center);
+        let row_content = container(pills)
+            .padding(Padding { top: 6.0, right: 10.0, bottom: 6.0, left: 10.0 })
+            .width(Length::Fill);
+        let separator = container(Space::new().height(1))
+            .width(Length::Fill)
+            .style(|_| container::Style {
+                background: Some(Background::Color(OryxisColors::t().border)),
+                ..Default::default()
+            });
+        iced::widget::column![row_content, separator]
+            .width(Length::Fill)
             .into()
     }
 
