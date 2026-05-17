@@ -153,7 +153,13 @@ impl Oryxis {
                 // for Local Shell tabs (`"Ubuntu (WSL)"`,
                 // `"PowerShell"`, `"Command Prompt"`, …), those
                 // never go through the SSH `detect_os` round-trip.
-                .or_else(|| crate::os_icon::local_shell_os_hint(base_label));
+                .or_else(|| crate::os_icon::local_shell_os_hint(base_label))
+                // Cloud-transport tabs (`ECS · ...`, `SSM · ...`,
+                // `K8s · ...`) need to inherit the parent dynamic
+                // group's brand instead of the generic Tux fallback.
+                .or_else(|| {
+                    crate::os_icon::tab_label_cloud_brand(base_label).map(|s| s.to_string())
+                });
             let width = if is_active { active_width } else { inactive_width };
             // Per-host accent override: when this tab points at a
             // saved connection that has a custom `color`, tint the

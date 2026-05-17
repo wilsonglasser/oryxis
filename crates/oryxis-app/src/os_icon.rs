@@ -270,6 +270,25 @@ pub(crate) fn local_shell_os_hint(label: &str) -> Option<String> {
     None
 }
 
+/// Cloud-transport tabs carry a prefix in their label so the user
+/// can tell SSM-into-EC2 from ECS-Exec-into-container apart
+/// (`SSM · ...`, `ECS · ...`, `K8s · ...`). Map that prefix back to
+/// a brand id so the tab badge shows the same brand glyph the
+/// dynamic-group card showed before the user clicked. Returns
+/// `None` for labels without a known cloud prefix; the caller falls
+/// through to the generic Tux badge.
+pub(crate) fn tab_label_cloud_brand(label: &str) -> Option<&'static str> {
+    if label.starts_with("ECS \u{B7} ") {
+        Some("ecs")
+    } else if label.starts_with("SSM \u{B7} ") {
+        Some("aws")
+    } else if label.starts_with("K8s \u{B7} ") || label.starts_with("Pod \u{B7} ") {
+        Some("kubernetes")
+    } else {
+        None
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Color helpers
 // ---------------------------------------------------------------------------

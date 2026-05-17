@@ -501,7 +501,7 @@ impl Oryxis {
                                         actions_btn,
                                     ]).align_y(iced::Alignment::Center),
                                 )
-                                .padding(Padding { top: 8.0, right: 6.0, bottom: 8.0, left: 8.0 }),
+                                .padding(Padding { top: 8.0, right: 6.0, bottom: 8.0, left: 2.0 }),
                             )
                             .on_press(Message::OpenGroup(gid))
                             .width(Length::Fill)
@@ -767,7 +767,10 @@ impl Oryxis {
                         ])
                         .align_y(iced::Alignment::Center),
                     )
-                    .padding(Padding { top: 8.0, right: 6.0, bottom: 8.0, left: 8.0 }),
+                    // Match the host-card padding so dynamic-group
+                    // cards line up at the same height when they sit
+                    // beside hosts in the same grid row.
+                    .padding(Padding { top: 8.0, right: 6.0, bottom: 8.0, left: 2.0 }),
                 )
                 .on_press(Message::OpenGroup(gid))
                 .width(Length::Fill)
