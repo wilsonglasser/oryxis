@@ -85,9 +85,18 @@ impl Oryxis {
         // leading edge in Workspace mode; sidebar toggle is always
         // there in both modes.
         let burger_width = SIDEBAR_TOGGLE_WIDTH;
+        // Logo only renders in Workspace mode; subtract its slot
+        // (same SIDEBAR_TOGGLE_WIDTH as burger/toggle) so the strip
+        // math stays aligned with the actual leading row.
+        let logo_width = if self.setting_layout_mode == "workspace" {
+            SIDEBAR_TOGGLE_WIDTH
+        } else {
+            0.0
+        };
         let approx_strip_width = (self.window_size.width
             - SIDEBAR_TOGGLE_WIDTH
             - burger_width
+            - logo_width
             - RIGHT_CLUSTER_WIDTH
             - area_tabs_total
             - 12.0)
@@ -309,20 +318,28 @@ impl Oryxis {
         // Updates, About, Exit.
         let burger_btn = burger_menu_btn(self.show_burger_menu);
 
-        // Four-block row: [burger] [sidebar_toggle] [tab_strip(Fill)] [right_cluster].
-        // burger / sidebar_toggle / right_cluster are Length::Shrink so iced
+        // Workspace mode also shows the Oryxis product logo on the
+        // far leading edge so the chrome carries product identity in
+        // the JetBrains style. Classic mode keeps the logo on the
+        // sidebar header where it always lived.
+        let mut leading: Vec<Element<'_, Message>> = Vec::new();
+        if self.setting_layout_mode == "workspace" {
+            leading.push(product_logo(self.logo_small_handle.clone()));
+        }
+        leading.push(burger_btn);
+        leading.push(sidebar_toggle);
+        leading.push(tab_strip);
+        leading.push(right_cluster);
+
+        // Four-block row: [logo?] [burger] [sidebar_toggle] [tab_strip(Fill)] [right_cluster].
+        // Burger / sidebar_toggle / right_cluster are Length::Shrink so iced
         // gives them their content width first; tab_strip is the remaining
         // Fill area in between. `dir_row` flips the row under RTL so the
         // leading-edge controls always sit next to the sidebar (which the
         // outer layout also flips to the trailing edge).
         container(
-            crate::widgets::dir_row(vec![
-                burger_btn,
-                sidebar_toggle,
-                tab_strip,
-                right_cluster,
-            ])
-            .align_y(iced::Alignment::Center),
+            crate::widgets::dir_row(leading)
+                .align_y(iced::Alignment::Center),
         )
         .width(Length::Fill)
         .height(Length::Fixed(BAR_HEIGHT))
@@ -364,9 +381,18 @@ impl Oryxis {
         let area_tabs_total = area_tab_count as f32
             * (AREA_TAB_APPROX_WIDTH + TAB_SPACING);
         let burger_width = SIDEBAR_TOGGLE_WIDTH;
+        // Logo only renders in Workspace mode; subtract its slot
+        // (same SIDEBAR_TOGGLE_WIDTH as burger/toggle) so the strip
+        // math stays aligned with the actual leading row.
+        let logo_width = if self.setting_layout_mode == "workspace" {
+            SIDEBAR_TOGGLE_WIDTH
+        } else {
+            0.0
+        };
         let approx_strip_width = (self.window_size.width
             - SIDEBAR_TOGGLE_WIDTH
             - burger_width
+            - logo_width
             - RIGHT_CLUSTER_WIDTH
             - area_tabs_total
             - 12.0)
@@ -770,6 +796,22 @@ fn tab_jump_btn<'a>() -> Element<'a, Message> {
             ..Default::default()
         }
     })
+    .into()
+}
+
+/// Product logo on the leading edge of the tab bar (Workspace mode
+/// only). Same trick JetBrains uses: a small product mark anchored
+/// in the chrome carries identity even though the whole window is
+/// otherwise unbranded. Sized to match the burger / sidebar-toggle
+/// neighbours so the strip reads as one uniform row of controls.
+fn product_logo<'a>(handle: iced::widget::image::Handle) -> Element<'a, Message> {
+    container(
+        iced::widget::image(handle)
+            .width(Length::Fixed(22.0))
+            .height(Length::Fixed(22.0)),
+    )
+    .center_x(Length::Fixed(SIDEBAR_TOGGLE_WIDTH))
+    .center_y(Length::Fixed(BAR_HEIGHT))
     .into()
 }
 

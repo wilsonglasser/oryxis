@@ -805,6 +805,11 @@ pub enum View {
     Terminal,
     Keys,
     Snippets,
+    /// Known Hosts moved into Settings in v0.7 (see
+    /// `SettingsSection::KnownHosts`). The variant stays so the
+    /// `change view -> KnownHosts` aliases redirect to Settings with
+    /// the right section selected, instead of breaking persisted
+    /// links / tests.
     KnownHosts,
     History,
     Sftp,
@@ -986,6 +991,10 @@ pub(crate) enum SettingsSection {
     /// and adds toggles for status bar visibility and (in later PRs)
     /// layout mode, tab close button position, host icon style, etc.
     Interface,
+    /// SSH host key registry (was a top-level View in 0.6, lives under
+    /// Settings in 0.7+ since it's a security-knob screen, not a
+    /// browsing one).
+    KnownHosts,
     Shortcuts,
     Security,
     Sync,

@@ -184,7 +184,7 @@ impl Oryxis {
         let in_vault_area = self.active_tab.is_none()
             && matches!(
                 self.active_view,
-                View::Dashboard | View::Keys | View::Snippets | View::KnownHosts | View::History
+                View::Dashboard | View::Keys | View::Snippets | View::History
             );
         let sub_nav: Element<'_, Message> = if workspace_mode && in_vault_area {
             self.view_vault_sub_nav()
@@ -1065,7 +1065,11 @@ impl Oryxis {
                 View::Dashboard => self.view_dashboard(),
                 View::Keys => self.view_keys(),
                 View::Snippets => self.view_snippets(),
-                View::KnownHosts => self.view_known_hosts(),
+                // Known Hosts is now a SettingsSection in v0.7; the
+                // View variant only survives so ChangeView aliases can
+                // redirect. If somebody still lands here, fall through
+                // to Settings with the right section active.
+                View::KnownHosts => self.view_settings(),
                 View::History => self.view_history(),
                 View::Sftp => self.view_sftp(),
                 View::Settings => self.view_settings(),
@@ -1130,7 +1134,6 @@ impl Oryxis {
             pill("hosts", View::Dashboard),
             pill("keychain", View::Keys),
             pill("snippets", View::Snippets),
-            pill("known_hosts", View::KnownHosts),
             pill("history", View::History),
         ])
         .spacing(4)
@@ -1190,14 +1193,24 @@ impl Oryxis {
             })
             .into()
         };
-        // Visual separator between item groups.
-        let sep = container(Space::new().height(1))
-            .width(Length::Fill)
-            .padding(Padding { top: 4.0, right: 8.0, bottom: 4.0, left: 8.0 })
-            .style(|_| container::Style {
-                background: Some(Background::Color(OryxisColors::t().border)),
-                ..Default::default()
-            });
+        // Visual separator between item groups: a 1 px hairline with
+        // some breathing room above and below. The previous version
+        // applied the border color to the outer container *and* its
+        // padding, which rendered as a chunky colored bar instead of
+        // a thin divider. Wrap the colored hairline in a transparent
+        // outer container so only the inner 1 px takes the color.
+        let sep: Element<'_, Message> = iced::widget::column![
+            Space::new().height(6),
+            container(Space::new().width(Length::Fill).height(1))
+                .width(Length::Fill)
+                .style(|_| container::Style {
+                    background: Some(Background::Color(OryxisColors::t().border)),
+                    ..Default::default()
+                }),
+            Space::new().height(6),
+        ]
+        .width(Length::Fill)
+        .into();
         // Mirror every sidebar nav entry here so Workspace mode
         // (where the sidebar is gone) still exposes the full set of
         // vault surfaces. The SFTP entry is gated on `sftp_enabled`,
@@ -1212,7 +1225,6 @@ impl Oryxis {
             sftp_item,
             item("keychain", Message::ChangeView(View::Keys)),
             item("snippets", Message::ChangeView(View::Snippets)),
-            item("known_hosts", Message::ChangeView(View::KnownHosts)),
             item("history", Message::ChangeView(View::History)),
             item("settings", Message::ChangeView(View::Settings)),
             sep,

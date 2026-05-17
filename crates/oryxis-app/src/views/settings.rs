@@ -24,6 +24,7 @@ impl Oryxis {
                 ("SFTP", SettingsSection::Sftp),
                 (crate::i18n::t("ai_assistant"), SettingsSection::AI),
                 (crate::i18n::t("interface"), SettingsSection::Interface),
+                (crate::i18n::t("known_hosts"), SettingsSection::KnownHosts),
                 (crate::i18n::t("shortcuts"), SettingsSection::Shortcuts),
                 (crate::i18n::t("security"), SettingsSection::Security),
                 (crate::i18n::t("sync"), SettingsSection::Sync),
@@ -1691,6 +1692,7 @@ impl Oryxis {
             SettingsSection::Proxies => self.view_settings_proxies(),
             SettingsSection::Cloud => self.view_cloud_accounts(),
             SettingsSection::Plugins => self.view_plugins_panel(),
+            SettingsSection::KnownHosts => self.view_known_hosts(),
         };
 
         container(crate::widgets::dir_row(vec![

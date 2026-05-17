@@ -421,19 +421,21 @@ impl Oryxis {
                                         OryxisColors::t().accent,
                                     )
                                 };
-                            let icon_box = container(folder_glyph.view(18.0, Color::WHITE))
-                                .width(Length::Fixed(32.0))
-                                .height(Length::Fixed(32.0))
-                                .center_x(Length::Fixed(32.0))
-                                .center_y(Length::Fixed(32.0))
-                                .style(move |_| container::Style {
-                                    background: Some(Background::Color(folder_bg)),
-                                    border: Border {
-                                        radius: Radius::from(8.0),
-                                        ..Default::default()
-                                    },
-                                    ..Default::default()
-                                });
+                            // Render through host_icon so the group
+                            // folder respects the global default shape
+                            // (Circular / Square / Outline / Initials)
+                            // the user picked in Settings -> Interface.
+                            let host_style = crate::widgets::resolve_host_icon_style(
+                                None,
+                                &self.setting_default_host_icon,
+                            );
+                            let icon_box = crate::widgets::host_icon(
+                                host_style,
+                                folder_bg,
+                                &group.label,
+                                Some(folder_glyph.view(18.0, Color::WHITE)),
+                                32.0,
+                            );
 
                             // ⋮ button, only rendered while the folder
                             // row is hovered, mirroring the host-card UX.
@@ -469,7 +471,7 @@ impl Oryxis {
                             let folder_card = button(
                                 container(
                                     dir_row(vec![
-                                        icon_box.into(),
+                                        icon_box,
                                         Space::new().width(8).into(),
                                         column![
                                             text(label)
@@ -556,19 +558,20 @@ impl Oryxis {
                     OryxisColors::t().accent,
                 )
                 .1;
-                let icon_box = container(folder_glyph.view(18.0, Color::WHITE))
-                    .width(Length::Fixed(32.0))
-                    .height(Length::Fixed(32.0))
-                    .center_x(Length::Fixed(32.0))
-                    .center_y(Length::Fixed(32.0))
-                    .style(move |_| container::Style {
-                        background: Some(Background::Color(folder_bg)),
-                        border: Border {
-                            radius: Radius::from(8.0),
-                            ..Default::default()
-                        },
-                        ..Default::default()
-                    });
+                // Render via host_icon so the dynamic-group folder
+                // mirrors the global shape preference, same as the
+                // manual-folder card above.
+                let host_style = crate::widgets::resolve_host_icon_style(
+                    None,
+                    &self.setting_default_host_icon,
+                );
+                let icon_box = crate::widgets::host_icon(
+                    host_style,
+                    folder_bg,
+                    &group.label,
+                    Some(folder_glyph.view(18.0, Color::WHITE)),
+                    32.0,
+                );
 
                 // Kebab + hover state, same convention as host /
                 // manual-folder cards. Edit + Delete via the overlay
@@ -601,7 +604,7 @@ impl Oryxis {
                 let folder_card = button(
                     container(
                         dir_row(vec![
-                            icon_box.into(),
+                            icon_box,
                             Space::new().width(8).into(),
                             column![
                                 text(group.label.clone())
@@ -693,16 +696,17 @@ impl Oryxis {
                         OryxisColors::t().accent,
                     ),
                 };
-                let icon_box = container(folder_glyph.view(18.0, Color::WHITE))
-                    .width(Length::Fixed(32.0))
-                    .height(Length::Fixed(32.0))
-                    .center_x(Length::Fixed(32.0))
-                    .center_y(Length::Fixed(32.0))
-                    .style(move |_| container::Style {
-                        background: Some(Background::Color(folder_bg)),
-                        border: Border { radius: Radius::from(8.0), ..Default::default() },
-                        ..Default::default()
-                    });
+                let host_style = crate::widgets::resolve_host_icon_style(
+                    None,
+                    &self.setting_default_host_icon,
+                );
+                let icon_box = crate::widgets::host_icon(
+                    host_style,
+                    folder_bg,
+                    &group.label,
+                    Some(folder_glyph.view(18.0, Color::WHITE)),
+                    32.0,
+                );
 
                 const DG_DOTS_SLOT_W: f32 = 22.0;
                 let show_dots = self.hovered_dynamic_group_card == Some(gid);
@@ -732,7 +736,7 @@ impl Oryxis {
                 let folder_card = button(
                     container(
                         dir_row(vec![
-                            icon_box.into(),
+                            icon_box,
                             Space::new().width(8).into(),
                             column![
                                 text(group.label.clone())

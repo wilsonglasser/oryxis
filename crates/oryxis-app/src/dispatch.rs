@@ -165,7 +165,16 @@ impl Oryxis {
 
             // -- Navigation --
             Message::ChangeView(view) => {
-                self.active_view = view;
+                // Known Hosts moved into Settings in v0.7; rewrite the
+                // request so older callers (and any persisted state)
+                // land on the right place instead of an unreachable
+                // top-level view.
+                if view == View::KnownHosts {
+                    self.active_view = View::Settings;
+                    self.settings_section = crate::state::SettingsSection::KnownHosts;
+                } else {
+                    self.active_view = view;
+                }
                 self.active_tab = None;
                 // Burger menu auto-dismisses on navigation: the user
                 // picked a destination, leaving the overlay open is
