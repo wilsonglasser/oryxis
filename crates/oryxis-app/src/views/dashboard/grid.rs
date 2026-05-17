@@ -821,17 +821,26 @@ impl Oryxis {
                 conn.username.as_deref(),
                 default_fallback,
             );
-            // Fixed 32x32 square box centered on the glyph (Termius-style).
-            let icon_box = container(os_glyph.view(18.0, Color::WHITE))
-                .width(Length::Fixed(32.0))
-                .height(Length::Fixed(32.0))
-                .center_x(Length::Fixed(32.0))
-                .center_y(Length::Fixed(32.0))
-                .style(move |_| container::Style {
-                    background: Some(Background::Color(icon_color)),
-                    border: Border { radius: Radius::from(8.0), ..Default::default() },
-                    ..Default::default()
-                });
+            // Fixed 32x32 badge. Shape and color come from the per-host
+            // override (icon_style + color) when set; otherwise fall back
+            // to the global default_host_icon setting and the OS-derived
+            // brand color. Initials style ignores the glyph and renders
+            // the leading letters of the label instead.
+            let host_style = crate::widgets::resolve_host_icon_style(
+                conn.icon_style.as_deref(),
+                &self.setting_default_host_icon,
+            );
+            let badge_color = conn.color.as_deref()
+                .and_then(crate::widgets::parse_hex_color)
+                .unwrap_or(icon_color);
+            let glyph_el: Element<'_, Message> = os_glyph.view(18.0, Color::WHITE);
+            let icon_box = crate::widgets::host_icon(
+                host_style,
+                badge_color,
+                &conn.label,
+                Some(glyph_el),
+                32.0,
+            );
 
             // Floating ⋮ kebab: lives in a Stack overlay on the trailing
             // corner so it doesn't take inline width inside the dir_row.
@@ -852,7 +861,7 @@ impl Oryxis {
             let card_btn = button(
                 container(
                     dir_row(vec![
-                        icon_box.into(),
+                        icon_box,
                         Space::new().width(8).into(),
                         column![
                             text(&conn.label)

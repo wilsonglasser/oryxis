@@ -122,6 +122,7 @@ impl Oryxis {
                             .as_ref()
                             .map(|r| r.transport_pref),
                         initial_command: conn.initial_command.clone().unwrap_or_default(),
+                        icon_style: conn.icon_style.clone(),
                     };
                 }
             }
@@ -243,6 +244,15 @@ impl Oryxis {
             Message::EditorInitialCommandChanged(v) => {
                 self.editor_form.initial_command = v;
             }
+            Message::EditorIconStyleChanged(v) => {
+                // "" clears the override; anything else is normalized to
+                // the known set so a stale UI value can't smuggle in a
+                // string the renderer doesn't understand.
+                self.editor_form.icon_style = match v.as_str() {
+                    "circular" | "square" | "outline" | "initials" => Some(v),
+                    _ => None,
+                };
+            }
             Message::EditorKeepaliveChanged(v) => {
                 // Digits only; preserve empty (= inherit global). Cap at
                 // 86_400s (1 day) like the global setting field, so users
@@ -329,6 +339,7 @@ impl Oryxis {
                 conn.mcp_enabled = self.editor_form.mcp_enabled;
                 conn.agent_forwarding = self.editor_form.agent_forwarding;
                 conn.terminal_theme = self.editor_form.terminal_theme.clone();
+                conn.icon_style = self.editor_form.icon_style.clone();
                 // Initial command, empty == None (no command sent).
                 conn.initial_command = if self.editor_form.initial_command.trim().is_empty() {
                     None

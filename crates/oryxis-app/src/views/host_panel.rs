@@ -671,6 +671,52 @@ impl Oryxis {
             .into(),
         };
 
+        // Per-host icon shape override. The "Use default" entry maps to
+        // an empty string which clears the override (resolved to the
+        // global default_host_icon at render time).
+        let use_default_label = crate::i18n::t("icon_use_default").to_string();
+        let icon_circular = crate::i18n::t("icon_circular").to_string();
+        let icon_square = crate::i18n::t("icon_square").to_string();
+        let icon_outline = crate::i18n::t("icon_outline").to_string();
+        let icon_initials = crate::i18n::t("icon_initials").to_string();
+        let icon_options = vec![
+            use_default_label.clone(),
+            icon_circular.clone(),
+            icon_square.clone(),
+            icon_outline.clone(),
+            icon_initials.clone(),
+        ];
+        let icon_selected = match self.editor_form.icon_style.as_deref() {
+            Some("circular") => icon_circular.clone(),
+            Some("square") => icon_square.clone(),
+            Some("outline") => icon_outline.clone(),
+            Some("initials") => icon_initials.clone(),
+            _ => use_default_label.clone(),
+        };
+        let (l_use, l_ci, l_sq, l_ol, l_in) = (
+            use_default_label.clone(),
+            icon_circular.clone(),
+            icon_square.clone(),
+            icon_outline.clone(),
+            icon_initials.clone(),
+        );
+        let icon_picker = pick_list(
+            Some(icon_selected),
+            icon_options,
+            move |s: &String| {
+                if *s == l_use { String::new() }
+                else if *s == l_ci { "circular".into() }
+                else if *s == l_sq { "square".into() }
+                else if *s == l_ol { "outline".into() }
+                else if *s == l_in { "initials".into() }
+                else { String::new() }
+            },
+        )
+        .on_select(Message::EditorIconStyleChanged)
+        .width(220)
+        .padding(10)
+        .style(crate::widgets::rounded_pick_list_style);
+
         let appearance_section = panel_section(column![
             text(crate::i18n::t("terminal_theme"))
                 .size(13)
@@ -681,6 +727,16 @@ impl Oryxis {
                 .color(OryxisColors::t().text_muted),
             Space::new().height(8),
             theme_trigger,
+            Space::new().height(12),
+            text(crate::i18n::t("host_icon_style"))
+                .size(13)
+                .color(OryxisColors::t().text_primary),
+            Space::new().height(4),
+            text(crate::i18n::t("host_icon_style_desc"))
+                .size(11)
+                .color(OryxisColors::t().text_muted),
+            Space::new().height(8),
+            icon_picker,
         ]);
 
         // ── Error ──

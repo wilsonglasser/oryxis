@@ -24,6 +24,10 @@ pub struct Connection {
     pub proxy_identity_id: Option<Uuid>,
     pub tags: Vec<String>,
     pub notes: Option<String>,
+    /// Accent color for the host. Persisted as a hex string ("#RRGGBB").
+    /// Used by the dynamic accent system to tint the chrome / tab
+    /// indicator when this host is active, and as the fill / border
+    /// color for the host icon. `None` falls back to the global accent.
     pub color: Option<String>,
     #[serde(default)]
     pub port_forwards: Vec<PortForward>,
@@ -80,6 +84,14 @@ pub struct Connection {
     /// `Some(n)` overrides the global with `n` seconds.
     #[serde(default)]
     pub keepalive_interval: Option<u32>,
+    /// Shape to use when rendering this host's icon in cards / tabs /
+    /// sidebar. Valid values: `"circular"`, `"square"`, `"outline"`,
+    /// `"initials"`. `None` falls back to the global
+    /// `default_host_icon` setting (default `"circular"` in v0.7).
+    /// Stored as a String to keep the wire / sync payload identical for
+    /// older peers that never saw the field.
+    #[serde(default)]
+    pub icon_style: Option<String>,
 }
 
 impl Connection {
@@ -114,6 +126,7 @@ impl Connection {
             cloud_ref: None,
             initial_command: None,
             keepalive_interval: None,
+            icon_style: None,
         }
     }
 }

@@ -79,6 +79,9 @@ pub enum Message {
     /// opens. Empty = none. Useful for hosts that drop into `/bin/sh`
     /// when you really want `bash`.
     EditorInitialCommandChanged(String),
+    /// Set the per-host icon shape override. Empty string clears the
+    /// override (falls back to the global `default_host_icon`).
+    EditorIconStyleChanged(String),
     /// Empty string == "inherit the global keepalive setting".
     /// "0" == explicitly disabled on this host; any positive integer
     /// is the per-host override in seconds. Sanitized to digits-only.

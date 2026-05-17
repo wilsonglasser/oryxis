@@ -626,6 +626,9 @@ pub(crate) struct ConnectionForm {
     /// Empty == no initial command. Mirrors `Connection.initial_command`
     /// while the editor is open.
     pub initial_command: String,
+    /// Per-host icon shape override. `None` falls back to the global
+    /// `default_host_icon` setting. Mirrors `Connection.icon_style`.
+    pub icon_style: Option<String>,
 }
 
 /// UI-side proxy kind. Includes a `None` (disabled) variant, the
@@ -749,6 +752,7 @@ impl Default for ConnectionForm {
             keepalive_interval: String::new(),
             cloud_transport: None,
             initial_command: String::new(),
+            icon_style: None,
         }
     }
 }
