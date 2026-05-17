@@ -123,18 +123,26 @@ impl Oryxis {
         // never renders in this mode. Classic mode keeps the sidebar
         // visible at all times like before.
         let workspace_mode = self.setting_layout_mode == "workspace";
-        let hide_sidebar = workspace_mode;
+        // Browser-style fullscreen suppresses every piece of chrome
+        // (sidebar, tab bar, status bar) so the content fills the
+        // monitor edge-to-edge. The X-close affordance and the on-
+        // enter hint banner are drawn as Stack overlays below.
+        let immersive = self.window_fullscreen;
+        let hide_sidebar = workspace_mode || immersive;
         let sidebar: Element<'_, Message> = if hide_sidebar {
             Space::new().width(0).height(Length::Fill).into()
         } else {
             self.view_sidebar()
         };
-        let tab_bar = self.view_tab_bar();
+        let tab_bar: Element<'_, Message> = if immersive {
+            Space::new().height(0).into()
+        } else {
+            self.view_tab_bar()
+        };
         let content = self.view_content();
-        // Status bar is opt-out (Interface → Show status bar). When off,
-        // the row collapses to 0 height and the main_row claims the
-        // freed vertical space.
-        let status_bar: Element<'_, Message> = if self.setting_show_status_bar {
+        // Status bar is opt-out (Interface → Show status bar) and
+        // also suppressed in immersive fullscreen.
+        let status_bar: Element<'_, Message> = if self.setting_show_status_bar && !immersive {
             self.view_status_bar()
         } else {
             Space::new().height(0).into()
@@ -150,22 +158,39 @@ impl Oryxis {
         let accent_tint: Option<Color> = self.active_tab.and_then(|idx| {
             let tab = self.tabs.get(idx)?;
             let label = tab.label.trim_end_matches(" (disconnected)");
-            let conn = self.connections.iter().find(|c| c.label == label)?;
-            conn.color
-                .as_deref()
-                .and_then(crate::widgets::parse_hex_color)
-                .or(Some(OryxisColors::t().accent))
+            // 1) per-host color from a matching saved Connection
+            if let Some(c) = self.connections.iter().find(|c| c.label == label)
+                && let Some(hex) = c.color.as_deref()
+                && let Some(col) = crate::widgets::parse_hex_color(hex)
+            {
+                return Some(col);
+            }
+            // 2) cloud-transport tabs (no Connection match) inherit
+            //    the parent dynamic-group brand color (AWS orange,
+            //    K8s blue, ...) so the hairline matches the per-host
+            //    treatment on regular SSH tabs.
+            if let Some(brand) = crate::os_icon::tab_label_cloud_brand(label) {
+                return Some(crate::os_icon::provider_icon(brand, OryxisColors::t().accent).1);
+            }
+            // 3) generic active-tab fallback (any tab without a more
+            //    specific color tints in the global accent).
+            Some(OryxisColors::t().accent)
         });
         let (hair_height, hair_color) = match accent_tint {
             Some(c) => (2.0_f32, c),
             None => (1.0_f32, OryxisColors::t().border),
         };
-        let h_separator = container(Space::new().height(hair_height))
-            .width(Length::Fill)
-            .style(move |_| container::Style {
-                background: Some(Background::Color(hair_color)),
-                ..Default::default()
-            });
+        let h_separator: Element<'_, Message> = if immersive {
+            Space::new().height(0).into()
+        } else {
+            container(Space::new().height(hair_height))
+                .width(Length::Fill)
+                .style(move |_| container::Style {
+                    background: Some(Background::Color(hair_color)),
+                    ..Default::default()
+                })
+                .into()
+        };
         let v_separator = container(Space::new().width(1))
             .height(Length::Fill)
             .style(|_| container::Style {
@@ -215,11 +240,13 @@ impl Oryxis {
             })
             .into();
 
-        // Edge/corner resize handles, only when the window isn't maximized.
-        // Placed as the topmost stack layer so they win over tab-bar buttons
-        // near the frame, while the Space in the middle is pass-through.
+        // Edge/corner resize handles, only when the window isn't
+        // maximized or in immersive fullscreen (no borders to grab in
+        // either case). Placed as the topmost stack layer so they win
+        // over tab-bar buttons near the frame, while the Space in the
+        // middle is pass-through.
         let resize_overlay: Option<Element<'_, Message>> =
-            if self.window_maximized { None } else { Some(resize_border()) };
+            if self.window_maximized || immersive { None } else { Some(resize_border()) };
 
         // Burger menu overlay (top-left dropdown). Renders first so any
         // other modal stacked below still wins, but in practice the
@@ -888,6 +915,105 @@ impl Oryxis {
         }
 
         wrap_with_resize(base, resize_overlay)
+    }
+
+    /// Browser-style immersive-mode overlays: on-enter hint banner and
+    /// hover-only round X close button. Stacked on top of whatever the
+    /// caller passed so they never get hidden by content underneath.
+    /// The X only renders when the mouse sits in the top 60 px so the
+    /// affordance is discoverable but unobtrusive once the user gets
+    /// used to F11.
+    pub(crate) fn layer_fullscreen_overlays<'a>(
+        &'a self,
+        content: Element<'a, Message>,
+    ) -> Element<'a, Message> {
+        const TOP_HOVER_ZONE: f32 = 60.0;
+        const HINT_BANNER_HEIGHT: f32 = 32.0;
+        let in_top_zone = self.mouse_position.y < TOP_HOVER_ZONE;
+
+        let mut layers = Stack::new()
+            .push(content)
+            .width(Length::Fill)
+            .height(Length::Fill);
+
+        if self.fullscreen_hint_visible {
+            let hint = container(
+                text(crate::i18n::t("fullscreen_exit_hint"))
+                    .size(12)
+                    .color(OryxisColors::t().text_primary),
+            )
+            .padding(Padding { top: 6.0, right: 14.0, bottom: 6.0, left: 14.0 })
+            .style(|_| container::Style {
+                background: Some(Background::Color(Color {
+                    a: 0.92,
+                    ..OryxisColors::t().bg_selected
+                })),
+                border: Border {
+                    radius: Radius::from(8.0),
+                    color: OryxisColors::t().border,
+                    width: 1.0,
+                },
+                ..Default::default()
+            });
+            let centered = column![
+                Space::new().height(12.0),
+                container(hint).center_x(Length::Fill),
+                Space::new().height(Length::Fill),
+            ]
+            .width(Length::Fill)
+            .height(Length::Fill);
+            layers = layers.push(centered);
+        }
+
+        if in_top_zone {
+            // Round 28×28 button with the lucide `x` glyph centered.
+            // Clicking toggles fullscreen off (same Message as F11).
+            // Anchored top-center with a small top inset; when the
+            // hint banner is also visible the button sits below it
+            // so the two affordances don't overlap.
+            let close_btn = button(
+                container(
+                    iced_fonts::lucide::x::<iced::Theme, iced::Renderer>()
+                        .size(14)
+                        .color(OryxisColors::t().button_text),
+                )
+                .center(Length::Fixed(28.0)),
+            )
+            .on_press(Message::WindowFullscreenToggle)
+            .style(|_, status| {
+                let bg = match status {
+                    iced::widget::button::Status::Hovered => OryxisColors::t().error,
+                    _ => Color {
+                        a: 0.85,
+                        ..OryxisColors::t().bg_selected
+                    },
+                };
+                iced::widget::button::Style {
+                    background: Some(Background::Color(bg)),
+                    border: Border {
+                        radius: Radius::from(14.0),
+                        color: OryxisColors::t().border,
+                        width: 1.0,
+                    },
+                    ..Default::default()
+                }
+            });
+            let top_offset = if self.fullscreen_hint_visible {
+                12.0 + HINT_BANNER_HEIGHT + 8.0
+            } else {
+                12.0
+            };
+            let positioned = column![
+                Space::new().height(top_offset),
+                container(close_btn).center_x(Length::Fill),
+                Space::new().height(Length::Fill),
+            ]
+            .width(Length::Fill)
+            .height(Length::Fill);
+            layers = layers.push(positioned);
+        }
+
+        layers.into()
     }
 
     pub(crate) fn render_overlay_menu(&self, overlay: &OverlayState) -> Element<'_, Message> {

@@ -170,7 +170,20 @@ impl Oryxis {
             let host_accent: Option<Color> = self.connections.iter()
                 .find(|c| c.label == base_label)
                 .and_then(|c| c.color.as_deref())
-                .and_then(crate::widgets::parse_hex_color);
+                .and_then(crate::widgets::parse_hex_color)
+                // Cloud-transport tabs (`ECS · ...`, `SSM · ...`,
+                // `K8s · ...`) don't match any saved Connection by
+                // label, so the per-host color lookup above returns
+                // None and the active-tab gradient falls back to the
+                // global accent. Derive a brand-coloured accent from
+                // the tab label prefix instead so the tab "breathes"
+                // the parent dynamic-group color (AWS orange / K8s
+                // blue / etc.) the same way a per-host accent does.
+                .or_else(|| {
+                    crate::os_icon::tab_label_cloud_brand(base_label).map(|brand| {
+                        crate::os_icon::provider_icon(brand, OryxisColors::t().accent).1
+                    })
+                });
             // Resolve the per-host icon style override against the
             // global default so the badge shape on the tab matches
             // the one on the dashboard card. Local-shell tabs (no

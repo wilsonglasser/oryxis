@@ -685,12 +685,16 @@ pub struct TerminalView<Message = ()> {
 }
 
 /// Horizontal padding around the terminal content (left/right).
-const TERM_PAD: f32 = 4.0;
-/// Vertical padding above the first row. Set to 0 so the first line
-/// of output sits flush against the tab-bar hairline; previous values
-/// (10, then 4) left a visible air gap above shells with short
-/// initial output (ECS exec, SSM, fresh local shells).
-const TERM_PAD_TOP: f32 = 0.0;
+/// Termius uses ~8 px so the first column doesn't kiss the window
+/// border, matched here.
+const TERM_PAD: f32 = 8.0;
+/// Vertical padding above the first row. Mirrors `TERM_PAD` so
+/// horizontal and vertical breathing are symmetric, again matching
+/// the Termius spacing. If the canvas still looks padded above the
+/// first row of output, the gap isn't coming from here — likely the
+/// remote session emits a leading clear / cursor-move sequence that
+/// blanks the top rows.
+const TERM_PAD_TOP: f32 = 8.0;
 
 /// Rolling per-frame samples for the perf overlay. We track the
 /// **max** of each phase over a short window so transient spikes

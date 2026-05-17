@@ -278,12 +278,22 @@ impl Oryxis {
             action_group
         };
 
+        // Pin the inner row to the same fixed 24 px height the
+        // `+ HOST` / `+ DISCOVER` buttons render at. Without this,
+        // navigating into a dynamic group (where the action slot is
+        // an empty Space) drops the row to the breadcrumb text
+        // height alone, and the toolbar height + the content below
+        // it bounce by ~6 px between views.
         let toolbar = container(
-            dir_row(vec![
-                toolbar_left,
-                Space::new().width(Length::Fill).into(),
-                resolved_action,
-            ]).align_y(iced::Alignment::Center),
+            container(
+                dir_row(vec![
+                    toolbar_left,
+                    Space::new().width(Length::Fill).into(),
+                    resolved_action,
+                ])
+                .align_y(iced::Alignment::Center),
+            )
+            .height(Length::Fixed(24.0)),
         )
         .padding(Padding { top: 20.0, right: 24.0, bottom: 16.0, left: 24.0 })
         .width(Length::Fill);
