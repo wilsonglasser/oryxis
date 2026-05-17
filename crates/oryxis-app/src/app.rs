@@ -394,6 +394,10 @@ pub struct Oryxis {
     /// Off makes the renderer paint the cell exactly as the app
     /// asked, which some color-precise tools rely on.
     pub(crate) setting_smart_contrast: bool,
+    /// Toggles the bottom status bar that shows current connection IP +
+    /// Oryxis version. Off in `view_main` simply skips rendering it,
+    /// reclaiming the row for the active content area.
+    pub(crate) setting_show_status_bar: bool,
     pub(crate) setting_keepalive_interval: String,
     pub(crate) setting_scrollback_rows: String,
     /// Max parallel SFTP transfer slots (uploads/downloads). 1 = serial,

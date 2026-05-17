@@ -254,6 +254,13 @@ impl Oryxis {
                     if self.setting_smart_contrast { "true" } else { "false" },
                 );
             }
+            Message::SettingToggleShowStatusBar => {
+                self.setting_show_status_bar = !self.setting_show_status_bar;
+                self.persist_setting(
+                    "show_status_bar",
+                    if self.setting_show_status_bar { "true" } else { "false" },
+                );
+            }
             Message::SettingKeepaliveChanged(val) => {
                 // Accept only digits; cap at 86_400 (1 day) so users can't
                 // accidentally type a runaway value.

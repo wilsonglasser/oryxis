@@ -334,6 +334,7 @@ pub enum Message {
     ToggleBoldIsBright,
     ToggleKeywordHighlight,
     ToggleSmartContrast,
+    SettingToggleShowStatusBar,
     SettingKeepaliveChanged(String),
     SettingScrollbackChanged(String),
     SettingSftpConcurrencyChanged(String),

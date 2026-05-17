@@ -261,6 +261,7 @@ impl Oryxis {
                 setting_bold_is_bright: true,
                 setting_keyword_highlight: true,
                 setting_smart_contrast: true,
+                setting_show_status_bar: true,
                 setting_keepalive_interval: "30".into(),
                 setting_scrollback_rows: "10000".into(),
                 setting_sftp_concurrency: "2".into(),
@@ -544,6 +545,9 @@ impl Oryxis {
             }
             if let Ok(Some(v)) = vault.get_setting("smart_contrast") {
                 self.setting_smart_contrast = v == "true";
+            }
+            if let Ok(Some(v)) = vault.get_setting("show_status_bar") {
+                self.setting_show_status_bar = v == "true";
             }
             if let Ok(Some(v)) = vault.get_setting("terminal_font_size")
                 && let Ok(parsed) = v.parse::<f32>()

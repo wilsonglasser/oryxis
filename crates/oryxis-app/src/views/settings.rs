@@ -763,6 +763,14 @@ impl Oryxis {
                         .color(OryxisColors::t().text_muted),
                 ]);
 
+                let status_bar_section = panel_section(column![
+                    toggle_row(
+                        crate::i18n::t("show_status_bar"),
+                        self.setting_show_status_bar,
+                        Message::SettingToggleShowStatusBar,
+                    ),
+                ]);
+
                 let mut content_col = column![
                     text(crate::i18n::t("interface")).size(18).color(OryxisColors::t().text_primary),
                     Space::new().height(16),
@@ -771,6 +779,8 @@ impl Oryxis {
                     layout_dir_section,
                     Space::new().height(8),
                     flatten_section,
+                    Space::new().height(8),
+                    status_bar_section,
                     Space::new().height(12),
                 ]
                 .spacing(12)

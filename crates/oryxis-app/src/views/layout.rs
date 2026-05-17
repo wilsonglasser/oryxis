@@ -121,7 +121,14 @@ impl Oryxis {
         let sidebar = self.view_sidebar();
         let tab_bar = self.view_tab_bar();
         let content = self.view_content();
-        let status_bar = self.view_status_bar();
+        // Status bar is opt-out (Interface → Show status bar). When off,
+        // the row collapses to 0 height and the main_row claims the
+        // freed vertical space.
+        let status_bar: Element<'_, Message> = if self.setting_show_status_bar {
+            self.view_status_bar()
+        } else {
+            Space::new().height(0).into()
+        };
 
         // 1 px separators: horizontal below the tab bar, vertical between
         // sidebar and content. Same hairline look as Termius, anchors the
