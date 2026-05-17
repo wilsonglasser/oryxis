@@ -211,7 +211,12 @@ impl Oryxis {
             if dynamic_query_profile.is_some() {
                 // Dynamic group → no "+ host" button. The Refresh
                 // icon already lives in the sub-header.
-                Space::new().width(0).into()
+                // Reserve the same vertical slot the `+ HOST` /
+                // `+ DISCOVER` buttons would occupy so the toolbar
+                // row keeps its height when the action is suppressed
+                // (the content below it would otherwise pop up by
+                // ~8 px when you step into a dynamic group).
+                Space::new().width(0).height(Length::Fixed(32.0)).into()
             } else {
                 // Manual folder: derive the linked profile from any
                 // child host's cloud_ref or any child dynamic group's
@@ -278,24 +283,18 @@ impl Oryxis {
             action_group
         };
 
-        // Pin the inner row to the action button's true height (24
-        // inner + button widget chrome ~= 32). Without this, nav into
-        // a dynamic group (where the action slot is an empty Space)
-        // drops the row to the breadcrumb text height and the
-        // content below it bounces by ~6 px between views. The
-        // previous attempt at 24 px clipped the button itself; 32 px
-        // matches the action's outer height so the layout is stable
-        // *and* the button keeps its size.
+        // Let the row size to its natural height (button chrome
+        // included) so the action button keeps its true visual size.
+        // Stability across views (dynamic group has no action) is
+        // handled by sizing the empty action slot to the same height
+        // in `resolved_action` above.
         let toolbar = container(
-            container(
-                dir_row(vec![
-                    toolbar_left,
-                    Space::new().width(Length::Fill).into(),
-                    resolved_action,
-                ])
-                .align_y(iced::Alignment::Center),
-            )
-            .height(Length::Fixed(32.0)),
+            dir_row(vec![
+                toolbar_left,
+                Space::new().width(Length::Fill).into(),
+                resolved_action,
+            ])
+            .align_y(iced::Alignment::Center),
         )
         .padding(Padding { top: 20.0, right: 24.0, bottom: 16.0, left: 24.0 })
         .width(Length::Fill);

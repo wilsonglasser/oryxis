@@ -299,7 +299,12 @@ impl Oryxis {
                 } else {
                     0.0
                 };
-                let menu_width = 180.0;
+                // Keep this in sync with `menu_width` in
+                // `views/layout.rs::view_main` overlay block. 150
+                // matches the split-button width more closely so the
+                // dropdown doesn't overhang the trigger by ~30 px on
+                // the leading edge.
+                let menu_width = 150.0;
                 let toolbar_padding = 24.0;
                 // The dashboard toolbar uses dir_row, so under RTL the
                 // "+ HOST" group sits at the leading (left) edge of the

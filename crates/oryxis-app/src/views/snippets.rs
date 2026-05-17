@@ -60,6 +60,9 @@ impl Oryxis {
             Space::new().height(0).into()
         };
 
+        // Section title aligns with the card's leading border (the
+        // scrollable's left padding is already 24 px; the title sits
+        // outside the scrollable so we apply the same here).
         let section_title = container(
             text(t("commands")).size(14).color(OryxisColors::t().text_muted),
         )

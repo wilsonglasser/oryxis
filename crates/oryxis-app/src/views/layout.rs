@@ -778,7 +778,9 @@ impl Oryxis {
             // Position the menu, clamping to window bounds to prevent clipping.
             // Under RTL, anchor by the menu's right edge so it grows toward
             // the leading (left) side, mirroring native OS dropdown behavior.
-            let menu_width = 180.0_f32;
+            // Kept in sync with the dispatcher anchors (`dispatch_cloud`
+            // and `dispatch_keys` use the same value to compute `overlay.x`).
+            let menu_width = 150.0_f32;
             let menu_height = 80.0_f32; // approximate menu height
             let raw_x = if crate::i18n::is_rtl_layout() {
                 overlay.x - menu_width
@@ -1017,7 +1019,7 @@ impl Oryxis {
     }
 
     pub(crate) fn render_overlay_menu(&self, overlay: &OverlayState) -> Element<'_, Message> {
-        let menu_width = 180.0;
+        let menu_width = 150.0;
         let items: Element<'_, Message> = match &overlay.content {
             OverlayContent::HostActions(idx) => {
                 let idx = *idx;

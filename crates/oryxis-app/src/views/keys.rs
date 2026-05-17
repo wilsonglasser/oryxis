@@ -170,10 +170,13 @@ impl Oryxis {
         };
 
         // ── Keys grid ──
+        // Section title aligns with the card's leading border. The
+        // surrounding scrollable already pads the column by 24 px on
+        // the leading side, so the title only needs vertical padding.
         let section_title = container(
             text(t("keys_section")).size(14).color(OryxisColors::t().text_muted),
         )
-        .padding(Padding { top: 4.0, right: 24.0, bottom: 8.0, left: 24.0 });
+        .padding(Padding { top: 4.0, right: 0.0, bottom: 8.0, left: 0.0 });
 
         // Filter keys by search query
         let search_lower = self.key_search.to_lowercase();
@@ -392,7 +395,7 @@ impl Oryxis {
         let identity_section_title = container(
             text(t("identities")).size(14).color(OryxisColors::t().text_muted),
         )
-        .padding(Padding { top: 16.0, right: 24.0, bottom: 8.0, left: 24.0 });
+        .padding(Padding { top: 16.0, right: 0.0, bottom: 8.0, left: 0.0 });
 
         let filtered_identities: Vec<(usize, &Identity)> = self.identities.iter().enumerate()
             .filter(|(_, i)| search_lower.is_empty() || i.label.to_lowercase().contains(&search_lower))

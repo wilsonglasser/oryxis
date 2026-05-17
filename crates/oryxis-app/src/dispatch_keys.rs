@@ -383,7 +383,8 @@ impl Oryxis {
                     } else {
                         0.0
                     };
-                    let menu_width = 180.0;
+                    // Sync with `views/layout.rs::view_main` overlay.
+                    let menu_width = 150.0;
                     let toolbar_padding = 24.0;
                     // Toolbar uses dir_row, so under RTL the "+ ADD ▼"
                     // group sits at the leading (left) edge. The render
