@@ -7,6 +7,36 @@ project uses [SemVer](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- **Workspace layout mode** (new default). Hides the sidebar entirely
+  and promotes navigation to the top tab bar: Hosts and SFTP sit as
+  area tabs before the connection tabs, the burger menu (top-left)
+  covers the remaining vault surfaces (Keychain, Snippets, Known
+  Hosts, History, Settings, Local Shell, Updates). Terminal sessions
+  get the full canvas width. Classic mode stays available as a
+  one-click switch in Settings -> Interface for anyone who prefers
+  the old sidebar.
+- **Settings -> Interface section** absorbing the old Theme section
+  and adding: status bar toggle, tab close button position
+  (Left|Right), connection status dot on tabs (green/orange/red),
+  Enable SFTP toggle (hides the entry from sidebar + burger), layout
+  mode picker (Workspace/Classic), default host icon style picker.
+- **Customizable host icons.** Per-host shape override (Circular /
+  Square / Outline / Initials) with a global default in Interface
+  settings. Rendered consistently on dashboard cards and tab badges.
+  Migration: `connections.icon_style TEXT` added.
+- **Dynamic accent on the chrome.** When a tab pointing at a saved
+  connection is active, the active-tab fill, label, close-X color
+  and the 2 px hairline under the tab strip all adopt the host's
+  per-host `color`. JetBrains-style "respiração" so you can tell
+  prod-vs-dev tabs apart at a glance without reading labels.
+- **Burger menu** (`☰`) at the leading edge of the tab bar with full
+  navigation list + Settings / Updates / Local Shell entries.
+- **Solarized Dark theme** as an `AppTheme` choice. Terminal palette
+  already existed; UI palette mirrors `Solarized Light`.
+- **System monospace font enumeration** via `fontdb`. The Terminal
+  font picker now lists every monospace family installed on the
+  host instead of the hardcoded 20-name array, with a static
+  fallback when the scan returns nothing.
 - **MCP server is now a plugin.** `oryxis-mcp` no longer ships inside
   the OS installers (`.deb`, AppImage, tarballs, NSIS); the app
   downloads it on demand into `~/.oryxis/bin/oryxis-mcp[.exe]` when
@@ -105,6 +135,22 @@ project uses [SemVer](https://semver.org/spec/v2.0.0.html).
   release workflow.
 
 ### Fixed
+- **Right-click paste in SSH sessions.** The terminal widget's
+  right-click handler wrote the clipboard text straight to the local
+  PTY, which never reached the SSH session. Fixed by routing the
+  paste through the app dispatcher (`TerminalPasteFromClipboard`)
+  so it follows the same SSH-first / PTY-fallback path Ctrl+Shift+V
+  already used.
+- **AI Chat toggle button** no longer renders over the terminal
+  canvas when AI is disabled in Settings.
+- **Lock Vault button** is hidden when no master password is set
+  (locking has nothing to protect in that mode and the unlock screen
+  has no way to re-enter), replaced by a muted hint pointing at the
+  password toggle.
+- **Relay poll loop** stops retrying on permanent HTTP conditions
+  (404, 410, 501) instead of looping every 2 s burning network +
+  battery. Logs a single warning with the detail. Transient errors
+  (5xx, 429, network blips) keep retrying as before.
 - Importing an OpenSSH key from PuTTYgen's "Export OpenSSH key (force
   new file format)" no longer fails with "invalid Base64 encoding".
   PuTTYgen wraps the body at 76 chars; `ssh-encoding` requires exactly
