@@ -324,6 +324,7 @@ impl Oryxis {
             header_title,
             Space::new().width(Length::Fill),
             text_input("Filter…", &self.sftp.remote_filter)
+                .id(iced::widget::Id::new("search-sftp-remote"))
                 .on_input(Message::SftpRemoteFilter)
                 .padding(Padding { top: 4.0, right: 8.0, bottom: 4.0, left: 8.0 })
                 .size(11)
@@ -566,19 +567,28 @@ impl Oryxis {
             } else {
                 OryxisColors::t().accent
             };
-            let (glyph, badge_color) =
+            let (glyph, default_color) =
                 crate::os_icon::resolve_icon(conn.detected_os.as_deref(), fallback);
-            let badge = container(glyph.view(14.0, Color::WHITE))
-                .center_x(Length::Fixed(22.0))
-                .center_y(Length::Fixed(22.0))
-                .style(move |_| container::Style {
-                    background: Some(Background::Color(badge_color)),
-                    border: Border { radius: Radius::from(5.0), ..Default::default() },
-                    ..Default::default()
-                });
+            // Respect the per-host icon shape + accent color so the
+            // picker row matches the dashboard card for the same host.
+            let badge_style = crate::widgets::resolve_host_icon_style(
+                conn.icon_style.as_deref(),
+                &self.setting_default_host_icon,
+            );
+            let badge_color = conn.color.as_deref()
+                .and_then(crate::widgets::parse_hex_color)
+                .unwrap_or(default_color);
+            let glyph_el: Element<'_, Message> = glyph.view(14.0, Color::WHITE);
+            let badge = crate::widgets::host_icon(
+                badge_style,
+                badge_color,
+                &conn.label,
+                Some(glyph_el),
+                24.0,
+            );
             let row_btn = button(
                 crate::widgets::dir_row(vec![
-                    badge.into(),
+                    badge,
                     Space::new().width(10).into(),
                     column![
                         text(conn.label.clone()).size(13).color(OryxisColors::t().text_primary),

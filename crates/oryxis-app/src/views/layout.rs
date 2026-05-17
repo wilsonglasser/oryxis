@@ -1168,7 +1168,18 @@ impl Oryxis {
             _ => None,
         };
         let search_input: Element<'_, Message> = if let Some((ph_key, value, on_input)) = search_binding {
+            // ID matches `Oryxis::active_view_search_id`, the global
+            // Ctrl+F handler resolves the active view to one of these
+            // strings and focuses the matching input.
+            let search_id = match self.active_view {
+                View::Dashboard => "search-dashboard",
+                View::Keys => "search-keys",
+                View::Snippets => "search-snippets",
+                View::History => "search-history",
+                _ => "search-vault-subnav",
+            };
             iced::widget::text_input(crate::i18n::t(ph_key), value)
+                .id(iced::widget::Id::new(search_id))
                 .on_input(on_input)
                 // Generous vertical padding so the input feels like a
                 // real field, not a 1-line label.
@@ -1269,6 +1280,14 @@ impl Oryxis {
         } else {
             Space::new().height(0).into()
         };
+        // Lock Vault only when a master password is set; without one,
+        // locking has nothing to protect and the unlock screen has no
+        // way to re-enter (mirrors the Settings -> Security gating).
+        let lock_item: Element<'_, Message> = if self.vault_has_user_password {
+            item("lock_vault", Message::LockVault)
+        } else {
+            Space::new().height(0).into()
+        };
         let menu_col = column![
             item("hosts", Message::ChangeView(View::Dashboard)),
             sftp_item,
@@ -1278,7 +1297,9 @@ impl Oryxis {
             item("settings", Message::ChangeView(View::Settings)),
             sep,
             item("local_shell", Message::OpenLocalShell),
+            item("new_window", Message::SpawnNewWindow),
             item("check_for_updates_now", Message::CheckForUpdateManual),
+            lock_item,
         ]
         .width(Length::Fill);
         let menu_panel = container(menu_col)

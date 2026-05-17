@@ -118,7 +118,30 @@ impl Oryxis {
             } else {
                 Color::TRANSPARENT
             };
-            rows.push(picker_row(*ci, &conn.label, breadcrumb, zebra_bg));
+            // Resolve the per-host badge so the row mirrors the
+            // dashboard card for the same host (shape from the
+            // global default_host_icon + per-host icon_style override;
+            // color from per-host accent or OS-derived fallback).
+            let badge_style = crate::widgets::resolve_host_icon_style(
+                conn.icon_style.as_deref(),
+                &self.setting_default_host_icon,
+            );
+            let (glyph, default_color) = crate::os_icon::resolve_icon(
+                conn.detected_os.as_deref(),
+                OryxisColors::t().accent,
+            );
+            let badge_color = conn.color.as_deref()
+                .and_then(crate::widgets::parse_hex_color)
+                .unwrap_or(default_color);
+            let glyph_el: Element<'_, Message> = glyph.view(12.0, Color::WHITE);
+            let badge = crate::widgets::host_icon(
+                badge_style,
+                badge_color,
+                &conn.label,
+                Some(glyph_el),
+                26.0,
+            );
+            rows.push(picker_row(*ci, &conn.label, breadcrumb, zebra_bg, badge));
         }
 
         if rows.is_empty() {
@@ -195,21 +218,8 @@ fn picker_row<'a>(
     label: &'a str,
     breadcrumb: String,
     zebra_bg: Color,
+    badge: Element<'a, Message>,
 ) -> Element<'a, Message> {
-    // Icon badge, 26×26 accent square with server glyph.
-    let icon_box = container(
-        iced_fonts::lucide::server().size(12).color(Color::WHITE),
-    )
-    .width(Length::Fixed(26.0))
-    .height(Length::Fixed(26.0))
-    .center_x(Length::Fixed(26.0))
-    .center_y(Length::Fixed(26.0))
-    .style(|_| container::Style {
-        background: Some(Background::Color(OryxisColors::t().accent)),
-        border: Border { radius: Radius::from(6.0), ..Default::default() },
-        ..Default::default()
-    });
-
     let label_text = text(label.to_string()).size(13).font(iced::Font {
         weight: iced::font::Weight::Semibold,
         ..iced::Font::new(crate::theme::SYSTEM_UI_FAMILY)
@@ -218,7 +228,7 @@ fn picker_row<'a>(
     let breadcrumb_text = text(breadcrumb).size(12).color(OryxisColors::t().accent);
 
     let inner = dir_row(vec![
-        icon_box.into(),
+        badge,
         Space::new().width(12).into(),
         label_text.into(),
         Space::new().width(Length::Fill).into(),

@@ -213,6 +213,7 @@ pub struct Oryxis {
     /// hover-only-dots UX as host cards.
     pub(crate) hovered_key_card: Option<usize>,
     pub(crate) hovered_identity_card: Option<usize>,
+    pub(crate) hovered_snippet_card: Option<usize>,
     pub(crate) card_context_menu: Option<usize>,
 
     // Floating overlay menu
@@ -245,6 +246,10 @@ pub struct Oryxis {
     /// optimistically on `WindowMaximizeToggle` since our chrome is the only
     /// path that can change this state (native titlebar is disabled).
     pub(crate) window_maximized: bool,
+    /// Whether the window is in native fullscreen mode. Flipped by F11.
+    /// Same optimistic pattern as `window_maximized` because the OS-side
+    /// transition is one-way from the app.
+    pub(crate) window_fullscreen: bool,
 
     // Keys
     pub(crate) keys: Vec<SshKey>,

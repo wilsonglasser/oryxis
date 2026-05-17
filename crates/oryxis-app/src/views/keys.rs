@@ -138,6 +138,7 @@ impl Oryxis {
         } else {
             container(
                 text_input(t("search_keys_identities"), &self.key_search)
+                    .id(iced::widget::Id::new("search-keys"))
                     .on_input(Message::KeySearchChanged)
                     .padding(10)
                     .size(13)
@@ -238,13 +239,21 @@ impl Oryxis {
 
         for (idx, key) in filtered_keys {
             let algo = format!("{} {}", t("type_label"), key.algorithm);
-            let icon_box = container(iced_fonts::lucide::key_round().size(18).color(Color::WHITE))
-                .padding(Padding { top: 8.0, right: 10.0, bottom: 8.0, left: 10.0 })
-                .style(|_| container::Style {
-                    background: Some(Background::Color(OryxisColors::t().accent)),
-                    border: Border { radius: Radius::from(8.0), ..Default::default() },
-                    ..Default::default()
-                });
+            let key_style = crate::widgets::resolve_host_icon_style(
+                None,
+                &self.setting_default_host_icon,
+            );
+            let glyph_el: Element<'_, Message> = iced_fonts::lucide::key_round()
+                .size(16)
+                .color(Color::WHITE)
+                .into();
+            let icon_box = crate::widgets::host_icon(
+                key_style,
+                OryxisColors::t().accent,
+                &key.label,
+                Some(glyph_el),
+                32.0,
+            );
 
             // Floating ⋮ kebab: lives in a Stack overlay on the trailing
             // corner so it doesn't take inline width. Always mounted with
@@ -262,7 +271,7 @@ impl Oryxis {
 
             let card = button(
                 dir_row(vec![
-                    icon_box.into(),
+                    icon_box,
                     Space::new().width(12).into(),
                     column![
                         text(&key.label)
@@ -418,13 +427,21 @@ impl Oryxis {
             }
             let subtitle = if parts.is_empty() { t("no_credentials").to_string() } else { parts.join(", ") };
 
-            let icon_box = container(iced_fonts::lucide::user().size(18).color(Color::WHITE))
-                .padding(Padding { top: 8.0, right: 10.0, bottom: 8.0, left: 10.0 })
-                .style(|_| container::Style {
-                    background: Some(Background::Color(OryxisColors::t().accent)),
-                    border: Border { radius: Radius::from(8.0), ..Default::default() },
-                    ..Default::default()
-                });
+            let id_style = crate::widgets::resolve_host_icon_style(
+                None,
+                &self.setting_default_host_icon,
+            );
+            let id_glyph_el: Element<'_, Message> = iced_fonts::lucide::user()
+                .size(16)
+                .color(Color::WHITE)
+                .into();
+            let icon_box = crate::widgets::host_icon(
+                id_style,
+                OryxisColors::t().accent,
+                &identity.label,
+                Some(id_glyph_el),
+                32.0,
+            );
 
             // Floating ⋮ kebab in a Stack overlay on the trailing corner,
             // same pattern as host / key cards.
@@ -440,7 +457,7 @@ impl Oryxis {
 
             let card = button(
                 dir_row(vec![
-                    icon_box.into(),
+                    icon_box,
                     Space::new().width(12).into(),
                     column![
                         text(&identity.label)

@@ -1,7 +1,7 @@
 //! Snippets (saved commands) list and editor panel.
 
 use iced::border::Radius;
-use iced::widget::{button, column, container, scrollable, text, text_input, Space};
+use iced::widget::{button, column, container, scrollable, text, text_input, MouseArea, Space};
 use iced::widget::button::Status as BtnStatus;
 use iced::{Background, Border, Color, Element, Length, Padding};
 
@@ -116,32 +116,53 @@ impl Oryxis {
             {
                 continue;
             }
-            let icon_box = container(iced_fonts::lucide::code().size(14).color(Color::WHITE))
-                .padding(Padding { top: 8.0, right: 8.0, bottom: 8.0, left: 8.0 })
-                .style(|_| container::Style {
-                    background: Some(Background::Color(OryxisColors::t().accent)),
-                    border: Border { radius: Radius::from(8.0), ..Default::default() },
-                    ..Default::default()
-                });
+            // Use host_icon so the snippet badge follows the global
+            // `default_host_icon` shape (Circular by default in v0.7)
+            // and the rest of the cards on this screen look the same.
+            let snip_style = crate::widgets::resolve_host_icon_style(
+                None,
+                &self.setting_default_host_icon,
+            );
+            let glyph_el: Element<'_, Message> = iced_fonts::lucide::code()
+                .size(14)
+                .color(Color::WHITE)
+                .into();
+            let icon_box = crate::widgets::host_icon(
+                snip_style,
+                OryxisColors::t().accent,
+                &snip.label,
+                Some(glyph_el),
+                32.0,
+            );
 
-            // Vertical ellipsis (⋮) to match the hosts / keys / cloud
-            // pattern. Snippets don't have a context menu yet, so this
-            // still goes straight to Edit; the glyph alignment is the
-            // main goal here.
-            let edit_btn = button(text("\u{22EE}").size(14).color(OryxisColors::t().text_muted))
-                .on_press(Message::EditSnippet(idx))
-                .padding(Padding { top: 1.0, right: 6.0, bottom: 1.0, left: 6.0 })
-                .style(|_, status| {
-                    let bg = match status {
-                        BtnStatus::Hovered => OryxisColors::t().bg_hover,
-                        _ => Color::TRANSPARENT,
-                    };
-                    button::Style {
-                        background: Some(Background::Color(bg)),
-                        border: Border { radius: Radius::from(6.0), ..Default::default() },
-                        ..Default::default()
-                    }
-                });
+            // Vertical ellipsis (⋮) only when the row is hovered, so it
+            // matches the host-card / keychain affordance. A fixed
+            // placeholder reserves the slot in the unhovered state so
+            // the label column width stays constant.
+            const SNIP_DOTS_SLOT_W: f32 = 22.0;
+            let show_dots = self.hovered_snippet_card == Some(idx);
+            let edit_btn: Element<'_, Message> = if show_dots {
+                button(text("\u{22EE}").size(14).color(OryxisColors::t().text_muted))
+                    .on_press(Message::EditSnippet(idx))
+                    .padding(Padding { top: 1.0, right: 6.0, bottom: 1.0, left: 6.0 })
+                    .style(|_, status| {
+                        let bg = match status {
+                            BtnStatus::Hovered => OryxisColors::t().bg_hover,
+                            _ => Color::TRANSPARENT,
+                        };
+                        button::Style {
+                            background: Some(Background::Color(bg)),
+                            border: Border { radius: Radius::from(6.0), ..Default::default() },
+                            ..Default::default()
+                        }
+                    })
+                    .into()
+            } else {
+                Space::new()
+                    .width(Length::Fixed(SNIP_DOTS_SLOT_W))
+                    .height(Length::Fixed(20.0))
+                    .into()
+            };
 
             let cmd_preview = if snip.command.len() > 30 {
                 format!("{}...", &snip.command[..30])
@@ -149,11 +170,11 @@ impl Oryxis {
                 snip.command.clone()
             };
 
-            let card = button(
+            let card_btn = button(
                 container(
                     dir_row(vec![
-                        icon_box.into(),
-                        Space::new().width(12).into(),
+                        icon_box,
+                        Space::new().width(8).into(),
                         column![
                             text(&snip.label)
                                 .size(13)
@@ -166,10 +187,13 @@ impl Oryxis {
                                 .font(iced::Font::MONOSPACE)
                                 .wrapping(iced::widget::text::Wrapping::None),
                         ].width(Length::Fill).into(),
-                        edit_btn.into(),
+                        edit_btn,
                     ]).align_y(iced::Alignment::Center),
                 )
-                .padding(16),
+                // Match the host card padding (top/bottom 8, left 2,
+                // right reserved for the trailing slot) so the row
+                // height + indent line up with the rest of the grid.
+                .padding(Padding { top: 8.0, right: 2.0, bottom: 8.0, left: 2.0 }),
             )
             .on_press(Message::RunSnippet(idx))
             .width(Length::Fill)
@@ -186,7 +210,14 @@ impl Oryxis {
                 }
             });
 
-            cards.push(container(card).width(Length::Fill).clip(true).into());
+            // Wrap the button in a MouseArea so we can track hover
+            // for the kebab show/hide affordance, same trick the host
+            // cards use.
+            let wrapped: Element<'_, Message> = MouseArea::new(card_btn)
+                .on_enter(Message::SnippetCardHovered(idx))
+                .on_exit(Message::SnippetCardUnhovered)
+                .into();
+            cards.push(container(wrapped).width(Length::Fill).clip(true).into());
         }
 
         let nav_width = if self.sidebar_collapsed {

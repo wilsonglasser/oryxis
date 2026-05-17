@@ -61,6 +61,12 @@ impl Oryxis {
             Message::IdentityCardHovered(idx) => {
                 self.hovered_identity_card = Some(idx);
             }
+            Message::SnippetCardHovered(idx) => {
+                self.hovered_snippet_card = Some(idx);
+            }
+            Message::SnippetCardUnhovered => {
+                self.hovered_snippet_card = None;
+            }
             Message::IdentityCardUnhovered => {
                 self.hovered_identity_card = None;
             }
@@ -203,6 +209,34 @@ impl Oryxis {
                     Some(id) => iced::window::close(id),
                     None => Task::none(),
                 }));
+            }
+            Message::WindowFullscreenToggle => {
+                // Optimistic local flip mirrors `WindowMaximizeToggle`,
+                // the only way fullscreen changes today is through this
+                // handler so the cached bool stays in sync.
+                self.window_fullscreen = !self.window_fullscreen;
+                let next = if self.window_fullscreen {
+                    iced::window::Mode::Fullscreen
+                } else {
+                    iced::window::Mode::Windowed
+                };
+                return Ok(iced::window::latest().then(move |id_opt| match id_opt {
+                    Some(id) => iced::window::set_mode(id, next),
+                    None => Task::none(),
+                }));
+            }
+            Message::SpawnNewWindow => {
+                self.spawn_oryxis_child(None);
+            }
+            Message::ActivateStripSlot(slot) => {
+                if let Some(msg) = self.strip_slot_target(slot) {
+                    return Ok(Task::done(msg));
+                }
+            }
+            Message::FocusViewSearch => {
+                if let Some(id) = self.active_view_search_id() {
+                    return Ok(iced::widget::operation::focus(id));
+                }
             }
             Message::HideOverlayMenu => {
                 self.overlay = None;
@@ -429,49 +463,7 @@ impl Oryxis {
             }
             Message::DuplicateInNewWindow(idx) => {
                 self.overlay = None;
-                // Spawn a fresh Oryxis process. When the source tab is
-                // bound to a saved connection we pass `--connect <uuid>`
-                // so the new window auto-opens it. When the user has a
-                // master password we also pass `--inherit-vault` and pipe
-                // the password through stdin, keeps the secret out of
-                // command-line arguments (which `ps aux` would expose).
-                let connect_uuid = self.tabs.get(idx).and_then(|tab| {
-                    let base_label = tab.label.trim_end_matches(" (disconnected)").to_string();
-                    self.connections
-                        .iter()
-                        .find(|c| c.label == base_label)
-                        .map(|c| c.id)
-                });
-                let exe = match std::env::current_exe() {
-                    Ok(p) => p,
-                    Err(e) => {
-                        tracing::error!("current_exe unavailable: {}", e);
-                        return Ok(Task::none());
-                    }
-                };
-                let mut cmd = std::process::Command::new(exe);
-                if let Some(uuid) = connect_uuid {
-                    cmd.arg("--connect").arg(uuid.to_string());
-                }
-                let inherit = self.master_password.is_some();
-                if inherit {
-                    cmd.arg("--inherit-vault");
-                    cmd.stdin(std::process::Stdio::piped());
-                }
-                match cmd.spawn() {
-                    Ok(mut child) => {
-                        if inherit
-                            && let Some(mut stdin) = child.stdin.take()
-                            && let Some(pw) = self.master_password.as_ref()
-                        {
-                            use std::io::Write as _;
-                            let _ = writeln!(stdin, "{}", pw);
-                            // Closing the pipe signals EOF to the child.
-                            drop(stdin);
-                        }
-                    }
-                    Err(e) => tracing::error!("Failed to spawn new window: {}", e),
-                }
+                self.spawn_oryxis_child(Some(idx));
             }
             Message::ShowFolderActions(gid) => {
                 // Anchor the menu to the cursor, matches the host-card

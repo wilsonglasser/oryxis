@@ -84,20 +84,16 @@ impl Oryxis {
         const AREA_TAB_APPROX_WIDTH: f32 = 100.0;
         let area_tabs_total = area_tab_count as f32
             * (AREA_TAB_APPROX_WIDTH + TAB_SPACING);
-        // Burger menu button (SIDEBAR_TOGGLE_WIDTH) also lives on the
-        // leading edge in Workspace mode; sidebar toggle is always
-        // there in both modes.
+        // Burger menu button (SIDEBAR_TOGGLE_WIDTH) lives on the
+        // leading edge in both modes. The sidebar collapse toggle
+        // only renders in Classic mode (Workspace has no sidebar to
+        // collapse). Logo only renders in Workspace.
         let burger_width = SIDEBAR_TOGGLE_WIDTH;
-        // Logo only renders in Workspace mode; subtract its slot
-        // (same SIDEBAR_TOGGLE_WIDTH as burger/toggle) so the strip
-        // math stays aligned with the actual leading row.
-        let logo_width = if self.setting_layout_mode == "workspace" {
-            SIDEBAR_TOGGLE_WIDTH
-        } else {
-            0.0
-        };
+        let workspace_mode = self.setting_layout_mode == "workspace";
+        let toggle_width = if workspace_mode { 0.0 } else { SIDEBAR_TOGGLE_WIDTH };
+        let logo_width = if workspace_mode { SIDEBAR_TOGGLE_WIDTH } else { 0.0 };
         let approx_strip_width = (self.window_size.width
-            - SIDEBAR_TOGGLE_WIDTH
+            - toggle_width
             - burger_width
             - logo_width
             - RIGHT_CLUSTER_WIDTH
@@ -315,9 +311,6 @@ impl Oryxis {
             .align_y(iced::Alignment::Center)
             .into();
 
-        let sidebar_toggle =
-            super::sidebar::sidebar_toggle_btn(!self.sidebar_collapsed);
-
         // Burger menu trigger. Mirrors the Termius `☰` strip on the
         // leading edge: opens a top-left dropdown with Settings,
         // Updates, About, Exit.
@@ -327,8 +320,9 @@ impl Oryxis {
         // far leading edge so the chrome carries product identity in
         // the JetBrains style. Classic mode keeps the logo on the
         // sidebar header where it always lived.
+        let workspace_mode = self.setting_layout_mode == "workspace";
         let mut leading: Vec<Element<'_, Message>> = Vec::new();
-        if self.setting_layout_mode == "workspace" {
+        if workspace_mode {
             // Small breathing space on the very leading edge so the
             // logo doesn't kiss the window border. Matches the gap
             // JetBrains leaves on its product mark.
@@ -336,7 +330,14 @@ impl Oryxis {
             leading.push(product_logo(self.logo_small_handle.clone()));
         }
         leading.push(burger_btn);
-        leading.push(sidebar_toggle);
+        // Sidebar collapse toggle only makes sense in Classic mode;
+        // Workspace mode doesn't have a sidebar to collapse, so the
+        // button would just be a dead control next to the burger.
+        if !workspace_mode {
+            let sidebar_toggle =
+                super::sidebar::sidebar_toggle_btn(!self.sidebar_collapsed);
+            leading.push(sidebar_toggle);
+        }
         leading.push(tab_strip);
         leading.push(right_cluster);
 
@@ -392,16 +393,11 @@ impl Oryxis {
         let area_tabs_total = area_tab_count as f32
             * (AREA_TAB_APPROX_WIDTH + TAB_SPACING);
         let burger_width = SIDEBAR_TOGGLE_WIDTH;
-        // Logo only renders in Workspace mode; subtract its slot
-        // (same SIDEBAR_TOGGLE_WIDTH as burger/toggle) so the strip
-        // math stays aligned with the actual leading row.
-        let logo_width = if self.setting_layout_mode == "workspace" {
-            SIDEBAR_TOGGLE_WIDTH
-        } else {
-            0.0
-        };
+        let workspace_mode = self.setting_layout_mode == "workspace";
+        let toggle_width = if workspace_mode { 0.0 } else { SIDEBAR_TOGGLE_WIDTH };
+        let logo_width = if workspace_mode { SIDEBAR_TOGGLE_WIDTH } else { 0.0 };
         let approx_strip_width = (self.window_size.width
-            - SIDEBAR_TOGGLE_WIDTH
+            - toggle_width
             - burger_width
             - logo_width
             - RIGHT_CLUSTER_WIDTH

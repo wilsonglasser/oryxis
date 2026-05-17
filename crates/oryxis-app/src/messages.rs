@@ -227,7 +227,22 @@ pub enum Message {
     WindowExpandVertical,
     WindowMinimize,
     WindowMaximizeToggle,
+    WindowFullscreenToggle,
     WindowClose,
+    /// Spawn a fresh top-level Oryxis window without binding to any
+    /// existing tab. Triggered by Ctrl+Shift+N and the burger menu's
+    /// "New Window" entry. Inherits the vault master password the
+    /// same way `DuplicateInNewWindow` does.
+    SpawnNewWindow,
+    /// Focus the current view's primary search/filter input. Triggered
+    /// by Ctrl+F outside the terminal. No-op when the active view has
+    /// no search field (Snippets, Settings, History).
+    FocusViewSearch,
+    /// Activate the Nth slot of the visual tab strip (0-indexed). In
+    /// Workspace mode slot 0 is Hosts, slot 1 is SFTP (when enabled),
+    /// followed by terminal tabs. In Classic mode the strip only
+    /// holds terminal tabs. Out-of-range slots are no-ops.
+    ActivateStripSlot(usize),
 
     // Overlay
     HideOverlayMenu,
@@ -240,6 +255,8 @@ pub enum Message {
     KeyCardHovered(usize),
     KeyCardUnhovered,
     IdentityCardHovered(usize),
+    SnippetCardHovered(usize),
+    SnippetCardUnhovered,
     IdentityCardUnhovered,
     ShowCardMenu(usize),
     #[allow(dead_code)]
@@ -316,8 +333,16 @@ pub enum Message {
     ViewSessionLog(Uuid),
     CloseSessionLogView,
     DeleteSessionLog(usize),
+    // History was split in v0.6 (logs + session logs in two panes
+    // with independent pagination); v0.7 merges both into one timeline
+    // so the per-section Clear / Next / Prev controls don't render
+    // anymore. Handlers stay wired so we can resurrect a dedicated
+    // session-logs surface without re-introducing the messages.
+    #[allow(dead_code)]
     ClearSessionLogs,
+    #[allow(dead_code)]
     SessionLogsPageNext,
+    #[allow(dead_code)]
     SessionLogsPagePrev,
 
     // Settings
