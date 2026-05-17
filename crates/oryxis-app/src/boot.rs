@@ -266,10 +266,12 @@ impl Oryxis {
                 setting_tab_close_button_side: "left".into(),
                 setting_show_tab_status_dot: true,
                 sftp_enabled: true,
-                // Default classic for now; PR 6 flips this to
-                // "workspace" for fresh installs and migrates existing
-                // users in a single dedicated boot step.
-                setting_layout_mode: "classic".into(),
+                // Workspace is the v0.7 default. Existing users who
+                // never persisted `layout_mode` also fall through to
+                // this default on next launch (no migration row
+                // needed), then can switch to Classic in one click via
+                // Settings -> Interface if they want the old behavior.
+                setting_layout_mode: "workspace".into(),
                 setting_default_host_icon: "circular".into(),
                 setting_keepalive_interval: "30".into(),
                 setting_scrollback_rows: "10000".into(),

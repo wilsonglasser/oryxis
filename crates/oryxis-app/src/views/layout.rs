@@ -118,7 +118,20 @@ pub(crate) fn resize_border<'a>() -> Element<'a, Message> {
 
 impl Oryxis {
     pub(crate) fn view_main(&self) -> Element<'_, Message> {
-        let sidebar = self.view_sidebar();
+        // Workspace mode hides the sidebar when a connection tab is
+        // active so the terminal claims the full canvas width. The
+        // top tab bar and burger menu remain the navigation surface
+        // while a session is open; switching back to a vault view
+        // brings the sidebar back. Classic mode keeps the sidebar
+        // visible at all times (existing behavior).
+        let workspace_mode = self.setting_layout_mode == "workspace";
+        let session_active = self.active_tab.is_some();
+        let hide_sidebar = workspace_mode && session_active;
+        let sidebar: Element<'_, Message> = if hide_sidebar {
+            Space::new().width(0).height(Length::Fill).into()
+        } else {
+            self.view_sidebar()
+        };
         let tab_bar = self.view_tab_bar();
         let content = self.view_content();
         // Status bar is opt-out (Interface → Show status bar). When off,
@@ -165,7 +178,13 @@ impl Oryxis {
 
         let right_side: Element<'_, Message> =
             column![tab_bar, h_separator, content].height(Length::Fill).into();
-        let v_sep: Element<'_, Message> = v_separator.into();
+        // Vertical separator goes away alongside the sidebar in
+        // Workspace mode so the right side truly fills edge-to-edge.
+        let v_sep: Element<'_, Message> = if hide_sidebar {
+            Space::new().width(0).height(Length::Fill).into()
+        } else {
+            v_separator.into()
+        };
         // `dir_row` mirrors children when the user picked RTL layout (or
         // Auto + RTL language), so the sidebar lands on the trailing edge
         // without having to duplicate the layout site.
