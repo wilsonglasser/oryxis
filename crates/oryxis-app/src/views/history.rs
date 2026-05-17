@@ -277,7 +277,30 @@ impl Oryxis {
             return viewer.into();
         }
 
-        column![toolbar, list]
+        // Inline search bar in Classic mode (Workspace puts it on
+        // the contextual sub-nav). Collapses to zero height in
+        // Workspace so the input doesn't render twice.
+        let workspace_mode = self.setting_layout_mode == "workspace";
+        let search_bar: Element<'_, Message> = if workspace_mode {
+            Space::new().height(0).into()
+        } else {
+            container(
+                iced::widget::text_input(
+                    crate::i18n::t("search_history"),
+                    &self.history_search,
+                )
+                .on_input(Message::HistorySearchChanged)
+                .padding(10)
+                .size(13)
+                .style(crate::widgets::rounded_input_style)
+                .align_x(crate::widgets::dir_align_x()),
+            )
+            .padding(Padding { top: 0.0, right: 24.0, bottom: 12.0, left: 24.0 })
+            .width(Length::Fill)
+            .into()
+        };
+
+        column![toolbar, search_bar, list]
             .width(Length::Fill)
             .height(Length::Fill)
             .into()

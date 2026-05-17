@@ -317,16 +317,14 @@ impl Oryxis {
             .align_y(iced::Alignment::Center)
             .into();
 
-        // Burger menu trigger. Mirrors the Termius `☰` strip on the
-        // leading edge: opens a top-left dropdown with Settings,
-        // Updates, About, Exit.
-        let burger_btn = burger_menu_btn(self.show_burger_menu);
+        let workspace_mode = self.setting_layout_mode == "workspace";
 
         // Workspace mode also shows the Oryxis product logo on the
         // far leading edge so the chrome carries product identity in
         // the JetBrains style. Classic mode keeps the logo on the
-        // sidebar header where it always lived.
-        let workspace_mode = self.setting_layout_mode == "workspace";
+        // sidebar header where it always lived and skips both the
+        // burger (sidebar already lists every destination) and the
+        // logo (it would compete with the sidebar header).
         let mut leading: Vec<Element<'_, Message>> = Vec::new();
         if workspace_mode {
             // Small breathing space on the very leading edge so the
@@ -334,15 +332,14 @@ impl Oryxis {
             // JetBrains leaves on its product mark.
             leading.push(Space::new().width(4).into());
             leading.push(product_logo(self.logo_small_handle.clone()));
-        }
-        leading.push(burger_btn);
-        // Sidebar collapse toggle only makes sense in Classic mode;
-        // Workspace mode doesn't have a sidebar to collapse, so the
-        // button would just be a dead control next to the burger.
-        if !workspace_mode {
-            let sidebar_toggle =
-                super::sidebar::sidebar_toggle_btn(!self.sidebar_collapsed);
-            leading.push(sidebar_toggle);
+            // Burger only in Workspace mode; Classic already has a
+            // full sidebar listing every destination so a dropdown
+            // mirroring it would be redundant noise.
+            leading.push(burger_menu_btn(self.show_burger_menu));
+        } else {
+            // Classic mode keeps the sidebar collapse toggle on the
+            // leading edge so the user can shrink the sidebar to icons.
+            leading.push(super::sidebar::sidebar_toggle_btn(!self.sidebar_collapsed));
         }
         leading.push(tab_strip);
         leading.push(right_cluster);

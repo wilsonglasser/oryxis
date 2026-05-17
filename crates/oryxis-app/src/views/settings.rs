@@ -780,18 +780,17 @@ impl Oryxis {
                     ),
                 ]);
 
-                // Tab close button position picker. Display labels come
-                // from i18n; the persisted value is always "left" or
-                // "right" so the setting stays language-stable.
-                let close_left = crate::i18n::t("close_position_left").to_string();
-                let close_right = crate::i18n::t("close_position_right").to_string();
-                let close_options = vec![close_left.clone(), close_right.clone()];
-                let close_selected = if self.setting_tab_close_button_side == "right" {
-                    close_right.clone()
-                } else {
-                    close_left.clone()
-                };
-                let close_left_for_map = close_left.clone();
+                // Tab close button position picker. We use the token
+                // strings ("left" / "right") as the picker's value type
+                // and only translate to the localized display in the
+                // `to_string` closure. The previous wiring used the
+                // localized labels as values, so the on_select handler
+                // always saw "Left"/"Right" (case + spelling locale-
+                // dependent) and never matched the "right" arm.
+                let close_options = vec![
+                    "left".to_string(),
+                    "right".to_string(),
+                ];
                 let tabs_section = panel_section(column![
                     dir_row(vec![
                         text(crate::i18n::t("close_button_position"))
@@ -800,10 +799,15 @@ impl Oryxis {
                             .into(),
                         Space::new().width(Length::Fill).into(),
                         pick_list(
-                            Some(close_selected),
+                            Some(self.setting_tab_close_button_side.clone()),
                             close_options,
-                            move |s: &String| {
-                                if *s == close_left_for_map { "left".into() } else { "right".into() }
+                            |s: &String| {
+                                crate::i18n::t(if s == "right" {
+                                    "close_position_right"
+                                } else {
+                                    "close_position_left"
+                                })
+                                .to_string()
                             },
                         )
                         .on_select(Message::SettingTabCloseButtonSideChanged)
@@ -820,20 +824,13 @@ impl Oryxis {
                     ),
                 ]);
 
-                // Layout mode + default host icon are forward-looking
-                // settings: they persist now so users can pick their
-                // preference, but the actual renderers wire up in
-                // later PRs (6 and 3 respectively). Until then the
-                // selection is a no-op for the displayed UI.
-                let layout_workspace = crate::i18n::t("layout_mode_workspace").to_string();
-                let layout_classic = crate::i18n::t("layout_mode_classic").to_string();
-                let layout_options = vec![layout_classic.clone(), layout_workspace.clone()];
-                let layout_selected = if self.setting_layout_mode == "workspace" {
-                    layout_workspace.clone()
-                } else {
-                    layout_classic.clone()
-                };
-                let layout_classic_for_map = layout_classic.clone();
+                // Layout mode picker: same token-as-value pattern as
+                // the close-button picker. The display closure
+                // translates the token to the localized label.
+                let layout_options = vec![
+                    "classic".to_string(),
+                    "workspace".to_string(),
+                ];
                 let layout_section = panel_section(column![
                     dir_row(vec![
                         text(crate::i18n::t("layout_mode"))
@@ -842,14 +839,15 @@ impl Oryxis {
                             .into(),
                         Space::new().width(Length::Fill).into(),
                         pick_list(
-                            Some(layout_selected),
+                            Some(self.setting_layout_mode.clone()),
                             layout_options,
-                            move |s: &String| {
-                                if *s == layout_classic_for_map {
-                                    "classic".into()
+                            |s: &String| {
+                                crate::i18n::t(if s == "workspace" {
+                                    "layout_mode_workspace"
                                 } else {
-                                    "workspace".into()
-                                }
+                                    "layout_mode_classic"
+                                })
+                                .to_string()
                             },
                         )
                         .on_select(Message::SettingLayoutModeChanged)
@@ -864,24 +862,14 @@ impl Oryxis {
                         .color(OryxisColors::t().text_muted),
                 ]);
 
-                let icon_circular = crate::i18n::t("icon_circular").to_string();
-                let icon_square = crate::i18n::t("icon_square").to_string();
-                let icon_outline = crate::i18n::t("icon_outline").to_string();
-                let icon_initials = crate::i18n::t("icon_initials").to_string();
+                // Default host icon picker: tokens drive the value,
+                // localized labels come from `to_string`.
                 let icon_options = vec![
-                    icon_circular.clone(),
-                    icon_square.clone(),
-                    icon_outline.clone(),
-                    icon_initials.clone(),
+                    "circular".to_string(),
+                    "square".to_string(),
+                    "outline".to_string(),
+                    "initials".to_string(),
                 ];
-                let icon_selected = match self.setting_default_host_icon.as_str() {
-                    "square" => icon_square.clone(),
-                    "outline" => icon_outline.clone(),
-                    "initials" => icon_initials.clone(),
-                    _ => icon_circular.clone(),
-                };
-                let (i_sq, i_ol, i_in) =
-                    (icon_square.clone(), icon_outline.clone(), icon_initials.clone());
                 let icon_section = panel_section(column![
                     dir_row(vec![
                         text(crate::i18n::t("default_host_icon"))
@@ -890,13 +878,16 @@ impl Oryxis {
                             .into(),
                         Space::new().width(Length::Fill).into(),
                         pick_list(
-                            Some(icon_selected),
+                            Some(self.setting_default_host_icon.clone()),
                             icon_options,
-                            move |s: &String| {
-                                if *s == i_sq { "square".into() }
-                                else if *s == i_ol { "outline".into() }
-                                else if *s == i_in { "initials".into() }
-                                else { "circular".into() }
+                            |s: &String| {
+                                let key = match s.as_str() {
+                                    "square" => "icon_square",
+                                    "outline" => "icon_outline",
+                                    "initials" => "icon_initials",
+                                    _ => "icon_circular",
+                                };
+                                crate::i18n::t(key).to_string()
                             },
                         )
                         .on_select(Message::SettingDefaultHostIconChanged)

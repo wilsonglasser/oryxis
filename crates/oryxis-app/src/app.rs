@@ -689,11 +689,13 @@ impl Oryxis {
     /// toolbar and verified by user feedback.
     pub(crate) fn dashboard_dropdown_anchor_y(&self) -> f32 {
         use crate::state::View;
-        // Bumped again after a second walkthrough: 94 / 130 still
-        // overlapped the trigger button vertically, so the menu's
-        // top edge clipped over "+ HOST". 120 / 160 puts the menu
-        // clearly under the button with the usual ~4 px breath.
-        const BASE_Y: f32 = 120.0;
+        // Toolbar geometry (top to bottom):
+        //   tab_bar(40) + hairline(2) + toolbar_top_pad(20)
+        //   + button(24) + gap(4) = 90
+        // Add sub-nav (~40) on top when Workspace+vault renders it.
+        // Classic was getting the Workspace value before, so the menu
+        // hung well below the trigger button.
+        const BASE_Y: f32 = 90.0;
         const SUBNAV_HEIGHT: f32 = 40.0;
         let in_workspace_vault = self.setting_layout_mode == "workspace"
             && self.active_tab.is_none()

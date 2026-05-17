@@ -239,7 +239,27 @@ impl Oryxis {
             column![snippets_grid].padding(Padding { top: 0.0, right: 24.0, bottom: 24.0, left: 24.0 }),
         ).height(Length::Fill);
 
-        let main_content = column![toolbar, status, section_title, grid]
+        // Inline search bar in Classic mode (Workspace puts it on
+        // the contextual sub-nav). Collapses to zero height in
+        // Workspace so we don't render the input twice.
+        let workspace_mode = self.setting_layout_mode == "workspace";
+        let search_bar: Element<'_, Message> = if workspace_mode {
+            Space::new().height(0).into()
+        } else {
+            container(
+                text_input(t("search_snippets"), &self.snippet_search)
+                    .on_input(Message::SnippetSearchChanged)
+                    .padding(10)
+                    .size(13)
+                    .style(crate::widgets::rounded_input_style)
+                    .align_x(dir_align_x()),
+            )
+            .padding(Padding { top: 0.0, right: 24.0, bottom: 12.0, left: 24.0 })
+            .width(Length::Fill)
+            .into()
+        };
+
+        let main_content = column![toolbar, search_bar, status, section_title, grid]
             .width(Length::Fill).height(Length::Fill);
 
         if self.show_snippet_panel {
