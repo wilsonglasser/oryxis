@@ -403,6 +403,11 @@ pub struct Oryxis {
     /// slot at the trailing edge of the tab). Anything else is treated
     /// as `"left"`.
     pub(crate) setting_tab_close_button_side: String,
+    /// When on, each tab paints a small colored dot over its OS badge:
+    /// green for an active SSH session, orange while connecting, red
+    /// for a tab that lost its session. Defaults on; the user can hide
+    /// it from Settings -> Interface.
+    pub(crate) setting_show_tab_status_dot: bool,
     pub(crate) setting_keepalive_interval: String,
     pub(crate) setting_scrollback_rows: String,
     /// Max parallel SFTP transfer slots (uploads/downloads). 1 = serial,

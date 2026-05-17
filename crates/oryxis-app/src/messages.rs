@@ -336,6 +336,7 @@ pub enum Message {
     ToggleSmartContrast,
     SettingToggleShowStatusBar,
     SettingTabCloseButtonSideChanged(String),
+    SettingToggleShowTabStatusDot,
     SettingKeepaliveChanged(String),
     SettingScrollbackChanged(String),
     SettingSftpConcurrencyChanged(String),

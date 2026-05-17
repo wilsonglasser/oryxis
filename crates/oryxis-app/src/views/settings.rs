@@ -803,6 +803,12 @@ impl Oryxis {
                         .style(crate::widgets::rounded_pick_list_style)
                         .into(),
                     ]).align_y(iced::Alignment::Center),
+                    Space::new().height(8),
+                    toggle_row(
+                        crate::i18n::t("show_tab_status_dot"),
+                        self.setting_show_tab_status_dot,
+                        Message::SettingToggleShowTabStatusDot,
+                    ),
                 ]);
 
                 let mut content_col = column![

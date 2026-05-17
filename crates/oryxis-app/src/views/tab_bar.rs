@@ -101,6 +101,27 @@ impl Oryxis {
                 // never go through the SSH `detect_os` round-trip.
                 .or_else(|| crate::os_icon::local_shell_os_hint(base_label));
             let width = if is_active { active_width } else { inactive_width };
+            // Connection-state dot color. Connecting beats every other
+            // signal because a tab that's currently dialing isn't yet
+            // "disconnected" in the user's mental model. Local-shell
+            // tabs (no SSH session, not labeled disconnected) get no
+            // dot, the OS badge already says what they are.
+            let status_dot: Option<Color> = if self.setting_show_tab_status_dot {
+                let is_connecting = self.connecting.as_ref().map(|cp| cp.tab_idx) == Some(idx);
+                let is_disconnected = tab.label.ends_with(" (disconnected)");
+                let is_ssh = tab.active().ssh_session.is_some();
+                if is_connecting {
+                    Some(OryxisColors::t().warning)
+                } else if is_disconnected {
+                    Some(OryxisColors::t().error)
+                } else if is_ssh {
+                    Some(OryxisColors::t().success)
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
             tab_items.push(session_tab(
                 idx,
                 &tab.label,
@@ -109,6 +130,7 @@ impl Oryxis {
                 detected_os.as_deref(),
                 width,
                 self.setting_tab_close_button_side == "right",
+                status_dot,
             ));
         }
 
@@ -328,6 +350,11 @@ fn truncate_label(label: &str, width: f32) -> String {
 /// trailing edge of the tab and the OS badge always stays on the
 /// leading edge. When false (the default, Termius-style), the X
 /// replaces the OS badge in the leading slot on hover/active.
+///
+/// `status_dot`: when Some, a small filled circle of that color is
+/// stacked over the OS badge's bottom-right corner. None hides the
+/// dot entirely (local-shell tabs and users who disabled the setting).
+#[allow(clippy::too_many_arguments)]
 fn session_tab<'a>(
     idx: usize,
     label: &'a str,
@@ -336,6 +363,7 @@ fn session_tab<'a>(
     detected_os: Option<&str>,
     width: f32,
     close_on_right: bool,
+    status_dot: Option<Color>,
 ) -> Element<'a, Message> {
     let fg = if is_active {
         OryxisColors::t().accent
@@ -372,15 +400,43 @@ fn session_tab<'a>(
         if is_disconnected {
             badge_color = OryxisColors::t().text_muted;
         }
-        container(glyph.view(12.0, Color::WHITE))
+        let base = container(glyph.view(12.0, Color::WHITE))
             .center_x(Length::Fixed(TAB_ICON_SLOT))
             .center_y(Length::Fixed(TAB_ICON_SLOT))
             .style(move |_| container::Style {
                 background: Some(Background::Color(badge_color)),
                 border: Border { radius: Radius::from(4.0), ..Default::default() },
                 ..Default::default()
-            })
-            .into()
+            });
+        if let Some(dot_color) = status_dot {
+            // Small filled circle stacked over the badge's bottom-right
+            // corner. The Stack child uses Length::Fill so we can pin
+            // it with align_x + align_y; the visible disc is the inner
+            // container's actual 8 px square with a 50% radius.
+            let dot_disc = container(Space::new().width(7).height(7))
+                .style(move |_| container::Style {
+                    background: Some(Background::Color(dot_color)),
+                    border: Border {
+                        radius: Radius::from(4.0),
+                        color: OryxisColors::t().bg_sidebar,
+                        width: 1.5,
+                    },
+                    ..Default::default()
+                });
+            let dot_pin = container(dot_disc)
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .align_x(iced::alignment::Horizontal::Right)
+                .align_y(iced::alignment::Vertical::Bottom);
+            iced::widget::Stack::new()
+                .push(base)
+                .push(dot_pin)
+                .width(Length::Fixed(TAB_ICON_SLOT))
+                .height(Length::Fixed(TAB_ICON_SLOT))
+                .into()
+        } else {
+            base.into()
+        }
     };
     let close_btn = || -> Element<'_, Message> {
         MouseArea::new(

@@ -261,6 +261,13 @@ impl Oryxis {
                     if self.setting_show_status_bar { "true" } else { "false" },
                 );
             }
+            Message::SettingToggleShowTabStatusDot => {
+                self.setting_show_tab_status_dot = !self.setting_show_tab_status_dot;
+                self.persist_setting(
+                    "show_tab_status_dot",
+                    if self.setting_show_tab_status_dot { "true" } else { "false" },
+                );
+            }
             Message::SettingTabCloseButtonSideChanged(val) => {
                 // Only accept the two known values; anything else
                 // collapses to the default so an unknown pick from a
