@@ -1015,28 +1015,42 @@ impl Oryxis {
                     column![Space::new().height(4), note, error].into()
                 };
 
-                let lock_btn = button(
-                    container(
-                        dir_row(vec![
-                            iced_fonts::lucide::lock().size(14).color(OryxisColors::t().warning).into(),
-                            Space::new().width(10).into(),
-                            text(crate::i18n::t("lock_vault")).size(13).color(OryxisColors::t().warning).into(),
-                        ]).align_y(iced::Alignment::Center),
+                // Lock Vault only makes sense once a master password is
+                // set; without one, locking has nothing to protect and
+                // the unlock screen would have no way to re-enter (the
+                // vault re-opens itself with an empty key). Show the
+                // button when a password exists; otherwise replace with
+                // a muted note telling the user how to enable locking.
+                let lock_btn: Element<'_, Message> = if self.vault_has_user_password {
+                    button(
+                        container(
+                            dir_row(vec![
+                                iced_fonts::lucide::lock().size(14).color(OryxisColors::t().warning).into(),
+                                Space::new().width(10).into(),
+                                text(crate::i18n::t("lock_vault")).size(13).color(OryxisColors::t().warning).into(),
+                            ]).align_y(iced::Alignment::Center),
+                        )
+                        .padding(Padding { top: 10.0, right: 20.0, bottom: 10.0, left: 20.0 }),
                     )
-                    .padding(Padding { top: 10.0, right: 20.0, bottom: 10.0, left: 20.0 }),
-                )
-                .on_press(Message::LockVault)
-                .style(|_, status| {
-                    let bg = match status {
-                        BtnStatus::Hovered => Color { a: 0.15, ..OryxisColors::t().warning },
-                        _ => Color::TRANSPARENT,
-                    };
-                    button::Style {
-                        background: Some(Background::Color(bg)),
-                        border: Border { radius: Radius::from(8.0), color: OryxisColors::t().warning, width: 1.0 },
-                        ..Default::default()
-                    }
-                });
+                    .on_press(Message::LockVault)
+                    .style(|_, status| {
+                        let bg = match status {
+                            BtnStatus::Hovered => Color { a: 0.15, ..OryxisColors::t().warning },
+                            _ => Color::TRANSPARENT,
+                        };
+                        button::Style {
+                            background: Some(Background::Color(bg)),
+                            border: Border { radius: Radius::from(8.0), color: OryxisColors::t().warning, width: 1.0 },
+                            ..Default::default()
+                        }
+                    })
+                    .into()
+                } else {
+                    text(crate::i18n::t("lock_vault_requires_password"))
+                        .size(11)
+                        .color(OryxisColors::t().text_muted)
+                        .into()
+                };
 
                 // MCP Server section
                 let mcp_toggle = toggle_row(
