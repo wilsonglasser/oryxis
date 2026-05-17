@@ -1942,27 +1942,30 @@ impl Oryxis {
         .padding(Padding { top: 20.0, right: 24.0, bottom: 16.0, left: 24.0 })
         .width(Length::Fill);
 
-        scrollable(
-            container(
-                column![
-                    toolbar,
-                    list,
-                    Space::new().height(16),
-                    form,
-                    Space::new().height(24),
-                ]
-                .width(Length::Fill)
-                .align_x(dir_align_x()),
-            )
-            .padding(Padding {
-                top: 0.0,
-                right: 24.0,
-                bottom: 24.0,
-                left: 24.0,
-            }),
+        // Mirror the Hosts / Keychain layout: toolbar lives OUTSIDE
+        // the scrollable so its leading padding doesn't stack with
+        // the scrollable's, and the list + form inside use their
+        // own leading padding tuned to land flush with the toolbar
+        // title (Hosts achieves this by sharing the scrollable
+        // `left: 24` with the toolbar's `left: 24` for matching
+        // indents at the top of the panel).
+        let scroll = scrollable(
+            column![
+                list,
+                Space::new().height(16),
+                form,
+                Space::new().height(24),
+            ]
+            .width(Length::Fill)
+            .padding(Padding { top: 0.0, right: 24.0, bottom: 0.0, left: 24.0 })
+            .align_x(dir_align_x()),
         )
-        .height(Length::Fill)
-        .into()
+        .height(Length::Fill);
+
+        column![toolbar, scroll]
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .into()
     }
 
     /// Standalone MCP Server settings section. Was nested inside the

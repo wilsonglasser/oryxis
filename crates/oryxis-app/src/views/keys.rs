@@ -270,13 +270,15 @@ impl Oryxis {
             let key_show_dots =
                 self.hovered_key_card == Some(idx) || self.key_context_menu == Some(idx);
             let key_rtl = crate::i18n::is_rtl_layout();
-            // Mirror the host-card padding: 8 top/bottom, 2 leading,
-            // 24 trailing to reserve room for the kebab overlay.
+            // Mirror the host-card padding family: 8 top/bottom for
+            // a snug row height, 8 leading so the badge gets a
+            // small breath from the card border, 24 trailing to
+            // reserve room for the kebab overlay.
             let card_pad_trailing = 24.0_f32;
             let card_padding = if key_rtl {
-                Padding { top: 8.0, right: 2.0, bottom: 8.0, left: card_pad_trailing }
+                Padding { top: 8.0, right: 8.0, bottom: 8.0, left: card_pad_trailing }
             } else {
-                Padding { top: 8.0, right: card_pad_trailing, bottom: 8.0, left: 2.0 }
+                Padding { top: 8.0, right: card_pad_trailing, bottom: 8.0, left: 8.0 }
             };
 
             let card = button(
