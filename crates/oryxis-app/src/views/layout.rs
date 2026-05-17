@@ -118,15 +118,12 @@ pub(crate) fn resize_border<'a>() -> Element<'a, Message> {
 
 impl Oryxis {
     pub(crate) fn view_main(&self) -> Element<'_, Message> {
-        // Workspace mode hides the sidebar when a connection tab is
-        // active so the terminal claims the full canvas width. The
-        // top tab bar and burger menu remain the navigation surface
-        // while a session is open; switching back to a vault view
-        // brings the sidebar back. Classic mode keeps the sidebar
-        // visible at all times (existing behavior).
+        // Workspace mode replaces the sidebar with the top tab bar
+        // (areas + connections) and the burger menu, so the sidebar
+        // never renders in this mode. Classic mode keeps the sidebar
+        // visible at all times like before.
         let workspace_mode = self.setting_layout_mode == "workspace";
-        let session_active = self.active_tab.is_some();
-        let hide_sidebar = workspace_mode && session_active;
+        let hide_sidebar = workspace_mode;
         let sidebar: Element<'_, Message> = if hide_sidebar {
             Space::new().width(0).height(Length::Fill).into()
         } else {
@@ -1117,9 +1114,22 @@ impl Oryxis {
                 background: Some(Background::Color(OryxisColors::t().border)),
                 ..Default::default()
             });
+        // Mirror every sidebar nav entry here so Workspace mode
+        // (where the sidebar is gone) still exposes the full set of
+        // vault surfaces. The SFTP entry is gated on `sftp_enabled`,
+        // same rule the sidebar applies.
+        let sftp_item: Element<'_, Message> = if self.sftp_enabled {
+            item("sftp", Message::ChangeView(View::Sftp))
+        } else {
+            Space::new().height(0).into()
+        };
         let menu_col = column![
             item("hosts", Message::ChangeView(View::Dashboard)),
-            item("sftp", Message::ChangeView(View::Sftp)),
+            sftp_item,
+            item("keychain", Message::ChangeView(View::Keys)),
+            item("snippets", Message::ChangeView(View::Snippets)),
+            item("known_hosts", Message::ChangeView(View::KnownHosts)),
+            item("history", Message::ChangeView(View::History)),
             item("settings", Message::ChangeView(View::Settings)),
             sep,
             item("local_shell", Message::OpenLocalShell),

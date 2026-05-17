@@ -14,6 +14,7 @@ use iced::widget::{button, container, row, scrollable, text, MouseArea, Space};
 use iced::{Background, Border, Color, Element, Length, Padding};
 
 use crate::app::{Message, Oryxis};
+use crate::state::View;
 use crate::theme::{OryxisColors, SYSTEM_UI_SEMIBOLD};
 
 const TAB_HEIGHT: f32 = 26.0;
@@ -86,6 +87,30 @@ impl Oryxis {
         let scroll_mode = natural_total > approx_strip_width;
 
         let mut tab_items: Vec<Element<'_, Message>> = Vec::new();
+
+        // Workspace mode promotes the navigation areas (Hosts and SFTP)
+        // into top-level tabs that sit before the connection tabs. In
+        // Classic mode the sidebar still owns navigation, so we skip
+        // them. Settings stays out of the strip on purpose - it lives
+        // in the burger menu so it doesn't take a permanent slot.
+        if self.setting_layout_mode == "workspace" {
+            let nav_active = self.active_tab.is_none();
+            tab_items.push(area_tab(
+                crate::i18n::t("hosts"),
+                iced_fonts::lucide::server(),
+                View::Dashboard,
+                nav_active && self.active_view == View::Dashboard,
+            ));
+            if self.sftp_enabled {
+                tab_items.push(area_tab(
+                    crate::i18n::t("sftp"),
+                    iced_fonts::lucide::folder_tree(),
+                    View::Sftp,
+                    nav_active && self.active_view == View::Sftp,
+                ));
+            }
+        }
+
         for (idx, tab) in self.tabs.iter().enumerate() {
             let is_active = active_idx == Some(idx);
             let is_hovered = self.hovered_tab == Some(idx);
@@ -392,6 +417,62 @@ fn truncate_label(label: &str, width: f32) -> String {
 /// from the per-host override or the global `default_host_icon`
 /// setting; defaults to Square here (back-compat with the previous
 /// fixed shape) when the caller passes nothing custom.
+/// Area tab: navigation entry (Hosts, SFTP, ...) rendered into the
+/// top tab strip in Workspace mode. Same height + bg as a session
+/// tab so the strip reads as one continuous row, but with a leading
+/// glyph instead of a host badge and no close affordance (areas
+/// can't be closed). Dispatches `ChangeView` so the existing
+/// navigation handler picks it up.
+fn area_tab<'a>(
+    label: &'a str,
+    glyph: iced::widget::Text<'a>,
+    view: View,
+    is_active: bool,
+) -> Element<'a, Message> {
+    let fg = if is_active {
+        OryxisColors::t().accent
+    } else {
+        OryxisColors::t().text_muted
+    };
+    let bg = if is_active {
+        Color { a: 0.15, ..OryxisColors::t().accent }
+    } else {
+        Color::TRANSPARENT
+    };
+    button(
+        container(
+            row![
+                container(glyph.size(14).color(fg))
+                    .center_x(Length::Fixed(TAB_ICON_SLOT))
+                    .center_y(Length::Fixed(TAB_ICON_SLOT)),
+                Space::new().width(6),
+                text(label)
+                    .size(12)
+                    .line_height(1.0)
+                    .wrapping(iced::widget::text::Wrapping::None)
+                    .font(SYSTEM_UI_SEMIBOLD)
+                    .color(fg),
+            ]
+            .align_y(iced::Alignment::Center),
+        )
+        .center_y(Length::Fixed(TAB_HEIGHT))
+        .padding(Padding { top: 0.0, right: 10.0, bottom: 0.0, left: 6.0 }),
+    )
+    .on_press(Message::ChangeView(view))
+    .style(move |_, status| {
+        let hover_bg = match status {
+            BtnStatus::Hovered if !is_active => Color::from_rgba(1.0, 1.0, 1.0, 0.06),
+            _ => bg,
+        };
+        button::Style {
+            background: Some(Background::Color(hover_bg)),
+            border: Border { radius: Radius::from(6.0), ..Default::default() },
+            ..Default::default()
+        }
+    })
+    .into()
+}
+
 #[allow(clippy::too_many_arguments)]
 fn session_tab<'a>(
     idx: usize,
