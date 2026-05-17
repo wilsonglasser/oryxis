@@ -684,10 +684,13 @@ pub struct TerminalView<Message = ()> {
     on_paste_request: Option<Message>,
 }
 
-/// Padding around the terminal content (in pixels). Top stays small
-/// so the first line of output sits close to the tab bar; the legacy
-/// uniform 10 px looked like a chunky air gap on dense layouts.
+/// Horizontal padding around the terminal content (left/right).
 const TERM_PAD: f32 = 4.0;
+/// Vertical padding above the first row. Set to 0 so the first line
+/// of output sits flush against the tab-bar hairline; previous values
+/// (10, then 4) left a visible air gap above shells with short
+/// initial output (ECS exec, SSM, fresh local shells).
+const TERM_PAD_TOP: f32 = 0.0;
 
 /// Rolling per-frame samples for the perf overlay. We track the
 /// **max** of each phase over a short window so transient spikes
@@ -810,8 +813,8 @@ fn scrollbar_geom(
     }
     let track_x = bounds.width - 8.0;
     let track_w = 6.0;
-    let track_y = TERM_PAD;
-    let track_h = (bounds.height - TERM_PAD * 2.0).max(0.0);
+    let track_y = TERM_PAD_TOP;
+    let track_h = (bounds.height - TERM_PAD_TOP - TERM_PAD).max(0.0);
     let total = total_lines as f32;
     let visible = screen_lines as f32;
     let thumb_h = (track_h * (visible / total)).max(24.0).min(track_h);
@@ -914,7 +917,7 @@ impl<Message> TerminalView<Message> {
         let cell_width = font_size * 0.6;
         let cell_height = font_size * 1.15;
         let usable_w = (width - TERM_PAD * 2.0).max(cell_width);
-        let usable_h = (height - TERM_PAD * 2.0).max(cell_height);
+        let usable_h = (height - TERM_PAD_TOP - TERM_PAD).max(cell_height);
         let cols = (usable_w / cell_width).floor().max(1.0) as u16;
         let rows = (usable_h / cell_height).floor().max(1.0) as u16;
         (cols, rows)
@@ -922,7 +925,7 @@ impl<Message> TerminalView<Message> {
 
     fn pixel_to_cell(&self, pos: Point) -> (u16, u16) {
         let col = ((pos.x - TERM_PAD) / self.cell_width).floor().max(0.0) as u16;
-        let row = ((pos.y - TERM_PAD) / self.cell_height).floor().max(0.0) as u16;
+        let row = ((pos.y - TERM_PAD_TOP) / self.cell_height).floor().max(0.0) as u16;
         (col, row)
     }
 
@@ -1410,7 +1413,7 @@ where
             widget_state.hovered_url
         {
             let col = ((pos.x - TERM_PAD) / cell_w).max(0.0) as u16;
-            let row = ((pos.y - TERM_PAD) / cell_h).max(0.0) as u16;
+            let row = ((pos.y - TERM_PAD_TOP) / cell_h).max(0.0) as u16;
             hovered_url_range(&highlights, row, col)
         } else {
             None
@@ -1438,7 +1441,7 @@ where
         // --- Pass 2: draw cells with highlight overrides ---
         for cd in &cells {
             let x = cd.col as f32 * cell_w + TERM_PAD;
-            let y = cd.row as f32 * cell_h + TERM_PAD;
+            let y = cd.row as f32 * cell_h + TERM_PAD_TOP;
 
             if let Some(panel) = perf_panel
                 && x + cell_w > panel.x
@@ -1558,7 +1561,7 @@ where
         let visible_cursor_row = cursor.point.line.0 + scroll_offset;
         if (0..screen_lines as i32).contains(&visible_cursor_row) {
             let cx = cursor.point.column.0 as f32 * cell_w + TERM_PAD;
-            let cy = visible_cursor_row as f32 * cell_h + TERM_PAD;
+            let cy = visible_cursor_row as f32 * cell_h + TERM_PAD_TOP;
             match cursor.shape {
                 CursorShape::Block => {
                     frame.fill_rectangle(
