@@ -1350,12 +1350,20 @@ impl Oryxis {
                         .color(OryxisColors::t().text_muted)
                 };
 
-                let mut options_section: iced::widget::Column<'_, Message> = column![
-                    text(crate::i18n::t("sync_options")).size(14).color(OryxisColors::t().text_muted),
-                    Space::new().height(8),
+                // Master enable panel sits at the top, same shape as
+                // the Enable SFTP / Enable AI panels: a single toggle
+                // (with the engine state hint right under it). When
+                // the master toggle is off, every other Sync panel
+                // is hidden below so the surface collapses to just
+                // the on/off knob.
+                let enable_section: iced::widget::Column<'_, Message> = column![
                     sync_toggle,
                     Space::new().height(4),
                     engine_state,
+                ];
+
+                let mut options_section: iced::widget::Column<'_, Message> = column![
+                    text(crate::i18n::t("sync_options")).size(14).color(OryxisColors::t().text_muted),
                     Space::new().height(8),
                     dir_row(vec![
                         text(crate::i18n::t("sync_mode")).size(13).color(OryxisColors::t().text_secondary).into(),
@@ -1659,24 +1667,30 @@ impl Oryxis {
                     port_input,
                 ]);
 
+                let mut content_col: iced::widget::Column<'_, Message> = column![
+                    text(crate::i18n::t("sync")).size(18).color(OryxisColors::t().text_primary),
+                    Space::new().height(16),
+                    panel_section(enable_section),
+                ]
+                .width(Length::Fill)
+                .align_x(dir_align_x());
+
+                if self.sync_enabled {
+                    content_col = content_col
+                        .push(Space::new().height(12))
+                        .push(device_section)
+                        .push(Space::new().height(12))
+                        .push(panel_section(options_section))
+                        .push(Space::new().height(12))
+                        .push(panel_section(pairing_section))
+                        .push(Space::new().height(12))
+                        .push(advanced_section);
+                }
+                content_col = content_col.push(Space::new().height(24));
+
                 scrollable(
-                    container(
-                        column![
-                            text(crate::i18n::t("sync")).size(18).color(OryxisColors::t().text_primary),
-                            Space::new().height(16),
-                            device_section,
-                            Space::new().height(12),
-                            panel_section(options_section),
-                            Space::new().height(12),
-                            panel_section(pairing_section),
-                            Space::new().height(12),
-                            advanced_section,
-                            Space::new().height(24),
-                        ]
-                        .width(Length::Fill)
-                        .align_x(dir_align_x()),
-                    )
-                    .padding(Padding { top: 20.0, right: 24.0, bottom: 24.0, left: 24.0 }),
+                    container(content_col)
+                        .padding(Padding { top: 20.0, right: 24.0, bottom: 24.0, left: 24.0 }),
                 )
                 .height(Length::Fill)
                 .into()
@@ -1827,15 +1841,43 @@ impl Oryxis {
                         ..Default::default()
                     }
                 });
+            // Card layout matching the Hosts / Keychain / Snippets
+            // pattern: host_icon badge on the leading edge, label +
+            // subtitle column in the middle, action buttons trailing.
+            let proxy_style = crate::widgets::resolve_host_icon_style(
+                None,
+                &self.setting_default_host_icon,
+            );
+            let glyph_el: Element<'_, Message> = iced_fonts::lucide::globe()
+                .size(16)
+                .line_height(1.0)
+                .color(Color::WHITE)
+                .into();
+            let badge = crate::widgets::host_icon(
+                proxy_style,
+                OryxisColors::t().accent,
+                &pi.label,
+                Some(glyph_el),
+                32.0,
+            );
             let row_el = container(
                 dir_row(vec![
+                    badge,
+                    Space::new().width(8).into(),
                     column![
                         text(&pi.label)
-                            .size(14)
-                            .color(OryxisColors::t().text_primary),
-                        text(summary).size(12).color(OryxisColors::t().text_muted),
-                    ].into(),
-                    Space::new().width(Length::Fill).into(),
+                            .size(13)
+                            .color(OryxisColors::t().text_primary)
+                            .wrapping(iced::widget::text::Wrapping::None),
+                        Space::new().height(2),
+                        text(summary)
+                            .size(10)
+                            .color(OryxisColors::t().text_muted)
+                            .wrapping(iced::widget::text::Wrapping::None),
+                    ]
+                    .width(Length::Fill)
+                    .align_x(dir_align_x())
+                    .into(),
                     edit_btn.into(),
                     Space::new().width(8).into(),
                     delete_btn.into(),
@@ -1843,15 +1885,15 @@ impl Oryxis {
                 .align_y(iced::Alignment::Center),
             )
             .padding(Padding {
-                top: 12.0,
+                top: 8.0,
                 right: 12.0,
-                bottom: 12.0,
-                left: 12.0,
+                bottom: 8.0,
+                left: 8.0,
             })
             .style(|_| container::Style {
-                background: Some(Background::Color(OryxisColors::t().bg_hover)),
+                background: Some(Background::Color(OryxisColors::t().bg_surface)),
                 border: Border {
-                    radius: Radius::from(6.0),
+                    radius: Radius::from(10.0),
                     color: OryxisColors::t().border,
                     width: 1.0,
                 },

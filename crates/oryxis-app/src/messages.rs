@@ -231,6 +231,15 @@ pub enum Message {
     /// Clears the "Press F11 to exit fullscreen" banner. Fired by a
     /// timed `Task::perform` 3 s after entering fullscreen.
     FullscreenHintHide,
+    /// Settings → Shortcuts: enter capture mode for an action. The
+    /// next non-Esc, non-pure-modifier `KeyPressed` becomes the new
+    /// binding (see `shortcuts::handle_hotkey_capture`).
+    StartEditingHotkey(crate::hotkeys::HotkeyAction),
+    /// Settings → Shortcuts: drop a single action's user override and
+    /// fall back to the factory default.
+    ResetHotkey(crate::hotkeys::HotkeyAction),
+    /// Settings → Shortcuts: drop every user override.
+    ResetAllHotkeys,
     WindowClose,
     /// Spawn a fresh top-level Oryxis window without binding to any
     /// existing tab. Triggered by Ctrl+Shift+N and the burger menu's

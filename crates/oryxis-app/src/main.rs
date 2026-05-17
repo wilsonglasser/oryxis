@@ -44,6 +44,7 @@ mod root_view;
 // path-finding, no SDK, relocated here from `oryxis-cloud-aws` when
 // the AWS provider moved into its plugin subprocess.
 mod session_manager_plugin;
+mod hotkeys;
 mod sftp_helpers;
 mod sftp_methods;
 mod shortcuts;

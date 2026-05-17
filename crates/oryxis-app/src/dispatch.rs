@@ -165,6 +165,10 @@ impl Oryxis {
 
             // -- Navigation --
             Message::ChangeView(view) => {
+                // Navigating away from the Shortcuts editor cancels
+                // any pending capture so the next keystroke doesn't
+                // silently rebind an action from another screen.
+                self.editing_hotkey = None;
                 // Known Hosts moved into Settings in v0.7; rewrite the
                 // request so older callers (and any persisted state)
                 // land on the right place instead of an unreachable

@@ -218,14 +218,17 @@ impl Oryxis {
                         }
                         Err(msg) => {
                             // A failed fetch must not mask a working
-                            // dev build or an installed version.
-                            let base = detect_status(&id);
-                            entry.status =
-                                if matches!(base, PluginUiStatus::NotInstalled) {
-                                    PluginUiStatus::Failed(msg)
-                                } else {
-                                    base
-                                };
+                            // dev build or an installed version. For
+                            // a `NotInstalled` provider we also keep
+                            // the status: a failed manifest fetch is
+                            // typically a transient network blip (no
+                            // release yet, GitHub API throttled,
+                            // offline) and the install modal that
+                            // triggered the fetch already surfaces
+                            // "Download size unavailable", no need to
+                            // also escalate the row badge to error.
+                            let _ = msg;
+                            entry.status = detect_status(&id);
                         }
                     }
                 }

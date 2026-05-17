@@ -145,6 +145,8 @@ impl Oryxis {
                 window_maximized: false,
                 window_fullscreen: false,
                 fullscreen_hint_visible: false,
+                hotkey_bindings: crate::hotkeys::default_bindings(),
+                editing_hotkey: None,
                 modifiers: keyboard::Modifiers::default(),
                 keys: Vec::new(),
                 show_key_panel: false,
@@ -581,8 +583,21 @@ impl Oryxis {
             {
                 self.setting_layout_mode = v;
             }
+            // Hotkey overrides: each action persists under
+            // `hotkey_<id>` with the canonical serialized form
+            // (`"ctrl+shift+n"`). Defaults already populate
+            // `hotkey_bindings`, so any missing / malformed entry
+            // silently falls back to the factory binding.
+            for action in crate::hotkeys::HotkeyAction::all() {
+                let key = format!("hotkey_{}", action.id());
+                if let Ok(Some(v)) = vault.get_setting(&key)
+                    && let Some(binding) = crate::hotkeys::HotkeyBinding::parse(&v)
+                {
+                    self.hotkey_bindings.insert(*action, binding);
+                }
+            }
             if let Ok(Some(v)) = vault.get_setting("default_host_icon")
-                && matches!(v.as_str(), "circular" | "square" | "outline" | "initials")
+                && matches!(v.as_str(), "circular" | "square" | "rounded" | "outline" | "initials")
             {
                 self.setting_default_host_icon = v;
             }

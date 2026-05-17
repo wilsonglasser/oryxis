@@ -256,6 +256,15 @@ pub struct Oryxis {
     /// the on-enter hint fades on its own and the X close affordance
     /// then only shows on top-edge hover.
     pub(crate) fullscreen_hint_visible: bool,
+    /// Active hotkey bindings: defaults overlaid with user overrides
+    /// loaded from the settings table. Mutated by the Shortcuts
+    /// editor; read on every `KeyboardEvent` in dispatch_terminal.
+    pub(crate) hotkey_bindings: crate::hotkeys::HotkeyMap,
+    /// Action currently being re-bound from Settings → Shortcuts.
+    /// `Some` puts the keyboard handler in capture mode: the next
+    /// KeyPressed becomes the new binding (Esc cancels). `None` is
+    /// normal dispatch.
+    pub(crate) editing_hotkey: Option<crate::hotkeys::HotkeyAction>,
 
     // Keys
     pub(crate) keys: Vec<SshKey>,
@@ -701,7 +710,7 @@ impl Oryxis {
         // Add sub-nav (~40) on top when Workspace+vault renders it.
         // Classic was getting the Workspace value before, so the menu
         // hung well below the trigger button.
-        const BASE_Y: f32 = 90.0;
+        const BASE_Y: f32 = 95.0;
         const SUBNAV_HEIGHT: f32 = 40.0;
         let in_workspace_vault = self.setting_layout_mode == "workspace"
             && self.active_tab.is_none()

@@ -224,7 +224,34 @@ impl Oryxis {
                 self.persist_setting("terminal_font_name", &self.terminal_font_name);
             }
             Message::ChangeSettingsSection(section) => {
+                // Leaving the Shortcuts editor cancels any pending
+                // capture; otherwise the next keystroke on the new
+                // section would silently rebind the action.
+                if self.settings_section == crate::state::SettingsSection::Shortcuts
+                    && section != crate::state::SettingsSection::Shortcuts
+                {
+                    self.editing_hotkey = None;
+                }
                 self.settings_section = section;
+            }
+            Message::StartEditingHotkey(action) => {
+                self.editing_hotkey = Some(action);
+            }
+            Message::ResetHotkey(action) => {
+                let defaults = crate::hotkeys::default_bindings();
+                if let Some(default_binding) = defaults.get(&action) {
+                    self.hotkey_bindings.insert(action, *default_binding);
+                }
+                // Empty value persists the absence of an override, so
+                // future boots rehydrate to the default. Same
+                // semantics as deleting the row.
+                self.persist_setting(&format!("hotkey_{}", action.id()), "");
+            }
+            Message::ResetAllHotkeys => {
+                self.hotkey_bindings = crate::hotkeys::default_bindings();
+                for action in crate::hotkeys::HotkeyAction::all() {
+                    self.persist_setting(&format!("hotkey_{}", action.id()), "");
+                }
             }
             Message::ToggleCopyOnSelect => {
                 self.setting_copy_on_select = !self.setting_copy_on_select;
