@@ -273,6 +273,7 @@ fn en(key: &str) -> &'static str {
         "cloud_dynamic_form_key" => "SSH Key",
         "cloud_dynamic_form_identity" => "Identity",
         "local_shell" => "Local Shell",
+        "new_window" => "New Window",
         "detecting_shells" => "Detecting shells…",
 
         // Actions
@@ -537,6 +538,9 @@ fn en(key: &str) -> &'static str {
         "search_hosts" => "Search hosts...",
         "search_snippets" => "Search snippets...",
         "search_history" => "Search history...",
+        "event_session" => "Session",
+        "event_auth_failed" => "Auth failed",
+        "event_error" => "Error",
         "search_keys" => "Search keys...",
         "no_results" => "No results",
         "error" => "Error",
@@ -922,6 +926,7 @@ fn pt_br(key: &str) -> Option<&'static str> {
         "cloud_dynamic_form_key" => "Chave SSH",
         "cloud_dynamic_form_identity" => "Identidade",
         "local_shell" => "Shell Local",
+        "new_window" => "Nova Janela",
         "detecting_shells" => "Detectando shells…",
 
         "create_host" => "Criar host",
@@ -1532,6 +1537,7 @@ fn es(key: &str) -> Option<&'static str> {
         "cloud_dynamic_form_key" => "Clave SSH",
         "cloud_dynamic_form_identity" => "Identidad",
         "local_shell" => "Shell Local",
+        "new_window" => "Nueva Ventana",
         "detecting_shells" => "Detectando shells…",
 
         "create_host" => "Crear host",
@@ -2131,6 +2137,7 @@ fn fr(key: &str) -> Option<&'static str> {
         "cloud_dynamic_form_key" => "Clé SSH",
         "cloud_dynamic_form_identity" => "Identité",
         "local_shell" => "Shell Local",
+        "new_window" => "Nouvelle Fenêtre",
         "detecting_shells" => "Détection des shells…",
 
         "create_host" => "Créer un hôte",

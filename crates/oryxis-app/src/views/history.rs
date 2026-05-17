@@ -1,40 +1,140 @@
-//! History / session logs screen.
+//! History view: unified timeline of connection errors + recorded
+//! sessions, replacing the separate "History" / "Session Logs"
+//! containers from v0.6. Successful connect/disconnect events are
+//! folded into the corresponding session log row (start/end times,
+//! data size) so the list reads as one chronological feed.
 
 use iced::border::Radius;
 use iced::widget::{button, column, container, row, scrollable, text, Space};
 use iced::widget::button::Status as BtnStatus;
 use iced::{Background, Border, Color, Element, Length, Padding};
 
+use chrono::{DateTime, Utc};
+
 use crate::app::{Message, Oryxis};
 use crate::theme::OryxisColors;
 use crate::util::format_data_size;
 
+/// A single row in the unified timeline, either a failed-connect log
+/// entry or a recorded session. Ordered by `ts` descending across
+/// both kinds.
+enum TimelineKind<'a> {
+    /// Connection attempt that didn't go anywhere useful (auth
+    /// failure or transport error). Carries the original LogEntry
+    /// so we can show the underlying message.
+    Failure(&'a oryxis_core::models::log_entry::LogEntry),
+    /// A recorded session, successful start through end (or still
+    /// in progress). Carries the session row + its index in
+    /// `self.session_logs` so the View/Delete buttons can target it.
+    Session {
+        idx: usize,
+        entry: &'a oryxis_vault::SessionLogEntry,
+    },
+}
+
+struct TimelineRow<'a> {
+    ts: DateTime<Utc>,
+    label: &'a str,
+    hostname: Option<&'a str>,
+    kind: TimelineKind<'a>,
+}
+
 impl Oryxis {
     pub(crate) fn view_history(&self) -> Element<'_, Message> {
-        // Pagination state: 50 rows / page; labels reflect current page and
-        // total count from the vault. Prev/Next are disabled at the edges.
+        use oryxis_core::models::log_entry::LogEvent;
+
+        // ── Toolbar ──
         let per_page: usize = 50;
-        let max_page = self.logs_total.saturating_sub(1) / per_page.max(1);
-        let can_prev = self.logs_page > 0;
-        let can_next = self.logs_page < max_page;
-        let range_label = if self.logs_total == 0 {
+        let needle = self.history_search.to_lowercase();
+
+        // Build the unified timeline. Failed log entries (auth fail,
+        // transport error) stay as their own rows; everything else
+        // about a successful connect is already captured by its
+        // session log row, so we drop Connected/Disconnected events
+        // here to avoid showing the same connection twice.
+        let mut rows: Vec<TimelineRow<'_>> = Vec::new();
+        for entry in &self.logs {
+            if !matches!(entry.event, LogEvent::AuthFailed | LogEvent::Error) {
+                continue;
+            }
+            rows.push(TimelineRow {
+                ts: entry.timestamp,
+                label: &entry.connection_label,
+                hostname: Some(&entry.hostname),
+                kind: TimelineKind::Failure(entry),
+            });
+        }
+        for (idx, entry) in self.session_logs.iter().enumerate() {
+            // Look up the connection by id so we can show its
+            // hostname next to the label (matches the Termius row).
+            let hostname = self
+                .connections
+                .iter()
+                .find(|c| c.id == entry.connection_id)
+                .map(|c| c.hostname.as_str());
+            rows.push(TimelineRow {
+                ts: entry.started_at,
+                label: &entry.label,
+                hostname,
+                kind: TimelineKind::Session { idx, entry },
+            });
+        }
+        rows.sort_by_key(|r| std::cmp::Reverse(r.ts));
+
+        // Filter by the contextual sub-nav search before paginating
+        // so the page counts reflect what the user actually sees.
+        rows.retain(|r| {
+            if needle.is_empty() {
+                return true;
+            }
+            r.label.to_lowercase().contains(&needle)
+                || r.hostname.is_some_and(|h| h.to_lowercase().contains(&needle))
+        });
+
+        let total = rows.len();
+        let max_page = total.saturating_sub(1) / per_page.max(1);
+        let page = self.logs_page.min(max_page);
+        let can_prev = page > 0;
+        let can_next = page < max_page;
+        let range_label = if total == 0 {
             format!("0 {}", crate::i18n::t("entries"))
         } else {
-            let start = self.logs_page * per_page + 1;
-            let end = ((self.logs_page + 1) * per_page).min(self.logs_total);
-            format!("{}\u{2013}{} {} {}", start, end, crate::i18n::t("of"), self.logs_total)
+            let start = page * per_page + 1;
+            let end = ((page + 1) * per_page).min(total);
+            format!(
+                "{}\u{2013}{} {} {}",
+                start, end, crate::i18n::t("of"), total
+            )
         };
 
-        let prev_btn = nav_btn(iced_fonts::lucide::chevron_left(), Message::LogsPagePrev, can_prev);
-        let next_btn = nav_btn(iced_fonts::lucide::chevron_right(), Message::LogsPageNext, can_next);
+        let prev_btn = nav_btn(
+            iced_fonts::lucide::chevron_left(),
+            Message::LogsPagePrev,
+            can_prev,
+        );
+        let next_btn = nav_btn(
+            iced_fonts::lucide::chevron_right(),
+            Message::LogsPageNext,
+            can_next,
+        );
 
         let clear_btn = button(
-            container(text(crate::i18n::t("clear").to_uppercase()).size(11).font(iced::Font {
-                weight: iced::font::Weight::Bold,
-                ..iced::Font::new(crate::theme::SYSTEM_UI_FAMILY)
-            }).color(OryxisColors::t().text_muted))
-                .center_y(Length::Fixed(24.0))
-                .padding(Padding { top: 0.0, right: 14.0, bottom: 0.0, left: 14.0 }),
+            container(
+                text(crate::i18n::t("clear").to_uppercase())
+                    .size(11)
+                    .font(iced::Font {
+                        weight: iced::font::Weight::Bold,
+                        ..iced::Font::new(crate::theme::SYSTEM_UI_FAMILY)
+                    })
+                    .color(OryxisColors::t().text_muted),
+            )
+            .center_y(Length::Fixed(24.0))
+            .padding(Padding {
+                top: 0.0,
+                right: 14.0,
+                bottom: 0.0,
+                left: 14.0,
+            }),
         )
         .on_press(Message::ClearLogs)
         .style(|_, status| {
@@ -44,297 +144,90 @@ impl Oryxis {
             };
             button::Style {
                 background: Some(Background::Color(bg)),
-                border: Border { radius: Radius::from(6.0), color: OryxisColors::t().border, width: 1.0 },
+                border: Border {
+                    radius: Radius::from(6.0),
+                    color: OryxisColors::t().border,
+                    width: 1.0,
+                },
                 ..Default::default()
             }
         });
+
         let toolbar = container(
             crate::widgets::dir_row(vec![
-                text(crate::i18n::t("history")).size(20).color(OryxisColors::t().text_primary).into(),
+                text(crate::i18n::t("history"))
+                    .size(20)
+                    .color(OryxisColors::t().text_primary)
+                    .into(),
                 Space::new().width(Length::Fill).into(),
-                text(range_label).size(11).color(OryxisColors::t().text_muted).into(),
+                text(range_label)
+                    .size(11)
+                    .color(OryxisColors::t().text_muted)
+                    .into(),
                 Space::new().width(8).into(),
                 prev_btn,
                 Space::new().width(4).into(),
                 next_btn,
                 Space::new().width(12).into(),
                 clear_btn.into(),
-            ]).align_y(iced::Alignment::Center),
+            ])
+            .align_y(iced::Alignment::Center),
         )
         .padding(Padding { top: 20.0, right: 24.0, bottom: 16.0, left: 24.0 })
         .width(Length::Fill);
 
-        let mut rows: Vec<Element<'_, Message>> = Vec::new();
-
-        if self.logs.is_empty() {
-            rows.push(
+        // ── Rows ──
+        let mut row_elements: Vec<Element<'_, Message>> = Vec::new();
+        if rows.is_empty() {
+            row_elements.push(
                 container(
                     text(crate::i18n::t("no_activity"))
-                        .size(13).color(OryxisColors::t().text_muted),
+                        .size(13)
+                        .color(OryxisColors::t().text_muted),
                 )
                 .padding(16)
                 .into(),
             );
-        }
-
-        let history_needle = self.history_search.to_lowercase();
-        for entry in &self.logs {
-            if !history_needle.is_empty()
-                && !entry.connection_label.to_lowercase().contains(&history_needle)
-                && !entry.hostname.to_lowercase().contains(&history_needle)
-            {
-                continue;
-            }
-            let (event_icon, event_color) = match entry.event {
-                oryxis_core::models::log_entry::LogEvent::Connected => {
-                    (iced_fonts::lucide::circle_check(), OryxisColors::t().success)
-                }
-                oryxis_core::models::log_entry::LogEvent::Disconnected => {
-                    (iced_fonts::lucide::circle_minus(), OryxisColors::t().text_muted)
-                }
-                oryxis_core::models::log_entry::LogEvent::AuthFailed => {
-                    (iced_fonts::lucide::circle_x(), OryxisColors::t().warning)
-                }
-                oryxis_core::models::log_entry::LogEvent::Error => {
-                    (iced_fonts::lucide::circle_alert(), OryxisColors::t().error)
-                }
-            };
-
-            let ts = entry.timestamp.with_timezone(&chrono::Local).format("%Y-%m-%d %H:%M:%S").to_string();
-
-            // Inner column children (title row + message text) stick to
-            // the *leading* edge of the column, left under LTR, right
-            // under RTL, so the title sits next to the icon (which the
-            // outer dir_row places on the leading side) instead of
-            // ending up glued to the timestamp on the trailing side.
-            // Add `Space` on *both* sides of the column so neither the
-            // icon nor the timestamp end up touching the column content.
-            let log_row = container(
-                crate::widgets::dir_row(vec![
-                    event_icon.size(14).color(event_color).into(),
-                    Space::new().width(12).into(),
-                    column![
-                        crate::widgets::dir_row(vec![
-                            text(&entry.connection_label).size(13).color(OryxisColors::t().text_primary).into(),
-                            Space::new().width(8).into(),
-                            text(format!("{}", entry.event)).size(11).color(event_color).into(),
-                        ]).align_y(iced::Alignment::Center),
-                        Space::new().height(2),
-                        text(&entry.message).size(11).color(OryxisColors::t().text_muted),
-                    ]
-                    .width(Length::Fill)
-                    .align_x(crate::widgets::dir_align_x())
-                    .into(),
-                    Space::new().width(12).into(),
-                    text(ts).size(10).color(OryxisColors::t().text_muted).into(),
-                ]).align_y(iced::Alignment::Center),
-            )
-            .padding(Padding { top: 8.0, right: 16.0, bottom: 8.0, left: 16.0 })
-            .width(Length::Fill)
-            .style(|_| container::Style {
-                background: Some(Background::Color(OryxisColors::t().bg_surface)),
-                border: Border { radius: Radius::from(8.0), ..Default::default() },
-                ..Default::default()
-            });
-
-            rows.push(log_row.into());
-            rows.push(Space::new().height(4).into());
-        }
-
-        // ── Session Logs section ──
-        // Mirrors the activity-log toolbar: range label, prev/next, and a
-        // Clear button. Pagination state is tracked separately from the
-        // top section so each list scrolls independently.
-        let session_max_page =
-            self.session_logs_total.saturating_sub(1) / per_page.max(1);
-        let session_can_prev = self.session_logs_page > 0;
-        let session_can_next = self.session_logs_page < session_max_page;
-        let session_range_label = if self.session_logs_total == 0 {
-            format!("0 {}", crate::i18n::t("entries"))
         } else {
-            let start = self.session_logs_page * per_page + 1;
-            let end = ((self.session_logs_page + 1) * per_page)
-                .min(self.session_logs_total);
-            format!(
-                "{}\u{2013}{} {} {}",
-                start,
-                end,
-                crate::i18n::t("of"),
-                self.session_logs_total
-            )
-        };
-        let session_prev_btn = nav_btn(
-            iced_fonts::lucide::chevron_left(),
-            Message::SessionLogsPagePrev,
-            session_can_prev,
-        );
-        let session_next_btn = nav_btn(
-            iced_fonts::lucide::chevron_right(),
-            Message::SessionLogsPageNext,
-            session_can_next,
-        );
-        let session_clear_btn = button(
-            container(text(crate::i18n::t("clear").to_uppercase()).size(11).font(iced::Font {
-                weight: iced::font::Weight::Bold,
-                ..iced::Font::new(crate::theme::SYSTEM_UI_FAMILY)
-            }).color(OryxisColors::t().text_muted))
-                .center_y(Length::Fixed(24.0))
-                .padding(Padding { top: 0.0, right: 14.0, bottom: 0.0, left: 14.0 }),
-        )
-        .on_press(Message::ClearSessionLogs)
-        .style(|_, status| {
-            let bg = match status {
-                BtnStatus::Hovered => Color { a: 0.15, ..OryxisColors::t().error },
-                _ => Color::TRANSPARENT,
-            };
-            button::Style {
-                background: Some(Background::Color(bg)),
-                border: Border { radius: Radius::from(6.0), color: OryxisColors::t().border, width: 1.0 },
-                ..Default::default()
+            let start = page * per_page;
+            let end = ((page + 1) * per_page).min(total);
+            for row_data in &rows[start..end] {
+                row_elements.push(self.render_timeline_row(row_data));
+                row_elements.push(Space::new().height(4).into());
             }
-        });
-
-        rows.push(Space::new().height(16).into());
-        rows.push(
-            crate::widgets::dir_row(vec![
-                text(crate::i18n::t("session_logs"))
-                    .size(16)
-                    .color(OryxisColors::t().text_primary)
-                    .into(),
-                Space::new().width(Length::Fill).into(),
-                text(session_range_label)
-                    .size(11)
-                    .color(OryxisColors::t().text_muted)
-                    .into(),
-                Space::new().width(8).into(),
-                session_prev_btn,
-                Space::new().width(4).into(),
-                session_next_btn,
-                Space::new().width(12).into(),
-                session_clear_btn.into(),
-            ])
-            .align_y(iced::Alignment::Center)
-            .into(),
-        );
-        rows.push(Space::new().height(8).into());
-
-        if self.session_logs.is_empty() {
-            rows.push(
-                container(
-                    text(crate::i18n::t("no_session_recordings"))
-                        .size(13).color(OryxisColors::t().text_muted),
-                )
-                .padding(16)
-                .into(),
-            );
-        }
-
-        for (idx, entry) in self.session_logs.iter().enumerate() {
-            let ts = entry.started_at.with_timezone(&chrono::Local).format("%Y-%m-%d %H:%M:%S").to_string();
-            let duration = if let Some(ended) = entry.ended_at {
-                let dur = ended.signed_duration_since(entry.started_at);
-                let secs = dur.num_seconds();
-                if secs < 60 {
-                    format!("{}s", secs)
-                } else if secs < 3600 {
-                    format!("{}m {}s", secs / 60, secs % 60)
-                } else {
-                    format!("{}h {}m", secs / 3600, (secs % 3600) / 60)
-                }
-            } else {
-                crate::i18n::t("in_progress").to_string()
-            };
-            let size_str = format_data_size(entry.data_size);
-            let log_id = entry.id;
-
-            let view_btn = button(
-                container(text(crate::i18n::t("view")).size(11).color(OryxisColors::t().accent))
-                    .padding(Padding { top: 4.0, right: 10.0, bottom: 4.0, left: 10.0 }),
-            )
-            .on_press(Message::ViewSessionLog(log_id))
-            .style(|_, status| {
-                let bg = match status {
-                    BtnStatus::Hovered => Color { a: 0.15, ..OryxisColors::t().accent },
-                    _ => Color::TRANSPARENT,
-                };
-                button::Style {
-                    background: Some(Background::Color(bg)),
-                    border: Border { radius: Radius::from(6.0), color: OryxisColors::t().accent, width: 1.0 },
-                    ..Default::default()
-                }
-            });
-            let delete_btn = button(
-                container(text(crate::i18n::t("delete")).size(11).color(OryxisColors::t().error))
-                    .padding(Padding { top: 4.0, right: 10.0, bottom: 4.0, left: 10.0 }),
-            )
-            .on_press(Message::DeleteSessionLog(idx))
-            .style(|_, status| {
-                let bg = match status {
-                    BtnStatus::Hovered => Color { a: 0.15, ..OryxisColors::t().error },
-                    _ => Color::TRANSPARENT,
-                };
-                button::Style {
-                    background: Some(Background::Color(bg)),
-                    border: Border { radius: Radius::from(6.0), color: OryxisColors::t().error, width: 1.0 },
-                    ..Default::default()
-                }
-            });
-            let session_row = container(
-                crate::widgets::dir_row(vec![
-                    iced_fonts::lucide::file_text().size(14).color(OryxisColors::t().accent).into(),
-                    Space::new().width(12).into(),
-                    column![
-                        text(&entry.label).size(13).color(OryxisColors::t().text_primary),
-                        Space::new().height(2),
-                        crate::widgets::dir_row(vec![
-                            text(ts).size(10).color(OryxisColors::t().text_muted).into(),
-                            Space::new().width(12).into(),
-                            text(duration).size(10).color(OryxisColors::t().text_muted).into(),
-                            Space::new().width(12).into(),
-                            text(size_str).size(10).color(OryxisColors::t().text_muted).into(),
-                        ]),
-                    ]
-                    .width(Length::Fill)
-                    .align_x(crate::widgets::dir_align_x())
-                    .into(),
-                    Space::new().width(12).into(),
-                    view_btn.into(),
-                    Space::new().width(8).into(),
-                    delete_btn.into(),
-                ]).align_y(iced::Alignment::Center),
-            )
-            .padding(Padding { top: 8.0, right: 16.0, bottom: 8.0, left: 16.0 })
-            .width(Length::Fill)
-            .style(|_| container::Style {
-                background: Some(Background::Color(OryxisColors::t().bg_surface)),
-                border: Border { radius: Radius::from(8.0), ..Default::default() },
-                ..Default::default()
-            });
-
-            rows.push(session_row.into());
-            rows.push(Space::new().height(4).into());
         }
 
         let list = scrollable(
-            column(rows).padding(Padding { top: 0.0, right: 24.0, bottom: 24.0, left: 24.0 }),
-        ).height(Length::Fill);
+            column(row_elements).padding(Padding {
+                top: 0.0,
+                right: 24.0,
+                bottom: 24.0,
+                left: 24.0,
+            }),
+        )
+        .height(Length::Fill);
 
-        // Session log viewer overlay
+        // ── Session viewer overlay ──
         if let Some((_log_id, ref rendered_text)) = self.viewing_session_log {
             let viewer = container(
                 column![
-                    // Header
                     container(
                         row![
-                            text(crate::i18n::t("session_log")).size(16).color(OryxisColors::t().text_primary),
+                            text(crate::i18n::t("session_log"))
+                                .size(16)
+                                .color(OryxisColors::t().text_primary),
                             Space::new().width(Length::Fill),
                             button(
-                                container(text(crate::i18n::t("close")).size(11).font(iced::Font {
-                                    weight: iced::font::Weight::Bold,
-                                    ..iced::Font::new(crate::theme::SYSTEM_UI_FAMILY)
-                                }).color(OryxisColors::t().text_muted))
-                                    .center_y(Length::Fixed(24.0))
-                                    .padding(Padding { top: 0.0, right: 14.0, bottom: 0.0, left: 14.0 }),
+                                container(
+                                    text(crate::i18n::t("close")).size(11).font(iced::Font {
+                                        weight: iced::font::Weight::Bold,
+                                        ..iced::Font::new(crate::theme::SYSTEM_UI_FAMILY)
+                                    }).color(OryxisColors::t().text_muted),
+                                )
+                                .center_y(Length::Fixed(24.0))
+                                .padding(Padding {
+                                    top: 0.0, right: 14.0, bottom: 0.0, left: 14.0,
+                                }),
                             )
                             .on_press(Message::CloseSessionLogView)
                             .style(|_, status| {
@@ -344,14 +237,19 @@ impl Oryxis {
                                 };
                                 button::Style {
                                     background: Some(Background::Color(bg)),
-                                    border: Border { radius: Radius::from(6.0), color: OryxisColors::t().border, width: 1.0 },
+                                    border: Border {
+                                        radius: Radius::from(6.0),
+                                        color: OryxisColors::t().border,
+                                        width: 1.0,
+                                    },
                                     ..Default::default()
                                 }
                             }),
                         ].align_y(iced::Alignment::Center),
                     )
-                    .padding(Padding { top: 16.0, right: 20.0, bottom: 12.0, left: 20.0 }),
-                    // Content
+                    .padding(Padding {
+                        top: 16.0, right: 20.0, bottom: 12.0, left: 20.0,
+                    }),
                     scrollable(
                         container(
                             text(rendered_text)
@@ -361,14 +259,18 @@ impl Oryxis {
                         )
                         .padding(16)
                         .width(Length::Fill),
-                    ).height(Length::Fill),
-                ]
+                    )
+                    .height(Length::Fill),
+                ],
             )
             .width(Length::Fill)
             .height(Length::Fill)
             .style(|_| container::Style {
                 background: Some(Background::Color(OryxisColors::t().bg_primary)),
-                border: Border { radius: Radius::from(0.0), ..Default::default() },
+                border: Border {
+                    radius: Radius::from(0.0),
+                    ..Default::default()
+                },
                 ..Default::default()
             });
 
@@ -381,11 +283,233 @@ impl Oryxis {
             .into()
     }
 
+    /// Render one row of the unified timeline. Layout (LTR):
+    ///   [host_icon] [label / hostname] [event chip] [meta] [actions] [ts]
+    /// `event chip` is "Session" / "Auth Failed" / "Error".
+    /// `meta` and `actions` only show for session rows; failure rows
+    /// add their underlying message under the label instead.
+    fn render_timeline_row<'a>(&'a self, row: &TimelineRow<'a>) -> Element<'a, Message> {
+        use oryxis_core::models::log_entry::LogEvent;
 
+        // Host badge through the shared host_icon helper so per-host
+        // shape + accent color are honoured here too. Look up the
+        // matching connection by label; missing connections (host
+        // deleted but log row stays) fall back to the global accent.
+        let conn = self.connections.iter().find(|c| c.label == row.label);
+        let icon_style = crate::widgets::resolve_host_icon_style(
+            conn.and_then(|c| c.icon_style.as_deref()),
+            &self.setting_default_host_icon,
+        );
+        let detected_os = conn.and_then(|c| c.detected_os.as_deref());
+        let (glyph, default_color) = crate::os_icon::resolve_icon(
+            detected_os,
+            OryxisColors::t().accent,
+        );
+        let icon_color = conn
+            .and_then(|c| c.color.as_deref())
+            .and_then(crate::widgets::parse_hex_color)
+            .unwrap_or(default_color);
+        let glyph_el: Element<'_, Message> = glyph.view(14.0, Color::WHITE);
+        let badge = crate::widgets::host_icon(
+            icon_style,
+            icon_color,
+            row.label,
+            Some(glyph_el),
+            28.0,
+        );
+
+        let ts = row
+            .ts
+            .with_timezone(&chrono::Local)
+            .format("%Y-%m-%d %H:%M:%S")
+            .to_string();
+
+        // Event chip + per-kind colour. Session rows render in the
+        // accent colour so they read as "primary" content vs. the
+        // warning/error tint reserved for failures.
+        let (chip_text, chip_color): (String, Color) = match &row.kind {
+            TimelineKind::Failure(e) => match e.event {
+                LogEvent::AuthFailed => (
+                    crate::i18n::t("event_auth_failed").to_string(),
+                    OryxisColors::t().warning,
+                ),
+                _ => (
+                    crate::i18n::t("event_error").to_string(),
+                    OryxisColors::t().error,
+                ),
+            },
+            TimelineKind::Session { .. } => (
+                crate::i18n::t("event_session").to_string(),
+                OryxisColors::t().accent,
+            ),
+        };
+        let chip = container(
+            text(chip_text)
+                .size(10)
+                .color(chip_color),
+        )
+        .padding(Padding { top: 2.0, right: 8.0, bottom: 2.0, left: 8.0 })
+        .style(move |_| container::Style {
+            background: Some(Background::Color(Color { a: 0.12, ..chip_color })),
+            border: Border {
+                radius: Radius::from(4.0),
+                ..Default::default()
+            },
+            ..Default::default()
+        });
+
+        // Subtitle line: hostname for sessions, "hostname · message"
+        // for failures (collapses to hostname when there's no message).
+        let subtitle = match &row.kind {
+            TimelineKind::Failure(e) => {
+                if e.message.is_empty() {
+                    row.hostname.unwrap_or("").to_string()
+                } else if let Some(h) = row.hostname {
+                    format!("{h} · {}", e.message)
+                } else {
+                    e.message.clone()
+                }
+            }
+            TimelineKind::Session { entry, .. } => {
+                let hostname = row.hostname.unwrap_or("");
+                let duration = if let Some(ended) = entry.ended_at {
+                    let dur = ended.signed_duration_since(entry.started_at);
+                    let secs = dur.num_seconds();
+                    if secs < 60 {
+                        format!("{}s", secs)
+                    } else if secs < 3600 {
+                        format!("{}m {}s", secs / 60, secs % 60)
+                    } else {
+                        format!("{}h {}m", secs / 3600, (secs % 3600) / 60)
+                    }
+                } else {
+                    crate::i18n::t("in_progress").to_string()
+                };
+                let size_str = format_data_size(entry.data_size);
+                if hostname.is_empty() {
+                    format!("{} · {}", duration, size_str)
+                } else {
+                    format!("{hostname} · {duration} · {size_str}")
+                }
+            }
+        };
+
+        // Action buttons (Session rows only).
+        let actions: Element<'_, Message> = match &row.kind {
+            TimelineKind::Session { idx, entry } => {
+                let log_id = entry.id;
+                let idx = *idx;
+                let view_btn = button(
+                    container(
+                        text(crate::i18n::t("view"))
+                            .size(11)
+                            .color(OryxisColors::t().accent),
+                    )
+                    .padding(Padding {
+                        top: 4.0, right: 10.0, bottom: 4.0, left: 10.0,
+                    }),
+                )
+                .on_press(Message::ViewSessionLog(log_id))
+                .style(|_, status| {
+                    let bg = match status {
+                        BtnStatus::Hovered => Color { a: 0.15, ..OryxisColors::t().accent },
+                        _ => Color::TRANSPARENT,
+                    };
+                    button::Style {
+                        background: Some(Background::Color(bg)),
+                        border: Border {
+                            radius: Radius::from(6.0),
+                            color: OryxisColors::t().accent,
+                            width: 1.0,
+                        },
+                        ..Default::default()
+                    }
+                });
+                let delete_btn = button(
+                    container(
+                        text(crate::i18n::t("delete"))
+                            .size(11)
+                            .color(OryxisColors::t().error),
+                    )
+                    .padding(Padding {
+                        top: 4.0, right: 10.0, bottom: 4.0, left: 10.0,
+                    }),
+                )
+                .on_press(Message::DeleteSessionLog(idx))
+                .style(|_, status| {
+                    let bg = match status {
+                        BtnStatus::Hovered => Color { a: 0.15, ..OryxisColors::t().error },
+                        _ => Color::TRANSPARENT,
+                    };
+                    button::Style {
+                        background: Some(Background::Color(bg)),
+                        border: Border {
+                            radius: Radius::from(6.0),
+                            color: OryxisColors::t().error,
+                            width: 1.0,
+                        },
+                        ..Default::default()
+                    }
+                });
+                crate::widgets::dir_row(vec![
+                    view_btn.into(),
+                    Space::new().width(6).into(),
+                    delete_btn.into(),
+                ])
+                .align_y(iced::Alignment::Center)
+                .into()
+            }
+            TimelineKind::Failure(_) => Space::new().width(0).into(),
+        };
+
+        container(
+            crate::widgets::dir_row(vec![
+                badge,
+                Space::new().width(12).into(),
+                column![
+                    crate::widgets::dir_row(vec![
+                        text(row.label)
+                            .size(13)
+                            .color(OryxisColors::t().text_primary)
+                            .into(),
+                        Space::new().width(8).into(),
+                        chip.into(),
+                    ])
+                    .align_y(iced::Alignment::Center),
+                    Space::new().height(2),
+                    text(subtitle)
+                        .size(11)
+                        .color(OryxisColors::t().text_muted),
+                ]
+                .width(Length::Fill)
+                .align_x(crate::widgets::dir_align_x())
+                .into(),
+                Space::new().width(12).into(),
+                actions,
+                Space::new().width(12).into(),
+                text(ts)
+                    .size(10)
+                    .color(OryxisColors::t().text_muted)
+                    .into(),
+            ])
+            .align_y(iced::Alignment::Center),
+        )
+        .padding(Padding { top: 8.0, right: 16.0, bottom: 8.0, left: 16.0 })
+        .width(Length::Fill)
+        .style(|_| container::Style {
+            background: Some(Background::Color(OryxisColors::t().bg_surface)),
+            border: Border {
+                radius: Radius::from(8.0),
+                ..Default::default()
+            },
+            ..Default::default()
+        })
+        .into()
+    }
 }
 
-/// Pagination chevron button. Disabled state has no `on_press` and a muted
-/// look so it reads as unclickable at the boundaries.
+/// Pagination chevron button. Disabled state has no `on_press` and a
+/// muted look so it reads as unclickable at the boundaries.
 fn nav_btn<'a>(
     icon: iced::widget::Text<'a>,
     msg: Message,
@@ -413,7 +537,11 @@ fn nav_btn<'a>(
         };
         button::Style {
             background: Some(Background::Color(bg)),
-            border: Border { radius: Radius::from(6.0), color: OryxisColors::t().border, width: 1.0 },
+            border: Border {
+                radius: Radius::from(6.0),
+                color: OryxisColors::t().border,
+                width: 1.0,
+            },
             ..Default::default()
         }
     });
