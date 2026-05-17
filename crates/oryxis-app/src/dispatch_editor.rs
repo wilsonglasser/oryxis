@@ -249,7 +249,7 @@ impl Oryxis {
                 // the known set so a stale UI value can't smuggle in a
                 // string the renderer doesn't understand.
                 self.editor_form.icon_style = match v.as_str() {
-                    "circular" | "square" | "outline" | "initials" => Some(v),
+                    "circular" | "square" | "rounded" | "outline" | "initials" => Some(v),
                     _ => None,
                 };
             }

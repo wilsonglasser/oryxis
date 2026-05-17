@@ -38,6 +38,7 @@ pub(crate) fn resolve_host_icon_style(per_host: Option<&str>, global: &str) -> H
     let candidate = per_host.unwrap_or(global);
     match candidate {
         "square" => HostIconStyle::Square,
+        "rounded" => HostIconStyle::Rounded,
         "outline" => HostIconStyle::Outline,
         "initials" => HostIconStyle::Initials,
         _ => HostIconStyle::Circular,
@@ -48,7 +49,12 @@ pub(crate) fn resolve_host_icon_style(per_host: Option<&str>, global: &str) -> H
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum HostIconStyle {
     Circular,
+    /// Sharp-cornered square (radius 0). The earlier "square" value
+    /// was actually rounded, which is now `Rounded` below.
     Square,
+    /// Soft-cornered square (~25 % radius). This was the original
+    /// `Square` rendering before user feedback split the two.
+    Rounded,
     Outline,
     Initials,
 }
@@ -78,11 +84,12 @@ pub(crate) fn host_icon<'a>(
 ) -> Element<'a, Message> {
     let half = size / 2.0;
     match style {
-        HostIconStyle::Circular | HostIconStyle::Square => {
-            let radius = if matches!(style, HostIconStyle::Circular) {
-                half
-            } else {
-                size * 0.25
+        HostIconStyle::Circular | HostIconStyle::Square | HostIconStyle::Rounded => {
+            let radius = match style {
+                HostIconStyle::Circular => half,
+                HostIconStyle::Square => 0.0,
+                HostIconStyle::Rounded => size * 0.25,
+                _ => 0.0,
             };
             let inner: Element<'a, Message> = glyph
                 .unwrap_or_else(|| Space::new().width(0).height(0).into());

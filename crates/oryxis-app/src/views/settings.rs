@@ -867,6 +867,7 @@ impl Oryxis {
                 let icon_options = vec![
                     "circular".to_string(),
                     "square".to_string(),
+                    "rounded".to_string(),
                     "outline".to_string(),
                     "initials".to_string(),
                 ];
@@ -883,6 +884,7 @@ impl Oryxis {
                             |s: &String| {
                                 let key = match s.as_str() {
                                     "square" => "icon_square",
+                                    "rounded" => "icon_rounded",
                                     "outline" => "icon_outline",
                                     "initials" => "icon_initials",
                                     _ => "icon_circular",

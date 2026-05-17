@@ -286,6 +286,7 @@ impl Oryxis {
             Message::SettingDefaultHostIconChanged(val) => {
                 let normalized = match val.as_str() {
                     "square" => "square",
+                    "rounded" => "rounded",
                     "outline" => "outline",
                     "initials" => "initials",
                     _ => "circular",

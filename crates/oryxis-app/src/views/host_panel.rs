@@ -674,42 +674,31 @@ impl Oryxis {
         // Per-host icon shape override. The "Use default" entry maps to
         // an empty string which clears the override (resolved to the
         // global default_host_icon at render time).
-        let use_default_label = crate::i18n::t("icon_use_default").to_string();
-        let icon_circular = crate::i18n::t("icon_circular").to_string();
-        let icon_square = crate::i18n::t("icon_square").to_string();
-        let icon_outline = crate::i18n::t("icon_outline").to_string();
-        let icon_initials = crate::i18n::t("icon_initials").to_string();
+        // Tokens drive the picker value (same pattern as Settings
+        // -> Interface). Empty string is the "use default" token; the
+        // dispatcher treats it as a None override on the form field.
         let icon_options = vec![
-            use_default_label.clone(),
-            icon_circular.clone(),
-            icon_square.clone(),
-            icon_outline.clone(),
-            icon_initials.clone(),
+            String::new(),
+            "circular".to_string(),
+            "square".to_string(),
+            "rounded".to_string(),
+            "outline".to_string(),
+            "initials".to_string(),
         ];
-        let icon_selected = match self.editor_form.icon_style.as_deref() {
-            Some("circular") => icon_circular.clone(),
-            Some("square") => icon_square.clone(),
-            Some("outline") => icon_outline.clone(),
-            Some("initials") => icon_initials.clone(),
-            _ => use_default_label.clone(),
-        };
-        let (l_use, l_ci, l_sq, l_ol, l_in) = (
-            use_default_label.clone(),
-            icon_circular.clone(),
-            icon_square.clone(),
-            icon_outline.clone(),
-            icon_initials.clone(),
-        );
+        let icon_selected = self.editor_form.icon_style.clone().unwrap_or_default();
         let icon_picker = pick_list(
             Some(icon_selected),
             icon_options,
-            move |s: &String| {
-                if *s == l_use { String::new() }
-                else if *s == l_ci { "circular".into() }
-                else if *s == l_sq { "square".into() }
-                else if *s == l_ol { "outline".into() }
-                else if *s == l_in { "initials".into() }
-                else { String::new() }
+            |s: &String| {
+                let key = match s.as_str() {
+                    "circular" => "icon_circular",
+                    "square" => "icon_square",
+                    "rounded" => "icon_rounded",
+                    "outline" => "icon_outline",
+                    "initials" => "icon_initials",
+                    _ => "icon_use_default",
+                };
+                crate::i18n::t(key).to_string()
             },
         )
         .on_select(Message::EditorIconStyleChanged)
