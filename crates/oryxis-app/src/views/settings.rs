@@ -771,6 +771,40 @@ impl Oryxis {
                     ),
                 ]);
 
+                // Tab close button position picker. Display labels come
+                // from i18n; the persisted value is always "left" or
+                // "right" so the setting stays language-stable.
+                let close_left = crate::i18n::t("close_position_left").to_string();
+                let close_right = crate::i18n::t("close_position_right").to_string();
+                let close_options = vec![close_left.clone(), close_right.clone()];
+                let close_selected = if self.setting_tab_close_button_side == "right" {
+                    close_right.clone()
+                } else {
+                    close_left.clone()
+                };
+                let close_left_for_map = close_left.clone();
+                let tabs_section = panel_section(column![
+                    dir_row(vec![
+                        text(crate::i18n::t("close_button_position"))
+                            .size(13)
+                            .color(OryxisColors::t().text_primary)
+                            .into(),
+                        Space::new().width(Length::Fill).into(),
+                        pick_list(
+                            Some(close_selected),
+                            close_options,
+                            move |s: &String| {
+                                if *s == close_left_for_map { "left".into() } else { "right".into() }
+                            },
+                        )
+                        .on_select(Message::SettingTabCloseButtonSideChanged)
+                        .width(160)
+                        .padding(10)
+                        .style(crate::widgets::rounded_pick_list_style)
+                        .into(),
+                    ]).align_y(iced::Alignment::Center),
+                ]);
+
                 let mut content_col = column![
                     text(crate::i18n::t("interface")).size(18).color(OryxisColors::t().text_primary),
                     Space::new().height(16),
@@ -781,6 +815,8 @@ impl Oryxis {
                     flatten_section,
                     Space::new().height(8),
                     status_bar_section,
+                    Space::new().height(8),
+                    tabs_section,
                     Space::new().height(12),
                 ]
                 .spacing(12)

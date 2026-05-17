@@ -262,6 +262,7 @@ impl Oryxis {
                 setting_keyword_highlight: true,
                 setting_smart_contrast: true,
                 setting_show_status_bar: true,
+                setting_tab_close_button_side: "left".into(),
                 setting_keepalive_interval: "30".into(),
                 setting_scrollback_rows: "10000".into(),
                 setting_sftp_concurrency: "2".into(),
@@ -548,6 +549,11 @@ impl Oryxis {
             }
             if let Ok(Some(v)) = vault.get_setting("show_status_bar") {
                 self.setting_show_status_bar = v == "true";
+            }
+            if let Ok(Some(v)) = vault.get_setting("tab_close_button_side")
+                && (v == "left" || v == "right")
+            {
+                self.setting_tab_close_button_side = v;
             }
             if let Ok(Some(v)) = vault.get_setting("terminal_font_size")
                 && let Ok(parsed) = v.parse::<f32>()

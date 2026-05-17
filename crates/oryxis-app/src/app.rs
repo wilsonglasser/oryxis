@@ -398,6 +398,11 @@ pub struct Oryxis {
     /// Oryxis version. Off in `view_main` simply skips rendering it,
     /// reclaiming the row for the active content area.
     pub(crate) setting_show_status_bar: bool,
+    /// `"left"` (default, Termius-style: X replaces the OS badge on
+    /// hover/active) or `"right"` (badge stays left, X gets its own
+    /// slot at the trailing edge of the tab). Anything else is treated
+    /// as `"left"`.
+    pub(crate) setting_tab_close_button_side: String,
     pub(crate) setting_keepalive_interval: String,
     pub(crate) setting_scrollback_rows: String,
     /// Max parallel SFTP transfer slots (uploads/downloads). 1 = serial,

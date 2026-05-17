@@ -108,6 +108,7 @@ impl Oryxis {
                 is_hovered,
                 detected_os.as_deref(),
                 width,
+                self.setting_tab_close_button_side == "right",
             ));
         }
 
@@ -322,6 +323,11 @@ fn truncate_label(label: &str, width: f32) -> String {
 
 /// Session tab: icon badge (host icon by default, X on hover) + label.
 /// Width is fixed by the caller so the row layout adapts to overflow.
+///
+/// `close_on_right`: when true the close X gets its own slot at the
+/// trailing edge of the tab and the OS badge always stays on the
+/// leading edge. When false (the default, Termius-style), the X
+/// replaces the OS badge in the leading slot on hover/active.
 fn session_tab<'a>(
     idx: usize,
     label: &'a str,
@@ -329,6 +335,7 @@ fn session_tab<'a>(
     is_hovered: bool,
     detected_os: Option<&str>,
     width: f32,
+    close_on_right: bool,
 ) -> Element<'a, Message> {
     let fg = if is_active {
         OryxisColors::t().accent
@@ -343,10 +350,39 @@ fn session_tab<'a>(
 
     let is_disconnected = label.ends_with(" (disconnected)");
     let display_label_full = label.trim_end_matches(" (disconnected)").to_string();
-    let display_label = truncate_label(&display_label_full, width);
+    // When the close X gets its own trailing slot, the label has less
+    // horizontal room. Reserve the X's slot + a small gap so the
+    // truncation kicks in earlier instead of the X clipping over the
+    // last few characters.
+    let label_width = if close_on_right {
+        (width - TAB_ICON_SLOT - 4.0).max(0.0)
+    } else {
+        width
+    };
+    let display_label = truncate_label(&display_label_full, label_width);
 
     let show_close = is_active || is_hovered;
-    let icon_slot: Element<'_, Message> = if show_close {
+    let os_badge: Element<'_, Message> = {
+        let fallback = if is_disconnected {
+            OryxisColors::t().text_muted
+        } else {
+            OryxisColors::t().accent
+        };
+        let (glyph, mut badge_color) = crate::os_icon::resolve_icon(detected_os, fallback);
+        if is_disconnected {
+            badge_color = OryxisColors::t().text_muted;
+        }
+        container(glyph.view(12.0, Color::WHITE))
+            .center_x(Length::Fixed(TAB_ICON_SLOT))
+            .center_y(Length::Fixed(TAB_ICON_SLOT))
+            .style(move |_| container::Style {
+                background: Some(Background::Color(badge_color)),
+                border: Border { radius: Radius::from(4.0), ..Default::default() },
+                ..Default::default()
+            })
+            .into()
+    };
+    let close_btn = || -> Element<'_, Message> {
         MouseArea::new(
             container(
                 iced_fonts::lucide::x()
@@ -371,43 +407,56 @@ fn session_tab<'a>(
         )
         .on_press(Message::CloseTab(idx))
         .into()
+    };
+
+    // Leading slot follows the Termius behaviour by default (X replaces
+    // badge on hover/active). When close-on-right is set, the badge
+    // always stays leading and the X joins as a separate trailing slot.
+    let leading_slot: Element<'_, Message> = if close_on_right || !show_close {
+        os_badge
     } else {
-        let fallback = if is_disconnected {
-            OryxisColors::t().text_muted
+        close_btn()
+    };
+
+    let label_text = text(display_label)
+        .size(12)
+        .line_height(1.0)
+        .wrapping(iced::widget::text::Wrapping::None)
+        .font(SYSTEM_UI_SEMIBOLD)
+        .color(fg)
+        .width(Length::Fill);
+
+    let inner_row: Element<'_, Message> = if close_on_right {
+        // Trailing slot reserves its width even when the X isn't
+        // currently shown, so the label position doesn't jump on hover.
+        let trailing_slot: Element<'_, Message> = if show_close {
+            close_btn()
         } else {
-            OryxisColors::t().accent
+            Space::new().width(TAB_ICON_SLOT).height(TAB_ICON_SLOT).into()
         };
-        let (glyph, mut badge_color) = crate::os_icon::resolve_icon(detected_os, fallback);
-        if is_disconnected {
-            badge_color = OryxisColors::t().text_muted;
-        }
-        container(glyph.view(12.0, Color::WHITE))
-            .center_x(Length::Fixed(TAB_ICON_SLOT))
-            .center_y(Length::Fixed(TAB_ICON_SLOT))
-            .style(move |_| container::Style {
-                background: Some(Background::Color(badge_color)),
-                border: Border { radius: Radius::from(4.0), ..Default::default() },
-                ..Default::default()
-            })
-            .into()
+        row![
+            leading_slot,
+            Space::new().width(5),
+            label_text,
+            Space::new().width(4),
+            trailing_slot,
+        ]
+        .align_y(iced::Alignment::Center)
+        .into()
+    } else {
+        row![
+            leading_slot,
+            Space::new().width(5),
+            label_text,
+        ]
+        .align_y(iced::Alignment::Center)
+        .into()
     };
 
     let tab_btn = button(
-        container(
-            row![
-                icon_slot,
-                Space::new().width(5),
-                text(display_label)
-                    .size(12)
-                    .line_height(1.0)
-                    .wrapping(iced::widget::text::Wrapping::None)
-                    .font(SYSTEM_UI_SEMIBOLD)
-                    .color(fg),
-            ]
-            .align_y(iced::Alignment::Center),
-        )
-        .center_y(Length::Fixed(TAB_HEIGHT))
-        .padding(Padding { top: 0.0, right: 4.0, bottom: 0.0, left: 2.0 }),
+        container(inner_row)
+            .center_y(Length::Fixed(TAB_HEIGHT))
+            .padding(Padding { top: 0.0, right: 4.0, bottom: 0.0, left: 2.0 }),
     )
     .width(Length::Fixed(width))
     .on_press(Message::SelectTab(idx))

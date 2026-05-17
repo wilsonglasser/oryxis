@@ -261,6 +261,17 @@ impl Oryxis {
                     if self.setting_show_status_bar { "true" } else { "false" },
                 );
             }
+            Message::SettingTabCloseButtonSideChanged(val) => {
+                // Only accept the two known values; anything else
+                // collapses to the default so an unknown pick from a
+                // future build can't wedge the tab bar.
+                let normalized = match val.as_str() {
+                    "right" => "right",
+                    _ => "left",
+                };
+                self.setting_tab_close_button_side = normalized.into();
+                self.persist_setting("tab_close_button_side", normalized);
+            }
             Message::SettingKeepaliveChanged(val) => {
                 // Accept only digits; cap at 86_400 (1 day) so users can't
                 // accidentally type a runaway value.
