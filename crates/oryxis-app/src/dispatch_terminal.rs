@@ -67,6 +67,19 @@ impl Oryxis {
                     self.new_tab_picker_search.clear();
                     return Ok(Task::none());
                 }
+                // Ctrl+F1 is an alternate binding for the new-tab
+                // picker, surfaced for users who think of it as
+                // "global host search" rather than "open a new tab".
+                // Same underlying overlay; the trigger glyph on the
+                // tab bar (lucide::search) also dispatches it.
+                if let keyboard::Event::KeyPressed { key, modifiers, .. } = &event
+                    && modifiers.control()
+                    && matches!(key, keyboard::Key::Named(keyboard::key::Named::F1))
+                {
+                    self.show_new_tab_picker = true;
+                    self.new_tab_picker_search.clear();
+                    return Ok(Task::none());
+                }
                 // Ctrl+J, jump to a tab via the Termius-style modal
                 // listing all open tabs + Quick connect entries.
                 if let keyboard::Event::KeyPressed { key, modifiers, .. } = &event

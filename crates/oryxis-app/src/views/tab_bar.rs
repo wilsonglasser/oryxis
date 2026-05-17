@@ -50,6 +50,7 @@ const SIDEBAR_TOGGLE_WIDTH: f32 = 28.0;
 // uniform 46×BAR_HEIGHT cell rhythm.
 const PLUS_BUTTON_WIDTH: f32 = 46.0;
 const DOTS_BUTTON_WIDTH: f32 = 46.0;
+const SEARCH_BUTTON_WIDTH: f32 = 46.0;
 const CHROME_BUTTON_WIDTH: f32 = 46.0;
 const CHROME_TOTAL_WIDTH: f32 = CHROME_BUTTON_WIDTH * 3.0;
 
@@ -63,7 +64,9 @@ impl Oryxis {
         // value isn't critical, `scrollable` is the safety net for
         // any miscalculation. Subtract everything else on the row.
         // RIGHT_CLUSTER_WIDTH = +(28) + 2 + ⋯(28) + 2 + chrome(3*46)
-        const RIGHT_CLUSTER_WIDTH: f32 = PLUS_BUTTON_WIDTH
+        const RIGHT_CLUSTER_WIDTH: f32 = SEARCH_BUTTON_WIDTH
+            + 2.0
+            + PLUS_BUTTON_WIDTH
             + 2.0
             + DOTS_BUTTON_WIDTH
             + 2.0
@@ -299,6 +302,8 @@ impl Oryxis {
         // `dir_row` flip the order in RTL so chrome lands on the
         // outer edge there too.
         let mut cluster_items: Vec<Element<'_, Message>> = Vec::new();
+        cluster_items.push(search_btn());
+        cluster_items.push(Space::new().width(2).into());
         if let Some(dots) = dots_btn {
             cluster_items.push(dots);
             cluster_items.push(Space::new().width(2).into());
@@ -367,7 +372,9 @@ impl Oryxis {
         // Mirror the layout math in view_tab_bar so the offsets line up,
         // including the burger button + area tabs that Workspace mode
         // prepends to the strip.
-        const RIGHT_CLUSTER_WIDTH: f32 = PLUS_BUTTON_WIDTH
+        const RIGHT_CLUSTER_WIDTH: f32 = SEARCH_BUTTON_WIDTH
+            + 2.0
+            + PLUS_BUTTON_WIDTH
             + 2.0
             + DOTS_BUTTON_WIDTH
             + 2.0
@@ -785,6 +792,37 @@ fn tab_jump_btn<'a>() -> Element<'a, Message> {
         // Match the window-chrome / new-tab buttons' subtle hover
         // and squared corners so the right cluster reads as one
         // continuous strip.
+        let bg = match status {
+            BtnStatus::Hovered => Color { a: 0.2, ..hover_color },
+            BtnStatus::Pressed => Color { a: 0.35, ..hover_color },
+            _ => Color::TRANSPARENT,
+        };
+        button::Style {
+            background: Some(Background::Color(bg)),
+            border: Border::default(),
+            ..Default::default()
+        }
+    })
+    .into()
+}
+
+/// Global host search trigger. Opens the same overlay Ctrl+K / Ctrl+F1
+/// open, just as a click affordance for users who prefer the chrome
+/// over keyboard shortcuts. Lives at the leading edge of the right
+/// cluster so it reads as a peer to `+ new tab` and the chrome
+/// buttons next to it.
+fn search_btn<'a>() -> Element<'a, Message> {
+    let hover_color = OryxisColors::t().text_secondary;
+    button(
+        container(
+            iced_fonts::lucide::search().size(14).color(hover_color),
+        )
+        .center(Length::Fixed(SEARCH_BUTTON_WIDTH))
+        .height(Length::Fixed(BAR_HEIGHT)),
+    )
+    .on_press(Message::ShowNewTabPicker)
+    .padding(0)
+    .style(move |_, status| {
         let bg = match status {
             BtnStatus::Hovered => Color { a: 0.2, ..hover_color },
             BtnStatus::Pressed => Color { a: 0.35, ..hover_color },
