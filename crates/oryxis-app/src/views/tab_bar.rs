@@ -246,14 +246,20 @@ impl Oryxis {
         let sidebar_toggle =
             super::sidebar::sidebar_toggle_btn(!self.sidebar_collapsed);
 
-        // Three-block row: [sidebar_toggle] [tab_strip(Fill)] [right_cluster].
-        // sidebar_toggle and right_cluster are Length::Shrink so iced
-        // gives them their content width first; tab_strip is the
-        // remaining Fill area in between. `dir_row` flips the trio under
-        // RTL so the toggle always sits next to the sidebar (which the
+        // Burger menu trigger. Mirrors the Termius `☰` strip on the
+        // leading edge: opens a top-left dropdown with Settings,
+        // Updates, About, Exit.
+        let burger_btn = burger_menu_btn(self.show_burger_menu);
+
+        // Four-block row: [burger] [sidebar_toggle] [tab_strip(Fill)] [right_cluster].
+        // burger / sidebar_toggle / right_cluster are Length::Shrink so iced
+        // gives them their content width first; tab_strip is the remaining
+        // Fill area in between. `dir_row` flips the row under RTL so the
+        // leading-edge controls always sit next to the sidebar (which the
         // outer layout also flips to the trailing edge).
         container(
             crate::widgets::dir_row(vec![
+                burger_btn,
                 sidebar_toggle,
                 tab_strip,
                 right_cluster,
@@ -611,6 +617,40 @@ fn tab_jump_btn<'a>() -> Element<'a, Message> {
             BtnStatus::Hovered => Color { a: 0.2, ..hover_color },
             BtnStatus::Pressed => Color { a: 0.35, ..hover_color },
             _ => Color::TRANSPARENT,
+        };
+        button::Style {
+            background: Some(Background::Color(bg)),
+            border: Border::default(),
+            ..Default::default()
+        }
+    })
+    .into()
+}
+
+/// Burger menu trigger at the leading edge of the tab bar. When the
+/// menu is open the button paints with the accent hover state so the
+/// click affordance reads as "active control" instead of a stray glyph.
+fn burger_menu_btn<'a>(is_open: bool) -> Element<'a, Message> {
+    let hover_color = OryxisColors::t().text_secondary;
+    let resting_bg = if is_open {
+        Color { a: 0.2, ..hover_color }
+    } else {
+        Color::TRANSPARENT
+    };
+    button(
+        container(
+            iced_fonts::lucide::menu().size(15).color(hover_color),
+        )
+        .center(Length::Fixed(SIDEBAR_TOGGLE_WIDTH))
+        .height(Length::Fixed(BAR_HEIGHT)),
+    )
+    .on_press(Message::ToggleBurgerMenu)
+    .padding(0)
+    .style(move |_, status| {
+        let bg = match status {
+            BtnStatus::Hovered => Color { a: 0.2, ..hover_color },
+            BtnStatus::Pressed => Color { a: 0.35, ..hover_color },
+            _ => resting_bg,
         };
         button::Style {
             background: Some(Background::Color(bg)),

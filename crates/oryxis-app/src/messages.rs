@@ -340,6 +340,9 @@ pub enum Message {
     SettingToggleShowStatusBar,
     SettingTabCloseButtonSideChanged(String),
     SettingToggleShowTabStatusDot,
+    /// Show/hide the top-left burger menu (Settings / Updates / About /
+    /// Exit). Mirrors Termius's `☰` strip at the start of the tab bar.
+    ToggleBurgerMenu,
     SettingToggleSftpEnabled,
     SettingLayoutModeChanged(String),
     SettingDefaultHostIconChanged(String),

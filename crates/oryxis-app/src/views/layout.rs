@@ -187,6 +187,23 @@ impl Oryxis {
         let resize_overlay: Option<Element<'_, Message>> =
             if self.window_maximized { None } else { Some(resize_border()) };
 
+        // Burger menu overlay (top-left dropdown). Renders first so any
+        // other modal stacked below still wins, but in practice the
+        // burger menu and the bigger modals (share dialog, picker, etc.)
+        // never coexist on the user's screen at the same time.
+        if self.show_burger_menu {
+            let menu = self.view_burger_menu();
+            return wrap_with_resize(
+                Stack::new()
+                    .push(base)
+                    .push(menu)
+                    .width(Length::Fill)
+                    .height(Length::Fill)
+                    .into(),
+                resize_overlay,
+            );
+        }
+
         // Share dialog overlay
         if self.show_share_dialog {
             let share_include_keys = self.share_include_keys;
@@ -1029,6 +1046,108 @@ impl Oryxis {
                 background: Some(Background::Color(OryxisColors::t().bg_primary)),
                 ..Default::default()
             })
+            .into()
+    }
+
+    /// Burger menu overlay anchored to the top-left of the window.
+    /// Pairs with the `☰` trigger in the tab bar. A transparent
+    /// MouseArea backdrop catches outside clicks to dismiss; the
+    /// menu items themselves stop propagation by living inside their
+    /// own button widgets.
+    pub(crate) fn view_burger_menu(&self) -> Element<'_, Message> {
+        // Menu row: small icon (optional) + label, full-row hover bg.
+        // Items dispatch the same Messages the existing sidebar /
+        // status bar use, so we don't have to introduce new flows.
+        let item = |label: &'static str, msg: Message| -> Element<'_, Message> {
+            button(
+                container(
+                    text(crate::i18n::t(label))
+                        .size(13)
+                        .color(OryxisColors::t().text_primary),
+                )
+                .padding(Padding {
+                    top: 8.0,
+                    right: 16.0,
+                    bottom: 8.0,
+                    left: 16.0,
+                })
+                .width(Length::Fill)
+                .align_x(dir_align_x()),
+            )
+            .on_press(msg)
+            .width(Length::Fill)
+            .style(|_, status| {
+                let bg = match status {
+                    iced::widget::button::Status::Hovered => OryxisColors::t().bg_hover,
+                    iced::widget::button::Status::Pressed => OryxisColors::t().bg_selected,
+                    _ => Color::TRANSPARENT,
+                };
+                button::Style {
+                    background: Some(Background::Color(bg)),
+                    border: Border { radius: Radius::from(6.0), ..Default::default() },
+                    ..Default::default()
+                }
+            })
+            .into()
+        };
+        // Visual separator between item groups.
+        let sep = container(Space::new().height(1))
+            .width(Length::Fill)
+            .padding(Padding { top: 4.0, right: 8.0, bottom: 4.0, left: 8.0 })
+            .style(|_| container::Style {
+                background: Some(Background::Color(OryxisColors::t().border)),
+                ..Default::default()
+            });
+        let menu_col = column![
+            item("hosts", Message::ChangeView(View::Dashboard)),
+            item("sftp", Message::ChangeView(View::Sftp)),
+            item("settings", Message::ChangeView(View::Settings)),
+            sep,
+            item("local_shell", Message::OpenLocalShell),
+            item("check_for_updates_now", Message::CheckForUpdateManual),
+        ]
+        .width(Length::Fill);
+        let menu_panel = container(menu_col)
+            .width(Length::Fixed(240.0))
+            .padding(Padding { top: 6.0, right: 6.0, bottom: 6.0, left: 6.0 })
+            .style(|_| container::Style {
+                background: Some(Background::Color(OryxisColors::t().bg_sidebar)),
+                border: Border {
+                    radius: Radius::from(8.0),
+                    color: OryxisColors::t().border,
+                    width: 1.0,
+                },
+                ..Default::default()
+            });
+        // Pin the panel to the top-left, just below the tab bar
+        // (40 px tall). dir_align_x flips the anchor side under RTL
+        // so the dropdown lands under its trigger.
+        let pinned = container(menu_panel)
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .align_x(dir_align_x())
+            .align_y(iced::alignment::Vertical::Top)
+            .padding(Padding {
+                top: 44.0,
+                right: 0.0,
+                bottom: 0.0,
+                left: 6.0,
+            });
+        // Backdrop catches outside clicks. Z-stack: backdrop on the
+        // bottom, panel on top so the panel's buttons still receive
+        // their own clicks.
+        let backdrop: Element<'_, Message> = MouseArea::new(
+            container(Space::new().width(Length::Fill).height(Length::Fill))
+                .width(Length::Fill)
+                .height(Length::Fill),
+        )
+        .on_press(Message::ToggleBurgerMenu)
+        .into();
+        Stack::new()
+            .push(backdrop)
+            .push(pinned)
+            .width(Length::Fill)
+            .height(Length::Fill)
             .into()
     }
 }

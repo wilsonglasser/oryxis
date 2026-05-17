@@ -167,6 +167,10 @@ impl Oryxis {
             Message::ChangeView(view) => {
                 self.active_view = view;
                 self.active_tab = None;
+                // Burger menu auto-dismisses on navigation: the user
+                // picked a destination, leaving the overlay open is
+                // visual noise.
+                self.show_burger_menu = false;
                 // Lazy-load the local SFTP pane when the user first lands
                 // on the view (or returns to it after the underlying dir
                 // changed). Cheap enough to redo unconditionally.

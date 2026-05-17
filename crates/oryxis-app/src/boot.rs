@@ -97,6 +97,7 @@ impl Oryxis {
                 new_tab_picker_search: String::new(),
                 show_tab_jump: false,
                 tab_jump_search: String::new(),
+                show_burger_menu: false,
                 show_icon_picker: false,
                 icon_picker_for: None,
                 icon_picker_icon: None,

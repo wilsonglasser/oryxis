@@ -255,6 +255,9 @@ impl Oryxis {
                 self.show_tab_jump = true;
                 self.tab_jump_search.clear();
             }
+            Message::ToggleBurgerMenu => {
+                self.show_burger_menu = !self.show_burger_menu;
+            }
             Message::HideTabJump => {
                 self.show_tab_jump = false;
             }
