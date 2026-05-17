@@ -19,19 +19,25 @@ impl Oryxis {
     pub(crate) fn view_settings(&self) -> Element<'_, Message> {
         // ── Settings sidebar ──
         let settings_sidebar = {
+            // Order: most-touched at the top (visual + everyday
+            // configuration), then per-feature toggles, then network
+            // resources, then plugin / system / about. The previous
+            // order was historical (followed the implementation
+            // sequence) and didn't reflect how users actually move
+            // through the panel.
             let items: Vec<(&str, SettingsSection)> = vec![
-                (crate::i18n::t("terminal_settings"), SettingsSection::Terminal),
-                ("SFTP", SettingsSection::Sftp),
-                (crate::i18n::t("ai_assistant"), SettingsSection::AI),
                 (crate::i18n::t("interface"), SettingsSection::Interface),
+                (crate::i18n::t("terminal_settings"), SettingsSection::Terminal),
+                (crate::i18n::t("ai_assistant"), SettingsSection::AI),
+                ("SFTP", SettingsSection::Sftp),
+                (crate::i18n::t("sync"), SettingsSection::Sync),
+                (crate::i18n::t("cloud_accounts"), SettingsSection::Cloud),
+                (crate::i18n::t("proxies"), SettingsSection::Proxies),
                 (crate::i18n::t("known_hosts"), SettingsSection::KnownHosts),
                 (crate::i18n::t("mcp_server"), SettingsSection::Mcp),
+                (crate::i18n::t("plugins"), SettingsSection::Plugins),
                 (crate::i18n::t("shortcuts"), SettingsSection::Shortcuts),
                 (crate::i18n::t("security"), SettingsSection::Security),
-                (crate::i18n::t("sync"), SettingsSection::Sync),
-                (crate::i18n::t("proxies"), SettingsSection::Proxies),
-                (crate::i18n::t("cloud_accounts"), SettingsSection::Cloud),
-                (crate::i18n::t("plugins"), SettingsSection::Plugins),
                 (crate::i18n::t("about"), SettingsSection::About),
             ];
             let mut col = column![]

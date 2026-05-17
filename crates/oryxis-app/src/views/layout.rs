@@ -1346,24 +1346,40 @@ impl Oryxis {
     /// menu items themselves stop propagation by living inside their
     /// own button widgets.
     pub(crate) fn view_burger_menu(&self) -> Element<'_, Message> {
-        // Menu row: small icon (optional) + label, full-row hover bg.
+        // Menu row: label on the leading edge, optional muted hotkey
+        // hint on the trailing edge (Termius-style "Ctrl+1" tail).
         // Items dispatch the same Messages the existing sidebar /
         // status bar use, so we don't have to introduce new flows.
-        let item = |label: &'static str, msg: Message| -> Element<'_, Message> {
+        let item = |label: &'static str, msg: Message, shortcut: Option<String>| -> Element<'_, Message> {
+            let label_el: Element<'_, Message> = text(crate::i18n::t(label))
+                .size(13)
+                .color(OryxisColors::t().text_primary)
+                .into();
+            let inner: Element<'_, Message> = if let Some(s) = shortcut {
+                let shortcut_el: Element<'_, Message> = text(s)
+                    .size(11)
+                    .color(OryxisColors::t().text_muted)
+                    .into();
+                dir_row(vec![
+                    label_el,
+                    Space::new().width(Length::Fill).into(),
+                    shortcut_el,
+                ])
+                .align_y(iced::Alignment::Center)
+                .into()
+            } else {
+                label_el
+            };
             button(
-                container(
-                    text(crate::i18n::t(label))
-                        .size(13)
-                        .color(OryxisColors::t().text_primary),
-                )
-                .padding(Padding {
-                    top: 8.0,
-                    right: 16.0,
-                    bottom: 8.0,
-                    left: 16.0,
-                })
-                .width(Length::Fill)
-                .align_x(dir_align_x()),
+                container(inner)
+                    .padding(Padding {
+                        top: 8.0,
+                        right: 16.0,
+                        bottom: 8.0,
+                        left: 16.0,
+                    })
+                    .width(Length::Fill)
+                    .align_x(dir_align_x()),
             )
             .on_press(msg)
             .width(Length::Fill)
@@ -1380,6 +1396,26 @@ impl Oryxis {
                 }
             })
             .into()
+        };
+        // Resolve hotkey hints from the live bindings so user
+        // overrides flow through to the menu without rebuilds.
+        let hk_settings = self.hotkey_label_for_action(crate::hotkeys::HotkeyAction::OpenSettings);
+        let hk_local_shell = self.hotkey_label_for_action(crate::hotkeys::HotkeyAction::OpenLocalShell);
+        let hk_new_window = self.hotkey_label_for_action(crate::hotkeys::HotkeyAction::NewWindow);
+        // Hosts / SFTP get the Ctrl+1 / Ctrl+2 hints only in
+        // Workspace mode, the same layouts where the strip carries
+        // them as area tabs (Classic mode keeps them in the
+        // sidebar so the hint would be misleading).
+        let workspace_mode = self.setting_layout_mode == "workspace";
+        let hk_hosts = if workspace_mode {
+            self.hotkey_label_for_strip_slot(0)
+        } else {
+            None
+        };
+        let hk_sftp = if workspace_mode && self.sftp_enabled {
+            self.hotkey_label_for_strip_slot(1)
+        } else {
+            None
         };
         // Visual separator between item groups: a 1 px hairline with
         // some breathing room above and below. The previous version
@@ -1404,7 +1440,7 @@ impl Oryxis {
         // vault surfaces. The SFTP entry is gated on `sftp_enabled`,
         // same rule the sidebar applies.
         let sftp_item: Element<'_, Message> = if self.sftp_enabled {
-            item("sftp", Message::ChangeView(View::Sftp))
+            item("sftp", Message::ChangeView(View::Sftp), hk_sftp)
         } else {
             Space::new().height(0).into()
         };
@@ -1412,21 +1448,21 @@ impl Oryxis {
         // locking has nothing to protect and the unlock screen has no
         // way to re-enter (mirrors the Settings -> Security gating).
         let lock_item: Element<'_, Message> = if self.vault_has_user_password {
-            item("lock_vault", Message::LockVault)
+            item("lock_vault", Message::LockVault, None)
         } else {
             Space::new().height(0).into()
         };
         let menu_col = column![
-            item("hosts", Message::ChangeView(View::Dashboard)),
+            item("hosts", Message::ChangeView(View::Dashboard), hk_hosts),
             sftp_item,
-            item("keychain", Message::ChangeView(View::Keys)),
-            item("snippets", Message::ChangeView(View::Snippets)),
-            item("history", Message::ChangeView(View::History)),
-            item("settings", Message::ChangeView(View::Settings)),
+            item("keychain", Message::ChangeView(View::Keys), None),
+            item("snippets", Message::ChangeView(View::Snippets), None),
+            item("history", Message::ChangeView(View::History), None),
+            item("settings", Message::ChangeView(View::Settings), hk_settings),
             sep,
-            item("local_shell", Message::OpenLocalShell),
-            item("new_window", Message::SpawnNewWindow),
-            item("check_for_updates_now", Message::CheckForUpdateManual),
+            item("local_shell", Message::OpenLocalShell, hk_local_shell),
+            item("new_window", Message::SpawnNewWindow, hk_new_window),
+            item("check_for_updates_now", Message::CheckForUpdateManual, None),
             lock_item,
         ]
         .width(Length::Fill);

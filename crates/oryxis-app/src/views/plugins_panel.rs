@@ -431,8 +431,15 @@ fn plugin_card(entry: &PluginUiEntry) -> Element<'_, Message> {
         .padding(Padding { top: 12.0, right: 16.0, bottom: 12.0, left: 16.0 })
         .width(Length::Fill)
         .style(|_| container::Style {
-            background: Some(Background::Color(OryxisColors::t().bg_surface)),
-            border: Border { radius: Radius::from(8.0), ..Default::default() },
+            // Match the `panel_section` bg used elsewhere in Settings
+            // so a plugin card looks like every other settings panel
+            // instead of the lighter `bg_surface` it used before.
+            background: Some(Background::Color(OryxisColors::t().bg_hover)),
+            border: Border {
+                radius: Radius::from(8.0),
+                color: OryxisColors::t().border,
+                width: 1.0,
+            },
             ..Default::default()
         })
         .into()
