@@ -1149,7 +1149,10 @@ impl Oryxis {
                 &self.host_search,
             )
             .on_input(Message::HostSearchChanged)
-            .padding(Padding { top: 4.0, right: 8.0, bottom: 4.0, left: 8.0 })
+            // Generous vertical padding so the input feels like a
+            // real field, not a 1-line label; the previous 4 px top
+            // cropped the placeholder visually.
+            .padding(Padding { top: 7.0, right: 10.0, bottom: 7.0, left: 10.0 })
             .size(12)
             .width(220)
             .style(crate::widgets::rounded_input_style)

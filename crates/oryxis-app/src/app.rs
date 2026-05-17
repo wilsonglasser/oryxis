@@ -664,17 +664,26 @@ pub struct Oryxis {
 // `boot`, `load_data_from_vault`, `persist_setting` live in `crate::boot`.
 
 impl Oryxis {
-    /// Vertical offset (px) that toolbar dropdown anchors should add
-    /// to land below the toolbar buttons on the dashboard, regardless
-    /// of layout mode. In Classic mode there's just the tab bar + the
-    /// toolbar top padding; in Workspace mode the contextual vault
-    /// sub-nav adds another ~32 px under the tab bar that we have to
-    /// account for, or every `+ HOST` / `+ ADD` dropdown lands above
-    /// the button that opened it.
+    /// Vertical offset (px) that toolbar dropdown anchors should use
+    /// to land *below* the toolbar buttons on the dashboard, regardless
+    /// of layout mode. Empirically:
+    ///
+    ///   Tab bar       40
+    /// + h_separator    2
+    /// + sub-nav      ~36   (Workspace + vault area only)
+    /// + toolbar top   20
+    /// + button + gap  32
+    /// ────────────────────
+    /// = ~94 (Classic) / ~130 (Workspace vault)
+    ///
+    /// The previous hardcoded 56 lined up against an older toolbar
+    /// geometry; with the v0.7 sub-nav the menus were dropping over
+    /// the trigger button. New values measured against the current
+    /// toolbar and verified by user feedback.
     pub(crate) fn dashboard_dropdown_anchor_y(&self) -> f32 {
         use crate::state::View;
-        const BASE_Y: f32 = 56.0;
-        const SUBNAV_HEIGHT: f32 = 32.0;
+        const BASE_Y: f32 = 94.0;
+        const SUBNAV_HEIGHT: f32 = 36.0;
         let in_workspace_vault = self.setting_layout_mode == "workspace"
             && self.active_tab.is_none()
             && matches!(
