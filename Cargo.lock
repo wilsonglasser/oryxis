@@ -5406,6 +5406,7 @@ dependencies = [
  "chrono",
  "dirs",
  "ed25519-dalek 2.2.0",
+ "fontdb",
  "futures-util",
  "iced",
  "iced_fonts",

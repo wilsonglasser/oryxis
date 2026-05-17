@@ -41,12 +41,15 @@ pub(crate) const SIDEBAR_WIDTH: f32 = 180.0;
 pub(crate) const SIDEBAR_WIDTH_COLLAPSED: f32 = 56.0;
 pub(crate) const CARD_WIDTH: f32 = 280.0;
 
-/// Monospace fonts offered in the terminal font picker.
+/// Fallback monospace font names offered when the system enumeration
+/// returns nothing (boot-time scan still in flight, fontdb error, or
+/// a stripped-down system with no installed monospace fonts beyond the
+/// bundled Source Code Pro).
 ///
-/// `Source Code Pro` is bundled with the binary (see `main.rs`). The rest are
-/// looked up from the OS fontconfig, if not installed, cosmic-text falls back
-/// gracefully to the system default monospace.
-pub(crate) const TERMINAL_FONTS: &[&str] = &[
+/// `Source Code Pro` is bundled with the binary (see `main.rs`). The rest
+/// are looked up from the OS fontconfig; if a name doesn't resolve,
+/// cosmic-text falls back gracefully to the system default monospace.
+const TERMINAL_FONT_FALLBACK: &[&str] = &[
     "Source Code Pro",
     "Source Code Pro Medium",
     "JetBrains Mono",
@@ -68,6 +71,52 @@ pub(crate) const TERMINAL_FONTS: &[&str] = &[
     "Monaco",
     "Consolas",
 ];
+
+/// Returns the list of monospace fonts available to the picker.
+///
+/// Builds a fresh `fontdb::Database`, loads the system fonts on this
+/// platform, and filters to families that report `monospaced`. The
+/// bundled Source Code Pro is always prepended so it's the first
+/// option even on systems with rich font libraries.
+///
+/// On error or empty enumeration we fall back to
+/// `TERMINAL_FONT_FALLBACK` so the picker is never empty.
+pub(crate) fn enumerate_terminal_fonts() -> Vec<String> {
+    let mut db = fontdb::Database::new();
+    db.load_system_fonts();
+
+    let mut names: std::collections::BTreeSet<String> =
+        std::collections::BTreeSet::new();
+    for face in db.faces() {
+        if !face.monospaced {
+            continue;
+        }
+        if let Some((family, _lang)) = face.families.first() {
+            // Filter out empty / placeholder names defensively; some
+            // systems carry symbol-only faces marked monospace.
+            let trimmed = family.trim();
+            if !trimmed.is_empty() {
+                names.insert(trimmed.to_string());
+            }
+        }
+    }
+
+    if names.is_empty() {
+        return TERMINAL_FONT_FALLBACK.iter().map(|s| s.to_string()).collect();
+    }
+
+    // Prepend the bundled Source Code Pro so it's always picker entry
+    // #1; the rest of the names come from the dedup'd system scan.
+    let mut out: Vec<String> = Vec::with_capacity(names.len() + 1);
+    let bundled = "Source Code Pro".to_string();
+    out.push(bundled.clone());
+    for n in names {
+        if n != bundled {
+            out.push(n);
+        }
+    }
+    out
+}
 
 // ---------------------------------------------------------------------------
 // App state

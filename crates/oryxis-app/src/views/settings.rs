@@ -221,12 +221,10 @@ impl Oryxis {
                     theme_grid,
                 ]);
 
-                // Font picker, full list, regardless of whether a given font is
-                // bundled. The renderer falls back when a name can't be resolved.
-                let fonts: Vec<String> = crate::app::TERMINAL_FONTS
-                    .iter()
-                    .map(|s| s.to_string())
-                    .collect();
+                // Font picker. The list comes from a live fontdb scan
+                // of monospace families installed on the system, with a
+                // hardcoded fallback when the scan returns nothing.
+                let fonts: Vec<String> = crate::app::enumerate_terminal_fonts();
                 let font_picker_section = panel_section(column![
                     text(crate::i18n::t("terminal_font")).size(13).color(OryxisColors::t().text_primary),
                     Space::new().height(4),
