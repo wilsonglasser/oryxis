@@ -111,6 +111,17 @@ impl Oryxis {
                 .find(|c| c.label == base_label)
                 .and_then(|c| c.color.as_deref())
                 .and_then(crate::widgets::parse_hex_color);
+            // Resolve the per-host icon style override against the
+            // global default so the badge shape on the tab matches
+            // the one on the dashboard card. Local-shell tabs (no
+            // matching connection row) fall through to the global
+            // default like fresh hosts do.
+            let host_icon_style = {
+                let per_host = self.connections.iter()
+                    .find(|c| c.label == base_label)
+                    .and_then(|c| c.icon_style.as_deref());
+                crate::widgets::resolve_host_icon_style(per_host, &self.setting_default_host_icon)
+            };
             // Connection-state dot color. Connecting beats every other
             // signal because a tab that's currently dialing isn't yet
             // "disconnected" in the user's mental model. Local-shell
@@ -142,6 +153,7 @@ impl Oryxis {
                 self.setting_tab_close_button_side == "right",
                 status_dot,
                 host_accent,
+                host_icon_style,
             ));
         }
 
@@ -375,6 +387,11 @@ fn truncate_label(label: &str, width: f32) -> String {
 /// `host_accent`: per-host accent color resolved from `Connection.color`.
 /// When Some, the active-tab fill and label adopt this color instead of
 /// the global accent, so each tab "breathes" the color of its host.
+///
+/// `host_icon_style`: shape the OS badge takes in this tab. Resolved
+/// from the per-host override or the global `default_host_icon`
+/// setting; defaults to Square here (back-compat with the previous
+/// fixed shape) when the caller passes nothing custom.
 #[allow(clippy::too_many_arguments)]
 fn session_tab<'a>(
     idx: usize,
@@ -386,6 +403,7 @@ fn session_tab<'a>(
     close_on_right: bool,
     status_dot: Option<Color>,
     host_accent: Option<Color>,
+    host_icon_style: crate::widgets::HostIconStyle,
 ) -> Element<'a, Message> {
     let effective_accent = host_accent.unwrap_or_else(|| OryxisColors::t().accent);
     let fg = if is_active {
@@ -423,14 +441,25 @@ fn session_tab<'a>(
         if is_disconnected {
             badge_color = OryxisColors::t().text_muted;
         }
-        let base = container(glyph.view(12.0, Color::WHITE))
+        // host_icon respects the user's chosen shape (Circular /
+        // Square / Outline / Initials). For Initials the OS glyph is
+        // ignored and the leading letters of the label render; for
+        // the other styles the glyph paints inside the shape.
+        let glyph_el: Element<'_, Message> = glyph.view(12.0, Color::WHITE);
+        let base = crate::widgets::host_icon(
+            host_icon_style,
+            badge_color,
+            label,
+            Some(glyph_el),
+            TAB_ICON_SLOT,
+        );
+        // Wrap in a container so the existing status_dot Stack code
+        // below still has a container to compose with; host_icon
+        // already returns an Element so we re-wrap to keep the
+        // dot-overlay branch unchanged.
+        let base = container(base)
             .center_x(Length::Fixed(TAB_ICON_SLOT))
-            .center_y(Length::Fixed(TAB_ICON_SLOT))
-            .style(move |_| container::Style {
-                background: Some(Background::Color(badge_color)),
-                border: Border { radius: Radius::from(4.0), ..Default::default() },
-                ..Default::default()
-            });
+            .center_y(Length::Fixed(TAB_ICON_SLOT));
         if let Some(dot_color) = status_dot {
             // Small filled circle stacked over the badge's bottom-right
             // corner. The Stack child uses Length::Fill so we can pin
