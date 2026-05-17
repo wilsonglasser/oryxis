@@ -987,29 +987,35 @@ impl Oryxis {
         // shrinks to content and the column's `align_x` pushes the
         // shrunk box around in a way that doesn't always coincide
         // with the card border; making the container Fill anchors it
-        // explicitly to the leading edge of the row.
+        // explicitly to the leading edge of the row. Also mirrors
+        // Keychain's section_title vertical padding (4 px top, 8 px
+        // bottom) so the section labels sit at the same offset
+        // relative to the search bar as they do in the Keychain.
         let section_header = |label_key: &'static str| -> Element<'_, Message> {
             container(
-                text(t(label_key))
-                    .size(14)
-                    .color(OryxisColors::t().text_muted),
+                container(
+                    text(t(label_key))
+                        .size(14)
+                        .color(OryxisColors::t().text_muted),
+                )
+                .width(Length::Fill)
+                .align_x(crate::widgets::dir_align_x()),
             )
-            .width(Length::Fill)
-            .align_x(crate::widgets::dir_align_x())
+            .padding(Padding { top: 4.0, right: 0.0, bottom: 8.0, left: 0.0 })
             .into()
         };
 
         let mut content_rows: Vec<Element<'_, Message>> = Vec::new();
         if flatten {
             if !group_cards.is_empty() {
+                // `section_header` already carries its own 4/8 vertical
+                // padding (mirroring Keychain), so no extra Space below.
                 content_rows.push(section_header("groups_section"));
-                content_rows.push(Space::new().height(8).into());
                 content_rows.push(distribute_card_grid(group_cards, cols, 12.0, 12.0));
                 content_rows.push(Space::new().height(20).into());
             }
             if !host_cards.is_empty() {
                 content_rows.push(section_header("hosts_section"));
-                content_rows.push(Space::new().height(8).into());
                 content_rows.push(distribute_card_grid(host_cards, cols, 12.0, 12.0));
             }
         } else {
