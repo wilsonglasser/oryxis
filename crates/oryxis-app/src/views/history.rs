@@ -77,7 +77,14 @@ impl Oryxis {
             );
         }
 
+        let history_needle = self.history_search.to_lowercase();
         for entry in &self.logs {
+            if !history_needle.is_empty()
+                && !entry.connection_label.to_lowercase().contains(&history_needle)
+                && !entry.hostname.to_lowercase().contains(&history_needle)
+            {
+                continue;
+            }
             let (event_icon, event_color) = match entry.event {
                 oryxis_core::models::log_entry::LogEvent::Connected => {
                     (iced_fonts::lucide::circle_check(), OryxisColors::t().success)

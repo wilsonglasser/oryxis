@@ -265,6 +265,13 @@ pub struct Oryxis {
     pub(crate) key_context_menu: Option<usize>,
     pub(crate) editing_key_id: Option<Uuid>,
     pub(crate) key_search: String,
+    /// Workspace-mode contextual search backing for Snippets view.
+    /// Matches against snippet label + command.
+    pub(crate) snippet_search: String,
+    /// Workspace-mode contextual search backing for History view.
+    /// Matches against the connection label / hostname recorded in
+    /// each log row.
+    pub(crate) history_search: String,
 
     // Identities
     pub(crate) identities: Vec<Identity>,
@@ -665,16 +672,11 @@ pub struct Oryxis {
 
 impl Oryxis {
     /// Vertical offset (px) that toolbar dropdown anchors should use
-    /// to land *below* the toolbar buttons on the dashboard, regardless
-    /// of layout mode. Empirically:
-    ///
-    ///   Tab bar       40
-    /// + h_separator    2
-    /// + sub-nav      ~36   (Workspace + vault area only)
-    /// + toolbar top   20
-    /// + button + gap  32
-    /// ────────────────────
-    /// = ~94 (Classic) / ~130 (Workspace vault)
+    /// to land below the toolbar buttons on the dashboard, regardless
+    /// of layout mode. Stack of contributions, top to bottom:
+    /// tab bar (40) + hairline (2) + sub-nav (~36, Workspace vault
+    /// only) + toolbar top (20) + button + gap (32) = ~94 (Classic)
+    /// or ~130 (Workspace vault).
     ///
     /// The previous hardcoded 56 lined up against an older toolbar
     /// geometry; with the v0.7 sub-nav the menus were dropping over

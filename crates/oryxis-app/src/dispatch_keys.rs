@@ -248,6 +248,12 @@ impl Oryxis {
             Message::KeySearchChanged(v) => {
                 self.key_search = v;
             }
+            Message::SnippetSearchChanged(v) => {
+                self.snippet_search = v;
+            }
+            Message::HistorySearchChanged(v) => {
+                self.history_search = v;
+            }
 
             // ── Identities ──
             Message::ShowIdentityPanel => {

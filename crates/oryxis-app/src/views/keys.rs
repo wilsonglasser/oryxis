@@ -129,16 +129,25 @@ impl Oryxis {
         .width(Length::Fill);
 
         // ── Search bar ──
-        let search_bar = container(
-            text_input(t("search_keys_identities"), &self.key_search)
-                .on_input(Message::KeySearchChanged)
-                .padding(10)
-                .size(13)
-                .width(Length::Fill)
-                .style(crate::widgets::rounded_input_style).align_x(dir_align_x()),
-        )
-        .padding(Padding { top: 0.0, right: 24.0, bottom: 12.0, left: 24.0 })
-        .width(Length::Fill);
+        // Collapses to zero height in Workspace mode where the search
+        // lives on the contextual sub-nav (`view_vault_sub_nav`),
+        // matching the host-grid / snippets / history treatment.
+        let workspace_mode = self.setting_layout_mode == "workspace";
+        let search_bar: Element<'_, Message> = if workspace_mode {
+            Space::new().height(0).into()
+        } else {
+            container(
+                text_input(t("search_keys_identities"), &self.key_search)
+                    .on_input(Message::KeySearchChanged)
+                    .padding(10)
+                    .size(13)
+                    .width(Length::Fill)
+                    .style(crate::widgets::rounded_input_style).align_x(dir_align_x()),
+            )
+            .padding(Padding { top: 0.0, right: 24.0, bottom: 12.0, left: 24.0 })
+            .width(Length::Fill)
+            .into()
+        };
 
         // ── Status message ──
         // While the import / identity sidebars are open, the panel surfaces

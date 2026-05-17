@@ -108,7 +108,14 @@ impl Oryxis {
             return main_content.into();
         }
 
+        let snippet_needle = self.snippet_search.to_lowercase();
         for (idx, snip) in self.snippets.iter().enumerate() {
+            if !snippet_needle.is_empty()
+                && !snip.label.to_lowercase().contains(&snippet_needle)
+                && !snip.command.to_lowercase().contains(&snippet_needle)
+            {
+                continue;
+            }
             let icon_box = container(iced_fonts::lucide::code().size(14).color(Color::WHITE))
                 .padding(Padding { top: 8.0, right: 8.0, bottom: 8.0, left: 8.0 })
                 .style(|_| container::Style {

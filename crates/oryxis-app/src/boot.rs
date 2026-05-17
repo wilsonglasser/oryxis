@@ -156,6 +156,8 @@ impl Oryxis {
                 key_context_menu: None,
                 editing_key_id: None,
                 key_search: String::new(),
+                snippet_search: String::new(),
+                history_search: String::new(),
                 identities: Vec::new(),
                 identities_with_password: std::collections::HashSet::new(),
                 show_identity_panel: false,

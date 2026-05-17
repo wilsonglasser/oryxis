@@ -418,6 +418,10 @@ pub enum Message {
     HideKeyMenu,
     EditKey(usize),
     KeySearchChanged(String),
+    /// Workspace sub-nav search input wired to Snippets view.
+    SnippetSearchChanged(String),
+    /// Workspace sub-nav search input wired to History view.
+    HistorySearchChanged(String),
 
     // Identities
     ShowIdentityPanel,

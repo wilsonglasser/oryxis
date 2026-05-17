@@ -1139,25 +1139,45 @@ impl Oryxis {
         .spacing(4)
         .align_y(iced::Alignment::Center);
         // Compact search input on the trailing edge of the sub-nav.
-        // For now only the Hosts pill wires into a real backing
-        // string (`host_search`); the other views still have their
-        // own internal search and ignore this row when they're
-        // active. Width capped so the pills keep their natural width.
-        let search_input: Element<'_, Message> = if self.active_view == View::Dashboard {
-            iced::widget::text_input(
-                crate::i18n::t("search_hosts"),
-                &self.host_search,
-            )
-            .on_input(Message::HostSearchChanged)
-            // Generous vertical padding so the input feels like a
-            // real field, not a 1-line label; the previous 4 px top
-            // cropped the placeholder visually.
-            .padding(Padding { top: 7.0, right: 10.0, bottom: 7.0, left: 10.0 })
-            .size(12)
-            .width(220)
-            .style(crate::widgets::rounded_input_style)
-            .align_x(dir_align_x())
-            .into()
+        // Each vault sub-section has its own backing string + message
+        // so the same row serves every view; the placeholder text
+        // changes accordingly. Width capped so the pills keep their
+        // natural width.
+        type SearchBinding<'a> = (&'a str, &'a str, fn(String) -> Message);
+        let search_binding: Option<SearchBinding<'_>> = match self.active_view {
+            View::Dashboard => Some((
+                "search_hosts",
+                self.host_search.as_str(),
+                Message::HostSearchChanged,
+            )),
+            View::Keys => Some((
+                "search_keys_identities",
+                self.key_search.as_str(),
+                Message::KeySearchChanged,
+            )),
+            View::Snippets => Some((
+                "search_snippets",
+                self.snippet_search.as_str(),
+                Message::SnippetSearchChanged,
+            )),
+            View::History => Some((
+                "search_history",
+                self.history_search.as_str(),
+                Message::HistorySearchChanged,
+            )),
+            _ => None,
+        };
+        let search_input: Element<'_, Message> = if let Some((ph_key, value, on_input)) = search_binding {
+            iced::widget::text_input(crate::i18n::t(ph_key), value)
+                .on_input(on_input)
+                // Generous vertical padding so the input feels like a
+                // real field, not a 1-line label.
+                .padding(Padding { top: 7.0, right: 10.0, bottom: 7.0, left: 10.0 })
+                .size(12)
+                .width(220)
+                .style(crate::widgets::rounded_input_style)
+                .align_x(dir_align_x())
+                .into()
         } else {
             Space::new().width(0).height(0).into()
         };

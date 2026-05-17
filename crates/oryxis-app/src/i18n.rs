@@ -535,6 +535,8 @@ fn en(key: &str) -> &'static str {
 
         // Misc
         "search_hosts" => "Search hosts...",
+        "search_snippets" => "Search snippets...",
+        "search_history" => "Search history...",
         "search_keys" => "Search keys...",
         "no_results" => "No results",
         "error" => "Error",
@@ -1157,6 +1159,8 @@ fn pt_br(key: &str) -> Option<&'static str> {
         "share" => "Compartilhar",
 
         "search_hosts" => "Buscar hosts...",
+        "search_snippets" => "Buscar snippets...",
+        "search_history" => "Buscar histórico...",
         "search_keys" => "Buscar chaves...",
         "no_results" => "Sem resultados",
         "error" => "Erro",
@@ -1671,6 +1675,8 @@ fn es(key: &str) -> Option<&'static str> {
         "linked_to" => "Vinculado a",
 
         "search_hosts" => "Buscar hosts...",
+        "search_snippets" => "Buscar snippets...",
+        "search_history" => "Buscar historial...",
         "search_keys" => "Buscar claves...",
         "no_results" => "Sin resultados",
         "error" => "Error",
@@ -2268,6 +2274,8 @@ fn fr(key: &str) -> Option<&'static str> {
         "linked_to" => "Lié à",
 
         "search_hosts" => "Rechercher des hôtes...",
+        "search_snippets" => "Rechercher des snippets...",
+        "search_history" => "Rechercher l'historique...",
         "search_keys" => "Rechercher des clés...",
         "no_results" => "Aucun résultat",
         "error" => "Erreur",
@@ -2865,6 +2873,8 @@ fn de(key: &str) -> Option<&'static str> {
         "linked_to" => "Verknüpft mit",
 
         "search_hosts" => "Hosts suchen...",
+        "search_snippets" => "Snippets suchen...",
+        "search_history" => "Verlauf suchen...",
         "search_keys" => "Schlüssel suchen...",
         "no_results" => "Keine Ergebnisse",
         "error" => "Fehler",
@@ -3462,6 +3472,8 @@ fn it(key: &str) -> Option<&'static str> {
         "linked_to" => "Collegato a",
 
         "search_hosts" => "Cerca host...",
+        "search_snippets" => "Cerca snippets...",
+        "search_history" => "Cerca cronologia...",
         "search_keys" => "Cerca chiavi...",
         "no_results" => "Nessun risultato",
         "error" => "Errore",
@@ -4059,6 +4071,8 @@ fn zh(key: &str) -> Option<&'static str> {
         "linked_to" => "关联到",
 
         "search_hosts" => "搜索主机...",
+        "search_snippets" => "搜索代码片段...",
+        "search_history" => "搜索历史记录...",
         "search_keys" => "搜索密钥...",
         "no_results" => "无结果",
         "error" => "错误",
@@ -4656,6 +4670,8 @@ fn ja(key: &str) -> Option<&'static str> {
         "linked_to" => "リンク先",
 
         "search_hosts" => "ホストを検索...",
+        "search_snippets" => "スニペットを検索...",
+        "search_history" => "履歴を検索...",
         "search_keys" => "鍵を検索...",
         "no_results" => "結果なし",
         "error" => "エラー",
@@ -5253,6 +5269,8 @@ fn ru(key: &str) -> Option<&'static str> {
         "linked_to" => "Связан с",
 
         "search_hosts" => "Поиск хостов...",
+        "search_snippets" => "Поиск сниппетов...",
+        "search_history" => "Поиск в истории...",
         "search_keys" => "Поиск ключей...",
         "no_results" => "Нет результатов",
         "error" => "Ошибка",
@@ -5973,6 +5991,8 @@ fn fa(key: &str) -> Option<&'static str> {
 
         // Misc
         "search_hosts" => "جستجوی میزبان‌ها...",
+        "search_snippets" => "جستجوی قطعه‌ها...",
+        "search_history" => "جستجوی تاریخچه...",
         "search_keys" => "جستجوی کلیدها...",
         "no_results" => "نتیجه‌ای یافت نشد",
         "error" => "خطا",
@@ -6604,6 +6624,8 @@ fn ar(key: &str) -> Option<&'static str> {
 
         // Misc
         "search_hosts" => "البحث عن المضيفين...",
+        "search_snippets" => "البحث في المقتطفات...",
+        "search_history" => "البحث في السجل...",
         "search_keys" => "البحث عن المفاتيح...",
         "no_results" => "لم يتم العثور على نتائج",
         "error" => "خطأ",
