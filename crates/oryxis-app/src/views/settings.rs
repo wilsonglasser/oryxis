@@ -417,30 +417,38 @@ impl Oryxis {
                     ),
                 ]);
 
+                // Tuning knobs (parallelism, timeouts) only render
+                // when SFTP is enabled, matching the AI / Sync
+                // sections' pattern: a single master toggle stays
+                // visible at the top, the rest collapses when off.
+                let mut content_col: iced::widget::Column<'_, Message> = column![
+                    text(t("sftp"))
+                        .size(18)
+                        .color(OryxisColors::t().text_primary),
+                    Space::new().height(16),
+                    enable_section,
+                ]
+                .width(Length::Fill)
+                .align_x(dir_align_x());
+
+                if self.sftp_enabled {
+                    content_col = content_col
+                        .push(Space::new().height(12))
+                        .push(concurrency_section)
+                        .push(Space::new().height(12))
+                        .push(connect_section)
+                        .push(Space::new().height(12))
+                        .push(auth_section)
+                        .push(Space::new().height(12))
+                        .push(session_section)
+                        .push(Space::new().height(12))
+                        .push(op_section);
+                }
+                content_col = content_col.push(Space::new().height(24));
+
                 scrollable(
-                    container(
-                        column![
-                            text(t("sftp"))
-                                .size(18)
-                                .color(OryxisColors::t().text_primary),
-                            Space::new().height(16),
-                            enable_section,
-                            Space::new().height(12),
-                            concurrency_section,
-                            Space::new().height(12),
-                            connect_section,
-                            Space::new().height(12),
-                            auth_section,
-                            Space::new().height(12),
-                            session_section,
-                            Space::new().height(12),
-                            op_section,
-                            Space::new().height(24),
-                        ]
-                        .width(Length::Fill)
-                        .align_x(dir_align_x()),
-                    )
-                    .padding(Padding { top: 20.0, right: 24.0, bottom: 24.0, left: 24.0 }),
+                    container(content_col)
+                        .padding(Padding { top: 20.0, right: 24.0, bottom: 24.0, left: 24.0 }),
                 )
                 .height(Length::Fill)
                 .into()
