@@ -25,15 +25,24 @@ impl Oryxis {
         let toolbar = self.dashboard_toolbar();
 
         // ── Search bar ──
-        let search_bar = container(
-            text_input(t("search_hosts"), &self.host_search)
-                .on_input(Message::HostSearchChanged)
-                .padding(10)
-                .size(13)
-                .style(crate::widgets::rounded_input_style).align_x(dir_align_x()),
-        )
-        .padding(Padding { top: 0.0, right: 24.0, bottom: 12.0, left: 24.0 })
-        .width(Length::Fill);
+        // In Workspace mode the search lives on the contextual sub-nav
+        // (`view_vault_sub_nav`) instead of taking a full content row,
+        // so the wide bar collapses to a zero-height spacer here.
+        let workspace_mode = self.setting_layout_mode == "workspace";
+        let search_bar: Element<'_, Message> = if workspace_mode {
+            Space::new().height(0).into()
+        } else {
+            container(
+                text_input(t("search_hosts"), &self.host_search)
+                    .on_input(Message::HostSearchChanged)
+                    .padding(10)
+                    .size(13)
+                    .style(crate::widgets::rounded_input_style).align_x(dir_align_x()),
+            )
+            .padding(Padding { top: 0.0, right: 24.0, bottom: 12.0, left: 24.0 })
+            .width(Length::Fill)
+            .into()
+        };
 
         // The host editor's validation error renders inside the
         // editor panel itself (`host_panel::view_host_panel`) right

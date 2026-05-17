@@ -392,7 +392,10 @@ impl Oryxis {
                             - toolbar_padding
                             - menu_width
                     };
-                    let y = 56.0; // toolbar top padding + button height + small gap
+                    // Helper accounts for the Workspace contextual
+                    // sub-nav under the tab bar; in Classic it returns
+                    // the legacy 56 px (toolbar top + button + gap).
+                    let y = self.dashboard_dropdown_anchor_y();
                     self.overlay = Some(OverlayState {
                         content: OverlayContent::KeychainAdd,
                         x: x.max(0.0),

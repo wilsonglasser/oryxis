@@ -313,7 +313,7 @@ impl Oryxis {
                 } else {
                     self.window_size.width - panel_width - toolbar_padding - menu_width
                 };
-                let y = 56.0;
+                let y = self.dashboard_dropdown_anchor_y();
                 self.overlay = Some(OverlayState {
                     content: OverlayContent::CloudProviderPicker,
                     x: x.max(0.0),

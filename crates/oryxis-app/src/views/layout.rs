@@ -1138,7 +1138,33 @@ impl Oryxis {
         ])
         .spacing(4)
         .align_y(iced::Alignment::Center);
-        let row_content = container(pills)
+        // Compact search input on the trailing edge of the sub-nav.
+        // For now only the Hosts pill wires into a real backing
+        // string (`host_search`); the other views still have their
+        // own internal search and ignore this row when they're
+        // active. Width capped so the pills keep their natural width.
+        let search_input: Element<'_, Message> = if self.active_view == View::Dashboard {
+            iced::widget::text_input(
+                crate::i18n::t("search_hosts"),
+                &self.host_search,
+            )
+            .on_input(Message::HostSearchChanged)
+            .padding(Padding { top: 4.0, right: 8.0, bottom: 4.0, left: 8.0 })
+            .size(12)
+            .width(220)
+            .style(crate::widgets::rounded_input_style)
+            .align_x(dir_align_x())
+            .into()
+        } else {
+            Space::new().width(0).height(0).into()
+        };
+        let row_inner = dir_row(vec![
+            pills.into(),
+            Space::new().width(Length::Fill).into(),
+            search_input,
+        ])
+        .align_y(iced::Alignment::Center);
+        let row_content = container(row_inner)
             .padding(Padding { top: 6.0, right: 10.0, bottom: 6.0, left: 10.0 })
             .width(Length::Fill);
         let separator = container(Space::new().height(1))
