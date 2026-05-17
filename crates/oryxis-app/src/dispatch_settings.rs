@@ -464,6 +464,10 @@ impl Oryxis {
             }
 
             Message::OpenLocalShell => {
+                // Burger menu is the most common entry point for
+                // this action; dismiss it so the spawned shell
+                // doesn't appear behind the still-open dropdown.
+                self.show_burger_menu = false;
                 // On Windows, surface the picker so the user can pick
                 // between cmd / PowerShell / their WSL distros. Other
                 // platforms get the default shell, there's nothing

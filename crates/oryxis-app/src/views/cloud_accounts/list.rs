@@ -18,7 +18,7 @@ impl Oryxis {
         let toolbar = container(
             dir_row(vec![
                 text(t("cloud_accounts"))
-                    .size(20)
+                    .size(18)
                     .color(OryxisColors::t().text_primary)
                     .into(),
                 Space::new().width(Length::Fill).into(),

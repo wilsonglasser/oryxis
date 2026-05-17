@@ -663,9 +663,11 @@ impl Oryxis {
                 ));
             }
             Message::CheckForUpdateManual => {
-                // Manual trigger from the settings button, runs regardless
-                // of the auto-check preference. Clears prior skipped version
-                // so the user can resurface a previously-dismissed prompt.
+                // Manual trigger from the settings button OR the burger
+                // menu; dismiss the burger so the resulting "Checking..."
+                // status (and any modal that follows) isn't hidden by
+                // the dropdown that's still open.
+                self.show_burger_menu = false;
                 self.update_error = None;
                 self.update_check_status = Some("Checking…".into());
                 if let Some(vault) = &self.vault {

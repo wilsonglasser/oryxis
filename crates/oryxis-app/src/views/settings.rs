@@ -1928,7 +1928,7 @@ impl Oryxis {
         let toolbar = container(
             dir_row(vec![
                 text(crate::i18n::t("proxies"))
-                    .size(20)
+                    .size(18)
                     .color(OryxisColors::t().text_primary)
                     .into(),
                 Space::new().width(Length::Fill).into(),

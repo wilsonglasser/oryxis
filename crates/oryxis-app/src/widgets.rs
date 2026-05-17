@@ -553,6 +553,11 @@ pub(crate) fn panel_option_pick<'a>(
 }
 
 pub(crate) fn settings_row<'a>(label: &'static str, value: String) -> Element<'a, Message> {
+    // Transparent row inside the surrounding `panel_section` (which
+    // already supplies the bg + border + radius). The earlier
+    // `bg_surface` fill made these rows render lighter than the
+    // panel around them and out of step with the rest of Settings,
+    // where panel children sit directly on the panel background.
     container(
         dir_row(vec![
             text(label).size(13).color(OryxisColors::t().text_secondary).into(),
@@ -560,13 +565,8 @@ pub(crate) fn settings_row<'a>(label: &'static str, value: String) -> Element<'a
             text(value).size(13).color(OryxisColors::t().text_primary).into(),
         ]),
     )
-    .padding(Padding { top: 6.0, right: 12.0, bottom: 6.0, left: 12.0 })
-    .width(300)
-    .style(|_| container::Style {
-        background: Some(Background::Color(OryxisColors::t().bg_surface)),
-        border: Border { radius: Radius::from(6.0), ..Default::default() },
-        ..Default::default()
-    })
+    .padding(Padding { top: 6.0, right: 4.0, bottom: 6.0, left: 4.0 })
+    .width(Length::Fill)
     .into()
 }
 
@@ -589,13 +589,8 @@ pub(crate) fn settings_row_link<'a>(
             text(display).size(13).color(OryxisColors::t().accent).into(),
         ]),
     )
-    .padding(Padding { top: 6.0, right: 12.0, bottom: 6.0, left: 12.0 })
-    .width(300)
-    .style(|_| container::Style {
-        background: Some(Background::Color(OryxisColors::t().bg_surface)),
-        border: Border { radius: Radius::from(6.0), ..Default::default() },
-        ..Default::default()
-    });
+    .padding(Padding { top: 6.0, right: 4.0, bottom: 6.0, left: 4.0 })
+    .width(Length::Fill);
     iced::widget::MouseArea::new(body)
         .on_press(Message::OpenUrl(url))
         .interaction(iced::mouse::Interaction::Pointer)
