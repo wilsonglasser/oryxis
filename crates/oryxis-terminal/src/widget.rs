@@ -684,8 +684,10 @@ pub struct TerminalView<Message = ()> {
     on_paste_request: Option<Message>,
 }
 
-/// Padding around the terminal content (in pixels).
-const TERM_PAD: f32 = 10.0;
+/// Padding around the terminal content (in pixels). Top stays small
+/// so the first line of output sits close to the tab bar; the legacy
+/// uniform 10 px looked like a chunky air gap on dense layouts.
+const TERM_PAD: f32 = 4.0;
 
 /// Rolling per-frame samples for the perf overlay. We track the
 /// **max** of each phase over a short window so transient spikes

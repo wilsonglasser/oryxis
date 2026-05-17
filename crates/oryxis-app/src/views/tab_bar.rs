@@ -561,10 +561,22 @@ fn session_tab<'a>(
     } else {
         OryxisColors::t().text_muted
     };
-    let bg = if is_active {
-        Color { a: 0.15, ..effective_accent }
+    // Active tab paints a vertical gradient JetBrains-style: a
+    // saturated tint at the top (highlight, ~0.28 alpha) fading to
+    // almost transparent at the bottom (~0.04 alpha). Pairs with the
+    // border-bottom hairline in `view_main` so the active tab reads
+    // as "lit from above" instead of a flat chip. Inactive tabs stay
+    // transparent so hover gets the only visible cue.
+    let bg: Background = if is_active {
+        let top = Color { a: 0.28, ..effective_accent };
+        let bot = Color { a: 0.04, ..effective_accent };
+        Background::Gradient(iced::Gradient::Linear(
+            iced::gradient::Linear::new(iced::Radians(std::f32::consts::PI))
+                .add_stop(0.0, top)
+                .add_stop(1.0, bot),
+        ))
     } else {
-        Color::TRANSPARENT
+        Background::Color(Color::TRANSPARENT)
     };
 
     let is_disconnected = label.ends_with(" (disconnected)");
@@ -719,12 +731,14 @@ fn session_tab<'a>(
     .width(Length::Fixed(width))
     .on_press(Message::SelectTab(idx))
     .style(move |_, status| {
-        let hover_bg = match status {
-            BtnStatus::Hovered if !is_active => Color::from_rgba(1.0, 1.0, 1.0, 0.06),
+        let hover_bg: Background = match status {
+            BtnStatus::Hovered if !is_active => {
+                Background::Color(Color::from_rgba(1.0, 1.0, 1.0, 0.06))
+            }
             _ => bg,
         };
         button::Style {
-            background: Some(Background::Color(hover_bg)),
+            background: Some(hover_bg),
             border: Border { radius: Radius::from(6.0), ..Default::default() },
             ..Default::default()
         }
