@@ -408,6 +408,12 @@ pub struct Oryxis {
     /// for a tab that lost its session. Defaults on; the user can hide
     /// it from Settings -> Interface.
     pub(crate) setting_show_tab_status_dot: bool,
+    /// Toggles the SFTP feature entirely. Off hides the SFTP sidebar
+    /// entry (both expanded and collapsed) so users who never transfer
+    /// files don't have it taking up nav space. The SFTP settings panel
+    /// still renders so the user can re-enable + tweak in one place,
+    /// mirroring how `ai_enabled` works.
+    pub(crate) sftp_enabled: bool,
     pub(crate) setting_keepalive_interval: String,
     pub(crate) setting_scrollback_rows: String,
     /// Max parallel SFTP transfer slots (uploads/downloads). 1 = serial,

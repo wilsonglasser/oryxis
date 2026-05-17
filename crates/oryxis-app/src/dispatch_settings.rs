@@ -268,6 +268,13 @@ impl Oryxis {
                     if self.setting_show_tab_status_dot { "true" } else { "false" },
                 );
             }
+            Message::SettingToggleSftpEnabled => {
+                self.sftp_enabled = !self.sftp_enabled;
+                self.persist_setting(
+                    "sftp_enabled",
+                    if self.sftp_enabled { "true" } else { "false" },
+                );
+            }
             Message::SettingTabCloseButtonSideChanged(val) => {
                 // Only accept the two known values; anything else
                 // collapses to the default so an unknown pick from a

@@ -410,6 +410,14 @@ impl Oryxis {
                     Message::SettingSftpOpTimeoutChanged,
                 );
 
+                let enable_section = panel_section(column![
+                    toggle_row(
+                        crate::i18n::t("enable_sftp"),
+                        self.sftp_enabled,
+                        Message::SettingToggleSftpEnabled,
+                    ),
+                ]);
+
                 scrollable(
                     container(
                         column![
@@ -417,6 +425,8 @@ impl Oryxis {
                                 .size(18)
                                 .color(OryxisColors::t().text_primary),
                             Space::new().height(16),
+                            enable_section,
+                            Space::new().height(12),
                             concurrency_section,
                             Space::new().height(12),
                             connect_section,

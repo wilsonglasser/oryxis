@@ -264,6 +264,7 @@ impl Oryxis {
                 setting_show_status_bar: true,
                 setting_tab_close_button_side: "left".into(),
                 setting_show_tab_status_dot: true,
+                sftp_enabled: true,
                 setting_keepalive_interval: "30".into(),
                 setting_scrollback_rows: "10000".into(),
                 setting_sftp_concurrency: "2".into(),
@@ -558,6 +559,9 @@ impl Oryxis {
             }
             if let Ok(Some(v)) = vault.get_setting("show_tab_status_dot") {
                 self.setting_show_tab_status_dot = v == "true";
+            }
+            if let Ok(Some(v)) = vault.get_setting("sftp_enabled") {
+                self.sftp_enabled = v == "true";
             }
             if let Ok(Some(v)) = vault.get_setting("terminal_font_size")
                 && let Ok(parsed) = v.parse::<f32>()

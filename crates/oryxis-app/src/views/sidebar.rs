@@ -29,15 +29,16 @@ impl Oryxis {
             .center_x(Length::Fill);
 
         let active_is_nav = self.active_tab.is_none();
-        let nav_buttons: Vec<Element<'_, Message>> = vec![
-            sidebar_nav_btn(iced_fonts::lucide::server(), crate::i18n::t("hosts"), View::Dashboard, active_is_nav && self.active_view == View::Dashboard),
-            sidebar_nav_btn(iced_fonts::lucide::folder_tree(), crate::i18n::t("sftp"), View::Sftp, active_is_nav && self.active_view == View::Sftp),
-            sidebar_nav_btn(iced_fonts::lucide::key_round(), crate::i18n::t("keychain"), View::Keys, active_is_nav && self.active_view == View::Keys),
-            sidebar_nav_btn(iced_fonts::lucide::code(), crate::i18n::t("snippets"), View::Snippets, active_is_nav && self.active_view == View::Snippets),
-            sidebar_nav_btn(iced_fonts::lucide::shield_check(), crate::i18n::t("known_hosts"), View::KnownHosts, active_is_nav && self.active_view == View::KnownHosts),
-            sidebar_nav_btn(iced_fonts::lucide::history(), crate::i18n::t("history"), View::History, active_is_nav && self.active_view == View::History),
-            sidebar_nav_btn(iced_fonts::lucide::settings(), crate::i18n::t("settings"), View::Settings, active_is_nav && self.active_view == View::Settings),
-        ];
+        let mut nav_buttons: Vec<Element<'_, Message>> = Vec::new();
+        nav_buttons.push(sidebar_nav_btn(iced_fonts::lucide::server(), crate::i18n::t("hosts"), View::Dashboard, active_is_nav && self.active_view == View::Dashboard));
+        if self.sftp_enabled {
+            nav_buttons.push(sidebar_nav_btn(iced_fonts::lucide::folder_tree(), crate::i18n::t("sftp"), View::Sftp, active_is_nav && self.active_view == View::Sftp));
+        }
+        nav_buttons.push(sidebar_nav_btn(iced_fonts::lucide::key_round(), crate::i18n::t("keychain"), View::Keys, active_is_nav && self.active_view == View::Keys));
+        nav_buttons.push(sidebar_nav_btn(iced_fonts::lucide::code(), crate::i18n::t("snippets"), View::Snippets, active_is_nav && self.active_view == View::Snippets));
+        nav_buttons.push(sidebar_nav_btn(iced_fonts::lucide::shield_check(), crate::i18n::t("known_hosts"), View::KnownHosts, active_is_nav && self.active_view == View::KnownHosts));
+        nav_buttons.push(sidebar_nav_btn(iced_fonts::lucide::history(), crate::i18n::t("history"), View::History, active_is_nav && self.active_view == View::History));
+        nav_buttons.push(sidebar_nav_btn(iced_fonts::lucide::settings(), crate::i18n::t("settings"), View::Settings, active_is_nav && self.active_view == View::Settings));
 
         let local_btn = button(
             container(
@@ -101,15 +102,16 @@ impl Oryxis {
             .center_x(Length::Fill);
 
         let active_is_nav = self.active_tab.is_none();
-        let icons: Vec<Element<'_, Message>> = vec![
-            collapsed_nav_btn(iced_fonts::lucide::server(), View::Dashboard, active_is_nav && self.active_view == View::Dashboard),
-            collapsed_nav_btn(iced_fonts::lucide::folder_tree(), View::Sftp, active_is_nav && self.active_view == View::Sftp),
-            collapsed_nav_btn(iced_fonts::lucide::key_round(), View::Keys, active_is_nav && self.active_view == View::Keys),
-            collapsed_nav_btn(iced_fonts::lucide::code(), View::Snippets, active_is_nav && self.active_view == View::Snippets),
-            collapsed_nav_btn(iced_fonts::lucide::shield_check(), View::KnownHosts, active_is_nav && self.active_view == View::KnownHosts),
-            collapsed_nav_btn(iced_fonts::lucide::history(), View::History, active_is_nav && self.active_view == View::History),
-            collapsed_nav_btn(iced_fonts::lucide::settings(), View::Settings, active_is_nav && self.active_view == View::Settings),
-        ];
+        let mut icons: Vec<Element<'_, Message>> = Vec::new();
+        icons.push(collapsed_nav_btn(iced_fonts::lucide::server(), View::Dashboard, active_is_nav && self.active_view == View::Dashboard));
+        if self.sftp_enabled {
+            icons.push(collapsed_nav_btn(iced_fonts::lucide::folder_tree(), View::Sftp, active_is_nav && self.active_view == View::Sftp));
+        }
+        icons.push(collapsed_nav_btn(iced_fonts::lucide::key_round(), View::Keys, active_is_nav && self.active_view == View::Keys));
+        icons.push(collapsed_nav_btn(iced_fonts::lucide::code(), View::Snippets, active_is_nav && self.active_view == View::Snippets));
+        icons.push(collapsed_nav_btn(iced_fonts::lucide::shield_check(), View::KnownHosts, active_is_nav && self.active_view == View::KnownHosts));
+        icons.push(collapsed_nav_btn(iced_fonts::lucide::history(), View::History, active_is_nav && self.active_view == View::History));
+        icons.push(collapsed_nav_btn(iced_fonts::lucide::settings(), View::Settings, active_is_nav && self.active_view == View::Settings));
 
         let local_btn = button(
             container(text("+").size(16).color(OryxisColors::t().text_muted))
