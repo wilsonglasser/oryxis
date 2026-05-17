@@ -30,6 +30,7 @@ mod dispatch_tabs;
 mod dispatch_terminal;
 mod i18n;
 mod mcp;
+mod mcp_install;
 mod messages;
 mod os_icon;
 // Cloud-provider plugin subsystem. Inert until the cloud dispatch

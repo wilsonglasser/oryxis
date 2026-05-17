@@ -83,8 +83,12 @@ FunctionEnd
 Section "Install"
     SetOutPath $INSTDIR
 
+    ; Upgrading from a pre-v0.7 install: remove the bundled MCP binary
+    ; if it's still there. The app now downloads MCP into
+    ; `%USERPROFILE%\.oryxis\bin\` on demand. Missing-file is silent.
+    Delete "$INSTDIR\oryxis-mcp.exe"
+
     File "${BINPATH}\oryxis.exe"
-    File "${BINPATH}\oryxis-mcp.exe"
     File "..\resources\logo.ico"
     File "..\README.md"
 
@@ -129,6 +133,8 @@ Section "Uninstall"
     Pop $0
 
     Delete "$INSTDIR\oryxis.exe"
+    ; Sweep the pre-v0.7 bundled MCP binary, if upgrading from an old
+    ; install that still has it. New installs never lay this file down.
     Delete "$INSTDIR\oryxis-mcp.exe"
     Delete "$INSTDIR\logo.ico"
     Delete "$INSTDIR\README.md"

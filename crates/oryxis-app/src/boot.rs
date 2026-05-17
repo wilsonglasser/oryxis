@@ -378,6 +378,34 @@ impl Oryxis {
         if app.vault_state == VaultState::Unlocked && app.sync_enabled {
             tasks.push(app.start_sync_engine());
         }
+
+        // MCP migration: v0.6 shipped `oryxis-mcp` inside the OS
+        // package; v0.7+ downloads it as a plugin into
+        // `~/.oryxis/bin/`. Sweep any leftover `.old.exe` from a
+        // previous Windows update, then silently fetch + install the
+        // plugin when the user already had MCP enabled but no plugin
+        // binary is present.
+        crate::mcp_install::sweep_stale_launcher();
+        if app.vault_state == VaultState::Unlocked
+            && app.mcp_server_enabled
+            && !crate::mcp_install::is_installed()
+            && !crate::dispatch_plugins::dev_binary_present("mcp")
+        {
+            // Surface the in-flight state on the Plugins panel so a
+            // user opening it mid-migration sees something happening.
+            if let Some(entry) =
+                app.plugins.iter_mut().find(|p| p.provider_id == "mcp")
+            {
+                entry.status = crate::state::PluginUiStatus::Downloading;
+            }
+            tasks.push(Task::perform(
+                crate::mcp_install::migrate_install(),
+                |result| {
+                    Message::PluginInstallDone("mcp".to_string(), result)
+                },
+            ));
+        }
+
         let boot_task = Task::batch(tasks);
         (app, boot_task)
     }

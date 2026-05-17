@@ -25,7 +25,10 @@ section = "net"
 priority = "optional"
 assets = [
     ["target/release/oryxis", "usr/bin/", "755"],
-    ["target/release/oryxis-mcp", "usr/bin/", "755"],
+    # `oryxis-mcp` is no longer bundled; the app downloads it as a
+    # plugin into `~/.oryxis/bin/oryxis-mcp` on first enable. See
+    # `crates/oryxis-app/src/mcp_install.rs` for the migration path
+    # v0.6 users hit on first boot after the upgrade.
     ["../../resources/oryxis.desktop", "usr/share/applications/", "644"],
     ["../../resources/logo_64.png", "usr/share/icons/hicolor/64x64/apps/oryxis.png", "644"],
     ["../../resources/logo_128.png", "usr/share/icons/hicolor/128x128/apps/oryxis.png", "644"],

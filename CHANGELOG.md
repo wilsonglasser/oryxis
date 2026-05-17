@@ -6,6 +6,18 @@ project uses [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- **MCP server is now a plugin.** `oryxis-mcp` no longer ships inside
+  the OS installers (`.deb`, AppImage, tarballs, NSIS); the app
+  downloads it on demand into `~/.oryxis/bin/oryxis-mcp[.exe]` when
+  the user enables MCP for the first time, via the same Ed25519-signed
+  manifest pipeline cloud plugins use (`mcp-v*` release tags publish
+  `mcp.json` + signed per-platform binaries). v0.6 users with the
+  toggle already on get a silent migration on first boot. External
+  MCP clients (Claude Desktop, Code, Cursor) spawn the stable
+  launcher path the install layer maintains, so their existing config
+  keeps working across plugin updates.
+
 ### Changed
 - **P2P sync protocol version 4 (breaking).** `PairingRequest` and
   `PairingAccepted` now carry the sender's `device_id`,

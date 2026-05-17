@@ -516,6 +516,18 @@ impl Oryxis {
                 if let Some(vault) = &self.vault {
                     let _ = vault.set_setting("mcp_server_enabled", if self.mcp_server_enabled { "true" } else { "false" });
                 }
+                // MCP ships as a plugin (~5 MB binary external clients
+                // like Claude Desktop spawn). First-time enable triggers
+                // the install modal; an already-installed plugin or a
+                // dev binary on the side both make this a no-op.
+                if self.mcp_server_enabled
+                    && !crate::mcp_install::is_installed()
+                    && !crate::dispatch_plugins::dev_binary_present("mcp")
+                {
+                    return Task::done(Message::ShowPluginInstallModal(
+                        "mcp".to_string(),
+                    ));
+                }
             }
             Message::ShowMcpInfo => {
                 self.show_mcp_info = true;

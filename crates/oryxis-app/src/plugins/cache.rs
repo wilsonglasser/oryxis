@@ -45,9 +45,15 @@ pub fn version_dir(provider_id: &str, version: &str) -> Result<PathBuf, PluginEr
 
 /// Conventional binary file name inside a version directory. The
 /// `.exe` suffix on Windows is what `Command::spawn` needs to find
-/// the executable.
+/// the executable. Cloud plugins follow the
+/// `oryxis-cloud-{id}-plugin` shape; MCP is special-cased because
+/// the binary predates the plugin model and external MCP clients
+/// (Claude Desktop / Code) spawn it by its original name.
 pub fn binary_name(provider_id: &str) -> String {
-    let base = format!("oryxis-cloud-{provider_id}-plugin");
+    let base = match provider_id {
+        "mcp" => "oryxis-mcp".to_string(),
+        id => format!("oryxis-cloud-{id}-plugin"),
+    };
     if cfg!(windows) {
         format!("{base}.exe")
     } else {
@@ -183,6 +189,16 @@ mod tests {
             assert_eq!(name, "oryxis-cloud-aws-plugin.exe");
         } else {
             assert_eq!(name, "oryxis-cloud-aws-plugin");
+        }
+    }
+
+    #[test]
+    fn binary_name_mcp_special_case() {
+        let name = binary_name("mcp");
+        if cfg!(windows) {
+            assert_eq!(name, "oryxis-mcp.exe");
+        } else {
+            assert_eq!(name, "oryxis-mcp");
         }
     }
 

@@ -18,9 +18,15 @@ use crate::plugins::cache;
 use crate::state::{PluginUiEntry, PluginUiStatus};
 
 /// Providers the app knows how to surface in the Plugins panel.
-/// `(provider_id, display_name)`. Today just AWS; gcp / azure / k8s
-/// append here as their plugins land.
-const KNOWN_PLUGINS: &[(&str, &str)] = &[("aws", "Amazon Web Services")];
+/// `(provider_id, display_name)`. AWS runs as a subprocess spawned
+/// by the app via `PluginProvider`; MCP is also a plugin from a
+/// distribution standpoint (download / verify / cache) but the
+/// binary is spawned by external clients (Claude Desktop, Code),
+/// not the app, see [`crate::mcp_install`].
+const KNOWN_PLUGINS: &[(&str, &str)] = &[
+    ("aws", "Amazon Web Services"),
+    ("mcp", "Oryxis MCP Server"),
+];
 
 /// Build the initial `PluginUiEntry` rows from the on-disk cache plus
 /// the per-plugin settings. Called once from `boot::load_data_from_vault`.
@@ -72,7 +78,7 @@ fn detect_status(provider_id: &str) -> PluginUiStatus {
 
 /// True when a freshly-built plugin binary sits next to the app
 /// executable. Debug builds only, matches `PluginProvider::resolve_binary`.
-fn dev_binary_present(provider_id: &str) -> bool {
+pub(crate) fn dev_binary_present(provider_id: &str) -> bool {
     #[cfg(debug_assertions)]
     {
         if let Ok(exe) = std::env::current_exe()
@@ -298,6 +304,7 @@ impl Oryxis {
             }
 
             Message::PluginInstallDone(id, result) => {
+                let token = self.mcp_server_token.clone();
                 if let Some(entry) =
                     self.plugins.iter_mut().find(|p| p.provider_id == id)
                 {
@@ -306,7 +313,19 @@ impl Oryxis {
                             // `download_and_install` wrote the binary
                             // but left `current` untouched, flip it now.
                             match cache::set_current(&id, &version) {
-                                Ok(()) => PluginUiStatus::Installed(version),
+                                Ok(()) => {
+                                    // MCP needs the stable launcher
+                                    // (`~/.oryxis/bin/oryxis-mcp`)
+                                    // refreshed so external clients
+                                    // keep finding the right binary
+                                    // across version bumps.
+                                    if id == "mcp" {
+                                        crate::mcp_install::post_install_refresh(
+                                            &token,
+                                        );
+                                    }
+                                    PluginUiStatus::Installed(version)
+                                }
                                 Err(e) => PluginUiStatus::Failed(e.to_string()),
                             }
                         }

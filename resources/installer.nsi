@@ -7,12 +7,14 @@
 ;   /DVERSION=0.5.2          — SemVer; falls back to 0.0.0-dev
 ;   /DARCH=x86_64|aarch64    — used in OutFile suffix; defaults to x86_64
 ;   /DBINPATH=..\target\release
-;                            — directory holding oryxis.exe and
-;                              oryxis-mcp.exe; defaults to the
-;                              x86_64 release path so a local
+;                            — directory holding oryxis.exe; defaults
+;                              to the x86_64 release path so a local
 ;                              `cargo build --release` followed by
 ;                              `makensis installer.nsi` still works
-;                              without flags.
+;                              without flags. `oryxis-mcp.exe` is no
+;                              longer bundled; the app downloads it as
+;                              a plugin on first enable into
+;                              `%USERPROFILE%\.oryxis\bin\`.
 
 !include "MUI2.nsh"
 
@@ -81,8 +83,12 @@ FunctionEnd
 Section "Install"
     SetOutPath $INSTDIR
 
+    ; Upgrading from a pre-v0.7 install: remove the bundled MCP binary
+    ; if it's still there. The app now downloads MCP into
+    ; `%USERPROFILE%\.oryxis\bin\` on demand. Missing-file is silent.
+    Delete "$INSTDIR\oryxis-mcp.exe"
+
     File "${BINPATH}\oryxis.exe"
-    File "${BINPATH}\oryxis-mcp.exe"
     File "..\resources\logo.ico"
     File "..\README.md"
 
@@ -133,6 +139,8 @@ Section "Uninstall"
     Pop $0
 
     Delete "$INSTDIR\oryxis.exe"
+    ; Sweep the pre-v0.7 bundled MCP binary, if upgrading from an old
+    ; install that still has it. New installs never lay this file down.
     Delete "$INSTDIR\oryxis-mcp.exe"
     Delete "$INSTDIR\logo.ico"
     Delete "$INSTDIR\README.md"

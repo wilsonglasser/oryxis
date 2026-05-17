@@ -8,22 +8,55 @@ use iced::widget::{button, column, container, text, Space};
 use iced::{Background, Border, Color, Element, Length, Padding};
 
 use crate::app::Message;
+use crate::mcp_install;
 use crate::theme::OryxisColors;
 
-/// Binary command for each platform.
-pub(crate) fn mcp_binary_command() -> &'static str {
-    if cfg!(target_os = "windows") {
-        "C:\\\\Program Files\\\\Oryxis\\\\oryxis-mcp.exe"
-    } else if cfg!(target_os = "macos") {
-        "/Applications/Oryxis.app/Contents/MacOS/oryxis-mcp"
-    } else {
-        "/usr/local/bin/oryxis-mcp"
-    }
+/// Binary command external MCP clients (Claude Desktop / Code,
+/// Cursor) should spawn. Resolves to the stable launcher path the
+/// plugin install layer maintains (`~/.oryxis/bin/oryxis-mcp[.exe]`),
+/// so the JSON snippet the user copies stays valid across plugin
+/// updates. Falls back to the launcher path even when no plugin is
+/// installed yet, the install flow gates the surface, so the user
+/// shouldn't see this snippet with a missing binary.
+pub(crate) fn mcp_binary_command() -> String {
+    mcp_install::launcher_path()
+        .map(|p| {
+            if cfg!(target_os = "windows") {
+                // JSON in the snippet needs `\\` to escape backslashes
+                // when rendered into a `command` string. The display
+                // form embeds them as-is; the JSON builder doubles
+                // them.
+                p.display().to_string()
+            } else {
+                p.display().to_string()
+            }
+        })
+        .unwrap_or_else(|_| "oryxis-mcp".to_string())
 }
 
-/// WSL command for Windows users whose AI client runs inside WSL.
-pub(crate) fn mcp_wsl_command() -> &'static str {
-    "/mnt/c/Program Files/Oryxis/oryxis-mcp.exe"
+/// WSL-side path for Windows users whose AI client runs inside WSL.
+/// Translates the Windows launcher path (`C:\Users\<user>\.oryxis\bin\
+/// oryxis-mcp.exe`) into its WSL mount equivalent
+/// (`/mnt/c/Users/<user>/.oryxis/bin/oryxis-mcp.exe`). Returns an
+/// empty string when `USERPROFILE` isn't available; the WSL block in
+/// the info panel only renders on Windows, where it always is.
+pub(crate) fn mcp_wsl_command() -> String {
+    // The launcher path is computed against `dirs::home_dir`, which
+    // reads `USERPROFILE` on Windows. We post-process the result into
+    // the WSL form rather than going through `USERPROFILE` again so
+    // both helpers stay in lockstep.
+    let Ok(path) = mcp_install::launcher_path() else {
+        return String::new();
+    };
+    let s = path.to_string_lossy();
+    // Drive-letter form: `C:\Users\...` -> `/mnt/c/Users/...`.
+    if let Some(rest) = s.strip_prefix("C:\\").or_else(|| s.strip_prefix("c:\\")) {
+        return format!("/mnt/c/{}", rest.replace('\\', "/"));
+    }
+    // Any other layout (network share, non-C drive) is too unusual to
+    // guess at; fall back to the bare Windows path so the user can fix
+    // it by hand.
+    s.into_owned()
 }
 
 /// Config file path hint per platform.
@@ -37,6 +70,21 @@ pub(crate) fn mcp_config_path() -> &'static str {
     }
 }
 
+/// JSON entry for the `oryxis` MCP server: the `command` path plus
+/// the optional `env` block carrying the auth token. Shared between
+/// the copy-to-clipboard snippet and the on-disk merge so backslash
+/// escaping stays consistent on Windows.
+fn oryxis_mcp_entry(cmd: &str, token: &str) -> serde_json::Value {
+    if token.is_empty() {
+        serde_json::json!({ "command": cmd })
+    } else {
+        serde_json::json!({
+            "command": cmd,
+            "env": { "ORYXIS_MCP_TOKEN": token },
+        })
+    }
+}
+
 /// The JSON snippet users need to copy. When `token` is non-empty
 /// the snippet includes an `env` block that passes
 /// `ORYXIS_MCP_TOKEN` to the spawned MCP server; the server refuses
@@ -44,15 +92,12 @@ pub(crate) fn mcp_config_path() -> &'static str {
 /// vault. Empty token keeps the legacy unauth path.
 pub(crate) fn mcp_config_json(token: &str) -> String {
     let cmd = mcp_binary_command();
-    if token.is_empty() {
-        format!(
-            "{{\n  \"mcpServers\": {{\n    \"oryxis\": {{\n      \"command\": \"{cmd}\"\n    }}\n  }}\n}}"
-        )
-    } else {
-        format!(
-            "{{\n  \"mcpServers\": {{\n    \"oryxis\": {{\n      \"command\": \"{cmd}\",\n      \"env\": {{\n        \"ORYXIS_MCP_TOKEN\": \"{token}\"\n      }}\n    }}\n  }}\n}}"
-        )
-    }
+    let root = serde_json::json!({
+        "mcpServers": {
+            "oryxis": oryxis_mcp_entry(&cmd, token),
+        }
+    });
+    serde_json::to_string_pretty(&root).unwrap_or_else(|_| String::from("{}"))
 }
 
 /// Write/merge the oryxis MCP entry into `~/.claude/.mcp.json`.
@@ -88,15 +133,7 @@ pub(crate) fn install_mcp_config_to_file(token: &str) -> Result<String, String> 
         .ok_or("mcpServers is not an object")?;
 
     let cmd = mcp_binary_command();
-    let entry = if token.is_empty() {
-        serde_json::json!({ "command": cmd })
-    } else {
-        serde_json::json!({
-            "command": cmd,
-            "env": { "ORYXIS_MCP_TOKEN": token },
-        })
-    };
-    servers_map.insert("oryxis".to_string(), entry);
+    servers_map.insert("oryxis".to_string(), oryxis_mcp_entry(&cmd, token));
 
     let output = serde_json::to_string_pretty(&root)
         .map_err(|e| format!("Failed to serialize: {e}"))?;

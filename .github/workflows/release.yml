@@ -36,7 +36,7 @@ jobs:
       - name: Package tarball
         run: |
           mkdir -p dist
-          cp target/release/oryxis target/release/oryxis-mcp dist/
+          cp target/release/oryxis dist/
           cp README.md resources/logo_64.png resources/oryxis.desktop dist/
           cd dist && tar czf ../oryxis-linux-x86_64.tar.gz *
 
@@ -59,7 +59,6 @@ jobs:
           chmod +x linuxdeploy
           mkdir -p AppDir/usr/bin AppDir/usr/share/applications AppDir/usr/share/icons/hicolor/256x256/apps
           cp target/release/oryxis AppDir/usr/bin/
-          cp target/release/oryxis-mcp AppDir/usr/bin/
           cp resources/oryxis.desktop AppDir/usr/share/applications/
           cp resources/logo_256.png AppDir/usr/share/icons/hicolor/256x256/apps/oryxis.png
           ./linuxdeploy --appdir AppDir --output appimage
@@ -97,7 +96,7 @@ jobs:
       - name: Package tarball
         run: |
           mkdir -p dist
-          cp target/release/oryxis target/release/oryxis-mcp dist/
+          cp target/release/oryxis dist/
           cp README.md resources/logo_64.png resources/oryxis.desktop dist/
           cd dist && tar czf ../oryxis-linux-aarch64.tar.gz *
       - name: Install cargo-deb
@@ -113,7 +112,6 @@ jobs:
           chmod +x linuxdeploy
           mkdir -p AppDir/usr/bin AppDir/usr/share/applications AppDir/usr/share/icons/hicolor/256x256/apps
           cp target/release/oryxis AppDir/usr/bin/
-          cp target/release/oryxis-mcp AppDir/usr/bin/
           cp resources/oryxis.desktop AppDir/usr/share/applications/
           cp resources/logo_256.png AppDir/usr/share/icons/hicolor/256x256/apps/oryxis.png
           ./linuxdeploy --appdir AppDir --output appimage
@@ -145,7 +143,7 @@ jobs:
       - name: Package
         run: |
           mkdir -p dist
-          cp target/release/oryxis target/release/oryxis-mcp dist/
+          cp target/release/oryxis dist/
           cp README.md resources/logo_64.png dist/
           cd dist && tar czf ../oryxis-macos-aarch64.tar.gz *
       - uses: actions/upload-artifact@v5
@@ -172,7 +170,6 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force -Path dist
           Copy-Item target\release\oryxis.exe dist\
-          Copy-Item target\release\oryxis-mcp.exe dist\
           Copy-Item README.md dist\
           Copy-Item resources\logo_64.png dist\
           Compress-Archive -Path dist\* -DestinationPath oryxis-windows-x86_64.zip
@@ -254,7 +251,6 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force -Path dist
           Copy-Item target\aarch64-pc-windows-msvc\release\oryxis.exe dist\
-          Copy-Item target\aarch64-pc-windows-msvc\release\oryxis-mcp.exe dist\
           Copy-Item README.md dist\
           Copy-Item resources\logo_64.png dist\
           Compress-Archive -Path dist\* -DestinationPath oryxis-windows-aarch64.zip
