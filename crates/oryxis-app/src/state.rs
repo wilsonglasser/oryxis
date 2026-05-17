@@ -995,6 +995,12 @@ pub(crate) enum SettingsSection {
     /// Settings in 0.7+ since it's a security-knob screen, not a
     /// browsing one).
     KnownHosts,
+    /// MCP server (Model Context Protocol). Was bundled into the
+    /// installer in 0.6 and lived inside the Security section; in
+    /// 0.7 it's distributed as a plugin and gets its own section
+    /// in the Settings sidebar so the setup-guide affordances and
+    /// the enable toggle aren't buried.
+    Mcp,
     Shortcuts,
     Security,
     Sync,

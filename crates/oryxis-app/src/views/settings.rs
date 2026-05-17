@@ -25,6 +25,7 @@ impl Oryxis {
                 (crate::i18n::t("ai_assistant"), SettingsSection::AI),
                 (crate::i18n::t("interface"), SettingsSection::Interface),
                 (crate::i18n::t("known_hosts"), SettingsSection::KnownHosts),
+                (crate::i18n::t("mcp_server"), SettingsSection::Mcp),
                 (crate::i18n::t("shortcuts"), SettingsSection::Shortcuts),
                 (crate::i18n::t("security"), SettingsSection::Security),
                 (crate::i18n::t("sync"), SettingsSection::Sync),
@@ -1107,50 +1108,9 @@ impl Oryxis {
                         .into()
                 };
 
-                // MCP Server section
-                let mcp_toggle = toggle_row(
-                    crate::i18n::t("enable_mcp_server"),
-                    self.mcp_server_enabled,
-                    Message::ToggleMcpServer,
-                );
-                let mcp_guide_btn = button(
-                    container(text(crate::i18n::t("mcp_setup_guide")).size(12).color(OryxisColors::t().accent))
-                        .padding(Padding { top: 6.0, right: 16.0, bottom: 6.0, left: 16.0 }),
-                )
-                .on_press(if self.show_mcp_info { Message::HideMcpInfo } else { Message::ShowMcpInfo })
-                .style(|_, status| {
-                    let bg = match status {
-                        BtnStatus::Hovered => Color { a: 0.1, ..OryxisColors::t().accent },
-                        _ => Color::TRANSPARENT,
-                    };
-                    button::Style {
-                        background: Some(Background::Color(bg)),
-                        border: Border { radius: Radius::from(6.0), color: OryxisColors::t().accent, width: 1.0 },
-                        ..Default::default()
-                    }
-                });
-                let mut mcp_col = column![
-                    text(crate::i18n::t("mcp_server")).size(14).color(OryxisColors::t().text_muted),
-                    Space::new().height(8),
-                    mcp_toggle,
-                    Space::new().height(4),
-                    dir_row(vec![
-                        text(crate::i18n::t("mcp_server_desc")).size(11).color(OryxisColors::t().text_muted).into(),
-                        Space::new().width(Length::Fill).into(),
-                        mcp_guide_btn.into(),
-                    ]).align_y(iced::Alignment::Center),
-                ];
-                if self.show_mcp_info {
-                    mcp_col = mcp_col
-                        .push(Space::new().height(12))
-                        .push(mcp_info_panel(
-                            self.mcp_config_copied,
-                            &self.mcp_install_status,
-                            &self.mcp_server_token,
-                            self.mcp_token_visible,
-                        ));
-                }
-                let mcp_section = panel_section(mcp_col);
+                // MCP Server moved to its own Settings sidebar entry
+                // in v0.7 (see `view_settings_mcp`). Keeping it here
+                // was crowding the Security panel.
 
                 // Export/Import section
                 let export_btn = styled_button(crate::i18n::t("export_vault"), Message::ExportVault, OryxisColors::t().accent);
@@ -1274,8 +1234,6 @@ impl Oryxis {
                             Space::new().height(24),
                             lock_btn,
                             Space::new().height(24),
-                            mcp_section,
-                            Space::new().height(12),
                             panel_section(export_import_section),
                             Space::new().height(12),
                             panel_section(ssh_config_section),
@@ -1761,6 +1719,7 @@ impl Oryxis {
             SettingsSection::Cloud => self.view_cloud_accounts(),
             SettingsSection::Plugins => self.view_plugins_panel(),
             SettingsSection::KnownHosts => self.view_known_hosts(),
+            SettingsSection::Mcp => self.view_settings_mcp(),
         };
 
         container(crate::widgets::dir_row(vec![
@@ -1779,10 +1738,11 @@ impl Oryxis {
     /// inline create / edit form. Form is hidden by default; clicking
     /// "+ New" or a row's edit icon opens it pre-populated.
     fn view_settings_proxies(&self) -> Element<'_, Message> {
-        let title = text(crate::i18n::t("proxies"))
-            .size(18)
-            .color(OryxisColors::t().text_primary);
-
+        // The standalone title binding became unused once the
+        // toolbar block below inlines its own label; the previous
+        // assignment leaked into the Text type-inference too. Drop
+        // it explicitly so rustc doesn't try to pin down a generic
+        // Theme parameter for an unread binding.
         // ── List rows ──
         let mut list = column![].spacing(8);
         if self.proxy_identities.is_empty() && !self.proxy_identity_form_visible {
@@ -1911,16 +1871,48 @@ impl Oryxis {
             list = list.push(row_el);
         }
 
-        // ── Add button, same primary CTA styling as Save / Connect.
-        // No "+" prefix here: `styled_button` borrows the label, so a
-        // dynamically formatted `String` would be tied to this scope;
-        // the i18n value is enough on its own with the accent color
-        // signaling it's an additive action.
-        let add_btn = styled_button(
-            crate::i18n::t("new_proxy_identity"),
-            Message::ShowProxyIdentityForm(None),
-            OryxisColors::t().accent,
-        );
+        // "+ Proxy" button, same Cloud-Accounts pattern: bold plus
+        // glyph + bold label in the accent fill. Lives on the
+        // trailing edge of the toolbar so the section header reads
+        // exactly like Hosts / Keychain / Snippets / Cloud.
+        let add_btn: Element<'_, Message> = {
+            let fg = OryxisColors::t().button_text;
+            button(
+                container(
+                    dir_row(vec![
+                        text("+").size(13).font(iced::Font {
+                            weight: iced::font::Weight::Bold,
+                            ..iced::Font::new(crate::theme::SYSTEM_UI_FAMILY)
+                        }).color(fg).into(),
+                        Space::new().width(4).into(),
+                        text(crate::i18n::t("new_proxy_identity"))
+                            .size(11)
+                            .font(iced::Font {
+                                weight: iced::font::Weight::Bold,
+                                ..iced::Font::new(crate::theme::SYSTEM_UI_FAMILY)
+                            })
+                            .color(fg)
+                            .into(),
+                    ])
+                    .align_y(iced::Alignment::Center),
+                )
+                .center_y(Length::Fixed(24.0))
+                .padding(Padding { top: 0.0, right: 14.0, bottom: 0.0, left: 14.0 }),
+            )
+            .on_press(Message::ShowProxyIdentityForm(None))
+            .style(|_, status| {
+                let bg = match status {
+                    BtnStatus::Hovered => OryxisColors::t().button_bg_hover,
+                    _ => OryxisColors::t().button_bg,
+                };
+                button::Style {
+                    background: Some(Background::Color(bg)),
+                    border: Border { radius: Radius::from(6.0), ..Default::default() },
+                    ..Default::default()
+                }
+            })
+            .into()
+        };
 
         // ── Inline form (only when visible) ──
         let form: Element<'_, Message> = if self.proxy_identity_form_visible {
@@ -1929,21 +1921,31 @@ impl Oryxis {
             Space::new().height(0).into()
         };
 
-        let header = if self.proxy_identity_form_visible {
-            dir_row(vec![title.into(), Space::new().width(Length::Fill).into()])
-        } else {
-            dir_row(vec![title.into(), Space::new().width(Length::Fill).into(), add_btn])
-        };
+        // Toolbar layout matches Hosts / Keychain / Cloud Accounts:
+        // bold title on the leading edge, action button trailing,
+        // no extra descriptive paragraph in between (let the empty
+        // state speak for itself).
+        let toolbar = container(
+            dir_row(vec![
+                text(crate::i18n::t("proxies"))
+                    .size(20)
+                    .color(OryxisColors::t().text_primary)
+                    .into(),
+                Space::new().width(Length::Fill).into(),
+                if self.proxy_identity_form_visible {
+                    Space::new().width(0).height(Length::Fixed(32.0)).into()
+                } else {
+                    add_btn
+                },
+            ]).align_y(iced::Alignment::Center),
+        )
+        .padding(Padding { top: 20.0, right: 24.0, bottom: 16.0, left: 24.0 })
+        .width(Length::Fill);
 
         scrollable(
             container(
                 column![
-                    header,
-                    Space::new().height(12),
-                    text(crate::i18n::t("proxy_identities_desc"))
-                        .size(13)
-                        .color(OryxisColors::t().text_muted),
-                    Space::new().height(16),
+                    toolbar,
                     list,
                     Space::new().height(16),
                     form,
@@ -1953,11 +1955,75 @@ impl Oryxis {
                 .align_x(dir_align_x()),
             )
             .padding(Padding {
-                top: 20.0,
+                top: 0.0,
                 right: 24.0,
                 bottom: 24.0,
                 left: 24.0,
             }),
+        )
+        .height(Length::Fill)
+        .into()
+    }
+
+    /// Standalone MCP Server settings section. Was nested inside the
+    /// Security panel in 0.6 when MCP shipped with the installer; in
+    /// 0.7 it lives in its own Settings sidebar entry because the
+    /// plugin distribution + setup-guide affordances deserve room
+    /// without competing with the Security toggles.
+    fn view_settings_mcp(&self) -> Element<'_, Message> {
+        let mcp_toggle = toggle_row(
+            crate::i18n::t("enable_mcp_server"),
+            self.mcp_server_enabled,
+            Message::ToggleMcpServer,
+        );
+        let mcp_guide_btn = button(
+            container(text(crate::i18n::t("mcp_setup_guide")).size(12).color(OryxisColors::t().accent))
+                .padding(Padding { top: 6.0, right: 16.0, bottom: 6.0, left: 16.0 }),
+        )
+        .on_press(if self.show_mcp_info { Message::HideMcpInfo } else { Message::ShowMcpInfo })
+        .style(|_, status| {
+            let bg = match status {
+                BtnStatus::Hovered => Color { a: 0.1, ..OryxisColors::t().accent },
+                _ => Color::TRANSPARENT,
+            };
+            button::Style {
+                background: Some(Background::Color(bg)),
+                border: Border { radius: Radius::from(6.0), color: OryxisColors::t().accent, width: 1.0 },
+                ..Default::default()
+            }
+        });
+        let mut mcp_col = column![
+            mcp_toggle,
+            Space::new().height(4),
+            dir_row(vec![
+                text(crate::i18n::t("mcp_server_desc")).size(11).color(OryxisColors::t().text_muted).into(),
+                Space::new().width(Length::Fill).into(),
+                mcp_guide_btn.into(),
+            ]).align_y(iced::Alignment::Center),
+        ];
+        if self.show_mcp_info {
+            mcp_col = mcp_col
+                .push(Space::new().height(12))
+                .push(mcp_info_panel(
+                    self.mcp_config_copied,
+                    &self.mcp_install_status,
+                    &self.mcp_server_token,
+                    self.mcp_token_visible,
+                ));
+        }
+
+        scrollable(
+            container(
+                column![
+                    text(crate::i18n::t("mcp_server")).size(18).color(OryxisColors::t().text_primary),
+                    Space::new().height(16),
+                    panel_section(mcp_col),
+                    Space::new().height(24),
+                ]
+                .width(Length::Fill)
+                .align_x(dir_align_x()),
+            )
+            .padding(Padding { top: 20.0, right: 24.0, bottom: 24.0, left: 24.0 }),
         )
         .height(Length::Fill)
         .into()

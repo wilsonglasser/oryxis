@@ -711,7 +711,7 @@ impl Oryxis {
         // Classic was getting the Workspace value before, so the menu
         // hung well below the trigger button.
         const BASE_Y: f32 = 95.0;
-        const SUBNAV_HEIGHT: f32 = 40.0;
+        const SUBNAV_HEIGHT: f32 = 50.0;
         let in_workspace_vault = self.setting_layout_mode == "workspace"
             && self.active_tab.is_none()
             && matches!(
