@@ -327,6 +327,8 @@ fn en(key: &str) -> &'static str {
         // Settings
         "appearance" => "Appearance",
         "theme" => "Theme",
+        "interface" => "Interface",
+        "show_status_bar" => "Show status bar",
         "terminal_font_size" => "Terminal Font Size",
         "vault_stats" => "Vault Statistics",
         "security" => "Security",
@@ -950,6 +952,8 @@ fn pt_br(key: &str) -> Option<&'static str> {
 
         "appearance" => "Aparência",
         "theme" => "Tema",
+        "interface" => "Interface",
+        "show_status_bar" => "Mostrar barra de status",
         "terminal_font_size" => "Tamanho da Fonte do Terminal",
         "vault_stats" => "Estatísticas do Cofre",
         "security" => "Segurança",
@@ -1538,6 +1542,8 @@ fn es(key: &str) -> Option<&'static str> {
 
         "appearance" => "Apariencia",
         "theme" => "Tema",
+        "interface" => "Interfaz",
+        "show_status_bar" => "Mostrar barra de estado",
         "terminal_font_size" => "Tamaño de Fuente del Terminal",
         "terminal_theme" => "Tema del Terminal",
         "terminal_theme_desc" => "Elige la paleta usada en las sesiones del terminal. Por defecto sigue el tema de la app; las anulaciones por host tienen prioridad.",
@@ -2115,6 +2121,8 @@ fn fr(key: &str) -> Option<&'static str> {
 
         "appearance" => "Apparence",
         "theme" => "Thème",
+        "interface" => "Interface",
+        "show_status_bar" => "Afficher la barre d'état",
         "terminal_font_size" => "Taille de Police du Terminal",
         "terminal_theme" => "Thème du Terminal",
         "terminal_theme_desc" => "Choisissez la palette utilisée pour les sessions du terminal. Par défaut, suit le thème de l'app ; les surcharges par hôte prennent priorité.",
@@ -2692,6 +2700,8 @@ fn de(key: &str) -> Option<&'static str> {
 
         "appearance" => "Darstellung",
         "theme" => "Design",
+        "interface" => "Oberfläche",
+        "show_status_bar" => "Statusleiste anzeigen",
         "terminal_font_size" => "Terminal-Schriftgröße",
         "terminal_theme" => "Terminal-Theme",
         "terminal_theme_desc" => "Wähle die Palette für Terminalsitzungen. Folgt standardmäßig dem App-Theme; pro-Host-Überschreibungen haben Vorrang.",
@@ -3269,6 +3279,8 @@ fn it(key: &str) -> Option<&'static str> {
 
         "appearance" => "Aspetto",
         "theme" => "Tema",
+        "interface" => "Interfaccia",
+        "show_status_bar" => "Mostra barra di stato",
         "terminal_font_size" => "Dimensione Font del Terminale",
         "terminal_theme" => "Tema del Terminale",
         "terminal_theme_desc" => "Scegli la palette per le sessioni del terminale. Segue il tema dell'app per impostazione predefinita; le sostituzioni per host hanno la priorità.",
@@ -3846,6 +3858,8 @@ fn zh(key: &str) -> Option<&'static str> {
 
         "appearance" => "外观",
         "theme" => "主题",
+        "interface" => "界面",
+        "show_status_bar" => "显示状态栏",
         "terminal_font_size" => "终端字体大小",
         "terminal_theme" => "终端主题",
         "terminal_theme_desc" => "选择终端会话使用的调色板。默认跟随应用主题；按主机的覆盖优先生效。",
@@ -4423,6 +4437,8 @@ fn ja(key: &str) -> Option<&'static str> {
 
         "appearance" => "外観",
         "theme" => "テーマ",
+        "interface" => "インターフェース",
+        "show_status_bar" => "ステータスバーを表示",
         "terminal_font_size" => "ターミナルフォントサイズ",
         "terminal_theme" => "ターミナルテーマ",
         "terminal_theme_desc" => "ターミナルセッションで使用するパレットを選択します。デフォルトはアプリのテーマに従います。ホスト固有の設定が優先されます。",
@@ -5000,6 +5016,8 @@ fn ru(key: &str) -> Option<&'static str> {
 
         "appearance" => "Внешний вид",
         "theme" => "Тема",
+        "interface" => "Интерфейс",
+        "show_status_bar" => "Показывать строку состояния",
         "terminal_font_size" => "Размер шрифта терминала",
         "terminal_theme" => "Тема терминала",
         "terminal_theme_desc" => "Выберите палитру для сессий терминала. По умолчанию используется тема приложения; переопределения по хостам имеют приоритет.",
@@ -5585,6 +5603,8 @@ fn fa(key: &str) -> Option<&'static str> {
         // Settings
         "appearance" => "ظاهر",
         "theme" => "پوسته",
+        "interface" => "رابط",
+        "show_status_bar" => "نمایش نوار وضعیت",
         "terminal_font_size" => "اندازه فونت ترمینال",
         "vault_stats" => "آمار صندوقچه",
         "security" => "امنیت",
@@ -6196,6 +6216,8 @@ fn ar(key: &str) -> Option<&'static str> {
         // Settings
         "appearance" => "المظهر",
         "theme" => "السمة",
+        "interface" => "الواجهة",
+        "show_status_bar" => "إظهار شريط الحالة",
         "terminal_font_size" => "حجم خط الطرفية",
         "vault_stats" => "إحصائيات الخزنة",
         "security" => "الأمان",

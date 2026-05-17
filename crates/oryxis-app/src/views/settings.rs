@@ -23,7 +23,7 @@ impl Oryxis {
                 (crate::i18n::t("terminal_settings"), SettingsSection::Terminal),
                 ("SFTP", SettingsSection::Sftp),
                 (crate::i18n::t("ai_assistant"), SettingsSection::AI),
-                (crate::i18n::t("theme"), SettingsSection::Theme),
+                (crate::i18n::t("interface"), SettingsSection::Interface),
                 (crate::i18n::t("shortcuts"), SettingsSection::Shortcuts),
                 (crate::i18n::t("security"), SettingsSection::Security),
                 (crate::i18n::t("sync"), SettingsSection::Sync),
@@ -586,7 +586,7 @@ impl Oryxis {
                 .into()
             }
 
-            SettingsSection::Theme => {
+            SettingsSection::Interface => {
                 use crate::theme::AppTheme;
                 let active_name = AppTheme::active().name();
 
@@ -764,7 +764,7 @@ impl Oryxis {
                 ]);
 
                 let mut content_col = column![
-                    text(crate::i18n::t("theme")).size(18).color(OryxisColors::t().text_primary),
+                    text(crate::i18n::t("interface")).size(18).color(OryxisColors::t().text_primary),
                     Space::new().height(16),
                     language_section,
                     Space::new().height(8),

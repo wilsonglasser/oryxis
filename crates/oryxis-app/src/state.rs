@@ -978,7 +978,10 @@ pub(crate) enum SettingsSection {
     Terminal,
     Sftp,
     AI,
-    Theme,
+    /// Visual + layout preferences. Absorbs the legacy "Theme" section
+    /// and adds toggles for status bar visibility and (in later PRs)
+    /// layout mode, tab close button position, host icon style, etc.
+    Interface,
     Shortcuts,
     Security,
     Sync,
