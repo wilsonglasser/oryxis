@@ -982,11 +982,21 @@ impl Oryxis {
         // Section header (Termius-style "Groups" / "Hosts" labels).
         // Only rendered in flatten mode at root, where the user can
         // see both lists side-by-side.
+        // Wrap the label in a width-fill container so it lines up
+        // with the card grid's leading edge. The plain `text` widget
+        // shrinks to content and the column's `align_x` pushes the
+        // shrunk box around in a way that doesn't always coincide
+        // with the card border; making the container Fill anchors it
+        // explicitly to the leading edge of the row.
         let section_header = |label_key: &'static str| -> Element<'_, Message> {
-            text(t(label_key))
-                .size(14)
-                .color(OryxisColors::t().text_muted)
-                .into()
+            container(
+                text(t(label_key))
+                    .size(14)
+                    .color(OryxisColors::t().text_muted),
+            )
+            .width(Length::Fill)
+            .align_x(crate::widgets::dir_align_x())
+            .into()
         };
 
         let mut content_rows: Vec<Element<'_, Message>> = Vec::new();

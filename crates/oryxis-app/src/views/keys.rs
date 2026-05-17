@@ -170,11 +170,15 @@ impl Oryxis {
         };
 
         // ── Keys grid ──
-        // Section title aligns with the card's leading border. The
-        // surrounding scrollable already pads the column by 24 px on
-        // the leading side, so the title only needs vertical padding.
+        // Section title in a Fill container so it anchors to the
+        // card grid's leading edge (column align_x can push a
+        // shrink-fit text past the card border otherwise).
         let section_title = container(
-            text(t("keys_section")).size(14).color(OryxisColors::t().text_muted),
+            container(
+                text(t("keys_section")).size(14).color(OryxisColors::t().text_muted),
+            )
+            .width(Length::Fill)
+            .align_x(crate::widgets::dir_align_x()),
         )
         .padding(Padding { top: 4.0, right: 0.0, bottom: 8.0, left: 0.0 });
 
@@ -393,7 +397,11 @@ impl Oryxis {
 
         // ── Identities section ──
         let identity_section_title = container(
-            text(t("identities")).size(14).color(OryxisColors::t().text_muted),
+            container(
+                text(t("identities")).size(14).color(OryxisColors::t().text_muted),
+            )
+            .width(Length::Fill)
+            .align_x(crate::widgets::dir_align_x()),
         )
         .padding(Padding { top: 16.0, right: 0.0, bottom: 8.0, left: 0.0 });
 

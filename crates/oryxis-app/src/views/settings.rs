@@ -451,12 +451,16 @@ impl Oryxis {
                     toggle_row(crate::i18n::t("enable_ai"), self.ai_enabled, Message::ToggleAiEnabled),
                 ]);
 
+                // Use explicit `Space::new()` between elements (no
+                // `.spacing()`) so the gap before the first panel
+                // matches the SFTP section's 16 px exactly; the
+                // previous `.spacing(12)` was stacking on top of the
+                // explicit 16 to give a ~40 px gap.
                 let mut content_col = column![
                     text(crate::i18n::t("ai_assistant")).size(18).color(OryxisColors::t().text_primary),
                     Space::new().height(16),
                     enable_section,
                 ]
-                .spacing(12)
                 .width(Length::Fill)
                 .align_x(dir_align_x());
 
@@ -549,7 +553,9 @@ impl Oryxis {
                         .push(Space::new().height(4))
                         .push(key_status);
 
-                    content_col = content_col.push(panel_section(provider_col));
+                    content_col = content_col
+                        .push(Space::new().height(12))
+                        .push(panel_section(provider_col));
 
                     // System prompt, multi-line editor that grows with the
                     // content. `Length::Shrink` lets the editor auto-resize
@@ -584,7 +590,9 @@ impl Oryxis {
                         text(t("ai_system_prompt_desc"))
                             .size(11).color(OryxisColors::t().text_muted),
                     ]);
-                    content_col = content_col.push(prompt_section);
+                    content_col = content_col
+                        .push(Space::new().height(12))
+                        .push(prompt_section);
                 }
 
                 scrollable(
@@ -900,30 +908,36 @@ impl Oryxis {
                     ]).align_y(iced::Alignment::Center),
                 ]);
 
+                // Explicit `Space::new()` between elements (no
+                // `.spacing()`) so the gap before the first panel
+                // matches the SFTP section's 16 px exactly; the
+                // previous `.spacing(12)` was stacking on top of the
+                // explicit gaps to roughly double them.
                 let mut content_col = column![
                     text(crate::i18n::t("interface")).size(18).color(OryxisColors::t().text_primary),
                     Space::new().height(16),
                     language_section,
-                    Space::new().height(8),
+                    Space::new().height(12),
                     layout_dir_section,
-                    Space::new().height(8),
+                    Space::new().height(12),
                     flatten_section,
-                    Space::new().height(8),
+                    Space::new().height(12),
                     status_bar_section,
-                    Space::new().height(8),
+                    Space::new().height(12),
                     tabs_section,
-                    Space::new().height(8),
+                    Space::new().height(12),
                     layout_section,
-                    Space::new().height(8),
+                    Space::new().height(12),
                     icon_section,
                     Space::new().height(12),
                 ]
-                .spacing(12)
                 .width(Length::Fill)
                 .align_x(dir_align_x());
 
                 for row_el in grid_rows {
-                    content_col = content_col.push(row_el);
+                    content_col = content_col
+                        .push(Space::new().height(12))
+                        .push(row_el);
                 }
 
                 scrollable(
@@ -935,28 +949,67 @@ impl Oryxis {
             }
 
             SettingsSection::Shortcuts => {
-                let shortcuts: Vec<(Vec<&str>, &str)> = vec![
-                    (vec!["Ctrl", "Shift", "C"], crate::i18n::t("copy_terminal")),
-                    (vec!["Ctrl", "Shift", "V"], crate::i18n::t("paste_terminal")),
-                    (vec!["Ctrl", "Shift", "W"], crate::i18n::t("close_tab")),
-                    (vec!["Ctrl", "1...9"], crate::i18n::t("switch_tab")),
-                    (vec!["Ctrl", "L"], crate::i18n::t("open_local")),
-                    (vec!["Ctrl", "N"], crate::i18n::t("new_host_shortcut")),
-                    (vec!["Ctrl", "="], crate::i18n::t("font_zoom_in")),
-                    (vec!["Ctrl", "-"], crate::i18n::t("font_zoom_out")),
-                    (vec!["Ctrl", "0"], crate::i18n::t("font_zoom_reset")),
-                    (vec!["Ctrl", "Wheel"], crate::i18n::t("font_zoom_wheel")),
-                ];
+                use crate::hotkeys::{default_bindings, HotkeyAction};
+                let defaults = default_bindings();
 
-                let mut rows_col = column![
-                    text(crate::i18n::t("keyboard_shortcuts")).size(18).color(OryxisColors::t().text_primary),
+                // Header: title + hint + global reset button.
+                let header = column![
+                    text(crate::i18n::t("keyboard_shortcuts"))
+                        .size(18)
+                        .color(OryxisColors::t().text_primary),
+                    Space::new().height(6),
+                    text(crate::i18n::t("hotkey_edit_hint"))
+                        .size(11)
+                        .color(OryxisColors::t().text_muted),
+                    Space::new().height(10),
+                    styled_button(
+                        crate::i18n::t("hotkey_reset_all"),
+                        Message::ResetAllHotkeys,
+                        OryxisColors::t().bg_selected,
+                    ),
                     Space::new().height(16),
-                ].spacing(8).width(Length::Fill).align_x(dir_align_x());
+                ]
+                .width(Length::Fill)
+                .align_x(dir_align_x());
 
-                for (keys, action) in shortcuts {
-                    let badges: Vec<Element<'_, Message>> = keys.iter().map(|k| key_badge(k)).collect();
-                    rows_col = rows_col.push(shortcut_row(badges, action));
+                let mut rows_col = column![header]
+                    .spacing(8)
+                    .width(Length::Fill)
+                    .align_x(dir_align_x());
+
+                for action in HotkeyAction::all() {
+                    let row_el = self.hotkey_editor_row(*action, defaults.get(action).copied());
+                    rows_col = rows_col.push(row_el);
                 }
+
+                // Read-only footer: terminal copy/paste and Ctrl+Wheel
+                // zoom are handled in different layers (the terminal
+                // widget owns copy selection; the wheel handler lives
+                // in the scroll event). Surfaced here so the user
+                // doesn't think they're missing.
+                let static_rows = column![
+                    Space::new().height(20),
+                    text(crate::i18n::t("hotkey_terminal_handled"))
+                        .size(11)
+                        .color(OryxisColors::t().text_muted),
+                    Space::new().height(8),
+                    shortcut_row(
+                        vec![key_badge("Ctrl"), key_badge("Shift"), key_badge("C")],
+                        crate::i18n::t("copy_terminal"),
+                    ),
+                    shortcut_row(
+                        vec![key_badge("Ctrl"), key_badge("Shift"), key_badge("V")],
+                        crate::i18n::t("paste_terminal"),
+                    ),
+                    shortcut_row(
+                        vec![key_badge("Ctrl"), key_badge("Wheel")],
+                        crate::i18n::t("font_zoom_wheel"),
+                    ),
+                ]
+                .spacing(8)
+                .width(Length::Fill)
+                .align_x(dir_align_x());
+                rows_col = rows_col.push(static_rows);
 
                 scrollable(
                     container(rows_col)
@@ -2000,4 +2053,177 @@ impl Oryxis {
             .width(Length::Fill)
             .into()
     }
+
+    /// Single row in the Shortcuts editor list. Renders:
+    /// - capture state ("Press a key…") when this row is currently
+    ///   being edited;
+    /// - badges + clickable surface in normal state;
+    /// - reset button only when the binding differs from the
+    ///   factory default, so the user can spot overrides at a glance.
+    fn hotkey_editor_row(
+        &self,
+        action: crate::hotkeys::HotkeyAction,
+        default: Option<crate::hotkeys::HotkeyBinding>,
+    ) -> Element<'_, Message> {
+        let binding = self.hotkey_bindings.get(&action).copied();
+        let is_editing = self.editing_hotkey == Some(action);
+        let is_overridden = matches!(
+            (binding, default),
+            (Some(b), Some(d)) if b != d
+        );
+
+        // Badge cluster — either the captured-mode placeholder or the
+        // serialized binding pills. For family actions the suffix
+        // badge is rendered with a distinct muted style so the user
+        // sees at a glance which slot is fixed.
+        let pills: Element<'_, Message> = if is_editing {
+            text(crate::i18n::t("hotkey_press_a_key"))
+                .size(12)
+                .color(OryxisColors::t().accent)
+                .into()
+        } else if let Some(b) = binding {
+            let labels = b.badges();
+            let n = labels.len();
+            let primary_editable = action.primary_editable();
+            let badges: Vec<Element<'_, Message>> = labels
+                .into_iter()
+                .enumerate()
+                .map(|(i, lbl)| {
+                    let is_suffix = i == n - 1;
+                    if is_suffix && !primary_editable {
+                        // Fixed-suffix badge: same solid pill as the
+                        // modifiers so it stays legible, but with a
+                        // dashed-feel via a tinted border + muted
+                        // text. The earlier alpha-40 background
+                        // washed out completely against the dark
+                        // button surface; this keeps the visual
+                        // distinction without losing contrast.
+                        container(
+                            text(lbl)
+                                .size(11)
+                                .color(OryxisColors::t().text_secondary),
+                        )
+                        .padding(Padding {
+                            top: 3.0,
+                            right: 6.0,
+                            bottom: 3.0,
+                            left: 6.0,
+                        })
+                        .style(|_| container::Style {
+                            background: Some(Background::Color(OryxisColors::t().bg_selected)),
+                            border: Border {
+                                radius: Radius::from(4.0),
+                                color: OryxisColors::t().border,
+                                width: 1.0,
+                            },
+                            ..Default::default()
+                        })
+                        .into()
+                    } else {
+                        key_badge_owned(lbl)
+                    }
+                })
+                .collect();
+            iced::widget::Row::with_children(badges)
+                .spacing(4)
+                .align_y(iced::Alignment::Center)
+                .into()
+        } else {
+            // Unbound (post-conflict). Render a dashed placeholder.
+            text(crate::i18n::t("hotkey_unbound"))
+                .size(11)
+                .color(OryxisColors::t().text_muted)
+                .into()
+        };
+
+        // Wrap badges in a clickable surface (button with neutral
+        // style). The editing-state row gets an accent border so it
+        // reads "pending input" against the other rows.
+        let pills_btn = button(pills).on_press(Message::StartEditingHotkey(action)).style(
+            move |_, status| {
+                let bg = match status {
+                    BtnStatus::Hovered => OryxisColors::t().button_bg_hover,
+                    _ => OryxisColors::t().button_bg,
+                };
+                let border_color = if is_editing {
+                    OryxisColors::t().accent
+                } else {
+                    OryxisColors::t().border
+                };
+                button::Style {
+                    background: Some(Background::Color(bg)),
+                    border: Border {
+                        radius: Radius::from(6.0),
+                        color: border_color,
+                        width: 1.0,
+                    },
+                    ..Default::default()
+                }
+            },
+        );
+        let pills_box = container(pills_btn)
+            .width(220)
+            .align_x(dir_align_x());
+
+        let label = text(crate::i18n::t(action.label_key()))
+            .size(13)
+            .color(OryxisColors::t().text_secondary);
+
+        let reset_el: Element<'_, Message> = if is_overridden {
+            button(
+                text(crate::i18n::t("hotkey_reset"))
+                    .size(11)
+                    .color(OryxisColors::t().text_muted),
+            )
+            .on_press(Message::ResetHotkey(action))
+            .style(|_, status| {
+                let bg = match status {
+                    BtnStatus::Hovered => Some(Background::Color(OryxisColors::t().button_bg_hover)),
+                    _ => None,
+                };
+                button::Style {
+                    background: bg,
+                    border: Border {
+                        radius: Radius::from(4.0),
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                }
+            })
+            .into()
+        } else {
+            Space::new().width(0).into()
+        };
+
+        dir_row(vec![
+            pills_box.into(),
+            label.into(),
+            Space::new().width(Length::Fill).into(),
+            reset_el,
+        ])
+        .align_y(iced::Alignment::Center)
+        .into()
+    }
+}
+
+/// Owned-label variant of `widgets::key_badge`. The editor builds
+/// labels at runtime from `HotkeyBinding::badges()` so we can't reuse
+/// the `&'a str` shape directly without leaking.
+fn key_badge_owned(label: String) -> Element<'static, Message> {
+    container(text(label).size(11).color(OryxisColors::t().text_primary))
+        .padding(Padding {
+            top: 3.0,
+            right: 6.0,
+            bottom: 3.0,
+            left: 6.0,
+        })
+        .style(|_| container::Style {
+            background: Some(Background::Color(OryxisColors::t().bg_selected)),
+            border: Border {
+                radius: Radius::from(4.0),
+                ..Default::default()
+            },
+            ..Default::default()
+        })
+        .into()
 }
