@@ -324,10 +324,17 @@ impl Oryxis {
             }
 
             // -- History --
+            // Clear now wipes both feeds the unified History timeline
+            // mixes (failed-connect log rows + recorded session rows)
+            // so the user gets a true "empty list" instead of seeing
+            // every previously recorded session reappear after the
+            // wipe finishes.
             Message::ClearLogs => {
                 if let Some(vault) = &self.vault {
                     let _ = vault.clear_logs();
+                    let _ = vault.clear_session_logs();
                     self.logs_page = 0;
+                    self.session_logs_page = 0;
                     self.load_data_from_vault();
                 }
             }
