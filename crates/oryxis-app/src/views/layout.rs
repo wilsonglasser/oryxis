@@ -130,13 +130,30 @@ impl Oryxis {
             Space::new().height(0).into()
         };
 
-        // 1 px separators: horizontal below the tab bar, vertical between
-        // sidebar and content. Same hairline look as Termius, anchors the
-        // chrome visually without stealing contrast.
-        let h_separator = container(Space::new().height(1))
+        // Tab-bar bottom hairline. When a connection tab is active and
+        // it has a per-host accent color, paint the hairline 2 px and
+        // tint it that color (JetBrains-style "respiração" of the
+        // active project). Falls back to the global accent for tabs
+        // without a per-host color, and the neutral border for non-
+        // connection screens so settings / dashboard don't look like
+        // they belong to whichever host happened to be open last.
+        let accent_tint: Option<Color> = self.active_tab.and_then(|idx| {
+            let tab = self.tabs.get(idx)?;
+            let label = tab.label.trim_end_matches(" (disconnected)");
+            let conn = self.connections.iter().find(|c| c.label == label)?;
+            conn.color
+                .as_deref()
+                .and_then(crate::widgets::parse_hex_color)
+                .or(Some(OryxisColors::t().accent))
+        });
+        let (hair_height, hair_color) = match accent_tint {
+            Some(c) => (2.0_f32, c),
+            None => (1.0_f32, OryxisColors::t().border),
+        };
+        let h_separator = container(Space::new().height(hair_height))
             .width(Length::Fill)
-            .style(|_| container::Style {
-                background: Some(Background::Color(OryxisColors::t().border)),
+            .style(move |_| container::Style {
+                background: Some(Background::Color(hair_color)),
                 ..Default::default()
             });
         let v_separator = container(Space::new().width(1))

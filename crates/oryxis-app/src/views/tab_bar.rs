@@ -101,6 +101,16 @@ impl Oryxis {
                 // never go through the SSH `detect_os` round-trip.
                 .or_else(|| crate::os_icon::local_shell_os_hint(base_label));
             let width = if is_active { active_width } else { inactive_width };
+            // Per-host accent override: when this tab points at a
+            // saved connection that has a custom `color`, tint the
+            // active-tab fill and the tab text with that color
+            // (JetBrains-style "respiração"). Otherwise the active
+            // tab keeps the global accent.
+            let base_label = tab.label.trim_end_matches(" (disconnected)");
+            let host_accent: Option<Color> = self.connections.iter()
+                .find(|c| c.label == base_label)
+                .and_then(|c| c.color.as_deref())
+                .and_then(crate::widgets::parse_hex_color);
             // Connection-state dot color. Connecting beats every other
             // signal because a tab that's currently dialing isn't yet
             // "disconnected" in the user's mental model. Local-shell
@@ -131,6 +141,7 @@ impl Oryxis {
                 width,
                 self.setting_tab_close_button_side == "right",
                 status_dot,
+                host_accent,
             ));
         }
 
@@ -354,6 +365,10 @@ fn truncate_label(label: &str, width: f32) -> String {
 /// `status_dot`: when Some, a small filled circle of that color is
 /// stacked over the OS badge's bottom-right corner. None hides the
 /// dot entirely (local-shell tabs and users who disabled the setting).
+///
+/// `host_accent`: per-host accent color resolved from `Connection.color`.
+/// When Some, the active-tab fill and label adopt this color instead of
+/// the global accent, so each tab "breathes" the color of its host.
 #[allow(clippy::too_many_arguments)]
 fn session_tab<'a>(
     idx: usize,
@@ -364,14 +379,16 @@ fn session_tab<'a>(
     width: f32,
     close_on_right: bool,
     status_dot: Option<Color>,
+    host_accent: Option<Color>,
 ) -> Element<'a, Message> {
+    let effective_accent = host_accent.unwrap_or_else(|| OryxisColors::t().accent);
     let fg = if is_active {
-        OryxisColors::t().accent
+        effective_accent
     } else {
         OryxisColors::t().text_muted
     };
     let bg = if is_active {
-        Color { a: 0.15, ..OryxisColors::t().accent }
+        Color { a: 0.15, ..effective_accent }
     } else {
         Color::TRANSPARENT
     };
@@ -444,7 +461,7 @@ fn session_tab<'a>(
                 iced_fonts::lucide::x()
                     .size(11)
                     .color(if is_active {
-                        OryxisColors::t().accent
+                        effective_accent
                     } else {
                         OryxisColors::t().text_secondary
                     }),
