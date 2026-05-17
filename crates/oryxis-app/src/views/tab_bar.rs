@@ -329,6 +329,10 @@ impl Oryxis {
         // sidebar header where it always lived.
         let mut leading: Vec<Element<'_, Message>> = Vec::new();
         if self.setting_layout_mode == "workspace" {
+            // Small breathing space on the very leading edge so the
+            // logo doesn't kiss the window border. Matches the gap
+            // JetBrains leaves on its product mark.
+            leading.push(Space::new().width(4).into());
             leading.push(product_logo(self.logo_small_handle.clone()));
         }
         leading.push(burger_btn);
