@@ -178,6 +178,79 @@ pub fn verify_session_handshake(
     verify_ed25519_32(peer_pubkey, exporter, signature)
 }
 
+/// Maximum skew, in seconds, the server tolerates between its clock
+/// and the `signed_at` field in a register/unregister request. Anything
+/// outside this window is rejected as a likely replay or as a client
+/// with a wildly broken clock that we would not want to trust either
+/// way. Kept short so a captured signature has a small reuse window.
+pub const REGISTER_TIMESTAMP_SKEW_SECS: i64 = 60;
+
+/// Domain-separation tag for the signaling register canonical payload.
+/// Bumping this tag forces a clean break with older clients/servers
+/// instead of silently producing an unverifiable signature.
+pub const REGISTER_SIGN_LABEL: &str = "oryxis-register-v1";
+
+/// Domain-separation tag for the signaling unregister payload.
+pub const UNREGISTER_SIGN_LABEL: &str = "oryxis-unregister-v1";
+
+/// Build the canonical byte string the client and server both hash to
+/// build a register signature. Newline-delimited text so a JS server
+/// (Cloudflare Worker) can reproduce it without bincode or fixed-width
+/// integer encoding. Domain-separated by [`REGISTER_SIGN_LABEL`] so a
+/// signature minted for any other oryxis protocol cannot be replayed
+/// here, and vice-versa.
+pub fn register_sign_payload(
+    device_id: &Uuid,
+    ip: &str,
+    port: u16,
+    signed_at: i64,
+) -> Vec<u8> {
+    format!(
+        "{}\n{}\n{}\n{}\n{}",
+        REGISTER_SIGN_LABEL, device_id, ip, port, signed_at
+    )
+    .into_bytes()
+}
+
+/// Canonical bytes for the unregister request. Same construction as
+/// [`register_sign_payload`] minus the address fields (since the
+/// server doesn't need them to look up the row).
+pub fn unregister_sign_payload(device_id: &Uuid, signed_at: i64) -> Vec<u8> {
+    format!("{}\n{}\n{}", UNREGISTER_SIGN_LABEL, device_id, signed_at).into_bytes()
+}
+
+/// Sign a register/unregister payload with this device's Ed25519 key.
+/// The payload is hashed with SHA-256 first so we sign exactly 32
+/// bytes (matching the rest of the crypto surface) and so the JS
+/// verifier can use the standard `Ed25519` algorithm without needing
+/// to prehash itself.
+pub fn sign_register_payload(signing_key: &SigningKey, payload: &[u8]) -> [u8; 64] {
+    signing_key.sign(payload).to_bytes()
+}
+
+/// Verify a register/unregister payload signature. Mirrors
+/// [`sign_register_payload`] and is the entry point both the Rust
+/// relay and the test suite use; the JS worker does the equivalent
+/// via `crypto.subtle.verify({ name: "Ed25519" }, ...)`.
+pub fn verify_register_payload(
+    pubkey: &[u8],
+    payload: &[u8],
+    signature: &[u8],
+) -> Result<(), SyncError> {
+    let pubkey_array: [u8; 32] = pubkey
+        .try_into()
+        .map_err(|_| SyncError::Crypto("Register pubkey must be 32 bytes".into()))?;
+    let verifying = VerifyingKey::from_bytes(&pubkey_array)
+        .map_err(|e| SyncError::Crypto(format!("Bad register pubkey: {}", e)))?;
+    let sig_array: [u8; 64] = signature
+        .try_into()
+        .map_err(|_| SyncError::Crypto("Register signature must be 64 bytes".into()))?;
+    let sig = Signature::from_bytes(&sig_array);
+    verifying
+        .verify_strict(payload, &sig)
+        .map_err(|e| SyncError::Crypto(format!("Register signature invalid: {}", e)))
+}
+
 /// Domain-separation tag for the relay-session handshake transcript.
 /// Folded into the hash so the same nonce pair signed in some other
 /// context cannot be replayed here, and so bumping the tag forces a
@@ -288,13 +361,20 @@ pub fn x25519_keypair() -> (EphemeralSecret, [u8; 32]) {
 }
 
 /// Complete an X25519 exchange started with [`x25519_keypair`]. Takes
-/// the ephemeral secret (consumed: post-DH the secret is forgotten,
-/// which is the forward-secrecy property we want) and the peer's
-/// public bytes; returns the 32-byte shared secret to persist on the
-/// `SyncPeer` row. The raw DH output is run through HKDF-SHA256 (see
-/// [`derive_peer_secret`]) before being returned so the persisted
+/// the ephemeral secret (consumed: `EphemeralSecret` is single-use,
+/// so the DH stage cannot be repeated for the same keypair) and the
+/// peer's public bytes; returns the 32-byte shared secret to persist
+/// on the `SyncPeer` row. The raw DH output is run through HKDF-SHA256
+/// (see [`derive_peer_secret`]) before being returned so the persisted
 /// secret is uniform AEAD key material rather than the X25519 group
 /// element directly.
+///
+/// NOTE: the derived secret is long-lived (lives on the `SyncPeer`
+/// row for the lifetime of the peering) so this DOES NOT provide
+/// forward secrecy. Compromise of the vault discloses all historical
+/// and future per-record AEAD payloads under this peer. A future
+/// protocol bump should ratchet per session (e.g. HKDF over the
+/// stored secret plus per-session nonces) to recover FS.
 pub fn x25519_dh(secret: EphemeralSecret, peer_public: &[u8; 32]) -> [u8; 32] {
     let peer = X25519PublicKey::from(*peer_public);
     derive_peer_secret(secret.diffie_hellman(&peer).as_bytes())
@@ -325,6 +405,19 @@ pub fn derive_peer_secret(dh_output: &[u8]) -> [u8; 32] {
 }
 
 /// Encrypt payload with shared secret using ChaCha20Poly1305.
+///
+/// Nonce is a fresh 96-bit random per call. The birthday bound on a
+/// 96-bit random nonce is ~2^48 messages per key before a collision
+/// becomes likely (a key collision under AEAD is catastrophic). At
+/// even 100 sync records per second a single per-peer key would take
+/// ~89,000 years to reach that bound, so we're far inside the safe
+/// regime. Re-pairing rotates the key, shrinking the window further.
+///
+/// FUTURE: switching to XChaCha20Poly1305 (192-bit nonce) would lift
+/// the bound past any concern. Deferred because it changes the wire
+/// format (nonce length goes 12 -> 24 bytes), which would require a
+/// protocol-version bump and a coordinated re-pair across every
+/// paired device. Worth it on the next breaking v6 bump, not before.
 pub fn encrypt_payload(plaintext: &[u8], shared_secret: &[u8; 32]) -> Result<Vec<u8>, SyncError> {
     let cipher = ChaCha20Poly1305::new_from_slice(shared_secret)
         .map_err(|e| SyncError::Crypto(format!("Cipher init: {}", e)))?;
@@ -515,6 +608,60 @@ mod tests {
         let mallory = DeviceIdentity::generate("mallory");
         let bad = sign_ed25519_32(&mallory.signing_key, &challenge);
         assert!(verify_ed25519_32(&identity.public_key_bytes(), &challenge, &bad).is_err());
+    }
+
+    #[test]
+    fn register_payload_signature_roundtrips() {
+        let identity = DeviceIdentity::generate("alice");
+        let payload =
+            register_sign_payload(&identity.device_id, "203.0.113.5", 9001, 1_747_500_000);
+        let sig = sign_register_payload(&identity.signing_key, &payload);
+        verify_register_payload(&identity.public_key_bytes(), &payload, &sig).unwrap();
+    }
+
+    #[test]
+    fn register_payload_rejects_tampered_fields() {
+        // The signature must commit to every field of the register
+        // canonical payload. Bumping any one (port here) flips the
+        // verifier even though signer + key bytes are unchanged.
+        let identity = DeviceIdentity::generate("alice");
+        let signed_at = 1_747_500_000;
+        let original =
+            register_sign_payload(&identity.device_id, "203.0.113.5", 9001, signed_at);
+        let sig = sign_register_payload(&identity.signing_key, &original);
+        let tampered =
+            register_sign_payload(&identity.device_id, "203.0.113.5", 9002, signed_at);
+        assert!(verify_register_payload(&identity.public_key_bytes(), &tampered, &sig).is_err());
+    }
+
+    #[test]
+    fn register_payload_rejects_other_signer() {
+        // TOFU defense: a token holder who knows the device_id but
+        // doesn't hold the pinned private key cannot mint a valid
+        // register or unregister request.
+        let owner = DeviceIdentity::generate("owner");
+        let attacker = DeviceIdentity::generate("attacker");
+        let payload = register_sign_payload(&owner.device_id, "10.0.0.1", 9000, 1_747_500_000);
+        let attacker_sig = sign_register_payload(&attacker.signing_key, &payload);
+        assert!(
+            verify_register_payload(&owner.public_key_bytes(), &payload, &attacker_sig).is_err()
+        );
+    }
+
+    #[test]
+    fn unregister_payload_distinct_from_register() {
+        // Domain separation: a register signature cannot be replayed
+        // as an unregister, even when device_id and signed_at match.
+        let identity = DeviceIdentity::generate("alice");
+        let signed_at = 1_747_500_000;
+        let register =
+            register_sign_payload(&identity.device_id, "10.0.0.1", 9000, signed_at);
+        let unregister = unregister_sign_payload(&identity.device_id, signed_at);
+        assert_ne!(register, unregister);
+        let sig = sign_register_payload(&identity.signing_key, &register);
+        assert!(
+            verify_register_payload(&identity.public_key_bytes(), &unregister, &sig).is_err()
+        );
     }
 
     #[test]

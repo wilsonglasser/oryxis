@@ -24,7 +24,7 @@ use crate::error::SyncError;
 use crate::protocol::SyncMessage;
 use crate::transport;
 
-use super::{HostingPairing, SyncEvent, MAX_PAIRING_ATTEMPTS};
+use super::{HostingPairing, MAX_PAIRING_ATTEMPTS, MAX_PAIRING_SOURCES, SyncEvent};
 
 /// URL scheme + path prefix for shareable pairing links.
 pub(super) const PAIRING_LINK_PREFIX: &str = "oryxis://pair/";
@@ -160,6 +160,29 @@ pub(super) async fn handle_pairing_request(
     peer_endpoint: Option<(SocketAddr, u16)>,
     joiner_x25519_pub: Vec<u8>,
 ) -> Result<(), SyncError> {
+    // Per-source attempt key. QUIC: IP; relay: joiner device_id.
+    let source = match peer_endpoint {
+        Some((addr, _)) => source_key_for_quic(&addr),
+        None => source_key_for_relay(&device_id),
+    };
+    // Refuse outright if this source is already over the cap from
+    // earlier attempts on the same hosted code. Read the count into
+    // a local + drop the lock guard BEFORE awaiting so the future
+    // stays `Send` (MutexGuard is not Send across an await).
+    let over_cap = {
+        let state = hosting_pairing
+            .lock()
+            .map_err(|_| SyncError::Vault("Lock".into()))?;
+        state
+            .as_ref()
+            .map(|s| s.attempts_by_source.get(&source).copied().unwrap_or(0))
+            .unwrap_or(0)
+            >= MAX_PAIRING_ATTEMPTS
+    };
+    if over_cap {
+        return reject_pairing(transport, "Rate limited").await;
+    }
+
     // Is there a live hosting code? Drop expired ones here so a stale
     // code never pairs.
     let expected = {
@@ -175,12 +198,13 @@ pub(super) async fn handle_pairing_request(
         return reject_pairing(transport, "Not hosting pairing (or code expired)").await;
     };
     if !crypto::constant_time_eq(expected.as_bytes(), pairing_code.as_bytes()) {
-        // Wrong code: count it. Once we hit MAX_PAIRING_ATTEMPTS the
-        // hosting state self-invalidates so an attacker who knows
-        // the device_id (it travels in clear via pairing-link + STUN
-        // registration) can't grind through the 10^6 code space.
-        record_pairing_failure(hosting_pairing);
-        return reject_pairing(transport, "Wrong pairing code").await;
+        // Wrong code: count it against this source only. The hosted
+        // code stays alive for legitimate peers paired from a
+        // different network even if an attacker is grinding the
+        // 6-digit space from one IP.
+        let over = record_pairing_failure(hosting_pairing, &source);
+        let reason = if over { "Rate limited" } else { "Wrong pairing code" };
+        return reject_pairing(transport, reason).await;
     }
 
     // Code matches. Challenge the joiner with a fresh nonce so an
@@ -195,13 +219,14 @@ pub(super) async fn handle_pairing_request(
         _ => return Err(SyncError::Protocol("Expected PairingResponse".into())),
     };
     if crypto::verify_ed25519_32(&public_key, &challenge, &signed).is_err() {
-        // Bad challenge response: also counted; an attacker who
-        // happens to know the code is still gated on holding the
-        // matching private key, but a brute-force of the signed
-        // challenge would be much easier to reason about under the
-        // same attempt cap.
-        record_pairing_failure(hosting_pairing);
-        return reject_pairing(transport, "Bad challenge response").await;
+        // Bad challenge response: also counted against this source.
+        // An attacker who happens to know the code is still gated
+        // on holding the matching private key, but a brute-force of
+        // the signed challenge would be much easier to reason about
+        // under the same attempt cap.
+        let over = record_pairing_failure(hosting_pairing, &source);
+        let reason = if over { "Rate limited" } else { "Bad challenge response" };
+        return reject_pairing(transport, reason).await;
     }
 
     // Joiner's X25519 pubkey must be 32 bytes; reject otherwise. Then
@@ -255,24 +280,59 @@ pub(super) async fn handle_pairing_request(
     Ok(())
 }
 
-/// Increment the attempt counter on the live hosting state and
-/// invalidate it once the cap is reached. Silently no-ops when the
-/// state is already cleared (expired between the lookup and now);
-/// the lock is short-lived so concurrent attempts under-count by at
-/// most one before the cap kicks in.
+/// Build a stable source key for the per-source attempt counter.
+/// QUIC paths surface the joiner's IP (we trust the QUIC source
+/// address because the handshake completed against it); relay paths
+/// use the joiner's device_id (the `X-Sender-Id` header on the
+/// inbox POST). Keeping the two namespaces distinct prevents an
+/// attacker on relay from poisoning the QUIC bucket for a
+/// legitimate peer that happens to share device_id with someone
+/// else's IP, or vice-versa.
+pub(super) fn source_key_for_quic(addr: &SocketAddr) -> String {
+    format!("quic:{}", addr.ip())
+}
+pub(super) fn source_key_for_relay(joiner_device_id: &Uuid) -> String {
+    format!("relay:{joiner_device_id}")
+}
+
+/// Increment the attempt counter for `source` on the live hosting
+/// state. Returns `true` when the source is now over the cap (caller
+/// should reject all further attempts from it with rate-limit text,
+/// not "wrong code"). Silently no-ops when the state is already
+/// cleared (expired between the lookup and now); the lock is
+/// short-lived so concurrent attempts under-count by at most one
+/// before the cap kicks in.
+///
+/// CONTRAST with the old "cap on the host" model: there a single
+/// noisy attacker invalidated the whole code, hurting the legit
+/// user. Per-source caps only deny service to the attacker.
 fn record_pairing_failure(
     hosting_pairing: &Arc<std::sync::Mutex<Option<HostingPairing>>>,
-) {
-    let Ok(mut state) = hosting_pairing.lock() else { return };
-    let Some(s) = state.as_mut() else { return };
-    s.attempts = s.attempts.saturating_add(1);
-    if s.attempts >= MAX_PAIRING_ATTEMPTS {
+    source: &str,
+) -> bool {
+    let Ok(mut state) = hosting_pairing.lock() else { return false };
+    let Some(s) = state.as_mut() else { return false };
+    // Cap on total tracked sources to keep the map bounded under a
+    // sender_id flood. At the cap, drop everyone (the legit user is
+    // safe because they re-enter the code from scratch; the loss is
+    // a tiny bit of attacker state).
+    if s.attempts_by_source.len() >= MAX_PAIRING_SOURCES {
+        s.attempts_by_source.clear();
         tracing::warn!(
-            attempts = s.attempts,
-            "pairing: invalidating hosted code after {MAX_PAIRING_ATTEMPTS} failed attempts"
+            "pairing: cleared attempt map (hit {MAX_PAIRING_SOURCES} distinct sources)"
         );
-        *state = None;
     }
+    let counter = s.attempts_by_source.entry(source.to_string()).or_insert(0);
+    *counter = counter.saturating_add(1);
+    let over = *counter >= MAX_PAIRING_ATTEMPTS;
+    if over {
+        tracing::warn!(
+            attempts = counter,
+            source = %source,
+            "pairing: source over the {MAX_PAIRING_ATTEMPTS}-attempt cap"
+        );
+    }
+    over
 }
 
 /// Send a `PairingRejected` and hold the connection open until the

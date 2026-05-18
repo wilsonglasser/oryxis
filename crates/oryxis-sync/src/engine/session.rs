@@ -51,8 +51,15 @@ pub(super) async fn handle_incoming(
         .await
         .map_err(|e| SyncError::Transport(format!("Accept stream: {}", e)))?;
 
-    // Receive Hello (or a PairingRequest)
-    let msg = transport::recv_message(&mut recv).await?;
+    // Receive Hello (or a PairingRequest). Pre-auth cap: the peer's
+    // identity is verified only AFTER this read returns, so cap the
+    // declared frame length tight to keep a hostile dialer from
+    // forcing a 16 MiB allocation per connection.
+    let msg = transport::recv_message_capped(
+        &mut recv,
+        transport::MAX_PREAUTH_MESSAGE_BYTES,
+    )
+    .await?;
     let (peer_id, peer_auth_sig) = match msg {
         SyncMessage::Hello {
             device_id,
@@ -461,7 +468,14 @@ async fn sync_with_peer(
     // pubkey we stored at pairing time. If the server is a MITM (its
     // TLS session with us has a different exporter than the real
     // peer's), the relayed signature will fail verification here.
-    let msg = transport::recv_message(&mut recv).await?;
+    // Pre-auth cap: the verification step below is the first time
+    // we know whether this is really our paired peer talking, so
+    // gate the raw allocation accordingly.
+    let msg = transport::recv_message_capped(
+        &mut recv,
+        transport::MAX_PREAUTH_MESSAGE_BYTES,
+    )
+    .await?;
     let peer_auth_sig = match msg {
         SyncMessage::HelloAck {
             device_id,

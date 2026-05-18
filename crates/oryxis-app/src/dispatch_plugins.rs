@@ -293,6 +293,7 @@ impl Oryxis {
                     async move {
                         // Progress is a no-op for now, the panel shows
                         // an indeterminate "downloading" state.
+                        let id_log = id_for_task.clone();
                         crate::plugins::download::download_and_install(
                             &id_for_task,
                             &best,
@@ -300,7 +301,21 @@ impl Oryxis {
                         )
                         .await
                         .map(|_| best.version.clone())
-                        .map_err(|e| e.to_string())
+                        .map_err(|e| {
+                            // Detailed error goes to the log file so
+                            // we can debug crashes without polluting
+                            // the UI with raw PluginError::Display
+                            // text (sha mismatch hashes, HTTP codes,
+                            // file paths). The UI gets the stable
+                            // i18n key only.
+                            tracing::warn!(
+                                target = "oryxis::plugins",
+                                provider = %id_log,
+                                error = %e,
+                                "plugin install failed"
+                            );
+                            e.i18n_key().to_string()
+                        })
                     },
                     move |result| Message::PluginInstallDone(id.clone(), result),
                 ))
@@ -330,10 +345,22 @@ impl Oryxis {
                                     }
                                     PluginUiStatus::Installed(version)
                                 }
-                                Err(e) => PluginUiStatus::Failed(e.to_string()),
+                                Err(e) => {
+                                    tracing::warn!(
+                                        target = "oryxis::plugins",
+                                        provider = %id,
+                                        error = %e,
+                                        "post-install set_current failed"
+                                    );
+                                    PluginUiStatus::Failed(
+                                        crate::i18n::t("plugin_err_io").to_string(),
+                                    )
+                                }
                             }
                         }
-                        Err(msg) => PluginUiStatus::Failed(msg),
+                        Err(key) => {
+                            PluginUiStatus::Failed(crate::i18n::t(&key).to_string())
+                        }
                     };
                 }
                 // Repoint the live PluginProvider at the new binary

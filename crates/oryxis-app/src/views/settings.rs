@@ -2242,7 +2242,7 @@ impl Oryxis {
             (Some(b), Some(d)) if b != d
         );
 
-        // Badge cluster — either the captured-mode placeholder or the
+        // Badge cluster: either the captured-mode placeholder or the
         // serialized binding pills. For family actions the suffix
         // badge is rendered with a distinct muted style so the user
         // sees at a glance which slot is fixed.

@@ -72,19 +72,48 @@ pub async fn send_message(
     Ok(())
 }
 
-/// Receive a framed SyncMessage from a QUIC recv stream.
+/// Soft cap on a framed `SyncMessage` once the peer is authenticated.
+/// Sized to fit a large sync manifest comfortably; a single record
+/// payload is dwarfed by this even with full-fat encrypted vault rows.
+pub const MAX_AUTHED_MESSAGE_BYTES: usize = 16 * 1024 * 1024;
+
+/// Cap applied to frames received *before* the peer's Ed25519 identity
+/// has been verified (Hello / PairingRequest / RelayHello). Without
+/// this, anyone who can reach the QUIC port could announce a 16 MiB
+/// length and force the server to allocate that buffer per stream
+/// before any auth happens. The real legal frame here is sub-kilobyte
+/// (a UUID + pubkey + signature), so 64 KiB leaves ample headroom for
+/// future fields while keeping the pre-auth allocation budget small.
+pub const MAX_PREAUTH_MESSAGE_BYTES: usize = 64 * 1024;
+
+/// Receive a framed SyncMessage from a QUIC recv stream. Defaults to
+/// the post-auth cap; callers that read a pre-auth frame should use
+/// [`recv_message_capped`] with [`MAX_PREAUTH_MESSAGE_BYTES`] so an
+/// unauthenticated peer cannot force a multi-megabyte allocation.
 pub async fn recv_message(
     recv: &mut quinn::RecvStream,
 ) -> Result<SyncMessage, SyncError> {
-    // Read 4-byte length prefix
+    recv_message_capped(recv, MAX_AUTHED_MESSAGE_BYTES).await
+}
+
+/// Receive a framed `SyncMessage` and reject the frame if the declared
+/// length exceeds `cap`. Use for any read that runs before the sender
+/// has been authenticated, so a hostile or accidental large length
+/// can't force a giant `vec![0; len]` allocation.
+pub async fn recv_message_capped(
+    recv: &mut quinn::RecvStream,
+    cap: usize,
+) -> Result<SyncMessage, SyncError> {
     let mut len_buf = [0u8; 4];
     recv.read_exact(&mut len_buf)
         .await
         .map_err(|e| SyncError::Transport(format!("Read len: {}", e)))?;
     let len = u32::from_le_bytes(len_buf) as usize;
 
-    if len > 16 * 1024 * 1024 {
-        return Err(SyncError::Protocol("Message too large".into()));
+    if len > cap {
+        return Err(SyncError::Protocol(format!(
+            "Message too large: {len} > cap {cap}"
+        )));
     }
 
     let mut buf = vec![0u8; len];

@@ -1,25 +1,21 @@
 //! Ed25519 signature verification for downloaded plugin binaries.
 //!
-//! Verify-only: this module never holds a private key. The dev signs
-//! release binaries with `oryxis-plugin-signer` (a separate tool, a
-//! later PR); the public key is baked in here as a `const` so a
-//! tampered binary can't slip a matching key alongside it.
+//! Verify-only: this module never holds a private key. Release
+//! binaries are signed by `oryxis-plugin-signer` (CI workflow
+//! `.github/workflows/release-aws.yml`); the public key is baked in
+//! here as a `const` so a tampered binary can't slip a matching key
+//! alongside it.
 //!
 //! Two trust anchors:
 //!
-//! - [`PROD_PUBKEY`], the production key, kept in a CI secret. The
-//!   only key release builds trust.
-//! - [`DEV_PUBKEY`], a development key committed to the repo so the
-//!   plugin pipeline can be exercised locally. Trusted *only* in
-//!   `debug_assertions` builds.
-//!
-//! Both are placeholder all-zero keys until the signer tool and
-//! keygen script land. An all-zero key is treated as "not
-//! provisioned" and dropped from the trust set, so until then the
-//! download path verifies nothing and refuses every binary, which is
-//! the correct inert state. The dev loop (decision B) runs the
-//! plugin straight out of `target/debug/` and never touches this
-//! path.
+//! - [`PROD_PUBKEY`], the production key. Default value is checked
+//!   in (`PROD_PUBKEY_FALLBACK`); CI overrides via
+//!   `ORYXIS_PROD_PUBKEY_HEX` at build time when rotating. The only
+//!   key release builds trust.
+//! - The dev key, derived at runtime from `DEV_SEED`
+//!   (`oryxis_plugin_protocol::DEV_PLUGIN_SIGNING_SEED`). Trusted
+//!   *only* in `debug_assertions` builds so the plugin pipeline can
+//!   be exercised locally without leaking trust into release.
 
 use base64::engine::general_purpose::STANDARD;
 use base64::Engine as _;
@@ -98,9 +94,11 @@ fn dev_pubkey() -> [u8; 32] {
 }
 
 /// The trust anchors active for *this* build: prod always, dev only
-/// in debug builds. The placeholder (all-zero) prod key is filtered
-/// out so an un-provisioned build trusts nothing rather than
-/// appearing to trust a null key.
+/// in debug builds. The retain filter keeps an explicit defense
+/// against an all-zero pubkey ever sneaking in (e.g. a
+/// `ORYXIS_PROD_PUBKEY_HEX="0000...0000"` build override that the
+/// hex parser accepts at compile time). A build with no trusted
+/// keys rejects every binary, which is the correct inert state.
 fn active_pubkeys() -> Vec<[u8; 32]> {
     let mut keys = vec![PROD_PUBKEY];
     if cfg!(debug_assertions) {

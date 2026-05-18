@@ -179,11 +179,33 @@ pub(crate) fn collect_records(
             continue;
         }
 
-        // For now, payload is unencrypted JSON (E2E encryption uses shared secret, added in pairing flow)
+        // For now, payload is unencrypted JSON (E2E encryption uses
+        // shared secret, added in pairing flow). The `encode!` macro
+        // wraps `serde_json::to_vec` so a failure surfaces via
+        // tracing instead of shipping empty bytes that the receiver
+        // would then fail to deserialize. In practice `to_vec` on
+        // owned values never fails, but if it ever did we want loud
+        // diagnostics rather than silent record loss.
+        macro_rules! encode {
+            ($value:expr, $label:literal) => {
+                match serde_json::to_vec(&$value) {
+                    Ok(bytes) => Some(bytes),
+                    Err(e) => {
+                        tracing::error!(
+                            "sync: serialize {} for {} failed: {e}",
+                            $label,
+                            delta.entity_id
+                        );
+                        None
+                    }
+                }
+            };
+        }
+
         let payload = match delta.entity_type {
             EntityType::Connection => {
                 let conns = v.list_connections()?;
-                conns.iter().find(|c| c.id == delta.entity_id).map(|c| {
+                conns.iter().find(|c| c.id == delta.entity_id).and_then(|c| {
                     let password = if sync_passwords {
                         v.get_connection_password(&c.id).ok().flatten()
                     } else {
@@ -199,18 +221,18 @@ pub(crate) fn collect_records(
                         password,
                         proxy_password,
                     };
-                    serde_json::to_vec(&wrapper).unwrap_or_default()
+                    encode!(wrapper, "Connection")
                 })
             }
             EntityType::SshKey => {
                 let keys = v.list_keys()?;
                 keys.iter()
                     .find(|k| k.id == delta.entity_id)
-                    .map(|k| serde_json::to_vec(k).unwrap_or_default())
+                    .and_then(|k| encode!(k, "SshKey"))
             }
             EntityType::Identity => {
                 let idents = v.list_identities()?;
-                idents.iter().find(|i| i.id == delta.entity_id).map(|i| {
+                idents.iter().find(|i| i.id == delta.entity_id).and_then(|i| {
                     let password = if sync_passwords {
                         v.get_identity_password(&i.id).ok().flatten()
                     } else {
@@ -220,12 +242,12 @@ pub(crate) fn collect_records(
                         identity: i.clone(),
                         password,
                     };
-                    serde_json::to_vec(&wrapper).unwrap_or_default()
+                    encode!(wrapper, "Identity")
                 })
             }
             EntityType::ProxyIdentity => {
                 let items = v.list_proxy_identities()?;
-                items.iter().find(|pi| pi.id == delta.entity_id).map(|pi| {
+                items.iter().find(|pi| pi.id == delta.entity_id).and_then(|pi| {
                     let password = if sync_passwords {
                         v.get_proxy_identity_password(&pi.id).ok().flatten()
                     } else {
@@ -235,30 +257,30 @@ pub(crate) fn collect_records(
                         proxy_identity: pi.clone(),
                         password,
                     };
-                    serde_json::to_vec(&wrapper).unwrap_or_default()
+                    encode!(wrapper, "ProxyIdentity")
                 })
             }
             EntityType::Group => {
                 let groups = v.list_groups()?;
                 groups.iter()
                     .find(|g| g.id == delta.entity_id)
-                    .map(|g| serde_json::to_vec(g).unwrap_or_default())
+                    .and_then(|g| encode!(g, "Group"))
             }
             EntityType::Snippet => {
                 let snippets = v.list_snippets()?;
                 snippets.iter()
                     .find(|s| s.id == delta.entity_id)
-                    .map(|s| serde_json::to_vec(s).unwrap_or_default())
+                    .and_then(|s| encode!(s, "Snippet"))
             }
             EntityType::KnownHost => {
                 let hosts = v.list_known_hosts()?;
                 hosts.iter()
                     .find(|kh| kh.id == delta.entity_id)
-                    .map(|kh| serde_json::to_vec(kh).unwrap_or_default())
+                    .and_then(|kh| encode!(kh, "KnownHost"))
             }
             EntityType::CloudProfile => {
                 let items = v.list_cloud_profiles()?;
-                items.iter().find(|cp| cp.id == delta.entity_id).map(|cp| {
+                items.iter().find(|cp| cp.id == delta.entity_id).and_then(|cp| {
                     let secret = if sync_passwords {
                         v.get_cloud_profile_secret(&cp.id).ok().flatten()
                     } else {
@@ -268,7 +290,7 @@ pub(crate) fn collect_records(
                         profile: cp.clone(),
                         secret,
                     };
-                    serde_json::to_vec(&wrapper).unwrap_or_default()
+                    encode!(wrapper, "CloudProfile")
                 })
             }
         };
@@ -313,16 +335,27 @@ pub(crate) fn apply_records(
 
     for record in records {
         if record.is_deleted {
-            // Handle deletion
-            match record.entity_type {
-                EntityType::Connection => { let _ = v.delete_connection(&record.entity_id); }
-                EntityType::SshKey => { let _ = v.delete_key(&record.entity_id); }
-                EntityType::Identity => { let _ = v.delete_identity(&record.entity_id); }
-                EntityType::ProxyIdentity => { let _ = v.delete_proxy_identity(&record.entity_id); }
-                EntityType::Group => { let _ = v.delete_group(&record.entity_id); }
-                EntityType::Snippet => { let _ = v.delete_snippet(&record.entity_id); }
-                EntityType::KnownHost => { let _ = v.delete_known_host(&record.entity_id); }
-                EntityType::CloudProfile => { let _ = v.delete_cloud_profile(&record.entity_id); }
+            // Handle deletion. A vault error here is non-fatal (the
+            // peer is allowed to be ahead of us on its own deletes)
+            // but must surface as a warning so a real bug like a
+            // locked row, SQLite I/O failure, or schema mismatch
+            // doesn't disappear into the void.
+            let result = match record.entity_type {
+                EntityType::Connection => v.delete_connection(&record.entity_id),
+                EntityType::SshKey => v.delete_key(&record.entity_id),
+                EntityType::Identity => v.delete_identity(&record.entity_id),
+                EntityType::ProxyIdentity => v.delete_proxy_identity(&record.entity_id),
+                EntityType::Group => v.delete_group(&record.entity_id),
+                EntityType::Snippet => v.delete_snippet(&record.entity_id),
+                EntityType::KnownHost => v.delete_known_host(&record.entity_id),
+                EntityType::CloudProfile => v.delete_cloud_profile(&record.entity_id),
+            };
+            if let Err(e) = result {
+                tracing::warn!(
+                    "sync: failed to apply delete for {} {}: {e}",
+                    record.entity_type,
+                    record.entity_id
+                );
             }
             continue;
         }
@@ -346,53 +379,104 @@ pub(crate) fn apply_records(
             None => std::borrow::Cow::Borrowed(&record.payload),
         };
 
+        // Helper: every save_* below shares the same "warn on Err"
+        // shape. Inline so the closure can refer back to the record's
+        // entity_type and id for the log line.
+        macro_rules! log_save {
+            ($expr:expr) => {
+                if let Err(e) = $expr {
+                    tracing::warn!(
+                        "sync: failed to apply update for {} {}: {e}",
+                        record.entity_type,
+                        record.entity_id
+                    );
+                }
+            };
+        }
+
         match record.entity_type {
             EntityType::Connection => {
                 // `SyncConnection` flattens the inner `Connection`, so a
                 // payload from a pre-wrapper peer (bare `Connection` JSON)
                 // still deserializes, the optional password fields just
                 // resolve to `None` via `#[serde(default)]`.
-                if let Ok(sc) = serde_json::from_slice::<protocol::SyncConnection>(&payload) {
-                    let id = sc.connection.id;
-                    let _ = v.save_connection(&sc.connection, sc.password.as_deref());
-                    if let Some(pp) = &sc.proxy_password {
-                        let _ = v.set_proxy_password(&id, Some(pp));
+                match serde_json::from_slice::<protocol::SyncConnection>(&payload) {
+                    Ok(sc) => {
+                        let id = sc.connection.id;
+                        log_save!(v.save_connection(&sc.connection, sc.password.as_deref()));
+                        if let Some(pp) = &sc.proxy_password {
+                            log_save!(v.set_proxy_password(&id, Some(pp)));
+                        }
                     }
+                    Err(e) => tracing::warn!(
+                        "sync: bad Connection payload for {}: {e}",
+                        record.entity_id
+                    ),
                 }
             }
             EntityType::SshKey => {
-                if let Ok(key) = serde_json::from_slice::<oryxis_core::models::SshKey>(&payload) {
-                    let _ = v.save_key(&key, None);
+                match serde_json::from_slice::<oryxis_core::models::SshKey>(&payload) {
+                    Ok(key) => log_save!(v.save_key(&key, None)),
+                    Err(e) => tracing::warn!(
+                        "sync: bad SshKey payload for {}: {e}",
+                        record.entity_id
+                    ),
                 }
             }
             EntityType::Identity => {
-                if let Ok(si) = serde_json::from_slice::<protocol::SyncIdentity>(&payload) {
-                    let _ = v.save_identity(&si.identity, si.password.as_deref());
+                match serde_json::from_slice::<protocol::SyncIdentity>(&payload) {
+                    Ok(si) => log_save!(v.save_identity(&si.identity, si.password.as_deref())),
+                    Err(e) => tracing::warn!(
+                        "sync: bad Identity payload for {}: {e}",
+                        record.entity_id
+                    ),
                 }
             }
             EntityType::ProxyIdentity => {
-                if let Ok(spi) = serde_json::from_slice::<protocol::SyncProxyIdentity>(&payload) {
-                    let _ = v.save_proxy_identity(&spi.proxy_identity, spi.password.as_deref());
+                match serde_json::from_slice::<protocol::SyncProxyIdentity>(&payload) {
+                    Ok(spi) => log_save!(
+                        v.save_proxy_identity(&spi.proxy_identity, spi.password.as_deref())
+                    ),
+                    Err(e) => tracing::warn!(
+                        "sync: bad ProxyIdentity payload for {}: {e}",
+                        record.entity_id
+                    ),
                 }
             }
             EntityType::Group => {
-                if let Ok(group) = serde_json::from_slice::<oryxis_core::models::Group>(&payload) {
-                    let _ = v.save_group(&group);
+                match serde_json::from_slice::<oryxis_core::models::Group>(&payload) {
+                    Ok(group) => log_save!(v.save_group(&group)),
+                    Err(e) => tracing::warn!(
+                        "sync: bad Group payload for {}: {e}",
+                        record.entity_id
+                    ),
                 }
             }
             EntityType::Snippet => {
-                if let Ok(snippet) = serde_json::from_slice::<oryxis_core::models::Snippet>(&payload) {
-                    let _ = v.save_snippet(&snippet);
+                match serde_json::from_slice::<oryxis_core::models::Snippet>(&payload) {
+                    Ok(snippet) => log_save!(v.save_snippet(&snippet)),
+                    Err(e) => tracing::warn!(
+                        "sync: bad Snippet payload for {}: {e}",
+                        record.entity_id
+                    ),
                 }
             }
             EntityType::KnownHost => {
-                if let Ok(kh) = serde_json::from_slice::<oryxis_core::models::KnownHost>(&payload) {
-                    let _ = v.save_known_host(&kh);
+                match serde_json::from_slice::<oryxis_core::models::KnownHost>(&payload) {
+                    Ok(kh) => log_save!(v.save_known_host(&kh)),
+                    Err(e) => tracing::warn!(
+                        "sync: bad KnownHost payload for {}: {e}",
+                        record.entity_id
+                    ),
                 }
             }
             EntityType::CloudProfile => {
-                if let Ok(scp) = serde_json::from_slice::<protocol::SyncCloudProfile>(&payload) {
-                    let _ = v.save_cloud_profile(&scp.profile, scp.secret.as_deref());
+                match serde_json::from_slice::<protocol::SyncCloudProfile>(&payload) {
+                    Ok(scp) => log_save!(v.save_cloud_profile(&scp.profile, scp.secret.as_deref())),
+                    Err(e) => tracing::warn!(
+                        "sync: bad CloudProfile payload for {}: {e}",
+                        record.entity_id
+                    ),
                 }
             }
         }

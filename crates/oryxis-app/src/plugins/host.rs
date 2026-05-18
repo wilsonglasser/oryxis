@@ -220,10 +220,7 @@ struct Connection {
     /// Result of the `initialize` handshake.
     init: InitializeResult,
     /// Generation token, lets the reaper distinguish this connection
-    /// from a successor. Read only from `reaper_task`; flagged
-    /// `dead_code`-allowed so clippy's `-D warnings` doesn't trip
-    /// when a future lint counts cross-task field reads as unused.
-    #[allow(dead_code)]
+    /// from a successor. Read by `reaper_task`.
     epoch: u64,
     /// Last completed call, drives idle teardown.
     last_used: Instant,
@@ -236,6 +233,15 @@ impl Drop for Connection {
         // A dropped `JoinHandle` does not stop its task, abort the
         // reader and stderr drain explicitly. The child itself dies
         // via `kill_on_drop`, `start_kill` just makes it immediate.
+        //
+        // TODO(v0.8): graceful shutdown. Today even a well-behaved
+        // plugin doing in-flight work (AWS pagination, an open SDK
+        // client) loses it on every idle reap. Wire a `shutdown`
+        // JSON-RPC notification + a short drain window (200-500 ms)
+        // BEFORE `start_kill`, so plugins can flush logs and close
+        // SDK clients cleanly. Out of scope for the audit fixes
+        // because the protocol bump touches `oryxis-plugin-protocol`
+        // and every shipped plugin binary.
         self.reader.abort();
         self.stderr.abort();
         let _ = self.child.start_kill();

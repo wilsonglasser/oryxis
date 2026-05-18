@@ -395,6 +395,46 @@ mod tests {
         assert!(host.vault.lock().unwrap().list_sync_peers().unwrap().is_empty());
     }
 
+    /// Per-source attempt cap regression. The pre-fix behaviour: 3
+    /// wrong codes from ANY source invalidated the host's state, so
+    /// the legitimate user (typing on a different network) saw
+    /// "Not hosting pairing" afterward. The fix scopes the cap per
+    /// source. We can't simulate two distinct source IPs over
+    /// loopback, so the behavioural assertion is: after a single
+    /// noisy joiner burns the per-source cap from the loopback IP,
+    /// the **hosted code stays live** (not auto-cleared by the host),
+    /// which is the precondition for the legitimate user to still
+    /// pair from elsewhere.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn pairing_per_source_cap_keeps_hosted_code_alive() {
+        use crate::engine::MAX_PAIRING_ATTEMPTS;
+        let (host, host_port) = started_engine("host");
+        let (joiner, _) = started_engine("joiner");
+
+        let original_code = host.handle().start_hosting_pairing();
+        for _ in 0..(MAX_PAIRING_ATTEMPTS + 2) {
+            let _ = joiner
+                .handle()
+                .join_pairing(loopback(host_port), "000000".to_string())
+                .await;
+        }
+        // The hosted code must still be present on the host's state.
+        // Without the per-source fix the old global counter would have
+        // cleared it after 3 attempts, regardless of how legitimate
+        // any later attempt might be.
+        let still_hosting = host
+            .hosting_pairing
+            .lock()
+            .unwrap()
+            .as_ref()
+            .map(|s| s.code.clone());
+        assert_eq!(
+            still_hosting.as_deref(),
+            Some(original_code.as_str()),
+            "hosted code must survive a single source over the cap"
+        );
+    }
+
     /// Joining with no code hosted at all is rejected.
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn pairing_rejects_when_not_hosting() {

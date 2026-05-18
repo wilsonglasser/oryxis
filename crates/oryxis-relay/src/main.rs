@@ -41,8 +41,20 @@ use uuid::Uuid;
 mod discovery;
 mod queue;
 
-use discovery::{DeviceRecord, DeviceTable};
+use discovery::{DeviceRecord, DeviceTable, RegisterOutcome};
+use ed25519_dalek::{Signature, Verifier, VerifyingKey};
 use queue::{InboxRegistry, QueueEntry};
+
+/// Domain-separation tags. MUST match
+/// `oryxis_sync::crypto::{REGISTER_SIGN_LABEL, UNREGISTER_SIGN_LABEL}`
+/// byte-for-byte; the worker.js verifier uses the same strings.
+const REGISTER_SIGN_LABEL: &str = "oryxis-register-v1";
+const UNREGISTER_SIGN_LABEL: &str = "oryxis-unregister-v1";
+
+/// Maximum clock skew the relay tolerates between its `now()` and the
+/// client's `signed_at` field. Anything older or newer than this is
+/// refused as replay or as a misconfigured client.
+const REGISTER_TIMESTAMP_SKEW_SECS: i64 = 60;
 
 /// Soft cap on a single relayed frame, matches the worker and client.
 const MAX_FRAME_BYTES: usize = 256 * 1024;
@@ -238,8 +250,76 @@ struct RegisterReq {
     device_id: Uuid,
     #[serde(default)]
     public_key_fp: String,
+    /// Raw 32-byte Ed25519 verifying key, hex-encoded. Required: the
+    /// server uses this to verify the body signature and pins it on
+    /// first register for TOFU on subsequent re-registers.
+    public_key: String,
     ip: String,
     port: u16,
+    /// Unix epoch seconds at which the client signed this body.
+    /// Verified against the server clock with a small skew window so
+    /// a captured signature can't be replayed forever.
+    signed_at: i64,
+    /// 64-byte Ed25519 signature, hex-encoded. Signs the canonical
+    /// bytes: `REGISTER_SIGN_LABEL || \n || device_id || \n || ip
+    /// || \n || port || \n || signed_at`.
+    signature: String,
+}
+
+/// Canonical bytes for register payload, kept in lockstep with
+/// `oryxis_sync::crypto::register_sign_payload`. Newline-delimited
+/// text so the JS worker can build the same byte string with
+/// `TextEncoder` and `[label, id, ip, port, ts].join('\n')`.
+fn register_sign_payload(device_id: Uuid, ip: &str, port: u16, signed_at: i64) -> Vec<u8> {
+    format!(
+        "{}\n{}\n{}\n{}\n{}",
+        REGISTER_SIGN_LABEL, device_id, ip, port, signed_at
+    )
+    .into_bytes()
+}
+
+/// Canonical bytes for the unregister payload. Kept in lockstep with
+/// `oryxis_sync::crypto::unregister_sign_payload`.
+fn unregister_sign_payload(device_id: Uuid, signed_at: i64) -> Vec<u8> {
+    format!("{}\n{}\n{}", UNREGISTER_SIGN_LABEL, device_id, signed_at).into_bytes()
+}
+
+/// Parse a hex string into a fixed-size byte array. Used for the
+/// pubkey (32 bytes) and signature (64 bytes) fields; returns `None`
+/// on any decode failure or length mismatch so the handler emits a
+/// uniform 400 without leaking which validation step failed.
+fn decode_fixed_hex<const N: usize>(s: &str) -> Option<[u8; N]> {
+    let bytes = hex::decode(s).ok()?;
+    bytes.try_into().ok()
+}
+
+/// Reject any `signed_at` outside the server's clock-skew window.
+/// Returns true when the timestamp is acceptable.
+fn timestamp_fresh(signed_at: i64) -> bool {
+    let now = chrono::Utc::now().timestamp();
+    (now - signed_at).abs() <= REGISTER_TIMESTAMP_SKEW_SECS
+}
+
+/// Build a JSON 400 response with the given short error message. The
+/// register/unregister handlers deliberately return one of a small
+/// set of strings ("Bad signature", "Stale signed_at", ...) so a
+/// caller can debug without us leaking secrets into the response.
+fn bad_request(msg: &'static str) -> Response {
+    (
+        StatusCode::BAD_REQUEST,
+        [(header::CONTENT_TYPE, "application/json")],
+        format!(r#"{{"error":"{}"}}"#, msg),
+    )
+        .into_response()
+}
+
+fn forbidden(msg: &'static str) -> Response {
+    (
+        StatusCode::FORBIDDEN,
+        [(header::CONTENT_TYPE, "application/json")],
+        format!(r#"{{"error":"{}"}}"#, msg),
+    )
+        .into_response()
 }
 
 async fn register_device(
@@ -250,23 +330,51 @@ async fn register_device(
     if !check_auth(&headers, &state.token) {
         return unauthorized();
     }
+
+    let req = body.0;
+    let Some(pubkey) = decode_fixed_hex::<32>(&req.public_key) else {
+        return bad_request("Bad public_key");
+    };
+    let Some(sig_bytes) = decode_fixed_hex::<64>(&req.signature) else {
+        return bad_request("Bad signature");
+    };
+    if !timestamp_fresh(req.signed_at) {
+        return bad_request("Stale signed_at");
+    }
+    let Ok(verifying) = VerifyingKey::from_bytes(&pubkey) else {
+        return bad_request("Bad public_key");
+    };
+    let payload = register_sign_payload(req.device_id, &req.ip, req.port, req.signed_at);
+    if verifying
+        .verify(&payload, &Signature::from_bytes(&sig_bytes))
+        .is_err()
+    {
+        return bad_request("Bad signature");
+    }
+
     let now = chrono::Utc::now().to_rfc3339();
-    state
+    match state
         .devices
-        .register(DeviceRecord {
-            device_id: body.0.device_id,
-            public_key_fp: body.0.public_key_fp,
-            ip: body.0.ip,
-            port: body.0.port,
-            registered_at: now,
-        })
-        .await;
-    (
-        StatusCode::OK,
-        [(header::CONTENT_TYPE, "application/json")],
-        r#"{"ok":true,"ttl":300}"#,
-    )
-        .into_response()
+        .register(
+            DeviceRecord {
+                device_id: req.device_id,
+                public_key_fp: req.public_key_fp,
+                ip: req.ip,
+                port: req.port,
+                registered_at: now,
+            },
+            pubkey,
+        )
+        .await
+    {
+        RegisterOutcome::Accepted => (
+            StatusCode::OK,
+            [(header::CONTENT_TYPE, "application/json")],
+            r#"{"ok":true,"ttl":300}"#,
+        )
+            .into_response(),
+        RegisterOutcome::PubkeyMismatch => forbidden("Pubkey mismatch"),
+    }
 }
 
 async fn lookup_device(
@@ -312,9 +420,52 @@ async fn unregister_device(
     if !check_auth(&headers, &state.token) {
         return unauthorized();
     }
-    if let Ok(uuid) = Uuid::parse_str(&id) {
-        state.devices.unregister(&uuid).await;
+    let Ok(uuid) = Uuid::parse_str(&id) else {
+        return bad_request("Bad id");
+    };
+
+    // All three headers are required: bearer token alone never grants
+    // delete permission; the caller must demonstrate control of the
+    // private key whose pubkey was pinned at register time.
+    let Some(pubkey_hex) = headers.get("X-Pubkey").and_then(|v| v.to_str().ok()) else {
+        return bad_request("Missing X-Pubkey");
+    };
+    let Some(signed_at_str) = headers.get("X-Signed-At").and_then(|v| v.to_str().ok()) else {
+        return bad_request("Missing X-Signed-At");
+    };
+    let Some(sig_hex) = headers.get("X-Signature").and_then(|v| v.to_str().ok()) else {
+        return bad_request("Missing X-Signature");
+    };
+    let Some(pubkey) = decode_fixed_hex::<32>(pubkey_hex) else {
+        return bad_request("Bad X-Pubkey");
+    };
+    let Some(sig_bytes) = decode_fixed_hex::<64>(sig_hex) else {
+        return bad_request("Bad X-Signature");
+    };
+    let Ok(signed_at) = signed_at_str.parse::<i64>() else {
+        return bad_request("Bad X-Signed-At");
+    };
+    if !timestamp_fresh(signed_at) {
+        return bad_request("Stale signed_at");
     }
+    let Ok(verifying) = VerifyingKey::from_bytes(&pubkey) else {
+        return bad_request("Bad X-Pubkey");
+    };
+    let payload = unregister_sign_payload(uuid, signed_at);
+    if verifying
+        .verify(&payload, &Signature::from_bytes(&sig_bytes))
+        .is_err()
+    {
+        return bad_request("Bad X-Signature");
+    }
+    // TOFU enforcement: a missing entry returns 200 (already gone),
+    // a present entry whose pinned pubkey doesn't match is 403.
+    if let Some(pinned) = state.devices.pinned_pubkey(&uuid).await
+        && pinned != pubkey
+    {
+        return forbidden("Pubkey mismatch");
+    }
+    state.devices.unregister(&uuid).await;
     (
         StatusCode::OK,
         [(header::CONTENT_TYPE, "application/json")],
@@ -456,25 +607,92 @@ mod tests {
         assert_eq!(resp.status(), 401);
     }
 
+    /// Build a signed register body with the given identity and
+    /// optional clock offset (seconds). Returns the JSON value the
+    /// integration tests POST to /register.
+    fn signed_register_body(
+        signing_key: &ed25519_dalek::SigningKey,
+        device_id: Uuid,
+        ip: &str,
+        port: u16,
+        offset_secs: i64,
+    ) -> serde_json::Value {
+        use ed25519_dalek::Signer;
+        let signed_at = chrono::Utc::now().timestamp() + offset_secs;
+        let payload = register_sign_payload(device_id, ip, port, signed_at);
+        let sig = signing_key.sign(&payload).to_bytes();
+        let pubkey = signing_key.verifying_key().to_bytes();
+        serde_json::json!({
+            "device_id": device_id,
+            "public_key_fp": "fp",
+            "public_key": hex::encode(pubkey),
+            "ip": ip,
+            "port": port,
+            "signed_at": signed_at,
+            "signature": hex::encode(sig),
+        })
+    }
+
+    fn signed_unregister_headers(
+        signing_key: &ed25519_dalek::SigningKey,
+        device_id: Uuid,
+        offset_secs: i64,
+    ) -> [(&'static str, String); 3] {
+        use ed25519_dalek::Signer;
+        let signed_at = chrono::Utc::now().timestamp() + offset_secs;
+        let payload = unregister_sign_payload(device_id, signed_at);
+        let sig = signing_key.sign(&payload).to_bytes();
+        let pubkey = signing_key.verifying_key().to_bytes();
+        [
+            ("X-Pubkey", hex::encode(pubkey)),
+            ("X-Signed-At", signed_at.to_string()),
+            ("X-Signature", hex::encode(sig)),
+        ]
+    }
+
+    fn fresh_signing_key() -> ed25519_dalek::SigningKey {
+        let mut bytes = [0u8; 32];
+        rand_for_tests(&mut bytes);
+        ed25519_dalek::SigningKey::from_bytes(&bytes)
+    }
+
+    fn rand_for_tests(out: &mut [u8]) {
+        use std::sync::atomic::{AtomicU64, Ordering};
+        // Tests don't need cryptographic randomness; a per-call seed
+        // derived from the OS clock and a static counter keeps keys
+        // distinct across parallel test threads without depending on
+        // the unstable `ThreadId::as_u64`.
+        static COUNTER: AtomicU64 = AtomicU64::new(0);
+        let seed = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos() as u64;
+        let mut state = seed.wrapping_mul(0x9E37_79B9_7F4A_7C15)
+            ^ COUNTER.fetch_add(1, Ordering::Relaxed);
+        for byte in out.iter_mut() {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            *byte = state as u8;
+        }
+    }
+
     #[tokio::test]
     async fn register_lookup_unregister() {
         let (addr, token) = spawn_server().await;
         let client = reqwest::Client::new();
+        let signing = fresh_signing_key();
         let device_id = Uuid::new_v4();
 
+        let body = signed_register_body(&signing, device_id, "192.0.2.1", 9000, 0);
         let resp = client
             .post(format!("http://{addr}/register"))
             .bearer_auth(&token)
-            .json(&serde_json::json!({
-                "device_id": device_id,
-                "public_key_fp": "fp",
-                "ip": "192.0.2.1",
-                "port": 9000,
-            }))
+            .json(&body)
             .send()
             .await
             .unwrap();
-        assert!(resp.status().is_success());
+        assert!(resp.status().is_success(), "got {}", resp.status());
 
         let resp = client
             .get(format!("http://{addr}/lookup/{device_id}"))
@@ -487,13 +705,15 @@ mod tests {
         assert_eq!(body["ip"], "192.0.2.1");
         assert_eq!(body["port"], 9000);
 
-        let resp = client
+        let headers = signed_unregister_headers(&signing, device_id, 0);
+        let mut req = client
             .delete(format!("http://{addr}/register/{device_id}"))
-            .bearer_auth(&token)
-            .send()
-            .await
-            .unwrap();
-        assert!(resp.status().is_success());
+            .bearer_auth(&token);
+        for (k, v) in headers {
+            req = req.header(k, v);
+        }
+        let resp = req.send().await.unwrap();
+        assert!(resp.status().is_success(), "got {}", resp.status());
 
         let resp = client
             .get(format!("http://{addr}/lookup/{device_id}"))
@@ -502,6 +722,107 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(resp.status(), 404);
+    }
+
+    #[tokio::test]
+    async fn register_rejects_unsigned_body() {
+        // Legacy unsigned body (the shape v0.6.1 clients used). Must
+        // be refused now that the signature is mandatory.
+        let (addr, token) = spawn_server().await;
+        let client = reqwest::Client::new();
+        let resp = client
+            .post(format!("http://{addr}/register"))
+            .bearer_auth(&token)
+            .json(&serde_json::json!({
+                "device_id": Uuid::new_v4(),
+                "public_key_fp": "fp",
+                "ip": "192.0.2.1",
+                "port": 9000,
+            }))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), 422); // axum json missing-field
+    }
+
+    #[tokio::test]
+    async fn register_rejects_stale_signed_at() {
+        let (addr, token) = spawn_server().await;
+        let client = reqwest::Client::new();
+        let signing = fresh_signing_key();
+        let device_id = Uuid::new_v4();
+        // Sign 5 minutes in the past: outside the 60s skew window.
+        let body = signed_register_body(&signing, device_id, "192.0.2.1", 9000, -300);
+        let resp = client
+            .post(format!("http://{addr}/register"))
+            .bearer_auth(&token)
+            .json(&body)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), 400);
+    }
+
+    #[tokio::test]
+    async fn register_rejects_wrong_signer_for_existing_device() {
+        // TOFU defense: device_id is pinned to the first signer.
+        // A second registration with a different key returns 403.
+        let (addr, token) = spawn_server().await;
+        let client = reqwest::Client::new();
+        let owner = fresh_signing_key();
+        let attacker = fresh_signing_key();
+        let device_id = Uuid::new_v4();
+
+        let body = signed_register_body(&owner, device_id, "192.0.2.1", 9000, 0);
+        let resp = client
+            .post(format!("http://{addr}/register"))
+            .bearer_auth(&token)
+            .json(&body)
+            .send()
+            .await
+            .unwrap();
+        assert!(resp.status().is_success());
+
+        // Same device_id, different signing key, valid sig per its
+        // own key. Server must reject because the pinned pubkey
+        // doesn't match the attacker's.
+        let body = signed_register_body(&attacker, device_id, "203.0.113.6", 9001, 0);
+        let resp = client
+            .post(format!("http://{addr}/register"))
+            .bearer_auth(&token)
+            .json(&body)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), 403);
+    }
+
+    #[tokio::test]
+    async fn unregister_rejects_wrong_signer() {
+        let (addr, token) = spawn_server().await;
+        let client = reqwest::Client::new();
+        let owner = fresh_signing_key();
+        let attacker = fresh_signing_key();
+        let device_id = Uuid::new_v4();
+
+        let body = signed_register_body(&owner, device_id, "192.0.2.1", 9000, 0);
+        client
+            .post(format!("http://{addr}/register"))
+            .bearer_auth(&token)
+            .json(&body)
+            .send()
+            .await
+            .unwrap();
+
+        let headers = signed_unregister_headers(&attacker, device_id, 0);
+        let mut req = client
+            .delete(format!("http://{addr}/register/{device_id}"))
+            .bearer_auth(&token);
+        for (k, v) in headers {
+            req = req.header(k, v);
+        }
+        let resp = req.send().await.unwrap();
+        assert_eq!(resp.status(), 403);
     }
 
     #[tokio::test]

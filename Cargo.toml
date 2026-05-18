@@ -59,6 +59,7 @@ ed25519-dalek = { version = "2", features = ["rand_core", "serde"] }
 rand = "0.8"
 base64 = "0.22"
 bincode = "1"
+hex = "0.4"
 
 # Storage
 rusqlite = { version = "0.32", features = ["bundled"] }

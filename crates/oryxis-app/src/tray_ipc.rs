@@ -208,11 +208,34 @@ impl Child {
 /// single-instance mutex reads the registry, sends commands.
 pub struct Primary;
 
+/// Cache keyed by registry file path. Each entry remembers the mtime
+/// of the underlying file the last time we successfully parsed it
+/// plus the parsed `InstanceState`, so the 100 ms `TrayPoll` tick can
+/// skip the JSON parse for unchanged rows (the typical case). A
+/// missing entry, an mtime change, or a vanished file all fall back
+/// to the slow path (`fs::read` + parse).
+static INSTANCE_CACHE: std::sync::Mutex<
+    Option<std::collections::HashMap<std::path::PathBuf, CachedInstance>>,
+> = std::sync::Mutex::new(None);
+
+#[derive(Clone)]
+struct CachedInstance {
+    mtime: std::time::SystemTime,
+    state: InstanceState,
+}
+
 impl Primary {
     /// Scan `instances/` and return one `InstanceState` per file.
     /// Files whose PID no longer maps to a live process are deleted
     /// during the scan so the registry self-heals from hard kills.
     /// Returns an empty vec on any I/O error (degrade gracefully).
+    ///
+    /// Skips the JSON parse for entries whose mtime hasn't changed
+    /// since the last poll. The steady state for an idle fleet of
+    /// children is "nothing changed", so re-parsing every row every
+    /// 100 ms is wasted work. Cache is keyed by path; stale entries
+    /// for removed files fall out implicitly because we rebuild the
+    /// map on every scan from the current `read_dir` listing.
     pub fn list_instances() -> Vec<InstanceState> {
         let Some(dir) = instances_dir() else { return Vec::new() };
         let entries = match fs::read_dir(&dir) {
@@ -221,20 +244,37 @@ impl Primary {
         };
         let mut out: Vec<InstanceState> = Vec::new();
         let self_pid = current_pid();
+        // Lock the cache once for the whole scan. Poisoned mutexes
+        // recover the inner value: a stale cache is harmless.
+        let mut cache_guard = match INSTANCE_CACHE.lock() {
+            Ok(g) => g,
+            Err(p) => p.into_inner(),
+        };
+        let cache = cache_guard.get_or_insert_with(std::collections::HashMap::new);
+        let mut next: std::collections::HashMap<std::path::PathBuf, CachedInstance> =
+            std::collections::HashMap::new();
         for entry in entries.flatten() {
             let path = entry.path();
             if path.extension().and_then(|s| s.to_str()) != Some("json") {
                 continue;
             }
-            let bytes = match fs::read(&path) {
-                Ok(b) => b,
-                Err(_) => continue,
-            };
-            let state: InstanceState = match serde_json::from_slice(&bytes) {
-                Ok(s) => s,
-                Err(_) => {
-                    let _ = fs::remove_file(&path);
-                    continue;
+            // Cheap stat first: if mtime matches the cached entry,
+            // reuse the parsed state without re-reading the file.
+            let mtime = entry.metadata().and_then(|m| m.modified()).ok();
+            let state: InstanceState = match (mtime, cache.get(&path)) {
+                (Some(now), Some(cached)) if cached.mtime == now => cached.state.clone(),
+                _ => {
+                    let bytes = match fs::read(&path) {
+                        Ok(b) => b,
+                        Err(_) => continue,
+                    };
+                    match serde_json::from_slice(&bytes) {
+                        Ok(s) => s,
+                        Err(_) => {
+                            let _ = fs::remove_file(&path);
+                            continue;
+                        }
+                    }
                 }
             };
             // Skip our own row, the primary tracks its own state
@@ -246,8 +286,20 @@ impl Primary {
                 let _ = fs::remove_file(&path);
                 continue;
             }
+            if let Some(m) = mtime {
+                next.insert(
+                    path.clone(),
+                    CachedInstance {
+                        mtime: m,
+                        state: state.clone(),
+                    },
+                );
+            }
             out.push(state);
         }
+        // Swap in the new map. Entries for files that vanished
+        // between polls drop here.
+        *cache = next;
         out
     }
 

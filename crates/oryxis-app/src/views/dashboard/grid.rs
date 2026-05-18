@@ -841,7 +841,7 @@ impl Oryxis {
 
                 // Icon precedence (matches manual-folder cards):
                 //   1. Explicit `group.icon` set by the user via the
-                //      dynamic-group editor (Phase 4) — wins so a
+                //      dynamic-group editor (Phase 4): wins so a
                 //      renamed/recustomised ECS group reflects the
                 //      user's choice.
                 //   2. Otherwise the query-derived brand (`ecs` for

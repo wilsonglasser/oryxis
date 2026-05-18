@@ -62,6 +62,32 @@ mod imp {
     /// happens from there, hence the ThreadBound safety claim.
     static TRAY: Mutex<Option<ThreadBound<TrayIcon>>> = Mutex::new(None);
 
+    /// `ThreadId` of the thread that called `install()`. Every
+    /// subsequent `set_visible` / `rebuild_menu` asserts it's on
+    /// the same thread, so a future refactor that moves a tray call
+    /// onto a `Task::perform` worker fails loud in debug builds
+    /// rather than silently corrupting the `Rc` refcount inside
+    /// `tray_icon::TrayIcon`. Release builds skip the assert; the
+    /// invariant is documented in the `ThreadBound` SAFETY comment.
+    static TRAY_THREAD: std::sync::OnceLock<std::thread::ThreadId> = std::sync::OnceLock::new();
+
+    /// Panic in debug builds if called from a thread other than the
+    /// one that installed the tray. No-op once the tray hasn't been
+    /// installed yet (still in setup), and no-op in release builds.
+    fn assert_tray_thread(op: &'static str) {
+        if cfg!(debug_assertions)
+            && let Some(expected) = TRAY_THREAD.get()
+            && std::thread::current().id() != *expected
+        {
+            panic!(
+                "tray::{op} called from {:?}, expected {:?} (the install thread). \
+                 TrayIcon holds non-Send state.",
+                std::thread::current().id(),
+                expected
+            );
+        }
+    }
+
     /// Create the tray icon at app startup. Safe to call once; later
     /// calls are no-ops (idempotent via `OnceLock::set`). Returns
     /// `Ok(())` on success or `Err(...)` if the OS refused to
@@ -75,6 +101,10 @@ mod imp {
         {
             return Ok(());
         }
+        // Pin the thread that owns the tray. First call wins; later
+        // installs after a promotion still happen on the same iced
+        // main thread, so the OnceLock pin holds.
+        let _ = TRAY_THREAD.set(std::thread::current().id());
 
         let menu = Menu::new();
         // Labels go through the i18n table so the tray respects the
@@ -145,6 +175,7 @@ mod imp {
     /// Failure is logged + swallowed; the worst case is a stale tray
     /// icon hanging around for a tick longer than ideal.
     pub fn set_visible(visible: bool) {
+        assert_tray_thread("set_visible");
         let Ok(guard) = TRAY.lock() else { return };
         let Some(ThreadBound(tray)) = guard.as_ref() else { return };
         if let Err(e) = tray.set_visible(visible) {
@@ -168,6 +199,7 @@ mod imp {
         recent_hosts: &[(String, String)],
         hidden_windows: &[(String, String)],
     ) -> Result<(), Box<dyn std::error::Error>> {
+        assert_tray_thread("rebuild_menu");
         let guard = match TRAY.lock() {
             Ok(g) => g,
             Err(_) => return Ok(()),

@@ -101,3 +101,27 @@ pub enum PluginError {
     #[error("io error: {0}")]
     Io(#[from] std::io::Error),
 }
+
+impl PluginError {
+    /// Stable i18n key for showing this error in the UI. The raw
+    /// `Display` text is detailed (file paths, byte counts, HTTP
+    /// codes, signature bytes) and goes through `tracing` for the
+    /// log file; what the user sees is a short translated phrase
+    /// per variant. Keep these aligned with the keys defined in
+    /// `crate::i18n` for every language.
+    pub fn i18n_key(&self) -> &'static str {
+        match self {
+            Self::BinaryNotFound(_) => "plugin_err_binary_not_found",
+            Self::Spawn(_) => "plugin_err_spawn",
+            Self::ProcessGone => "plugin_err_process_gone",
+            Self::Timeout(_) => "plugin_err_timeout",
+            Self::Protocol(_) => "plugin_err_protocol",
+            Self::VersionMismatch { .. } => "plugin_err_version_mismatch",
+            Self::Provider(_) => "plugin_err_provider",
+            Self::Manifest(_) => "plugin_err_manifest",
+            Self::Download(_) => "plugin_err_download",
+            Self::Integrity(_) => "plugin_err_integrity",
+            Self::Io(_) => "plugin_err_io",
+        }
+    }
+}

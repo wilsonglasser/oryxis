@@ -2108,18 +2108,34 @@ impl VaultStore {
     /// periodically from the sync engine to keep `sync_metadata` from
     /// growing without bound. Returns the number of rows removed.
     ///
-    /// 30 days is the v1 default; it should outlive any reasonable
-    /// gap a paired peer spends offline between syncs. A peer that
-    /// reconnects after the TTL window will miss the deletion and
-    /// silently resurrect the entity until the user deletes it again.
-    /// The trade-off keeps the table O(recent deletes) instead of
-    /// growing forever.
+    /// Two conditions must hold before a tombstone is dropped:
+    /// 1. Age >= `older_than_days` (the lifetime cap).
+    /// 2. Every active `SyncPeer` row has synced at least once since
+    ///    `deleted_at`, so we know the deletion already propagated.
+    ///    A peer with `last_synced_at = NULL` (never synced) blocks
+    ///    GC of any tombstone. This is the trade-off that fixes the
+    ///    "silent deletion resurrection" class of bugs flagged in the
+    ///    audit. The price is unbounded tombstone growth when a
+    ///    paired peer is gone forever; the [`SyncEvent::PeerStaleWarning`]
+    ///    surfaced by the engine nudges the user to remove the dead
+    ///    peer well before that becomes a real space issue.
+    ///
+    /// 30 days is the v1 default lifetime cap.
     pub fn vacuum_tombstones(&self, older_than_days: u32) -> Result<usize, VaultError> {
         let cutoff = (Utc::now() - chrono::Duration::days(older_than_days as i64))
             .to_rfc3339();
+        // `NOT EXISTS` here means: only delete the tombstone if no
+        // active peer is still behind it. Treats a never-synced peer
+        // (last_synced_at IS NULL) as universally behind.
         let removed = self.db.execute(
             "DELETE FROM sync_metadata
-             WHERE is_deleted = 1 AND deleted_at < ?1",
+             WHERE is_deleted = 1
+               AND deleted_at < ?1
+               AND NOT EXISTS (
+                   SELECT 1 FROM sync_peers
+                    WHERE is_active = 1
+                      AND (last_synced_at IS NULL OR last_synced_at < sync_metadata.deleted_at)
+               )",
             params![cutoff],
         )?;
         Ok(removed)
@@ -3403,6 +3419,60 @@ mod tests {
         vault.delete_connection(&conn2.id).unwrap();
         assert_eq!(vault.vacuum_tombstones(365).unwrap(), 0);
         assert_eq!(vault.list_tombstones().unwrap().len(), 1);
+    }
+
+    /// Regression: a tombstone must not be vacuumed while any active
+    /// peer is still behind it (last_synced_at < deleted_at, or NULL).
+    /// Without this guarantee, the deletion would silently resurrect
+    /// on the offline peer's next sync.
+    #[test]
+    fn vacuum_tombstones_keeps_rows_with_behind_peer() {
+        let vault = unlocked_vault();
+        let peer_id = Uuid::new_v4();
+        let pubkey = [1u8; 32];
+        // Peer paired but has never synced (NULL last_synced_at).
+        vault
+            .save_sync_peer(&peer_id, "offline-peer", &pubkey, None, &Utc::now())
+            .unwrap();
+
+        let conn = Connection::new("doomed", "10.0.0.1");
+        vault.save_connection(&conn, None).unwrap();
+        vault.delete_connection(&conn.id).unwrap();
+        assert_eq!(vault.list_tombstones().unwrap().len(), 1);
+
+        // TTL 0 + peer is behind => the row stays.
+        let removed = vault.vacuum_tombstones(0).unwrap();
+        assert_eq!(removed, 0);
+        assert_eq!(vault.list_tombstones().unwrap().len(), 1);
+
+        // After the peer catches up (synced AFTER deleted_at), the
+        // tombstone can be reclaimed. The public API stamps "now",
+        // which is guaranteed strictly later than the deleted_at row
+        // we just inserted (chrono is monotonic on a single thread).
+        vault.update_sync_peer_last_synced(&peer_id).unwrap();
+        let removed = vault.vacuum_tombstones(0).unwrap();
+        assert_eq!(removed, 1);
+        assert!(vault.list_tombstones().unwrap().is_empty());
+    }
+
+    /// An inactive peer should not block tombstone GC. A peer the user
+    /// already removed has no claim on the deletion log.
+    #[test]
+    fn vacuum_tombstones_ignores_inactive_peer() {
+        let vault = unlocked_vault();
+        let peer_id = Uuid::new_v4();
+        vault
+            .save_sync_peer(&peer_id, "stale", &[2u8; 32], None, &Utc::now())
+            .unwrap();
+        vault.delete_sync_peer(&peer_id).unwrap();
+
+        let conn = Connection::new("doomed", "10.0.0.1");
+        vault.save_connection(&conn, None).unwrap();
+        vault.delete_connection(&conn.id).unwrap();
+        assert_eq!(vault.list_tombstones().unwrap().len(), 1);
+
+        // Inactive peer doesn't gate GC: row is dropped at TTL 0.
+        assert_eq!(vault.vacuum_tombstones(0).unwrap(), 1);
     }
 
     // ── Share (filtered export) ──

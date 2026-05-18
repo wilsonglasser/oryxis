@@ -265,7 +265,18 @@ impl HotkeyBinding {
         }
         match self.primary {
             PrimaryKey::Char(c) => c.is_ascii_alphanumeric(),
-            PrimaryKey::Punct(_) => true,
+            // Only the punctuation keys that genuinely produce control
+            // bytes via the kernel's tty layer get suppressed. The
+            // wider Punct set (`,`, `=`, `-`, `.`, `;`, `/`) doesn't
+            // map to anything readline or the shell consumes, so the
+            // default bindings on those (OpenSettings, FontZoomIn,
+            // FontZoomOut) must continue to fire inside the terminal.
+            // The accepted set mirrors the C0 escapes a US/QWERTY shell
+            // actually generates: Ctrl+[ = ESC, Ctrl+\ = FS,
+            // Ctrl+] = GS.
+            PrimaryKey::Punct("[") => true,
+            PrimaryKey::Punct("\\") => true,
+            PrimaryKey::Punct("]") => true,
             _ => false,
         }
     }
@@ -537,27 +548,44 @@ pub fn binding_from_event(
         None
     };
 
-    let binding = HotkeyBinding {
-        ctrl: modifiers.control(),
-        shift: modifiers.shift(),
-        alt: modifiers.alt(),
-        logo: modifiers.logo(),
-        primary: primary_opt.unwrap_or(PrimaryKey::Char('?')),
-    };
     if primary_editable {
+        // Without a recognised primary there is nothing to bind. The
+        // old fallback to `PrimaryKey::Char('?')` produced a row that
+        // passed `is_safe()` but no real key event ever reproduced,
+        // so the binding was silently dead. Returning `None` here
+        // keeps the capture in "press a key" state.
+        let primary = primary_opt?;
+        let binding = HotkeyBinding {
+            ctrl: modifiers.control(),
+            shift: modifiers.shift(),
+            alt: modifiers.alt(),
+            logo: modifiers.logo(),
+            primary,
+        };
         if !binding.is_safe() {
             return None;
         }
+        Some(binding)
     } else {
         // Family captures keep the existing primary (a digit, an
         // arrow, etc.) and only swap the modifiers. The user must
         // still pick at least one of Ctrl / Alt / Logo, otherwise
-        // any bare digit press would hijack tab switching.
+        // any bare digit press would hijack tab switching. The
+        // primary isn't read from the event here, so a missing
+        // `primary_opt` is fine, fall back to a placeholder that
+        // the caller's existing `family` field overrides.
+        let binding = HotkeyBinding {
+            ctrl: modifiers.control(),
+            shift: modifiers.shift(),
+            alt: modifiers.alt(),
+            logo: modifiers.logo(),
+            primary: primary_opt.unwrap_or(PrimaryKey::Digit1to9),
+        };
         if !binding.ctrl && !binding.alt && !binding.logo {
             return None;
         }
+        Some(binding)
     }
-    Some(binding)
 }
 
 /// Map from action to its current binding (default or user override).
@@ -683,6 +711,48 @@ mod tests {
             b.match_event(&Key::Character("k".into()), &Modifiers::CTRL),
             Some(FamilyMatch::Plain)
         );
+    }
+
+    #[test]
+    fn punct_keys_are_not_terminal_control_unless_c0() {
+        // Regression: Ctrl+, / Ctrl+= / Ctrl+- used to be silently
+        // suppressed inside the terminal view because the gate
+        // accepted every Punct. They map to no control byte; the
+        // default bindings (OpenSettings, FontZoomIn, FontZoomOut)
+        // must fire even when the focus is on the embedded terminal.
+        for &p in &[",", "=", "-", ".", ";", "/"] {
+            let b = HotkeyBinding {
+                ctrl: true,
+                shift: false,
+                alt: false,
+                logo: false,
+                primary: PrimaryKey::Punct(p),
+            };
+            assert!(
+                !b.is_terminal_control_sequence(),
+                "Ctrl+{p} should not be a terminal control sequence"
+            );
+        }
+    }
+
+    #[test]
+    fn punct_keys_that_map_to_c0_are_terminal_control() {
+        // Ctrl+[ = ESC, Ctrl+\ = FS, Ctrl+] = GS are real C0 escapes
+        // a shell consumes via the tty layer, so the dispatcher should
+        // continue to suppress them inside the terminal view.
+        for &p in &["[", "\\", "]"] {
+            let b = HotkeyBinding {
+                ctrl: true,
+                shift: false,
+                alt: false,
+                logo: false,
+                primary: PrimaryKey::Punct(p),
+            };
+            assert!(
+                b.is_terminal_control_sequence(),
+                "Ctrl+{p} should be a terminal control sequence"
+            );
+        }
     }
 
     #[test]

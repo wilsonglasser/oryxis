@@ -1,9 +1,64 @@
+use std::collections::{HashMap, VecDeque};
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use tokio::sync::mpsc;
 use uuid::Uuid;
+
+/// Hard cap on concurrent per-sender sessions tracked by the relay
+/// inbox demux. A bearer-token holder cycling fresh `X-Sender-Id`
+/// UUIDs would otherwise force the receiver to allocate an mpsc and
+/// spawn a task per id without bound. 64 covers any realistic
+/// fleet size and triggers FIFO eviction beyond that.
+const MAX_RELAY_SESSIONS: usize = 64;
+
+/// FIFO-evicting map from a peer's sender id to the mpsc channel
+/// feeding its in-flight session. When the map reaches
+/// [`MAX_RELAY_SESSIONS`], the oldest entry is dropped (its sender
+/// closes, the spawned session task winds down on next `recv`)
+/// before the new entry is inserted.
+struct BoundedSessionMap {
+    map: HashMap<Uuid, tokio::sync::mpsc::UnboundedSender<SyncMessage>>,
+    fifo: VecDeque<Uuid>,
+}
+
+impl BoundedSessionMap {
+    fn new() -> Self {
+        Self {
+            map: HashMap::new(),
+            fifo: VecDeque::new(),
+        }
+    }
+
+    fn get(&self, k: &Uuid) -> Option<&tokio::sync::mpsc::UnboundedSender<SyncMessage>> {
+        self.map.get(k)
+    }
+
+    fn remove(&mut self, k: &Uuid) {
+        if self.map.remove(k).is_some() {
+            self.fifo.retain(|x| x != k);
+        }
+    }
+
+    fn insert(&mut self, k: Uuid, tx: tokio::sync::mpsc::UnboundedSender<SyncMessage>) {
+        if self.map.contains_key(&k) {
+            // Re-insert wins; refresh FIFO position so the renewed
+            // session isn't evicted before older idle peers.
+            self.fifo.retain(|x| x != &k);
+        } else if self.map.len() >= MAX_RELAY_SESSIONS {
+            if let Some(evict) = self.fifo.pop_front() {
+                self.map.remove(&evict);
+                tracing::warn!(
+                    "relay session map at cap ({}), evicting {evict}",
+                    MAX_RELAY_SESSIONS
+                );
+            }
+        }
+        self.map.insert(k, tx);
+        self.fifo.push_back(k);
+    }
+}
 
 use oryxis_vault::VaultStore;
 
@@ -93,30 +148,35 @@ pub enum SyncEvent {
 /// waiting for a peer to join. Lives behind a `Mutex` shared between
 /// the engine, its `SyncHandle`s, and the QUIC accept loop. Visible
 /// to the submodules so `pairing.rs` can validate against it.
-pub(super) struct HostingPairing {
-    pub(super) code: String,
-    pub(super) expires_at: Instant,
-    /// Number of failed attempts (wrong code or bad challenge
-    /// response) accumulated against this hosting state. Cleared
-    /// when a fresh code is generated. Once we hit
-    /// [`MAX_PAIRING_ATTEMPTS`] the state is invalidated so an
-    /// attacker who learned a device_id via the pairing link or
-    /// STUN registration can't brute-force the 6-digit code over
-    /// the relay (~10^6 attempts at 1 try/sec is feasible without
-    /// a cap).
-    /// Wired by the audit follow-up that enforces the cap in
-    /// `pairing.rs`; the consumer landed in a separate branch and
-    /// hasn't merged yet, hence the dead-code allow.
-    #[allow(dead_code)]
-    pub(super) attempts: u32,
+pub(crate) struct HostingPairing {
+    pub(crate) code: String,
+    pub(crate) expires_at: Instant,
+    /// Per-source failed-attempt counter. Key is a short label that
+    /// identifies the joiner network identity:
+    ///   `quic:<ip>` for direct LAN / cross-NAT QUIC dial
+    ///   `relay:<device_id>` for relay-routed sessions
+    /// Once a given source hits [`MAX_PAIRING_ATTEMPTS`] only that
+    /// source is rejected (with `Rate limited` instead of `Wrong
+    /// pairing code`). The hosted code stays alive for everyone
+    /// else, so an attacker grinding the 10^6 code space from one
+    /// IP cannot deny service to the legitimate user paired from
+    /// a different network. The total map size is also capped via
+    /// [`MAX_PAIRING_SOURCES`] to keep memory bounded under churn.
+    pub(super) attempts_by_source: HashMap<String, u32>,
 }
 
-/// Max failed attempts against a single hosted pairing code before
-/// the state self-invalidates. Conservative: the legitimate joiner
-/// types the code once, so 3 tries is enough room for a typo and
-/// well below the brute-force regime.
-#[allow(dead_code)]
+/// Max failed attempts a single joiner source can make against the
+/// hosted code before that source is rejected. Conservative: the
+/// legitimate joiner types the code once, so 3 tries is enough room
+/// for a typo and well below the brute-force regime.
 pub(super) const MAX_PAIRING_ATTEMPTS: u32 = 3;
+
+/// Soft cap on distinct sources tracked at once. An attacker cycling
+/// fresh sender IDs would otherwise grow `attempts_by_source` without
+/// bound; at the cap we clear the oldest entries (here: all of them,
+/// since the typing legit user is the only entry that matters and we
+/// don't expect to be at the cap under normal use).
+pub(super) const MAX_PAIRING_SOURCES: usize = 1024;
 
 /// Tombstones older than this drop on engine boot. Should outlive any
 /// realistic offline gap between a paired peer's syncs; a peer that
@@ -150,7 +210,10 @@ pub struct SyncEngine {
     shutdown_tx: Option<tokio::sync::broadcast::Sender<()>>,
     /// Set while this device is hosting a pairing code (single-shot:
     /// cleared once a peer successfully pairs, or on expiry / cancel).
-    hosting_pairing: Arc<std::sync::Mutex<Option<HostingPairing>>>,
+    /// `pub(crate)` so the per-source attempt-cap regression test in
+    /// `tests.rs` can inspect that the hosted code survives a noisy
+    /// joiner.
+    pub(crate) hosting_pairing: Arc<std::sync::Mutex<Option<HostingPairing>>>,
     /// The QUIC port the server actually bound, known only after
     /// `start()`. Advertised to joiners in `PairingRequest` so the
     /// host can sync back to us.
@@ -304,7 +367,6 @@ impl SyncEngine {
                 // against the TTL even when our public IP is stable.
                 let refresh_interval = std::time::Duration::from_secs(180);
                 let mut last_register_at: Option<std::time::Instant> = None;
-                let fp = identity.public_key_fingerprint();
                 loop {
                     tokio::select! {
                         _ = ticker.tick() => {
@@ -341,7 +403,7 @@ impl SyncEngine {
                             if !ip_changed && !needs_refresh {
                                 continue;
                             }
-                            match client.register(&identity.device_id, &fp, &ip, bound_port).await {
+                            match client.register(&identity, &ip, bound_port).await {
                                 Ok(()) => {
                                     tracing::info!(
                                         "signaling: registered {} -> {}:{}",
@@ -436,10 +498,8 @@ impl SyncEngine {
                 let client = crate::relay::RelayClient::new(&relay_url, &token, my_id);
                 // device_id -> mpsc to its in-flight session. New
                 // senders trigger a fresh server-side session.
-                let sessions: Arc<std::sync::Mutex<std::collections::HashMap<
-                    Uuid,
-                    tokio::sync::mpsc::UnboundedSender<SyncMessage>,
-                >>> = Arc::new(std::sync::Mutex::new(std::collections::HashMap::new()));
+                let sessions: Arc<std::sync::Mutex<BoundedSessionMap>> =
+                    Arc::new(std::sync::Mutex::new(BoundedSessionMap::new()));
                 loop {
                     tokio::select! {
                         biased;
@@ -479,8 +539,18 @@ impl SyncEngine {
                                 }
                             };
                             // Forward to an existing session if any.
+                            // Mutex poison: recover the inner value
+                            // (the map is just a routing table; a
+                            // panicked holder doesn't corrupt the
+                            // routing semantics) so a single bad
+                            // session can't kill the whole relay
+                            // demux. Same pattern relay/main.rs:117
+                            // uses for its rate-limiter bucket.
                             {
-                                let mut map = sessions.lock().unwrap();
+                                let mut map = match sessions.lock() {
+                                    Ok(g) => g,
+                                    Err(p) => p.into_inner(),
+                                };
                                 if let Some(tx) = map.get(&from) {
                                     if tx.send(msg.clone()).is_ok() {
                                         continue;
@@ -492,7 +562,10 @@ impl SyncEngine {
                             // and ManifestRequest are the only valid
                             // session openers; other messages are dropped.
                             let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
-                            sessions.lock().unwrap().insert(from, tx.clone());
+                            match sessions.lock() {
+                                Ok(mut g) => g.insert(from, tx.clone()),
+                                Err(p) => p.into_inner().insert(from, tx.clone()),
+                            }
                             let _ = tx.send(msg);
                             let session_client = client.clone();
                             let vault = vault.clone();
@@ -511,7 +584,10 @@ impl SyncEngine {
                                     event_tx,
                                 )
                                 .await;
-                                sessions.lock().unwrap().remove(&from);
+                                match sessions.lock() {
+                                    Ok(mut g) => g.remove(&from),
+                                    Err(p) => p.into_inner().remove(&from),
+                                };
                             });
                         }
                     }
@@ -602,7 +678,7 @@ impl SyncHandle {
             *state = Some(HostingPairing {
                 code: code.clone(),
                 expires_at: Instant::now() + PAIRING_CODE_TTL,
-                attempts: 0,
+                attempts_by_source: HashMap::new(),
             });
         }
         let _ = self
@@ -838,6 +914,57 @@ impl SyncHandle {
             None,
         )
         .await
+    }
+}
+
+#[cfg(test)]
+mod bounded_session_tests {
+    use super::*;
+
+    #[test]
+    fn evicts_oldest_at_cap() {
+        let mut map = BoundedSessionMap::new();
+        let mut ids = Vec::new();
+        // Fill to cap + 1: the very first insertion must be evicted.
+        for _ in 0..(MAX_RELAY_SESSIONS + 1) {
+            let id = Uuid::new_v4();
+            ids.push(id);
+            let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+            map.insert(id, tx);
+        }
+        assert_eq!(map.map.len(), MAX_RELAY_SESSIONS);
+        assert!(
+            map.get(&ids[0]).is_none(),
+            "oldest entry should have been evicted"
+        );
+        for id in &ids[1..] {
+            assert!(map.get(id).is_some(), "{id} should still be present");
+        }
+    }
+
+    #[test]
+    fn re_insert_refreshes_fifo_position() {
+        let mut map = BoundedSessionMap::new();
+        let mut ids = Vec::new();
+        for _ in 0..MAX_RELAY_SESSIONS {
+            let id = Uuid::new_v4();
+            ids.push(id);
+            let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+            map.insert(id, tx);
+        }
+        // Touch the oldest: it should now be the freshest, so the
+        // NEXT new insertion evicts the *second* original, not the
+        // refreshed one.
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        map.insert(ids[0], tx);
+        let new_id = Uuid::new_v4();
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        map.insert(new_id, tx);
+        assert!(map.get(&ids[0]).is_some(), "refreshed entry must survive");
+        assert!(
+            map.get(&ids[1]).is_none(),
+            "second-oldest must be the eviction target"
+        );
     }
 }
 

@@ -1,14 +1,29 @@
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use crate::crypto::{
+    DeviceIdentity, register_sign_payload, sign_register_payload, unregister_sign_payload,
+};
 use crate::error::SyncError;
 
+/// Wire body sent to `POST /register`. The signature gates re-registers
+/// (TOFU: the server stores `public_key` on first register and refuses
+/// any later register that signs with a different key for the same
+/// `device_id`). `signed_at` is unix epoch seconds and must land inside
+/// the server's clock-skew window to be accepted, which kills replay.
 #[derive(Debug, Serialize)]
 struct RegisterRequest {
     device_id: String,
     public_key_fp: String,
+    /// Raw 32-byte Ed25519 verifying key, hex-encoded (64 chars).
+    public_key: String,
     ip: String,
     port: u16,
+    /// Unix epoch seconds at which the client signed this body.
+    signed_at: i64,
+    /// 64-byte Ed25519 signature over the canonical bytes returned by
+    /// `crypto::register_sign_payload`, hex-encoded (128 chars).
+    signature: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -37,18 +52,29 @@ impl SignalingClient {
     }
 
     /// Register this device's current IP:port on the signaling server.
+    /// Signs the body with the device's Ed25519 key so the server can
+    /// pin the registration to this device (TOFU on the public key)
+    /// and reject blackhole/poisoning attempts from any other bearer
+    /// token holder.
     pub async fn register(
         &self,
-        device_id: &Uuid,
-        public_key_fp: &str,
+        identity: &DeviceIdentity,
         ip: &str,
         port: u16,
     ) -> Result<(), SyncError> {
+        let signed_at = chrono::Utc::now().timestamp();
+        let payload = register_sign_payload(&identity.device_id, ip, port, signed_at);
+        let signature = sign_register_payload(&identity.signing_key, &payload);
+        let pubkey = identity.public_key().to_bytes();
+
         let req = RegisterRequest {
-            device_id: device_id.to_string(),
-            public_key_fp: public_key_fp.into(),
+            device_id: identity.device_id.to_string(),
+            public_key_fp: identity.public_key_fingerprint(),
+            public_key: hex::encode(pubkey),
             ip: ip.into(),
             port,
+            signed_at,
+            signature: hex::encode(signature),
         };
 
         let resp = self
@@ -68,6 +94,39 @@ impl SignalingClient {
         }
 
         tracing::debug!("Signaling: registered {}:{}", ip, port);
+        Ok(())
+    }
+
+    /// Remove our registration from the signaling server. Signed with
+    /// the same Ed25519 key the server pinned at register time; an
+    /// attacker holding only the bearer token cannot delete our entry.
+    /// Headers carry the auth fields so the URL stays bookmark-able
+    /// and the body stays empty.
+    #[allow(dead_code)]
+    pub async fn unregister(&self, identity: &DeviceIdentity) -> Result<(), SyncError> {
+        let signed_at = chrono::Utc::now().timestamp();
+        let payload = unregister_sign_payload(&identity.device_id, signed_at);
+        let signature = sign_register_payload(&identity.signing_key, &payload);
+        let pubkey = identity.public_key().to_bytes();
+
+        let resp = self
+            .http
+            .delete(format!("{}/register/{}", self.base_url, identity.device_id))
+            .bearer_auth(&self.token)
+            .header("X-Pubkey", hex::encode(pubkey))
+            .header("X-Signed-At", signed_at.to_string())
+            .header("X-Signature", hex::encode(signature))
+            .send()
+            .await
+            .map_err(|e| SyncError::Discovery(format!("Signaling unregister: {}", e)))?;
+
+        if !resp.status().is_success() {
+            return Err(SyncError::Discovery(format!(
+                "Signaling unregister failed: {}",
+                resp.status()
+            )));
+        }
+
         Ok(())
     }
 

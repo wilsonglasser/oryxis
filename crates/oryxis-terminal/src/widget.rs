@@ -699,7 +699,7 @@ const TERM_PAD: f32 = 8.0;
 /// Vertical padding above the first row. Mirrors `TERM_PAD` so
 /// horizontal and vertical breathing are symmetric, again matching
 /// the Termius spacing. If the canvas still looks padded above the
-/// first row of output, the gap isn't coming from here — likely the
+/// first row of output, the gap isn't coming from here; likely the
 /// remote session emits a leading clear / cursor-move sequence that
 /// blanks the top rows.
 const TERM_PAD_TOP: f32 = 8.0;

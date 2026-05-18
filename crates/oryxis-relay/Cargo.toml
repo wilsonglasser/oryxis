@@ -23,6 +23,8 @@ bytes = "1"
 clap = { version = "4", features = ["derive", "env"] }
 chrono = { workspace = true }
 anyhow = "1"
+ed25519-dalek = { workspace = true }
+hex = { workspace = true }
 
 [dev-dependencies]
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
