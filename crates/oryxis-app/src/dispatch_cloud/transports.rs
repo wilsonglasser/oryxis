@@ -12,7 +12,12 @@ impl Oryxis {
         message: Message,
     ) -> Result<Task<Message>, Message> {
         match message {
-            Message::ConnectEcsExecTask { group_id, task_id, task_label } => {
+            Message::ConnectEcsExecTask {
+                group_id,
+                task_id,
+                task_label,
+                container,
+            } => {
                 // Resolve the dynamic group + its cloud_query.
                 let Some(group) = self.groups.iter().find(|g| g.id == group_id).cloned()
                 else {
@@ -24,13 +29,17 @@ impl Oryxis {
                 let oryxis_core::models::cloud::CloudQueryKind::EcsTasks {
                     cluster,
                     service: _,
-                    container,
+                    container: _,
                 } = query.kind.clone()
                 else {
                     // K8s tasks live behind a different transport
                     // (kubectl exec), silently ignore here.
                     return Ok(Task::none());
                 };
+                // Use the per-row container (the one the user
+                // actually clicked) instead of the query's. Under
+                // wildcard mode the query's is empty; under
+                // single-container mode the two match anyway.
                 let Some(profile) = self.resolve_cloud_profile(query.profile_id) else {
                     tracing::warn!(
                         target = "oryxis::dispatch_cloud",

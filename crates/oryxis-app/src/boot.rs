@@ -100,6 +100,7 @@ impl Oryxis {
                 show_burger_menu: false,
                 show_icon_picker: false,
                 icon_picker_for: None,
+                icon_picker_for_group_form: false,
                 icon_picker_icon: None,
                 icon_picker_color: None,
                 icon_picker_hex_input: String::new(),
@@ -176,6 +177,9 @@ impl Oryxis {
                 editing_identity_id: None,
                 identity_context_menu: None,
                 show_keychain_add_menu: false,
+                hosts_sort: crate::state::ListSort::default(),
+                keys_sort: crate::state::ListSort::default(),
+                snippets_sort: crate::state::ListSort::default(),
                 proxy_identities: Vec::new(),
                 proxy_identity_form_visible: false,
                 proxy_identity_form_label: String::new(),
@@ -219,6 +223,14 @@ impl Oryxis {
                 cloud_discover_collapsed: std::collections::HashSet::new(),
                 cloud_discover_default_transport:
                     oryxis_core::models::cloud::TransportKind::Ssh,
+                cloud_discover_default_group_name: String::new(),
+                cloud_discover_default_group_picker_open: false,
+                cloud_discover_default_group_picker_search: String::new(),
+                cloud_discover_default_group_combo_bounds: crate::widgets::new_bounds_cell(),
+                group_picker_search: String::new(),
+                editor_parent_combo_bounds: crate::widgets::new_bounds_cell(),
+                dynamic_form_parent_combo_bounds: crate::widgets::new_bounds_cell(),
+                host_filter_cloud_profile: None,
                 cloud_import_confirm_visible: false,
                 cloud_dynamic_group_state: std::collections::HashMap::new(),
                 cloud_dynamic_form_visible: false,
@@ -229,6 +241,13 @@ impl Oryxis {
                     oryxis_core::models::cloud::TransportKind::EcsExec,
                 cloud_dynamic_form_selected_key: None,
                 cloud_dynamic_form_selected_identity: None,
+                cloud_dynamic_form_label: String::new(),
+                cloud_dynamic_form_color: String::new(),
+                cloud_dynamic_form_icon: String::new(),
+                cloud_dynamic_form_parent_label: String::new(),
+                cloud_dynamic_form_cluster: String::new(),
+                cloud_dynamic_form_service: String::new(),
+                cloud_dynamic_form_container: String::new(),
                 hovered_dynamic_group_card: None,
                 hovered_cloud_card: None,
                 // Provider registry seeded once at boot. AWS runs as a
@@ -273,6 +292,7 @@ impl Oryxis {
                 setting_show_status_bar: true,
                 setting_tab_close_button_side: "left".into(),
                 setting_show_tab_status_dot: true,
+                setting_tab_accent_line: true,
                 sftp_enabled: true,
                 // Workspace is the v0.7 default. Existing users who
                 // never persisted `layout_mode` also fall through to
@@ -282,6 +302,10 @@ impl Oryxis {
                 setting_layout_mode: "workspace".into(),
                 setting_default_host_icon: "circular".into(),
                 setting_keepalive_interval: "30".into(),
+                setting_cloud_auto_refresh_enabled: false,
+                setting_cloud_auto_refresh_interval_minutes: "30".into(),
+                setting_cloud_auto_archive_orphans: false,
+                setting_cloud_orphan_archive_days: "7".into(),
                 setting_scrollback_rows: "10000".into(),
                 setting_sftp_concurrency: "2".into(),
                 setting_sftp_connect_timeout: "15".into(),
@@ -432,6 +456,30 @@ impl Oryxis {
 
     pub(crate) fn load_data_from_vault(&mut self) {
         if let Some(vault) = &self.vault {
+            // Auto-archive sweep: when the user has opted into the
+            // cleanup, drop orphan-imported hosts whose `orphaned_at`
+            // is older than the configured threshold. Runs before the
+            // in-memory load so the deleted rows don't briefly appear
+            // and then vanish.
+            if self.setting_cloud_auto_archive_orphans {
+                let days = self
+                    .setting_cloud_orphan_archive_days
+                    .parse::<i64>()
+                    .ok()
+                    .filter(|d| *d > 0)
+                    .unwrap_or(7);
+                let cutoff = chrono::Utc::now() - chrono::Duration::days(days);
+                if let Ok(existing) = vault.list_connections() {
+                    for c in existing.iter() {
+                        if let Some(cr) = c.cloud_ref.as_ref()
+                            && let Some(orphaned_at) = cr.orphaned_at
+                            && orphaned_at < cutoff
+                        {
+                            let _ = vault.delete_connection(&c.id);
+                        }
+                    }
+                }
+            }
             self.connections = vault.list_connections().unwrap_or_default();
             self.groups = vault.list_groups().unwrap_or_default();
             self.keys = vault.list_keys().unwrap_or_default();
@@ -530,6 +578,15 @@ impl Oryxis {
             if let Ok(Some(v)) = vault.get_setting("flatten_hosts") {
                 self.flatten_hosts = v == "true";
             }
+            if let Ok(Some(v)) = vault.get_setting("hosts_sort") {
+                self.hosts_sort = crate::state::ListSort::from_storage_str(&v);
+            }
+            if let Ok(Some(v)) = vault.get_setting("keys_sort") {
+                self.keys_sort = crate::state::ListSort::from_storage_str(&v);
+            }
+            if let Ok(Some(v)) = vault.get_setting("snippets_sort") {
+                self.snippets_sort = crate::state::ListSort::from_storage_str(&v);
+            }
             if let Ok(Some(v)) = vault.get_setting("sync_device_name") {
                 self.sync_device_name = v;
             }
@@ -575,6 +632,9 @@ impl Oryxis {
             }
             if let Ok(Some(v)) = vault.get_setting("show_tab_status_dot") {
                 self.setting_show_tab_status_dot = v == "true";
+            }
+            if let Ok(Some(v)) = vault.get_setting("tab_accent_line") {
+                self.setting_tab_accent_line = v == "true";
             }
             if let Ok(Some(v)) = vault.get_setting("sftp_enabled") {
                 self.sftp_enabled = v == "true";
@@ -633,6 +693,18 @@ impl Oryxis {
             }
             if let Ok(Some(v)) = vault.get_setting("scrollback_rows") {
                 self.setting_scrollback_rows = v;
+            }
+            if let Ok(Some(v)) = vault.get_setting("cloud_auto_refresh_enabled") {
+                self.setting_cloud_auto_refresh_enabled = v == "true";
+            }
+            if let Ok(Some(v)) = vault.get_setting("cloud_auto_refresh_interval_minutes") {
+                self.setting_cloud_auto_refresh_interval_minutes = v;
+            }
+            if let Ok(Some(v)) = vault.get_setting("cloud_auto_archive_orphans") {
+                self.setting_cloud_auto_archive_orphans = v == "true";
+            }
+            if let Ok(Some(v)) = vault.get_setting("cloud_orphan_archive_days") {
+                self.setting_cloud_orphan_archive_days = v;
             }
             if let Ok(Some(v)) = vault.get_setting("auto_reconnect") {
                 self.setting_auto_reconnect = v == "true";

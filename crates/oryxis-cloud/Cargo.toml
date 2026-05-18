@@ -13,3 +13,4 @@ serde_json = { workspace = true }
 uuid = { workspace = true }
 thiserror = { workspace = true }
 async-trait = "0.1"
+chrono = { workspace = true }

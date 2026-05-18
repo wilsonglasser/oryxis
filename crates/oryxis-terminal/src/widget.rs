@@ -16,6 +16,14 @@ use iced::{keyboard, mouse, Color, Font, Pixels, Point, Rectangle, Renderer, Siz
 use std::sync::{Arc, Mutex};
 use tokio::sync::mpsc;
 
+/// Bundled glyph-fallback font for the Unicode Private Use Area
+/// (Powerline / Font Awesome / Devicons / Octicons / etc). The font
+/// itself is loaded into iced/cosmic-text in `main.rs` via
+/// `include_bytes!`, here we just reference it by family name so the
+/// per-cell renderer can hand specific codepoints to it instead of
+/// the user's primary terminal font.
+const NERD_FONT: Font = Font::new("JetBrainsMono Nerd Font");
+
 // ---------------------------------------------------------------------------
 // Terminal State
 // ---------------------------------------------------------------------------
@@ -1524,14 +1532,37 @@ where
                 frame.fill_rectangle(Point::new(x, y), Size::new(width, cell_h), bg);
             }
 
-            // Draw character
+            // Draw character. Codepoints in the Unicode Private Use
+            // Area (U+E000-F8FF) are forced through the bundled
+            // JetBrainsMono Nerd Font: cosmic-text's auto-fallback
+            // tends to pick CJK fonts (which use the PUA for
+            // user-defined chars) before our Nerd Font for the F0xx
+            // range, so prompts with Powerline / Font Awesome / Devicons
+            // would render as tofu or wrong-script glyphs. Forcing the
+            // symbol font here is what alacritty/wezterm call a
+            // "symbol_map" — same idea, hard-coded to the bundled
+            // family since we ship it in the binary.
             if cd.c != ' ' && cd.c != '\0' {
+                let cp = cd.c as u32;
+                // Both Private Use Areas: BMP PUA covers Powerline,
+                // Font Awesome, Devicons, Octicons, Codicons and the
+                // rest of the legacy Nerd Font ranges; SMP PUA is
+                // where Nerd Font v3+ stuffed the Material Design
+                // Icons. Regular fonts don't use either area, so we
+                // can safely force the bundled Nerd Font across both.
+                let font = if (0xE000..=0xF8FF).contains(&cp)
+                    || (0xF0000..=0xFFFFD).contains(&cp)
+                {
+                    NERD_FONT
+                } else {
+                    self.font
+                };
                 frame.fill_text(CanvasText {
                     content: cd.c.to_string(),
                     position: Point::new(x, y),
                     color: fg,
                     size: Pixels(self.font_size),
-                    font: self.font,
+                    font,
                     align_x: alignment::Horizontal::Left.into(),
                     align_y: alignment::Vertical::Top,
                     ..Default::default()

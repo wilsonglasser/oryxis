@@ -419,6 +419,10 @@ impl VaultStore {
         let _ = self.db.execute_batch("ALTER TABLE connections ADD COLUMN initial_command TEXT;");
         let _ = self.db.execute_batch("ALTER TABLE connections ADD COLUMN keepalive_interval INTEGER;");
         let _ = self.db.execute_batch("ALTER TABLE connections ADD COLUMN icon_style TEXT;");
+        // JSON array of field names the user has explicitly overridden
+        // on a cloud-imported host. Reimport leaves listed fields
+        // alone. NULL / empty for manual hosts and untouched imports.
+        let _ = self.db.execute_batch("ALTER TABLE connections ADD COLUMN customized_fields TEXT;");
         // Backing query for dynamic groups (ECS services / K8s workloads).
         // JSON-encoded `CloudQuery`. NULL for manual groups.
         let _ = self.db.execute_batch("ALTER TABLE groups ADD COLUMN cloud_query TEXT;");
@@ -657,8 +661,8 @@ impl VaultStore {
             "INSERT OR REPLACE INTO connections
              (id, label, hostname, port, username, auth_method, key_id, group_id,
               jump_chain, proxy, tags, notes, color, password, last_used, created_at, updated_at, identity_id, mcp_enabled, port_forwards,
-              detected_os, custom_icon, custom_color, agent_forwarding, proxy_identity_id, terminal_theme, cloud_ref, initial_command, keepalive_interval, icon_style)
-             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20,?21,?22,?23,?24,?25,?26,?27,?28,?29,?30)",
+              detected_os, custom_icon, custom_color, agent_forwarding, proxy_identity_id, terminal_theme, cloud_ref, initial_command, keepalive_interval, icon_style, customized_fields)
+             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20,?21,?22,?23,?24,?25,?26,?27,?28,?29,?30,?31)",
             params![
                 conn.id.to_string(),
                 conn.label,
@@ -693,6 +697,11 @@ impl VaultStore {
                 conn.initial_command,
                 conn.keepalive_interval,
                 conn.icon_style,
+                if conn.customized_fields.is_empty() {
+                    None
+                } else {
+                    Some(serde_json::to_string(&conn.customized_fields).unwrap_or_default())
+                },
             ],
         )?;
         // Re-creation clears any stale tombstone for this id (the
@@ -715,12 +724,12 @@ impl VaultStore {
         let query = match mcp_filter {
             Some(true) => {
                 "SELECT id, label, hostname, port, username, auth_method, key_id, group_id,
-                        jump_chain, proxy, tags, notes, color, last_used, created_at, updated_at, identity_id, mcp_enabled, port_forwards, detected_os, custom_icon, custom_color, agent_forwarding, proxy_identity_id, terminal_theme, cloud_ref, initial_command, keepalive_interval, icon_style
+                        jump_chain, proxy, tags, notes, color, last_used, created_at, updated_at, identity_id, mcp_enabled, port_forwards, detected_os, custom_icon, custom_color, agent_forwarding, proxy_identity_id, terminal_theme, cloud_ref, initial_command, keepalive_interval, icon_style, customized_fields
                  FROM connections WHERE mcp_enabled = 1 ORDER BY label"
             }
             _ => {
                 "SELECT id, label, hostname, port, username, auth_method, key_id, group_id,
-                        jump_chain, proxy, tags, notes, color, last_used, created_at, updated_at, identity_id, mcp_enabled, port_forwards, detected_os, custom_icon, custom_color, agent_forwarding, proxy_identity_id, terminal_theme, cloud_ref, initial_command, keepalive_interval, icon_style
+                        jump_chain, proxy, tags, notes, color, last_used, created_at, updated_at, identity_id, mcp_enabled, port_forwards, detected_os, custom_icon, custom_color, agent_forwarding, proxy_identity_id, terminal_theme, cloud_ref, initial_command, keepalive_interval, icon_style, customized_fields
                  FROM connections ORDER BY label"
             }
         };
@@ -819,6 +828,12 @@ impl VaultStore {
                         .flatten()
                         .and_then(|v| u32::try_from(v).ok()),
                     icon_style: row.get::<_, Option<String>>(28).ok().flatten(),
+                    customized_fields: row
+                        .get::<_, Option<String>>(29)
+                        .ok()
+                        .flatten()
+                        .and_then(|s| serde_json::from_str(&s).ok())
+                        .unwrap_or_default(),
                 })
             })?
             .collect::<Result<Vec<_>, _>>()?;
@@ -3727,6 +3742,7 @@ mod tests {
             region: Some("us-east-1".into()),
             transport_pref: TransportKind::InstanceConnect,
             auto_refresh_hostname: true,
+            orphaned_at: None,
         });
         conn.initial_command = Some("exec bash".into());
         vault.save_connection(&conn, None).unwrap();

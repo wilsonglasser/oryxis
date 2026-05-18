@@ -92,6 +92,17 @@ pub struct Connection {
     /// older peers that never saw the field.
     #[serde(default)]
     pub icon_style: Option<String>,
+    /// Names of fields the user has explicitly overridden after this
+    /// host was imported from a cloud provider. Reimport / refresh
+    /// flows consult this list before overwriting a field with the
+    /// upstream value: if the field name appears here, the user's value
+    /// wins. Empty on manually-added hosts and on freshly-imported
+    /// cloud hosts. Today only `label`, `hostname`, and `username` are
+    /// tracked since those are the fields AWS discovery actually
+    /// pushes; the structure stays open-ended so future providers can
+    /// flag more without a schema change.
+    #[serde(default)]
+    pub customized_fields: Vec<String>,
 }
 
 impl Connection {
@@ -127,6 +138,7 @@ impl Connection {
             initial_command: None,
             keepalive_interval: None,
             icon_style: None,
+            customized_fields: Vec::new(),
         }
     }
 }

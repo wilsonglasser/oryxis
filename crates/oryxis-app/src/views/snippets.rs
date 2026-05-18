@@ -12,10 +12,16 @@ use crate::widgets::{card_grid_columns, dir_align_x, dir_row, distribute_card_gr
 
 impl Oryxis {
     pub(crate) fn view_snippets(&self) -> Element<'_, Message> {
+        let sort_btn = crate::widgets::sort_toolbar_button(
+            crate::state::SortMenuKind::Snippets,
+            self.snippets_sort,
+        );
         let toolbar = container(
             dir_row(vec![
                 text(t("snippets")).size(20).color(OryxisColors::t().text_primary).into(),
                 Space::new().width(Length::Fill).into(),
+                sort_btn,
+                Space::new().width(8).into(),
                 {
                     let fg = OryxisColors::t().button_text;
                     button(
@@ -115,7 +121,17 @@ impl Oryxis {
         }
 
         let snippet_needle = self.snippet_search.to_lowercase();
-        for (idx, snip) in self.snippets.iter().enumerate() {
+        // Apply the toolbar sort by reordering an index list, the source
+        // collection stays in insertion order (its index is what the
+        // EditSnippet / RunSnippet messages carry).
+        let mut snippet_order: Vec<usize> = (0..self.snippets.len()).collect();
+        self.snippets_sort.sort_items(
+            &mut snippet_order,
+            |&i| self.snippets[i].label.clone(),
+            |&i| self.snippets[i].created_at,
+        );
+        for idx in snippet_order {
+            let snip = &self.snippets[idx];
             if !snippet_needle.is_empty()
                 && !snip.label.to_lowercase().contains(&snippet_needle)
                 && !snip.command.to_lowercase().contains(&snippet_needle)

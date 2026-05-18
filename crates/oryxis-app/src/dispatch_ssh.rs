@@ -666,10 +666,14 @@ impl Oryxis {
                 // Manual trigger from the settings button OR the burger
                 // menu; dismiss the burger so the resulting "Checking..."
                 // status (and any modal that follows) isn't hidden by
-                // the dropdown that's still open.
+                // the dropdown that's still open. Also surface a
+                // toast so users who fired this from the burger menu
+                // (where the Settings panel's `update_check_status`
+                // line is invisible) still see feedback.
                 self.show_burger_menu = false;
                 self.update_error = None;
                 self.update_check_status = Some("Checking…".into());
+                self.toast = Some(crate::i18n::t("update_check_checking").to_string());
                 if let Some(vault) = &self.vault {
                     let _ = vault.set_setting("skipped_update_version", "");
                 }
@@ -684,6 +688,14 @@ impl Oryxis {
             Message::UpdateCheckResult(info) => {
                 match info {
                     Some(i) => {
+                        // Surface the new version as a toast too so a
+                        // burger-menu-triggered check confirms the
+                        // result even before the update modal renders.
+                        self.toast = Some(format!(
+                            "{} {}",
+                            crate::i18n::t("update_check_available"),
+                            i.version,
+                        ));
                         self.pending_update = Some(i);
                         self.update_check_status = None;
                     }
@@ -697,9 +709,23 @@ impl Oryxis {
                                 "You're running the latest version ({}).",
                                 env!("CARGO_PKG_VERSION"),
                             ));
+                            self.toast = Some(format!(
+                                "{} ({})",
+                                crate::i18n::t("update_check_up_to_date"),
+                                env!("CARGO_PKG_VERSION"),
+                            ));
                         }
                     }
                 }
+                // Auto-dismiss the toast after the standard 1.8 s
+                // window matches the existing "copied to clipboard"
+                // toast cadence so users get consistent feedback timing.
+                return Ok(Task::perform(
+                    async {
+                        tokio::time::sleep(std::time::Duration::from_millis(2_500)).await;
+                    },
+                    |_| Message::ToastClear,
+                ));
             }
             Message::UpdateSkipVersion => {
                 if let Some(info) = self.pending_update.take()

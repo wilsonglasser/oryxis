@@ -10,6 +10,7 @@
 use iced::border::Radius;
 use iced::widget::button::Status as BtnStatus;
 use iced::widget::{button, column, container, scrollable, text, text_input, MouseArea, Space};
+use uuid::Uuid;
 use iced::{Background, Border, Color, Element, Length, Padding};
 
 use oryxis_core::models::connection::AuthMethod;
@@ -21,6 +22,32 @@ use crate::theme::OryxisColors;
 use crate::widgets::{card_grid_columns, dir_align_x, dir_row, distribute_card_grid};
 
 impl Oryxis {
+    /// Recursively check whether a group contains at least one host or
+    /// nested dynamic group whose cloud origin matches `profile_id`.
+    /// Used by the cloud-profile filter chip so a parent folder stays
+    /// visible when only its descendants match. Bounded by the
+    /// underlying acyclic group structure; if upstream data ever holds
+    /// a cycle, the visited set would need to be carried explicitly.
+    fn group_contains_cloud_profile(&self, gid: Uuid, profile_id: Uuid) -> bool {
+        if self.connections.iter().any(|c| {
+            c.group_id == Some(gid)
+                && c.cloud_ref.as_ref().map(|r| r.profile_id) == Some(profile_id)
+        }) {
+            return true;
+        }
+        for child in self.groups.iter().filter(|g| g.parent_id == Some(gid)) {
+            if let Some(q) = &child.cloud_query
+                && q.profile_id == profile_id
+            {
+                return true;
+            }
+            if self.group_contains_cloud_profile(child.id, profile_id) {
+                return true;
+            }
+        }
+        false
+    }
+
     pub(super) fn dashboard_main_content(&self) -> Element<'_, Message> {
         let toolbar = self.dashboard_toolbar();
 
@@ -224,37 +251,191 @@ impl Oryxis {
                         .center(Length::Fill)
                         .into()
                     } else {
+                        // Pull the ECS coordinates once per body
+                        // render so each row can build its own
+                        // `aws ecs execute-command` clipboard payload
+                        // without re-matching the query kind. K8s
+                        // pods leave these empty (no aws-cli copy
+                        // makes sense there).
+                        let (ecs_cluster, ecs_container) = match &query.kind {
+                            oryxis_core::models::cloud::CloudQueryKind::EcsTasks {
+                                cluster,
+                                container,
+                                ..
+                            } => (cluster.clone(), container.clone()),
+                            _ => (String::new(), String::new()),
+                        };
                         let mut items: Vec<Element<'_, Message>> = Vec::new();
                         for h in hosts {
-                            // Click → ECS Exec into this task. Handler
-                            // calls AWS, spawns session-manager-plugin
-                            // in a PTY, and opens a new terminal tab.
                             let task_id = h.resource_id.clone();
                             let task_label = h.label.clone();
+                            let cli_region = h.region.clone().unwrap_or_default();
+                            // Use the per-row container so wildcard
+                            // queries (empty query.container) still
+                            // produce a valid CLI string targeting
+                            // the specific container the user
+                            // clicked. Falls back to the query
+                            // container for single-container imports.
+                            let cli_container = h
+                                .container_name
+                                .clone()
+                                .filter(|s| !s.is_empty())
+                                .unwrap_or_else(|| ecs_container.clone());
+                            let cli_command = if !ecs_cluster.is_empty()
+                                && !cli_container.is_empty()
+                                && !cli_region.is_empty()
+                            {
+                                Some(format!(
+                                    "aws ecs execute-command --region {} --cluster {} --task {} --container {} --interactive --command /bin/bash",
+                                    cli_region, ecs_cluster, task_id, cli_container,
+                                ))
+                            } else {
+                                None
+                            };
+
+                            // Primary line: container name (when set,
+                            // ECS task with N containers, today N=1
+                            // since the query filters to the imported
+                            // container) followed by the task id. For
+                            // bare resources the task id is the
+                            // primary label.
+                            let primary = match &h.container_name {
+                                Some(name) if !name.is_empty() => name.clone(),
+                                _ => h.resource_id.clone(),
+                            };
+                            let secondary = match (&h.container_name, &h.task_definition) {
+                                (Some(_), Some(td)) => {
+                                    format!("{}  ·  {}", h.resource_id, td)
+                                }
+                                (Some(_), None) => h.resource_id.clone(),
+                                (None, Some(td)) => td.clone(),
+                                _ => String::new(),
+                            };
+
+                            // Meta line: IP · AZ · "5m ago". Skipped
+                            // pieces collapse so a row with only an IP
+                            // doesn't show "  ·  ·  ·  ".
+                            let started_str = h
+                                .started_at
+                                .map(relative_time_ago)
+                                .unwrap_or_default();
+                            let mut meta_parts: Vec<String> = Vec::new();
+                            if let Some(ip) = &h.private_ip
+                                && !ip.is_empty()
+                            {
+                                meta_parts.push(ip.clone());
+                            }
+                            if let Some(az) = &h.availability_zone
+                                && !az.is_empty()
+                            {
+                                meta_parts.push(az.clone());
+                            }
+                            if !started_str.is_empty() {
+                                meta_parts.push(started_str);
+                            }
+                            let meta_line = meta_parts.join("  ·  ");
+
+                            // Status pill, colour-coded so the user
+                            // can scan RUNNING (green) vs PENDING /
+                            // STOPPED at a glance. Unknown statuses
+                            // fall through to muted grey.
+                            let status_upper: Option<String> = h
+                                .status
+                                .as_deref()
+                                .map(|s| s.to_ascii_uppercase());
+                            let status_pill: Element<'_, Message> = match status_upper
+                                .as_deref()
+                            {
+                                Some("RUNNING") => status_pill_widget(
+                                    "RUNNING".into(),
+                                    OryxisColors::t().success,
+                                ),
+                                Some("PENDING") | Some("PROVISIONING") => {
+                                    status_pill_widget(
+                                        status_upper.clone().unwrap(),
+                                        OryxisColors::t().warning,
+                                    )
+                                }
+                                Some("STOPPED") | Some("DEACTIVATING") => {
+                                    status_pill_widget(
+                                        status_upper.clone().unwrap(),
+                                        OryxisColors::t().error,
+                                    )
+                                }
+                                Some(_) => status_pill_widget(
+                                    status_upper.clone().unwrap(),
+                                    OryxisColors::t().text_muted,
+                                ),
+                                None => Space::new().width(0).into(),
+                            };
+
+                            let mut text_col: Vec<Element<'_, Message>> = vec![
+                                text(primary)
+                                    .size(13)
+                                    .color(OryxisColors::t().text_primary)
+                                    .wrapping(iced::widget::text::Wrapping::None)
+                                    .into(),
+                            ];
+                            if !secondary.is_empty() {
+                                text_col.push(Space::new().height(2).into());
+                                text_col.push(
+                                    text(secondary)
+                                        .size(10)
+                                        .color(OryxisColors::t().text_muted)
+                                        .wrapping(iced::widget::text::Wrapping::None)
+                                        .into(),
+                                );
+                            }
+                            if !meta_line.is_empty() {
+                                text_col.push(Space::new().height(2).into());
+                                text_col.push(
+                                    text(meta_line)
+                                        .size(10)
+                                        .color(OryxisColors::t().text_muted)
+                                        .wrapping(iced::widget::text::Wrapping::None)
+                                        .into(),
+                                );
+                            }
+
                             items.push(
                                 button(
                                     dir_row(vec![
                                         iced_fonts::lucide::container()
-                                            .size(14)
+                                            .size(16)
                                             .color(OryxisColors::t().text_muted)
                                             .into(),
-                                        Space::new().width(8).into(),
-                                        text(h.label.clone())
-                                            .size(12)
-                                            .color(OryxisColors::t().text_primary)
+                                        Space::new().width(10).into(),
+                                        iced::widget::Column::with_children(text_col)
+                                            .width(Length::Fill)
+                                            .align_x(dir_align_x())
+                                            .clip(true)
                                             .into(),
+                                        Space::new().width(10).into(),
+                                        status_pill,
                                     ])
                                     .align_y(iced::Alignment::Center),
                                 )
                                 .on_press(Message::ConnectEcsExecTask {
                                     group_id: gid,
-                                    task_id,
+                                    task_id: task_id.clone(),
                                     task_label,
+                                    // Specific container the user
+                                    // clicked. Under wildcard mode
+                                    // each row is one container; the
+                                    // connect path needs the name to
+                                    // target the right one in the
+                                    // task. Falls back to the query
+                                    // container when the row didn't
+                                    // populate (legacy hosts).
+                                    container: h
+                                        .container_name
+                                        .clone()
+                                        .unwrap_or_else(|| ecs_container.clone()),
                                 })
                                 .padding(Padding {
-                                    top: 8.0,
+                                    top: 10.0,
                                     right: 12.0,
-                                    bottom: 8.0,
+                                    bottom: 10.0,
                                     left: 12.0,
                                 })
                                 .width(Length::Fill)
@@ -285,6 +466,67 @@ impl Oryxis {
                                 })
                                 .into(),
                             );
+                            // Copy CLI overlay: small button on the
+                            // trailing edge of the row that copies
+                            // the matching `aws ecs execute-command`
+                            // invocation. Lives in a Stack so the
+                            // click doesn't leak into the underlying
+                            // ConnectEcsExecTask button. Only mounted
+                            // when we have enough context to build a
+                            // valid command (ECS path, region known).
+                            if let Some(cmd) = cli_command {
+                                let last_idx = items.len() - 1;
+                                let row_el = std::mem::replace(
+                                    &mut items[last_idx],
+                                    Space::new().height(0).into(),
+                                );
+                                let copy_btn: Element<'_, Message> = button(
+                                    iced_fonts::lucide::clipboard_copy()
+                                        .size(13)
+                                        .color(OryxisColors::t().text_muted),
+                                )
+                                .on_press(Message::CopyToClipboard(cmd))
+                                .padding(Padding {
+                                    top: 4.0,
+                                    right: 6.0,
+                                    bottom: 4.0,
+                                    left: 6.0,
+                                })
+                                .style(|_, status| {
+                                    let bg = match status {
+                                        BtnStatus::Hovered => {
+                                            OryxisColors::t().bg_hover
+                                        }
+                                        _ => Color::TRANSPARENT,
+                                    };
+                                    button::Style {
+                                        background: Some(Background::Color(bg)),
+                                        border: Border {
+                                            radius: Radius::from(4.0),
+                                            ..Default::default()
+                                        },
+                                        ..Default::default()
+                                    }
+                                })
+                                .into();
+                                let overlay = container(copy_btn)
+                                    .width(Length::Fill)
+                                    .height(Length::Fill)
+                                    .align_x(iced::alignment::Horizontal::Right)
+                                    .align_y(iced::alignment::Vertical::Center)
+                                    .padding(Padding {
+                                        top: 0.0,
+                                        right: 8.0,
+                                        bottom: 0.0,
+                                        left: 0.0,
+                                    });
+                                let stacked: Element<'_, Message> =
+                                    iced::widget::Stack::new()
+                                        .push(row_el)
+                                        .push(overlay)
+                                        .into();
+                                items[last_idx] = stacked;
+                            }
                             items.push(Space::new().height(6).into());
                         }
                         items.push(Space::new().height(8).into());
@@ -334,7 +576,36 @@ impl Oryxis {
                     roots_to_render.push(g.id);
                 }
             }
+            // Apply the toolbar sort to folder cards. Hidden groups (no
+            // direct match) just fall through the search filter below.
+            self.hosts_sort.sort_items(
+                &mut roots_to_render,
+                |gid| {
+                    self.groups
+                        .iter()
+                        .find(|g| g.id == *gid)
+                        .map(|g| g.label.clone())
+                        .unwrap_or_default()
+                },
+                |gid| {
+                    self.groups
+                        .iter()
+                        .find(|g| g.id == *gid)
+                        .map(|g| g.created_at)
+                        .unwrap_or_else(chrono::Utc::now)
+                },
+            );
             for gid in roots_to_render {
+                // Cloud-profile filter, hide folders whose subtree has
+                // no host or dynamic group matching the active profile.
+                // Active filter intentionally hides every manual,
+                // non-cloud folder at root, the chip is the user's
+                // explicit "show me only this provider" lens.
+                if let Some(filter_pid) = self.host_filter_cloud_profile
+                    && !self.group_contains_cloud_profile(gid, filter_pid)
+                {
+                    continue;
+                }
                 if let Some(group) = self.groups.iter().find(|g| g.id == gid)
                         && (search_lower.is_empty()
                             || group.label.to_lowercase().contains(&search_lower)) {
@@ -535,12 +806,26 @@ impl Oryxis {
             // only show dynamic groups WITHOUT a `parent_id`; nested
             // ones (auto-imported under their cloud-profile folder)
             // surface when the user opens that folder, just like
-            // manual nested groups would.
-            for group in &self.groups {
+            // manual nested groups would. Sorted indices keep dynamic
+            // groups interleaved with manual folders by the same rule
+            // (label / created_at) instead of vault-insertion order.
+            let mut dyn_group_order: Vec<usize> = (0..self.groups.len()).collect();
+            self.hosts_sort.sort_items(
+                &mut dyn_group_order,
+                |&i| self.groups[i].label.clone(),
+                |&i| self.groups[i].created_at,
+            );
+            for dyn_i in dyn_group_order {
+                let group = &self.groups[dyn_i];
                 let Some(query) = group.cloud_query.as_ref() else { continue };
                 if group.parent_id.is_some() { continue }
                 if !search_lower.is_empty()
                     && !group.label.to_lowercase().contains(&search_lower)
+                {
+                    continue;
+                }
+                if let Some(filter_pid) = self.host_filter_cloud_profile
+                    && query.profile_id != filter_pid
                 {
                     continue;
                 }
@@ -554,20 +839,40 @@ impl Oryxis {
                     } => format!("K8s · {context}/{namespace}"),
                 };
 
-                // Dynamic groups always have a known brand from their
-                // own cloud_query (ECS hexagon-box, K8s wheel). We
-                // don't expose a UI to set group icons, so honouring
-                // `group.icon` here is moot, derive from the query.
-                let brand: &str = match query.kind {
+                // Icon precedence (matches manual-folder cards):
+                //   1. Explicit `group.icon` set by the user via the
+                //      dynamic-group editor (Phase 4) — wins so a
+                //      renamed/recustomised ECS group reflects the
+                //      user's choice.
+                //   2. Otherwise the query-derived brand (`ecs` for
+                //      ECS tasks, `kubernetes` for K8s pods) so a
+                //      fresh import still shows the right glyph.
+                // Background precedence:
+                //   1. Explicit `group.color` (hex) wins.
+                //   2. Otherwise the icon's brand colour from
+                //      `provider_icon` (orange for ecs/aws, blue for
+                //      kubernetes, ...).
+                let query_brand: &str = match query.kind {
                     oryxis_core::models::cloud::CloudQueryKind::EcsTasks { .. } => "ecs",
                     oryxis_core::models::cloud::CloudQueryKind::K8sPods { .. } => "kubernetes",
                 };
-                let folder_glyph = crate::os_icon::custom_icon_glyph(brand);
-                let folder_bg = crate::os_icon::provider_icon(
-                    brand,
-                    OryxisColors::t().accent,
-                )
-                .1;
+                let icon_id: &str = group
+                    .icon
+                    .as_deref()
+                    .filter(|s| !s.is_empty())
+                    .unwrap_or(query_brand);
+                let folder_glyph = crate::os_icon::custom_icon_glyph(icon_id);
+                let folder_bg = group
+                    .color
+                    .as_deref()
+                    .and_then(crate::os_icon::parse_hex_color)
+                    .unwrap_or_else(|| {
+                        crate::os_icon::provider_icon(
+                            icon_id,
+                            OryxisColors::t().accent,
+                        )
+                        .1
+                    });
                 // Render via host_icon so the dynamic-group folder
                 // mirrors the global shape preference, same as the
                 // manual-folder card above.
@@ -671,12 +976,25 @@ impl Oryxis {
             // Inside a folder: render its nested dynamic groups (e.g.
             // ECS service / K8s deployment dynamic groups whose
             // `parent_id` points at this folder). Same card style as
-            // the root pass, just filtered by parent.
-            for group in &self.groups {
+            // the root pass, just filtered by parent. Same sort rule
+            // too so the nested view stays consistent with the root.
+            let mut nested_dyn_order: Vec<usize> = (0..self.groups.len()).collect();
+            self.hosts_sort.sort_items(
+                &mut nested_dyn_order,
+                |&i| self.groups[i].label.clone(),
+                |&i| self.groups[i].created_at,
+            );
+            for nested_i in nested_dyn_order {
+                let group = &self.groups[nested_i];
                 let Some(query) = group.cloud_query.as_ref() else { continue };
                 if group.parent_id != Some(active_gid) { continue }
                 if !search_lower.is_empty()
                     && !group.label.to_lowercase().contains(&search_lower)
+                {
+                    continue;
+                }
+                if let Some(filter_pid) = self.host_filter_cloud_profile
+                    && query.profile_id != filter_pid
                 {
                     continue;
                 }
@@ -690,22 +1008,36 @@ impl Oryxis {
                     } => format!("K8s · {context}/{namespace}"),
                 };
 
-                let (folder_glyph, folder_bg): (BrandIcon, Color) =
-                    match group.icon.as_deref() {
-                    Some(custom) if !custom.is_empty() => {
-                        let glyph = crate::os_icon::custom_icon_glyph(custom);
-                        let brand = crate::os_icon::provider_icon(
-                            custom.strip_prefix("si:").unwrap_or(custom),
+                // Mirror the root-level dynamic-group precedence so a
+                // nested ECS group reacts to the user's icon / colour
+                // edits in the Edit Cloud Group panel. Icon falls back
+                // to the query brand (`ecs` / `kubernetes`), colour
+                // falls back to the icon's brand colour. Previously
+                // the nested path looked at `group.icon` alone and
+                // ignored `group.color` entirely, so colour edits
+                // never reached the card.
+                let query_brand: &str = match query.kind {
+                    oryxis_core::models::cloud::CloudQueryKind::EcsTasks { .. } => "ecs",
+                    oryxis_core::models::cloud::CloudQueryKind::K8sPods { .. } => "kubernetes",
+                };
+                let icon_id: &str = group
+                    .icon
+                    .as_deref()
+                    .filter(|s| !s.is_empty())
+                    .map(|s| s.strip_prefix("si:").unwrap_or(s))
+                    .unwrap_or(query_brand);
+                let folder_glyph = crate::os_icon::custom_icon_glyph(icon_id);
+                let folder_bg = group
+                    .color
+                    .as_deref()
+                    .and_then(crate::os_icon::parse_hex_color)
+                    .unwrap_or_else(|| {
+                        crate::os_icon::provider_icon(
+                            icon_id,
                             OryxisColors::t().accent,
                         )
-                        .1;
-                        (glyph, brand)
-                    }
-                    _ => (
-                        BrandIcon::Glyph(iced_fonts::lucide::cloud()),
-                        OryxisColors::t().accent,
-                    ),
-                };
+                        .1
+                    });
                 let host_style = crate::widgets::resolve_host_icon_style(
                     None,
                     &self.setting_default_host_icon,
@@ -794,8 +1126,18 @@ impl Oryxis {
             }
         }
 
-        // Show host cards, filtered by active group and search
-        for (idx, conn) in self.connections.iter().enumerate() {
+        // Show host cards, filtered by active group and search.
+        // Reorder by the toolbar sort first; `idx` still references the
+        // vault position so downstream messages (EditConnection,
+        // ConnectSsh, …) keep targeting the right row.
+        let mut host_order: Vec<usize> = (0..self.connections.len()).collect();
+        self.hosts_sort.sort_items(
+            &mut host_order,
+            |&i| self.connections[i].label.clone(),
+            |&i| self.connections[i].created_at,
+        );
+        for idx in host_order {
+            let conn = &self.connections[idx];
             // Filter: inside a folder always restrict to that group;
             // at root, hide grouped hosts only when not flattening
             // (flatten = on means show every host, including grouped
@@ -811,6 +1153,17 @@ impl Oryxis {
                 let label_match = conn.label.to_lowercase().contains(&search_lower);
                 let host_match = conn.hostname.to_lowercase().contains(&search_lower);
                 if !label_match && !host_match { continue; }
+            }
+
+            // Cloud-profile filter, only hosts imported from the
+            // active filter profile survive. Hosts without a cloud
+            // origin are hidden too so the lens stays consistent.
+            if let Some(filter_pid) = self.host_filter_cloud_profile {
+                let matches =
+                    conn.cloud_ref.as_ref().map(|r| r.profile_id) == Some(filter_pid);
+                if !matches {
+                    continue;
+                }
             }
 
             let is_connected = self.tabs.iter().any(|t| t.label == conn.label);
@@ -875,22 +1228,122 @@ impl Oryxis {
                 Padding { top: 8.0, right: pad_trailing, bottom: 8.0, left: 2.0 }
             };
 
+            // Cloud-origin badge: small brand glyph that used to sit
+            // inline with the label (and got clipped on long names).
+            // Moved to the LEADING edge of the subtitle row so it
+            // never competes with the title for horizontal space.
+            // Stored as (brand_key, badge_color, is_orphan) so the
+            // glyph can be re-resolved at the use site instead of
+            // moved out of a shared tuple (`BrandIcon::view` consumes
+            // self and `BrandIcon` doesn't impl Clone).
+            let cloud_decoration: Option<(&'static str, Color, bool)> =
+                conn.cloud_ref.as_ref().map(|cr| {
+                    let provider = self
+                        .cloud_profiles
+                        .iter()
+                        .find(|p| p.id == cr.profile_id)
+                        .map(|p| p.provider.as_str())
+                        .unwrap_or("cloud");
+                    let brand_key: &'static str = match provider {
+                        "aws" => "aws",
+                        "k8s" | "kubernetes" => "kubernetes",
+                        _ => "cloud",
+                    };
+                    let is_orphan = cr.orphaned_at.is_some();
+                    let (_brand_glyph, brand_color_default) = crate::os_icon::provider_icon(
+                        brand_key,
+                        OryxisColors::t().accent,
+                    );
+                    let badge_color = if is_orphan {
+                        OryxisColors::t().text_muted
+                    } else {
+                        brand_color_default
+                    };
+                    (brand_key, badge_color, is_orphan)
+                });
+
+            let label_color = match &cloud_decoration {
+                Some((_, _, true)) => OryxisColors::t().text_muted,
+                _ => OryxisColors::t().text_primary,
+            };
+            let label_el: Element<'_, Message> = if let Some((_, _, true)) = &cloud_decoration {
+                // Orphan: keep the pill next to the label so the user
+                // sees it at the title's eye level.
+                let muted = OryxisColors::t().text_muted;
+                let pill = container(
+                    text(t("host_orphan_label"))
+                        .size(9)
+                        .color(OryxisColors::t().text_muted),
+                )
+                .padding(Padding {
+                    top: 1.0,
+                    right: 6.0,
+                    bottom: 1.0,
+                    left: 6.0,
+                })
+                .style(move |_| container::Style {
+                    background: Some(Background::Color(Color { a: 0.10, ..muted })),
+                    border: Border {
+                        radius: Radius::from(6.0),
+                        color: Color { a: 0.30, ..muted },
+                        width: 1.0,
+                    },
+                    ..Default::default()
+                });
+                dir_row(vec![
+                    text(&conn.label)
+                        .size(13)
+                        .color(label_color)
+                        .wrapping(iced::widget::text::Wrapping::None)
+                        .into(),
+                    Space::new().width(6).into(),
+                    pill.into(),
+                ])
+                .align_y(iced::Alignment::Center)
+                .into()
+            } else {
+                text(&conn.label)
+                    .size(13)
+                    .color(label_color)
+                    .wrapping(iced::widget::text::Wrapping::None)
+                    .into()
+            };
+
+            // Subtitle row carries the brand badge on its leading edge
+            // when this host is cloud-sourced. Manual hosts get just
+            // the subtitle text (no leading gap).
+            let subtitle_el: Element<'_, Message> = match &cloud_decoration {
+                Some((brand_key, color, _)) => {
+                    let glyph = crate::os_icon::custom_icon_glyph(brand_key);
+                    dir_row(vec![
+                        glyph.view(10.0, *color),
+                        Space::new().width(6).into(),
+                        text(subtitle)
+                            .size(10)
+                            .color(OryxisColors::t().text_muted)
+                            .wrapping(iced::widget::text::Wrapping::None)
+                            .into(),
+                    ])
+                    .align_y(iced::Alignment::Center)
+                    .into()
+                }
+                None => text(subtitle)
+                    .size(10)
+                    .color(OryxisColors::t().text_muted)
+                    .wrapping(iced::widget::text::Wrapping::None)
+                    .into(),
+            };
+
             let card_btn = button(
                 container(
                     dir_row(vec![
                         icon_box,
                         Space::new().width(8).into(),
-                        column![
-                            text(&conn.label)
-                                .size(13)
-                                .color(OryxisColors::t().text_primary)
-                                .wrapping(iced::widget::text::Wrapping::None),
-                            Space::new().height(2),
-                            text(subtitle)
-                                .size(10)
-                                .color(OryxisColors::t().text_muted)
-                                .wrapping(iced::widget::text::Wrapping::None),
-                        ]
+                        iced::widget::Column::with_children(vec![
+                            label_el,
+                            Space::new().height(2).into(),
+                            subtitle_el,
+                        ])
                         .width(Length::Fill)
                         .align_x(crate::widgets::dir_align_x())
                         .clip(true)
@@ -1042,9 +1495,142 @@ impl Oryxis {
                 .align_x(crate::widgets::dir_align_x()),
         ).height(Length::Fill);
 
-        let main_content = column![toolbar, search_bar, status, grid]
+        // Cloud-profile filter chip, only rendered while a filter is
+        // active. Sits between search and the grid so the user always
+        // has a visible way to clear it. Picks the brand glyph and
+        // colour from the active profile's provider so AWS reads
+        // orange, K8s blue, etc.
+        let filter_chip: Element<'_, Message> = if let Some(filter_pid) =
+            self.host_filter_cloud_profile
+        {
+            let profile = self.cloud_profiles.iter().find(|p| p.id == filter_pid);
+            let profile_label = profile.map(|p| p.label.clone()).unwrap_or_default();
+            let provider = profile.map(|p| p.provider.as_str()).unwrap_or("cloud");
+            let brand_key = match provider {
+                "aws" => "aws",
+                "k8s" | "kubernetes" => "kubernetes",
+                _ => "cloud",
+            };
+            let (brand_glyph, brand_color) =
+                crate::os_icon::provider_icon(brand_key, OryxisColors::t().accent);
+            let bg_color = brand_color;
+            let chip = container(
+                dir_row(vec![
+                    brand_glyph.view(12.0, brand_color),
+                    Space::new().width(6).into(),
+                    text(crate::i18n::t("host_filter_active"))
+                        .size(11)
+                        .color(OryxisColors::t().text_muted)
+                        .into(),
+                    Space::new().width(4).into(),
+                    text(profile_label)
+                        .size(11)
+                        .color(OryxisColors::t().text_primary)
+                        .into(),
+                    Space::new().width(6).into(),
+                    button(
+                        text("\u{00D7}")
+                            .size(13)
+                            .color(OryxisColors::t().text_muted),
+                    )
+                    .on_press(Message::HostFilterByCloudProfile(None))
+                    .padding(Padding {
+                        top: 0.0,
+                        right: 6.0,
+                        bottom: 0.0,
+                        left: 6.0,
+                    })
+                    .style(|_, _| button::Style {
+                        background: None,
+                        ..Default::default()
+                    })
+                    .into(),
+                ])
+                .align_y(iced::Alignment::Center),
+            )
+            .padding(Padding {
+                top: 4.0,
+                right: 4.0,
+                bottom: 4.0,
+                left: 10.0,
+            })
+            .style(move |_| container::Style {
+                background: Some(Background::Color(Color {
+                    a: 0.12,
+                    ..bg_color
+                })),
+                border: Border {
+                    radius: Radius::from(14.0),
+                    color: Color { a: 0.30, ..bg_color },
+                    width: 1.0,
+                },
+                ..Default::default()
+            });
+            container(chip)
+                .padding(Padding {
+                    top: 0.0,
+                    right: 24.0,
+                    bottom: 8.0,
+                    left: 24.0,
+                })
+                .align_x(dir_align_x())
+                .width(Length::Fill)
+                .into()
+        } else {
+            Space::new().height(0).into()
+        };
+
+        let main_content = column![toolbar, search_bar, filter_chip, status, grid]
             .width(Length::Fill)
             .height(Length::Fill);
         main_content.into()
     }
+}
+
+/// Coloured pill rendering a short status string. Background uses the
+/// caller-provided accent (success / warning / error / muted) at low
+/// alpha so the pill reads as a chip on either light or dark surfaces
+/// without fighting the row's own border.
+fn status_pill_widget(label: String, accent: Color) -> Element<'static, Message> {
+    container(text(label).size(10).color(accent))
+        .padding(Padding { top: 2.0, right: 8.0, bottom: 2.0, left: 8.0 })
+        .style(move |_| container::Style {
+            background: Some(Background::Color(Color { a: 0.15, ..accent })),
+            border: Border {
+                radius: Radius::from(6.0),
+                color: Color { a: 0.30, ..accent },
+                width: 1.0,
+            },
+            ..Default::default()
+        })
+        .into()
+}
+
+/// Compact "5m ago" / "2h ago" / "3d ago" formatter. Negative or
+/// zero-second deltas collapse to "now" so freshly-started tasks read
+/// cleanly. Values past 30 days fall through to a plain ISO date so
+/// older orphans don't claim impossibly large hour counts.
+fn relative_time_ago(t: chrono::DateTime<chrono::Utc>) -> String {
+    let now = chrono::Utc::now();
+    let delta = now.signed_duration_since(t);
+    let secs = delta.num_seconds();
+    if secs < 5 {
+        return "now".to_string();
+    }
+    if secs < 60 {
+        return format!("{secs}s ago");
+    }
+    let mins = delta.num_minutes();
+    if mins < 60 {
+        return format!("{mins}m ago");
+    }
+    let hours = delta.num_hours();
+    if hours < 48 {
+        return format!("{hours}h ago");
+    }
+    let days = delta.num_days();
+    if days < 30 {
+        return format!("{days}d ago");
+    }
+    t.format("%Y-%m-%d").to_string()
 }

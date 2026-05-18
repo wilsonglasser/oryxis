@@ -306,39 +306,67 @@ async fn list_running_tasks(
                 .next()
                 .unwrap_or(task_arn)
                 .to_string();
-            let zone = task.availability_zone().unwrap_or_default().to_string();
+            let zone_raw = task.availability_zone().unwrap_or_default().to_string();
+            let zone = if zone_raw.is_empty() { None } else { Some(zone_raw.clone()) };
+            let status = task.last_status().map(|s| s.to_string());
+            let started_at = task
+                .started_at()
+                .and_then(|t| chrono::DateTime::<chrono::Utc>::from_timestamp(t.secs(), 0));
+            // Task definition: `family:revision` extracted from the
+            // full ARN. ARN format:
+            // `arn:aws:ecs:<region>:<acct>:task-definition/family:rev`.
+            let task_definition = task.task_definition_arn().and_then(|arn| {
+                arn.rsplit('/').next().map(|s| s.to_string())
+            });
 
-            // Pull the IP from the matching container, services with
-            // multiple containers may have different IPs per
-            // container, so we filter by name to be safe.
-            let mut ip: Option<String> = None;
-            for c in task.containers() {
-                if c.name() != Some(container) {
-                    continue;
-                }
-                if let Some(net) = c.network_interfaces().first()
-                    && let Some(p) = net.private_ipv4_address()
-                    && !p.is_empty()
-                {
-                    ip = Some(p.to_string());
-                }
-                break;
-            }
-
-            let label = match (&ip, &zone) {
-                (Some(addr), z) if !z.is_empty() => {
-                    format!("{task_id}  ({addr})  {z}")
-                }
-                (Some(addr), _) => format!("{task_id}  ({addr})"),
-                (None, z) if !z.is_empty() => format!("{task_id}  {z}"),
-                _ => task_id.clone(),
+            // Pick the containers to emit. Empty `container` filter
+            // = all (Lens-style nesting: one row per container in
+            // each task). Otherwise filter to the single named
+            // container, matching the v0.6 behaviour.
+            let task_containers: Vec<_> = if container.is_empty() {
+                task.containers()
+                    .iter()
+                    .filter_map(|c| c.name().map(|n| (n.to_string(), c)))
+                    .collect()
+            } else {
+                task.containers()
+                    .iter()
+                    .find(|c| c.name() == Some(container))
+                    .map(|c| (container.to_string(), c))
+                    .into_iter()
+                    .collect()
             };
 
-            out.push(DiscoveredHost {
-                label,
-                resource_id: task_id,
-                subtitle: ip.clone(),
-            });
+            for (cname, c) in task_containers {
+                let ip: Option<String> = c
+                    .network_interfaces()
+                    .first()
+                    .and_then(|net| net.private_ipv4_address())
+                    .filter(|p| !p.is_empty())
+                    .map(|p| p.to_string());
+
+                let label = match (&ip, &zone_raw.as_str()) {
+                    (Some(addr), z) if !z.is_empty() => {
+                        format!("{task_id}  ({addr})  {z}")
+                    }
+                    (Some(addr), _) => format!("{task_id}  ({addr})"),
+                    (None, z) if !z.is_empty() => format!("{task_id}  {z}"),
+                    _ => task_id.clone(),
+                };
+
+                out.push(DiscoveredHost {
+                    label,
+                    resource_id: task_id.clone(),
+                    subtitle: ip.clone(),
+                    container_name: Some(cname),
+                    task_definition: task_definition.clone(),
+                    status: status.clone(),
+                    started_at,
+                    private_ip: ip,
+                    availability_zone: zone.clone(),
+                    region: Some(region.to_string()),
+                });
+            }
         }
     }
     Ok(out)

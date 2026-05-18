@@ -155,7 +155,9 @@ impl Oryxis {
         // without a per-host color, and the neutral border for non-
         // connection screens so settings / dashboard don't look like
         // they belong to whichever host happened to be open last.
-        let accent_tint: Option<Color> = self.active_tab.and_then(|idx| {
+        let accent_tint: Option<Color> = if !self.setting_tab_accent_line {
+            None
+        } else { self.active_tab.and_then(|idx| {
             let tab = self.tabs.get(idx)?;
             let label = tab.label.trim_end_matches(" (disconnected)");
             // 1) per-host color from a matching saved Connection
@@ -175,7 +177,7 @@ impl Oryxis {
             // 3) generic active-tab fallback (any tab without a more
             //    specific color tints in the global accent).
             Some(OryxisColors::t().accent)
-        });
+        })};
         let (hair_height, hair_color) = match accent_tint {
             Some(c) => (2.0_f32, c),
             None => (1.0_f32, OryxisColors::t().border),
@@ -429,39 +431,109 @@ impl Oryxis {
             );
         }
 
-        // Cloud import transport-confirmation modal. Pops up when the
-        // user clicks "Import N selected" with at least one EC2 row
-        // checked. Pure-ECS imports skip this entirely (handler
-        // routes straight to `CloudDiscoverImportConfirmed`).
+        // Cloud import confirmation modal. Always opens on Import (no
+        // ECS-only short-circuit) so the user can set the target
+        // group from the same surface that already gates the
+        // transport choice. Transport row hides itself when the
+        // batch is ECS-only since dynamic groups always run ECS Exec.
         if self.cloud_import_confirm_visible {
             use oryxis_core::models::cloud::TransportKind;
-            let transport_options = vec![
-                TransportKind::Ssh,
-                TransportKind::InstanceConnect,
-                TransportKind::Ssm,
-            ];
-            let transport_pick = iced::widget::pick_list(
-                Some(self.cloud_discover_default_transport),
-                transport_options,
-                |t| match t {
-                    TransportKind::Ssh => "SSH".to_string(),
-                    TransportKind::InstanceConnect => "EC2 Instance Connect".to_string(),
-                    TransportKind::Ssm => "SSM Session".to_string(),
-                    TransportKind::EcsExec => "ECS Exec".to_string(),
-                    TransportKind::KubectlExec => "kubectl exec".to_string(),
-                },
-            )
-            .on_select(Message::CloudDiscoverDefaultTransportChanged)
-            .padding(10)
-            .style(crate::widgets::rounded_pick_list_style);
-
             let n_ec2 = self.cloud_discover_selected_ec2.len();
             let n_ecs = self.cloud_discover_selected_ecs.len();
-            let summary = if n_ecs > 0 {
+            let summary = if n_ec2 > 0 && n_ecs > 0 {
                 format!("{} EC2 + {} ECS", n_ec2, n_ecs)
-            } else {
+            } else if n_ec2 > 0 {
                 format!("{} EC2", n_ec2)
+            } else {
+                format!("{} ECS", n_ecs)
             };
+
+            // Import-into field + chevron. The suggestion dropdown
+            // is no longer inline; it's a floating popover rendered
+            // via the global OverlayState (`CloudDiscoverGroupPicker`)
+            // injected into the modal's own Stack below so it can
+            // visually rise above the dialog instead of pushing
+            // siblings. Input + chevron heights are explicitly fixed
+            // to 36 so they stay aligned in the row.
+            const COMBO_HEIGHT: f32 = 36.0;
+            let group_input = iced::widget::text_input(
+                crate::i18n::t("cloud_discover_import_into_placeholder"),
+                &self.cloud_discover_default_group_name,
+            )
+            .on_input(Message::CloudDiscoverDefaultGroupNameChanged)
+            .padding(8)
+            .style(crate::widgets::rounded_input_style)
+            .align_x(dir_align_x());
+            let chevron_btn = iced::widget::button(
+                container(
+                    iced_fonts::lucide::chevron_down::<iced::Theme, iced::Renderer>()
+                        .size(12)
+                        .color(OryxisColors::t().text_muted),
+                )
+                .center_x(Length::Fixed(32.0))
+                .center_y(Length::Fixed(COMBO_HEIGHT)),
+            )
+            .on_press(Message::ToggleCloudDiscoverGroupPicker)
+            .padding(0)
+            .style(|_, status| {
+                let bg = match status {
+                    iced::widget::button::Status::Hovered => OryxisColors::t().bg_hover,
+                    _ => OryxisColors::t().bg_surface,
+                };
+                iced::widget::button::Style {
+                    background: Some(Background::Color(bg)),
+                    border: Border {
+                        radius: Radius::from(6.0),
+                        color: OryxisColors::t().border,
+                        width: 1.0,
+                    },
+                    ..Default::default()
+                }
+            });
+
+            // Transport picker is always rendered. For ECS-only
+            // imports the value is ignored on save (dynamic groups
+            // always run ECS Exec), but keeping the row in place
+            // preserves the row geometry + the explanatory hint
+            // beneath it and avoids the modal looking sparse when
+            // the user happens to pick zero EC2 hosts.
+            let transport_section: Element<'_, Message> = {
+                let transport_options = vec![
+                    TransportKind::Ssh,
+                    TransportKind::InstanceConnect,
+                    TransportKind::Ssm,
+                ];
+                let transport_pick = iced::widget::pick_list(
+                    Some(self.cloud_discover_default_transport),
+                    transport_options,
+                    |t| match t {
+                        TransportKind::Ssh => "SSH".to_string(),
+                        TransportKind::InstanceConnect => "EC2 Instance Connect".to_string(),
+                        TransportKind::Ssm => "SSM Session".to_string(),
+                        TransportKind::EcsExec => "ECS Exec".to_string(),
+                        TransportKind::KubectlExec => "kubectl exec".to_string(),
+                    },
+                )
+                .on_select(Message::CloudDiscoverDefaultTransportChanged)
+                .padding(10)
+                .style(crate::widgets::rounded_pick_list_style);
+                column![
+                    text(crate::i18n::t("cloud_dynamic_form_transport"))
+                        .size(12)
+                        .color(OryxisColors::t().text_secondary),
+                    Space::new().height(4),
+                    container(transport_pick).width(Length::Fixed(320.0)),
+                    Space::new().height(8),
+                    text(crate::i18n::t("cloud_import_transport_hint"))
+                        .size(11)
+                        .color(OryxisColors::t().text_muted),
+                    Space::new().height(16),
+                ]
+                .into()
+            };
+            // Silence the now-unused n_ec2 binding; kept by name so
+            // the summary text above can read it without re-querying.
+            let _ = n_ec2;
 
             let dialog_content = container(
                 column![
@@ -471,16 +543,41 @@ impl Oryxis {
                     Space::new().height(4),
                     text(summary).size(11).color(OryxisColors::t().text_muted),
                     Space::new().height(16),
-                    text(crate::i18n::t("cloud_dynamic_form_transport"))
+                    // "Import into" comes BEFORE Transport: the
+                    // dropdown is anchored to the chevron and opens
+                    // downward, so having the field higher in the
+                    // dialog gives the menu maximum vertical room
+                    // to extend without escaping the screen edge.
+                    text(crate::i18n::t("cloud_discover_import_into"))
                         .size(12)
                         .color(OryxisColors::t().text_secondary),
                     Space::new().height(4),
-                    container(transport_pick).width(Length::Fixed(280.0)),
-                    Space::new().height(8),
-                    text(crate::i18n::t("cloud_import_transport_hint"))
-                        .size(11)
-                        .color(OryxisColors::t().text_muted),
+                    // Wrap the combo row in `bounds_reporter` so the
+                    // toggle handler can read its on-screen rect and
+                    // anchor the picker overlay right below it. The
+                    // cell lives on Oryxis state; the wrapper here
+                    // just writes to it on every draw pass. Wrapping
+                    // the whole row (input + chevron) means the menu
+                    // can mirror the full combo width by default,
+                    // covering the empty area between the input and
+                    // the chevron edge.
+                    crate::widgets::bounds_reporter(
+                        dir_row(vec![
+                            container(group_input)
+                                .width(Length::Fill)
+                                .height(Length::Fixed(COMBO_HEIGHT))
+                                .into(),
+                            Space::new().width(6).into(),
+                            container(chevron_btn)
+                                .height(Length::Fixed(COMBO_HEIGHT))
+                                .into(),
+                        ])
+                        .width(Length::Fixed(308.0))
+                        .align_y(iced::Alignment::Center),
+                        self.cloud_discover_default_group_combo_bounds.clone(),
+                    ),
                     Space::new().height(16),
+                    transport_section,
                     row![
                         styled_button(
                             crate::i18n::t("import_btn_label"),
@@ -507,29 +604,91 @@ impl Oryxis {
                 ..Default::default()
             });
 
-            let scrim: Element<'_, Message> = MouseArea::new(
-                container(Space::new())
-                    .width(Length::Fill)
-                    .height(Length::Fill)
-                    .style(|_| container::Style {
-                        background: Some(Background::Color(Color::from_rgba(0.0, 0.0, 0.0, 0.5))),
-                        ..Default::default()
-                    }),
+            let centered = container(
+                MouseArea::new(dialog_content).on_press(Message::NoOp),
             )
-            .on_press(Message::CloudDiscoverImportCancelled)
-            .into();
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .center_x(Length::Fill)
+            .center_y(Length::Fill);
 
-            let centered = container(MouseArea::new(dialog_content).on_press(Message::NoOp))
-                .width(Length::Fill)
-                .height(Length::Fill)
-                .center_x(Length::Fill)
-                .center_y(Length::Fill);
+            // Scrim behaviour: while the group picker is open,
+            // off-dialog clicks dismiss only the picker so the user
+            // doesn't accidentally cancel the whole import. Wrapped
+            // in `iced::widget::opaque` so hover events stop here
+            // instead of bleeding through to the dashboard cards
+            // beneath the modal (otherwise iced's Stack lets mouse
+            // hover propagate to lower layers, lighting up rows
+            // under the cursor while the modal is open).
+            let on_scrim_click = if self.cloud_discover_default_group_picker_open {
+                Message::ToggleCloudDiscoverGroupPicker
+            } else {
+                Message::CloudDiscoverImportCancelled
+            };
+            let scrim: Element<'_, Message> = iced::widget::opaque(
+                MouseArea::new(
+                    container(Space::new())
+                        .width(Length::Fill)
+                        .height(Length::Fill)
+                        .style(|_| container::Style {
+                            background: Some(Background::Color(Color::from_rgba(
+                                0.0, 0.0, 0.0, 0.5,
+                            ))),
+                            ..Default::default()
+                        }),
+                )
+                .on_press(on_scrim_click),
+            );
+
+            // Group-picker context menu: same pattern as the
+            // existing kebab menus. Built via the global
+            // `OverlayState` + `render_overlay_menu` pipeline so the
+            // menu styling, backdrop, and dismiss-on-click-outside
+            // all behave like every other context menu in the app.
+            // Injected here (inside the modal's Stack) because the
+            // modal short-circuits the global overlay path further
+            // down in `view_main`.
+            let mut modal_stack =
+                Stack::new().push(base).push(scrim).push(centered);
+            if let Some(ref ovl) = self.overlay
+                && matches!(ovl.content, OverlayContent::CloudDiscoverGroupPicker)
+            {
+                let menu = self.render_overlay_menu(ovl);
+                // Width matches the combo's measured width from the
+                // bounds_reporter (falls back to 308 on the very
+                // first open when the cell is still zeroed). Height
+                // clamp keeps tall menus on-screen.
+                let combo = self.cloud_discover_default_group_combo_bounds.get();
+                let menu_width = if combo.width > 0.0 { combo.width } else { 308.0 };
+                let menu_height = 280.0_f32;
+                let x = ovl
+                    .x
+                    .min((self.window_size.width - menu_width).max(0.0))
+                    .max(0.0);
+                let y = ovl
+                    .y
+                    .min((self.window_size.height - menu_height).max(0.0))
+                    .max(0.0);
+                let backdrop: Element<'_, Message> = MouseArea::new(
+                    container(Space::new())
+                        .width(Length::Fill)
+                        .height(Length::Fill),
+                )
+                .on_press(Message::ToggleCloudDiscoverGroupPicker)
+                .into();
+                let positioned: Element<'_, Message> = column![
+                    Space::new().height(y),
+                    row![
+                        Space::new().width(x),
+                        container(menu).width(Length::Fixed(menu_width)),
+                    ],
+                ]
+                .into();
+                modal_stack = modal_stack.push(backdrop).push(positioned);
+            }
 
             return wrap_with_resize(
-                Stack::new()
-                    .push(base)
-                    .push(scrim)
-                    .push(centered)
+                modal_stack
                     .width(Length::Fill)
                     .height(Length::Fill)
                     .into(),
@@ -778,9 +937,9 @@ impl Oryxis {
             // Position the menu, clamping to window bounds to prevent clipping.
             // Under RTL, anchor by the menu's right edge so it grows toward
             // the leading (left) side, mirroring native OS dropdown behavior.
-            // Kept in sync with the dispatcher anchors (`dispatch_cloud`
-            // and `dispatch_keys` use the same value to compute `overlay.x`).
-            let menu_width = 150.0_f32;
+            // Width must match the value used in `render_overlay_menu` so
+            // clamping lines up with the rendered box.
+            let menu_width = self.overlay_menu_width(overlay);
             let menu_height = 80.0_f32; // approximate menu height
             let raw_x = if crate::i18n::is_rtl_layout() {
                 overlay.x - menu_width
@@ -1018,18 +1177,80 @@ impl Oryxis {
         layers.into()
     }
 
+    /// Resolve the on-screen width of an overlay popover. Group
+    /// pickers track their associated combo's measured bounds (so
+    /// the popover stays the same width as the input it dropdowns
+    /// from). Sort menus get a wider fixed slot so long-translated
+    /// labels fit. Everything else uses the default kebab width.
+    /// Falls back to the kebab width when a combo's bounds cell
+    /// hasn't been populated yet (extremely brief, before the first
+    /// draw pass on a freshly opened panel).
+    fn overlay_menu_width(&self, overlay: &OverlayState) -> f32 {
+        match &overlay.content {
+            OverlayContent::SortMenu(_) => 220.0,
+            OverlayContent::CloudDiscoverGroupPicker => {
+                let b = self.cloud_discover_default_group_combo_bounds.get();
+                if b.width > 0.0 { b.width } else { 308.0 }
+            }
+            OverlayContent::GroupPicker(target) => {
+                let b = match target {
+                    crate::state::GroupPickerTarget::EditorParent => {
+                        self.editor_parent_combo_bounds.get()
+                    }
+                    crate::state::GroupPickerTarget::DynamicFormParent => {
+                        self.dynamic_form_parent_combo_bounds.get()
+                    }
+                };
+                if b.width > 0.0 { b.width } else { 308.0 }
+            }
+            _ => 150.0,
+        }
+    }
+
     pub(crate) fn render_overlay_menu(&self, overlay: &OverlayState) -> Element<'_, Message> {
-        let menu_width = 150.0;
+        // Per-variant width. Group pickers track the live combo width
+        // measured by their `bounds_reporter` so the popover always
+        // matches the input it dropdowns from; sort menu gets a wider
+        // fixed slot so long translations fit; everything else falls
+        // back to the default kebab width.
+        let menu_width = self.overlay_menu_width(overlay);
         let items: Element<'_, Message> = match &overlay.content {
             OverlayContent::HostActions(idx) => {
                 let idx = *idx;
-                column![
+                let conn = self.connections.get(idx);
+                let cloud_profile_id = conn
+                    .and_then(|c| c.cloud_ref.as_ref())
+                    .map(|r| r.profile_id);
+                let is_orphan = conn
+                    .and_then(|c| c.cloud_ref.as_ref())
+                    .and_then(|r| r.orphaned_at)
+                    .is_some();
+                let mut items = column![
                     context_menu_item(iced_fonts::lucide::play(), crate::i18n::t("connect"), Message::ConnectSsh(idx), OryxisColors::t().success),
                     context_menu_item(iced_fonts::lucide::pencil(), crate::i18n::t("edit"), Message::EditConnection(idx), OryxisColors::t().text_secondary),
                     context_menu_item(iced_fonts::lucide::copy(), crate::i18n::t("duplicate"), Message::DuplicateConnection(idx), OryxisColors::t().text_secondary),
                     context_menu_item(iced_fonts::lucide::share(), crate::i18n::t("share"), Message::ShareConnection(idx), OryxisColors::t().text_secondary),
-                    context_menu_item(iced_fonts::lucide::trash(), crate::i18n::t("remove"), Message::DeleteConnection(idx), OryxisColors::t().error),
-                ].into()
+                ];
+                if let Some(pid) = cloud_profile_id {
+                    items = items.push(context_menu_item(
+                        iced_fonts::lucide::funnel(),
+                        crate::i18n::t("host_filter_by_profile"),
+                        Message::HostFilterByCloudProfile(Some(pid)),
+                        OryxisColors::t().text_secondary,
+                    ));
+                }
+                // Orphan hosts get a "Forget" label (semantically
+                // closer to "this resource is gone upstream, drop my
+                // local record") instead of the generic "Remove".
+                // Same `DeleteConnection` action under the hood.
+                let (remove_label, remove_icon) = if is_orphan {
+                    (crate::i18n::t("host_orphan_forget"), iced_fonts::lucide::eraser())
+                } else {
+                    (crate::i18n::t("remove"), iced_fonts::lucide::trash())
+                };
+                items
+                    .push(context_menu_item(remove_icon, remove_label, Message::DeleteConnection(idx), OryxisColors::t().error))
+                    .into()
             }
             OverlayContent::KeyActions(idx) => {
                 let idx = *idx;
@@ -1053,33 +1274,17 @@ impl Oryxis {
             }
             OverlayContent::FolderActions(gid) => {
                 let gid = *gid;
-                // Groups that hold cloud-imported hosts shouldn't be
-                // renamed (the label tracks the cloud profile so the
-                // import dedupe finds them) or deleted via this menu
-                // (would orphan the imported hosts). Hide both
-                // actions and surface a hint instead. The user can
-                // still tear down the whole tree by deleting the
-                // CloudProfile in Settings → Cloud.
-                let is_cloud_managed = self
-                    .connections
-                    .iter()
-                    .any(|c| c.group_id == Some(gid) && c.cloud_ref.is_some());
-                if is_cloud_managed {
-                    column![
-                        context_menu_item(
-                            iced_fonts::lucide::cloud(),
-                            crate::i18n::t("cloud_managed_group_hint"),
-                            Message::HideOverlayMenu,
-                            OryxisColors::t().text_muted,
-                        ),
-                    ]
-                    .into()
-                } else {
-                    column![
-                        context_menu_item(iced_fonts::lucide::pencil(), crate::i18n::t("rename"), Message::StartRenameFolder(gid), OryxisColors::t().text_secondary),
-                        context_menu_item(iced_fonts::lucide::trash(), crate::i18n::t("delete"), Message::StartDeleteFolder(gid), OryxisColors::t().error),
-                    ].into()
-                }
+                // Folders that hold cloud-imported hosts used to hide
+                // their rename / delete actions to protect the
+                // import-by-label dedupe. The decoupling work in v0.7
+                // moved import targets to an explicit picker, so
+                // renaming or moving the auto folder no longer breaks
+                // anything (worst case the next Auto import creates a
+                // sibling). Surface the standard actions instead.
+                column![
+                    context_menu_item(iced_fonts::lucide::pencil(), crate::i18n::t("rename"), Message::StartRenameFolder(gid), OryxisColors::t().text_secondary),
+                    context_menu_item(iced_fonts::lucide::trash(), crate::i18n::t("delete"), Message::StartDeleteFolder(gid), OryxisColors::t().error),
+                ].into()
             }
             OverlayContent::DynamicGroupActions(id) => {
                 let id = *id;
@@ -1098,6 +1303,7 @@ impl Oryxis {
                 let id = *id;
                 column![
                     context_menu_item(iced_fonts::lucide::pencil(), crate::i18n::t("edit"), Message::ShowCloudForm(Some(id)), OryxisColors::t().text_secondary),
+                    context_menu_item(iced_fonts::lucide::refresh_cw(), crate::i18n::t("cloud_profile_sync"), Message::CloudProfileSync(id), OryxisColors::t().accent),
                     context_menu_item(iced_fonts::lucide::trash(), crate::i18n::t("delete"), Message::DeleteCloudProfile(id), OryxisColors::t().error),
                 ].into()
             }
@@ -1144,6 +1350,321 @@ impl Oryxis {
                     context_menu_item(iced_fonts::lucide::x(), crate::i18n::t("close_other_tabs"), Message::CloseOtherTabs(idx), OryxisColors::t().text_secondary),
                     context_menu_item(iced_fonts::lucide::x(), crate::i18n::t("close_all_tabs"), Message::CloseAllTabs, OryxisColors::t().error),
                 ].into()
+            }
+            OverlayContent::SortMenu(kind) => {
+                let kind = *kind;
+                let current = match kind {
+                    crate::state::SortMenuKind::Hosts => self.hosts_sort,
+                    crate::state::SortMenuKind::Keys => self.keys_sort,
+                    crate::state::SortMenuKind::Snippets => self.snippets_sort,
+                };
+                use crate::state::ListSort;
+                // Each row: leading lucide icon, label, trailing
+                // checkmark when the row matches the active sort.
+                // Inlined as four explicit calls so the icon widget's
+                // lifetime stays 'static (a closure would force the
+                // icon to outlive the returned Element borrow).
+                // Hairline divider: the colored fill must sit on the
+                // inner 1 px Space, not the outer padded container,
+                // otherwise the breathing-room padding inherits the
+                // border colour and the line reads ~9 px tall.
+                let divider: Element<'_, Message> = container(
+                    container(Space::new().width(Length::Fill).height(1))
+                        .width(Length::Fill)
+                        .style(|_| container::Style {
+                            background: Some(Background::Color(
+                                OryxisColors::t().border,
+                            )),
+                            ..Default::default()
+                        }),
+                )
+                .padding(Padding {
+                    top: 4.0,
+                    right: 4.0,
+                    bottom: 4.0,
+                    left: 4.0,
+                })
+                .into();
+                column![
+                    crate::widgets::sort_menu_row(
+                        kind,
+                        ListSort::LabelAsc,
+                        iced_fonts::lucide::arrow_down_a_z::<iced::Theme, iced::Renderer>(),
+                        "sort_label_asc",
+                        current == ListSort::LabelAsc,
+                    ),
+                    crate::widgets::sort_menu_row(
+                        kind,
+                        ListSort::LabelDesc,
+                        iced_fonts::lucide::arrow_down_z_a::<iced::Theme, iced::Renderer>(),
+                        "sort_label_desc",
+                        current == ListSort::LabelDesc,
+                    ),
+                    divider,
+                    crate::widgets::sort_menu_row(
+                        kind,
+                        ListSort::NewestFirst,
+                        iced_fonts::lucide::calendar_arrow_down::<iced::Theme, iced::Renderer>(),
+                        "sort_newest_first",
+                        current == ListSort::NewestFirst,
+                    ),
+                    crate::widgets::sort_menu_row(
+                        kind,
+                        ListSort::OldestFirst,
+                        iced_fonts::lucide::calendar_arrow_up::<iced::Theme, iced::Renderer>(),
+                        "sort_oldest_first",
+                        current == ListSort::OldestFirst,
+                    ),
+                ]
+                .into()
+            }
+            OverlayContent::CloudDiscoverGroupPicker => {
+                // Search input + filtered list. The search field is
+                // the menu's own filter (independent of the modal's
+                // "Import into" input). Picking a row fills the
+                // input and closes the menu.
+                let picker_needle = self
+                    .cloud_discover_default_group_picker_search
+                    .trim()
+                    .to_lowercase();
+                let mut all_groups: Vec<String> = self
+                    .groups
+                    .iter()
+                    .filter(|g| g.cloud_query.is_none())
+                    .filter(|g| {
+                        picker_needle.is_empty()
+                            || g.label.to_lowercase().contains(&picker_needle)
+                    })
+                    .map(|g| g.label.clone())
+                    .collect();
+                all_groups.sort_by_key(|s| s.to_lowercase());
+                all_groups.dedup();
+                // Width chases the combo bounds via the outer
+                // wrapper in `view_main` + `overlay_menu_width`; the
+                // inner content fills whatever space that outer
+                // container hands down. Padding 4+4 on the outer
+                // wrapper means content fills (combo_width - 8).
+                let menu_outer_width = self.overlay_menu_width(overlay);
+                let menu_content_width = (menu_outer_width - 8.0).max(80.0);
+                // Search input uses a distinct surface tint so the
+                // user reads it as the popover's own filter (not a
+                // second copy of the modal's "Import into" field).
+                // Mirrors what most context-menus do with their
+                // header row: tinted bg + tighter border than the
+                // form inputs underneath.
+                let search_input = iced::widget::text_input(
+                    crate::i18n::t("search_groups"),
+                    &self.cloud_discover_default_group_picker_search,
+                )
+                .on_input(
+                    Message::CloudDiscoverDefaultGroupPickerSearchChanged,
+                )
+                .padding(8)
+                .width(Length::Fixed(menu_content_width))
+                .style(|_theme: &iced::Theme, status| {
+                    let palette = OryxisColors::t();
+                    let bg = match status {
+                        iced::widget::text_input::Status::Focused { .. }
+                        | iced::widget::text_input::Status::Hovered => palette.bg_hover,
+                        _ => palette.bg_selected,
+                    };
+                    let border_color = match status {
+                        iced::widget::text_input::Status::Focused { .. } => palette.accent,
+                        _ => palette.border,
+                    };
+                    iced::widget::text_input::Style {
+                        background: Background::Color(bg),
+                        border: Border {
+                            radius: Radius::from(6.0),
+                            color: border_color,
+                            width: 1.0,
+                        },
+                        icon: palette.text_muted,
+                        placeholder: palette.text_muted,
+                        value: palette.text_primary,
+                        selection: Color { a: 0.30, ..palette.accent },
+                    }
+                });
+                let list_el: Element<'_, Message> = if all_groups.is_empty() {
+                    container(
+                        text(crate::i18n::t("cloud_discover_no_matches"))
+                            .size(12)
+                            .color(OryxisColors::t().text_muted),
+                    )
+                    .padding(Padding {
+                        top: 12.0,
+                        right: 12.0,
+                        bottom: 12.0,
+                        left: 12.0,
+                    })
+                    .into()
+                } else {
+                    // Plain label rows: dropped the leading folder
+                    // glyph since every entry is a folder by
+                    // definition (the picker only lists groups) and
+                    // the icon was just visual noise.
+                    let mut items = column![].spacing(2);
+                    for label in all_groups {
+                        let display = label.clone();
+                        items = items.push(
+                            iced::widget::button(
+                                container(
+                                    text(display)
+                                        .size(12)
+                                        .color(OryxisColors::t().text_primary),
+                                )
+                                .padding(Padding {
+                                    top: 6.0,
+                                    right: 10.0,
+                                    bottom: 6.0,
+                                    left: 10.0,
+                                })
+                                .width(Length::Fill),
+                            )
+                            .on_press(
+                                Message::CloudDiscoverDefaultGroupPick(label),
+                            )
+                            .width(Length::Fill)
+                            .style(|_, status| {
+                                let bg = match status {
+                                    iced::widget::button::Status::Hovered => {
+                                        OryxisColors::t().bg_hover
+                                    }
+                                    _ => Color::TRANSPARENT,
+                                };
+                                iced::widget::button::Style {
+                                    background: Some(Background::Color(bg)),
+                                    border: Border {
+                                        radius: Radius::from(4.0),
+                                        ..Default::default()
+                                    },
+                                    ..Default::default()
+                                }
+                            }),
+                        );
+                    }
+                    iced::widget::scrollable(items)
+                        .height(Length::Fixed(220.0))
+                        .into()
+                };
+                column![search_input, Space::new().height(8), list_el]
+                    .width(Length::Fixed(menu_content_width))
+                    .into()
+            }
+            OverlayContent::GroupPicker(target) => {
+                // Same shape as the Discover modal's group picker
+                // (search input + filtered scrollable list) but
+                // wired to the shared `group_picker_search` /
+                // `GroupPickerPick(target)` messages. Lives at the
+                // top-level render path because the side-panel
+                // editors don't short-circuit the way the modal
+                // does.
+                let target = *target;
+                let menu_outer_width = self.overlay_menu_width(overlay);
+                let menu_content_width = (menu_outer_width - 8.0).max(80.0);
+                let needle = self.group_picker_search.trim().to_lowercase();
+                let mut all_groups: Vec<String> = self
+                    .groups
+                    .iter()
+                    .filter(|g| g.cloud_query.is_none())
+                    .filter(|g| {
+                        needle.is_empty()
+                            || g.label.to_lowercase().contains(&needle)
+                    })
+                    .map(|g| g.label.clone())
+                    .collect();
+                all_groups.sort_by_key(|s| s.to_lowercase());
+                all_groups.dedup();
+                let search_input = iced::widget::text_input(
+                    crate::i18n::t("search_groups"),
+                    &self.group_picker_search,
+                )
+                .on_input(Message::GroupPickerSearchChanged)
+                .padding(8)
+                .width(Length::Fixed(menu_content_width))
+                .style(|_theme: &iced::Theme, status| {
+                    let palette = OryxisColors::t();
+                    let bg = match status {
+                        iced::widget::text_input::Status::Focused { .. }
+                        | iced::widget::text_input::Status::Hovered => palette.bg_hover,
+                        _ => palette.bg_selected,
+                    };
+                    let border_color = match status {
+                        iced::widget::text_input::Status::Focused { .. } => palette.accent,
+                        _ => palette.border,
+                    };
+                    iced::widget::text_input::Style {
+                        background: Background::Color(bg),
+                        border: Border {
+                            radius: Radius::from(6.0),
+                            color: border_color,
+                            width: 1.0,
+                        },
+                        icon: palette.text_muted,
+                        placeholder: palette.text_muted,
+                        value: palette.text_primary,
+                        selection: Color { a: 0.30, ..palette.accent },
+                    }
+                });
+                let list_el: Element<'_, Message> = if all_groups.is_empty() {
+                    container(
+                        text(crate::i18n::t("cloud_discover_no_matches"))
+                            .size(12)
+                            .color(OryxisColors::t().text_muted),
+                    )
+                    .padding(Padding {
+                        top: 12.0,
+                        right: 12.0,
+                        bottom: 12.0,
+                        left: 12.0,
+                    })
+                    .into()
+                } else {
+                    let mut items = column![].spacing(2);
+                    for label in all_groups {
+                        let display = label.clone();
+                        items = items.push(
+                            iced::widget::button(
+                                container(
+                                    text(display)
+                                        .size(12)
+                                        .color(OryxisColors::t().text_primary),
+                                )
+                                .padding(Padding {
+                                    top: 6.0,
+                                    right: 10.0,
+                                    bottom: 6.0,
+                                    left: 10.0,
+                                })
+                                .width(Length::Fill),
+                            )
+                            .on_press(Message::GroupPickerPick(target, label))
+                            .width(Length::Fill)
+                            .style(|_, status| {
+                                let bg = match status {
+                                    iced::widget::button::Status::Hovered => {
+                                        OryxisColors::t().bg_hover
+                                    }
+                                    _ => Color::TRANSPARENT,
+                                };
+                                iced::widget::button::Style {
+                                    background: Some(Background::Color(bg)),
+                                    border: Border {
+                                        radius: Radius::from(4.0),
+                                        ..Default::default()
+                                    },
+                                    ..Default::default()
+                                }
+                            }),
+                        );
+                    }
+                    iced::widget::scrollable(items)
+                        .height(Length::Fixed(220.0))
+                        .into()
+                };
+                column![search_input, Space::new().height(8), list_el]
+                    .width(Length::Fixed(menu_content_width))
+                    .into()
             }
         };
 

@@ -3,7 +3,10 @@
 //! modal trigger, and the actual import that materializes EC2 hosts +
 //! ECS dynamic groups in the vault.
 
+use std::sync::Arc;
+
 use iced::Task;
+use oryxis_cloud::CloudProviderRegistry;
 use oryxis_core::models::cloud::{
     CloudQuery, CloudQueryKind, CloudRef, CloudResourceType, ConnectionTemplate, TransportKind,
 };
@@ -34,6 +37,16 @@ impl Oryxis {
                 self.cloud_discover_selected_ecs.clear();
                 self.cloud_discover_filter.clear();
                 self.cloud_discover_state = CloudDiscoverState::Idle;
+                // Default the input to the profile's own label so the
+                // most common case (one folder per profile) requires
+                // zero typing. The user can clear or change before
+                // hitting Import.
+                self.cloud_discover_default_group_name = self
+                    .cloud_profiles
+                    .iter()
+                    .find(|p| p.id == profile_id)
+                    .map(|p| p.label.clone())
+                    .unwrap_or_default();
                 return self.spawn_discover(profile_id);
             }
             Message::HideCloudDiscover => {
@@ -97,19 +110,244 @@ impl Oryxis {
             Message::CloudDiscoverDefaultTransportChanged(t) => {
                 self.cloud_discover_default_transport = t;
             }
-            Message::CloudDiscoverImport => {
-                // Decide whether the user needs to be asked which
-                // transport to use:
-                //   - Any EC2 selected → modal asks for transport
-                //   - ECS-only        → no modal, import straight (
-                //     dynamic groups always use ECS Exec)
-                if self.cloud_discover_selected_ec2.is_empty()
-                    && !self.cloud_discover_selected_ecs.is_empty()
-                {
-                    return Ok(self
-                        .handle_cloud(Message::CloudDiscoverImportConfirmed)
-                        .unwrap_or_else(|_| Task::none()));
+            Message::CloudDiscoverDefaultGroupNameChanged(v) => {
+                self.cloud_discover_default_group_name = v;
+            }
+            Message::CloudDiscoverDefaultGroupPick(label) => {
+                self.cloud_discover_default_group_name = label;
+                self.cloud_discover_default_group_picker_open = false;
+                // The modal-stack injection at `view_main` only
+                // checks `self.overlay`; without also clearing it
+                // here the menu would re-render on top after every
+                // pick. Mirrors the close-branch of
+                // `ToggleCloudDiscoverGroupPicker`.
+                if matches!(
+                    self.overlay.as_ref().map(|o| &o.content),
+                    Some(crate::state::OverlayContent::CloudDiscoverGroupPicker)
+                ) {
+                    self.overlay = None;
                 }
+            }
+            Message::ToggleCloudDiscoverGroupPicker => {
+                self.cloud_discover_default_group_picker_open =
+                    !self.cloud_discover_default_group_picker_open;
+                if self.cloud_discover_default_group_picker_open {
+                    self.cloud_discover_default_group_picker_search.clear();
+                    // Anchor the menu off the live combo bounds
+                    // captured by the `bounds_reporter` wrapping the
+                    // Import-into row. `BoundsCell` value is the
+                    // last-rendered screen-space rect of the combo
+                    // (input + chevron). Menu's top sits 6 px below
+                    // the combo's bottom; left edge matches combo
+                    // left so the dropdown visually replaces the
+                    // input column.
+                    let combo = self.cloud_discover_default_group_combo_bounds.get();
+                    let gap = 6.0_f32;
+                    let x = combo.x.max(0.0);
+                    let y = (combo.y + combo.height + gap).max(0.0);
+                    self.overlay = Some(crate::state::OverlayState {
+                        content: crate::state::OverlayContent::CloudDiscoverGroupPicker,
+                        x,
+                        y,
+                    });
+                } else if matches!(
+                    self.overlay.as_ref().map(|o| &o.content),
+                    Some(crate::state::OverlayContent::CloudDiscoverGroupPicker)
+                ) {
+                    self.overlay = None;
+                }
+            }
+            Message::CloudDiscoverDefaultGroupPickerSearchChanged(v) => {
+                self.cloud_discover_default_group_picker_search = v;
+            }
+            Message::CloudAutoRefreshTick => {
+                // Fan out a sync for every configured profile. Each
+                // sync is independent (own Task::perform), so a slow /
+                // failing profile doesn't hold up the others. Empty
+                // profile list short-circuits.
+                let profile_ids: Vec<uuid::Uuid> =
+                    self.cloud_profiles.iter().map(|p| p.id).collect();
+                let mut tasks: Vec<Task<Message>> = Vec::new();
+                for pid in profile_ids {
+                    if let Ok(task) = self.handle_cloud(Message::CloudProfileSync(pid)) {
+                        tasks.push(task);
+                    }
+                }
+                return Ok(Task::batch(tasks));
+            }
+            Message::CloudProfileSync(profile_id) => {
+                // Background refresh, runs the provider's `discover`
+                // and routes the result to `CloudProfileSyncResult`
+                // where the sticky-fields merge happens. Independent
+                // of the Discover panel; the profile card's Sync
+                // button can fire this without opening any UI.
+                let Some(mut profile) = self
+                    .cloud_profiles
+                    .iter()
+                    .find(|p| p.id == profile_id)
+                    .cloned()
+                else {
+                    return Ok(Task::none());
+                };
+                let registry: Arc<CloudProviderRegistry> =
+                    self.cloud_provider_registry.clone();
+                let Some(provider) = registry.get(&profile.provider) else {
+                    return Ok(Task::none());
+                };
+                if let Some(vault) = &self.vault {
+                    profile.secret =
+                        vault.get_cloud_profile_secret(&profile_id).ok().flatten();
+                }
+                return Ok(Task::perform(
+                    async move { provider.discover(&profile).await },
+                    move |result| {
+                        Message::CloudProfileSyncResult(
+                            profile_id,
+                            result.map(Box::new).map_err(|e| e.to_string()),
+                        )
+                    },
+                ));
+            }
+            Message::CloudProfileSyncResult(profile_id, result) => {
+                if self.vault.is_none() {
+                    return Ok(Task::none());
+                }
+                match result {
+                    Ok(discovery) => {
+                        let now = chrono::Utc::now();
+                        // Index AWS-side EC2 results by instance id so
+                        // the merge below is O(N+M) instead of O(N*M).
+                        let by_id: std::collections::HashMap<
+                            String,
+                            &oryxis_cloud::DiscoveredEc2,
+                        > = discovery
+                            .ec2
+                            .iter()
+                            .map(|e| (e.instance_id.clone(), e))
+                            .collect();
+                        // Compute merge first so the vault save loop
+                        // doesn't have to fight a mutable borrow of
+                        // `self.connections` during the diff.
+                        let mut updated: Vec<Connection> = Vec::new();
+                        for conn in &self.connections {
+                            let Some(cref) = conn.cloud_ref.as_ref() else {
+                                continue;
+                            };
+                            if cref.profile_id != profile_id {
+                                continue;
+                            }
+                            if cref.resource_type != CloudResourceType::Ec2 {
+                                continue;
+                            }
+                            let mut next = conn.clone();
+                            let mut changed = false;
+                            if let Some(found) = by_id.get(&cref.resource_id) {
+                                if cref.orphaned_at.is_some()
+                                    && let Some(cr) = next.cloud_ref.as_mut()
+                                {
+                                    cr.orphaned_at = None;
+                                    changed = true;
+                                }
+                                // Field-by-field merge: AWS wins unless
+                                // the user flagged the field as
+                                // customized post-import.
+                                if !next
+                                    .customized_fields
+                                    .iter()
+                                    .any(|s| s == "label")
+                                {
+                                    let new_label = found
+                                        .name
+                                        .clone()
+                                        .unwrap_or_else(|| found.instance_id.clone());
+                                    if next.label != new_label {
+                                        next.label = new_label;
+                                        changed = true;
+                                    }
+                                }
+                                if !next
+                                    .customized_fields
+                                    .iter()
+                                    .any(|s| s == "hostname")
+                                {
+                                    let new_hostname = found
+                                        .public_dns
+                                        .clone()
+                                        .or_else(|| found.public_ip.clone())
+                                        .or_else(|| found.private_dns.clone())
+                                        .or_else(|| found.private_ip.clone())
+                                        .unwrap_or_default();
+                                    if !new_hostname.is_empty()
+                                        && next.hostname != new_hostname
+                                    {
+                                        next.hostname = new_hostname;
+                                        changed = true;
+                                    }
+                                }
+                                if !next
+                                    .customized_fields
+                                    .iter()
+                                    .any(|s| s == "username")
+                                {
+                                    let new_username = found
+                                        .default_username
+                                        .clone()
+                                        .or_else(|| Some("ec2-user".to_string()));
+                                    if next.username != new_username {
+                                        next.username = new_username;
+                                        changed = true;
+                                    }
+                                }
+                            } else {
+                                // Resource absent upstream, mark orphan
+                                // on first miss (preserve the
+                                // timestamp on subsequent syncs so the
+                                // "orphaned for N days" math stays
+                                // stable).
+                                if cref.orphaned_at.is_none()
+                                    && let Some(cr) = next.cloud_ref.as_mut()
+                                {
+                                    cr.orphaned_at = Some(now);
+                                    changed = true;
+                                }
+                            }
+                            if changed {
+                                next.updated_at = now;
+                                updated.push(next);
+                            }
+                        }
+                        let cp_to_save = self
+                            .cloud_profiles
+                            .iter()
+                            .find(|p| p.id == profile_id)
+                            .cloned()
+                            .map(|mut cp| {
+                                cp.last_discovered = Some(now);
+                                cp
+                            });
+                        if let Some(vault) = &self.vault {
+                            for conn in &updated {
+                                let _ = vault.save_connection(conn, None);
+                            }
+                            if let Some(cp) = cp_to_save {
+                                let _ = vault.save_cloud_profile(&cp, None);
+                            }
+                        }
+                        self.load_data_from_vault();
+                    }
+                    Err(msg) => {
+                        tracing::error!(
+                            target = "oryxis::dispatch_cloud",
+                            "cloud profile sync failed: {msg}"
+                        );
+                    }
+                }
+            }
+            Message::CloudDiscoverImport => {
+                // Always route through the confirmation modal so the
+                // user gets a chance to set the target group (and the
+                // transport, when EC2 hosts are part of the batch).
+                // Empty selection short-circuits.
                 if self.cloud_discover_selected_ec2.is_empty()
                     && self.cloud_discover_selected_ecs.is_empty()
                 {
@@ -119,6 +357,7 @@ impl Oryxis {
             }
             Message::CloudDiscoverImportCancelled => {
                 self.cloud_import_confirm_visible = false;
+                self.cloud_discover_default_group_picker_open = false;
             }
             Message::CloudDiscoverImportConfirmed => {
                 self.cloud_import_confirm_visible = false;
@@ -151,39 +390,46 @@ impl Oryxis {
                 }
 
                 if let Some(vault) = &self.vault {
-                    // Provider-folder layout (per user feedback round
-                    // 3): every imported entity nests under a single
-                    // top-level folder named after the cloud profile.
-                    // EC2 hosts get the folder as their `group_id`;
-                    // ECS dynamic groups get it as `parent_id`. Folder
-                    // is auto-created the first time and reused on
-                    // subsequent imports of the same profile.
-                    let profile_label = self
-                        .cloud_profiles
-                        .iter()
-                        .find(|p| p.id == profile_id)
-                        .map(|p| p.label.clone())
-                        .unwrap_or_default();
+                    // Resolve the target group from the typed name.
+                    // Empty = root (no parent). Matching label = reuse
+                    // existing group. Non-matching = create a new
+                    // group with that label on the spot, so the user
+                    // can type any folder name (existing or new) and
+                    // have it materialised in one go.
+                    let typed = self.cloud_discover_default_group_name.trim().to_string();
                     let provider_id_str = self
                         .cloud_profiles
                         .iter()
                         .find(|p| p.id == profile_id)
                         .map(|p| p.provider.clone())
                         .unwrap_or_default();
-                    let provider_group_id = self
-                        .groups
+                    let profile_label = self
+                        .cloud_profiles
                         .iter()
-                        .find(|g| g.label == profile_label && g.cloud_query.is_none())
-                        .map(|g| g.id)
-                        .or_else(|| {
-                            let mut g = Group::new(profile_label.clone());
-                            // Provider folder = brand glyph for the
-                            // provider id (resolved by the brand-icon
-                            // SVG registry via the canonical alias).
-                            g.icon = Some(provider_id_str.clone());
-                            let id = g.id;
-                            vault.save_group(&g).ok().map(|_| id)
-                        });
+                        .find(|p| p.id == profile_id)
+                        .map(|p| p.label.clone())
+                        .unwrap_or_default();
+                    let provider_group_id: Option<uuid::Uuid> = if typed.is_empty() {
+                        None
+                    } else {
+                        self.groups
+                            .iter()
+                            .find(|g| g.label == typed && g.cloud_query.is_none())
+                            .map(|g| g.id)
+                            .or_else(|| {
+                                let mut g = Group::new(typed.clone());
+                                // Brand glyph only when the user kept
+                                // the profile-label default. A custom
+                                // folder name gets a generic icon so
+                                // it doesn't look like an auto-folder
+                                // by accident.
+                                if typed == profile_label {
+                                    g.icon = Some(provider_id_str.clone());
+                                }
+                                let id = g.id;
+                                vault.save_group(&g).ok().map(|_| id)
+                            })
+                    };
 
                     for e in &selected_ec2 {
                         // Connection labels prefer the EC2 Name tag
@@ -225,6 +471,7 @@ impl Oryxis {
                             // re-resolving on each connect is the safer
                             // default for imported EC2.
                             auto_refresh_hostname: true,
+                            orphaned_at: None,
                         });
                         let _ = vault.save_connection(&conn, None);
                     }

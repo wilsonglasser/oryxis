@@ -219,6 +219,139 @@ impl Oryxis {
             Message::HostSearchChanged(v) => {
                 self.host_search = v;
             }
+            Message::HostFilterByCloudProfile(maybe_pid) => {
+                self.host_filter_cloud_profile = maybe_pid;
+            }
+            Message::ToggleGroupPicker(target) => {
+                use crate::state::{GroupPickerTarget, OverlayContent, OverlayState};
+                let already_open = matches!(
+                    self.overlay.as_ref().map(|o| &o.content),
+                    Some(OverlayContent::GroupPicker(t)) if *t == target
+                );
+                if already_open {
+                    self.overlay = None;
+                } else {
+                    let bounds = match target {
+                        GroupPickerTarget::EditorParent => {
+                            self.editor_parent_combo_bounds.get()
+                        }
+                        GroupPickerTarget::DynamicFormParent => {
+                            self.dynamic_form_parent_combo_bounds.get()
+                        }
+                    };
+                    self.group_picker_search.clear();
+                    // 6 px gap below the combo. Falls back to mouse
+                    // coords if the cell hasn't been populated yet
+                    // (first ever open before any draw pass).
+                    self.overlay = Some(OverlayState {
+                        content: OverlayContent::GroupPicker(target),
+                        x: if bounds.width > 0.0 {
+                            bounds.x
+                        } else {
+                            self.mouse_position.x
+                        },
+                        y: if bounds.height > 0.0 {
+                            bounds.y + bounds.height + 6.0
+                        } else {
+                            self.mouse_position.y + 26.0
+                        },
+                    });
+                }
+            }
+            Message::GroupPickerSearchChanged(v) => {
+                self.group_picker_search = v;
+            }
+            Message::GroupPickerPick(target, label) => {
+                use crate::state::{GroupPickerTarget, OverlayContent};
+                match target {
+                    GroupPickerTarget::EditorParent => {
+                        self.editor_form.group_name = label;
+                    }
+                    GroupPickerTarget::DynamicFormParent => {
+                        self.cloud_dynamic_form_parent_label = label;
+                    }
+                }
+                if matches!(
+                    self.overlay.as_ref().map(|o| &o.content),
+                    Some(OverlayContent::GroupPicker(_))
+                ) {
+                    self.overlay = None;
+                }
+            }
+            Message::ToggleSortMenu(kind) => {
+                use crate::state::{OverlayContent, OverlayState, SortMenuKind};
+                let already_open = matches!(
+                    self.overlay.as_ref().map(|o| &o.content),
+                    Some(OverlayContent::SortMenu(k)) if *k == kind
+                );
+                if already_open {
+                    self.overlay = None;
+                } else {
+                    // Anchor the dropdown to the trailing edge of the
+                    // toolbar, just under the button row, matching the
+                    // keychain "+ ADD" menu geometry. Pre-compensate for
+                    // the panel-on-the-right footprint per view so the
+                    // menu's right edge always lands at the visible
+                    // content's right edge.
+                    let panel_width = match kind {
+                        SortMenuKind::Hosts => {
+                            if self.show_host_panel { crate::app::PANEL_WIDTH } else { 0.0 }
+                        }
+                        SortMenuKind::Keys => {
+                            if self.show_key_panel || self.show_identity_panel {
+                                crate::app::PANEL_WIDTH
+                            } else {
+                                0.0
+                            }
+                        }
+                        SortMenuKind::Snippets => {
+                            if self.show_snippet_panel { crate::app::PANEL_WIDTH } else { 0.0 }
+                        }
+                    };
+                    // Must match the `OverlayContent::SortMenu` width
+                    // in `views/layout.rs` so the dropdown lands under
+                    // the trigger button instead of being shifted.
+                    let menu_width = 220.0_f32;
+                    let toolbar_padding = 24.0_f32;
+                    let x = if crate::i18n::is_rtl_layout() {
+                        panel_width + toolbar_padding + menu_width
+                    } else {
+                        self.window_size.width
+                            - panel_width
+                            - toolbar_padding
+                            - menu_width
+                    };
+                    let y = self.dashboard_dropdown_anchor_y();
+                    self.overlay = Some(OverlayState {
+                        content: OverlayContent::SortMenu(kind),
+                        x: x.max(0.0),
+                        y,
+                    });
+                }
+            }
+            Message::SetListSort(kind, sort) => {
+                use crate::state::SortMenuKind;
+                let key = match kind {
+                    SortMenuKind::Hosts => {
+                        self.hosts_sort = sort;
+                        "hosts_sort"
+                    }
+                    SortMenuKind::Keys => {
+                        self.keys_sort = sort;
+                        "keys_sort"
+                    }
+                    SortMenuKind::Snippets => {
+                        self.snippets_sort = sort;
+                        "snippets_sort"
+                    }
+                };
+                if let Some(v) = &self.vault {
+                    if let Err(e) = v.set_setting(key, sort.as_storage_str()) {
+                        eprintln!("[sort] failed to persist {key}: {e}");
+                    }
+                }
+                self.overlay = None;
+            }
             Message::ToggleSidebar => {
                 self.sidebar_collapsed = !self.sidebar_collapsed;
             }

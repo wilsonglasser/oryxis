@@ -295,6 +295,13 @@ impl Oryxis {
                     if self.setting_show_tab_status_dot { "true" } else { "false" },
                 );
             }
+            Message::SettingToggleTabAccentLine => {
+                self.setting_tab_accent_line = !self.setting_tab_accent_line;
+                self.persist_setting(
+                    "tab_accent_line",
+                    if self.setting_tab_accent_line { "true" } else { "false" },
+                );
+            }
             Message::SettingToggleSftpEnabled => {
                 self.sftp_enabled = !self.sftp_enabled;
                 self.persist_setting(
@@ -343,6 +350,49 @@ impl Oryxis {
                 // both unreasonable and a foot-gun for memory pressure.
                 self.setting_scrollback_rows = sanitize_uint(&val, 1_000_000);
                 self.persist_setting("scrollback_rows", &self.setting_scrollback_rows);
+            }
+            Message::SettingCloudAutoRefreshToggle => {
+                self.setting_cloud_auto_refresh_enabled =
+                    !self.setting_cloud_auto_refresh_enabled;
+                self.persist_setting(
+                    "cloud_auto_refresh_enabled",
+                    if self.setting_cloud_auto_refresh_enabled { "true" } else { "false" },
+                );
+            }
+            Message::SettingCloudAutoRefreshIntervalChanged(val) => {
+                // Floor of 1 minute, ceiling of 1 day. AWS rate limits
+                // are well above a per-minute pace for the discovery
+                // calls we make, but the ceiling is just a sanity cap.
+                self.setting_cloud_auto_refresh_interval_minutes =
+                    sanitize_uint(&val, 1_440);
+                if self.setting_cloud_auto_refresh_interval_minutes == "0" {
+                    self.setting_cloud_auto_refresh_interval_minutes = "1".into();
+                }
+                self.persist_setting(
+                    "cloud_auto_refresh_interval_minutes",
+                    &self.setting_cloud_auto_refresh_interval_minutes,
+                );
+            }
+            Message::SettingCloudAutoArchiveToggle => {
+                self.setting_cloud_auto_archive_orphans =
+                    !self.setting_cloud_auto_archive_orphans;
+                self.persist_setting(
+                    "cloud_auto_archive_orphans",
+                    if self.setting_cloud_auto_archive_orphans { "true" } else { "false" },
+                );
+            }
+            Message::SettingCloudOrphanArchiveDaysChanged(val) => {
+                // Floor of 1 day (an orphan needs at least one full day
+                // to "settle" so a transient AWS API hiccup doesn't
+                // wipe legitimate hosts). Ceiling of one year.
+                self.setting_cloud_orphan_archive_days = sanitize_uint(&val, 365);
+                if self.setting_cloud_orphan_archive_days == "0" {
+                    self.setting_cloud_orphan_archive_days = "1".into();
+                }
+                self.persist_setting(
+                    "cloud_orphan_archive_days",
+                    &self.setting_cloud_orphan_archive_days,
+                );
             }
             Message::SettingSftpConcurrencyChanged(val) => {
                 // Cap at 8, beyond that the SSH channel multiplexer

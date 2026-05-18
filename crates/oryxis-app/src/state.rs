@@ -383,6 +383,69 @@ impl Default for SftpSort {
     }
 }
 
+/// Sort modes available for the Hosts / Keychain / Snippets card
+/// grids. Persisted per-list in the `settings` table under
+/// `hosts_sort` / `keys_sort` / `snippets_sort` as the value of
+/// `ListSort::as_storage_str()`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub(crate) enum ListSort {
+    #[default]
+    LabelAsc,
+    LabelDesc,
+    NewestFirst,
+    OldestFirst,
+}
+
+impl ListSort {
+    pub fn as_storage_str(self) -> &'static str {
+        match self {
+            ListSort::LabelAsc => "label_asc",
+            ListSort::LabelDesc => "label_desc",
+            ListSort::NewestFirst => "newest_first",
+            ListSort::OldestFirst => "oldest_first",
+        }
+    }
+
+    pub fn from_storage_str(s: &str) -> Self {
+        match s {
+            "label_desc" => ListSort::LabelDesc,
+            "newest_first" => ListSort::NewestFirst,
+            "oldest_first" => ListSort::OldestFirst,
+            _ => ListSort::LabelAsc,
+        }
+    }
+
+    /// Sort `items` in place using the row's label + creation
+    /// timestamp. Labels are lowercased before comparison so case
+    /// differences don't reorder rows the user thinks of as equal.
+    pub fn sort_items<T, FLabel, FTime>(
+        self,
+        items: &mut [T],
+        mut label_of: FLabel,
+        mut created_at: FTime,
+    ) where
+        FLabel: FnMut(&T) -> String,
+        FTime: FnMut(&T) -> chrono::DateTime<chrono::Utc>,
+    {
+        match self {
+            ListSort::LabelAsc => items.sort_by(|a, b| {
+                label_of(a)
+                    .to_lowercase()
+                    .cmp(&label_of(b).to_lowercase())
+            }),
+            ListSort::LabelDesc => items.sort_by(|a, b| {
+                label_of(b)
+                    .to_lowercase()
+                    .cmp(&label_of(a).to_lowercase())
+            }),
+            ListSort::NewestFirst => {
+                items.sort_by_key(|i| std::cmp::Reverse(created_at(i)))
+            }
+            ListSort::OldestFirst => items.sort_by_key(|i| created_at(i)),
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub(crate) struct LocalEntry {
     pub name: String,
@@ -778,6 +841,39 @@ pub(crate) enum OverlayContent {
     /// directly from the Hosts view. Only opened when at least one
     /// profile is configured (otherwise the chevron is hidden).
     CloudProviderPicker,
+    /// Floating context menu for the Discover import modal's
+    /// "Import into" combo. Carries a search input + the full list
+    /// of user groups. Rendered through the modal's local Stack
+    /// (the global overlay path is short-circuited by the modal's
+    /// early return).
+    CloudDiscoverGroupPicker,
+    /// Shared group-picker popover for side-panel Parent Group
+    /// inputs. The target enum tells the dispatch which form field
+    /// the picked value flows into so the same overlay machinery
+    /// (search + list) serves both the host editor and the dynamic
+    /// group editor without duplicate state.
+    GroupPicker(GroupPickerTarget),
+    /// Sort dropdown anchored to the toolbar sort button in one of
+    /// the card-grid views (Hosts / Keychain / Snippets).
+    SortMenu(SortMenuKind),
+}
+
+/// Which side-panel input the shared group picker is currently
+/// driving. Each panel carries its own combo bounds cell so the
+/// popover anchors precisely under the right chevron.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum GroupPickerTarget {
+    EditorParent,
+    DynamicFormParent,
+}
+
+/// Which list the open sort menu controls. Drives both the dispatched
+/// `Set*Sort` message and the icon shown on the trigger button.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum SortMenuKind {
+    Hosts,
+    Keys,
+    Snippets,
 }
 
 #[derive(Debug, Clone)]
@@ -941,6 +1037,7 @@ pub enum CloudDiscoverState {
     Loaded(oryxis_cloud::DiscoveryResult),
     Failed(String),
 }
+
 
 /// Per-dynamic-group resolve state. Lives in a `HashMap<group_id, _>`
 /// on `Oryxis` so opening one group doesn't blow away another's

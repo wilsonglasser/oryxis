@@ -96,6 +96,33 @@ impl Oryxis {
                             .find(|i| i.id == iid)
                             .map(|i| i.label.clone())
                     });
+                self.cloud_dynamic_form_label = group.label.clone();
+                self.cloud_dynamic_form_color = group.color.clone().unwrap_or_default();
+                self.cloud_dynamic_form_icon = group.icon.clone().unwrap_or_default();
+                self.cloud_dynamic_form_parent_label = group
+                    .parent_id
+                    .and_then(|pid| self.groups.iter().find(|g| g.id == pid))
+                    .map(|g| g.label.clone())
+                    .unwrap_or_default();
+                match &query.kind {
+                    oryxis_core::models::cloud::CloudQueryKind::EcsTasks {
+                        cluster,
+                        service,
+                        container,
+                    } => {
+                        self.cloud_dynamic_form_cluster = cluster.clone();
+                        self.cloud_dynamic_form_service = service.clone();
+                        self.cloud_dynamic_form_container = container.clone();
+                    }
+                    oryxis_core::models::cloud::CloudQueryKind::K8sPods { .. } => {
+                        // K8s editing surface lands in a follow-up;
+                        // clear the ECS-specific buffers so they don't
+                        // leak in from a previous edit session.
+                        self.cloud_dynamic_form_cluster = String::new();
+                        self.cloud_dynamic_form_service = String::new();
+                        self.cloud_dynamic_form_container = String::new();
+                    }
+                }
             }
             Message::HideDynamicGroupForm => {
                 self.cloud_dynamic_form_visible = false;
@@ -123,6 +150,38 @@ impl Oryxis {
                 } else {
                     Some(label)
                 };
+            }
+            Message::DynamicGroupFormLabelChanged(v) => {
+                self.cloud_dynamic_form_label = v;
+            }
+            Message::DynamicGroupFormParentChanged(v) => {
+                self.cloud_dynamic_form_parent_label = v;
+            }
+            Message::DynamicGroupFormClusterChanged(v) => {
+                self.cloud_dynamic_form_cluster = v;
+            }
+            Message::DynamicGroupFormServiceChanged(v) => {
+                self.cloud_dynamic_form_service = v;
+            }
+            Message::DynamicGroupFormContainerChanged(v) => {
+                self.cloud_dynamic_form_container = v;
+            }
+            Message::ShowIconPickerForDynamicGroupForm => {
+                // Pre-fill the picker from the current form values so
+                // re-opens preserve the user's in-flight selection.
+                // Fallback to `server` so the preview always renders.
+                let icon = if self.cloud_dynamic_form_icon.trim().is_empty() {
+                    "server".to_string()
+                } else {
+                    self.cloud_dynamic_form_icon.trim().to_string()
+                };
+                self.icon_picker_icon = Some(icon);
+                let color = self.cloud_dynamic_form_color.trim().to_string();
+                self.icon_picker_color = if color.is_empty() { None } else { Some(color.clone()) };
+                self.icon_picker_hex_input = color;
+                self.icon_picker_for = None;
+                self.icon_picker_for_group_form = true;
+                self.show_icon_picker = true;
             }
             Message::SaveDynamicGroup => {
                 let Some(gid) = self.cloud_dynamic_form_group_id else {
@@ -163,7 +222,47 @@ impl Oryxis {
                             .find(|i| &i.label == label)
                             .map(|i| i.id)
                     });
+                // ECS query fields: persist the user's edits so the
+                // next resolve targets the new cluster/service/container
+                // triple. Blank values are kept as-is (the user can
+                // intentionally clear; AWS-side resolve will error
+                // visibly).
+                if let oryxis_core::models::cloud::CloudQueryKind::EcsTasks {
+                    cluster,
+                    service,
+                    container,
+                } = &mut query.kind
+                {
+                    *cluster = self.cloud_dynamic_form_cluster.trim().to_string();
+                    *service = self.cloud_dynamic_form_service.trim().to_string();
+                    *container = self.cloud_dynamic_form_container.trim().to_string();
+                }
                 group.cloud_query = Some(query);
+                let new_label = self.cloud_dynamic_form_label.trim();
+                if !new_label.is_empty() {
+                    group.label = new_label.to_string();
+                }
+                group.color = if self.cloud_dynamic_form_color.trim().is_empty() {
+                    None
+                } else {
+                    Some(self.cloud_dynamic_form_color.trim().to_string())
+                };
+                group.icon = if self.cloud_dynamic_form_icon.trim().is_empty() {
+                    None
+                } else {
+                    Some(self.cloud_dynamic_form_icon.trim().to_string())
+                };
+                // Parent picker uses label matching like the host
+                // editor's `parent_group`. Empty / unmatched = root.
+                let parent_trimmed = self.cloud_dynamic_form_parent_label.trim();
+                group.parent_id = if parent_trimmed.is_empty() {
+                    None
+                } else {
+                    self.groups
+                        .iter()
+                        .find(|g| g.label == parent_trimmed && g.id != gid)
+                        .map(|g| g.id)
+                };
                 group.updated_at = chrono::Utc::now();
                 if let Some(vault) = &self.vault
                     && vault.save_group(&group).is_ok()

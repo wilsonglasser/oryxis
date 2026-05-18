@@ -16,6 +16,7 @@ thiserror = { workspace = true }
 tokio = { workspace = true }
 async-trait = "0.1"
 tracing = { workspace = true }
+chrono = { workspace = true }
 
 # AWS SDK, pinned to the 1.x GA series. `behavior-version-latest`
 # silences the runtime nag and locks us to the current default semantics

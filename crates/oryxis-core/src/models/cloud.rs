@@ -59,6 +59,14 @@ pub struct CloudRef {
     /// change across stop/start.
     #[serde(default)]
     pub auto_refresh_hostname: bool,
+    /// Set by the cloud refresh flow when this resource is no longer
+    /// present in the upstream provider (EC2 terminated, ECS task
+    /// stopped). The host stays in the vault so the user can decide
+    /// whether to keep it as a record or forget it. Cleared the next
+    /// time a refresh sees the resource come back. `None` means the
+    /// resource is current (or has never been refreshed yet).
+    #[serde(default)]
+    pub orphaned_at: Option<chrono::DateTime<chrono::Utc>>,
 }
 
 /// Backing query of a dynamic `Group`. Children are re-resolved on each
@@ -77,6 +85,12 @@ pub enum CloudQueryKind {
     EcsTasks {
         cluster: String,
         service: String,
+        /// Container to surface from each task. Empty string is the
+        /// **all containers** wildcard: the resolver emits one
+        /// `DiscoveredHost` per container in every matching task
+        /// (Lens-style nesting). Set to a specific name to filter
+        /// (single row per task, the historical behaviour from
+        /// v0.6 where every imported service had one container).
         container: String,
     },
     K8sPods {
@@ -158,6 +172,7 @@ mod tests {
             region: Some("us-east-1".into()),
             transport_pref: TransportKind::InstanceConnect,
             auto_refresh_hostname: true,
+            orphaned_at: None,
         };
         let j = serde_json::to_string(&r).unwrap();
         let back: CloudRef = serde_json::from_str(&j).unwrap();

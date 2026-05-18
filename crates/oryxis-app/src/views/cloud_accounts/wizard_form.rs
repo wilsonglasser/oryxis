@@ -519,8 +519,11 @@ impl Oryxis {
         container(panel_content)
             .width(PANEL_WIDTH)
             .height(Length::Fill)
+            // Standardised side-panel chrome (matches host editor,
+            // discovery, dynamic-group editor) so every right-panel
+            // editor shares the same background surface.
             .style(|_| container::Style {
-                background: Some(Background::Color(OryxisColors::t().bg_sidebar)),
+                background: Some(Background::Color(OryxisColors::t().bg_surface)),
                 border: Border {
                     color: OryxisColors::t().border,
                     width: 1.0,

@@ -117,10 +117,17 @@ impl Oryxis {
         .align_y(iced::Alignment::Center)
         .into();
 
+        let sort_btn = crate::widgets::sort_toolbar_button(
+            crate::state::SortMenuKind::Keys,
+            self.keys_sort,
+        );
+
         let toolbar = container(
             dir_row(vec![
                 text(t("keychain")).size(20).color(OryxisColors::t().text_primary).into(),
                 Space::new().width(Length::Fill).into(),
+                sort_btn,
+                Space::new().width(8).into(),
                 add_btn,
             ])
             .align_y(iced::Alignment::Center),
@@ -182,10 +189,23 @@ impl Oryxis {
         )
         .padding(Padding { top: 4.0, right: 0.0, bottom: 8.0, left: 0.0 });
 
-        // Filter keys by search query
+        // Filter keys by search query. Apply the toolbar sort by
+        // reordering the index list first so EditKey(idx) / DeleteKey
+        // still target the canonical vault index, even though the
+        // rendered order changes.
         let search_lower = self.key_search.to_lowercase();
-        let filtered_keys: Vec<(usize, &SshKey)> = self.keys.iter().enumerate()
-            .filter(|(_, k)| search_lower.is_empty() || k.label.to_lowercase().contains(&search_lower))
+        let mut key_order: Vec<usize> = (0..self.keys.len()).collect();
+        self.keys_sort.sort_items(
+            &mut key_order,
+            |&i| self.keys[i].label.clone(),
+            |&i| self.keys[i].created_at,
+        );
+        let filtered_keys: Vec<(usize, &SshKey)> = key_order
+            .into_iter()
+            .map(|i| (i, &self.keys[i]))
+            .filter(|(_, k)| {
+                search_lower.is_empty() || k.label.to_lowercase().contains(&search_lower)
+            })
             .collect();
 
         let mut cards: Vec<Element<'_, Message>> = Vec::new();
@@ -270,15 +290,20 @@ impl Oryxis {
             let key_show_dots =
                 self.hovered_key_card == Some(idx) || self.key_context_menu == Some(idx);
             let key_rtl = crate::i18n::is_rtl_layout();
-            // Mirror the host-card padding family: 8 top/bottom for
-            // a snug row height, 8 leading so the badge gets a
-            // small breath from the card border, 24 trailing to
-            // reserve room for the kebab overlay.
+            // Match the dashboard host-card geometry exactly: the host
+            // card wraps its row in `container(...).padding(...)` and
+            // lets the outer button add its `DEFAULT_PADDING` (5/10/5
+            // /10), producing a 13/16/13/12 effective padding. Since
+            // keychain cards override `button.padding()` directly,
+            // they need explicit values that match that effective
+            // size, otherwise they render ~10 px shorter and ~4 px
+            // tighter on the leading edge than the host cards next to
+            // them. Trailing stays at 24 to clear the kebab overlay.
             let card_pad_trailing = 24.0_f32;
             let card_padding = if key_rtl {
-                Padding { top: 8.0, right: 8.0, bottom: 8.0, left: card_pad_trailing }
+                Padding { top: 13.0, right: 12.0, bottom: 13.0, left: card_pad_trailing }
             } else {
-                Padding { top: 8.0, right: card_pad_trailing, bottom: 8.0, left: 8.0 }
+                Padding { top: 13.0, right: card_pad_trailing, bottom: 13.0, left: 12.0 }
             };
 
             let card = button(
@@ -409,8 +434,18 @@ impl Oryxis {
         )
         .padding(Padding { top: 16.0, right: 0.0, bottom: 8.0, left: 0.0 });
 
-        let filtered_identities: Vec<(usize, &Identity)> = self.identities.iter().enumerate()
-            .filter(|(_, i)| search_lower.is_empty() || i.label.to_lowercase().contains(&search_lower))
+        let mut identity_order: Vec<usize> = (0..self.identities.len()).collect();
+        self.keys_sort.sort_items(
+            &mut identity_order,
+            |&i| self.identities[i].label.clone(),
+            |&i| self.identities[i].created_at,
+        );
+        let filtered_identities: Vec<(usize, &Identity)> = identity_order
+            .into_iter()
+            .map(|i| (i, &self.identities[i]))
+            .filter(|(_, i)| {
+                search_lower.is_empty() || i.label.to_lowercase().contains(&search_lower)
+            })
             .collect();
 
         let mut identity_cards: Vec<Element<'_, Message>> = Vec::new();
@@ -465,12 +500,17 @@ impl Oryxis {
             let id_show_dots =
                 self.hovered_identity_card == Some(idx) || self.identity_context_menu == Some(idx);
             let id_rtl = crate::i18n::is_rtl_layout();
-            // Mirror the host-card padding.
+            // Match the host-card geometry (see key card comment
+            // above): 13 top/bottom + 12 leading + 24 trailing brings
+            // the identity card to the same visible footprint as the
+            // host folder cards on the dashboard, fixing the "card has
+            // no padding" feel (was 2 leading) and the 9-px height
+            // gap to host cards (was 8 top/bottom).
             let id_pad_trailing = 24.0_f32;
             let id_card_padding = if id_rtl {
-                Padding { top: 8.0, right: 2.0, bottom: 8.0, left: id_pad_trailing }
+                Padding { top: 13.0, right: 12.0, bottom: 13.0, left: id_pad_trailing }
             } else {
-                Padding { top: 8.0, right: id_pad_trailing, bottom: 8.0, left: 2.0 }
+                Padding { top: 13.0, right: id_pad_trailing, bottom: 13.0, left: 12.0 }
             };
 
             let card = button(

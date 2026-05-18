@@ -495,6 +495,103 @@ pub(crate) fn panel_option_row<'a>(
     .into()
 }
 
+/// Toolbar trigger button that opens the Sort dropdown. The glyph
+/// reflects the active sort so the user can read the current mode
+/// without opening the menu (A-z / Z-a / new-first / old-first).
+/// Sizing matches the "+ Host" / "+ ADD" buttons (24 px tall) so all
+/// toolbar actions share a visual baseline.
+pub(crate) fn sort_toolbar_button(
+    kind: crate::state::SortMenuKind,
+    current: crate::state::ListSort,
+) -> Element<'static, Message> {
+    use crate::state::ListSort;
+    let glyph: iced::widget::Text<'static, iced::Theme, iced::Renderer> = match current {
+        ListSort::LabelAsc => iced_fonts::lucide::arrow_down_a_z(),
+        ListSort::LabelDesc => iced_fonts::lucide::arrow_down_z_a(),
+        ListSort::NewestFirst => iced_fonts::lucide::calendar_arrow_down(),
+        ListSort::OldestFirst => iced_fonts::lucide::calendar_arrow_up(),
+    };
+    button(
+        container(
+            glyph
+                .size(15)
+                .color(OryxisColors::t().button_text),
+        )
+        .center_y(Length::Fixed(24.0))
+        .center_x(Length::Fixed(24.0)),
+    )
+    .on_press(Message::ToggleSortMenu(kind))
+    .style(|_, status| {
+        let bg = match status {
+            BtnStatus::Hovered => OryxisColors::t().button_bg_hover,
+            _ => OryxisColors::t().button_bg,
+        };
+        button::Style {
+            background: Some(Background::Color(bg)),
+            border: Border { radius: Radius::from(6.0), ..Default::default() },
+            ..Default::default()
+        }
+    })
+    .into()
+}
+
+/// One row of the toolbar Sort dropdown (Hosts / Keychain / Snippets).
+/// Mirrors `context_menu_item` but adds a trailing checkmark when the
+/// row matches the current sort. Icon is taken pre-built so the
+/// caller can pass any `iced_fonts::lucide::*` glyph (their lifetime
+/// is `'static`, which keeps the helper monomorphizable without a
+/// closure that would force shorter borrows).
+pub(crate) fn sort_menu_row(
+    kind: crate::state::SortMenuKind,
+    sort: crate::state::ListSort,
+    icon: iced::widget::Text<'static, iced::Theme, iced::Renderer>,
+    label_key: &'static str,
+    is_active: bool,
+) -> Element<'static, Message> {
+    let check: Element<'static, Message> = if is_active {
+        iced_fonts::lucide::check()
+            .size(13)
+            .color(OryxisColors::t().accent)
+            .into()
+    } else {
+        Space::new().width(13).into()
+    };
+    button(
+        container(
+            dir_row(vec![
+                icon.size(14)
+                    .color(OryxisColors::t().text_secondary)
+                    .into(),
+                Space::new().width(10).into(),
+                text(crate::i18n::t(label_key))
+                    .size(12)
+                    .color(OryxisColors::t().text_primary)
+                    .into(),
+                Space::new().width(Length::Fill).into(),
+                check,
+            ])
+            .align_y(iced::Alignment::Center),
+        )
+        .width(Length::Fill)
+        .align_x(dir_align_x()),
+    )
+    .on_press(Message::SetListSort(kind, sort))
+    .width(Length::Fill)
+    .padding(Padding { top: 6.0, right: 12.0, bottom: 6.0, left: 12.0 })
+    .style(|_, status| {
+        let bg = match status {
+            BtnStatus::Hovered => OryxisColors::t().bg_hover,
+            _ => Color::TRANSPARENT,
+        };
+        button::Style {
+            background: Some(Background::Color(bg)),
+            border: Border { radius: Radius::from(4.0), ..Default::default() },
+            ..Default::default()
+        }
+    })
+    .into()
+}
+
 pub(crate) fn context_menu_item<'a>(
     icon: impl Into<crate::os_icon::BrandIcon>,
     label: &'a str,
@@ -833,4 +930,148 @@ pub(crate) fn terminal_theme_inherit_card<'a>(
         }
     })
     .into()
+}
+
+/// Shared cell type for `bounds_reporter`. Single-threaded
+/// (`Rc<Cell<_>>`) is fine for iced's event loop in 0.13; bump to
+/// `Arc<AtomicRefCell<_>>` if iced ever multithreads the layout pass.
+pub(crate) type BoundsCell = std::rc::Rc<std::cell::Cell<iced::Rectangle>>;
+
+/// Build a fresh, zeroed `BoundsCell` ready to be cloned into a
+/// `bounds_reporter` and held in app state for later reads.
+pub(crate) fn new_bounds_cell() -> BoundsCell {
+    std::rc::Rc::new(std::cell::Cell::new(iced::Rectangle::new(
+        iced::Point::ORIGIN,
+        iced::Size::ZERO,
+    )))
+}
+
+/// Wraps `content` and writes the laid-out screen-space bounds to
+/// `cell` on every `draw` pass. Lets other code (typically context-
+/// menu anchor logic) read the widget's on-screen rect synchronously
+/// instead of going through the async `Operation` round-trip. Cell
+/// value reflects the LAST rendered frame, which is what every
+/// popover/anchor flow wants anyway. Everything except `draw`
+/// delegates straight to the inner widget, so behaviour is otherwise
+/// identical to the unwrapped child.
+pub(crate) fn bounds_reporter<'a, Message: 'a>(
+    content: impl Into<Element<'a, Message>>,
+    cell: BoundsCell,
+) -> Element<'a, Message> {
+    use iced::advanced::widget::{tree, Operation, Tree, Widget};
+    use iced::advanced::{layout, mouse, overlay, renderer, Layout, Shell};
+    use iced::{Event, Length as L, Rectangle, Size, Vector};
+
+    struct BoundsReporter<'a, Message> {
+        content: Element<'a, Message>,
+        cell: BoundsCell,
+    }
+
+    impl<Message> Widget<Message, Theme, iced::Renderer> for BoundsReporter<'_, Message> {
+        fn tag(&self) -> tree::Tag {
+            self.content.as_widget().tag()
+        }
+        fn state(&self) -> tree::State {
+            self.content.as_widget().state()
+        }
+        fn children(&self) -> Vec<Tree> {
+            self.content.as_widget().children()
+        }
+        fn diff(&self, tree: &mut Tree) {
+            self.content.as_widget().diff(tree);
+        }
+        fn size(&self) -> Size<L> {
+            self.content.as_widget().size()
+        }
+        fn size_hint(&self) -> Size<L> {
+            self.content.as_widget().size_hint()
+        }
+        fn layout(
+            &mut self,
+            tree: &mut Tree,
+            renderer: &iced::Renderer,
+            limits: &layout::Limits,
+        ) -> layout::Node {
+            self.content
+                .as_widget_mut()
+                .layout(tree, renderer, limits)
+        }
+        fn draw(
+            &self,
+            tree: &Tree,
+            renderer: &mut iced::Renderer,
+            theme: &Theme,
+            style: &renderer::Style,
+            layout: Layout<'_>,
+            cursor: mouse::Cursor,
+            viewport: &Rectangle,
+        ) {
+            // Draw runs after final positioning, so `layout.bounds()`
+            // here is the screen-space rect (offset by parent
+            // translations). Cache it so anchor lookups in `update`
+            // hit the correct on-screen coordinates.
+            self.cell.set(layout.bounds());
+            self.content
+                .as_widget()
+                .draw(tree, renderer, theme, style, layout, cursor, viewport);
+        }
+        fn operate(
+            &mut self,
+            tree: &mut Tree,
+            layout: Layout<'_>,
+            renderer: &iced::Renderer,
+            operation: &mut dyn Operation,
+        ) {
+            self.content
+                .as_widget_mut()
+                .operate(tree, layout, renderer, operation);
+        }
+        fn update(
+            &mut self,
+            tree: &mut Tree,
+            event: &Event,
+            layout: Layout<'_>,
+            cursor: mouse::Cursor,
+            renderer: &iced::Renderer,
+            shell: &mut Shell<'_, Message>,
+            viewport: &Rectangle,
+        ) {
+            self.content.as_widget_mut().update(
+                tree, event, layout, cursor, renderer, shell, viewport,
+            );
+        }
+        fn mouse_interaction(
+            &self,
+            tree: &Tree,
+            layout: Layout<'_>,
+            cursor: mouse::Cursor,
+            viewport: &Rectangle,
+            renderer: &iced::Renderer,
+        ) -> mouse::Interaction {
+            self.content
+                .as_widget()
+                .mouse_interaction(tree, layout, cursor, viewport, renderer)
+        }
+        fn overlay<'b>(
+            &'b mut self,
+            tree: &'b mut Tree,
+            layout: Layout<'b>,
+            renderer: &iced::Renderer,
+            viewport: &Rectangle,
+            translation: Vector,
+        ) -> Option<overlay::Element<'b, Message, Theme, iced::Renderer>> {
+            self.content.as_widget_mut().overlay(
+                tree,
+                layout,
+                renderer,
+                viewport,
+                translation,
+            )
+        }
+    }
+
+    Element::new(BoundsReporter {
+        content: content.into(),
+        cell,
+    })
 }

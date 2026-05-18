@@ -375,6 +375,7 @@ pub enum Message {
     ToggleKeywordHighlight,
     ToggleSmartContrast,
     SettingToggleShowStatusBar,
+    SettingToggleTabAccentLine,
     SettingTabCloseButtonSideChanged(String),
     SettingToggleShowTabStatusDot,
     /// Show/hide the top-left burger menu (Settings / Updates / About /
@@ -474,6 +475,13 @@ pub enum Message {
     ShowIdentityMenu(usize),
     ToggleKeychainAddMenu,
 
+    // Per-list sort menus (Hosts / Keychain / Snippets toolbars).
+    // The Toggle* messages open/close the dropdown anchored to the
+    // toolbar sort button; the Set* messages pick a sort mode and
+    // persist it via the matching `*_sort` settings key.
+    ToggleSortMenu(crate::state::SortMenuKind),
+    SetListSort(crate::state::SortMenuKind, crate::state::ListSort),
+
     // Proxy Identities (Settings → Proxies)
     ShowProxyIdentityForm(Option<Uuid>),
     HideProxyIdentityForm,
@@ -547,6 +555,55 @@ pub enum Message {
     /// discovery panel. Carries the section key (e.g. `"ec2"`).
     CloudDiscoverToggleSection(String),
     CloudDiscoverDefaultTransportChanged(oryxis_core::models::cloud::TransportKind),
+    CloudDiscoverDefaultGroupNameChanged(String),
+    CloudDiscoverDefaultGroupPick(String),
+    /// Open / close the shared group picker for a side-panel parent
+    /// group input. Anchors the popover at the matching combo's
+    /// measured bounds (`editor_parent_combo_bounds` or
+    /// `dynamic_form_parent_combo_bounds`).
+    ToggleGroupPicker(crate::state::GroupPickerTarget),
+    /// Live filter for the shared group-picker popover.
+    GroupPickerSearchChanged(String),
+    /// Route a pick into the matching form field and close the
+    /// popover. Existing field-change messages (`EditorGroupChanged`,
+    /// `DynamicGroupFormParentChanged`) still drive the write.
+    GroupPickerPick(crate::state::GroupPickerTarget, String),
+    /// Toggle the floating group-picker overlay rendered at the top
+    /// of the Discover import modal. Independent of the global
+    /// OverlayState so it can sit on top of the modal scrim.
+    ToggleCloudDiscoverGroupPicker,
+    /// Live filter typed inside the group-picker overlay's own
+    /// search field. Doesn't affect the main "Import into" input.
+    CloudDiscoverDefaultGroupPickerSearchChanged(String),
+    /// Apply / clear the dashboard cloud-profile filter. Passing None
+    /// clears it; passing Some(pid) restricts the grid to items whose
+    /// cloud origin matches that profile.
+    HostFilterByCloudProfile(Option<Uuid>),
+    /// Manual sync of a cloud profile, re-runs discovery and updates
+    /// every already-imported host whose `cloud_ref.profile_id` matches.
+    /// Fields the user has flagged in `customized_fields` are preserved.
+    /// Hosts not in the upstream result get their `cloud_ref.orphaned_at`
+    /// set; hosts that come back get it cleared.
+    CloudProfileSync(Uuid),
+    CloudProfileSyncResult(Uuid, Result<Box<oryxis_cloud::DiscoveryResult>, String>),
+    SettingCloudAutoRefreshToggle,
+    SettingCloudAutoRefreshIntervalChanged(String),
+    SettingCloudAutoArchiveToggle,
+    SettingCloudOrphanArchiveDaysChanged(String),
+    /// Fired by the iced subscription when the auto-refresh interval
+    /// elapses. Iterates every cloud profile and dispatches a
+    /// `CloudProfileSync(pid)` for each.
+    CloudAutoRefreshTick,
+    DynamicGroupFormLabelChanged(String),
+    DynamicGroupFormParentChanged(String),
+    DynamicGroupFormClusterChanged(String),
+    DynamicGroupFormServiceChanged(String),
+    DynamicGroupFormContainerChanged(String),
+    /// Open the shared icon + color picker pre-filled with the current
+    /// dynamic-group form values. On Save the picker writes back to the
+    /// form (not directly to the vault) so the deferred Save button on
+    /// the form panel still controls when the group is persisted.
+    ShowIconPickerForDynamicGroupForm,
     /// Kick off `provider.resolve_query()` for a dynamic group. The
     /// async result lands as `DynamicGroupResolved`. Idempotent
     /// safe to dispatch even if a resolve is already running for the
@@ -559,6 +616,12 @@ pub enum Message {
         group_id: Uuid,
         task_id: String,
         task_label: String,
+        /// Specific container to exec into. Required because under
+        /// wildcard queries (empty `container` in `cloud_query`) the
+        /// row knows which container the user actually clicked while
+        /// the query itself doesn't pin one. Always populated from
+        /// the row's `DiscoveredHost.container_name`.
+        container: String,
     },
     /// Result of `ecs:ExecuteCommand` + plugin invocation prep. On
     /// success the dispatch spawns the plugin and opens a tab; on

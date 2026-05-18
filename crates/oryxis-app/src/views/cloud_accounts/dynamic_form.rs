@@ -4,8 +4,9 @@
 //! with the rest of the app.
 
 use iced::border::Radius;
+use iced::widget::button::Status as BtnStatus;
 use iced::widget::{button, column, container, pick_list, scrollable, text, text_input, Space};
-use iced::{Background, Border, Element, Length, Padding};
+use iced::{Background, Border, Color, Element, Length, Padding};
 
 use crate::app::{Message, Oryxis, PANEL_WIDTH};
 use crate::i18n::t;
@@ -16,50 +17,44 @@ impl Oryxis {
     pub(crate) fn view_dynamic_group_form_panel(&self) -> Element<'_, Message> {
         use oryxis_core::models::cloud::TransportKind;
 
-        // Header, label of the group + close button.
-        let group_label = self
-            .cloud_dynamic_form_group_id
-            .and_then(|gid| self.groups.iter().find(|g| g.id == gid))
-            .map(|g| g.label.clone())
-            .unwrap_or_default();
+        // Header: single-line title + chevron-right close, matches
+        // the host editor (`view_host_panel`) so every right-side
+        // panel reads with the same chrome. The group label appears
+        // inside the General section below as the editable Label
+        // field instead of doubling as a header subtitle.
         let title = container(
             dir_row(vec![
-                column![
-                    text(t("cloud_dynamic_form_title"))
-                        .size(11)
-                        .color(OryxisColors::t().text_muted),
-                    Space::new().height(2),
-                    text(group_label)
-                        .size(16)
-                        .color(OryxisColors::t().text_primary),
-                ]
-                .into(),
-                Space::new().width(Length::Fill).into(),
-                button(text("\u{00D7}").size(14).color(OryxisColors::t().text_muted))
-                    .on_press(Message::HideDynamicGroupForm)
-                    .padding(Padding {
-                        top: 4.0,
-                        right: 8.0,
-                        bottom: 4.0,
-                        left: 8.0,
-                    })
-                    .style(|_, _| button::Style {
-                        background: Some(Background::Color(OryxisColors::t().bg_surface)),
-                        border: Border {
-                            radius: Radius::from(6.0),
-                            ..Default::default()
-                        },
-                        ..Default::default()
-                    })
+                text(t("cloud_dynamic_form_title"))
+                    .size(16)
+                    .color(OryxisColors::t().text_primary)
                     .into(),
+                Space::new().width(Length::Fill).into(),
+                button(
+                    iced_fonts::lucide::chevron_right()
+                        .size(14)
+                        .color(OryxisColors::t().text_muted),
+                )
+                .on_press(Message::HideDynamicGroupForm)
+                .padding(Padding {
+                    top: 4.0,
+                    right: 8.0,
+                    bottom: 4.0,
+                    left: 8.0,
+                })
+                .style(|_, _| button::Style {
+                    background: Some(Background::Color(Color::TRANSPARENT)),
+                    border: Border::default(),
+                    ..Default::default()
+                })
+                .into(),
             ])
             .align_y(iced::Alignment::Center),
         )
         .padding(Padding {
-            top: 20.0,
-            right: 20.0,
-            bottom: 16.0,
-            left: 20.0,
+            top: 16.0,
+            right: 16.0,
+            bottom: 12.0,
+            left: 16.0,
         });
 
         // Transport picker, the four transports that make sense for
@@ -123,7 +118,180 @@ impl Oryxis {
         .padding(10)
         .style(crate::widgets::rounded_pick_list_style);
 
-        let form = column![
+        // Icon + color preview: same widget shape the host editor
+        // uses (a 32 px rounded square with the glyph centred). Click
+        // opens the shared icon picker modal pre-filled from the form
+        // state; the picker writes the user's choice back to
+        // `cloud_dynamic_form_icon` / `_color` instead of persisting
+        // straight to the vault, so the form's Save button stays the
+        // single commit point.
+        let icon_id_for_preview = if self.cloud_dynamic_form_icon.trim().is_empty() {
+            "server"
+        } else {
+            self.cloud_dynamic_form_icon.trim()
+        };
+        let preview_color = if self.cloud_dynamic_form_color.trim().is_empty() {
+            OryxisColors::t().accent
+        } else {
+            crate::widgets::parse_hex_color(self.cloud_dynamic_form_color.trim())
+                .unwrap_or(OryxisColors::t().accent)
+        };
+        let preview_glyph = crate::os_icon::custom_icon_glyph(icon_id_for_preview);
+        let preview_box: Element<'_, Message> = button(
+            container(preview_glyph.view(18.0, Color::WHITE))
+                .width(Length::Fixed(32.0))
+                .height(Length::Fixed(32.0))
+                .center_x(Length::Fixed(32.0))
+                .center_y(Length::Fixed(32.0)),
+        )
+        .on_press(Message::ShowIconPickerForDynamicGroupForm)
+        .padding(0)
+        .style(move |_, status| {
+            let ring = match status {
+                BtnStatus::Hovered => Color::from_rgba(1.0, 1.0, 1.0, 0.25),
+                _ => Color::TRANSPARENT,
+            };
+            button::Style {
+                background: Some(Background::Color(preview_color)),
+                border: Border {
+                    radius: Radius::from(8.0),
+                    color: ring,
+                    width: 1.5,
+                },
+                ..Default::default()
+            }
+        })
+        .into();
+
+        // Parent Group combo, same shape as the host editor: text
+        // input + chevron that opens the shared group picker popover.
+        // Typing a brand new name still creates the group on Save
+        // (existing `DynamicGroupFormParentChanged` path unchanged).
+        const PARENT_COMBO_HEIGHT: f32 = 36.0;
+        let parent_input = text_input(
+            t("group_placeholder"),
+            &self.cloud_dynamic_form_parent_label,
+        )
+        .on_input(Message::DynamicGroupFormParentChanged)
+        .padding(10)
+        .width(Length::Fill)
+        .style(crate::widgets::rounded_input_style)
+        .align_x(dir_align_x());
+        let parent_chevron = button(
+            container(
+                iced_fonts::lucide::chevron_down::<iced::Theme, iced::Renderer>()
+                    .size(12)
+                    .color(OryxisColors::t().text_muted),
+            )
+            .center_x(Length::Fixed(32.0))
+            .center_y(Length::Fixed(PARENT_COMBO_HEIGHT)),
+        )
+        .on_press(Message::ToggleGroupPicker(
+            crate::state::GroupPickerTarget::DynamicFormParent,
+        ))
+        .padding(0)
+        .style(|_, status| {
+            let bg = match status {
+                BtnStatus::Hovered => OryxisColors::t().bg_hover,
+                _ => OryxisColors::t().bg_surface,
+            };
+            button::Style {
+                background: Some(Background::Color(bg)),
+                border: Border {
+                    radius: Radius::from(6.0),
+                    color: OryxisColors::t().border,
+                    width: 1.0,
+                },
+                ..Default::default()
+            }
+        });
+        let parent_combo: Element<'_, Message> = crate::widgets::bounds_reporter(
+            dir_row(vec![
+                container(parent_input)
+                    .width(Length::Fill)
+                    .height(Length::Fixed(PARENT_COMBO_HEIGHT))
+                    .into(),
+                Space::new().width(6).into(),
+                container(parent_chevron)
+                    .height(Length::Fixed(PARENT_COMBO_HEIGHT))
+                    .into(),
+            ])
+            .align_y(iced::Alignment::Center),
+            self.dynamic_form_parent_combo_bounds.clone(),
+        );
+
+        // General section: rename the group, swap icon/color via the
+        // shared picker, re-parent under any other user folder. Parity
+        // with the host editor so a dynamic group is a first-class
+        // entity.
+        let general_section = column![
+            text(t("cloud_dynamic_form_general"))
+                .size(14)
+                .color(OryxisColors::t().text_primary),
+            Space::new().height(10),
+            dir_row(vec![
+                preview_box,
+                Space::new().width(10).into(),
+                text_input("group label", &self.cloud_dynamic_form_label)
+                    .on_input(Message::DynamicGroupFormLabelChanged)
+                    .padding(10)
+                    .style(crate::widgets::rounded_input_style)
+                    .align_x(dir_align_x())
+                    .into(),
+            ])
+            .align_y(iced::Alignment::Center),
+            Space::new().height(14),
+            text(t("parent_group"))
+                .size(12)
+                .color(OryxisColors::t().text_secondary),
+            Space::new().height(4),
+            parent_combo,
+        ]
+        .width(Length::Fill)
+        .align_x(dir_align_x());
+
+        // Cloud source section: the query backing the dynamic group
+        // (ECS today, K8s lands later) followed by the template applied
+        // to every transient child the resolver returns.
+        let source_section = column![
+            text(t("cloud_dynamic_form_source"))
+                .size(14)
+                .color(OryxisColors::t().text_primary),
+            Space::new().height(10),
+            text(t("cloud_dynamic_form_cluster"))
+                .size(12)
+                .color(OryxisColors::t().text_secondary),
+            Space::new().height(4),
+            text_input("my-cluster", &self.cloud_dynamic_form_cluster)
+                .on_input(Message::DynamicGroupFormClusterChanged)
+                .padding(10)
+                .style(crate::widgets::rounded_input_style)
+                .align_x(dir_align_x()),
+            Space::new().height(14),
+            text(t("cloud_dynamic_form_service"))
+                .size(12)
+                .color(OryxisColors::t().text_secondary),
+            Space::new().height(4),
+            text_input("my-service", &self.cloud_dynamic_form_service)
+                .on_input(Message::DynamicGroupFormServiceChanged)
+                .padding(10)
+                .style(crate::widgets::rounded_input_style)
+                .align_x(dir_align_x()),
+            Space::new().height(14),
+            text(t("cloud_dynamic_form_container"))
+                .size(12)
+                .color(OryxisColors::t().text_secondary),
+            Space::new().height(4),
+            text_input(t("cloud_dynamic_form_container_ph"), &self.cloud_dynamic_form_container)
+                .on_input(Message::DynamicGroupFormContainerChanged)
+                .padding(10)
+                .style(crate::widgets::rounded_input_style)
+                .align_x(dir_align_x()),
+            Space::new().height(6),
+            text(t("cloud_dynamic_form_query_hint"))
+                .size(10)
+                .color(OryxisColors::t().text_muted),
+            Space::new().height(14),
             text(t("cloud_dynamic_form_transport"))
                 .size(12)
                 .color(OryxisColors::t().text_secondary),
@@ -137,7 +305,8 @@ impl Oryxis {
             text_input("ec2-user", &self.cloud_dynamic_form_username)
                 .on_input(Message::DynamicGroupFormUsernameChanged)
                 .padding(10)
-                .style(crate::widgets::rounded_input_style).align_x(dir_align_x()),
+                .style(crate::widgets::rounded_input_style)
+                .align_x(dir_align_x()),
             Space::new().height(14),
             text(t("cloud_dynamic_form_initial_command"))
                 .size(12)
@@ -146,7 +315,8 @@ impl Oryxis {
             text_input("exec bash", &self.cloud_dynamic_form_initial_command)
                 .on_input(Message::DynamicGroupFormInitialCommandChanged)
                 .padding(10)
-                .style(crate::widgets::rounded_input_style).align_x(dir_align_x()),
+                .style(crate::widgets::rounded_input_style)
+                .align_x(dir_align_x()),
             Space::new().height(14),
             text(t("cloud_dynamic_form_key"))
                 .size(12)
@@ -159,6 +329,17 @@ impl Oryxis {
                 .color(OryxisColors::t().text_secondary),
             Space::new().height(4),
             identity_pick,
+        ]
+        .width(Length::Fill)
+        .align_x(dir_align_x());
+
+        // Wrap each section in a `panel_section` card so the visual
+        // grouping matches the host editor (cards-on-surface layout
+        // instead of loose fields against the panel background).
+        let form = column![
+            crate::widgets::panel_section(general_section),
+            Space::new().height(8),
+            crate::widgets::panel_section(source_section),
         ]
         .width(Length::Fill)
         .align_x(dir_align_x());
@@ -189,33 +370,44 @@ impl Oryxis {
             ..Default::default()
         });
 
+        // Push the right padding INSIDE the scrollable so the
+        // scrollbar overlay lands in the panel's empty right margin
+        // instead of sitting on top of the input fields. Mirrors the
+        // host editor layout so both side panels feel consistent.
+        let form_scroll = scrollable(
+            column![form]
+                .width(Length::Fill)
+                .align_x(dir_align_x())
+                .padding(Padding {
+                    top: 0.0,
+                    right: 20.0,
+                    bottom: 0.0,
+                    left: 20.0,
+                }),
+        )
+        .height(Length::Fill);
+
         let panel_content = column![
             title,
-            container(
-                column![
-                    scrollable(form).height(Length::Fill),
-                    Space::new().height(12),
-                    save_btn,
-                ]
-                .height(Length::Fill)
-                .width(Length::Fill)
-                .align_x(dir_align_x()),
-            )
-            .padding(Padding {
-                top: 0.0,
-                right: 20.0,
-                bottom: 20.0,
-                left: 20.0,
-            })
-            .height(Length::Fill),
+            form_scroll,
+            container(column![Space::new().height(12), save_btn])
+                .padding(Padding {
+                    top: 0.0,
+                    right: 20.0,
+                    bottom: 20.0,
+                    left: 20.0,
+                }),
         ]
         .height(Length::Fill);
 
         container(panel_content)
             .width(PANEL_WIDTH)
             .height(Length::Fill)
+            // Standardised side-panel chrome: same `bg_surface` +
+            // border as the host editor (`view_host_panel`) so all
+            // right-side editors share the same visual frame.
             .style(|_| container::Style {
-                background: Some(Background::Color(OryxisColors::t().bg_sidebar)),
+                background: Some(Background::Color(OryxisColors::t().bg_surface)),
                 border: Border {
                     color: OryxisColors::t().border,
                     width: 1.0,

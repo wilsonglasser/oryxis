@@ -5442,6 +5442,7 @@ name = "oryxis-cloud"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "chrono",
  "oryxis-core",
  "serde",
  "serde_json",
@@ -5460,6 +5461,7 @@ dependencies = [
  "aws-sdk-ecs",
  "aws-sdk-ssm",
  "aws-sdk-sts",
+ "chrono",
  "oryxis-cloud",
  "oryxis-core",
  "serde",

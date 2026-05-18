@@ -36,6 +36,11 @@ impl Oryxis {
             // like a continuation of that title rather than a separate
             // nav element. Accent color marks it as clickable; routes
             // back to the root view.
+            // Zero padding on every crumb button so the clickable
+            // ancestors render at the same x footprint as the
+            // unstyled-text current crumb. Gaps between crumbs come
+            // from explicit `Space::new().width(...)` separators
+            // below, not from button chrome.
             let mut crumbs: Vec<Element<'_, Message>> = vec![
                 button(
                     text(t("hosts"))
@@ -43,7 +48,7 @@ impl Oryxis {
                         .color(OryxisColors::t().accent),
                 )
                 .on_press(Message::BackToRoot)
-                .padding(Padding { top: 0.0, right: 4.0, bottom: 0.0, left: 0.0 })
+                .padding(Padding::ZERO)
                 .style(|_, _| button::Style {
                     background: Some(Background::Color(Color::TRANSPARENT)),
                     border: Border::default(),
@@ -72,7 +77,11 @@ impl Oryxis {
                             .into(),
                     );
                 } else {
-                    // Ancestor, clickable: navigates back up.
+                    // Ancestor, clickable: navigates back up. Zero
+                    // padding mirrors the leading "Hosts" button and
+                    // the unstyled current-crumb text so the row's
+                    // glyph baseline stays consistent across mixed
+                    // clickable + non-clickable crumbs.
                     let parent_id = g.id;
                     crumbs.push(
                         button(
@@ -81,12 +90,7 @@ impl Oryxis {
                                 .color(OryxisColors::t().accent),
                         )
                         .on_press(Message::OpenGroup(parent_id))
-                        .padding(Padding {
-                            top: 0.0,
-                            right: 4.0,
-                            bottom: 0.0,
-                            left: 4.0,
-                        })
+                        .padding(Padding::ZERO)
                         .style(|_, _| button::Style {
                             background: Some(Background::Color(Color::TRANSPARENT)),
                             border: Border::default(),
@@ -209,14 +213,21 @@ impl Oryxis {
                 .and_then(|g| g.cloud_query.as_ref())
                 .map(|q| q.profile_id);
             if dynamic_query_profile.is_some() {
-                // Dynamic group → no "+ host" button. The Refresh
-                // icon already lives in the sub-header.
-                // Reserve the same vertical slot the `+ HOST` /
-                // `+ DISCOVER` buttons would occupy so the toolbar
-                // row keeps its height when the action is suppressed
-                // (the content below it would otherwise pop up by
-                // ~8 px when you step into a dynamic group).
-                Space::new().width(0).height(Length::Fixed(32.0)).into()
+                // Dynamic group → no "+ host" button. Reserve the
+                // same vertical slot the visible button would occupy
+                // so the breadcrumb row keeps its height. Iced's
+                // button widget adds its own DEFAULT_PADDING (5 top
+                // + 5 bottom) on top of the inner container's
+                // `center_y(Length::Fixed(24.0))`, so the rendered
+                // button is 24 + 10 = 34 px tall. Anchoring the
+                // slot to 34 keeps the breadcrumb glyph baseline at
+                // the same y-position across views; iced's Space
+                // also ignores `height` when `width == 0`, so use a
+                // 1 px-wide sliver to actually force the height.
+                Space::new()
+                    .width(Length::Fixed(1.0))
+                    .height(Length::Fixed(34.0))
+                    .into()
             } else {
                 // Manual folder: derive the linked profile from any
                 // child host's cloud_ref or any child dynamic group's
@@ -283,6 +294,14 @@ impl Oryxis {
             action_group
         };
 
+        // Sort dropdown trigger, sits just before the "+ Host" /
+        // "+ Discover" action. Glyph reflects the active sort so the
+        // current mode is readable without opening the menu.
+        let sort_btn = crate::widgets::sort_toolbar_button(
+            crate::state::SortMenuKind::Hosts,
+            self.hosts_sort,
+        );
+
         // Let the row size to its natural height (button chrome
         // included) so the action button keeps its true visual size.
         // Stability across views (dynamic group has no action) is
@@ -292,6 +311,8 @@ impl Oryxis {
             dir_row(vec![
                 toolbar_left,
                 Space::new().width(Length::Fill).into(),
+                sort_btn,
+                Space::new().width(8).into(),
                 resolved_action,
             ])
             .align_y(iced::Alignment::Center),

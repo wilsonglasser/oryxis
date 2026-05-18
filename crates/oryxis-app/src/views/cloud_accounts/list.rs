@@ -5,13 +5,16 @@
 
 use iced::border::Radius;
 use iced::widget::button::Status as BtnStatus;
-use iced::widget::{button, column, container, scrollable, text, MouseArea, Space};
+use iced::widget::{button, column, container, scrollable, text, text_input, MouseArea, Space};
 use iced::{Background, Border, Color, Element, Length, Padding};
 
 use crate::app::{Message, Oryxis, CARD_WIDTH, PANEL_WIDTH};
 use crate::i18n::t;
 use crate::theme::OryxisColors;
-use crate::widgets::{card_grid_columns, dir_row, distribute_card_grid};
+use crate::widgets::{
+    card_grid_columns, dir_align_x, dir_row, distribute_card_grid, panel_section,
+    rounded_input_style, toggle_row,
+};
 
 impl Oryxis {
     pub(crate) fn view_cloud_accounts(&self) -> Element<'_, Message> {
@@ -264,12 +267,85 @@ impl Oryxis {
             let cols = card_grid_columns(available, CARD_WIDTH, 12.0);
             let cloud_grid = distribute_card_grid(cards, cols, 12.0, 12.0);
 
-            let grid = scrollable(column![cloud_grid].padding(Padding {
-                top: 0.0,
-                right: 24.0,
-                bottom: 24.0,
-                left: 24.0,
-            }))
+            // Cloud Sync settings card. Sits between the toolbar and
+            // the cards so the user can flip auto-refresh / auto-
+            // archive from the same screen they manage their cloud
+            // profiles on. Interval / days inputs accept partial typed
+            // input and clamp on commit via the sanitize helper in the
+            // dispatcher.
+            let refresh_interval_input = text_input(
+                "30",
+                &self.setting_cloud_auto_refresh_interval_minutes,
+            )
+            .on_input(Message::SettingCloudAutoRefreshIntervalChanged)
+            .padding(8)
+            .width(120)
+            .style(rounded_input_style)
+            .align_x(dir_align_x());
+            let orphan_days_input = text_input(
+                "7",
+                &self.setting_cloud_orphan_archive_days,
+            )
+            .on_input(Message::SettingCloudOrphanArchiveDaysChanged)
+            .padding(8)
+            .width(120)
+            .style(rounded_input_style)
+            .align_x(dir_align_x());
+            let cloud_sync_settings = panel_section(column![
+                text(t("settings_cloud_section"))
+                    .size(14)
+                    .color(OryxisColors::t().text_primary),
+                Space::new().height(10),
+                toggle_row(
+                    t("settings_cloud_auto_refresh"),
+                    self.setting_cloud_auto_refresh_enabled,
+                    Message::SettingCloudAutoRefreshToggle,
+                ),
+                Space::new().height(8),
+                dir_row(vec![
+                    text(t("settings_cloud_auto_refresh_interval"))
+                        .size(12)
+                        .color(OryxisColors::t().text_muted)
+                        .into(),
+                    Space::new().width(Length::Fill).into(),
+                    refresh_interval_input.into(),
+                ])
+                .align_y(iced::Alignment::Center),
+                Space::new().height(14),
+                toggle_row(
+                    t("settings_cloud_auto_archive"),
+                    self.setting_cloud_auto_archive_orphans,
+                    Message::SettingCloudAutoArchiveToggle,
+                ),
+                Space::new().height(8),
+                dir_row(vec![
+                    text(t("settings_cloud_orphan_archive_days"))
+                        .size(12)
+                        .color(OryxisColors::t().text_muted)
+                        .into(),
+                    Space::new().width(Length::Fill).into(),
+                    orphan_days_input.into(),
+                ])
+                .align_y(iced::Alignment::Center),
+            ]);
+
+            let grid = scrollable(
+                column![
+                    container(cloud_sync_settings).padding(Padding {
+                        top: 0.0,
+                        right: 0.0,
+                        bottom: 16.0,
+                        left: 0.0,
+                    }),
+                    cloud_grid
+                ]
+                .padding(Padding {
+                    top: 0.0,
+                    right: 24.0,
+                    bottom: 24.0,
+                    left: 24.0,
+                }),
+            )
             .height(Length::Fill);
 
             column![toolbar, grid]

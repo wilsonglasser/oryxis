@@ -105,13 +105,17 @@ pub(crate) fn enumerate_terminal_fonts() -> Vec<String> {
         return TERMINAL_FONT_FALLBACK.iter().map(|s| s.to_string()).collect();
     }
 
-    // Prepend the bundled Source Code Pro so it's always picker entry
-    // #1; the rest of the names come from the dedup'd system scan.
-    let mut out: Vec<String> = Vec::with_capacity(names.len() + 1);
-    let bundled = "Source Code Pro".to_string();
-    out.push(bundled.clone());
+    // Prepend the bundled families so they're always picker entries
+    // #1 and #2 regardless of what the system scan returned. cosmic-text
+    // resolves them by family name, fontdb has them registered via
+    // `application.font(include_bytes!(...))` in main.rs.
+    let bundled: &[&str] = &["Source Code Pro", "JetBrainsMono Nerd Font"];
+    let mut out: Vec<String> = Vec::with_capacity(names.len() + bundled.len());
+    for b in bundled {
+        out.push((*b).to_string());
+    }
     for n in names {
-        if n != bundled {
+        if !bundled.contains(&n.as_str()) {
             out.push(n);
         }
     }
@@ -140,6 +144,12 @@ pub struct Oryxis {
     pub(crate) active_view: View,
     pub(crate) active_group: Option<Uuid>,  // None = root, Some(id) = inside folder
     pub(crate) host_search: String,
+    /// When set, the dashboard grid hides every host / group whose
+    /// cloud origin doesn't match this profile id. Activated by
+    /// clicking the small provider badge on a cloud-sourced host card,
+    /// cleared from the chip at the top of the grid. None means no
+    /// cloud filter.
+    pub(crate) host_filter_cloud_profile: Option<Uuid>,
     pub(crate) quick_host_input: String,
     pub(crate) sidebar_collapsed: bool,
 
@@ -167,6 +177,13 @@ pub struct Oryxis {
     // Icon/color picker (from the host editor's icon box).
     pub(crate) show_icon_picker: bool,
     pub(crate) icon_picker_for: Option<Uuid>,
+    /// When true, the icon picker writes its result back to the
+    /// dynamic group editor form fields (`cloud_dynamic_form_icon` /
+    /// `_color`) instead of persisting straight to a Connection in the
+    /// vault. Lets the same picker serve both the host editor (saves
+    /// directly) and the form-driven dynamic group editor (deferred
+    /// save when the user clicks the form's Save).
+    pub(crate) icon_picker_for_group_form: bool,
     pub(crate) icon_picker_icon: Option<String>,
     pub(crate) icon_picker_color: Option<String>,
     pub(crate) icon_picker_hex_input: String,
@@ -314,6 +331,15 @@ pub struct Oryxis {
     pub(crate) identity_context_menu: Option<usize>,
     pub(crate) show_keychain_add_menu: bool,
 
+    // Per-list sort modes for the Hosts / Keychain / Snippets grids.
+    // Persisted via the `hosts_sort` / `keys_sort` / `snippets_sort`
+    // settings keys; loaded on boot and rewritten on each pick. The
+    // active value drives both the trigger button's glyph and the
+    // check mark in the dropdown.
+    pub(crate) hosts_sort: crate::state::ListSort,
+    pub(crate) keys_sort: crate::state::ListSort,
+    pub(crate) snippets_sort: crate::state::ListSort,
+
     // Proxy Identities, reusable proxy configs edited inline inside
     // the Settings → Proxies section. Form state is in-memory only
     // until SaveProxyIdentity flushes to the vault.
@@ -405,6 +431,34 @@ pub struct Oryxis {
     /// survives discovery refreshes.
     pub(crate) cloud_discover_default_transport:
         oryxis_core::models::cloud::TransportKind,
+    /// Target group name for the next import. Empty string = no
+    /// parent (drop at root). Otherwise the import flow finds a group
+    /// with this label or creates it on the spot, so the user can
+    /// type any name (existing or new) and have it materialised.
+    /// Decoupled from the pick_list-based approach so typing a brand
+    /// new folder name doesn't require a pre-existing entry.
+    pub(crate) cloud_discover_default_group_name: String,
+    /// Whether the floating group picker overlay (inside the import
+    /// confirmation modal) is open. Chevron toggles it; picking an
+    /// entry or clicking the scrim closes it.
+    pub(crate) cloud_discover_default_group_picker_open: bool,
+    /// Screen-space bounds of the Import-into combo row, populated
+    /// by a `bounds_reporter` wrapper. Read by the toggle handler to
+    /// anchor the picker overlay right under the chevron without
+    /// guessing layout offsets.
+    pub(crate) cloud_discover_default_group_combo_bounds: crate::widgets::BoundsCell,
+    /// Shared search input for the group picker (used by both side
+    /// panels' Parent Group fields). Reset on every open.
+    pub(crate) group_picker_search: String,
+    /// Bounds of the host editor's Parent Group combo row.
+    pub(crate) editor_parent_combo_bounds: crate::widgets::BoundsCell,
+    /// Bounds of the dynamic group editor's Parent Group combo row.
+    pub(crate) dynamic_form_parent_combo_bounds: crate::widgets::BoundsCell,
+    /// Search text inside the group picker overlay. Independent of
+    /// `cloud_discover_default_group_name` (the input box) so typing
+    /// in the picker's filter doesn't overwrite the user's chosen
+    /// folder name.
+    pub(crate) cloud_discover_default_group_picker_search: String,
     /// Modal that asks the user to pick the transport for the EC2
     /// hosts about to be imported. Only opened when there's at
     /// least one EC2 selected, pure-ECS imports skip straight to
@@ -428,6 +482,19 @@ pub struct Oryxis {
     pub(crate) cloud_dynamic_form_selected_key: Option<String>,
     /// Selected identity label (or `"(none)"`); resolved to an `identity_id` on save.
     pub(crate) cloud_dynamic_form_selected_identity: Option<String>,
+    /// General-section fields, parity with the host editor so a
+    /// dynamic group is a first-class entity (rename, color, icon,
+    /// move under any user group). Persisted on Save.
+    pub(crate) cloud_dynamic_form_label: String,
+    pub(crate) cloud_dynamic_form_color: String,
+    pub(crate) cloud_dynamic_form_icon: String,
+    pub(crate) cloud_dynamic_form_parent_label: String,
+    /// Cloud-source fields. ECS variant only (K8s ships later); editing
+    /// these repoints the group at a different upstream collection so
+    /// the next resolve hits the new cluster/service/container.
+    pub(crate) cloud_dynamic_form_cluster: String,
+    pub(crate) cloud_dynamic_form_service: String,
+    pub(crate) cloud_dynamic_form_container: String,
 
     /// Hover tracking for the kebab on dynamic-group cards (root + nested).
     pub(crate) hovered_dynamic_group_card: Option<Uuid>,
@@ -496,6 +563,13 @@ pub struct Oryxis {
     /// for a tab that lost its session. Defaults on; the user can hide
     /// it from Settings -> Interface.
     pub(crate) setting_show_tab_status_dot: bool,
+    /// When true (default), the hairline under the tab strip thickens
+    /// to 2 px and tints itself with the active host's accent (per-
+    /// host color → cloud brand → global accent). When false, it
+    /// collapses to the same neutral 1 px border the non-tabbed
+    /// screens use, so the user always sees a flat chrome regardless
+    /// of which host is open.
+    pub(crate) setting_tab_accent_line: bool,
     /// Toggles the SFTP feature entirely. Off hides the SFTP sidebar
     /// entry (both expanded and collapsed) so users who never transfer
     /// files don't have it taking up nav space. The SFTP settings panel
@@ -514,6 +588,17 @@ pub struct Oryxis {
     /// the renderer keeps the current shape.
     pub(crate) setting_default_host_icon: String,
     pub(crate) setting_keepalive_interval: String,
+    /// Background refresh of every cloud profile on a fixed interval.
+    /// Off by default; opt-in to avoid surprise API calls.
+    pub(crate) setting_cloud_auto_refresh_enabled: bool,
+    /// Minutes between auto-refresh ticks. Stored as a string to match
+    /// the rest of the int-setting family (`setting_keepalive_interval`,
+    /// etc.) and let the Settings UI accept partial typed input.
+    pub(crate) setting_cloud_auto_refresh_interval_minutes: String,
+    /// When on, the next boot deletes orphaned cloud-imported hosts
+    /// (resource gone upstream) older than `orphan_archive_days`.
+    pub(crate) setting_cloud_auto_archive_orphans: bool,
+    pub(crate) setting_cloud_orphan_archive_days: String,
     pub(crate) setting_scrollback_rows: String,
     /// Max parallel SFTP transfer slots (uploads/downloads). 1 = serial,
     /// up to 8 = aggressive. Each slot gets its own SFTP subsystem

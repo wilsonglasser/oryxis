@@ -7,6 +7,63 @@ project uses [SemVer](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- **Cloud providers UX redesign (Phase 1-5).** Replaces the rigid
+  v0.6 "everything goes into a provider folder, never editable"
+  model with a decoupled origin-as-metadata pattern (cloud_ref
+  stays as backpointer; group_id, label, color, icon all
+  user-owned post-import).
+  - **Multi-region per AWS profile.** Wizard accepts a chip list
+    of regions; backend already supported fan-out, now exposed.
+    New profiles prefill the chip with `AWS_REGION` env var or the
+    `[default]` profile's `region` in `~/.aws/config` when
+    available, so single-region devs don't see an empty form.
+  - **Import-into picker** in the Discover modal. Floating
+    autocomplete combo with a search field opens above the input;
+    typing a brand-new name creates the folder on the spot. No
+    more being trapped in the auto provider folder.
+  - **Filter chip** at the top of the dashboard: click "Filter by
+    cloud profile" on any host kebab and the grid dims down to
+    only that profile's items (lens model, not a separate sidebar
+    section). Brand badge on every cloud-sourced host card.
+  - **Sticky reimport.** `customized_fields` column on
+    `connections` tracks per-field user edits. The new "Sync now"
+    action in the cloud profile kebab refreshes every imported
+    host of that profile against AWS, preserving any field the
+    user has touched. Hosts that vanished upstream get an "Orphan"
+    pill + greyed badge; a "Forget" item in the kebab makes the
+    intent explicit.
+  - **Auto-refresh + auto-archive settings** (`Cloud Sync`
+    section): opt-in periodic refresh via an iced subscription,
+    opt-in auto-archive of orphans older than N days on boot.
+  - **Dynamic group (ECS) is a first-class group now.** Renamable,
+    re-parentable, color/icon via the same shared picker as the
+    host editor. Cloud-source query (cluster/service/container)
+    became editable in-place.
+  - **Container view enrichment.** ECS task rows show container
+    name + task definition revision + status pill (RUNNING green,
+    PENDING amber, STOPPED red) + private IP + AZ + started-at
+    relative (`5m ago`). Data was already in `DescribeTasks`,
+    just not surfaced.
+- **Shared group picker combo** (input + chevron + floating
+  search popover) on the Parent Group fields of both the host
+  editor and the dynamic group editor. Backed by a small
+  reusable `bounds_reporter` widget so the popover anchors at
+  the actual on-screen rect of the input (no hardcoded layout
+  math). Typing a brand-new name still creates the group on
+  Save.
+- **Update check feedback as a toast.** "Check for updates now"
+  from the burger menu now surfaces a transient toast
+  ("Checking…" → "You're on the latest version" or "Update
+  available: vX.Y") so the action doesn't look like a no-op when
+  fired from outside Settings.
+- **Tab badge always renders as a rounded square** regardless of
+  the global `default_host_icon` style. Circular badges read as
+  pills inside the narrow tab strip; locking the tab shape keeps
+  the strip uniform while leaving dashboard cards free to honour
+  the user's preference.
+- **`Tint tab underline with host accent`** toggle in Settings →
+  Interface. Off collapses the 2 px tinted hairline under the
+  tab strip to a flat 1 px neutral border across all screens.
 - **Workspace layout mode** (new default). Hides the sidebar entirely
   and promotes navigation to the top tab bar: Hosts and SFTP sit as
   area tabs before the connection tabs, the burger menu (top-left)

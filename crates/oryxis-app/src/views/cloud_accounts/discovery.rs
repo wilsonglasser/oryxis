@@ -199,18 +199,25 @@ impl Oryxis {
             b
         };
 
-        // Refresh moved to a header icon. Transport pick was moved to
-        // a confirmation modal that fires on click of the Import
-        // button (only when EC2 hosts are selected; ECS-only imports
-        // skip the modal). Footer is just the Import button.
+        // Footer: just the Import button. Both target group and
+        // transport selection now live inside the import-confirm
+        // modal (one decision surface for the whole batch), so the
+        // panel here stays focused on browsing + checking the
+        // resources to bring in.
         let footer = column![import_btn];
 
+        // Body wrapper keeps the leading + bottom insets but drops
+        // the trailing padding: the scrollable inside
+        // `view_discover_result_body` now owns its own right pad so
+        // the scrollbar overlay lands in the panel's empty right
+        // margin instead of overlapping the rows. Mirrors the host
+        // editor / dynamic-group panel pattern.
         let panel_content = column![
             title,
             search,
             container(body).height(Length::Fill).padding(Padding {
                 top: 0.0,
-                right: 20.0,
+                right: 0.0,
                 bottom: 8.0,
                 left: 20.0,
             }),
@@ -226,8 +233,12 @@ impl Oryxis {
         container(panel_content)
             .width(PANEL_WIDTH)
             .height(Length::Fill)
+            // Standardised side-panel chrome, matches the host
+            // editor and the dynamic-group / wizard panels so the
+            // right side of the dashboard reads as one consistent
+            // surface regardless of which editor is open.
             .style(|_| container::Style {
-                background: Some(Background::Color(OryxisColors::t().bg_sidebar)),
+                background: Some(Background::Color(OryxisColors::t().bg_surface)),
                 border: Border {
                     color: OryxisColors::t().border,
                     width: 1.0,
@@ -587,6 +598,19 @@ impl Oryxis {
             );
         }
 
-        scrollable(column(sections)).height(Length::Fill).into()
+        // Right padding pushes the rows away from the scrollbar
+        // overlay; the outer panel container intentionally dropped
+        // its trailing pad so the scrollbar can sit in the empty
+        // right margin instead of biting into row content.
+        scrollable(
+            column(sections).padding(Padding {
+                top: 0.0,
+                right: 20.0,
+                bottom: 0.0,
+                left: 0.0,
+            }),
+        )
+        .height(Length::Fill)
+        .into()
     }
 }

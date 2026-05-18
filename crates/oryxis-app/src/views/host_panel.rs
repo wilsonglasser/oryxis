@@ -106,12 +106,68 @@ impl Oryxis {
         ]);
 
         // ── Section: General ──
+        // Parent Group field now mirrors the Discover modal's
+        // combo: text input + chevron that opens a floating
+        // group-picker popover with its own search. Typing a brand
+        // new name still creates the group on Save (existing
+        // EditorGroupChanged → SaveConnection path is unchanged).
+        const PARENT_COMBO_HEIGHT: f32 = 36.0;
+        let parent_input = text_input(
+            t("group_placeholder"),
+            &self.editor_form.group_name,
+        )
+        .on_input(Message::EditorGroupChanged)
+        .padding(10)
+        .width(Length::Fill)
+        .style(crate::widgets::rounded_input_style)
+        .align_x(dir_align_x());
+        let parent_chevron = button(
+            container(
+                iced_fonts::lucide::chevron_down::<iced::Theme, iced::Renderer>()
+                    .size(12)
+                    .color(OryxisColors::t().text_muted),
+            )
+            .center_x(Length::Fixed(32.0))
+            .center_y(Length::Fixed(PARENT_COMBO_HEIGHT)),
+        )
+        .on_press(Message::ToggleGroupPicker(
+            crate::state::GroupPickerTarget::EditorParent,
+        ))
+        .padding(0)
+        .style(|_, status| {
+            let bg = match status {
+                BtnStatus::Hovered => OryxisColors::t().bg_hover,
+                _ => OryxisColors::t().bg_surface,
+            };
+            button::Style {
+                background: Some(Background::Color(bg)),
+                border: Border {
+                    radius: Radius::from(6.0),
+                    color: OryxisColors::t().border,
+                    width: 1.0,
+                },
+                ..Default::default()
+            }
+        });
+        let parent_combo: Element<'_, Message> = crate::widgets::bounds_reporter(
+            dir_row(vec![
+                container(parent_input)
+                    .width(Length::Fill)
+                    .height(Length::Fixed(PARENT_COMBO_HEIGHT))
+                    .into(),
+                Space::new().width(6).into(),
+                container(parent_chevron)
+                    .height(Length::Fixed(PARENT_COMBO_HEIGHT))
+                    .into(),
+            ])
+            .align_y(iced::Alignment::Center),
+            self.editor_parent_combo_bounds.clone(),
+        );
         let general_section = panel_section(column![
             panel_field(t("label"), text_input(t("my_server_placeholder"), &self.editor_form.label)
                 .on_input(Message::EditorLabelChanged).padding(10).style(crate::widgets::rounded_input_style).align_x(dir_align_x()).into()),
             Space::new().height(8),
-            panel_field(t("parent_group"), text_input(t("group_placeholder"), &self.editor_form.group_name)
-                .on_input(Message::EditorGroupChanged).padding(10).style(crate::widgets::rounded_input_style).align_x(dir_align_x()).into()),
+            panel_field(t("parent_group"), parent_combo),
         ]);
 
         // ── Section: SSH & Credentials ──

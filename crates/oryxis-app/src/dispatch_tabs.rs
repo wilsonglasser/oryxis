@@ -246,6 +246,14 @@ impl Oryxis {
                 self.fullscreen_hint_visible = false;
             }
             Message::SpawnNewWindow => {
+                // Burger menu fires this. Drop both the context-menu
+                // overlay AND the burger panel itself so the menu
+                // doesn't linger on top of the freshly-spawned window.
+                // The burger lives in its own `show_burger_menu` flag
+                // (not `OverlayState`), so clearing `self.overlay`
+                // alone wasn't enough.
+                self.overlay = None;
+                self.show_burger_menu = false;
                 self.spawn_oryxis_child(None);
             }
             Message::ActivateStripSlot(slot) => {
@@ -355,6 +363,7 @@ impl Oryxis {
             Message::HideIconPicker => {
                 self.show_icon_picker = false;
                 self.icon_picker_for = None;
+                self.icon_picker_for_group_form = false;
             }
             Message::IconPickerSelectIcon(name) => {
                 self.icon_picker_icon = Some(name);
@@ -372,7 +381,16 @@ impl Oryxis {
                 }
             }
             Message::IconPickerSave => {
-                if let Some(conn_id) = self.icon_picker_for {
+                if self.icon_picker_for_group_form {
+                    // Form-target: flow the choice back to the dynamic
+                    // group editor fields. The form's own Save button
+                    // persists to the vault, so the icon picker stays
+                    // an in-memory editor here.
+                    self.cloud_dynamic_form_icon =
+                        self.icon_picker_icon.clone().unwrap_or_default();
+                    self.cloud_dynamic_form_color =
+                        self.icon_picker_color.clone().unwrap_or_default();
+                } else if let Some(conn_id) = self.icon_picker_for {
                     let icon = self.icon_picker_icon.clone();
                     let color = self.icon_picker_color.clone();
                     if let Some(conn) = self.connections.iter_mut().find(|c| c.id == conn_id) {
@@ -387,13 +405,17 @@ impl Oryxis {
                 }
                 self.show_icon_picker = false;
                 self.icon_picker_for = None;
+                self.icon_picker_for_group_form = false;
             }
             Message::IconPickerResetAuto => {
                 // Clears the icon/color override, letting OS detection
                 // drive the icon again on the next successful connect.
                 // (Terminal-theme override is edited separately in the
                 // host editor and is not touched here.)
-                if let Some(conn_id) = self.icon_picker_for
+                if self.icon_picker_for_group_form {
+                    self.cloud_dynamic_form_icon = String::new();
+                    self.cloud_dynamic_form_color = String::new();
+                } else if let Some(conn_id) = self.icon_picker_for
                     && let Some(conn) = self.connections.iter_mut().find(|c| c.id == conn_id) {
                     conn.custom_icon = None;
                     conn.custom_color = None;
@@ -403,6 +425,7 @@ impl Oryxis {
                 }
                 self.show_icon_picker = false;
                 self.icon_picker_for = None;
+                self.icon_picker_for_group_form = false;
             }
             Message::CloseTab(idx) => {
                 // Also dismiss any open context menu so the menu doesn't linger

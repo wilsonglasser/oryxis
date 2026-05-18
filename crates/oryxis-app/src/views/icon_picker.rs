@@ -142,14 +142,22 @@ impl Oryxis {
         ])
         .align_y(iced::Alignment::Center);
 
+        // Colors first, icons below: the background colour is the
+        // dominant visual cue the user picks, the glyph layers on top.
+        // Putting it on top mirrors the natural top-down editing order
+        // and avoids the icon grid pushing the colours below the fold
+        // on shorter viewports.
         let scroll_area = scrollable(
             column![
-                icons_block,
-                Space::new().height(20),
                 colors_block,
+                Space::new().height(20),
+                icons_block,
                 Space::new().height(8),
             ]
-            .padding(iced::Padding { top: 0.0, right: 10.0, bottom: 0.0, left: 0.0 }),
+            // Extra trailing pad so the scrollbar overlay never bites
+            // into the right-most swatch / icon cell. 22 px clears the
+            // scrollbar's full width plus a small visual buffer.
+            .padding(iced::Padding { top: 0.0, right: 22.0, bottom: 0.0, left: 0.0 }),
         )
         .height(Length::Fill);
 

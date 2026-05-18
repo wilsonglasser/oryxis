@@ -13,6 +13,42 @@ use crate::state::{
     CloudAuthChoice, CloudProviderChoice, CloudTestState, OverlayContent, OverlayState,
 };
 
+/// Best-effort AWS default region lookup. Checks env vars first
+/// (AWS_REGION / AWS_DEFAULT_REGION are what `aws` CLI honours), then
+/// falls back to parsing the `[default]` profile's `region` line in
+/// `~/.aws/config`. Trims whitespace and skips empty values. Returns
+/// `None` when no source resolves so the wizard can keep its empty-
+/// chip default for users without any local AWS setup.
+fn detect_default_aws_region() -> Option<String> {
+    for var in ["AWS_REGION", "AWS_DEFAULT_REGION"] {
+        if let Ok(v) = std::env::var(var) {
+            let trimmed = v.trim();
+            if !trimmed.is_empty() {
+                return Some(trimmed.to_string());
+            }
+        }
+    }
+    let home = dirs::home_dir()?;
+    let content = std::fs::read_to_string(home.join(".aws/config")).ok()?;
+    let mut in_default = false;
+    for line in content.lines() {
+        let line = line.trim();
+        if line.starts_with('[') {
+            in_default = line == "[default]";
+            continue;
+        }
+        if in_default
+            && let Some(rest) = line.strip_prefix("region")
+        {
+            let val = rest.trim_start_matches('=').trim();
+            if !val.is_empty() {
+                return Some(val.to_string());
+            }
+        }
+    }
+    None
+}
+
 impl Oryxis {
     pub(super) fn handle_cloud_form(
         &mut self,
@@ -95,7 +131,14 @@ impl Oryxis {
                     self.cloud_form_provider = CloudProviderChoice::Aws;
                     self.cloud_form_auth_kind = CloudAuthChoice::Profile;
                     self.cloud_form_aws_profile_name = String::new();
-                    self.cloud_form_aws_regions = Vec::new();
+                    // Prefill regions from the user's existing AWS
+                    // config so the wizard isn't blank for the
+                    // common case (single-region developer with a
+                    // [default] profile in ~/.aws/config or an
+                    // AWS_REGION env var). User can still add/edit.
+                    self.cloud_form_aws_regions = detect_default_aws_region()
+                        .into_iter()
+                        .collect();
                     self.cloud_form_aws_region_draft = String::new();
                     self.cloud_form_aws_access_key_id = String::new();
                     self.cloud_form_aws_access_key_secret = String::new();

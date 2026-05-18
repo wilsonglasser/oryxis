@@ -184,17 +184,14 @@ impl Oryxis {
                         crate::os_icon::provider_icon(brand, OryxisColors::t().accent).1
                     })
                 });
-            // Resolve the per-host icon style override against the
-            // global default so the badge shape on the tab matches
-            // the one on the dashboard card. Local-shell tabs (no
-            // matching connection row) fall through to the global
-            // default like fresh hosts do.
-            let host_icon_style = {
-                let per_host = self.connections.iter()
-                    .find(|c| c.label == base_label)
-                    .and_then(|c| c.icon_style.as_deref());
-                crate::widgets::resolve_host_icon_style(per_host, &self.setting_default_host_icon)
-            };
+            // Tabs always render the badge as a rounded square,
+            // independent of the per-host override and the global
+            // `default_host_icon` setting. Circular badges read as
+            // pills inside the narrow tab strip and the variable
+            // shape disrupts the row's vertical rhythm; locking the
+            // tab shape keeps the strip uniform while leaving the
+            // dashboard card free to honour the user's choice.
+            let host_icon_style = crate::widgets::HostIconStyle::Rounded;
             // Connection-state dot color. Connecting beats every other
             // signal because a tab that's currently dialing isn't yet
             // "disconnected" in the user's mental model. Local-shell

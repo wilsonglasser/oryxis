@@ -294,16 +294,19 @@ impl Oryxis {
                     None
                 };
 
-                let mut conn = if let Some(id) = self.editor_form.editing_id {
-                    // Editing existing
-                    self.connections
-                        .iter()
-                        .find(|c| c.id == id)
-                        .cloned()
-                        .unwrap_or_else(|| Connection::new("", ""))
-                } else {
-                    Connection::new("", "")
-                };
+                // Snapshot the pre-edit Connection (when editing an
+                // existing row) so we can diff the user's changes after
+                // all the per-field assignments below. The diff feeds
+                // `customized_fields`, which the cloud reimport flow
+                // honours to leave user-edited values alone on refresh.
+                let original: Option<Connection> = self
+                    .editor_form
+                    .editing_id
+                    .and_then(|id| self.connections.iter().find(|c| c.id == id).cloned());
+
+                let mut conn = original
+                    .clone()
+                    .unwrap_or_else(|| Connection::new("", ""));
 
                 conn.label = self.editor_form.label.clone();
                 conn.hostname = self.editor_form.hostname.clone();
@@ -377,6 +380,33 @@ impl Oryxis {
                     }
                 }
                 conn.updated_at = chrono::Utc::now();
+
+                // Track user edits on cloud-imported hosts so the next
+                // refresh from AWS doesn't clobber them. Only the
+                // fields that discovery actually pushes are tracked,
+                // anything else (port, color, group_id, ...) is fully
+                // user-controlled on imported hosts already and doesn't
+                // need a flag.
+                if conn.cloud_ref.is_some()
+                    && let Some(orig) = &original
+                {
+                    let mut customized = conn.customized_fields.clone();
+                    let mark = |list: &mut Vec<String>, name: &str| {
+                        if !list.iter().any(|s| s == name) {
+                            list.push(name.to_string());
+                        }
+                    };
+                    if conn.label != orig.label {
+                        mark(&mut customized, "label");
+                    }
+                    if conn.hostname != orig.hostname {
+                        mark(&mut customized, "hostname");
+                    }
+                    if conn.username != orig.username {
+                        mark(&mut customized, "username");
+                    }
+                    conn.customized_fields = customized;
+                }
 
                 let password = if !self.editor_form.password_touched {
                     None // User didn't touch the field, preserve existing password

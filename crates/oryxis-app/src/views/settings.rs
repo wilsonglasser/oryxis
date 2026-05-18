@@ -801,6 +801,12 @@ impl Oryxis {
                         self.setting_show_status_bar,
                         Message::SettingToggleShowStatusBar,
                     ),
+                    Space::new().height(8),
+                    toggle_row(
+                        crate::i18n::t("tab_accent_line"),
+                        self.setting_tab_accent_line,
+                        Message::SettingToggleTabAccentLine,
+                    ),
                 ]);
 
                 // Tab close button position picker. We use the token

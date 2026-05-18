@@ -96,6 +96,23 @@ impl Oryxis {
                     .map(|_| Message::SftpEditWatchTick),
             );
         }
+        // Cloud auto-refresh ticker. Only mounts the subscription when
+        // the user enabled the toggle in Settings; otherwise zero
+        // background API calls. Interval reads the persisted setting
+        // and falls back to 30 min on any parse failure so a malformed
+        // value doesn't pin the ticker at 1 ms.
+        if self.setting_cloud_auto_refresh_enabled && !self.cloud_profiles.is_empty() {
+            let minutes = self
+                .setting_cloud_auto_refresh_interval_minutes
+                .parse::<u64>()
+                .ok()
+                .filter(|m| *m > 0)
+                .unwrap_or(30);
+            subs.push(
+                iced::time::every(std::time::Duration::from_secs(minutes * 60))
+                    .map(|_| Message::CloudAutoRefreshTick),
+            );
+        }
         Subscription::batch(subs)
     }
 }

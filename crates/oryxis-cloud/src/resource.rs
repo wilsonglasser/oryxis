@@ -59,4 +59,37 @@ pub struct DiscoveredHost {
     /// Optional per-child overrides surfaced by the provider (zone,
     /// node, etc.), shown as a subtitle on the row.
     pub subtitle: Option<String>,
+    /// Container name when this host represents a container inside a
+    /// task. None for non-ECS / non-K8s resources. ECS resolve fills
+    /// this with the container chosen at import; future iterations may
+    /// expand a multi-container task into N rows.
+    #[serde(default)]
+    pub container_name: Option<String>,
+    /// Task definition `family:revision` for ECS resources (e.g.
+    /// `my-app:42`). None for non-ECS / when DescribeTaskDefinition
+    /// failed.
+    #[serde(default)]
+    pub task_definition: Option<String>,
+    /// Upstream lifecycle status (ECS LastStatus, K8s pod phase):
+    /// `RUNNING`, `PENDING`, `STOPPED`, etc. Drives the colour of the
+    /// status pill in the row.
+    #[serde(default)]
+    pub status: Option<String>,
+    /// When the resource entered its current running state. Rendered
+    /// as a relative timestamp (`2h ago`).
+    #[serde(default)]
+    pub started_at: Option<chrono::DateTime<chrono::Utc>>,
+    /// Private IPv4 surfaced inline (split out of `subtitle` so the
+    /// view can render it as its own column / chip).
+    #[serde(default)]
+    pub private_ip: Option<String>,
+    /// Availability zone / node name (`us-east-1a`, `ip-10-0-1-23`).
+    #[serde(default)]
+    pub availability_zone: Option<String>,
+    /// AWS region (or K8s context-region equivalent) the resolver
+    /// found this resource in. Exposed so UI actions like
+    /// "copy `aws ecs execute-command`" can fill the `--region`
+    /// flag without re-deriving it from the profile config.
+    #[serde(default)]
+    pub region: Option<String>,
 }
