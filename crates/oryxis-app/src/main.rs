@@ -53,6 +53,7 @@ mod state;
 mod subscription;
 mod sync_runtime;
 mod theme;
+mod tray;
 mod update;
 mod util;
 mod views;
@@ -120,6 +121,14 @@ fn main() -> iced::Result {
         .init();
 
     tracing::info!("Starting Oryxis");
+
+    // Install the Windows system tray icon. No-op on macOS/Linux
+    // until those platforms get their own backends. Failure here is
+    // logged but non-fatal: the app still runs without a tray, the
+    // user just loses the close-to-tray / right-click-menu features.
+    if let Err(e) = tray::install() {
+        tracing::warn!("tray icon registration failed: {e}");
+    }
 
     // Load window icon from PNG
     let icon = load_icon();

@@ -109,7 +109,11 @@ winresource = "0.1"
 # triggers UAC for the system installer, while the per-user installer
 # (asInvoker) launches without a prompt, same code path serves both.
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.59", features = ["Win32_UI_Shell", "Win32_UI_WindowsAndMessaging", "Win32_Foundation"] }
+windows-sys = { version = "0.59", features = ["Win32_UI_Shell", "Win32_UI_WindowsAndMessaging", "Win32_Foundation", "Win32_System_Threading", "Win32_Security"] }
+# Cross-platform tray icon, but only built on Windows. macOS and
+# Linux need different lifecycle conventions (LSUIElement on macOS,
+# SNI/AppIndicator on Linux), deferred to a later release.
+tray-icon = "0.21"
 
 [dev-dependencies]
 # Property-based fuzzing for path/name helpers, generates random
