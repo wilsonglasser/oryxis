@@ -117,11 +117,19 @@ impl HotkeyAction {
     /// Skip this action while the active view is the Terminal so the
     /// shell still receives the keystroke (Ctrl+L = clear, Ctrl+T =
     /// transpose, Ctrl+P = previous history, Ctrl+F = forward char).
-    /// Mirrors the existing gates in `dispatch_terminal.rs`.
+    /// Pre-v0.7 marker that was checked per-action to decide whether
+    /// the app should claim a key while the terminal view was active.
+    /// Kept around for any caller that still wants a hint, but the
+    /// dispatcher now uses [`HotkeyBinding::is_terminal_control_sequence`]
+    /// against the CURRENT binding so rebinding `CloseActiveTab` away
+    /// from a shell sequence frees that key for the PTY, and rebinding
+    /// a non-gated action TO a shell sequence correctly gates it.
+    #[deprecated(note = "use HotkeyBinding::is_terminal_control_sequence on the active binding")]
+    #[allow(dead_code)]
     pub fn gate_in_terminal(self) -> bool {
         matches!(
             self,
-            HotkeyAction::ShowNewTabPicker  // Ctrl+T (the Termius synonym)
+            HotkeyAction::ShowNewTabPicker
                 | HotkeyAction::OpenLocalShell
                 | HotkeyAction::OpenPortForwards
                 | HotkeyAction::FocusViewSearch
@@ -228,12 +236,44 @@ impl HotkeyBinding {
     }
 
     /// Whether the binding is valid for the editor: it must carry at
-    /// least one modifier OR target a function key, otherwise a plain
-    /// letter would silently intercept the user's typing.
+    /// least one of Ctrl / Alt / Logo (Shift alone doesn't count,
+    /// `Shift+letter` is just uppercase typing) OR target a function
+    /// key, otherwise the binding would silently intercept the
+    /// user's typing.
     pub fn is_safe(&self) -> bool {
-        if self.ctrl || self.shift || self.alt || self.logo {
+        if self.ctrl || self.alt || self.logo {
             return true;
         }
+        // Shift + function key is fine; Shift alone on a letter is
+        // just uppercase typing and would steal text input.
+        if self.is_function_key_primary() {
+            return true;
+        }
+        false
+    }
+
+    /// `true` when this binding looks like a sequence the terminal
+    /// shell normally consumes itself: Ctrl + printable character with
+    /// no other modifier. Examples: Ctrl+L = clear, Ctrl+P = history
+    /// prev, Ctrl+K = readline kill, Ctrl+[ = Escape byte. Ctrl+Shift+X
+    /// is NOT included because shells don't interpret it as a control
+    /// byte. Used by the dispatcher to suppress app-level handling
+    /// when the terminal view is focused.
+    pub fn is_terminal_control_sequence(&self) -> bool {
+        if !self.ctrl || self.alt || self.logo || self.shift {
+            return false;
+        }
+        match self.primary {
+            PrimaryKey::Char(c) => c.is_ascii_alphanumeric(),
+            PrimaryKey::Punct(_) => true,
+            _ => false,
+        }
+    }
+
+    /// `true` when the primary is F1..F12. Extracted as a helper so
+    /// both `is_safe` and the family-capture guard read the same
+    /// definition.
+    fn is_function_key_primary(&self) -> bool {
         matches!(
             self.primary,
             PrimaryKey::Named(
@@ -505,8 +545,18 @@ pub fn binding_from_event(
         logo: modifiers.logo(),
         primary: primary_opt.unwrap_or(PrimaryKey::Char('?')),
     };
-    if primary_editable && !binding.is_safe() {
-        return None;
+    if primary_editable {
+        if !binding.is_safe() {
+            return None;
+        }
+    } else {
+        // Family captures keep the existing primary (a digit, an
+        // arrow, etc.) and only swap the modifiers. The user must
+        // still pick at least one of Ctrl / Alt / Logo, otherwise
+        // any bare digit press would hijack tab switching.
+        if !binding.ctrl && !binding.alt && !binding.logo {
+            return None;
+        }
     }
     Some(binding)
 }

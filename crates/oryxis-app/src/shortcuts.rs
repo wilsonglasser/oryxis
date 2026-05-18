@@ -218,20 +218,29 @@ impl Oryxis {
             }
         }
 
-        // 2. Binding-table dispatch. First match wins; the action's
-        //    `gate_in_terminal` flag suppresses the action when the
-        //    user is interacting with a PTY (preserves Ctrl+L clear,
-        //    Ctrl+T transpose, Ctrl+P history-prev, Ctrl+F forward).
-        // Clone the actions slice so we can call `self.dispatch_hotkey_action`
-        // (which takes `&mut self`) inside the loop without holding a
-        // borrow on `self.hotkey_bindings`.
+        // 2. Binding-table dispatch. First match wins. When the
+        //    terminal view is focused, any binding shaped like a
+        //    shell control sequence (Ctrl+letter with no other
+        //    modifier) is skipped so Ctrl+L/Ctrl+P/Ctrl+K/etc. reach
+        //    the PTY. The gate is computed from the CURRENT binding,
+        //    so a user who rebinds CloseActiveTab onto a shell key
+        //    loses the rebound action in the terminal (but it still
+        //    fires elsewhere), and rebinding an old gated action OFF
+        //    a shell key restores it everywhere. Clone the actions
+        //    slice so we can call `self.dispatch_hotkey_action`
+        //    (which takes `&mut self`) inside the loop without
+        //    holding a borrow on `self.hotkey_bindings`.
         let actions: Vec<HotkeyAction> = HotkeyAction::all().to_vec();
+        let in_terminal = self.active_view == View::Terminal;
         for action in actions {
-            if action.gate_in_terminal() && self.active_view == View::Terminal {
+            let binding = self.hotkey_bindings.get(&action);
+            if in_terminal
+                && binding.is_some_and(|b| b.is_terminal_control_sequence())
+            {
                 continue;
             }
-            let family = match self.hotkey_bindings.get(&action) {
-                Some(binding) => binding.match_event(key, modifiers),
+            let family = match binding {
+                Some(b) => b.match_event(key, modifiers),
                 None => None,
             };
             if let Some(family) = family {
