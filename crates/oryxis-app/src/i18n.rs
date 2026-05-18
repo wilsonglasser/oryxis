@@ -830,7 +830,7 @@ fn en(key: &str) -> &'static str {
         // Settings descriptions
         "setting_keepalive_desc" => "How often (in seconds) to send SSH keepalive packets. Set to 0 to disable.",
         "setting_scrollback_desc" => "Limit number of terminal rows. Set to 0 for maximum.",
-        "setting_font_desc" => "Source Code Pro is bundled; others rely on the system, if a font isn't installed, the OS falls back to its default monospace.",
+        "setting_font_desc" => "SauceCodePro Nerd Font is bundled (Source Code Pro patched with Powerline, Font Awesome, Devicons and Material icons); others rely on the system, if a font isn't installed, the OS falls back to its default monospace.",
         "setting_update_check_desc" => "Query GitHub on startup for newer releases. You'll see a modal with options to skip, defer, or install.",
         "setting_os_detect_desc" => "After the first successful SSH connect, silently run a probe (`cat /etc/os-release; uname -s`) to detect the remote OS and swap in a distro-specific icon on host cards.",
         "setting_reconnect_desc" => "Silently retry disconnected SSH sessions every 30 seconds, up to the limit below.",
@@ -1503,7 +1503,7 @@ fn pt_br(key: &str) -> Option<&'static str> {
         // Settings descriptions
         "setting_keepalive_desc" => "Com qual frequência (em segundos) enviar pacotes keepalive SSH. 0 desativa.",
         "setting_scrollback_desc" => "Limita o número de linhas no terminal. 0 para máximo.",
-        "setting_font_desc" => "Source Code Pro vem incluso; outras dependem do sistema, se uma fonte não estiver instalada, o SO usa a fonte monoespaçada padrão.",
+        "setting_font_desc" => "SauceCodePro Nerd Font vem incluso (Source Code Pro com Powerline, Font Awesome, Devicons e Material); outras dependem do sistema, se uma fonte não estiver instalada, o SO usa a fonte monoespaçada padrão.",
         "setting_update_check_desc" => "Consulta o GitHub na inicialização por novas releases. Um modal aparecerá com opções de pular, adiar ou instalar.",
         "setting_os_detect_desc" => "Após a primeira conexão SSH bem-sucedida, executa uma sonda silenciosa (`cat /etc/os-release; uname -s`) para detectar o SO remoto e trocar o ícone do host pelo da distro.",
         "setting_reconnect_desc" => "Tenta reconectar sessões SSH desconectadas a cada 30 segundos, até o limite abaixo.",
@@ -2165,7 +2165,7 @@ fn es(key: &str) -> Option<&'static str> {
         // Settings
         "setting_keepalive_desc" => "Cada cuántos segundos enviar paquetes keepalive SSH. 0 desactiva.",
         "setting_scrollback_desc" => "Limita el número de filas del terminal. 0 para máximo.",
-        "setting_font_desc" => "Source Code Pro viene incluida; otras dependen del sistema, si una fuente no está instalada, el SO usa su monoespaciada por defecto.",
+        "setting_font_desc" => "SauceCodePro Nerd Font viene incluida (Source Code Pro con Powerline, Font Awesome, Devicons y Material); otras dependen del sistema, si una fuente no está instalada, el SO usa su monoespaciada por defecto.",
         "setting_update_check_desc" => "Consulta GitHub al iniciar para nuevas versiones. Aparecerá un modal con opciones para omitir, posponer o instalar.",
         "setting_os_detect_desc" => "Tras la primera conexión SSH exitosa, ejecuta una sonda silenciosa (`cat /etc/os-release; uname -s`) para detectar el SO remoto y cambiar el ícono.",
         "setting_reconnect_desc" => "Reintenta sesiones SSH desconectadas cada 30 segundos, hasta el límite siguiente.",
@@ -2827,7 +2827,7 @@ fn fr(key: &str) -> Option<&'static str> {
         // Settings
         "setting_keepalive_desc" => "À quelle fréquence (en secondes) envoyer des paquets keepalive SSH. 0 désactive.",
         "setting_scrollback_desc" => "Limite le nombre de lignes du terminal. 0 pour le maximum.",
-        "setting_font_desc" => "Source Code Pro est incluse ; les autres dépendent du système, si une police n'est pas installée, l'OS utilise sa monospace par défaut.",
+        "setting_font_desc" => "SauceCodePro Nerd Font est incluse (Source Code Pro avec Powerline, Font Awesome, Devicons et Material) ; les autres dépendent du système, si une police n'est pas installée, l'OS utilise sa monospace par défaut.",
         "setting_update_check_desc" => "Interroge GitHub au démarrage pour de nouvelles versions. Une fenêtre apparaîtra avec ignorer, reporter ou installer.",
         "setting_os_detect_desc" => "Après la première connexion SSH réussie, exécute silencieusement (`cat /etc/os-release; uname -s`) pour détecter l'OS distant et changer l'icône.",
         "setting_reconnect_desc" => "Réessaie silencieusement les sessions SSH déconnectées toutes les 30 secondes, jusqu'à la limite ci-dessous.",
@@ -3489,7 +3489,7 @@ fn de(key: &str) -> Option<&'static str> {
         // Settings
         "setting_keepalive_desc" => "Wie oft (in Sekunden) SSH-Keepalive-Pakete senden. 0 deaktiviert.",
         "setting_scrollback_desc" => "Begrenzt die Anzahl der Terminalzeilen. 0 für maximal.",
-        "setting_font_desc" => "Source Code Pro ist enthalten; andere hängen vom System ab, wenn eine Schriftart nicht installiert ist, fällt das OS auf seine Standard-Monospace zurück.",
+        "setting_font_desc" => "SauceCodePro Nerd Font ist enthalten (Source Code Pro mit Powerline, Font Awesome, Devicons und Material); andere hängen vom System ab, wenn eine Schriftart nicht installiert ist, fällt das OS auf seine Standard-Monospace zurück.",
         "setting_update_check_desc" => "Fragt GitHub beim Start nach neuen Versionen ab. Ein Modal mit Optionen zum Überspringen, Verschieben oder Installieren erscheint.",
         "setting_os_detect_desc" => "Nach der ersten erfolgreichen SSH-Verbindung wird still ein Probe (`cat /etc/os-release; uname -s`) ausgeführt, um das Remote-OS zu erkennen.",
         "setting_reconnect_desc" => "Versucht getrennte SSH-Sitzungen alle 30 Sekunden neu zu verbinden, bis zum Limit unten.",
@@ -4151,7 +4151,7 @@ fn it(key: &str) -> Option<&'static str> {
         // Settings
         "setting_keepalive_desc" => "Ogni quanti secondi inviare pacchetti SSH keepalive. 0 disabilita.",
         "setting_scrollback_desc" => "Limita il numero di righe del terminale. 0 per il massimo.",
-        "setting_font_desc" => "Source Code Pro è inclusa; le altre dipendono dal sistema, se un font non è installato, il SO usa quello monospazio predefinito.",
+        "setting_font_desc" => "SauceCodePro Nerd Font è inclusa (Source Code Pro con Powerline, Font Awesome, Devicons e Material); le altre dipendono dal sistema, se un font non è installato, il SO usa quello monospazio predefinito.",
         "setting_update_check_desc" => "Interroga GitHub all'avvio per nuove versioni. Apparirà un modale con opzioni salta, rimanda o installa.",
         "setting_os_detect_desc" => "Dopo la prima connessione SSH riuscita, esegue silenziosamente (`cat /etc/os-release; uname -s`) per rilevare il SO remoto e cambiare l'icona.",
         "setting_reconnect_desc" => "Riprova silenziosamente le sessioni SSH disconnesse ogni 30 secondi, fino al limite sotto.",
@@ -4813,7 +4813,7 @@ fn zh(key: &str) -> Option<&'static str> {
         // Settings
         "setting_keepalive_desc" => "多久（秒）发送一次 SSH keepalive 包。0 表示禁用。",
         "setting_scrollback_desc" => "限制终端行数。0 表示最大值。",
-        "setting_font_desc" => "Source Code Pro 已内置；其他字体依赖系统, 如果字体未安装，OS 会回退到默认等宽字体。",
+        "setting_font_desc" => "SauceCodePro Nerd Font 已内置（Source Code Pro 加上 Powerline、Font Awesome、Devicons 和 Material）；其他字体依赖系统, 如果字体未安装，OS 会回退到默认等宽字体。",
         "setting_update_check_desc" => "启动时查询 GitHub 检查新版本。会出现包含跳过、稍后或安装选项的弹窗。",
         "setting_os_detect_desc" => "首次成功 SSH 连接后，静默执行（`cat /etc/os-release; uname -s`）以检测远程 OS 并切换图标。",
         "setting_reconnect_desc" => "每 30 秒静默重试断开的 SSH 会话，直到下方限制。",
@@ -5475,7 +5475,7 @@ fn ja(key: &str) -> Option<&'static str> {
         // Settings
         "setting_keepalive_desc" => "SSH keepalive パケットを送信する頻度（秒）。0 で無効。",
         "setting_scrollback_desc" => "ターミナルの行数を制限。0 で最大。",
-        "setting_font_desc" => "Source Code Pro はバンドル済み。他はシステム依存, フォントがインストールされていない場合、OS のデフォルト等幅フォントにフォールバックします。",
+        "setting_font_desc" => "SauceCodePro Nerd Font はバンドル済み (Source Code Pro に Powerline、Font Awesome、Devicons、Material を追加)。他はシステム依存, フォントがインストールされていない場合、OS のデフォルト等幅フォントにフォールバックします。",
         "setting_update_check_desc" => "起動時に GitHub で新バージョンを確認。スキップ、後で、インストールのオプション付きモーダルが表示されます。",
         "setting_os_detect_desc" => "最初の SSH 接続成功後、静かにプローブ（`cat /etc/os-release; uname -s`）を実行してリモート OS を検出し、ホストカードのアイコンを切り替えます。",
         "setting_reconnect_desc" => "切断された SSH セッションを 30 秒ごとに静かに再試行。下記の制限まで。",
@@ -6137,7 +6137,7 @@ fn ru(key: &str) -> Option<&'static str> {
         // Settings
         "setting_keepalive_desc" => "Как часто (в секундах) отправлять SSH keepalive-пакеты. 0 отключает.",
         "setting_scrollback_desc" => "Ограничивает количество строк терминала. 0, максимум.",
-        "setting_font_desc" => "Source Code Pro в комплекте; остальные зависят от системы, если шрифт не установлен, ОС использует моноширинный по умолчанию.",
+        "setting_font_desc" => "SauceCodePro Nerd Font в комплекте (Source Code Pro с Powerline, Font Awesome, Devicons и Material); остальные зависят от системы, если шрифт не установлен, ОС использует моноширинный по умолчанию.",
         "setting_update_check_desc" => "При запуске опрашивает GitHub на новые версии. Появится модал с опциями пропустить, отложить или установить.",
         "setting_os_detect_desc" => "После первого успешного SSH-подключения тихо запускает зонд (`cat /etc/os-release; uname -s`) для определения удалённой ОС.",
         "setting_reconnect_desc" => "Тихо повторяет отключённые SSH-сессии каждые 30 секунд, до лимита ниже.",
@@ -6840,7 +6840,7 @@ fn fa(key: &str) -> Option<&'static str> {
         // Settings descriptions
         "setting_keepalive_desc" => "هر چند ثانیه بسته‌های keepalive ارسال شود. 0 برای غیرفعال‌سازی.",
         "setting_scrollback_desc" => "محدود کردن تعداد سطرهای ترمینال. 0 برای حداکثر.",
-        "setting_font_desc" => "Source Code Pro همراه است؛ سایرین به سیستم وابسته‌اند, اگر فونت نصب نباشد، سیستم‌عامل به فونت تک‌فاصله پیش‌فرض برمی‌گردد.",
+        "setting_font_desc" => "SauceCodePro Nerd Font همراه است (Source Code Pro به همراه Powerline، Font Awesome، Devicons و Material)؛ سایرین به سیستم وابسته‌اند, اگر فونت نصب نباشد، سیستم‌عامل به فونت تک‌فاصله پیش‌فرض برمی‌گردد.",
         "setting_update_check_desc" => "هنگام راه‌اندازی، GitHub را برای نسخه‌های جدید بررسی می‌کند. یک پنجره با گزینه‌های رد، تعویق یا نصب نمایش داده می‌شود.",
         "setting_os_detect_desc" => "پس از اولین اتصال موفق SSH، یک پروب بی‌صدا (`cat /etc/os-release; uname -s`) اجرا می‌شود تا سیستم‌عامل راه دور شناسایی شود و آیکون مخصوص توزیع جایگزین شود.",
         "setting_reconnect_desc" => "نشست‌های SSH قطع‌شده هر 30 ثانیه به‌طور بی‌صدا تلاش مجدد می‌شوند، تا محدودیت زیر.",
@@ -7536,7 +7536,7 @@ fn ar(key: &str) -> Option<&'static str> {
         // Settings descriptions
         "setting_keepalive_desc" => "كم ثانية بين حزم الإبقاء على الاتصال. ٠ للتعطيل.",
         "setting_scrollback_desc" => "تحديد عدد أسطر الطرفية. ٠ للحد الأقصى.",
-        "setting_font_desc" => "Source Code Pro مرفق؛ الباقي يعتمد على النظام, إذا لم يكن الخط مثبتًا، يعود نظام التشغيل إلى الخط أحادي المسافة الافتراضي.",
+        "setting_font_desc" => "SauceCodePro Nerd Font مرفق (Source Code Pro مع Powerline و Font Awesome و Devicons و Material)؛ الباقي يعتمد على النظام, إذا لم يكن الخط مثبتًا، يعود نظام التشغيل إلى الخط أحادي المسافة الافتراضي.",
         "setting_update_check_desc" => "يتحقق من GitHub بحثًا عن إصدارات أحدث عند بدء التشغيل. يظهر مربع حوار بخيارات التخطي أو التأجيل أو التثبيت.",
         "setting_os_detect_desc" => "بعد أول جلسة SSH ناجحة، يتم تشغيل فحص صامت (`cat /etc/os-release; uname -s`) لاكتشاف نظام التشغيل البعيد واستبدال الأيقونة بأخرى خاصة بالتوزيع.",
         "setting_reconnect_desc" => "تُعاد محاولة الجلسات المنقطعة بصمت كل ٣٠ ثانية، حتى الحد أدناه.",

@@ -283,7 +283,7 @@ impl Oryxis {
                 terminal_theme: oryxis_terminal::TerminalTheme::OryxisDark,
                 terminal_theme_override: None,
                 terminal_font_size: 14.0,
-                terminal_font_name: "Source Code Pro".to_string(),
+                terminal_font_name: "SauceCodePro Nerd Font".to_string(),
                 settings_section: SettingsSection::Terminal,
                 setting_copy_on_select: true,
                 setting_bold_is_bright: true,
@@ -670,7 +670,18 @@ impl Oryxis {
             if let Ok(Some(v)) = vault.get_setting("terminal_font_name")
                 && !v.is_empty()
             {
-                self.terminal_font_name = v;
+                // Migrate legacy default. v0.6 shipped Source Code Pro as
+                // the bundled terminal font, v0.7 replaces it with the
+                // Nerd Font-patched variant (same visual base, full PUA
+                // coverage). Users who never customised the picker had
+                // the literal "Source Code Pro" persisted, hop them onto
+                // the new bundled family so glyphs render and the picker
+                // reflects what's actually loaded.
+                self.terminal_font_name = if v == "Source Code Pro" {
+                    "SauceCodePro Nerd Font".to_string()
+                } else {
+                    v
+                };
             }
             if let Ok(Some(v)) = vault.get_setting("keepalive_interval") {
                 self.setting_keepalive_interval = v;

@@ -499,7 +499,7 @@ impl Oryxis {
                         container(
                             text(cmd.clone())
                                 .size(12)
-                                .font(iced::Font::new("Source Code Pro"))
+                                .font(iced::Font::new("SauceCodePro Nerd Font"))
                                 .color(OryxisColors::t().text_primary),
                         )
                         .padding(Padding {

@@ -140,18 +140,18 @@ fn main() -> iced::Result {
         .font(include_bytes!("../../../resources/fonts/Inter-Regular.ttf").as_slice())
         .font(include_bytes!("../../../resources/fonts/Inter-SemiBold.ttf").as_slice())
         .font(include_bytes!("../../../resources/fonts/Inter-Bold.ttf").as_slice())
-        // Source Code Pro, default terminal font; additional mono fonts are
-        // resolved by name from the system when the user picks them.
-        .font(include_bytes!("../../../resources/fonts/SourceCodePro-Regular.ttf").as_slice())
-        .font(include_bytes!("../../../resources/fonts/SourceCodePro-Medium.ttf").as_slice())
-        // JetBrains Mono Nerd Font (~2 MB). Bundled as the fallback
-        // glyph source so Box Drawing / Powerline / icon glyphs that
-        // the user's primary mono font doesn't cover render correctly
-        // without requiring a system install. cosmic-text uses every
-        // loaded font for per-glyph fallback, so the user's picked
-        // terminal font stays primary for ASCII / latin coverage and
-        // this one only kicks in for the missing glyphs.
-        .font(include_bytes!("../../../resources/fonts/JetBrainsMonoNerdFont-Regular.ttf").as_slice())
+        // SauceCodePro Nerd Font, default terminal font (Source Code
+        // Pro patched with the full Nerd Font glyph set: Powerline,
+        // Font Awesome, Devicons, Octicons, Codicons, Material). One
+        // bundled mono font covers both regular text and the Private
+        // Use Area symbol ranges, so prompts using Starship / Powerline
+        // segments render correctly out of the box without a system
+        // install. Additional mono fonts the user picks are resolved
+        // by name from the system; for any system font that lacks the
+        // PUA glyphs, the terminal widget's symbol_map falls back to
+        // this family per-codepoint.
+        .font(include_bytes!("../../../resources/fonts/SauceCodeProNerdFont-Regular.ttf").as_slice())
+        .font(include_bytes!("../../../resources/fonts/SauceCodeProNerdFont-Medium.ttf").as_slice())
         // Default UI font is the system font (Segoe UI on Windows, SF Pro
         // on macOS, bundled Inter on Linux), matches how Electron apps
         // like Termius render and keeps the UI feeling native per-OS.

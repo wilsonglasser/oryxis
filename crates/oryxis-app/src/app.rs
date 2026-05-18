@@ -43,15 +43,15 @@ pub(crate) const CARD_WIDTH: f32 = 280.0;
 
 /// Fallback monospace font names offered when the system enumeration
 /// returns nothing (boot-time scan still in flight, fontdb error, or
-/// a stripped-down system with no installed monospace fonts beyond the
-/// bundled Source Code Pro).
+/// a stripped-down system with no installed monospace fonts beyond
+/// the bundled SauceCodePro Nerd Font).
 ///
-/// `Source Code Pro` is bundled with the binary (see `main.rs`). The rest
-/// are looked up from the OS fontconfig; if a name doesn't resolve,
-/// cosmic-text falls back gracefully to the system default monospace.
+/// `SauceCodePro Nerd Font` is bundled with the binary (see `main.rs`).
+/// The rest are looked up from the OS fontconfig; if a name doesn't
+/// resolve, cosmic-text falls back gracefully to the system default
+/// monospace.
 const TERMINAL_FONT_FALLBACK: &[&str] = &[
-    "Source Code Pro",
-    "Source Code Pro Medium",
+    "SauceCodePro Nerd Font",
     "JetBrains Mono",
     "Fira Code",
     "Fira Mono",
@@ -76,8 +76,8 @@ const TERMINAL_FONT_FALLBACK: &[&str] = &[
 ///
 /// Builds a fresh `fontdb::Database`, loads the system fonts on this
 /// platform, and filters to families that report `monospaced`. The
-/// bundled Source Code Pro is always prepended so it's the first
-/// option even on systems with rich font libraries.
+/// bundled SauceCodePro Nerd Font is always prepended so it's the
+/// first option even on systems with rich font libraries.
 ///
 /// On error or empty enumeration we fall back to
 /// `TERMINAL_FONT_FALLBACK` so the picker is never empty.
@@ -105,11 +105,11 @@ pub(crate) fn enumerate_terminal_fonts() -> Vec<String> {
         return TERMINAL_FONT_FALLBACK.iter().map(|s| s.to_string()).collect();
     }
 
-    // Prepend the bundled families so they're always picker entries
-    // #1 and #2 regardless of what the system scan returned. cosmic-text
-    // resolves them by family name, fontdb has them registered via
+    // Prepend the bundled family so it's always picker entry #1
+    // regardless of what the system scan returned. cosmic-text
+    // resolves it by family name, fontdb has it registered via
     // `application.font(include_bytes!(...))` in main.rs.
-    let bundled: &[&str] = &["Source Code Pro", "JetBrainsMono Nerd Font"];
+    let bundled: &[&str] = &["SauceCodePro Nerd Font"];
     let mut out: Vec<String> = Vec::with_capacity(names.len() + bundled.len());
     for b in bundled {
         out.push((*b).to_string());

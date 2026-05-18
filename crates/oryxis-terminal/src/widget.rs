@@ -22,7 +22,7 @@ use tokio::sync::mpsc;
 /// `include_bytes!`, here we just reference it by family name so the
 /// per-cell renderer can hand specific codepoints to it instead of
 /// the user's primary terminal font.
-const NERD_FONT: Font = Font::new("JetBrainsMono Nerd Font");
+const NERD_FONT: Font = Font::new("SauceCodePro Nerd Font");
 
 // ---------------------------------------------------------------------------
 // Terminal State
@@ -1533,15 +1533,15 @@ where
             }
 
             // Draw character. Codepoints in the Unicode Private Use
-            // Area (U+E000-F8FF) are forced through the bundled
-            // JetBrainsMono Nerd Font: cosmic-text's auto-fallback
-            // tends to pick CJK fonts (which use the PUA for
-            // user-defined chars) before our Nerd Font for the F0xx
-            // range, so prompts with Powerline / Font Awesome / Devicons
-            // would render as tofu or wrong-script glyphs. Forcing the
-            // symbol font here is what alacritty/wezterm call a
-            // "symbol_map" — same idea, hard-coded to the bundled
-            // family since we ship it in the binary.
+            // Areas are forced through the bundled SauceCodePro Nerd
+            // Font: cosmic-text's auto-fallback tends to pick CJK
+            // fonts (which use the PUA for user-defined chars) before
+            // our Nerd Font for the F0xx range, so prompts with
+            // Powerline / Font Awesome / Devicons would render as
+            // tofu or wrong-script glyphs. Forcing the symbol font
+            // here is what alacritty/wezterm call a "symbol_map",
+            // hard-coded to the bundled family since we ship it in
+            // the binary.
             if cd.c != ' ' && cd.c != '\0' {
                 let cp = cd.c as u32;
                 // Both Private Use Areas: BMP PUA covers Powerline,
