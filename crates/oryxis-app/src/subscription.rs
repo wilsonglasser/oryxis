@@ -96,6 +96,19 @@ impl Oryxis {
                     .map(|_| Message::SftpEditWatchTick),
             );
         }
+        // Tray icon event drain. On Windows the tray-icon crate runs
+        // its own thread that pushes menu / icon events into a pair
+        // of crossbeam channels; the dispatcher's `TrayPoll` handler
+        // calls `tray::poll_*` to drain them. 100 ms is the same
+        // cadence Tauri uses internally for the same job. On non-
+        // Windows targets the polls are no-ops, so mounting the
+        // subscription unconditionally costs only the timer thread,
+        // which iced shares across all `time::every` ticks anyway.
+        subs.push(
+            iced::time::every(std::time::Duration::from_millis(100))
+                .map(|_| Message::TrayPoll),
+        );
+
         // Cloud auto-refresh ticker. Only mounts the subscription when
         // the user enabled the toggle in Settings; otherwise zero
         // background API calls. Interval reads the persisted setting

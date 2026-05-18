@@ -1100,6 +1100,60 @@ impl Oryxis {
                 }
             }
 
+            // -- System tray --
+            Message::TrayPoll => {
+                // Drain whatever the tray-icon crate's event threads
+                // queued since the last poll. Each menu id resolves
+                // to a real Message via Task::batch so we can emit
+                // more than one event per tick if the user spam-
+                // clicked. On non-Windows targets both polls return
+                // None immediately, so this is harmless overhead.
+                let mut follow_ups: Vec<Task<Message>> = Vec::new();
+                while let Some(id) = crate::tray::poll_menu_event() {
+                    let msg = match id.as_str() {
+                        crate::tray::MENU_ID_SHOW => Some(Message::TrayShow),
+                        crate::tray::MENU_ID_HIDE => Some(Message::TrayHide),
+                        crate::tray::MENU_ID_QUIT => Some(Message::TrayQuit),
+                        _ => None,
+                    };
+                    if let Some(m) = msg {
+                        follow_ups.push(Task::done(m));
+                    }
+                }
+                // Left-click on the tray icon body (not the menu)
+                // counts as "Show". We drain but ignore the right-
+                // click event; Windows already pops the menu on its
+                // own for right-clicks via the registered Menu.
+                #[cfg(target_os = "windows")]
+                while let Some(ev) = crate::tray::poll_icon_event() {
+                    if matches!(
+                        ev,
+                        tray_icon::TrayIconEvent::DoubleClick { .. }
+                    ) {
+                        follow_ups.push(Task::done(Message::TrayShow));
+                    }
+                }
+                #[cfg(not(target_os = "windows"))]
+                while crate::tray::poll_icon_event().is_some() {}
+
+                if !follow_ups.is_empty() {
+                    return Task::batch(follow_ups);
+                }
+            }
+            Message::TrayShow => {
+                // Wired in PR 8c once the HWND/ShowWindow plumbing
+                // lands. Placeholder so the dispatch arm exists and
+                // the menu click round-trips without a panic.
+                tracing::debug!("tray: show requested (handler stub)");
+            }
+            Message::TrayHide => {
+                tracing::debug!("tray: hide requested (handler stub)");
+            }
+            Message::TrayQuit => {
+                tracing::info!("tray: quit requested");
+                return iced::exit();
+            }
+
             // Anything not handled above was claimed by one of the
             // domain handlers in the `try_handler!` chain above. Any
             // variant reaching here means we forgot to claim it; treat

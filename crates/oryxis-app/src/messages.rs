@@ -830,6 +830,28 @@ pub enum Message {
     ImportCompleted(Result<String, String>),
     ExportImportDismiss,
 
+    // System tray (Windows only at runtime; messages compile on
+    // every platform so dispatch.rs and subscription.rs stay cfg-
+    // free).
+    /// 100 ms ticker emitted by the iced subscription. The handler
+    /// drains the tray-icon crate's crossbeam event channels and
+    /// re-emits real `TrayShow / TrayHide / TrayQuit` messages.
+    /// Polling here is acceptable noise (~10 ticks/sec, each a
+    /// non-blocking `try_recv`) and avoids wiring a custom
+    /// Subscription stream that bridges crossbeam into iced.
+    TrayPoll,
+    /// User clicked "Show Oryxis" in the tray menu, or left-clicked
+    /// the tray icon. Bring the main window back from hidden state
+    /// and pull it to the foreground.
+    TrayShow,
+    /// User clicked "Hide to tray". Hide the main window (true
+    /// hide via Win32 ShowWindow, not just minimize) and leave
+    /// only the tray icon present.
+    TrayHide,
+    /// User clicked "Quit" in the tray menu. Tear down the tray
+    /// icon and exit the process.
+    TrayQuit,
+
     // Share
     ShareConnection(usize),
     #[allow(dead_code)]
