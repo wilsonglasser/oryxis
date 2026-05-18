@@ -1245,7 +1245,9 @@ impl Oryxis {
                 // No-op for the primary process (it never has its
                 // own command file because we skip self_pid in
                 // Primary::list_instances).
-                if matches!(crate::app::APP_IS_PRIMARY.get(), Some(false)) {
+                let is_primary = crate::app::APP_IS_PRIMARY
+                    .load(std::sync::atomic::Ordering::Relaxed);
+                if !is_primary {
                     while let Some(cmd) = crate::tray_ipc::Child::poll_command() {
                         match cmd {
                             crate::tray_ipc::Command::Show => {
@@ -1255,6 +1257,25 @@ impl Oryxis {
                                 follow_ups.push(Task::done(Message::TrayQuit));
                             }
                         }
+                    }
+
+                    // Promotion check: if the primary process
+                    // exited (mutex released) one of the surviving
+                    // children needs to take over so the user
+                    // doesn't end up with orphaned hidden windows
+                    // and no tray to surface them. try_acquire_mutex
+                    // succeeds when nobody else owns the mutex; the
+                    // first child to win the race becomes the new
+                    // primary, installs the tray, and unregisters
+                    // its own IPC row.
+                    if crate::tray::try_acquire_mutex() {
+                        tracing::info!("tray IPC: promoting to primary (old primary gone)");
+                        crate::app::APP_IS_PRIMARY
+                            .store(true, std::sync::atomic::Ordering::Relaxed);
+                        if let Err(e) = crate::tray::install() {
+                            tracing::warn!("tray install on promotion: {e}");
+                        }
+                        crate::tray_ipc::Child::unregister();
                     }
                 }
 
@@ -1410,7 +1431,7 @@ impl Oryxis {
     /// also call this so the registry refreshes within one tick of
     /// the user action instead of waiting for the polling tick.
     pub(crate) fn broadcast_ipc_state_if_child(&mut self) {
-        if matches!(crate::app::APP_IS_PRIMARY.get(), Some(true) | None) {
+        if crate::app::APP_IS_PRIMARY.load(std::sync::atomic::Ordering::Relaxed) {
             return;
         }
         use std::collections::hash_map::DefaultHasher;

@@ -131,7 +131,7 @@ fn main() -> iced::Result {
     // all known windows into a single "Hidden windows" section so
     // the user sees one tray ruling them all instead of N duplicates.
     let is_primary = !tray::another_instance_running();
-    app::APP_IS_PRIMARY.set(is_primary).ok();
+    app::APP_IS_PRIMARY.store(is_primary, std::sync::atomic::Ordering::Relaxed);
     tray_ipc::init_runtime_dirs();
 
     if is_primary {

@@ -23,13 +23,15 @@ pub static AUTO_CONNECT: OnceLock<Uuid> = OnceLock::new();
 /// the user doesn't have to re-type for "Duplicate in New Window".
 pub static AUTO_PASSWORD: OnceLock<String> = OnceLock::new();
 
-/// True when this process won the single-instance mutex race and owns
-/// the system tray icon ("primary"). False for every subsequent launch
-/// ("child"). Dispatchers branch on this to decide whether to write a
-/// state row into the tray_ipc registry, render the "Hidden windows"
-/// submenu, or skip both. Defaults to true on the unsupported path so
-/// non-Windows behaviour stays single-process-equivalent.
-pub static APP_IS_PRIMARY: OnceLock<bool> = OnceLock::new();
+/// True when this process is currently the primary (owns the system
+/// tray icon). Stored as an AtomicBool rather than OnceLock so the
+/// child-promotion path can flip it at runtime when the previous
+/// primary dies and one of the surviving children takes over the
+/// mutex. Dispatchers branch on this every TrayPoll tick to decide
+/// whether to read the IPC registry + render the unified Windows
+/// section (primary) or just publish their own state row (child).
+pub static APP_IS_PRIMARY: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(true);
 
 use crate::state::{
     ConnectionForm, ConnectionProgress, OverlayState, SettingsSection, TerminalTab, VaultState,

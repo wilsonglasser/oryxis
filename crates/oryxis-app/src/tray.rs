@@ -17,7 +17,7 @@
 
 #[cfg(target_os = "windows")]
 mod imp {
-    use std::sync::OnceLock;
+    use std::sync::Mutex;
 
     use tray_icon::{
         menu::{Menu, MenuEvent, MenuItem, PredefinedMenuItem},
@@ -54,13 +54,13 @@ mod imp {
     unsafe impl<T> Send for ThreadBound<T> {}
     unsafe impl<T> Sync for ThreadBound<T> {}
 
-    /// Held for the lifetime of the process. Dropping the `TrayIcon`
-    /// removes the icon from the notification area immediately, so
-    /// we stash it in a `OnceLock` and never release it. iced owns
-    /// the message loop the icon's event channels feed into; every
-    /// interaction with `tray` happens from there, hence the
-    /// ThreadBound wrapper's safety claim.
-    static TRAY: OnceLock<ThreadBound<TrayIcon>> = OnceLock::new();
+    /// Held for the lifetime of the process when set. Mutex (not
+    /// OnceLock) because the child-promotion path installs the tray
+    /// after boot when the original primary dies, and a OnceLock
+    /// would refuse the second `set`. iced owns the message loop
+    /// the icon's event channels feed into; every interaction
+    /// happens from there, hence the ThreadBound safety claim.
+    static TRAY: Mutex<Option<ThreadBound<TrayIcon>>> = Mutex::new(None);
 
     /// Create the tray icon at app startup. Safe to call once; later
     /// calls are no-ops (idempotent via `OnceLock::set`). Returns
@@ -68,7 +68,11 @@ mod imp {
     /// register the icon (rare on Windows, can happen on locked-down
     /// kiosks).
     pub fn install() -> Result<(), Box<dyn std::error::Error>> {
-        if TRAY.get().is_some() {
+        // Already installed (we're called twice on the same process
+        // somehow). Bail without rebuilding.
+        if let Ok(guard) = TRAY.lock()
+            && guard.is_some()
+        {
             return Ok(());
         }
 
@@ -107,13 +111,13 @@ mod imp {
         // with_visible(false), so we toggle right after build.
         let _ = tray.set_visible(false);
 
-        // OnceLock::set returns Err with the value we tried to set
-        // if another thread won the race; the icon dropping there
-        // would un-register from the tray, so we deliberately leak
-        // it via mem::forget if that happens to keep the visible
-        // icon alive.
-        if let Err(losing) = TRAY.set(ThreadBound(tray)) {
-            std::mem::forget(losing);
+        // Promotion path may have raced us; if a TRAY is already
+        // here when we try to install, drop ours (the existing one
+        // wins) so we never end up with two icons in the tray.
+        if let Ok(mut guard) = TRAY.lock()
+            && guard.is_none()
+        {
+            *guard = Some(ThreadBound(tray));
         }
         Ok(())
     }
@@ -141,7 +145,8 @@ mod imp {
     /// Failure is logged + swallowed; the worst case is a stale tray
     /// icon hanging around for a tick longer than ideal.
     pub fn set_visible(visible: bool) {
-        let Some(ThreadBound(tray)) = TRAY.get() else { return };
+        let Ok(guard) = TRAY.lock() else { return };
+        let Some(ThreadBound(tray)) = guard.as_ref() else { return };
         if let Err(e) = tray.set_visible(visible) {
             tracing::warn!("tray set_visible({visible}): {e}");
         }
@@ -163,7 +168,11 @@ mod imp {
         recent_hosts: &[(String, String)],
         hidden_windows: &[(String, String)],
     ) -> Result<(), Box<dyn std::error::Error>> {
-        let Some(ThreadBound(tray)) = TRAY.get() else {
+        let guard = match TRAY.lock() {
+            Ok(g) => g,
+            Err(_) => return Ok(()),
+        };
+        let Some(ThreadBound(tray)) = guard.as_ref() else {
             // No tray installed (install() failed or platform stub),
             // nothing to rebuild. Caller doesn't care.
             return Ok(());
@@ -243,46 +252,47 @@ mod imp {
         TrayIconEvent::receiver().try_recv().ok()
     }
 
-    /// Check if another Oryxis instance already owns the named
-    /// mutex; returns `true` when this process should exit. The
-    /// mutex name is fixed per-user (uses the `Local\` namespace
-    /// so it's session-scoped, not machine-wide), so two different
-    /// Windows users can each run Oryxis independently.
+    /// Try to acquire the single-instance mutex. Returns true if
+    /// we won (we ARE primary), false if another instance owns it.
+    /// Side effect: when we win, the handle stays alive for the
+    /// rest of the process via a deliberate leak so we hold the
+    /// mutex until exit.
     ///
-    /// MVP behaviour: duplicate launch just exits. A follow-up
-    /// release will add an IPC channel so the duplicate routes its
-    /// CLI args (`--connect <uuid>`) into the existing instance
-    /// instead of dropping them. Until then, JumpList / shortcut
-    /// double-click while the app is running is a no-op the user
-    /// has to resolve by clicking the existing tray icon.
-    pub fn another_instance_running() -> bool {
+    /// Called twice in the lifecycle:
+    /// 1. At boot, to decide primary vs child role.
+    /// 2. Periodically from children's TrayPoll to detect a dead
+    ///    primary and promote (the OS releases mutexes when the
+    ///    owning process exits, so a fresh CreateMutexW succeeds
+    ///    again once primary is gone).
+    pub fn try_acquire_mutex() -> bool {
         use windows_sys::Win32::Foundation::{
             CloseHandle, ERROR_ALREADY_EXISTS, GetLastError,
         };
         use windows_sys::Win32::System::Threading::CreateMutexW;
 
-        // Wide-string literal so we can pass it to CreateMutexW
-        // directly. `Local\\` scopes the mutex to the current user
-        // session (RDP / multiple Windows accounts don't collide).
         let name: Vec<u16> = "Local\\oryxis-single-instance\0"
             .encode_utf16()
             .collect();
-        // SAFETY: name is null-terminated, dwInitialOwner = FALSE
-        // means we don't take ownership (we only care about the
-        // create vs already-exists distinction).
         let h = unsafe { CreateMutexW(std::ptr::null(), 0, name.as_ptr()) };
         let already = unsafe { GetLastError() } == ERROR_ALREADY_EXISTS;
         if already {
-            // Release our handle but the mutex object stays alive
-            // because the other process still owns it.
             unsafe {
                 CloseHandle(h);
             }
+            return false;
         }
-        // Otherwise we deliberately leak `h`: the OS reclaims the
-        // mutex when the process exits, and holding it for the
-        // lifetime of the app is the whole point.
-        already
+        // Leak the handle so the mutex object stays owned for the
+        // lifetime of this process. The OS reclaims it on exit.
+        true
+    }
+
+    /// Back-compat wrapper kept for `main.rs`. Returns the inverse
+    /// of `try_acquire_mutex`: true when another instance is
+    /// already running. The original API was the negation; this
+    /// shim avoids churning the call site for what is essentially
+    /// the same call.
+    pub fn another_instance_running() -> bool {
+        !try_acquire_mutex()
     }
 
     /// Hide the window passed in, going through the raw HWND
@@ -385,6 +395,13 @@ mod stub {
     /// matches the platform-only scope of the tray feature itself.
     pub fn another_instance_running() -> bool {
         false
+    }
+
+    /// Stub: always reports success on non-Windows, so the
+    /// promotion path treats every process as already-primary
+    /// (matches the no-tray scope).
+    pub fn try_acquire_mutex() -> bool {
+        true
     }
 
     pub fn poll_menu_event() -> Option<String> {
