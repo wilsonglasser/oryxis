@@ -63,6 +63,8 @@ mod imp {
     ///
     /// Called from the dispatcher inside an `iced::window::run`
     /// callback so we have a valid HWND on the UI thread.
+    #[allow(dead_code)] // call site disabled until we can debug the silent
+    // FFI failure (see dispatch.rs near jumplist_window_tagged)
     pub fn tag_window(handle: &dyn iced::Window) {
         use iced::window::raw_window_handle::RawWindowHandle;
         use windows::Win32::Foundation::HWND;
@@ -257,6 +259,7 @@ pub use imp::{rebuild, set_app_id, tag_window};
 mod stub {
     pub fn set_app_id() {}
     pub fn rebuild(_recent: &[(String, String)]) {}
+    #[allow(dead_code)]
     pub fn tag_window(_handle: &dyn iced::Window) {}
 }
 

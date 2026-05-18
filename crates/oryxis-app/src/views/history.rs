@@ -5,7 +5,7 @@
 //! data size) so the list reads as one chronological feed.
 
 use iced::border::Radius;
-use iced::widget::{button, column, container, row, scrollable, text, Space};
+use iced::widget::{button, column, container, scrollable, text, Space};
 use iced::widget::button::Status as BtnStatus;
 use iced::{Background, Border, Color, Element, Length, Padding};
 
@@ -212,11 +212,12 @@ impl Oryxis {
             let viewer = container(
                 column![
                     container(
-                        row![
+                        crate::widgets::dir_row(vec![
                             text(crate::i18n::t("session_log"))
                                 .size(16)
-                                .color(OryxisColors::t().text_primary),
-                            Space::new().width(Length::Fill),
+                                .color(OryxisColors::t().text_primary)
+                                .into(),
+                            Space::new().width(Length::Fill).into(),
                             button(
                                 container(
                                     text(crate::i18n::t("close")).size(11).font(iced::Font {
@@ -244,8 +245,9 @@ impl Oryxis {
                                     },
                                     ..Default::default()
                                 }
-                            }),
-                        ].align_y(iced::Alignment::Center),
+                            })
+                            .into(),
+                        ]).align_y(iced::Alignment::Center),
                     )
                     .padding(Padding {
                         top: 16.0, right: 20.0, bottom: 12.0, left: 20.0,

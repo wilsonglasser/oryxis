@@ -527,18 +527,20 @@ fn area_tab<'a>(
     };
     button(
         container(
-            row![
+            crate::widgets::dir_row(vec![
                 container(glyph.size(14).color(fg))
                     .center_x(Length::Fixed(TAB_ICON_SLOT))
-                    .center_y(Length::Fixed(TAB_ICON_SLOT)),
-                Space::new().width(6),
+                    .center_y(Length::Fixed(TAB_ICON_SLOT))
+                    .into(),
+                Space::new().width(6).into(),
                 text(label)
                     .size(12)
                     .line_height(1.0)
                     .wrapping(iced::widget::text::Wrapping::None)
                     .font(SYSTEM_UI_SEMIBOLD)
-                    .color(fg),
-            ]
+                    .color(fg)
+                    .into(),
+            ])
             .align_y(iced::Alignment::Center),
         )
         .center_y(Length::Fixed(TAB_HEIGHT))
@@ -721,21 +723,21 @@ fn session_tab<'a>(
         } else {
             Space::new().width(TAB_ICON_SLOT).height(TAB_ICON_SLOT).into()
         };
-        row![
+        crate::widgets::dir_row(vec![
             leading_slot,
-            Space::new().width(5),
-            label_text,
-            Space::new().width(4),
+            Space::new().width(5).into(),
+            label_text.into(),
+            Space::new().width(4).into(),
             trailing_slot,
-        ]
+        ])
         .align_y(iced::Alignment::Center)
         .into()
     } else {
-        row![
+        crate::widgets::dir_row(vec![
             leading_slot,
-            Space::new().width(5),
-            label_text,
-        ]
+            Space::new().width(5).into(),
+            label_text.into(),
+        ])
         .align_y(iced::Alignment::Center)
         .into()
     };

@@ -104,7 +104,7 @@ pub async fn recv_message(
 /// one when a peer connects (or when a `Sync Now` opens a session),
 /// runs it to completion, and drops it.
 pub enum SessionTransport {
-    /// Direct QUIC stream pair — the LAN / cross-NAT-direct path.
+    /// Direct QUIC stream pair, the LAN / cross-NAT-direct path.
     Quic {
         send: quinn::SendStream,
         recv: quinn::RecvStream,
@@ -142,7 +142,7 @@ impl SessionTransport {
 
     /// Block until a frame from the bound peer arrives. Relay frames
     /// from a different sender (multi-peer cross-talk on the inbox)
-    /// are silently dropped — they'll get processed when their own
+    /// are silently dropped; they'll get processed when their own
     /// session fires.
     pub async fn recv(&mut self) -> Result<SyncMessage, SyncError> {
         match self {

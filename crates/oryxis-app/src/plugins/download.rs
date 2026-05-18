@@ -29,6 +29,7 @@ pub async fn fetch_manifest(provider_id: &str) -> Result<PluginManifest, PluginE
     let client = reqwest::Client::builder()
         .user_agent(concat!("Oryxis/", env!("CARGO_PKG_VERSION")))
         .timeout(std::time::Duration::from_secs(15))
+        .https_only(true)
         .build()
         .map_err(|e| PluginError::Download(e.to_string()))?;
 
@@ -180,6 +181,7 @@ async fn download_bytes(
     let client = reqwest::Client::builder()
         .user_agent(concat!("Oryxis/", env!("CARGO_PKG_VERSION")))
         .timeout(std::time::Duration::from_secs(600))
+        .https_only(true)
         .build()
         .map_err(|e| PluginError::Download(e.to_string()))?;
     let resp = client
@@ -191,14 +193,28 @@ async fn download_bytes(
         return Err(PluginError::Download(format!("HTTP {}", resp.status())));
     }
 
-    // Prefer the server's Content-Length, fall back to the manifest
-    // size so the UI still has something to draw a bar against.
+    // Hard cap on the body size: a malicious or mistakenly-large
+    // Content-Length (or the manifest's `size` field if Content-Length
+    // is missing) would let us pre-allocate or stream gigabytes. AWS
+    // plugin is ~25 MB today; 200 MB leaves headroom without giving
+    // an attacker an OOM lever.
+    const MAX_PLUGIN_BYTES: u64 = 200 * 1024 * 1024;
     let total = resp.content_length().unwrap_or(binary.size);
+    if total > MAX_PLUGIN_BYTES {
+        return Err(PluginError::Download(format!(
+            "plugin binary advertises {total} bytes, exceeds {MAX_PLUGIN_BYTES} byte ceiling"
+        )));
+    }
     let mut buf: Vec<u8> = Vec::with_capacity(total as usize);
     let mut stream = resp.bytes_stream();
     progress(0, total);
     while let Some(chunk) = stream.next().await {
         let chunk = chunk.map_err(|e| PluginError::Download(e.to_string()))?;
+        if (buf.len() as u64).saturating_add(chunk.len() as u64) > MAX_PLUGIN_BYTES {
+            return Err(PluginError::Download(format!(
+                "plugin binary exceeded {MAX_PLUGIN_BYTES} byte ceiling mid-stream"
+            )));
+        }
         buf.extend_from_slice(&chunk);
         progress(buf.len() as u64, total.max(buf.len() as u64));
     }

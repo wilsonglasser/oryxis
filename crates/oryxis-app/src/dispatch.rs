@@ -1124,11 +1124,14 @@ impl Oryxis {
                     let sig = h.finish();
                     if sig != self.tray_menu_signature {
                         self.tray_menu_signature = sig;
+                        // `&` is the Windows menu accelerator prefix:
+                        // a host named "R&D" would render as "RD" with
+                        // D underlined. Doubling the `&` escapes it.
                         let active: Vec<(String, String)> = self
                             .tabs
                             .iter()
                             .enumerate()
-                            .map(|(i, t)| (t.label.clone(), i.to_string()))
+                            .map(|(i, t)| (t.label.replace('&', "&&"), i.to_string()))
                             .collect();
                         // Recent hosts: top 10 by last_used desc.
                         // Hosts that were never connected drop to
@@ -1141,7 +1144,7 @@ impl Oryxis {
                         let recent: Vec<(String, String)> = recent_pairs
                             .iter()
                             .take(10)
-                            .map(|c| (c.label.clone(), c.id.to_string()))
+                            .map(|c| (c.label.replace('&', "&&"), c.id.to_string()))
                             .collect();
                         if let Err(e) = crate::tray::rebuild_menu(&active, &recent) {
                             tracing::warn!("tray menu rebuild failed: {e}");
