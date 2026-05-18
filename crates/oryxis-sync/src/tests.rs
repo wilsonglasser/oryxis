@@ -125,10 +125,12 @@ mod tests {
 
     #[test]
     fn protocol_version_consistency() {
-        // v4 added X25519 ephemeral key exchange to the pairing
-        // messages so payloads can be sealed with the resulting
-        // shared secret. Older peers are intentionally incompatible.
-        assert_eq!(PROTOCOL_VERSION, 4);
+        // v5 added the Ed25519 relay handshake (RelayHello /
+        // RelayHelloAck / RelayAuth) plus HKDF-SHA256 around the
+        // X25519 DH output. v4 sealed payloads under the raw DH
+        // output, which was acceptable but not best-practice; this
+        // pin catches any accidental version bump or rollback.
+        assert_eq!(PROTOCOL_VERSION, 5);
     }
 
     #[test]

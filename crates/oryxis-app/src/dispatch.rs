@@ -1097,6 +1097,16 @@ impl Oryxis {
                             crate::i18n::t("sync_status_signaling_failed"),
                         ));
                     }
+                    SyncEvent::VersionMismatch {
+                        peer_version,
+                        local_version,
+                        ..
+                    } => {
+                        self.sync_status = Some(format!(
+                            "{}: peer v{peer_version}, local v{local_version}",
+                            crate::i18n::t("sync_status_version_mismatch"),
+                        ));
+                    }
                 }
             }
 

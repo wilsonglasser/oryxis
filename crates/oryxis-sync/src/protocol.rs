@@ -21,10 +21,23 @@ use uuid::Uuid;
 /// secret, so a future MITM (or a compromised signaling relay) sees
 /// only ciphertext even if the TLS layer is broken.
 ///
+/// v5 added a three-step Ed25519 handshake to the relay session path
+/// (`RelayHello` / `RelayHelloAck` / `RelayAuth`) so a relay session
+/// is bound to a fresh nonce pair signed by both sides' long-term
+/// identity keys. Without it, an attacker who learned a peer's
+/// `device_id` (which travels in clear via pairing links + STUN
+/// registrations) could open a relay session impersonating that peer
+/// and push forged tombstones (`SyncRecord { is_deleted: true,
+/// payload: [] }`) that bypass per-record AEAD because empty
+/// payloads skip encryption. v5 also wraps the raw X25519 DH output
+/// in HKDF-SHA256 before persisting as the per-peer AEAD key, so the
+/// key is uniform group-independent material rather than a raw curve
+/// point.
+///
 /// Older peers cannot interop across a version bump, and that is
-/// intentional. There are no pre-v4 peers in the wild because sync was
-/// never operational before this release.
-pub const PROTOCOL_VERSION: u32 = 4;
+/// intentional. There are no pre-v5 peers in the wild because no
+/// release between v0.6.1 (which shipped v1) and now has gone out.
+pub const PROTOCOL_VERSION: u32 = 5;
 
 /// Entity types that can be synced.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
@@ -169,6 +182,33 @@ pub enum SyncMessage {
     Ping,
     Pong,
     Bye,
+
+    // Relay-session authentication (v5+). The QUIC path uses Hello /
+    // HelloAck above, which binds the Ed25519 signature to the TLS
+    // session via the RFC 5705 exporter, but the relay path has no
+    // exporter available so we sign a fresh nonce pair instead. The
+    // server's signature in `RelayHelloAck` authenticates the server
+    // to the client (and binds to the client's nonce); the client's
+    // signature in `RelayAuth` authenticates the client back. Both
+    // sides verify against the peer's stored pubkey from pairing.
+    RelayHello {
+        device_id: Uuid,
+        protocol_version: u32,
+        client_nonce: [u8; 32],
+    },
+    RelayHelloAck {
+        device_id: Uuid,
+        protocol_version: u32,
+        server_nonce: [u8; 32],
+        /// Ed25519 signature over the transcript produced by
+        /// `crypto::relay_handshake_transcript`.
+        server_signature: Vec<u8>,
+    },
+    RelayAuth {
+        /// Ed25519 signature over the same transcript the server
+        /// signed in `RelayHelloAck`.
+        client_signature: Vec<u8>,
+    },
 }
 
 /// A single entry in a sync manifest.

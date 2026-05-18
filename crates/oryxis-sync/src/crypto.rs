@@ -178,6 +178,64 @@ pub fn verify_session_handshake(
     verify_ed25519_32(peer_pubkey, exporter, signature)
 }
 
+/// Domain-separation tag for the relay-session handshake transcript.
+/// Folded into the hash so the same nonce pair signed in some other
+/// context cannot be replayed here, and so bumping the tag forces a
+/// hard fail instead of silent accept on a future change.
+pub const RELAY_HANDSHAKE_LABEL: &[u8] = b"oryxis-sync relay auth v5";
+
+/// Build the 32-byte transcript both sides sign during the relay
+/// handshake. The transcript binds the two device IDs and the two
+/// fresh per-session nonces, so a signature captured from one session
+/// will not verify in another. The QUIC path uses the TLS exporter
+/// instead, since QUIC sessions have channel binding for free.
+pub fn relay_handshake_transcript(
+    client_device_id: &Uuid,
+    server_device_id: &Uuid,
+    client_nonce: &[u8; 32],
+    server_nonce: &[u8; 32],
+) -> [u8; 32] {
+    use sha2::{Digest, Sha256};
+    let mut h = Sha256::new();
+    h.update(RELAY_HANDSHAKE_LABEL);
+    h.update(client_device_id.as_bytes());
+    h.update(server_device_id.as_bytes());
+    h.update(client_nonce);
+    h.update(server_nonce);
+    let digest = h.finalize();
+    let mut out = [0u8; 32];
+    out.copy_from_slice(&digest);
+    out
+}
+
+/// Sign the relay-handshake transcript with this device's Ed25519
+/// key. Wrapper around [`sign_ed25519_32`] kept separate so the
+/// call sites read clearly and so the relay path can grow its own
+/// label-bump independent of [`sign_session_handshake`].
+pub fn sign_relay_handshake(
+    signing_key: &SigningKey,
+    transcript: &[u8; 32],
+) -> [u8; 64] {
+    sign_ed25519_32(signing_key, transcript)
+}
+
+/// Verify a peer's Ed25519 signature over the relay-handshake
+/// transcript against the pubkey persisted at pairing time.
+pub fn verify_relay_handshake(
+    peer_pubkey: &[u8],
+    transcript: &[u8; 32],
+    signature: &[u8],
+) -> Result<(), SyncError> {
+    verify_ed25519_32(peer_pubkey, transcript, signature)
+}
+
+/// Fresh 32-byte random nonce for the relay handshake. Same shape as
+/// the pairing challenge nonce; kept as a distinct helper so the call
+/// sites read clearly.
+pub fn random_relay_nonce() -> [u8; 32] {
+    random_challenge()
+}
+
 /// Constant-time byte comparison for the pairing-code check. Returns
 /// true only when both slices are the same length and content; the
 /// timing does not reveal where (or whether) they first differ.
@@ -204,14 +262,18 @@ pub fn random_challenge() -> [u8; 32] {
 }
 
 /// Perform X25519 key exchange to derive a shared secret in one step.
-/// Returns (our_public_key, shared_secret). Used by tests and by any
-/// caller that has the peer's pubkey available when generating.
+/// Returns (our_public_key, shared_secret). The DH output is run through
+/// HKDF-SHA256 with the [`PEER_SECRET_HKDF_INFO`] domain separator before
+/// being returned, so the secret is uniformly distributed AEAD-grade key
+/// material and cannot be reused for a different protocol purpose. Used
+/// by tests and by any caller that has the peer's pubkey available when
+/// generating.
 pub fn x25519_key_exchange(peer_public_key: &[u8; 32]) -> ([u8; 32], [u8; 32]) {
     let secret = EphemeralSecret::random_from_rng(OsRng);
     let our_public = X25519PublicKey::from(&secret);
     let peer_public = X25519PublicKey::from(*peer_public_key);
     let shared = secret.diffie_hellman(&peer_public);
-    (our_public.to_bytes(), *shared.as_bytes())
+    (our_public.to_bytes(), derive_peer_secret(shared.as_bytes()))
 }
 
 /// Generate a fresh ephemeral X25519 keypair, returning the secret
@@ -229,10 +291,37 @@ pub fn x25519_keypair() -> (EphemeralSecret, [u8; 32]) {
 /// the ephemeral secret (consumed: post-DH the secret is forgotten,
 /// which is the forward-secrecy property we want) and the peer's
 /// public bytes; returns the 32-byte shared secret to persist on the
-/// `SyncPeer` row.
+/// `SyncPeer` row. The raw DH output is run through HKDF-SHA256 (see
+/// [`derive_peer_secret`]) before being returned so the persisted
+/// secret is uniform AEAD key material rather than the X25519 group
+/// element directly.
 pub fn x25519_dh(secret: EphemeralSecret, peer_public: &[u8; 32]) -> [u8; 32] {
     let peer = X25519PublicKey::from(*peer_public);
-    *secret.diffie_hellman(&peer).as_bytes()
+    derive_peer_secret(secret.diffie_hellman(&peer).as_bytes())
+}
+
+/// HKDF info string used to derive the per-peer AEAD key from the raw
+/// X25519 DH output. Bumping this tag forces a re-pairing instead of
+/// silently producing a wrong-key decryption error, and prevents the
+/// derived key from being reusable for any other purpose that picks a
+/// different info string.
+pub const PEER_SECRET_HKDF_INFO: &[u8] = b"oryxis-sync peer secret v5";
+
+/// Derive a 32-byte AEAD key from a raw 32-byte X25519 DH output using
+/// HKDF-SHA256 with an empty salt and [`PEER_SECRET_HKDF_INFO`] as the
+/// domain separator. Best-practice over feeding raw DH bytes into
+/// ChaCha20-Poly1305: HKDF uniformises the bias of the X25519 group
+/// element and pins the key to this specific use.
+pub fn derive_peer_secret(dh_output: &[u8]) -> [u8; 32] {
+    use hkdf::Hkdf;
+    use sha2::Sha256;
+    let hk = Hkdf::<Sha256>::new(None, dh_output);
+    let mut okm = [0u8; 32];
+    // Expand into a 32-byte slot, well under the 255 * HashLen limit
+    // for HKDF-SHA256 so the `expand` call cannot fail.
+    hk.expand(PEER_SECRET_HKDF_INFO, &mut okm)
+        .expect("HKDF-SHA256 expand for 32 bytes always fits within the per-call limit");
+    okm
 }
 
 /// Encrypt payload with shared secret using ChaCha20Poly1305.

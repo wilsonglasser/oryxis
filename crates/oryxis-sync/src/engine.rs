@@ -68,6 +68,16 @@ pub enum SyncEvent {
     SignalingFailed {
         reason: String,
     },
+    /// A peer attempted to handshake with a protocol version this
+    /// build doesn't speak. Surfaced so the UI can prompt the user
+    /// to update (or update the peer). Fired from both sides:
+    /// server when an incoming Hello mismatches, and client when an
+    /// outgoing HelloAck does.
+    VersionMismatch {
+        peer_id: Uuid,
+        peer_version: u32,
+        local_version: u32,
+    },
 }
 
 /// State for a device that is currently hosting a pairing code and
@@ -125,6 +135,14 @@ pub struct SyncEngine {
     /// `start()`. Advertised to joiners in `PairingRequest` so the
     /// host can sync back to us.
     bound_port: u16,
+    /// mDNS registration and browser handles. The `ServiceDaemon`
+    /// drops would deregister the device from the LAN, so we have
+    /// to keep them owned by the engine for as long as sync is up.
+    /// Previously these were stack locals in `start()` and dropped
+    /// the moment the function returned, silently disabling LAN
+    /// discovery. Cleared in `stop()` to release the daemons.
+    mdns_register: Option<mdns_sd::ServiceDaemon>,
+    mdns_browse: Option<mdns_sd::ServiceDaemon>,
 }
 
 impl SyncEngine {
@@ -144,6 +162,8 @@ impl SyncEngine {
             shutdown_tx: None,
             hosting_pairing: Arc::new(std::sync::Mutex::new(None)),
             bound_port: 0,
+            mdns_register: None,
+            mdns_browse: None,
         }
     }
 
@@ -184,10 +204,16 @@ impl SyncEngine {
         // it to pairing joiners (the configured port may have been 0).
         self.bound_port = listen_port;
 
-        // Start mDNS registration and browsing
+        // Start mDNS registration and browsing. The `ServiceDaemon`s
+        // have to stay alive for as long as sync is running, so we
+        // hand them to the engine. Letting them drop here (the prior
+        // behaviour) silently took LAN discovery offline the moment
+        // `start()` returned.
         let (discovery_tx, mut discovery_rx) = mpsc::unbounded_channel();
-        let _mdns_register = discovery::mdns::register(&self.identity.device_id, listen_port).ok();
-        let _mdns_browse = discovery::mdns::browse(&self.identity.device_id, discovery_tx).ok();
+        self.mdns_register =
+            discovery::mdns::register(&self.identity.device_id, listen_port).ok();
+        self.mdns_browse =
+            discovery::mdns::browse(&self.identity.device_id, discovery_tx).ok();
 
         // Forward discovery events
         let event_tx = self.event_tx.clone();
@@ -386,7 +412,8 @@ impl SyncEngine {
                                 Err(crate::SyncError::RelayUnavailable(detail)) => {
                                     // Permanent server-side condition
                                     // (404/410/501). Retrying just burns
-                                    // network + battery; log loud once
+                                    // network + battery; log loud once,
+                                    // surface a SignalingFailed event
                                     // so the user sees why relay sync
                                     // went quiet, then exit the poll
                                     // task. Local mDNS + STUN paths
@@ -395,6 +422,11 @@ impl SyncEngine {
                                     tracing::warn!(
                                         "relay inbox unavailable, giving up: {detail}"
                                     );
+                                    let _ = event_tx.send(SyncEvent::SignalingFailed {
+                                        reason: format!(
+                                            "Relay inbox unavailable: {detail}"
+                                        ),
+                                    });
                                     break;
                                 }
                                 Err(e) => {
@@ -458,6 +490,11 @@ impl SyncEngine {
         if let Some(tx) = self.shutdown_tx.take() {
             let _ = tx.send(());
         }
+        // Drop the mDNS daemons so we deregister from the LAN as
+        // soon as the user toggles sync off (rather than lingering
+        // in service browsers until the process exits).
+        self.mdns_register = None;
+        self.mdns_browse = None;
     }
 
     /// Get a cheap, cloneable handle for triggering syncs and pairing
@@ -890,7 +927,17 @@ async fn handle_incoming(
             auth_signature,
         } => {
             if protocol_version != PROTOCOL_VERSION {
-                return Err(SyncError::Protocol("Version mismatch".into()));
+                // Surface to the UI so the user knows which side
+                // needs to update. Without this the connection
+                // just drops with no actionable signal.
+                let _ = event_tx.send(SyncEvent::VersionMismatch {
+                    peer_id: device_id,
+                    peer_version: protocol_version,
+                    local_version: PROTOCOL_VERSION,
+                });
+                return Err(SyncError::Protocol(format!(
+                    "Version mismatch: peer v{protocol_version}, local v{PROTOCOL_VERSION}"
+                )));
             }
             (device_id, auth_signature)
         }
@@ -1155,32 +1202,93 @@ async fn run_relay_inbound_session(
             )
             .await;
         }
-        SyncMessage::ManifestRequest
-        | SyncMessage::DeltaRequest { .. }
-        | SyncMessage::DeltaPush { .. }
-        | SyncMessage::Ping => {
-            // Authenticate the sender against our paired-peer list.
-            // Relay has no channel binding; pairing must already have
-            // seeded shared_secret, so an unknown sender is a stranger
-            // we drop on the floor.
-            let known = vault
-                .lock()
-                .ok()
-                .and_then(|v| v.list_sync_peers().ok())
-                .map(|peers| {
-                    peers.iter().any(|p| p.peer_id == sender_id && p.is_active)
-                })
-                .unwrap_or(false);
-            if !known {
+        SyncMessage::RelayHello {
+            device_id,
+            protocol_version,
+            client_nonce,
+        } => {
+            // Authenticated relay session. Pre-v5 the sender_id check
+            // above was the only gate, so an attacker who knew a
+            // paired device's UUID could push forged tombstones
+            // (empty payload skips AEAD). v5 makes the client prove
+            // it holds the paired Ed25519 private key over a fresh
+            // nonce pair before any sync frames are processed.
+            if device_id != sender_id {
+                tracing::warn!(
+                    "relay session: RelayHello device_id {device_id} != relay sender_id {sender_id}"
+                );
+                return;
+            }
+            if protocol_version != PROTOCOL_VERSION {
+                let _ = event_tx.send(SyncEvent::VersionMismatch {
+                    peer_id: sender_id,
+                    peer_version: protocol_version,
+                    local_version: PROTOCOL_VERSION,
+                });
+                return;
+            }
+            let peer_pubkey = {
+                let Ok(v) = vault.lock() else { return };
+                let Ok(peers) = v.list_sync_peers() else { return };
+                peers
+                    .into_iter()
+                    .find(|p| p.peer_id == sender_id && p.is_active)
+                    .map(|p| p.public_key)
+            };
+            let Some(peer_pubkey) = peer_pubkey else {
                 tracing::warn!(
                     "relay session: rejecting unknown sender {sender_id}"
                 );
                 return;
+            };
+            let server_nonce = crypto::random_relay_nonce();
+            let transcript = crypto::relay_handshake_transcript(
+                &sender_id,
+                &identity.device_id,
+                &client_nonce,
+                &server_nonce,
+            );
+            let server_sig =
+                crypto::sign_relay_handshake(&identity.signing_key, &transcript);
+            let ack = SyncMessage::RelayHelloAck {
+                device_id: identity.device_id,
+                protocol_version: PROTOCOL_VERSION,
+                server_nonce,
+                server_signature: server_sig.to_vec(),
+            };
+            if let Err(e) = transport.send(&ack).await {
+                tracing::warn!(
+                    "relay session: send RelayHelloAck to {sender_id} failed: {e}"
+                );
+                return;
+            }
+            let auth_msg = match transport.recv().await {
+                Ok(m) => m,
+                Err(e) => {
+                    tracing::warn!(
+                        "relay session: recv RelayAuth from {sender_id} failed: {e}"
+                    );
+                    return;
+                }
+            };
+            let SyncMessage::RelayAuth { client_signature } = auth_msg else {
+                tracing::warn!(
+                    "relay session: expected RelayAuth from {sender_id}, got {auth_msg:?}"
+                );
+                return;
+            };
+            if let Err(e) = crypto::verify_relay_handshake(
+                &peer_pubkey,
+                &transcript,
+                &client_signature,
+            ) {
+                tracing::warn!(
+                    "relay session: RelayAuth signature from {sender_id} did not verify: {e}"
+                );
+                return;
             }
             let _ = event_tx.send(SyncEvent::SyncStarted { peer_id: sender_id });
-            match handle_sync_session(&mut transport, &vault, &sender_id, Some(first))
-                .await
-            {
+            match handle_sync_session(&mut transport, &vault, &sender_id, None).await {
                 Ok((pushed, pulled)) => {
                     let _ = event_tx.send(SyncEvent::SyncCompleted {
                         peer_id: sender_id,
@@ -1197,8 +1305,13 @@ async fn run_relay_inbound_session(
             }
         }
         other => {
+            // Pre-v5 the bare ManifestRequest / DeltaRequest / Ping
+            // were accepted here on the basis of the relay sender_id
+            // alone. They are now rejected so a stranger that knows
+            // a paired device's UUID cannot skip the RelayHello
+            // round and slip frames straight into the sync session.
             tracing::warn!(
-                "relay session from {sender_id}: unexpected opener {other:?}"
+                "relay session from {sender_id}: unexpected opener {other:?} (RelayHello required)"
             );
         }
     }
@@ -1671,7 +1784,7 @@ async fn sync_all_peers(
                     Ok(addr) => Some(
                         tokio::time::timeout(
                             std::time::Duration::from_secs(5),
-                            sync_with_peer(vault, identity, &peer.peer_id, addr),
+                            sync_with_peer(vault, identity, &peer.peer_id, addr, event_tx),
                         )
                         .await,
                     ),
@@ -1718,6 +1831,7 @@ async fn sync_all_peers(
                     relay_url,
                     &token,
                     &peer.peer_id,
+                    event_tx,
                 )
                 .await
                 {
@@ -1754,16 +1868,20 @@ async fn sync_all_peers(
 }
 
 /// Client side of a relay-based sync session: bind a `RelayClient`
-/// long-poll inbox to the peer, run the same `run_sync_session_as_client`
-/// flow that QUIC uses. Skips the Hello/HelloAck auth round (relay has
-/// no TLS exporter to bind to); the per-record `shared_secret`
-/// encryption fills the same gap.
+/// long-poll inbox to the peer, run a three-step Ed25519 handshake
+/// (`RelayHello` / `RelayHelloAck` / `RelayAuth`) over the relay so the
+/// peer cannot be impersonated by anyone who happens to know its
+/// `device_id`, then run the same `run_sync_session_as_client` flow
+/// that QUIC uses. Per-record AEAD still protects payload contents
+/// against a relay-server eavesdropper; the handshake closes the
+/// integrity gap (empty-payload tombstones used to bypass AEAD).
 async fn sync_with_peer_via_relay(
     vault: &Arc<std::sync::Mutex<VaultStore>>,
     identity: &DeviceIdentity,
     relay_url: &str,
     relay_token: &str,
     peer_id: &Uuid,
+    event_tx: &mpsc::UnboundedSender<SyncEvent>,
 ) -> Result<(usize, usize), SyncError> {
     let client = crate::relay::RelayClient::new(
         relay_url,
@@ -1775,6 +1893,71 @@ async fn sync_with_peer_via_relay(
         peer_id: *peer_id,
         my_id: identity.device_id,
     };
+
+    let client_nonce = crypto::random_relay_nonce();
+    transport
+        .send(&SyncMessage::RelayHello {
+            device_id: identity.device_id,
+            protocol_version: PROTOCOL_VERSION,
+            client_nonce,
+        })
+        .await?;
+
+    let ack = transport.recv().await?;
+    let SyncMessage::RelayHelloAck {
+        device_id: ack_device_id,
+        protocol_version,
+        server_nonce,
+        server_signature,
+    } = ack
+    else {
+        return Err(SyncError::Protocol("Expected RelayHelloAck".into()));
+    };
+    if ack_device_id != *peer_id {
+        return Err(SyncError::Protocol(format!(
+            "RelayHelloAck device_id mismatch: expected {peer_id}, got {ack_device_id}"
+        )));
+    }
+    if protocol_version != PROTOCOL_VERSION {
+        let _ = event_tx.send(SyncEvent::VersionMismatch {
+            peer_id: *peer_id,
+            peer_version: protocol_version,
+            local_version: PROTOCOL_VERSION,
+        });
+        return Err(SyncError::Protocol(format!(
+            "RelayHelloAck version mismatch: peer v{protocol_version}, local v{PROTOCOL_VERSION}"
+        )));
+    }
+    let peer_pubkey = {
+        let v = vault
+            .lock()
+            .map_err(|_| SyncError::Vault("Lock failed".into()))?;
+        v.list_sync_peers()?
+            .into_iter()
+            .find(|p| p.peer_id == *peer_id && p.is_active)
+            .map(|p| p.public_key)
+            .ok_or_else(|| SyncError::PeerNotFound(peer_id.to_string()))?
+    };
+    let transcript = crypto::relay_handshake_transcript(
+        &identity.device_id,
+        peer_id,
+        &client_nonce,
+        &server_nonce,
+    );
+    crypto::verify_relay_handshake(&peer_pubkey, &transcript, &server_signature)
+        .map_err(|e| {
+            SyncError::PairingFailed(format!(
+                "RelayHelloAck signature from {peer_id} did not verify: {e}"
+            ))
+        })?;
+    let client_sig =
+        crypto::sign_relay_handshake(&identity.signing_key, &transcript);
+    transport
+        .send(&SyncMessage::RelayAuth {
+            client_signature: client_sig.to_vec(),
+        })
+        .await?;
+
     run_sync_session_as_client(&mut transport, vault, peer_id).await
 }
 
@@ -1784,6 +1967,7 @@ async fn sync_with_peer(
     identity: &DeviceIdentity,
     peer_id: &Uuid,
     addr: SocketAddr,
+    event_tx: &mpsc::UnboundedSender<SyncEvent>,
 ) -> Result<(usize, usize), SyncError> {
     let client = transport::create_client_endpoint()?;
 
@@ -1819,11 +2003,26 @@ async fn sync_with_peer(
     let peer_auth_sig = match msg {
         SyncMessage::HelloAck {
             device_id,
+            protocol_version,
             auth_signature,
-            ..
         } => {
             if device_id != *peer_id {
                 return Err(SyncError::Protocol("Peer ID mismatch".into()));
+            }
+            // Server-side check (handle_incoming) covers Hello.version,
+            // but the server may legitimately speak a newer protocol
+            // than what its HelloAck reports if backward-compat was
+            // added. Today we require an exact match either way, so a
+            // mismatch here also surfaces a UI event before failing.
+            if protocol_version != PROTOCOL_VERSION {
+                let _ = event_tx.send(SyncEvent::VersionMismatch {
+                    peer_id: *peer_id,
+                    peer_version: protocol_version,
+                    local_version: PROTOCOL_VERSION,
+                });
+                return Err(SyncError::Protocol(format!(
+                    "HelloAck version mismatch: peer v{protocol_version}, local v{PROTOCOL_VERSION}"
+                )));
             }
             auth_signature
         }
