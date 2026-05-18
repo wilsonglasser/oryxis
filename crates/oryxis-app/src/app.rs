@@ -561,6 +561,13 @@ pub struct Oryxis {
     /// When on, minimizing the window hides it from the taskbar and
     /// leaves only the tray icon visible. Windows-only. Default off.
     pub(crate) setting_minimize_to_tray: bool,
+    /// Signature of (tabs len, last tab uuid, connections len, max
+    /// last_used timestamp) computed during the last tray menu
+    /// rebuild. The TrayPoll handler recomputes the signature each
+    /// tick and only rebuilds the menu when it differs. Avoids
+    /// burning cycles rebuilding the dynamic submenus 10 times a
+    /// second when nothing has changed.
+    pub(crate) tray_menu_signature: u64,
     /// `"left"` (default, Termius-style: X replaces the OS badge on
     /// hover/active) or `"right"` (badge stays left, X gets its own
     /// slot at the trailing edge of the tab). Anything else is treated

@@ -853,6 +853,15 @@ pub enum Message {
     /// User clicked "Quit" in the tray menu. Tear down the tray
     /// icon and exit the process.
     TrayQuit,
+    /// User clicked an entry in the tray menu's "Active sessions"
+    /// section. Payload is the tab index from `Oryxis::tabs`. The
+    /// handler shows the window (in case it was hidden) and selects
+    /// the tab.
+    TrayActivateSession(usize),
+    /// User clicked an entry in the tray menu's "Recent hosts"
+    /// section. Payload is the connection UUID. The handler shows
+    /// the window and opens a new tab against that connection.
+    TrayOpenHost(uuid::Uuid),
 
     // Share
     ShareConnection(usize),

@@ -390,6 +390,8 @@ fn en(key: &str) -> &'static str {
         "tray_show" => "Show Oryxis",
         "tray_hide" => "Hide to tray",
         "tray_quit" => "Quit",
+        "tray_active_sessions" => "Active sessions",
+        "tray_recent_hosts" => "Recent hosts",
         "close_button_position" => "Tab close button position",
         "close_position_left" => "Left",
         "close_position_right" => "Right",

@@ -292,6 +292,7 @@ impl Oryxis {
                 setting_show_status_bar: true,
                 setting_close_to_tray: false,
                 setting_minimize_to_tray: false,
+                tray_menu_signature: 0,
                 setting_tab_close_button_side: "left".into(),
                 setting_show_tab_status_dot: true,
                 setting_tab_accent_line: true,

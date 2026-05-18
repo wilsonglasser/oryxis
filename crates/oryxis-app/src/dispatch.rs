@@ -1102,6 +1102,52 @@ impl Oryxis {
 
             // -- System tray --
             Message::TrayPoll => {
+                // Rebuild the dynamic submenu (Active sessions +
+                // Recent hosts) when the state behind it changed.
+                // Signature is a hash of the tab count + connection
+                // last_used times; cheap enough to recompute every
+                // 100 ms and skips the actual rebuild on no-change.
+                {
+                    use std::collections::hash_map::DefaultHasher;
+                    use std::hash::{Hash, Hasher};
+
+                    let mut h = DefaultHasher::new();
+                    self.tabs.len().hash(&mut h);
+                    for t in &self.tabs {
+                        t.label.hash(&mut h);
+                    }
+                    self.connections.len().hash(&mut h);
+                    for c in &self.connections {
+                        c.id.hash(&mut h);
+                        c.last_used.map(|d| d.timestamp_millis()).hash(&mut h);
+                    }
+                    let sig = h.finish();
+                    if sig != self.tray_menu_signature {
+                        self.tray_menu_signature = sig;
+                        let active: Vec<(String, String)> = self
+                            .tabs
+                            .iter()
+                            .enumerate()
+                            .map(|(i, t)| (t.label.clone(), i.to_string()))
+                            .collect();
+                        // Recent hosts: top 10 by last_used desc.
+                        // Hosts that were never connected drop to
+                        // the bottom and get sliced off, so the
+                        // menu only lists hosts the user actually
+                        // touched.
+                        let mut recent_pairs: Vec<&oryxis_core::models::connection::Connection> =
+                            self.connections.iter().filter(|c| c.last_used.is_some()).collect();
+                        recent_pairs.sort_by_key(|c| std::cmp::Reverse(c.last_used));
+                        let recent: Vec<(String, String)> = recent_pairs
+                            .iter()
+                            .take(10)
+                            .map(|c| (c.label.clone(), c.id.to_string()))
+                            .collect();
+                        if let Err(e) = crate::tray::rebuild_menu(&active, &recent) {
+                            tracing::warn!("tray menu rebuild failed: {e}");
+                        }
+                    }
+                }
                 // Drain whatever the tray-icon crate's event threads
                 // queued since the last poll. Each menu id resolves
                 // to a real Message via Task::batch so we can emit
@@ -1114,6 +1160,28 @@ impl Oryxis {
                         crate::tray::MENU_ID_SHOW => Some(Message::TrayShow),
                         crate::tray::MENU_ID_HIDE => Some(Message::TrayHide),
                         crate::tray::MENU_ID_QUIT => Some(Message::TrayQuit),
+                        s if s.starts_with(crate::tray::MENU_PREFIX_SESSION) => {
+                            // "oryxis-tray-session:<idx>" -> activate
+                            // that open tab. The dispatcher already
+                            // has TabSelect plumbed through every code
+                            // path that switches the active terminal.
+                            let suffix = &s[crate::tray::MENU_PREFIX_SESSION.len()..];
+                            suffix.parse::<usize>().ok().and_then(|idx| {
+                                if idx < self.tabs.len() {
+                                    Some(Message::TrayActivateSession(idx))
+                                } else {
+                                    None
+                                }
+                            })
+                        }
+                        s if s.starts_with(crate::tray::MENU_PREFIX_HOST) => {
+                            // "oryxis-tray-host:<uuid>" -> open a new
+                            // tab against that saved connection.
+                            let suffix = &s[crate::tray::MENU_PREFIX_HOST.len()..];
+                            uuid::Uuid::parse_str(suffix)
+                                .ok()
+                                .map(Message::TrayOpenHost)
+                        }
                         _ => None,
                     };
                     if let Some(m) = msg {
@@ -1168,6 +1236,28 @@ impl Oryxis {
             Message::TrayQuit => {
                 tracing::info!("tray: quit requested");
                 return iced::exit();
+            }
+            Message::TrayActivateSession(idx) => {
+                // Show first (window may be hidden) then re-emit
+                // SelectTab via Task::done. Bundled together so the
+                // user sees the tab swap and the window pop in the
+                // same frame.
+                if idx < self.tabs.len() {
+                    return Task::batch(vec![
+                        Task::done(Message::TrayShow),
+                        Task::done(Message::SelectTab(idx)),
+                    ]);
+                }
+            }
+            Message::TrayOpenHost(uuid) => {
+                if let Some(idx) =
+                    self.connections.iter().position(|c| c.id == uuid)
+                {
+                    return Task::batch(vec![
+                        Task::done(Message::TrayShow),
+                        Task::done(Message::ConnectSsh(idx)),
+                    ]);
+                }
             }
 
             // Anything not handled above was claimed by one of the

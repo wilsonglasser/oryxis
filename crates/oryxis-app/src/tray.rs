@@ -30,6 +30,12 @@ mod imp {
     pub const MENU_ID_SHOW: &str = "oryxis-tray-show";
     pub const MENU_ID_HIDE: &str = "oryxis-tray-hide";
     pub const MENU_ID_QUIT: &str = "oryxis-tray-quit";
+    /// Prefix for "active session" submenu entries. The dispatcher
+    /// strips the prefix and parses the remainder as a tab index.
+    pub const MENU_PREFIX_SESSION: &str = "oryxis-tray-session:";
+    /// Prefix for "recent host" entries. Suffix is the connection
+    /// UUID (parsed back in dispatch_tabs to open a new tab).
+    pub const MENU_PREFIX_HOST: &str = "oryxis-tray-host:";
 
     /// Held for the lifetime of the process. Dropping the `TrayIcon`
     /// removes the icon from the notification area immediately, so
@@ -105,6 +111,80 @@ mod imp {
     /// item's id, or `None` when the queue is empty.
     pub fn poll_menu_event() -> Option<String> {
         MenuEvent::receiver().try_recv().ok().map(|e| e.id.0)
+    }
+
+    /// Replace the tray icon's menu with a freshly built one that
+    /// reflects the current `Active sessions` and `Recent hosts`
+    /// lists. Idempotent: the tray-icon crate swaps the underlying
+    /// HMENU in place, the OS picks up the new menu on the next
+    /// right-click (open menus aren't disrupted because Windows
+    /// uses a snapshot).
+    ///
+    /// The two parameters are pre-formatted (label, id-suffix)
+    /// pairs so this module doesn't need to know about TerminalTab
+    /// / Connection internals. The caller assembles them from app
+    /// state and decides the cap (top N).
+    pub fn rebuild_menu(
+        active_sessions: &[(String, String)],
+        recent_hosts: &[(String, String)],
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let Some(tray) = TRAY.get() else {
+            // No tray installed (install() failed or platform stub),
+            // nothing to rebuild. Caller doesn't care.
+            return Ok(());
+        };
+
+        let menu = Menu::new();
+        menu.append(&MenuItem::with_id(
+            MENU_ID_SHOW,
+            crate::i18n::t("tray_show"),
+            true,
+            None,
+        ))?;
+        menu.append(&MenuItem::with_id(
+            MENU_ID_HIDE,
+            crate::i18n::t("tray_hide"),
+            true,
+            None,
+        ))?;
+
+        if !active_sessions.is_empty() {
+            menu.append(&PredefinedMenuItem::separator())?;
+            // Header item, disabled so it reads as a section label.
+            menu.append(&MenuItem::new(
+                crate::i18n::t("tray_active_sessions"),
+                false,
+                None,
+            ))?;
+            for (label, id_suffix) in active_sessions {
+                let id = format!("{MENU_PREFIX_SESSION}{id_suffix}");
+                menu.append(&MenuItem::with_id(id, label, true, None))?;
+            }
+        }
+
+        if !recent_hosts.is_empty() {
+            menu.append(&PredefinedMenuItem::separator())?;
+            menu.append(&MenuItem::new(
+                crate::i18n::t("tray_recent_hosts"),
+                false,
+                None,
+            ))?;
+            for (label, id_suffix) in recent_hosts {
+                let id = format!("{MENU_PREFIX_HOST}{id_suffix}");
+                menu.append(&MenuItem::with_id(id, label, true, None))?;
+            }
+        }
+
+        menu.append(&PredefinedMenuItem::separator())?;
+        menu.append(&MenuItem::with_id(
+            MENU_ID_QUIT,
+            crate::i18n::t("tray_quit"),
+            true,
+            None,
+        ))?;
+
+        tray.set_menu(Some(Box::new(menu)));
+        Ok(())
     }
 
     /// Drain any pending icon click event (left click, right click,
@@ -186,6 +266,15 @@ mod stub {
     pub const MENU_ID_SHOW: &str = "oryxis-tray-show";
     pub const MENU_ID_HIDE: &str = "oryxis-tray-hide";
     pub const MENU_ID_QUIT: &str = "oryxis-tray-quit";
+    pub const MENU_PREFIX_SESSION: &str = "oryxis-tray-session:";
+    pub const MENU_PREFIX_HOST: &str = "oryxis-tray-host:";
+
+    pub fn rebuild_menu(
+        _active_sessions: &[(String, String)],
+        _recent_hosts: &[(String, String)],
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        Ok(())
+    }
 
     pub fn install() -> Result<(), Box<dyn std::error::Error>> {
         Ok(())
