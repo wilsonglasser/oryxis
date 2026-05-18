@@ -122,6 +122,17 @@ fn main() -> iced::Result {
 
     tracing::info!("Starting Oryxis");
 
+    // Single-instance check, Windows-only. Duplicate launches exit
+    // immediately, the user has to interact with the existing tray
+    // icon. A later release will replace this with IPC so the
+    // duplicate's CLI args (e.g. `--connect <uuid>` from a JumpList
+    // pick) get routed into the existing instance instead of being
+    // dropped on the floor.
+    if tray::another_instance_running() {
+        tracing::info!("another Oryxis instance is already running, exiting");
+        return Ok(());
+    }
+
     // Install the Windows system tray icon. No-op on macOS/Linux
     // until those platforms get their own backends. Failure here is
     // logged but non-fatal: the app still runs without a tray, the

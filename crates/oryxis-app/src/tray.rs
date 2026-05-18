@@ -194,6 +194,48 @@ mod imp {
         TrayIconEvent::receiver().try_recv().ok()
     }
 
+    /// Check if another Oryxis instance already owns the named
+    /// mutex; returns `true` when this process should exit. The
+    /// mutex name is fixed per-user (uses the `Local\` namespace
+    /// so it's session-scoped, not machine-wide), so two different
+    /// Windows users can each run Oryxis independently.
+    ///
+    /// MVP behaviour: duplicate launch just exits. A follow-up
+    /// release will add an IPC channel so the duplicate routes its
+    /// CLI args (`--connect <uuid>`) into the existing instance
+    /// instead of dropping them. Until then, JumpList / shortcut
+    /// double-click while the app is running is a no-op the user
+    /// has to resolve by clicking the existing tray icon.
+    pub fn another_instance_running() -> bool {
+        use windows_sys::Win32::Foundation::{
+            CloseHandle, ERROR_ALREADY_EXISTS, GetLastError,
+        };
+        use windows_sys::Win32::System::Threading::CreateMutexW;
+
+        // Wide-string literal so we can pass it to CreateMutexW
+        // directly. `Local\\` scopes the mutex to the current user
+        // session (RDP / multiple Windows accounts don't collide).
+        let name: Vec<u16> = "Local\\oryxis-single-instance\0"
+            .encode_utf16()
+            .collect();
+        // SAFETY: name is null-terminated, dwInitialOwner = FALSE
+        // means we don't take ownership (we only care about the
+        // create vs already-exists distinction).
+        let h = unsafe { CreateMutexW(std::ptr::null(), 0, name.as_ptr()) };
+        let already = unsafe { GetLastError() } == ERROR_ALREADY_EXISTS;
+        if already {
+            // Release our handle but the mutex object stays alive
+            // because the other process still owns it.
+            unsafe {
+                CloseHandle(h);
+            }
+        }
+        // Otherwise we deliberately leak `h`: the OS reclaims the
+        // mutex when the process exits, and holding it for the
+        // lifetime of the app is the whole point.
+        already
+    }
+
     /// Hide the window passed in, going through the raw HWND
     /// instead of `winit::Window::set_visible` (iced 0.14 doesn't
     /// expose it). Called from the iced dispatcher inside a
@@ -278,6 +320,13 @@ mod stub {
 
     pub fn install() -> Result<(), Box<dyn std::error::Error>> {
         Ok(())
+    }
+
+    /// Stub: never reports a duplicate instance on non-Windows.
+    /// macOS / Linux apps can still be launched twice; the limitation
+    /// matches the platform-only scope of the tray feature itself.
+    pub fn another_instance_running() -> bool {
+        false
     }
 
     pub fn poll_menu_event() -> Option<String> {
