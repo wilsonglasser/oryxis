@@ -49,7 +49,28 @@ impl Oryxis {
                             .to_string()
                     };
                     self.cloud_form_aws_profile_name = str_field("profile_name");
-                    self.cloud_form_aws_region = str_field("region");
+                    // Multi-region: prefer the `regions` array; fall
+                    // back to the single `region` for profiles written
+                    // by older builds so they round-trip without losing
+                    // the value.
+                    let regions_array: Vec<String> = cfg
+                        .get("regions")
+                        .and_then(|v| v.as_array())
+                        .map(|arr| {
+                            arr.iter()
+                                .filter_map(|v| v.as_str().map(str::to_string))
+                                .collect()
+                        })
+                        .unwrap_or_default();
+                    let single = str_field("region");
+                    self.cloud_form_aws_regions = if !regions_array.is_empty() {
+                        regions_array
+                    } else if !single.is_empty() {
+                        vec![single]
+                    } else {
+                        Vec::new()
+                    };
+                    self.cloud_form_aws_region_draft = String::new();
                     self.cloud_form_aws_access_key_id = str_field("access_key_id");
                     self.cloud_form_aws_access_key_session_token =
                         str_field("access_key_session_token");
@@ -74,7 +95,8 @@ impl Oryxis {
                     self.cloud_form_provider = CloudProviderChoice::Aws;
                     self.cloud_form_auth_kind = CloudAuthChoice::Profile;
                     self.cloud_form_aws_profile_name = String::new();
-                    self.cloud_form_aws_region = String::new();
+                    self.cloud_form_aws_regions = Vec::new();
+                    self.cloud_form_aws_region_draft = String::new();
                     self.cloud_form_aws_access_key_id = String::new();
                     self.cloud_form_aws_access_key_secret = String::new();
                     self.cloud_form_aws_access_key_secret_touched = false;
@@ -114,8 +136,31 @@ impl Oryxis {
                 self.cloud_form_aws_profile_name = v;
                 self.cloud_form_test_state = CloudTestState::Idle;
             }
-            Message::CloudFormAwsRegionChanged(v) => {
-                self.cloud_form_aws_region = v;
+            Message::CloudFormAwsRegionDraftChanged(v) => {
+                self.cloud_form_aws_region_draft = v;
+                self.cloud_form_test_state = CloudTestState::Idle;
+            }
+            Message::CloudFormAwsRegionAdd => {
+                // Split on comma or whitespace so pasting
+                // "us-east-1, us-west-2" lands as two chips.
+                let parts: Vec<String> = self
+                    .cloud_form_aws_region_draft
+                    .split(|c: char| c == ',' || c.is_whitespace())
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty())
+                    .collect();
+                for p in parts {
+                    if !self.cloud_form_aws_regions.contains(&p) {
+                        self.cloud_form_aws_regions.push(p);
+                    }
+                }
+                self.cloud_form_aws_region_draft.clear();
+                self.cloud_form_test_state = CloudTestState::Idle;
+            }
+            Message::CloudFormAwsRegionRemove(idx) => {
+                if idx < self.cloud_form_aws_regions.len() {
+                    self.cloud_form_aws_regions.remove(idx);
+                }
                 self.cloud_form_test_state = CloudTestState::Idle;
             }
             Message::CloudFormAwsAccessKeyIdChanged(v) => {

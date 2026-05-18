@@ -4,7 +4,7 @@
 //! the bottom.
 
 use iced::border::Radius;
-use iced::widget::{button, column, container, pick_list, scrollable, text, text_input, Space};
+use iced::widget::{button, column, container, pick_list, row, scrollable, text, text_input, Row, Space};
 use iced::{Background, Border, Color, Element, Length, Padding};
 
 use crate::app::{Message, Oryxis, PANEL_WIDTH};
@@ -100,16 +100,46 @@ impl Oryxis {
         .padding(10)
         .style(crate::widgets::rounded_pick_list_style);
 
-        // Region is shared across all AWS auth kinds, workload region.
+        // Workload regions, chip list shared across all AWS auth kinds.
+        // First chip = default region for single-region API calls; the
+        // full list drives discovery fan-out. SSO has its own
+        // `sso_region` separately (the IdC endpoint, not workload).
+        let chips: Vec<Element<'_, Message>> = self
+            .cloud_form_aws_regions
+            .iter()
+            .enumerate()
+            .map(|(i, r)| region_chip(r.as_str(), i))
+            .collect();
+        let chips_block: Element<'_, Message> = if chips.is_empty() {
+            Space::new().height(0).into()
+        } else {
+            // Plain Row, not dir_row, the chips are content-flow not
+            // structural layout and don't need to mirror under RTL.
+            container(Row::with_children(chips).spacing(6))
+                .padding(Padding {
+                    top: 0.0,
+                    right: 0.0,
+                    bottom: 6.0,
+                    left: 0.0,
+                })
+                .into()
+        };
         let region_field = column![
-            text(t("cloud_aws_region"))
+            text(t("cloud_aws_regions"))
                 .size(12)
                 .color(OryxisColors::t().text_secondary),
             Space::new().height(4),
-            text_input("us-east-1", &self.cloud_form_aws_region)
-                .on_input(Message::CloudFormAwsRegionChanged)
+            chips_block,
+            text_input("us-east-1", &self.cloud_form_aws_region_draft)
+                .on_input(Message::CloudFormAwsRegionDraftChanged)
+                .on_submit(Message::CloudFormAwsRegionAdd)
                 .padding(10)
-                .style(crate::widgets::rounded_input_style).align_x(dir_align_x()),
+                .style(crate::widgets::rounded_input_style)
+                .align_x(dir_align_x()),
+            Space::new().height(4),
+            text(t("cloud_aws_regions_hint"))
+                .size(10)
+                .color(OryxisColors::t().text_muted),
         ];
 
         // Auth-kind-specific fields. We render only the ones that
@@ -500,4 +530,52 @@ impl Oryxis {
             })
             .into()
     }
+}
+
+fn region_chip(label: &str, idx: usize) -> Element<'_, Message> {
+    let accent = OryxisColors::t().accent;
+    container(
+        row![
+            text(label.to_string())
+                .size(11)
+                .color(OryxisColors::t().text_primary),
+            Space::new().width(2),
+            button(
+                text("\u{00D7}")
+                    .size(13)
+                    .color(OryxisColors::t().text_muted),
+            )
+            .padding(Padding {
+                top: 0.0,
+                right: 6.0,
+                bottom: 0.0,
+                left: 6.0,
+            })
+            .on_press(Message::CloudFormAwsRegionRemove(idx))
+            .style(|_, _| button::Style {
+                background: None,
+                ..Default::default()
+            }),
+        ]
+        .align_y(iced::Alignment::Center),
+    )
+    .padding(Padding {
+        top: 2.0,
+        right: 0.0,
+        bottom: 2.0,
+        left: 10.0,
+    })
+    .style(move |_| container::Style {
+        background: Some(Background::Color(Color {
+            a: 0.12,
+            ..accent
+        })),
+        border: Border {
+            radius: Radius::from(12.0),
+            color: Color { a: 0.30, ..accent },
+            width: 1.0,
+        },
+        ..Default::default()
+    })
+    .into()
 }

@@ -294,10 +294,22 @@ impl Oryxis {
         };
         match self.cloud_form_provider {
             CloudProviderChoice::Aws => {
-                // Region is shared across all AWS auth kinds, it's the
-                // workload region for API calls. SSO has its own
-                // `sso_region` for the IdC endpoint.
-                put(&mut obj, "region", &self.cloud_form_aws_region);
+                // Workload regions are shared across all AWS auth
+                // kinds. Persist both the legacy `region` key (= first
+                // entry) and the `regions` array so older builds keep
+                // working. SSO has its own `sso_region` for the IdC
+                // endpoint, unrelated.
+                if let Some(first) = self.cloud_form_aws_regions.first() {
+                    put(&mut obj, "region", first);
+                }
+                if !self.cloud_form_aws_regions.is_empty() {
+                    let arr: Vec<serde_json::Value> = self
+                        .cloud_form_aws_regions
+                        .iter()
+                        .map(|r| serde_json::Value::String(r.clone()))
+                        .collect();
+                    obj.insert("regions".into(), serde_json::Value::Array(arr));
+                }
                 match self.cloud_form_auth_kind {
                     CloudAuthChoice::Profile => {
                         put(&mut obj, "profile_name", &self.cloud_form_aws_profile_name);

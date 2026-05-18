@@ -341,7 +341,14 @@ pub struct Oryxis {
     pub(crate) cloud_form_provider: crate::state::CloudProviderChoice,
     pub(crate) cloud_form_auth_kind: crate::state::CloudAuthChoice,
     pub(crate) cloud_form_aws_profile_name: String,
-    pub(crate) cloud_form_aws_region: String,
+    /// Workload regions, the first entry is the default region and the
+    /// full list drives discovery fan-out. Persisted as both `region`
+    /// (= first) and `regions` (= full list) for forward compat with
+    /// older builds.
+    pub(crate) cloud_form_aws_regions: Vec<String>,
+    /// Draft text in the region input box, committed to
+    /// `cloud_form_aws_regions` on Enter.
+    pub(crate) cloud_form_aws_region_draft: String,
     /// Access Key auth fields. The secret access key follows the
     /// password-tri-state convention (`*_touched` differentiates
     /// "leave alone" from "explicitly cleared").

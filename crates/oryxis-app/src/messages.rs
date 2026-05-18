@@ -493,7 +493,11 @@ pub enum Message {
     CloudFormProviderChanged(crate::state::CloudProviderChoice),
     CloudFormAuthKindChanged(crate::state::CloudAuthChoice),
     CloudFormAwsProfileNameChanged(String),
-    CloudFormAwsRegionChanged(String),
+    CloudFormAwsRegionDraftChanged(String),
+    /// Commit the current draft to the regions chip list. Supports
+    /// comma or whitespace separated input so paste-multiple works.
+    CloudFormAwsRegionAdd,
+    CloudFormAwsRegionRemove(usize),
     CloudFormAwsAccessKeyIdChanged(String),
     CloudFormAwsAccessKeySecretChanged(String),
     CloudFormAwsAccessKeySessionTokenChanged(String),
