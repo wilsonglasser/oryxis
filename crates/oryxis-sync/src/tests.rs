@@ -472,4 +472,155 @@ mod tests {
             .await;
         assert!(second.is_err(), "the code should be single-shot");
     }
+
+    // ---------------------------------------------------------------
+    // Audit follow-up coverage: tests for guarantees the audit
+    // flagged as missing (pairing replay, relay handshake roundtrip
+    // and replay rejection, version-mismatch surface,
+    // tombstone-vacuum-then-resurrection).
+    // ---------------------------------------------------------------
+
+    /// A captured `PairingResponse` signature is bound to its own
+    /// challenge nonce. Replaying it against a fresh challenge must
+    /// fail verification. Protects against a leaked-link attacker
+    /// reusing the signed bytes from a prior session.
+    #[test]
+    fn pairing_response_cannot_be_replayed_across_challenges() {
+        let identity = crate::crypto::DeviceIdentity::generate("alice");
+        let challenge_a = crate::crypto::random_challenge();
+        let challenge_b = crate::crypto::random_challenge();
+        assert_ne!(challenge_a, challenge_b);
+
+        // The joiner signs the host's challenge.
+        let signed_a = crate::crypto::sign_ed25519_32(&identity.signing_key, &challenge_a);
+
+        // Verifies cleanly against the SAME challenge.
+        crate::crypto::verify_ed25519_32(&identity.public_key_bytes(), &challenge_a, &signed_a)
+            .unwrap();
+
+        // Replay against the *next* session's challenge must reject.
+        let err = crate::crypto::verify_ed25519_32(
+            &identity.public_key_bytes(),
+            &challenge_b,
+            &signed_a,
+        );
+        assert!(err.is_err(), "signed challenge from session A must not verify in session B");
+    }
+
+    /// Round-trip the v5 relay handshake transcript: sign with the
+    /// server's identity, verify with the server's pubkey, both sides
+    /// see the same nonce pair.
+    #[test]
+    fn relay_handshake_signature_round_trip() {
+        let server = crate::crypto::DeviceIdentity::generate("server");
+        let client_id = Uuid::new_v4();
+        let nonce_c = crate::crypto::random_relay_nonce();
+        let nonce_s = crate::crypto::random_relay_nonce();
+        let transcript = crate::crypto::relay_handshake_transcript(
+            &client_id,
+            &server.device_id,
+            &nonce_c,
+            &nonce_s,
+        );
+        let sig = crate::crypto::sign_relay_handshake(&server.signing_key, &transcript);
+        crate::crypto::verify_relay_handshake(&server.public_key_bytes(), &transcript, &sig)
+            .unwrap();
+    }
+
+    /// A relay-handshake signature captured from session A cannot be
+    /// replayed in session B because the transcript binds both
+    /// sides' fresh nonces. This is the integrity property that the
+    /// v5 handshake adds to the relay path (QUIC gets it for free
+    /// via the TLS exporter).
+    #[test]
+    fn relay_handshake_rejects_replay_with_fresh_nonces() {
+        let server = crate::crypto::DeviceIdentity::generate("server");
+        let client_id = Uuid::new_v4();
+        let server_id = server.device_id;
+        let transcript_a = crate::crypto::relay_handshake_transcript(
+            &client_id,
+            &server_id,
+            &[1u8; 32],
+            &[2u8; 32],
+        );
+        let transcript_b = crate::crypto::relay_handshake_transcript(
+            &client_id,
+            &server_id,
+            &[3u8; 32],
+            &[4u8; 32],
+        );
+        let sig_a = crate::crypto::sign_relay_handshake(&server.signing_key, &transcript_a);
+        let err = crate::crypto::verify_relay_handshake(
+            &server.public_key_bytes(),
+            &transcript_b,
+            &sig_a,
+        );
+        assert!(err.is_err(), "relay handshake sig must not replay across nonce sets");
+    }
+
+    /// A Hello with a stale protocol version still serializes /
+    /// deserializes cleanly (the bincode shape is the same), so the
+    /// receiver can inspect `protocol_version` and emit a structured
+    /// `VersionMismatch` event instead of dropping the connection
+    /// with a generic transport error.
+    #[test]
+    fn protocol_version_mismatch_is_inspectable_on_the_wire() {
+        use crate::protocol::{decode_message, encode_message, SyncMessage};
+        let stale = SyncMessage::Hello {
+            device_id: Uuid::new_v4(),
+            protocol_version: PROTOCOL_VERSION - 1,
+            auth_signature: vec![0u8; 64],
+        };
+        let frame = encode_message(&stale).unwrap();
+        let len =
+            u32::from_le_bytes([frame[0], frame[1], frame[2], frame[3]]) as usize;
+        let decoded = decode_message(&frame[4..4 + len]).unwrap();
+        match decoded {
+            SyncMessage::Hello { protocol_version, .. } => {
+                assert_eq!(protocol_version, PROTOCOL_VERSION - 1);
+                assert_ne!(protocol_version, PROTOCOL_VERSION);
+            }
+            _ => panic!("expected Hello"),
+        }
+    }
+
+    /// Tombstone resurrection scenario: a tombstone older than the
+    /// TTL is vacuumed from `sync_metadata`. After vacuum,
+    /// `build_manifest` no longer emits a deletion entry for that
+    /// entity. If the entity exists on a peer that resyncs >TTL days
+    /// later, that peer's live record beats nothing on our side and
+    /// the entity comes back. This test pins the current behaviour
+    /// so the `PeerStaleWarning` event keeps being the right
+    /// mitigation; a future fix that preserves vacuumed tombstones
+    /// against still-paired peers would flip the assertion.
+    #[test]
+    fn vacuumed_tombstone_no_longer_appears_in_manifest() {
+        use crate::engine::build_manifest;
+        let vault = test_vault();
+        let conn = Connection::new("doomed", "10.0.0.99");
+        vault.save_connection(&conn, None).unwrap();
+        vault.delete_connection(&conn.id).unwrap();
+
+        // Tombstone is present right after delete.
+        let vault_arc = Arc::new(Mutex::new(vault));
+        let manifest = build_manifest(&vault_arc).unwrap();
+        let tomb = manifest.iter().find(|e| e.entity_id == conn.id);
+        assert!(
+            tomb.is_some_and(|e| e.is_deleted),
+            "tombstone should be in manifest right after delete"
+        );
+
+        // Vacuum with TTL=0 sweeps it.
+        {
+            let v = vault_arc.lock().unwrap();
+            v.vacuum_tombstones(0).unwrap();
+        }
+
+        let manifest_after = build_manifest(&vault_arc).unwrap();
+        let still_there = manifest_after.iter().any(|e| e.entity_id == conn.id);
+        assert!(
+            !still_there,
+            "vacuumed tombstone must no longer appear in manifest, which is exactly why PeerStaleWarning exists as a mitigation"
+        );
+    }
 }
