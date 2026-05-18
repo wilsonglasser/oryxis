@@ -22,7 +22,9 @@
 //! oryxis-relay --port 8080 --token <bearer>
 //! ```
 
+use std::collections::HashMap;
 use std::net::SocketAddr;
+use std::sync::Arc;
 use std::time::Duration;
 
 use axum::Router;
@@ -76,6 +78,61 @@ struct AppState {
     devices: DeviceTable,
     inboxes: InboxRegistry,
     token: String,
+    /// Token-bucket rate limiter keyed by X-Sender-Id. Without it a
+    /// single bearer-token holder could fill any recipient's 256-
+    /// slot queue in under a second (~256 frames × 256 KiB =
+    /// 65 MiB) before the queue's own depth cap kicked oldest. The
+    /// bucket bounds steady-state push rate per sender across all
+    /// recipients.
+    push_limiter: RateLimiter,
+}
+
+/// Token bucket rate limiter, one bucket per `Uuid` key. Cheap mutex
+/// around a HashMap; the relay is single-tenant by deployment so a
+/// hot lock under load is acceptable.
+#[derive(Clone)]
+struct RateLimiter {
+    inner: Arc<std::sync::Mutex<HashMap<Uuid, BucketState>>>,
+    capacity: f64,
+    refill_per_sec: f64,
+}
+
+struct BucketState {
+    tokens: f64,
+    last: Instant,
+}
+
+impl RateLimiter {
+    fn new(capacity: f64, refill_per_sec: f64) -> Self {
+        Self {
+            inner: Arc::new(std::sync::Mutex::new(HashMap::new())),
+            capacity,
+            refill_per_sec,
+        }
+    }
+
+    /// Returns `true` when the request was admitted (a token consumed)
+    /// and `false` when the bucket was empty (429 Too Many Requests).
+    fn try_consume(&self, key: Uuid) -> bool {
+        let mut map = match self.inner.lock() {
+            Ok(g) => g,
+            Err(p) => p.into_inner(),
+        };
+        let now = Instant::now();
+        let state = map.entry(key).or_insert(BucketState {
+            tokens: self.capacity,
+            last: now,
+        });
+        let elapsed = now.duration_since(state.last).as_secs_f64();
+        state.tokens = (state.tokens + elapsed * self.refill_per_sec).min(self.capacity);
+        state.last = now;
+        if state.tokens >= 1.0 {
+            state.tokens -= 1.0;
+            true
+        } else {
+            false
+        }
+    }
 }
 
 #[tokio::main]
@@ -92,6 +149,13 @@ async fn main() -> anyhow::Result<()> {
         devices: DeviceTable::new(),
         inboxes: InboxRegistry::new(),
         token: args.token,
+        // 10-token burst, refilling at 1/sec. Legit sync flows
+        // average well under 1 push/sec; this leaves room for a
+        // pairing handshake spike (3-4 frames back-to-back) and
+        // blocks an attacker from filling the 256-slot queue
+        // faster than ~4 minutes regardless of how many tokens
+        // they hold.
+        push_limiter: RateLimiter::new(10.0, 1.0),
     };
 
     state
@@ -284,6 +348,9 @@ async fn push_inbox(
     if body.len() > MAX_FRAME_BYTES {
         return (StatusCode::PAYLOAD_TOO_LARGE, "Too large").into_response();
     }
+    if !state.push_limiter.try_consume(sender) {
+        return (StatusCode::TOO_MANY_REQUESTS, "Rate limit exceeded").into_response();
+    }
     let depth = state
         .inboxes
         .push(recipient, QueueEntry {
@@ -355,6 +422,9 @@ mod tests {
             devices: DeviceTable::new(),
             inboxes: InboxRegistry::new(),
             token: token.clone(),
+            // Generous cap in tests so the integration suite isn't
+            // throttled by the steady-state production limit.
+            push_limiter: RateLimiter::new(1000.0, 1000.0),
         };
         let app = Router::new()
             .route("/register", post(register_device))

@@ -78,15 +78,16 @@ mod imp {
         // Rebuilding the menu on language change is not yet wired:
         // the user has to restart for new labels to land. Same
         // limitation Termius / Tabby ship with on Windows.
+        // Bootstrap menu, replaced by rebuild_menu on the first
+        // TrayPoll tick after boot. Only carries the static
+        // entries (Show + Quit); the dynamic sessions / hidden
+        // windows / recent hosts sections come in via rebuild.
+        // No "Hide to tray" item: the user's UX vision (D-lite)
+        // treats the title-bar minimize / close buttons as the
+        // canonical hide path.
         menu.append(&MenuItem::with_id(
             MENU_ID_SHOW,
             crate::i18n::t("tray_show"),
-            true,
-            None,
-        ))?;
-        menu.append(&MenuItem::with_id(
-            MENU_ID_HIDE,
-            crate::i18n::t("tray_hide"),
             true,
             None,
         ))?;
@@ -104,6 +105,11 @@ mod imp {
             .with_tooltip("Oryxis")
             .with_icon(icon)
             .build()?;
+        // Hide the icon at boot; the dispatcher's visibility rule
+        // mounts it as soon as the primary's own window OR any child
+        // reports hidden state. tray-icon's builder doesn't expose a
+        // with_visible(false), so we toggle right after build.
+        let _ = tray.set_visible(false);
 
         // OnceLock::set returns Err with the value we tried to set
         // if another thread won the race; the icon dropping there
@@ -132,6 +138,19 @@ mod imp {
         MenuEvent::receiver().try_recv().ok().map(|e| e.id.0)
     }
 
+    /// Toggle the tray icon's visibility in the notification area.
+    /// The user-visible rule lives in the dispatcher (primary's own
+    /// window hidden OR any child reports hidden -> show icon, else
+    /// hide). This helper just forwards to tray-icon's set_visible.
+    /// Failure is logged + swallowed; the worst case is a stale tray
+    /// icon hanging around for a tick longer than ideal.
+    pub fn set_visible(visible: bool) {
+        let Some(ThreadBound(tray)) = TRAY.get() else { return };
+        if let Err(e) = tray.set_visible(visible) {
+            tracing::warn!("tray set_visible({visible}): {e}");
+        }
+    }
+
     /// Replace the tray icon's menu with a freshly built one that
     /// reflects the current `Active sessions` and `Recent hosts`
     /// lists. Idempotent: the tray-icon crate swaps the underlying
@@ -155,15 +174,14 @@ mod imp {
         };
 
         let menu = Menu::new();
+        // "Show" surfaces the primary window when it's hidden.
+        // Per the user's UX vision (D-lite), the tray menu no
+        // longer carries a redundant "Hide to tray" entry; the
+        // window's own title bar minimize / close buttons are the
+        // canonical way to send a window to the tray.
         menu.append(&MenuItem::with_id(
             MENU_ID_SHOW,
             crate::i18n::t("tray_show"),
-            true,
-            None,
-        ))?;
-        menu.append(&MenuItem::with_id(
-            MENU_ID_HIDE,
-            crate::i18n::t("tray_hide"),
             true,
             None,
         ))?;
@@ -361,6 +379,8 @@ mod stub {
     pub fn install() -> Result<(), Box<dyn std::error::Error>> {
         Ok(())
     }
+
+    pub fn set_visible(_visible: bool) {}
 
     /// Stub: never reports a duplicate instance on non-Windows.
     /// macOS / Linux apps can still be launched twice; the limitation

@@ -1107,6 +1107,13 @@ impl Oryxis {
                             crate::i18n::t("sync_status_version_mismatch"),
                         ));
                     }
+                    SyncEvent::PeerStaleWarning { days_since_sync, .. } => {
+                        self.sync_status = Some(format!(
+                            "{} ({}d)",
+                            crate::i18n::t("sync_status_peer_stale"),
+                            days_since_sync,
+                        ));
+                    }
                 }
             }
 
@@ -1130,6 +1137,19 @@ impl Oryxis {
                     for c in &self.connections {
                         c.id.hash(&mut h);
                         c.last_used.map(|d| d.timestamp_millis()).hash(&mut h);
+                    }
+                    // Fold the IPC registry into the signature so a
+                    // child going hidden / changing title triggers
+                    // a primary menu rebuild on the next tick. Cheap:
+                    // list_instances does one dir scan + PID liveness
+                    // check per entry, which on a typical setup means
+                    // <5 file reads.
+                    let ipc_instances = crate::tray_ipc::Primary::list_instances();
+                    ipc_instances.len().hash(&mut h);
+                    for inst in &ipc_instances {
+                        inst.pid.hash(&mut h);
+                        inst.is_hidden.hash(&mut h);
+                        inst.title.hash(&mut h);
                     }
                     let sig = h.finish();
                     if sig != self.tray_menu_signature {
@@ -1156,9 +1176,32 @@ impl Oryxis {
                             .take(10)
                             .map(|c| (c.label.replace('&', "&&"), c.id.to_string()))
                             .collect();
-                        if let Err(e) = crate::tray::rebuild_menu(&active, &recent) {
+                        // Hidden windows aggregated across every
+                        // child process via the tray_ipc registry.
+                        // Primary's own hidden state isn't listed
+                        // here (the user is staring at this menu
+                        // through that very window's tray icon if
+                        // primary is hidden; surfacing it would be
+                        // a weird self-reference). list_instances
+                        // already filters dead PIDs and the self-pid
+                        // row so we can pass straight through.
+                        let hidden: Vec<(String, String)> = crate::tray_ipc::Primary::list_instances()
+                            .into_iter()
+                            .filter(|s| s.is_hidden)
+                            .map(|s| (s.title.replace('&', "&&"), s.pid.to_string()))
+                            .collect();
+                        if let Err(e) = crate::tray::rebuild_menu(&active, &recent, &hidden) {
                             tracing::warn!("tray menu rebuild failed: {e}");
                         }
+                        // Tray icon is only visible when at least
+                        // one window (primary's own or any child's)
+                        // is currently hidden. The "1 tray to rule
+                        // them all" UX the user asked for: when
+                        // everything's visible on screen there's no
+                        // reason to clutter the notification area
+                        // with a redundant icon.
+                        let any_hidden = self.is_window_hidden || !hidden.is_empty();
+                        crate::tray::set_visible(any_hidden);
                         // Mirror the same Recent Hosts list into the
                         // Windows JumpList so the taskbar / Start menu
                         // right-click also surfaces it (PhpStorm-style
@@ -1185,6 +1228,24 @@ impl Oryxis {
                 // label edits / new sessions / etc. between explicit
                 // hide/show events. No-op for the primary itself.
                 self.broadcast_ipc_state_if_child();
+
+                // Drain whatever command the primary queued for us
+                // (a Show or Quit from a click in its tray menu).
+                // No-op for the primary process (it never has its
+                // own command file because we skip self_pid in
+                // Primary::list_instances).
+                if matches!(crate::app::APP_IS_PRIMARY.get(), Some(false)) {
+                    while let Some(cmd) = crate::tray_ipc::Child::poll_command() {
+                        match cmd {
+                            crate::tray_ipc::Command::Show => {
+                                follow_ups.push(Task::done(Message::TrayShow));
+                            }
+                            crate::tray_ipc::Command::Quit => {
+                                follow_ups.push(Task::done(Message::TrayQuit));
+                            }
+                        }
+                    }
+                }
 
                 // Window-tag for JumpList is intentionally disabled
                 // until we can debug the SHGetPropertyStoreForWindow
@@ -1224,6 +1285,22 @@ impl Oryxis {
                             uuid::Uuid::parse_str(suffix)
                                 .ok()
                                 .map(Message::TrayOpenHost)
+                        }
+                        s if s.starts_with(crate::tray::MENU_PREFIX_HIDDEN) => {
+                            // "oryxis-tray-hidden:<pid>" -> queue a
+                            // Show command for that child PID via the
+                            // tray_ipc registry. Child's TrayPoll
+                            // picks it up within one tick and pops
+                            // its window. Side-effect, no follow-up
+                            // Message needed.
+                            let suffix = &s[crate::tray::MENU_PREFIX_HIDDEN.len()..];
+                            if let Ok(pid) = suffix.parse::<u32>() {
+                                crate::tray_ipc::Primary::send_command(
+                                    pid,
+                                    crate::tray_ipc::Command::Show,
+                                );
+                            }
+                            None
                         }
                         _ => None,
                     };

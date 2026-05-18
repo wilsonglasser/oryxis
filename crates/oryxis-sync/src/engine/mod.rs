@@ -78,6 +78,15 @@ pub enum SyncEvent {
         peer_version: u32,
         local_version: u32,
     },
+    /// A paired peer hasn't synced in long enough that the tombstone
+    /// GC window (30 days, see [`TOMBSTONE_TTL_DAYS`]) is closing in
+    /// on it. Fired at boot for every peer with
+    /// `last_synced_at < now - 25 days` so the UI can nudge the user
+    /// to bring the peer online before deletes silently resurrect.
+    PeerStaleWarning {
+        peer_id: Uuid,
+        days_since_sync: i64,
+    },
 }
 
 /// State for a device that is currently hosting a pairing code and
@@ -87,7 +96,27 @@ pub enum SyncEvent {
 pub(super) struct HostingPairing {
     pub(super) code: String,
     pub(super) expires_at: Instant,
+    /// Number of failed attempts (wrong code or bad challenge
+    /// response) accumulated against this hosting state. Cleared
+    /// when a fresh code is generated. Once we hit
+    /// [`MAX_PAIRING_ATTEMPTS`] the state is invalidated so an
+    /// attacker who learned a device_id via the pairing link or
+    /// STUN registration can't brute-force the 6-digit code over
+    /// the relay (~10^6 attempts at 1 try/sec is feasible without
+    /// a cap).
+    /// Wired by the audit follow-up that enforces the cap in
+    /// `pairing.rs`; the consumer landed in a separate branch and
+    /// hasn't merged yet, hence the dead-code allow.
+    #[allow(dead_code)]
+    pub(super) attempts: u32,
 }
+
+/// Max failed attempts against a single hosted pairing code before
+/// the state self-invalidates. Conservative: the legitimate joiner
+/// types the code once, so 3 tries is enough room for a typo and
+/// well below the brute-force regime.
+#[allow(dead_code)]
+pub(super) const MAX_PAIRING_ATTEMPTS: u32 = 3;
 
 /// Tombstones older than this drop on engine boot. Should outlive any
 /// realistic offline gap between a paired peer's syncs; a peer that
@@ -370,6 +399,24 @@ impl SyncEngine {
                 Ok(n) => tracing::info!("sync: vacuumed {n} stale tombstones"),
                 Err(e) => tracing::warn!("sync: tombstone vacuum failed: {e}"),
             }
+            // Stale-peer warning: nudge the user when a paired peer
+            // is approaching the tombstone GC cliff so they can bring
+            // it online before deletes silently resurrect. Threshold
+            // is 5 days inside the TTL so the user has time to act.
+            let warn_after_days = TOMBSTONE_TTL_DAYS.saturating_sub(5) as i64;
+            let now = chrono::Utc::now();
+            if let Ok(peers) = v.list_sync_peers() {
+                for peer in peers.iter().filter(|p| p.is_active) {
+                    let Some(last) = peer.last_synced_at else { continue };
+                    let days = (now - last).num_days();
+                    if days >= warn_after_days {
+                        let _ = self.event_tx.send(SyncEvent::PeerStaleWarning {
+                            peer_id: peer.peer_id,
+                            days_since_sync: days,
+                        });
+                    }
+                }
+            }
         }
 
         // Relay inbox listener. Long-polls the configured relay for
@@ -555,6 +602,7 @@ impl SyncHandle {
             *state = Some(HostingPairing {
                 code: code.clone(),
                 expires_at: Instant::now() + PAIRING_CODE_TTL,
+                attempts: 0,
             });
         }
         let _ = self

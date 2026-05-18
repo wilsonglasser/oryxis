@@ -24,7 +24,7 @@ use crate::error::SyncError;
 use crate::protocol::SyncMessage;
 use crate::transport;
 
-use super::{HostingPairing, SyncEvent};
+use super::{HostingPairing, SyncEvent, MAX_PAIRING_ATTEMPTS};
 
 /// URL scheme + path prefix for shareable pairing links.
 pub(super) const PAIRING_LINK_PREFIX: &str = "oryxis://pair/";
@@ -175,6 +175,11 @@ pub(super) async fn handle_pairing_request(
         return reject_pairing(transport, "Not hosting pairing (or code expired)").await;
     };
     if !crypto::constant_time_eq(expected.as_bytes(), pairing_code.as_bytes()) {
+        // Wrong code: count it. Once we hit MAX_PAIRING_ATTEMPTS the
+        // hosting state self-invalidates so an attacker who knows
+        // the device_id (it travels in clear via pairing-link + STUN
+        // registration) can't grind through the 10^6 code space.
+        record_pairing_failure(hosting_pairing);
         return reject_pairing(transport, "Wrong pairing code").await;
     }
 
@@ -190,6 +195,12 @@ pub(super) async fn handle_pairing_request(
         _ => return Err(SyncError::Protocol("Expected PairingResponse".into())),
     };
     if crypto::verify_ed25519_32(&public_key, &challenge, &signed).is_err() {
+        // Bad challenge response: also counted; an attacker who
+        // happens to know the code is still gated on holding the
+        // matching private key, but a brute-force of the signed
+        // challenge would be much easier to reason about under the
+        // same attempt cap.
+        record_pairing_failure(hosting_pairing);
         return reject_pairing(transport, "Bad challenge response").await;
     }
 
@@ -242,6 +253,26 @@ pub(super) async fn handle_pairing_request(
         device_name,
     });
     Ok(())
+}
+
+/// Increment the attempt counter on the live hosting state and
+/// invalidate it once the cap is reached. Silently no-ops when the
+/// state is already cleared (expired between the lookup and now);
+/// the lock is short-lived so concurrent attempts under-count by at
+/// most one before the cap kicks in.
+fn record_pairing_failure(
+    hosting_pairing: &Arc<std::sync::Mutex<Option<HostingPairing>>>,
+) {
+    let Ok(mut state) = hosting_pairing.lock() else { return };
+    let Some(s) = state.as_mut() else { return };
+    s.attempts = s.attempts.saturating_add(1);
+    if s.attempts >= MAX_PAIRING_ATTEMPTS {
+        tracing::warn!(
+            attempts = s.attempts,
+            "pairing: invalidating hosted code after {MAX_PAIRING_ATTEMPTS} failed attempts"
+        );
+        *state = None;
+    }
 }
 
 /// Send a `PairingRejected` and hold the connection open until the
