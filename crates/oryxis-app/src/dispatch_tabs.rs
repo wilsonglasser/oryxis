@@ -199,6 +199,8 @@ impl Oryxis {
                 // the toggle is off we fall through to the real
                 // iced::window::minimize call.
                 if self.setting_minimize_to_tray && cfg!(target_os = "windows") {
+                    self.is_window_hidden = true;
+                    self.broadcast_ipc_state_if_child();
                     return Ok(iced::window::oldest()
                         .and_then(|id| {
                             iced::window::run(id, |window| {
@@ -229,6 +231,8 @@ impl Oryxis {
                 // through to a real close. Default (off) closes for
                 // everyone.
                 if self.setting_close_to_tray && cfg!(target_os = "windows") {
+                    self.is_window_hidden = true;
+                    self.broadcast_ipc_state_if_child();
                     return Ok(iced::window::oldest()
                         .and_then(|id| {
                             iced::window::run(id, |window| {

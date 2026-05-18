@@ -1180,6 +1180,12 @@ impl Oryxis {
                 // None immediately, so this is harmless overhead.
                 let mut follow_ups: Vec<Task<Message>> = Vec::new();
 
+                // Push our state into the tray_ipc registry so the
+                // primary's "Hidden windows" menu reflects any tab
+                // label edits / new sessions / etc. between explicit
+                // hide/show events. No-op for the primary itself.
+                self.broadcast_ipc_state_if_child();
+
                 // Window-tag for JumpList is intentionally disabled
                 // until we can debug the SHGetPropertyStoreForWindow
                 // / hand-rolled PROPVARIANT path on real Windows.
@@ -1253,6 +1259,8 @@ impl Oryxis {
                 // Windows even though the code compiles everywhere.
                 // `.discard()` drops the `()` return so the chain
                 // matches the dispatcher's `Task<Message>` shape.
+                self.is_window_hidden = false;
+                self.broadcast_ipc_state_if_child();
                 return iced::window::oldest()
                     .and_then(|id| {
                         iced::window::run(id, |window| {
@@ -1262,6 +1270,8 @@ impl Oryxis {
                     .discard();
             }
             Message::TrayHide => {
+                self.is_window_hidden = true;
+                self.broadcast_ipc_state_if_child();
                 return iced::window::oldest()
                     .and_then(|id| {
                         iced::window::run(id, |window| {
@@ -1304,5 +1314,50 @@ impl Oryxis {
             _ => {}
         }
         Task::none()
+    }
+
+    /// Push the current window state (hidden + tab labels) into the
+    /// tray_ipc registry so the primary's tray menu picks it up on
+    /// its next scan. No-op for the primary itself (its tray rebuild
+    /// reads from in-process Oryxis state directly, not via the
+    /// filesystem registry).
+    ///
+    /// Signature-gated so 100 ms TrayPoll ticks don't churn the
+    /// filesystem when nothing changed; explicit hide/show handlers
+    /// also call this so the registry refreshes within one tick of
+    /// the user action instead of waiting for the polling tick.
+    pub(crate) fn broadcast_ipc_state_if_child(&mut self) {
+        if matches!(crate::app::APP_IS_PRIMARY.get(), Some(true) | None) {
+            return;
+        }
+        use std::collections::hash_map::DefaultHasher;
+        use std::hash::{Hash, Hasher};
+        let mut h = DefaultHasher::new();
+        self.is_window_hidden.hash(&mut h);
+        self.tabs.len().hash(&mut h);
+        for t in &self.tabs {
+            t.label.hash(&mut h);
+        }
+        let sig = h.finish();
+        if sig == self.ipc_state_signature {
+            return;
+        }
+        self.ipc_state_signature = sig;
+        let tabs: Vec<String> = self.tabs.iter().map(|t| t.label.clone()).collect();
+        // Title: when the user has an active tab the label is what
+        // they're staring at, otherwise fall back to a generic
+        // "Oryxis" so the primary's submenu still has something to
+        // show.
+        let title = self
+            .active_tab
+            .and_then(|i| self.tabs.get(i))
+            .map(|t| t.label.clone())
+            .unwrap_or_else(|| "Oryxis".to_string());
+        crate::tray_ipc::Child::write_state(crate::tray_ipc::InstanceState {
+            pid: std::process::id(),
+            title,
+            tabs,
+            is_hidden: self.is_window_hidden,
+        });
     }
 }

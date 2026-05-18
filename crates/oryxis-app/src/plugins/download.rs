@@ -48,9 +48,13 @@ pub async fn fetch_manifest(provider_id: &str) -> Result<PluginManifest, PluginE
             resp.status()
         )));
     }
-    let releases: Vec<serde_json::Value> = resp
-        .json()
+    // 1 MB cap on the releases listing: 30 entries × ~5 KB of metadata
+    // is ~150 KB in practice; anything past 1 MB is either a server
+    // glitch or hostile data and we'd rather fail clean than OOM.
+    let releases_bytes = read_capped(resp, 1024 * 1024)
         .await
+        .map_err(|e| PluginError::Download(format!("github releases body: {e}")))?;
+    let releases: Vec<serde_json::Value> = serde_json::from_slice(&releases_bytes)
         .map_err(|e| PluginError::Download(format!("parse releases json: {e}")))?;
 
     // Step 2: filter by `<provider>-v` tag, require a manifest asset,
@@ -99,15 +103,48 @@ pub async fn fetch_manifest(provider_id: &str) -> Result<PluginManifest, PluginE
             PluginError::Manifest("asset url missing on release payload".into())
         })?;
 
-    let body = client
+    let resp = client
         .get(download_url)
         .send()
         .await
-        .map_err(|e| PluginError::Download(e.to_string()))?
-        .text()
-        .await
         .map_err(|e| PluginError::Download(e.to_string()))?;
-    PluginManifest::parse(&body)
+    // 1 MB cap mirrors the releases listing above. A real manifest is
+    // a few hundred bytes; anything bigger is broken or hostile.
+    let body = read_capped(resp, 1024 * 1024)
+        .await
+        .map_err(|e| PluginError::Download(format!("manifest body: {e}")))?;
+    let body = std::str::from_utf8(&body)
+        .map_err(|e| PluginError::Download(format!("manifest not utf-8: {e}")))?;
+    PluginManifest::parse(body)
+}
+
+/// Read a `reqwest::Response` body into a `Vec<u8>` up to `max_bytes`.
+/// Returns an error if the body exceeds the cap, either by
+/// `Content-Length` advertisement or by mid-stream chunk accumulation.
+/// Used by `fetch_manifest` to keep small JSON parses bounded; the
+/// binary download path has its own cap because it streams to a buffer
+/// the verifier needs whole.
+async fn read_capped(
+    resp: reqwest::Response,
+    max_bytes: u64,
+) -> Result<Vec<u8>, String> {
+    if let Some(len) = resp.content_length()
+        && len > max_bytes
+    {
+        return Err(format!(
+            "advertised {len} bytes exceeds {max_bytes} byte ceiling"
+        ));
+    }
+    let mut buf = Vec::new();
+    let mut stream = resp.bytes_stream();
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk.map_err(|e| e.to_string())?;
+        if (buf.len() as u64).saturating_add(chunk.len() as u64) > max_bytes {
+            return Err(format!("exceeded {max_bytes} byte ceiling mid-stream"));
+        }
+        buf.extend_from_slice(&chunk);
+    }
+    Ok(buf)
 }
 
 /// Download the binary for `entry` on the current platform, verify
@@ -147,14 +184,41 @@ pub async fn download_and_install(
     // Gate 2: Ed25519 signature against a baked-in trust anchor.
     verify::verify(&bytes, &binary.signature)?;
 
-    // Both gates passed, write atomically into the version dir.
+    // Both gates passed, write atomically into the version dir. The
+    // sequence is `create_new` (refuses an existing partial), write,
+    // `sync_all` (the file's data + metadata reach the disk), rename
+    // (the dir entry flip is atomic on POSIX), and finally `fsync`
+    // the parent dir on Unix so the rename itself survives a power
+    // loss. Without `sync_all` the rename could land before the data
+    // and we'd boot with a zero-length-but-verified-named binary.
     let dir = cache::version_dir(provider_id, &entry.version)?;
     std::fs::create_dir_all(&dir)?;
     let final_path = cache::binary_path(provider_id, &entry.version)?;
     let tmp_path = dir.join(format!("{}.tmp", cache::binary_name(provider_id)));
-    std::fs::write(&tmp_path, &bytes)?;
+    // Clear any orphan from a previous crashed install before
+    // `create_new` would otherwise reject the path.
+    let _ = std::fs::remove_file(&tmp_path);
+    {
+        use std::io::Write as _;
+        let mut f = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&tmp_path)?;
+        f.write_all(&bytes)?;
+        f.sync_all()?;
+    }
     set_executable(&tmp_path)?;
     std::fs::rename(&tmp_path, &final_path)?;
+    #[cfg(unix)]
+    {
+        // fsync the parent directory so the rename itself is durable.
+        // Best-effort: a failure here doesn't undo a successful
+        // verify+rename, just leaves the install at the kernel-cache
+        // level until the next sync.
+        if let Ok(dir_file) = std::fs::File::open(&dir) {
+            let _ = dir_file.sync_all();
+        }
+    }
 
     // Best-effort retention prune, a failure here doesn't invalidate
     // the install that just succeeded.

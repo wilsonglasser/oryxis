@@ -583,6 +583,20 @@ pub struct Oryxis {
     /// burning cycles rebuilding the dynamic submenus 10 times a
     /// second when nothing has changed.
     pub(crate) tray_menu_signature: u64,
+    /// True when the main window is currently hidden to the tray
+    /// (Win32 ShowWindow(SW_HIDE), via TrayHide / close-to-tray /
+    /// minimize-to-tray). Drives the primary's tray menu visibility
+    /// rule (only show the icon when at least one window is hidden)
+    /// and feeds the child-side tray_ipc state row so the primary
+    /// knows which children to surface in the "Hidden windows"
+    /// submenu. Defaults to false; flipped by TrayShow / TrayHide
+    /// handlers.
+    pub(crate) is_window_hidden: bool,
+    /// Cached signature of (is_window_hidden, tab labels) the child
+    /// last wrote to the tray_ipc registry. TrayPoll recomputes
+    /// each tick and only re-writes when it differs so we don't
+    /// churn the filesystem ten times a second.
+    pub(crate) ipc_state_signature: u64,
     /// One-shot: set to true after we successfully tag the main
     /// window with our AppUserModelID via SHGetPropertyStoreForWindow.
     /// The taskbar JumpList only attaches to the right entry when

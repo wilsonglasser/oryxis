@@ -220,7 +220,10 @@ struct Connection {
     /// Result of the `initialize` handshake.
     init: InitializeResult,
     /// Generation token, lets the reaper distinguish this connection
-    /// from a successor.
+    /// from a successor. Read only from `reaper_task`; flagged
+    /// `dead_code`-allowed so clippy's `-D warnings` doesn't trip
+    /// when a future lint counts cross-task field reads as unused.
+    #[allow(dead_code)]
     epoch: u64,
     /// Last completed call, drives idle teardown.
     last_used: Instant,
@@ -278,6 +281,13 @@ impl Connection {
         let stderr_h = tokio::spawn(stderr_task(stderr, provider_id.to_string()));
 
         // `initialize` handshake, before the struct exists, on id 0.
+        // A plugin that wedges before printing its first frame holds
+        // the spawn for the full call_timeout (2 min) under the
+        // generic ceiling; the handshake should be snappy regardless,
+        // so we cap it at 15s. Per-call timeout still applies to
+        // anything past handshake.
+        let handshake_timeout =
+            std::cmp::min(call_timeout, Duration::from_secs(15));
         let params = serde_json::to_value(InitializeParams {
             supported_versions: SUPPORTED_PROTOCOL_VERSIONS.to_vec(),
         })
@@ -288,7 +298,7 @@ impl Connection {
             0,
             method::INITIALIZE,
             params,
-            call_timeout,
+            handshake_timeout,
         )
         .await?;
         if let Some(err) = resp.error {
@@ -406,7 +416,19 @@ async fn reader_task(stdout: ChildStdout, pending: PendingMap, provider_id: Stri
                             .and_then(|id| pending.lock().unwrap().remove(&id));
                         match slot {
                             Some(tx) => {
-                                let _ = tx.send(resp);
+                                if tx.send(resp).is_err() {
+                                    // Receiver dropped (caller timed
+                                    // out or was cancelled). Not a
+                                    // bug, but logged so an operator
+                                    // can correlate "the response
+                                    // came back but no one was
+                                    // listening" with a prior
+                                    // timeout log.
+                                    tracing::debug!(
+                                        target = "oryxis::plugins",
+                                        "response delivered for an already-cancelled call"
+                                    );
+                                }
                             }
                             None => tracing::warn!(
                                 target = "oryxis::plugins",

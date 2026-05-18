@@ -31,11 +31,56 @@ use super::PluginError;
 /// lives in the `ORYXIS_SIGNING_KEY` repository secret;
 /// `oryxis-plugin-signer` (invoked by `.github/workflows/release-aws.yml`)
 /// reads it from there to sign every released plugin binary.
-pub const PROD_PUBKEY: [u8; 32] = [
+///
+/// Compile-time override: setting `ORYXIS_PROD_PUBKEY_HEX` at build
+/// time (64 lowercase hex chars) replaces this constant via
+/// `prod_pubkey_from_env`. Lets CI rotate the key per channel without
+/// editing source, while the literal here stays the production
+/// default for `cargo build` outside CI.
+pub const PROD_PUBKEY: [u8; 32] = prod_pubkey_from_env();
+
+const PROD_PUBKEY_FALLBACK: [u8; 32] = [
     0x19, 0x33, 0x99, 0xc1, 0xad, 0x91, 0x4b, 0x07, 0xa1, 0x4b, 0xe8, 0xee, 0x7a, 0xec, 0x94,
     0x31, 0xa9, 0x7e, 0x1d, 0xc0, 0xa6, 0x78, 0xdb, 0x38, 0x54, 0xc4, 0x5c, 0x2e, 0xaa, 0xe2,
     0xcd, 0x25,
 ];
+
+/// Resolve the production pubkey at build time: `ORYXIS_PROD_PUBKEY_HEX`
+/// wins if set + valid (64 lowercase hex chars), otherwise fall back
+/// to the committed default. Panics at compile time if the env var is
+/// present but malformed so an accidentally-broken CI secret can't
+/// silently ship a binary that trusts the default key.
+const fn prod_pubkey_from_env() -> [u8; 32] {
+    match option_env!("ORYXIS_PROD_PUBKEY_HEX") {
+        Some(hex) => hex_to_32(hex),
+        None => PROD_PUBKEY_FALLBACK,
+    }
+}
+
+const fn hex_to_32(hex: &str) -> [u8; 32] {
+    let bytes = hex.as_bytes();
+    if bytes.len() != 64 {
+        panic!("ORYXIS_PROD_PUBKEY_HEX must be 64 hex chars");
+    }
+    let mut out = [0u8; 32];
+    let mut i = 0;
+    while i < 32 {
+        let hi = hex_nibble(bytes[i * 2]);
+        let lo = hex_nibble(bytes[i * 2 + 1]);
+        out[i] = (hi << 4) | lo;
+        i += 1;
+    }
+    out
+}
+
+const fn hex_nibble(c: u8) -> u8 {
+    match c {
+        b'0'..=b'9' => c - b'0',
+        b'a'..=b'f' => c - b'a' + 10,
+        b'A'..=b'F' => c - b'A' + 10,
+        _ => panic!("ORYXIS_PROD_PUBKEY_HEX must be lowercase hex"),
+    }
+}
 
 /// Seed for the development signing keypair. Re-exported from the
 /// protocol crate (where the signer also reads it) so the dev sign

@@ -30,6 +30,14 @@
 //! TrayPoll / dispatch handlers, and the payloads are small enough
 //! that the latency is invisible (<1 ms in practice).
 
+// Dead-code allow because the Primary side of the API is wired in
+// the next PR in this series (9d). Without the allow the
+// `-D warnings` gate trips on every intermediate commit; cleaner
+// to land the module + its primary callers across the same series
+// and remove this attribute when 9d's tray menu rebuild starts
+// using them.
+#![allow(dead_code)]
+
 use std::fs;
 use std::io::Write;
 use std::path::PathBuf;
