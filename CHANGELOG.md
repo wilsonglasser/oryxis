@@ -44,6 +44,20 @@ project uses [SemVer](https://semver.org/spec/v2.0.0.html).
     PENDING amber, STOPPED red) + private IP + AZ + started-at
     relative (`5m ago`). Data was already in `DescribeTasks`,
     just not surfaced.
+  - **Multi-container ECS tasks expand Lens-style.** Leave the
+    Container field empty in the dynamic group editor and the
+    resolver emits one row per container in every matching task
+    (was: one row per task, filtered to a single named
+    container). Connect + Copy CLI both target the specific
+    container the user clicked. Backwards-compatible: existing
+    single-container imports keep their original behaviour
+    because their `container` field is non-empty.
+  - **Copy `aws ecs execute-command`** action on every ECS task
+    row. Small clipboard icon overlay on the trailing edge that
+    copies the full CLI invocation (region + cluster + task id +
+    container) so power-users can paste into a terminal with the
+    AWS CLI installed. Region is plumbed via a new field on
+    `DiscoveredHost`.
 - **Shared group picker combo** (input + chevron + floating
   search popover) on the Parent Group fields of both the host
   editor and the dynamic group editor. Backed by a small
