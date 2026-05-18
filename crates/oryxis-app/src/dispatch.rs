@@ -1181,20 +1181,37 @@ impl Oryxis {
                             .take(10)
                             .map(|c| (c.label.replace('&', "&&"), c.id.to_string()))
                             .collect();
-                        // Hidden windows aggregated across every
-                        // child process via the tray_ipc registry.
-                        // Primary's own hidden state isn't listed
-                        // here (the user is staring at this menu
-                        // through that very window's tray icon if
-                        // primary is hidden; surfacing it would be
-                        // a weird self-reference). list_instances
-                        // already filters dead PIDs and the self-pid
-                        // row so we can pass straight through.
-                        let hidden: Vec<(String, String)> = crate::tray_ipc::Primary::list_instances()
-                            .into_iter()
-                            .filter(|s| s.is_hidden)
-                            .map(|s| (s.title.replace('&', "&&"), s.pid.to_string()))
-                            .collect();
+                        // Unified "Windows" list: every window the
+                        // user owns that's currently hidden, primary
+                        // first (when the primary itself is hidden)
+                        // then each hidden child via the IPC registry.
+                        // The id-suffix is the owning process's PID;
+                        // the menu click dispatcher checks self_pid
+                        // to decide between local TrayShow and an
+                        // IPC send_command.
+                        let mut hidden: Vec<(String, String)> = Vec::new();
+                        if self.is_window_hidden {
+                            let primary_label = self
+                                .active_tab
+                                .and_then(|i| self.tabs.get(i))
+                                .map(|t| t.label.clone())
+                                .unwrap_or_else(|| crate::i18n::t("tray_main_window").to_string());
+                            hidden.push((
+                                primary_label.replace('&', "&&"),
+                                std::process::id().to_string(),
+                            ));
+                        }
+                        for inst in crate::tray_ipc::Primary::list_instances() {
+                            if !inst.is_hidden {
+                                continue;
+                            }
+                            let label = if inst.title.is_empty() || inst.title == "Oryxis" {
+                                format!("{} (PID {})", crate::i18n::t("tray_main_window"), inst.pid)
+                            } else {
+                                inst.title.clone()
+                            };
+                            hidden.push((label.replace('&', "&&"), inst.pid.to_string()));
+                        }
                         if let Err(e) = crate::tray::rebuild_menu(&active, &recent, &hidden) {
                             tracing::warn!("tray menu rebuild failed: {e}");
                         }
@@ -1269,20 +1286,27 @@ impl Oryxis {
                                 .map(Message::TrayOpenHost)
                         }
                         s if s.starts_with(crate::tray::MENU_PREFIX_HIDDEN) => {
-                            // "oryxis-tray-hidden:<pid>" -> queue a
-                            // Show command for that child PID via the
-                            // tray_ipc registry. Child's TrayPoll
-                            // picks it up within one tick and pops
-                            // its window. Side-effect, no follow-up
-                            // Message needed.
+                            // "oryxis-tray-hidden:<pid>". If pid is
+                            // our own, the menu item refers to the
+                            // primary's own hidden window: fire
+                            // TrayShow locally. Otherwise queue an
+                            // IPC Show command for the child whose
+                            // TrayPoll routes it back into TrayShow
+                            // on its side.
                             let suffix = &s[crate::tray::MENU_PREFIX_HIDDEN.len()..];
                             if let Ok(pid) = suffix.parse::<u32>() {
-                                crate::tray_ipc::Primary::send_command(
-                                    pid,
-                                    crate::tray_ipc::Command::Show,
-                                );
+                                if pid == std::process::id() {
+                                    Some(Message::TrayShow)
+                                } else {
+                                    crate::tray_ipc::Primary::send_command(
+                                        pid,
+                                        crate::tray_ipc::Command::Show,
+                                    );
+                                    None
+                                }
+                            } else {
+                                None
                             }
-                            None
                         }
                         _ => None,
                     };

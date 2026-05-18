@@ -79,19 +79,15 @@ mod imp {
         // the user has to restart for new labels to land. Same
         // limitation Termius / Tabby ship with on Windows.
         // Bootstrap menu, replaced by rebuild_menu on the first
-        // TrayPoll tick after boot. Only carries the static
-        // entries (Show + Quit); the dynamic sessions / hidden
-        // windows / recent hosts sections come in via rebuild.
-        // No "Hide to tray" item: the user's UX vision (D-lite)
-        // treats the title-bar minimize / close buttons as the
-        // canonical hide path.
-        menu.append(&MenuItem::with_id(
-            MENU_ID_SHOW,
-            crate::i18n::t("tray_show"),
-            true,
-            None,
-        ))?;
-        menu.append(&PredefinedMenuItem::separator())?;
+        // TrayPoll tick after boot. The unified Windows / Active
+        // sessions / Recent hosts sections come in via rebuild;
+        // here we only carry the always-present Quit entry so the
+        // menu has something to render at boot before the first
+        // poll. There is no "Show" or "Hide to tray" static item:
+        // the user's UX vision (D-lite) routes Show through the
+        // Windows section (one row per hidden window) and treats
+        // the title-bar minimize / close buttons as the canonical
+        // hide path.
         menu.append(&MenuItem::with_id(
             MENU_ID_QUIT,
             crate::i18n::t("tray_quit"),
@@ -174,20 +170,35 @@ mod imp {
         };
 
         let menu = Menu::new();
-        // "Show" surfaces the primary window when it's hidden.
-        // Per the user's UX vision (D-lite), the tray menu no
-        // longer carries a redundant "Hide to tray" entry; the
-        // window's own title bar minimize / close buttons are the
-        // canonical way to send a window to the tray.
-        menu.append(&MenuItem::with_id(
-            MENU_ID_SHOW,
-            crate::i18n::t("tray_show"),
-            true,
-            None,
-        ))?;
+        // Unified "Windows" section: every hidden window the user
+        // owns lives here (primary's own as the first row when
+        // primary is hidden, then every child via the IPC registry).
+        // Clicking any row surfaces THAT window. Per the user's
+        // UX vision the menu doesn't carry a redundant "Hide to
+        // tray" entry; the window's own title-bar minimize / close
+        // are the canonical hide path.
+        //
+        // The caller passes `hidden_windows` already merged (primary
+        // first if it belongs there, then children). The id-suffix
+        // is the owning process's PID; the dispatcher checks for
+        // self_pid to decide between a local TrayShow and an IPC
+        // send to a child.
+        if !hidden_windows.is_empty() {
+            menu.append(&MenuItem::new(
+                crate::i18n::t("tray_windows"),
+                false,
+                None,
+            ))?;
+            for (label, id_suffix) in hidden_windows {
+                let id = format!("{MENU_PREFIX_HIDDEN}{id_suffix}");
+                menu.append(&MenuItem::with_id(id, label, true, None))?;
+            }
+        }
 
         if !active_sessions.is_empty() {
-            menu.append(&PredefinedMenuItem::separator())?;
+            if !hidden_windows.is_empty() {
+                menu.append(&PredefinedMenuItem::separator())?;
+            }
             // Header item, disabled so it reads as a section label.
             menu.append(&MenuItem::new(
                 crate::i18n::t("tray_active_sessions"),
@@ -196,19 +207,6 @@ mod imp {
             ))?;
             for (label, id_suffix) in active_sessions {
                 let id = format!("{MENU_PREFIX_SESSION}{id_suffix}");
-                menu.append(&MenuItem::with_id(id, label, true, None))?;
-            }
-        }
-
-        if !hidden_windows.is_empty() {
-            menu.append(&PredefinedMenuItem::separator())?;
-            menu.append(&MenuItem::new(
-                crate::i18n::t("tray_hidden_windows"),
-                false,
-                None,
-            ))?;
-            for (label, id_suffix) in hidden_windows {
-                let id = format!("{MENU_PREFIX_HIDDEN}{id_suffix}");
                 menu.append(&MenuItem::with_id(id, label, true, None))?;
             }
         }
