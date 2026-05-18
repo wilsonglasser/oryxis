@@ -100,6 +100,20 @@ Section "Install"
     ; Desktop shortcut
     CreateShortCut "$DESKTOP\Oryxis.lnk" "$INSTDIR\oryxis.exe" "" "$INSTDIR\logo.ico"
 
+    ; Stamp the AppUserModelID on the start-menu + desktop shortcuts
+    ; so the JumpList we build at runtime (io.oryxis.Oryxis) is
+    ; pinned to THIS .lnk, not to a Windows-derived one based on the
+    ; shortcut path. Without it, JumpList recent-hosts only appears
+    ; after the first launch finishes tagging the live window, and
+    ; the user may never see the pinned-shortcut menu. Setting
+    ; PKEY_AppUserModel_ID on a .lnk requires IPropertyStore, which
+    ; needs either a custom NSIS plugin or a small bundled helper
+    ; .exe (PowerShell + inline C# is brittle enough that it has
+    ; broken silent installs in the past). Tracked as a follow-up
+    ; rather than risk a broken installer on top of the working
+    ; runtime fallback (SetCurrentProcessExplicitAppUserModelID
+    ; + jumplist::tag_window).
+
     ; Write uninstaller
     WriteUninstaller "$INSTDIR\uninstall.exe"
 

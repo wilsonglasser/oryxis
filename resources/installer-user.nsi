@@ -98,6 +98,10 @@ Section "Install"
 
     CreateShortCut "$DESKTOP\Oryxis.lnk" "$INSTDIR\oryxis.exe" "" "$INSTDIR\logo.ico"
 
+    ; AppUserModelID on .lnk: see installer.nsi for the same TODO.
+    ; The runtime fallback ships the JumpList anyway, just one
+    ; cold-start late.
+
     WriteUninstaller "$INSTDIR\uninstall.exe"
 
     ; Add INSTDIR to the per-user PATH (HKCU\Environment). No admin
