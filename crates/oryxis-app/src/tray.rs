@@ -93,6 +93,63 @@ mod imp {
     pub fn poll_icon_event() -> Option<TrayIconEvent> {
         TrayIconEvent::receiver().try_recv().ok()
     }
+
+    /// Hide the window passed in, going through the raw HWND
+    /// instead of `winit::Window::set_visible` (iced 0.14 doesn't
+    /// expose it). Called from the iced dispatcher inside a
+    /// `iced::window::run` callback, which guarantees we're on the
+    /// UI thread with a valid handle. Returns `false` if the handle
+    /// wasn't the expected `Win32WindowHandle` variant; that
+    /// shouldn't happen in practice but we'd rather log + skip than
+    /// panic.
+    pub fn hide_window(handle: &dyn raw_window_handle::HasWindowHandle) -> bool {
+        use raw_window_handle::RawWindowHandle;
+        use windows_sys::Win32::UI::WindowsAndMessaging::{ShowWindow, SW_HIDE};
+
+        let Ok(wh) = handle.window_handle() else {
+            return false;
+        };
+        let RawWindowHandle::Win32(win32) = wh.as_raw() else {
+            return false;
+        };
+        // SAFETY: HWND is valid for the lifetime of the &dyn handle
+        // reference; SW_HIDE is a constant integer argument with no
+        // pointer semantics. The call is documented as thread-safe
+        // for the owning thread, which is where iced::window::run
+        // dispatches us.
+        unsafe {
+            let _ = ShowWindow(win32.hwnd.get() as _, SW_HIDE);
+        }
+        true
+    }
+
+    /// Restore a hidden window: show it, then pull to foreground.
+    /// `SW_SHOW` alone leaves it in the previous z-order, so an
+    /// `SetForegroundWindow` chases it to land on top. If the
+    /// window was minimized when hidden, `SW_RESTORE` instead of
+    /// `SW_SHOW` un-minimizes too.
+    pub fn show_window(handle: &dyn raw_window_handle::HasWindowHandle) -> bool {
+        use raw_window_handle::RawWindowHandle;
+        use windows_sys::Win32::UI::WindowsAndMessaging::{
+            SetForegroundWindow, ShowWindow, SW_RESTORE,
+        };
+
+        let Ok(wh) = handle.window_handle() else {
+            return false;
+        };
+        let RawWindowHandle::Win32(win32) = wh.as_raw() else {
+            return false;
+        };
+        // SAFETY: same rationale as hide_window. SetForegroundWindow
+        // can fail silently (Windows focus-stealing prevention) but
+        // doesn't unsafe-misuse the HWND on failure.
+        unsafe {
+            let hwnd = win32.hwnd.get() as _;
+            let _ = ShowWindow(hwnd, SW_RESTORE);
+            let _ = SetForegroundWindow(hwnd);
+        }
+        true
+    }
 }
 
 #[cfg(target_os = "windows")]
@@ -125,6 +182,18 @@ mod stub {
 
     pub fn poll_icon_event() -> Option<TrayIconEvent> {
         None
+    }
+
+    /// Stub: never actually hides anything on non-Windows targets.
+    /// Same signature as the Windows impl so dispatch.rs stays cfg-
+    /// free. Returns false so the caller knows nothing happened.
+    pub fn hide_window<H: ?Sized>(_handle: &H) -> bool {
+        false
+    }
+
+    /// Stub: never actually shows anything on non-Windows targets.
+    pub fn show_window<H: ?Sized>(_handle: &H) -> bool {
+        false
     }
 }
 

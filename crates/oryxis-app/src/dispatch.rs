@@ -1141,13 +1141,29 @@ impl Oryxis {
                 }
             }
             Message::TrayShow => {
-                // Wired in PR 8c once the HWND/ShowWindow plumbing
-                // lands. Placeholder so the dispatch arm exists and
-                // the menu click round-trips without a panic.
-                tracing::debug!("tray: show requested (handler stub)");
+                // Hop through iced::window::oldest -> window::run so
+                // we get the raw window handle on the UI thread. The
+                // tray hide/show helpers swallow non-Windows targets
+                // (stubs return false), so this is a no-op outside
+                // Windows even though the code compiles everywhere.
+                // `.discard()` drops the `()` return so the chain
+                // matches the dispatcher's `Task<Message>` shape.
+                return iced::window::oldest()
+                    .and_then(|id| {
+                        iced::window::run(id, |window| {
+                            crate::tray::show_window(window);
+                        })
+                    })
+                    .discard();
             }
             Message::TrayHide => {
-                tracing::debug!("tray: hide requested (handler stub)");
+                return iced::window::oldest()
+                    .and_then(|id| {
+                        iced::window::run(id, |window| {
+                            crate::tray::hide_window(window);
+                        })
+                    })
+                    .discard();
             }
             Message::TrayQuit => {
                 tracing::info!("tray: quit requested");
