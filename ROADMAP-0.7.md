@@ -418,6 +418,6 @@ Itens conversados mas adiados:
   discussão futura. Workspace mode já resolve o caso de uso.
 - **Modos `Tab bar` e `Burger` no Classic**: a discussão de "múltiplas
   formas de navegação" fica restrita a "Classic vs Workspace" em v0.7.
-- **System tray + minimize-to-tray**: issue dedicada, v0.8/v0.9.
+- **System tray + minimize-to-tray**: ~~v0.8/v0.9~~. **ENTREGUE em v0.7** (PR 8a-8h, Windows-only). Inclui: ícone na tray, menu Show/Hide/Quit, close-to-tray + minimize-to-tray como settings em Settings -> Interface, submenu "Active sessions" com tabs abertas, submenu "Recent hosts" (top 10 por last_used), single-instance via named mutex. **Pendente pra v0.7.1**: JumpList no taskbar context menu (PhpStorm-style "Recent Projects") e IPC pra rotear `--connect <uuid>` da JumpList / shortcut na instância já rodando em vez de exit silencioso.
 - **Split panes**: continua adiado pra v0.8.
 - **Custom themes do usuário**: v0.9.

@@ -7,6 +7,24 @@ project uses [SemVer](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- **Windows system tray** (closes the last item from issue #18).
+  Tray icon registers on app start with a menu that grows as state
+  changes:
+  - Static actions: Show Oryxis / Hide to tray / Quit.
+  - "Active sessions" submenu: one item per open terminal tab,
+    click activates the tab + pops the window.
+  - "Recent hosts" submenu: top 10 saved connections by last_used
+    desc (connections never connected to are filtered out), click
+    opens a new tab against that host.
+  - Settings -> Interface -> System tray panel: opt-in close-to-
+    tray (custom title bar X + Alt+F4 hide instead of close) and
+    minimize-to-tray (title bar minimize hides instead of taskbar-
+    minimize). Defaults off.
+  - Single-instance guard via named mutex so duplicate launches
+    don't spawn a second tray icon. JumpList + IPC for routing
+    `--connect <uuid>` into an existing instance ship in v0.7.1.
+  - macOS / Linux: tray module is a no-op stub, settings panel is
+    suppressed, app behaves exactly like v0.6.
 - **Cloud providers UX redesign (Phase 1-5).** Replaces the rigid
   v0.6 "everything goes into a provider folder, never editable"
   model with a decoupled origin-as-metadata pattern (cloud_ref
