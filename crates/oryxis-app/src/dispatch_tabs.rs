@@ -192,6 +192,21 @@ impl Oryxis {
                 }));
             }
             Message::WindowMinimize => {
+                // Custom title bar minimize. Honours
+                // setting_minimize_to_tray on Windows by hiding the
+                // window outright instead of minimizing (which would
+                // leave a taskbar slot). Everywhere else and when
+                // the toggle is off we fall through to the real
+                // iced::window::minimize call.
+                if self.setting_minimize_to_tray && cfg!(target_os = "windows") {
+                    return Ok(iced::window::oldest()
+                        .and_then(|id| {
+                            iced::window::run(id, |window| {
+                                crate::tray::hide_window(window);
+                            })
+                        })
+                        .discard());
+                }
                 return Ok(iced::window::latest().then(|id_opt| match id_opt {
                     Some(id) => iced::window::minimize(id, true),
                     None => Task::none(),
