@@ -169,7 +169,11 @@ impl Oryxis {
             let base_label = tab.label.trim_end_matches(" (disconnected)");
             let host_accent: Option<Color> = self.connections.iter()
                 .find(|c| c.label == base_label)
-                .and_then(|c| c.color.as_deref())
+                // `custom_color` is what the icon picker writes (the
+                // user-chosen accent). The legacy `color` field is a
+                // dead column today but stays as a fallback so any
+                // future code path that fills it still works.
+                .and_then(|c| c.custom_color.as_deref().or(c.color.as_deref()))
                 .and_then(crate::widgets::parse_hex_color)
                 // Cloud-transport tabs (`ECS · ...`, `SSM · ...`,
                 // `K8s · ...`) don't match any saved Connection by

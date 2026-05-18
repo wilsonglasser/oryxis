@@ -160,9 +160,12 @@ impl Oryxis {
         } else { self.active_tab.and_then(|idx| {
             let tab = self.tabs.get(idx)?;
             let label = tab.label.trim_end_matches(" (disconnected)");
-            // 1) per-host color from a matching saved Connection
+            // 1) per-host color from a matching saved Connection.
+            // `custom_color` is what the icon picker writes; `color`
+            // is the legacy field that's never set today but kept as
+            // a fallback for any future code path that fills it.
             if let Some(c) = self.connections.iter().find(|c| c.label == label)
-                && let Some(hex) = c.color.as_deref()
+                && let Some(hex) = c.custom_color.as_deref().or(c.color.as_deref())
                 && let Some(col) = crate::widgets::parse_hex_color(hex)
             {
                 return Some(col);

@@ -575,7 +575,8 @@ impl Oryxis {
                 conn.icon_style.as_deref(),
                 &self.setting_default_host_icon,
             );
-            let badge_color = conn.color.as_deref()
+            let badge_color = conn.custom_color.as_deref()
+                .or(conn.color.as_deref())
                 .and_then(crate::widgets::parse_hex_color)
                 .unwrap_or(default_color);
             let glyph_el: Element<'_, Message> = glyph.view(14.0, Color::WHITE);

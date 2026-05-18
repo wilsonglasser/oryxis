@@ -52,6 +52,87 @@ mod imp {
         }
     }
 
+    /// Tag the given window with our AppUserModelID via its property
+    /// store. SetCurrentProcessExplicitAppUserModelID alone often
+    /// isn't enough: winit/Windows register the WindowClass before
+    /// we got to set the process ID, so the window ends up tagged
+    /// with a path-derived AppID that the JumpList we built doesn't
+    /// match. Setting PKEY_AppUserModel_ID on the window directly
+    /// after creation lines everything up so the taskbar entry's
+    /// right-click shows our JumpList.
+    ///
+    /// Called from the dispatcher inside an `iced::window::run`
+    /// callback so we have a valid HWND on the UI thread.
+    pub fn tag_window(handle: &dyn iced::Window) {
+        use iced::window::raw_window_handle::RawWindowHandle;
+        use windows::Win32::Foundation::HWND;
+        use windows::Win32::UI::Shell::PropertiesSystem::{
+            IPropertyStore, SHGetPropertyStoreForWindow,
+        };
+
+        let Ok(wh) = handle.window_handle() else { return };
+        let RawWindowHandle::Win32(win32) = wh.as_raw() else { return };
+        let hwnd = HWND(win32.hwnd.get() as *mut _);
+
+        let id_wide: Vec<u16> = APP_USER_MODEL_ID
+            .encode_utf16()
+            .chain(std::iter::once(0))
+            .collect();
+
+        // SAFETY: all calls are documented thread-safe for the
+        // owning thread, and iced::window::run hands us a handle
+        // on the UI thread. The PROPVARIANT borrows id_wide which
+        // lives across the SetValue call (synchronous; the store
+        // copies the string internally).
+        unsafe {
+            let store: windows::core::Result<IPropertyStore> =
+                SHGetPropertyStoreForWindow(hwnd);
+            let Ok(store) = store else { return };
+            let pv = propvariant_lpwstr(&id_wide);
+            let _ = store.SetValue(&PKEY_APP_USER_MODEL_ID, &pv);
+            let _ = store.Commit();
+        }
+    }
+
+    /// PKEY_AppUserModel_ID from <propkey.h>. windows-rs 0.61
+    /// doesn't ship the constant; the GUID + pid 5 are stable.
+    const PKEY_APP_USER_MODEL_ID: windows::Win32::Foundation::PROPERTYKEY =
+        windows::Win32::Foundation::PROPERTYKEY {
+            fmtid: windows::core::GUID::from_u128(
+                0x9f4c2855_9f79_4b39_a8d0_e1d42de1d5f3,
+            ),
+            pid: 5,
+        };
+
+    /// Build a PROPVARIANT carrying a VT_LPWSTR pointing at the
+    /// caller's wide-string buffer. The store copies the data on
+    /// SetValue so the buffer only needs to outlive the call.
+    /// windows-rs 0.61 has no `From<PCWSTR>` for PROPVARIANT and
+    /// no `InitPropVariantFromString` (single, not vector); doing
+    /// the tagged-union construction by hand is the path forward.
+    unsafe fn propvariant_lpwstr(
+        wide: &[u16],
+    ) -> windows::Win32::System::Com::StructuredStorage::PROPVARIANT {
+        use windows::Win32::System::Com::StructuredStorage::{
+            PROPVARIANT, PROPVARIANT_0, PROPVARIANT_0_0, PROPVARIANT_0_0_0,
+        };
+        use windows::Win32::System::Variant::VT_LPWSTR;
+        let inner = PROPVARIANT_0_0 {
+            vt: VT_LPWSTR,
+            wReserved1: 0,
+            wReserved2: 0,
+            wReserved3: 0,
+            Anonymous: PROPVARIANT_0_0_0 {
+                pwszVal: windows::core::PWSTR(wide.as_ptr() as *mut u16),
+            },
+        };
+        PROPVARIANT {
+            Anonymous: PROPVARIANT_0 {
+                Anonymous: core::mem::ManuallyDrop::new(inner),
+            },
+        }
+    }
+
     /// Replace the JumpList's "Recent Hosts" category with one
     /// shell-link entry per item in `recent`. Each tuple is
     /// `(label, cli_args)` where `cli_args` is appended to the
@@ -170,12 +251,13 @@ mod imp {
 }
 
 #[cfg(target_os = "windows")]
-pub use imp::{rebuild, set_app_id};
+pub use imp::{rebuild, set_app_id, tag_window};
 
 #[cfg(not(target_os = "windows"))]
 mod stub {
     pub fn set_app_id() {}
     pub fn rebuild(_recent: &[(String, String)]) {}
+    pub fn tag_window(_handle: &dyn iced::Window) {}
 }
 
 #[cfg(not(target_os = "windows"))]

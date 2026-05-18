@@ -1166,6 +1166,27 @@ impl Oryxis {
                 // clicked. On non-Windows targets both polls return
                 // None immediately, so this is harmless overhead.
                 let mut follow_ups: Vec<Task<Message>> = Vec::new();
+
+                // Tag the main window with our AppUserModelID once
+                // after boot. Without this the JumpList we build
+                // attaches to a different taskbar entry (winit
+                // registers the WindowClass before we set the
+                // process ID, so the window inherits a path-derived
+                // AppID). Flag-guarded to avoid the
+                // SHGetPropertyStoreForWindow call firing ten times
+                // a second forever.
+                if !self.jumplist_window_tagged {
+                    self.jumplist_window_tagged = true;
+                    follow_ups.push(
+                        iced::window::oldest()
+                            .and_then(|id| {
+                                iced::window::run(id, |window| {
+                                    crate::jumplist::tag_window(window);
+                                })
+                            })
+                            .discard(),
+                    );
+                }
                 while let Some(id) = crate::tray::poll_menu_event() {
                     let msg = match id.as_str() {
                         crate::tray::MENU_ID_SHOW => Some(Message::TrayShow),

@@ -568,6 +568,15 @@ pub struct Oryxis {
     /// burning cycles rebuilding the dynamic submenus 10 times a
     /// second when nothing has changed.
     pub(crate) tray_menu_signature: u64,
+    /// One-shot: set to true after we successfully tag the main
+    /// window with our AppUserModelID via SHGetPropertyStoreForWindow.
+    /// The taskbar JumpList only attaches to the right entry when
+    /// the window and the JumpList share the same AppID, and winit
+    /// often registers the WindowClass before we set the process ID
+    /// so the window ends up with a path-derived AppID. The
+    /// dispatcher runs `jumplist::tag_window` on the first TrayPoll
+    /// after boot to align them.
+    pub(crate) jumplist_window_tagged: bool,
     /// `"left"` (default, Termius-style: X replaces the OS badge on
     /// hover/active) or `"right"` (badge stays left, X gets its own
     /// slot at the trailing edge of the tab). Anything else is treated

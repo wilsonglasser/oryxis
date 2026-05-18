@@ -378,13 +378,21 @@ impl Oryxis {
                 self.new_tab_picker_search = v;
             }
             Message::ShowIconPicker(conn_id) => {
-                // Pre-fill the picker with whatever the connection currently
-                // has (custom > detected). The user either confirms, edits,
-                // or clicks "Reset to auto" to drop the override entirely.
+                // Pre-fill the picker with the icon the user is
+                // currently seeing on the host card: custom override
+                // first, then auto-detected OS, then the generic
+                // "server" fallback as last resort. Using just
+                // `custom_icon || "server"` here was buggy: hosts
+                // whose icon comes from `detected_os` (Ubuntu, etc.)
+                // showed "server" highlighted in the picker, so a
+                // user clicking Save (even just to change the color)
+                // accidentally overrode the auto-detected icon with
+                // the generic stack glyph.
                 if let Some(conn) = self.connections.iter().find(|c| c.id == conn_id) {
                     self.icon_picker_icon = conn
                         .custom_icon
                         .clone()
+                        .or_else(|| conn.detected_os.clone())
                         .or_else(|| Some("server".to_string()));
                     self.icon_picker_color = conn.custom_color.clone();
                     self.icon_picker_hex_input = conn.custom_color.clone().unwrap_or_default();
