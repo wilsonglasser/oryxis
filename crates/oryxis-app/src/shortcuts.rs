@@ -226,24 +226,21 @@ impl Oryxis {
         //    so a user who rebinds CloseActiveTab onto a shell key
         //    loses the rebound action in the terminal (but it still
         //    fires elsewhere), and rebinding an old gated action OFF
-        //    a shell key restores it everywhere. Clone the actions
-        //    slice so we can call `self.dispatch_hotkey_action`
-        //    (which takes `&mut self`) inside the loop without
-        //    holding a borrow on `self.hotkey_bindings`.
-        let actions: Vec<HotkeyAction> = HotkeyAction::all().to_vec();
+        //    a shell key restores it everywhere. Iterates over the
+        //    'static slice directly; HotkeyBinding is Copy, so we
+        //    materialise it before calling dispatch_hotkey_action
+        //    (which takes &mut self) and avoid the per-press
+        //    allocation that the prior `.to_vec()` paid.
         let in_terminal = self.active_view == View::Terminal;
-        for action in actions {
-            let binding = self.hotkey_bindings.get(&action);
+        for &action in HotkeyAction::all() {
+            let bind_copy = self.hotkey_bindings.get(&action).copied();
             if in_terminal
-                && binding.is_some_and(|b| b.is_terminal_control_sequence())
+                && bind_copy.is_some_and(|b| b.is_terminal_control_sequence())
             {
                 continue;
             }
-            let family = match binding {
-                Some(b) => b.match_event(key, modifiers),
-                None => None,
-            };
-            if let Some(family) = family {
+            let Some(b) = bind_copy else { continue };
+            if let Some(family) = b.match_event(key, modifiers) {
                 return Some(self.dispatch_hotkey_action(action, family));
             }
         }

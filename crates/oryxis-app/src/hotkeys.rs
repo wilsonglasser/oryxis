@@ -506,26 +506,25 @@ pub fn binding_from_event(
                     let ch = txt.chars().next().unwrap();
                     if ch.is_ascii_alphanumeric() {
                         Some(PrimaryKey::Char(ch.to_ascii_lowercase()))
-                    } else if matches!(
-                        ch,
-                        ',' | '.' | ';' | '=' | '-' | '+' | '/' | '\\' | '[' | ']'
-                    ) {
-                        let p: &'static str = match ch {
-                            ',' => ",",
-                            '.' => ".",
-                            ';' => ";",
-                            '=' => "=",
-                            '-' => "-",
-                            '+' => "+",
-                            '/' => "/",
-                            '\\' => "\\",
-                            '[' => "[",
-                            ']' => "]",
-                            _ => unreachable!(),
-                        };
-                        Some(PrimaryKey::Punct(p))
                     } else {
-                        None
+                        // Single source of truth for the punctuation
+                        // accept-list: the match returning Some(s) IS
+                        // both the membership check and the
+                        // &'static str mapping. Adding a new punct
+                        // means one new arm, not two synced lists.
+                        match ch {
+                            ',' => Some(PrimaryKey::Punct(",")),
+                            '.' => Some(PrimaryKey::Punct(".")),
+                            ';' => Some(PrimaryKey::Punct(";")),
+                            '=' => Some(PrimaryKey::Punct("=")),
+                            '-' => Some(PrimaryKey::Punct("-")),
+                            '+' => Some(PrimaryKey::Punct("+")),
+                            '/' => Some(PrimaryKey::Punct("/")),
+                            '\\' => Some(PrimaryKey::Punct("\\")),
+                            '[' => Some(PrimaryKey::Punct("[")),
+                            ']' => Some(PrimaryKey::Punct("]")),
+                            _ => None,
+                        }
                     }
                 } else {
                     None
