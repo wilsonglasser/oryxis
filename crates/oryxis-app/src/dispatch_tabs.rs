@@ -205,6 +205,23 @@ impl Oryxis {
                 }));
             }
             Message::WindowClose => {
+                // Honour the close-to-tray setting: when on, the
+                // user's "close" verb (custom title bar X, Alt+F4
+                // via CloseRequested subscription, etc.) hides the
+                // window into the tray instead of quitting. Returns
+                // a hide task on Windows where the tray is real; on
+                // other platforms the helper is a no-op so we fall
+                // through to a real close. Default (off) closes for
+                // everyone.
+                if self.setting_close_to_tray && cfg!(target_os = "windows") {
+                    return Ok(iced::window::oldest()
+                        .and_then(|id| {
+                            iced::window::run(id, |window| {
+                                crate::tray::hide_window(window);
+                            })
+                        })
+                        .discard());
+                }
                 return Ok(iced::window::latest().then(|id_opt| match id_opt {
                     Some(id) => iced::window::close(id),
                     None => Task::none(),

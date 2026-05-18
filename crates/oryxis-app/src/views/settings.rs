@@ -809,6 +809,36 @@ impl Oryxis {
                     ),
                 ]);
 
+                // Tray toggles only mean something on Windows (the
+                // tray module is a no-op on macOS/Linux). Hide the
+                // whole section on those platforms so we don't dangle
+                // settings the user can't actually exercise.
+                let tray_section = panel_section(column![
+                    text(crate::i18n::t("system_tray"))
+                        .size(13)
+                        .color(OryxisColors::t().text_primary),
+                    Space::new().height(8),
+                    toggle_row(
+                        crate::i18n::t("close_to_tray"),
+                        self.setting_close_to_tray,
+                        Message::SettingToggleCloseToTray,
+                    ),
+                    Space::new().height(4),
+                    text(crate::i18n::t("close_to_tray_desc"))
+                        .size(11)
+                        .color(OryxisColors::t().text_muted),
+                    Space::new().height(10),
+                    toggle_row(
+                        crate::i18n::t("minimize_to_tray"),
+                        self.setting_minimize_to_tray,
+                        Message::SettingToggleMinimizeToTray,
+                    ),
+                    Space::new().height(4),
+                    text(crate::i18n::t("minimize_to_tray_desc"))
+                        .size(11)
+                        .color(OryxisColors::t().text_muted),
+                ]);
+
                 // Tab close button position picker. We use the token
                 // strings ("left" / "right") as the picker's value type
                 // and only translate to the localized display in the
@@ -954,6 +984,15 @@ impl Oryxis {
                 ]
                 .width(Length::Fill)
                 .align_x(dir_align_x());
+
+                // Tray section sits at the end so it doesn't push the
+                // more-common toggles down on Linux/macOS (where it's
+                // suppressed entirely).
+                if cfg!(target_os = "windows") {
+                    content_col = content_col.push(tray_section).push(Space::new().height(12));
+                } else {
+                    let _ = tray_section; // keep helper construction warning-free.
+                }
 
                 for row_el in grid_rows {
                     content_col = content_col

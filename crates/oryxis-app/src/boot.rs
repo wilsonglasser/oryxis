@@ -290,6 +290,8 @@ impl Oryxis {
                 setting_keyword_highlight: true,
                 setting_smart_contrast: true,
                 setting_show_status_bar: true,
+                setting_close_to_tray: false,
+                setting_minimize_to_tray: false,
                 setting_tab_close_button_side: "left".into(),
                 setting_show_tab_status_dot: true,
                 setting_tab_accent_line: true,
@@ -624,6 +626,12 @@ impl Oryxis {
             }
             if let Ok(Some(v)) = vault.get_setting("show_status_bar") {
                 self.setting_show_status_bar = v == "true";
+            }
+            if let Ok(Some(v)) = vault.get_setting("close_to_tray") {
+                self.setting_close_to_tray = v == "true";
+            }
+            if let Ok(Some(v)) = vault.get_setting("minimize_to_tray") {
+                self.setting_minimize_to_tray = v == "true";
             }
             if let Ok(Some(v)) = vault.get_setting("tab_close_button_side")
                 && (v == "left" || v == "right")

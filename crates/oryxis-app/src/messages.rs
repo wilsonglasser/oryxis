@@ -375,6 +375,8 @@ pub enum Message {
     ToggleKeywordHighlight,
     ToggleSmartContrast,
     SettingToggleShowStatusBar,
+    SettingToggleCloseToTray,
+    SettingToggleMinimizeToTray,
     SettingToggleTabAccentLine,
     SettingTabCloseButtonSideChanged(String),
     SettingToggleShowTabStatusDot,

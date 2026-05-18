@@ -288,6 +288,20 @@ impl Oryxis {
                     if self.setting_show_status_bar { "true" } else { "false" },
                 );
             }
+            Message::SettingToggleCloseToTray => {
+                self.setting_close_to_tray = !self.setting_close_to_tray;
+                self.persist_setting(
+                    "close_to_tray",
+                    if self.setting_close_to_tray { "true" } else { "false" },
+                );
+            }
+            Message::SettingToggleMinimizeToTray => {
+                self.setting_minimize_to_tray = !self.setting_minimize_to_tray;
+                self.persist_setting(
+                    "minimize_to_tray",
+                    if self.setting_minimize_to_tray { "true" } else { "false" },
+                );
+            }
             Message::SettingToggleShowTabStatusDot => {
                 self.setting_show_tab_status_dot = !self.setting_show_tab_status_dot;
                 self.persist_setting(

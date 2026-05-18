@@ -48,10 +48,30 @@ mod imp {
         }
 
         let menu = Menu::new();
-        menu.append(&MenuItem::with_id(MENU_ID_SHOW, "Show Oryxis", true, None))?;
-        menu.append(&MenuItem::with_id(MENU_ID_HIDE, "Hide to tray", true, None))?;
+        // Labels go through the i18n table so the tray respects the
+        // user's language pick (set in Settings -> Interface).
+        // Rebuilding the menu on language change is not yet wired:
+        // the user has to restart for new labels to land. Same
+        // limitation Termius / Tabby ship with on Windows.
+        menu.append(&MenuItem::with_id(
+            MENU_ID_SHOW,
+            crate::i18n::t("tray_show"),
+            true,
+            None,
+        ))?;
+        menu.append(&MenuItem::with_id(
+            MENU_ID_HIDE,
+            crate::i18n::t("tray_hide"),
+            true,
+            None,
+        ))?;
         menu.append(&PredefinedMenuItem::separator())?;
-        menu.append(&MenuItem::with_id(MENU_ID_QUIT, "Quit", true, None))?;
+        menu.append(&MenuItem::with_id(
+            MENU_ID_QUIT,
+            crate::i18n::t("tray_quit"),
+            true,
+            None,
+        ))?;
 
         let icon = load_icon();
         let tray = TrayIconBuilder::new()

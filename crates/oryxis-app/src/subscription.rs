@@ -96,6 +96,13 @@ impl Oryxis {
                     .map(|_| Message::SftpEditWatchTick),
             );
         }
+        // Intercept the user's close verb (Alt+F4, OS taskbar Close,
+        // any path that produces a winit CloseRequested). iced 0.14
+        // exposes a dedicated subscription for this; we route it
+        // through the existing WindowClose dispatcher so the close-
+        // to-tray check lives in one place.
+        subs.push(iced::window::close_requests().map(|_| Message::WindowClose));
+
         // Tray icon event drain. On Windows the tray-icon crate runs
         // its own thread that pushes menu / icon events into a pair
         // of crossbeam channels; the dispatcher's `TrayPoll` handler

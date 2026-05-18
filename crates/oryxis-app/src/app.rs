@@ -553,6 +553,14 @@ pub struct Oryxis {
     /// Oryxis version. Off in `view_main` simply skips rendering it,
     /// reclaiming the row for the active content area.
     pub(crate) setting_show_status_bar: bool,
+    /// When on, clicking the window's close button hides to the
+    /// system tray instead of quitting. Only honoured on Windows
+    /// (the tray module is a no-op everywhere else). Default off
+    /// so we don't surprise users who never knew there was a tray.
+    pub(crate) setting_close_to_tray: bool,
+    /// When on, minimizing the window hides it from the taskbar and
+    /// leaves only the tray icon visible. Windows-only. Default off.
+    pub(crate) setting_minimize_to_tray: bool,
     /// `"left"` (default, Termius-style: X replaces the OS badge on
     /// hover/active) or `"right"` (badge stays left, X gets its own
     /// slot at the trailing edge of the tab). Anything else is treated
