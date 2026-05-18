@@ -55,6 +55,7 @@ mod subscription;
 mod sync_runtime;
 mod theme;
 mod tray;
+mod tray_ipc;
 mod update;
 mod util;
 mod views;
@@ -123,36 +124,38 @@ fn main() -> iced::Result {
 
     tracing::info!("Starting Oryxis");
 
-    // Single-instance check, Windows-only. v0.7 MVP just logs the
-    // duplicate-detection result, doesn't act on it: exiting
-    // silently broke the first round of testing when a backgrounded
-    // tray instance from a previous run still held the mutex,
-    // making fresh launches look like the app crashed at boot. A
-    // proper single-instance flow needs IPC to surface the existing
-    // window instead of just bailing on the new process; that lands
-    // in v0.7.1 together with JumpList arg routing. For now we
-    // keep the mutex registration (so v0.7.1's IPC has a quick
-    // probe to look up the prior instance) but every launch
-    // succeeds.
-    if tray::another_instance_running() {
-        tracing::info!(
-            "another Oryxis instance is already running, continuing anyway \
-             (single-instance not enforced in v0.7)"
-        );
-    }
+    // Single-instance + multi-window IPC roles. The first process to
+    // boot grabs the mutex and owns the tray icon ("primary"); every
+    // subsequent process becomes a "child" that registers with the
+    // primary via the filesystem-based tray_ipc registry and skips
+    // tray installation entirely. The primary's tray menu aggregates
+    // all known windows into a single "Hidden windows" section so
+    // the user sees one tray ruling them all instead of N duplicates.
+    let is_primary = !tray::another_instance_running();
+    app::APP_IS_PRIMARY.set(is_primary).ok();
+    tray_ipc::init_runtime_dirs();
 
     // Register our AppUserModelID with the OS so taskbar grouping
     // tags our window with the right identity and any JumpList we
     // build later attaches to the right taskbar entry. Must happen
-    // before the first window opens. No-op on non-Windows.
+    // before the first window opens. No-op on non-Windows. Both
+    // primary and children call it so their windows group under
+    // the same taskbar entry.
     jumplist::set_app_id();
 
-    // Install the Windows system tray icon. No-op on macOS/Linux
-    // until those platforms get their own backends. Failure here is
-    // logged but non-fatal: the app still runs without a tray, the
-    // user just loses the close-to-tray / right-click-menu features.
-    if let Err(e) = tray::install() {
-        tracing::warn!("tray icon registration failed: {e}");
+    if is_primary {
+        // Install the Windows system tray icon. No-op on macOS/Linux
+        // until those platforms get their own backends. Failure here
+        // is logged but non-fatal: the app still runs without a tray.
+        if let Err(e) = tray::install() {
+            tracing::warn!("tray icon registration failed: {e}");
+        }
+    } else {
+        // Child: announce ourselves to the primary's registry.
+        // Title is the default app title; per-window state updates
+        // refine it later via tray_ipc::Child::write_state.
+        tray_ipc::Child::register("Oryxis");
+        tracing::info!("running as tray IPC child (primary already up)");
     }
 
     // Load window icon from PNG

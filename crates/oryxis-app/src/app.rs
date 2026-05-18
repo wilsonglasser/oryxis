@@ -23,6 +23,14 @@ pub static AUTO_CONNECT: OnceLock<Uuid> = OnceLock::new();
 /// the user doesn't have to re-type for "Duplicate in New Window".
 pub static AUTO_PASSWORD: OnceLock<String> = OnceLock::new();
 
+/// True when this process won the single-instance mutex race and owns
+/// the system tray icon ("primary"). False for every subsequent launch
+/// ("child"). Dispatchers branch on this to decide whether to write a
+/// state row into the tray_ipc registry, render the "Hidden windows"
+/// submenu, or skip both. Defaults to true on the unsupported path so
+/// non-Windows behaviour stays single-process-equivalent.
+pub static APP_IS_PRIMARY: OnceLock<bool> = OnceLock::new();
+
 use crate::state::{
     ConnectionForm, ConnectionProgress, OverlayState, SettingsSection, TerminalTab, VaultState,
     View,
