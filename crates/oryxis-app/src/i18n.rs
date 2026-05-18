@@ -2327,6 +2327,11 @@ fn es(key: &str) -> Option<&'static str> {
         "auto_check_updates" => "Buscar actualizaciones al iniciar",
         "auto_reconnect" => "Reconexión automática al desconectar",
         "sftp" => "SFTP",
+        "reconnect" => "Reconectar",
+        "max_reconnect_attempts" => "Máximo de intentos de reconexión",
+        "terminal_font" => "Fuente del terminal",
+        "os_detection" => "Detectar SO remoto al conectar",
+        "share" => "Compartir",
 
         _ => return None,
     })
@@ -3022,6 +3027,11 @@ fn fr(key: &str) -> Option<&'static str> {
         "auto_check_updates" => "Vérifier les mises à jour au démarrage",
         "auto_reconnect" => "Reconnexion automatique à la déconnexion",
         "sftp" => "SFTP",
+        "reconnect" => "Reconnecter",
+        "max_reconnect_attempts" => "Tentatives de reconnexion maximales",
+        "terminal_font" => "Police du terminal",
+        "os_detection" => "Détecter l'OS distant après connexion",
+        "share" => "Partager",
 
         _ => return None,
     })
@@ -3179,7 +3189,7 @@ fn de(key: &str) -> Option<&'static str> {
         "edit_host" => "Host Bearbeiten",
         "new_host" => "Neuer Host",
         "label" => "Bezeichnung",
-        "hostname" => "Hostname",
+        "hostname" => "Adresse",
         "parent_group" => "Gruppe",
         "ssh_on_port" => "SSH auf Port",
         "credentials" => "Zugangsdaten",
@@ -3717,6 +3727,11 @@ fn de(key: &str) -> Option<&'static str> {
         "auto_check_updates" => "Beim Start nach Updates suchen",
         "auto_reconnect" => "Bei Trennung automatisch wiederverbinden",
         "sftp" => "SFTP",
+        "reconnect" => "Erneut verbinden",
+        "max_reconnect_attempts" => "Maximale Wiederverbindungsversuche",
+        "terminal_font" => "Terminal-Schriftart",
+        "os_detection" => "Remote-OS nach Verbindung erkennen",
+        "share" => "Teilen",
 
         _ => return None,
     })
@@ -4412,6 +4427,11 @@ fn it(key: &str) -> Option<&'static str> {
         "auto_check_updates" => "Controlla aggiornamenti all'avvio",
         "auto_reconnect" => "Riconnessione automatica alla disconnessione",
         "sftp" => "SFTP",
+        "reconnect" => "Riconnetti",
+        "max_reconnect_attempts" => "Numero massimo di tentativi di riconnessione",
+        "terminal_font" => "Carattere del terminale",
+        "os_detection" => "Rileva sistema operativo remoto dopo la connessione",
+        "share" => "Condividi",
 
         _ => return None,
     })
@@ -5107,6 +5127,11 @@ fn zh(key: &str) -> Option<&'static str> {
         "auto_check_updates" => "启动时检查更新",
         "auto_reconnect" => "断开时自动重连",
         "sftp" => "SFTP",
+        "reconnect" => "重新连接",
+        "max_reconnect_attempts" => "最大重连尝试次数",
+        "terminal_font" => "终端字体",
+        "os_detection" => "连接后检测远程操作系统",
+        "share" => "分享",
 
         _ => return None,
     })
@@ -5802,6 +5827,11 @@ fn ja(key: &str) -> Option<&'static str> {
         "auto_check_updates" => "起動時に更新を確認",
         "auto_reconnect" => "切断時に自動再接続",
         "sftp" => "SFTP",
+        "reconnect" => "再接続",
+        "max_reconnect_attempts" => "最大再接続試行回数",
+        "terminal_font" => "ターミナルフォント",
+        "os_detection" => "接続後にリモートOSを検出",
+        "share" => "共有",
 
         _ => return None,
     })
@@ -6497,6 +6527,11 @@ fn ru(key: &str) -> Option<&'static str> {
         "auto_check_updates" => "Проверять обновления при запуске",
         "auto_reconnect" => "Автоматическое переподключение при разрыве",
         "sftp" => "SFTP",
+        "reconnect" => "Переподключить",
+        "max_reconnect_attempts" => "Максимум попыток переподключения",
+        "terminal_font" => "Шрифт терминала",
+        "os_detection" => "Определять удалённую ОС после подключения",
+        "share" => "Поделиться",
 
         _ => return None,
     })
