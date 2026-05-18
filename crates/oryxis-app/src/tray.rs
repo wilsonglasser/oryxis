@@ -36,6 +36,10 @@ mod imp {
     /// Prefix for "recent host" entries. Suffix is the connection
     /// UUID (parsed back in dispatch_tabs to open a new tab).
     pub const MENU_PREFIX_HOST: &str = "oryxis-tray-host:";
+    /// Prefix for "hidden window" entries (child processes whose
+    /// window is currently hidden to the tray). Suffix is the child
+    /// PID; the dispatcher forwards a Show command via tray_ipc.
+    pub const MENU_PREFIX_HIDDEN: &str = "oryxis-tray-hidden:";
 
     /// Wrapper that asserts Send + Sync on a value the compiler
     /// thinks is neither. `tray_icon::TrayIcon` contains an Rc /
@@ -142,6 +146,7 @@ mod imp {
     pub fn rebuild_menu(
         active_sessions: &[(String, String)],
         recent_hosts: &[(String, String)],
+        hidden_windows: &[(String, String)],
     ) -> Result<(), Box<dyn std::error::Error>> {
         let Some(ThreadBound(tray)) = TRAY.get() else {
             // No tray installed (install() failed or platform stub),
@@ -173,6 +178,19 @@ mod imp {
             ))?;
             for (label, id_suffix) in active_sessions {
                 let id = format!("{MENU_PREFIX_SESSION}{id_suffix}");
+                menu.append(&MenuItem::with_id(id, label, true, None))?;
+            }
+        }
+
+        if !hidden_windows.is_empty() {
+            menu.append(&PredefinedMenuItem::separator())?;
+            menu.append(&MenuItem::new(
+                crate::i18n::t("tray_hidden_windows"),
+                false,
+                None,
+            ))?;
+            for (label, id_suffix) in hidden_windows {
+                let id = format!("{MENU_PREFIX_HIDDEN}{id_suffix}");
                 menu.append(&MenuItem::with_id(id, label, true, None))?;
             }
         }
@@ -330,10 +348,12 @@ mod stub {
     pub const MENU_ID_QUIT: &str = "oryxis-tray-quit";
     pub const MENU_PREFIX_SESSION: &str = "oryxis-tray-session:";
     pub const MENU_PREFIX_HOST: &str = "oryxis-tray-host:";
+    pub const MENU_PREFIX_HIDDEN: &str = "oryxis-tray-hidden:";
 
     pub fn rebuild_menu(
         _active_sessions: &[(String, String)],
         _recent_hosts: &[(String, String)],
+        _hidden_windows: &[(String, String)],
     ) -> Result<(), Box<dyn std::error::Error>> {
         Ok(())
     }

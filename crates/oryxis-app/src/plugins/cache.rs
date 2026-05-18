@@ -111,6 +111,16 @@ pub fn set_current(provider_id: &str, version: &str) -> Result<(), PluginError> 
 
 /// Absolute path to the *active* plugin binary, or `None` when no
 /// version is installed / activated.
+///
+/// Note: this only verifies the file exists. The Ed25519 + SHA-256
+/// gates run once at install time
+/// (`super::download::download_and_install`), and after that we
+/// trust the disk. If the on-disk binary is later corrupted out of
+/// band (disk error, an external process editing the file, malware)
+/// the next spawn fails at runtime rather than at this check. A
+/// re-verify on every boot would buy detection at the cost of
+/// hashing the binary on the hot path, the trade isn't worth it
+/// while the cache lives under `~/.oryxis/` (user-private path).
 pub fn current_binary(provider_id: &str) -> Result<Option<PathBuf>, PluginError> {
     match current_version(provider_id)? {
         Some(v) => {

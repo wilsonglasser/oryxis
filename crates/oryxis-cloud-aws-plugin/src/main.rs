@@ -12,6 +12,14 @@
 //! goes to stderr. The process is long-running: it serves requests
 //! until stdin closes (the host drops it on idle / shutdown), then
 //! exits.
+//!
+//! Credentials trust boundary: the host (the main app) is the only
+//! writer on this stdin pipe and the only reader of stdout. Cloud
+//! credentials (`CloudProfile.secret`) travel in plaintext JSON on
+//! that pipe, that's intentional and safe in the same process tree.
+//! The plugin must never log `profile.secret` to stderr (which the
+//! tracing layer drains to the app); never echo it in error
+//! messages or response payloads; and never persist it to disk.
 
 mod dispatch;
 
