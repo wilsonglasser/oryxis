@@ -308,6 +308,7 @@ impl Oryxis {
 
             Message::PluginInstallDone(id, result) => {
                 let token = self.mcp_server_token.clone();
+                let rebind_provider = self.plugin_providers.get(&id).cloned();
                 if let Some(entry) =
                     self.plugins.iter_mut().find(|p| p.provider_id == id)
                 {
@@ -335,7 +336,21 @@ impl Oryxis {
                         Err(msg) => PluginUiStatus::Failed(msg),
                     };
                 }
-                Ok(Task::none())
+                // Repoint the live PluginProvider at the new binary
+                // and tear down any in-flight subprocess so the next
+                // call respawns from the freshly-installed version.
+                // Without this the host would keep its frozen-at-boot
+                // PathBuf and respawn the previous version (or fail
+                // with BinaryNotFound if pruning removed it).
+                let task = if let Some(provider) = rebind_provider {
+                    Task::perform(
+                        async move { provider.rebind().await },
+                        |()| Message::NoOp,
+                    )
+                } else {
+                    Task::none()
+                };
+                Ok(task)
             }
 
             Message::PluginUninstall(id) => {

@@ -156,12 +156,18 @@ pub fn current_os() -> &'static str {
     }
 }
 
-/// Canonical architecture string used in manifests.
+/// Canonical architecture string used in manifests. Returns
+/// `"unsupported"` for architectures we don't ship binaries for, so
+/// `binary_for_current_platform` resolves to `None` and the install
+/// fails with a clear error instead of silently picking the wrong
+/// binary (e.g. handing an x86_64 .so to an i686 or armv7 process).
 pub fn current_arch() -> &'static str {
     if cfg!(target_arch = "aarch64") {
         "aarch64"
-    } else {
+    } else if cfg!(target_arch = "x86_64") {
         "x86_64"
+    } else {
+        "unsupported"
     }
 }
 

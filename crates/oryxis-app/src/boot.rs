@@ -73,6 +73,28 @@ impl Oryxis {
             }
         }
 
+        // Plugin providers are kept twice: once as `Arc<dyn CloudProvider>`
+        // inside the registry (used by every CloudProvider call site)
+        // and once as `Arc<PluginProvider>` in `plugin_providers` (so
+        // the install path can call rebind after `cache::set_current`).
+        // Both fields point at the SAME Arc so a rebind through the
+        // concrete map propagates to the registered trait object.
+        let aws_provider =
+            std::sync::Arc::new(crate::plugins::PluginProvider::new("aws"));
+        let plugin_providers = {
+            let mut m: std::collections::HashMap<
+                String,
+                std::sync::Arc<crate::plugins::PluginProvider>,
+            > = std::collections::HashMap::new();
+            m.insert("aws".to_string(), aws_provider.clone());
+            m
+        };
+        let cloud_provider_registry = {
+            let mut reg = oryxis_cloud::CloudProviderRegistry::new();
+            reg.register(aws_provider.clone());
+            std::sync::Arc::new(reg)
+        };
+
         let (mut app, task) = (
             Self {
                 vault,
@@ -254,12 +276,8 @@ impl Oryxis {
                 // plugin subprocess via `PluginProvider`; K8s lands in
                 // a follow-up PR. The Arc lets us hand the registry to
                 // async tasks without locking.
-                cloud_provider_registry: {
-                    let mut reg = oryxis_cloud::CloudProviderRegistry::new();
-                    let aws = crate::plugins::PluginProvider::new("aws");
-                    reg.register(std::sync::Arc::new(aws));
-                    std::sync::Arc::new(reg)
-                },
+                cloud_provider_registry,
+                plugin_providers,
                 // Plugins panel state, the defaults here are replaced
                 // by `load_data_from_vault` once the vault is unlocked
                 // (settings + on-disk plugin cache).

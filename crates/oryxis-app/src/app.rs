@@ -393,6 +393,13 @@ pub struct Oryxis {
     pub(crate) cloud_form_error: Option<String>,
     pub(crate) cloud_form_test_state: crate::state::CloudTestState,
     pub(crate) cloud_provider_registry: std::sync::Arc<oryxis_cloud::CloudProviderRegistry>,
+    /// Concrete plugin providers kept here as well as inside the
+    /// registry, so the install / update path can call
+    /// `PluginProvider::rebind` after `cache::set_current` flips the
+    /// active version. The registry only exposes the `CloudProvider`
+    /// trait surface, which doesn't include rebind on purpose.
+    pub(crate) plugin_providers:
+        std::collections::HashMap<String, std::sync::Arc<crate::plugins::PluginProvider>>,
 
     // Plugins panel, one row per cloud-provider plugin. Cloud
     // providers run as downloaded subprocess plugins; this is where

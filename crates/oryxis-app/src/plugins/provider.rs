@@ -52,6 +52,15 @@ impl PluginProvider {
             host: PluginHost::new(binary, provider_id),
         }
     }
+
+    /// Re-resolve the cached binary and repoint the host at it. Called
+    /// from the install / update completion path so a fresh version
+    /// gets used on the next call without recreating the registered
+    /// provider Arc.
+    pub async fn rebind(&self) {
+        let binary = resolve_binary(self.id);
+        self.host.rebind(binary).await;
+    }
 }
 
 /// Resolve the plugin binary path for a provider.

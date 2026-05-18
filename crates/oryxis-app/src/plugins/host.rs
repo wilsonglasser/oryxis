@@ -55,7 +55,12 @@ type PendingMap = Arc<StdMutex<HashMap<u64, oneshot::Sender<JsonRpcResponse>>>>;
 /// it. Cheap to construct, the subprocess isn't spawned until the
 /// first call.
 pub struct PluginHost {
-    binary: PathBuf,
+    /// Binary path is interior-mutable so a successful install (which
+    /// flips `cache::set_current`) can repoint the host without
+    /// recreating the registered provider. Spawns read the current
+    /// value each time, so the next call after a rebind picks up the
+    /// fresh binary.
+    binary: Arc<StdMutex<PathBuf>>,
     provider_id: String,
     idle_timeout: Duration,
     call_timeout: Duration,
@@ -77,12 +82,24 @@ impl PluginHost {
     /// `binary`. Nothing is spawned here.
     pub fn new(binary: impl Into<PathBuf>, provider_id: impl Into<String>) -> Self {
         Self {
-            binary: binary.into(),
+            binary: Arc::new(StdMutex::new(binary.into())),
             provider_id: provider_id.into(),
             idle_timeout: Self::DEFAULT_IDLE_TIMEOUT,
             call_timeout: Self::DEFAULT_CALL_TIMEOUT,
             inner: Arc::new(Mutex::new(None)),
         }
+    }
+
+    /// Repoint the host at a new binary and tear down any live
+    /// connection so the next call respawns against the fresh path.
+    /// Called from the install-completion path right after
+    /// `cache::set_current` flips the active version.
+    pub async fn rebind(&self, new_binary: PathBuf) {
+        if let Ok(mut guard) = self.binary.lock() {
+            *guard = new_binary;
+        }
+        let mut conn_guard = self.inner.lock().await;
+        *conn_guard = None;
     }
 
     /// Override the idle / call timeouts. Builder-style, mainly for
@@ -170,8 +187,13 @@ impl PluginHost {
             *guard = None;
         }
         if guard.is_none() {
+            let binary_now = self
+                .binary
+                .lock()
+                .map(|p| p.clone())
+                .map_err(|_| PluginError::Spawn("binary path mutex poisoned".into()))?;
             let conn = Connection::spawn(
-                &self.binary,
+                &binary_now,
                 &self.provider_id,
                 self.call_timeout,
                 self.idle_timeout,
