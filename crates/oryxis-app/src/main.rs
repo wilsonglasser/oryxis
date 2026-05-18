@@ -29,7 +29,6 @@ mod dispatch_ssh;
 mod dispatch_tabs;
 mod dispatch_terminal;
 mod i18n;
-mod jumplist;
 mod mcp;
 mod mcp_install;
 mod messages;
@@ -134,14 +133,6 @@ fn main() -> iced::Result {
     let is_primary = !tray::another_instance_running();
     app::APP_IS_PRIMARY.set(is_primary).ok();
     tray_ipc::init_runtime_dirs();
-
-    // Register our AppUserModelID with the OS so taskbar grouping
-    // tags our window with the right identity and any JumpList we
-    // build later attaches to the right taskbar entry. Must happen
-    // before the first window opens. No-op on non-Windows. Both
-    // primary and children call it so their windows group under
-    // the same taskbar entry.
-    jumplist::set_app_id();
 
     if is_primary {
         // Install the Windows system tray icon. No-op on macOS/Linux

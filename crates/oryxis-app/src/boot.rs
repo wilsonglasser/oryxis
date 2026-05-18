@@ -313,7 +313,6 @@ impl Oryxis {
                 tray_menu_signature: 0,
                 is_window_hidden: false,
                 ipc_state_signature: 0,
-                jumplist_window_tagged: false,
                 setting_tab_close_button_side: "left".into(),
                 setting_show_tab_status_dot: true,
                 setting_tab_accent_line: true,

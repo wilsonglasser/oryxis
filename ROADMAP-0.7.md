@@ -418,6 +418,6 @@ Itens conversados mas adiados:
   discussão futura. Workspace mode já resolve o caso de uso.
 - **Modos `Tab bar` e `Burger` no Classic**: a discussão de "múltiplas
   formas de navegação" fica restrita a "Classic vs Workspace" em v0.7.
-- **System tray + minimize-to-tray**: ~~v0.8/v0.9~~. **ENTREGUE em v0.7** (PR 8a-8h, Windows-only). Inclui: ícone na tray, menu Show/Hide/Quit, close-to-tray + minimize-to-tray como settings em Settings -> Interface, submenu "Active sessions" com tabs abertas, submenu "Recent hosts" (top 10 por last_used), single-instance via named mutex. **Pendente pra v0.7.1**: JumpList no taskbar context menu (PhpStorm-style "Recent Projects") e IPC pra rotear `--connect <uuid>` da JumpList / shortcut na instância já rodando em vez de exit silencioso.
+- **System tray + minimize-to-tray**: ~~v0.8/v0.9~~. **ENTREGUE em v0.7** (PR 8 + PR 9 + PR 10, Windows-only). Inclui: ícone na tray (visibilidade dinâmica, só aparece se algo tá oculto), menu Show / Quit + Active sessions + Recent hosts, close-to-tray + minimize-to-tray como settings em Settings -> Interface, single-instance via named mutex, **D-lite multi-window aggregation** (primary owns the tray, children registram via filesystem IPC em `~/.oryxis/runtime/`, "Hidden windows" section agrega todas), promoção child→primary se primary morrer. **Dropado por escopo**: JumpList no taskbar context menu (Windows-specific, COM-heavy, baixa ROI vs. tray já cobrindo o caso).
 - **Split panes**: continua adiado pra v0.8.
 - **Custom themes do usuário**: v0.9.

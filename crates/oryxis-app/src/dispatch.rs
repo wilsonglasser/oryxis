@@ -1207,17 +1207,6 @@ impl Oryxis {
                         // with a redundant icon.
                         let any_hidden = self.is_window_hidden || !hidden.is_empty();
                         crate::tray::set_visible(any_hidden);
-                        // Mirror the same Recent Hosts list into the
-                        // Windows JumpList so the taskbar / Start menu
-                        // right-click also surfaces it (PhpStorm-style
-                        // "Recent Projects"). Tuples carry the host
-                        // label + the CLI args needed to open it via
-                        // the existing --connect path.
-                        let jl_recent: Vec<(String, String)> = recent
-                            .iter()
-                            .map(|(label, id)| (label.clone(), format!("--connect {id}")))
-                            .collect();
-                        crate::jumplist::rebuild(&jl_recent);
                     }
                 }
                 // Drain whatever the tray-icon crate's event threads
@@ -1252,18 +1241,6 @@ impl Oryxis {
                     }
                 }
 
-                // Window-tag for JumpList is intentionally disabled
-                // until we can debug the SHGetPropertyStoreForWindow
-                // / hand-rolled PROPVARIANT path on real Windows.
-                // The first user-facing crash report after enabling
-                // it landed at "app launches then closes immediately"
-                // with no console output, classic native-FFI silent
-                // failure. Leaving the JumpList to attach via
-                // SetCurrentProcessExplicitAppUserModelID alone
-                // (which works enough for most taskbar entries even
-                // if it sometimes misses) is the safer trade until
-                // we can attach a debugger.
-                let _ = self.jumplist_window_tagged;
                 while let Some(id) = crate::tray::poll_menu_event() {
                     let msg = match id.as_str() {
                         crate::tray::MENU_ID_SHOW => Some(Message::TrayShow),
