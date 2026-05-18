@@ -1616,6 +1616,17 @@ fn pt_br(key: &str) -> Option<&'static str> {
         "sort_newest_first" => "Mais novos primeiro",
         "sort_oldest_first" => "Mais antigos primeiro",
 
+        "delete_folder" => "Excluir pasta",
+        "delete_folder_keep_hosts" => "Mover hosts para raiz",
+        "delete_folder_question" => "Excluir esta pasta?",
+        "delete_folder_with_hosts" => "Excluir pasta e hosts",
+        "folder_name" => "Nome da pasta",
+        "rename" => "Renomear",
+        "rename_folder" => "Renomear pasta",
+        "duplicate_tab" => "Duplicar aba",
+        "duplicate_new_window" => "Duplicar em nova janela",
+        "sftp" => "SFTP",
+
         _ => return None,
     })
 }
@@ -2292,6 +2303,21 @@ fn es(key: &str) -> Option<&'static str> {
         "sort_label_desc" => "Z-a",
         "sort_newest_first" => "Más recientes primero",
         "sort_oldest_first" => "Más antiguos primero",
+
+        "delete_folder" => "Eliminar carpeta",
+        "delete_folder_keep_hosts" => "Mover hosts a la raíz",
+        "delete_folder_question" => "¿Eliminar esta carpeta?",
+        "delete_folder_with_hosts" => "Eliminar carpeta y hosts",
+        "folder_name" => "Nombre de la carpeta",
+        "rename" => "Renombrar",
+        "rename_folder" => "Renombrar carpeta",
+        "duplicate_tab" => "Duplicar pestaña",
+        "duplicate_new_window" => "Duplicar en nueva ventana",
+        "close_all_tabs" => "Cerrar todas las pestañas",
+        "close_other_tabs" => "Cerrar otras pestañas",
+        "auto_check_updates" => "Buscar actualizaciones al iniciar",
+        "auto_reconnect" => "Reconexión automática al desconectar",
+        "sftp" => "SFTP",
 
         _ => return None,
     })
@@ -2970,6 +2996,21 @@ fn fr(key: &str) -> Option<&'static str> {
         "sort_newest_first" => "Du plus récent au plus ancien",
         "sort_oldest_first" => "Du plus ancien au plus récent",
 
+        "delete_folder" => "Supprimer le dossier",
+        "delete_folder_keep_hosts" => "Déplacer les hôtes à la racine",
+        "delete_folder_question" => "Supprimer ce dossier ?",
+        "delete_folder_with_hosts" => "Supprimer le dossier et les hôtes",
+        "folder_name" => "Nom du dossier",
+        "rename" => "Renommer",
+        "rename_folder" => "Renommer le dossier",
+        "duplicate_tab" => "Dupliquer l'onglet",
+        "duplicate_new_window" => "Dupliquer dans une nouvelle fenêtre",
+        "close_all_tabs" => "Fermer tous les onglets",
+        "close_other_tabs" => "Fermer les autres onglets",
+        "auto_check_updates" => "Vérifier les mises à jour au démarrage",
+        "auto_reconnect" => "Reconnexion automatique à la déconnexion",
+        "sftp" => "SFTP",
+
         _ => return None,
     })
 }
@@ -3646,6 +3687,21 @@ fn de(key: &str) -> Option<&'static str> {
         "sort_label_desc" => "Z-a",
         "sort_newest_first" => "Neueste zuerst",
         "sort_oldest_first" => "Älteste zuerst",
+
+        "delete_folder" => "Ordner löschen",
+        "delete_folder_keep_hosts" => "Hosts ins Root verschieben",
+        "delete_folder_question" => "Diesen Ordner löschen?",
+        "delete_folder_with_hosts" => "Ordner und Hosts löschen",
+        "folder_name" => "Ordnername",
+        "rename" => "Umbenennen",
+        "rename_folder" => "Ordner umbenennen",
+        "duplicate_tab" => "Tab duplizieren",
+        "duplicate_new_window" => "In neuem Fenster duplizieren",
+        "close_all_tabs" => "Alle Tabs schließen",
+        "close_other_tabs" => "Andere Tabs schließen",
+        "auto_check_updates" => "Beim Start nach Updates suchen",
+        "auto_reconnect" => "Bei Trennung automatisch wiederverbinden",
+        "sftp" => "SFTP",
 
         _ => return None,
     })
@@ -4324,6 +4380,21 @@ fn it(key: &str) -> Option<&'static str> {
         "sort_newest_first" => "Dal più recente al più vecchio",
         "sort_oldest_first" => "Dal più vecchio al più recente",
 
+        "delete_folder" => "Elimina cartella",
+        "delete_folder_keep_hosts" => "Sposta gli host nella root",
+        "delete_folder_question" => "Eliminare questa cartella?",
+        "delete_folder_with_hosts" => "Elimina cartella e host",
+        "folder_name" => "Nome della cartella",
+        "rename" => "Rinomina",
+        "rename_folder" => "Rinomina cartella",
+        "duplicate_tab" => "Duplica scheda",
+        "duplicate_new_window" => "Duplica in nuova finestra",
+        "close_all_tabs" => "Chiudi tutte le schede",
+        "close_other_tabs" => "Chiudi altre schede",
+        "auto_check_updates" => "Controlla aggiornamenti all'avvio",
+        "auto_reconnect" => "Riconnessione automatica alla disconnessione",
+        "sftp" => "SFTP",
+
         _ => return None,
     })
 }
@@ -5000,6 +5071,21 @@ fn zh(key: &str) -> Option<&'static str> {
         "sort_label_desc" => "Z-a",
         "sort_newest_first" => "从新到旧",
         "sort_oldest_first" => "从旧到新",
+
+        "delete_folder" => "删除文件夹",
+        "delete_folder_keep_hosts" => "将主机移至根目录",
+        "delete_folder_question" => "删除此文件夹？",
+        "delete_folder_with_hosts" => "删除文件夹和主机",
+        "folder_name" => "文件夹名称",
+        "rename" => "重命名",
+        "rename_folder" => "重命名文件夹",
+        "duplicate_tab" => "复制标签页",
+        "duplicate_new_window" => "在新窗口中复制",
+        "close_all_tabs" => "关闭所有标签",
+        "close_other_tabs" => "关闭其他标签",
+        "auto_check_updates" => "启动时检查更新",
+        "auto_reconnect" => "断开时自动重连",
+        "sftp" => "SFTP",
 
         _ => return None,
     })
@@ -5678,6 +5764,21 @@ fn ja(key: &str) -> Option<&'static str> {
         "sort_newest_first" => "新しい順",
         "sort_oldest_first" => "古い順",
 
+        "delete_folder" => "フォルダを削除",
+        "delete_folder_keep_hosts" => "ホストをルートに移動",
+        "delete_folder_question" => "このフォルダを削除しますか？",
+        "delete_folder_with_hosts" => "フォルダとホストを削除",
+        "folder_name" => "フォルダ名",
+        "rename" => "名前を変更",
+        "rename_folder" => "フォルダ名を変更",
+        "duplicate_tab" => "タブを複製",
+        "duplicate_new_window" => "新しいウィンドウで複製",
+        "close_all_tabs" => "すべてのタブを閉じる",
+        "close_other_tabs" => "他のタブを閉じる",
+        "auto_check_updates" => "起動時に更新を確認",
+        "auto_reconnect" => "切断時に自動再接続",
+        "sftp" => "SFTP",
+
         _ => return None,
     })
 }
@@ -6354,6 +6455,21 @@ fn ru(key: &str) -> Option<&'static str> {
         "sort_label_desc" => "Я-а",
         "sort_newest_first" => "Сначала новые",
         "sort_oldest_first" => "Сначала старые",
+
+        "delete_folder" => "Удалить папку",
+        "delete_folder_keep_hosts" => "Переместить хосты в корень",
+        "delete_folder_question" => "Удалить эту папку?",
+        "delete_folder_with_hosts" => "Удалить папку и хосты",
+        "folder_name" => "Имя папки",
+        "rename" => "Переименовать",
+        "rename_folder" => "Переименовать папку",
+        "duplicate_tab" => "Дублировать вкладку",
+        "duplicate_new_window" => "Дублировать в новом окне",
+        "close_all_tabs" => "Закрыть все вкладки",
+        "close_other_tabs" => "Закрыть другие вкладки",
+        "auto_check_updates" => "Проверять обновления при запуске",
+        "auto_reconnect" => "Автоматическое переподключение при разрыве",
+        "sftp" => "SFTP",
 
         _ => return None,
     })
