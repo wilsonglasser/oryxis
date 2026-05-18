@@ -1157,10 +1157,15 @@ impl Oryxis {
                         // `&` is the Windows menu accelerator prefix:
                         // a host named "R&D" would render as "RD" with
                         // D underlined. Doubling the `&` escapes it.
+                        // Capped at 20: a user with 50+ open tabs gets
+                        // an unwieldy submenu otherwise; recent-hosts
+                        // submenu already had a `.take(10)` for the
+                        // same reason.
                         let active: Vec<(String, String)> = self
                             .tabs
                             .iter()
                             .enumerate()
+                            .take(20)
                             .map(|(i, t)| (t.label.replace('&', "&&"), i.to_string()))
                             .collect();
                         // Recent hosts: top 10 by last_used desc.

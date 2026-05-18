@@ -566,6 +566,12 @@ pub type HotkeyMap = HashMap<HotkeyAction, HotkeyBinding>;
 
 /// Hardcoded factory defaults. Settings overrides land on top of
 /// this map in `boot.rs::load_data_from_vault`.
+///
+/// macOS swaps Ctrl for Logo (Cmd) on the primary actions to match
+/// the platform convention (Termius, VSCode, Safari all use Cmd
+/// for new-tab / close-tab / find / etc on macOS). Modifier-only
+/// fields are still settable in the editor so a user who wants
+/// Ctrl-everywhere on macOS can rebind.
 pub fn default_bindings() -> HotkeyMap {
     use HotkeyAction::*;
     use PrimaryKey::*;
@@ -582,20 +588,24 @@ pub fn default_bindings() -> HotkeyMap {
             },
         );
     };
-    put(&mut m, ShowNewTabPicker, true, false, false, false, Char('k'));
-    put(&mut m, ShowTabJump, true, false, false, false, Char('j'));
-    put(&mut m, OpenLocalShell, true, false, false, false, Char('l'));
-    put(&mut m, NewWindow, true, true, false, false, Char('n'));
-    put(&mut m, CloseActiveTab, true, true, false, false, Char('w'));
-    put(&mut m, OpenPortForwards, true, false, false, false, Char('p'));
-    put(&mut m, OpenSettings, true, false, false, false, Punct(","));
-    put(&mut m, FocusViewSearch, true, false, false, false, Char('f'));
-    put(&mut m, SwitchToTabSlot, true, false, false, false, Digit1to9);
+    // Platform-primary modifier: Cmd (logo) on macOS, Ctrl elsewhere.
+    let mac = cfg!(target_os = "macos");
+    let primary_ctrl = !mac;
+    let primary_logo = mac;
+    put(&mut m, ShowNewTabPicker, primary_ctrl, false, false, primary_logo, Char('k'));
+    put(&mut m, ShowTabJump, primary_ctrl, false, false, primary_logo, Char('j'));
+    put(&mut m, OpenLocalShell, primary_ctrl, false, false, primary_logo, Char('l'));
+    put(&mut m, NewWindow, primary_ctrl, true, false, primary_logo, Char('n'));
+    put(&mut m, CloseActiveTab, primary_ctrl, true, false, primary_logo, Char('w'));
+    put(&mut m, OpenPortForwards, primary_ctrl, false, false, primary_logo, Char('p'));
+    put(&mut m, OpenSettings, primary_ctrl, false, false, primary_logo, Punct(","));
+    put(&mut m, FocusViewSearch, primary_ctrl, false, false, primary_logo, Char('f'));
+    put(&mut m, SwitchToTabSlot, primary_ctrl, false, false, primary_logo, Digit1to9);
     put(&mut m, CycleTabs, false, false, true, false, ArrowLeftRight);
     put(&mut m, ToggleFullscreen, false, false, false, false, Named(keyboard::key::Named::F11));
-    put(&mut m, FontZoomIn, true, false, false, false, Punct("="));
-    put(&mut m, FontZoomOut, true, false, false, false, Punct("-"));
-    put(&mut m, FontZoomReset, true, false, false, false, Char('0'));
+    put(&mut m, FontZoomIn, primary_ctrl, false, false, primary_logo, Punct("="));
+    put(&mut m, FontZoomOut, primary_ctrl, false, false, primary_logo, Punct("-"));
+    put(&mut m, FontZoomReset, primary_ctrl, false, false, primary_logo, Char('0'));
     m
 }
 

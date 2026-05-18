@@ -581,19 +581,19 @@ impl Oryxis {
                     ),
                     Space::new().height(16),
                     transport_section,
-                    row![
+                    crate::widgets::dir_row(vec![
                         styled_button(
                             crate::i18n::t("import_btn_label"),
                             Message::CloudDiscoverImportConfirmed,
                             OryxisColors::t().accent,
                         ),
-                        Space::new().width(8),
+                        Space::new().width(8).into(),
                         styled_button(
                             crate::i18n::t("cancel"),
                             Message::CloudDiscoverImportCancelled,
                             OryxisColors::t().text_muted,
                         ),
-                    ],
+                    ]),
                 ]
                 .padding(24),
             )

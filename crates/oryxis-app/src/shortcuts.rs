@@ -318,12 +318,38 @@ impl Oryxis {
             .find(|(a, b)| **a != action && **b == new_binding)
             .map(|(a, _)| *a);
         let conflict_toast: Option<Task<Message>> = conflict.map(|other| {
-            self.hotkey_bindings.remove(&other);
-            self.persist_setting(&format!("hotkey_{}", other.id()), "");
-            self.toast = Some(
-                crate::i18n::t("hotkey_conflict_unbound")
-                    .replace("{action}", crate::i18n::t(other.label_key())),
-            );
+            // Auto-rebind the conflicting action to its factory default
+            // when that default doesn't itself collide with the new
+            // binding (or with any other live binding). Beats leaving
+            // the user with an orphaned action they have to discover
+            // and re-set themselves. Falls back to unbinding when the
+            // default would be a fresh conflict.
+            let defaults = crate::hotkeys::default_bindings();
+            let default_for_other = defaults.get(&other).copied();
+            let default_safe = default_for_other.is_some_and(|d| {
+                d != new_binding
+                    && !self.hotkey_bindings.iter().any(|(a, b)| {
+                        *a != action && *a != other && *b == d
+                    })
+            });
+            if let Some(d) = default_for_other.filter(|_| default_safe) {
+                self.hotkey_bindings.insert(other, d);
+                self.persist_setting(
+                    &format!("hotkey_{}", other.id()),
+                    &d.serialize(),
+                );
+                self.toast = Some(
+                    crate::i18n::t("hotkey_conflict_rebound_default")
+                        .replace("{action}", crate::i18n::t(other.label_key())),
+                );
+            } else {
+                self.hotkey_bindings.remove(&other);
+                self.persist_setting(&format!("hotkey_{}", other.id()), "");
+                self.toast = Some(
+                    crate::i18n::t("hotkey_conflict_unbound")
+                        .replace("{action}", crate::i18n::t(other.label_key())),
+                );
+            }
             toast_clear_after_secs(3)
         });
 
