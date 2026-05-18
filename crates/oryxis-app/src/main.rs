@@ -123,15 +123,22 @@ fn main() -> iced::Result {
 
     tracing::info!("Starting Oryxis");
 
-    // Single-instance check, Windows-only. Duplicate launches exit
-    // immediately, the user has to interact with the existing tray
-    // icon. A later release will replace this with IPC so the
-    // duplicate's CLI args (e.g. `--connect <uuid>` from a JumpList
-    // pick) get routed into the existing instance instead of being
-    // dropped on the floor.
+    // Single-instance check, Windows-only. v0.7 MVP just logs the
+    // duplicate-detection result, doesn't act on it: exiting
+    // silently broke the first round of testing when a backgrounded
+    // tray instance from a previous run still held the mutex,
+    // making fresh launches look like the app crashed at boot. A
+    // proper single-instance flow needs IPC to surface the existing
+    // window instead of just bailing on the new process; that lands
+    // in v0.7.1 together with JumpList arg routing. For now we
+    // keep the mutex registration (so v0.7.1's IPC has a quick
+    // probe to look up the prior instance) but every launch
+    // succeeds.
     if tray::another_instance_running() {
-        tracing::info!("another Oryxis instance is already running, exiting");
-        return Ok(());
+        tracing::info!(
+            "another Oryxis instance is already running, continuing anyway \
+             (single-instance not enforced in v0.7)"
+        );
     }
 
     // Register our AppUserModelID with the OS so taskbar grouping
