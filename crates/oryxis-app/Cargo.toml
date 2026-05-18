@@ -110,6 +110,12 @@ winresource = "0.1"
 # (asInvoker) launches without a prompt, same code path serves both.
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.59", features = ["Win32_UI_Shell", "Win32_UI_WindowsAndMessaging", "Win32_Foundation", "Win32_System_Threading", "Win32_Security"] }
+# Higher-level Windows API bindings used for the JumpList COM
+# interfaces (ICustomDestinationList, IShellLink, IObjectCollection)
+# that `windows-sys` doesn't expose. Compile-time hit is significant
+# on the first build but incremental is fine; trade is worth the
+# ~100 lines of unsafe COM glue we'd otherwise have to hand-roll.
+windows = { version = "0.61", features = ["Win32_UI_Shell", "Win32_UI_Shell_PropertiesSystem", "Win32_UI_Shell_Common", "Win32_System_Com", "Win32_System_Com_StructuredStorage", "Win32_System_Variant", "Win32_Foundation"] }
 # Cross-platform tray icon, but only built on Windows. macOS and
 # Linux need different lifecycle conventions (LSUIElement on macOS,
 # SNI/AppIndicator on Linux), deferred to a later release.

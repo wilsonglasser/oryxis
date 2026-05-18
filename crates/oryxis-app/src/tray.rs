@@ -37,11 +37,26 @@ mod imp {
     /// UUID (parsed back in dispatch_tabs to open a new tab).
     pub const MENU_PREFIX_HOST: &str = "oryxis-tray-host:";
 
+    /// Wrapper that asserts Send + Sync on a value the compiler
+    /// thinks is neither. `tray_icon::TrayIcon` contains an Rc /
+    /// RefCell which marks it !Send, but we only ever access it
+    /// from the main thread (iced's message loop), so the
+    /// guarantee holds in practice. The OnceLock storage below
+    /// needs the assertion to compile.
+    struct ThreadBound<T>(T);
+    // SAFETY: see TRAY comment, every read/write happens on the
+    // main thread. The unsafe here is a contract with the caller,
+    // not a guarantee from the type system.
+    unsafe impl<T> Send for ThreadBound<T> {}
+    unsafe impl<T> Sync for ThreadBound<T> {}
+
     /// Held for the lifetime of the process. Dropping the `TrayIcon`
     /// removes the icon from the notification area immediately, so
     /// we stash it in a `OnceLock` and never release it. iced owns
-    /// the message loop the icon's event channels feed into.
-    static TRAY: OnceLock<TrayIcon> = OnceLock::new();
+    /// the message loop the icon's event channels feed into; every
+    /// interaction with `tray` happens from there, hence the
+    /// ThreadBound wrapper's safety claim.
+    static TRAY: OnceLock<ThreadBound<TrayIcon>> = OnceLock::new();
 
     /// Create the tray icon at app startup. Safe to call once; later
     /// calls are no-ops (idempotent via `OnceLock::set`). Returns
@@ -91,7 +106,7 @@ mod imp {
         // would un-register from the tray, so we deliberately leak
         // it via mem::forget if that happens to keep the visible
         // icon alive.
-        if let Err(losing) = TRAY.set(tray) {
+        if let Err(losing) = TRAY.set(ThreadBound(tray)) {
             std::mem::forget(losing);
         }
         Ok(())
@@ -128,7 +143,7 @@ mod imp {
         active_sessions: &[(String, String)],
         recent_hosts: &[(String, String)],
     ) -> Result<(), Box<dyn std::error::Error>> {
-        let Some(tray) = TRAY.get() else {
+        let Some(ThreadBound(tray)) = TRAY.get() else {
             // No tray installed (install() failed or platform stub),
             // nothing to rebuild. Caller doesn't care.
             return Ok(());
@@ -244,8 +259,13 @@ mod imp {
     /// wasn't the expected `Win32WindowHandle` variant; that
     /// shouldn't happen in practice but we'd rather log + skip than
     /// panic.
-    pub fn hide_window(handle: &dyn raw_window_handle::HasWindowHandle) -> bool {
-        use raw_window_handle::RawWindowHandle;
+    ///
+    /// Takes `&dyn iced::Window` so the dispatcher
+    /// can pass the exact closure argument from `window::run`
+    /// without an extra crate import. `Window` is `HasWindowHandle
+    /// + HasDisplayHandle`, which is the trait method we need.
+    pub fn hide_window(handle: &dyn iced::Window) -> bool {
+        use iced::window::raw_window_handle::RawWindowHandle;
         use windows_sys::Win32::UI::WindowsAndMessaging::{ShowWindow, SW_HIDE};
 
         let Ok(wh) = handle.window_handle() else {
@@ -270,8 +290,8 @@ mod imp {
     /// `SetForegroundWindow` chases it to land on top. If the
     /// window was minimized when hidden, `SW_RESTORE` instead of
     /// `SW_SHOW` un-minimizes too.
-    pub fn show_window(handle: &dyn raw_window_handle::HasWindowHandle) -> bool {
-        use raw_window_handle::RawWindowHandle;
+    pub fn show_window(handle: &dyn iced::Window) -> bool {
+        use iced::window::raw_window_handle::RawWindowHandle;
         use windows_sys::Win32::UI::WindowsAndMessaging::{
             SetForegroundWindow, ShowWindow, SW_RESTORE,
         };
@@ -345,12 +365,12 @@ mod stub {
     /// Stub: never actually hides anything on non-Windows targets.
     /// Same signature as the Windows impl so dispatch.rs stays cfg-
     /// free. Returns false so the caller knows nothing happened.
-    pub fn hide_window<H: ?Sized>(_handle: &H) -> bool {
+    pub fn hide_window(_handle: &dyn iced::Window) -> bool {
         false
     }
 
     /// Stub: never actually shows anything on non-Windows targets.
-    pub fn show_window<H: ?Sized>(_handle: &H) -> bool {
+    pub fn show_window(_handle: &dyn iced::Window) -> bool {
         false
     }
 }

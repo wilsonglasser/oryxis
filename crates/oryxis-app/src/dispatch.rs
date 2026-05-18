@@ -1146,6 +1146,17 @@ impl Oryxis {
                         if let Err(e) = crate::tray::rebuild_menu(&active, &recent) {
                             tracing::warn!("tray menu rebuild failed: {e}");
                         }
+                        // Mirror the same Recent Hosts list into the
+                        // Windows JumpList so the taskbar / Start menu
+                        // right-click also surfaces it (PhpStorm-style
+                        // "Recent Projects"). Tuples carry the host
+                        // label + the CLI args needed to open it via
+                        // the existing --connect path.
+                        let jl_recent: Vec<(String, String)> = recent
+                            .iter()
+                            .map(|(label, id)| (label.clone(), format!("--connect {id}")))
+                            .collect();
+                        crate::jumplist::rebuild(&jl_recent);
                     }
                 }
                 // Drain whatever the tray-icon crate's event threads

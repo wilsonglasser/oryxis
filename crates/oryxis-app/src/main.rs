@@ -29,6 +29,7 @@ mod dispatch_ssh;
 mod dispatch_tabs;
 mod dispatch_terminal;
 mod i18n;
+mod jumplist;
 mod mcp;
 mod mcp_install;
 mod messages;
@@ -132,6 +133,12 @@ fn main() -> iced::Result {
         tracing::info!("another Oryxis instance is already running, exiting");
         return Ok(());
     }
+
+    // Register our AppUserModelID with the OS so taskbar grouping
+    // tags our window with the right identity and any JumpList we
+    // build later attaches to the right taskbar entry. Must happen
+    // before the first window opens. No-op on non-Windows.
+    jumplist::set_app_id();
 
     // Install the Windows system tray icon. No-op on macOS/Linux
     // until those platforms get their own backends. Failure here is
