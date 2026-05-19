@@ -70,45 +70,52 @@ Most SSH clients are either powerful but ugly (PuTTY), pretty but Electron-heavy
 </p>
 
 <p align="center">
-  <img src="resources/screen_1.png" width="720" alt="Hosts grid with folders and quick search">
+  <img src="resources/screen_1.png" width="720" alt="Hosts dashboard with cards, groups, and quick search">
 </p>
 <p align="center">
-  <em>Hosts — cards grid with folders, distro auto-detection, inline quick connect</em>
-</p>
-
-<p align="center">
-  <img src="resources/screen_2.png" width="720" alt="SFTP dual-pane browser, local on the left, remote on the right">
-</p>
-<p align="center">
-  <em>SFTP browser — drag &amp; drop uploads, multi-select transfers, edit-in-place, parallel channels</em>
+  <em>Hosts dashboard. Cards grid with groups (manual and dynamic cloud-backed), distro auto-detection, inline quick connect.</em>
 </p>
 
 <p align="center">
-  <img src="resources/screen_3.png" width="720" alt="Keychain showing keys and reusable identities">
+  <img src="resources/screen_9.png" width="720" alt="SFTP dual-pane browser, local on the left, remote on the right">
 </p>
 <p align="center">
-  <em>Keychain — keys and reusable identities side by side, linked to multiple hosts</em>
-</p>
-
-<p align="center">
-  <img src="resources/screen_5.png" width="720" alt="Terminal session with AI Chat sidebar">
-</p>
-<p align="center">
-  <em>Streaming AI sidebar — token-by-token responses, per-code-block Copy / Play, risk-aware tool gate</em>
+  <em>SFTP browser. Dual-pane layout with drag-and-drop uploads, multi-select transfers, edit-in-place, parallel channels.</em>
 </p>
 
 <p align="center">
-  <img src="resources/screen_4.png" width="720" alt="Theme settings showing the 12-theme picker">
+  <img src="resources/screen_3.png" width="720" alt="Terminal session with streaming AI Chat sidebar">
 </p>
 <p align="center">
-  <em>12 global themes with palette previews — Oryxis, Termius, Darcula, Dracula, Monokai, Nord, Solarized&hellip;</em>
+  <em>Streaming AI sidebar. Token-by-token responses, per-code-block Copy / Play, terminal context, bash tool execution.</em>
 </p>
 
 <p align="center">
-  <img src="resources/screen_6.png" width="720" alt="P2P Sync settings with pairing flow">
+  <img src="resources/screen_2.png" width="720" alt="ECS dynamic group expanded with running container task">
 </p>
 <p align="center">
-  <em>P2P sync over QUIC — LAN via mDNS, internet via STUN, pairing &amp; optional relay</em>
+  <em>Cloud Accounts (AWS). Dynamic ECS groups expand to live tasks; multi-container Lens, region badge, Copy CLI per row.</em>
+</p>
+
+<p align="center">
+  <img src="resources/screen_4.png" width="720" alt="Keychain with keys and reusable identities">
+</p>
+<p align="center">
+  <em>Keychain. Keys and reusable Identities side by side, linked to many hosts, encrypted-key passphrase import.</em>
+</p>
+
+<p align="center">
+  <img src="resources/screen_8.png" width="720" alt="Terminal theme picker with 13 palette previews">
+</p>
+<p align="center">
+  <em>13 terminal palettes. Oryxis Dark / Light, Termius, Darcula, Islands Dark, Dracula, Monokai, Hacker Green, Nord, Nord Light, Solarized Dark / Light, Paper Light.</em>
+</p>
+
+<p align="center">
+  <img src="resources/screen_6.png" width="720" alt="Settings Interface section with workspace mode and tab options">
+</p>
+<p align="center">
+  <em>Settings → Interface. New Workspace layout mode (sidebar-less, top-tab unified), customizable host icons, dynamic accent on the chrome, status bar / tab close button position, layout direction (LTR / RTL).</em>
 </p>
 
 ## Features
@@ -131,6 +138,8 @@ Most SSH clients are either powerful but ugly (PuTTY), pretty but Electron-heavy
 - **Syntax highlighting** — IPs (magenta), URLs (blue), file paths (cyan) auto-detected.
 - **Bold-to-bright colors** — Bold text uses vivid bright ANSI variants.
 - **13 terminal palettes** — Oryxis Dark / Light, Termius, Darcula, Islands Dark, Dracula, Monokai, Hacker Green, Nord / Nord Light, Solarized Dark / Light, Paper Light. Picker with inline swatch previews lives in `Settings → Terminal` (global) and the host editor (per-host override that wins over the global pick).
+- **Bundled Nerd Fonts** — SauceCodePro Nerd Font is the default terminal font (Source Code Pro patched with the full Nerd glyph set); Symbols Nerd Font ships alongside as a glyph-only fallback so Powerline / Font Awesome / Devicons / Codicons / Material Design icons render correctly even when the user picks a non-Nerd system mono font. A per-glyph symbol_map forces the bundled symbols family on Unicode Private Use Area codepoints regardless of the user's primary font pick.
+- **System mono font enumeration** — Picker lists every monospace font installed on the OS via fontdb (no fixed allowlist).
 - **Configurable font size** — 10-24px, adjustable in Settings or with `Ctrl + = / - / 0` and `Ctrl + Wheel`. Persisted across restarts.
 - **Session recording** — Full terminal output saved to vault, viewable in History.
 
@@ -201,7 +210,7 @@ Most SSH clients are either powerful but ugly (PuTTY), pretty but Electron-heavy
 - **Encrypted SSH key import** — Passphrase-protected OpenSSH keys are detected on file pick; the importer prompts inline for the passphrase, decrypts the key once, and stores it unencrypted inside the vault. The vault's master password (Argon2id + ChaCha20Poly1305) takes over for at-rest protection — no per-key passphrase prompt at connect time. Termius / 1Password-style flow.
 
 ### Themes & Internationalization
-- **12 global themes** — Oryxis Dark / Light, Termius, Darcula, Islands Dark, Dracula, Monokai, Hacker Green, Nord, Nord Light, Solarized Light, Paper Light. Changes entire UI instantly.
+- **13 global themes** — Oryxis Dark / Light, Termius, Darcula, Islands Dark, Dracula, Monokai, Hacker Green, Nord, Nord Light, Solarized Dark, Solarized Light, Paper Light. Changes entire UI instantly.
 - **Per-theme button colors** — Every theme defines a `button_bg` / `button_text` pair so primary CTAs (`+ HOST`, `New Snippet`, modal Save, etc.) keep readable foregrounds across the whole palette.
 - **WCAG contrast guards** — Unit tests iterate every theme and assert text-on-surface and button label contrast against AA bounds; bad picks fail CI before they ship.
 - **11 languages** — English, Português (Brasil), Español, Français, Deutsch, Italiano, 中文, 日本語, Русский, فارسی, العربية.
@@ -223,27 +232,47 @@ Most SSH clients are either powerful but ugly (PuTTY), pretty but Electron-heavy
 - **Smart merge** — Import merges by UUID, updating only records that are newer (LWW).
 - **Round-trips proxy data** — Proxy Identities (with their passwords) and per-host inline proxy passwords ride along in the export, so a fresh device gets working proxy auth out of the box.
 
+### Plugin Subsystem
+- **Out-of-process plugins** — Cloud providers and the MCP server run as separate subprocess binaries that talk to the app over JSON-RPC stdio (`oryxis-plugin-protocol`).
+- **Signed binaries** — Every release plugin binary is signed by `oryxis-plugin-signer` (Ed25519) and verified against a baked-in public key before execution. Dev builds trust an additional dev seed; release builds reject anything not signed by the production key.
+- **Manifest + cache** — Manifests live next to release artifacts under each plugin's GitHub release; the client downloads the right asset for the host arch on demand into `~/.oryxis/plugins/` and verifies the signature + sha256 before linking.
+- **Install errors translated** — All plugin install failure modes (download, integrity, spawn, protocol, version mismatch, etc.) surface through stable i18n keys translated across all 11 languages.
+
 ### MCP Server
 - **AI integration** — Expose your SSH hosts to AI assistants (Claude Code, etc.) via the [Model Context Protocol](https://modelcontextprotocol.io/).
 - **5 tools** — `list_hosts`, `get_host`, `ssh_execute`, `list_groups`, `list_keys`.
 - **Per-host control** — Toggle MCP exposure per connection in the host editor.
 - **Disabled by default** — Enable in Settings > Security.
 - **Non-interactive SSH exec** — Execute commands and get stdout/stderr/exit_code without PTY.
+- **Distributed as a plugin** — Since v0.7, `oryxis-mcp` is downloaded on demand via the plugin pipeline (`mcp-v*` release tags + signed `mcp.json` manifest) instead of bundled in the OS installers. A stable launcher at `~/.oryxis/bin/oryxis-mcp` keeps external clients (Claude Desktop, Claude Code, Cursor) pointing at a fixed path across plugin updates. Token-gated server (regenerable from Settings > MCP).
 
 ### P2P Sync
 - **Decentralized** — Sync vault data between devices over QUIC (quinn), no cloud dependency.
-- **LAN discovery** — Automatic peer discovery via mDNS on the local network.
-- **Internet discovery** — Lightweight signaling server (Cloudflare Workers) for NAT traversal with STUN.
-- **Pairing** — 6-digit code for initial device introduction, then Ed25519 key authentication.
+- **LAN discovery** — Automatic peer discovery via mDNS on the local network, with a live "discovered devices" list and one-click pair.
+- **Cross-network discovery** — Self-hostable signaling server (Cloudflare Worker template or `oryxis-relay` axum binary) plus STUN for NAT traversal. The Cloudflare deployment uses a Durable Object per `device_id` so the TOFU check-then-pin sequence is race-free under concurrent registers.
+- **Pairing** — 6-digit code for initial device introduction, then Ed25519 challenge/response. `oryxis://pair/<device_id>/<code>` link + QR code for one-click cross-device pair.
 - **E2E encrypted** — Sync payloads encrypted with shared secret (X25519 + ChaCha20Poly1305).
+- **Tombstone-driven deletes** — Deletions propagate as tombstones with a 30-day TTL gated by active-peer catch-up; a peer can't silently resurrect an entity another peer just deleted.
+- **Audit hardening** — Ed25519-signed register/unregister (`oryxis-register-v1` / `oryxis-unregister-v1` domain-separated payloads, 60 s timestamp skew, replay rejection) with TOFU public-key pinning, so a bearer-token holder can't hijack another device's signaling entry. Per-source pairing attempt cap (a noisy joiner from one IP can't lock out a legitimate user paired from elsewhere). Bounded relay session map with FIFO eviction. Pre-auth allocation cap (64 KiB) on the QUIC server so an unauthenticated dialer can't force a 16 MiB allocation per stream. Mutex-poison recovery on the routing maps so a panicked session task can't kill the demux. `verify_strict` (RFC 8032 canonical R-value) across Rust client, Rust relay, and Worker.
 - **Auto or manual** — Configurable sync mode with adjustable interval.
-- **Optional relay** — User-configurable relay URL for symmetric NAT environments.
+- **Optional relay** — User-configurable relay URL for symmetric NAT environments. Relay traffic stays ciphertext-only.
 - **Proxy Identities mirror across devices** — `EntityType::ProxyIdentity` is part of the manifest so saved proxies appear on every paired peer.
-- **Opt-in password sync** — Off by default: passwords (connection / identity / proxy) stay device-local. Toggle "Sync passwords across devices" in Settings → Sync to mirror them too. Wire format is forward/backward compatible — older peers ignore the extra fields.
+- **Opt-in password sync** — Off by default: passwords (connection / identity / proxy) stay device-local. Toggle "Sync passwords across devices" in Settings → Sync to mirror them too. Wire format is forward/backward compatible: older peers ignore the extra fields.
+
+### Windows System Tray
+- **Tray icon + menu** — Show Oryxis / Hide to tray / Quit, plus dynamic submenus.
+- **Active sessions submenu** — One item per open terminal tab; click activates the tab and pops the window.
+- **Recent hosts submenu** — Top 10 saved connections by `last_used` desc; click opens a new tab against that host.
+- **Opt-in tray gestures** — Settings → Interface → System tray panel toggles close-to-tray (custom title bar X + Alt+F4 hide instead of close) and minimize-to-tray (title bar minimize hides instead of taskbar-minimize). Defaults off.
+- **Single-instance** — Named-mutex guard via a file-based registry; the second launch becomes a child that reports state to the primary, and a child auto-promotes itself to primary if the primary dies. macOS / Linux: tray module is a no-op stub, settings panel is suppressed.
 
 ### UI / UX
 - **Native GPU-accelerated UI** — [Iced 0.14](https://iced.rs) (wgpu backend).
 - **Termius-inspired design** — Card grid, slide-in editors, sidebar navigation.
+- **Workspace layout mode** — Sidebar hides when a connection tab is open so the terminal fills the canvas; areas (Hosts / Keychain / Snippets / History) and connection tabs unify into one top bar with a burger menu. Classic mode (sidebar always shown) remains a one-click opt-out in Settings → Interface.
+- **Customizable host icons** — 4 styles (Circular / Square / Outline / Initials) settable globally and per-host. Tab badges respect the style.
+- **Dynamic accent on the chrome** — Active tab and 2 px hairline adopt the host's accent color; cloud tabs inherit the parent brand badge.
+- **Editable hotkeys** — Every binding (terminal copy/paste, font zoom, tab switch, open settings, etc.) is editable in Settings → Shortcuts with a live capture mode and burger-menu hints. Terminal C0 escape gate narrowed to actual control sequences so Ctrl+, Ctrl+= Ctrl+- continue to fire global actions inside the terminal.
 - **Responsive card grid** — Hosts, keys, identities, snippets and cloud accounts all use the same dynamic grid: column count is recomputed from the available width on every render, cards flex to fill the row (`Length::Fill`), and long labels truncate cleanly via `Wrapping::None` + container `clip(true)` instead of breaking the card geometry. Resizing the window or opening a side panel reflows the grid; the trailing card never clips off-screen.
 - **Standardised card affordances** — Every card family (hosts, keys, identities, snippets, cloud) renders the same vertical-ellipsis (⋮) row-action button: hover-only, 22 px reserved slot, identical hover style. Split-button dropdowns (`+ ADD ▼`, `+ Host [▾]`) anchor below the chevron at a fixed screen position derived from the toolbar geometry, so the menu always opens in the same place regardless of where the click landed.
 - **Folder organization** — Group hosts into folders with breadcrumb navigation.
@@ -430,9 +459,9 @@ Full step-by-step in [SELF_HOSTING.md](SELF_HOSTING.md).
 | **v0.4** | **Released** | Streaming AI responses, SSH agent forwarding, SSH integration tests, `app.rs` / `dispatch.rs` split into per-domain modules, theme contrast pass + per-theme button colors |
 | **v0.5** | **Released** | Authenticated proxies (SOCKS5 / HTTP CONNECT Basic), reusable Proxy Identities, jump-host-via-proxy stacking, `~/.ssh/config` `ProxyCommand` + `ProxyJump` import, opt-in password sync, Persian + Arabic UI with workspace-wide RTL layout pass, packaging + winget fixes |
 | **v0.6** | **Released** | AWS Cloud Accounts (named profile, static keys, IAM Identity Center / SSO), EC2 + ECS discovery and import, EC2 Instance Connect / SSM Session / ECS Exec transports, brand SVG icons, encrypted-key passphrase import, per-host initial command, Windows per-user + ARM64 installers, responsive card grid, `PATH` registration on Windows |
-| **v0.7** | Planned | UI refresh: Workspace layout mode (sidebar hidden, top tab bar unified for areas + connections, burger menu, terminal full-canvas) as the new default with Classic mode as a one-click opt-out; Settings -> Interface section absorbing Theme with status bar / tab close button position / status dot / Enable SFTP / layout mode / default host icon / tab underline tint pickers; customizable host icons (Circular / Square / Outline / Initials) global + per-host with tab badges locked to Rounded; dynamic accent on the chrome (active tab and 2 px hairline adopt the host's color); Solarized Dark theme; right-click paste in SSH sessions; AI Chat toggle respects the enable setting; Lock Vault button hidden when no master password is set; system monospace font enumeration via fontdb; relay poll loop stops on permanent HTTP errors; P2P sync delivery (engine actually spawns, tombstone-driven delete propagation with 30-day TTL, two-sided pairing handshake with challenge/response, X25519-derived ChaCha20Poly1305 end-to-end payload encryption, cross-network signaling via Cloudflare Workers + STUN, self-hostable HTTP relay fallback for NAT-blocked peers, `oryxis://pair/...` link pairing); MCP server distributed as a plugin (downloaded on demand into `~/.oryxis/bin/`); **cloud providers UX redesign** decoupling cloud origin from organisation (cloud_ref stays as metadata, group_id user-owned), multi-region per AWS profile (chip input with `~/.aws/config` default), Import-into autocomplete combo in the Discover modal with create-on-the-fly groups, dashboard filter chip by cloud profile, sticky reimport (per-field `customized_fields` preserved), `Sync now` action on the profile kebab plus opt-in auto-refresh + auto-archive orphan settings, dynamic group (ECS) editable as a first-class group (label / color / icon / parent / cluster / service / container), enriched container view (container name + task def revision + status pill + IP + AZ + relative started-at) with multi-container Lens-style expansion (empty Container field = one row per container per task) and a per-row Copy `aws ecs execute-command` action; **Windows system tray** (closes issue #18 last item) with Show/Hide/Quit menu, Active sessions submenu, Recent hosts submenu (top 10 by last_used), opt-in close-to-tray + minimize-to-tray settings, single-instance via named mutex (JumpList in taskbar context menu + IPC arg routing land in v0.7.1); bundled SauceCodePro Nerd Font as default terminal font (Source Code Pro patched with full Nerd glyph set) plus a per-glyph symbol_map that forces the bundled family on Unicode PUA codepoints so prompts with Powerline / Font Awesome / Devicons render correctly even when the user picked a non-Nerd system mono font |
-| **v0.8** | Planned | Port forwarding as standalone entity (independent of terminal session, with on/off toggle, auto-start at boot, dedicated sidebar) — covers Local (`-L`), Remote (`-R`) and Dynamic SOCKS (`-D`); Kubernetes provider (`kubectl exec` into pods, namespace + label discovery); split panes; custom themes; bundle Nerd Font for glyph fallback out-of-the-box; macOS bundling |
-| **v0.9** | Planned | Google Cloud provider (Compute Engine + GKE); Azure provider (VMs + AKS); biometric unlock; system tray + minimize-to-tray; Windows ConPTY local shell |
+| **v0.7** | **Released** | **UI refresh**: Workspace layout mode (sidebar hidden, top tab bar unified for areas + connections, burger menu, terminal full-canvas) with Classic mode as a one-click opt-out, contextual vault sub-nav under top tabs, dynamic accent on the chrome, 13th terminal theme (Solarized Dark), customizable host icons (Circular / Square / Outline / Initials) global + per-host, Settings → Interface absorbing Theme. **Plugin subsystem**: `oryxis-plugin-protocol` JSON-RPC over stdio, Ed25519-signed binaries via `oryxis-plugin-signer`, manifest + cache + integrity verify, MCP server distributed as a plugin (downloaded on demand into `~/.oryxis/bin/`). **Cloud providers UX redesign**: decoupled cloud origin (cloud_ref as metadata, group_id user-owned), multi-region per AWS profile, Import-into autocomplete combo, dashboard filter chip by profile, sticky reimport (`customized_fields` preserved), `Sync now` + opt-in auto-refresh, dynamic ECS group editable as a first-class group, multi-container Lens-style expansion, per-row Copy `aws ecs execute-command`. **Windows system tray** (closes #18): Show/Hide/Quit, Active sessions submenu, Recent hosts submenu, opt-in close-to-tray + minimize-to-tray, single-instance via named mutex with file-based primary/child IPC and child auto-promotion if primary dies. **P2P sync delivered + hardened**: engine spawn, tombstone-driven delete propagation with 30-day TTL gated by active-peer catch-up, two-sided pairing handshake (challenge/response + X25519 DH + ChaCha20Poly1305 E2E payloads), mDNS LAN discovery, cross-network signaling via self-hostable Cloudflare Worker (Durable Object per `device_id` for race-free TOFU) or `oryxis-relay` axum binary, STUN, optional HTTP relay fallback, `oryxis://pair/...` link + QR code. **Sync audit hardening**: Ed25519-signed register/unregister + TOFU pubkey pin, per-source pairing attempt cap, bounded relay session map (FIFO eviction), 64 KiB pre-auth allocation cap, mutex-poison recovery, `verify_strict` (RFC 8032 canonical R) across client and server, unregister on shutdown. **Terminal fonts**: bundled SauceCodePro Nerd Font + Symbols Nerd Font as glyph fallback, PUA symbol_map forces the bundled symbols family on Unicode PUA codepoints regardless of user font pick, system monospace enumeration via fontdb. **Hotkeys**: editable bindings with capture mode + burger menu hints, narrowed terminal C0 escape set to actual control sequences. **Polish**: right-click paste in SSH, AI Chat toggle respects setting, Lock Vault hidden when no master password, relay poll loop stops on permanent HTTP errors, full RTL pass across panels, plugin install errors translated across all 11 languages |
+| **v0.8** | Planned | Port forwarding as standalone entity (independent of terminal session, with on/off toggle, auto-start at boot, dedicated sidebar) covering Local (`-L`), Remote (`-R`) and Dynamic SOCKS (`-D`); Kubernetes provider (`kubectl exec` into pods, namespace + label discovery); split panes; custom themes; macOS notarized bundling; graceful plugin shutdown (drain in-flight before reap); Windows JumpList + `--connect <uuid>` IPC routing for the tray |
+| **v0.9** | Planned | Google Cloud provider (Compute Engine + GKE); Azure provider (VMs + AKS); biometric unlock; Windows ConPTY local shell; XChaCha20-Poly1305 wire format (192-bit nonce) on a sync v6 protocol bump |
 
 ## Contributing
 
