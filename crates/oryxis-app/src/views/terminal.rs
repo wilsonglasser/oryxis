@@ -397,6 +397,18 @@ impl Oryxis {
                 // Compact heading scale, `with_text_size` ramps h1=2x and
                 // h2=1.75x base which reads as huge in a narrow sidebar.
                 // We override to a tighter ladder anchored at 13 px body.
+                // SauceCodePro Nerd Font is bundled in main.rs and carries
+                // the full Nerd Font PUA glyph set. Wire it into the
+                // markdown style so inline `code` and fenced code blocks
+                // render Powerline/Devicon/etc. glyphs the user pastes
+                // or the AI emits, matching what the terminal panel
+                // already shows. Body prose stays on the proportional
+                // default; cosmic-text's PUA fallback isn't reliable
+                // enough to count on for non-code text.
+                let mut md_style = iced::widget::markdown::Style::from(self.theme());
+                let nerd = iced::Font::new("SauceCodePro Nerd Font");
+                md_style.inline_code_font = nerd;
+                md_style.code_block_font = nerd;
                 let md_settings = iced::widget::markdown::Settings {
                     text_size: 13.into(),
                     h1_size: 17.into(),
@@ -407,7 +419,7 @@ impl Oryxis {
                     h6_size: 13.into(),
                     code_size: 12.into(),
                     spacing: 8.into(),
-                    style: iced::widget::markdown::Style::from(self.theme()),
+                    style: md_style,
                     selectable: true,
                     group_selection: true,
                 };

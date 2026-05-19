@@ -17,12 +17,16 @@ use std::sync::{Arc, Mutex};
 use tokio::sync::mpsc;
 
 /// Bundled glyph-fallback font for the Unicode Private Use Area
-/// (Powerline / Font Awesome / Devicons / Octicons / etc). The font
-/// itself is loaded into iced/cosmic-text in `main.rs` via
-/// `include_bytes!`, here we just reference it by family name so the
-/// per-cell renderer can hand specific codepoints to it instead of
-/// the user's primary terminal font.
-const NERD_FONT: Font = Font::new("SauceCodePro Nerd Font");
+/// (Powerline / Font Awesome / Devicons / Octicons / Codicons /
+/// Material). Points at Symbols Nerd Font (loaded into the fontdb
+/// in `main.rs` via `include_bytes!`) rather than SauceCodePro Nerd
+/// Font: cosmic-text's canvas `font:` parameter is a hard pick, not
+/// a fallback chain, so any PUA codepoint SauceCodePro happens to
+/// miss (Material Design Icons + some Codicons in certain patched
+/// builds) would render as tofu instead of falling through. Symbols
+/// Nerd Font is the official NF "symbols-only" drop-in built for
+/// universal PUA coverage, so we route every PUA codepoint to it.
+const NERD_FONT: Font = Font::new("Symbols Nerd Font");
 
 // ---------------------------------------------------------------------------
 // Terminal State

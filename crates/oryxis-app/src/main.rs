@@ -180,6 +180,14 @@ fn main() -> iced::Result {
         // this family per-codepoint.
         .font(include_bytes!("../../../resources/fonts/SauceCodeProNerdFont-Regular.ttf").as_slice())
         .font(include_bytes!("../../../resources/fonts/SauceCodeProNerdFont-Medium.ttf").as_slice())
+        // Symbols Nerd Font: same PUA glyph set as SauceCodePro Nerd
+        // but with no Latin coverage, purpose-built as a fallback-only
+        // font. Loaded into the iced fontdb so cosmic-text picks it up
+        // automatically for nerd glyph codepoints in proportional text
+        // (Inter/Segoe/SF Pro have no PUA coverage). Keeps prose
+        // proportional while still rendering Powerline/Devicon/etc.
+        // characters in chat messages, host labels, snippets, etc.
+        .font(include_bytes!("../../../resources/fonts/SymbolsNerdFont-Regular.ttf").as_slice())
         // Default UI font is the system font (Segoe UI on Windows, SF Pro
         // on macOS, bundled Inter on Linux), matches how Electron apps
         // like Termius render and keeps the UI feeling native per-OS.
