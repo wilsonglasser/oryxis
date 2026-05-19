@@ -6,6 +6,8 @@ project uses [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-05-19
+
 ### Added
 - **Windows system tray** (closes the last item from issue #18).
   Tray icon registers on app start with a menu that grows as state
@@ -244,6 +246,63 @@ project uses [SemVer](https://semver.org/spec/v2.0.0.html).
   new file format)" no longer fails with "invalid Base64 encoding".
   PuTTYgen wraps the body at 76 chars; `ssh-encoding` requires exactly
   70. On a Base64 error the importer now retries after re-wrapping.
+
+### Security
+- **Signaling register / unregister now signed (Ed25519).** Bearer
+  token alone is no longer sufficient to write a `device_id` row.
+  Every request carries an Ed25519 signature over the canonical
+  payload (`oryxis-register-v1` / `oryxis-unregister-v1` domain
+  separated), a `signed_at` timestamp checked against a 60 s server
+  skew window (replay defence), and the raw 32-byte verifying key.
+  The signaling worker, the standalone `oryxis-relay`, and the
+  client all build the same canonical bytes and use `verify_strict`
+  (RFC 8032 canonical R) so the trust decision is identical across
+  Rust and Worker.
+- **TOFU pubkey pinning on signaling.** The first register for a
+  given `device_id` pins its public key. Later registers from a
+  different signer (e.g. another bearer-token holder trying to
+  hijack the entry) return 403. Unregister enforces the same:
+  only the original key can remove its entry. Implemented in
+  `oryxis_relay::discovery::DeviceTable` (in-memory Mutex,
+  race-free) and a `DeviceRegistry` Cloudflare Durable Object
+  in `signaling-worker/worker.js` (one DO per device_id =
+  single-writer, so check-then-pin can't race even under
+  concurrent registers from the same bearer-token holder). KV
+  for discovery (`device:*` keys) was retired; the relay queue
+  (`relay:*`) stays on KV since its append-only profile has no
+  TOFU race. Self-hosters get the DO provisioned automatically
+  via wrangler migration `v1` on the first `wrangler deploy`.
+- **Per-source cap on pairing attempts.** Replaces the old global
+  "3 bad codes invalidates the hosted code" with a `HashMap` keyed
+  by joiner network identity (`quic:<ip>` or `relay:<device_id>`).
+  An attacker grinding the 10^6 code space from one IP can only
+  lock themselves out; the legitimate user paired from elsewhere
+  keeps a live code. Bounded at 1024 distinct sources to keep the
+  map small under sender_id flood.
+- **Bounded relay session map (64 entries, FIFO eviction).** The
+  inbox demux on the relay client used to spawn an unbounded mpsc
+  per fresh `X-Sender-Id`, which a token holder cycling UUIDs could
+  exhaust. New entries past the cap evict the oldest session.
+- **Pre-auth frame allocation cap (64 KiB).** The QUIC server used
+  to honour the declared length on the very first frame, so an
+  unauthenticated dialer could force a 16 MiB allocation per stream
+  before any signature check. Hello / HelloAck reads now reject
+  frames larger than 64 KiB; post-auth reads keep the 16 MiB cap.
+- **Tombstone GC waits for every active peer to catch up.**
+  `vacuum_tombstones` now requires `last_synced_at >= deleted_at`
+  on every active `sync_peer` before reclaiming the row, closing
+  the silent-resurrection bug class (a tombstone could be vacuumed
+  while an offline peer was still behind it, then the peer would
+  re-sync the entity back into existence).
+- **Mutex-poison recovery on relay routing maps.** A panicked
+  session task no longer poisons the shared session map and kills
+  the whole relay demux; the routing table is recovered via
+  `into_inner()` and the offending peer is just dropped.
+- **Plugin install errors translate.** Install failures surface
+  through stable `plugin_err_*` i18n keys (translated across all
+  11 languages) instead of raw `Display` text. Raw detail still
+  goes to the log file for debugging without polluting the UI or
+  leaking file paths / HTTP codes.
 
 ## [0.6.1] - 2026-05-11
 
