@@ -141,12 +141,16 @@ jobs:
           TAG='${{ steps.tag.outputs.tag }}'
           BASE="https://github.com/${{ github.repository }}/releases/download/${TAG}"
 
-          entries=()
+          # Build the binaries array via jq so JSON escaping is correct
+          # and we avoid heredocs (which collide with the YAML block
+          # scalar's indent rules: a dedented `EOF` ends the YAML scalar
+          # before bash sees it).
+          binaries='[]'
           for sha_file in assets/oryxis-mcp-*.sha256; do
             [ -f "$sha_file" ] || continue
             base="${sha_file%.sha256}"
             name=$(basename "$base")
-            # Parse `os` + `arch` from the filename
+            # Parse `os` + `arch` from the filename:
             #   oryxis-mcp-linux-x86_64
             #   oryxis-mcp-windows-aarch64.exe
             stripped="${name#oryxis-mcp-}"
@@ -156,35 +160,31 @@ jobs:
             sha=$(cat "$base.sha256")
             sig=$(cat "$base.sig")
             size=$(cat "$base.size")
-            entries+=("$(cat <<EOF
-              {
-                "os": "$os",
-                "arch": "$arch",
-                "url": "$BASE/$name",
-                "sha256": "$sha",
-                "signature": "$sig",
-                "size": $size
-              }
-EOF
-)")
+            binaries=$(echo "$binaries" | jq \
+              --arg os "$os" \
+              --arg arch "$arch" \
+              --arg url "$BASE/$name" \
+              --arg sha "$sha" \
+              --arg sig "$sig" \
+              --argjson size "$size" \
+              '. + [{os: $os, arch: $arch, url: $url, sha256: $sha, signature: $sig, size: $size}]')
           done
-          binaries=$(IFS=$',\n'; echo "${entries[*]}")
 
-          cat > mcp.json <<EOF
-          {
-            "provider_id": "mcp",
-            "versions": [
-              {
-                "version": "$VERSION",
-                "protocol_versions": [1],
-                "min_app": "0.7.0",
-                "binaries": [
-          $binaries
-                ]
-              }
-            ]
-          }
-          EOF
+          jq -n \
+            --arg version "$VERSION" \
+            --argjson binaries "$binaries" \
+            '{
+              provider_id: "mcp",
+              versions: [
+                {
+                  version: $version,
+                  protocol_versions: [1],
+                  min_app: "0.7.0",
+                  binaries: $binaries
+                }
+              ]
+            }' > mcp.json
+
           echo '--- mcp.json ---'
           cat mcp.json
 
