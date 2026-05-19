@@ -1,8 +1,9 @@
 /**
  * Oryxis Sync Signaling + Relay Server
- * Cloudflare Worker + KV
+ * Cloudflare Worker + KV + Durable Objects
  *
- * Discovery routes:
+ * Discovery routes (back-end: `DeviceRegistry` Durable Object,
+ *                   one instance per `device_id`):
  *   POST   /register             — register device IP:port (TTL 300s)
  *                                  Body: { device_id, public_key_fp?,
  *                                          public_key (32B hex),
@@ -10,15 +11,18 @@
  *                                          signature (64B hex) }
  *                                  TOFU: public_key is pinned on first
  *                                  register; later registers must use
- *                                  the same key or the worker returns
- *                                  403 (anti-hijack inside one bearer).
+ *                                  the same key or the DO returns 403
+ *                                  (anti-hijack inside one bearer).
+ *                                  The DO is single-writer per device,
+ *                                  so check-then-pin is race-free even
+ *                                  under concurrent registers.
  *   GET    /lookup/:id           — look up peer's IP:port
  *   DELETE /register/:id         — unregister device
  *                                  Headers: X-Pubkey, X-Signed-At,
  *                                           X-Signature (auth fields)
  *                                  TOFU: must match the pinned pubkey.
  *
- * Relay routes (Phase D — fallback transport when QUIC direct fails):
+ * Relay routes (back-end: SYNC_KV; queue-append profile, no TOFU race):
  *   POST   /relay/:recipient_id/inbox   — enqueue a frame for recipient
  *     Headers: X-Sender-Id: <uuid>
  *     Body:    raw bytes (max 256KB) — the bincode-encoded SyncMessage,
@@ -34,8 +38,9 @@
  * Set the token via: wrangler secret put SIGNALING_TOKEN
  *
  * Self-hosting: this file is the entire relay; deploy with
- * `wrangler deploy`. Both signaling and relay live in one KV namespace
- * (`SYNC_KV`) keyed by prefix.
+ * `wrangler deploy`. The first deploy after wrangler.jsonc declared
+ * the DO + migration v1 provisions the `DeviceRegistry` class
+ * automatically; no extra command needed.
  */
 
 const TTL = 300; // 5 minutes — applies to both register entries and relay queue items.
@@ -75,7 +80,13 @@ export default {
     }
 
     try {
-      // ── Discovery ──
+      // ── Discovery (forwarded to DeviceRegistry DO) ──
+      //
+      // Signature verification + timestamp skew + bearer auth all
+      // run at the worker layer; the DO trusts that whatever lands
+      // in its fetch handler has already been authenticated. This
+      // saves a DO invocation on every malformed / replay request
+      // (which would otherwise count toward DO request billing).
 
       if (request.method === "POST" && path === "/register") {
         const body = await request.json();
@@ -101,24 +112,13 @@ export default {
         if (!sigOk) {
           return json({ error: "Bad signature" }, 400, corsHeaders);
         }
-        // TOFU: if an entry exists, the new pubkey must match. Fetch
-        // metadata, not the value, since we only need the pinned key.
-        const existing = await env.SYNC_KV.getWithMetadata(`device:${device_id}`);
-        if (existing && existing.metadata && existing.metadata.public_key && existing.metadata.public_key !== public_key) {
-          return json({ error: "Pubkey mismatch" }, 403, corsHeaders);
-        }
-        const value = JSON.stringify({
+        return await forwardToRegistry(env, device_id, "POST", "/register", corsHeaders, {
           device_id,
           public_key_fp: public_key_fp || "",
+          public_key,
           ip,
           port,
-          registered_at: new Date().toISOString(),
         });
-        await env.SYNC_KV.put(`device:${device_id}`, value, {
-          expirationTtl: TTL,
-          metadata: { public_key },
-        });
-        return json({ ok: true, ttl: TTL }, 200, corsHeaders);
       }
 
       if (request.method === "GET" && path.startsWith("/lookup/")) {
@@ -126,11 +126,7 @@ export default {
         if (!isValidUuid(deviceId)) {
           return json({ error: "Bad device_id" }, 400, corsHeaders);
         }
-        const value = await env.SYNC_KV.get(`device:${deviceId}`);
-        if (!value) {
-          return json({ error: "Not found" }, 404, corsHeaders);
-        }
-        return json(JSON.parse(value), 200, corsHeaders);
+        return await forwardToRegistry(env, deviceId, "GET", "/lookup", corsHeaders, null);
       }
 
       if (request.method === "DELETE" && path.startsWith("/register/")) {
@@ -160,17 +156,12 @@ export default {
         if (!sigOk) {
           return json({ error: "Bad signature" }, 400, corsHeaders);
         }
-        // TOFU enforcement: if an entry exists, the caller's pubkey
-        // must match the pinned key. Missing entry => 200 (idempotent).
-        const existing = await env.SYNC_KV.getWithMetadata(`device:${deviceId}`);
-        if (existing && existing.metadata && existing.metadata.public_key && existing.metadata.public_key !== pubkeyHex) {
-          return json({ error: "Pubkey mismatch" }, 403, corsHeaders);
-        }
-        await env.SYNC_KV.delete(`device:${deviceId}`);
-        return json({ ok: true }, 200, corsHeaders);
+        return await forwardToRegistry(env, deviceId, "DELETE", "/unregister", corsHeaders, {
+          public_key: pubkeyHex,
+        });
       }
 
-      // ── Relay ──
+      // ── Relay (KV-backed queue, no TOFU race profile) ──
 
       const relayMatch = path.match(/^\/relay\/([^/]+)\/inbox$/);
       if (relayMatch) {
@@ -246,6 +237,127 @@ export default {
     }
   },
 };
+
+/**
+ * Forward a request to the `DeviceRegistry` Durable Object that owns
+ * `deviceId`. The DO's fetch handler decides the TOFU outcome and the
+ * storage write; the worker just relays its status + body back to the
+ * client and re-attaches CORS headers (the DO doesn't know about CORS).
+ *
+ * The fake `https://do.local` base URL is required because Workers
+ * Request objects need an absolute URL. The DO sees the path component
+ * (`/register`, `/lookup`, `/unregister`) and ignores the host.
+ */
+async function forwardToRegistry(env, deviceId, method, doPath, corsHeaders, body) {
+  const id = env.DEVICE_REGISTRY.idFromName(deviceId);
+  const stub = env.DEVICE_REGISTRY.get(id);
+  const init = { method, headers: {} };
+  if (body !== null) {
+    init.headers["Content-Type"] = "application/json";
+    init.body = JSON.stringify(body);
+  }
+  const doResp = await stub.fetch(`https://do.local${doPath}`, init);
+  const respHeaders = { ...corsHeaders };
+  const ct = doResp.headers.get("Content-Type");
+  if (ct) {
+    respHeaders["Content-Type"] = ct;
+  }
+  return new Response(doResp.body, { status: doResp.status, headers: respHeaders });
+}
+
+/**
+ * Per-device discovery state. One instance per `device_id` (resolved
+ * via `env.DEVICE_REGISTRY.idFromName(device_id)`); each instance is
+ * single-writer, so the TOFU check-then-pin sequence is serialized
+ * and the race that the KV-only path used to have is eliminated.
+ *
+ * Storage layout (kept tiny; one DO holds at most ~200 bytes):
+ *   record      → { device_id, public_key_fp, ip, port, registered_at }
+ *   public_key  → hex string of the 32-byte Ed25519 pubkey pinned at
+ *                 the first register; later registers + unregisters
+ *                 must present the same string or get 403.
+ *
+ * TTL is enforced by a Storage alarm scheduled 5 min from each
+ * accepted register. The `alarm()` handler wipes the storage, which
+ * makes the next register a fresh pin (TOFU resets). This matches
+ * the KV `expirationTtl: 300` behaviour the worker had before.
+ */
+export class DeviceRegistry {
+  constructor(state, env) {
+    this.state = state;
+    this.env = env;
+  }
+
+  async fetch(request) {
+    const url = new URL(request.url);
+
+    if (request.method === "POST" && url.pathname === "/register") {
+      const body = await request.json();
+      const pinned = await this.state.storage.get("public_key");
+      if (pinned && pinned !== body.public_key) {
+        // Anti-hijack: another bearer-token holder cannot replace
+        // the pinned key. Returning 403 here matches the KV path
+        // and the Rust `oryxis-relay` behaviour.
+        return doJson({ error: "Pubkey mismatch" }, 403);
+      }
+      await this.state.storage.put({
+        record: {
+          device_id: body.device_id,
+          public_key_fp: body.public_key_fp,
+          ip: body.ip,
+          port: body.port,
+          registered_at: new Date().toISOString(),
+        },
+        public_key: body.public_key,
+      });
+      // Refresh the TTL on every register. The alarm handler wipes
+      // storage if no register lands within `TTL` seconds, mirroring
+      // the KV `expirationTtl` lifecycle.
+      await this.state.storage.setAlarm(Date.now() + TTL * 1000);
+      return doJson({ ok: true, ttl: TTL }, 200);
+    }
+
+    if (request.method === "GET" && url.pathname === "/lookup") {
+      const record = await this.state.storage.get("record");
+      if (!record) {
+        return doJson({ error: "Not found" }, 404);
+      }
+      return doJson(record, 200);
+    }
+
+    if (request.method === "DELETE" && url.pathname === "/unregister") {
+      const body = await request.json();
+      const pinned = await this.state.storage.get("public_key");
+      if (pinned && pinned !== body.public_key) {
+        return doJson({ error: "Pubkey mismatch" }, 403);
+      }
+      // Idempotent: a missing entry returns 200 even when the caller
+      // signed correctly — matches the KV path which used `delete` of
+      // a non-existent key as a no-op.
+      await this.state.storage.deleteAll();
+      await this.state.storage.deleteAlarm();
+      return doJson({ ok: true }, 200);
+    }
+
+    return doJson({ error: "Not found" }, 404);
+  }
+
+  async alarm() {
+    // TTL expired without a refresh: wipe state so the next register
+    // is a fresh pin. Matches the KV `expirationTtl` semantics so a
+    // device that goes offline for >5 min has to re-register and a
+    // new owner of the same `device_id` (e.g. after vault reset) can
+    // re-pin without a 403 from a stale entry.
+    await this.state.storage.deleteAll();
+  }
+}
+
+function doJson(data, status) {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: { "Content-Type": "application/json" },
+  });
+}
 
 function json(data, status, headers) {
   return new Response(JSON.stringify(data), {

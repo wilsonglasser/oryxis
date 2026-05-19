@@ -42,7 +42,7 @@ mod discovery;
 mod queue;
 
 use discovery::{DeviceRecord, DeviceTable, RegisterOutcome};
-use ed25519_dalek::{Signature, Verifier, VerifyingKey};
+use ed25519_dalek::{Signature, VerifyingKey};
 use queue::{InboxRegistry, QueueEntry};
 
 /// Domain-separation tags. MUST match
@@ -345,8 +345,12 @@ async fn register_device(
         return bad_request("Bad public_key");
     };
     let payload = register_sign_payload(req.device_id, &req.ip, req.port, req.signed_at);
+    // `verify_strict` matches `oryxis_sync::crypto::verify_register_payload`:
+    // both sides reject Ed25519 signatures with non-canonical R-values
+    // (RFC 8032 §5.1.7) so the trust decision is the same regardless of
+    // which verifier sees the bytes first.
     if verifying
-        .verify(&payload, &Signature::from_bytes(&sig_bytes))
+        .verify_strict(&payload, &Signature::from_bytes(&sig_bytes))
         .is_err()
     {
         return bad_request("Bad signature");
@@ -452,8 +456,10 @@ async fn unregister_device(
         return bad_request("Bad X-Pubkey");
     };
     let payload = unregister_sign_payload(uuid, signed_at);
+    // `verify_strict` matches the client + crypto module; see the
+    // matching note in `register_device`.
     if verifying
-        .verify(&payload, &Signature::from_bytes(&sig_bytes))
+        .verify_strict(&payload, &Signature::from_bytes(&sig_bytes))
         .is_err()
     {
         return bad_request("Bad X-Signature");

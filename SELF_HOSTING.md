@@ -33,8 +33,13 @@ random chars). All paired clients use the same value.
 
 ## Option 1: Cloudflare Workers (recommended, free tier covers it)
 
-Free tier: 100k requests/day. A pair of devices syncing every few
-hours stays well inside it. Bandwidth is free for Workers.
+Cloudflare's free tier covers typical Oryxis usage (Workers free
+tier includes 100k requests/day; Durable Objects is on the free
+tier with its own monthly allowance). Check the current numbers at
+[Workers pricing](https://developers.cloudflare.com/workers/platform/pricing/)
+and [Durable Objects pricing](https://developers.cloudflare.com/durable-objects/platform/pricing/);
+a pair of devices syncing every few hours stays well inside both.
+Bandwidth is free for Workers.
 
 ```bash
 # In the Oryxis repo
@@ -42,7 +47,10 @@ cd signaling-worker
 npm install -g wrangler
 wrangler login
 
-# Create the KV namespace and copy its ID into wrangler.jsonc
+# Create the KV namespace and copy its ID into wrangler.jsonc.
+# KV holds the relay queue (`relay:*`); discovery state lives in
+# the DeviceRegistry Durable Object provisioned automatically by
+# the deploy step below (migration `v1` in wrangler.jsonc).
 wrangler kv namespace create SYNC_KV
 
 # Set the shared token (matches Settings > Sync > Signaling token)
@@ -50,6 +58,10 @@ wrangler secret put SIGNALING_TOKEN
 
 wrangler deploy
 ```
+
+The first `wrangler deploy` after a fresh clone runs the `v1`
+Durable Objects migration declared in `wrangler.jsonc`, which
+provisions the `DeviceRegistry` class. No extra command needed.
 
 Wrangler prints the deployed URL
 (`https://oryxis-signaling.<your-subdomain>.workers.dev`).

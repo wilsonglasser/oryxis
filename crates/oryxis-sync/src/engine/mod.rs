@@ -423,7 +423,23 @@ impl SyncEngine {
                                 }
                             }
                         }
-                        _ = shutdown_rx.recv() => break,
+                        _ = shutdown_rx.recv() => {
+                            // Best-effort unregister so the entry
+                            // doesn't linger for the full 5 min TTL
+                            // after the user turns sync off or quits.
+                            // Only call if we have something to undo:
+                            // a never-registered task has nothing to
+                            // delete and we don't want a 404 in logs.
+                            // Nested `if let` (not chained `&&`) since
+                            // this crate is on edition 2021, where
+                            // let-chains aren't stable.
+                            if last_register_at.is_some() {
+                                if let Err(e) = client.unregister(&identity).await {
+                                    tracing::debug!("signaling: unregister on shutdown: {e}");
+                                }
+                            }
+                            break;
+                        }
                     }
                 }
             });

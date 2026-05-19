@@ -102,7 +102,11 @@ impl SignalingClient {
     /// attacker holding only the bearer token cannot delete our entry.
     /// Headers carry the auth fields so the URL stays bookmark-able
     /// and the body stays empty.
-    #[allow(dead_code)]
+    ///
+    /// Called from the signaling task's shutdown arm so the entry
+    /// doesn't linger for the full TTL after the user disables sync
+    /// or quits. Failure is logged at debug level only; the worst
+    /// case is a stale entry that catches up at the next 5 min TTL.
     pub async fn unregister(&self, identity: &DeviceIdentity) -> Result<(), SyncError> {
         let signed_at = chrono::Utc::now().timestamp();
         let payload = unregister_sign_payload(&identity.device_id, signed_at);
