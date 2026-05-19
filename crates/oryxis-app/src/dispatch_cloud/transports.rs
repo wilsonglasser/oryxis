@@ -122,6 +122,15 @@ impl Oryxis {
                             %msg,
                             "SSM Session start failed"
                         );
+                        if let Some(vault) = &self.vault {
+                            let entry = oryxis_core::models::log_entry::LogEntry::new(
+                                &host_label,
+                                &host_label,
+                                oryxis_core::models::log_entry::LogEvent::Error,
+                                &msg,
+                            );
+                            let _ = vault.add_log(&entry);
+                        }
                         self.show_error_dialog(
                             crate::i18n::t("ssm_start_failed_title").to_string(),
                             msg,
@@ -138,6 +147,15 @@ impl Oryxis {
                                 error = %e,
                                 "session-manager-plugin missing, install it to use SSM Session"
                             );
+                            if let Some(vault) = &self.vault {
+                                let entry = oryxis_core::models::log_entry::LogEntry::new(
+                                    &host_label,
+                                    &host_label,
+                                    oryxis_core::models::log_entry::LogEvent::Error,
+                                    &format!("session-manager-plugin missing: {e}"),
+                                );
+                                let _ = vault.add_log(&entry);
+                            }
                             self.show_plugin_missing_dialog();
                             return Ok(Task::none());
                         }
@@ -170,6 +188,15 @@ impl Oryxis {
                             %msg,
                             "ECS Exec session start failed"
                         );
+                        if let Some(vault) = &self.vault {
+                            let entry = oryxis_core::models::log_entry::LogEntry::new(
+                                &task_label,
+                                &task_label,
+                                oryxis_core::models::log_entry::LogEvent::Error,
+                                &msg,
+                            );
+                            let _ = vault.add_log(&entry);
+                        }
                         self.show_error_dialog(
                             crate::i18n::t("ecs_exec_start_failed_title").to_string(),
                             msg,
@@ -191,6 +218,15 @@ impl Oryxis {
                                 error = %e,
                                 "session-manager-plugin missing, install it to use ECS Exec"
                             );
+                            if let Some(vault) = &self.vault {
+                                let entry = oryxis_core::models::log_entry::LogEntry::new(
+                                    &task_label,
+                                    &task_label,
+                                    oryxis_core::models::log_entry::LogEvent::Error,
+                                    &format!("session-manager-plugin missing: {e}"),
+                                );
+                                let _ = vault.add_log(&entry);
+                            }
                             self.show_plugin_missing_dialog();
                             return Ok(Task::none());
                         }

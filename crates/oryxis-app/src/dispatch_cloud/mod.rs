@@ -140,12 +140,25 @@ impl Oryxis {
                 let tab_idx = self.tabs.len();
                 let label = tab_label.to_string();
                 self.tabs.push(TerminalTab::new_single(
-                    label,
+                    label.clone(),
                     Arc::new(Mutex::new(state)),
                 ));
                 self.active_tab = Some(tab_idx);
                 self.remember_terminal_tab_focus(tab_idx);
                 self.active_view = View::Terminal;
+                // ECS Exec and SSM Session don't go through SshConnected,
+                // so the History view never picked them up. Mirror the
+                // SSH path's add_log call here so cloud sessions show up
+                // alongside regular hosts.
+                if let Some(vault) = &self.vault {
+                    let entry = oryxis_core::models::log_entry::LogEntry::new(
+                        &label,
+                        &label,
+                        oryxis_core::models::log_entry::LogEvent::Connected,
+                        "Session established",
+                    );
+                    let _ = vault.add_log(&entry);
+                }
                 let stream = UnboundedReceiverStream::new(rx);
                 Task::batch(vec![
                     self.tab_scroll_to_active(),
@@ -158,6 +171,15 @@ impl Oryxis {
                     error = %e,
                     "Failed to spawn session-manager-plugin in PTY"
                 );
+                if let Some(vault) = &self.vault {
+                    let entry = oryxis_core::models::log_entry::LogEntry::new(
+                        tab_label,
+                        tab_label,
+                        oryxis_core::models::log_entry::LogEvent::Error,
+                        &format!("Failed to spawn session-manager-plugin: {e}"),
+                    );
+                    let _ = vault.add_log(&entry);
+                }
                 self.show_error_dialog(
                     crate::i18n::t("plugin_spawn_failed_title").to_string(),
                     format!("{e}"),
