@@ -176,7 +176,7 @@ jobs:
                 {
                   version: $version,
                   protocol_versions: [1],
-                  min_app: "0.9.0",
+                  min_app: "0.7.0",
                   binaries: $binaries
                 }
               ]
