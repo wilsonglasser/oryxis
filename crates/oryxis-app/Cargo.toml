@@ -113,7 +113,14 @@ windows-sys = { version = "0.59", features = ["Win32_UI_Shell", "Win32_UI_Window
 # Cross-platform tray icon, but only built on Windows. macOS and
 # Linux need different lifecycle conventions (LSUIElement on macOS,
 # SNI/AppIndicator on Linux), deferred to a later release.
-tray-icon = "0.21"
+#
+# Default features (`gtk`, `libxdo`) drag in `libappindicator 0.9` ->
+# `gtk 0.18` -> `glib 0.18.5` for Linux + BSD targets. We never
+# build those code paths, and `glib 0.18.5` has an open security
+# advisory whose fix only lives in `glib 0.20`. Disable defaults and
+# keep only `common-controls-v6` (Windows menu styling) so the
+# vulnerable chain disappears from Cargo.lock for every target.
+tray-icon = { version = "0.24", default-features = false, features = ["common-controls-v6"] }
 
 [dev-dependencies]
 # Property-based fuzzing for path/name helpers, generates random
