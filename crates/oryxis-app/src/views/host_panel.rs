@@ -99,7 +99,9 @@ impl Oryxis {
                 icon_element,
                 Space::new().width(10).into(),
                 text_input(t("ip_or_hostname"), &self.editor_form.hostname)
+                    .id(iced::widget::Id::new("editor-hostname"))
                     .on_input(Message::EditorHostnameChanged)
+                    .on_submit(Message::EditorSave)
                     .padding(10)
                     .style(crate::widgets::rounded_input_style).align_x(dir_align_x()).into(),
             ]).align_y(iced::Alignment::Center),
@@ -117,6 +119,7 @@ impl Oryxis {
             &self.editor_form.group_name,
         )
         .on_input(Message::EditorGroupChanged)
+        .on_submit(Message::EditorSave)
         .padding(10)
         .width(Length::Fill)
         .style(crate::widgets::rounded_input_style)
@@ -165,7 +168,7 @@ impl Oryxis {
         );
         let general_section = panel_section(column![
             panel_field(t("label"), text_input(t("my_server_placeholder"), &self.editor_form.label)
-                .on_input(Message::EditorLabelChanged).padding(10).style(crate::widgets::rounded_input_style).align_x(dir_align_x()).into()),
+                .on_input(Message::EditorLabelChanged).on_submit(Message::EditorSave).padding(10).style(crate::widgets::rounded_input_style).align_x(dir_align_x()).into()),
             Space::new().height(8),
             panel_field(t("parent_group"), parent_combo),
         ]);
@@ -179,6 +182,7 @@ impl Oryxis {
                 Space::new().width(8).into(),
                 text_input("22", &self.editor_form.port)
                     .on_input(Message::EditorPortChanged)
+                    .on_submit(Message::EditorSave)
                     .padding(6)
                     .width(60)
                     .style(crate::widgets::rounded_input_style).align_x(dir_align_x()).into(),
@@ -193,6 +197,7 @@ impl Oryxis {
                 Space::new().width(10).into(),
                 text_input(t("username"), &self.editor_form.username)
                     .on_input(Message::EditorUsernameChanged)
+                    .on_submit(Message::EditorSave)
                     .padding(10)
                     .style(crate::widgets::rounded_input_style).align_x(dir_align_x()).into(),
             ]).align_y(iced::Alignment::Center)
@@ -306,7 +311,7 @@ impl Oryxis {
                         pw_placeholder,
                         &self.editor_form.password,
                         Message::EditorPasswordChanged,
-                        None,
+                        Some(Message::EditorSave),
                         self.editor_form.password_visible,
                         Message::EditorTogglePasswordVisibility,
                         10.0,
@@ -398,6 +403,7 @@ impl Oryxis {
                     &self.editor_form.initial_command,
                 )
                 .on_input(Message::EditorInitialCommandChanged)
+                .on_submit(Message::EditorSave)
                 .padding(10)
                 .style(crate::widgets::rounded_input_style).align_x(dir_align_x()),
             );
@@ -533,6 +539,7 @@ impl Oryxis {
                         &self.editor_form.keepalive_interval,
                     )
                         .on_input(Message::EditorKeepaliveChanged)
+                        .on_submit(Message::EditorSave)
                         .padding(6)
                         .width(100)
                         .style(crate::widgets::rounded_input_style).align_x(dir_align_x())
@@ -935,6 +942,7 @@ impl Oryxis {
                         &self.editor_form.proxy_command,
                     )
                     .on_input(Message::EditorProxyCommandChanged)
+                    .on_submit(Message::EditorSave)
                     .padding(10)
                     .style(crate::widgets::rounded_input_style).align_x(dir_align_x())
                     .into(),
@@ -952,6 +960,7 @@ impl Oryxis {
                         &self.editor_form.proxy_host,
                     )
                     .on_input(Message::EditorProxyHostChanged)
+                    .on_submit(Message::EditorSave)
                     .padding(10)
                     .style(crate::widgets::rounded_input_style).align_x(dir_align_x())
                     .into(),
@@ -961,6 +970,7 @@ impl Oryxis {
                     crate::i18n::t("proxy_port"),
                     text_input("1080", &self.editor_form.proxy_port)
                         .on_input(Message::EditorProxyPortChanged)
+                        .on_submit(Message::EditorSave)
                         .padding(6)
                         .width(70)
                         .style(crate::widgets::rounded_input_style).align_x(dir_align_x())
@@ -974,6 +984,7 @@ impl Oryxis {
                         &self.editor_form.proxy_username,
                     )
                     .on_input(Message::EditorProxyUsernameChanged)
+                    .on_submit(Message::EditorSave)
                     .padding(10)
                     .style(crate::widgets::rounded_input_style).align_x(dir_align_x())
                     .into(),
@@ -997,6 +1008,7 @@ impl Oryxis {
                     crate::i18n::t("proxy_password"),
                     text_input(placeholder, &self.editor_form.proxy_password)
                         .on_input(Message::EditorProxyPasswordChanged)
+                        .on_submit(Message::EditorSave)
                         .secure(true)
                         .padding(10)
                         .style(crate::widgets::rounded_input_style).align_x(dir_align_x())

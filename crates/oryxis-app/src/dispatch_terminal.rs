@@ -54,6 +54,21 @@ impl Oryxis {
                 if let keyboard::Event::ModifiersChanged(m) = &event {
                     self.modifiers = *m;
                 }
+                // Host editor panel open -> Tab / Shift+Tab move focus
+                // between form fields like a browser, instead of falling
+                // through to the PTY (which would emit a literal \t) or a
+                // hotkey binding. focus_next / focus_previous walk iced's
+                // real focus chain, so click-then-Tab works too.
+                if self.show_host_panel
+                    && let keyboard::Event::KeyPressed { key, modifiers, .. } = &event
+                    && matches!(key, keyboard::Key::Named(keyboard::key::Named::Tab))
+                {
+                    return Ok(if modifiers.shift() {
+                        iced::widget::operation::focus_previous()
+                    } else {
+                        iced::widget::operation::focus_next()
+                    });
+                }
                 // Hotkey dispatch + capture mode live in `shortcuts.rs`
                 // (`handle_hotkey_keypress`). Returns a Task when the
                 // event was consumed by a binding (or by the Settings

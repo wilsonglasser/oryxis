@@ -33,6 +33,12 @@ impl Oryxis {
                     self.editor_form.group_name = g.label.clone();
                 }
                 self.host_panel_error = None;
+                // Land the cursor in the first field so the very first
+                // Tab keypress walks the form (focus_next with nothing
+                // focused would otherwise grab the grid search input).
+                return Ok(iced::widget::operation::focus(iced::widget::Id::new(
+                    "editor-hostname",
+                )));
             }
             Message::EditConnection(idx) => {
                 self.card_context_menu = None;
@@ -124,6 +130,9 @@ impl Oryxis {
                         initial_command: conn.initial_command.clone().unwrap_or_default(),
                         icon_style: conn.icon_style.clone(),
                     };
+                    return Ok(iced::widget::operation::focus(iced::widget::Id::new(
+                        "editor-hostname",
+                    )));
                 }
             }
             Message::EditorLabelChanged(v) => { self.editor_form.label = v; self.editor_form.username_focused = false; }
