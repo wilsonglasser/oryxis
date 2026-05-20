@@ -31,25 +31,57 @@ impl Oryxis {
                 // Brand new vault, show setup screen
                 vault_state = VaultState::NeedSetup;
             } else {
-                // Vault exists, try opening without password first
-                match v.open_without_password() {
-                    Ok(()) => {
-                        vault_state = VaultState::Unlocked;
-                        vault_has_user_password = false;
-                    }
-                    Err(_) => {
-                        // Has a real password. Try the inherited password
-                        // (from `--inherit-vault` stdin) before falling
-                        // back to the lock screen.
-                        let unlocked = inherited_password
-                            .as_ref()
-                            .is_some_and(|pw| v.unlock(pw).is_ok());
-                        if unlocked {
+                // Consult the plaintext `has_user_password` flag before
+                // running `open_without_password`. That helper attempts
+                // `unlock("")`, which runs a full Argon2id KDF against
+                // the empty password just to find out the vault is
+                // locked, ~17 ms wasted on every cold boot for users
+                // with a master password. The flag is written by
+                // `set_user_password` / `remove_user_password` /
+                // `set_master_password`, and is backfilled here for
+                // legacy vaults that pre-date the flag.
+                let flag = v.get_setting("has_user_password").ok().flatten();
+                let known_user_pw = matches!(flag.as_deref(), Some("1"));
+                if known_user_pw {
+                    // Skip empty-pw KDF entirely. Try the inherited
+                    // password (from `--inherit-vault` stdin) before
+                    // falling back to the lock screen.
+                    let unlocked = inherited_password
+                        .as_ref()
+                        .is_some_and(|pw| v.unlock(pw).is_ok());
+                    vault_state = if unlocked {
+                        VaultState::Unlocked
+                    } else {
+                        VaultState::Locked
+                    };
+                    vault_has_user_password = true;
+                } else {
+                    // Either the flag says "0" or it's missing (legacy
+                    // vault). Either way we attempt the empty unlock,
+                    // and opportunistically backfill the flag if it
+                    // wasn't there.
+                    match v.open_without_password() {
+                        Ok(()) => {
                             vault_state = VaultState::Unlocked;
-                        } else {
-                            vault_state = VaultState::Locked;
+                            vault_has_user_password = false;
+                            if flag.is_none() {
+                                let _ = v.set_setting("has_user_password", "0");
+                            }
                         }
-                        vault_has_user_password = true;
+                        Err(_) => {
+                            let unlocked = inherited_password
+                                .as_ref()
+                                .is_some_and(|pw| v.unlock(pw).is_ok());
+                            vault_state = if unlocked {
+                                VaultState::Unlocked
+                            } else {
+                                VaultState::Locked
+                            };
+                            vault_has_user_password = true;
+                            if flag.is_none() {
+                                let _ = v.set_setting("has_user_password", "1");
+                            }
+                        }
                     }
                 }
             }

@@ -499,6 +499,15 @@ impl VaultStore {
             "INSERT INTO vault_meta (key, value) VALUES ('password_check', ?1)",
             params![check],
         )?;
+        // Mirror the flag that `set_user_password` / `remove_user_password`
+        // maintain. Lets `Oryxis::boot` skip the wake-up Argon2id KDF on
+        // brand-new vaults without ever running an empty-password unlock
+        // attempt to discover the state.
+        let flag = if pw_bytes.is_empty() { "0" } else { "1" };
+        self.db.execute(
+            "INSERT OR REPLACE INTO settings (key, value) VALUES ('has_user_password', ?1)",
+            params![flag],
+        )?;
         self.master_key = Some(pw_bytes.to_vec());
         tracing::info!("Vault master password set");
         Ok(())
