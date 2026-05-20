@@ -645,8 +645,12 @@ fn url_at_cell(
 fn open_url(url: &str) {
     #[cfg(target_os = "windows")]
     {
+        use std::os::windows::process::CommandExt;
+        // CREATE_NO_WINDOW so the `cmd /C start` shim doesn't flash a
+        // console window on the GUI-subsystem app.
         let _ = std::process::Command::new("cmd")
             .args(["/C", "start", "", url])
+            .creation_flags(0x0800_0000)
             .spawn();
     }
     #[cfg(target_os = "macos")]

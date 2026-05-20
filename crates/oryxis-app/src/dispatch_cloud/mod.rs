@@ -143,6 +143,11 @@ impl Oryxis {
                     label.clone(),
                     Arc::new(Mutex::new(state)),
                 ));
+                // SSM/ECS sessions don't go through the SSH connecting
+                // pipeline, so a leftover `connecting` (e.g. a previous
+                // host's timeout that wasn't cleared) would otherwise
+                // render its progress screen over this cloud terminal.
+                self.connecting = None;
                 self.active_tab = Some(tab_idx);
                 self.remember_terminal_tab_focus(tab_idx);
                 self.active_view = View::Terminal;

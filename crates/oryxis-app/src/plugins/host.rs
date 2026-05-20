@@ -261,11 +261,18 @@ impl Connection {
         if !binary.exists() {
             return Err(PluginError::BinaryNotFound(binary.to_path_buf()));
         }
-        let mut child = Command::new(binary)
-            .stdin(Stdio::piped())
+        let mut cmd = Command::new(binary);
+        cmd.stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
-            .kill_on_drop(true)
+            .kill_on_drop(true);
+        // Plugin binaries are console-subsystem executables. Spawning
+        // one from the GUI-subsystem app (windows_subsystem = "windows")
+        // pops a visible console window per plugin, even though we pipe
+        // all three stdio streams. CREATE_NO_WINDOW suppresses it.
+        #[cfg(windows)]
+        cmd.creation_flags(0x0800_0000);
+        let mut child = cmd
             .spawn()
             .map_err(|e| PluginError::Spawn(e.to_string()))?;
 

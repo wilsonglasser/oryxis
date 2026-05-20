@@ -477,6 +477,21 @@ impl Oryxis {
                 self.overlay = None;
                 if idx < self.tabs.len() {
                     self.tabs.remove(idx);
+                    // Keep the in-flight connection progress in sync with
+                    // the tab list. Closing the connecting tab clears the
+                    // progress (otherwise the stale screen, including a
+                    // failed/timeout state, leaks into the next session,
+                    // e.g. an ECS/SSM tab that doesn't set `connecting`).
+                    // Closing an earlier tab shifts the connecting tab's
+                    // index down by one so `SshRetry`/`SshCloseProgress`
+                    // still target the right `self.tabs[..]` entry.
+                    if let Some(ref mut progress) = self.connecting {
+                        match progress.tab_idx.cmp(&idx) {
+                            std::cmp::Ordering::Equal => self.connecting = None,
+                            std::cmp::Ordering::Greater => progress.tab_idx -= 1,
+                            std::cmp::Ordering::Less => {}
+                        }
+                    }
                     self.adjust_last_terminal_tab_after_remove(idx);
                     if self.tabs.is_empty() {
                         self.active_tab = None;

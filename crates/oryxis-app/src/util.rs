@@ -102,8 +102,12 @@ pub(crate) fn sanitize_uint(input: &str, max: u64) -> String {
 pub(crate) fn open_in_browser(url: &str) -> Result<(), std::io::Error> {
     #[cfg(target_os = "windows")]
     {
+        use std::os::windows::process::CommandExt;
+        // CREATE_NO_WINDOW so the `cmd /C start` shim doesn't flash a
+        // console window on the GUI-subsystem app.
         std::process::Command::new("cmd")
             .args(["/C", "start", "", url])
+            .creation_flags(0x0800_0000)
             .spawn()?;
     }
     #[cfg(target_os = "macos")]
