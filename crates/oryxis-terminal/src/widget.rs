@@ -1546,7 +1546,13 @@ where
             // here is what alacritty/wezterm call a "symbol_map",
             // hard-coded to the bundled family since we ship it in
             // the binary.
-            if cd.c != ' ' && cd.c != '\0' {
+            //
+            // `\t` is a marker the emulator parks at the *start* of a
+            // tab span (see alacritty's `put_tab` in `term/mod.rs`)
+            // so clipboard copy can recover the original TAB. It's
+            // not a glyph: GNU `ls` in TTY column mode pads with tabs,
+            // so rendering it would tofu after every filename.
+            if cd.c != ' ' && cd.c != '\0' && cd.c != '\t' {
                 let cp = cd.c as u32;
                 // Both Private Use Areas: BMP PUA covers Powerline,
                 // Font Awesome, Devicons, Octicons, Codicons and the
