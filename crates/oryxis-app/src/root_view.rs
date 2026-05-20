@@ -66,8 +66,13 @@ impl Oryxis {
             .height(Length::Fill)
             .into();
             // The scrim itself dismisses the picker on click, outside-
-            // click-to-close pattern shared with the SFTP modals.
+            // click-to-close pattern shared with the SFTP modals. The
+            // `interaction(Idle)` is what makes `Stack` levitate the
+            // cursor so the cards underneath stop firing hover events;
+            // without a non-`None` interaction the scrim is transparent
+            // to mouse motion even though it eats clicks.
             let scrim: Element<'_, Message> = iced::widget::MouseArea::new(scrim)
+                .interaction(iced::mouse::Interaction::Idle)
                 .on_press(Message::HideLocalShellPicker)
                 .into();
             Stack::new()
@@ -97,7 +102,10 @@ impl Oryxis {
             .height(Length::Fill)
             .into();
             // Outside-click dismisses, same pattern as the other modals.
+            // `interaction(Idle)` blocks hover bleed-through to widgets
+            // below; see the local-shell scrim above for the rationale.
             let scrim: Element<'_, Message> = iced::widget::MouseArea::new(scrim)
+                .interaction(iced::mouse::Interaction::Idle)
                 .on_press(Message::HidePluginInstallModal)
                 .into();
             Stack::new()
