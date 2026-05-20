@@ -97,5 +97,5 @@ strip = true
 
 [profile.release-with-split-debuginfo-packed] 
 inherits = "release"
-debug = "true"
+debug = true
 split-debuginfo = "packed"
