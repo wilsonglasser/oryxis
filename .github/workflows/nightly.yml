@@ -60,7 +60,7 @@ jobs:
           cp target/release/oryxis dist/
           cp README.md resources/logo_64.png resources/oryxis.desktop dist/
           cd dist && tar czf ../oryxis-nightly-linux-x86_64.tar.gz *
-      - uses: actions/upload-artifact@v5
+      - uses: actions/upload-artifact@v7
         with:
           name: oryxis-nightly-linux-x86_64
           path: oryxis-nightly-linux-x86_64.tar.gz
@@ -90,7 +90,7 @@ jobs:
           cp target/release/oryxis dist/
           cp README.md resources/logo_64.png resources/oryxis.desktop dist/
           cd dist && tar czf ../oryxis-nightly-linux-aarch64.tar.gz *
-      - uses: actions/upload-artifact@v5
+      - uses: actions/upload-artifact@v7
         with:
           name: oryxis-nightly-linux-aarch64
           path: oryxis-nightly-linux-aarch64.tar.gz
@@ -115,7 +115,7 @@ jobs:
           cp target/release/oryxis dist/
           cp README.md resources/logo_64.png dist/
           cd dist && tar czf ../oryxis-nightly-macos-aarch64.tar.gz *
-      - uses: actions/upload-artifact@v5
+      - uses: actions/upload-artifact@v7
         with:
           name: oryxis-nightly-macos-aarch64
           path: oryxis-nightly-macos-aarch64.tar.gz
@@ -142,7 +142,7 @@ jobs:
           Copy-Item README.md dist\
           Copy-Item resources\logo_64.png dist\
           Compress-Archive -Path dist\* -DestinationPath oryxis-nightly-windows-x86_64.zip
-      - uses: actions/upload-artifact@v5
+      - uses: actions/upload-artifact@v7
         with:
           name: oryxis-nightly-windows-x86_64
           path: oryxis-nightly-windows-x86_64.zip
@@ -171,7 +171,7 @@ jobs:
           Copy-Item README.md dist\
           Copy-Item resources\logo_64.png dist\
           Compress-Archive -Path dist\* -DestinationPath oryxis-nightly-windows-aarch64.zip
-      - uses: actions/upload-artifact@v5
+      - uses: actions/upload-artifact@v7
         with:
           name: oryxis-nightly-windows-aarch64
           path: oryxis-nightly-windows-aarch64.zip
@@ -192,7 +192,7 @@ jobs:
           # the previous one to overwrite, and so the SHA shows up in
           # release notes.
           fetch-depth: 0
-      - uses: actions/download-artifact@v5
+      - uses: actions/download-artifact@v8
         with:
           path: dist
           merge-multiple: true

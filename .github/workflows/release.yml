@@ -66,7 +66,7 @@ jobs:
             || mv oryxis-*.AppImage oryxis-linux-x86_64.AppImage 2>/dev/null \
             || mv *.AppImage oryxis-linux-x86_64.AppImage
 
-      - uses: actions/upload-artifact@v5
+      - uses: actions/upload-artifact@v7
         with:
           name: oryxis-linux-x86_64
           path: |
@@ -118,7 +118,7 @@ jobs:
           mv Oryxis-*.AppImage oryxis-linux-aarch64.AppImage 2>/dev/null \
             || mv oryxis-*.AppImage oryxis-linux-aarch64.AppImage 2>/dev/null \
             || mv *.AppImage oryxis-linux-aarch64.AppImage
-      - uses: actions/upload-artifact@v5
+      - uses: actions/upload-artifact@v7
         with:
           name: oryxis-linux-aarch64
           path: |
@@ -146,7 +146,7 @@ jobs:
           cp target/release/oryxis dist/
           cp README.md resources/logo_64.png dist/
           cd dist && tar czf ../oryxis-macos-aarch64.tar.gz *
-      - uses: actions/upload-artifact@v5
+      - uses: actions/upload-artifact@v7
         with:
           name: oryxis-macos-aarch64
           path: oryxis-macos-aarch64.tar.gz
@@ -222,7 +222,7 @@ jobs:
           # Per-user installer (no UAC, %LOCALAPPDATA%) — auto-updater
           # picks this when the running exe lives under LOCALAPPDATA.
           makensis "/DVERSION=$version" "/DARCH=x86_64" "/DBINPATH=..\target\release" installer-user.nsi
-      - uses: actions/upload-artifact@v5
+      - uses: actions/upload-artifact@v7
         with:
           name: oryxis-windows-x86_64
           path: |
@@ -292,7 +292,7 @@ jobs:
           cd resources
           makensis "/DVERSION=$version" "/DARCH=aarch64" "/DBINPATH=..\target\aarch64-pc-windows-msvc\release" installer.nsi
           makensis "/DVERSION=$version" "/DARCH=aarch64" "/DBINPATH=..\target\aarch64-pc-windows-msvc\release" installer-user.nsi
-      - uses: actions/upload-artifact@v5
+      - uses: actions/upload-artifact@v7
         with:
           name: oryxis-windows-aarch64
           path: |
@@ -307,19 +307,19 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - uses: actions/download-artifact@v5
+      - uses: actions/download-artifact@v8
         with:
           name: oryxis-linux-x86_64
-      - uses: actions/download-artifact@v5
+      - uses: actions/download-artifact@v8
         with:
           name: oryxis-linux-aarch64
-      - uses: actions/download-artifact@v5
+      - uses: actions/download-artifact@v8
         with:
           name: oryxis-macos-aarch64
-      - uses: actions/download-artifact@v5
+      - uses: actions/download-artifact@v8
         with:
           name: oryxis-windows-x86_64
-      - uses: actions/download-artifact@v5
+      - uses: actions/download-artifact@v8
         with:
           name: oryxis-windows-aarch64
 
