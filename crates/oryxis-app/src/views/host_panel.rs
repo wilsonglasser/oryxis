@@ -618,121 +618,34 @@ impl Oryxis {
         // current pick (palette swatches if a specific theme is set,
         // a plain "inherit" row otherwise). The full picker lives in
         // its own modal so this section stays compact.
-        let theme_trigger: Element<'_, Message> = match &self.editor_form.terminal_theme {
-            Some(name) => {
-                let resolved = oryxis_terminal::TerminalTheme::ALL
+        // Themed preview tile: shows the chosen per-host palette, or the
+        // inherited global theme when there's no override, so the row is
+        // always a real preview instead of a bare "use global" dropdown.
+        // Click opens the full picker modal.
+        let (preview_theme, theme_label) = match self
+            .editor_form
+            .terminal_theme
+            .as_deref()
+            .and_then(|name| {
+                oryxis_terminal::TerminalTheme::ALL
                     .iter()
                     .find(|th| th.name() == name)
-                    .copied();
-                match resolved {
-                    Some(theme) => {
-                        let palette = theme.palette();
-                        let swatches: Vec<Element<'_, Message>> = [1usize, 2, 3, 4, 5, 6]
-                            .iter()
-                            .map(|&i| {
-                                let color = palette.ansi[i];
-                                container(
-                                    Space::new()
-                                        .width(Length::Fixed(10.0))
-                                        .height(Length::Fixed(10.0)),
-                                )
-                                .style(move |_| container::Style {
-                                    background: Some(Background::Color(color)),
-                                    border: Border {
-                                        radius: Radius::from(5.0),
-                                        ..Default::default()
-                                    },
-                                    ..Default::default()
-                                })
-                                .into()
-                            })
-                            .collect();
-                        let bg = palette.background;
-                        let fg = palette.foreground;
-                        button(
-                            container(
-                                dir_row(vec![
-                                    text(theme.name()).size(13).color(fg).into(),
-                                    Space::new().width(Length::Fill).into(),
-                                    iced::widget::Row::with_children(swatches)
-                                        .spacing(4)
-                                        .into(),
-                                ])
-                                .align_y(iced::Alignment::Center),
-                            )
-                            .padding(Padding {
-                                top: 10.0,
-                                right: 12.0,
-                                bottom: 10.0,
-                                left: 12.0,
-                            })
-                            .width(Length::Fill),
-                        )
-                        .on_press(Message::EditorOpenThemePicker)
-                        .padding(0)
-                        .width(Length::Fill)
-                        .style(move |_, _| button::Style {
-                            background: Some(Background::Color(bg)),
-                            border: Border {
-                                radius: Radius::from(8.0),
-                                ..Default::default()
-                            },
-                            ..Default::default()
-                        })
-                        .into()
-                    }
-                    None => button(
-                        container(
-                            text(crate::i18n::t("terminal_theme_inherit_global"))
-                                .size(13)
-                                .color(OryxisColors::t().text_primary),
-                        )
-                        .padding(Padding {
-                            top: 10.0,
-                            right: 12.0,
-                            bottom: 10.0,
-                            left: 12.0,
-                        })
-                        .width(Length::Fill),
-                    )
-                    .on_press(Message::EditorOpenThemePicker)
-                    .padding(0)
-                    .width(Length::Fill)
-                    .style(move |_, _| button::Style {
-                        background: Some(Background::Color(OryxisColors::t().bg_surface)),
-                        border: Border {
-                            radius: Radius::from(8.0),
-                            color: OryxisColors::t().border,
-                            width: 1.0,
-                        },
-                        ..Default::default()
-                    })
-                    .into(),
-                }
-            }
-            None => button(
-                container(
-                    text(crate::i18n::t("terminal_theme_inherit_global"))
-                        .size(13)
-                        .color(OryxisColors::t().text_primary),
+                    .copied()
+            }) {
+            Some(theme) => (theme, theme.name().to_string()),
+            None => {
+                let global = self.resolve_global_terminal_theme();
+                (
+                    global,
+                    format!(
+                        "{} ({})",
+                        crate::i18n::t("terminal_theme_inherit_global"),
+                        global.name()
+                    ),
                 )
-                .padding(Padding { top: 10.0, right: 12.0, bottom: 10.0, left: 12.0 })
-                .width(Length::Fill),
-            )
-            .on_press(Message::EditorOpenThemePicker)
-            .padding(0)
-            .width(Length::Fill)
-            .style(move |_, _| button::Style {
-                background: Some(Background::Color(OryxisColors::t().bg_surface)),
-                border: Border {
-                    radius: Radius::from(8.0),
-                    color: OryxisColors::t().border,
-                    width: 1.0,
-                },
-                ..Default::default()
-            })
-            .into(),
+            }
         };
+        let theme_trigger: Element<'_, Message> = terminal_theme_trigger(preview_theme, theme_label);
 
         // Per-host icon shape override. The "Use default" entry maps to
         // an empty string which clears the override (resolved to the
@@ -1018,4 +931,56 @@ impl Oryxis {
 
         panel_section(col)
     }
+}
+
+/// Full-width "click to open the theme picker" tile, painted in a
+/// terminal palette: `label` in the theme foreground, ANSI swatches on
+/// the trailing edge, the theme background as the fill. Used for both a
+/// chosen per-host theme and the "use global" state (where it previews
+/// the inherited global theme).
+fn terminal_theme_trigger<'a>(
+    theme: oryxis_terminal::TerminalTheme,
+    label: String,
+) -> Element<'a, Message> {
+    let palette = theme.palette();
+    let bg = palette.background;
+    let fg = palette.foreground;
+    let swatches: Vec<Element<'a, Message>> = [1usize, 2, 3, 4, 5, 6]
+        .iter()
+        .map(|&i| {
+            let color = palette.ansi[i];
+            container(
+                Space::new()
+                    .width(Length::Fixed(10.0))
+                    .height(Length::Fixed(10.0)),
+            )
+            .style(move |_| container::Style {
+                background: Some(Background::Color(color)),
+                border: Border { radius: Radius::from(5.0), ..Default::default() },
+                ..Default::default()
+            })
+            .into()
+        })
+        .collect();
+    button(
+        container(
+            dir_row(vec![
+                text(label).size(13).color(fg).into(),
+                Space::new().width(Length::Fill).into(),
+                iced::widget::Row::with_children(swatches).spacing(4).into(),
+            ])
+            .align_y(iced::Alignment::Center),
+        )
+        .padding(Padding { top: 10.0, right: 12.0, bottom: 10.0, left: 12.0 })
+        .width(Length::Fill),
+    )
+    .on_press(Message::EditorOpenThemePicker)
+    .padding(0)
+    .width(Length::Fill)
+    .style(move |_, _| button::Style {
+        background: Some(Background::Color(bg)),
+        border: Border { radius: Radius::from(8.0), ..Default::default() },
+        ..Default::default()
+    })
+    .into()
 }
