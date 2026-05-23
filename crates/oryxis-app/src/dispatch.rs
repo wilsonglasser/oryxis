@@ -373,6 +373,7 @@ impl Oryxis {
             // -- Snippets --
             Message::ShowSnippetPanel => {
                 self.show_snippet_panel = true;
+                self.return_view = None;
                 self.snippet_label.clear();
                 self.snippet_command.clear();
                 self.snippet_editing_id = None;
@@ -380,12 +381,16 @@ impl Oryxis {
             }
             Message::HideSnippetPanel => {
                 self.show_snippet_panel = false;
+                if let Some(v) = self.return_view.take() {
+                    self.active_view = v;
+                }
             }
             Message::SnippetLabelChanged(v) => self.snippet_label = v,
             Message::SnippetCommandChanged(v) => self.snippet_command = v,
             Message::EditSnippet(idx) => {
                 if let Some(snip) = self.snippets.get(idx) {
                     self.show_snippet_panel = true;
+                    self.return_view = None;
                     self.snippet_label = snip.label.clone();
                     self.snippet_command = snip.command.clone();
                     self.snippet_editing_id = Some(snip.id);
@@ -410,6 +415,9 @@ impl Oryxis {
                         Ok(()) => {
                             self.show_snippet_panel = false;
                             self.snippet_error = None;
+                            if let Some(v) = self.return_view.take() {
+                                self.active_view = v;
+                            }
                             self.load_data_from_vault();
                         }
                         Err(e) => self.snippet_error = Some(e.to_string()),
@@ -437,6 +445,45 @@ impl Oryxis {
                         } else if let Ok(mut state) = tab.active().terminal.lock() {
                             state.write(cmd.as_bytes());
                         }
+                    }
+                }
+            }
+            Message::PasteSnippet(idx) => {
+                // Same injection path as RunSnippet, but without the trailing
+                // newline so the user reviews and presses Enter themselves.
+                if let Some(snip) = self.snippets.get(idx) {
+                    let cmd = snip.command.clone();
+                    if let Some(tab_idx) = self.snippet_injection_tab()
+                        && let Some(tab) = self.tabs.get(tab_idx)
+                    {
+                        if let Some(ref ssh) = tab.active().ssh_session {
+                            let _ = ssh.write(cmd.as_bytes());
+                        } else if let Ok(mut state) = tab.active().terminal.lock() {
+                            state.write(cmd.as_bytes());
+                        }
+                    }
+                }
+            }
+            Message::OpenSnippetEditor(maybe_idx) => {
+                // Navigate to the Snippets workspace and open its editor.
+                // Dedicated message (rather than reusing ShowSnippetPanel /
+                // EditSnippet) so the workspace's own callers don't suddenly
+                // start navigating too. Remember where we came from so
+                // Save / close returns there (e.g. back to the terminal).
+                self.return_view = Some(self.active_view);
+                self.active_view = crate::state::View::Snippets;
+                self.show_snippet_panel = true;
+                self.snippet_error = None;
+                match maybe_idx.and_then(|i| self.snippets.get(i)) {
+                    Some(snip) => {
+                        self.snippet_label = snip.label.clone();
+                        self.snippet_command = snip.command.clone();
+                        self.snippet_editing_id = Some(snip.id);
+                    }
+                    None => {
+                        self.snippet_label.clear();
+                        self.snippet_command.clear();
+                        self.snippet_editing_id = None;
                     }
                 }
             }

@@ -71,6 +71,23 @@ impl Oryxis {
                         }
                     });
 
+                    // Tooltip to the left so it can't clip off the right edge.
+                    let toggle_btn = iced::widget::tooltip(
+                        toggle_btn,
+                        container(text(t("open_ai_chat")).size(12).color(OryxisColors::t().text_primary))
+                            .padding(Padding { top: 4.0, right: 8.0, bottom: 4.0, left: 8.0 })
+                            .style(|_| container::Style {
+                                background: Some(Background::Color(OryxisColors::t().bg_surface)),
+                                border: Border {
+                                    radius: Radius::from(6.0),
+                                    color: OryxisColors::t().border,
+                                    width: 1.0,
+                                },
+                                ..Default::default()
+                            }),
+                        iced::widget::tooltip::Position::Left,
+                    );
+
                     let toggle_overlay: Element<'_, Message> = container(toggle_btn)
                         .width(Length::Fill)
                         .height(Length::Fill)
@@ -88,7 +105,7 @@ impl Oryxis {
                 };
 
                 if chat_visible {
-                    let sidebar = self.view_chat_sidebar(tab);
+                    let sidebar = self.view_terminal_sidebar(tab);
                     dir_row(vec![term_with_toggle, sidebar])
                         .width(Length::Fill)
                         .height(Length::Fill)
@@ -115,41 +132,51 @@ impl Oryxis {
             .into()
     }
 
-    pub(crate) fn view_chat_sidebar<'a>(&'a self, tab: &'a TerminalTab) -> Element<'a, Message> {
-        // ── Header ──
-        // Reset (clears chat history) and Close X, both transparent at
-        // rest, bg_hover on hover, same affordance pattern as the chrome.
-        let reset_btn = chat_header_btn(iced_fonts::lucide::rotate_ccw(), Message::ChatResetConversation);
-        let close_btn = chat_header_btn(iced_fonts::lucide::x(), Message::ToggleChatSidebar);
+    pub(crate) fn view_terminal_sidebar<'a>(&'a self, tab: &'a TerminalTab) -> Element<'a, Message> {
+        use crate::state::TerminalSidebarTab as STab;
+        // Chat is only reachable when AI is enabled; otherwise the active
+        // tab effectively falls back to Snippets.
+        let active = if self.terminal_sidebar_tab == STab::Chat && !self.ai_enabled {
+            STab::Snippets
+        } else {
+            self.terminal_sidebar_tab
+        };
+
+        // ── Tab strip ──
+        // Icon tabs on the leading edge; contextual Reset (Chat only) and
+        // the Close X on the trailing edge, same affordance as the chrome.
+        let mut strip: Vec<Element<'_, Message>> = Vec::new();
+        if self.ai_enabled {
+            strip.push(sidebar_tab_btn(
+                iced_fonts::lucide::sparkles(),
+                active == STab::Chat,
+                Message::SelectTerminalSidebarTab(STab::Chat),
+            ));
+        }
+        strip.push(sidebar_tab_btn(
+            iced_fonts::lucide::code(),
+            active == STab::Snippets,
+            Message::SelectTerminalSidebarTab(STab::Snippets),
+        ));
+        strip.push(sidebar_tab_btn(
+            iced_fonts::lucide::history(),
+            active == STab::History,
+            Message::SelectTerminalSidebarTab(STab::History),
+        ));
+        strip.push(Space::new().width(Length::Fill).into());
+        if active == STab::Chat {
+            strip.push(chat_header_btn(iced_fonts::lucide::rotate_ccw(), Message::ChatResetConversation));
+            strip.push(Space::new().width(4).into());
+        }
+        strip.push(chat_header_btn(iced_fonts::lucide::x(), Message::ToggleChatSidebar));
 
         let header = container(
-            dir_row(vec![
-                iced_fonts::lucide::sparkles().size(14).color(OryxisColors::t().accent).into(),
-                Space::new().width(8).into(),
-                text(t("ai_chat")).size(14).color(OryxisColors::t().text_primary).into(),
-                Space::new().width(Length::Fill).into(),
-                reset_btn,
-                Space::new().width(4).into(),
-                close_btn,
-            ])
-            // Row needs an explicit Fill width, without it, the inner
-            // `Space::Fill` collapses and the reset/close buttons end up
-            // packed against the title text instead of pushed to the
-            // right edge of the sidebar (so clicks at the visual right
-            // were landing on empty container area, not the buttons).
-            .width(Length::Fill)
-            .align_y(iced::Alignment::Center),
+            dir_row(strip)
+                .width(Length::Fill)
+                .align_y(iced::Alignment::Center),
         )
-        .padding(Padding { top: 12.0, right: 12.0, bottom: 12.0, left: 12.0 })
-        .width(Length::Fill)
-        .style(|_| container::Style {
-            border: Border {
-                width: 0.0,
-                color: OryxisColors::t().border,
-                radius: Radius::from(0.0),
-            },
-            ..Default::default()
-        });
+        .padding(Padding { top: 8.0, right: 8.0, bottom: 8.0, left: 8.0 })
+        .width(Length::Fill);
 
         let header_separator = container(Space::new().height(1))
             .width(Length::Fill)
@@ -288,10 +315,21 @@ impl Oryxis {
         .into();
 
         // ── Assemble sidebar ──
-        let panel_column =
-            column![header, header_separator, messages_scroll, input_separator, input_row]
+        // Chat body (messages + input) is the content for the Chat tab;
+        // the other tabs swap their own content in below the strip.
+        let chat_body: Element<'_, Message> =
+            column![messages_scroll, input_separator, input_row]
                 .width(Length::Fill)
-                .height(Length::Fill);
+                .height(Length::Fill)
+                .into();
+        let content: Element<'_, Message> = match active {
+            STab::Chat => chat_body,
+            STab::Snippets => self.snippets_tab_content(),
+            STab::History => sidebar_placeholder(t("coming_soon")),
+        };
+        let panel_column = column![header, header_separator, content]
+            .width(Length::Fill)
+            .height(Length::Fill);
 
         // Optional toast, floats above the input area without taking
         // a row in the column layout. Cleared after ~1.8 s by a
@@ -632,6 +670,102 @@ impl Oryxis {
             }
         }
     }
+
+    /// Snippets tab of the terminal sidebar: New + sort header, a search
+    /// box, and a compact list. Each row injects via Paste (no newline)
+    /// or Run (with newline); the pencil opens the workspace editor.
+    fn snippets_tab_content(&self) -> Element<'_, Message> {
+        let c = OryxisColors::t();
+
+        let new_btn = button(
+            container(
+                dir_row(vec![
+                    iced_fonts::lucide::plus().size(12).color(c.button_text).into(),
+                    Space::new().width(6).into(),
+                    text(t("snippet_btn"))
+                        .size(11)
+                        .font(iced::Font {
+                            weight: iced::font::Weight::Bold,
+                            ..iced::Font::new(crate::theme::SYSTEM_UI_FAMILY)
+                        })
+                        .color(c.button_text)
+                        .into(),
+                ])
+                .align_y(iced::Alignment::Center),
+            )
+            .center_y(Length::Fixed(22.0))
+            .padding(Padding { top: 0.0, right: 12.0, bottom: 0.0, left: 12.0 }),
+        )
+        .on_press(Message::OpenSnippetEditor(None))
+        .style(|_, status| {
+            let bg = match status {
+                BtnStatus::Hovered => OryxisColors::t().button_bg_hover,
+                _ => OryxisColors::t().button_bg,
+            };
+            button::Style {
+                background: Some(Background::Color(bg)),
+                border: Border { radius: Radius::from(6.0), ..Default::default() },
+                ..Default::default()
+            }
+        });
+
+        let header = container(
+            dir_row(vec![
+                new_btn.into(),
+                Space::new().width(Length::Fill).into(),
+                crate::widgets::sort_toolbar_button(
+                    crate::state::SortMenuKind::Snippets,
+                    self.snippets_sort,
+                ),
+            ])
+            .width(Length::Fill)
+            .align_y(iced::Alignment::Center),
+        )
+        .padding(Padding { top: 10.0, right: 12.0, bottom: 6.0, left: 12.0 });
+
+        let search = container(
+            iced::widget::text_input(t("search"), &self.sidebar_snippet_search)
+                .on_input(Message::SidebarSnippetSearchChanged)
+                .padding(8)
+                .size(13)
+                .style(crate::widgets::rounded_input_style),
+        )
+        .padding(Padding { top: 0.0, right: 12.0, bottom: 8.0, left: 12.0 });
+
+        // Sort then filter, carrying original indices so Run/Paste/Edit
+        // address the right snippet (the list reorders, `self.snippets`
+        // does not).
+        let needle = self.sidebar_snippet_search.to_lowercase();
+        let mut order: Vec<usize> = (0..self.snippets.len()).collect();
+        self.snippets_sort.sort_items(
+            &mut order,
+            |&i| self.snippets[i].label.clone(),
+            |&i| self.snippets[i].created_at,
+        );
+        let mut list = column![]
+            .spacing(6)
+            .padding(Padding { top: 0.0, right: 12.0, bottom: 12.0, left: 12.0 });
+        let mut any = false;
+        for idx in order {
+            let snip = &self.snippets[idx];
+            if !needle.is_empty()
+                && !snip.label.to_lowercase().contains(&needle)
+                && !snip.command.to_lowercase().contains(&needle)
+            {
+                continue;
+            }
+            any = true;
+            list = list.push(snippet_row(idx, &snip.label, &snip.command));
+        }
+        if !any {
+            list = list.push(sidebar_placeholder(t("no_matches")));
+        }
+
+        column![header, search, scrollable(list).height(Length::Fill)]
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .into()
+    }
 }
 
 /// Custom markdown viewer that injects Copy / Play buttons inside each
@@ -745,6 +879,7 @@ impl<'a>
             .push(toolbar)
             .into()
     }
+
 }
 
 /// Filled chip-button used by the PendingTool confirmation prompt
@@ -792,6 +927,70 @@ fn pending_tool_btn<'a>(
 /// `MouseArea` directly instead of `button` to bypass any iced widget-tree
 /// quirk that was eating clicks on the previous `button(...)` version. The
 /// click area is the icon + 28×24 padding box.
+/// One icon tab in the sidebar's tab strip. Active tab gets an accent
+/// glyph on a faint accent wash; inactive is muted and transparent.
+fn sidebar_tab_btn<'a>(
+    icon: iced::widget::Text<'a>,
+    active: bool,
+    msg: Message,
+) -> Element<'a, Message> {
+    use iced::widget::MouseArea;
+    let color = if active { OryxisColors::t().accent } else { OryxisColors::t().text_muted };
+    MouseArea::new(
+        container(icon.size(15).color(color))
+            .center_x(Length::Fixed(34.0))
+            .center_y(Length::Fixed(28.0))
+            .style(move |_| container::Style {
+                background: Some(Background::Color(if active {
+                    Color { a: 0.15, ..OryxisColors::t().accent }
+                } else {
+                    Color::TRANSPARENT
+                })),
+                border: Border { radius: Radius::from(6.0), ..Default::default() },
+                ..Default::default()
+            }),
+    )
+    .on_press(msg)
+    .interaction(iced::mouse::Interaction::Pointer)
+    .into()
+}
+
+/// Centered muted text for an empty / not-yet-built sidebar tab.
+fn sidebar_placeholder<'a>(label: &'a str) -> Element<'a, Message> {
+    container(text(label).size(12).color(OryxisColors::t().text_muted))
+        .center_x(Length::Fill)
+        .padding(Padding { top: 40.0, right: 12.0, bottom: 0.0, left: 12.0 })
+        .width(Length::Fill)
+        .into()
+}
+
+/// One row in the Snippets tab: label + command on the leading edge,
+/// Edit / Paste / Run icon actions on the trailing edge.
+fn snippet_row<'a>(idx: usize, label: &'a str, command: &'a str) -> Element<'a, Message> {
+    let c = OryxisColors::t();
+    let info = column![
+        text(label).size(13).color(c.text_primary),
+        text(command).size(11).color(c.text_muted),
+    ]
+    .spacing(2)
+    .width(Length::Fill);
+    let actions = dir_row(vec![
+        chat_header_btn(iced_fonts::lucide::pencil(), Message::OpenSnippetEditor(Some(idx))),
+        chat_header_btn(iced_fonts::lucide::clipboard_copy(), Message::PasteSnippet(idx)),
+        chat_header_btn(iced_fonts::lucide::play(), Message::RunSnippet(idx)),
+    ])
+    .align_y(iced::Alignment::Center);
+    container(dir_row(vec![info.into(), actions.into()]).align_y(iced::Alignment::Center))
+        .padding(Padding { top: 8.0, right: 6.0, bottom: 8.0, left: 10.0 })
+        .width(Length::Fill)
+        .style(|_| container::Style {
+            background: Some(Background::Color(OryxisColors::t().bg_surface)),
+            border: Border { radius: Radius::from(8.0), ..Default::default() },
+            ..Default::default()
+        })
+        .into()
+}
+
 fn chat_header_btn<'a>(
     icon: iced::widget::Text<'a>,
     msg: Message,

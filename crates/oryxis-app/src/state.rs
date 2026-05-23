@@ -577,7 +577,8 @@ pub(crate) struct TerminalTab {
     pub focused_pane: usize,
     /// AI chat history for this terminal session.
     pub chat_history: Vec<ChatMessage>,
-    /// Whether the AI chat sidebar is visible.
+    /// Whether the terminal sidebar is visible (Chat / Snippets / History
+    /// tabs share this flag; the active tab is `Oryxis::terminal_sidebar_tab`).
     pub chat_visible: bool,
     /// First-token allow-list for AI tool execution. Populated when the
     /// user clicks "ALWAYS RUN" on a confirmation prompt, future tool
@@ -893,6 +894,16 @@ pub(crate) enum VaultState {
     NeedSetup,
     Locked,
     Unlocked,
+}
+
+/// Active tab inside the terminal-side panel. `Chat` is only reachable
+/// when AI is enabled; the dispatch falls back to `Snippets` otherwise.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum TerminalSidebarTab {
+    #[default]
+    Chat,
+    Snippets,
+    History,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

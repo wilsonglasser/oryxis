@@ -88,10 +88,25 @@ impl Oryxis {
 
             // ── AI chat sidebar ──
             Message::ToggleChatSidebar => {
+                let ai_enabled = self.ai_enabled;
                 if let Some(idx) = self.active_tab
                     && let Some(tab) = self.tabs.get_mut(idx) {
                         tab.chat_visible = !tab.chat_visible;
+                        // When opening with AI off, the Chat tab is hidden, so
+                        // land on Snippets instead of an empty panel.
+                        if tab.chat_visible
+                            && !ai_enabled
+                            && self.terminal_sidebar_tab == crate::state::TerminalSidebarTab::Chat
+                        {
+                            self.terminal_sidebar_tab = crate::state::TerminalSidebarTab::Snippets;
+                        }
                 }
+            }
+            Message::SelectTerminalSidebarTab(tab) => {
+                self.terminal_sidebar_tab = tab;
+            }
+            Message::SidebarSnippetSearchChanged(v) => {
+                self.sidebar_snippet_search = v;
             }
             Message::ChatInputAction(action) => {
                 self.chat_input.perform(action);

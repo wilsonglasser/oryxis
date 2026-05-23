@@ -152,6 +152,10 @@ pub struct Oryxis {
 
     // UI state
     pub(crate) active_view: View,
+    /// View to return to after closing the snippet editor, set when the
+    /// editor is opened from outside the Snippets workspace (the terminal
+    /// sidebar's New / Edit). `None` for the in-workspace flow.
+    pub(crate) return_view: Option<View>,
     pub(crate) active_group: Option<Uuid>,  // None = root, Some(id) = inside folder
     pub(crate) host_search: String,
     /// When set, the dashboard grid hides every host / group whose
@@ -724,6 +728,12 @@ pub struct Oryxis {
     /// should auto-scroll. If the user has scrolled up to read older
     /// content, we leave them where they are.
     pub(crate) chat_scroll_at_bottom: bool,
+    /// Active tab in the terminal side panel (Chat / Snippets / History).
+    pub(crate) terminal_sidebar_tab: crate::state::TerminalSidebarTab,
+    /// Search needle for the Snippets tab of the terminal sidebar. Kept
+    /// separate from `snippet_search` (the workspace view) so filtering
+    /// one doesn't disturb the other.
+    pub(crate) sidebar_snippet_search: String,
     /// User-resizable width of the chat sidebar in pixels.
     pub(crate) chat_sidebar_width: f32,
     /// Some((cursor_x_at_drag_start, sidebar_width_at_drag_start)) while

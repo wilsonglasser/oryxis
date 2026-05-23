@@ -331,6 +331,17 @@ pub enum Message {
     EditSnippet(usize),
     DeleteSnippet(usize),
     RunSnippet(usize),
+    /// Inject a snippet's command into the active terminal WITHOUT a
+    /// trailing newline (the user presses Enter), unlike `RunSnippet`.
+    PasteSnippet(usize),
+    /// Navigate to the Snippets workspace and open its editor. `Some(idx)`
+    /// preloads the row for editing; `None` opens a blank "New Snippet".
+    /// Used by the terminal sidebar's Snippets tab.
+    OpenSnippetEditor(Option<usize>),
+
+    // Terminal side panel (Chat / Snippets / History tabs)
+    SelectTerminalSidebarTab(crate::state::TerminalSidebarTab),
+    SidebarSnippetSearchChanged(String),
 
     // Known hosts
     DeleteKnownHost(usize),
