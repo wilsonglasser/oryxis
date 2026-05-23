@@ -41,68 +41,10 @@ impl Oryxis {
                     .height(Length::Fill)
                     .into();
 
-                // Chat toggle, overlaid in the top-right corner of the
-                // terminal canvas so it doesn't steal vertical space. The
-                // sparkles always render in accent and the toggle hides
-                // entirely when the sidebar is open (the sidebar header
-                // shows the same sparkle, no point duplicating it) or
-                // when AI is disabled in settings.
-                let term_with_toggle: Element<'_, Message> = if chat_visible || !self.ai_enabled {
-                    term_canvas
-                } else {
-                    let toggle_btn = button(
-                        container(
-                            iced_fonts::lucide::sparkles()
-                                .size(14)
-                                .color(OryxisColors::t().accent),
-                        )
-                        .padding(Padding { top: 6.0, right: 8.0, bottom: 6.0, left: 8.0 }),
-                    )
-                    .on_press(Message::ToggleChatSidebar)
-                    .style(|_, status| {
-                        let bg = match status {
-                            BtnStatus::Hovered => OryxisColors::t().bg_surface,
-                            _ => Color::TRANSPARENT,
-                        };
-                        button::Style {
-                            background: Some(Background::Color(bg)),
-                            border: Border { radius: Radius::from(6.0), ..Default::default() },
-                            ..Default::default()
-                        }
-                    });
-
-                    // Tooltip to the left so it can't clip off the right edge.
-                    let toggle_btn = iced::widget::tooltip(
-                        toggle_btn,
-                        container(text(t("open_ai_chat")).size(12).color(OryxisColors::t().text_primary))
-                            .padding(Padding { top: 4.0, right: 8.0, bottom: 4.0, left: 8.0 })
-                            .style(|_| container::Style {
-                                background: Some(Background::Color(OryxisColors::t().bg_surface)),
-                                border: Border {
-                                    radius: Radius::from(6.0),
-                                    color: OryxisColors::t().border,
-                                    width: 1.0,
-                                },
-                                ..Default::default()
-                            }),
-                        iced::widget::tooltip::Position::Left,
-                    );
-
-                    let toggle_overlay: Element<'_, Message> = container(toggle_btn)
-                        .width(Length::Fill)
-                        .height(Length::Fill)
-                        .align_x(iced::alignment::Horizontal::Right)
-                        .align_y(iced::alignment::Vertical::Top)
-                        .padding(Padding { top: 4.0, right: 8.0, bottom: 0.0, left: 0.0 })
-                        .into();
-
-                    iced::widget::Stack::new()
-                        .push(term_canvas)
-                        .push(toggle_overlay)
-                        .width(Length::Fill)
-                        .height(Length::Fill)
-                        .into()
-                };
+                // The AI/sidebar toggle now lives in the tab bar (panel
+                // button right of `+`), so the terminal canvas no longer
+                // carries its own floating sparkle overlay.
+                let term_with_toggle: Element<'_, Message> = term_canvas;
 
                 if chat_visible {
                     let sidebar = self.view_terminal_sidebar(tab);
@@ -675,6 +617,14 @@ impl Oryxis {
     /// box, and a compact list. Each row injects via Paste (no newline)
     /// or Run (with newline); the pencil opens the workspace editor.
     fn snippets_tab_content(&self) -> Element<'_, Message> {
+        // The editor lives inline in the sidebar (the workspace is never
+        // shown while a terminal tab is active, so navigating there is a
+        // no-op). `show_snippet_panel` is the shared "editing a snippet"
+        // flag, set by New / Edit and cleared on Save / close.
+        if self.show_snippet_panel {
+            return self.sidebar_snippet_editor();
+        }
+
         let c = OryxisColors::t();
 
         let new_btn = button(
@@ -696,7 +646,7 @@ impl Oryxis {
             .center_y(Length::Fixed(22.0))
             .padding(Padding { top: 0.0, right: 12.0, bottom: 0.0, left: 12.0 }),
         )
-        .on_press(Message::OpenSnippetEditor(None))
+        .on_press(Message::ShowSnippetPanel)
         .style(|_, status| {
             let bg = match status {
                 BtnStatus::Hovered => OryxisColors::t().button_bg_hover,
@@ -755,7 +705,12 @@ impl Oryxis {
                 continue;
             }
             any = true;
-            list = list.push(snippet_row(idx, &snip.label, &snip.command));
+            list = list.push(snippet_row(
+                idx,
+                &snip.label,
+                &snip.command,
+                self.hovered_snippet_card == Some(idx),
+            ));
         }
         if !any {
             list = list.push(sidebar_placeholder(t("no_matches")));
@@ -765,6 +720,102 @@ impl Oryxis {
             .width(Length::Fill)
             .height(Length::Fill)
             .into()
+    }
+
+    /// Compact New / Edit snippet form rendered inline in the Snippets
+    /// tab (reuses the same `snippet_*` state + messages as the workspace
+    /// editor). A back arrow cancels; Save persists and returns to the
+    /// list; Delete shows only when editing an existing snippet.
+    fn sidebar_snippet_editor(&self) -> Element<'_, Message> {
+        let c = OryxisColors::t();
+        let title = if self.snippet_editing_id.is_some() {
+            t("edit_snippet")
+        } else {
+            t("new_snippet")
+        };
+
+        let header = dir_row(vec![
+            chat_header_btn(iced_fonts::lucide::arrow_left(), Message::HideSnippetPanel),
+            Space::new().width(6).into(),
+            text(title).size(14).color(c.text_primary).into(),
+        ])
+        .align_y(iced::Alignment::Center);
+
+        let label_input: Element<'_, Message> =
+            iced::widget::text_input("restart-nginx", &self.snippet_label)
+                .on_input(Message::SnippetLabelChanged)
+                .padding(8)
+                .size(13)
+                .style(crate::widgets::rounded_input_style)
+                .into();
+        let command_input: Element<'_, Message> =
+            iced::widget::text_input("sudo systemctl restart nginx", &self.snippet_command)
+                .on_input(Message::SnippetCommandChanged)
+                .padding(8)
+                .size(13)
+                .style(crate::widgets::rounded_input_style)
+                .into();
+
+        let error: Element<'_, Message> = if let Some(err) = &self.snippet_error {
+            text(err.clone()).size(11).color(c.error).into()
+        } else {
+            Space::new().height(0).into()
+        };
+
+        let save = button(
+            container(text(t("save")).size(13).color(c.button_text))
+                .center_x(Length::Fill)
+                .padding(Padding { top: 9.0, right: 0.0, bottom: 9.0, left: 0.0 }),
+        )
+        .on_press(Message::SaveSnippet)
+        .width(Length::Fill)
+        .style(|_, _| button::Style {
+            background: Some(Background::Color(OryxisColors::t().accent)),
+            border: Border { radius: Radius::from(8.0), ..Default::default() },
+            ..Default::default()
+        });
+
+        let mut form = column![
+            header,
+            Space::new().height(12),
+            text(t("name")).size(12).color(c.text_secondary),
+            Space::new().height(4),
+            label_input,
+            Space::new().height(12),
+            text(t("command_label")).size(12).color(c.text_secondary),
+            Space::new().height(4),
+            command_input,
+            Space::new().height(10),
+            error,
+            Space::new().height(12),
+            save,
+        ]
+        .spacing(0)
+        .padding(12);
+
+        if let Some(edit_id) = self.snippet_editing_id
+            && let Some(idx) = self.snippets.iter().position(|s| s.id == edit_id)
+        {
+            let delete = button(
+                container(text(t("delete")).size(13).color(OryxisColors::t().error))
+                    .center_x(Length::Fill)
+                    .padding(Padding { top: 9.0, right: 0.0, bottom: 9.0, left: 0.0 }),
+            )
+            .on_press(Message::DeleteSnippet(idx))
+            .width(Length::Fill)
+            .style(|_, _| button::Style {
+                background: Some(Background::Color(Color::TRANSPARENT)),
+                border: Border {
+                    radius: Radius::from(8.0),
+                    color: OryxisColors::t().error,
+                    width: 1.0,
+                },
+                ..Default::default()
+            });
+            form = form.push(Space::new().height(8)).push(delete);
+        }
+
+        form.width(Length::Fill).height(Length::Fill).into()
     }
 }
 
@@ -964,30 +1015,99 @@ fn sidebar_placeholder<'a>(label: &'a str) -> Element<'a, Message> {
         .into()
 }
 
-/// One row in the Snippets tab: label + command on the leading edge,
-/// Edit / Paste / Run icon actions on the trailing edge.
-fn snippet_row<'a>(idx: usize, label: &'a str, command: &'a str) -> Element<'a, Message> {
+/// An icon action with a tooltip, used for the floating snippet-row
+/// actions so Paste (no newline) and Run (+ Enter) are self-explanatory.
+fn action_btn<'a>(
+    icon: iced::widget::Text<'a>,
+    msg: Message,
+    tip: &'a str,
+) -> Element<'a, Message> {
+    iced::widget::tooltip(
+        chat_header_btn(icon, msg),
+        container(text(tip).size(11).color(OryxisColors::t().text_primary))
+            .padding(Padding { top: 4.0, right: 8.0, bottom: 4.0, left: 8.0 })
+            .style(|_| container::Style {
+                background: Some(Background::Color(OryxisColors::t().bg_surface)),
+                border: Border {
+                    radius: Radius::from(6.0),
+                    color: OryxisColors::t().border,
+                    width: 1.0,
+                },
+                ..Default::default()
+            }),
+        iced::widget::tooltip::Position::Top,
+    )
+    .into()
+}
+
+/// One row in the Snippets tab. Label + a single ellipsized line of the
+/// command read inline; the Edit / Paste / Run actions float over the
+/// trailing edge and only appear on hover (see the card-icon convention
+/// in CLAUDE.md). `hovered` is `self.hovered_snippet_card == Some(idx)`.
+fn snippet_row<'a>(
+    idx: usize,
+    label: &'a str,
+    command: &'a str,
+    hovered: bool,
+) -> Element<'a, Message> {
     let c = OryxisColors::t();
+    // First line only, ellipsized, so multi-line snippets stay one row.
+    let first = command.lines().next().unwrap_or("");
+    let multiline = command.lines().nth(1).is_some();
+    let preview: String = {
+        let head: String = first.chars().take(48).collect();
+        if multiline || first.chars().count() > 48 {
+            format!("{head}…")
+        } else {
+            head
+        }
+    };
     let info = column![
         text(label).size(13).color(c.text_primary),
-        text(command).size(11).color(c.text_muted),
+        text(preview).size(11).color(c.text_muted),
     ]
     .spacing(2)
     .width(Length::Fill);
-    let actions = dir_row(vec![
-        chat_header_btn(iced_fonts::lucide::pencil(), Message::OpenSnippetEditor(Some(idx))),
-        chat_header_btn(iced_fonts::lucide::clipboard_copy(), Message::PasteSnippet(idx)),
-        chat_header_btn(iced_fonts::lucide::play(), Message::RunSnippet(idx)),
-    ])
-    .align_y(iced::Alignment::Center);
-    container(dir_row(vec![info.into(), actions.into()]).align_y(iced::Alignment::Center))
-        .padding(Padding { top: 8.0, right: 6.0, bottom: 8.0, left: 10.0 })
+
+    let card = container(info)
+        .padding(Padding { top: 8.0, right: 10.0, bottom: 8.0, left: 10.0 })
         .width(Length::Fill)
         .style(|_| container::Style {
             background: Some(Background::Color(OryxisColors::t().bg_surface)),
             border: Border { radius: Radius::from(8.0), ..Default::default() },
             ..Default::default()
-        })
+        });
+
+    let row_el: Element<'a, Message> = if hovered {
+        let actions = container(
+            dir_row(vec![
+                action_btn(iced_fonts::lucide::pencil(), Message::EditSnippet(idx), t("edit_snippet")),
+                action_btn(iced_fonts::lucide::clipboard_copy(), Message::PasteSnippet(idx), t("snippet_paste")),
+                action_btn(iced_fonts::lucide::play(), Message::RunSnippet(idx), t("snippet_run")),
+            ])
+            .spacing(2)
+            .align_y(iced::Alignment::Center),
+        )
+        .padding(Padding { top: 3.0, right: 5.0, bottom: 3.0, left: 5.0 })
+        .style(|_| container::Style {
+            background: Some(Background::Color(OryxisColors::t().bg_selected)),
+            border: Border { radius: Radius::from(8.0), ..Default::default() },
+            ..Default::default()
+        });
+        let overlay = container(actions)
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .align_x(iced::alignment::Horizontal::Right)
+            .align_y(iced::alignment::Vertical::Center)
+            .padding(Padding { top: 0.0, right: 6.0, bottom: 0.0, left: 0.0 });
+        iced::widget::Stack::new().push(card).push(overlay).into()
+    } else {
+        card.into()
+    };
+
+    MouseArea::new(row_el)
+        .on_enter(Message::SnippetCardHovered(idx))
+        .on_exit(Message::SnippetCardUnhovered)
         .into()
 }
 

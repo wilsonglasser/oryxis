@@ -152,10 +152,6 @@ pub struct Oryxis {
 
     // UI state
     pub(crate) active_view: View,
-    /// View to return to after closing the snippet editor, set when the
-    /// editor is opened from outside the Snippets workspace (the terminal
-    /// sidebar's New / Edit). `None` for the in-workspace flow.
-    pub(crate) return_view: Option<View>,
     pub(crate) active_group: Option<Uuid>,  // None = root, Some(id) = inside folder
     pub(crate) host_search: String,
     /// When set, the dashboard grid hides every host / group whose

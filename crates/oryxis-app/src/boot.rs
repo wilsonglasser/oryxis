@@ -139,7 +139,6 @@ impl Oryxis {
                 connections: Vec::new(),
                 groups: Vec::new(),
                 active_view: View::Dashboard,
-                return_view: None,
                 active_group: None,
                 host_search: String::new(),
                 quick_host_input: String::new(),
