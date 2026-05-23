@@ -23,18 +23,34 @@ impl Oryxis {
         // (per-host custom icon/color + shape from the icon_style setting),
         // falling back to the detected OS brand. "Edit Host" lives here on
         // the trailing edge when failed, freeing the bottom action row.
-        let conn = self.connections.iter().find(|c| c.label == progress.label);
+        // Resolve by stored index first (set at connect time), guarded by a
+        // label check so a reordered list can't grab the wrong host, then
+        // fall back to a label search. The badge stayed teal before because
+        // a missing match collapsed every field to None and the brand color
+        // never resolved.
+        let conn = self
+            .connections
+            .get(progress.connection_idx)
+            .filter(|c| c.label == progress.label)
+            .or_else(|| self.connections.iter().find(|c| c.label == progress.label));
         let badge_style = crate::widgets::resolve_host_icon_style(
             conn.and_then(|c| c.icon_style.as_deref()),
             &self.setting_default_host_icon,
         );
-        let (glyph, badge_color) = crate::os_icon::resolve_for(
+        // Two-step color, mirroring the dashboard host card: resolve the
+        // brand color from detected OS / custom icon, then let an explicit
+        // custom_color / legacy color hex override it.
+        let (glyph, icon_color) = crate::os_icon::resolve_for(
             conn.and_then(|c| c.detected_os.as_deref()),
             conn.and_then(|c| c.custom_icon.as_deref()),
-            conn.and_then(|c| c.custom_color.as_deref().or(c.color.as_deref())),
+            conn.and_then(|c| c.custom_color.as_deref()),
             conn.and_then(|c| c.username.as_deref()),
             OryxisColors::t().accent,
         );
+        let badge_color = conn
+            .and_then(|c| c.custom_color.as_deref().or(c.color.as_deref()))
+            .and_then(crate::widgets::parse_hex_color)
+            .unwrap_or(icon_color);
         let glyph_el: Element<'_, Message> = glyph.view(20.0, Color::WHITE);
         let badge = crate::widgets::host_icon(badge_style, badge_color, &progress.label, Some(glyph_el), 40.0);
 
