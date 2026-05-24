@@ -455,6 +455,10 @@ pub struct SshEngine {
     /// level `auth-agent-req@openssh.com` request *and* to
     /// `ClientHandler` so we only accept forward channels we asked for.
     agent_forwarding: bool,
+    /// Per-host environment variables sent via `set_env` before the shell
+    /// starts. `(name, value)` pairs. Non-fatal: most `sshd` only accept
+    /// `LC_*` / `LANG_*` unless `AcceptEnv` is widened.
+    env_vars: Vec<(String, String)>,
 }
 
 impl Default for SshEngine {
@@ -473,7 +477,15 @@ impl SshEngine {
             auth_timeout: std::time::Duration::from_secs(30),
             session_timeout: std::time::Duration::from_secs(10),
             agent_forwarding: false,
+            env_vars: Vec::new(),
         }
+    }
+
+    /// Set per-host environment variables to send (via `set_env`) before
+    /// the shell starts on the next session opened on this engine.
+    pub fn with_env_vars(mut self, vars: Vec<(String, String)>) -> Self {
+        self.env_vars = vars;
+        self
     }
 
     /// Enable ssh-agent forwarding for the next session opened on this
@@ -1390,6 +1402,16 @@ impl SshEngine {
             && let Err(e) = channel.agent_forward(false).await
         {
             tracing::warn!("agent_forward request failed (non-fatal): {}", e);
+        }
+
+        // Per-host environment variables. Sent before `request_shell` so
+        // the server can apply them to the launched process. Non-fatal:
+        // most `sshd` reject anything outside `AcceptEnv` (LC_*/LANG_* by
+        // default), and we'd rather give the user a shell than abort.
+        for (name, value) in &self.env_vars {
+            if let Err(e) = channel.set_env(false, name.clone(), value.clone()).await {
+                tracing::warn!("set_env {} failed (non-fatal): {}", name, e);
+            }
         }
 
         // Request shell

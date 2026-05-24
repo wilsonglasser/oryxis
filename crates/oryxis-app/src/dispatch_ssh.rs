@@ -205,6 +205,12 @@ impl Oryxis {
                             let auth_method_label = format!("{:?}", conn.auth_method);
                             let keepalive = self.effective_keepalive(&conn);
                             let agent_forwarding = conn.agent_forwarding;
+                            let env_vars: Vec<(String, String)> = conn
+                                .env_vars
+                                .iter()
+                                .filter(|e| !e.key.trim().is_empty())
+                                .map(|e| (e.key.clone(), e.value.clone()))
+                                .collect();
 
                             // Resolve EC2 Instance Connect pre-step
                             // when the connection's `cloud_ref` asks
@@ -298,7 +304,8 @@ impl Oryxis {
                                         .with_host_key_check(host_key_check)
                                         .with_host_key_ask(hk_ask_tx)
                                         .with_keepalive(keepalive)
-                                        .with_agent_forwarding(agent_forwarding);
+                                        .with_agent_forwarding(agent_forwarding)
+                                        .with_env_vars(env_vars);
 
                                     // Spawn a bridge task: receives host key queries from the SSH engine,
                                     // forwards to iced stream, and waits for UI response

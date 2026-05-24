@@ -613,6 +613,64 @@ impl Oryxis {
 
         let port_forward_section = panel_section(pf_items);
 
+        // ── Section: Environment Variables ──
+        let mut env_items = column![
+            dir_row(vec![
+                iced_fonts::lucide::variable().size(14).color(OryxisColors::t().text_muted).into(),
+                Space::new().width(10).into(),
+                column![
+                    text(t("env_vars")).size(13).color(OryxisColors::t().text_secondary),
+                    Space::new().height(2),
+                    text(t("env_vars_desc")).size(11).color(OryxisColors::t().text_muted),
+                ].width(Length::Fill).into(),
+                Space::new().width(8).into(),
+                button(text("+").size(14).color(OryxisColors::t().text_primary))
+                    .on_press(Message::EditorAddEnvVar)
+                    .style(|_, _| button::Style {
+                        background: Some(Background::Color(OryxisColors::t().bg_hover)),
+                        border: Border { radius: Radius::from(4.0), ..Default::default() },
+                        text_color: OryxisColors::t().text_primary,
+                        ..Default::default()
+                    })
+                    .padding(Padding { top: 2.0, right: 8.0, bottom: 2.0, left: 8.0 })
+                    .into(),
+            ]).align_y(iced::Alignment::Center),
+        ];
+
+        for (i, e) in self.editor_form.env_vars.iter().enumerate() {
+            let idx = i;
+            env_items = env_items.push(Space::new().height(8));
+            env_items = env_items.push(
+                dir_row(vec![
+                    text_input("LC_EXAMPLE", &e.key)
+                        .on_input(move |v| Message::EditorEnvVarKeyChanged(idx, v))
+                        .padding(6)
+                        .width(Length::FillPortion(2))
+                        .style(crate::widgets::rounded_input_style).align_x(dir_align_x())
+                        .into(),
+                    text("=").size(12).color(OryxisColors::t().text_muted).into(),
+                    text_input("value", &e.value)
+                        .on_input(move |v| Message::EditorEnvVarValueChanged(idx, v))
+                        .padding(6)
+                        .width(Length::FillPortion(3))
+                        .style(crate::widgets::rounded_input_style).align_x(dir_align_x())
+                        .into(),
+                    button(text("\u{00D7}").size(11).color(OryxisColors::t().error))
+                        .on_press(Message::EditorRemoveEnvVar(idx))
+                        .style(|_, _| button::Style {
+                            background: None,
+                            border: Border::default(),
+                            text_color: OryxisColors::t().error,
+                            ..Default::default()
+                        })
+                        .padding(Padding { top: 2.0, right: 4.0, bottom: 2.0, left: 4.0 })
+                        .into(),
+                ]).align_y(iced::Alignment::Center).spacing(4),
+            );
+        }
+
+        let env_var_section = panel_section(env_items);
+
         // ── Section: Terminal appearance ──
         // A single "click to open picker" tile that mirrors the
         // current pick (palette swatches if a specific theme is set,
@@ -748,6 +806,8 @@ impl Oryxis {
                 proxy_section,
                 Space::new().height(8),
                 port_forward_section,
+                Space::new().height(8),
+                env_var_section,
                 Space::new().height(8),
                 appearance_section,
             ]

@@ -750,6 +750,10 @@ pub enum Message {
     EditorPortFwdLocalPortChanged(usize, String),
     EditorPortFwdRemoteHostChanged(usize, String),
     EditorPortFwdRemotePortChanged(usize, String),
+    EditorAddEnvVar,
+    EditorRemoveEnvVar(usize),
+    EditorEnvVarKeyChanged(usize, String),
+    EditorEnvVarValueChanged(usize, String),
 
     // SSH agent forwarding (per-host opt-in)
     EditorToggleAgentForwarding,

@@ -651,6 +651,7 @@ pub(crate) struct ConnectionForm {
     pub username_focused: bool,
     /// Port forwarding rules (local -L style).
     pub port_forwards: Vec<PortForwardForm>,
+    pub env_vars: Vec<EnvVarForm>,
     /// Whether this host is exposed via MCP.
     pub mcp_enabled: bool,
     /// Forward the local ssh-agent socket to the remote shell. See the
@@ -783,6 +784,12 @@ pub(crate) struct PortForwardForm {
     pub remote_port: String,
 }
 
+#[derive(Debug, Clone, Default)]
+pub(crate) struct EnvVarForm {
+    pub key: String,
+    pub value: String,
+}
+
 impl Default for ConnectionForm {
     fn default() -> Self {
         Self {
@@ -802,6 +809,7 @@ impl Default for ConnectionForm {
             password_visible: false,
             username_focused: false,
             port_forwards: Vec::new(),
+            env_vars: Vec::new(),
             mcp_enabled: true,
             agent_forwarding: false,
             proxy_kind: ProxyKind::None,

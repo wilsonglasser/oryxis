@@ -14,7 +14,7 @@ use oryxis_vault::VaultError;
 
 use crate::app::{Message, Oryxis};
 use crate::mcp::{install_mcp_config_to_file, mcp_config_json};
-use crate::state::{ConnectionForm, PortForwardForm, VaultState, View};
+use crate::state::{ConnectionForm, EnvVarForm, PortForwardForm, VaultState, View};
 use crate::util::strip_ansi;
 
 /// Chain `message` through a domain handler. If the handler claims it
@@ -685,6 +685,24 @@ impl Oryxis {
             Message::EditorPortFwdRemotePortChanged(i, v) => {
                 if let Some(pf) = self.editor_form.port_forwards.get_mut(i) {
                     pf.remote_port = v;
+                }
+            }
+            Message::EditorAddEnvVar => {
+                self.editor_form.env_vars.push(EnvVarForm::default());
+            }
+            Message::EditorRemoveEnvVar(i) => {
+                if i < self.editor_form.env_vars.len() {
+                    self.editor_form.env_vars.remove(i);
+                }
+            }
+            Message::EditorEnvVarKeyChanged(i, v) => {
+                if let Some(e) = self.editor_form.env_vars.get_mut(i) {
+                    e.key = v;
+                }
+            }
+            Message::EditorEnvVarValueChanged(i, v) => {
+                if let Some(e) = self.editor_form.env_vars.get_mut(i) {
+                    e.value = v;
                 }
             }
             Message::ToggleMcpServer => {

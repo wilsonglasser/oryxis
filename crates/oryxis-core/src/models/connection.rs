@@ -31,6 +31,11 @@ pub struct Connection {
     pub color: Option<String>,
     #[serde(default)]
     pub port_forwards: Vec<PortForward>,
+    /// Environment variables sent to the remote shell via SSH `setenv`
+    /// before the shell starts. Note most `sshd` only accept `LC_*` /
+    /// `LANG_*` unless `AcceptEnv` is widened.
+    #[serde(default)]
+    pub env_vars: Vec<EnvVar>,
     pub mcp_enabled: bool,
     pub last_used: Option<chrono::DateTime<chrono::Utc>>,
     pub created_at: chrono::DateTime<chrono::Utc>,
@@ -120,6 +125,7 @@ impl Connection {
             group_id: None,
             jump_chain: Vec::new(),
             port_forwards: Vec::new(),
+            env_vars: Vec::new(),
             proxy: None,
             proxy_identity_id: None,
             tags: Vec::new(),
@@ -158,6 +164,12 @@ pub struct PortForward {
     pub local_port: u16,
     pub remote_host: String,
     pub remote_port: u16,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct EnvVar {
+    pub key: String,
+    pub value: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

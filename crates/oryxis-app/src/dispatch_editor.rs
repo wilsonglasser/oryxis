@@ -90,6 +90,10 @@ impl Oryxis {
                             remote_host: pf.remote_host.clone(),
                             remote_port: pf.remote_port.to_string(),
                         }).collect(),
+                        env_vars: conn.env_vars.iter().map(|e| crate::state::EnvVarForm {
+                            key: e.key.clone(),
+                            value: e.value.clone(),
+                        }).collect(),
                         mcp_enabled: conn.mcp_enabled,
                         agent_forwarding: conn.agent_forwarding,
                         // Saved-identity reference takes precedence over
@@ -346,6 +350,17 @@ impl Oryxis {
                         local_port,
                         remote_host: pf.remote_host.clone(),
                         remote_port,
+                    })
+                }).collect();
+                // Env vars: keep rows with a non-empty key (value may be
+                // empty); trim the key so accidental whitespace doesn't
+                // create a bogus variable name.
+                conn.env_vars = self.editor_form.env_vars.iter().filter_map(|e| {
+                    let key = e.key.trim();
+                    if key.is_empty() { return None; }
+                    Some(oryxis_core::models::connection::EnvVar {
+                        key: key.to_string(),
+                        value: e.value.clone(),
                     })
                 }).collect();
                 conn.mcp_enabled = self.editor_form.mcp_enabled;
