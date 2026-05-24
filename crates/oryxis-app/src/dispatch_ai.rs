@@ -108,6 +108,23 @@ impl Oryxis {
             Message::SidebarSnippetSearchChanged(v) => {
                 self.sidebar_snippet_search = v;
             }
+            Message::ToggleSidebarSort => {
+                self.sidebar_sort_open = !self.sidebar_sort_open;
+                if self.sidebar_sort_open {
+                    self.sidebar_search_open = false;
+                }
+            }
+            Message::ToggleSidebarSearch => {
+                self.sidebar_search_open = !self.sidebar_search_open;
+                self.sidebar_sort_open = false;
+                if self.sidebar_search_open {
+                    return Ok(iced::widget::operation::focus(iced::widget::Id::new(
+                        "sidebar-snippet-search",
+                    )));
+                }
+                // Collapsing clears the needle so the list shows everything.
+                self.sidebar_snippet_search.clear();
+            }
             Message::ChatInputAction(action) => {
                 self.chat_input.perform(action);
             }

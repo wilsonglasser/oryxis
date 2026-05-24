@@ -659,28 +659,31 @@ impl Oryxis {
             }
         });
 
-        let header = container(
+        // Header: New + sort + search icons; when search is expanded, a
+        // focused input (with a close X) takes over the whole row.
+        let header_row: iced::widget::Row<'_, Message> = if self.sidebar_search_open {
+            dir_row(vec![
+                iced::widget::text_input(t("search"), &self.sidebar_snippet_search)
+                    .id(iced::widget::Id::new("sidebar-snippet-search"))
+                    .on_input(Message::SidebarSnippetSearchChanged)
+                    .padding(8)
+                    .size(13)
+                    .style(crate::widgets::rounded_input_style)
+                    .into(),
+                Space::new().width(6).into(),
+                chat_header_btn(iced_fonts::lucide::x(), Message::ToggleSidebarSearch),
+            ])
+        } else {
             dir_row(vec![
                 new_btn.into(),
                 Space::new().width(Length::Fill).into(),
-                crate::widgets::sort_toolbar_button(
-                    crate::state::SortMenuKind::Snippets,
-                    self.snippets_sort,
-                ),
+                chat_header_btn(sort_glyph(self.snippets_sort), Message::ToggleSidebarSort),
+                Space::new().width(2).into(),
+                chat_header_btn(iced_fonts::lucide::search(), Message::ToggleSidebarSearch),
             ])
-            .width(Length::Fill)
-            .align_y(iced::Alignment::Center),
-        )
-        .padding(Padding { top: 10.0, right: 12.0, bottom: 6.0, left: 12.0 });
-
-        let search = container(
-            iced::widget::text_input(t("search"), &self.sidebar_snippet_search)
-                .on_input(Message::SidebarSnippetSearchChanged)
-                .padding(8)
-                .size(13)
-                .style(crate::widgets::rounded_input_style),
-        )
-        .padding(Padding { top: 0.0, right: 12.0, bottom: 8.0, left: 12.0 });
+        };
+        let header = container(header_row.width(Length::Fill).align_y(iced::Alignment::Center))
+            .padding(Padding { top: 10.0, right: 12.0, bottom: 8.0, left: 12.0 });
 
         // Sort then filter, carrying original indices so Run/Paste/Edit
         // address the right snippet (the list reorders, `self.snippets`
@@ -716,10 +719,77 @@ impl Oryxis {
             list = list.push(sidebar_placeholder(t("no_matches")));
         }
 
-        column![header, search, scrollable(list).height(Length::Fill)]
+        let base = column![header, scrollable(list).height(Length::Fill)]
             .width(Length::Fill)
-            .height(Length::Fill)
-            .into()
+            .height(Length::Fill);
+
+        if self.sidebar_sort_open {
+            use crate::state::{ListSort, SortMenuKind};
+            let menu = container(column![
+                crate::widgets::sort_menu_row(
+                    SortMenuKind::Snippets,
+                    ListSort::LabelAsc,
+                    iced_fonts::lucide::arrow_down_a_z::<iced::Theme, iced::Renderer>(),
+                    "sort_label_asc",
+                    self.snippets_sort == ListSort::LabelAsc,
+                ),
+                crate::widgets::sort_menu_row(
+                    SortMenuKind::Snippets,
+                    ListSort::LabelDesc,
+                    iced_fonts::lucide::arrow_down_z_a::<iced::Theme, iced::Renderer>(),
+                    "sort_label_desc",
+                    self.snippets_sort == ListSort::LabelDesc,
+                ),
+                crate::widgets::sort_menu_row(
+                    SortMenuKind::Snippets,
+                    ListSort::NewestFirst,
+                    iced_fonts::lucide::calendar_arrow_down::<iced::Theme, iced::Renderer>(),
+                    "sort_newest_first",
+                    self.snippets_sort == ListSort::NewestFirst,
+                ),
+                crate::widgets::sort_menu_row(
+                    SortMenuKind::Snippets,
+                    ListSort::OldestFirst,
+                    iced_fonts::lucide::calendar_arrow_up::<iced::Theme, iced::Renderer>(),
+                    "sort_oldest_first",
+                    self.snippets_sort == ListSort::OldestFirst,
+                ),
+            ])
+            .width(Length::Fixed(190.0))
+            .padding(Padding { top: 4.0, right: 0.0, bottom: 4.0, left: 0.0 })
+            .style(|_| container::Style {
+                background: Some(Background::Color(OryxisColors::t().bg_surface)),
+                border: Border {
+                    radius: Radius::from(8.0),
+                    color: OryxisColors::t().border,
+                    width: 1.0,
+                },
+                ..Default::default()
+            });
+            // Anchor under the header, hugging the trailing edge.
+            let positioned = container(column![
+                Space::new().height(Length::Fixed(46.0)),
+                container(menu)
+                    .width(Length::Fill)
+                    .align_x(iced::alignment::Horizontal::Right)
+                    .padding(Padding { top: 0.0, right: 12.0, bottom: 0.0, left: 0.0 }),
+            ])
+            .width(Length::Fill)
+            .height(Length::Fill);
+            // Transparent backdrop dismisses the popover on any click.
+            let backdrop: Element<'_, Message> = MouseArea::new(
+                container(Space::new()).width(Length::Fill).height(Length::Fill),
+            )
+            .on_press(Message::ToggleSidebarSort)
+            .into();
+            iced::widget::Stack::new()
+                .push(base)
+                .push(backdrop)
+                .push(positioned)
+                .into()
+        } else {
+            base.into()
+        }
     }
 
     /// Compact New / Edit snippet form rendered inline in the Snippets
@@ -1004,6 +1074,18 @@ fn sidebar_tab_btn<'a>(
     .on_press(msg)
     .interaction(iced::mouse::Interaction::Pointer)
     .into()
+}
+
+/// Glyph for the collapsed sort button, reflecting the current sort so
+/// the icon doubles as a state indicator (matches the workspace toolbar).
+fn sort_glyph<'a>(sort: crate::state::ListSort) -> iced::widget::Text<'a> {
+    use crate::state::ListSort;
+    match sort {
+        ListSort::LabelAsc => iced_fonts::lucide::arrow_down_a_z(),
+        ListSort::LabelDesc => iced_fonts::lucide::arrow_down_z_a(),
+        ListSort::NewestFirst => iced_fonts::lucide::calendar_arrow_down(),
+        ListSort::OldestFirst => iced_fonts::lucide::calendar_arrow_up(),
+    }
 }
 
 /// Centered muted text for an empty / not-yet-built sidebar tab.

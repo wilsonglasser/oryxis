@@ -331,6 +331,9 @@ impl Oryxis {
             }
             Message::SetListSort(kind, sort) => {
                 use crate::state::SortMenuKind;
+                // Selecting from the sidebar's own sort popover dismisses it
+                // (harmless for the workspace overlay, which closes itself).
+                self.sidebar_sort_open = false;
                 let key = match kind {
                     SortMenuKind::Hosts => {
                         self.hosts_sort = sort;

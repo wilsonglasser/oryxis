@@ -338,6 +338,11 @@ pub enum Message {
     // Terminal side panel (Chat / Snippets / History tabs)
     SelectTerminalSidebarTab(crate::state::TerminalSidebarTab),
     SidebarSnippetSearchChanged(String),
+    /// Toggle the Snippets-tab sort popover.
+    ToggleSidebarSort,
+    /// Toggle the Snippets-tab search field (autofocuses on open, clears
+    /// the needle on close).
+    ToggleSidebarSearch,
 
     // Known hosts
     DeleteKnownHost(usize),

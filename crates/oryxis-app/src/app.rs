@@ -730,6 +730,12 @@ pub struct Oryxis {
     /// separate from `snippet_search` (the workspace view) so filtering
     /// one doesn't disturb the other.
     pub(crate) sidebar_snippet_search: String,
+    /// Sort dropdown open in the Snippets tab (a sidebar-local popover, not
+    /// the workspace's window-anchored overlay).
+    pub(crate) sidebar_sort_open: bool,
+    /// Search field expanded in the Snippets tab. Collapsed = a search
+    /// icon; expanded = a focused input that replaces the New / sort row.
+    pub(crate) sidebar_search_open: bool,
     /// User-resizable width of the chat sidebar in pixels.
     pub(crate) chat_sidebar_width: f32,
     /// Some((cursor_x_at_drag_start, sidebar_width_at_drag_start)) while

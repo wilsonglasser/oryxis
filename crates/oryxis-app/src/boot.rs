@@ -397,6 +397,8 @@ impl Oryxis {
                 chat_scroll_at_bottom: true,
                 terminal_sidebar_tab: crate::state::TerminalSidebarTab::default(),
                 sidebar_snippet_search: String::new(),
+                sidebar_sort_open: false,
+                sidebar_search_open: false,
                 chat_sidebar_width: 350.0,
                 chat_sidebar_drag: None,
                 mcp_server_enabled: false,
