@@ -6,6 +6,7 @@ fn main() {
     #[cfg(windows)]
     {
         let mut res = winresource::WindowsResource::new();
+        res.set_manifest_file("../../resources/manifest.xml");
         res.set_icon("../../resources/logo.ico");
         res.set("FileDescription", "Oryxis SSH Client");
         res.set("ProductName", "Oryxis");
