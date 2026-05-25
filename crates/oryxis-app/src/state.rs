@@ -913,7 +913,6 @@ pub enum TerminalSidebarTab {
     #[default]
     Chat,
     Snippets,
-    History,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

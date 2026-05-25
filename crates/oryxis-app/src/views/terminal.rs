@@ -100,11 +100,6 @@ impl Oryxis {
             active == STab::Snippets,
             Message::SelectTerminalSidebarTab(STab::Snippets),
         ));
-        strip.push(sidebar_tab_btn(
-            iced_fonts::lucide::history(),
-            active == STab::History,
-            Message::SelectTerminalSidebarTab(STab::History),
-        ));
         strip.push(Space::new().width(Length::Fill).into());
         if active == STab::Chat {
             strip.push(chat_header_btn(iced_fonts::lucide::rotate_ccw(), Message::ChatResetConversation));
@@ -267,7 +262,6 @@ impl Oryxis {
         let content: Element<'_, Message> = match active {
             STab::Chat => chat_body,
             STab::Snippets => self.snippets_tab_content(),
-            STab::History => sidebar_placeholder(t("coming_soon")),
         };
         let panel_column = column![header, header_separator, content]
             .width(Length::Fill)
