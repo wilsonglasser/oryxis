@@ -36,6 +36,10 @@ pub struct Connection {
     /// `LANG_*` unless `AcceptEnv` is widened.
     #[serde(default)]
     pub env_vars: Vec<EnvVar>,
+    /// Per-host character encoding label (e.g. `"Big5"`). `None` = UTF-8.
+    /// Drives PTY transcoding in the SSH engine for legacy charsets.
+    #[serde(default)]
+    pub encoding: Option<String>,
     pub mcp_enabled: bool,
     pub last_used: Option<chrono::DateTime<chrono::Utc>>,
     pub created_at: chrono::DateTime<chrono::Utc>,
@@ -126,6 +130,7 @@ impl Connection {
             jump_chain: Vec::new(),
             port_forwards: Vec::new(),
             env_vars: Vec::new(),
+            encoding: None,
             proxy: None,
             proxy_identity_id: None,
             tags: Vec::new(),

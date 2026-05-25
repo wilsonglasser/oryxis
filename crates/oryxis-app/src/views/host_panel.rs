@@ -740,6 +740,27 @@ impl Oryxis {
         .padding(10)
         .style(crate::widgets::rounded_pick_list_style);
 
+        // Per-host terminal encoding. "UTF-8" is the default (stored as
+        // None); the rest are encoding_rs labels the SSH engine transcodes.
+        let encoding_options: Vec<String> = [
+            "UTF-8", "Big5", "GBK", "gb18030", "Shift_JIS", "EUC-JP",
+            "EUC-KR", "ISO-8859-1", "ISO-8859-15", "windows-1251",
+            "windows-1252", "KOI8-R",
+        ]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+        let encoding_selected = self
+            .editor_form
+            .encoding
+            .clone()
+            .unwrap_or_else(|| "UTF-8".to_string());
+        let encoding_picker = pick_list(Some(encoding_selected), encoding_options, |s: &String| s.clone())
+            .on_select(Message::EditorEncodingChanged)
+            .width(220)
+            .padding(10)
+            .style(crate::widgets::rounded_pick_list_style);
+
         let appearance_section = panel_section(column![
             text(crate::i18n::t("terminal_theme"))
                 .size(13)
@@ -760,6 +781,16 @@ impl Oryxis {
                 .color(OryxisColors::t().text_muted),
             Space::new().height(8),
             icon_picker,
+            Space::new().height(12),
+            text(crate::i18n::t("host_encoding"))
+                .size(13)
+                .color(OryxisColors::t().text_primary),
+            Space::new().height(4),
+            text(crate::i18n::t("host_encoding_desc"))
+                .size(11)
+                .color(OryxisColors::t().text_muted),
+            Space::new().height(8),
+            encoding_picker,
         ]);
 
         // ── Error ──

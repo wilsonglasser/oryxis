@@ -14,6 +14,9 @@ tokio-socks = "0.5"
 uuid = { workspace = true }
 # HTTP CONNECT Proxy-Authorization: Basic header
 base64 = { workspace = true }
+# Per-host terminal encoding: transcode PTY bytes <-> UTF-8 for non-UTF-8
+# charsets (Big5, Shift-JIS, CP437, ...). UTF-8 hosts skip it entirely.
+encoding_rs = "0.8"
 
 [dev-dependencies]
 # Spin up an ephemeral OpenSSH container per test for hermetic SFTP /

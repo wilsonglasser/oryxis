@@ -459,6 +459,11 @@ pub struct SshEngine {
     /// starts. `(name, value)` pairs. Non-fatal: most `sshd` only accept
     /// `LC_*` / `LANG_*` unless `AcceptEnv` is widened.
     env_vars: Vec<(String, String)>,
+    /// Per-host character encoding label (e.g. `"Big5"`, `"Shift_JIS"`).
+    /// `None` or UTF-8 means no transcoding (the terminal is UTF-8); any
+    /// other charset is decoded to UTF-8 on the way in and encoded back on
+    /// the way out.
+    encoding: Option<String>,
 }
 
 impl Default for SshEngine {
@@ -478,6 +483,7 @@ impl SshEngine {
             session_timeout: std::time::Duration::from_secs(10),
             agent_forwarding: false,
             env_vars: Vec::new(),
+            encoding: None,
         }
     }
 
@@ -485,6 +491,14 @@ impl SshEngine {
     /// the shell starts on the next session opened on this engine.
     pub fn with_env_vars(mut self, vars: Vec<(String, String)>) -> Self {
         self.env_vars = vars;
+        self
+    }
+
+    /// Set the per-host character encoding. `None` / `"UTF-8"` leaves the
+    /// byte stream untouched; any other label transcodes PTY data to and
+    /// from UTF-8 for the terminal.
+    pub fn with_encoding(mut self, encoding: Option<String>) -> Self {
+        self.encoding = encoding;
         self
     }
 
@@ -1423,12 +1437,24 @@ impl SshEngine {
         let (writer_tx, mut writer_rx) = mpsc::unbounded_channel::<Vec<u8>>();
         let (resize_tx, mut resize_rx) = mpsc::unbounded_channel::<(u16, u16)>();
 
+        // Resolve the per-host charset once. `None` (or UTF-8) means the
+        // byte stream is forwarded untouched; any other charset is decoded
+        // to UTF-8 inbound and encoded back outbound for the terminal.
+        let enc: Option<&'static encoding_rs::Encoding> = self
+            .encoding
+            .as_deref()
+            .and_then(|n| encoding_rs::Encoding::for_label(n.as_bytes()))
+            .filter(|e| *e != encoding_rs::UTF_8);
+
         let mut channel_writer = channel.make_writer();
 
         // Reader task, multiplexes incoming PTY data with outgoing
         // window-change requests so we only own `channel` in one place.
         let reader_task = tokio::spawn(async move {
             let mut channel = channel;
+            // Stateful decoder so a multi-byte char split across two reads
+            // still decodes correctly. `None` for UTF-8 (passthrough).
+            let mut decoder = enc.map(|e| e.new_decoder());
             loop {
                 tokio::select! {
                     msg = channel.wait() => {
@@ -1446,10 +1472,18 @@ impl SshEngine {
                             }
                             _ => continue,
                         };
-                        if let Some(b) = bytes
-                            && output_tx.send(b).is_err()
-                        {
-                            break;
+                        if let Some(b) = bytes {
+                            let out = match &mut decoder {
+                                Some(dec) => {
+                                    let mut s = String::with_capacity(b.len() + 16);
+                                    let _ = dec.decode_to_string(&b, &mut s, false);
+                                    s.into_bytes()
+                                }
+                                None => b,
+                            };
+                            if output_tx.send(out).is_err() {
+                                break;
+                            }
                         }
                     }
                     Some((cols, rows)) = resize_rx.recv() => {
@@ -1467,6 +1501,17 @@ impl SshEngine {
         // Writer task
         let writer_task = tokio::spawn(async move {
             while let Some(data) = writer_rx.recv().await {
+                // Terminal input arrives as UTF-8; encode it to the host
+                // charset when one is set. One-shot per write is fine:
+                // keystrokes/pastes arrive as whole UTF-8 chars.
+                let data = match enc {
+                    Some(e) => {
+                        let text = String::from_utf8_lossy(&data);
+                        let (encoded, _, _) = e.encode(&text);
+                        encoded.into_owned()
+                    }
+                    None => data,
+                };
                 if let Err(e) = channel_writer.write_all(&data).await {
                     tracing::error!("SSH write error: {}", e);
                     break;

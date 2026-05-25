@@ -133,6 +133,7 @@ impl Oryxis {
                             .map(|r| r.transport_pref),
                         initial_command: conn.initial_command.clone().unwrap_or_default(),
                         icon_style: conn.icon_style.clone(),
+                        encoding: conn.encoding.clone(),
                     };
                     return Ok(iced::widget::operation::focus(iced::widget::Id::new(
                         "editor-hostname",
@@ -266,6 +267,11 @@ impl Oryxis {
                     _ => None,
                 };
             }
+            Message::EditorEncodingChanged(v) => {
+                // "UTF-8" is the implicit default, stored as None so the
+                // SSH engine skips transcoding entirely.
+                self.editor_form.encoding = if v == "UTF-8" { None } else { Some(v) };
+            }
             Message::EditorKeepaliveChanged(v) => {
                 // Digits only; preserve empty (= inherit global). Cap at
                 // 86_400s (1 day) like the global setting field, so users
@@ -367,6 +373,7 @@ impl Oryxis {
                 conn.agent_forwarding = self.editor_form.agent_forwarding;
                 conn.terminal_theme = self.editor_form.terminal_theme.clone();
                 conn.icon_style = self.editor_form.icon_style.clone();
+                conn.encoding = self.editor_form.encoding.clone();
                 // Initial command, empty == None (no command sent).
                 conn.initial_command = if self.editor_form.initial_command.trim().is_empty() {
                     None

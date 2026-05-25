@@ -211,6 +211,7 @@ impl Oryxis {
                                 .filter(|e| !e.key.trim().is_empty())
                                 .map(|e| (e.key.clone(), e.value.clone()))
                                 .collect();
+                            let encoding = conn.encoding.clone();
 
                             // Resolve EC2 Instance Connect pre-step
                             // when the connection's `cloud_ref` asks
@@ -305,7 +306,8 @@ impl Oryxis {
                                         .with_host_key_ask(hk_ask_tx)
                                         .with_keepalive(keepalive)
                                         .with_agent_forwarding(agent_forwarding)
-                                        .with_env_vars(env_vars);
+                                        .with_env_vars(env_vars)
+                                        .with_encoding(encoding);
 
                                     // Spawn a bridge task: receives host key queries from the SSH engine,
                                     // forwards to iced stream, and waits for UI response

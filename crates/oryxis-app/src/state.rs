@@ -694,6 +694,7 @@ pub(crate) struct ConnectionForm {
     /// Per-host icon shape override. `None` falls back to the global
     /// `default_host_icon` setting. Mirrors `Connection.icon_style`.
     pub icon_style: Option<String>,
+    pub encoding: Option<String>,
 }
 
 /// UI-side proxy kind. Includes a `None` (disabled) variant, the
@@ -825,6 +826,7 @@ impl Default for ConnectionForm {
             cloud_transport: None,
             initial_command: String::new(),
             icon_style: None,
+            encoding: None,
         }
     }
 }
