@@ -133,19 +133,24 @@ jobs:
             ~/.cargo/git/
             target/
           key: windows-x86-nightly-${{ hashFiles('**/Cargo.lock') }}
-      - run: cargo build --release -p oryxis-app
-      - name: Package zip
+      - run: cargo build --release-with-split-debuginfo-packed -p oryxis-app
+      - name: Package zip & pdb's
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path dist
-          Copy-Item target\release\oryxis.exe dist\
+          Copy-Item target\release-with-split-debuginfo-packed\oryxis.exe dist\
           Copy-Item README.md dist\
           Copy-Item resources\logo_64.png dist\
           Compress-Archive -Path dist\* -DestinationPath oryxis-nightly-windows-x86_64.zip
+          New-Item -ItemType Directory -Force -Path pdb
+          Copy-Item -Path target\release-with-split-debuginfo-packed\*.pdb pdb\
+          Compress-Archive -Path pdb\* -DestinationPath oryxis-nightly-windows-x86_64-pdb.zip
       - uses: actions/upload-artifact@v7
         with:
           name: oryxis-nightly-windows-x86_64
-          path: oryxis-nightly-windows-x86_64.zip
+          path: |
+            oryxis-nightly-windows-x86_64.zip
+            oryxis-nightly-windows-x86_64-pdb.zip
 
   build-windows-arm:
     name: Windows ARM64
