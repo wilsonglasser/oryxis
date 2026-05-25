@@ -133,7 +133,7 @@ jobs:
             ~/.cargo/git/
             target/
           key: windows-x86-nightly-${{ hashFiles('**/Cargo.lock') }}
-      - run: cargo build --release-with-split-debuginfo-packed -p oryxis-app
+      - run: cargo build --profile release-with-split-debuginfo-packed -p oryxis-app
       - name: Package zip & pdb's
         shell: pwsh
         run: |
