@@ -6,6 +6,50 @@ project uses [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.7.1] - 2026-05-25
+
+### Added
+- **Terminal side panel with tabs.** A panel toggle in the tab bar (right
+  of `+`) opens a sidebar with **Chat** (when AI is enabled) and
+  **Snippets** tabs, replacing the standalone chat toggle and the
+  redundant host-search button.
+  - Snippets tab: inline New / Edit editor (no context switch to the
+    workspace), an expanding search field, a sort popover (A-z / Z-a /
+    newest / oldest), and per-row Edit / Paste (no newline) / Run
+    (+ Enter). Action icons float over the row and reveal on hover; rows
+    show a single ellipsized command line.
+  - **Built-in "Apply sudo password"** action: types the active host's
+    stored password + Enter (e.g. to answer a `sudo` prompt). Shown only
+    for a live SSH session, never written to the session log.
+- **Per-host environment variables.** Sent to the remote shell via SSH
+  `setenv` before the shell starts (most `sshd` accept only `LC_*` /
+  `LANG_*` unless `AcceptEnv` is widened). Editable in the host editor;
+  rides along with connection sync and portable export.
+- **Per-host terminal encoding.** Transcodes the PTY stream to and from
+  UTF-8 for legacy charsets (Big5, GBK, gb18030, Shift_JIS, EUC-JP,
+  EUC-KR, ISO-8859-*, windows-125x, KOI8-R) via `encoding_rs`. UTF-8
+  hosts are pure passthrough.
+- **Theme preview in the host editor.** The Terminal Theme selector
+  always shows a palette swatch preview now, including a preview of the
+  inherited global theme for the "use global" state.
+- **Connect-screen redesign.** Vertical timeline instead of the
+  horizontal step bar, a selectable connection log with a Copy logs
+  button, the host badge following the configured icon / color, and Edit
+  Host moved into the header.
+- **Keyboard navigation in the host editor** (Tab between fields, Enter
+  to save).
+
+### Fixed
+- Windows: embed the Common Controls v6 manifest so native controls are
+  themed.
+- Windows: suppress plugin console windows; clear stale connect progress.
+- Hover bleed-through under modal scrims.
+- Terminal tab markers rendered as tofu boxes.
+
+### Changed
+- Bumped `russh` to 0.60.3; dropped `tray-icon` default features
+  (clears a glib 0.18 advisory); skip the empty-password KDF on boot.
+
 ## [0.7.0] - 2026-05-19
 
 ### Added
