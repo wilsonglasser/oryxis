@@ -334,6 +334,10 @@ pub enum Message {
     /// Inject a snippet's command into the active terminal WITHOUT a
     /// trailing newline (the user presses Enter), unlike `RunSnippet`.
     PasteSnippet(usize),
+    /// Built-in "global snippet": type the active host's stored password
+    /// then Enter into the terminal (e.g. to answer a sudo prompt). No-op
+    /// with a toast when the host has no stored password.
+    ApplySudoPassword,
 
     // Terminal side panel (Chat / Snippets / History tabs)
     SelectTerminalSidebarTab(crate::state::TerminalSidebarTab),

@@ -719,7 +719,53 @@ impl Oryxis {
             list = list.push(sidebar_placeholder(t("no_matches")));
         }
 
-        let base = column![header, scrollable(list).height(Length::Fill)]
+        // Built-in "global snippet": type the host's stored password +
+        // Enter (e.g. to answer a sudo prompt). Shown only for a live SSH
+        // session; the click no-ops with a toast if no password is stored.
+        let ssh_active = self
+            .active_tab
+            .and_then(|i| self.tabs.get(i))
+            .map(|t| t.active().ssh_session.is_some())
+            .unwrap_or(false);
+        let sudo_row: Element<'_, Message> = if ssh_active {
+            container(
+                button(
+                    container(
+                        dir_row(vec![
+                            iced_fonts::lucide::shield_check().size(13).color(c.accent).into(),
+                            Space::new().width(8).into(),
+                            text(t("apply_sudo_password")).size(12).color(c.text_primary).into(),
+                        ])
+                        .align_y(iced::Alignment::Center),
+                    )
+                    .padding(Padding { top: 8.0, right: 10.0, bottom: 8.0, left: 10.0 })
+                    .width(Length::Fill),
+                )
+                .on_press(Message::ApplySudoPassword)
+                .width(Length::Fill)
+                .style(|_, status| {
+                    let bg = match status {
+                        BtnStatus::Hovered => OryxisColors::t().bg_hover,
+                        _ => OryxisColors::t().bg_surface,
+                    };
+                    button::Style {
+                        background: Some(Background::Color(bg)),
+                        border: Border {
+                            radius: Radius::from(8.0),
+                            color: Color { a: 0.5, ..OryxisColors::t().accent },
+                            width: 1.0,
+                        },
+                        ..Default::default()
+                    }
+                }),
+            )
+            .padding(Padding { top: 0.0, right: 12.0, bottom: 8.0, left: 12.0 })
+            .into()
+        } else {
+            Space::new().height(0).into()
+        };
+
+        let base = column![header, sudo_row, scrollable(list).height(Length::Fill)]
             .width(Length::Fill)
             .height(Length::Fill);
 

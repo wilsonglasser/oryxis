@@ -443,6 +443,43 @@ impl Oryxis {
                     }
                 }
             }
+            Message::ApplySudoPassword => {
+                // Resolve the active terminal's connection by label, decrypt
+                // its stored password, and type it + Enter. The password is
+                // never logged (only PTY output is recorded, and sudo turns
+                // echo off) nor shown in the toast.
+                let toast_key = (|| {
+                    let tab_idx = self.snippet_injection_tab()?;
+                    let label = self.tabs.get(tab_idx)?.label.clone();
+                    let conn_id = self
+                        .connections
+                        .iter()
+                        .find(|c| c.label == label)
+                        .map(|c| c.id)?;
+                    let pw = self
+                        .vault
+                        .as_ref()
+                        .and_then(|v| v.get_connection_password(&conn_id).ok().flatten())
+                        .filter(|p| !p.is_empty())?;
+                    let data = format!("{pw}\n");
+                    if let Some(tab) = self.tabs.get(tab_idx) {
+                        if let Some(ref ssh) = tab.active().ssh_session {
+                            let _ = ssh.write(data.as_bytes());
+                        } else if let Ok(mut state) = tab.active().terminal.lock() {
+                            state.write(data.as_bytes());
+                        }
+                    }
+                    Some("sudo_password_sent")
+                })()
+                .unwrap_or("no_stored_password");
+                self.toast = Some(crate::i18n::t(toast_key).to_string());
+                return Task::perform(
+                    async {
+                        tokio::time::sleep(std::time::Duration::from_millis(1800)).await;
+                    },
+                    |_| Message::ToastClear,
+                );
+            }
             Message::PasteSnippet(idx) => {
                 // Same injection path as RunSnippet, but without the trailing
                 // newline so the user reviews and presses Enter themselves.
