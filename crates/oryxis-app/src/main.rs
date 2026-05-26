@@ -209,6 +209,17 @@ fn main() -> iced::Result {
                 undecorated_shadow: true,
                 ..Default::default()
             },
+            #[cfg(target_os = "linux")]
+            platform_specific: window::settings::PlatformSpecific {
+                // Sets the X11 WM_CLASS and the Wayland app_id. GNOME
+                // (and other desktops) match a running window to its
+                // installed `oryxis.desktop` entry by this id to resolve
+                // the taskbar / dock icon. The id must equal the
+                // .desktop basename ("oryxis"). Without it the id stays
+                // empty and the window falls back to a generic icon.
+                application_id: "oryxis".to_string(),
+                ..Default::default()
+            },
             ..Default::default()
         })
         .antialiasing(true)
