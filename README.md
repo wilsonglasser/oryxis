@@ -5,7 +5,7 @@
 <h1 align="center">Oryxis</h1>
 
 <p align="center">
-  A modern SSH client built entirely in Rust — fast, encrypted, native.
+  A modern SSH client built entirely in Rust. Fast, encrypted, native.
 </p>
 
 <p align="center">
@@ -45,8 +45,8 @@ Pre-built binaries are also available on the [Releases](https://github.com/wilso
 
 The two Windows installer flavors mirror VSCode's pattern:
 
-- **System** (`oryxis-setup-*.exe`) — installs to `Program Files`, registers under `HKLM`, requires UAC. Use this for shared machines or when you want all Windows users to share the install. This is the build `winget install` targets.
-- **Per-user** (`oryxis-user-setup-*.exe`) — installs to `%LOCALAPPDATA%\Programs\Oryxis`, registers under `HKCU`, no admin rights needed. Use this on locked-down corporate machines or when you don't want UAC prompts on every update.
+- **System** (`oryxis-setup-*.exe`): installs to `Program Files`, registers under `HKLM`, requires UAC. Use this for shared machines or when all Windows users should share the install. This is the build `winget install` targets.
+- **Per-user** (`oryxis-user-setup-*.exe`): installs to `%LOCALAPPDATA%\Programs\Oryxis`, registers under `HKCU`, no admin rights. Use this on locked-down machines or when you don't want UAC prompts on every update.
 
 Both register `oryxis` and `oryxis-mcp` on `PATH` so they resolve from any shell. The auto-updater detects the install scope and downloads the matching installer.
 
@@ -54,7 +54,7 @@ Both register `oryxis` and `oryxis-mcp` on `PATH` so they resolve from any shell
 
 ## What is Oryxis?
 
-Oryxis is an open-source alternative to [Termius](https://termius.com/) — a desktop SSH client with a modern UI, an encrypted vault for credentials, and a Termius-inspired design. No Electron, no webview, no cloud servers. Just a single native binary.
+Oryxis is an open-source alternative to [Termius](https://termius.com/): a desktop SSH client with a modern UI, an encrypted vault for credentials, and a Termius-inspired design. No Electron, no webview, no cloud servers. Just a single native binary.
 
 ### Why?
 
@@ -73,216 +73,162 @@ Most SSH clients are either powerful but ugly (PuTTY), pretty but Electron-heavy
   <img src="resources/screen_1.png" width="720" alt="Hosts dashboard with cards, groups, and quick search">
 </p>
 <p align="center">
-  <em>Hosts dashboard. Cards grid with groups (manual and dynamic cloud-backed), distro auto-detection, inline quick connect.</em>
+  <em>Hosts dashboard. Card grid with groups, distro auto-detection, inline quick connect.</em>
 </p>
 
 <p align="center">
   <img src="resources/screen_9.png" width="720" alt="SFTP dual-pane browser, local on the left, remote on the right">
 </p>
 <p align="center">
-  <em>SFTP browser. Dual-pane layout with drag-and-drop uploads, multi-select transfers, edit-in-place, parallel channels.</em>
+  <em>SFTP browser. Dual-pane layout with drag-and-drop, multi-select transfers, edit-in-place.</em>
 </p>
 
 <p align="center">
   <img src="resources/screen_3.png" width="720" alt="Terminal session with streaming AI Chat sidebar">
 </p>
 <p align="center">
-  <em>Streaming AI sidebar. Token-by-token responses, per-code-block Copy / Play, terminal context, bash tool execution.</em>
+  <em>Streaming AI sidebar. Token-by-token responses, per-code-block Copy / Play, bash tool execution.</em>
 </p>
 
 <p align="center">
   <img src="resources/screen_2.png" width="720" alt="ECS dynamic group expanded with running container task">
 </p>
 <p align="center">
-  <em>Cloud Accounts (AWS). Dynamic ECS groups expand to live tasks; multi-container Lens, region badge, Copy CLI per row.</em>
+  <em>Cloud Accounts (AWS). Dynamic ECS groups expand to live tasks; multi-container Lens, Copy CLI per row.</em>
 </p>
 
 <p align="center">
   <img src="resources/screen_4.png" width="720" alt="Keychain with keys and reusable identities">
 </p>
 <p align="center">
-  <em>Keychain. Keys and reusable Identities side by side, linked to many hosts, encrypted-key passphrase import.</em>
+  <em>Keychain. Keys and reusable Identities side by side, linked to many hosts.</em>
 </p>
 
 <p align="center">
   <img src="resources/screen_8.png" width="720" alt="Terminal theme picker with 13 palette previews">
 </p>
 <p align="center">
-  <em>13 terminal palettes. Oryxis Dark / Light, Termius, Darcula, Islands Dark, Dracula, Monokai, Hacker Green, Nord, Nord Light, Solarized Dark / Light, Paper Light.</em>
+  <em>13 terminal palettes with inline swatch previews.</em>
 </p>
 
 <p align="center">
   <img src="resources/screen_6.png" width="720" alt="Settings Interface section with workspace mode and tab options">
 </p>
 <p align="center">
-  <em>Settings → Interface. New Workspace layout mode (sidebar-less, top-tab unified), customizable host icons, dynamic accent on the chrome, status bar / tab close button position, layout direction (LTR / RTL).</em>
+  <em>Settings → Interface. Workspace layout mode, customizable host icons, dynamic accent, layout direction (LTR / RTL).</em>
 </p>
 
 ## Features
 
 ### SSH & Connectivity
-- **Smart auto-authentication** — Automatically tries key, agent, password, and keyboard-interactive in order.
-- **Full SSH pipeline** — Direct, SOCKS4/5, HTTP CONNECT, ProxyCommand, jump host chaining, and local port forwarding via [russh 0.60](https://github.com/warp-tech/russh).
-- **Authenticated proxies** — SOCKS5 username/password (RFC 1929) and HTTP CONNECT Basic auth (RFC 7617). Proxy passwords live in their own encrypted column, never in the host's serialized JSON.
-- **Proxy + jump host stacking** — A jump host that itself sits behind a proxy now dials through that proxy on the first hop; subsequent jumps travel inside the SSH tunnel as before.
-- **Reusable Proxy Identities** — Save SOCKS5 / HTTP / SOCKS4 configs once in Settings → Proxies and link them from any host. The host editor's proxy picker shows static types and your saved proxies in one list.
-- **SSH agent forwarding** — Per-host opt-in (`ForwardAgent yes` from `ssh_config` is honored on import). Bridges the local ssh-agent socket through the channel so you can `ssh hostB` from inside hostA without staging keys remotely. Unsolicited forward channels are rejected.
-- **Rich `~/.ssh/config` import** — `ProxyCommand` maps to typed `Command(cmd)` proxies; `ProxyJump host` is auto-resolved against other imported aliases (unresolved targets are flagged in the host's notes for manual fix).
-- **RSA SHA-2 support** — Modern rsa-sha2-256/512 signing.
-- **Connection progress** — Step-by-step indicator with detailed error messages.
-- **TOFU host key verification** — Fingerprints saved on first connect, rejected if key changes.
-- **Integration tests** — Real OpenSSH server containers via testcontainers (`cargo test -p oryxis-ssh -- --ignored`) covering password auth, ed25519 pubkey, exec exit codes, stdout/stderr separation, PTY round-trip, resize, agent forwarding on/off.
+- **Auto-authentication.** Tries key, agent, password, and keyboard-interactive in order.
+- **Full SSH pipeline.** Direct, SOCKS4/5, HTTP CONNECT, ProxyCommand, jump host chaining, and local port forwarding via [russh 0.60](https://github.com/warp-tech/russh).
+- **Authenticated proxies.** SOCKS5 and HTTP CONNECT Basic auth, with proxy passwords in their own encrypted column.
+- **Proxy + jump host stacking.** A jump host behind a proxy dials through it on the first hop.
+- **Reusable Proxy Identities.** Save SOCKS5 / HTTP / SOCKS4 configs once and link them from any host.
+- **SSH agent forwarding.** Per-host opt-in; bridges the local ssh-agent socket through the channel.
+- **Rich `~/.ssh/config` import.** `ProxyCommand` and `ProxyJump` resolved automatically.
+- **RSA SHA-2 support**, step-by-step connection progress, TOFU host key verification, and integration tests against real OpenSSH containers.
 
 ### Terminal
-- **Embedded emulator** — [alacritty_terminal 0.26](https://github.com/alacritty/alacritty) with 256-color, truecolor, mouse selection, scrollback.
-- **Syntax highlighting** — IPs (magenta), URLs (blue), file paths (cyan) auto-detected.
-- **Bold-to-bright colors** — Bold text uses vivid bright ANSI variants.
-- **13 terminal palettes** — Oryxis Dark / Light, Termius, Darcula, Islands Dark, Dracula, Monokai, Hacker Green, Nord / Nord Light, Solarized Dark / Light, Paper Light. Picker with inline swatch previews lives in `Settings → Terminal` (global) and the host editor (per-host override that wins over the global pick).
-- **Bundled Nerd Fonts** — SauceCodePro Nerd Font is the default terminal font (Source Code Pro patched with the full Nerd glyph set); Symbols Nerd Font ships alongside as a glyph-only fallback so Powerline / Font Awesome / Devicons / Codicons / Material Design icons render correctly even when the user picks a non-Nerd system mono font. A per-glyph symbol_map forces the bundled symbols family on Unicode Private Use Area codepoints regardless of the user's primary font pick.
-- **System mono font enumeration** — Picker lists every monospace font installed on the OS via fontdb (no fixed allowlist).
-- **Configurable font size** — 10-24px, adjustable in Settings or with `Ctrl + = / - / 0` and `Ctrl + Wheel`. Persisted across restarts.
-- **Session recording** — Full terminal output saved to vault, viewable in History.
+- **Embedded emulator.** [alacritty_terminal 0.26](https://github.com/alacritty/alacritty) with 256-color, truecolor, mouse selection, scrollback.
+- **Syntax highlighting.** IPs, URLs, and file paths auto-detected and colored.
+- **13 terminal palettes.** Picker with inline swatch previews, global or per-host.
+- **Bundled Nerd Fonts.** SauceCodePro plus a Symbols Nerd Font fallback so Powerline and icon glyphs always render.
+- **System mono font enumeration**, configurable font size (10-24px, `Ctrl + = / - / 0`), bold-to-bright colors, and full session recording.
 
 ### SFTP File Browser
-- **Dual-pane layout** — Local on the left, remote on the right, columnar (name / modified / size) with click-to-sort.
-- **Drag-and-drop uploads** — Drop files from any OS file manager onto the remote pane (or onto a specific folder row to upload there).
-- **Internal drag** — Drag rows from one pane to the other to upload/download; ghost preview follows the cursor.
-- **Multi-select** — Ctrl/Cmd-click toggles, Shift-click range, plain click replaces. Right-click on a selection runs Delete / Download / Duplicate / Upload as a batch.
-- **Edit-in-place** — Right-click → Edit downloads to a temp file, opens your OS default editor, watches for save (mtime poll), prompts to upload back.
-- **Properties dialog** — Per-row chmod with R/W/X grid for owner / group / others, file size, mtime, owner uid/gid.
-- **Overwrite handling** — Replace / Replace if different size / Duplicate / Cancel modal on collision; "Apply to remaining" sticky decision for multi-file transfers.
-- **Configurable parallelism** — 1–8 concurrent SFTP channels per session for fast bulk transfers.
-- **`rm -rf` over exec** — Recursive remote delete via SSH exec instead of slow per-file SFTP, single round-trip.
-- **Live progress bar** — Per-file count, current item, percent, cancel button.
-- **Tunable timeouts** — Connect / auth / channel-open / per-operation timeouts, all live-applicable from Settings → SFTP.
+- **Dual-pane layout.** Local and remote side by side, with sortable columns.
+- **Drag-and-drop uploads.** Drop files from any OS file manager onto the remote pane.
+- **Internal drag.** Drag rows between panes to upload or download.
+- **Multi-select.** Ctrl/Cmd-click and Shift-range; batch Delete / Download / Duplicate / Upload.
+- **Edit-in-place.** Opens a remote file in your OS editor and prompts to upload on save.
+- **Properties dialog.** Per-row chmod grid, size, mtime, owner.
+- **Overwrite handling**, configurable parallelism (1-8 channels), `rm -rf` over exec, a live progress bar, and tunable timeouts.
 
 ### AI Chat Assistant
-- **Integrated AI sidebar** — Collapsible chat panel per terminal session.
-- **Streaming responses** — Tokens land in the bubble as the model emits them via SSE (Anthropic, OpenAI, Gemini, OpenAI-compat). Markdown re-renders progressively as each delta arrives.
-- **Bash tool execution** — AI can run commands in the active terminal and analyze output. Tool follow-ups stream through the same pipeline (poll terminal for stable output → stream the next round).
-- **Smart output capture** — Polls terminal until output stabilizes (no fixed timeouts).
-- **Multiple providers** — Anthropic (Claude), OpenAI (GPT), Google Gemini, or custom OpenAI-compatible endpoints.
-- **Terminal context** — AI receives the last ~50 lines of terminal output for context.
-- **Custom system prompt** — Add additional instructions in Settings.
+- **Integrated AI sidebar.** Collapsible chat panel per terminal session.
+- **Streaming responses.** Tokens land as the model emits them; markdown re-renders progressively.
+- **Bash tool execution.** The AI can run commands in the active terminal and analyze the output.
+- **Multiple providers.** Anthropic, OpenAI, Google Gemini, or any OpenAI-compatible endpoint.
+- **Terminal context**, smart output capture, and a custom system prompt option.
 
 ### Cloud Accounts (AWS)
-- **First-class AWS provider** — Manage encrypted `CloudProfile` rows
-  in `Settings → Cloud`. Three auth flavors: named profile from
-  `~/.aws/config`, static access key + secret + optional session token,
-  or IAM Identity Center / SSO. Each profile has a "Test credentials"
-  button that hits `sts:GetCallerIdentity` so misconfigurations
-  surface before discovery.
-- **Discovery & Import** — From the Hosts toolbar, "+ Host [▾] →
-  Discover" lists every EC2 instance and ECS service the profile can
-  see, grouped by region (EC2) and by region / cluster (ECS). Live
-  filter, hidden empty sections, greyed-out already-imported entries,
-  per-row checkboxes. Pick the default transport (SSH / EC2 Instance
-  Connect / SSM Session) at import time.
-- **Provider folder layout** — Imports nest under a single top-level
-  folder named after the cloud profile. EC2 hosts use the folder as
-  their `group_id`; ECS services materialize as **dynamic groups**
-  (`Group` rows with `cloud_query`) parented under it. Renaming the
-  profile renames the folder.
-- **EC2 Instance Connect** — Push a one-shot SSH public key through
-  `ec2-instance-connect:SendSSHPublicKey`, then complete the SSH
-  handshake with the linked key. AMI-aware OS user inference (Amazon
-  Linux → `ec2-user`, Ubuntu → `ubuntu`, Debian → `admin`) keeps
-  imported hosts one-click.
-- **SSM Session for EC2** — Bypass open ports / public IPs entirely.
-  `transport_pref = Ssm` opens a Session Manager session through the
-  bundled `session-manager-plugin`. Private subnets work out of the
-  box once the instance has the SSM agent and IAM permissions.
-- **ECS Exec into a live container** — Dynamic groups expand on click
-  to list running tasks; selecting a task starts an interactive
-  `aws ecs execute-command` session into the configured container.
-  Per-(service, container) editor pins the transport, OS user,
-  initial command, key, and identity.
-- **Brand SVG icons** — Provider folders and dynamic groups render
-  with native AWS / ECS / Kubernetes / Docker / distro / BSD / OS
-  glyphs. The previous SimpleIcons font subset (1.5 MB `.ttf`) was
-  retired in favor of bundled SVGs.
+- **First-class AWS provider.** Encrypted profiles (named profile, static keys, or IAM Identity Center / SSO) with a "Test credentials" button.
+- **Discovery & import.** Lists EC2 instances and ECS services grouped by region and cluster, with live filter and per-row import.
+- **Provider folder layout.** Imports nest under a folder named after the profile; ECS services become dynamic groups.
+- **EC2 Instance Connect.** One-shot key push with AMI-aware OS user inference.
+- **SSM Session.** Reach private instances with no open ports via Session Manager.
+- **ECS Exec.** Expand a dynamic group to its live tasks and exec into a container.
+- **Brand SVG icons** for providers, dynamic groups, and distros.
 
 ### Identity System
-- **Reusable credentials** — Create Identities (username + password + key) linked to multiple hosts.
-- **Autocomplete** — Type in username field to see matching identities, click to link.
-- **Keychain view** — Keys and Identities side by side with search, edit, context menus.
-- **Proxy Identities** — Same shape but for proxy configs (SOCKS5 / HTTP / SOCKS4). Edit once, link from many hosts, password stored encrypted alongside the identity.
-- **Encrypted SSH key import** — Passphrase-protected OpenSSH keys are detected on file pick; the importer prompts inline for the passphrase, decrypts the key once, and stores it unencrypted inside the vault. The vault's master password (Argon2id + ChaCha20Poly1305) takes over for at-rest protection — no per-key passphrase prompt at connect time. Termius / 1Password-style flow.
+- **Reusable credentials.** Identities (username + password + key) linked to many hosts.
+- **Autocomplete.** Type a username to find and link matching identities.
+- **Keychain view.** Keys and Identities side by side with search and context menus.
+- **Proxy Identities.** Same shape for proxy configs, password stored encrypted.
+- **Encrypted SSH key import.** Passphrase-protected keys are decrypted on import; the vault master password protects them at rest.
 
 ### Themes & Internationalization
-- **13 global themes** — Oryxis Dark / Light, Termius, Darcula, Islands Dark, Dracula, Monokai, Hacker Green, Nord, Nord Light, Solarized Dark, Solarized Light, Paper Light. Changes entire UI instantly.
-- **Per-theme button colors** — Every theme defines a `button_bg` / `button_text` pair so primary CTAs (`+ HOST`, `New Snippet`, modal Save, etc.) keep readable foregrounds across the whole palette.
-- **WCAG contrast guards** — Unit tests iterate every theme and assert text-on-surface and button label contrast against AA bounds; bad picks fail CI before they ship.
-- **11 languages** — English, Português (Brasil), Español, Français, Deutsch, Italiano, 中文, 日本語, Русский, فارسی, العربية.
-- **RTL layout support** — Persian and Arabic flip the chrome (sidebar position, tab bar order, history rows, keychain cards, window controls) automatically. `Settings → Theme → Layout direction` overrides the language-driven default with explicit Auto / LTR / RTL.
-- **Floating overlay menus** — Context menus float over content with click-outside-to-dismiss.
-- **Theme + language honored on the lock screen** — Settings live in the plaintext settings table, so the unlock / setup screen already renders in the chosen theme before the vault is open.
+- **13 global themes.** Switch the entire UI instantly.
+- **Per-theme button colors** with WCAG contrast guards enforced in CI.
+- **11 languages.** English, Português, Español, Français, Deutsch, Italiano, 中文, 日本語, Русский, فارسی, العربية.
+- **RTL layout support.** Persian and Arabic flip the chrome; `Settings → Theme → Layout direction` overrides with Auto / LTR / RTL.
+- **Theme + language on the lock screen**, plus floating overlay context menus.
 
 ### Vault & Security
-- **No password by default** — Opens instantly. Enable master password in Settings.
-- **Argon2id + ChaCha20Poly1305** — Industry-standard encryption.
-- **Per-field encryption** — Each secret has unique 32-byte salt + 12-byte nonce.
-- **Re-encryption** — All secrets re-encrypted when password changes.
-- **Vault reset** — "Forgot password?" option to destroy and recreate vault.
-- **No telemetry** — No data leaves your machine.
+- **No password by default.** Opens instantly; enable a master password in Settings.
+- **Argon2id + ChaCha20Poly1305** with a per-field salt and nonce.
+- **Re-encryption** of all secrets when the password changes.
+- **Vault reset** option from the lock screen.
+- **No telemetry.** No data leaves your machine.
 
 ### Export / Import
-- **Single encrypted file** — Export your entire vault as a `.oryxis` file protected with a password.
-- **Selective export** — Choose whether to include SSH private keys or only host configurations.
-- **Smart merge** — Import merges by UUID, updating only records that are newer (LWW).
-- **Round-trips proxy data** — Proxy Identities (with their passwords) and per-host inline proxy passwords ride along in the export, so a fresh device gets working proxy auth out of the box.
+- **Single encrypted file.** Export your whole vault as a password-protected `.oryxis` file.
+- **Selective export.** Include SSH private keys or only host configs.
+- **Smart merge.** Import merges by UUID, keeping the newer record (LWW).
+- **Round-trips proxy data** so a fresh device gets working proxy auth.
 
 ### Plugin Subsystem
-- **Out-of-process plugins** — Cloud providers and the MCP server run as separate subprocess binaries that talk to the app over JSON-RPC stdio (`oryxis-plugin-protocol`).
-- **Signed binaries** — Every release plugin binary is signed by `oryxis-plugin-signer` (Ed25519) and verified against a baked-in public key before execution. Dev builds trust an additional dev seed; release builds reject anything not signed by the production key.
-- **Manifest + cache** — Manifests live next to release artifacts under each plugin's GitHub release; the client downloads the right asset for the host arch on demand into `~/.oryxis/plugins/` and verifies the signature + sha256 before linking.
-- **Install errors translated** — All plugin install failure modes (download, integrity, spawn, protocol, version mismatch, etc.) surface through stable i18n keys translated across all 11 languages.
+- **Out-of-process plugins.** Cloud providers and the MCP server run as subprocess binaries over JSON-RPC stdio.
+- **Signed binaries.** Every plugin is Ed25519-signed and verified against a baked-in key before execution.
+- **Manifest + cache.** The right asset for the host arch is downloaded on demand and verified (signature + sha256).
+- **Install errors translated** across all 11 languages.
 
 ### MCP Server
-- **AI integration** — Expose your SSH hosts to AI assistants (Claude Code, etc.) via the [Model Context Protocol](https://modelcontextprotocol.io/).
-- **5 tools** — `list_hosts`, `get_host`, `ssh_execute`, `list_groups`, `list_keys`.
-- **Per-host control** — Toggle MCP exposure per connection in the host editor.
-- **Disabled by default** — Enable in Settings > Security.
-- **Non-interactive SSH exec** — Execute commands and get stdout/stderr/exit_code without PTY.
-- **Distributed as a plugin** — Since v0.7, `oryxis-mcp` is downloaded on demand via the plugin pipeline (`mcp-v*` release tags + signed `mcp.json` manifest) instead of bundled in the OS installers. A stable launcher at `~/.oryxis/bin/oryxis-mcp` keeps external clients (Claude Desktop, Claude Code, Cursor) pointing at a fixed path across plugin updates. Token-gated server (regenerable from Settings > MCP).
+- **AI integration.** Expose your SSH hosts to AI assistants via the [Model Context Protocol](https://modelcontextprotocol.io/).
+- **5 tools.** `list_hosts`, `get_host`, `ssh_execute`, `list_groups`, `list_keys`.
+- **Per-host control.** Toggle MCP exposure per connection.
+- **Disabled by default.** Enable in Settings > Security.
+- **Distributed as a plugin.** Downloaded on demand since v0.7, with a stable launcher path for external clients.
 
 ### P2P Sync
-- **Decentralized** — Sync vault data between devices over QUIC (quinn), no cloud dependency.
-- **LAN discovery** — Automatic peer discovery via mDNS on the local network, with a live "discovered devices" list and one-click pair.
-- **Cross-network discovery** — Self-hostable signaling server (Cloudflare Worker template or `oryxis-relay` axum binary) plus STUN for NAT traversal. The Cloudflare deployment uses a Durable Object per `device_id` so the TOFU check-then-pin sequence is race-free under concurrent registers.
-- **Pairing** — 6-digit code for initial device introduction, then Ed25519 challenge/response. `oryxis://pair/<device_id>/<code>` link + QR code for one-click cross-device pair.
-- **E2E encrypted** — Sync payloads encrypted with shared secret (X25519 + ChaCha20Poly1305).
-- **Tombstone-driven deletes** — Deletions propagate as tombstones with a 30-day TTL gated by active-peer catch-up; a peer can't silently resurrect an entity another peer just deleted.
-- **Audit hardening** — Ed25519-signed register/unregister (`oryxis-register-v1` / `oryxis-unregister-v1` domain-separated payloads, 60 s timestamp skew, replay rejection) with TOFU public-key pinning, so a bearer-token holder can't hijack another device's signaling entry. Per-source pairing attempt cap (a noisy joiner from one IP can't lock out a legitimate user paired from elsewhere). Bounded relay session map with FIFO eviction. Pre-auth allocation cap (64 KiB) on the QUIC server so an unauthenticated dialer can't force a 16 MiB allocation per stream. Mutex-poison recovery on the routing maps so a panicked session task can't kill the demux. `verify_strict` (RFC 8032 canonical R-value) across Rust client, Rust relay, and Worker.
-- **Auto or manual** — Configurable sync mode with adjustable interval.
-- **Optional relay** — User-configurable relay URL for symmetric NAT environments. Relay traffic stays ciphertext-only.
-- **Proxy Identities mirror across devices** — `EntityType::ProxyIdentity` is part of the manifest so saved proxies appear on every paired peer.
-- **Opt-in password sync** — Off by default: passwords (connection / identity / proxy) stay device-local. Toggle "Sync passwords across devices" in Settings → Sync to mirror them too. Wire format is forward/backward compatible: older peers ignore the extra fields.
+- **Decentralized.** Sync vault data between devices over QUIC, no cloud dependency.
+- **LAN discovery.** Automatic peer discovery via mDNS with one-click pair.
+- **Cross-network discovery.** Self-hostable signaling (Cloudflare Worker or `oryxis-relay`) plus STUN for NAT traversal.
+- **Pairing.** 6-digit code then Ed25519 challenge/response; `oryxis://pair/...` link and QR code.
+- **E2E encrypted.** Payloads sealed with X25519 + ChaCha20Poly1305.
+- **Tombstone-driven deletes** with a 30-day TTL gated by active-peer catch-up.
+- **Audit hardening.** Signed register/unregister with TOFU pinning, replay rejection, bounded session maps, and `verify_strict` across client and server.
+- **Optional relay** (ciphertext-only) and **opt-in password sync**, off by default.
 
 ### Windows System Tray
-- **Tray icon + menu** — Show Oryxis / Hide to tray / Quit, plus dynamic submenus.
-- **Active sessions submenu** — One item per open terminal tab; click activates the tab and pops the window.
-- **Recent hosts submenu** — Top 10 saved connections by `last_used` desc; click opens a new tab against that host.
-- **Opt-in tray gestures** — Settings → Interface → System tray panel toggles close-to-tray (custom title bar X + Alt+F4 hide instead of close) and minimize-to-tray (title bar minimize hides instead of taskbar-minimize). Defaults off.
-- **Single-instance** — Named-mutex guard via a file-based registry; the second launch becomes a child that reports state to the primary, and a child auto-promotes itself to primary if the primary dies. macOS / Linux: tray module is a no-op stub, settings panel is suppressed.
+- **Tray icon + menu.** Show / Hide to tray / Quit with dynamic submenus.
+- **Active sessions submenu.** One item per open terminal tab.
+- **Recent hosts submenu.** Top 10 connections by last used.
+- **Opt-in tray gestures.** Close-to-tray and minimize-to-tray, both off by default.
+- **Single-instance.** Named-mutex guard with primary/child IPC and auto-promotion.
 
 ### UI / UX
-- **Native GPU-accelerated UI** — [Iced 0.14](https://iced.rs) (wgpu backend).
-- **Termius-inspired design** — Card grid, slide-in editors, sidebar navigation.
-- **Workspace layout mode** — Sidebar hides when a connection tab is open so the terminal fills the canvas; areas (Hosts / Keychain / Snippets / History) and connection tabs unify into one top bar with a burger menu. Classic mode (sidebar always shown) remains a one-click opt-out in Settings → Interface.
-- **Customizable host icons** — 4 styles (Circular / Square / Outline / Initials) settable globally and per-host. Tab badges respect the style.
-- **Dynamic accent on the chrome** — Active tab and 2 px hairline adopt the host's accent color; cloud tabs inherit the parent brand badge.
-- **Editable hotkeys** — Every binding (terminal copy/paste, font zoom, tab switch, open settings, etc.) is editable in Settings → Shortcuts with a live capture mode and burger-menu hints. Terminal C0 escape gate narrowed to actual control sequences so Ctrl+, Ctrl+= Ctrl+- continue to fire global actions inside the terminal.
-- **Responsive card grid** — Hosts, keys, identities, snippets and cloud accounts all use the same dynamic grid: column count is recomputed from the available width on every render, cards flex to fill the row (`Length::Fill`), and long labels truncate cleanly via `Wrapping::None` + container `clip(true)` instead of breaking the card geometry. Resizing the window or opening a side panel reflows the grid; the trailing card never clips off-screen.
-- **Standardised card affordances** — Every card family (hosts, keys, identities, snippets, cloud) renders the same vertical-ellipsis (⋮) row-action button: hover-only, 22 px reserved slot, identical hover style. Split-button dropdowns (`+ ADD ▼`, `+ Host [▾]`) anchor below the chevron at a fixed screen position derived from the toolbar geometry, so the menu always opens in the same place regardless of where the click landed.
-- **Folder organization** — Group hosts into folders with breadcrumb navigation.
-- **Search** — Filter hosts and keys by name.
-- **Empty states** — Centered onboarding screens.
-- **Multi-tab sessions** — SSH and local shell sessions in tabs.
-- **Snippets** — Save and execute commands with one click.
-- **Settings sidebar** — Terminal, SFTP, AI, Theme, Shortcuts, Security, Sync, About sections.
-- **Persistent settings** — All preferences stored in the encrypted vault and restored on next launch.
-- **Tab overflow** — Tabs compact down to a min width as the bar fills (active stays at natural width). Beyond that, the strip becomes horizontally scrollable (mouse wheel scrolls), and a `⋯` button surfaces a "Jump to" modal (`Ctrl+J`) listing all open tabs + Quick connect entries.
+- **Native GPU-accelerated UI.** [Iced 0.14](https://iced.rs) on the wgpu backend.
+- **Termius-inspired design.** Card grid, slide-in editors, sidebar navigation.
+- **Workspace layout mode.** Sidebar hides when a tab is open so the terminal fills the canvas; Classic mode stays a one-click opt-out.
+- **Customizable host icons.** Circular / Square / Outline / Initials, global or per-host.
+- **Dynamic accent on the chrome** from the host's color.
+- **Editable hotkeys.** Every binding is rebindable with a live capture mode.
+- **Responsive card grid.** Column count reflows to the available width; long labels truncate cleanly.
+- **Multi-tab sessions** with tab overflow, a scrollable strip, and a `Ctrl+J` jump-to modal.
+- **Snippets**, folder organization, search, empty states, a Settings sidebar, and persistent settings.
 
 ## Architecture
 
@@ -316,13 +262,13 @@ Most SSH clients are either powerful but ugly (PuTTY), pretty but Electron-heavy
 | Crate | Purpose |
 |-------|---------|
 | `oryxis-app` | Iced app, views, themes, i18n, AI chat, overlay system |
-| `oryxis-core` | Shared types — Connection, SshKey, Identity, ProxyIdentity, Group, Snippet, KnownHost, LogEntry |
+| `oryxis-core` | Shared types: Connection, SshKey, Identity, ProxyIdentity, Group, Snippet, KnownHost, LogEntry |
 | `oryxis-terminal` | Terminal widget (alacritty + canvas + PTY + syntax highlight + 6 themes) |
-| `oryxis-ssh` | SSH engine — auto-auth, jump hosts, SOCKS/HTTP proxy, ProxyCommand, TOFU, RSA-SHA2 |
-| `oryxis-vault` | Encrypted vault — SQLite + Argon2id + ChaCha20Poly1305 + Identity + Session logs + Export/Import |
-| `oryxis-sync` | P2P sync engine — QUIC (quinn) + mDNS + STUN + signaling + HTTP relay fallback + Ed25519/X25519 + LWW conflict resolution |
+| `oryxis-ssh` | SSH engine: auto-auth, jump hosts, SOCKS/HTTP proxy, ProxyCommand, TOFU, RSA-SHA2 |
+| `oryxis-vault` | Encrypted vault: SQLite + Argon2id + ChaCha20Poly1305 + Identity + Session logs + Export/Import |
+| `oryxis-sync` | P2P sync engine: QUIC (quinn) + mDNS + STUN + signaling + HTTP relay fallback + Ed25519/X25519 + LWW conflict resolution |
 | `oryxis-relay` | Self-hostable signaling + relay HTTP server (axum + in-memory queues) |
-| `oryxis-mcp` | MCP server binary — JSON-RPC 2.0 over stdio, exposes SSH hosts to AI assistants |
+| `oryxis-mcp` | MCP server binary: JSON-RPC 2.0 over stdio, exposes SSH hosts to AI assistants |
 
 ## Tech Stack
 
@@ -368,16 +314,16 @@ cargo test --workspace
 
 ## Usage
 
-1. **First launch** — Choose to set a master password or continue without one
-2. **Add hosts** — Click `+ HOST`, fill in hostname and credentials
-3. **Identities** — Create reusable credential bundles in the Keychain
-4. **Connect** — Click a host card to open an SSH session
-5. **AI Chat** — Enable in Settings > AI, click chat bubble in terminal to ask questions
-6. **Export/Import** — Settings > Security to export vault or import from another device
-7. **MCP Server** — Enable in Settings > Security, configure in your AI client
-8. **P2P Sync** — Settings > Sync to pair devices and sync vault data
-9. **Themes** — Switch in Settings (Oryxis Dark, Light, Dracula, Nord)
-10. **Language** — Change in Settings > Theme (11 languages available, including Persian and Arabic with RTL layout)
+1. **First launch.** Choose to set a master password or continue without one.
+2. **Add hosts.** Click `+ HOST`, fill in hostname and credentials.
+3. **Identities.** Create reusable credential bundles in the Keychain.
+4. **Connect.** Click a host card to open an SSH session.
+5. **AI Chat.** Enable in Settings > AI, click the chat bubble in the terminal to ask questions.
+6. **Export/Import.** Settings > Security to export the vault or import from another device.
+7. **MCP Server.** Enable in Settings > Security, configure in your AI client.
+8. **P2P Sync.** Settings > Sync to pair devices and sync vault data.
+9. **Themes.** Switch in Settings (Oryxis Dark, Light, Dracula, Nord).
+10. **Language.** Change in Settings > Theme (11 languages available, including Persian and Arabic with RTL layout).
 
 ### MCP Server Setup
 
@@ -403,25 +349,20 @@ If your vault has no password, omit the `env` field.
 
 ### Signaling + relay (for P2P Sync over the internet)
 
-LAN sync works out of the box via mDNS — no server needed.
+LAN sync works out of the box via mDNS, no server needed.
 
-For cross-network sync (different ISPs, mobile networks, behind
-double NAT), Oryxis needs a small HTTP server that does two things:
+For cross-network sync (different ISPs, mobile networks, behind double NAT), Oryxis needs a small HTTP server that does two things:
 
-1. **Signaling** — `device_id -> ip:port` lookup so peers can find
-   each other.
-2. **Relay** — carries sync traffic as fallback when QUIC direct
-   can't punch through NAT.
+1. **Signaling:** `device_id -> ip:port` lookup so peers can find each other.
+2. **Relay:** carries sync traffic as fallback when QUIC direct can't punch through NAT.
 
-**We don't run a central server**; you self-host. The server sees
-ciphertext only (payloads are sealed end-to-end with
-ChaCha20-Poly1305 from an X25519 DH at pairing time).
+**We don't run a central server**; you self-host. The server sees ciphertext only (payloads are sealed end-to-end with ChaCha20-Poly1305 from an X25519 DH at pairing time).
 
 Three deployment options:
 
-- **Cloudflare Workers** (free tier covers normal use) — `signaling-worker/worker.js`
-- **Docker** — `ghcr.io/wilsonglasser/oryxis-relay:latest`
-- **Standalone binary** — `cargo install --path crates/oryxis-relay`
+- **Cloudflare Workers** (free tier covers normal use): `signaling-worker/worker.js`
+- **Docker:** `ghcr.io/wilsonglasser/oryxis-relay:latest`
+- **Standalone binary:** `cargo install --path crates/oryxis-relay`
 
 Full step-by-step in [SELF_HOSTING.md](SELF_HOSTING.md).
 
@@ -442,13 +383,14 @@ Full step-by-step in [SELF_HOSTING.md](SELF_HOSTING.md).
 
 ## Security
 
-- **Argon2id + ChaCha20Poly1305** — Memory-hard KDF + AEAD encryption
-- **Per-field encryption** — Unique 32-byte salt + 12-byte nonce per secret
-- **Optional master password** — Disabled by default, enable in Settings
-- **TOFU** — Server fingerprints verified on every connection
-- **Pure Rust** — No C dependencies in crypto path
-- **No telemetry** — No data leaves your machine
-- **AI keys encrypted** — API keys stored encrypted in vault
+- **Argon2id + ChaCha20Poly1305.** Memory-hard KDF plus AEAD encryption.
+- **Per-field encryption.** Unique 32-byte salt + 12-byte nonce per secret.
+- **Optional master password.** Disabled by default, enable in Settings.
+- **TOFU.** Server fingerprints verified on every connection.
+- **Pure Rust.** No C dependencies in the crypto path.
+- **No telemetry.** No data leaves your machine.
+- **AI keys encrypted.** API keys stored encrypted in the vault.
+
 ## Roadmap
 
 | Version | Status | Scope |
@@ -470,7 +412,7 @@ Contributions welcome. Open an issue to discuss before submitting large PRs.
 
 ## License
 
-[AGPL-3.0](LICENSE) — Free and open-source forever.
+[AGPL-3.0](LICENSE). Free and open-source forever.
 
 ---
 
