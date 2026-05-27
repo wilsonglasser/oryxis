@@ -6,6 +6,26 @@ project uses [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.7.2] - 2026-05-27
+
+### Added
+- **Right-click-to-copy selection mode.** A sub-option of copy-on-select
+  (the Windows console "QuickEdit" model): when on, a finished selection
+  no longer auto-copies on mouse release; a right-click over a live
+  selection copies it, and a right-click with no selection still pastes.
+  No-op while copy-on-select is off. Shown as an indented sub-toggle
+  under copy-on-select in Settings -> Terminal.
+- **Copy/install MCP config into a WSL client (Windows).** The MCP setup
+  panel gains a Native / WSL target toggle. With WSL selected, Copy JSON
+  and Install express the binary as its `/mnt/c/...` mount path so a
+  Claude Code / Cursor instance running inside a WSL distro can reach it;
+  Install merges the entry into the distro's `~/.claude/.mcp.json` via
+  `wsl.exe`.
+
+### Fixed
+- Linux: set `WM_CLASS` / Wayland `app_id` so GNOME resolves the app
+  icon instead of falling back to a generic placeholder.
+
 ## [0.7.1] - 2026-05-25
 
 ### Added
