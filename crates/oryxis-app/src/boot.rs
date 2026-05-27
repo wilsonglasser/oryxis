@@ -336,6 +336,7 @@ impl Oryxis {
                 terminal_font_name: "SauceCodePro Nerd Font".to_string(),
                 settings_section: SettingsSection::Terminal,
                 setting_copy_on_select: true,
+                setting_right_click_copy: false,
                 setting_bold_is_bright: true,
                 setting_keyword_highlight: true,
                 setting_smart_contrast: true,
@@ -671,6 +672,9 @@ impl Oryxis {
             // when the key is missing (first-run or new key in update).
             if let Ok(Some(v)) = vault.get_setting("copy_on_select") {
                 self.setting_copy_on_select = v == "true";
+            }
+            if let Ok(Some(v)) = vault.get_setting("right_click_copy") {
+                self.setting_right_click_copy = v == "true";
             }
             if let Ok(Some(v)) = vault.get_setting("bold_is_bright") {
                 self.setting_bold_is_bright = v == "true";

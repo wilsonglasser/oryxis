@@ -426,6 +426,7 @@ fn en(key: &str) -> &'static str {
 
         // Settings toggles
         "copy_on_select" => "Select text to copy & Right click to paste",
+        "copy_requires_right_click" => "Requires a right click to copy",
         "bold_bright" => "Use bright colours for bold text",
         "bell_sound" => "Bell sound",
         "keyword_highlight" => "Keyword highlighting",
@@ -1179,6 +1180,7 @@ fn pt_br(key: &str) -> Option<&'static str> {
         "language" => "Idioma",
 
         "copy_on_select" => "Selecionar texto para copiar e clicar com botão direito para colar",
+        "copy_requires_right_click" => "Requer clique direito para copiar",
         "bold_bright" => "Usar cores brilhantes para texto em negrito",
         "bell_sound" => "Som do bell",
         "keyword_highlight" => "Destaque de palavras-chave",
@@ -1914,6 +1916,7 @@ fn es(key: &str) -> Option<&'static str> {
         "language" => "Idioma",
 
         "copy_on_select" => "Seleccionar texto para copiar y clic derecho para pegar",
+        "copy_requires_right_click" => "Requiere clic derecho para copiar",
         "bold_bright" => "Usar colores brillantes para texto en negrita",
         "bell_sound" => "Sonido de campana",
         "keyword_highlight" => "Resaltado de palabras clave",
@@ -2642,6 +2645,7 @@ fn fr(key: &str) -> Option<&'static str> {
         "language" => "Langue",
 
         "copy_on_select" => "Sélectionner pour copier et clic droit pour coller",
+        "copy_requires_right_click" => "Nécessite un clic droit pour copier",
         "bold_bright" => "Utiliser des couleurs vives pour le texte en gras",
         "bell_sound" => "Son de la cloche",
         "keyword_highlight" => "Surlignage des mots-clés",
@@ -3370,6 +3374,7 @@ fn de(key: &str) -> Option<&'static str> {
         "language" => "Sprache",
 
         "copy_on_select" => "Text auswählen zum Kopieren & Rechtsklick zum Einfügen",
+        "copy_requires_right_click" => "Rechtsklick zum Kopieren erforderlich",
         "bold_bright" => "Helle Farben für fetten Text verwenden",
         "bell_sound" => "Glockenton",
         "keyword_highlight" => "Schlüsselwort-Hervorhebung",
@@ -4098,6 +4103,7 @@ fn it(key: &str) -> Option<&'static str> {
         "language" => "Lingua",
 
         "copy_on_select" => "Seleziona il testo per copiare e clic destro per incollare",
+        "copy_requires_right_click" => "Richiede clic destro per copiare",
         "bold_bright" => "Usa colori vivaci per il testo in grassetto",
         "bell_sound" => "Suono campanella",
         "keyword_highlight" => "Evidenziazione parole chiave",
@@ -4826,6 +4832,7 @@ fn zh(key: &str) -> Option<&'static str> {
         "language" => "语言",
 
         "copy_on_select" => "选中文本自动复制，右键粘贴",
+        "copy_requires_right_click" => "需要右键点击才能复制",
         "bold_bright" => "粗体文本使用高亮颜色",
         "bell_sound" => "响铃声音",
         "keyword_highlight" => "关键词高亮",
@@ -5554,6 +5561,7 @@ fn ja(key: &str) -> Option<&'static str> {
         "language" => "言語",
 
         "copy_on_select" => "テキスト選択でコピー、右クリックでペースト",
+        "copy_requires_right_click" => "コピーには右クリックが必要",
         "bold_bright" => "太字テキストに明るい色を使用",
         "bell_sound" => "ベル音",
         "keyword_highlight" => "キーワードハイライト",
@@ -6282,6 +6290,7 @@ fn ru(key: &str) -> Option<&'static str> {
         "language" => "Язык",
 
         "copy_on_select" => "Копировать при выделении, вставка правой кнопкой",
+        "copy_requires_right_click" => "Для копирования нужен правый клик",
         "bold_bright" => "Яркие цвета для жирного текста",
         "bell_sound" => "Звук звонка",
         "keyword_highlight" => "Подсветка ключевых слов",
@@ -7014,6 +7023,7 @@ fn fa(key: &str) -> Option<&'static str> {
 
         // Settings toggles
         "copy_on_select" => "انتخاب متن برای کپی و کلیک راست برای جای‌گذاری",
+        "copy_requires_right_click" => "برای کپی نیاز به کلیک راست است",
         "bold_bright" => "استفاده از رنگ‌های روشن برای متن پررنگ",
         "bell_sound" => "صدای زنگ",
         "keyword_highlight" => "برجسته‌سازی کلمات کلیدی",
@@ -7756,6 +7766,7 @@ fn ar(key: &str) -> Option<&'static str> {
 
         // Settings toggles
         "copy_on_select" => "تحديد النص للنسخ والنقر بالزر الأيمن للصق",
+        "copy_requires_right_click" => "يتطلب نقرة بالزر الأيمن للنسخ",
         "bold_bright" => "استخدام الألوان الفاتحة للنص الغامق",
         "bell_sound" => "صوت الجرس",
         "keyword_highlight" => "تمييز الكلمات المفتاحية",

@@ -676,6 +676,11 @@ pub struct TerminalView<Message = ()> {
     /// When true, completing a mouse selection auto-copies it to the
     /// system clipboard, same UX as XTerm / iTerm "copy on select".
     copy_on_select: bool,
+    /// Only consulted when `copy_on_select` is on. When true the selection
+    /// no longer auto-copies on release; instead a right-click over a live
+    /// selection copies it (the Windows console "QuickEdit" model), and a
+    /// right-click with no selection still pastes.
+    right_click_copy: bool,
     /// When true, ANSI bold flag promotes the named foreground color to
     /// its bright variant (red → bright red, etc).
     bold_is_bright: bool,
@@ -861,6 +866,7 @@ impl<Message> TerminalView<Message> {
             cell_height: font_size * 1.15,
             font: Font::MONOSPACE,
             copy_on_select: true,
+            right_click_copy: false,
             bold_is_bright: true,
             keyword_highlight: true,
             smart_contrast: true,
@@ -879,6 +885,14 @@ impl<Message> TerminalView<Message> {
 
     pub fn with_copy_on_select(mut self, on: bool) -> Self {
         self.copy_on_select = on;
+        self
+    }
+
+    /// When on (and `copy_on_select` is also on), the selection waits for a
+    /// right-click to copy instead of copying on release. No-op while
+    /// `copy_on_select` is off.
+    pub fn with_right_click_copy(mut self, on: bool) -> Self {
+        self.right_click_copy = on;
         self
     }
 
@@ -1119,9 +1133,12 @@ where
                 widget_state.selecting = false;
                 // Auto-copy the just-finished selection when the setting is
                 // enabled (XTerm / iTerm behaviour). Skip degenerate
-                // selections that didn't move (single click).
+                // selections that didn't move (single click). When
+                // `right_click_copy` is on the copy is deferred to a
+                // right-click instead, so skip the auto-copy here.
                 if was_selecting
                     && self.copy_on_select
+                    && !self.right_click_copy
                     && let Some(ref sel) = widget_state.selection
                     && !sel.is_empty()
                     && let Ok(state) = self.state.lock()
@@ -1147,6 +1164,30 @@ where
             iced::Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Right))
                 if cursor.position_in(bounds).is_some() =>
             {
+                // State 3 (copy_on_select + right_click_copy): a right-click
+                // over a live selection copies it instead of pasting, then
+                // clears the selection so the next right-click pastes. With
+                // no selection we fall through to the normal paste path. The
+                // copy is written straight to the clipboard here (mirroring
+                // Ctrl+Shift+C), not via `on_paste_request`, which is the
+                // paste hook.
+                if self.copy_on_select
+                    && self.right_click_copy
+                    && let Some(sel) = widget_state.selection
+                    && !sel.is_empty()
+                {
+                    if let Ok(state) = self.state.lock() {
+                        let text = state.get_selection_text(&sel);
+                        drop(state);
+                        if !text.is_empty()
+                            && let Ok(mut clip) = arboard::Clipboard::new()
+                        {
+                            let _ = clip.set_text(&text);
+                        }
+                    }
+                    widget_state.selection = None;
+                    return Some(CanvasAction::request_redraw().and_capture());
+                }
                 if let Some(msg) = self.on_paste_request.clone() {
                     return Some(CanvasAction::publish(msg).and_capture());
                 }

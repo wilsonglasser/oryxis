@@ -108,15 +108,37 @@ impl Oryxis {
         // ── Settings content ──
         let settings_content: Element<'_, Message> = match self.settings_section {
             SettingsSection::Terminal => {
-                let toggles_section = panel_section(column![
+                let mut toggles_col: iced::widget::Column<'_, Message> = column![
                     toggle_row(crate::i18n::t("copy_on_select"), self.setting_copy_on_select, Message::ToggleCopyOnSelect),
-                    Space::new().height(10),
-                    toggle_row(crate::i18n::t("bold_bright"), self.setting_bold_is_bright, Message::ToggleBoldIsBright),
-                    Space::new().height(10),
-                    toggle_row(crate::i18n::t("keyword_highlight"), self.setting_keyword_highlight, Message::ToggleKeywordHighlight),
-                    Space::new().height(10),
-                    toggle_row(crate::i18n::t("smart_contrast"), self.setting_smart_contrast, Message::ToggleSmartContrast),
-                ]);
+                ];
+                // Sub-option, only meaningful while copy-on-select is on.
+                // Indent it on the leading edge so it reads as nested.
+                if self.setting_copy_on_select {
+                    let indent = if crate::i18n::is_rtl_layout() {
+                        Padding { right: 22.0, ..Padding::ZERO }
+                    } else {
+                        Padding { left: 22.0, ..Padding::ZERO }
+                    };
+                    toggles_col = toggles_col
+                        .push(Space::new().height(8))
+                        .push(
+                            container(toggle_row(
+                                crate::i18n::t("copy_requires_right_click"),
+                                self.setting_right_click_copy,
+                                Message::ToggleRightClickCopy,
+                            ))
+                            .padding(indent),
+                        );
+                }
+                let toggles_section = panel_section(
+                    toggles_col
+                        .push(Space::new().height(10))
+                        .push(toggle_row(crate::i18n::t("bold_bright"), self.setting_bold_is_bright, Message::ToggleBoldIsBright))
+                        .push(Space::new().height(10))
+                        .push(toggle_row(crate::i18n::t("keyword_highlight"), self.setting_keyword_highlight, Message::ToggleKeywordHighlight))
+                        .push(Space::new().height(10))
+                        .push(toggle_row(crate::i18n::t("smart_contrast"), self.setting_smart_contrast, Message::ToggleSmartContrast)),
+                );
 
                 let font_size_section = panel_section(column![
                     dir_row(vec![

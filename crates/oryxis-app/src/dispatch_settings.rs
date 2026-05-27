@@ -260,6 +260,13 @@ impl Oryxis {
                     if self.setting_copy_on_select { "true" } else { "false" },
                 );
             }
+            Message::ToggleRightClickCopy => {
+                self.setting_right_click_copy = !self.setting_right_click_copy;
+                self.persist_setting(
+                    "right_click_copy",
+                    if self.setting_right_click_copy { "true" } else { "false" },
+                );
+            }
             Message::ToggleBoldIsBright => {
                 self.setting_bold_is_bright = !self.setting_bold_is_bright;
                 self.persist_setting(

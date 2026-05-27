@@ -388,6 +388,7 @@ pub enum Message {
     TerminalPasteFromClipboard,
     ChangeSettingsSection(SettingsSection),
     ToggleCopyOnSelect,
+    ToggleRightClickCopy,
     ToggleBoldIsBright,
     ToggleKeywordHighlight,
     ToggleSmartContrast,

@@ -557,6 +557,10 @@ pub struct Oryxis {
     // Settings
     pub(crate) settings_section: SettingsSection,
     pub(crate) setting_copy_on_select: bool,
+    /// Sub-option of `setting_copy_on_select`: when both are on, a selection
+    /// copies on right-click instead of on release. Ignored when
+    /// `setting_copy_on_select` is off.
+    pub(crate) setting_right_click_copy: bool,
     pub(crate) setting_bold_is_bright: bool,
     pub(crate) setting_keyword_highlight: bool,
     /// When the foreground and background of a cell render too close
