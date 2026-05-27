@@ -758,6 +758,10 @@ pub struct Oryxis {
     /// otherwise as a row of bullets. Sensitive enough to keep masked
     /// by default, the user opts in to seeing it.
     pub(crate) mcp_token_visible: bool,
+    /// Which client the setup snippet / Copy / Install target: the
+    /// native client (`false`) or one running inside WSL (`true`). Only
+    /// reachable on Windows, where the toggle that flips it renders.
+    pub(crate) mcp_target_wsl: bool,
 
     // Sync
     pub(crate) sync_enabled: bool,

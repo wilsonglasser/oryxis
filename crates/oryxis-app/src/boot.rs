@@ -408,6 +408,7 @@ impl Oryxis {
                 mcp_install_status: None,
                 mcp_server_token: String::new(),
                 mcp_token_visible: false,
+                mcp_target_wsl: false,
                 sync_enabled: false,
                 sync_mode: "manual".into(),
                 sync_passwords: false,

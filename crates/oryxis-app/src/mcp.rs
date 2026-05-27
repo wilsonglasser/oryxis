@@ -59,10 +59,12 @@ pub(crate) fn mcp_wsl_command() -> String {
     s.into_owned()
 }
 
-/// Config file path hint per platform.
+/// Config file path hint for the native client per platform. The WSL
+/// target has its own hint, built inline in the info panel, so this no
+/// longer needs to mention WSL on Windows.
 pub(crate) fn mcp_config_path() -> &'static str {
     if cfg!(target_os = "windows") {
-        "%APPDATA%\\Claude\\claude_desktop_config.json  or  ~/.claude/settings.json (WSL)"
+        "%APPDATA%\\Claude\\claude_desktop_config.json  or  ~/.claude/.mcp.json"
     } else if cfg!(target_os = "macos") {
         "~/Library/Application Support/Claude/claude_desktop_config.json  or  ~/.claude/settings.json"
     } else {
@@ -92,6 +94,21 @@ fn oryxis_mcp_entry(cmd: &str, token: &str) -> serde_json::Value {
 /// vault. Empty token keeps the legacy unauth path.
 pub(crate) fn mcp_config_json(token: &str) -> String {
     let cmd = mcp_binary_command();
+    let root = serde_json::json!({
+        "mcpServers": {
+            "oryxis": oryxis_mcp_entry(&cmd, token),
+        }
+    });
+    serde_json::to_string_pretty(&root).unwrap_or_else(|_| String::from("{}"))
+}
+
+/// Same as [`mcp_config_json`] but with the binary expressed as its
+/// WSL mount path (`/mnt/c/...`), for an AI client (Claude Code,
+/// Cursor) running *inside* a WSL distro on a Windows host. The
+/// Windows app produces this so the user doesn't have to translate the
+/// `C:\...` path into `/mnt/c/...` by hand.
+pub(crate) fn mcp_config_json_wsl(token: &str) -> String {
+    let cmd = mcp_wsl_command();
     let root = serde_json::json!({
         "mcpServers": {
             "oryxis": oryxis_mcp_entry(&cmd, token),
@@ -143,10 +160,106 @@ pub(crate) fn install_mcp_config_to_file(token: &str) -> Result<String, String> 
     Ok(mcp_path.display().to_string())
 }
 
+/// Write/merge the oryxis MCP entry into the WSL distro's
+/// `~/.claude/.mcp.json`, for a Claude Code / Cursor instance running
+/// inside WSL on a Windows host. Shells out to `wsl.exe` (default
+/// distro): reads the current config, merges in Rust so the JSON stays
+/// well-formed, and writes the result back through stdin so the
+/// payload never has to survive shell quoting. The `command` field
+/// uses the `/mnt/c/...` mount path from [`mcp_wsl_command`].
+///
+/// Only meaningful on Windows; returns an error elsewhere, where there
+/// is no `wsl.exe` to talk to.
+pub(crate) fn install_mcp_config_to_wsl(token: &str) -> Result<String, String> {
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = token;
+        Err("WSL install is only available on the Windows build".to_string())
+    }
+    #[cfg(target_os = "windows")]
+    {
+        use std::io::Write;
+        use std::os::windows::process::CommandExt;
+        use std::process::{Command, Stdio};
+
+        // CREATE_NO_WINDOW keeps wsl.exe from flashing a console over
+        // the app.
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+
+        // Read the current config (empty when the file is absent). A
+        // non-login bash keeps rc-file noise out of stdout while still
+        // expanding `~` via HOME. The trailing `|| true` keeps the exit
+        // code at 0 when the file doesn't exist yet (first install),
+        // otherwise `cat`'s failure would look like a WSL error.
+        let read = Command::new("wsl.exe")
+            .args([
+                "--",
+                "bash",
+                "-c",
+                "mkdir -p ~/.claude && cat ~/.claude/.mcp.json 2>/dev/null || true",
+            ])
+            .creation_flags(CREATE_NO_WINDOW)
+            .output()
+            .map_err(|e| format!("Could not run wsl.exe ({e}). Is WSL installed?"))?;
+        if !read.status.success() {
+            let err = String::from_utf8_lossy(&read.stderr);
+            return Err(format!("wsl.exe failed: {}", err.trim()));
+        }
+
+        let existing = String::from_utf8_lossy(&read.stdout);
+        let mut root: serde_json::Map<String, serde_json::Value> = if existing.trim().is_empty() {
+            serde_json::Map::new()
+        } else {
+            serde_json::from_str(existing.trim())
+                .map_err(|e| format!("Failed to parse WSL ~/.claude/.mcp.json: {e}"))?
+        };
+
+        let servers = root
+            .entry("mcpServers")
+            .or_insert_with(|| serde_json::json!({}));
+        let servers_map = servers
+            .as_object_mut()
+            .ok_or("mcpServers is not an object")?;
+        let cmd = mcp_wsl_command();
+        servers_map.insert("oryxis".to_string(), oryxis_mcp_entry(&cmd, token));
+
+        let output =
+            serde_json::to_string_pretty(&root).map_err(|e| format!("Failed to serialize: {e}"))?;
+
+        // Pipe the merged JSON back through stdin so it never has to be
+        // escaped into a shell argument.
+        let mut child = Command::new("wsl.exe")
+            .args(["--", "bash", "-c", "mkdir -p ~/.claude && cat > ~/.claude/.mcp.json"])
+            .stdin(Stdio::piped())
+            .stdout(Stdio::null())
+            .stderr(Stdio::piped())
+            .creation_flags(CREATE_NO_WINDOW)
+            .spawn()
+            .map_err(|e| format!("Could not run wsl.exe ({e})."))?;
+        child
+            .stdin
+            .take()
+            .ok_or("failed to open wsl.exe stdin")?
+            .write_all(output.as_bytes())
+            .map_err(|e| format!("Failed to write to WSL: {e}"))?;
+        let status = child
+            .wait()
+            .map_err(|e| format!("wsl.exe did not finish: {e}"))?;
+        if !status.success() {
+            return Err("wsl.exe could not write ~/.claude/.mcp.json".to_string());
+        }
+
+        Ok("~/.claude/.mcp.json (WSL)".to_string())
+    }
+}
+
 /// Monospaced code block widget.
 pub(crate) fn code_block<'a>(content: &str) -> Element<'a, Message> {
     container(
-        text(content.to_owned()).size(12).color(OryxisColors::t().text_primary),
+        // `selectable(true)` lets the user drag-highlight the snippet
+        // and copy it with Ctrl+C, instead of being forced through the
+        // Copy button.
+        text(content.to_owned()).size(12).selectable(true).color(OryxisColors::t().text_primary),
     )
     .padding(12)
     .width(Length::Fill)
@@ -164,8 +277,22 @@ pub(crate) fn mcp_info_panel<'a>(
     install_status: &'a Option<Result<String, String>>,
     token: &'a str,
     token_visible: bool,
+    target_wsl: bool,
 ) -> Element<'a, Message> {
-    let json_text = mcp_config_json(token);
+    // `target_wsl` switches the snippet (and the Copy / Install button
+    // targets, handled in dispatch) between the native client and a
+    // Claude Code / Cursor running inside WSL. The toggle that flips it
+    // is Windows-only, so on other platforms this stays false.
+    let json_text = if target_wsl {
+        mcp_config_json_wsl(token)
+    } else {
+        mcp_config_json(token)
+    };
+    let path_hint: &str = if target_wsl {
+        "~/.claude/.mcp.json (WSL)"
+    } else {
+        mcp_config_path()
+    };
 
     let copy_label = if copied {
         crate::i18n::t("mcp_copied")
@@ -286,6 +413,7 @@ pub(crate) fn mcp_info_panel<'a>(
         container(
             text(token_display)
                 .size(11)
+                .selectable(true)
                 .font(iced::Font::MONOSPACE)
                 .color(token_color),
         )
@@ -324,28 +452,86 @@ pub(crate) fn mcp_info_panel<'a>(
         text(crate::i18n::t("mcp_info_title")).size(14).color(OryxisColors::t().text_primary),
         Space::new().height(8),
         text(crate::i18n::t("mcp_info_desc")).size(12).color(OryxisColors::t().text_secondary),
-        Space::new().height(12),
-        token_row,
-        Space::new().height(4),
-        text(crate::i18n::t("mcp_token_desc"))
-            .size(10).color(OryxisColors::t().text_muted),
-        Space::new().height(12),
-        code_block(&json_text),
-        Space::new().height(8),
-        text(format!("{} {}", crate::i18n::t("mcp_info_path_label"), mcp_config_path()))
-            .size(11).color(OryxisColors::t().text_muted),
     ];
 
-    if cfg!(target_os = "windows") {
-        let wsl_json = format!(
-            "{{\n  \"mcpServers\": {{\n    \"oryxis\": {{\n      \"command\": \"{}\"\n    }}\n  }}\n}}",
-            mcp_wsl_command()
+    // Target toggle (Native / WSL): only relevant on Windows, where the
+    // binary is an `.exe` a WSL-resident client reaches via `/mnt/c`.
+    // On other platforms there is a single target, so the toggle is
+    // omitted and `target_wsl` stays false.
+    #[cfg(target_os = "windows")]
+    {
+        fn target_btn<'a>(label: &'a str, selected: bool, msg: Message) -> Element<'a, Message> {
+            let text_color = if selected {
+                OryxisColors::t().bg_primary
+            } else {
+                OryxisColors::t().text_secondary
+            };
+            button(
+                container(text(label).size(11).color(text_color))
+                    .padding(Padding { top: 4.0, right: 14.0, bottom: 4.0, left: 14.0 }),
+            )
+            .on_press(msg)
+            .style(move |_, status| {
+                let bg = if selected {
+                    OryxisColors::t().accent
+                } else if matches!(status, BtnStatus::Hovered) {
+                    OryxisColors::t().bg_hover
+                } else {
+                    Color::TRANSPARENT
+                };
+                button::Style {
+                    background: Some(Background::Color(bg)),
+                    border: Border { radius: Radius::from(6.0), color: OryxisColors::t().border, width: 1.0 },
+                    ..Default::default()
+                }
+            })
+            .into()
+        }
+
+        let target_row = crate::widgets::dir_row(vec![
+            text(crate::i18n::t("mcp_target_label"))
+                .size(11)
+                .color(OryxisColors::t().text_muted)
+                .into(),
+            Space::new().width(8).into(),
+            target_btn(crate::i18n::t("mcp_target_native"), !target_wsl, Message::SetMcpTarget(false)),
+            Space::new().width(6).into(),
+            target_btn(crate::i18n::t("mcp_target_wsl"), target_wsl, Message::SetMcpTarget(true)),
+        ])
+        .align_y(iced::Alignment::Center);
+
+        info_col = info_col.push(Space::new().height(12)).push(target_row);
+    }
+
+    info_col = info_col
+        .push(Space::new().height(12))
+        .push(token_row)
+        .push(Space::new().height(4))
+        .push(
+            text(crate::i18n::t("mcp_token_desc"))
+                .size(10)
+                .color(OryxisColors::t().text_muted),
+        )
+        .push(Space::new().height(12))
+        .push(code_block(&json_text))
+        .push(Space::new().height(8))
+        .push(
+            text(format!("{} {}", crate::i18n::t("mcp_info_path_label"), path_hint))
+                .size(11)
+                .color(OryxisColors::t().text_muted),
         );
+
+    // Explain that the WSL snippet targets a client living inside the
+    // distro, shown only while that target is selected.
+    #[cfg(target_os = "windows")]
+    if target_wsl {
         info_col = info_col
-            .push(Space::new().height(12))
-            .push(text(crate::i18n::t("mcp_info_note_wsl")).size(12).color(OryxisColors::t().warning))
-            .push(Space::new().height(4))
-            .push(code_block(&wsl_json));
+            .push(Space::new().height(8))
+            .push(
+                text(crate::i18n::t("mcp_info_note_wsl"))
+                    .size(11)
+                    .color(OryxisColors::t().warning),
+            );
     }
 
     if let Some(Err(e)) = install_status {

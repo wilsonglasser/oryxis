@@ -13,7 +13,9 @@ use iced::Task;
 use oryxis_vault::VaultError;
 
 use crate::app::{Message, Oryxis};
-use crate::mcp::{install_mcp_config_to_file, mcp_config_json};
+use crate::mcp::{
+    install_mcp_config_to_file, install_mcp_config_to_wsl, mcp_config_json, mcp_config_json_wsl,
+};
 use crate::state::{ConnectionForm, EnvVarForm, PortForwardForm, VaultState, View};
 use crate::util::strip_ansi;
 
@@ -770,15 +772,34 @@ impl Oryxis {
             }
             Message::CopyMcpConfig => {
                 self.mcp_config_copied = true;
-                return iced::clipboard::write(mcp_config_json(&self.mcp_server_token)).discard();
+                let json = if self.mcp_target_wsl {
+                    mcp_config_json_wsl(&self.mcp_server_token)
+                } else {
+                    mcp_config_json(&self.mcp_server_token)
+                };
+                return iced::clipboard::write(json).discard();
             }
             Message::InstallMcpConfig => {
                 self.mcp_install_status = None;
                 let token = self.mcp_server_token.clone();
+                let wsl = self.mcp_target_wsl;
                 return Task::perform(
-                    async move { install_mcp_config_to_file(&token) },
+                    async move {
+                        if wsl {
+                            install_mcp_config_to_wsl(&token)
+                        } else {
+                            install_mcp_config_to_file(&token)
+                        }
+                    },
                     Message::InstallMcpConfigResult,
                 );
+            }
+            Message::SetMcpTarget(is_wsl) => {
+                self.mcp_target_wsl = is_wsl;
+                // The Copy / Install feedback from the previous target no
+                // longer reflects what's on screen.
+                self.mcp_config_copied = false;
+                self.mcp_install_status = None;
             }
             Message::InstallMcpConfigResult(result) => {
                 self.mcp_install_status = Some(result);

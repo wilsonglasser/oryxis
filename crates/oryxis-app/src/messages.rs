@@ -772,6 +772,12 @@ pub enum Message {
     CopyMcpConfig,
     InstallMcpConfig,
     InstallMcpConfigResult(Result<String, String>),
+    /// Pick which client the snippet, Copy, and Install target: the
+    /// native client (`false`) or one running inside WSL (`true`).
+    /// Only the Windows build renders the toggle that emits this, so
+    /// elsewhere the variant is constructed nowhere.
+    #[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+    SetMcpTarget(bool),
     /// Generate a fresh random MCP server token and persist it. Wipes
     /// the previous value, every existing MCP config will need to be
     /// reissued (re-copy / re-install) with the new token.

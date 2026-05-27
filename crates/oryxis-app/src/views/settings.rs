@@ -2085,6 +2085,7 @@ impl Oryxis {
                     &self.mcp_install_status,
                     &self.mcp_server_token,
                     self.mcp_token_visible,
+                    self.mcp_target_wsl,
                 ));
         }
 
