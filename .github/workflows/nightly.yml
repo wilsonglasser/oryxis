@@ -33,6 +33,12 @@ env:
   # builds use.
   ORYXIS_SIGNALING_URL: ${{ secrets.ORYXIS_SIGNALING_URL }}
   ORYXIS_SIGNALING_TOKEN: ${{ secrets.ORYXIS_SIGNALING_TOKEN }}
+  # Stamp the binary as a nightly build at the exact commit. `build.rs`
+  # bakes these into ORYXIS_CHANNEL / ORYXIS_GIT_SHA so the in-app
+  # nightly updater can tell what it's running and compare against the
+  # rolling release's target commit.
+  ORYXIS_BUILD_CHANNEL: nightly
+  ORYXIS_GIT_SHA: ${{ github.sha }}
 
 jobs:
   build-linux-x86:
@@ -54,16 +60,20 @@ jobs:
             target/
           key: linux-x86-nightly-${{ hashFiles('**/Cargo.lock') }}
       - run: cargo build --release -p oryxis-app
-      - name: Package tarball
+      - name: Package tarball + bare binary
         run: |
           mkdir -p dist
           cp target/release/oryxis dist/
           cp README.md resources/logo_64.png resources/oryxis.desktop dist/
           cd dist && tar czf ../oryxis-nightly-linux-x86_64.tar.gz *
+          # Bare binary asset for in-app self-update (no installer for nightly).
+          cd .. && cp target/release/oryxis oryxis-nightly-linux-x86_64.bin
       - uses: actions/upload-artifact@v7
         with:
           name: oryxis-nightly-linux-x86_64
-          path: oryxis-nightly-linux-x86_64.tar.gz
+          path: |
+            oryxis-nightly-linux-x86_64.tar.gz
+            oryxis-nightly-linux-x86_64.bin
 
   build-linux-arm:
     name: Linux ARM64
@@ -84,16 +94,19 @@ jobs:
             target/
           key: linux-arm-nightly-${{ hashFiles('**/Cargo.lock') }}
       - run: cargo build --release -p oryxis-app
-      - name: Package tarball
+      - name: Package tarball + bare binary
         run: |
           mkdir -p dist
           cp target/release/oryxis dist/
           cp README.md resources/logo_64.png resources/oryxis.desktop dist/
           cd dist && tar czf ../oryxis-nightly-linux-aarch64.tar.gz *
+          cd .. && cp target/release/oryxis oryxis-nightly-linux-aarch64.bin
       - uses: actions/upload-artifact@v7
         with:
           name: oryxis-nightly-linux-aarch64
-          path: oryxis-nightly-linux-aarch64.tar.gz
+          path: |
+            oryxis-nightly-linux-aarch64.tar.gz
+            oryxis-nightly-linux-aarch64.bin
 
   build-macos-arm:
     name: macOS Apple Silicon
@@ -109,16 +122,19 @@ jobs:
             target/
           key: macos-arm-nightly-${{ hashFiles('**/Cargo.lock') }}
       - run: cargo build --release -p oryxis-app
-      - name: Package tarball
+      - name: Package tarball + bare binary
         run: |
           mkdir -p dist
           cp target/release/oryxis dist/
           cp README.md resources/logo_64.png dist/
           cd dist && tar czf ../oryxis-nightly-macos-aarch64.tar.gz *
+          cd .. && cp target/release/oryxis oryxis-nightly-macos-aarch64.bin
       - uses: actions/upload-artifact@v7
         with:
           name: oryxis-nightly-macos-aarch64
-          path: oryxis-nightly-macos-aarch64.tar.gz
+          path: |
+            oryxis-nightly-macos-aarch64.tar.gz
+            oryxis-nightly-macos-aarch64.bin
 
   build-windows-x86:
     name: Windows x86_64
@@ -134,7 +150,7 @@ jobs:
             target/
           key: windows-x86-nightly-${{ hashFiles('**/Cargo.lock') }}
       - run: cargo build --profile release-with-split-debuginfo-packed -p oryxis-app
-      - name: Package zip & pdb's
+      - name: Package zip & pdb's + bare exe
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path dist
@@ -145,12 +161,15 @@ jobs:
           New-Item -ItemType Directory -Force -Path pdb
           Copy-Item -Path target\release-with-split-debuginfo-packed\*.pdb pdb\
           Compress-Archive -Path pdb\* -DestinationPath oryxis-nightly-windows-x86_64-pdb.zip
+          # Bare exe asset for in-app self-update (no installer for nightly).
+          Copy-Item target\release-with-split-debuginfo-packed\oryxis.exe oryxis-nightly-windows-x86_64.exe
       - uses: actions/upload-artifact@v7
         with:
           name: oryxis-nightly-windows-x86_64
           path: |
             oryxis-nightly-windows-x86_64.zip
             oryxis-nightly-windows-x86_64-pdb.zip
+            oryxis-nightly-windows-x86_64.exe
 
   build-windows-arm:
     name: Windows ARM64
@@ -168,7 +187,7 @@ jobs:
             target/
           key: windows-arm-nightly-${{ hashFiles('**/Cargo.lock') }}
       - run: cargo build --release --target aarch64-pc-windows-msvc -p oryxis-app
-      - name: Package portable zip
+      - name: Package portable zip + bare exe
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path dist
@@ -176,10 +195,14 @@ jobs:
           Copy-Item README.md dist\
           Copy-Item resources\logo_64.png dist\
           Compress-Archive -Path dist\* -DestinationPath oryxis-nightly-windows-aarch64.zip
+          # Bare exe asset for in-app self-update (no installer for nightly).
+          Copy-Item target\aarch64-pc-windows-msvc\release\oryxis.exe oryxis-nightly-windows-aarch64.exe
       - uses: actions/upload-artifact@v7
         with:
           name: oryxis-nightly-windows-aarch64
-          path: oryxis-nightly-windows-aarch64.zip
+          path: |
+            oryxis-nightly-windows-aarch64.zip
+            oryxis-nightly-windows-aarch64.exe
 
   publish:
     name: Publish nightly release

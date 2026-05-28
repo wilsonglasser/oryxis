@@ -17,10 +17,71 @@ use std::path::PathBuf;
 /// fork or mirror requires a single edit.
 pub const RELEASE_REPO: &str = "wilsonglasser/oryxis";
 
+/// The release stream the auto-updater follows. Persisted as the
+/// `update_channel` setting (`"stable"` / `"nightly"`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum UpdateChannel {
+    #[default]
+    Stable,
+    Nightly,
+}
+
+impl UpdateChannel {
+    pub fn from_setting(s: &str) -> Self {
+        match s {
+            "nightly" => Self::Nightly,
+            _ => Self::Stable,
+        }
+    }
+
+    pub fn as_setting(self) -> &'static str {
+        match self {
+            Self::Stable => "stable",
+            Self::Nightly => "nightly",
+        }
+    }
+}
+
+/// Selectable channels for the settings picker, in display order.
+pub const UPDATE_CHANNELS: [UpdateChannel; 2] = [UpdateChannel::Stable, UpdateChannel::Nightly];
+
+// `pick_list` requires its option type to implement `Display` even when a
+// mapper closure handles the visible label, so provide a plain fallback.
+// The settings picker maps through i18n; this is only the default.
+impl std::fmt::Display for UpdateChannel {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Self::Stable => "Stable",
+            Self::Nightly => "Nightly",
+        })
+    }
+}
+
+/// Channel this binary was built for, baked in by `build.rs`. Stable for
+/// tagged releases and local builds; nightly only for the rolling CI
+/// build. Used so a user who flips back to the stable channel from a
+/// nightly binary is offered a clean stable build instead of being
+/// stranded (the nightly's `CARGO_PKG_VERSION` would read as "not newer").
+pub fn build_channel() -> UpdateChannel {
+    UpdateChannel::from_setting(env!("ORYXIS_CHANNEL"))
+}
+
+/// How an update is applied once downloaded.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum UpdateArtifact {
+    /// A platform installer (NSIS / AppImage / tarball) handed off to the
+    /// OS. The stable channel's mechanism.
+    Installer,
+    /// A bare executable that replaces the running binary in place. The
+    /// nightly channel's mechanism, no installer is published for it.
+    Binary,
+}
+
 /// Release metadata extracted from the GitHub API payload.
 #[derive(Debug, Clone)]
 pub struct UpdateInfo {
-    /// Version without the leading `v` (e.g. `0.3.2`).
+    /// Version without the leading `v` (e.g. `0.3.2`), or `nightly
+    /// (<sha>)` for the nightly channel.
     pub version: String,
     /// HTML page for the release (for "What's new").
     pub html_url: String,
@@ -30,14 +91,23 @@ pub struct UpdateInfo {
     pub installer_url: Option<String>,
     /// Installer file name (used when saving to temp).
     pub installer_name: Option<String>,
+    /// Whether to launch an installer or swap the binary in place.
+    pub artifact: UpdateArtifact,
 }
 
-/// Query the GitHub API for the latest release. Returns `None` if the
-/// remote version is not strictly newer than the compile-time package
-/// version. Any network / parse error also returns `None`, update
-/// notifications are best-effort, never break startup.
-pub async fn check_latest_release() -> Option<UpdateInfo> {
-    let url = format!("https://api.github.com/repos/{}/releases/latest", RELEASE_REPO);
+/// Query the GitHub API for an available update on the given channel.
+/// Returns `None` when already up to date or on any network / parse
+/// error, update notifications are best-effort and never break startup.
+pub async fn check_latest_release(channel: UpdateChannel) -> Option<UpdateInfo> {
+    match channel {
+        UpdateChannel::Stable => check_stable().await,
+        UpdateChannel::Nightly => check_nightly().await,
+    }
+}
+
+/// Fetch a release JSON payload from a `releases/...` API path.
+async fn fetch_release(path: &str) -> Option<serde_json::Value> {
+    let url = format!("https://api.github.com/repos/{RELEASE_REPO}/{path}");
     let client = reqwest::Client::builder()
         .user_agent(concat!("Oryxis/", env!("CARGO_PKG_VERSION")))
         .timeout(std::time::Duration::from_secs(10))
@@ -47,21 +117,82 @@ pub async fn check_latest_release() -> Option<UpdateInfo> {
     if !resp.status().is_success() {
         return None;
     }
-    let json: serde_json::Value = resp.json().await.ok()?;
+    resp.json().await.ok()
+}
 
+/// Stable channel: the newest tagged release. Normally only offered when
+/// strictly newer than the running version, but a binary built on the
+/// nightly channel always gets offered the latest stable so flipping the
+/// channel toggle back actually lands the user on a stable build.
+async fn check_stable() -> Option<UpdateInfo> {
+    let json = fetch_release("releases/latest").await?;
     let tag = json.get("tag_name")?.as_str()?.trim_start_matches('v').to_string();
-    let current = env!("CARGO_PKG_VERSION");
-    if !is_newer(&tag, current) {
+    let running_nightly = build_channel() == UpdateChannel::Nightly;
+    if !running_nightly && !is_newer(&tag, env!("CARGO_PKG_VERSION")) {
         return None;
     }
-
     let html_url = json.get("html_url")?.as_str()?.to_string();
     let body = json.get("body").and_then(|v| v.as_str()).unwrap_or("").to_string();
+    let (installer_url, installer_name) = pick_asset(&json, UpdateChannel::Stable);
+    Some(UpdateInfo {
+        version: tag,
+        html_url,
+        body,
+        installer_url,
+        installer_name,
+        artifact: UpdateArtifact::Installer,
+    })
+}
 
-    // Pick the asset that matches our platform.
-    let (installer_url, installer_name) = pick_asset(&json);
+/// Nightly channel: the rolling `nightly` prerelease. Version numbers
+/// don't move between nightlies, so "newer" means a different target
+/// commit than the one baked into this binary. `/releases/latest` skips
+/// prereleases, hence the explicit tag lookup.
+async fn check_nightly() -> Option<UpdateInfo> {
+    let json = fetch_release("releases/tags/nightly").await?;
+    let remote_sha = nightly_commit(&json)?;
+    let local_sha = env!("ORYXIS_GIT_SHA");
+    // Dev build with no embedded SHA: can't compare, so never nag.
+    if local_sha == "unknown" || commit_eq(&remote_sha, local_sha) {
+        return None;
+    }
+    let html_url = json.get("html_url")?.as_str()?.to_string();
+    let body = json.get("body").and_then(|v| v.as_str()).unwrap_or("").to_string();
+    let (installer_url, installer_name) = pick_asset(&json, UpdateChannel::Nightly);
+    let short: String = remote_sha.chars().take(8).collect();
+    Some(UpdateInfo {
+        version: format!("nightly ({short})"),
+        html_url,
+        body,
+        installer_url,
+        installer_name,
+        artifact: UpdateArtifact::Binary,
+    })
+}
 
-    Some(UpdateInfo { version: tag, html_url, body, installer_url, installer_name })
+/// Extract the commit the `nightly` release points at. The publish job
+/// creates the tag with `--target <full-sha>`, so `target_commitish`
+/// usually carries it; fall back to the short SHA in the release title
+/// (`Nightly (abcdef12)`).
+fn nightly_commit(json: &serde_json::Value) -> Option<String> {
+    if let Some(tc) = json.get("target_commitish").and_then(|v| v.as_str())
+        && tc.len() >= 7
+        && tc.chars().all(|c| c.is_ascii_hexdigit())
+    {
+        return Some(tc.to_string());
+    }
+    let name = json.get("name").and_then(|v| v.as_str())?;
+    let start = name.find('(')? + 1;
+    let end = name[start..].find(')')? + start;
+    let sha = &name[start..end];
+    (sha.len() >= 7 && sha.chars().all(|c| c.is_ascii_hexdigit())).then(|| sha.to_string())
+}
+
+/// Compare two commit SHAs by their common-length prefix, so a short SHA
+/// (8 hex from a title) matches the full 40-hex form.
+fn commit_eq(a: &str, b: &str) -> bool {
+    let n = a.len().min(b.len()).min(40);
+    n >= 7 && a[..n].eq_ignore_ascii_case(&b[..n])
 }
 
 /// Strict "lhs > rhs" comparison over semantic-ish versions (major.minor.patch,
@@ -84,13 +215,18 @@ fn is_newer(lhs: &str, rhs: &str) -> bool {
     parse(lhs) > parse(rhs)
 }
 
-fn pick_asset(json: &serde_json::Value) -> (Option<String>, Option<String>) {
+fn pick_asset(
+    json: &serde_json::Value,
+    channel: UpdateChannel,
+) -> (Option<String>, Option<String>) {
     let assets = match json.get("assets").and_then(|v| v.as_array()) {
         Some(a) => a,
         None => return (None, None),
     };
-    let want = platform_asset_fragment();
-    let exclude = platform_asset_exclude();
+    let (want, exclude) = match channel {
+        UpdateChannel::Stable => (platform_asset_fragment(), platform_asset_exclude()),
+        UpdateChannel::Nightly => (nightly_asset_fragment(), vec![]),
+    };
     for a in assets {
         let name = a.get("name").and_then(|v| v.as_str()).unwrap_or("");
         let lname = name.to_lowercase();
@@ -200,6 +336,41 @@ fn platform_asset_exclude() -> Vec<&'static str> {
     vec![]
 }
 
+/// Substrings identifying this platform's bare-binary nightly asset. The
+/// nightly workflow publishes, per platform:
+///   • Linux:    `oryxis-nightly-linux-<arch>.bin`
+///   • macOS:    `oryxis-nightly-macos-aarch64.bin`
+///   • Windows:  `oryxis-nightly-windows-<arch>.exe`
+/// The `.bin` / `.exe` suffix keeps the matcher from grabbing the
+/// `.tar.gz` / `.zip` archives published under the same name stem.
+fn nightly_asset_fragment() -> Vec<&'static str> {
+    if cfg!(target_os = "windows") {
+        if cfg!(target_arch = "x86_64") {
+            vec!["nightly", "windows", "x86_64", ".exe"]
+        } else if cfg!(target_arch = "aarch64") {
+            vec!["nightly", "windows", "aarch64", ".exe"]
+        } else {
+            vec![]
+        }
+    } else if cfg!(target_os = "macos") {
+        if cfg!(target_arch = "aarch64") {
+            vec!["nightly", "macos", "aarch64", ".bin"]
+        } else {
+            vec![]
+        }
+    } else if cfg!(target_os = "linux") {
+        if cfg!(target_arch = "x86_64") {
+            vec!["nightly", "linux", "x86_64", ".bin"]
+        } else if cfg!(target_arch = "aarch64") {
+            vec!["nightly", "linux", "aarch64", ".bin"]
+        } else {
+            vec![]
+        }
+    } else {
+        vec![]
+    }
+}
+
 /// Download the installer to a temp file. Reads the full response body into
 /// memory first, simpler than streaming chunks, fine for our installer
 /// sizes (~80 MB). The progress closure is accepted for API symmetry but
@@ -276,4 +447,114 @@ pub fn launch_installer(path: &std::path::Path) -> Result<(), String> {
             .spawn();
     }
     Ok(())
+}
+
+/// Apply a downloaded nightly: replace the running executable with the
+/// freshly downloaded bare binary and relaunch. The nightly channel
+/// ships no installer, so there's nothing to hand off, we swap in place.
+/// Returns once the new process is spawned; the caller then closes the
+/// window so the old process exits and releases the file.
+pub fn apply_binary_update(downloaded: &std::path::Path) -> Result<(), String> {
+    let current = std::env::current_exe().map_err(|e| format!("locate current exe: {e}"))?;
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        // Stage next to the target so the rename is same-filesystem and
+        // atomic. Overwriting the running binary's path is fine on Unix:
+        // the old inode stays alive for the still-running process.
+        let staged = current.with_extension("new");
+        std::fs::copy(downloaded, &staged).map_err(|e| format!("stage binary: {e}"))?;
+        std::fs::set_permissions(&staged, std::fs::Permissions::from_mode(0o755))
+            .map_err(|e| format!("set exec bit: {e}"))?;
+        std::fs::rename(&staged, &current).map_err(|e| format!("swap binary: {e}"))?;
+        std::process::Command::new(&current)
+            .spawn()
+            .map_err(|e| format!("relaunch: {e}"))?;
+    }
+
+    #[cfg(windows)]
+    {
+        // A running .exe can't be overwritten, but it can be renamed.
+        // Move ourselves aside, drop the new binary in place, relaunch.
+        // `sweep_stale_binary` clears the `.old.exe` on the next boot.
+        let old = current.with_extension("old.exe");
+        let _ = std::fs::remove_file(&old);
+        std::fs::rename(&current, &old).map_err(|e| format!("rename running exe: {e}"))?;
+        if let Err(e) = std::fs::copy(downloaded, &current) {
+            // Roll back so the user isn't left without a binary.
+            let _ = std::fs::rename(&old, &current);
+            return Err(format!("install new exe: {e}"));
+        }
+        std::process::Command::new(&current)
+            .spawn()
+            .map_err(|e| format!("relaunch: {e}"))?;
+    }
+
+    Ok(())
+}
+
+/// Delete the `.old.exe` left behind by a Windows nightly self-update.
+/// Best-effort and a no-op everywhere else, called once on boot.
+pub fn sweep_stale_binary() {
+    #[cfg(windows)]
+    {
+        if let Ok(current) = std::env::current_exe() {
+            let _ = std::fs::remove_file(current.with_extension("old.exe"));
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn commit_eq_matches_full_and_short_prefixes() {
+        let full = "a1b2c3d4e5f60718293a4b5c6d7e8f9012345678";
+        // Identical full SHAs.
+        assert!(commit_eq(full, full));
+        // Short (8-hex title form) vs full: compare on the common prefix.
+        assert!(commit_eq("a1b2c3d4", full));
+        assert!(commit_eq(full, "A1B2C3D4")); // case-insensitive
+        // Different commits.
+        assert!(!commit_eq("a1b2c3d4", "ffffffff0000"));
+        // Too short to trust (< 7 hex) never matches, guards against
+        // accidental "everything is up to date" on a garbage value.
+        assert!(!commit_eq("a1b", "a1b2c3d4"));
+        assert!(!commit_eq("", full));
+    }
+
+    #[test]
+    fn nightly_commit_prefers_hex_target_commitish() {
+        let json = serde_json::json!({
+            "target_commitish": "a1b2c3d4e5f60718293a4b5c6d7e8f9012345678",
+            "name": "Nightly (deadbeef)",
+        });
+        // A real hex commitish wins over the title.
+        assert_eq!(
+            nightly_commit(&json).as_deref(),
+            Some("a1b2c3d4e5f60718293a4b5c6d7e8f9012345678"),
+        );
+    }
+
+    #[test]
+    fn nightly_commit_falls_back_to_title_when_commitish_is_a_branch() {
+        // GitHub often returns the branch name, not a SHA, in
+        // target_commitish; parse the short SHA out of the title instead.
+        let json = serde_json::json!({
+            "target_commitish": "main",
+            "name": "Nightly (deadbeef)",
+        });
+        assert_eq!(nightly_commit(&json).as_deref(), Some("deadbeef"));
+    }
+
+    #[test]
+    fn nightly_commit_none_when_unparseable() {
+        let json = serde_json::json!({
+            "target_commitish": "main",
+            "name": "Nightly build",
+        });
+        assert!(nightly_commit(&json).is_none());
+    }
 }

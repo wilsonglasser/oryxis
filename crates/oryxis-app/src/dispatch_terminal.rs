@@ -47,6 +47,22 @@ impl Oryxis {
                     }
                 }
             }
+            // Synthesized input from the terminal widget: mouse-tracking
+            // reports (tmux `mouse on`, vim `mouse=a`, htop, ...) and the
+            // wheel-to-arrow translation in alt-screen. Same SSH-or-local
+            // routing as keystrokes; without this the widget's local-PTY
+            // fallback would never reach the remote session.
+            Message::TerminalInput(bytes) => {
+                if let Some(tab_idx) = self.active_tab
+                    && let Some(tab) = self.tabs.get(tab_idx)
+                {
+                    if let Some(ref ssh) = tab.active().ssh_session {
+                        let _ = ssh.write(&bytes);
+                    } else if let Ok(mut state) = tab.active().terminal.lock() {
+                        state.write(&bytes);
+                    }
+                }
+            }
             Message::KeyboardEvent(event) => {
                 // Track modifier state for downstream consumers (SFTP
                 // ctrl/shift-click selection). Always update first so

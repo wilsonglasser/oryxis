@@ -297,6 +297,32 @@ impl Oryxis {
                     }
                     None => Space::new().height(0).into(),
                 };
+                let channel_picker = pick_list(
+                    Some(self.setting_update_channel),
+                    crate::update::UPDATE_CHANNELS.to_vec(),
+                    |c: &crate::update::UpdateChannel| match c {
+                        crate::update::UpdateChannel::Stable => t("update_channel_stable").to_string(),
+                        crate::update::UpdateChannel::Nightly => t("update_channel_nightly").to_string(),
+                    },
+                )
+                .on_select(Message::SettingUpdateChannelChanged)
+                .width(260)
+                .padding(10)
+                .style(crate::widgets::rounded_pick_list_style);
+                // Bleeding-edge warning, only while the nightly channel is
+                // selected, so stable users don't see scary copy.
+                let channel_note: Element<'_, Message> =
+                    if self.setting_update_channel == crate::update::UpdateChannel::Nightly {
+                        container(
+                            text(t("update_channel_nightly_warning"))
+                                .size(11)
+                                .color(OryxisColors::t().text_muted),
+                        )
+                        .padding(Padding { top: 4.0, right: 0.0, bottom: 0.0, left: 0.0 })
+                        .into()
+                    } else {
+                        Space::new().height(0).into()
+                    };
                 let auto_update_section = panel_section(column![
                     toggle_row(
                         crate::i18n::t("auto_check_updates"),
@@ -306,6 +332,11 @@ impl Oryxis {
                     Space::new().height(4),
                     text(t("setting_update_check_desc"))
                         .size(11).color(OryxisColors::t().text_muted),
+                    Space::new().height(12),
+                    text(t("update_channel")).size(12).color(OryxisColors::t().text_secondary),
+                    Space::new().height(4),
+                    channel_picker,
+                    channel_note,
                     Space::new().height(10),
                     current_version_line,
                     Space::new().height(8),

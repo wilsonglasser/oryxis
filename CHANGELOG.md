@@ -6,6 +6,33 @@ project uses [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.7.3] - 2026-05-28
+
+### Added
+- **Mouse reporting (xterm mouse tracking).** When a remote app turns on
+  mouse tracking (tmux `set -g mouse on`, vim `set mouse=a`, htop, less,
+  lazygit, ...) the terminal now reports clicks, drags and wheel events
+  to it, so selecting a pane, resizing a split by dragging, and clicking
+  menu items work like they do in any other terminal. Supports the SGR
+  (1006) and legacy X10 protocols and the click / drag (1002) / any-motion
+  (1003) tracking modes. Holding **Shift** bypasses reporting and falls
+  back to local text selection, the universal terminal escape hatch.
+  Also fixes wheel-scroll in alt-screen apps (vim / less / htop) over SSH,
+  which previously only worked on local-shell tabs.
+- **Nightly update channel.** Settings -> Updates gains a channel picker
+  (Stable / Nightly). On the nightly channel the in-app updater follows
+  the rolling `nightly` release, comparing the running commit against the
+  release's target commit (version numbers don't move between nightlies)
+  and installing the new build in place, no installer, no UAC prompt.
+  Switching back to Stable offers a clean tagged build immediately so you
+  never get stranded on a nightly binary. The build's commit + channel are
+  baked in at compile time.
+
+### Changed
+- App logo is now a vector (`resources/logo.svg`) embedded at compile
+  time and rendered via the `svg` widget on the lock / setup screens and
+  the tab-bar product mark, so it stays crisp at any DPI.
+
 ## [0.7.2] - 2026-05-27
 
 ### Added

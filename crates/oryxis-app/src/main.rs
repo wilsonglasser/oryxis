@@ -79,6 +79,10 @@ fn main() -> iced::Result {
     // calls), which we deliberately ignore.
     let _ = rustls::crypto::ring::default_provider().install_default();
 
+    // Sweep the `.old.exe` left behind by a Windows nightly self-update
+    // (no-op elsewhere). Done before anything else touches the binary.
+    update::sweep_stale_binary();
+
     // CLI arg pickup, flags set when another Oryxis instance spawned
     // us via "Duplicate in New Window". Unknown flags are silently
     // ignored so future flags / OS double-click args don't crash boot.

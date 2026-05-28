@@ -873,9 +873,9 @@ fn sidebar_btn<'a>() -> Element<'a, Message> {
 /// in the chrome carries identity even though the whole window is
 /// otherwise unbranded. Sized to match the burger / sidebar-toggle
 /// neighbours so the strip reads as one uniform row of controls.
-fn product_logo<'a>(handle: iced::widget::image::Handle) -> Element<'a, Message> {
+fn product_logo<'a>(handle: iced::widget::svg::Handle) -> Element<'a, Message> {
     container(
-        iced::widget::image(handle)
+        iced::widget::svg(handle)
             .width(Length::Fixed(22.0))
             .height(Length::Fixed(22.0)),
     )

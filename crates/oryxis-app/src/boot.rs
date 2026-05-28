@@ -3,7 +3,7 @@
 //! mostly the message dispatch + view plumbing.
 
 use iced::keyboard;
-use iced::widget::{image, text_editor};
+use iced::widget::{svg, text_editor};
 use iced::{Point, Task};
 
 use oryxis_vault::VaultStore;
@@ -134,8 +134,13 @@ impl Oryxis {
                 vault_password_input: String::new(),
                 vault_password_visible: false,
                 vault_error: None,
-                logo_handle: image::Handle::from_bytes(include_bytes!("../../../resources/logo_128.png").as_slice()),
-                logo_small_handle: image::Handle::from_bytes(include_bytes!("../../../resources/logo_64.png").as_slice()),
+                // Vector logo: rendered through iced's SVG (resvg) path so
+                // it stays crisp at any scale and avoids the wgpu image-atlas
+                // corruption seen on GNOME Wayland fractional scaling. Both
+                // handles share the one asset; the SVG scales to each call
+                // site's box.
+                logo_handle: svg::Handle::from_memory(include_bytes!("../../../resources/logo.svg").as_slice()),
+                logo_small_handle: svg::Handle::from_memory(include_bytes!("../../../resources/logo.svg").as_slice()),
                 connections: Vec::new(),
                 groups: Vec::new(),
                 active_view: View::Dashboard,
@@ -372,6 +377,7 @@ impl Oryxis {
                 setting_max_reconnect_attempts: "5".into(),
                 setting_os_detection: true,
                 setting_auto_check_updates: true,
+                setting_update_channel: crate::update::UpdateChannel::default(),
                 pending_update: None,
                 update_downloading: false,
                 update_progress: 0.0,
@@ -798,6 +804,9 @@ impl Oryxis {
             }
             if let Ok(Some(v)) = vault.get_setting("auto_check_updates") {
                 self.setting_auto_check_updates = v == "true";
+            }
+            if let Ok(Some(v)) = vault.get_setting("update_channel") {
+                self.setting_update_channel = crate::update::UpdateChannel::from_setting(&v);
             }
             if let Ok(Some(v)) = vault.get_setting("sftp_concurrency") {
                 self.setting_sftp_concurrency = v;

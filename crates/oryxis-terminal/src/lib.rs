@@ -2,6 +2,7 @@ pub mod backend;
 pub mod widget;
 pub mod pty;
 pub mod colors;
+pub mod mouse;
 
 pub use backend::TerminalBackend;
 pub use colors::{TerminalPalette, TerminalTheme};

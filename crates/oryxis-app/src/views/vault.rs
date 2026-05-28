@@ -1,7 +1,7 @@
 //! Vault setup / unlock / error screens.
 
 use iced::border::Radius;
-use iced::widget::{button, column, container, image, text, Space};
+use iced::widget::{button, column, container, svg, text, Space};
 use iced::widget::button::Status as BtnStatus;
 use iced::{Background, Border, Color, Element, Length, Padding};
 
@@ -54,7 +54,7 @@ impl Oryxis {
     }
 
     pub(crate) fn view_vault_setup(&self) -> Element<'_, Message> {
-        let logo = image(self.logo_handle.clone())
+        let logo = svg(self.logo_handle.clone())
             .width(64)
             .height(64);
         let title = text(crate::i18n::t("welcome")).size(28).color(OryxisColors::t().text_primary);
@@ -108,7 +108,7 @@ impl Oryxis {
     }
 
     pub(crate) fn view_vault_unlock(&self) -> Element<'_, Message> {
-        let logo = image(self.logo_handle.clone())
+        let logo = svg(self.logo_handle.clone())
             .width(64)
             .height(64);
         let title = text("Oryxis").size(28).color(OryxisColors::t().accent);

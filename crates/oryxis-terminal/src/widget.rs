@@ -1,5 +1,6 @@
 use crate::backend::TerminalBackend;
 use crate::colors::TerminalPalette;
+use crate::mouse::{self as mouse_report, Mods as ReportMods, MouseButton as ReportButton, MouseEventKind};
 use crate::pty::PtyHandle;
 
 /// Common result type for terminal operations.
@@ -229,6 +230,14 @@ pub struct TerminalWidgetState {
     /// when the SSH echo lands at the same time, showing up as typing
     /// lag.
     hovered_cell: Option<(u16, u16)>,
+    /// Button currently held down while the remote app has mouse
+    /// tracking on. Drives drag-motion reports (which carry the held
+    /// button) and the matching release report. `None` when no button
+    /// is down or the app isn't tracking the mouse.
+    report_button: Option<ReportButton>,
+    /// Last `(col, row)` reported to the remote app, used to suppress
+    /// duplicate motion reports while the cursor stays inside one cell.
+    report_cell: Option<(u16, u16)>,
 }
 
 // ---------------------------------------------------------------------------
@@ -703,6 +712,12 @@ pub struct TerminalView<Message = ()> {
     /// to the local PTY, so the app dispatcher can route to the SSH
     /// session (mirroring the Ctrl+Shift+V path).
     on_paste_request: Option<Message>,
+    /// Optional callback for raw input bytes the widget synthesizes
+    /// (mouse-tracking reports, wheel-to-arrow translation). Like
+    /// `on_paste_request`, this routes the bytes through the dispatcher
+    /// so they reach the active SSH session; without it the widget
+    /// falls back to a local-PTY write, which is dead on SSH tabs.
+    on_terminal_input: Option<Box<dyn Fn(Vec<u8>) -> Message>>,
 }
 
 /// Horizontal padding around the terminal content (left/right).
@@ -873,6 +888,7 @@ impl<Message> TerminalView<Message> {
             on_font_size_increase: None,
             on_font_size_decrease: None,
             on_paste_request: None,
+            on_terminal_input: None,
         }
     }
 
@@ -936,6 +952,20 @@ impl<Message> TerminalView<Message> {
         self
     }
 
+    /// Wire a callback for synthesized input bytes (mouse-tracking
+    /// reports and wheel-to-arrow translation). The dispatcher should
+    /// route the bytes to the active SSH session, falling back to the
+    /// local PTY, exactly like the keyboard / paste paths. Without this
+    /// hook the widget writes to the local PTY directly, which is a
+    /// no-op on SSH tabs (their `TerminalState` has no PTY).
+    pub fn on_terminal_input(
+        mut self,
+        f: impl Fn(Vec<u8>) -> Message + 'static,
+    ) -> Self {
+        self.on_terminal_input = Some(Box::new(f));
+        self
+    }
+
     /// Override the font used for cell rendering. If the font can't be resolved
     /// by cosmic-text, it falls back to the system default monospace.
     pub fn with_font_name(mut self, name: &str) -> Self {
@@ -967,6 +997,148 @@ impl<Message> TerminalView<Message> {
     /// the current scroll offset. Visible row 0 is the top of the canvas.
     fn visible_row_to_line(visible_row: u16, scroll_offset: i32) -> i32 {
         visible_row as i32 - scroll_offset
+    }
+
+    /// Map an iced mouse button to its mouse-report button, or `None`
+    /// for buttons the xterm protocol doesn't encode (Back / Forward /
+    /// Other).
+    fn iced_to_report_button(btn: mouse::Button) -> Option<ReportButton> {
+        match btn {
+            mouse::Button::Left => Some(ReportButton::Left),
+            mouse::Button::Middle => Some(ReportButton::Middle),
+            mouse::Button::Right => Some(ReportButton::Right),
+            _ => None,
+        }
+    }
+
+    /// Send synthesized input bytes (mouse reports, wheel-to-arrow) to the
+    /// dispatcher so they reach the active SSH session. Falls back to a
+    /// direct local-PTY write when no callback is wired (local-shell
+    /// tabs). Always captures the originating event.
+    fn emit_input(&self, bytes: Vec<u8>) -> CanvasAction<Message> {
+        if let Some(cb) = &self.on_terminal_input {
+            CanvasAction::publish(cb(bytes)).and_capture()
+        } else {
+            if let Ok(mut state) = self.state.lock() {
+                state.write(&bytes);
+            }
+            CanvasAction::capture()
+        }
+    }
+
+    /// Translate a pointer event into a mouse-tracking report for the
+    /// remote app. Returns `Some(action)` when the event was consumed,
+    /// `None` to let the normal local handlers run. The caller guarantees
+    /// the app has mouse tracking on and Shift isn't held.
+    #[allow(clippy::too_many_arguments)]
+    fn handle_mouse_report(
+        &self,
+        widget_state: &mut TerminalWidgetState,
+        event: &iced::Event,
+        bounds: Rectangle,
+        cursor: mouse::Cursor,
+        mode: alacritty_terminal::term::TermMode,
+        grid_cols: u16,
+        grid_rows: u16,
+    ) -> Option<CanvasAction<Message>> {
+        use alacritty_terminal::term::TermMode;
+        let kbd = widget_state.modifiers;
+        let ctrl = kbd.control();
+        // Shift is the local-selection bypass, so the caller only reaches
+        // here with it released; never fold it into the report.
+        let mods = ReportMods { shift: false, alt: kbd.alt(), ctrl };
+
+        // Resolve a pixel position to a clamped, zero-based cell.
+        let cell = |pos: Point| -> (u16, u16) {
+            let (c, r) = self.pixel_to_cell(pos);
+            (
+                c.min(grid_cols.saturating_sub(1)),
+                r.min(grid_rows.saturating_sub(1)),
+            )
+        };
+
+        match event {
+            iced::Event::Mouse(mouse::Event::ButtonPressed(btn)) => {
+                let pos = cursor.position_in(bounds)?;
+                let rb = Self::iced_to_report_button(*btn)?;
+                let (col, row) = cell(pos);
+                widget_state.report_button = Some(rb);
+                widget_state.report_cell = Some((col, row));
+                let bytes =
+                    mouse_report::encode(mode, MouseEventKind::Press, rb, col, row, mods)?;
+                Some(self.emit_input(bytes))
+            }
+            iced::Event::Mouse(mouse::Event::ButtonReleased(btn)) => {
+                let rb = Self::iced_to_report_button(*btn)?;
+                // A drag can end with the pointer off the canvas; fall back
+                // to the last reported cell so the release still lands.
+                let (col, row) = match cursor.position_in(bounds) {
+                    Some(pos) => cell(pos),
+                    None => widget_state.report_cell.unwrap_or((0, 0)),
+                };
+                widget_state.report_button = None;
+                let bytes =
+                    mouse_report::encode(mode, MouseEventKind::Release, rb, col, row, mods)?;
+                Some(self.emit_input(bytes))
+            }
+            iced::Event::Mouse(mouse::Event::CursorMoved { .. }) => {
+                let pos = cursor.position_in(bounds)?;
+                let (col, row) = cell(pos);
+                // Suppress repeats while the cursor stays inside one cell.
+                if widget_state.report_cell == Some((col, row)) {
+                    return None;
+                }
+                // Drag tracking (1002) reports motion only while a button is
+                // held; any-motion tracking (1003) reports bare motion via
+                // the "no button" sentinel.
+                let btn = match widget_state.report_button {
+                    Some(b) => b,
+                    None if mode.contains(TermMode::MOUSE_MOTION) => ReportButton::None,
+                    None => return None,
+                };
+                let bytes =
+                    mouse_report::encode(mode, MouseEventKind::Motion, btn, col, row, mods)?;
+                widget_state.report_cell = Some((col, row));
+                Some(self.emit_input(bytes))
+            }
+            iced::Event::Mouse(mouse::Event::WheelScrolled { delta }) => {
+                // Ctrl+wheel stays a local font-zoom affordance; let it
+                // reach the dedicated handler instead of reporting it.
+                if ctrl {
+                    return None;
+                }
+                let pos = cursor.position_in(bounds)?;
+                let (col, row) = cell(pos);
+                let dy = match delta {
+                    mouse::ScrollDelta::Lines { y, .. } => *y,
+                    mouse::ScrollDelta::Pixels { y, .. } => *y / self.cell_height,
+                };
+                if dy == 0.0 {
+                    return None;
+                }
+                let btn = if dy > 0.0 {
+                    ReportButton::WheelUp
+                } else {
+                    ReportButton::WheelDown
+                };
+                // One report per notch, capped so a fast flick can't flood
+                // the session, concatenated into a single write.
+                let notches = (dy.abs().ceil() as u32).clamp(1, 5);
+                let mut bytes = Vec::new();
+                for _ in 0..notches {
+                    if let Some(seq) =
+                        mouse_report::encode(mode, MouseEventKind::Press, btn, col, row, mods)
+                    {
+                        bytes.extend_from_slice(&seq);
+                    }
+                }
+                if bytes.is_empty() {
+                    return None;
+                }
+                Some(self.emit_input(bytes))
+            }
+            _ => None,
+        }
     }
 
     fn is_in_selection(sel: &Selection, col: u16, line: i32) -> bool {
@@ -1002,6 +1174,31 @@ where
         let new_hover = cursor.position_in(bounds).is_some();
         let hover_changed = widget_state.hover != new_hover;
         widget_state.hover = new_hover;
+
+        // When the remote app has mouse tracking on (tmux `mouse on`,
+        // vim `mouse=a`, htop, ...) pointer events are reported to it
+        // instead of driving local selection / scrollback. We snapshot
+        // the relevant `TermMode` + grid size once per mouse event (the
+        // lock is a cheap flag read; skipped for keyboard events so the
+        // typing path never contends on it). Holding Shift bypasses
+        // reporting and restores local selection, the universal escape
+        // hatch every terminal honours.
+        let report_ctx = if matches!(event, iced::Event::Mouse(_)) {
+            self.state.lock().ok().and_then(|s| {
+                let mode = *s.backend.term.mode();
+                mode.intersects(alacritty_terminal::term::TermMode::MOUSE_MODE)
+                    .then(|| (mode, s.cols(), s.rows()))
+            })
+        } else {
+            None
+        };
+        if let Some((mode, grid_cols, grid_rows)) = report_ctx
+            && !widget_state.modifiers.shift()
+            && let Some(action) =
+                self.handle_mouse_report(widget_state, event, bounds, cursor, mode, grid_cols, grid_rows)
+        {
+            return Some(action);
+        }
 
         match event {
             // Mouse press, scrollbar interaction takes priority, then
@@ -1256,15 +1453,18 @@ where
                     .unwrap_or(false);
                 if in_alt_screen {
                     // Translate wheel into arrow-key bytes for the remote
-                    // app, `top`/`vim`/`less` all listen for these.
-                    let bytes: &[u8] = if lines > 0 { b"\x1b[A" } else { b"\x1b[B" };
-                    let count = lines.unsigned_abs().min(10);
-                    if let Ok(mut state) = self.state.lock() {
-                        for _ in 0..count {
-                            state.write(bytes);
-                        }
+                    // app, `top`/`vim`/`less` all listen for these. Routed
+                    // through `emit_input` so it reaches the SSH session,
+                    // a direct `state.write` only hits the local PTY and is
+                    // a no-op on SSH tabs (this used to silently do nothing
+                    // when scrolling vim / less over SSH).
+                    let arrow: &[u8] = if lines > 0 { b"\x1b[A" } else { b"\x1b[B" };
+                    let count = lines.unsigned_abs().min(10) as usize;
+                    let mut bytes = Vec::with_capacity(arrow.len() * count);
+                    for _ in 0..count {
+                        bytes.extend_from_slice(arrow);
                     }
-                    return Some(CanvasAction::capture());
+                    return Some(self.emit_input(bytes));
                 }
                 widget_state.scroll_offset = (widget_state.scroll_offset + lines).max(0);
                 if let Ok(state) = self.state.lock() {

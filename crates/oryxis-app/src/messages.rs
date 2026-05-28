@@ -386,6 +386,12 @@ pub enum Message {
     /// dispatcher reads the clipboard and routes the text to the SSH
     /// session (if active) or the local PTY, mirroring Ctrl+Shift+V.
     TerminalPasteFromClipboard,
+    /// Raw input bytes synthesized by the terminal widget (mouse-tracking
+    /// reports, wheel-to-arrow translation). Routed to the active SSH
+    /// session, falling back to the local PTY.
+    TerminalInput(Vec<u8>),
+    /// Settings: switch the auto-update release channel (stable/nightly).
+    SettingUpdateChannelChanged(crate::update::UpdateChannel),
     ChangeSettingsSection(SettingsSection),
     ToggleCopyOnSelect,
     ToggleRightClickCopy,

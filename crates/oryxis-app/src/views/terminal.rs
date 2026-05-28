@@ -36,7 +36,8 @@ impl Oryxis {
                     .with_smart_contrast(self.setting_smart_contrast)
                     .on_font_size_increase(Message::TerminalFontSizeIncrease)
                     .on_font_size_decrease(Message::TerminalFontSizeDecrease)
-                    .on_paste_request(Message::TerminalPasteFromClipboard);
+                    .on_paste_request(Message::TerminalPasteFromClipboard)
+                    .on_terminal_input(Message::TerminalInput);
                 let term_canvas: Element<'_, Message> = canvas(term_view)
                     .width(Length::Fill)
                     .height(Length::Fill)

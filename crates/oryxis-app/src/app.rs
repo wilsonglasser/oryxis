@@ -1,5 +1,5 @@
 use iced::keyboard;
-use iced::widget::{image, text_editor};
+use iced::widget::{svg, text_editor};
 use iced::{Point, Theme};
 
 use oryxis_core::models::connection::Connection;
@@ -143,8 +143,14 @@ pub struct Oryxis {
     pub(crate) vault_password_input: String,
     pub(crate) vault_password_visible: bool,
     pub(crate) vault_error: Option<String>,
-    pub(crate) logo_handle: image::Handle,
-    pub(crate) logo_small_handle: image::Handle,
+    // Vector logo handles (see boot.rs). SVG goes through iced's
+    // resvg/tiny-skia path instead of the wgpu image atlas, which on
+    // GNOME Wayland fractional scaling corrupted the raster PNG into
+    // garbage once the window got a real app_id and was composited at a
+    // non-integer scale. The small/large split is kept for call-site
+    // clarity even though both now point at the same asset.
+    pub(crate) logo_handle: svg::Handle,
+    pub(crate) logo_small_handle: svg::Handle,
 
     // Data
     pub(crate) connections: Vec<Connection>,
@@ -670,6 +676,8 @@ pub struct Oryxis {
     pub(crate) setting_max_reconnect_attempts: String,
     pub(crate) setting_os_detection: bool,
     pub(crate) setting_auto_check_updates: bool,
+    /// Release stream the updater follows (`stable` / `nightly`).
+    pub(crate) setting_update_channel: crate::update::UpdateChannel,
 
     // Update state (set by the async GitHub check on boot)
     pub(crate) pending_update: Option<crate::update::UpdateInfo>,

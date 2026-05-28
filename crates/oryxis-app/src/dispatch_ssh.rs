@@ -649,6 +649,16 @@ impl Oryxis {
                     if self.setting_auto_check_updates { "true" } else { "false" },
                 );
             }
+            Message::SettingUpdateChannelChanged(channel) => {
+                self.setting_update_channel = channel;
+                self.persist_setting("update_channel", channel.as_setting());
+                // A channel switch invalidates any "skip this version" so
+                // the user is offered the other stream's build right away
+                // (and a manual re-check feels responsive).
+                if let Some(vault) = &self.vault {
+                    let _ = vault.set_setting("skipped_update_version", "");
+                }
+            }
             Message::CheckForUpdate => {
                 if !self.setting_auto_check_updates {
                     return Ok(Task::none());
@@ -660,7 +670,7 @@ impl Oryxis {
                     .as_ref()
                     .and_then(|v| v.get_setting("skipped_update_version").ok().flatten());
                 return Ok(Task::perform(
-                    crate::update::check_latest_release(),
+                    crate::update::check_latest_release(self.setting_update_channel),
                     move |opt| {
                         match opt {
                             Some(info) if Some(&info.version) != skipped.as_ref() => {
@@ -687,7 +697,7 @@ impl Oryxis {
                     let _ = vault.set_setting("skipped_update_version", "");
                 }
                 return Ok(Task::perform(
-                    crate::update::check_latest_release(),
+                    crate::update::check_latest_release(self.setting_update_channel),
                     |info| match info {
                         Some(i) => Message::UpdateCheckResult(Some(i)),
                         None => Message::UpdateCheckResult(None),
@@ -779,11 +789,20 @@ impl Oryxis {
                 self.update_downloading = false;
                 match result {
                     Ok(path) => {
-                        if let Err(e) = crate::update::launch_installer(&path) {
+                        // Nightly ships a bare binary we swap in place;
+                        // stable hands a downloaded installer to the OS.
+                        let apply = match self.pending_update.as_ref().map(|i| i.artifact) {
+                            Some(crate::update::UpdateArtifact::Binary) => {
+                                crate::update::apply_binary_update(&path)
+                            }
+                            _ => crate::update::launch_installer(&path),
+                        };
+                        if let Err(e) = apply {
                             self.update_error = Some(e);
                         } else {
-                            // Installer launched, exit app so it can write
-                            // over our binary. Graceful quit via window close.
+                            // Installer launched (or new binary spawned),
+                            // exit so the old binary is released. Graceful
+                            // quit via window close.
                             self.pending_update = None;
                             return Ok(iced::window::latest().then(|id_opt| match id_opt {
                                 Some(id) => iced::window::close(id),
