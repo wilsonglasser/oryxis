@@ -31,7 +31,7 @@ repository = "https://github.com/wilsonglasser/oryxis"
 iced = { git = "https://github.com/wilsonglasser/iced", branch = "oryxis", features = ["canvas", "tokio", "advanced", "image", "svg", "markdown", "highlighter"] }
 
 # SSH
-russh = "0.60"
+russh = "0.61"
 
 # Terminal parsing
 alacritty_terminal = "0.26"
