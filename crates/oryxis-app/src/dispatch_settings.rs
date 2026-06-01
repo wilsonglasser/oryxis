@@ -253,6 +253,10 @@ impl Oryxis {
                     self.persist_setting(&format!("hotkey_{}", action.id()), "");
                 }
             }
+            Message::SettingRendererBackendChanged(mode) => {
+                self.setting_renderer_backend = mode.clone();
+                self.persist_setting("renderer_backend", &mode);
+            }
             Message::ToggleCopyOnSelect => {
                 self.setting_copy_on_select = !self.setting_copy_on_select;
                 self.persist_setting(

@@ -6,6 +6,31 @@ project uses [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.7.4] - 2026-06-01
+
+### Added
+- **Graphics renderer picker.** Settings -> Interface gains a renderer
+  selector: Automatic (default), OpenGL (GPU) or Software (CPU). Some
+  GPU/driver stacks (notably Vulkan on Mesa under GNOME) corrupt the
+  wgpu surface, bleeding other windows' pixels into the app chrome while
+  a terminal session forces frequent redraws. That corruption lives in
+  the driver's swapchain/present path, below iced, so it cannot be
+  repainted away from our side; instead the picker lets you change the
+  render path. OpenGL stays hardware-accelerated while dodging most
+  Vulkan-on-Mesa bugs, and Software (tiny-skia) is the maximally
+  compatible fallback (the terminal is a `canvas` widget, so it renders
+  identically off the GPU). The choice maps to `WGPU_BACKEND` /
+  `ICED_BACKEND` at startup and takes effect after a restart. Addresses
+  the GNOME / Debian rendering glitch reported in #25.
+- **macOS `.dmg`.** The release pipeline now packages a proper
+  `Oryxis.app` bundle (`Info.plist` + `.icns`) into a `.dmg` for Apple
+  Silicon, alongside the existing tarball. Developer ID signing and
+  notarization engage automatically once the Apple secrets are present;
+  until then the app is ad-hoc signed so it still launches locally.
+
+### Changed
+- Bumped `russh` 0.60.3 -> 0.61.1 and `astral-tokio-tar` 0.6.1 -> 0.6.2.
+
 ## [0.7.3] - 2026-05-28
 
 ### Added

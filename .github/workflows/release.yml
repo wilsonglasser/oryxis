@@ -4,6 +4,10 @@ on:
   push:
     tags:
       - 'v*'
+  # Manual trigger for testing the build/package steps (e.g. the macOS
+  # .dmg) without cutting a release. The publishing jobs below are gated
+  # on a tag ref, so a manual run only produces downloadable artifacts.
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -140,16 +144,94 @@ jobs:
             target/
           key: macos-arm-release-${{ hashFiles('**/Cargo.lock') }}
       - run: cargo build --release
-      - name: Package
+      - name: Package tarball
         run: |
           mkdir -p dist
           cp target/release/oryxis dist/
           cp README.md resources/logo_64.png dist/
           cd dist && tar czf ../oryxis-macos-aarch64.tar.gz *
+      - name: Build .app bundle
+        run: |
+          # On a tag the ref is v0.7.4 -> 0.7.4. On a manual workflow_dispatch
+          # run GITHUB_REF_NAME is a branch name, so fall back to a dummy.
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+          else
+            VERSION="0.0.0"
+          fi
+          APP="Oryxis.app"
+          mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
+          cp target/release/oryxis "$APP/Contents/MacOS/oryxis"
+          cp resources/Oryxis.icns "$APP/Contents/Resources/Oryxis.icns"
+          sed "s/__VERSION__/${VERSION}/g" resources/Info.plist > "$APP/Contents/Info.plist"
+      - name: Sign .app bundle
+        # Developer ID signing when secrets are present; otherwise an ad-hoc
+        # signature so the bundle is at least internally consistent. An ad-hoc
+        # build is still quarantined when downloaded (Gatekeeper warning) until
+        # the Developer ID secrets are added and notarization below kicks in.
+        env:
+          APPLE_CERT_P12_BASE64: ${{ secrets.APPLE_CERT_P12_BASE64 }}
+          APPLE_CERT_PASSWORD: ${{ secrets.APPLE_CERT_PASSWORD }}
+          APPLE_SIGN_IDENTITY: ${{ secrets.APPLE_SIGN_IDENTITY }}
+        run: |
+          APP="Oryxis.app"
+          if [ -n "$APPLE_CERT_P12_BASE64" ]; then
+            KEYCHAIN="$RUNNER_TEMP/build.keychain"
+            KEYCHAIN_PW="$(uuidgen)"
+            security create-keychain -p "$KEYCHAIN_PW" "$KEYCHAIN"
+            security set-keychain-settings -lut 21600 "$KEYCHAIN"
+            security unlock-keychain -p "$KEYCHAIN_PW" "$KEYCHAIN"
+            echo "$APPLE_CERT_P12_BASE64" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+            security import "$RUNNER_TEMP/cert.p12" -k "$KEYCHAIN" \
+              -P "$APPLE_CERT_PASSWORD" -T /usr/bin/codesign
+            security set-key-partition-list -S apple-tool:,apple:,codesign: \
+              -s -k "$KEYCHAIN_PW" "$KEYCHAIN" >/dev/null
+            security list-keychains -d user -s "$KEYCHAIN" login.keychain
+            codesign --force --deep --options runtime --timestamp \
+              --sign "$APPLE_SIGN_IDENTITY" "$APP"
+          else
+            echo "No Developer ID secrets set; applying ad-hoc signature."
+            codesign --force --deep --sign - "$APP"
+          fi
+      - name: Build .dmg
+        run: |
+          STAGING="$RUNNER_TEMP/dmg"
+          mkdir -p "$STAGING"
+          cp -R Oryxis.app "$STAGING/"
+          ln -s /Applications "$STAGING/Applications"
+          hdiutil create -volname "Oryxis" -srcfolder "$STAGING" \
+            -ov -format UDZO oryxis-macos-aarch64.dmg
+      - name: Notarize .dmg
+        # Runs only when the App Store Connect secrets are present. Submits the
+        # .dmg to Apple, waits for the ticket, then staples it so the app opens
+        # with no Gatekeeper prompt even offline. Note: the signing secrets
+        # (APPLE_CERT_*) and these notary secrets are a package deal. Apple
+        # rejects anything that is not Developer-ID-signed with hardened
+        # runtime, so notarization only makes sense once the cert is in place.
+        env:
+          APPLE_CERT_P12_BASE64: ${{ secrets.APPLE_CERT_P12_BASE64 }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          if [ -z "$APPLE_CERT_P12_BASE64" ]; then
+            echo "No Developer ID cert; skipping notarization (ad-hoc build)."
+            exit 0
+          fi
+          if [ -n "$APPLE_ID" ] && [ -n "$APPLE_PASSWORD" ] && [ -n "$APPLE_TEAM_ID" ]; then
+            xcrun notarytool submit oryxis-macos-aarch64.dmg \
+              --apple-id "$APPLE_ID" --password "$APPLE_PASSWORD" \
+              --team-id "$APPLE_TEAM_ID" --wait
+            xcrun stapler staple oryxis-macos-aarch64.dmg
+          else
+            echo "No notarization secrets set; shipping unsigned .dmg."
+          fi
       - uses: actions/upload-artifact@v7
         with:
           name: oryxis-macos-aarch64
-          path: oryxis-macos-aarch64.tar.gz
+          path: |
+            oryxis-macos-aarch64.tar.gz
+            oryxis-macos-aarch64.dmg
 
   build-windows:
     name: Windows x86_64
@@ -303,6 +385,7 @@ jobs:
   release:
     name: Create Release
     needs: [build-linux-x86, build-linux-arm, build-macos-arm, build-windows, build-windows-arm]
+    if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -335,6 +418,7 @@ jobs:
             oryxis-linux-aarch64.deb
             oryxis-linux-aarch64.AppImage
             oryxis-macos-aarch64.tar.gz
+            oryxis-macos-aarch64.dmg
             oryxis-windows-x86_64.zip
             oryxis-setup-x86_64.exe
             oryxis-user-setup-x86_64.exe

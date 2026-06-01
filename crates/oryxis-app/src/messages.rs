@@ -393,6 +393,10 @@ pub enum Message {
     /// Settings: switch the auto-update release channel (stable/nightly).
     SettingUpdateChannelChanged(crate::update::UpdateChannel),
     ChangeSettingsSection(SettingsSection),
+    /// Pick the renderer backend ("auto" / "opengl" / "software").
+    /// Persisted to the vault; takes effect on the next launch (the
+    /// backend is fixed at startup via WGPU_BACKEND / ICED_BACKEND).
+    SettingRendererBackendChanged(String),
     ToggleCopyOnSelect,
     ToggleRightClickCopy,
     ToggleBoldIsBright,

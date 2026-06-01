@@ -83,6 +83,35 @@ fn main() -> iced::Result {
     // (no-op elsewhere). Done before anything else touches the binary.
     update::sweep_stale_binary();
 
+    // Renderer escape hatch. Some GPU/driver stacks (seen on GNOME +
+    // Mesa) corrupt the wgpu surface, bleeding other windows' pixels
+    // into our chrome while a terminal session forces frequent redraws.
+    // The corruption lives below iced (swapchain/present in the driver),
+    // so we can't repaint our way out; instead we let the user pick a
+    // different render path. Both knobs are read once while iced builds
+    // its compositor, so they must be set before `iced::application(..)
+    // .run()`. The setting lives in the vault's `settings` table, which
+    // reads without the master password, so we resolve it here at
+    // process start. Default ("auto" / missing) sets nothing.
+    //   - "opengl"   -> force wgpu's GL backend instead of Vulkan,
+    //                   still hardware-accelerated; fixes most Vulkan-
+    //                   on-Mesa corruption without the software cost.
+    //   - "software" -> force iced's tiny-skia (CPU) renderer; the
+    //                   terminal is a plain `canvas` widget so it renders
+    //                   identically off the GPU.
+    if let Ok(vault) = oryxis_vault::VaultStore::open_default()
+        && let Ok(Some(mode)) = vault.get_setting("renderer_backend")
+    {
+        // SAFETY: still single-threaded here (tracing not yet
+        // initialized, no threads spawned), so mutating the process
+        // environment is sound under the Rust 2024 contract.
+        match mode.as_str() {
+            "opengl" => unsafe { std::env::set_var("WGPU_BACKEND", "gl") },
+            "software" => unsafe { std::env::set_var("ICED_BACKEND", "tiny-skia") },
+            _ => {}
+        }
+    }
+
     // CLI arg pickup, flags set when another Oryxis instance spawned
     // us via "Duplicate in New Window". Unknown flags are silently
     // ignored so future flags / OS double-click args don't crash boot.

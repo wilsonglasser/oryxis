@@ -1012,6 +1012,49 @@ impl Oryxis {
                     ]).align_y(iced::Alignment::Center),
                 ]);
 
+                // Renderer backend picker + a hint that it only takes
+                // effect after a restart (the backend is fixed at process
+                // start). Escape hatch for GPU/driver stacks that corrupt
+                // the wgpu surface: "auto" (best/Vulkan), "opengl" (still
+                // GPU, dodges most Vulkan-on-Mesa bugs), "software" (CPU).
+                // Token-as-value pattern: the picker stores the token and
+                // the display closure translates it to the localized label.
+                let renderer_options = vec![
+                    "auto".to_string(),
+                    "opengl".to_string(),
+                    "software".to_string(),
+                ];
+                let rendering_section = panel_section(column![
+                    dir_row(vec![
+                        text(crate::i18n::t("renderer_backend"))
+                            .size(13)
+                            .color(OryxisColors::t().text_primary)
+                            .into(),
+                        Space::new().width(Length::Fill).into(),
+                        pick_list(
+                            Some(self.setting_renderer_backend.clone()),
+                            renderer_options,
+                            |s: &String| {
+                                let key = match s.as_str() {
+                                    "opengl" => "renderer_opengl",
+                                    "software" => "renderer_software",
+                                    _ => "renderer_auto",
+                                };
+                                crate::i18n::t(key).to_string()
+                            },
+                        )
+                        .on_select(Message::SettingRendererBackendChanged)
+                        .width(200)
+                        .padding(10)
+                        .style(crate::widgets::rounded_pick_list_style)
+                        .into(),
+                    ]).align_y(iced::Alignment::Center),
+                    Space::new().height(4),
+                    text(crate::i18n::t("renderer_backend_desc"))
+                        .size(11)
+                        .color(OryxisColors::t().text_muted),
+                ]);
+
                 // Explicit `Space::new()` between elements (no
                 // `.spacing()`) so the gap before the first panel
                 // matches the SFTP section's 16 px exactly; the
@@ -1033,6 +1076,8 @@ impl Oryxis {
                     layout_section,
                     Space::new().height(12),
                     icon_section,
+                    Space::new().height(12),
+                    rendering_section,
                     Space::new().height(12),
                 ]
                 .width(Length::Fill)

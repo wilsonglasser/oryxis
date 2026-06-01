@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleName</key>
+	<string>Oryxis</string>
+	<key>CFBundleDisplayName</key>
+	<string>Oryxis</string>
+	<key>CFBundleIdentifier</key>
+	<string>app.oryxis</string>
+	<key>CFBundleExecutable</key>
+	<string>oryxis</string>
+	<key>CFBundleIconFile</key>
+	<string>Oryxis</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleShortVersionString</key>
+	<string>__VERSION__</string>
+	<key>CFBundleVersion</key>
+	<string>__VERSION__</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>11.0</string>
+	<key>NSHighResolutionCapable</key>
+	<true/>
+</dict>
+</plist>

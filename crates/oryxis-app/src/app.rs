@@ -562,6 +562,13 @@ pub struct Oryxis {
 
     // Settings
     pub(crate) settings_section: SettingsSection,
+    /// Renderer backend selection: "auto" (default), "opengl" (force
+    /// wgpu's GL backend, still GPU), or "software" (tiny-skia / CPU).
+    /// `main` translates this into `WGPU_BACKEND` / `ICED_BACKEND` at
+    /// startup, an escape hatch for GPU/driver stacks that corrupt the
+    /// wgpu surface. Read at boot only (the env vars are resolved before
+    /// the runtime starts), so changing it asks the user to restart.
+    pub(crate) setting_renderer_backend: String,
     pub(crate) setting_copy_on_select: bool,
     /// Sub-option of `setting_copy_on_select`: when both are on, a selection
     /// copies on right-click instead of on release. Ignored when

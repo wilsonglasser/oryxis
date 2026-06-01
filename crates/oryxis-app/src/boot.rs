@@ -340,6 +340,7 @@ impl Oryxis {
                 terminal_font_size: 14.0,
                 terminal_font_name: "SauceCodePro Nerd Font".to_string(),
                 settings_section: SettingsSection::Terminal,
+                setting_renderer_backend: "auto".to_string(),
                 setting_copy_on_select: true,
                 setting_right_click_copy: false,
                 setting_bold_is_bright: true,
@@ -677,6 +678,12 @@ impl Oryxis {
             // Terminal / SFTP / connection settings, load whatever
             // the user previously typed, fall back to defaults silently
             // when the key is missing (first-run or new key in update).
+            // Mirrors the read in `main` (which sets WGPU_BACKEND /
+            // ICED_BACKEND before the runtime starts); keep this in sync
+            // so the picker shows the persisted choice, not the default.
+            if let Ok(Some(v)) = vault.get_setting("renderer_backend") {
+                self.setting_renderer_backend = v;
+            }
             if let Ok(Some(v)) = vault.get_setting("copy_on_select") {
                 self.setting_copy_on_select = v == "true";
             }
