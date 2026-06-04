@@ -744,11 +744,14 @@ pub enum Message {
     ChatRetry,
     ChatToolExec(String),
     /// AI proposed a tool call. Carries the command + `risk` it
-    /// self-classified ("safe" / "risky"). Safe commands are executed
-    /// immediately via `ChatToolExec`; risky ones (and ones the model
-    /// failed to classify) are queued as a `PendingTool` bubble with
-    /// RUN / ALWAYS RUN / DENY buttons.
+    /// self-classified ("safe" / "risky"). Safe commands still have to
+    /// clear the independent auto-exec judge before running unattended;
+    /// risky ones (and ones the model failed to classify) are queued as
+    /// a `PendingTool` bubble with RUN / ALWAYS RUN / DENY buttons.
     ChatToolProposed { command: String, risk: String },
+    /// The independent safety judge declined to auto-run a model-claimed
+    /// `safe` command. Surface it for explicit approval like a risky one.
+    ChatToolGuardBlocked { command: String },
     /// User clicked RUN on a pending tool prompt, execute once.
     ChatToolApprove(String),
     /// User clicked ALWAYS RUN, add this command's first token to the

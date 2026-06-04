@@ -234,6 +234,145 @@ pub fn send_chat_stream(
     UnboundedReceiverStream::new(rx)
 }
 
+/// System prompt for the independent auto-exec safety gate. The judge
+/// never runs the command, it only decides whether running it
+/// automatically (with no user confirmation) is acceptable.
+pub const AUTO_EXEC_JUDGE_PROMPT: &str = "You are a safety gate placed in front of a terminal assistant. The command below is about to run AUTOMATICALLY on the user's live server, with no confirmation step. Decide whether running it unattended is safe. Answer BLOCK (so the user is asked first) for anything that writes, deletes, moves, renames, overwrites, or truncates files, changes permissions or ownership, installs or removes software, starts/stops/restarts services, edits configuration, has outbound network side effects, escalates privileges, or is otherwise irreversible or state-changing. Answer ALLOW only for clearly read-only / introspection commands (listing, reading, status, versions, resource usage). If you are unsure, answer BLOCK. Reply with a single word: ALLOW or BLOCK.";
+
+/// Independent second-opinion check run before a model-claimed `safe`
+/// command is auto-executed without user confirmation. Returns true only
+/// when the judge clearly approves. Any ambiguity, an unparseable reply,
+/// or a transport error resolves to false (require confirmation), so the
+/// gate fails safe: a broken or unreachable judge never opens the
+/// auto-exec path, it only ever forces the user prompt.
+pub async fn judge_auto_exec(config: AiConfig, command: String) -> bool {
+    matches!(judge_auto_exec_inner(&config, &command).await, Ok(true))
+}
+
+async fn judge_auto_exec_inner(config: &AiConfig, command: &str) -> Result<bool, String> {
+    let client = reqwest::Client::new();
+    let info = provider_info(&config.provider);
+    let user_msg = format!("Command about to auto-run:\n`{command}`\n\nALLOW or BLOCK?");
+
+    // Pull the model's verdict text out of a single non-streaming
+    // completion. Each provider family has its own request/response
+    // shape, mirroring the streaming functions above but without tools.
+    let text = match info.kind {
+        ProviderKind::Anthropic => {
+            let body = serde_json::json!({
+                "model": config.model,
+                "max_tokens": 8,
+                "system": AUTO_EXEC_JUDGE_PROMPT,
+                "messages": [{ "role": "user", "content": user_msg }],
+            });
+            let url = config
+                .api_url
+                .as_deref()
+                .filter(|s| !s.is_empty())
+                .unwrap_or("https://api.anthropic.com/v1/messages");
+            let resp = client
+                .post(url)
+                .header("x-api-key", &config.api_key)
+                .header("anthropic-version", "2023-06-01")
+                .header("content-type", "application/json")
+                .json(&body)
+                .send()
+                .await
+                .map_err(|e| format!("judge request failed: {e}"))?;
+            if !resp.status().is_success() {
+                return Err(format!("judge API error {}", resp.status()));
+            }
+            let v: serde_json::Value =
+                resp.json().await.map_err(|e| format!("judge parse: {e}"))?;
+            v["content"]
+                .as_array()
+                .and_then(|a| a.iter().find_map(|b| b["text"].as_str()))
+                .unwrap_or("")
+                .to_string()
+        }
+        ProviderKind::Gemini => {
+            let body = serde_json::json!({
+                "contents": [{ "role": "user", "parts": [{ "text": user_msg }] }],
+                "systemInstruction": { "parts": [{ "text": AUTO_EXEC_JUDGE_PROMPT }] },
+            });
+            // The judge needs the non-streaming generateContent endpoint;
+            // a custom URL configured for streaming gets swapped over.
+            let url = match config.api_url.as_deref() {
+                Some(u) if !u.is_empty() => format!(
+                    "{}?key={}",
+                    u.replace("streamGenerateContent", "generateContent"),
+                    config.api_key
+                ),
+                _ => format!(
+                    "https://generativelanguage.googleapis.com/v1beta/models/{}:generateContent?key={}",
+                    config.model, config.api_key
+                ),
+            };
+            let resp = client
+                .post(&url)
+                .header("content-type", "application/json")
+                .json(&body)
+                .send()
+                .await
+                .map_err(|e| format!("judge request failed: {e}"))?;
+            if !resp.status().is_success() {
+                return Err(format!("judge API error {}", resp.status()));
+            }
+            let v: serde_json::Value =
+                resp.json().await.map_err(|e| format!("judge parse: {e}"))?;
+            v["candidates"]
+                .as_array()
+                .and_then(|a| a.first())
+                .and_then(|c| c["content"]["parts"].as_array())
+                .and_then(|p| p.iter().find_map(|part| part["text"].as_str()))
+                .unwrap_or("")
+                .to_string()
+        }
+        ProviderKind::OpenAiCompat | ProviderKind::Custom => {
+            let url = config
+                .api_url
+                .as_deref()
+                .filter(|s| !s.is_empty())
+                .unwrap_or(info.default_url);
+            if url.is_empty() {
+                return Err("judge: provider requires an API URL".into());
+            }
+            let body = serde_json::json!({
+                "model": config.model,
+                "max_tokens": 8,
+                "messages": [
+                    { "role": "system", "content": AUTO_EXEC_JUDGE_PROMPT },
+                    { "role": "user", "content": user_msg },
+                ],
+            });
+            let resp = client
+                .post(url)
+                .header("Authorization", format!("Bearer {}", config.api_key))
+                .header("content-type", "application/json")
+                .json(&body)
+                .send()
+                .await
+                .map_err(|e| format!("judge request failed: {e}"))?;
+            if !resp.status().is_success() {
+                return Err(format!("judge API error {}", resp.status()));
+            }
+            let v: serde_json::Value =
+                resp.json().await.map_err(|e| format!("judge parse: {e}"))?;
+            v["choices"]
+                .as_array()
+                .and_then(|a| a.first())
+                .and_then(|c| c["message"]["content"].as_str())
+                .unwrap_or("")
+                .to_string()
+        }
+    };
+
+    // Fail safe: only a clear ALLOW (with no BLOCK anywhere) opens the
+    // auto-exec path. Empty / hedged / unexpected replies stay blocked.
+    let upper = text.to_uppercase();
+    Ok(upper.contains("ALLOW") && !upper.contains("BLOCK"))
+}
+
 /// SSE line iterator over a reqwest byte stream. Buffers chunks until a
 /// blank line (event boundary), yielding the assembled `data:` payload
 /// (concatenated if the event spanned multiple `data:` lines). Discards

@@ -413,14 +413,77 @@ impl Oryxis {
                             .any(|c| c == &first_token)
                     })
                     .unwrap_or(false);
-                if risk == "safe" || allowed {
+                // User-trusted commands ("always run X") bypass every gate.
+                if allowed {
                     return Ok(Task::done(Message::ChatToolExec(command)));
+                }
+                // A model-claimed `safe` command auto-runs only after an
+                // independent judge agrees. The judge can only escalate to
+                // a confirmation prompt, never approve a `risky` one, and
+                // it fails safe: any judge error blocks (see
+                // ai::judge_auto_exec).
+                if risk == "safe" {
+                    let api_key = self
+                        .vault
+                        .as_ref()
+                        .and_then(|v| v.get_ai_api_key().ok().flatten())
+                        .unwrap_or_default();
+                    let config = crate::ai::AiConfig {
+                        provider: self.ai_provider.clone(),
+                        model: self.ai_model.clone(),
+                        api_key,
+                        api_url: if self.ai_api_url.is_empty() {
+                            None
+                        } else {
+                            Some(self.ai_api_url.clone())
+                        },
+                        system_prompt: None,
+                    };
+                    self.chat_loading = true;
+                    let cmd_for_judge = command.clone();
+                    return Ok(Task::perform(
+                        crate::ai::judge_auto_exec(config, cmd_for_judge),
+                        move |allow| {
+                            if allow {
+                                Message::ChatToolExec(command.clone())
+                            } else {
+                                Message::ChatToolGuardBlocked {
+                                    command: command.clone(),
+                                }
+                            }
+                        },
+                    ));
                 }
                 if let Some(idx) = self.active_tab
                     && let Some(tab) = self.tabs.get_mut(idx)
                 {
                     // Drop the empty assistant placeholder if the model
                     // went straight to a tool call without any text.
+                    if let Some(last) = tab.chat_history.last()
+                        && last.role == ChatRole::Assistant
+                        && last.content.is_empty()
+                    {
+                        tab.chat_history.pop();
+                    }
+                    tab.chat_history.push(ChatMessage {
+                        role: ChatRole::PendingTool,
+                        content: command,
+                        timestamp: chrono::Utc::now(),
+                        parsed_md: Vec::new(),
+                    });
+                }
+                self.chat_loading = false;
+                if self.chat_scroll_at_bottom {
+                    return Ok(chat_scroll_to_end());
+                }
+            }
+            Message::ChatToolGuardBlocked { command } => {
+                // The independent judge declined to auto-run this
+                // model-claimed `safe` command, so surface it for explicit
+                // approval exactly like a risky one.
+                if let Some(idx) = self.active_tab
+                    && let Some(tab) = self.tabs.get_mut(idx)
+                {
                     if let Some(last) = tab.chat_history.last()
                         && last.role == ChatRole::Assistant
                         && last.content.is_empty()
