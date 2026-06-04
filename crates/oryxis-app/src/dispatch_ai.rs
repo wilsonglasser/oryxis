@@ -417,11 +417,17 @@ impl Oryxis {
                 if allowed {
                     return Ok(Task::done(Message::ChatToolExec(command)));
                 }
-                // A model-claimed `safe` command auto-runs only after an
-                // independent judge agrees. The judge can only escalate to
-                // a confirmation prompt, never approve a `risky` one, and
-                // it fails safe: any judge error blocks (see
+                // A model-claimed `safe` command auto-runs only after it
+                // clears two gates. First a deterministic floor: commands
+                // we already know are catastrophic always force the
+                // prompt, no judge call, uncheatable. Then an independent
+                // judge for the nuanced rest. Both can only escalate to a
+                // confirmation prompt, never approve a `risky` one, and
+                // both fail safe (a judge error blocks, see
                 // ai::judge_auto_exec).
+                if risk == "safe" && crate::ai::is_obviously_destructive(&command) {
+                    return Ok(Task::done(Message::ChatToolGuardBlocked { command }));
+                }
                 if risk == "safe" {
                     let api_key = self
                         .vault

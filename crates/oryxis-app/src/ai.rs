@@ -385,6 +385,77 @@ async fn judge_auto_exec_inner(config: &AiConfig, command: &str) -> Result<bool,
     })
 }
 
+/// Deterministic floor under the LLM judge: commands we already know are
+/// catastrophic or irreversible and must never auto-run unattended, no
+/// matter how the model classified them. A match forces the confirmation
+/// prompt; like the judge it can only escalate, never approve. Runs
+/// first, so these are caught even if the judge is wrong, jailbroken by
+/// the command text, or unreachable, and without spending a judge call.
+///
+/// Intentionally high-precision (catastrophic / host-level only); the
+/// nuanced, app-level destructive cases are left to the judge so this
+/// list stays short and false positives stay rare.
+pub fn is_obviously_destructive(command: &str) -> bool {
+    let c = command.to_ascii_lowercase();
+    // Shell-separator tokenization for command-name checks.
+    let tokens: Vec<&str> = c
+        .split(|ch: char| ch.is_whitespace() || matches!(ch, ';' | '|' | '&' | '(' | ')'))
+        .filter(|t| !t.is_empty())
+        .collect();
+
+    // Host-killers: bring the machine down.
+    if tokens
+        .iter()
+        .any(|t| matches!(*t, "reboot" | "shutdown" | "poweroff" | "halt"))
+    {
+        return true;
+    }
+    // `rm` with both a recursive and a force flag, in any order / form.
+    if c.contains("rm ") {
+        let recursive = c.contains(" -r")
+            || c.contains("--recursive")
+            || c.contains(" -rf")
+            || c.contains(" -fr");
+        let force = c.contains(" -f")
+            || c.contains("--force")
+            || c.contains(" -rf")
+            || c.contains(" -fr");
+        if recursive && force {
+            return true;
+        }
+    }
+    // Disabling rm's root guard is never something to auto-run.
+    if c.contains("--no-preserve-root") {
+        return true;
+    }
+    // Filesystem / partition destroyers (incl. mkfs.ext4-style subforms).
+    if tokens
+        .iter()
+        .any(|t| matches!(*t, "wipefs" | "fdisk" | "parted" | "mkswap" | "shred") || t.starts_with("mkfs"))
+    {
+        return true;
+    }
+    // dd writing straight to a raw device, or a redirect overwriting one.
+    if c.contains("dd ") && c.contains("of=/dev/") {
+        return true;
+    }
+    if ["> /dev/sd", "> /dev/nvme", "> /dev/disk", "> /dev/vd"]
+        .iter()
+        .any(|p| c.contains(p))
+    {
+        return true;
+    }
+    // Classic fork bomb.
+    if c.contains(":(){") || c.contains(":|:&") {
+        return true;
+    }
+    // Irreversible database drops.
+    if c.contains("drop database") || c.contains("drop table") || c.contains("truncate table") {
+        return true;
+    }
+    false
+}
+
 /// SSE line iterator over a reqwest byte stream. Buffers chunks until a
 /// blank line (event boundary), yielding the assembled `data:` payload
 /// (concatenated if the event spanned multiple `data:` lines). Discards
@@ -847,5 +918,56 @@ mod tests {
         let s = fake_byte_stream(vec![b"data: bad\n\n"]);
         let result = for_each_sse_event(s, |_data| Err("nope".into())).await;
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn destructive_floor_catches_catastrophic_commands() {
+        for cmd in [
+            "rm -rf /",
+            "rm -rf ~/data",
+            "rm -fr /var/tmp",
+            "rm --recursive --force /opt/app",
+            "sudo rm -rf --no-preserve-root /",
+            "mkfs.ext4 /dev/sdb1",
+            "wipefs -a /dev/sda",
+            "dd if=/dev/zero of=/dev/sda bs=1M",
+            "shred -u /etc/passwd",
+            "echo boom > /dev/sda",
+            ":(){ :|:& };:",
+            "sudo reboot",
+            "shutdown -h now",
+            "poweroff",
+            "mysql -e 'DROP DATABASE prod'",
+            "psql -c 'drop table users'",
+        ] {
+            assert!(
+                is_obviously_destructive(cmd),
+                "should be blocked deterministically: {cmd}"
+            );
+        }
+    }
+
+    #[test]
+    fn destructive_floor_leaves_benign_and_nuanced_to_the_judge() {
+        // Read-only and ordinary commands must pass the floor (the LLM
+        // judge handles them). Non-recursive rm and app-level deletes are
+        // intentionally NOT on the floor, to keep it high-precision.
+        for cmd in [
+            "ls -lh",
+            "cat /etc/os-release",
+            "tail -f /var/log/syslog",
+            "find / -name '*.conf'",
+            "ps aux | grep nginx",
+            "rm note.txt",
+            "rm -i scratch.log",
+            "git reset --hard HEAD~1",
+            "docker ps -a",
+            "minikube delete",
+        ] {
+            assert!(
+                !is_obviously_destructive(cmd),
+                "should NOT be on the deterministic floor: {cmd}"
+            );
+        }
     }
 }
