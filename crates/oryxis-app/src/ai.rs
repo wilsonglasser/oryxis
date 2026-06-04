@@ -261,7 +261,9 @@ async fn judge_auto_exec_inner(config: &AiConfig, command: &str) -> Result<bool,
         ProviderKind::Anthropic => {
             let body = serde_json::json!({
                 "model": config.model,
-                "max_tokens": 8,
+                // Headroom for a reasoning model to think before the
+                // one-word verdict; an instruct model still stops early.
+                "max_tokens": 512,
                 "system": AUTO_EXEC_JUDGE_PROMPT,
                 "messages": [{ "role": "user", "content": user_msg }],
             });
@@ -339,7 +341,9 @@ async fn judge_auto_exec_inner(config: &AiConfig, command: &str) -> Result<bool,
             }
             let body = serde_json::json!({
                 "model": config.model,
-                "max_tokens": 8,
+                // Headroom for a reasoning model to think before the
+                // one-word verdict; an instruct model still stops early.
+                "max_tokens": 512,
                 "messages": [
                     { "role": "system", "content": AUTO_EXEC_JUDGE_PROMPT },
                     { "role": "user", "content": user_msg },
@@ -367,10 +371,18 @@ async fn judge_auto_exec_inner(config: &AiConfig, command: &str) -> Result<bool,
         }
     };
 
-    // Fail safe: only a clear ALLOW (with no BLOCK anywhere) opens the
-    // auto-exec path. Empty / hedged / unexpected replies stay blocked.
+    // Fail safe: open auto-exec only when the verdict ends on ALLOW.
+    // Take the LAST of the two tokens so a reasoning model that mentions
+    // both while thinking ("could BLOCK, but ALLOW") is read by its final
+    // word. Empty / neither-token / BLOCK-last replies all stay blocked.
     let upper = text.to_uppercase();
-    Ok(upper.contains("ALLOW") && !upper.contains("BLOCK"))
+    let allow_at = upper.rfind("ALLOW");
+    let block_at = upper.rfind("BLOCK");
+    Ok(match (allow_at, block_at) {
+        (Some(a), Some(b)) => a > b,
+        (Some(_), None) => true,
+        _ => false,
+    })
 }
 
 /// SSE line iterator over a reqwest byte stream. Buffers chunks until a
