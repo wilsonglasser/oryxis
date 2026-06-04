@@ -528,6 +528,10 @@ impl Oryxis {
                     text(crate::i18n::t("ai_assistant")).size(18).color(OryxisColors::t().text_primary),
                     Space::new().height(16),
                     enable_section,
+                    Space::new().height(8),
+                    // The assistant runs commands on connected servers
+                    // (some auto-execute); warn before / while enabled.
+                    text(crate::i18n::t("ai_enable_warning")).size(12).color(OryxisColors::t().text_muted),
                 ]
                 .width(Length::Fill)
                 .align_x(dir_align_x());

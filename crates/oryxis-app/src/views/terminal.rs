@@ -253,11 +253,22 @@ impl Oryxis {
         .interaction(iced::mouse::Interaction::ResizingHorizontally)
         .into();
 
+        // Persistent reminder that the assistant runs commands on the
+        // live server (some auto-execute), sitting just above the input.
+        let chat_disclaimer = container(
+            text(t("ai_chat_disclaimer"))
+                .size(10)
+                .color(OryxisColors::t().text_muted),
+        )
+        .padding(Padding { top: 6.0, right: 12.0, bottom: 0.0, left: 12.0 })
+        .width(Length::Fill)
+        .align_x(crate::widgets::dir_align_x());
+
         // ── Assemble sidebar ──
         // Chat body (messages + input) is the content for the Chat tab;
         // the other tabs swap their own content in below the strip.
         let chat_body: Element<'_, Message> =
-            column![messages_scroll, input_separator, input_row]
+            column![messages_scroll, input_separator, chat_disclaimer, input_row]
                 .width(Length::Fill)
                 .height(Length::Fill)
                 .into();
