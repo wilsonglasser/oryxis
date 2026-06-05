@@ -124,11 +124,24 @@ impl Oryxis {
         // in the burger menu so it doesn't take a permanent slot.
         if self.setting_layout_mode == "workspace" {
             let nav_active = self.active_tab.is_none();
+            // The "Hosts" area tab stays selected across every vault
+            // sub-section (Hosts, Keychain, Snippets, Port Forwarding,
+            // History), not just the Hosts grid. Those sub-sections
+            // live under the contextual sub-nav of this same area, so
+            // mirror the `in_vault_area` family used in `layout.rs`.
+            let in_vault_area = matches!(
+                self.active_view,
+                View::Dashboard
+                    | View::Keys
+                    | View::Snippets
+                    | View::PortForwarding
+                    | View::History
+            );
             tab_items.push(area_tab(
                 crate::i18n::t("hosts"),
                 iced_fonts::lucide::server(),
                 View::Dashboard,
-                nav_active && self.active_view == View::Dashboard,
+                nav_active && in_vault_area,
             ));
             if self.sftp_enabled {
                 tab_items.push(area_tab(
