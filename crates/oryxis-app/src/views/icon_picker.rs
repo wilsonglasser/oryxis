@@ -41,55 +41,68 @@ impl Oryxis {
             ..Default::default()
         });
 
-        // ── Icon grid ──
+        // ── Icon section: curated presets up front, with a search box
+        // that filters the full Lucide library. The whole font is
+        // bundled already, so searching every glyph adds no weight. ──
         let selected_icon = self.icon_picker_icon.clone();
+        let query = self.icon_picker_icon_search.trim().to_string();
+
+        // Ids to render: search hits when the box has a query, otherwise
+        // the curated preset list.
+        let icon_ids: Vec<&'static str> = if query.is_empty() {
+            os_icon::CUSTOM_ICONS.iter().map(|(id, _)| *id).collect()
+        } else {
+            os_icon::lucide_search(&query, 120)
+                .into_iter()
+                .map(|(name, _)| name)
+                .collect()
+        };
+
         let mut icon_rows: Vec<Element<'_, Message>> = Vec::new();
         let mut current_row: Vec<Element<'_, Message>> = Vec::new();
-        for (id, _label) in os_icon::CUSTOM_ICONS.iter() {
-            let id_str = id.to_string();
-            let is_selected = selected_icon.as_deref() == Some(*id);
+        for id in icon_ids {
+            let is_selected = selected_icon.as_deref() == Some(id);
             current_row.push(icon_cell(id, is_selected));
             if current_row.len() == 7 {
                 icon_rows.push(dir_row(std::mem::take(&mut current_row)).spacing(6).into());
             }
-            let _ = id_str;
         }
         if !current_row.is_empty() {
             icon_rows.push(dir_row(current_row).spacing(6).into());
         }
+
+        let icon_search = text_input(t("icon_search"), &self.icon_picker_icon_search)
+            .on_input(Message::IconPickerIconSearchChanged)
+            .padding(8)
+            .size(12)
+            .width(Length::Fill)
+            .style(crate::widgets::rounded_input_style)
+            .align_x(dir_align_x());
+
+        let icon_grid: Element<'_, Message> = if icon_rows.is_empty() {
+            text(t("no_matches")).size(12).color(OryxisColors::t().text_muted).into()
+        } else {
+            column(icon_rows).spacing(6).into()
+        };
+
         let icons_block = column![
             text(t("icon")).size(12).font(iced::Font {
                 weight: iced::font::Weight::Semibold,
                 ..iced::Font::new(crate::theme::SYSTEM_UI_FAMILY)
             }).color(OryxisColors::t().text_secondary),
             Space::new().height(8),
-            column(icon_rows).spacing(6),
+            icon_search,
+            Space::new().height(10),
+            icon_grid,
         ];
-        id_str_unused_suppress(&selected_icon);
 
-        // ── Color grid ──
-        let mut color_row_children: Vec<Element<'_, Message>> = Vec::new();
-        for hex in os_icon::PRESET_COLORS.iter() {
-            let hex_str = hex.to_string();
-            let is_selected = self.icon_picker_color.as_deref() == Some(*hex);
-            color_row_children.push(color_swatch(hex, is_selected));
-            let _ = hex_str;
-        }
-        let color_grid = {
-            // Reshape into two rows of 8 for a tidy 2xN layout.
-            let mut rows: Vec<Element<'_, Message>> = Vec::new();
-            let mut chunk: Vec<Element<'_, Message>> = Vec::new();
-            for c in color_row_children {
-                chunk.push(c);
-                if chunk.len() == 7 {
-                    rows.push(dir_row(std::mem::take(&mut chunk)).spacing(6).into());
-                }
-            }
-            if !chunk.is_empty() {
-                rows.push(dir_row(chunk).spacing(6).into());
-            }
-            column(rows).spacing(6)
-        };
+        // ── Background color: the shared HSV picker (same widget the
+        // custom-theme editor uses) with a hex field beneath it. ──
+        let current_color = self
+            .icon_picker_color
+            .as_deref()
+            .and_then(parse_hex_color)
+            .unwrap_or(OryxisColors::t().accent);
 
         let hex_input = text_input("#RRGGBB", &self.icon_picker_hex_input)
             .on_input(Message::IconPickerHexInputChanged)
@@ -104,7 +117,7 @@ impl Oryxis {
                 ..iced::Font::new(crate::theme::SYSTEM_UI_FAMILY)
             }).color(OryxisColors::t().text_secondary),
             Space::new().height(8),
-            color_grid,
+            crate::color_picker::color_picker(current_color, Message::IconPickerSelectColor),
             Space::new().height(10),
             dir_row(vec![
                 text(t("custom_label")).size(11).color(OryxisColors::t().text_muted).into(),
@@ -196,19 +209,24 @@ impl Oryxis {
             .center_x(Length::Fill)
             .center_y(Length::Fill);
 
-        MouseArea::new(
-            container(centered)
-                .width(Length::Fill)
-                .height(Length::Fill)
-                .style(|_| container::Style {
-                    background: Some(Background::Color(Color::from_rgba(
-                        0.0, 0.0, 0.0, 0.5,
-                    ))),
-                    ..Default::default()
-                }),
+        // `opaque` makes the scrim swallow every mouse event (hover +
+        // scroll, not just clicks) so nothing bleeds through to the host
+        // list / editor stacked beneath the modal. Without it iced's
+        // Stack lets hover/scroll propagate to the lower layer.
+        iced::widget::opaque(
+            MouseArea::new(
+                container(centered)
+                    .width(Length::Fill)
+                    .height(Length::Fill)
+                    .style(|_| container::Style {
+                        background: Some(Background::Color(Color::from_rgba(
+                            0.0, 0.0, 0.0, 0.5,
+                        ))),
+                        ..Default::default()
+                    }),
+            )
+            .on_press(Message::HideIconPicker),
         )
-        .on_press(Message::HideIconPicker)
-        .into()
     }
 }
 
@@ -246,39 +264,6 @@ fn icon_cell<'a>(id: &'static str, is_selected: bool) -> Element<'a, Message> {
     .into()
 }
 
-fn color_swatch<'a>(hex: &'static str, is_selected: bool) -> Element<'a, Message> {
-    let color = parse_hex_color(hex).unwrap_or(OryxisColors::t().accent);
-    let ring_color = if is_selected {
-        OryxisColors::t().text_primary
-    } else {
-        Color::TRANSPARENT
-    };
-    let ring_width = if is_selected { 2.0 } else { 0.0 };
-
-    button(
-        container(Space::new().width(Length::Fixed(28.0)).height(Length::Fixed(28.0)))
-            .width(Length::Fixed(28.0))
-            .height(Length::Fixed(28.0)),
-    )
-    .on_press(Message::IconPickerSelectColor(hex.to_string()))
-    .style(move |_, status| {
-        let (bg, extra) = match status {
-            BtnStatus::Hovered => (color, 0.15),
-            _ => (color, 0.0),
-        };
-        button::Style {
-            background: Some(Background::Color(Color { a: 1.0 - extra * 0.0, ..bg })),
-            border: Border {
-                radius: Radius::from(6.0),
-                color: ring_color,
-                width: ring_width,
-            },
-            ..Default::default()
-        }
-    })
-    .into()
-}
-
 fn parse_hex_color(s: &str) -> Option<Color> {
     let s = s.trim().trim_start_matches('#');
     if s.len() != 6 { return None; }
@@ -287,7 +272,4 @@ fn parse_hex_color(s: &str) -> Option<Color> {
     let b = u8::from_str_radix(&s[4..6], 16).ok()?;
     Some(Color::from_rgb8(r, g, b))
 }
-
-#[inline]
-fn id_str_unused_suppress(_: &Option<String>) {}
 

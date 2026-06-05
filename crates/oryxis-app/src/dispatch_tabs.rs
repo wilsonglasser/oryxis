@@ -298,9 +298,31 @@ impl Oryxis {
                         })
                         .discard());
                 }
-                return Ok(iced::window::latest().then(|id_opt| match id_opt {
-                    Some(id) => iced::window::close(id),
-                    None => Task::none(),
+                // Real close (not tray-hide): gracefully drain the plugin
+                // subprocesses (flush logs / close SDK clients on stdin EOF)
+                // before the window closes and the process exits. Providers
+                // drain in parallel; the whole thing is time-bounded so a
+                // wedged plugin can't hold the app open.
+                let providers: Vec<std::sync::Arc<crate::plugins::PluginProvider>> =
+                    self.plugin_providers.values().cloned().collect();
+                return Ok(Task::perform(
+                    async move {
+                        let drain = futures_util::future::join_all(
+                            providers.iter().map(|p| p.shutdown()),
+                        );
+                        let _ = tokio::time::timeout(
+                            std::time::Duration::from_millis(2000),
+                            drain,
+                        )
+                        .await;
+                    },
+                    |_: ()| Message::NoOp,
+                )
+                .then(|_| {
+                    iced::window::latest().then(|id_opt| match id_opt {
+                        Some(id) => iced::window::close(id),
+                        None => Task::none(),
+                    })
                 }));
             }
             Message::WindowFullscreenToggle => {
@@ -387,6 +409,9 @@ impl Oryxis {
             // -- Tabs --
             Message::SelectTab(idx) => {
                 if idx < self.tabs.len() {
+                    // Switching tabs dismisses the session-group editor (it's
+                    // tied to the tab it was opened from).
+                    self.show_session_group_panel = false;
                     self.active_tab = Some(idx);
                     self.remember_terminal_tab_focus(idx);
                     self.active_view = View::Terminal;
@@ -492,6 +517,7 @@ impl Oryxis {
                     self.icon_picker_color = conn.custom_color.clone();
                     self.icon_picker_hex_input = conn.custom_color.clone().unwrap_or_default();
                 }
+                self.icon_picker_icon_search.clear();
                 self.icon_picker_for = Some(conn_id);
                 self.show_icon_picker = true;
             }
@@ -499,9 +525,14 @@ impl Oryxis {
                 self.show_icon_picker = false;
                 self.icon_picker_for = None;
                 self.icon_picker_for_group_form = false;
+                self.icon_picker_for_session_group = false;
+                self.icon_picker_icon_search.clear();
             }
             Message::IconPickerSelectIcon(name) => {
                 self.icon_picker_icon = Some(name);
+            }
+            Message::IconPickerIconSearchChanged(q) => {
+                self.icon_picker_icon_search = q;
             }
             Message::IconPickerSelectColor(hex) => {
                 self.icon_picker_hex_input = hex.clone();
@@ -516,7 +547,12 @@ impl Oryxis {
                 }
             }
             Message::IconPickerSave => {
-                if self.icon_picker_for_group_form {
+                if self.icon_picker_for_session_group {
+                    // Deferred save: flow the choice into the session-group
+                    // editor form; the form's own Save persists it.
+                    self.editor_session_group.icon_style = self.icon_picker_icon.clone();
+                    self.editor_session_group.color = self.icon_picker_color.clone();
+                } else if self.icon_picker_for_group_form {
                     // Form-target: flow the choice back to the dynamic
                     // group editor fields. The form's own Save button
                     // persists to the vault, so the icon picker stays
@@ -541,13 +577,18 @@ impl Oryxis {
                 self.show_icon_picker = false;
                 self.icon_picker_for = None;
                 self.icon_picker_for_group_form = false;
+                self.icon_picker_for_session_group = false;
+                self.icon_picker_icon_search.clear();
             }
             Message::IconPickerResetAuto => {
                 // Clears the icon/color override, letting OS detection
                 // drive the icon again on the next successful connect.
                 // (Terminal-theme override is edited separately in the
                 // host editor and is not touched here.)
-                if self.icon_picker_for_group_form {
+                if self.icon_picker_for_session_group {
+                    self.editor_session_group.icon_style = None;
+                    self.editor_session_group.color = None;
+                } else if self.icon_picker_for_group_form {
                     self.cloud_dynamic_form_icon = String::new();
                     self.cloud_dynamic_form_color = String::new();
                 } else if let Some(conn_id) = self.icon_picker_for
@@ -561,11 +602,14 @@ impl Oryxis {
                 self.show_icon_picker = false;
                 self.icon_picker_for = None;
                 self.icon_picker_for_group_form = false;
+                self.icon_picker_for_session_group = false;
             }
             Message::CloseTab(idx) => {
                 // Also dismiss any open context menu so the menu doesn't linger
                 // after the user clicks Close from it.
                 self.overlay = None;
+                // Closing a tab dismisses the session-group editor it spawned.
+                self.show_session_group_panel = false;
                 if idx < self.tabs.len() {
                     self.tabs.remove(idx);
                     // Keep the in-flight connection progress in sync with

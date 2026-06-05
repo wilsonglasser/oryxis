@@ -16,6 +16,22 @@ project uses [SemVer](https://semver.org/spec/v2.0.0.html).
   appear in Settings -> Interface, seeded from the active theme so you start
   from something that works. Terminal schemes can also be imported by pasting
   an iTerm `.itermcolors`, Windows Terminal JSON, or base16 YAML.
+- **Custom host icon picker overhaul.** The per-host icon/color dialog now
+  uses the same graphical color picker as the custom-theme editor (the
+  saturation/value square + hue bar) instead of a fixed swatch palette, and
+  the icon section gained a search box that filters the entire Lucide library
+  (~1500 glyphs) on top of the curated presets. The whole icon font already
+  ships in the binary, so searching every glyph adds no extra weight. The
+  modal's backdrop is now opaque too, so hover / scroll / clicks no longer
+  bleed through to the host list underneath it.
+- **Graceful plugin shutdown.** Cloud-provider plugin subprocesses (AWS,
+  Kubernetes) are now drained before they are reaped: on idle teardown,
+  rebind, and app exit the host lets in-flight requests finish, sends a
+  `shutdown` notification, and closes stdin so the plugin exits on its own
+  (flushing logs / closing SDK clients) instead of being hard-killed. The
+  hard kill stays only as a time-bounded fallback for a wedged plugin, so
+  app close can't hang. The `shutdown` notification is additive (no protocol
+  bump; plugins that predate it still exit cleanly on the stdin EOF).
 - **Split panes.** A terminal tab can now be split into an arbitrary grid
   of panes (tmux / iTerm style), built on iced's `pane_grid`. Ctrl+Shift+E
   splits the focused pane side-by-side, Ctrl+Shift+O stacks it. You can also

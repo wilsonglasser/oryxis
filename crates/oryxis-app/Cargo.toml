@@ -81,6 +81,10 @@ chrono = { workspace = true }
 rfd = "0.15"
 image = "0.25"
 iced_fonts = { git = "https://github.com/wilsonglasser/iced_fonts", branch = "text-selection-iced-0.15", features = ["lucide", "codicon"] }
+# Parses the embedded Lucide font's glyph-name table at runtime so the icon
+# picker can search the full library. The whole font is already bundled, so
+# this only pulls in the parser, no extra glyph weight.
+ttf-parser = "0.25"
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }

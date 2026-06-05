@@ -224,9 +224,16 @@ pub struct Oryxis {
     /// directly) and the form-driven dynamic group editor (deferred
     /// save when the user clicks the form's Save).
     pub(crate) icon_picker_for_group_form: bool,
+    /// Same idea, targeting the session-group editor form. Deferred save:
+    /// the choice flows into `editor_session_group` and persists on the
+    /// form's Save.
+    pub(crate) icon_picker_for_session_group: bool,
     pub(crate) icon_picker_icon: Option<String>,
     pub(crate) icon_picker_color: Option<String>,
     pub(crate) icon_picker_hex_input: String,
+    /// Search query for the icon picker's full-library Lucide search.
+    /// Empty shows the curated preset grid; non-empty shows matches.
+    pub(crate) icon_picker_icon_search: String,
     /// Whether the per-host terminal theme picker modal is open.
     /// Drawn on top of the host editor; the form's
     /// `terminal_theme` field is updated as soon as the user picks
@@ -255,6 +262,14 @@ pub struct Oryxis {
     // Host key verification dialog
     pub(crate) pending_host_key: Option<oryxis_ssh::HostKeyQuery>,
     pub(crate) host_key_response_tx: Option<tokio::sync::mpsc::Sender<bool>>,
+
+    // Keyboard-interactive (2FA / OTP) prompt dialog. `pending_kbi_prompt`
+    // is the current challenge round; `kbi_inputs` holds one answer buffer
+    // per prompt (parallel to `prompts`); the response channel carries
+    // `Some(answers)` on submit or `None` on cancel back to the engine.
+    pub(crate) pending_kbi_prompt: Option<oryxis_ssh::KbiQuery>,
+    pub(crate) kbi_inputs: Vec<String>,
+    pub(crate) kbi_response_tx: Option<tokio::sync::mpsc::Sender<Option<Vec<String>>>>,
 
     // Connection editor
     pub(crate) show_host_panel: bool,
@@ -540,6 +555,8 @@ pub struct Oryxis {
     pub(crate) editor_parent_combo_bounds: crate::widgets::BoundsCell,
     /// Bounds of the dynamic group editor's Parent Group combo row.
     pub(crate) dynamic_form_parent_combo_bounds: crate::widgets::BoundsCell,
+    /// Bounds of the session-group editor's Folder combo row.
+    pub(crate) session_group_folder_combo_bounds: crate::widgets::BoundsCell,
     /// Bounds of the `+` tab button, so the split hover popover anchors
     /// under it at a fixed position instead of following the cursor.
     pub(crate) plus_btn_bounds: crate::widgets::BoundsCell,

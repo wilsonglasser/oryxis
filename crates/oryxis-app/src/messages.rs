@@ -71,6 +71,7 @@ pub enum Message {
     IconPickerSelectIcon(String),
     IconPickerSelectColor(String),
     IconPickerHexInputChanged(String),
+    IconPickerIconSearchChanged(String),
     IconPickerSave,
     IconPickerResetAuto,
     // Per-host terminal theme picker (modal opened from the host
@@ -348,13 +349,14 @@ pub enum Message {
     DeleteSessionGroup(usize),
     SessionGroupFormLabelChanged(String),
     SessionGroupFormGroupChanged(String),
-    SessionGroupFormColorChanged(String),
     /// Multi-line edit on the currently-shown pane's startup script.
     SessionGroupScriptAction(text_editor::Action),
     /// Step the visible pane in the editor; `true` = next, `false` = previous.
     SessionGroupPaneNav(bool),
     SessionGroupFormSave,
     SessionGroupFormCancel,
+    /// Open the shared icon/color picker targeting the session-group form.
+    ShowSessionGroupIconPicker,
     SessionGroupCardHovered(usize),
     SessionGroupCardUnhovered,
 
@@ -369,6 +371,14 @@ pub enum Message {
     SshHostKeyReject,
     SshHostKeyContinue,
     SshHostKeyAcceptAndSave,
+    /// A keyboard-interactive challenge round arrived from the engine.
+    SshKbiPrompt(oryxis_ssh::KbiQuery),
+    /// User edited the answer for prompt `usize` in the current round.
+    SshKbiInput(usize, String),
+    /// User submitted all answers for the current round.
+    SshKbiSubmit,
+    /// User cancelled the interactive auth.
+    SshKbiCancel,
     SshCloseProgress,
     SshEditFromProgress,
     SshRetry,

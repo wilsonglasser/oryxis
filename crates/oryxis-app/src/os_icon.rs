@@ -506,8 +506,76 @@ pub(crate) fn custom_icon_glyph(id: &str) -> BrandIcon {
         "flag" => iced_fonts::lucide::flag(),
         "bookmark" => iced_fonts::lucide::bookmark(),
         "folder" => iced_fonts::lucide::folder(),
-        _ => iced_fonts::lucide::server(),
+        // Anything else: resolve against the full Lucide library parsed
+        // from the font (ids picked via the icon-picker search). The
+        // whole font is bundled, so this reaches every Lucide glyph
+        // without an extra hand-written arm. Unknown ids fall to server.
+        other => match lucide_char(other) {
+            Some(ch) => iced::widget::text(ch.to_string()).font(iced_fonts::LUCIDE_FONT),
+            None => iced_fonts::lucide::server(),
+        },
     })
+}
+
+// ---------------------------------------------------------------------------
+// Full Lucide library (parsed from the embedded font for the picker search)
+// ---------------------------------------------------------------------------
+
+/// Every `(glyph-name, char)` pair in the bundled Lucide font, parsed once
+/// from `LUCIDE_FONT_BYTES`. The font ships whole in the binary already, so
+/// exposing the full set in the picker costs no extra weight; we only walk
+/// the cmap + glyph-name table on first use. Names keep their canonical
+/// hyphenated Lucide spelling (e.g. `key-round`).
+fn lucide_table() -> &'static [(String, char)] {
+    use std::sync::OnceLock;
+    static TABLE: OnceLock<Vec<(String, char)>> = OnceLock::new();
+    TABLE.get_or_init(|| {
+        let mut out: Vec<(String, char)> = Vec::new();
+        let Ok(face) = ttf_parser::Face::parse(iced_fonts::LUCIDE_FONT_BYTES, 0) else {
+            return out;
+        };
+        if let Some(sub) = face
+            .tables()
+            .cmap
+            .and_then(|c| c.subtables.into_iter().find(|s| s.is_unicode()))
+        {
+            sub.codepoints(|cp| {
+                if let Ok(ch) = char::try_from(cp)
+                    && let Some(gid) = face.glyph_index(ch)
+                    && let Some(name) = face.glyph_name(gid)
+                {
+                    out.push((name.to_string(), ch));
+                }
+            });
+        }
+        out.sort_by(|a, b| a.0.cmp(&b.0));
+        out.dedup_by(|a, b| a.0 == b.0);
+        out
+    })
+}
+
+/// Look up a Lucide glyph char by id. Tries the raw hyphenated name first,
+/// then the underscore spelling some legacy picker ids use (`key_round`).
+fn lucide_char(id: &str) -> Option<char> {
+    let table = lucide_table();
+    let find = |name: &str| table.iter().find(|(n, _)| n == name).map(|(_, c)| *c);
+    find(id).or_else(|| find(&id.replace('_', "-")))
+}
+
+/// Filter the full Lucide library by a search query, returning up to `limit`
+/// `(name, char)` matches. An empty query yields nothing (the picker shows
+/// the curated preset grid instead). Matches are substring, case-insensitive.
+pub(crate) fn lucide_search(query: &str, limit: usize) -> Vec<(&'static str, char)> {
+    let q = query.trim().to_lowercase();
+    if q.is_empty() {
+        return Vec::new();
+    }
+    lucide_table()
+        .iter()
+        .filter(|(name, _)| name.contains(&q))
+        .take(limit)
+        .map(|(name, ch)| (name.as_str(), *ch))
+        .collect()
 }
 
 /// (BrandIcon, brand colour) for a cloud provider id. Used on cloud
@@ -594,4 +662,37 @@ pub(crate) fn resolve_for(
         None => username.and_then(infer_from_username).map(String::from),
     };
     resolve_icon(inferred.as_deref(), fallback_color)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn lucide_font_exposes_named_glyphs() {
+        // The embedded font must carry human-readable glyph names for the
+        // picker search to work. A few hundred is the floor for Lucide.
+        let table = lucide_table();
+        assert!(
+            table.len() > 200,
+            "expected a populated Lucide table, got {}",
+            table.len()
+        );
+    }
+
+    #[test]
+    fn lucide_search_finds_common_icons() {
+        // "server" is a canonical Lucide glyph and a search anchor.
+        let hits = lucide_search("server", 50);
+        assert!(hits.iter().any(|(name, _)| *name == "server"));
+        // Empty query yields nothing (picker shows the preset grid).
+        assert!(lucide_search("", 50).is_empty());
+    }
+
+    #[test]
+    fn lucide_char_resolves_underscore_aliases() {
+        // Legacy picker ids use underscores; the font names use hyphens.
+        assert!(lucide_char("key_round").is_some());
+        assert!(lucide_char("key-round").is_some());
+    }
 }
