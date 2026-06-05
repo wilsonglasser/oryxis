@@ -10,6 +10,8 @@ members = [
     "crates/oryxis-cloud",
     "crates/oryxis-cloud-aws",
     "crates/oryxis-cloud-aws-plugin",
+    "crates/oryxis-cloud-k8s",
+    "crates/oryxis-cloud-k8s-plugin",
     "crates/oryxis-plugin-protocol",
     "crates/oryxis-plugin-signer",
     "crates/oryxis-app",
@@ -88,6 +90,7 @@ oryxis-vault = { path = "crates/oryxis-vault" }
 oryxis-sync = { path = "crates/oryxis-sync" }
 oryxis-cloud = { path = "crates/oryxis-cloud" }
 oryxis-cloud-aws = { path = "crates/oryxis-cloud-aws" }
+oryxis-cloud-k8s = { path = "crates/oryxis-cloud-k8s" }
 oryxis-plugin-protocol = { path = "crates/oryxis-plugin-protocol" }
 
 [profile.release]

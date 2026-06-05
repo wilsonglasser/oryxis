@@ -11,12 +11,14 @@ use uuid::Uuid;
 
 use oryxis_core::models::cloud::{CloudQuery, CloudRef};
 use oryxis_core::models::cloud_profile::CloudProfile;
+use oryxis_core::models::custom_terminal_theme::CustomTerminalTheme;
 use oryxis_core::models::connection::{AuthMethod, Connection, ProxyType};
 use oryxis_core::models::group::Group;
 use oryxis_core::models::identity::Identity;
 use oryxis_core::models::proxy_identity::ProxyIdentity;
 use oryxis_core::models::key::{KeyAlgorithm, SshKey};
 use oryxis_core::models::snippet::Snippet;
+use oryxis_core::models::port_forward_rule::{ForwardKind, PortForwardRule};
 
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use chrono::{DateTime, Utc};
@@ -319,6 +321,31 @@ impl VaultStore {
                 description TEXT,
                 tags        TEXT,
                 created_at  TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS custom_terminal_themes (
+                id          TEXT PRIMARY KEY,
+                name        TEXT NOT NULL,
+                foreground  TEXT NOT NULL,
+                background  TEXT NOT NULL,
+                cursor      TEXT NOT NULL,
+                ansi        TEXT NOT NULL,
+                created_at  TEXT NOT NULL,
+                updated_at  TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS port_forward_rules (
+                id          TEXT PRIMARY KEY,
+                label       TEXT NOT NULL,
+                kind        TEXT NOT NULL,
+                host_id     TEXT NOT NULL,
+                listen_host TEXT NOT NULL,
+                listen_port INTEGER NOT NULL,
+                target_host TEXT NOT NULL,
+                target_port INTEGER NOT NULL,
+                auto_start  INTEGER NOT NULL DEFAULT 0,
+                created_at  TEXT NOT NULL,
+                updated_at  TEXT NOT NULL
             );
 
             CREATE TABLE IF NOT EXISTS identities (
@@ -1533,6 +1560,151 @@ impl VaultStore {
             params![id.to_string()],
         )?;
         self.record_tombstone("snippet", id)?;
+        Ok(())
+    }
+
+    // -- Custom terminal themes --
+    // Plain config rows (no secrets, so no per-field encryption; not in the
+    // sync set yet, so no tombstones). Colors are `"#RRGGBB"` hex; the 16
+    // ANSI entries are stored as a JSON array.
+
+    pub fn save_custom_terminal_theme(
+        &self,
+        theme: &CustomTerminalTheme,
+    ) -> Result<(), VaultError> {
+        self.db.execute(
+            "INSERT OR REPLACE INTO custom_terminal_themes
+                (id, name, foreground, background, cursor, ansi, created_at, updated_at)
+             VALUES (?1,?2,?3,?4,?5,?6,?7,?8)",
+            params![
+                theme.id.to_string(),
+                theme.name,
+                theme.foreground,
+                theme.background,
+                theme.cursor,
+                serde_json::to_string(&theme.ansi).unwrap_or_default(),
+                theme.created_at.to_rfc3339(),
+                theme.updated_at.to_rfc3339(),
+            ],
+        )?;
+        Ok(())
+    }
+
+    pub fn list_custom_terminal_themes(
+        &self,
+    ) -> Result<Vec<CustomTerminalTheme>, VaultError> {
+        let mut stmt = self.db.prepare(
+            "SELECT id, name, foreground, background, cursor, ansi, created_at, updated_at
+             FROM custom_terminal_themes ORDER BY name",
+        )?;
+        let themes = stmt
+            .query_map([], |row| {
+                let ansi: [String; 16] = row
+                    .get::<_, String>(5)
+                    .ok()
+                    .and_then(|s| serde_json::from_str(&s).ok())
+                    .unwrap_or_else(|| std::array::from_fn(|_| "#000000".to_string()));
+                Ok(CustomTerminalTheme {
+                    id: Uuid::parse_str(&row.get::<_, String>(0)?).unwrap_or_default(),
+                    name: row.get(1)?,
+                    foreground: row.get(2)?,
+                    background: row.get(3)?,
+                    cursor: row.get(4)?,
+                    ansi,
+                    created_at: row
+                        .get::<_, String>(6)
+                        .ok()
+                        .and_then(|s| chrono::DateTime::parse_from_rfc3339(&s).ok())
+                        .map(|d| d.with_timezone(&chrono::Utc))
+                        .unwrap_or_else(chrono::Utc::now),
+                    updated_at: row
+                        .get::<_, String>(7)
+                        .ok()
+                        .and_then(|s| chrono::DateTime::parse_from_rfc3339(&s).ok())
+                        .map(|d| d.with_timezone(&chrono::Utc))
+                        .unwrap_or_else(chrono::Utc::now),
+                })
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(themes)
+    }
+
+    pub fn delete_custom_terminal_theme(&self, id: &Uuid) -> Result<(), VaultError> {
+        self.db.execute(
+            "DELETE FROM custom_terminal_themes WHERE id = ?1",
+            params![id.to_string()],
+        )?;
+        Ok(())
+    }
+
+    // -----------------------------------------------------------------------
+    // Port forward rules
+    // -----------------------------------------------------------------------
+
+    pub fn save_port_forward_rule(&self, rule: &PortForwardRule) -> Result<(), VaultError> {
+        self.db.execute(
+            "INSERT OR REPLACE INTO port_forward_rules
+                (id, label, kind, host_id, listen_host, listen_port, target_host, target_port, auto_start, created_at, updated_at)
+             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11)",
+            params![
+                rule.id.to_string(),
+                rule.label,
+                rule.kind.as_token(),
+                rule.host_id.to_string(),
+                rule.listen_host,
+                rule.listen_port as i64,
+                rule.target_host,
+                rule.target_port as i64,
+                rule.auto_start as i64,
+                rule.created_at.to_rfc3339(),
+                rule.updated_at.to_rfc3339(),
+            ],
+        )?;
+        self.clear_tombstone("port_forward_rule", &rule.id)?;
+        Ok(())
+    }
+
+    pub fn list_port_forward_rules(&self) -> Result<Vec<PortForwardRule>, VaultError> {
+        let mut stmt = self.db.prepare(
+            "SELECT id, label, kind, host_id, listen_host, listen_port, target_host, target_port, auto_start, created_at, updated_at
+             FROM port_forward_rules ORDER BY label",
+        )?;
+        let rules = stmt
+            .query_map([], |row| {
+                Ok(PortForwardRule {
+                    id: Uuid::parse_str(&row.get::<_, String>(0)?).unwrap_or_default(),
+                    label: row.get(1)?,
+                    kind: ForwardKind::from_token(&row.get::<_, String>(2)?),
+                    host_id: Uuid::parse_str(&row.get::<_, String>(3)?).unwrap_or_default(),
+                    listen_host: row.get(4)?,
+                    listen_port: row.get::<_, i64>(5)? as u16,
+                    target_host: row.get(6)?,
+                    target_port: row.get::<_, i64>(7)? as u16,
+                    auto_start: row.get::<_, i64>(8)? != 0,
+                    created_at: row
+                        .get::<_, String>(9)
+                        .ok()
+                        .and_then(|s| chrono::DateTime::parse_from_rfc3339(&s).ok())
+                        .map(|d| d.with_timezone(&chrono::Utc))
+                        .unwrap_or_else(chrono::Utc::now),
+                    updated_at: row
+                        .get::<_, String>(10)
+                        .ok()
+                        .and_then(|s| chrono::DateTime::parse_from_rfc3339(&s).ok())
+                        .map(|d| d.with_timezone(&chrono::Utc))
+                        .unwrap_or_else(chrono::Utc::now),
+                })
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(rules)
+    }
+
+    pub fn delete_port_forward_rule(&self, id: &Uuid) -> Result<(), VaultError> {
+        self.db.execute(
+            "DELETE FROM port_forward_rules WHERE id = ?1",
+            params![id.to_string()],
+        )?;
+        self.record_tombstone("port_forward_rule", id)?;
         Ok(())
     }
 
@@ -3002,6 +3174,16 @@ mod tests {
         let kh = KnownHost::new("192.168.1.10", 22, "ed25519", "SHA256:abc");
         vault.save_known_host(&kh).unwrap();
 
+        let mut pf = oryxis_core::models::port_forward_rule::PortForwardRule::new(
+            "db tunnel",
+            oryxis_core::models::port_forward_rule::ForwardKind::Local,
+            conn.id,
+        );
+        pf.listen_port = 5432;
+        pf.target_host = "10.0.0.5".into();
+        pf.target_port = 5432;
+        vault.save_port_forward_rule(&pf).unwrap();
+
         // Export
         let export_pw = "export-password";
         let data = export_vault(&vault, export_pw, ExportOptions { include_private_keys: false, filter: ExportFilter::All }).unwrap();
@@ -3017,6 +3199,7 @@ mod tests {
         assert_eq!(result.groups_added, 1);
         assert_eq!(result.snippets_added, 1);
         assert_eq!(result.known_hosts_added, 1);
+        assert_eq!(result.port_forward_rules_added, 1);
 
         // Verify data
         let conns = vault2.list_connections().unwrap();
@@ -3029,6 +3212,10 @@ mod tests {
         assert_eq!(vault2.list_groups().unwrap().len(), 1);
         assert_eq!(vault2.list_snippets().unwrap().len(), 1);
         assert_eq!(vault2.list_known_hosts().unwrap().len(), 1);
+        let rules = vault2.list_port_forward_rules().unwrap();
+        assert_eq!(rules.len(), 1);
+        assert_eq!(rules[0].listen_port, 5432);
+        assert_eq!(rules[0].target_host, "10.0.0.5");
     }
 
     /// Round-trip a connection that uses both an inline proxy (with
@@ -3935,5 +4122,33 @@ mod tests {
         // Still decryptable with the (now-rotated) master key in memory.
         let back = vault.get_sync_device_identity().unwrap();
         assert_eq!(back.as_deref(), Some(&blob[..]));
+    }
+
+    #[test]
+    fn port_forward_rule_round_trip() {
+        use oryxis_core::models::port_forward_rule::{ForwardKind, PortForwardRule};
+        let vault = unlocked_vault();
+        let host_id = Uuid::new_v4();
+        let mut rule = PortForwardRule::new("db tunnel", ForwardKind::Local, host_id);
+        rule.listen_host = "0.0.0.0".into();
+        rule.listen_port = 5432;
+        rule.target_host = "10.0.0.5".into();
+        rule.target_port = 5432;
+        rule.auto_start = true;
+        vault.save_port_forward_rule(&rule).unwrap();
+
+        let listed = vault.list_port_forward_rules().unwrap();
+        assert_eq!(listed.len(), 1);
+        let got = &listed[0];
+        assert_eq!(got.id, rule.id);
+        assert_eq!(got.kind, ForwardKind::Local);
+        assert_eq!(got.host_id, host_id);
+        assert_eq!(got.listen_host, "0.0.0.0");
+        assert_eq!(got.listen_port, 5432);
+        assert_eq!(got.target_port, 5432);
+        assert!(got.auto_start);
+
+        vault.delete_port_forward_rule(&rule.id).unwrap();
+        assert!(vault.list_port_forward_rules().unwrap().is_empty());
     }
 }

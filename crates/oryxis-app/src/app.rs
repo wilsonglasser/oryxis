@@ -51,6 +51,12 @@ pub(crate) const SIDEBAR_WIDTH: f32 = 180.0;
 pub(crate) const SIDEBAR_WIDTH_COLLAPSED: f32 = 56.0;
 pub(crate) const CARD_WIDTH: f32 = 280.0;
 
+/// Tab-title prefix for SSM-into-EC2 sessions (`format!("{SSM_TAB_PREFIX}{host}")`).
+/// The middle dot is U+00B7 with a space on each side. Shared so the
+/// spawn site and the duplicate-tab strip site can never drift, a
+/// mismatch would silently break duplicating SSM tabs.
+pub(crate) const SSM_TAB_PREFIX: &str = "SSM \u{00b7} ";
+
 /// Fallback monospace font names offered when the system enumeration
 /// returns nothing (boot-time scan still in flight, fontdb error, or
 /// a stripped-down system with no installed monospace fonts beyond
@@ -171,6 +177,16 @@ pub struct Oryxis {
 
     // Tabs
     pub(crate) tabs: Vec<TerminalTab>,
+    /// Set while the new-tab picker is open *to fill a split pane* rather
+    /// than open a new tab: `(tab_idx, pane_to_split, axis)`. The picker's
+    /// selection (host or local shell) lands in a new pane next to the
+    /// target instead of a new tab. `None` = picker opens new tabs.
+    pub(crate) pending_pane_split:
+        Option<(usize, iced::widget::pane_grid::Pane, iced::widget::pane_grid::Axis)>,
+    /// True while the cursor is over the `+` split popover itself. Lets the
+    /// hover bridge keep the menu open when moving from the `+` button into
+    /// the menu, and close it shortly after the cursor leaves both.
+    pub(crate) split_menu_hovered: bool,
     pub(crate) active_tab: Option<usize>,
     /// Last terminal tab that had focus. Preserved when switching to nav-only
     /// views (Snippets, Keys, …) so snippet injection still targets that session.
@@ -178,6 +194,11 @@ pub struct Oryxis {
     pub(crate) hovered_tab: Option<usize>,
     pub(crate) show_new_tab_picker: bool,
     pub(crate) new_tab_picker_search: String,
+    /// When set, the new-tab picker is drilled into this group, showing
+    /// its members (or, for a cloud-query group, its resolved ECS tasks /
+    /// K8s pods) instead of the top-level group + recent list. `None` is
+    /// the top level. Reset to `None` whenever the picker opens or closes.
+    pub(crate) new_tab_picker_group: Option<Uuid>,
     /// Termius-style "Jump to" modal, lists all open tabs (plus Quick
     /// connect entries) for direct navigation when the bar runs out of
     /// horizontal room. Triggered by the `⋯` button in the tab bar or
@@ -270,6 +291,18 @@ pub struct Oryxis {
     pub(crate) sftp: crate::state::SftpState,
     pub(crate) mouse_position: Point,
     pub(crate) window_size: iced::Size,
+    /// Whether the OS window currently has focus. Driven by the
+    /// `Focused` / `Unfocused` window events. The cloud SSM/ECS
+    /// keepalive only ticks while this is `false` (the user alt-tabbed
+    /// away), since an active session resets the SSM idle timer on its
+    /// own via the user's input.
+    pub(crate) window_focused: bool,
+    /// Terminal size `(cols, rows)` captured the moment the window lost
+    /// focus, used as the anchor the SSM keepalive toggles around (it
+    /// resizes to `rows - 1` and back so each tick produces a real
+    /// SIGWINCH, which is what resets the SSM idle timer). `None` while
+    /// focused.
+    pub(crate) ssm_keepalive_base: Option<(u16, u16)>,
     /// Live keyboard modifier state, updated from `ModifiersChanged`
     /// keyboard events. Used by SFTP click logic for ctrl/shift-click
     /// selection, iced's MouseArea events don't include modifiers.
@@ -405,6 +438,10 @@ pub struct Oryxis {
     pub(crate) cloud_form_aws_sso_region: String,
     pub(crate) cloud_form_aws_sso_account_id: String,
     pub(crate) cloud_form_aws_sso_role_name: String,
+    /// Kubernetes (Kubeconfig) auth fields. Both optional: blank
+    /// kubeconfig = kubectl's default, blank context = current-context.
+    pub(crate) cloud_form_kubeconfig_path: String,
+    pub(crate) cloud_form_context: String,
     pub(crate) editing_cloud_profile_id: Option<Uuid>,
     pub(crate) cloud_form_error: Option<String>,
     pub(crate) cloud_form_test_state: crate::state::CloudTestState,
@@ -440,12 +477,16 @@ pub struct Oryxis {
     /// `CloudQuery::EcsTasks` carries), guarantees a stable id even
     /// when service or container names collide across clusters.
     pub(crate) cloud_discover_selected_ecs: std::collections::HashSet<String>,
+    /// Kubernetes workload identifiers checked in the discovery panel.
+    /// Key format: `namespace/kind/name` (the workload identity the
+    /// import looks back up to build a `K8sPods` dynamic group).
+    pub(crate) cloud_discover_selected_k8s: std::collections::HashSet<String>,
     /// Live filter for the discovery panel, matches against label,
     /// instance-id, hostname, IP. Lowercased substring match.
     pub(crate) cloud_discover_filter: String,
     /// Section names currently collapsed in the discovery panel
-    /// ("ec2" / "ecs" today; future K8s sections add their own keys).
-    /// Persisted only in memory, re-opens default to expanded.
+    /// ("ec2" / "ecs" / "k8s"). Persisted only in memory, re-opens
+    /// default to expanded.
     pub(crate) cloud_discover_collapsed: std::collections::HashSet<String>,
     /// Default transport applied to every EC2 host imported in this
     /// discovery session. Lets the user pick "Instance Connect" once
@@ -477,6 +518,9 @@ pub struct Oryxis {
     pub(crate) editor_parent_combo_bounds: crate::widgets::BoundsCell,
     /// Bounds of the dynamic group editor's Parent Group combo row.
     pub(crate) dynamic_form_parent_combo_bounds: crate::widgets::BoundsCell,
+    /// Bounds of the `+` tab button, so the split hover popover anchors
+    /// under it at a fixed position instead of following the cursor.
+    pub(crate) plus_btn_bounds: crate::widgets::BoundsCell,
     /// Search text inside the group picker overlay. Independent of
     /// `cloud_discover_default_group_name` (the input box) so typing
     /// in the picker's filter doesn't overwrite the user's chosen
@@ -512,12 +556,22 @@ pub struct Oryxis {
     pub(crate) cloud_dynamic_form_color: String,
     pub(crate) cloud_dynamic_form_icon: String,
     pub(crate) cloud_dynamic_form_parent_label: String,
-    /// Cloud-source fields. ECS variant only (K8s ships later); editing
-    /// these repoints the group at a different upstream collection so
-    /// the next resolve hits the new cluster/service/container.
+    /// Cloud-source fields (ECS variant). Editing these repoints the group
+    /// at a different upstream collection so the next resolve hits the new
+    /// cluster/service/container. K8s groups use the `_k8s_*` fields below.
     pub(crate) cloud_dynamic_form_cluster: String,
     pub(crate) cloud_dynamic_form_service: String,
     pub(crate) cloud_dynamic_form_container: String,
+    /// K8s dynamic-group source fields, used when the edited group's query
+    /// is `K8sPods`. `is_k8s` flips the editor between the ECS and K8s
+    /// source sections. The selector value's meaning depends on
+    /// `selector_kind`: a `k=v,k=v` string for `Labels`, otherwise a single
+    /// resource name.
+    pub(crate) cloud_dynamic_form_is_k8s: bool,
+    pub(crate) cloud_dynamic_form_k8s_context: String,
+    pub(crate) cloud_dynamic_form_namespace: String,
+    pub(crate) cloud_dynamic_form_k8s_selector_kind: crate::state::K8sSelectorKind,
+    pub(crate) cloud_dynamic_form_k8s_selector_value: String,
 
     /// Hover tracking for the kebab on dynamic-group cards (root + nested).
     pub(crate) hovered_dynamic_group_card: Option<Uuid>,
@@ -529,11 +583,55 @@ pub struct Oryxis {
 
     // Snippets
     pub(crate) snippets: Vec<oryxis_core::models::snippet::Snippet>,
+    /// User-defined terminal color schemes, shown in the theme pickers
+    /// alongside the built-in presets and resolved by name.
+    pub(crate) custom_terminal_themes:
+        Vec<oryxis_core::models::custom_terminal_theme::CustomTerminalTheme>,
+    /// Open custom-theme editor modal. `None` = closed.
+    pub(crate) theme_editor: Option<crate::state::ThemeEditorForm>,
+    /// Hovered custom terminal theme card (index into
+    /// `custom_terminal_themes`), for the floating edit / delete icons.
+    pub(crate) hovered_theme_card: Option<usize>,
+    /// Open color-picker popover in the theme editor: `(slot, anchor)`.
+    /// `None` = closed. Clicking a slot's swatch opens a compact picker
+    /// (SV square + hue + hex + presets) anchored at the click.
+    pub(crate) theme_color_popover: Option<(crate::state::ThemeColorSlot, iced::Point)>,
+    /// Import-theme modal (paste an iTerm / Windows Terminal / base16
+    /// scheme). On import the parsed colors open in the editor for review.
+    pub(crate) show_theme_import: bool,
+    pub(crate) theme_import_content: iced::widget::text_editor::Content,
+    pub(crate) theme_import_name: String,
+    pub(crate) theme_import_error: Option<String>,
     pub(crate) show_snippet_panel: bool,
     pub(crate) snippet_label: String,
     pub(crate) snippet_command: String,
     pub(crate) snippet_editing_id: Option<Uuid>,
     pub(crate) snippet_error: Option<String>,
+
+    // Port forwards (standalone entity, independent of any terminal)
+    pub(crate) port_forward_rules:
+        Vec<oryxis_core::models::port_forward_rule::PortForwardRule>,
+    /// Runtime-only registry of live forwards, keyed by rule id. Not
+    /// persisted, the on/off state lives only here. Dropping the
+    /// `ForwardSession` cancels its tasks.
+    pub(crate) active_forwards:
+        std::collections::HashMap<Uuid, std::sync::Arc<oryxis_ssh::ForwardSession>>,
+    /// Rules whose connect is in flight (drives the per-row spinner and
+    /// prevents a double-start).
+    pub(crate) port_forward_starting: std::collections::HashSet<Uuid>,
+    pub(crate) show_port_forward_panel: bool,
+    pub(crate) pf_label: String,
+    pub(crate) pf_kind: oryxis_core::models::port_forward_rule::ForwardKind,
+    pub(crate) pf_host_id: Option<Uuid>,
+    pub(crate) pf_listen_host: String,
+    pub(crate) pf_listen_port: String,
+    pub(crate) pf_target_host: String,
+    pub(crate) pf_target_port: String,
+    pub(crate) pf_auto_start: bool,
+    pub(crate) pf_editing_id: Option<Uuid>,
+    pub(crate) pf_error: Option<String>,
+    pub(crate) hovered_port_forward_card: Option<usize>,
+    pub(crate) port_forward_search: String,
 
     // Known hosts & logs
     pub(crate) known_hosts: Vec<oryxis_core::models::known_host::KnownHost>,
@@ -551,7 +649,10 @@ pub struct Oryxis {
     /// Theme derived from the active app theme, used as the global
     /// fallback when neither `terminal_theme_override` nor a per-host
     /// override is set.
-    pub(crate) terminal_theme: oryxis_terminal::TerminalTheme,
+    /// Cached resolved global terminal palette (built-in or custom).
+    /// Applied to new tabs / local shells / cloud sessions; recomputed when
+    /// the global theme or a custom theme changes.
+    pub(crate) terminal_palette: oryxis_terminal::TerminalPalette,
     /// User pick that overrides the app-theme-derived terminal palette.
     /// `None` means "follow the app theme" (default). Stored as the
     /// theme's display name (e.g. "Dracula") so the value survives new
@@ -889,7 +990,11 @@ impl Oryxis {
             && self.active_tab.is_none()
             && matches!(
                 self.active_view,
-                View::Dashboard | View::Keys | View::Snippets | View::History
+                View::Dashboard
+                    | View::Keys
+                    | View::Snippets
+                    | View::PortForwarding
+                    | View::History
             );
         if in_workspace_vault { BASE_Y + SUBNAV_HEIGHT } else { BASE_Y }
     }

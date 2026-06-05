@@ -64,6 +64,7 @@ impl Oryxis {
             TransportKind::EcsExec,
             TransportKind::Ssm,
             TransportKind::InstanceConnect,
+            TransportKind::KubectlExec,
         ];
         let transport_pick = pick_list(
             Some(self.cloud_dynamic_form_transport),
@@ -251,46 +252,120 @@ impl Oryxis {
         .align_x(dir_align_x());
 
         // Cloud source section: the query backing the dynamic group
-        // (ECS today, K8s lands later) followed by the template applied
-        // to every transient child the resolver returns.
+        // (ECS tasks or K8s pods, picked by `cloud_dynamic_form_is_k8s`)
+        // followed by the template applied to every transient child the
+        // resolver returns.
+        // Source query fields differ by kind: ECS groups edit
+        // cluster/service/container, K8s groups edit context/namespace and a
+        // pod selector (label string or a Deployment/StatefulSet/pod name).
+        let kind_fields: Element<'_, Message> = if self.cloud_dynamic_form_is_k8s {
+            use crate::state::K8sSelectorKind;
+            let selector_kind = self.cloud_dynamic_form_k8s_selector_kind;
+            let selector_pick = pick_list(
+                Some(selector_kind),
+                K8sSelectorKind::ALL.to_vec(),
+                |k| k.to_string(),
+            )
+            .on_select(Message::DynamicGroupFormK8sSelectorKindChanged)
+            .padding(10)
+            .style(crate::widgets::rounded_pick_list_style);
+            // The value field's placeholder + hint adapt to the kind: a
+            // label string for `Labels`, a single resource name otherwise.
+            let (value_ph, value_hint): (&str, &str) = match selector_kind {
+                K8sSelectorKind::Labels => {
+                    ("app=nginx,tier=frontend", t("cloud_k8s_selector_hint"))
+                }
+                K8sSelectorKind::Deployment => ("my-deployment", t("cloud_k8s_name_hint")),
+                K8sSelectorKind::StatefulSet => ("my-statefulset", t("cloud_k8s_name_hint")),
+                K8sSelectorKind::Name => ("my-pod", t("cloud_k8s_name_hint")),
+            };
+            column![
+                text(t("cloud_k8s_context"))
+                    .size(12)
+                    .color(OryxisColors::t().text_secondary),
+                Space::new().height(4),
+                text_input(t("cloud_k8s_context_ph"), &self.cloud_dynamic_form_k8s_context)
+                    .on_input(Message::DynamicGroupFormK8sContextChanged)
+                    .padding(10)
+                    .style(crate::widgets::rounded_input_style)
+                    .align_x(dir_align_x()),
+                Space::new().height(14),
+                text(t("cloud_k8s_namespace"))
+                    .size(12)
+                    .color(OryxisColors::t().text_secondary),
+                Space::new().height(4),
+                text_input("default", &self.cloud_dynamic_form_namespace)
+                    .on_input(Message::DynamicGroupFormNamespaceChanged)
+                    .padding(10)
+                    .style(crate::widgets::rounded_input_style)
+                    .align_x(dir_align_x()),
+                Space::new().height(14),
+                text(t("cloud_k8s_selector"))
+                    .size(12)
+                    .color(OryxisColors::t().text_secondary),
+                Space::new().height(4),
+                selector_pick,
+                Space::new().height(8),
+                text_input(value_ph, &self.cloud_dynamic_form_k8s_selector_value)
+                    .on_input(Message::DynamicGroupFormK8sSelectorValueChanged)
+                    .padding(10)
+                    .style(crate::widgets::rounded_input_style)
+                    .align_x(dir_align_x()),
+                Space::new().height(6),
+                text(value_hint)
+                    .size(10)
+                    .color(OryxisColors::t().text_muted),
+            ]
+            .width(Length::Fill)
+            .align_x(dir_align_x())
+            .into()
+        } else {
+            column![
+                text(t("cloud_dynamic_form_cluster"))
+                    .size(12)
+                    .color(OryxisColors::t().text_secondary),
+                Space::new().height(4),
+                text_input("my-cluster", &self.cloud_dynamic_form_cluster)
+                    .on_input(Message::DynamicGroupFormClusterChanged)
+                    .padding(10)
+                    .style(crate::widgets::rounded_input_style)
+                    .align_x(dir_align_x()),
+                Space::new().height(14),
+                text(t("cloud_dynamic_form_service"))
+                    .size(12)
+                    .color(OryxisColors::t().text_secondary),
+                Space::new().height(4),
+                text_input("my-service", &self.cloud_dynamic_form_service)
+                    .on_input(Message::DynamicGroupFormServiceChanged)
+                    .padding(10)
+                    .style(crate::widgets::rounded_input_style)
+                    .align_x(dir_align_x()),
+                Space::new().height(14),
+                text(t("cloud_dynamic_form_container"))
+                    .size(12)
+                    .color(OryxisColors::t().text_secondary),
+                Space::new().height(4),
+                text_input(t("cloud_dynamic_form_container_ph"), &self.cloud_dynamic_form_container)
+                    .on_input(Message::DynamicGroupFormContainerChanged)
+                    .padding(10)
+                    .style(crate::widgets::rounded_input_style)
+                    .align_x(dir_align_x()),
+                Space::new().height(6),
+                text(t("cloud_dynamic_form_query_hint"))
+                    .size(10)
+                    .color(OryxisColors::t().text_muted),
+            ]
+            .width(Length::Fill)
+            .align_x(dir_align_x())
+            .into()
+        };
+
         let source_section = column![
             text(t("cloud_dynamic_form_source"))
                 .size(14)
                 .color(OryxisColors::t().text_primary),
             Space::new().height(10),
-            text(t("cloud_dynamic_form_cluster"))
-                .size(12)
-                .color(OryxisColors::t().text_secondary),
-            Space::new().height(4),
-            text_input("my-cluster", &self.cloud_dynamic_form_cluster)
-                .on_input(Message::DynamicGroupFormClusterChanged)
-                .padding(10)
-                .style(crate::widgets::rounded_input_style)
-                .align_x(dir_align_x()),
-            Space::new().height(14),
-            text(t("cloud_dynamic_form_service"))
-                .size(12)
-                .color(OryxisColors::t().text_secondary),
-            Space::new().height(4),
-            text_input("my-service", &self.cloud_dynamic_form_service)
-                .on_input(Message::DynamicGroupFormServiceChanged)
-                .padding(10)
-                .style(crate::widgets::rounded_input_style)
-                .align_x(dir_align_x()),
-            Space::new().height(14),
-            text(t("cloud_dynamic_form_container"))
-                .size(12)
-                .color(OryxisColors::t().text_secondary),
-            Space::new().height(4),
-            text_input(t("cloud_dynamic_form_container_ph"), &self.cloud_dynamic_form_container)
-                .on_input(Message::DynamicGroupFormContainerChanged)
-                .padding(10)
-                .style(crate::widgets::rounded_input_style)
-                .align_x(dir_align_x()),
-            Space::new().height(6),
-            text(t("cloud_dynamic_form_query_hint"))
-                .size(10)
-                .color(OryxisColors::t().text_muted),
+            kind_fields,
             Space::new().height(14),
             text(t("cloud_dynamic_form_transport"))
                 .size(12)

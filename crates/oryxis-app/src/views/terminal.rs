@@ -26,27 +26,47 @@ impl Oryxis {
 
         let terminal_area: Element<'_, Message> = if let Some(tab_idx) = self.active_tab {
             if let Some(tab) = self.tabs.get(tab_idx) {
-                let term_view = TerminalView::new(Arc::clone(&tab.active().terminal))
-                    .with_font_size(self.terminal_font_size)
-                    .with_font_name(&self.terminal_font_name)
-                    .with_copy_on_select(self.setting_copy_on_select)
-                    .with_right_click_copy(self.setting_right_click_copy)
-                    .with_bold_is_bright(self.setting_bold_is_bright)
-                    .with_keyword_highlight(self.setting_keyword_highlight)
-                    .with_smart_contrast(self.setting_smart_contrast)
-                    .on_font_size_increase(Message::TerminalFontSizeIncrease)
-                    .on_font_size_decrease(Message::TerminalFontSizeDecrease)
-                    .on_paste_request(Message::TerminalPasteFromClipboard)
-                    .on_terminal_input(Message::TerminalInput);
-                let term_canvas: Element<'_, Message> = canvas(term_view)
-                    .width(Length::Fill)
-                    .height(Length::Fill)
-                    .into();
+                // Render the tab's panes through a `pane_grid`. With one
+                // pane this is visually identical to the old single canvas;
+                // splits add cells. Each cell gets a focus border (only
+                // visible once there's more than one pane) and the grid
+                // wires click-to-focus + drag-to-resize.
+                let focused = tab.focused;
+                let multipane = tab.pane_grid.panes.len() > 1;
+                let grid = iced::widget::pane_grid(&tab.pane_grid, move |pane, pane_data, _max| {
+                    let is_focused = pane == focused;
+                    // The focus border only shows when there's more than one
+                    // pane; the mouse-report gate uses real focus regardless.
+                    let show_border = multipane && is_focused;
+                    let border_color = if show_border {
+                        OryxisColors::t().accent
+                    } else {
+                        OryxisColors::t().border
+                    };
+                    iced::widget::pane_grid::Content::new(
+                        container(self.render_pane_canvas(pane_data, is_focused))
+                            .width(Length::Fill)
+                            .height(Length::Fill)
+                            .style(move |_| container::Style {
+                                border: Border {
+                                    color: border_color,
+                                    width: if multipane { 1.0 } else { 0.0 },
+                                    radius: Radius::from(0.0),
+                                },
+                                ..Default::default()
+                            }),
+                    )
+                })
+                .on_click(Message::FocusPane)
+                .on_resize(8, Message::ResizePane)
+                .spacing(if multipane { 4 } else { 0 })
+                .width(Length::Fill)
+                .height(Length::Fill);
 
                 // The AI/sidebar toggle now lives in the tab bar (panel
                 // button right of `+`), so the terminal canvas no longer
                 // carries its own floating sparkle overlay.
-                let term_with_toggle: Element<'_, Message> = term_canvas;
+                let term_with_toggle: Element<'_, Message> = grid.into();
 
                 if chat_visible {
                     let sidebar = self.view_terminal_sidebar(tab);
@@ -73,6 +93,34 @@ impl Oryxis {
                 background: Some(Background::Color(OryxisColors::TERMINAL_BG)),
                 ..Default::default()
             })
+            .into()
+    }
+
+    /// Build the terminal canvas for one pane, applying the global font /
+    /// rendering settings. Shared by every `pane_grid` cell. `is_focused`
+    /// gates mouse-tracking reports so a focus-click on an inactive pane
+    /// doesn't inject a stray report.
+    fn render_pane_canvas<'a>(
+        &'a self,
+        pane: &'a crate::state::Pane,
+        is_focused: bool,
+    ) -> Element<'a, Message> {
+        let term_view = TerminalView::new(Arc::clone(&pane.terminal))
+            .focused(is_focused)
+            .with_font_size(self.terminal_font_size)
+            .with_font_name(&self.terminal_font_name)
+            .with_copy_on_select(self.setting_copy_on_select)
+            .with_right_click_copy(self.setting_right_click_copy)
+            .with_bold_is_bright(self.setting_bold_is_bright)
+            .with_keyword_highlight(self.setting_keyword_highlight)
+            .with_smart_contrast(self.setting_smart_contrast)
+            .on_font_size_increase(Message::TerminalFontSizeIncrease)
+            .on_font_size_decrease(Message::TerminalFontSizeDecrease)
+            .on_paste_request(Message::TerminalPasteFromClipboard)
+            .on_terminal_input(Message::TerminalInput);
+        canvas(term_view)
+            .width(Length::Fill)
+            .height(Length::Fill)
             .into()
     }
 

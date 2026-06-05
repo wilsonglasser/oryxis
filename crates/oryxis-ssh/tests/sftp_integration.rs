@@ -198,6 +198,103 @@ async fn sftp_open_sibling_for_parallel_pool() {
     }
 }
 
+#[tokio::test]
+#[ignore = "requires Docker, run with --ignored"]
+async fn sftp_stream_upload_download_round_trip() {
+    // Exercises the streamed `upload_from` / `download_to` path with a
+    // payload larger than one SFTP request (255 KiB) so the chunked pump
+    // loop runs multiple iterations in each direction. Bytes must survive
+    // local -> remote -> local untouched.
+    let (conn, password, _container) = start_sshd().await;
+    let engine = engine();
+    let (session, _rx) = engine
+        .connect(&conn, Some(&password), None, 80, 24)
+        .await
+        .expect("connect");
+    let session = Arc::new(session);
+    let client = session.open_sftp().await.expect("open sftp");
+    let home = client.canonicalize(".").await.expect("canonicalize");
+
+    // 600 KiB of a non-repeating-ish pattern, spans ~3 chunks.
+    let payload: Vec<u8> = (0..600 * 1024).map(|i| (i % 251) as u8).collect();
+    let tmp = std::env::temp_dir();
+    let pid = std::process::id();
+    let local_src = tmp.join(format!("oryxis-stream-src-{pid}.bin"));
+    let local_dst = tmp.join(format!("oryxis-stream-dst-{pid}.bin"));
+    std::fs::write(&local_src, &payload).expect("write local src");
+
+    let remote = format!("{}/stream.bin", home.trim_end_matches('/'));
+    client
+        .upload_from(&local_src, &remote)
+        .await
+        .expect("upload_from");
+
+    // Remote size matches what we sent.
+    let stat = client.stat(&remote).await.expect("stat");
+    assert_eq!(stat.size, payload.len() as u64);
+
+    client
+        .download_to(&remote, &local_dst, None)
+        .await
+        .expect("download_to");
+    let round_tripped = std::fs::read(&local_dst).expect("read local dst");
+    assert_eq!(round_tripped, payload);
+
+    client.remove_file(&remote).await.expect("remove_file");
+    let _ = std::fs::remove_file(&local_src);
+    let _ = std::fs::remove_file(&local_dst);
+}
+
+#[tokio::test]
+#[ignore = "requires Docker, run with --ignored"]
+async fn sftp_windowed_large_round_trip() {
+    // Drives the concurrent windowed path: a payload above STREAM_THRESHOLD
+    // (8 MiB) makes both `upload_from` and `download_to` carry a sliding
+    // window of interleaved requests on one handle. This is the real-server
+    // check for the multiplexing assumption the unit tests can only fake.
+    // Bytes must survive local -> remote -> local intact.
+    let (conn, password, _container) = start_sshd().await;
+    let engine = engine();
+    let (session, _rx) = engine
+        .connect(&conn, Some(&password), None, 80, 24)
+        .await
+        .expect("connect");
+    let session = Arc::new(session);
+    let client = session.open_sftp().await.expect("open sftp");
+    let home = client.canonicalize(".").await.expect("canonicalize");
+
+    // 10 MiB, comfortably over the 8 MiB window threshold so both
+    // directions carry a sliding window of concurrent requests. Non-trivial
+    // byte pattern so a misplaced chunk shows up as a mismatch, not a
+    // coincidental match.
+    let payload: Vec<u8> = (0..10 * 1024 * 1024).map(|i| (i % 251) as u8).collect();
+    let tmp = std::env::temp_dir();
+    let pid = std::process::id();
+    let local_src = tmp.join(format!("oryxis-windowed-src-{pid}.bin"));
+    let local_dst = tmp.join(format!("oryxis-windowed-dst-{pid}.bin"));
+    std::fs::write(&local_src, &payload).expect("write local src");
+
+    let remote = format!("{}/windowed.bin", home.trim_end_matches('/'));
+    client
+        .upload_from(&local_src, &remote)
+        .await
+        .expect("upload_from windowed");
+    let stat = client.stat(&remote).await.expect("stat");
+    assert_eq!(stat.size, payload.len() as u64);
+
+    client
+        .download_to(&remote, &local_dst, None)
+        .await
+        .expect("download_to windowed");
+    let round_tripped = std::fs::read(&local_dst).expect("read local dst");
+    assert_eq!(round_tripped.len(), payload.len(), "size mismatch");
+    assert_eq!(round_tripped, payload, "windowed reassembly mismatch");
+
+    client.remove_file(&remote).await.expect("remove_file");
+    let _ = std::fs::remove_file(&local_src);
+    let _ = std::fs::remove_file(&local_dst);
+}
+
 /// Sequentially open `n` siblings off `primary`, keeps the test
 /// simple without pulling in a futures crate just for `join_all`.
 async fn futures_or_join(

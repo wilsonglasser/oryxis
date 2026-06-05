@@ -105,11 +105,13 @@ fn transfer_item_label_marks_directories() {
         src: "/a/b/c".into(),
         dst: "/x/c".into(),
         is_dir: true,
+        size: None,
     };
     let file = crate::state::TransferItem {
         src: "/a/b/c.txt".into(),
         dst: "/x/c.txt".into(),
         is_dir: false,
+        size: Some(123),
     };
     assert_eq!(transfer_item_label(&dir), "c/");
     assert_eq!(transfer_item_label(&file), "c.txt");

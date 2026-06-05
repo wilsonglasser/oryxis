@@ -35,6 +35,7 @@ impl Oryxis {
                 self.cloud_discover_profile_id = Some(profile_id);
                 self.cloud_discover_selected_ec2.clear();
                 self.cloud_discover_selected_ecs.clear();
+                self.cloud_discover_selected_k8s.clear();
                 self.cloud_discover_filter.clear();
                 self.cloud_discover_state = CloudDiscoverState::Idle;
                 // Default the input to the profile's own label so the
@@ -55,6 +56,7 @@ impl Oryxis {
                 self.cloud_discover_state = CloudDiscoverState::Idle;
                 self.cloud_discover_selected_ec2.clear();
                 self.cloud_discover_selected_ecs.clear();
+                self.cloud_discover_selected_k8s.clear();
                 self.cloud_discover_filter.clear();
             }
             Message::CloudDiscoverRefresh => {
@@ -73,6 +75,7 @@ impl Oryxis {
                 // exists in the new list would be misleading.
                 self.cloud_discover_selected_ec2.clear();
                 self.cloud_discover_selected_ecs.clear();
+                self.cloud_discover_selected_k8s.clear();
                 // Stamp the profile's last_discovered when we got real
                 // results, so the cards list shows fresh metadata.
                 if matches!(self.cloud_discover_state, CloudDiscoverState::Loaded(_))
@@ -97,6 +100,11 @@ impl Oryxis {
             Message::CloudDiscoverToggleEcs(key) => {
                 if !self.cloud_discover_selected_ecs.remove(&key) {
                     self.cloud_discover_selected_ecs.insert(key);
+                }
+            }
+            Message::CloudDiscoverToggleK8s(key) => {
+                if !self.cloud_discover_selected_k8s.remove(&key) {
+                    self.cloud_discover_selected_k8s.insert(key);
                 }
             }
             Message::CloudDiscoverFilterChanged(s) => {
@@ -385,7 +393,16 @@ impl Oryxis {
                     })
                     .cloned()
                     .collect();
-                if selected_ec2.is_empty() && selected_ecs.is_empty() {
+                let selected_k8s: Vec<_> = result
+                    .k8s_workloads
+                    .iter()
+                    .filter(|w| {
+                        self.cloud_discover_selected_k8s
+                            .contains(&format!("{}/{}/{}", w.namespace, w.kind, w.name))
+                    })
+                    .cloned()
+                    .collect();
+                if selected_ec2.is_empty() && selected_ecs.is_empty() && selected_k8s.is_empty() {
                     return Ok(Task::none());
                 }
 
@@ -511,10 +528,42 @@ impl Oryxis {
                         let _ = vault.save_group(&g);
                     }
 
+                    // Each picked K8s workload becomes a dynamic group
+                    // backed by a `K8sPods` label query. Expanding it
+                    // resolves the workload's current pods; clicking a pod
+                    // opens `kubectl exec`.
+                    for w in &selected_k8s {
+                        let label = format!("{} ({})", w.name, w.namespace);
+                        let mut g = Group::new(label);
+                        g.parent_id = provider_group_id;
+                        g.icon = Some("kubernetes".into());
+                        let selector = oryxis_core::models::cloud::PodSelector::Labels(
+                            w.match_labels.clone(),
+                        );
+                        g.cloud_query = Some(CloudQuery {
+                            profile_id,
+                            kind: CloudQueryKind::K8sPods {
+                                context: w.context.clone(),
+                                namespace: w.namespace.clone(),
+                                selector,
+                            },
+                            template: ConnectionTemplate {
+                                username: None,
+                                initial_command: None,
+                                transport: TransportKind::KubectlExec,
+                                key_id: None,
+                                identity_id: None,
+                                terminal_theme: None,
+                            },
+                        });
+                        let _ = vault.save_group(&g);
+                    }
+
                     self.cloud_discover_visible = false;
                     self.cloud_discover_profile_id = None;
                     self.cloud_discover_selected_ec2.clear();
                     self.cloud_discover_selected_ecs.clear();
+                    self.cloud_discover_selected_k8s.clear();
                     self.cloud_discover_state = CloudDiscoverState::Idle;
                     self.load_data_from_vault();
                 }

@@ -114,6 +114,8 @@ impl Oryxis {
                     self.cloud_form_aws_sso_region = str_field("sso_region");
                     self.cloud_form_aws_sso_account_id = str_field("sso_account_id");
                     self.cloud_form_aws_sso_role_name = str_field("sso_role_name");
+                    self.cloud_form_kubeconfig_path = str_field("kubeconfig");
+                    self.cloud_form_context = str_field("context");
                     // Never pre-fill the secret. Same convention as
                     // identity / proxy passwords, we just flag that
                     // one exists so the user knows leaving the field
@@ -149,6 +151,8 @@ impl Oryxis {
                     self.cloud_form_aws_sso_region = String::new();
                     self.cloud_form_aws_sso_account_id = String::new();
                     self.cloud_form_aws_sso_role_name = String::new();
+                    self.cloud_form_kubeconfig_path = String::new();
+                    self.cloud_form_context = String::new();
                 }
                 self.cloud_form_aws_access_key_secret_visible = false;
             }
@@ -173,6 +177,14 @@ impl Oryxis {
             }
             Message::CloudFormAuthKindChanged(a) => {
                 self.cloud_form_auth_kind = a;
+                self.cloud_form_test_state = CloudTestState::Idle;
+            }
+            Message::CloudFormKubeconfigPathChanged(v) => {
+                self.cloud_form_kubeconfig_path = v;
+                self.cloud_form_test_state = CloudTestState::Idle;
+            }
+            Message::CloudFormContextChanged(v) => {
+                self.cloud_form_context = v;
                 self.cloud_form_test_state = CloudTestState::Idle;
             }
             Message::CloudFormAwsProfileNameChanged(v) => {

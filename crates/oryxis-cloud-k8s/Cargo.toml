@@ -1,0 +1,17 @@
+[package]
+name = "oryxis-cloud-k8s"
+version = "0.1.0"
+edition = "2024"
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]
+oryxis-core = { workspace = true }
+oryxis-cloud = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+async-trait = "0.1"
+tracing = { workspace = true }
+chrono = { workspace = true }

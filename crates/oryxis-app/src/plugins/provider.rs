@@ -153,6 +153,7 @@ impl CloudProvider for PluginProvider {
                 TransportKind::InstanceConnect,
                 TransportKind::Ssm,
             ],
+            ("k8s", _) => vec![TransportKind::KubectlExec],
             _ => Vec::new(),
         }
     }

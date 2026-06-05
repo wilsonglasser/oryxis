@@ -805,14 +805,13 @@ pub(crate) fn shortcut_row<'a>(keys: Vec<Element<'a, Message>>, action: &'a str)
 /// color, and a strip of the six main ANSI colors so the user can
 /// compare palettes without having to apply each one.
 pub(crate) fn terminal_theme_card<'a>(
-    theme: oryxis_terminal::TerminalTheme,
+    palette: oryxis_terminal::TerminalPalette,
+    name: &'a str,
     selected: bool,
     on_press: Message,
 ) -> Element<'a, Message> {
-    let palette = theme.palette();
     let bg = palette.background;
     let fg = palette.foreground;
-    let name = theme.name();
 
     // Render ANSI red → cyan (skip black/white because they barely
     // read against the background).

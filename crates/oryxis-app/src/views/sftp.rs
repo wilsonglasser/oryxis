@@ -667,17 +667,23 @@ impl Oryxis {
             ..Default::default()
         });
 
-        let scrim: Element<'_, Message> = MouseArea::new(
-            container(Space::new())
-                .width(Length::Fill)
-                .height(Length::Fill)
-                .style(|_| container::Style {
-                    background: Some(Background::Color(Color::from_rgba(0.0, 0.0, 0.0, 0.5))),
-                    ..Default::default()
-                }),
-        )
-        .on_press(Message::SftpClosePicker)
-        .into();
+        // `iced::widget::opaque` makes the scrim capture every mouse event
+        // (scroll and motion included, not just the click `on_press`
+        // handles), so they stop here instead of bleeding through the
+        // Stack to the SFTP panes underneath, e.g. scrolling the file list
+        // behind the open modal.
+        let scrim: Element<'_, Message> = iced::widget::opaque(
+            MouseArea::new(
+                container(Space::new())
+                    .width(Length::Fill)
+                    .height(Length::Fill)
+                    .style(|_| container::Style {
+                        background: Some(Background::Color(Color::from_rgba(0.0, 0.0, 0.0, 0.5))),
+                        ..Default::default()
+                    }),
+            )
+            .on_press(Message::SftpClosePicker),
+        );
 
         // Wrap the dialog in a MouseArea that swallows clicks via
         // `NoOp`, otherwise events fall through the Stack to the scrim

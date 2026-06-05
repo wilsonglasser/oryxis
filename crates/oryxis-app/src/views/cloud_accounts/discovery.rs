@@ -153,7 +153,8 @@ impl Oryxis {
         // the current state allows. We re-render every frame so the
         // selection counter stays live.
         let import_count = self.cloud_discover_selected_ec2.len()
-            + self.cloud_discover_selected_ecs.len();
+            + self.cloud_discover_selected_ecs.len()
+            + self.cloud_discover_selected_k8s.len();
         let can_import = matches!(
             self.cloud_discover_state,
             CloudDiscoverState::Loaded(_)
@@ -249,14 +250,17 @@ impl Oryxis {
             .into()
     }
 
-    /// Render the EC2 (and future ECS / K8s) section of the loaded
-    /// discovery result. Already-imported instances are shown but
-    /// disabled, the user can tell what's new at a glance.
+    /// Render the EC2 / ECS / K8s sections of the loaded discovery result.
+    /// Already-imported resources are shown but disabled, the user can
+    /// tell what's new at a glance.
     fn view_discover_result_body(
         &self,
         result: &oryxis_cloud::DiscoveryResult,
     ) -> Element<'_, Message> {
-        if result.ec2.is_empty() && result.ecs_services.is_empty() {
+        if result.ec2.is_empty()
+            && result.ecs_services.is_empty()
+            && result.k8s_workloads.is_empty()
+        {
             return container(
                 text(t("cloud_discover_no_results"))
                     .size(13)
@@ -577,10 +581,167 @@ impl Oryxis {
             } // end `if !ecs_collapsed` block
         }
 
+        // ── Kubernetes workloads ── each surviving workload becomes a
+        // dynamic Group backed by a `K8sPods` label query.
+        let labels_key = |labels: &std::collections::BTreeMap<String, String>| -> String {
+            labels
+                .iter()
+                .map(|(k, v)| format!("{k}={v}"))
+                .collect::<Vec<_>>()
+                .join(",")
+        };
+        // Already-imported workloads: groups carrying a `K8sPods` query
+        // for this profile, keyed by `namespace|labels` so a re-discovery
+        // greys them out instead of offering a duplicate import.
+        let already_k8s: std::collections::HashSet<String> = self
+            .groups
+            .iter()
+            .filter_map(|g| {
+                let q = g.cloud_query.as_ref()?;
+                if Some(q.profile_id) != self.cloud_discover_profile_id {
+                    return None;
+                }
+                if let oryxis_core::models::cloud::CloudQueryKind::K8sPods {
+                    namespace,
+                    selector: oryxis_core::models::cloud::PodSelector::Labels(m),
+                    ..
+                } = &q.kind
+                {
+                    Some(format!("{namespace}|{}", labels_key(m)))
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        let k8s_match_filter = |w: &oryxis_cloud::DiscoveredK8sWorkload| -> bool {
+            if needle.is_empty() {
+                return true;
+            }
+            format!("{} {} {} {}", w.namespace, w.kind, w.name, w.container)
+                .to_lowercase()
+                .contains(&needle)
+        };
+        let k8s_filtered: Vec<&oryxis_cloud::DiscoveredK8sWorkload> = result
+            .k8s_workloads
+            .iter()
+            .filter(|w| k8s_match_filter(w))
+            .collect();
+
+        if !k8s_filtered.is_empty() {
+            sections.push(Space::new().height(8).into());
+            let k8s_header = if needle.is_empty() {
+                format!("{} ({})", t("cloud_k8s_workloads"), result.k8s_workloads.len())
+            } else {
+                format!(
+                    "{} ({} / {})",
+                    t("cloud_k8s_workloads"),
+                    k8s_filtered.len(),
+                    result.k8s_workloads.len()
+                )
+            };
+            let k8s_collapsed = self.cloud_discover_collapsed.contains("k8s");
+            sections.push(section_header("k8s", &k8s_header, k8s_collapsed));
+            sections.push(Space::new().height(6).into());
+
+            if !k8s_collapsed {
+                // Group by namespace so the user reads `▸ namespace` then
+                // its workloads.
+                let mut by_ns: std::collections::BTreeMap<
+                    String,
+                    Vec<&oryxis_cloud::DiscoveredK8sWorkload>,
+                > = std::collections::BTreeMap::new();
+                for w in &k8s_filtered {
+                    by_ns.entry(w.namespace.clone()).or_default().push(w);
+                }
+                for (namespace, items) in by_ns {
+                    sections.push(
+                        text(format!("\u{25B8} {namespace}"))
+                            .size(11)
+                            .color(OryxisColors::t().text_muted)
+                            .into(),
+                    );
+                    sections.push(Space::new().height(4).into());
+                    for w in items {
+                        // Selection key: workload identity. Import looks the
+                        // workload back up by this same triple.
+                        let key = format!("{}/{}/{}", w.namespace, w.kind, w.name);
+                        let imported_key = format!("{}|{}", w.namespace, labels_key(&w.match_labels));
+                        let is_imported = already_k8s.contains(&imported_key);
+                        let checked = self.cloud_discover_selected_k8s.contains(&key);
+                        let mut label_text = format!(
+                            "{} {}  ·  {} pod(s)",
+                            w.kind, w.name, w.running_pod_count
+                        );
+                        if is_imported {
+                            label_text =
+                                format!("{label_text}  ·  {}", t("cloud_discover_already_imported"));
+                        }
+                        let row_el: Element<'_, Message> = if is_imported {
+                            text(label_text)
+                                .size(11)
+                                .color(OryxisColors::t().text_muted)
+                                .into()
+                        } else {
+                            let mark = if checked {
+                                iced_fonts::lucide::circle_check()
+                                    .size(13)
+                                    .color(OryxisColors::t().accent)
+                            } else {
+                                iced_fonts::lucide::circle_minus()
+                                    .size(13)
+                                    .color(OryxisColors::t().text_muted)
+                            };
+                            let key_for_msg = key.clone();
+                            button(
+                                row![
+                                    mark,
+                                    Space::new().width(8),
+                                    text(label_text)
+                                        .size(11)
+                                        .color(OryxisColors::t().text_secondary),
+                                ]
+                                .align_y(iced::Alignment::Center),
+                            )
+                            .on_press(Message::CloudDiscoverToggleK8s(key_for_msg))
+                            .padding(Padding {
+                                top: 3.0,
+                                right: 6.0,
+                                bottom: 3.0,
+                                left: 4.0,
+                            })
+                            .style(|_, status| {
+                                let bg = match status {
+                                    BtnStatus::Hovered => OryxisColors::t().bg_hover,
+                                    _ => Color::TRANSPARENT,
+                                };
+                                button::Style {
+                                    background: Some(Background::Color(bg)),
+                                    border: Border {
+                                        radius: Radius::from(4.0),
+                                        ..Default::default()
+                                    },
+                                    ..Default::default()
+                                }
+                            })
+                            .into()
+                        };
+                        sections.push(row_el);
+                        sections.push(Space::new().height(2).into());
+                    }
+                    sections.push(Space::new().height(8).into());
+                }
+            }
+        }
+
         // Both sections hid themselves under the active filter, show
         // a friendly hint instead of an empty scroll area so the
         // panel doesn't read as "broken".
-        if !show_ec2_section && ecs_filtered.is_empty() && !needle.is_empty() {
+        if !show_ec2_section
+            && ecs_filtered.is_empty()
+            && k8s_filtered.is_empty()
+            && !needle.is_empty()
+        {
             sections.push(
                 container(
                     text(t("cloud_discover_no_matches"))

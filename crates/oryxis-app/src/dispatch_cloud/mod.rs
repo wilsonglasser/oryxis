@@ -123,6 +123,7 @@ impl Oryxis {
         tab_label: &str,
         plugin_path: String,
         args: Vec<String>,
+        relaunch: Option<Message>,
     ) -> Task<Message> {
         use crate::app::{DEFAULT_TERM_COLS, DEFAULT_TERM_ROWS};
         use crate::state::{TerminalTab, View};
@@ -136,13 +137,21 @@ impl Oryxis {
             &args,
         ) {
             Ok((mut state, rx)) => {
-                state.palette = self.terminal_theme.palette();
+                state.palette = self.terminal_palette.clone();
                 let tab_idx = self.tabs.len();
                 let label = tab_label.to_string();
-                self.tabs.push(TerminalTab::new_single(
+                let mut plugin_tab = TerminalTab::new_single(
                     label.clone(),
                     Arc::new(Mutex::new(state)),
-                ));
+                );
+                // Cloud SSM / ECS tabs get the idle keepalive (see the
+                // field doc on `TerminalTab`).
+                plugin_tab.ssm_keepalive = true;
+                // Cloud tabs without a saved Connection carry the message
+                // that re-creates them, so Duplicate Tab can relaunch.
+                plugin_tab.relaunch = relaunch.map(Box::new);
+                let pane_id = plugin_tab.active().id;
+                self.tabs.push(plugin_tab);
                 // SSM/ECS sessions don't go through the SSH connecting
                 // pipeline, so a leftover `connecting` (e.g. a previous
                 // host's timeout that wasn't cleared) would otherwise
@@ -167,7 +176,7 @@ impl Oryxis {
                 let stream = UnboundedReceiverStream::new(rx);
                 Task::batch(vec![
                     self.tab_scroll_to_active(),
-                    Task::stream(stream).map(move |bytes| Message::PtyOutput(tab_idx, bytes)),
+                    Task::stream(stream).map(move |bytes| Message::PtyOutput(pane_id, bytes)),
                 ])
             }
             Err(e) => {
@@ -356,15 +365,17 @@ impl Oryxis {
                         put(&mut obj, "sso_role_name", &self.cloud_form_aws_sso_role_name);
                     }
                     CloudAuthChoice::Kubeconfig => {
-                        // K8s lives in v0.7, no AWS-side fields here.
+                        // Kubeconfig auth belongs to the K8s provider; under
+                        // AWS it's an impossible combo, so write nothing.
                     }
                 }
             }
             CloudProviderChoice::K8s => {
-                // K8s wizard doesn't write any fields yet, the provider
-                // crate ships in a follow-up PR. The empty `{}` config
-                // is still valid JSON so the row round-trips through
-                // the vault.
+                // Both optional: a blank kubeconfig falls back to
+                // kubectl's default file, a blank context to the
+                // kubeconfig's current-context. `put` skips empties.
+                put(&mut obj, "kubeconfig", &self.cloud_form_kubeconfig_path);
+                put(&mut obj, "context", &self.cloud_form_context);
             }
         }
         serde_json::Value::Object(obj).to_string()

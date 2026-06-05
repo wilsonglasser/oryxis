@@ -680,30 +680,29 @@ impl Oryxis {
         // inherited global theme when there's no override, so the row is
         // always a real preview instead of a bare "use global" dropdown.
         // Click opens the full picker modal.
-        let (preview_theme, theme_label) = match self
+        // Resolve the override (built-in OR custom) to a palette for the
+        // preview swatch; fall back to the inherited global when there's no
+        // override (or the named custom theme was deleted).
+        let override_name = self
             .editor_form
             .terminal_theme
             .as_deref()
-            .and_then(|name| {
-                oryxis_terminal::TerminalTheme::ALL
-                    .iter()
-                    .find(|th| th.name() == name)
-                    .copied()
-            }) {
-            Some(theme) => (theme, theme.name().to_string()),
-            None => {
-                let global = self.resolve_global_terminal_theme();
-                (
-                    global,
-                    format!(
-                        "{} ({})",
-                        crate::i18n::t("terminal_theme_inherit_global"),
-                        global.name()
-                    ),
-                )
-            }
+            .filter(|name| self.terminal_palette_for_name(name).is_some());
+        let (preview_palette, theme_label) = match override_name {
+            Some(name) => (
+                self.terminal_palette_for_name(name).unwrap(),
+                name.to_string(),
+            ),
+            None => (
+                self.resolve_global_terminal_palette(),
+                format!(
+                    "{} ({})",
+                    crate::i18n::t("terminal_theme_inherit_global"),
+                    self.resolve_global_terminal_theme_name()
+                ),
+            ),
         };
-        let theme_trigger: Element<'_, Message> = terminal_theme_trigger(preview_theme, theme_label);
+        let theme_trigger: Element<'_, Message> = terminal_theme_trigger(preview_palette, theme_label);
 
         // Per-host icon shape override. The "Use default" entry maps to
         // an empty string which clears the override (resolved to the
@@ -1030,10 +1029,9 @@ impl Oryxis {
 /// chosen per-host theme and the "use global" state (where it previews
 /// the inherited global theme).
 fn terminal_theme_trigger<'a>(
-    theme: oryxis_terminal::TerminalTheme,
+    palette: oryxis_terminal::TerminalPalette,
     label: String,
 ) -> Element<'a, Message> {
-    let palette = theme.palette();
     let bg = palette.background;
     let fg = palette.foreground;
     let swatches: Vec<Element<'a, Message>> = [1usize, 2, 3, 4, 5, 6]

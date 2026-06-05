@@ -20,6 +20,23 @@ pub struct PtyHandle {
     // On Windows (ConPTY), dropping the slave calls ClosePseudoConsole(),
     // which terminates the child process.
     _slave: Box<dyn SlavePty + Send>,
+    /// The child process. Killed on `Drop` so closing a pane / tab tears
+    /// down the shell. Without this, the reader thread holds a cloned
+    /// master fd that keeps the slave open, so on Unix the child never
+    /// gets SIGHUP and a long-running app (htop, a `tail -f`) survives the
+    /// close, with the reader thread spinning forever on its output.
+    child: Box<dyn portable_pty::Child + Send + Sync>,
+}
+
+impl Drop for PtyHandle {
+    fn drop(&mut self) {
+        // Best effort: SIGKILL the child, then reap it so it doesn't
+        // linger as a zombie. After the kill the child exits promptly, so
+        // the `wait` doesn't meaningfully block. Killing also lets the
+        // reader thread see EOF and exit, ending the PTY output stream.
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+    }
 }
 
 impl PtyHandle {
@@ -69,7 +86,7 @@ impl PtyHandle {
         cmd.env("TERM", "xterm-256color");
         cmd.env("COLORTERM", "truecolor");
 
-        let _child = pair.slave.spawn_command(cmd)?;
+        let child = pair.slave.spawn_command(cmd)?;
 
         let mut reader = pair.master.try_clone_reader()?;
         let mut writer = pair.master.take_writer()?;
@@ -104,7 +121,7 @@ impl PtyHandle {
         std::thread::Builder::new()
             .name("pty-reader".into())
             .spawn(move || {
-                tracing::info!("PTY reader thread started for {}", program_log);
+                tracing::debug!("PTY reader thread started for {}", program_log);
                 let mut buf = [0u8; 8192];
                 let mut total_bytes: u64 = 0;
                 let mut chunk_count: u64 = 0;
@@ -120,19 +137,6 @@ impl PtyHandle {
                         Ok(n) => {
                             chunk_count += 1;
                             total_bytes += n as u64;
-                            // Log every chunk while diagnosing the
-                            // black-terminal symptom; trims back to
-                            // first / occasional once stable.
-                            tracing::info!(
-                                "PTY chunk #{} for {}: {} bytes (total {})  preview={:?}",
-                                chunk_count,
-                                program_log,
-                                n,
-                                total_bytes,
-                                String::from_utf8_lossy(
-                                    &buf[..n.min(64)],
-                                ),
-                            );
                             if tx.send(buf[..n].to_vec()).is_err() {
                                 tracing::warn!(
                                     "PTY receiver dropped for {} after {} bytes",
@@ -158,6 +162,7 @@ impl PtyHandle {
                 write_tx,
                 _master: pair.master,
                 _slave: pair.slave,
+                child,
             },
             rx,
         ))

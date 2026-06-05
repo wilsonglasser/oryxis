@@ -46,6 +46,27 @@ pub const SYSTEM_UI_SEMIBOLD: Font = Font {
 /// Global app theme index.
 static ACTIVE_THEME: AtomicUsize = AtomicUsize::new(0);
 
+/// Active *custom* UI theme colors, if any. A non-null pointer (to a
+/// `Box::leak`'d `ThemeColors`) wins over the built-in `ACTIVE_THEME`. Set
+/// only when the user selects a custom UI theme, so the bounded leak on
+/// switch (a previous selection may still be borrowed by an in-flight
+/// `t()` return, so it can't be freed) is negligible.
+static ACTIVE_CUSTOM: std::sync::atomic::AtomicPtr<ThemeColors> =
+    std::sync::atomic::AtomicPtr::new(std::ptr::null_mut());
+
+/// Activate a custom UI theme (its resolved colors). Cleared by selecting a
+/// built-in via `AppTheme::set_active`.
+pub fn set_active_custom_ui(colors: ThemeColors) {
+    let leaked = Box::into_raw(Box::new(colors));
+    let _old = ACTIVE_CUSTOM.swap(leaked, Ordering::Relaxed);
+    // `_old` intentionally leaked, see the field doc.
+}
+
+/// Drop back to the built-in `AppTheme` colors.
+pub fn clear_active_custom_ui() {
+    ACTIVE_CUSTOM.store(std::ptr::null_mut(), Ordering::Relaxed);
+}
+
 /// Available app themes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AppTheme {
@@ -100,8 +121,29 @@ impl AppTheme {
     }
 
     pub fn set_active(theme: AppTheme) {
+        // Selecting a built-in clears any active custom UI theme.
+        clear_active_custom_ui();
         let idx = Self::ALL.iter().position(|t| *t == theme).unwrap_or(0);
         ACTIVE_THEME.store(idx, Ordering::Relaxed);
+    }
+
+    /// This theme's `&'static` color table.
+    pub fn colors_ref(&self) -> &'static ThemeColors {
+        match self {
+            Self::OryxisDark => &ORYXIS_DARK,
+            Self::OryxisLight => &ORYXIS_LIGHT,
+            Self::Termius => &TERMIUS,
+            Self::Darcula => &DARCULA,
+            Self::IslandsDark => &ISLANDS_DARK,
+            Self::Dracula => &DRACULA,
+            Self::Monokai => &MONOKAI,
+            Self::HackerGreen => &HACKER_GREEN,
+            Self::Nord => &NORD,
+            Self::NordLight => &NORD_LIGHT,
+            Self::SolarizedDark => &SOLARIZED_DARK,
+            Self::SolarizedLight => &SOLARIZED_LIGHT,
+            Self::PaperLight => &PAPER_LIGHT,
+        }
     }
 
     pub fn active() -> AppTheme {
@@ -133,21 +175,13 @@ pub struct OryxisColors;
 impl OryxisColors {
     // ── Theme-aware accessors ──
     pub fn t() -> &'static ThemeColors {
-        match AppTheme::active() {
-            AppTheme::OryxisDark => &ORYXIS_DARK,
-            AppTheme::OryxisLight => &ORYXIS_LIGHT,
-            AppTheme::Termius => &TERMIUS,
-            AppTheme::Darcula => &DARCULA,
-            AppTheme::IslandsDark => &ISLANDS_DARK,
-            AppTheme::Dracula => &DRACULA,
-            AppTheme::Monokai => &MONOKAI,
-            AppTheme::HackerGreen => &HACKER_GREEN,
-            AppTheme::Nord => &NORD,
-            AppTheme::NordLight => &NORD_LIGHT,
-            AppTheme::SolarizedDark => &SOLARIZED_DARK,
-            AppTheme::SolarizedLight => &SOLARIZED_LIGHT,
-            AppTheme::PaperLight => &PAPER_LIGHT,
+        let custom = ACTIVE_CUSTOM.load(Ordering::Relaxed);
+        if !custom.is_null() {
+            // SAFETY: `ACTIVE_CUSTOM` is only ever set to a `Box::leak`'d
+            // `ThemeColors` (never freed), so the reference is `'static`.
+            return unsafe { &*custom };
         }
+        AppTheme::active().colors_ref()
     }
 
     // Keep const aliases for backward compat (default theme)
@@ -192,6 +226,7 @@ impl OryxisColors {
 }
 
 /// Raw color data for a theme.
+#[derive(Debug, Clone, Copy)]
 pub struct ThemeColors {
     pub bg_primary: Color,
     pub bg_sidebar: Color,
@@ -219,6 +254,110 @@ pub struct ThemeColors {
     pub button_bg: Color,
     pub button_bg_hover: Color,
     pub button_text: Color,
+}
+
+/// The 21 editable UI color fields in a stable order: `(label, group)`.
+/// Custom UI themes store their colors as a `[String; 21]` indexed by this
+/// order, so there's no per-field enum to keep in sync.
+pub const UI_COLOR_FIELDS: [(&str, &str); 21] = [
+    ("Primary background", "Backgrounds"),
+    ("Sidebar", "Backgrounds"),
+    ("Surface", "Backgrounds"),
+    ("Hover", "Backgrounds"),
+    ("Selected", "Backgrounds"),
+    ("Primary text", "Text"),
+    ("Secondary text", "Text"),
+    ("Muted text", "Text"),
+    ("Accent", "Accent"),
+    ("Accent hover", "Accent"),
+    ("Success", "Semantic"),
+    ("Warning", "Semantic"),
+    ("Error", "Semantic"),
+    ("Terminal background", "Terminal"),
+    ("Terminal text", "Terminal"),
+    ("Terminal cursor", "Terminal"),
+    ("Border", "Borders"),
+    ("Focus border", "Borders"),
+    ("Button background", "Buttons"),
+    ("Button hover", "Buttons"),
+    ("Button text", "Buttons"),
+];
+
+fn color_to_hex(c: Color) -> String {
+    let q = |x: f32| (x.clamp(0.0, 1.0) * 255.0).round() as u8;
+    format!("#{:02x}{:02x}{:02x}", q(c.r), q(c.g), q(c.b))
+}
+
+fn hex_to_color(s: &str, fallback: Color) -> Color {
+    let h = s.trim().trim_start_matches('#');
+    if h.len() == 6
+        && let (Ok(r), Ok(g), Ok(b)) = (
+            u8::from_str_radix(&h[0..2], 16),
+            u8::from_str_radix(&h[2..4], 16),
+            u8::from_str_radix(&h[4..6], 16),
+        )
+    {
+        Color::from_rgb8(r, g, b)
+    } else {
+        fallback
+    }
+}
+
+/// `ThemeColors` -> the 21 hex strings (UI_COLOR_FIELDS order). Used to seed
+/// a new custom UI theme from a built-in.
+pub fn theme_colors_to_hex(c: &ThemeColors) -> [String; 21] {
+    [
+        color_to_hex(c.bg_primary),
+        color_to_hex(c.bg_sidebar),
+        color_to_hex(c.bg_surface),
+        color_to_hex(c.bg_hover),
+        color_to_hex(c.bg_selected),
+        color_to_hex(c.text_primary),
+        color_to_hex(c.text_secondary),
+        color_to_hex(c.text_muted),
+        color_to_hex(c.accent),
+        color_to_hex(c.accent_hover),
+        color_to_hex(c.success),
+        color_to_hex(c.warning),
+        color_to_hex(c.error),
+        color_to_hex(c.terminal_bg),
+        color_to_hex(c.terminal_fg),
+        color_to_hex(c.terminal_cursor),
+        color_to_hex(c.border),
+        color_to_hex(c.border_focus),
+        color_to_hex(c.button_bg),
+        color_to_hex(c.button_bg_hover),
+        color_to_hex(c.button_text),
+    ]
+}
+
+/// The 21 hex strings -> `ThemeColors` (invalid entries fall back to the
+/// corresponding Oryxis Dark color so a malformed theme still renders).
+pub fn theme_colors_from_hex(h: &[String; 21]) -> ThemeColors {
+    let d = &ORYXIS_DARK;
+    ThemeColors {
+        bg_primary: hex_to_color(&h[0], d.bg_primary),
+        bg_sidebar: hex_to_color(&h[1], d.bg_sidebar),
+        bg_surface: hex_to_color(&h[2], d.bg_surface),
+        bg_hover: hex_to_color(&h[3], d.bg_hover),
+        bg_selected: hex_to_color(&h[4], d.bg_selected),
+        text_primary: hex_to_color(&h[5], d.text_primary),
+        text_secondary: hex_to_color(&h[6], d.text_secondary),
+        text_muted: hex_to_color(&h[7], d.text_muted),
+        accent: hex_to_color(&h[8], d.accent),
+        accent_hover: hex_to_color(&h[9], d.accent_hover),
+        success: hex_to_color(&h[10], d.success),
+        warning: hex_to_color(&h[11], d.warning),
+        error: hex_to_color(&h[12], d.error),
+        terminal_bg: hex_to_color(&h[13], d.terminal_bg),
+        terminal_fg: hex_to_color(&h[14], d.terminal_fg),
+        terminal_cursor: hex_to_color(&h[15], d.terminal_cursor),
+        border: hex_to_color(&h[16], d.border),
+        border_focus: hex_to_color(&h[17], d.border_focus),
+        button_bg: hex_to_color(&h[18], d.button_bg),
+        button_bg_hover: hex_to_color(&h[19], d.button_bg_hover),
+        button_text: hex_to_color(&h[20], d.button_text),
+    }
 }
 
 pub const ORYXIS_DARK: ThemeColors = ThemeColors {

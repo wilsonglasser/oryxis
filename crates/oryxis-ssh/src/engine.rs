@@ -8,6 +8,7 @@ use tokio::process::Command as TokioCommand;
 use tokio::sync::mpsc;
 
 use oryxis_core::models::connection::{AuthMethod, Connection, PortForward, ProxyConfig, ProxyType};
+use oryxis_core::models::port_forward_rule::{ForwardKind, PortForwardRule};
 use thiserror::Error;
 
 // ---------------------------------------------------------------------------
@@ -82,6 +83,17 @@ pub(crate) struct ClientHandler {
     /// inbound forward channels are rejected even if the server tries
     /// to open one.
     agent_forwarding: bool,
+    /// When there is no UI ask channel (e.g. a port forward auto-started
+    /// at boot, before any terminal exists), an unknown host key is
+    /// *rejected* rather than blindly TOFU-accepted. Lets a backgrounded
+    /// forward fail to off instead of silently trusting a new key.
+    strict_host_key: bool,
+    /// For remote (`-R`) forwards only: where to hand off inbound
+    /// `forwarded-tcpip` channels the server opens. The drain task in
+    /// `connect_forward` bridges each one to the rule's local target. When
+    /// `None`, the handler drops such channels (we never asked for them).
+    forwarded_channel_sink:
+        Option<tokio::sync::mpsc::UnboundedSender<russh::Channel<russh::client::Msg>>>,
 }
 
 /// Bridge an inbound agent-forward channel to the local ssh-agent so
@@ -110,6 +122,25 @@ async fn bridge_agent_channel(
     let mut stream = channel.into_stream();
     let _ = tokio::io::copy_bidirectional(&mut agent, &mut stream).await?;
     Ok(())
+}
+
+impl ClientHandler {
+    /// Test-only constructor: a handler that trusts any server key (no
+    /// callback, non-strict) so the in-process harness in `sftp_harness`
+    /// can build a `Handle<ClientHandler>` over a duplex stream. Fields
+    /// are private to this module, so the harness can't build one itself.
+    #[cfg(test)]
+    pub(crate) fn test_accept_all() -> Self {
+        ClientHandler {
+            hostname: "harness".into(),
+            port: 22,
+            host_key_check: None,
+            host_key_ask_tx: None,
+            agent_forwarding: false,
+            strict_host_key: false,
+            forwarded_channel_sink: None,
+        }
+    }
 }
 
 impl client::Handler for ClientHandler {
@@ -147,6 +178,10 @@ impl client::Handler for ClientHandler {
                         return Ok(false);
                     }
                     Ok(resp_rx.await.unwrap_or(false))
+                } else if self.strict_host_key {
+                    // No UI channel and strict: reject both changed and
+                    // unknown so a backgrounded forward never TOFU-trusts.
+                    Ok(false)
                 } else {
                     // No UI channel, reject changed, accept unknown (legacy fallback)
                     Ok(matches!(status, HostKeyStatus::Unknown))
@@ -176,6 +211,35 @@ impl client::Handler for ClientHandler {
                 tracing::warn!("agent-forward bridge ended: {e}");
             }
         });
+        Ok(())
+    }
+
+    async fn server_channel_open_forwarded_tcpip(
+        &mut self,
+        channel: russh::Channel<russh::client::Msg>,
+        connected_address: &str,
+        connected_port: u32,
+        _originator_address: &str,
+        _originator_port: u32,
+        _session: &mut client::Session,
+    ) -> Result<(), Self::Error> {
+        // Inbound channel for a remote (`-R`) forward. Hand it to the drain
+        // task that bridges to the local target; if we have no sink, we
+        // never requested a remote forward, so drop it.
+        match &self.forwarded_channel_sink {
+            Some(sink) => {
+                if sink.send(channel).is_err() {
+                    tracing::warn!("forwarded-tcpip drain gone, dropping channel");
+                }
+            }
+            None => {
+                tracing::warn!(
+                    "rejecting unsolicited forwarded-tcpip channel for {}:{}",
+                    connected_address,
+                    connected_port
+                );
+            }
+        }
         Ok(())
     }
 }
@@ -420,6 +484,359 @@ impl SshSession {
 }
 
 // ---------------------------------------------------------------------------
+// Port forward session (no PTY)
+// ---------------------------------------------------------------------------
+
+/// A live port forward held open by a dedicated SSH connection, with no PTY
+/// or shell. Created by `SshEngine::connect_forward` and kept alive by the
+/// app's runtime registry until the rule is toggled off.
+///
+/// Cancellation is explicit, never "drop the JoinHandle" (which would detach
+/// the accept loop and leave the listener bound). The `cancel` watch channel
+/// is selected on by the accept loop and every in-flight bridge; dropping the
+/// `ForwardSession` drops the sender, which also fires cancellation, so
+/// removing it from the registry tears the tunnel down cleanly.
+pub struct ForwardSession {
+    handle: SharedHandle,
+    cancel_tx: tokio::sync::watch::Sender<bool>,
+    _tasks: Vec<tokio::task::JoinHandle<()>>,
+    /// For `-R` only: the server-side bind that must be released with
+    /// `cancel_tcpip_forward` on stop. `None` for `-L` / `-D`.
+    remote_bind: Option<(String, u16)>,
+}
+
+impl ForwardSession {
+    /// Whether the underlying SSH connection is still up. Uses `try_lock` so
+    /// the liveness poll never blocks behind an in-flight bridge (a busy lock
+    /// means the connection is being used, i.e. alive).
+    pub fn is_alive(&self) -> bool {
+        match self.handle.try_lock() {
+            Ok(h) => !h.is_closed(),
+            Err(_) => true,
+        }
+    }
+
+    /// Stop the forward: signal cancellation to all tasks and, for `-R`,
+    /// ask the server to release its listener. Idempotent.
+    pub async fn cancel(&self) {
+        let _ = self.cancel_tx.send(true);
+        if let Some((host, port)) = &self.remote_bind {
+            let handle = self.handle.lock().await;
+            let _ = handle.cancel_tcpip_forward(host.clone(), *port as u32).await;
+        }
+    }
+}
+
+impl Drop for ForwardSession {
+    fn drop(&mut self) {
+        // Best-effort: fire cancellation so the accept loop and bridges stop
+        // even if `cancel()` was never awaited. The `-R` server-side release
+        // needs an await, so callers that care should `cancel().await` first.
+        let _ = self.cancel_tx.send(true);
+    }
+}
+
+impl std::fmt::Debug for ForwardSession {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ForwardSession")
+            .field("alive", &self.is_alive())
+            .finish()
+    }
+}
+
+/// Bind a TCP listener for a forward, honouring the rule's `listen_host`
+/// (e.g. `0.0.0.0` to expose a `-D`/`-L` listener on the LAN).
+async fn bind_forward_listener(
+    listen_host: &str,
+    listen_port: u16,
+) -> Result<tokio::net::TcpListener, SshError> {
+    tokio::net::TcpListener::bind((listen_host, listen_port))
+        .await
+        .map_err(|e| SshError::Channel(format!(
+            "Failed to bind {}:{}: {}", listen_host, listen_port, e
+        )))
+}
+
+/// Spawn a cancel-aware accept loop for a `-L` forward. Each accepted
+/// connection opens a `direct-tcpip` channel to `target_host:target_port`
+/// and bridges bytes until either side closes or cancellation fires.
+fn spawn_local_forward_task(
+    listener: tokio::net::TcpListener,
+    handle: SharedHandle,
+    target_host: String,
+    target_port: u16,
+    listen_port: u16,
+    cancel: tokio::sync::watch::Receiver<bool>,
+) -> tokio::task::JoinHandle<()> {
+    tokio::spawn(async move {
+        let mut cancel = cancel;
+        loop {
+            let (stream, addr) = tokio::select! {
+                _ = cancel.changed() => break,
+                res = listener.accept() => match res {
+                    Ok(v) => v,
+                    Err(e) => {
+                        tracing::error!("forward accept error on {}: {}", listen_port, e);
+                        break;
+                    }
+                },
+            };
+            tracing::debug!("forward {} accepted from {}", listen_port, addr);
+
+            let shared = Arc::clone(&handle);
+            let target_host = target_host.clone();
+            let child_cancel = cancel.clone();
+            tokio::spawn(async move {
+                bridge_direct_tcpip(
+                    shared, stream, target_host, target_port, listen_port, child_cancel,
+                )
+                .await;
+            });
+        }
+        tracing::debug!("forward accept loop on {} stopped", listen_port);
+    })
+}
+
+/// Open a `direct-tcpip` channel to `target_host:target_port` and pump bytes
+/// between it and `stream`, stopping on EOF, error, or cancellation.
+async fn bridge_direct_tcpip(
+    shared: SharedHandle,
+    stream: tokio::net::TcpStream,
+    target_host: String,
+    target_port: u16,
+    src_port: u16,
+    mut cancel: tokio::sync::watch::Receiver<bool>,
+) {
+    let channel: russh::Channel<russh::client::Msg> = {
+        let handle = shared.lock().await;
+        match handle
+            .channel_open_direct_tcpip(
+                target_host.clone(),
+                target_port as u32,
+                "127.0.0.1",
+                src_port as u32,
+            )
+            .await
+        {
+            Ok(ch) => ch,
+            Err(e) => {
+                tracing::error!("direct-tcpip to {}:{} failed: {}", target_host, target_port, e);
+                return;
+            }
+        }
+    };
+
+    let channel_stream = channel.into_stream();
+    let (mut ch_reader, mut ch_writer) = tokio::io::split(channel_stream);
+    let (mut tcp_reader, mut tcp_writer) = tokio::io::split(stream);
+
+    let c2t = tokio::io::copy(&mut ch_reader, &mut tcp_writer);
+    let t2c = tokio::io::copy(&mut tcp_reader, &mut ch_writer);
+
+    tokio::select! {
+        _ = cancel.changed() => {}
+        r = c2t => { if let Err(e) = r { tracing::debug!("forward channel->tcp: {}", e); } }
+        r = t2c => { if let Err(e) = r { tracing::debug!("forward tcp->channel: {}", e); } }
+    }
+}
+
+/// Bridge an inbound `forwarded-tcpip` channel (from a `-R` forward) to a
+/// local TCP target, pumping bytes until EOF, error, or cancellation. The
+/// target here is reached from *this* client, the opposite direction of a
+/// `-L` forward.
+async fn bridge_channel_to_target(
+    channel: russh::Channel<russh::client::Msg>,
+    target_host: String,
+    target_port: u16,
+    mut cancel: tokio::sync::watch::Receiver<bool>,
+) {
+    let stream = match tokio::net::TcpStream::connect((target_host.as_str(), target_port)).await {
+        Ok(s) => s,
+        Err(e) => {
+            tracing::error!(
+                "remote forward target {}:{} unreachable: {}",
+                target_host, target_port, e
+            );
+            return;
+        }
+    };
+
+    let channel_stream = channel.into_stream();
+    let (mut ch_reader, mut ch_writer) = tokio::io::split(channel_stream);
+    let (mut tcp_reader, mut tcp_writer) = tokio::io::split(stream);
+
+    let c2t = tokio::io::copy(&mut ch_reader, &mut tcp_writer);
+    let t2c = tokio::io::copy(&mut tcp_reader, &mut ch_writer);
+
+    tokio::select! {
+        _ = cancel.changed() => {}
+        r = c2t => { if let Err(e) = r { tracing::debug!("remote forward channel->tcp: {}", e); } }
+        r = t2c => { if let Err(e) = r { tracing::debug!("remote forward tcp->channel: {}", e); } }
+    }
+}
+
+/// Spawn a cancel-aware accept loop for a `-D` dynamic forward. The local
+/// listener speaks SOCKS5; each accepted connection negotiates a CONNECT
+/// target and gets its own `direct-tcpip` channel through the SSH session.
+fn spawn_dynamic_forward_task(
+    listener: tokio::net::TcpListener,
+    handle: SharedHandle,
+    listen_port: u16,
+    cancel: tokio::sync::watch::Receiver<bool>,
+) -> tokio::task::JoinHandle<()> {
+    tokio::spawn(async move {
+        let mut cancel = cancel;
+        loop {
+            let (stream, addr) = tokio::select! {
+                _ = cancel.changed() => break,
+                res = listener.accept() => match res {
+                    Ok(v) => v,
+                    Err(e) => {
+                        tracing::error!("socks5 accept error on {}: {}", listen_port, e);
+                        break;
+                    }
+                },
+            };
+            tracing::debug!("socks5 {} accepted from {}", listen_port, addr);
+            let shared = Arc::clone(&handle);
+            let child_cancel = cancel.clone();
+            tokio::spawn(async move {
+                bridge_socks5(shared, stream, listen_port, child_cancel).await;
+            });
+        }
+        tracing::debug!("socks5 accept loop on {} stopped", listen_port);
+    })
+}
+
+/// Write a SOCKS5 reply with the given reply code and a zeroed
+/// IPv4 bind address (the client ignores it for CONNECT).
+async fn socks5_reply(
+    stream: &mut tokio::net::TcpStream,
+    rep: u8,
+) -> std::io::Result<()> {
+    use tokio::io::AsyncWriteExt;
+    stream
+        .write_all(&[0x05, rep, 0x00, 0x01, 0, 0, 0, 0, 0, 0])
+        .await
+}
+
+/// Run the SOCKS5 server handshake (no-auth, CONNECT only) and return the
+/// requested destination. Sends the appropriate failure reply itself for
+/// the cases it rejects.
+async fn socks5_negotiate(
+    stream: &mut tokio::net::TcpStream,
+) -> std::io::Result<(String, u16)> {
+    use std::io::{Error, ErrorKind};
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    // Greeting: VER, NMETHODS, METHODS[NMETHODS].
+    let mut head = [0u8; 2];
+    stream.read_exact(&mut head).await?;
+    if head[0] != 0x05 {
+        return Err(Error::new(ErrorKind::InvalidData, "not a SOCKS5 client"));
+    }
+    let mut methods = vec![0u8; head[1] as usize];
+    stream.read_exact(&mut methods).await?;
+    // We only support "no authentication required" (0x00).
+    if !methods.contains(&0x00) {
+        stream.write_all(&[0x05, 0xFF]).await?;
+        return Err(Error::other("no acceptable SOCKS5 method"));
+    }
+    stream.write_all(&[0x05, 0x00]).await?;
+
+    // Request: VER CMD RSV ATYP DST.ADDR DST.PORT.
+    let mut req = [0u8; 4];
+    stream.read_exact(&mut req).await?;
+    if req[0] != 0x05 {
+        return Err(Error::new(ErrorKind::InvalidData, "bad SOCKS5 request"));
+    }
+    if req[1] != 0x01 {
+        // Only CONNECT (0x01); reject BIND / UDP ASSOCIATE.
+        socks5_reply(stream, 0x07).await?;
+        return Err(Error::other("SOCKS5 command not supported"));
+    }
+    let host = match req[3] {
+        0x01 => {
+            let mut a = [0u8; 4];
+            stream.read_exact(&mut a).await?;
+            std::net::Ipv4Addr::from(a).to_string()
+        }
+        0x03 => {
+            let mut len = [0u8; 1];
+            stream.read_exact(&mut len).await?;
+            let mut d = vec![0u8; len[0] as usize];
+            stream.read_exact(&mut d).await?;
+            String::from_utf8_lossy(&d).into_owned()
+        }
+        0x04 => {
+            let mut a = [0u8; 16];
+            stream.read_exact(&mut a).await?;
+            std::net::Ipv6Addr::from(a).to_string()
+        }
+        _ => {
+            socks5_reply(stream, 0x08).await?;
+            return Err(Error::other("SOCKS5 address type not supported"));
+        }
+    };
+    let mut port = [0u8; 2];
+    stream.read_exact(&mut port).await?;
+    Ok((host, u16::from_be_bytes(port)))
+}
+
+/// Handle one SOCKS5 client: negotiate the target, open a `direct-tcpip`
+/// channel to it, reply, then relay bytes until EOF / error / cancellation.
+async fn bridge_socks5(
+    shared: SharedHandle,
+    mut stream: tokio::net::TcpStream,
+    src_port: u16,
+    mut cancel: tokio::sync::watch::Receiver<bool>,
+) {
+    let (dest_host, dest_port) = match socks5_negotiate(&mut stream).await {
+        Ok(d) => d,
+        Err(e) => {
+            tracing::debug!("socks5 negotiate failed: {}", e);
+            return;
+        }
+    };
+
+    let channel = {
+        let handle = shared.lock().await;
+        handle
+            .channel_open_direct_tcpip(
+                dest_host.clone(),
+                dest_port as u32,
+                "127.0.0.1",
+                src_port as u32,
+            )
+            .await
+    };
+    let channel = match channel {
+        Ok(c) => c,
+        Err(e) => {
+            tracing::error!("socks5 direct-tcpip to {}:{} failed: {}", dest_host, dest_port, e);
+            // 0x05 = connection refused / general failure.
+            let _ = socks5_reply(&mut stream, 0x05).await;
+            return;
+        }
+    };
+    if socks5_reply(&mut stream, 0x00).await.is_err() {
+        return;
+    }
+
+    let channel_stream = channel.into_stream();
+    let (mut ch_reader, mut ch_writer) = tokio::io::split(channel_stream);
+    let (mut tcp_reader, mut tcp_writer) = tokio::io::split(stream);
+    let c2t = tokio::io::copy(&mut ch_reader, &mut tcp_writer);
+    let t2c = tokio::io::copy(&mut tcp_reader, &mut ch_writer);
+
+    tokio::select! {
+        _ = cancel.changed() => {}
+        r = c2t => { if let Err(e) = r { tracing::debug!("socks5 channel->tcp: {}", e); } }
+        r = t2c => { if let Err(e) = r { tracing::debug!("socks5 tcp->channel: {}", e); } }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // SSH Engine
 // ---------------------------------------------------------------------------
 
@@ -464,6 +881,15 @@ pub struct SshEngine {
     /// other charset is decoded to UTF-8 on the way in and encoded back on
     /// the way out.
     encoding: Option<String>,
+    /// Reject unknown/changed host keys when no UI ask channel is set
+    /// (used by boot auto-started port forwards). See
+    /// `ClientHandler::strict_host_key`.
+    strict_host_key: bool,
+    /// Set only for remote (`-R`) forwards. Propagated to the handler so
+    /// inbound `forwarded-tcpip` channels reach the drain task. See
+    /// `ClientHandler::forwarded_channel_sink`.
+    forwarded_channel_sink:
+        Option<tokio::sync::mpsc::UnboundedSender<russh::Channel<russh::client::Msg>>>,
 }
 
 impl Default for SshEngine {
@@ -484,7 +910,17 @@ impl SshEngine {
             agent_forwarding: false,
             env_vars: Vec::new(),
             encoding: None,
+            strict_host_key: false,
+            forwarded_channel_sink: None,
         }
+    }
+
+    /// Reject unknown/changed host keys instead of TOFU-accepting when no
+    /// UI ask channel is set. Used for port forwards auto-started at boot,
+    /// where there is no terminal to surface a host-key prompt.
+    pub fn with_strict_host_key(mut self, enabled: bool) -> Self {
+        self.strict_host_key = enabled;
+        self
     }
 
     /// Set per-host environment variables to send (via `set_env`) before
@@ -563,6 +999,8 @@ impl SshEngine {
             host_key_check: self.host_key_check.clone(),
             host_key_ask_tx: self.host_key_ask_tx.clone(),
             agent_forwarding: self.agent_forwarding,
+            strict_host_key: self.strict_host_key,
+            forwarded_channel_sink: self.forwarded_channel_sink.clone(),
         }
     }
 
@@ -728,6 +1166,132 @@ impl SshEngine {
             session.sftp_open_timeout = session_timeout;
             (session, rx)
         })
+    }
+
+    /// Open a standalone port forward (no PTY). Runs the same transport +
+    /// auth ladder as a terminal connect, then binds the forward listener
+    /// instead of requesting a shell. The returned `ForwardSession` holds
+    /// the connection open until cancelled.
+    ///
+    /// Consumes `self` because a remote (`-R`) forward must install the
+    /// inbound-channel sink on the handler *before* the transport (and thus
+    /// the handler) is created.
+    pub async fn connect_forward(
+        mut self,
+        connection: &Connection,
+        password: Option<&str>,
+        private_key_pem: Option<&str>,
+        rule: &PortForwardRule,
+        resolver: Option<&ConnectionResolver>,
+    ) -> Result<ForwardSession, SshError> {
+        let (cancel_tx, cancel_rx) = tokio::sync::watch::channel(false);
+
+        // Remote forwards need the handler to route inbound `forwarded-tcpip`
+        // channels, so wire the sink before `establish_transport` builds it.
+        let remote_rx = if rule.kind == ForwardKind::Remote {
+            let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+            self.forwarded_channel_sink = Some(tx);
+            Some(rx)
+        } else {
+            None
+        };
+
+        let mut handle = self.establish_transport(connection, resolver).await?;
+        self.do_authenticate(&mut handle, connection, password, private_key_pem)
+            .await?;
+        let shared = Arc::new(tokio::sync::Mutex::new(handle.0));
+
+        match rule.kind {
+            ForwardKind::Local => {
+                let listener =
+                    bind_forward_listener(&rule.listen_host, rule.listen_port).await?;
+                let task = spawn_local_forward_task(
+                    listener,
+                    Arc::clone(&shared),
+                    rule.target_host.clone(),
+                    rule.target_port,
+                    rule.listen_port,
+                    cancel_rx,
+                );
+                tracing::info!(
+                    "forward(-L) {}:{} -> {}:{} up",
+                    rule.listen_host, rule.listen_port, rule.target_host, rule.target_port
+                );
+                Ok(ForwardSession {
+                    handle: shared,
+                    cancel_tx,
+                    _tasks: vec![task],
+                    remote_bind: None,
+                })
+            }
+            ForwardKind::Remote => {
+                // Ask the server to listen on `listen_host:listen_port` and
+                // tunnel inbound connections back to us. A denied request
+                // (e.g. `AllowTcpForwarding no`) fails the toggle.
+                {
+                    let h = shared.lock().await;
+                    h.tcpip_forward(rule.listen_host.clone(), rule.listen_port as u32)
+                        .await
+                        .map_err(|e| {
+                            SshError::Channel(format!("remote forward request denied: {e}"))
+                        })?;
+                }
+                let mut rx = remote_rx.expect("remote sink set above for -R");
+                let target_host = rule.target_host.clone();
+                let target_port = rule.target_port;
+                let mut cancel = cancel_rx;
+                let task = tokio::spawn(async move {
+                    loop {
+                        tokio::select! {
+                            _ = cancel.changed() => break,
+                            ch = rx.recv() => match ch {
+                                Some(channel) => {
+                                    let th = target_host.clone();
+                                    let child_cancel = cancel.clone();
+                                    tokio::spawn(async move {
+                                        bridge_channel_to_target(
+                                            channel, th, target_port, child_cancel,
+                                        )
+                                        .await;
+                                    });
+                                }
+                                None => break,
+                            },
+                        }
+                    }
+                });
+                tracing::info!(
+                    "forward(-R) server {}:{} -> local {}:{} up",
+                    rule.listen_host, rule.listen_port, rule.target_host, rule.target_port
+                );
+                Ok(ForwardSession {
+                    handle: shared,
+                    cancel_tx,
+                    _tasks: vec![task],
+                    remote_bind: Some((rule.listen_host.clone(), rule.listen_port)),
+                })
+            }
+            ForwardKind::Dynamic => {
+                let listener =
+                    bind_forward_listener(&rule.listen_host, rule.listen_port).await?;
+                let task = spawn_dynamic_forward_task(
+                    listener,
+                    Arc::clone(&shared),
+                    rule.listen_port,
+                    cancel_rx,
+                );
+                tracing::info!(
+                    "forward(-D) SOCKS5 {}:{} up",
+                    rule.listen_host, rule.listen_port
+                );
+                Ok(ForwardSession {
+                    handle: shared,
+                    cancel_tx,
+                    _tasks: vec![task],
+                    remote_bind: None,
+                })
+            }
+        }
     }
 
     // -----------------------------------------------------------------------

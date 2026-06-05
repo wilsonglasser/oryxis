@@ -1,6 +1,6 @@
 //! Plugins panel, manage the downloaded cloud-provider plugins.
 //!
-//! Cloud providers (AWS today, gcp / azure / k8s later) run as
+//! Cloud providers (AWS + Kubernetes today, gcp / azure later) run as
 //! subprocess plugins downloaded on demand. This screen is the
 //! IDE-style management surface: per-provider status, install /
 //! update / uninstall, and the auto-update toggles. The first-use

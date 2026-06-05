@@ -88,6 +88,14 @@ pub(crate) fn build_manifest(
             is_deleted: false,
         });
     }
+    for r in v.list_port_forward_rules()? {
+        entries.push(ManifestEntry {
+            entity_type: EntityType::PortForwardRule,
+            entity_id: r.id,
+            updated_at: r.updated_at,
+            is_deleted: false,
+        });
+    }
     for kh in v.list_known_hosts()? {
         entries.push(ManifestEntry {
             entity_type: EntityType::KnownHost,
@@ -272,6 +280,12 @@ pub(crate) fn collect_records(
                     .find(|s| s.id == delta.entity_id)
                     .and_then(|s| encode!(s, "Snippet"))
             }
+            EntityType::PortForwardRule => {
+                let rules = v.list_port_forward_rules()?;
+                rules.iter()
+                    .find(|r| r.id == delta.entity_id)
+                    .and_then(|r| encode!(r, "PortForwardRule"))
+            }
             EntityType::KnownHost => {
                 let hosts = v.list_known_hosts()?;
                 hosts.iter()
@@ -349,6 +363,9 @@ pub(crate) fn apply_records(
                 EntityType::Snippet => v.delete_snippet(&record.entity_id),
                 EntityType::KnownHost => v.delete_known_host(&record.entity_id),
                 EntityType::CloudProfile => v.delete_cloud_profile(&record.entity_id),
+                EntityType::PortForwardRule => {
+                    v.delete_port_forward_rule(&record.entity_id)
+                }
             };
             if let Err(e) = result {
                 tracing::warn!(
@@ -475,6 +492,15 @@ pub(crate) fn apply_records(
                     Ok(scp) => log_save!(v.save_cloud_profile(&scp.profile, scp.secret.as_deref())),
                     Err(e) => tracing::warn!(
                         "sync: bad CloudProfile payload for {}: {e}",
+                        record.entity_id
+                    ),
+                }
+            }
+            EntityType::PortForwardRule => {
+                match serde_json::from_slice::<oryxis_core::models::PortForwardRule>(&payload) {
+                    Ok(rule) => log_save!(v.save_port_forward_rule(&rule)),
+                    Err(e) => tracing::warn!(
+                        "sync: bad PortForwardRule payload for {}: {e}",
                         record.entity_id
                     ),
                 }

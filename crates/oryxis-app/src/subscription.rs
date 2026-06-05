@@ -53,6 +53,12 @@ impl Oryxis {
                 iced::event::Event::Window(iced::window::Event::Resized(size)) => {
                     Some(Message::WindowResized(size))
                 }
+                iced::event::Event::Window(iced::window::Event::Focused) => {
+                    Some(Message::WindowFocusChanged(true))
+                }
+                iced::event::Event::Window(iced::window::Event::Unfocused) => {
+                    Some(Message::WindowFocusChanged(false))
+                }
                 // OS-level file drag-and-drop. iced fires one event per
                 // file, so multi-file drops produce a sequence of
                 // `FileDropped` messages, they're just queued through
@@ -116,6 +122,17 @@ impl Oryxis {
                 .map(|_| Message::TrayPoll),
         );
 
+        // Port forward liveness sweep. Only mounts while at least one
+        // forward is active; a 5 s tick is enough to flip a row's toggle
+        // back to off shortly after its connection drops, without polling
+        // when nothing is forwarding.
+        if !self.active_forwards.is_empty() {
+            subs.push(
+                iced::time::every(std::time::Duration::from_secs(5))
+                    .map(|_| Message::PortForwardLivenessTick),
+            );
+        }
+
         // Cloud auto-refresh ticker. Only mounts the subscription when
         // the user enabled the toggle in Settings; otherwise zero
         // background API calls. Interval reads the persisted setting
@@ -131,6 +148,24 @@ impl Oryxis {
             subs.push(
                 iced::time::every(std::time::Duration::from_secs(minutes * 60))
                     .map(|_| Message::CloudAutoRefreshTick),
+            );
+        }
+        // Cloud SSM/ECS idle keepalive. The SSM websocket drops the
+        // session after ~20 min of inactivity, which bites when the user
+        // alt-tabs away and comes back much later. We only mount the
+        // ticker while the window is unfocused (an in-focus session has
+        // the user's own input resetting the idle timer, and resizing a
+        // visible terminal would be jarring) and only when at least one
+        // SSM/ECS tab is open. 4 min comfortably beats the 20 min
+        // default even allowing for a missed tick; users who lowered the
+        // SSM idle timeout below ~5 min would need the server-side
+        // setting raised instead.
+        if !self.window_focused
+            && self.tabs.iter().any(|t| t.ssm_keepalive)
+        {
+            subs.push(
+                iced::time::every(std::time::Duration::from_secs(240))
+                    .map(|_| Message::SsmKeepaliveTick),
             );
         }
         Subscription::batch(subs)

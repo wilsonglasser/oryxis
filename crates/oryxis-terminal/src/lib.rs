@@ -6,5 +6,5 @@ pub mod mouse;
 
 pub use backend::TerminalBackend;
 pub use colors::{TerminalPalette, TerminalTheme};
-pub use widget::TerminalView;
+pub use widget::{wrap_paste, TerminalView};
 pub use pty::PtyHandle;

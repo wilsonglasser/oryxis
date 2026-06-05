@@ -56,10 +56,8 @@ impl Oryxis {
             left: 20.0,
         });
 
-        // ── Provider picker ── AWS-only in v0.6. Kubernetes ships
-        // in v0.7 as its own crate; keeping it out of the picker
-        // until then avoids surfacing dead options.
-        let provider_options = vec![CloudProviderChoice::Aws];
+        // ── Provider picker ── AWS + Kubernetes.
+        let provider_options = vec![CloudProviderChoice::Aws, CloudProviderChoice::K8s];
         let provider_pick = pick_list(
             Some(self.cloud_form_provider),
             provider_options,
@@ -88,12 +86,7 @@ impl Oryxis {
                 CloudAuthChoice::Profile => t("cloud_auth_profile").to_string(),
                 CloudAuthChoice::AccessKey => t("cloud_auth_access_key").to_string(),
                 CloudAuthChoice::Sso => t("cloud_auth_sso").to_string(),
-                // K8s lives in v0.7, kubeconfig path isn't wired yet.
-                CloudAuthChoice::Kubeconfig => format!(
-                    "{} ({})",
-                    t("cloud_auth_kubeconfig"),
-                    t("cloud_coming_soon")
-                ),
+                CloudAuthChoice::Kubeconfig => t("cloud_auth_kubeconfig").to_string(),
             },
         )
         .on_select(Message::CloudFormAuthKindChanged)
@@ -243,8 +236,32 @@ impl Oryxis {
             ]
             .into(),
             CloudAuthChoice::Kubeconfig => column![
-                text(t("cloud_coming_soon"))
+                text(t("cloud_k8s_kubeconfig_path"))
                     .size(12)
+                    .color(OryxisColors::t().text_secondary),
+                Space::new().height(4),
+                text_input(t("cloud_k8s_kubeconfig_ph"), &self.cloud_form_kubeconfig_path)
+                    .on_input(Message::CloudFormKubeconfigPathChanged)
+                    .padding(10)
+                    .style(crate::widgets::rounded_input_style)
+                    .align_x(dir_align_x()),
+                Space::new().height(4),
+                text(t("cloud_k8s_kubeconfig_hint"))
+                    .size(10)
+                    .color(OryxisColors::t().text_muted),
+                Space::new().height(14),
+                text(t("cloud_k8s_context"))
+                    .size(12)
+                    .color(OryxisColors::t().text_secondary),
+                Space::new().height(4),
+                text_input(t("cloud_k8s_context_ph"), &self.cloud_form_context)
+                    .on_input(Message::CloudFormContextChanged)
+                    .padding(10)
+                    .style(crate::widgets::rounded_input_style)
+                    .align_x(dir_align_x()),
+                Space::new().height(4),
+                text(t("cloud_k8s_context_hint"))
+                    .size(10)
                     .color(OryxisColors::t().text_muted),
             ]
             .into(),
@@ -272,14 +289,10 @@ impl Oryxis {
         // Test Credentials shells out to the provider plugin; if it's
         // not installed, the call would fail with a cryptic
         // `BinaryNotFound` error, so block it at the button level and
-        // surface the install banner above. K8s stays disabled until
-        // its plugin lands.
+        // surface the install banner above.
         let plugin_missing = !self.is_plugin_ready(self.cloud_form_provider);
-        let test_button_disabled = matches!(
-            self.cloud_form_test_state,
-            CloudTestState::Running
-        ) || matches!(self.cloud_form_auth_kind, CloudAuthChoice::Kubeconfig)
-            || plugin_missing;
+        let test_button_disabled =
+            matches!(self.cloud_form_test_state, CloudTestState::Running) || plugin_missing;
 
         let test_btn = {
             let mut btn = button(

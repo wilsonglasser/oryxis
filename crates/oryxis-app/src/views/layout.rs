@@ -214,7 +214,11 @@ impl Oryxis {
         let in_vault_area = self.active_tab.is_none()
             && matches!(
                 self.active_view,
-                View::Dashboard | View::Keys | View::Snippets | View::History
+                View::Dashboard
+                    | View::Keys
+                    | View::Snippets
+                    | View::PortForwarding
+                    | View::History
             );
         let sub_nav: Element<'_, Message> = if workspace_mode && in_vault_area {
             self.view_vault_sub_nav()
@@ -921,6 +925,35 @@ impl Oryxis {
             );
         }
 
+        // Custom terminal theme editor (from the "+" card / edit affordance
+        // in Settings -> Terminal).
+        if self.theme_editor.is_some() {
+            let editor = self.view_theme_editor_modal();
+            return wrap_with_resize(
+                Stack::new()
+                    .push(base)
+                    .push(editor)
+                    .width(Length::Fill)
+                    .height(Length::Fill)
+                    .into(),
+                resize_overlay,
+            );
+        }
+
+        // Import-a-scheme modal (Settings -> Terminal "Import" card).
+        if self.show_theme_import {
+            let importer = self.view_theme_import_modal();
+            return wrap_with_resize(
+                Stack::new()
+                    .push(base)
+                    .push(importer)
+                    .width(Length::Fill)
+                    .height(Length::Fill)
+                    .into(),
+                resize_overlay,
+            );
+        }
+
         // Note: the update modal is rendered at the top-level `view()`
         // dispatcher (see `Oryxis::view`) so it overlays the lock screen
         // too. Don't re-render it here.
@@ -1191,6 +1224,9 @@ impl Oryxis {
     fn overlay_menu_width(&self, overlay: &OverlayState) -> f32 {
         match &overlay.content {
             OverlayContent::SortMenu(_) => 220.0,
+            // Wide enough for "Split side by side" / "Duplicate in New
+            // Window" / "Close Other Tabs" to sit on one line.
+            OverlayContent::SplitMenu | OverlayContent::TabActions(_) => 210.0,
             OverlayContent::CloudDiscoverGroupPicker => {
                 let b = self.cloud_discover_default_group_combo_bounds.get();
                 if b.width > 0.0 { b.width } else { 308.0 }
@@ -1345,14 +1381,43 @@ impl Oryxis {
             }
             OverlayContent::TabActions(idx) => {
                 let idx = *idx;
-                column![
+                let mut items = column![
+                    context_menu_item(iced_fonts::lucide::columns_two(), crate::i18n::t("split_side_by_side"), Message::SplitTabPane(idx, iced::widget::pane_grid::Axis::Vertical), OryxisColors::t().text_secondary),
+                    context_menu_item(iced_fonts::lucide::rows_two(), crate::i18n::t("split_stacked"), Message::SplitTabPane(idx, iced::widget::pane_grid::Axis::Horizontal), OryxisColors::t().text_secondary),
                     context_menu_item(iced_fonts::lucide::copy(), crate::i18n::t("duplicate_tab"), Message::DuplicateTab(idx), OryxisColors::t().text_secondary),
-                    context_menu_item(iced_fonts::lucide::external_link(), crate::i18n::t("duplicate_new_window"), Message::DuplicateInNewWindow(idx), OryxisColors::t().text_secondary),
-                    context_menu_item(iced_fonts::lucide::rotate_cw(), crate::i18n::t("reconnect"), Message::ReconnectTab(idx), OryxisColors::t().accent),
-                    context_menu_item(iced_fonts::lucide::x(), crate::i18n::t("close_tab"), Message::CloseTab(idx), OryxisColors::t().text_secondary),
-                    context_menu_item(iced_fonts::lucide::x(), crate::i18n::t("close_other_tabs"), Message::CloseOtherTabs(idx), OryxisColors::t().text_secondary),
-                    context_menu_item(iced_fonts::lucide::x(), crate::i18n::t("close_all_tabs"), Message::CloseAllTabs, OryxisColors::t().error),
-                ].into()
+                ];
+                // "Duplicate in New Window" spawns a fresh process that
+                // can only re-open hosts saved in the vault. ECS Exec /
+                // kubectl tabs are ephemeral dynamic-group sessions (no
+                // saved connection, no uuid to hand the child), flagged
+                // by a `relaunch` message, so hide the item there rather
+                // than open an empty window.
+                let new_window_ok = self
+                    .tabs
+                    .get(idx)
+                    .map(|t| t.relaunch.is_none())
+                    .unwrap_or(true);
+                if new_window_ok {
+                    items = items.push(context_menu_item(iced_fonts::lucide::external_link(), crate::i18n::t("duplicate_new_window"), Message::DuplicateInNewWindow(idx), OryxisColors::t().text_secondary));
+                }
+                items = items.push(context_menu_item(iced_fonts::lucide::rotate_cw(), crate::i18n::t("reconnect"), Message::ReconnectTab(idx), OryxisColors::t().accent));
+                items = items.push(context_menu_item(iced_fonts::lucide::x(), crate::i18n::t("close_tab"), Message::CloseTab(idx), OryxisColors::t().text_secondary));
+                items = items.push(context_menu_item(iced_fonts::lucide::x(), crate::i18n::t("close_other_tabs"), Message::CloseOtherTabs(idx), OryxisColors::t().text_secondary));
+                items = items.push(context_menu_item(iced_fonts::lucide::x(), crate::i18n::t("close_all_tabs"), Message::CloseAllTabs, OryxisColors::t().error));
+                items.into()
+            }
+            OverlayContent::SplitMenu => {
+                let items = column![
+                    context_menu_item(iced_fonts::lucide::plus(), crate::i18n::t("new_tab"), Message::ShowNewTabPicker, OryxisColors::t().text_secondary),
+                    context_menu_item(iced_fonts::lucide::columns_two(), crate::i18n::t("split_side_by_side"), Message::SplitPane(iced::widget::pane_grid::Axis::Vertical), OryxisColors::t().text_secondary),
+                    context_menu_item(iced_fonts::lucide::rows_two(), crate::i18n::t("split_stacked"), Message::SplitPane(iced::widget::pane_grid::Axis::Horizontal), OryxisColors::t().text_secondary),
+                ];
+                // Keep the popover open while the cursor is over it (hover
+                // bridge from the `+` button into the menu).
+                MouseArea::new(items)
+                    .on_enter(Message::SplitMenuEnter)
+                    .on_exit(Message::SplitMenuLeave)
+                    .into()
             }
             OverlayContent::SortMenu(kind) => {
                 let kind = *kind;
@@ -1717,6 +1782,7 @@ impl Oryxis {
                 View::Dashboard => self.view_dashboard(),
                 View::Keys => self.view_keys(),
                 View::Snippets => self.view_snippets(),
+                View::PortForwarding => self.view_port_forwards(),
                 // Known Hosts is now a SettingsSection in v0.7; the
                 // View variant only survives so ChangeView aliases can
                 // redirect. If somebody still lands here, fall through
@@ -1786,6 +1852,7 @@ impl Oryxis {
             pill("hosts", View::Dashboard),
             pill("keychain", View::Keys),
             pill("snippets", View::Snippets),
+            pill("port_forwards", View::PortForwarding),
             pill("history", View::History),
         ])
         .spacing(4)
@@ -1812,6 +1879,11 @@ impl Oryxis {
                 self.snippet_search.as_str(),
                 Message::SnippetSearchChanged,
             )),
+            View::PortForwarding => Some((
+                "search_port_forwards",
+                self.port_forward_search.as_str(),
+                Message::PortForwardSearchChanged,
+            )),
             View::History => Some((
                 "search_history",
                 self.history_search.as_str(),
@@ -1827,6 +1899,7 @@ impl Oryxis {
                 View::Dashboard => "search-dashboard",
                 View::Keys => "search-keys",
                 View::Snippets => "search-snippets",
+                View::PortForwarding => "search-port-forwards",
                 View::History => "search-history",
                 _ => "search-vault-subnav",
             };
@@ -1981,6 +2054,7 @@ impl Oryxis {
             sftp_item,
             item("keychain", Message::ChangeView(View::Keys), None),
             item("snippets", Message::ChangeView(View::Snippets), None),
+            item("port_forwards", Message::ChangeView(View::PortForwarding), None),
             item("history", Message::ChangeView(View::History), None),
             item("settings", Message::ChangeView(View::Settings), hk_settings),
             sep,

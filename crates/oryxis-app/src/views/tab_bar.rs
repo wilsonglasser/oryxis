@@ -143,7 +143,10 @@ impl Oryxis {
         for (idx, tab) in self.tabs.iter().enumerate() {
             let is_active = active_idx == Some(idx);
             let is_hovered = self.hovered_tab == Some(idx);
-            let base_label = tab.label.trim_end_matches(" (disconnected)");
+            // A split tab shows the focused pane's label + icon; a single
+            // pane shows the tab's own label.
+            let display_label = tab.display_label();
+            let base_label = display_label.trim_end_matches(" (disconnected)");
             let detected_os = self
                 .connections
                 .iter()
@@ -166,7 +169,6 @@ impl Oryxis {
             // active-tab fill and the tab text with that color
             // (JetBrains-style "respiração"). Otherwise the active
             // tab keeps the global accent.
-            let base_label = tab.label.trim_end_matches(" (disconnected)");
             let host_accent: Option<Color> = self.connections.iter()
                 .find(|c| c.label == base_label)
                 // `custom_color` is what the icon picker writes (the
@@ -219,7 +221,8 @@ impl Oryxis {
             };
             tab_items.push(session_tab(
                 idx,
-                &tab.label,
+                display_label,
+                tab.pane_count(),
                 is_active,
                 is_hovered,
                 detected_os.as_deref(),
@@ -282,7 +285,7 @@ impl Oryxis {
         // is actually overflowing (scroll_mode), positioned BEFORE the
         // `+` so the natural reading order is "scroll-related controls,
         // then add a new tab, then window chrome".
-        let plus_btn = new_tab_btn();
+        let plus_btn = crate::widgets::bounds_reporter(new_tab_btn(), self.plus_btn_bounds.clone());
         let dots_btn: Option<Element<'_, Message>> =
             if scroll_mode { Some(tab_jump_btn()) } else { None };
 
@@ -565,6 +568,7 @@ fn area_tab<'a>(
 fn session_tab<'a>(
     idx: usize,
     label: &'a str,
+    pane_count: usize,
     is_active: bool,
     is_hovered: bool,
     detected_os: Option<&str>,
@@ -641,11 +645,11 @@ fn session_tab<'a>(
         let base = container(base)
             .center_x(Length::Fixed(TAB_ICON_SLOT))
             .center_y(Length::Fixed(TAB_ICON_SLOT));
+        // Status dot (bottom-right) stacked over the badge says the
+        // connection state. The split pane-count is a separate inline chip
+        // after the icon (built below), so it stays legible instead of
+        // crowding the glyph.
         if let Some(dot_color) = status_dot {
-            // Small filled circle stacked over the badge's bottom-right
-            // corner. The Stack child uses Length::Fill so we can pin
-            // it with align_x + align_y; the visible disc is the inner
-            // container's actual 8 px square with a 50% radius.
             let dot_disc = container(Space::new().width(7).height(7))
                 .style(move |_| container::Style {
                     background: Some(Background::Color(dot_color)),
@@ -671,6 +675,34 @@ fn session_tab<'a>(
             base.into()
         }
     };
+    // Split pane-count chip: a small rounded pill shown right after the
+    // icon (offset from it) on a split tab, e.g. "2". Tinted with the tab
+    // text color so it reads in both active and inactive states.
+    let count_chip: Option<Element<'_, Message>> = (pane_count > 1).then(|| {
+        // Fixed square so a single digit renders as a true circle rather
+        // than an oval. Two-digit counts (10+ panes) are vanishingly rare;
+        // they'd just fill the disc a little tighter.
+        const COUNT_DISC: f32 = 15.0;
+        container(
+            text(pane_count.to_string())
+                .size(10)
+                .line_height(1.0)
+                .font(SYSTEM_UI_SEMIBOLD)
+                .color(fg),
+        )
+        .center_x(Length::Fixed(COUNT_DISC))
+        .center_y(Length::Fixed(COUNT_DISC))
+        .style(move |_| container::Style {
+            background: Some(Background::Color(Color { a: 0.16, ..fg })),
+            border: Border {
+                radius: Radius::from(COUNT_DISC / 2.0),
+                color: Color { a: 0.35, ..fg },
+                width: 1.0,
+            },
+            ..Default::default()
+        })
+        .into()
+    });
     let close_btn = || -> Element<'_, Message> {
         MouseArea::new(
             container(
@@ -715,31 +747,29 @@ fn session_tab<'a>(
         .color(fg)
         .width(Length::Fill);
 
-    let inner_row: Element<'_, Message> = if close_on_right {
-        // Trailing slot reserves its width even when the X isn't
-        // currently shown, so the label position doesn't jump on hover.
-        let trailing_slot: Element<'_, Message> = if show_close {
-            close_btn()
-        } else {
-            Space::new().width(TAB_ICON_SLOT).height(TAB_ICON_SLOT).into()
-        };
-        crate::widgets::dir_row(vec![
-            leading_slot,
-            Space::new().width(5).into(),
-            label_text.into(),
-            Space::new().width(4).into(),
-            trailing_slot,
-        ])
-        .align_y(iced::Alignment::Center)
-        .into()
-    } else {
-        crate::widgets::dir_row(vec![
-            leading_slot,
-            Space::new().width(5).into(),
-            label_text.into(),
-        ])
-        .align_y(iced::Alignment::Center)
-        .into()
+    let inner_row: Element<'_, Message> = {
+        let mut items: Vec<Element<'_, Message>> = vec![leading_slot];
+        // Pane-count chip sits just after the icon, offset by a small gap.
+        if let Some(chip) = count_chip {
+            items.push(Space::new().width(4).into());
+            items.push(chip);
+        }
+        items.push(Space::new().width(5).into());
+        items.push(label_text.into());
+        if close_on_right {
+            // Trailing slot reserves its width even when the X isn't
+            // currently shown, so the label position doesn't jump on hover.
+            let trailing_slot: Element<'_, Message> = if show_close {
+                close_btn()
+            } else {
+                Space::new().width(TAB_ICON_SLOT).height(TAB_ICON_SLOT).into()
+            };
+            items.push(Space::new().width(4).into());
+            items.push(trailing_slot);
+        }
+        crate::widgets::dir_row(items)
+            .align_y(iced::Alignment::Center)
+            .into()
     };
 
     let tab_btn = button(
@@ -782,7 +812,7 @@ fn session_tab<'a>(
 /// `−` / `□` / `✕` glyphs right next to it, breaking visual rhythm.
 fn new_tab_btn<'a>() -> Element<'a, Message> {
     let hover_color = OryxisColors::t().text_secondary;
-    button(
+    let btn = button(
         container(iced_fonts::lucide::plus().size(15).color(hover_color))
             .center(Length::Fixed(PLUS_BUTTON_WIDTH))
             .height(Length::Fixed(BAR_HEIGHT)),
@@ -800,8 +830,13 @@ fn new_tab_btn<'a>() -> Element<'a, Message> {
             border: Border::default(),
             ..Default::default()
         }
-    })
-    .into()
+    });
+    // Click = new tab (default). Hovering reveals the New-Tab / Split
+    // popover (no-op unless a terminal tab is open, see `ShowSplitMenu`).
+    MouseArea::new(btn)
+        .on_enter(Message::ShowSplitMenu)
+        .on_exit(Message::SplitMenuLeave)
+        .into()
 }
 
 /// Tab-jump button, opens the Termius-style "Jump to" modal listing

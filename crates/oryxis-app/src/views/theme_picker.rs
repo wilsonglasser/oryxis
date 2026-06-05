@@ -40,9 +40,22 @@ impl Oryxis {
             let is_selected =
                 self.editor_form.terminal_theme.as_deref() == Some(theme.name());
             cards.push(crate::widgets::terminal_theme_card(
-                *theme,
+                theme.palette(),
+                theme.name(),
                 is_selected,
                 Message::EditorTerminalThemeChanged(theme.name().to_string()),
+            ));
+        }
+        // User-defined themes, selectable per host like the built-ins.
+        for ct in self.custom_terminal_themes.iter() {
+            let is_selected =
+                self.editor_form.terminal_theme.as_deref() == Some(ct.name.as_str());
+            let palette = self.terminal_palette_for_name(&ct.name).unwrap_or_default();
+            cards.push(crate::widgets::terminal_theme_card(
+                palette,
+                &ct.name,
+                is_selected,
+                Message::EditorTerminalThemeChanged(ct.name.clone()),
             ));
         }
 

@@ -25,6 +25,17 @@ use crate::state::{
 };
 use crate::util::open_in_browser;
 
+/// Items streamed from a per-pane SSH connect (split-into-host). Mirrors
+/// `SshStreamMsg` but trimmed to what a pane needs: host-key prompts go to
+/// the shared modal, data/connect/disconnect route by pane id.
+enum PaneConnMsg {
+    HostKey(oryxis_ssh::HostKeyQuery),
+    Connected(Arc<SshSession>),
+    Data(Vec<u8>),
+    Disconnected,
+    Error(String),
+}
+
 impl Oryxis {
     pub(crate) fn handle_ssh(
         &mut self,
@@ -37,6 +48,11 @@ impl Oryxis {
                 self.overlay = None;
                 // Close the new-tab picker if the connection was picked there.
                 self.show_new_tab_picker = false;
+                // If this pick is filling a split pane (not a new tab),
+                // route to the per-pane connect path instead.
+                if let Some((tab_idx, target, axis)) = self.pending_pane_split.take() {
+                    return Ok(self.connect_ssh_into_pane(idx, tab_idx, target, axis));
+                }
                 if let Some(mut conn) = self.connections.get(idx).cloned() {
                     // SSM Session transport short-circuits the SSH
                     // pipeline entirely, it goes through
@@ -127,7 +143,7 @@ impl Oryxis {
                             // themes, but starting on the right
                             // palette avoids a one-frame flash.
                             state.palette =
-                                self.resolve_terminal_theme_for_connection(&conn).palette();
+                                self.resolve_terminal_palette_for_connection(&conn);
                             let label = conn.label.clone();
                             let hostname = format!("SSH {}:{}", conn.hostname, conn.port);
                             let terminal = Arc::new(Mutex::new(state));
@@ -146,7 +162,11 @@ impl Oryxis {
                                 label.clone(),
                                 Arc::clone(&terminal),
                             );
-                            new_tab.panes[0].session_log_id = session_log_id;
+                            new_tab.active_mut().session_log_id = session_log_id;
+                            // Stable id of this tab's pane: PTY output and
+                            // session events route to it, so the right pane
+                            // gets the bytes even after the tab is split.
+                            let pane_id = new_tab.active().id;
                             self.tabs.push(new_tab);
 
                             // Show progress view instead of terminal
@@ -485,7 +505,7 @@ impl Oryxis {
                                         Message::SshProgress(step, log)
                                     }
                                     SshStreamMsg::Connected(session) => {
-                                        Message::SshConnected(tab_idx, session)
+                                        Message::SshConnected(pane_id, session)
                                     }
                                     SshStreamMsg::NewKnownHosts(hosts) => {
                                         Message::SshNewKnownHosts(hosts)
@@ -494,11 +514,11 @@ impl Oryxis {
                                         Message::SshHostKeyVerify(query)
                                     }
                                     SshStreamMsg::Data(data) => {
-                                        Message::PtyOutput(tab_idx, data)
+                                        Message::PtyOutput(pane_id, data)
                                     }
                                     SshStreamMsg::Error(err) => Message::SshError(err),
                                     SshStreamMsg::Disconnected => {
-                                        Message::SshDisconnected(tab_idx)
+                                        Message::SshDisconnected(pane_id)
                                     }
                                 }),
                             ]));
@@ -553,17 +573,24 @@ impl Oryxis {
                     let _ = tx.try_send(true);
                 }
             }
-            Message::SshConnected(tab_idx, session) => {
+            Message::SshConnected(pane_id, session) => {
                 let mut detect_for: Option<(Uuid, Arc<SshSession>)> = None;
-                if let Some(tab) = self.tabs.get_mut(tab_idx) {
-                    tab.active_mut().ssh_session = Some(session.clone());
-                    // Per-host initial command, fire as keystrokes
-                    // right after the session is wired. The remote
-                    // shell may not have its prompt up yet but the
-                    // SSH channel buffers input until the shell is
-                    // ready, so the line lands cleanly. Newline
-                    // suffix triggers `Enter` on the remote.
-                    let label = tab.label.clone();
+                if let Some(tab_idx) = self.pane_tab_index(pane_id) {
+                    let label = self.tabs[tab_idx].label.clone();
+                    // Attach the session to the specific pane that connected
+                    // and forward future viewport resizes to the server so
+                    // remote `top`/`vim` re-layout instead of overflowing.
+                    if let Some(pane) = self.tabs[tab_idx].pane_by_id_mut(pane_id) {
+                        pane.ssh_session = Some(session.clone());
+                        if let Ok(mut state) = pane.terminal.lock() {
+                            state.set_remote_resize_sender(session.resize_sender());
+                            session.resize(state.cols(), state.rows());
+                        }
+                    }
+                    // Per-host initial command, fired as keystrokes right
+                    // after the session is wired. The SSH channel buffers
+                    // input until the shell is ready, so the line lands
+                    // cleanly; the newline triggers `Enter` on the remote.
                     if let Some(conn) = self.connections.iter().find(|c| c.label == label)
                         && let Some(cmd) = conn.initial_command.as_deref()
                         && !cmd.trim().is_empty()
@@ -583,17 +610,6 @@ impl Oryxis {
                             );
                         }
                     }
-                    // Forward future viewport resizes to the SSH server so
-                    // remote `top`/`vim` re-layout instead of overflowing
-                    // into our local grid.
-                    if let Ok(mut state) = tab.active().terminal.lock() {
-                        state.set_remote_resize_sender(session.resize_sender());
-                        // Also kick off a resize for the current grid in
-                        // case the canvas is already smaller than the
-                        // initial PTY size negotiated at session open.
-                        session.resize(state.cols(), state.rows());
-                    }
-                    let label = tab.label.clone();
                     tracing::info!("SSH connected: {}", label);
                     if let Some(vault) = &self.vault {
                         let entry = oryxis_core::models::log_entry::LogEntry::new(
@@ -813,23 +829,25 @@ impl Oryxis {
                     Err(e) => self.update_error = Some(e),
                 }
             }
-            Message::SshDisconnected(tab_idx) => {
-                if let Some(tab) = self.tabs.get_mut(tab_idx) {
-                    let label = tab.label.replace(" (disconnected)", "");
-                    // End session log
-                    if let Some(log_id) = tab.active().session_log_id
-                        && let Some(vault) = &self.vault {
-                            let _ = vault.end_session_log(&log_id);
+            Message::SshDisconnected(pane_id) => {
+                if let Some(tab_idx) = self.pane_tab_index(pane_id) {
+                    let label = self.tabs[tab_idx].label.replace(" (disconnected)", "");
+                    // Clear the disconnected pane's session + end its log.
+                    let log_id = self.tabs[tab_idx].pane_by_id_mut(pane_id).and_then(|p| {
+                        p.ssh_session = None;
+                        p.session_log_id
+                    });
+                    if let Some(log_id) = log_id
+                        && let Some(vault) = &self.vault
+                    {
+                        let _ = vault.end_session_log(&log_id);
                     }
-                    // Log
                     if let Some(vault) = &self.vault {
                         let entry = oryxis_core::models::log_entry::LogEntry::new(
                             &label, &label, oryxis_core::models::log_entry::LogEvent::Disconnected, "Session ended",
                         );
                         let _ = vault.add_log(&entry);
                     }
-                    tab.label = format!("{} (disconnected)", label);
-                    tab.active_mut().ssh_session = None;
                     // Refresh session logs list (count + current page)
                     if let Some(vault) = &self.vault {
                         self.session_logs_total =
@@ -838,6 +856,22 @@ impl Oryxis {
                             .list_session_logs_page(self.session_logs_page * 50, 50)
                             .unwrap_or_default();
                     }
+                    // The tab-level "(disconnected)" relabel + idle toast +
+                    // auto-reconnect only make sense when the tab IS this one
+                    // session. A split tab has live sibling panes, relabeling
+                    // it would make `AutoReconnectTick` rebuild the whole tab
+                    // (`ReconnectTab` removes it), nuking the siblings. So for
+                    // a multi-pane tab we just note the disconnect inside the
+                    // pane and leave the tab alone.
+                    if self.tabs[tab_idx].pane_grid.panes.len() > 1 {
+                        if let Some(pane) = self.tabs[tab_idx].pane_by_id_mut(pane_id)
+                            && let Ok(mut state) = pane.terminal.lock()
+                        {
+                            state.process(b"\r\n[disconnected]\r\n");
+                        }
+                        return Ok(Task::none());
+                    }
+                    self.tabs[tab_idx].label = format!("{} (disconnected)", label);
                     // Surface the disconnect to the user. Without this the
                     // terminal just goes silent and the silent auto-reconnect
                     // (up to 30s later) feels like the shell mysteriously
@@ -893,6 +927,19 @@ impl Oryxis {
                     return Ok(self.update(Message::ConnectSsh(idx)));
                 }
             }
+            Message::PaneConnectError(pane_id, msg) => {
+                // Surface the failure inside the pane that was connecting.
+                if let Some(pane) = self
+                    .tabs
+                    .iter()
+                    .flat_map(|t| t.pane_grid.panes.values())
+                    .find(|p| p.id == pane_id)
+                    && let Ok(mut state) = pane.terminal.lock()
+                {
+                    state.process(format!("\r\nConnection failed: {msg}\r\n").as_bytes());
+                }
+                tracing::error!("pane SSH connect failed: {msg}");
+            }
             Message::SshError(err) => {
                 tracing::error!("SSH error: {}", err);
                 if let Some(vault) = &self.vault {
@@ -914,5 +961,170 @@ impl Oryxis {
             m => return Err(m),
         }
         Ok(Task::none())
+    }
+
+    /// Create a new pane next to `target` in tab `tab_idx`, focus it, and
+    /// return its stable id (for routing PTY output / session events).
+    pub(crate) fn make_split_pane(
+        &mut self,
+        tab_idx: usize,
+        target: iced::widget::pane_grid::Pane,
+        axis: iced::widget::pane_grid::Axis,
+        label: String,
+        terminal: Arc<Mutex<TerminalState>>,
+    ) -> Option<Uuid> {
+        let tab = self.tabs.get_mut(tab_idx)?;
+        let pane = crate::state::Pane::new(label, terminal);
+        let pane_id = pane.id;
+        let (handle, _split) = tab.pane_grid.split(axis, target, pane)?;
+        tab.focused = handle;
+        Some(pane_id)
+    }
+
+    /// Open a local shell into a new split pane.
+    pub(crate) fn local_shell_into_pane(
+        &mut self,
+        tab_idx: usize,
+        target: iced::widget::pane_grid::Pane,
+        axis: iced::widget::pane_grid::Axis,
+    ) -> Task<Message> {
+        let Ok((mut state, rx)) =
+            TerminalState::new(DEFAULT_TERM_COLS as u16, DEFAULT_TERM_ROWS as u16)
+        else {
+            return Task::none();
+        };
+        state.palette = self.terminal_palette.clone();
+        let terminal = Arc::new(Mutex::new(state));
+        let label = crate::i18n::t("local_shell").to_string();
+        let Some(pane_id) = self.make_split_pane(tab_idx, target, axis, label, terminal) else {
+            return Task::none();
+        };
+        self.active_tab = Some(tab_idx);
+        let stream = tokio_stream::wrappers::UnboundedReceiverStream::new(rx);
+        Task::stream(stream).map(move |bytes| Message::PtyOutput(pane_id, bytes))
+    }
+
+    /// Connect a saved host into a new split pane. Uses the one-shot
+    /// `connect_with_resolver` (no full progress timeline); the pane shows a
+    /// "Connecting…" line until output arrives. Host-key prompts reuse the
+    /// shared modal. Cloud-transport hosts fall back to a normal tab.
+    pub(crate) fn connect_ssh_into_pane(
+        &mut self,
+        conn_idx: usize,
+        tab_idx: usize,
+        target: iced::widget::pane_grid::Pane,
+        axis: iced::widget::pane_grid::Axis,
+    ) -> Task<Message> {
+        let Some(mut conn) = self.connections.get(conn_idx).cloned() else {
+            return Task::none();
+        };
+        // SSM / ECS / kubectl transports need their own plugin PTY, not a
+        // plain SSH session, so they can't live in this pane path yet; open
+        // them as a normal tab instead.
+        if conn
+            .cloud_ref
+            .as_ref()
+            .is_some_and(|c| c.transport_pref != TransportKind::Ssh)
+        {
+            return self.update(Message::ConnectSsh(conn_idx));
+        }
+        if let Some(vault) = self.vault.as_ref() {
+            conn.proxy = vault.resolve_proxy(&conn).ok().flatten();
+        }
+        let (password, private_key) = self.resolve_forward_credentials(&conn);
+        let resolver = self.build_jump_resolver(&conn);
+        let host_key_check = self.build_host_key_check();
+        let keepalive = self.effective_keepalive(&conn);
+
+        // Display-only terminal, fed by the SSH stream (same as a normal SSH
+        // tab). Seed a "Connecting…" line for immediate feedback.
+        let Ok(mut term) =
+            TerminalState::new_no_pty(DEFAULT_TERM_COLS as u16, DEFAULT_TERM_ROWS as u16)
+        else {
+            return Task::none();
+        };
+        term.palette = self.resolve_terminal_palette_for_connection(&conn);
+        term.process(
+            format!("Connecting to {} ({}:{})...\r\n", conn.label, conn.hostname, conn.port)
+                .as_bytes(),
+        );
+        let terminal = Arc::new(Mutex::new(term));
+        let Some(pane_id) =
+            self.make_split_pane(tab_idx, target, axis, conn.label.clone(), terminal)
+        else {
+            return Task::none();
+        };
+        self.active_tab = Some(tab_idx);
+
+        let session_log_id = self.vault.as_ref().map(|v| {
+            let id = Uuid::new_v4();
+            let _ = v.create_session_log(&id, &conn.id, &conn.label);
+            id
+        });
+        if let Some(log_id) = session_log_id
+            && let Some(pane) = self.tabs[tab_idx].pane_by_id_mut(pane_id)
+        {
+            pane.session_log_id = Some(log_id);
+        }
+
+        // Host-key bridge: the engine asks via `hk_ask`, we surface the
+        // shared modal (`SshHostKeyVerify`), and the answer comes back on
+        // `hk_resp` (driven by the existing SshHostKey* handlers).
+        let (hk_ask_tx, mut hk_ask_rx) = tokio::sync::mpsc::channel::<(
+            oryxis_ssh::HostKeyQuery,
+            tokio::sync::oneshot::Sender<bool>,
+        )>(1);
+        let (hk_resp_tx, mut hk_resp_rx) = tokio::sync::mpsc::channel::<bool>(1);
+        self.host_key_response_tx = Some(hk_resp_tx);
+
+        let stream = iced::stream::channel::<PaneConnMsg>(128, move |mut sender: iced::futures::channel::mpsc::Sender<PaneConnMsg>| async move {
+            let engine = SshEngine::new()
+                .with_host_key_check(host_key_check)
+                .with_host_key_ask(hk_ask_tx)
+                .with_keepalive(keepalive);
+
+            let mut sender_clone = sender.clone();
+            let _bridge = tokio::spawn(async move {
+                while let Some((query, resp_tx)) = hk_ask_rx.recv().await {
+                    let _ = sender_clone.send(PaneConnMsg::HostKey(query)).await;
+                    let accepted = hk_resp_rx.recv().await.unwrap_or(false);
+                    let _ = resp_tx.send(accepted);
+                }
+            });
+
+            match engine
+                .connect_with_resolver(
+                    &conn,
+                    password.as_deref(),
+                    private_key.as_deref(),
+                    DEFAULT_TERM_COLS,
+                    DEFAULT_TERM_ROWS,
+                    resolver.as_ref(),
+                )
+                .await
+            {
+                Ok((session, mut rx)) => {
+                    let session = Arc::new(session);
+                    let _ = sender.send(PaneConnMsg::Connected(session.clone())).await;
+                    while let Some(data) = rx.recv().await {
+                        if sender.send(PaneConnMsg::Data(data)).await.is_err() {
+                            break;
+                        }
+                    }
+                    let _ = sender.send(PaneConnMsg::Disconnected).await;
+                }
+                Err(e) => {
+                    let _ = sender.send(PaneConnMsg::Error(e.to_string())).await;
+                }
+            }
+        });
+
+        Task::stream(stream).map(move |m| match m {
+            PaneConnMsg::HostKey(q) => Message::SshHostKeyVerify(q),
+            PaneConnMsg::Connected(s) => Message::SshConnected(pane_id, s),
+            PaneConnMsg::Data(d) => Message::PtyOutput(pane_id, d),
+            PaneConnMsg::Disconnected => Message::SshDisconnected(pane_id),
+            PaneConnMsg::Error(e) => Message::PaneConnectError(pane_id, e),
+        })
     }
 }

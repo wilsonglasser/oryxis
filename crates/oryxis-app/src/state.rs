@@ -5,6 +5,7 @@
 
 use std::sync::{Arc, Mutex};
 
+use iced::widget::pane_grid;
 use iced::widget::text_editor;
 use oryxis_core::models::connection::AuthMethod;
 use oryxis_ssh::{SftpClient, SftpEntry, SshSession};
@@ -257,6 +258,11 @@ pub(crate) struct TransferItem {
     /// Folders are processed by ensuring the destination directory exists;
     /// files are read+written.
     pub is_dir: bool,
+    /// Remote file size, populated only for download items from the
+    /// directory listing that was walked. Passed to `download_to` as a
+    /// hint so each file skips an extra `stat` round trip. `None` for
+    /// uploads, local duplicates, and directories.
+    pub size: Option<u64>,
 }
 
 #[derive(Debug, Clone)]
@@ -537,13 +543,17 @@ pub(crate) struct ErrorDialogLink {
 // ---------------------------------------------------------------------------
 
 /// One terminal pane, owns its alacritty grid and (optionally) the SSH
-/// session feeding it. A `TerminalTab` holds one or more panes that are
-/// rendered side-by-side or stacked depending on `PaneLayout`.
+/// session feeding it. A `TerminalTab` holds one or more panes in a
+/// `pane_grid::State`, which owns their split layout.
 pub(crate) struct Pane {
-    // Used by future split-routing logic (focus, PtyOutput dispatch); kept
-    // now so the field is stable across the upcoming UI work.
-    #[allow(dead_code)]
+    /// Stable identity used to route PTY output / session events to the
+    /// right pane (the `pane_grid::Pane` handle is only unique within a
+    /// tab's grid, this `Uuid` is unique across all tabs).
     pub id: Uuid,
+    /// This pane's own connection label ("user@host", "Local Shell", ...).
+    /// The tab bar shows the *focused* pane's label + icon, so a tab split
+    /// across two hosts reads as whichever pane you're in.
+    pub label: String,
     pub terminal: Arc<Mutex<TerminalState>>,
     /// SSH session handle (None for local shell).
     pub ssh_session: Option<Arc<SshSession>>,
@@ -551,30 +561,30 @@ pub(crate) struct Pane {
     pub session_log_id: Option<Uuid>,
 }
 
-/// How panes inside a tab are arranged on screen.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[allow(dead_code)] // Horizontal/Vertical wired in next phase (split UI).
-pub(crate) enum PaneLayout {
-    /// Single pane filling the canvas, default for fresh tabs.
-    Single,
-    /// Two panes side by side (first on the left, second on the right).
-    Horizontal,
-    /// Two panes stacked (first on top, second on the bottom).
-    Vertical,
+impl Pane {
+    pub fn new(label: String, terminal: Arc<Mutex<TerminalState>>) -> Self {
+        Self {
+            id: Uuid::new_v4(),
+            label,
+            terminal,
+            ssh_session: None,
+            session_log_id: None,
+        }
+    }
 }
 
-/// A terminal tab, either a local shell or an SSH session. Holds 1+ panes
-/// (only the first one is alive when the tab is created; user can split
-/// it later to create the second).
+/// A terminal tab. Its panes live in an iced `pane_grid::State`, which owns
+/// the split layout (N-way horizontal / vertical splits) and resizing. A
+/// fresh tab has exactly one pane; the user can split it.
 pub(crate) struct TerminalTab {
     pub _id: Uuid,
     pub label: String,
-    pub panes: Vec<Pane>,
-    #[allow(dead_code)] // wired in the split-UI phase
-    pub layout: PaneLayout,
-    /// Index into `panes` of the currently focused split (0 when there's
-    /// only one pane, 0 or 1 once split).
-    pub focused_pane: usize,
+    /// The pane tree (1+ panes). `pane_grid` owns the geometry.
+    pub pane_grid: pane_grid::State<Pane>,
+    /// Handle of the currently focused pane. Kept valid by the split /
+    /// close / focus handlers; `active()` falls back to the first pane if
+    /// it ever goes stale so we never index a closed pane.
+    pub focused: pane_grid::Pane,
     /// AI chat history for this terminal session.
     pub chat_history: Vec<ChatMessage>,
     /// Whether the terminal sidebar is visible (Chat / Snippets / History
@@ -586,44 +596,154 @@ pub(crate) struct TerminalTab {
     /// here skip the prompt and run immediately. Per-tab so an
     /// "always run rm" decision on one host doesn't leak to others.
     pub chat_always_run_commands: Vec<String>,
+    /// True for cloud SSM / ECS-Exec tabs (a `session-manager-plugin`
+    /// PTY). These talk SSM over a websocket whose idle timer kills the
+    /// session after ~20 min of inactivity, so they get the
+    /// resize-based keepalive while the window is unfocused. Plain SSH /
+    /// local tabs leave this `false`.
+    pub ssm_keepalive: bool,
+    /// Message that re-creates this session, for "Duplicate Tab". Set
+    /// only for cloud tabs that have no saved `Connection` to look up
+    /// by label (ECS Exec, kubectl pod). SSH / InstanceConnect / SSM
+    /// tabs are connection-backed and duplicate via label lookup
+    /// instead, so they leave this `None`.
+    pub relaunch: Option<Box<crate::messages::Message>>,
 }
 
 impl TerminalTab {
-    /// Build a new tab with a single pane. Use `panes.push(...)` + a
-    /// non-`Single` layout to introduce splits later.
+    /// Build a new tab with a single pane. Split it later via
+    /// `pane_grid.split(...)`.
     pub fn new_single(label: String, terminal: Arc<Mutex<TerminalState>>) -> Self {
+        let (pane_grid, focused) = pane_grid::State::new(Pane::new(label.clone(), terminal));
         Self {
             _id: Uuid::new_v4(),
             label,
-            panes: vec![Pane {
-                id: Uuid::new_v4(),
-                terminal,
-                ssh_session: None,
-                session_log_id: None,
-            }],
-            layout: PaneLayout::Single,
-            focused_pane: 0,
+            pane_grid,
+            focused,
             chat_history: Vec::new(),
             chat_visible: false,
             chat_always_run_commands: Vec::new(),
+            ssm_keepalive: false,
+            relaunch: None,
         }
     }
 
-    /// Currently focused pane, invariant maintained by `focus_pane` and
-    /// the split / close handlers.
+    /// Currently focused pane. Falls back to the first pane if `focused`
+    /// is stale (e.g. just after a close), so this never panics.
     pub fn active(&self) -> &Pane {
-        &self.panes[self.focused_pane.min(self.panes.len() - 1)]
+        self.pane_grid
+            .get(self.focused)
+            .or_else(|| self.pane_grid.panes.values().next())
+            .expect("a tab always has at least one pane")
     }
 
     pub fn active_mut(&mut self) -> &mut Pane {
-        let idx = self.focused_pane.min(self.panes.len() - 1);
-        &mut self.panes[idx]
+        // Resolve a valid key first (repairing `focused` if it went
+        // stale), then take the mutable borrow.
+        let key = if self.pane_grid.panes.contains_key(&self.focused) {
+            self.focused
+        } else {
+            let k = *self
+                .pane_grid
+                .panes
+                .keys()
+                .next()
+                .expect("a tab always has at least one pane");
+            self.focused = k;
+            k
+        };
+        self.pane_grid.get_mut(key).expect("valid pane key")
+    }
+
+    /// Look up a pane by its stable `Uuid` (for routing PTY output /
+    /// session events).
+    pub fn pane_by_id_mut(&mut self, id: Uuid) -> Option<&mut Pane> {
+        self.pane_grid.panes.values_mut().find(|p| p.id == id)
+    }
+
+    /// Number of panes in this tab. `> 1` means the tab is split.
+    pub fn pane_count(&self) -> usize {
+        self.pane_grid.panes.len()
+    }
+
+    /// Label to show in the tab strip. A split tab follows the *focused*
+    /// pane (so a tab split across two hosts reads as whichever pane you're
+    /// in); a single-pane tab uses the tab's own label, which carries the
+    /// "(disconnected)" suffix the focused-pane label doesn't.
+    pub fn display_label(&self) -> &str {
+        if self.pane_count() > 1 {
+            &self.active().label
+        } else {
+            &self.label
+        }
     }
 }
 
 // ---------------------------------------------------------------------------
 // Connection editor form
 // ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod terminal_tab_tests {
+    use super::*;
+
+    fn dummy_terminal() -> Arc<Mutex<TerminalState>> {
+        Arc::new(Mutex::new(TerminalState::new_no_pty(80, 24).unwrap()))
+    }
+
+    fn split(tab: &mut TerminalTab, axis: pane_grid::Axis) -> pane_grid::Pane {
+        let (handle, _) = tab
+            .pane_grid
+            .split(axis, tab.focused, Pane::new("p".into(), dummy_terminal()))
+            .expect("split");
+        tab.focused = handle;
+        handle
+    }
+
+    #[test]
+    fn split_then_close_keeps_focused_on_a_live_pane() {
+        let mut tab = TerminalTab::new_single("t".into(), dummy_terminal());
+        assert_eq!(tab.pane_grid.panes.len(), 1);
+        split(&mut tab, pane_grid::Axis::Vertical);
+        split(&mut tab, pane_grid::Axis::Horizontal);
+        assert_eq!(tab.pane_grid.panes.len(), 3);
+
+        // Close the focused pane the way `ClosePane` does, then point
+        // `focused` at the sibling that took over.
+        let (_, sibling) = tab.pane_grid.close(tab.focused).expect("close");
+        tab.focused = sibling;
+        assert_eq!(tab.pane_grid.panes.len(), 2);
+
+        // `active()` must resolve to one of the surviving panes, never panic.
+        let active_id = tab.active().id;
+        assert!(tab.pane_grid.panes.values().any(|p| p.id == active_id));
+    }
+
+    #[test]
+    fn active_falls_back_when_focused_is_stale() {
+        let mut tab = TerminalTab::new_single("t".into(), dummy_terminal());
+        let handle = split(&mut tab, pane_grid::Axis::Vertical);
+        // Close the focused pane WITHOUT repairing `focused` (simulating a
+        // missed update): `active()` must still return a live pane.
+        tab.pane_grid.close(handle);
+        let _ = tab.active().id; // must not panic
+        // `active_mut()` repairs `focused` to a valid handle.
+        let id = tab.active_mut().id;
+        assert!(tab.pane_grid.panes.values().any(|p| p.id == id));
+    }
+
+    #[test]
+    fn pane_by_id_mut_targets_the_right_pane() {
+        let mut tab = TerminalTab::new_single("t".into(), dummy_terminal());
+        let id1 = tab.active().id;
+        let h2 = split(&mut tab, pane_grid::Axis::Vertical);
+        let id2 = tab.pane_grid.get(h2).unwrap().id;
+        assert_ne!(id1, id2);
+        assert_eq!(tab.pane_by_id_mut(id1).map(|p| p.id), Some(id1));
+        assert_eq!(tab.pane_by_id_mut(id2).map(|p| p.id), Some(id2));
+        assert!(tab.pane_by_id_mut(Uuid::new_v4()).is_none());
+    }
+}
 
 /// Connection editor form state.
 #[derive(Debug, Clone)]
@@ -842,6 +962,9 @@ pub(crate) enum OverlayContent {
     IdentityActions(usize),
     KeychainAdd,
     TabActions(usize),
+    /// Hover popover under the `+` tab button: New Tab + Split actions for
+    /// the active terminal tab.
+    SplitMenu,
     FolderActions(Uuid),
     CloudProfileActions(Uuid),
     /// Kebab menu on a dynamic-group card (ECS / K8s service folder).
@@ -921,6 +1044,7 @@ pub enum View {
     Terminal,
     Keys,
     Snippets,
+    PortForwarding,
     /// Known Hosts moved into Settings in v0.7 (see
     /// `SettingsSection::KnownHosts`). The variant stays so the
     /// `change view -> KnownHosts` aliases redirect to Settings with
@@ -977,15 +1101,45 @@ pub enum PluginUiStatus {
     Failed(String),
 }
 
-/// Cloud provider picked in the wizard. Only AWS is fully wired in
-/// v0.6 PR 3; Kubernetes lands in a follow-up PR with its own provider
-/// crate. The K8s variant is exposed in the picker for visibility but
-/// the wizard surfaces an "experimental, coming soon" hint.
+/// Cloud provider picked in the wizard. AWS authenticates via named
+/// profile / access key / SSO; Kubernetes via a kubeconfig.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum CloudProviderChoice {
     #[default]
     Aws,
     K8s,
+}
+
+/// Which kind of `PodSelector` a K8s dynamic group's editor produces.
+/// `Labels` takes a `k=v,k=v` string; the rest take a single resource
+/// name (the resolver expands it to that workload's / pod's selector).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum K8sSelectorKind {
+    #[default]
+    Labels,
+    Deployment,
+    StatefulSet,
+    Name,
+}
+
+impl K8sSelectorKind {
+    pub const ALL: [K8sSelectorKind; 4] = [
+        K8sSelectorKind::Labels,
+        K8sSelectorKind::Deployment,
+        K8sSelectorKind::StatefulSet,
+        K8sSelectorKind::Name,
+    ];
+}
+
+impl std::fmt::Display for K8sSelectorKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            K8sSelectorKind::Labels => "Labels",
+            K8sSelectorKind::Deployment => "Deployment",
+            K8sSelectorKind::StatefulSet => "StatefulSet",
+            K8sSelectorKind::Name => "Pod name",
+        })
+    }
 }
 
 impl CloudProviderChoice {
@@ -1067,9 +1221,9 @@ pub enum DynamicGroupState {
     Loading,
     Loaded {
         hosts: Vec<oryxis_cloud::DiscoveredHost>,
-        // Stored so a future TTL-based auto-refresh can compare
-        // against `Utc::now()`. Not read by any current call site.
-        #[allow(dead_code)]
+        // When this list was fetched. `OpenGroup` compares against
+        // `Utc::now()` and re-resolves past the cache TTL so a recycled
+        // ECS task doesn't sit as a dead row until a manual Refresh.
         fetched_at: chrono::DateTime<chrono::Utc>,
     },
     Failed(String),
@@ -1135,6 +1289,69 @@ pub(crate) enum SettingsSection {
     /// plugin to actually function.
     Plugins,
     About,
+}
+
+// ---------------------------------------------------------------------------
+// Custom terminal theme editor
+// ---------------------------------------------------------------------------
+
+/// One editable color slot in the custom terminal theme editor.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ThemeColorSlot {
+    Foreground,
+    Background,
+    Cursor,
+    Ansi(u8),
+}
+
+/// In-progress edit of a custom terminal theme. `None` for `editing_id`
+/// means a brand new theme; `Some(id)` edits an existing one. Colors are
+/// `"#RRGGBB"` hex strings being typed.
+#[derive(Debug, Clone)]
+pub(crate) struct ThemeEditorForm {
+    pub editing_id: Option<uuid::Uuid>,
+    pub name: String,
+    pub foreground: String,
+    pub background: String,
+    pub cursor: String,
+    pub ansi: [String; 16],
+    pub error: Option<String>,
+}
+
+impl ThemeEditorForm {
+    pub fn from_theme(
+        t: &oryxis_core::models::custom_terminal_theme::CustomTerminalTheme,
+    ) -> Self {
+        Self {
+            editing_id: Some(t.id),
+            name: t.name.clone(),
+            foreground: t.foreground.clone(),
+            background: t.background.clone(),
+            cursor: t.cursor.clone(),
+            ansi: t.ansi.clone(),
+            error: None,
+        }
+    }
+
+    /// Blank editor seeded from a sensible dark default.
+    pub fn new_blank() -> Self {
+        let t = oryxis_core::models::custom_terminal_theme::CustomTerminalTheme::new_default(
+            String::new(),
+        );
+        let mut form = Self::from_theme(&t);
+        form.editing_id = None;
+        form
+    }
+
+    /// Write the color string for a slot.
+    pub fn set_slot(&mut self, slot: ThemeColorSlot, value: String) {
+        match slot {
+            ThemeColorSlot::Foreground => self.foreground = value,
+            ThemeColorSlot::Background => self.background = value,
+            ThemeColorSlot::Cursor => self.cursor = value,
+            ThemeColorSlot::Ansi(i) => self.ansi[i as usize] = value,
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------

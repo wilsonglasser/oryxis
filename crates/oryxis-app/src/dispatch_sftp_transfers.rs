@@ -66,12 +66,9 @@ impl Oryxis {
                                 },
                             ));
                         }
-                        let bytes = tokio::fs::read(&local_path)
-                            .await
-                            .map_err(|e| format!("read local: {e}"))?;
                         let target = remote_join(&remote_dir, &basename);
                         client
-                            .write_file(&target, &bytes)
+                            .upload_from(&local_path, &target)
                             .await
                             .map_err(|e| e.to_string())?;
                         Ok(UploadOutcome::Done(remote_dir))
@@ -186,11 +183,8 @@ impl Oryxis {
                         let target = remote_join(&prompt.dst_dir, &prompt.basename);
                         Task::perform(
                             async move {
-                                let bytes = tokio::fs::read(&prompt.src)
-                                    .await
-                                    .map_err(|e| format!("read local: {e}"))?;
                                 client
-                                    .write_file(&target, &bytes)
+                                    .upload_from(&prompt.src, &target)
                                     .await
                                     .map_err(|e| e.to_string())?;
                                 Ok::<String, String>(reload)
@@ -212,11 +206,8 @@ impl Oryxis {
                             let unique =
                                 unique_entry_name(&prompt.basename, |n| !names.contains(n));
                             let target = remote_join(&prompt.dst_dir, &unique);
-                            let bytes = tokio::fs::read(&prompt.src)
-                                .await
-                                .map_err(|e| format!("read local: {e}"))?;
                             client
-                                .write_file(&target, &bytes)
+                                .upload_from(&prompt.src, &target)
                                 .await
                                 .map_err(|e| e.to_string())?;
                             Ok::<String, String>(reload)
@@ -246,10 +237,6 @@ impl Oryxis {
                             .find(|s| !s.is_empty())
                             .unwrap_or(&remote_path)
                             .to_string();
-                        let bytes = client
-                            .read_file(&remote_path)
-                            .await
-                            .map_err(|e| e.to_string())?;
                         let mut listing = Vec::new();
                         if let Ok(rd) = std::fs::read_dir(&local_dir) {
                             for entry in rd.flatten() {
@@ -262,9 +249,11 @@ impl Oryxis {
                             listing.into_iter().collect();
                         let unique = unique_entry_name(&basename, |n| !names.contains(n));
                         let target = local_dir.join(&unique);
-                        tokio::fs::write(&target, &bytes)
+                        client
+                            // Single file: one extra stat is negligible.
+                            .download_to(&remote_path, &target, None)
                             .await
-                            .map_err(|e| format!("write local: {e}"))?;
+                            .map_err(|e| e.to_string())?;
                         Ok::<(), String>(())
                     },
                     |result| match result {
@@ -436,6 +425,7 @@ impl Oryxis {
                             src: local_root.to_string_lossy().into_owned(),
                             dst: target_root.clone(),
                             is_dir: true,
+                            size: None,
                         });
                         walk_local_for_upload(&local_root, &target_root, &mut queue)
                             .map_err(|e| e.to_string())?;
@@ -497,6 +487,7 @@ impl Oryxis {
                             src: remote_root.clone(),
                             dst: target_root.to_string_lossy().into_owned(),
                             is_dir: true,
+                            size: None,
                         });
                         walk_remote_for_download(&client, &remote_root, &target_root, &mut queue)
                             .await?;
@@ -557,6 +548,7 @@ impl Oryxis {
                             src: src.to_string_lossy().into_owned(),
                             dst: target_root.to_string_lossy().into_owned(),
                             is_dir: true,
+                            size: None,
                         });
                         if let Err(e) = walk_local_for_duplicate(&src, &target_root, &mut queue) {
                             self.sftp.local_error = Some(e);
@@ -802,6 +794,7 @@ impl Oryxis {
                                     src: path.to_string_lossy().into_owned(),
                                     dst: target.clone(),
                                     is_dir: true,
+                                    size: None,
                                 });
                                 walk_local_for_upload(path, &target, &mut queue)
                                     .map_err(|e| e.to_string())?;
@@ -810,6 +803,7 @@ impl Oryxis {
                                     src: path.to_string_lossy().into_owned(),
                                     dst: target,
                                     is_dir: false,
+                                    size: None,
                                 });
                             }
                         }
@@ -896,6 +890,7 @@ impl Oryxis {
                                     src: remote_path.clone(),
                                     dst: target.to_string_lossy().into_owned(),
                                     is_dir: true,
+                                    size: None,
                                 });
                                 walk_remote_for_download(
                                     &client,
@@ -909,6 +904,7 @@ impl Oryxis {
                                     src: remote_path.clone(),
                                     dst: target.to_string_lossy().into_owned(),
                                     is_dir: false,
+                                    size: None,
                                 });
                             }
                         }

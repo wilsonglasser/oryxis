@@ -136,6 +136,63 @@ impl Oryxis {
                     self.window_size = snapped;
                 }
             }
+            Message::WindowFocusChanged(focused) => {
+                self.window_focused = focused;
+                if focused {
+                    // Restore any SSM/ECS terminal the keepalive may have
+                    // left at `rows - 1` (it nudges and lets the next
+                    // draw snap back, but no draw fires while the tab is
+                    // off-screen). Explicit so a refocus is always clean.
+                    if let Some((cols, rows)) = self.ssm_keepalive_base.take() {
+                        for tab in self.tabs.iter().filter(|t| t.ssm_keepalive) {
+                            for pane in tab.pane_grid.panes.values() {
+                                if let Ok(mut state) = pane.terminal.lock() {
+                                    state.resize(cols, rows);
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    // Anchor the keepalive toggle to the size the window
+                    // had when it lost focus. All plugin tabs share the
+                    // window, so the first one's size is representative.
+                    self.ssm_keepalive_base = self
+                        .tabs
+                        .iter()
+                        .filter(|t| t.ssm_keepalive)
+                        .find_map(|t| {
+                            t.pane_grid.panes.values().next().and_then(|p| {
+                                p.terminal
+                                    .lock()
+                                    .ok()
+                                    .map(|s| (s.cols(), s.rows()))
+                            })
+                        });
+                }
+            }
+            Message::SsmKeepaliveTick => {
+                // Toggle each SSM/ECS terminal between `base` and
+                // `base - 1` rows. Every tick is therefore a genuine size
+                // change, which fires a SIGWINCH the plugin forwards to
+                // SSM as a resize event, and resize events reset the
+                // server's idle timer. No base means we're focused (the
+                // ticker shouldn't be mounted then), so it's a no-op.
+                if let Some((base_cols, base_rows)) = self.ssm_keepalive_base {
+                    let shrunk = base_rows.saturating_sub(1).max(2);
+                    for tab in self.tabs.iter().filter(|t| t.ssm_keepalive) {
+                        for pane in tab.pane_grid.panes.values() {
+                            if let Ok(mut state) = pane.terminal.lock() {
+                                let target = if state.rows() == base_rows {
+                                    shrunk
+                                } else {
+                                    base_rows
+                                };
+                                state.resize(base_cols, target);
+                            }
+                        }
+                    }
+                }
+            }
             Message::WindowDrag => {
                 if !self.consume_window_press() {
                     return Ok(Task::none());
@@ -343,11 +400,45 @@ impl Oryxis {
                 self.hovered_tab = None;
             }
             Message::ShowNewTabPicker => {
+                // Opening the picker from the `+` button always targets a new
+                // tab, never a split (only SplitPane sets that).
+                self.overlay = None; // dismiss the `+` hover popover if open
+                self.pending_pane_split = None;
                 self.show_new_tab_picker = true;
                 self.new_tab_picker_search.clear();
+                self.new_tab_picker_group = None;
             }
             Message::HideNewTabPicker => {
                 self.show_new_tab_picker = false;
+                self.pending_pane_split = None;
+                self.new_tab_picker_group = None;
+            }
+            Message::NewTabPickerOpenGroup(gid) => {
+                // Drill into the group; the search box now filters this
+                // group's members instead of the top-level list, so clear
+                // the leftover top-level needle.
+                self.new_tab_picker_group = Some(gid);
+                self.new_tab_picker_search.clear();
+                // Cloud-query group: kick off (or refresh) the resolve so
+                // the ECS tasks / K8s pods load. Reuses the same TTL gate
+                // as the dashboard's OpenGroup so we don't hammer the API.
+                if self.dynamic_group_needs_resolve(gid) {
+                    return Ok(self
+                        .handle_cloud(Message::DynamicGroupResolve(gid))
+                        .unwrap_or_else(|_| Task::none()));
+                }
+            }
+            Message::NewTabPickerBack => {
+                self.new_tab_picker_group = None;
+                self.new_tab_picker_search.clear();
+            }
+            Message::PickLocalShell => {
+                self.show_new_tab_picker = false;
+                if let Some((tab_idx, target, axis)) = self.pending_pane_split.take() {
+                    return Ok(self.local_shell_into_pane(tab_idx, target, axis));
+                }
+                // No split pending: open a local shell in a new tab.
+                return Ok(self.update(Message::OpenLocalShell));
             }
             Message::ShowTabJump => {
                 self.show_tab_jump = true;
@@ -510,6 +601,53 @@ impl Oryxis {
                     y: self.mouse_position.y,
                 });
             }
+            Message::ShowSplitMenu => {
+                // Hover popover under `+`. Only meaningful with a terminal
+                // tab open (something to split); otherwise `+` just opens a
+                // new tab on click. Anchored under the cursor (over `+`).
+                if self.active_view == View::Terminal
+                    && self.active_tab.is_some()
+                    && !matches!(
+                        self.overlay.as_ref().map(|o| &o.content),
+                        Some(OverlayContent::SplitMenu)
+                    )
+                {
+                    // Anchor under the `+` button at a fixed position (its
+                    // reported bounds), not the cursor, so the popover lines
+                    // up cleanly with the button.
+                    let b = self.plus_btn_bounds.get();
+                    self.overlay = Some(OverlayState {
+                        content: OverlayContent::SplitMenu,
+                        x: b.x,
+                        y: b.y + b.height,
+                    });
+                }
+            }
+            Message::SplitMenuEnter => {
+                self.split_menu_hovered = true;
+            }
+            Message::SplitMenuLeave => {
+                // Left the `+` button or the popover. Defer the close briefly
+                // so moving from the button INTO the menu (which re-enters
+                // via `SplitMenuEnter`) doesn't flap it shut.
+                self.split_menu_hovered = false;
+                return Ok(Task::perform(
+                    async {
+                        tokio::time::sleep(std::time::Duration::from_millis(180)).await;
+                    },
+                    |_| Message::SplitMenuCloseIfIdle,
+                ));
+            }
+            Message::SplitMenuCloseIfIdle => {
+                if !self.split_menu_hovered
+                    && matches!(
+                        self.overlay.as_ref().map(|o| &o.content),
+                        Some(OverlayContent::SplitMenu)
+                    )
+                {
+                    self.overlay = None;
+                }
+            }
             Message::ReconnectTab(idx) => {
                 self.overlay = None;
                 // Find the connection matching this tab's label; close the tab and
@@ -550,14 +688,30 @@ impl Oryxis {
                 // Local shell tabs aren't backed by a saved connection; for
                 // those we just open a fresh shell tab. SSH tabs find their
                 // connection by label and dispatch `ConnectSsh` so the user
-                // gets a second live session into the same box.
+                // gets a second live session into the same box. Cloud tabs
+                // (ECS Exec / kubectl) re-open via the relaunch message
+                // stashed on the tab at spawn time.
                 if let Some(tab) = self.tabs.get(idx) {
                     let is_local_shell = tab.active().ssh_session.is_none()
                         && tab.label == "Local Shell";
                     if is_local_shell {
                         return Ok(Task::done(Message::OpenLocalShell));
                     }
-                    let base_label = tab.label.trim_end_matches(" (disconnected)").to_string();
+                    // Cloud tabs with no saved connection (ECS Exec,
+                    // kubectl pod) carry the message that re-opens them.
+                    if let Some(relaunch) = tab.relaunch.as_deref() {
+                        return Ok(Task::done(relaunch.clone()));
+                    }
+                    // Connection-backed tabs (SSH, InstanceConnect, and
+                    // SSM-into-EC2) duplicate by re-finding the host by
+                    // label. SSM tabs carry a title prefix, strip it so
+                    // the lookup matches; ConnectSsh re-routes to SSM via
+                    // the cloud_ref transport check.
+                    let base_label = tab
+                        .label
+                        .trim_end_matches(" (disconnected)")
+                        .trim_start_matches(crate::app::SSM_TAB_PREFIX)
+                        .to_string();
                     if let Some(ci) = self.connections.iter().position(|c| c.label == base_label) {
                         return Ok(Task::done(Message::ConnectSsh(ci)));
                     }

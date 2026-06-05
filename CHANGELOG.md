@@ -6,6 +6,47 @@ project uses [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- **Split panes.** A terminal tab can now be split into an arbitrary grid
+  of panes (tmux / iTerm style), built on iced's `pane_grid`. Ctrl+Shift+E
+  splits the focused pane side-by-side, Ctrl+Shift+O stacks it. You can also
+  split from the popover that appears on hovering the `+` tab button, or from
+  a tab's right-click menu. Each split opens the connection picker so the new
+  pane can be a saved host (it connects inside the pane, with the shared
+  host-key prompt for untrusted hosts) or a local shell. Drag the dividers to
+  resize, click or Ctrl+Shift+arrow to move focus, Ctrl+Shift+W to close a
+  pane (closing the last one closes the tab). Each pane keeps its own session,
+  output and scrollback; keyboard, paste, snippets and the AI assistant target
+  the focused pane. A split tab shows the focused pane's name + icon plus a
+  pane-count badge, so a tab split across two hosts reads as whichever pane
+  you're in.
+- **Kubernetes cloud provider.** A new "Kubernetes" option in Cloud
+  Accounts, authenticated by a kubeconfig (optional path + context). It
+  discovers workloads (Deployments / StatefulSets / DaemonSets) across
+  namespaces, imports the selected ones as dynamic groups that resolve to
+  their live pods on expand, and opens an interactive shell in a pod. The
+  provider ships as a subprocess plugin like AWS, but is a thin wrapper that
+  drives the `kubectl` CLI (no heavy SDK): discovery / resolve run
+  `kubectl get ... -o json`, and the pod shell spawns `kubectl exec -it` in a
+  local PTY. `kubectl` must be on PATH; a missing binary surfaces a clear
+  dialog. The dynamic-group editor lets you change the context, namespace and
+  label selector of an imported group.
+- **Port forwarding as a standalone entity.** Port forwards are no longer
+  tied to a terminal session. A new "Port Forwarding" area in the sidebar
+  manages `PortForwardRule` entities, each with a per-row on/off toggle that
+  opens a dedicated PTY-less SSH connection holding the tunnel until turned
+  off, plus an "auto-start on launch" option. All three directions are
+  supported: Local (`-L`), Remote (`-R`, via `tcpip-forward`, with a
+  `GatewayPorts yes` hint when binding `0.0.0.0`), and Dynamic SOCKS5 (`-D`,
+  a local SOCKS5 proxy that opens a `direct-tcpip` channel per request).
+  Toggling a rule on for an untrusted host surfaces the same host-key
+  verification modal the terminal uses; boot auto-start stays known-only and
+  silent. A dropped connection flips the row back to off. Rules sync over
+  P2P and travel in portable export/import; legacy inline
+  `Connection.port_forwards` are migrated into `Local` rules
+  (`auto_start = false`) on first launch, with the legacy field kept as the
+  "raise with the terminal" shortcut.
+
 ## [0.7.4] - 2026-06-01
 
 ### Added

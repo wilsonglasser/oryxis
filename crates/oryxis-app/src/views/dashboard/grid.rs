@@ -145,11 +145,11 @@ impl Oryxis {
         }
 
         // Dynamic-group early-return: if the user opened a cloud-query
-        // group (ECS service / future K8s deployment), short-circuit
-        // the regular host-card flow and show a placeholder explaining
-        // that the live-task resolver isn't wired yet. Without this
-        // the panel renders an empty grid and the user can't tell
-        // whether the import worked.
+        // group (ECS tasks or K8s pods), short-circuit the regular
+        // host-card flow and render the resolver's live children (or its
+        // pending / loading / failed state). Without this the panel would
+        // show an empty grid and the user couldn't tell whether the
+        // import worked.
         if let Some(gid) = self.active_group
             && let Some(group) = self.groups.iter().find(|g| g.id == gid)
             && let Some(query) = group.cloud_query.as_ref()
@@ -265,6 +265,16 @@ impl Oryxis {
                             } => (cluster.clone(), container.clone()),
                             _ => (String::new(), String::new()),
                         };
+                        // K8s namespace, set only for `K8sPods` groups so
+                        // each pod row dispatches `kubectl exec` instead of
+                        // the ECS Exec transport.
+                        let k8s_namespace = match &query.kind {
+                            oryxis_core::models::cloud::CloudQueryKind::K8sPods {
+                                namespace,
+                                ..
+                            } => Some(namespace.clone()),
+                            _ => None,
+                        };
                         let mut items: Vec<Element<'_, Message>> = Vec::new();
                         for h in hosts {
                             let task_id = h.resource_id.clone();
@@ -369,10 +379,29 @@ impl Oryxis {
                                 None => Space::new().width(0).into(),
                             };
 
+                            // Only RUNNING tasks can be exec'd into. A
+                            // PROVISIONING container has no `runtimeId`
+                            // yet and a STOPPED one is gone, so clicking
+                            // either just yields an opaque AWS error.
+                            // Disable the row (no on_press) and mute its
+                            // label for any known non-RUNNING state.
+                            // Unknown / absent status stays clickable so
+                            // we never block a task we simply couldn't
+                            // classify; the API gives a clear error then.
+                            let connectable = matches!(
+                                status_upper.as_deref(),
+                                Some("RUNNING") | None
+                            );
+                            let primary_color = if connectable {
+                                OryxisColors::t().text_primary
+                            } else {
+                                OryxisColors::t().text_muted
+                            };
+
                             let mut text_col: Vec<Element<'_, Message>> = vec![
                                 text(primary)
                                     .size(13)
-                                    .color(OryxisColors::t().text_primary)
+                                    .color(primary_color)
                                     .wrapping(iced::widget::text::Wrapping::None)
                                     .into(),
                             ];
@@ -415,23 +444,38 @@ impl Oryxis {
                                     ])
                                     .align_y(iced::Alignment::Center),
                                 )
-                                .on_press(Message::ConnectEcsExecTask {
-                                    group_id: gid,
-                                    task_id: task_id.clone(),
-                                    task_label,
-                                    // Specific container the user
-                                    // clicked. Under wildcard mode
-                                    // each row is one container; the
-                                    // connect path needs the name to
-                                    // target the right one in the
-                                    // task. Falls back to the query
-                                    // container when the row didn't
-                                    // populate (legacy hosts).
-                                    container: h
-                                        .container_name
-                                        .clone()
-                                        .unwrap_or_else(|| ecs_container.clone()),
-                                })
+                                .on_press_maybe(connectable.then_some(
+                                    match &k8s_namespace {
+                                        // K8s pod row: open `kubectl exec`.
+                                        Some(ns) => Message::ConnectKubectlExecPod {
+                                            group_id: gid,
+                                            namespace: ns.clone(),
+                                            pod: task_id.clone(),
+                                            container: h
+                                                .container_name
+                                                .clone()
+                                                .unwrap_or_default(),
+                                        },
+                                        // ECS task row: SSM-backed Exec.
+                                        None => Message::ConnectEcsExecTask {
+                                            group_id: gid,
+                                            task_id: task_id.clone(),
+                                            task_label,
+                                            // Specific container the user
+                                            // clicked. Under wildcard mode
+                                            // each row is one container; the
+                                            // connect path needs the name to
+                                            // target the right one in the
+                                            // task. Falls back to the query
+                                            // container when the row didn't
+                                            // populate (legacy hosts).
+                                            container: h
+                                                .container_name
+                                                .clone()
+                                                .unwrap_or_else(|| ecs_container.clone()),
+                                        },
+                                    },
+                                ))
                                 .padding(Padding {
                                     top: 10.0,
                                     right: 12.0,
@@ -448,6 +492,14 @@ impl Oryxis {
                                         BtnStatus::Pressed => (
                                             OryxisColors::t().bg_selected,
                                             OryxisColors::t().accent,
+                                        ),
+                                        // Non-RUNNING rows arrive here
+                                        // (no on_press). Flatten to the
+                                        // page background so they read as
+                                        // inert next to the live cards.
+                                        BtnStatus::Disabled => (
+                                            OryxisColors::t().bg_primary,
+                                            OryxisColors::t().border,
                                         ),
                                         _ => (
                                             OryxisColors::t().bg_surface,

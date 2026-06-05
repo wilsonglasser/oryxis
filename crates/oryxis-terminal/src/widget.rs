@@ -29,6 +29,34 @@ use tokio::sync::mpsc;
 /// universal PUA coverage, so we route every PUA codepoint to it.
 const NERD_FONT: Font = Font::new("Symbols Nerd Font");
 
+/// Bracketed-paste start marker (`ESC [ 200 ~`).
+const PASTE_START: &[u8] = b"\x1b[200~";
+/// Bracketed-paste end marker (`ESC [ 201 ~`).
+const PASTE_END: &[u8] = b"\x1b[201~";
+
+/// Prepare clipboard text for writing to a terminal session.
+///
+/// When `bracketed` is true (the focused app enabled DECSET 2004), wrap the
+/// payload in `ESC [ 200 ~` ... `ESC [ 201 ~` so readline / TUI programs
+/// (bash, zsh, Codex CLI, ...) treat the whole block as one paste and only
+/// submit when the user presses Enter, instead of one submit per embedded
+/// newline. Any marker already present in the clipboard is stripped first so
+/// the payload can't prematurely close (or reopen) the bracket.
+///
+/// When `bracketed` is false the text is returned unchanged, so plain shells
+/// that never requested the mode are unaffected.
+pub fn wrap_paste(text: &str, bracketed: bool) -> Vec<u8> {
+    if !bracketed {
+        return text.as_bytes().to_vec();
+    }
+    let sanitized = text.replace("\x1b[200~", "").replace("\x1b[201~", "");
+    let mut out = Vec::with_capacity(sanitized.len() + PASTE_START.len() + PASTE_END.len());
+    out.extend_from_slice(PASTE_START);
+    out.extend_from_slice(sanitized.as_bytes());
+    out.extend_from_slice(PASTE_END);
+    out
+}
+
 // ---------------------------------------------------------------------------
 // Terminal State
 // ---------------------------------------------------------------------------
@@ -101,6 +129,16 @@ impl TerminalState {
             && let Err(e) = pty.write(data) {
                 tracing::error!("PTY write error: {}", e);
             }
+    }
+
+    /// True when the focused application has enabled bracketed paste mode
+    /// (DECSET 2004, `ESC [ ? 2004 h`). Callers wrap pasted clipboard text
+    /// in bracket markers so embedded newlines arrive as literal characters
+    /// instead of one Enter per line. The backend tracks this even over SSH
+    /// because remote output is fed through `process()` into the same term.
+    pub fn bracketed_paste_enabled(&self) -> bool {
+        use alacritty_terminal::term::TermMode;
+        self.backend.term.mode().contains(TermMode::BRACKETED_PASTE)
     }
 
     pub fn resize(&mut self, cols: u16, rows: u16) -> bool {
@@ -718,6 +756,12 @@ pub struct TerminalView<Message = ()> {
     /// so they reach the active SSH session; without it the widget
     /// falls back to a local-PTY write, which is dead on SSH tabs.
     on_terminal_input: Option<Box<dyn Fn(Vec<u8>) -> Message>>,
+    /// Whether this pane currently has focus. Only the focused pane emits
+    /// mouse-tracking reports, so a click that merely focuses an inactive
+    /// split pane (e.g. one running htop, which leaves mouse mode on)
+    /// doesn't inject a stray report into that shell. Defaults to `true`
+    /// so the single-pane path is unchanged.
+    focused: bool,
 }
 
 /// Horizontal padding around the terminal content (left/right).
@@ -889,7 +933,15 @@ impl<Message> TerminalView<Message> {
             on_font_size_decrease: None,
             on_paste_request: None,
             on_terminal_input: None,
+            focused: true,
         }
+    }
+
+    /// Mark whether this pane is focused. Only the focused pane emits
+    /// mouse-tracking reports (see the `focused` field).
+    pub fn focused(mut self, focused: bool) -> Self {
+        self.focused = focused;
+        self
     }
 
     pub fn with_font_size(mut self, size: f32) -> Self {
@@ -1183,7 +1235,11 @@ where
         // typing path never contends on it). Holding Shift bypasses
         // reporting and restores local selection, the universal escape
         // hatch every terminal honours.
-        let report_ctx = if matches!(event, iced::Event::Mouse(_)) {
+        // Only the focused pane reports mouse events to its app. Otherwise
+        // a click that just focuses an inactive split pane (one still in
+        // mouse mode, e.g. running htop) would inject a stray SGR report
+        // like `\x1b[<0;1;1m` into that shell.
+        let report_ctx = if self.focused && matches!(event, iced::Event::Mouse(_)) {
             self.state.lock().ok().and_then(|s| {
                 let mode = *s.backend.term.mode();
                 mode.intersects(alacritty_terminal::term::TermMode::MOUSE_MODE)
@@ -1392,7 +1448,8 @@ where
                     && let Ok(text) = clip.get_text()
                     && let Ok(mut state) = self.state.lock()
                 {
-                    state.write(text.as_bytes());
+                    let bracketed = state.bracketed_paste_enabled();
+                    state.write(&crate::wrap_paste(&text, bracketed));
                 }
                 return Some(CanvasAction::capture());
             }
@@ -2081,5 +2138,30 @@ fn brighten_named(color: &alacritty_terminal::vte::ansi::Color) -> alacritty_ter
         }
         AnsiColor::Indexed(idx) if *idx < 8 => AnsiColor::Indexed(idx + 8),
         other => *other,
+    }
+}
+
+#[cfg(test)]
+mod paste_tests {
+    use super::wrap_paste;
+
+    #[test]
+    fn raw_when_mode_disabled() {
+        let text = "line one\nline two\n";
+        assert_eq!(wrap_paste(text, false), text.as_bytes());
+    }
+
+    #[test]
+    fn wraps_when_mode_enabled() {
+        let out = wrap_paste("hello\nworld", true);
+        assert_eq!(out, b"\x1b[200~hello\nworld\x1b[201~");
+    }
+
+    #[test]
+    fn strips_embedded_markers_so_payload_cannot_break_out() {
+        // A clipboard carrying its own bracket markers must not be able to
+        // close the bracket early or open a nested one.
+        let out = wrap_paste("a\x1b[201~b\x1b[200~c", true);
+        assert_eq!(out, b"\x1b[200~abc\x1b[201~");
     }
 }

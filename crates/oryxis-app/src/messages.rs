@@ -10,7 +10,8 @@ use iced::widget::text_editor;
 use iced::Point;
 use uuid::Uuid;
 
-use oryxis_ssh::SshSession;
+use oryxis_ssh::{ForwardSession, SshSession};
+use oryxis_core::models::port_forward_rule::ForwardKind;
 
 use crate::state::{ConnectionStep, SettingsSection, View};
 
@@ -42,6 +43,12 @@ pub enum Message {
     ShowNewTabPicker,
     HideNewTabPicker,
     NewTabPickerSearchChanged(String),
+    /// Drill into a group in the new-tab picker. For a cloud-query group
+    /// this also kicks off (or refreshes) the resolve so the ECS tasks /
+    /// K8s pods load. `Uuid` is the group id.
+    NewTabPickerOpenGroup(Uuid),
+    /// Step back out of a drilled-into group to the top-level picker list.
+    NewTabPickerBack,
     ShowTabJump,
     HideTabJump,
     TabJumpSearchChanged(String),
@@ -217,10 +224,18 @@ pub enum Message {
     CloseAllTabs,
 
     // Terminal I/O
-    PtyOutput(usize, Vec<u8>),  // (tab_index, bytes)
+    PtyOutput(Uuid, Vec<u8>),  // (pane_id, bytes)
     KeyboardEvent(keyboard::Event),
     MouseMoved(Point),
     WindowResized(iced::Size),
+    /// OS window gained (`true`) or lost (`false`) focus. Gates the
+    /// cloud SSM/ECS keepalive ticker: it only runs while unfocused.
+    WindowFocusChanged(bool),
+    /// Periodic tick (mounted only while the window is unfocused and at
+    /// least one SSM/ECS tab is open) that nudges those tabs' terminal
+    /// size so the SSM idle timer resets and a long alt-tab away doesn't
+    /// drop the session.
+    SsmKeepaliveTick,
     WindowDrag,
     WindowResizeDrag(iced::window::Direction),
     /// Double-click on a N/S edge, fill the full monitor height while
@@ -311,9 +326,9 @@ pub enum Message {
     // SSH
     ConnectSsh(usize),
     SshProgress(ConnectionStep, String),
-    SshConnected(usize, Arc<SshSession>),
+    SshConnected(Uuid, Arc<SshSession>),  // (pane_id, session)
     SshNewKnownHosts(Vec<oryxis_core::models::known_host::KnownHost>),
-    SshDisconnected(usize),
+    SshDisconnected(Uuid),  // (pane_id)
     SshError(String),
     SshHostKeyVerify(oryxis_ssh::HostKeyQuery),
     SshHostKeyReject,
@@ -339,6 +354,93 @@ pub enum Message {
     /// then Enter into the terminal (e.g. to answer a sudo prompt). No-op
     /// with a toast when the host has no stored password.
     ApplySudoPassword,
+
+    // Split panes
+    /// Focus a pane (click). Routes keyboard / snippets / paste to it.
+    FocusPane(iced::widget::pane_grid::Pane),
+    /// Drag a pane divider to resize.
+    ResizePane(iced::widget::pane_grid::ResizeEvent),
+    /// Split the focused pane of the active tab along an axis, opening the
+    /// connection picker to fill the new pane.
+    SplitPane(iced::widget::pane_grid::Axis),
+    /// Like `SplitPane` but targets a specific tab (from its right-click
+    /// menu), so it works even when that tab isn't the active one.
+    SplitTabPane(usize, iced::widget::pane_grid::Axis),
+    /// Hover entered the `+` button: reveal the New-Tab / Split popover.
+    /// No-op unless a terminal tab is open.
+    ShowSplitMenu,
+    /// Cursor entered the popover itself (keeps it open across the bridge).
+    SplitMenuEnter,
+    /// Cursor left the `+` button or the popover: schedule a close.
+    SplitMenuLeave,
+    /// Delayed close: hide the popover unless the cursor came back to it.
+    SplitMenuCloseIfIdle,
+    /// Close the focused pane (closes the tab if it was the last one).
+    ClosePane,
+    /// Move focus to the adjacent pane in a direction (keyboard nav).
+    FocusPaneDir(iced::widget::pane_grid::Direction),
+    /// Picker "Local Shell" entry. Opens a local shell, into a split pane
+    /// when `pending_pane_split` is set, otherwise a new tab.
+    PickLocalShell,
+    /// A pane's SSH connect failed; surface the error inside the pane.
+    PaneConnectError(Uuid, String),
+
+    // Custom terminal themes (Settings -> Themes)
+    /// Open the editor for a brand new custom theme.
+    ThemeEditorNew,
+    /// Open the editor for the custom theme at this index.
+    ThemeEditorEdit(usize),
+    /// Close the editor without saving.
+    ThemeEditorClose,
+    ThemeEditorNameChanged(String),
+    /// A color slot's hex value changed (live).
+    ThemeEditorColorChanged(crate::state::ThemeColorSlot, String),
+    /// Save the in-progress theme (insert or update) + repaint.
+    ThemeEditorSave,
+    /// Delete the custom theme at this index.
+    ThemeDelete(usize),
+    /// Import-theme modal (paste an iTerm / Windows Terminal / base16 scheme).
+    ThemeImportOpen,
+    ThemeImportClose,
+    ThemeImportContentAction(text_editor::Action),
+    ThemeImportNameChanged(String),
+    /// Parse the pasted scheme; on success open it in the editor for review.
+    ThemeImportApply,
+    /// Hover tracking for the floating edit / delete icons on a custom
+    /// theme card.
+    ThemeCardHovered(usize),
+    ThemeCardUnhovered,
+    /// Open the compact color-picker popover for a slot (anchored at the
+    /// cursor).
+    ThemeEditorOpenPicker(crate::state::ThemeColorSlot),
+    /// Close the color-picker popover.
+    ThemeEditorClosePicker,
+
+    // Port forwards (standalone entity)
+    ShowPortForwardPanel,
+    HidePortForwardPanel,
+    PfLabelChanged(String),
+    PfKindChanged(ForwardKind),
+    PfHostChanged(Uuid),
+    PfListenHostChanged(String),
+    PfListenPortChanged(String),
+    PfTargetHostChanged(String),
+    PfTargetPortChanged(String),
+    PfAutoStartToggled(bool),
+    SavePortForwardRule,
+    EditPortForwardRule(usize),
+    DeletePortForwardRule(usize),
+    /// Toggle a rule on: opens a dedicated PTY-less SSH session.
+    StartPortForward(Uuid),
+    /// Toggle a rule off: drops its `ForwardSession` (cancels the tunnel).
+    StopPortForward(Uuid),
+    /// Result of a `StartPortForward` connect attempt.
+    PortForwardStarted(Uuid, Result<Arc<ForwardSession>, String>),
+    /// Periodic liveness sweep; drops forwards whose connection died.
+    PortForwardLivenessTick,
+    PortForwardCardHovered(usize),
+    PortForwardCardUnhovered,
+    PortForwardSearchChanged(String),
 
     // Terminal side panel (Chat / Snippets / History tabs)
     SelectTerminalSidebarTab(crate::state::TerminalSidebarTab),
@@ -547,6 +649,9 @@ pub enum Message {
     CloudFormAwsSsoRegionChanged(String),
     CloudFormAwsSsoAccountIdChanged(String),
     CloudFormAwsSsoRoleNameChanged(String),
+    /// Kubernetes (Kubeconfig) auth fields.
+    CloudFormKubeconfigPathChanged(String),
+    CloudFormContextChanged(String),
     /// Kicks off a `test_credentials` round-trip via the registered
     /// provider. The result lands as `CloudFormTestResult`.
     CloudFormTestCredentials,
@@ -574,6 +679,8 @@ pub enum Message {
     /// Toggle an ECS service entry in the discovery panel. Carries
     /// the `cluster/service/container` key.
     CloudDiscoverToggleEcs(String),
+    /// Toggle a discovered K8s workload (`namespace/kind/name`).
+    CloudDiscoverToggleK8s(String),
     CloudDiscoverImport,
     /// Triggered from the transport-confirmation modal: actually run
     /// the import using the picked default transport.
@@ -629,6 +736,12 @@ pub enum Message {
     DynamicGroupFormClusterChanged(String),
     DynamicGroupFormServiceChanged(String),
     DynamicGroupFormContainerChanged(String),
+    /// K8s dynamic-group source fields (context / namespace / selector
+    /// kind + value).
+    DynamicGroupFormK8sContextChanged(String),
+    DynamicGroupFormNamespaceChanged(String),
+    DynamicGroupFormK8sSelectorKindChanged(crate::state::K8sSelectorKind),
+    DynamicGroupFormK8sSelectorValueChanged(String),
     /// Open the shared icon + color picker pre-filled with the current
     /// dynamic-group form values. On Save the picker writes back to the
     /// form (not directly to the vault) so the deferred Save button on
@@ -653,11 +766,33 @@ pub enum Message {
         /// the row's `DiscoveredHost.container_name`.
         container: String,
     },
+    /// Open an interactive shell in a Kubernetes pod by spawning
+    /// `kubectl exec -it` in a local PTY. No provider round-trip; the
+    /// dispatch builds the kubectl args from the group's profile + query.
+    ConnectKubectlExecPod {
+        group_id: Uuid,
+        namespace: String,
+        pod: String,
+        /// Container to exec into, empty = the pod's default (kubectl
+        /// picks the first container).
+        container: String,
+    },
     /// Result of `ecs:ExecuteCommand` + plugin invocation prep. On
     /// success the dispatch spawns the plugin and opens a tab; on
     /// error it's surfaced in the UI.
     EcsExecSessionReady {
+        /// Group the task belongs to. Carried so the error arm can
+        /// re-resolve the dynamic group's list: a failed connect on a
+        /// recycled task means the cached list is stale, refreshing it
+        /// surfaces the live task without a manual Refresh click.
+        group_id: Uuid,
         task_label: String,
+        /// Task id + container the session targets. Carried so the
+        /// spawn handler can rebuild a `ConnectEcsExecTask` and stash
+        /// it on the tab as its relaunch message (used by Duplicate Tab,
+        /// ECS tabs have no saved `Connection` to look up by label).
+        task_id: String,
+        container: String,
         result: Result<Box<oryxis_cloud::SessionPayload>, String>,
     },
     /// SSM Session result, same plugin payload shape as ECS Exec, so

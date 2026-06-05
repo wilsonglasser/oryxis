@@ -226,11 +226,30 @@ impl Oryxis {
                         .as_deref()
                         == Some(theme.name());
                     theme_cards.push(crate::widgets::terminal_theme_card(
-                        *theme,
+                        theme.palette(),
+                        theme.name(),
                         is_selected,
                         Message::TerminalThemeChanged(theme.name().to_string()),
                     ));
                 }
+                // User-defined themes after the built-ins, each with the
+                // hover edit / delete affordances.
+                for (idx, ct) in self.custom_terminal_themes.iter().enumerate() {
+                    let is_selected =
+                        self.terminal_theme_override.as_deref() == Some(ct.name.as_str());
+                    let palette = self
+                        .terminal_palette_for_name(&ct.name)
+                        .unwrap_or_default();
+                    theme_cards.push(self.terminal_custom_theme_card(
+                        idx,
+                        &ct.name,
+                        palette,
+                        is_selected,
+                    ));
+                }
+                // "+ New custom theme" + "Import" cards last.
+                theme_cards.push(crate::views::settings_themes::terminal_theme_add_card());
+                theme_cards.push(crate::views::settings_themes::terminal_theme_import_card());
                 // 2-column responsive grid for theme cards. Cards still
                 // use the existing swatch-+-name layout (the "bolinhas"
                 // style); only the row arrangement changes from a single

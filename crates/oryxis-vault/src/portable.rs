@@ -2,7 +2,8 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 use oryxis_core::models::{
-    CloudProfile, Connection, Group, Identity, KnownHost, ProxyIdentity, Snippet, SshKey,
+    CloudProfile, Connection, Group, Identity, KnownHost, PortForwardRule, ProxyIdentity,
+    Snippet, SshKey,
 };
 
 use crate::store::{encrypt, decrypt, VaultError, VaultStore};
@@ -40,6 +41,10 @@ struct ExportPayload {
     #[serde(default)]
     cloud_profiles: Vec<ExportCloudProfile>,
     snippets: Vec<Snippet>,
+    /// Standalone port forward rules. Defaults to empty for backwards compat
+    /// with `.oryxis` files written before this field existed.
+    #[serde(default)]
+    port_forward_rules: Vec<PortForwardRule>,
     known_hosts: Vec<KnownHost>,
 }
 
@@ -124,6 +129,8 @@ pub struct ImportResult {
     pub cloud_profiles_skipped: usize,
     pub snippets_added: usize,
     pub snippets_skipped: usize,
+    pub port_forward_rules_added: usize,
+    pub port_forward_rules_skipped: usize,
     pub known_hosts_added: usize,
     pub known_hosts_skipped: usize,
 }
@@ -175,6 +182,7 @@ pub fn export_vault(
     let all_proxy_identities = store.list_proxy_identities()?;
     let all_cloud_profiles = store.list_cloud_profiles()?;
     let all_snippets = store.list_snippets()?;
+    let all_port_forward_rules = store.list_port_forward_rules()?;
     let all_known_hosts = store.list_known_hosts()?;
 
     // Apply filter to select which connections to export
@@ -351,8 +359,9 @@ pub fn export_vault(
         }
     }
 
-    // Snippets and known_hosts: only included in full export
+    // Snippets, port forward rules and known_hosts: only included in full export
     let snippets = if is_filtered { Vec::new() } else { all_snippets };
+    let port_forward_rules = if is_filtered { Vec::new() } else { all_port_forward_rules };
     let known_hosts = if is_filtered { Vec::new() } else { all_known_hosts };
 
     let payload = ExportPayload {
@@ -366,6 +375,7 @@ pub fn export_vault(
         proxy_identities,
         cloud_profiles,
         snippets,
+        port_forward_rules,
         known_hosts,
     };
 
@@ -415,6 +425,8 @@ pub fn import_vault(
         cloud_profiles_skipped: 0,
         snippets_added: 0,
         snippets_skipped: 0,
+        port_forward_rules_added: 0,
+        port_forward_rules_skipped: 0,
         known_hosts_added: 0,
         known_hosts_skipped: 0,
     };
@@ -426,6 +438,7 @@ pub fn import_vault(
     let existing_identities = store.list_identities()?;
     let existing_proxy_identities = store.list_proxy_identities()?;
     let existing_cloud_profiles = store.list_cloud_profiles()?;
+    let existing_port_forward_rules = store.list_port_forward_rules()?;
     let existing_snippets = store.list_snippets()?;
     let existing_known_hosts = store.list_known_hosts()?;
 
@@ -551,6 +564,16 @@ pub fn import_vault(
         } else {
             store.save_snippet(snippet)?;
             result.snippets_added += 1;
+        }
+    }
+
+    // Port forward rules (skip if exists)
+    for rule in &payload.port_forward_rules {
+        if existing_port_forward_rules.iter().any(|r| r.id == rule.id) {
+            result.port_forward_rules_skipped += 1;
+        } else {
+            store.save_port_forward_rule(rule)?;
+            result.port_forward_rules_added += 1;
         }
     }
 

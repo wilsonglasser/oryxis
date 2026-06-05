@@ -56,6 +56,7 @@ impl Oryxis {
             // search input to focus, so Ctrl+F harmlessly tries to
             // focus an Id that doesn't exist (iced no-ops on a miss).
             View::Snippets => Some(widget::Id::new("search-snippets")),
+            View::PortForwarding => Some(widget::Id::new("search-port-forwards")),
             View::History => Some(widget::Id::new("search-history")),
             View::Sftp => {
                 // Two filter inputs (local + remote panes); focus
@@ -66,6 +67,22 @@ impl Oryxis {
             }
             View::Settings | View::Terminal | View::KnownHosts => None,
         }
+    }
+
+    /// `true` when a global picker / modal overlay is open and should
+    /// swallow keyboard input instead of letting it fall through to the
+    /// PTY underneath. Mirrors the set checked by `close_topmost_modal`
+    /// (minus the burger menu, which carries no text field). Used by the
+    /// keyboard router in `dispatch_terminal.rs` so typing in a picker's
+    /// search field doesn't also leak into the terminal behind it.
+    pub(crate) fn global_modal_captures_keys(&self) -> bool {
+        self.show_new_tab_picker
+            || self.show_tab_jump
+            || self.show_icon_picker
+            || self.show_theme_picker
+            || self.show_jump_host_picker
+            || self.folder_rename.is_some()
+            || self.folder_delete.is_some()
     }
 
     /// Closes the topmost open modal / overlay if any, and returns
@@ -121,9 +138,20 @@ impl Oryxis {
     /// `--inherit-vault` and pipes the password through stdin so the
     /// secret never appears in argv (which `ps aux` would expose).
     pub(crate) fn spawn_oryxis_child(&self, source_tab: Option<usize>) {
+        // Map the tab back to a saved connection so the child opens the
+        // same host. SSM-into-EC2 tabs carry a title prefix; strip it so
+        // the lookup matches (the child re-routes to SSM via cloud_ref).
+        // ECS Exec / kubectl tabs are ephemeral dynamic-group resources
+        // with no saved connection, so they resolve to None and the child
+        // opens a plain window (a fresh process can't carry an in-memory
+        // relaunch message across the boundary).
         let connect_uuid = source_tab.and_then(|idx| {
             self.tabs.get(idx).and_then(|tab| {
-                let base_label = tab.label.trim_end_matches(" (disconnected)").to_string();
+                let base_label = tab
+                    .label
+                    .trim_end_matches(" (disconnected)")
+                    .trim_start_matches(crate::app::SSM_TAB_PREFIX)
+                    .to_string();
                 self.connections
                     .iter()
                     .find(|c| c.label == base_label)
@@ -215,6 +243,35 @@ impl Oryxis {
                 self.editing_hotkey = None;
             } else if let Some(task) = self.handle_hotkey_capture(key, modifiers) {
                 return Some(task);
+            }
+        }
+
+        // 1b. Split-pane shortcuts (terminal view only). Fixed bindings,
+        //     mirroring GNOME Terminal, not (yet) in the rebind editor:
+        //     Ctrl+Shift+E / O split the focused pane side-by-side /
+        //     stacked, Ctrl+Shift+W closes it, and Ctrl+Shift+arrows move
+        //     focus between panes.
+        if self.active_view == View::Terminal && modifiers.control() && modifiers.shift() {
+            use iced::widget::pane_grid::{Axis, Direction};
+            if let Key::Character(c) = key {
+                match c.as_str() {
+                    "e" | "E" => return Some(self.update(Message::SplitPane(Axis::Vertical))),
+                    "o" | "O" => return Some(self.update(Message::SplitPane(Axis::Horizontal))),
+                    "w" | "W" => return Some(self.update(Message::ClosePane)),
+                    _ => {}
+                }
+            }
+            if let Key::Named(named) = key {
+                let dir = match named {
+                    Named::ArrowLeft => Some(Direction::Left),
+                    Named::ArrowRight => Some(Direction::Right),
+                    Named::ArrowUp => Some(Direction::Up),
+                    Named::ArrowDown => Some(Direction::Down),
+                    _ => None,
+                };
+                if let Some(d) = dir {
+                    return Some(self.update(Message::FocusPaneDir(d)));
+                }
             }
         }
 

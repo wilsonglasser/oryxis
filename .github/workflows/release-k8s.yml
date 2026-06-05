@@ -1,0 +1,195 @@
+name: Release Kubernetes plugin
+
+# Triggered by tags of the form `k8s-v0.1.0`. Builds the
+# `oryxis-cloud-k8s-plugin` binary for every supported platform,
+# signs each with the production Ed25519 key (from the
+# `ORYXIS_SIGNING_KEY` secret), uploads everything to the GitHub
+# Release, and finally builds the `k8s.json` manifest from the
+# same-release assets and uploads that too.
+#
+# The app reads the manifest via the GitHub API: list releases on
+# this repo, filter `k8s-v*`, pick the highest, download `k8s.json`
+# from its assets. No gh-pages branch involved. Mirrors
+# `release-aws.yml`; the only per-provider differences are the tag
+# prefix, the crate / binary name, the manifest filename, and
+# `provider_id` / `min_app`.
+
+on:
+  push:
+    tags:
+      - 'k8s-v*'
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    name: Build ${{ matrix.label }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: linux-x86_64
+            runner: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            ext: ''
+          - label: linux-aarch64
+            runner: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+            ext: ''
+          - label: macos-aarch64
+            runner: macos-latest
+            target: aarch64-apple-darwin
+            ext: ''
+          - label: windows-x86_64
+            runner: windows-latest
+            target: x86_64-pc-windows-msvc
+            ext: '.exe'
+          - label: windows-aarch64
+            runner: windows-latest
+            target: aarch64-pc-windows-msvc
+            ext: '.exe'
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry/
+            ~/.cargo/git/
+            target/
+          key: k8s-plugin-${{ matrix.label }}-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Build plugin (release)
+        run: cargo build --release -p oryxis-cloud-k8s-plugin --target ${{ matrix.target }}
+
+      - name: Strip (unix)
+        if: runner.os != 'Windows'
+        run: strip target/${{ matrix.target }}/release/oryxis-cloud-k8s-plugin${{ matrix.ext }}
+
+      - name: Build signer
+        run: cargo build --release -p oryxis-plugin-signer
+
+      - name: Sign + hash
+        shell: bash
+        env:
+          ORYXIS_SIGNING_KEY: ${{ secrets.ORYXIS_SIGNING_KEY }}
+        run: |
+          set -euo pipefail
+          BIN="target/${{ matrix.target }}/release/oryxis-cloud-k8s-plugin${{ matrix.ext }}"
+          OUT="dist/oryxis-cloud-k8s-plugin-${{ matrix.label }}${{ matrix.ext }}"
+          mkdir -p dist
+          cp "$BIN" "$OUT"
+          # The signer prints `sha256 = …`, `signature_b64 = …`,
+          # and `size = …` on three separate lines.
+          ./target/release/oryxis-plugin-signer sign "$BIN" > "$OUT.signinfo"
+          grep '^sha256'        "$OUT.signinfo" | awk '{print $3}' > "$OUT.sha256"
+          grep '^signature_b64' "$OUT.signinfo" | awk '{print $3}' > "$OUT.sig"
+          grep '^size'          "$OUT.signinfo" | awk '{print $3}' > "$OUT.size"
+          rm "$OUT.signinfo"
+
+      - name: Upload to Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          files: |
+            dist/oryxis-cloud-k8s-plugin-${{ matrix.label }}${{ matrix.ext }}
+            dist/oryxis-cloud-k8s-plugin-${{ matrix.label }}${{ matrix.ext }}.sig
+            dist/oryxis-cloud-k8s-plugin-${{ matrix.label }}${{ matrix.ext }}.sha256
+            dist/oryxis-cloud-k8s-plugin-${{ matrix.label }}${{ matrix.ext }}.size
+
+  manifest:
+    name: Publish manifest
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Resolve version
+        id: tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG='${{ github.ref_name }}'
+          echo "tag=$TAG"        >> "$GITHUB_OUTPUT"
+          echo "version=${TAG#k8s-v}" >> "$GITHUB_OUTPUT"
+
+      - name: Download sidecars from the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          mkdir -p assets
+          gh release download "${{ steps.tag.outputs.tag }}" \
+            --repo "${{ github.repository }}" \
+            --pattern 'oryxis-cloud-k8s-plugin-*.sha256' \
+            --pattern 'oryxis-cloud-k8s-plugin-*.sig' \
+            --pattern 'oryxis-cloud-k8s-plugin-*.size' \
+            --dir assets
+
+      - name: Build k8s.json
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION='${{ steps.tag.outputs.version }}'
+          TAG='${{ steps.tag.outputs.tag }}'
+          BASE="https://github.com/${{ github.repository }}/releases/download/${TAG}"
+
+          # Build the binaries array via jq so JSON escaping is correct
+          # and we avoid heredocs (which collide with the YAML block
+          # scalar's indent rules: a dedented `EOF` ends the YAML scalar
+          # before bash sees it).
+          binaries='[]'
+          for sha_file in assets/oryxis-cloud-k8s-plugin-*.sha256; do
+            [ -f "$sha_file" ] || continue
+            base="${sha_file%.sha256}"
+            name=$(basename "$base")
+            # Parse `os` + `arch` from the filename:
+            #   oryxis-cloud-k8s-plugin-linux-x86_64
+            #   oryxis-cloud-k8s-plugin-windows-aarch64.exe
+            stripped="${name#oryxis-cloud-k8s-plugin-}"
+            stripped="${stripped%.exe}"
+            os="${stripped%-*}"
+            arch="${stripped##*-}"
+            sha=$(cat "$base.sha256")
+            sig=$(cat "$base.sig")
+            size=$(cat "$base.size")
+            binaries=$(echo "$binaries" | jq \
+              --arg os "$os" \
+              --arg arch "$arch" \
+              --arg url "$BASE/$name" \
+              --arg sha "$sha" \
+              --arg sig "$sig" \
+              --argjson size "$size" \
+              '. + [{os: $os, arch: $arch, url: $url, sha256: $sha, signature: $sig, size: $size}]')
+          done
+
+          jq -n \
+            --arg version "$VERSION" \
+            --argjson binaries "$binaries" \
+            '{
+              provider_id: "k8s",
+              versions: [
+                {
+                  version: $version,
+                  protocol_versions: [1],
+                  min_app: "0.8.0",
+                  binaries: $binaries
+                }
+              ]
+            }' > k8s.json
+
+          echo '--- k8s.json ---'
+          cat k8s.json
+
+      - name: Upload k8s.json to the release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          files: k8s.json

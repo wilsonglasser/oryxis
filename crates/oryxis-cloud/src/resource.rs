@@ -40,11 +40,16 @@ pub struct DiscoveredEcsService {
 pub struct DiscoveredK8sWorkload {
     pub context: String,
     pub namespace: String,
-    /// `Deployment(name)` / `StatefulSet(name)` / `DaemonSet(name)`.
+    /// `Deployment` / `StatefulSet` / `DaemonSet`.
     pub kind: String,
     pub name: String,
     pub container: String,
     pub running_pod_count: u32,
+    /// `spec.selector.matchLabels` of the workload. Import turns this into
+    /// a `PodSelector::Labels`, which resolves to the workload's pods with a
+    /// single `kubectl get pods -l ...` call regardless of workload kind.
+    #[serde(default)]
+    pub match_labels: std::collections::BTreeMap<String, String>,
 }
 
 /// Resolved live host returned by `resolve_query`, used by dynamic

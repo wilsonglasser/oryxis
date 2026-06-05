@@ -113,17 +113,21 @@ impl Oryxis {
         // concrete map propagates to the registered trait object.
         let aws_provider =
             std::sync::Arc::new(crate::plugins::PluginProvider::new("aws"));
+        let k8s_provider =
+            std::sync::Arc::new(crate::plugins::PluginProvider::new("k8s"));
         let plugin_providers = {
             let mut m: std::collections::HashMap<
                 String,
                 std::sync::Arc<crate::plugins::PluginProvider>,
             > = std::collections::HashMap::new();
             m.insert("aws".to_string(), aws_provider.clone());
+            m.insert("k8s".to_string(), k8s_provider.clone());
             m
         };
         let cloud_provider_registry = {
             let mut reg = oryxis_cloud::CloudProviderRegistry::new();
             reg.register(aws_provider.clone());
+            reg.register(k8s_provider.clone());
             std::sync::Arc::new(reg)
         };
 
@@ -149,11 +153,14 @@ impl Oryxis {
                 quick_host_input: String::new(),
                 sidebar_collapsed: false,
                 tabs: Vec::new(),
+                pending_pane_split: None,
+                split_menu_hovered: false,
                 active_tab: None,
                 last_terminal_tab: None,
                 hovered_tab: None,
                 show_new_tab_picker: false,
                 new_tab_picker_search: String::new(),
+                new_tab_picker_group: None,
                 show_tab_jump: false,
                 tab_jump_search: String::new(),
                 show_burger_menu: false,
@@ -202,6 +209,8 @@ impl Oryxis {
                 },
                 mouse_position: Point::ORIGIN,
                 window_size: iced::Size::new(1200.0, 750.0),
+                window_focused: true,
+                ssm_keepalive_base: None,
                 window_maximized: false,
                 window_fullscreen: false,
                 fullscreen_hint_visible: false,
@@ -270,6 +279,8 @@ impl Oryxis {
                 cloud_form_aws_sso_region: String::new(),
                 cloud_form_aws_sso_account_id: String::new(),
                 cloud_form_aws_sso_role_name: String::new(),
+                cloud_form_kubeconfig_path: String::new(),
+                cloud_form_context: String::new(),
                 editing_cloud_profile_id: None,
                 cloud_form_error: None,
                 cloud_form_test_state: crate::state::CloudTestState::Idle,
@@ -278,6 +289,7 @@ impl Oryxis {
                 cloud_discover_state: crate::state::CloudDiscoverState::Idle,
                 cloud_discover_selected_ec2: std::collections::HashSet::new(),
                 cloud_discover_selected_ecs: std::collections::HashSet::new(),
+                cloud_discover_selected_k8s: std::collections::HashSet::new(),
                 cloud_discover_filter: String::new(),
                 cloud_discover_collapsed: std::collections::HashSet::new(),
                 cloud_discover_default_transport:
@@ -289,6 +301,7 @@ impl Oryxis {
                 group_picker_search: String::new(),
                 editor_parent_combo_bounds: crate::widgets::new_bounds_cell(),
                 dynamic_form_parent_combo_bounds: crate::widgets::new_bounds_cell(),
+                plus_btn_bounds: crate::widgets::new_bounds_cell(),
                 host_filter_cloud_profile: None,
                 cloud_import_confirm_visible: false,
                 cloud_dynamic_group_state: std::collections::HashMap::new(),
@@ -304,6 +317,11 @@ impl Oryxis {
                 cloud_dynamic_form_color: String::new(),
                 cloud_dynamic_form_icon: String::new(),
                 cloud_dynamic_form_parent_label: String::new(),
+                cloud_dynamic_form_is_k8s: false,
+                cloud_dynamic_form_k8s_context: String::new(),
+                cloud_dynamic_form_namespace: String::new(),
+                cloud_dynamic_form_k8s_selector_kind: crate::state::K8sSelectorKind::Labels,
+                cloud_dynamic_form_k8s_selector_value: String::new(),
                 cloud_dynamic_form_cluster: String::new(),
                 cloud_dynamic_form_service: String::new(),
                 cloud_dynamic_form_container: String::new(),
@@ -322,6 +340,14 @@ impl Oryxis {
                 plugins: Vec::new(),
                 plugin_install_modal: None,
                 snippets: Vec::new(),
+                custom_terminal_themes: Vec::new(),
+                theme_editor: None,
+                hovered_theme_card: None,
+                theme_color_popover: None,
+                show_theme_import: false,
+                theme_import_content: text_editor::Content::new(),
+                theme_import_name: String::new(),
+                theme_import_error: None,
                 known_hosts: Vec::new(),
                 logs: Vec::new(),
                 logs_page: 0,
@@ -335,7 +361,23 @@ impl Oryxis {
                 snippet_command: String::new(),
                 snippet_editing_id: None,
                 snippet_error: None,
-                terminal_theme: oryxis_terminal::TerminalTheme::OryxisDark,
+                port_forward_rules: Vec::new(),
+                active_forwards: std::collections::HashMap::new(),
+                port_forward_starting: std::collections::HashSet::new(),
+                show_port_forward_panel: false,
+                pf_label: String::new(),
+                pf_kind: oryxis_core::models::port_forward_rule::ForwardKind::Local,
+                pf_host_id: None,
+                pf_listen_host: "127.0.0.1".into(),
+                pf_listen_port: String::new(),
+                pf_target_host: String::new(),
+                pf_target_port: String::new(),
+                pf_auto_start: false,
+                pf_editing_id: None,
+                pf_error: None,
+                hovered_port_forward_card: None,
+                port_forward_search: String::new(),
+                terminal_palette: oryxis_terminal::TerminalPalette::default(),
                 terminal_theme_override: None,
                 terminal_font_size: 14.0,
                 terminal_font_name: "SauceCodePro Nerd Font".to_string(),
@@ -491,6 +533,12 @@ impl Oryxis {
             tasks.push(app.start_sync_engine());
         }
 
+        // Auto-start port forward rules marked `auto_start`. Deferred to
+        // `VaultUnlock` when the vault is locked, same as sync / --connect.
+        if app.vault_state == VaultState::Unlocked {
+            tasks.extend(app.auto_start_port_forwards());
+        }
+
         // MCP migration: v0.6 shipped `oryxis-mcp` inside the OS
         // package; v0.7+ downloads it as a plugin into
         // `~/.oryxis/bin/`. Sweep any leftover `.old.exe` from a
@@ -571,6 +619,9 @@ impl Oryxis {
 
             // (migration runs after the rest of the load, see end of fn)
             self.snippets = vault.list_snippets().unwrap_or_default();
+            self.custom_terminal_themes =
+                vault.list_custom_terminal_themes().unwrap_or_default();
+            self.port_forward_rules = vault.list_port_forward_rules().unwrap_or_default();
             self.known_hosts = vault.list_known_hosts().unwrap_or_default();
             self.logs_total = vault.count_logs().unwrap_or(0);
             self.logs = vault.list_logs_page(self.logs_page * 50, 50).unwrap_or_default();
@@ -608,7 +659,7 @@ impl Oryxis {
             // Refresh the global derived palette to pick up the
             // theme + override loaded above. Per-host overrides are
             // applied lazily when each tab paints.
-            self.terminal_theme = self.resolve_global_terminal_theme();
+            self.terminal_palette = self.resolve_global_terminal_palette();
 
             // AI settings
             if let Ok(Some(v)) = vault.get_setting("ai_enabled") {
@@ -838,7 +889,39 @@ impl Oryxis {
         // borrow without conflicting with `&mut self`. Restored below.
         if let Some(vault) = self.vault.take() {
             self.migrate_legacy_cloud_layout(&vault);
+            self.migrate_port_forwards(&vault);
             self.vault = Some(vault);
+        }
+    }
+
+    /// One-shot migration of legacy inline `Connection.port_forwards` into
+    /// standalone `PortForwardRule` rows (always `Local`, `auto_start =
+    /// false`). The legacy field is left intact, it still raises forwards
+    /// alongside the terminal session, the new rules just make the same
+    /// tunnels runnable on their own. Gated by a settings flag so it runs
+    /// exactly once.
+    fn migrate_port_forwards(&mut self, vault: &oryxis_vault::store::VaultStore) {
+        if vault
+            .get_setting("port_forwards_migrated")
+            .ok()
+            .flatten()
+            .as_deref()
+            == Some("true")
+        {
+            return;
+        }
+        let rules = legacy_forwards_to_rules(&self.connections);
+        let mut created = 0usize;
+        for rule in &rules {
+            match vault.save_port_forward_rule(rule) {
+                Ok(()) => created += 1,
+                Err(e) => tracing::warn!("port-forward migration: save failed: {e}"),
+            }
+        }
+        let _ = vault.set_setting("port_forwards_migrated", "true");
+        if created > 0 {
+            tracing::info!("migrated {created} legacy port forward(s) into standalone rules");
+            self.port_forward_rules = vault.list_port_forward_rules().unwrap_or_default();
         }
     }
 
@@ -943,5 +1026,73 @@ impl Oryxis {
         // Re-pull groups so the in-memory state matches what we just
         // wrote (icons + parent ids).
         self.groups = vault.list_groups().unwrap_or_default();
+    }
+}
+
+/// Pure mapping from legacy inline `Connection.port_forwards` to standalone
+/// `PortForwardRule`s. Every legacy forward is Local, binds `127.0.0.1` on
+/// its old `local_port`, targets the old `remote_host:remote_port`, and is
+/// created with `auto_start = false`. Kept separate from the vault I/O so
+/// the mapping is unit-testable.
+fn legacy_forwards_to_rules(
+    conns: &[oryxis_core::models::connection::Connection],
+) -> Vec<oryxis_core::models::port_forward_rule::PortForwardRule> {
+    use oryxis_core::models::port_forward_rule::{ForwardKind, PortForwardRule};
+    let mut rules = Vec::new();
+    for conn in conns {
+        for pf in &conn.port_forwards {
+            let mut rule = PortForwardRule::new(
+                format!("{} :{}", conn.label, pf.local_port),
+                ForwardKind::Local,
+                conn.id,
+            );
+            rule.listen_host = "127.0.0.1".into();
+            rule.listen_port = pf.local_port;
+            rule.target_host = pf.remote_host.clone();
+            rule.target_port = pf.remote_port;
+            rule.auto_start = false;
+            rules.push(rule);
+        }
+    }
+    rules
+}
+
+#[cfg(test)]
+mod port_forward_migration_tests {
+    use super::legacy_forwards_to_rules;
+    use oryxis_core::models::connection::{Connection, PortForward};
+    use oryxis_core::models::port_forward_rule::ForwardKind;
+
+    #[test]
+    fn maps_each_legacy_forward_to_a_local_rule() {
+        let mut conn = Connection::new("db-box", "10.0.0.1");
+        conn.port_forwards = vec![
+            PortForward { local_port: 5432, remote_host: "127.0.0.1".into(), remote_port: 5432 },
+            PortForward { local_port: 6379, remote_host: "cache.internal".into(), remote_port: 6379 },
+        ];
+        let other = Connection::new("no-forwards", "10.0.0.2");
+
+        let rules = legacy_forwards_to_rules(&[conn.clone(), other]);
+
+        // Two forwards on one connection, none on the other.
+        assert_eq!(rules.len(), 2);
+        for r in &rules {
+            assert_eq!(r.kind, ForwardKind::Local);
+            assert_eq!(r.host_id, conn.id);
+            assert_eq!(r.listen_host, "127.0.0.1");
+            assert!(!r.auto_start);
+        }
+        assert_eq!(rules[0].listen_port, 5432);
+        assert_eq!(rules[0].target_host, "127.0.0.1");
+        assert_eq!(rules[0].target_port, 5432);
+        assert_eq!(rules[1].listen_port, 6379);
+        assert_eq!(rules[1].target_host, "cache.internal");
+        assert_eq!(rules[1].target_port, 6379);
+    }
+
+    #[test]
+    fn no_forwards_yields_no_rules() {
+        let conn = Connection::new("plain", "10.0.0.3");
+        assert!(legacy_forwards_to_rules(&[conn]).is_empty());
     }
 }

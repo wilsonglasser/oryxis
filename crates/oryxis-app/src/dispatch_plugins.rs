@@ -25,6 +25,7 @@ use crate::state::{PluginUiEntry, PluginUiStatus};
 /// not the app, see [`crate::mcp_install`].
 const KNOWN_PLUGINS: &[(&str, &str)] = &[
     ("aws", "Amazon Web Services"),
+    ("k8s", "Kubernetes"),
     ("mcp", "Oryxis MCP Server"),
 ];
 

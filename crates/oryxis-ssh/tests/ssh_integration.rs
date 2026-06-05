@@ -9,6 +9,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use oryxis_core::models::connection::{AuthMethod, Connection};
+use oryxis_core::models::port_forward_rule::{ForwardKind, PortForwardRule};
 use oryxis_ssh::{HostKeyStatus, SshEngine};
 use testcontainers::{
     core::{ContainerPort, IntoContainerPort, WaitFor},
@@ -346,6 +347,247 @@ async fn agent_forwarding_off_leaves_remote_socket_unset() {
         "expected SSH_AUTH_SOCK to be unset without forwarding, got: {:?}",
         String::from_utf8_lossy(&buf)
     );
+}
+
+#[tokio::test]
+#[ignore = "requires Docker, run with --ignored"]
+async fn local_forward_tunnels_and_frees_listener_on_cancel() {
+    use tokio::io::AsyncReadExt;
+
+    // Reserve a free local port by binding+dropping a probe listener, so
+    // the forward binds a port we can predict and re-check after teardown.
+    let listen_port = {
+        let probe = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+            .await
+            .expect("probe bind");
+        probe.local_addr().expect("probe addr").port()
+    };
+
+    let (conn, password, container) = start_sshd(false).await;
+
+    // The linuxserver image ships `AllowTcpForwarding no`; flip it on and
+    // reload sshd so `direct-tcpip` channels are permitted, otherwise the
+    // forward would fail for an environmental reason, not a code one.
+    container
+        .exec(testcontainers::core::ExecCommand::new([
+            "sh",
+            "-c",
+            "sed -i 's/AllowTcpForwarding no/AllowTcpForwarding yes/' \
+             /config/sshd/sshd_config /etc/ssh/sshd_config 2>/dev/null; \
+             pkill -HUP sshd 2>/dev/null; true",
+        ]))
+        .await
+        .expect("enable tcp forwarding");
+    // Give sshd a moment to re-read its config after the HUP.
+    tokio::time::sleep(Duration::from_secs(2)).await;
+
+    // `-L` rule targeting the container's own sshd (reachable from the
+    // server as 127.0.0.1:2222). Tunnelling there means a TCP connect to
+    // our local listener should read back the remote sshd's SSH banner.
+    let mut rule = PortForwardRule::new("tunnel", ForwardKind::Local, uuid::Uuid::new_v4());
+    rule.listen_host = "127.0.0.1".into();
+    rule.listen_port = listen_port;
+    rule.target_host = "127.0.0.1".into();
+    rule.target_port = 2222;
+
+    let engine = engine();
+    let session = engine
+        .connect_forward(&conn, Some(&password), None, &rule, None)
+        .await
+        .expect("forward up");
+    assert!(session.is_alive());
+
+    // Connect through the local forwarded port and read the tunneled
+    // sshd banner, end-to-end proof the tunnel carries bytes.
+    let mut stream = tokio::net::TcpStream::connect(("127.0.0.1", listen_port))
+        .await
+        .expect("connect to forwarded port");
+    let mut buf = [0u8; 64];
+    let n = tokio::time::timeout(Duration::from_secs(15), stream.read(&mut buf))
+        .await
+        .expect("read banner within timeout")
+        .expect("read banner");
+    let banner = String::from_utf8_lossy(&buf[..n]);
+    assert!(
+        banner.starts_with("SSH-2.0"),
+        "expected tunneled SSH banner, got: {banner:?}"
+    );
+    drop(stream);
+
+    // Cancel and confirm the listener is actually released (the core
+    // spine guarantee: toggle-off is real cancellation, not a detached
+    // task that keeps the port bound).
+    session.cancel().await;
+    drop(session);
+    let freed = {
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+        loop {
+            if tokio::net::TcpListener::bind(("127.0.0.1", listen_port))
+                .await
+                .is_ok()
+            {
+                break true;
+            }
+            if tokio::time::Instant::now() >= deadline {
+                break false;
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+    };
+    assert!(freed, "listener port {listen_port} was not freed after cancel");
+}
+
+#[tokio::test]
+#[ignore = "requires Docker, run with --ignored"]
+async fn remote_forward_delivers_inbound_to_local_target() {
+    use testcontainers::core::ExecCommand;
+    use tokio::io::AsyncWriteExt;
+
+    const MARKER: &str = "HELLO-FROM-LOCAL-TARGET";
+
+    // Local target: a listener in THIS process. A `-R` forward should tunnel
+    // a connection made *inside the server* back here, so when the container
+    // connects to the server-side port, our listener writes the marker and
+    // the container reads it back.
+    let target = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+        .await
+        .expect("target bind");
+    let target_port = target.local_addr().expect("target addr").port();
+    tokio::spawn(async move {
+        while let Ok((mut sock, _)) = target.accept().await {
+            let _ = sock.write_all(MARKER.as_bytes()).await;
+            let _ = sock.flush().await;
+            let _ = sock.shutdown().await;
+        }
+    });
+
+    // Pick a free server-side port (predict it on the container's loopback).
+    let server_port = {
+        let probe = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+            .await
+            .expect("probe bind");
+        probe.local_addr().expect("probe addr").port()
+    };
+
+    let (conn, password, container) = start_sshd(false).await;
+    container
+        .exec(ExecCommand::new([
+            "sh",
+            "-c",
+            "sed -i 's/AllowTcpForwarding no/AllowTcpForwarding yes/' \
+             /config/sshd/sshd_config /etc/ssh/sshd_config 2>/dev/null; \
+             pkill -HUP sshd 2>/dev/null; true",
+        ]))
+        .await
+        .expect("enable tcp forwarding");
+    tokio::time::sleep(Duration::from_secs(2)).await;
+
+    // `-R`: server binds 127.0.0.1:server_port and tunnels back to our
+    // local target.
+    let mut rule = PortForwardRule::new("reverse", ForwardKind::Remote, uuid::Uuid::new_v4());
+    rule.listen_host = "127.0.0.1".into();
+    rule.listen_port = server_port;
+    rule.target_host = "127.0.0.1".into();
+    rule.target_port = target_port;
+
+    let engine = engine();
+    let session = engine
+        .connect_forward(&conn, Some(&password), None, &rule, None)
+        .await
+        .expect("remote forward up");
+    assert!(session.is_alive());
+
+    // From inside the container, connect to the server-side listener and
+    // read what comes back, which should be our local target's marker.
+    let mut exec = container
+        .exec(ExecCommand::new([
+            "sh",
+            "-c",
+            &format!("nc -w 5 127.0.0.1 {server_port}"),
+        ]))
+        .await
+        .expect("exec nc");
+    let out = exec.stdout_to_vec().await.expect("nc stdout");
+    let got = String::from_utf8_lossy(&out);
+    assert!(
+        got.contains(MARKER),
+        "expected the local target marker tunneled back through -R, got: {got:?}"
+    );
+
+    // Clean teardown also releases the server-side listener.
+    session.cancel().await;
+}
+
+#[tokio::test]
+#[ignore = "requires Docker, run with --ignored"]
+async fn dynamic_socks_forward_connects_through_proxy() {
+    use testcontainers::core::ExecCommand;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    let listen_port = {
+        let probe = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+            .await
+            .expect("probe bind");
+        probe.local_addr().expect("probe addr").port()
+    };
+
+    let (conn, password, container) = start_sshd(false).await;
+    container
+        .exec(ExecCommand::new([
+            "sh",
+            "-c",
+            "sed -i 's/AllowTcpForwarding no/AllowTcpForwarding yes/' \
+             /config/sshd/sshd_config /etc/ssh/sshd_config 2>/dev/null; \
+             pkill -HUP sshd 2>/dev/null; true",
+        ]))
+        .await
+        .expect("enable tcp forwarding");
+    tokio::time::sleep(Duration::from_secs(2)).await;
+
+    // `-D`: a local SOCKS5 listener. The destination is chosen per SOCKS
+    // request, so the rule has no fixed target.
+    let mut rule = PortForwardRule::new("socks", ForwardKind::Dynamic, uuid::Uuid::new_v4());
+    rule.listen_host = "127.0.0.1".into();
+    rule.listen_port = listen_port;
+
+    let engine = engine();
+    let session = engine
+        .connect_forward(&conn, Some(&password), None, &rule, None)
+        .await
+        .expect("dynamic forward up");
+    assert!(session.is_alive());
+
+    // Minimal SOCKS5 client: ask the proxy to CONNECT to the container's
+    // own sshd (127.0.0.1:2222, reachable from the server), then read the
+    // SSH banner that comes back through the tunnel.
+    let mut s = tokio::net::TcpStream::connect(("127.0.0.1", listen_port))
+        .await
+        .expect("connect to socks listener");
+    // Greeting: VER=5, 1 method, no-auth(0x00).
+    s.write_all(&[0x05, 0x01, 0x00]).await.expect("greeting");
+    let mut method = [0u8; 2];
+    s.read_exact(&mut method).await.expect("method reply");
+    assert_eq!(method, [0x05, 0x00], "expected no-auth method selected");
+    // CONNECT request: VER CMD RSV ATYP=IPv4 127.0.0.1 :2222.
+    s.write_all(&[0x05, 0x01, 0x00, 0x01, 127, 0, 0, 1, 0x08, 0xAE])
+        .await
+        .expect("connect request");
+    let mut reply = [0u8; 10]; // VER REP RSV ATYP=1 + 4 addr + 2 port
+    s.read_exact(&mut reply).await.expect("connect reply");
+    assert_eq!(reply[1], 0x00, "expected SOCKS5 success reply, got {reply:?}");
+
+    let mut buf = [0u8; 64];
+    let n = tokio::time::timeout(Duration::from_secs(15), s.read(&mut buf))
+        .await
+        .expect("banner within timeout")
+        .expect("read banner");
+    let banner = String::from_utf8_lossy(&buf[..n]);
+    assert!(
+        banner.starts_with("SSH-2.0"),
+        "expected tunneled SSH banner via SOCKS5, got: {banner:?}"
+    );
+
+    session.cancel().await;
 }
 
 #[tokio::test]

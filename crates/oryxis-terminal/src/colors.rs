@@ -74,6 +74,7 @@ impl TerminalTheme {
 }
 
 /// Terminal color palette.
+#[derive(Debug, Clone)]
 pub struct TerminalPalette {
     pub foreground: Color,
     pub background: Color,

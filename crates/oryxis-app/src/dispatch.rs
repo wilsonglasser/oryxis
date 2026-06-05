@@ -19,6 +19,13 @@ use crate::mcp::{
 use crate::state::{ConnectionForm, EnvVarForm, PortForwardForm, VaultState, View};
 use crate::util::strip_ansi;
 
+/// How long a dynamic group's resolved host list stays "fresh" before
+/// re-opening the group triggers a background re-resolve. Cloud
+/// resources (ECS tasks especially) recycle, so a list older than this
+/// is likely to contain dead rows that fail on click. 60s balances
+/// freshness against hammering the cloud API on every navigation.
+pub(crate) const DYNAMIC_GROUP_CACHE_TTL_SECS: i64 = 60;
+
 /// Chain `message` through a domain handler. If the handler claims it
 /// (returns `Ok`), short-circuit and return the resulting task.
 /// Otherwise, the message is handed back unchanged for the next link.
@@ -40,6 +47,7 @@ impl Oryxis {
         let message = try_handler!(self, message, handle_sftp_files);
         let message = try_handler!(self, message, handle_sftp);
         let message = try_handler!(self, message, handle_ssh);
+        let message = try_handler!(self, message, handle_port_forwards);
         let message = try_handler!(self, message, handle_settings);
         let message = try_handler!(self, message, handle_keys);
         let message = try_handler!(self, message, handle_proxy_identity);
@@ -140,6 +148,10 @@ impl Oryxis {
                             } else {
                                 Task::none()
                             };
+                            // Auto-start port forward rules now that the
+                            // vault (and its credentials) is open.
+                            let mut unlock_tasks = vec![sync_task];
+                            unlock_tasks.extend(self.auto_start_port_forwards());
                             // After a manual unlock, fire any deferred
                             // `--connect <uuid>` from the launch CLI args.
                             if let Some(connect_id) = self.pending_auto_connect.take()
@@ -148,12 +160,9 @@ impl Oryxis {
                                     .iter()
                                     .position(|c| c.id == connect_id)
                             {
-                                return Task::batch([
-                                    sync_task,
-                                    Task::done(Message::ConnectSsh(idx)),
-                                ]);
+                                unlock_tasks.push(Task::done(Message::ConnectSsh(idx)));
                             }
-                            return sync_task;
+                            return Task::batch(unlock_tasks);
                         }
                         Err(VaultError::InvalidPassword) => {
                             self.vault_error = Some("Invalid password".into());
@@ -200,15 +209,14 @@ impl Oryxis {
                 self.active_group = Some(gid);
                 self.host_search.clear();
                 // Auto-trigger resolve when the user opens a dynamic
-                // group, saves an extra click. Skip when we already
-                // have a cached result; the user can hit Refresh
-                // inside the panel to force a re-fetch.
-                if self
-                    .groups
-                    .iter()
-                    .any(|g| g.id == gid && g.cloud_query.is_some())
-                    && !self.cloud_dynamic_group_state.contains_key(&gid)
-                {
+                // group, saves an extra click. Re-resolve when there's
+                // no cache yet, or when the cached list has gone stale
+                // (older than the TTL): cloud resources like ECS tasks
+                // recycle, and a stale list means clicking a dead task
+                // fails until a manual Refresh. A still-`Loading` or
+                // `Failed` cache is left alone (don't restart in-flight
+                // resolves; let the user retry a failure explicitly).
+                if self.dynamic_group_needs_resolve(gid) {
                     return self
                         .handle_cloud(Message::DynamicGroupResolve(gid))
                         .unwrap_or_else(|_| Task::none());
@@ -433,14 +441,27 @@ impl Oryxis {
             }
             Message::RunSnippet(idx) => {
                 if let Some(snip) = self.snippets.get(idx) {
-                    let cmd = format!("{}\n", snip.command);
+                    let cmd = snip.command.clone();
                     if let Some(tab_idx) = self.snippet_injection_tab()
                         && let Some(tab) = self.tabs.get(tab_idx)
                     {
+                        // Bracket the body (so a multi-line snippet inserts as
+                        // one block under bracketed paste), then append the
+                        // submit newline OUTSIDE the bracket so it runs once.
+                        // With the mode off this collapses to the old
+                        // `command\n` raw write.
+                        let bracketed = tab
+                            .active()
+                            .terminal
+                            .lock()
+                            .map(|s| s.bracketed_paste_enabled())
+                            .unwrap_or(false);
+                        let mut payload = oryxis_terminal::wrap_paste(&cmd, bracketed);
+                        payload.push(b'\n');
                         if let Some(ref ssh) = tab.active().ssh_session {
-                            let _ = ssh.write(cmd.as_bytes());
+                            let _ = ssh.write(&payload);
                         } else if let Ok(mut state) = tab.active().terminal.lock() {
-                            state.write(cmd.as_bytes());
+                            state.write(&payload);
                         }
                     }
                 }
@@ -490,10 +511,20 @@ impl Oryxis {
                     if let Some(tab_idx) = self.snippet_injection_tab()
                         && let Some(tab) = self.tabs.get(tab_idx)
                     {
+                        // Wrap in bracketed paste when the focused app asked
+                        // for it, so a multi-line snippet inserts as one block
+                        // instead of auto-submitting on every embedded newline.
+                        let bracketed = tab
+                            .active()
+                            .terminal
+                            .lock()
+                            .map(|s| s.bracketed_paste_enabled())
+                            .unwrap_or(false);
+                        let payload = oryxis_terminal::wrap_paste(&cmd, bracketed);
                         if let Some(ref ssh) = tab.active().ssh_session {
-                            let _ = ssh.write(cmd.as_bytes());
+                            let _ = ssh.write(&payload);
                         } else if let Ok(mut state) = tab.active().terminal.lock() {
-                            state.write(cmd.as_bytes());
+                            state.write(&payload);
                         }
                     }
                 }

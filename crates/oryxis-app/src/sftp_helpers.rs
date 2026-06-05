@@ -101,6 +101,7 @@ pub(crate) fn walk_local_for_upload(
                 src: child_src.to_string_lossy().into_owned(),
                 dst: child_dst.clone(),
                 is_dir: true,
+                size: None,
             });
             walk_local_for_upload(&child_src, &child_dst, queue)?;
         } else {
@@ -108,6 +109,7 @@ pub(crate) fn walk_local_for_upload(
                 src: child_src.to_string_lossy().into_owned(),
                 dst: child_dst,
                 is_dir: false,
+                size: None,
             });
         }
     }
@@ -135,6 +137,7 @@ pub(crate) fn walk_local_for_duplicate(
                 src: child_src.to_string_lossy().into_owned(),
                 dst: child_dst.to_string_lossy().into_owned(),
                 is_dir: true,
+                size: None,
             });
             walk_local_for_duplicate(&child_src, &child_dst, queue)?;
         } else {
@@ -142,6 +145,7 @@ pub(crate) fn walk_local_for_duplicate(
                 src: child_src.to_string_lossy().into_owned(),
                 dst: child_dst.to_string_lossy().into_owned(),
                 is_dir: false,
+                size: None,
             });
         }
     }
@@ -171,6 +175,7 @@ pub(crate) fn walk_remote_for_download<'a>(
                     src: child_src.clone(),
                     dst: child_dst.to_string_lossy().into_owned(),
                     is_dir: true,
+                    size: None,
                 });
                 walk_remote_for_download(client, &child_src, &child_dst, queue).await?;
             } else {
@@ -178,6 +183,7 @@ pub(crate) fn walk_remote_for_download<'a>(
                     src: child_src,
                     dst: child_dst.to_string_lossy().into_owned(),
                     is_dir: false,
+                    size: Some(entry.size),
                 });
             }
         }
@@ -235,11 +241,8 @@ pub(crate) async fn do_upload_item(
         };
         return Ok(UploadStepOutcome::Conflict { prompt, item });
     }
-    let bytes = tokio::fs::read(&item.src)
-        .await
-        .map_err(|e| format!("read {}: {e}", item.src))?;
     client
-        .write_file(&item.dst, &bytes)
+        .upload_from(std::path::Path::new(&item.src), &item.dst)
         .await
         .map_err(|e| e.to_string())?;
     Ok(UploadStepOutcome::Done)
@@ -255,15 +258,10 @@ pub(crate) async fn apply_overwrite_for_item(
 ) -> Result<(), String> {
     match action {
         crate::state::OverwriteAction::Cancel => Ok(()),
-        crate::state::OverwriteAction::Replace => {
-            let bytes = tokio::fs::read(&item.src)
-                .await
-                .map_err(|e| format!("read {}: {e}", item.src))?;
-            client
-                .write_file(&item.dst, &bytes)
-                .await
-                .map_err(|e| e.to_string())
-        }
+        crate::state::OverwriteAction::Replace => client
+            .upload_from(std::path::Path::new(&item.src), &item.dst)
+            .await
+            .map_err(|e| e.to_string()),
         crate::state::OverwriteAction::ReplaceIfDifferent => {
             let local_size = tokio::fs::metadata(&item.src)
                 .await
@@ -288,11 +286,8 @@ pub(crate) async fn apply_overwrite_for_item(
             if local_size == remote_size {
                 return Ok(());
             }
-            let bytes = tokio::fs::read(&item.src)
-                .await
-                .map_err(|e| format!("read {}: {e}", item.src))?;
             client
-                .write_file(&item.dst, &bytes)
+                .upload_from(std::path::Path::new(&item.src), &item.dst)
                 .await
                 .map_err(|e| e.to_string())
         }
@@ -312,11 +307,8 @@ pub(crate) async fn apply_overwrite_for_item(
                 entries.into_iter().map(|e| e.name).collect();
             let unique = unique_entry_name(&basename, |n| !names.contains(n));
             let target = remote_join(&parent, &unique);
-            let bytes = tokio::fs::read(&item.src)
-                .await
-                .map_err(|e| format!("read {}: {e}", item.src))?;
             client
-                .write_file(&target, &bytes)
+                .upload_from(std::path::Path::new(&item.src), &target)
                 .await
                 .map_err(|e| e.to_string())
         }
@@ -332,13 +324,10 @@ pub(crate) async fn do_download_item(
             .await
             .map_err(|e| format!("mkdir {}: {e}", item.dst))
     } else {
-        let bytes = client
-            .read_file(&item.src)
+        client
+            .download_to(&item.src, std::path::Path::new(&item.dst), item.size)
             .await
-            .map_err(|e| e.to_string())?;
-        tokio::fs::write(&item.dst, &bytes)
-            .await
-            .map_err(|e| format!("write {}: {e}", item.dst))
+            .map_err(|e| e.to_string())
     }
 }
 

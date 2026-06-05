@@ -11,6 +11,28 @@ use crate::app::{Message, Oryxis};
 use crate::state::{DynamicGroupState, OverlayContent, OverlayState};
 
 impl Oryxis {
+    /// `true` when a dynamic (cloud-query) group's resolved children are
+    /// missing or stale (older than the cache TTL) and should be
+    /// re-resolved. Manual groups and in-flight / failed resolves return
+    /// `false`: don't restart an in-flight resolve, and let the user retry
+    /// a failure explicitly. Shared by the dashboard `OpenGroup` path and
+    /// the new-tab picker drill-in so both honour the same TTL.
+    pub(crate) fn dynamic_group_needs_resolve(&self, gid: uuid::Uuid) -> bool {
+        self.groups
+            .iter()
+            .any(|g| g.id == gid && g.cloud_query.is_some())
+            && match self.cloud_dynamic_group_state.get(&gid) {
+                None => true,
+                Some(DynamicGroupState::Loaded { fetched_at, .. }) => {
+                    chrono::Utc::now().signed_duration_since(*fetched_at)
+                        > chrono::Duration::seconds(
+                            crate::dispatch::DYNAMIC_GROUP_CACHE_TTL_SECS,
+                        )
+                }
+                Some(_) => false,
+            }
+    }
+
     pub(super) fn handle_cloud_dynamic_group(
         &mut self,
         message: Message,
@@ -110,14 +132,27 @@ impl Oryxis {
                         service,
                         container,
                     } => {
+                        self.cloud_dynamic_form_is_k8s = false;
                         self.cloud_dynamic_form_cluster = cluster.clone();
                         self.cloud_dynamic_form_service = service.clone();
                         self.cloud_dynamic_form_container = container.clone();
+                        self.cloud_dynamic_form_k8s_context = String::new();
+                        self.cloud_dynamic_form_namespace = String::new();
+                        self.cloud_dynamic_form_k8s_selector_kind =
+                            crate::state::K8sSelectorKind::Labels;
+                        self.cloud_dynamic_form_k8s_selector_value = String::new();
                     }
-                    oryxis_core::models::cloud::CloudQueryKind::K8sPods { .. } => {
-                        // K8s editing surface lands in a follow-up;
-                        // clear the ECS-specific buffers so they don't
-                        // leak in from a previous edit session.
+                    oryxis_core::models::cloud::CloudQueryKind::K8sPods {
+                        context,
+                        namespace,
+                        selector,
+                    } => {
+                        self.cloud_dynamic_form_is_k8s = true;
+                        self.cloud_dynamic_form_k8s_context = context.clone();
+                        self.cloud_dynamic_form_namespace = namespace.clone();
+                        let (kind, value) = selector_to_form(selector);
+                        self.cloud_dynamic_form_k8s_selector_kind = kind;
+                        self.cloud_dynamic_form_k8s_selector_value = value;
                         self.cloud_dynamic_form_cluster = String::new();
                         self.cloud_dynamic_form_service = String::new();
                         self.cloud_dynamic_form_container = String::new();
@@ -165,6 +200,18 @@ impl Oryxis {
             }
             Message::DynamicGroupFormContainerChanged(v) => {
                 self.cloud_dynamic_form_container = v;
+            }
+            Message::DynamicGroupFormK8sContextChanged(v) => {
+                self.cloud_dynamic_form_k8s_context = v;
+            }
+            Message::DynamicGroupFormNamespaceChanged(v) => {
+                self.cloud_dynamic_form_namespace = v;
+            }
+            Message::DynamicGroupFormK8sSelectorKindChanged(k) => {
+                self.cloud_dynamic_form_k8s_selector_kind = k;
+            }
+            Message::DynamicGroupFormK8sSelectorValueChanged(v) => {
+                self.cloud_dynamic_form_k8s_selector_value = v;
             }
             Message::ShowIconPickerForDynamicGroupForm => {
                 // Pre-fill the picker from the current form values so
@@ -227,15 +274,30 @@ impl Oryxis {
                 // triple. Blank values are kept as-is (the user can
                 // intentionally clear; AWS-side resolve will error
                 // visibly).
-                if let oryxis_core::models::cloud::CloudQueryKind::EcsTasks {
-                    cluster,
-                    service,
-                    container,
-                } = &mut query.kind
-                {
-                    *cluster = self.cloud_dynamic_form_cluster.trim().to_string();
-                    *service = self.cloud_dynamic_form_service.trim().to_string();
-                    *container = self.cloud_dynamic_form_container.trim().to_string();
+                match &mut query.kind {
+                    oryxis_core::models::cloud::CloudQueryKind::EcsTasks {
+                        cluster,
+                        service,
+                        container,
+                    } => {
+                        *cluster = self.cloud_dynamic_form_cluster.trim().to_string();
+                        *service = self.cloud_dynamic_form_service.trim().to_string();
+                        *container = self.cloud_dynamic_form_container.trim().to_string();
+                    }
+                    // K8s query fields: persist context / namespace and the
+                    // parsed `k=v,k=v` label selector.
+                    oryxis_core::models::cloud::CloudQueryKind::K8sPods {
+                        context,
+                        namespace,
+                        selector,
+                    } => {
+                        *context = self.cloud_dynamic_form_k8s_context.trim().to_string();
+                        *namespace = self.cloud_dynamic_form_namespace.trim().to_string();
+                        *selector = form_to_selector(
+                            self.cloud_dynamic_form_k8s_selector_kind,
+                            &self.cloud_dynamic_form_k8s_selector_value,
+                        );
+                    }
                 }
                 group.cloud_query = Some(query);
                 let new_label = self.cloud_dynamic_form_label.trim();
@@ -302,5 +364,94 @@ impl Oryxis {
             m => return Err(m),
         }
         Ok(Task::none())
+    }
+}
+
+/// Turn a `PodSelector` into the editor's `(kind, value)` pair. For
+/// `Labels` the value is the `k=v,k=v` string; for the name-based kinds
+/// it's the resource name.
+fn selector_to_form(
+    selector: &oryxis_core::models::cloud::PodSelector,
+) -> (crate::state::K8sSelectorKind, String) {
+    use crate::state::K8sSelectorKind as K;
+    use oryxis_core::models::cloud::PodSelector;
+    match selector {
+        PodSelector::Labels(m) => (
+            K::Labels,
+            m.iter()
+                .map(|(k, v)| format!("{k}={v}"))
+                .collect::<Vec<_>>()
+                .join(","),
+        ),
+        PodSelector::Deployment(name) => (K::Deployment, name.clone()),
+        PodSelector::StatefulSet(name) => (K::StatefulSet, name.clone()),
+        PodSelector::Name(name) => (K::Name, name.clone()),
+    }
+}
+
+/// Build a `PodSelector` from the editor's `(kind, value)`. `Labels` parses
+/// the `k=v,k=v` string (blank / malformed pairs dropped); the name-based
+/// kinds take the trimmed value as the resource name.
+fn form_to_selector(
+    kind: crate::state::K8sSelectorKind,
+    value: &str,
+) -> oryxis_core::models::cloud::PodSelector {
+    use crate::state::K8sSelectorKind as K;
+    use oryxis_core::models::cloud::PodSelector;
+    match kind {
+        K::Labels => {
+            let map: std::collections::BTreeMap<String, String> = value
+                .split(',')
+                .filter_map(|pair| {
+                    let (k, v) = pair.split_once('=')?;
+                    let (k, v) = (k.trim(), v.trim());
+                    (!k.is_empty()).then(|| (k.to_string(), v.to_string()))
+                })
+                .collect();
+            PodSelector::Labels(map)
+        }
+        K::Deployment => PodSelector::Deployment(value.trim().to_string()),
+        K::StatefulSet => PodSelector::StatefulSet(value.trim().to_string()),
+        K::Name => PodSelector::Name(value.trim().to_string()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::state::K8sSelectorKind as K;
+    use oryxis_core::models::cloud::PodSelector;
+
+    #[test]
+    fn labels_round_trip_through_form() {
+        let (kind, value) = selector_to_form(&form_to_selector(K::Labels, "app=nginx, tier=frontend"));
+        assert_eq!(kind, K::Labels);
+        // Whitespace trimmed; BTreeMap sorts keys.
+        assert_eq!(value, "app=nginx,tier=frontend");
+    }
+
+    #[test]
+    fn malformed_label_pairs_are_dropped() {
+        match form_to_selector(K::Labels, "garbage,app=nginx,=novalue") {
+            PodSelector::Labels(m) => {
+                assert_eq!(m.len(), 1);
+                assert_eq!(m.get("app").map(String::as_str), Some("nginx"));
+            }
+            _ => panic!("expected Labels"),
+        }
+    }
+
+    #[test]
+    fn name_kinds_round_trip_without_flattening() {
+        for (kind, ctor) in [
+            (K::Deployment, PodSelector::Deployment("web".into())),
+            (K::StatefulSet, PodSelector::StatefulSet("db".into())),
+            (K::Name, PodSelector::Name("pod-xyz".into())),
+        ] {
+            let (k, v) = selector_to_form(&ctor);
+            assert_eq!(k, kind);
+            // Re-building from the form yields the same selector, no flatten.
+            assert_eq!(form_to_selector(k, &v), ctor);
+        }
     }
 }

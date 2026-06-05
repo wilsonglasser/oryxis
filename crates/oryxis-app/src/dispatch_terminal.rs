@@ -16,16 +16,89 @@ impl Oryxis {
         message: Message,
     ) -> Result<Task<Message>, Message> {
         match message {
-            // -- Terminal I/O --
-            Message::PtyOutput(tab_idx, bytes) => {
+            // -- Split panes --
+            Message::FocusPane(pane) => {
+                if let Some(tab_idx) = self.active_tab
+                    && let Some(tab) = self.tabs.get_mut(tab_idx)
+                {
+                    tab.focused = pane;
+                }
+            }
+            Message::ResizePane(ev) => {
+                if let Some(tab_idx) = self.active_tab
+                    && let Some(tab) = self.tabs.get_mut(tab_idx)
+                {
+                    tab.pane_grid.resize(ev.split, ev.ratio);
+                }
+            }
+            Message::SplitPane(axis) => {
+                // Open the connection picker to choose what fills the new
+                // pane (a host, or a local shell). The selection routes into
+                // a split via `pending_pane_split` instead of a new tab.
+                self.overlay = None; // dismiss the `+` hover popover if open
+                if let Some(tab_idx) = self.active_tab
+                    && let Some(tab) = self.tabs.get(tab_idx)
+                {
+                    self.pending_pane_split = Some((tab_idx, tab.focused, axis));
+                    self.show_new_tab_picker = true;
+                    self.new_tab_picker_search.clear();
+                    self.new_tab_picker_group = None;
+                }
+            }
+            Message::SplitTabPane(tab_idx, axis) => {
+                // From a tab's right-click menu: focus that tab first, then
+                // open the picker to fill the new split pane.
+                self.overlay = None;
                 if let Some(tab) = self.tabs.get(tab_idx) {
-                    if let Ok(mut state) = tab.active().terminal.lock() {
+                    let target = tab.focused;
+                    self.active_tab = Some(tab_idx);
+                    self.active_view = crate::state::View::Terminal;
+                    self.remember_terminal_tab_focus(tab_idx);
+                    self.pending_pane_split = Some((tab_idx, target, axis));
+                    self.show_new_tab_picker = true;
+                    self.new_tab_picker_search.clear();
+                    self.new_tab_picker_group = None;
+                }
+            }
+            Message::ClosePane => {
+                let Some(tab_idx) = self.active_tab else {
+                    return Ok(Task::none());
+                };
+                // Last pane in the tab: closing it closes the whole tab.
+                if self.tabs[tab_idx].pane_grid.panes.len() <= 1 {
+                    return Ok(self.update(Message::CloseTab(tab_idx)));
+                }
+                let tab = &mut self.tabs[tab_idx];
+                let target = tab.focused;
+                if let Some((_closed, sibling)) = tab.pane_grid.close(target) {
+                    tab.focused = sibling;
+                }
+            }
+            Message::FocusPaneDir(dir) => {
+                if let Some(tab_idx) = self.active_tab
+                    && let Some(tab) = self.tabs.get_mut(tab_idx)
+                    && let Some(adj) = tab.pane_grid.adjacent(tab.focused, dir)
+                {
+                    tab.focused = adj;
+                }
+            }
+            // -- Terminal I/O --
+            Message::PtyOutput(pane_id, bytes) => {
+                // Route to the specific pane (a tab may have several, each
+                // with its own PTY). Scan is trivial at these counts.
+                if let Some(pane) = self
+                    .tabs
+                    .iter()
+                    .flat_map(|t| t.pane_grid.panes.values())
+                    .find(|p| p.id == pane_id)
+                {
+                    if let Ok(mut state) = pane.terminal.lock() {
                         state.process(&bytes);
                     }
-                    // Append to session log for terminal recording
-                    if let Some(log_id) = tab.active().session_log_id
-                        && let Some(vault) = &self.vault {
-                            let _ = vault.append_session_data(&log_id, &bytes);
+                    if let Some(log_id) = pane.session_log_id
+                        && let Some(vault) = &self.vault
+                    {
+                        let _ = vault.append_session_data(&log_id, &bytes);
                     }
                 }
             }
@@ -40,10 +113,17 @@ impl Oryxis {
                     && let Ok(mut clip) = arboard::Clipboard::new()
                     && let Ok(text) = clip.get_text()
                 {
+                    let bracketed = tab
+                        .active()
+                        .terminal
+                        .lock()
+                        .map(|s| s.bracketed_paste_enabled())
+                        .unwrap_or(false);
+                    let payload = oryxis_terminal::wrap_paste(&text, bracketed);
                     if let Some(ref ssh) = tab.active().ssh_session {
-                        let _ = ssh.write(text.as_bytes());
+                        let _ = ssh.write(&payload);
                     } else if let Ok(mut state) = tab.active().terminal.lock() {
-                        state.write(text.as_bytes());
+                        state.write(&payload);
                     }
                 }
             }
@@ -109,6 +189,17 @@ impl Oryxis {
                 if cursor_in_chat_sidebar {
                     return Ok(Task::none());
                 }
+                // A global picker / modal (new-tab picker, tab jump,
+                // icon / theme / jump-host pickers, folder rename or
+                // delete) owns the keyboard while open. Its own search
+                // field consumes the keystroke via iced focus; without
+                // this gate the same press also falls through to the
+                // PTY below, so typing in the picker echoes into the
+                // terminal. Esc still closes the modal because that's
+                // handled earlier in `handle_hotkey_keypress`.
+                if self.global_modal_captures_keys() {
+                    return Ok(Task::none());
+                }
 
                 if let Some(tab_idx) = self.active_tab
                     && self.connecting.is_none()
@@ -128,10 +219,17 @@ impl Oryxis {
                                         && let Ok(text) = clip.get_text()
                                         && let Some(tab) = self.tabs.get(tab_idx)
                                     {
+                                        let bracketed = tab
+                                            .active()
+                                            .terminal
+                                            .lock()
+                                            .map(|s| s.bracketed_paste_enabled())
+                                            .unwrap_or(false);
+                                        let payload = oryxis_terminal::wrap_paste(&text, bracketed);
                                         if let Some(ref ssh) = tab.active().ssh_session {
-                                            let _ = ssh.write(text.as_bytes());
+                                            let _ = ssh.write(&payload);
                                         } else if let Ok(mut state) = tab.active().terminal.lock() {
-                                            state.write(text.as_bytes());
+                                            state.write(&payload);
                                         }
                                     }
                                     // Don't fall through to the normal key handler
@@ -174,10 +272,17 @@ impl Oryxis {
                                 && let Ok(text) = clip.get_text()
                                 && let Some(tab) = self.tabs.get(tab_idx)
                             {
+                                let bracketed = tab
+                                    .active()
+                                    .terminal
+                                    .lock()
+                                    .map(|s| s.bracketed_paste_enabled())
+                                    .unwrap_or(false);
+                                let payload = oryxis_terminal::wrap_paste(&text, bracketed);
                                 if let Some(ref ssh) = tab.active().ssh_session {
-                                    let _ = ssh.write(text.as_bytes());
+                                    let _ = ssh.write(&payload);
                                 } else if let Ok(mut state) = tab.active().terminal.lock() {
-                                    state.write(text.as_bytes());
+                                    state.write(&payload);
                                 }
                             }
                         } else {
@@ -212,5 +317,13 @@ impl Oryxis {
             m => return Err(m),
         }
         Ok(Task::none())
+    }
+
+    /// Index of the tab whose grid contains the pane with `pane_id`.
+    /// Used to route per-pane session events (connect / disconnect).
+    pub(crate) fn pane_tab_index(&self, pane_id: uuid::Uuid) -> Option<usize> {
+        self.tabs
+            .iter()
+            .position(|t| t.pane_grid.panes.values().any(|p| p.id == pane_id))
     }
 }

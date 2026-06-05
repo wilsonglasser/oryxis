@@ -58,6 +58,10 @@ pub enum EntityType {
     /// wire only when `sync_passwords` is on (same opt-in as proxy /
     /// identity passwords).
     CloudProfile,
+    /// Standalone port forward rules. No credentials of their own (they
+    /// reference a `Connection` by `host_id`), so the bare model travels
+    /// over the wire like `Snippet`.
+    PortForwardRule,
 }
 
 impl std::fmt::Display for EntityType {
@@ -71,6 +75,7 @@ impl std::fmt::Display for EntityType {
             Self::KnownHost => write!(f, "known_host"),
             Self::ProxyIdentity => write!(f, "proxy_identity"),
             Self::CloudProfile => write!(f, "cloud_profile"),
+            Self::PortForwardRule => write!(f, "port_forward_rule"),
         }
     }
 }
@@ -91,6 +96,7 @@ impl EntityType {
             "known_host" => Some(Self::KnownHost),
             "proxy_identity" => Some(Self::ProxyIdentity),
             "cloud_profile" => Some(Self::CloudProfile),
+            "port_forward_rule" => Some(Self::PortForwardRule),
             _ => None,
         }
     }
