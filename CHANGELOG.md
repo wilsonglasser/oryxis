@@ -7,6 +7,15 @@ project uses [SemVer](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- **Custom themes.** Create your own terminal color schemes (the 16 ANSI
+  colors plus foreground / background / cursor) and your own UI / chrome
+  themes (the 21 app colors), each with a built-in graphical color picker
+  (saturation/value square + hue bar, no third-party crate) and a live
+  preview. Custom terminal themes appear in the Settings -> Terminal grid
+  (and the per-host theme picker) alongside the presets; custom UI themes
+  appear in Settings -> Interface, seeded from the active theme so you start
+  from something that works. Terminal schemes can also be imported by pasting
+  an iTerm `.itermcolors`, Windows Terminal JSON, or base16 YAML.
 - **Split panes.** A terminal tab can now be split into an arbitrary grid
   of panes (tmux / iTerm style), built on iced's `pane_grid`. Ctrl+Shift+E
   splits the focused pane side-by-side, Ctrl+Shift+O stacks it. You can also
@@ -20,6 +29,19 @@ project uses [SemVer](https://semver.org/spec/v2.0.0.html).
   the focused pane. A split tab shows the focused pane's name + icon plus a
   pane-count badge, so a tab split across two hosts reads as whichever pane
   you're in.
+- **Session groups.** Save a split-panel arrangement as a reusable entity:
+  right-click a tab and pick "Save as group" (or "Edit group" once it came
+  from one). A session group carries no connection data of its own, just a
+  reference to each pane (a saved host by id, or a local shell) plus the
+  exact split tree (axes and ratios), and it lives in a folder with its own
+  name, color and icon like a host. Each pane can carry its own startup
+  script, which overrides the host's `initial_command` for that pane (empty
+  falls back to it; local shells just run the script), so you can open five
+  local terminals each running a different command. Opening a group rebuilds
+  a single splitted tab and connects every pane; a host that was deleted in
+  the meantime is dropped with a warning rather than failing the whole open.
+  Groups appear on the dashboard alongside hosts, sync as a credential-free
+  entity, and travel in a full portable export.
 - **Kubernetes cloud provider.** A new "Kubernetes" option in Cloud
   Accounts, authenticated by a kubeconfig (optional path + context). It
   discovers workloads (Deployments / StatefulSets / DaemonSets) across

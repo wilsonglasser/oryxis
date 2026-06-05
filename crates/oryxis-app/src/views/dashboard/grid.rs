@@ -21,6 +21,17 @@ use crate::os_icon::BrandIcon;
 use crate::theme::OryxisColors;
 use crate::widgets::{card_grid_columns, dir_align_x, dir_row, distribute_card_grid};
 
+/// Count the leaf panes in a saved session-group layout (for the card
+/// subtitle).
+fn count_leaves(layout: &oryxis_core::models::PaneLayout) -> usize {
+    match layout {
+        oryxis_core::models::PaneLayout::Split { a, b, .. } => {
+            count_leaves(a) + count_leaves(b)
+        }
+        oryxis_core::models::PaneLayout::Leaf(_) => 1,
+    }
+}
+
 impl Oryxis {
     /// Recursively check whether a group contains at least one host or
     /// nested dynamic group whose cloud origin matches `profile_id`.
@@ -46,6 +57,142 @@ impl Oryxis {
             }
         }
         false
+    }
+
+    /// One session-group card: primary click opens the saved arrangement;
+    /// hovering reveals floating edit / delete icons (the per-card action
+    /// convention). Distinct `boxes` glyph + the group's own color set it
+    /// apart from host cards.
+    fn session_group_card<'a>(
+        &'a self,
+        idx: usize,
+        group: &'a oryxis_core::models::SessionGroup,
+    ) -> Element<'a, Message> {
+        let rtl = crate::i18n::is_rtl_layout();
+        let hovered = self.hovered_session_group_card == Some(idx);
+        let bg_color = group
+            .color
+            .as_deref()
+            .and_then(crate::os_icon::parse_hex_color)
+            .unwrap_or_else(|| OryxisColors::t().accent);
+
+        let icon_box = container(
+            iced_fonts::lucide::boxes().size(16).color(Color::WHITE),
+        )
+        .width(Length::Fixed(32.0))
+        .height(Length::Fixed(32.0))
+        .center_x(Length::Fixed(32.0))
+        .center_y(Length::Fixed(32.0))
+        .style(move |_| container::Style {
+            background: Some(Background::Color(bg_color)),
+            border: Border { radius: Radius::from(8.0), ..Default::default() },
+            ..Default::default()
+        });
+
+        let panes = count_leaves(&group.layout);
+        let subtitle = format!("{} {}", panes, t("session_group_panes"));
+        let label_el = text(group.label.clone())
+            .size(13)
+            .color(OryxisColors::t().text_primary)
+            .wrapping(iced::widget::text::Wrapping::None);
+        let subtitle_el = text(subtitle)
+            .size(10)
+            .color(OryxisColors::t().text_muted)
+            .wrapping(iced::widget::text::Wrapping::None);
+
+        let card_btn = button(
+            container(
+                dir_row(vec![
+                    icon_box.into(),
+                    Space::new().width(8).into(),
+                    iced::widget::Column::with_children(vec![
+                        label_el.into(),
+                        Space::new().height(2).into(),
+                        subtitle_el.into(),
+                    ])
+                    .width(Length::Fill)
+                    .align_x(dir_align_x())
+                    .clip(true)
+                    .into(),
+                ])
+                .align_y(iced::Alignment::Center),
+            )
+            .padding(Padding { top: 10.0, right: 10.0, bottom: 10.0, left: 10.0 }),
+        )
+        .on_press(Message::OpenSessionGroup(idx))
+        .width(Length::Fill)
+        .style(move |_, status| {
+            let (bg, bc, bw) = match status {
+                BtnStatus::Hovered => (OryxisColors::t().bg_hover, OryxisColors::t().accent, 1.5),
+                BtnStatus::Pressed => (OryxisColors::t().bg_selected, OryxisColors::t().accent, 2.0),
+                _ => (OryxisColors::t().bg_surface, OryxisColors::t().border, 1.0),
+            };
+            button::Style {
+                background: Some(Background::Color(bg)),
+                border: Border { radius: Radius::from(10.0), color: bc, width: bw },
+                ..Default::default()
+            }
+        });
+
+        // Floating, hover-revealed actions (edit + delete).
+        let actions_overlay: Element<'a, Message> = if hovered {
+            let edit_btn = button(
+                iced_fonts::lucide::pencil().size(13).color(OryxisColors::t().text_muted),
+            )
+            .on_press(Message::EditSessionGroup(idx))
+            .padding(Padding { top: 3.0, right: 6.0, bottom: 3.0, left: 6.0 })
+            .style(|_, status| button::Style {
+                background: Some(Background::Color(match status {
+                    BtnStatus::Hovered => OryxisColors::t().bg_hover,
+                    _ => Color::TRANSPARENT,
+                })),
+                border: Border { radius: Radius::from(6.0), ..Default::default() },
+                ..Default::default()
+            });
+            let delete_btn = button(
+                iced_fonts::lucide::trash().size(13).color(OryxisColors::t().error),
+            )
+            .on_press(Message::DeleteSessionGroup(idx))
+            .padding(Padding { top: 3.0, right: 6.0, bottom: 3.0, left: 6.0 })
+            .style(|_, status| button::Style {
+                background: Some(Background::Color(match status {
+                    BtnStatus::Hovered => OryxisColors::t().bg_hover,
+                    _ => Color::TRANSPARENT,
+                })),
+                border: Border { radius: Radius::from(6.0), ..Default::default() },
+                ..Default::default()
+            });
+            let actions_align = if rtl {
+                iced::alignment::Horizontal::Left
+            } else {
+                iced::alignment::Horizontal::Right
+            };
+            let actions_pad = if rtl {
+                Padding { top: 0.0, right: 0.0, bottom: 0.0, left: 4.0 }
+            } else {
+                Padding { top: 0.0, right: 4.0, bottom: 0.0, left: 0.0 }
+            };
+            container(dir_row(vec![edit_btn.into(), delete_btn.into()]))
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .align_x(actions_align)
+                .align_y(iced::alignment::Vertical::Center)
+                .padding(actions_pad)
+                .into()
+        } else {
+            Space::new().into()
+        };
+
+        let card_element: Element<'a, Message> = iced::widget::Stack::new()
+            .push(card_btn)
+            .push(actions_overlay)
+            .into();
+
+        let wrapped = MouseArea::new(card_element)
+            .on_enter(Message::SessionGroupCardHovered(idx))
+            .on_exit(Message::SessionGroupCardUnhovered);
+
+        container(wrapped).width(Length::Fill).clip(true).into()
     }
 
     pub(super) fn dashboard_main_content(&self) -> Element<'_, Message> {
@@ -87,7 +234,7 @@ impl Oryxis {
         let at_root = self.active_group.is_none();
         let flatten = self.flatten_hosts && at_root;
 
-        if self.connections.is_empty() && self.groups.is_empty() {
+        if self.connections.is_empty() && self.groups.is_empty() && self.session_groups.is_empty() {
             // Termius-style empty state, centered "Create host" with input
             let has_input = !self.quick_host_input.is_empty();
             let btn_bg = if has_input { OryxisColors::t().success } else { OryxisColors::t().bg_surface };
@@ -1511,6 +1658,17 @@ impl Oryxis {
             .into()
         };
 
+        // Saved session groups that live in the current folder. The
+        // enumerate index is absolute (into `self.session_groups`), which is
+        // what Open/Edit/Delete expect.
+        let session_group_cards: Vec<Element<'_, Message>> = self
+            .session_groups
+            .iter()
+            .enumerate()
+            .filter(|(_, g)| g.group_id == self.active_group)
+            .map(|(i, g)| self.session_group_card(i, g))
+            .collect();
+
         let mut content_rows: Vec<Element<'_, Message>> = Vec::new();
         if flatten {
             if !group_cards.is_empty() {
@@ -1520,13 +1678,19 @@ impl Oryxis {
                 content_rows.push(distribute_card_grid(group_cards, cols, 12.0, 12.0));
                 content_rows.push(Space::new().height(20).into());
             }
+            if !session_group_cards.is_empty() {
+                content_rows.push(section_header("session_groups"));
+                content_rows.push(distribute_card_grid(session_group_cards, cols, 12.0, 12.0));
+                content_rows.push(Space::new().height(20).into());
+            }
             if !host_cards.is_empty() {
                 content_rows.push(section_header("hosts_section"));
                 content_rows.push(distribute_card_grid(host_cards, cols, 12.0, 12.0));
             }
         } else {
-            // Legacy: groups (if any) first, then hosts, in one grid.
+            // Legacy: groups, then session groups, then hosts, in one grid.
             let mut combined = group_cards;
+            combined.extend(session_group_cards);
             combined.extend(host_cards);
             content_rows.push(distribute_card_grid(combined, cols, 12.0, 12.0));
         }
@@ -1685,5 +1849,7 @@ fn relative_time_ago(t: chrono::DateTime<chrono::Utc>) -> String {
     if days < 30 {
         return format!("{days}d ago");
     }
-    t.format("%Y-%m-%d").to_string()
+    // Absolute fallback for old timestamps: show the date in the user's
+    // local timezone, not UTC.
+    t.with_timezone(&chrono::Local).format("%Y-%m-%d").to_string()
 }

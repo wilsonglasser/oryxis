@@ -12,10 +12,12 @@ use uuid::Uuid;
 use oryxis_core::models::cloud::{CloudQuery, CloudRef};
 use oryxis_core::models::cloud_profile::CloudProfile;
 use oryxis_core::models::custom_terminal_theme::CustomTerminalTheme;
+use oryxis_core::models::custom_ui_theme::CustomUiTheme;
 use oryxis_core::models::connection::{AuthMethod, Connection, ProxyType};
 use oryxis_core::models::group::Group;
 use oryxis_core::models::identity::Identity;
 use oryxis_core::models::proxy_identity::ProxyIdentity;
+use oryxis_core::models::session_group::SessionGroup;
 use oryxis_core::models::key::{KeyAlgorithm, SshKey};
 use oryxis_core::models::snippet::Snippet;
 use oryxis_core::models::port_forward_rule::{ForwardKind, PortForwardRule};
@@ -283,6 +285,18 @@ impl VaultStore {
                 is_shared  INTEGER DEFAULT 0
             );
 
+            CREATE TABLE IF NOT EXISTS session_groups (
+                id         TEXT PRIMARY KEY,
+                label      TEXT NOT NULL,
+                group_id   TEXT,
+                color      TEXT,
+                icon       TEXT,
+                layout     TEXT NOT NULL,
+                last_used  TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+
             CREATE TABLE IF NOT EXISTS connections (
                 id          TEXT PRIMARY KEY,
                 label       TEXT NOT NULL,
@@ -330,6 +344,14 @@ impl VaultStore {
                 background  TEXT NOT NULL,
                 cursor      TEXT NOT NULL,
                 ansi        TEXT NOT NULL,
+                created_at  TEXT NOT NULL,
+                updated_at  TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS custom_ui_themes (
+                id          TEXT PRIMARY KEY,
+                name        TEXT NOT NULL,
+                colors      TEXT NOT NULL,
                 created_at  TEXT NOT NULL,
                 updated_at  TEXT NOT NULL
             );
@@ -660,6 +682,89 @@ impl VaultStore {
         self.db
             .execute("DELETE FROM groups WHERE id = ?1", params![id.to_string()])?;
         self.record_tombstone("group", id)?;
+        Ok(())
+    }
+
+    // -----------------------------------------------------------------------
+    // Session groups CRUD
+    //
+    // A session group is a saved split-panel arrangement. It carries no
+    // credentials (every leaf references a host by id or is a local shell),
+    // so there is no encrypted column and no password getter/setter. The
+    // split tree lives in the `layout` column as JSON.
+    // -----------------------------------------------------------------------
+
+    pub fn save_session_group(&self, group: &SessionGroup) -> Result<(), VaultError> {
+        let layout = serde_json::to_string(&group.layout)
+            .map_err(|e| VaultError::Database(format!("session group layout: {e}")))?;
+        self.db.execute(
+            "INSERT OR REPLACE INTO session_groups (id, label, group_id, color, icon, layout, last_used, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+            params![
+                group.id.to_string(),
+                group.label,
+                group.group_id.map(|u| u.to_string()),
+                group.color,
+                group.icon_style,
+                layout,
+                group.last_used.map(|d| d.to_rfc3339()),
+                group.created_at.to_rfc3339(),
+                group.updated_at.to_rfc3339(),
+            ],
+        )?;
+        self.clear_tombstone("session_group", &group.id)?;
+        Ok(())
+    }
+
+    pub fn list_session_groups(&self) -> Result<Vec<SessionGroup>, VaultError> {
+        let mut stmt = self.db.prepare(
+            "SELECT id, label, group_id, color, icon, layout, last_used, created_at, updated_at FROM session_groups ORDER BY label",
+        )?;
+        let groups = stmt
+            .query_map([], |row| {
+                let layout_json: String = row.get(5)?;
+                let layout = serde_json::from_str(&layout_json).map_err(|e| {
+                    rusqlite::Error::FromSqlConversionFailure(
+                        5,
+                        rusqlite::types::Type::Text,
+                        Box::new(e),
+                    )
+                })?;
+                Ok(SessionGroup {
+                    id: Uuid::parse_str(&row.get::<_, String>(0)?).unwrap_or_default(),
+                    label: row.get(1)?,
+                    group_id: row
+                        .get::<_, Option<String>>(2)?
+                        .and_then(|s| Uuid::parse_str(&s).ok()),
+                    color: row.get(3)?,
+                    icon_style: row.get(4)?,
+                    layout,
+                    last_used: row
+                        .get::<_, Option<String>>(6)?
+                        .and_then(|s| chrono::DateTime::parse_from_rfc3339(&s).ok())
+                        .map(|d| d.with_timezone(&chrono::Utc)),
+                    created_at: row
+                        .get::<_, Option<String>>(7)?
+                        .and_then(|s| chrono::DateTime::parse_from_rfc3339(&s).ok())
+                        .map(|d| d.with_timezone(&chrono::Utc))
+                        .unwrap_or_else(chrono::Utc::now),
+                    updated_at: row
+                        .get::<_, Option<String>>(8)?
+                        .and_then(|s| chrono::DateTime::parse_from_rfc3339(&s).ok())
+                        .map(|d| d.with_timezone(&chrono::Utc))
+                        .unwrap_or_else(chrono::Utc::now),
+                })
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(groups)
+    }
+
+    pub fn delete_session_group(&self, id: &Uuid) -> Result<(), VaultError> {
+        self.db.execute(
+            "DELETE FROM session_groups WHERE id = ?1",
+            params![id.to_string()],
+        )?;
+        self.record_tombstone("session_group", id)?;
         Ok(())
     }
 
@@ -1637,6 +1742,67 @@ impl VaultStore {
         Ok(())
     }
 
+    // -- Custom UI (chrome) themes --
+    // Plain config rows; the 21 chrome colors are stored as a JSON array.
+
+    pub fn save_custom_ui_theme(&self, theme: &CustomUiTheme) -> Result<(), VaultError> {
+        self.db.execute(
+            "INSERT OR REPLACE INTO custom_ui_themes
+                (id, name, colors, created_at, updated_at)
+             VALUES (?1,?2,?3,?4,?5)",
+            params![
+                theme.id.to_string(),
+                theme.name,
+                serde_json::to_string(&theme.colors).unwrap_or_default(),
+                theme.created_at.to_rfc3339(),
+                theme.updated_at.to_rfc3339(),
+            ],
+        )?;
+        Ok(())
+    }
+
+    pub fn list_custom_ui_themes(&self) -> Result<Vec<CustomUiTheme>, VaultError> {
+        let mut stmt = self.db.prepare(
+            "SELECT id, name, colors, created_at, updated_at
+             FROM custom_ui_themes ORDER BY name",
+        )?;
+        let themes = stmt
+            .query_map([], |row| {
+                let colors: [String; 21] = row
+                    .get::<_, String>(2)
+                    .ok()
+                    .and_then(|s| serde_json::from_str(&s).ok())
+                    .unwrap_or_else(|| std::array::from_fn(|_| "#000000".to_string()));
+                Ok(CustomUiTheme {
+                    id: Uuid::parse_str(&row.get::<_, String>(0)?).unwrap_or_default(),
+                    name: row.get(1)?,
+                    colors,
+                    created_at: row
+                        .get::<_, String>(3)
+                        .ok()
+                        .and_then(|s| chrono::DateTime::parse_from_rfc3339(&s).ok())
+                        .map(|d| d.with_timezone(&chrono::Utc))
+                        .unwrap_or_else(chrono::Utc::now),
+                    updated_at: row
+                        .get::<_, String>(4)
+                        .ok()
+                        .and_then(|s| chrono::DateTime::parse_from_rfc3339(&s).ok())
+                        .map(|d| d.with_timezone(&chrono::Utc))
+                        .unwrap_or_else(chrono::Utc::now),
+                })
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(themes)
+    }
+
+    pub fn delete_custom_ui_theme(&self, id: &Uuid) -> Result<(), VaultError> {
+        self.db.execute(
+            "DELETE FROM custom_ui_themes WHERE id = ?1",
+            params![id.to_string()],
+        )?;
+        Ok(())
+    }
+
     // -----------------------------------------------------------------------
     // Port forward rules
     // -----------------------------------------------------------------------
@@ -2517,6 +2683,9 @@ mod tests {
     use oryxis_core::models::key::{KeyAlgorithm, SshKey};
     use oryxis_core::models::known_host::KnownHost;
     use oryxis_core::models::log_entry::{LogEntry, LogEvent};
+    use oryxis_core::models::session_group::{
+        PaneLayout, PaneMember, PaneSource, SessionGroup, SplitAxis,
+    };
     use oryxis_core::models::snippet::Snippet;
     use tempfile::NamedTempFile;
 
@@ -2532,6 +2701,67 @@ mod tests {
         let mut vault = temp_vault();
         vault.set_master_password("testpass123").unwrap();
         vault
+    }
+
+    // ── Session groups ──
+
+    #[test]
+    fn session_group_layout_roundtrips_tree_and_scripts() {
+        let vault = temp_vault();
+        let host_a = Uuid::new_v4();
+        // Split { Vertical, 0.4, Leaf(host A, script), Leaf(local, script) }
+        let layout = PaneLayout::Split {
+            axis: SplitAxis::Vertical,
+            ratio: 0.4,
+            a: Box::new(PaneLayout::Leaf(PaneMember {
+                source: PaneSource::Host(host_a),
+                initial_script: Some("htop".to_string()),
+            })),
+            b: Box::new(PaneLayout::Leaf(PaneMember {
+                source: PaneSource::LocalShell {
+                    program: "bash".to_string(),
+                    args: vec!["-l".to_string()],
+                    label: "Local".to_string(),
+                },
+                initial_script: Some("cd /tmp".to_string()),
+            })),
+        };
+        let mut sg = SessionGroup::new("Dashboard", layout);
+        sg.color = Some("#ff8800".to_string());
+        sg.icon_style = Some("boxes".to_string());
+        vault.save_session_group(&sg).unwrap();
+
+        let loaded = vault.list_session_groups().unwrap();
+        assert_eq!(loaded.len(), 1);
+        let g = &loaded[0];
+        assert_eq!(g.id, sg.id);
+        assert_eq!(g.label, "Dashboard");
+        assert_eq!(g.color.as_deref(), Some("#ff8800"));
+        assert_eq!(g.icon_style.as_deref(), Some("boxes"));
+        match &g.layout {
+            PaneLayout::Split { axis, ratio, a, b } => {
+                assert_eq!(*axis, SplitAxis::Vertical);
+                assert!((*ratio - 0.4).abs() < f32::EPSILON);
+                match a.as_ref() {
+                    PaneLayout::Leaf(m) => {
+                        assert!(matches!(m.source, PaneSource::Host(id) if id == host_a));
+                        assert_eq!(m.initial_script.as_deref(), Some("htop"));
+                    }
+                    _ => panic!("expected leaf A"),
+                }
+                match b.as_ref() {
+                    PaneLayout::Leaf(m) => {
+                        assert!(matches!(&m.source, PaneSource::LocalShell { program, .. } if program == "bash"));
+                        assert_eq!(m.initial_script.as_deref(), Some("cd /tmp"));
+                    }
+                    _ => panic!("expected leaf B"),
+                }
+            }
+            _ => panic!("expected split root"),
+        }
+
+        vault.delete_session_group(&sg.id).unwrap();
+        assert!(vault.list_session_groups().unwrap().is_empty());
     }
 
     // ── Crypto ──

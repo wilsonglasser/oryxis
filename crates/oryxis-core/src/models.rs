@@ -10,7 +10,9 @@ pub mod identity;
 pub mod proxy_identity;
 pub mod cloud_profile;
 pub mod cloud;
+pub mod session_group;
 pub mod custom_terminal_theme;
+pub mod custom_ui_theme;
 
 pub use connection::*;
 pub use key::*;
@@ -24,4 +26,6 @@ pub use identity::*;
 pub use proxy_identity::*;
 pub use cloud_profile::*;
 pub use cloud::*;
+pub use session_group::*;
 pub use custom_terminal_theme::*;
+pub use custom_ui_theme::*;

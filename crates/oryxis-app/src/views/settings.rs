@@ -1,7 +1,7 @@
 //! Settings screen, terminal, AI, theme, shortcuts, security, sync, about.
 
 use iced::border::Radius;
-use iced::widget::{button, column, container, pick_list, row, scrollable, text, text_input, Space};
+use iced::widget::{button, column, container, pick_list, scrollable, text, text_input, Space};
 use iced::widget::button::Status as BtnStatus;
 use iced::{Background, Border, Color, Element, Length, Padding};
 
@@ -696,110 +696,45 @@ impl Oryxis {
 
             SettingsSection::Interface => {
                 use crate::theme::AppTheme;
-                let active_name = AppTheme::active().name();
+                let active_name = self.active_app_theme_name.as_str();
 
+                // Built-in themes, then custom UI themes, then the "+" card.
+                let mut cards: Vec<Element<'_, Message>> = Vec::new();
+                for theme in AppTheme::ALL.iter() {
+                    let name = theme.name();
+                    cards.push(crate::views::settings_ui_themes::app_theme_card(
+                        name,
+                        theme.colors_ref(),
+                        name == active_name,
+                        Message::AppThemeChanged(name.to_string()),
+                    ));
+                }
+                // Resolve custom colors up front (the card only reads Copy
+                // values, so this temporary outlives the borrow).
+                let custom_colors: Vec<crate::theme::ThemeColors> = self
+                    .custom_ui_themes
+                    .iter()
+                    .map(|t| crate::theme::theme_colors_from_hex(&t.colors))
+                    .collect();
+                for (idx, theme) in self.custom_ui_themes.iter().enumerate() {
+                    cards.push(self.ui_theme_custom_card(
+                        idx,
+                        &theme.name,
+                        &custom_colors[idx],
+                        theme.name == active_name,
+                    ));
+                }
+                cards.push(crate::views::settings_ui_themes::ui_theme_add_card());
+
+                // Chunk the cards into rows of two (Elements aren't Clone, so
+                // drain pairs instead of `chunks`).
                 let mut grid_rows: Vec<Element<'_, Message>> = Vec::new();
-                let themes: Vec<&AppTheme> = AppTheme::ALL.iter().collect();
-
-                for chunk in themes.chunks(2) {
-                    let mut cells: Vec<Element<'_, Message>> = Vec::new();
-                    for theme in chunk {
-                        let name = theme.name();
-                        let is_active = name == active_name;
-                        let colors = match theme {
-                            AppTheme::OryxisDark => &crate::theme::ORYXIS_DARK,
-                            AppTheme::OryxisLight => &crate::theme::ORYXIS_LIGHT,
-                            AppTheme::Termius => &crate::theme::TERMIUS,
-                            AppTheme::Darcula => &crate::theme::DARCULA,
-                            AppTheme::IslandsDark => &crate::theme::ISLANDS_DARK,
-                            AppTheme::Dracula => &crate::theme::DRACULA,
-                            AppTheme::Monokai => &crate::theme::MONOKAI,
-                            AppTheme::HackerGreen => &crate::theme::HACKER_GREEN,
-                            AppTheme::Nord => &crate::theme::NORD,
-                            AppTheme::NordLight => &crate::theme::NORD_LIGHT,
-                            AppTheme::SolarizedDark => &crate::theme::SOLARIZED_DARK,
-                            AppTheme::SolarizedLight => &crate::theme::SOLARIZED_LIGHT,
-                            AppTheme::PaperLight => &crate::theme::PAPER_LIGHT,
-                        };
-                        let border_color = if is_active {
-                            OryxisColors::t().accent
-                        } else {
-                            OryxisColors::t().border
-                        };
-                        let border_width = if is_active { 2.0 } else { 1.0 };
-
-                        let preview_bg = colors.bg_primary;
-                        let accent_bar = colors.accent;
-                        let success_bar = colors.success;
-                        let error_bar = colors.error;
-
-                        let preview = container(
-                            column![
-                                Space::new().height(20),
-                                row![
-                                    container(Space::new().width(30).height(4))
-                                        .style(move |_| container::Style {
-                                            background: Some(Background::Color(accent_bar)),
-                                            border: Border { radius: Radius::from(2.0), ..Default::default() },
-                                            ..Default::default()
-                                        }),
-                                    Space::new().width(4),
-                                    container(Space::new().width(20).height(4))
-                                        .style(move |_| container::Style {
-                                            background: Some(Background::Color(success_bar)),
-                                            border: Border { radius: Radius::from(2.0), ..Default::default() },
-                                            ..Default::default()
-                                        }),
-                                    Space::new().width(4),
-                                    container(Space::new().width(15).height(4))
-                                        .style(move |_| container::Style {
-                                            background: Some(Background::Color(error_bar)),
-                                            border: Border { radius: Radius::from(2.0), ..Default::default() },
-                                            ..Default::default()
-                                        }),
-                                ].padding(Padding { top: 0.0, right: 8.0, bottom: 8.0, left: 8.0 }),
-                            ],
-                        )
-                        .width(120)
-                        .style(move |_| container::Style {
-                            background: Some(Background::Color(preview_bg)),
-                            border: Border { radius: Radius::from(6.0), ..Default::default() },
-                            ..Default::default()
-                        });
-
-                        let card: Element<'_, Message> = button(
-                            container(
-                                column![
-                                    preview,
-                                    Space::new().height(8),
-                                    text(name).size(12).color(OryxisColors::t().text_primary),
-                                ]
-                                .align_x(iced::Alignment::Center),
-                            )
-                            .padding(12),
-                        )
-                        .on_press(Message::AppThemeChanged(name.to_string()))
-                        .width(Length::FillPortion(1))
-                        .style(move |_, status| {
-                            let bg = match status {
-                                BtnStatus::Hovered => OryxisColors::t().bg_hover,
-                                _ => OryxisColors::t().bg_surface,
-                            };
-                            button::Style {
-                                background: Some(Background::Color(bg)),
-                                border: Border {
-                                    radius: Radius::from(8.0),
-                                    color: border_color,
-                                    width: border_width,
-                                },
-                                ..Default::default()
-                            }
-                        })
-                        .into();
-                        cells.push(card);
-                    }
-                    // Fill remaining space if odd number
-                    if chunk.len() == 1 {
+                let mut iter = cards.into_iter();
+                while let Some(a) = iter.next() {
+                    let mut cells = vec![a];
+                    if let Some(b) = iter.next() {
+                        cells.push(b);
+                    } else {
                         cells.push(Space::new().width(Length::FillPortion(1)).into());
                     }
                     grid_rows.push(dir_row(cells).spacing(12).into());
@@ -1738,7 +1673,12 @@ impl Oryxis {
                         .push(Space::new().height(6));
                     for peer in &self.sync_peers {
                         let last_sync = peer.last_synced_at
-                            .map(|d| d.format("%Y-%m-%d %H:%M").to_string())
+                            // Stored UTC; show in the user's local timezone.
+                            .map(|d| {
+                                d.with_timezone(&chrono::Local)
+                                    .format("%Y-%m-%d %H:%M")
+                                    .to_string()
+                            })
                             .unwrap_or_else(|| crate::i18n::t("sync_never").into());
                         let unpair = button(
                             text(crate::i18n::t("sync_unpair")).size(11).color(OryxisColors::t().error)

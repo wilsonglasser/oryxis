@@ -8,52 +8,62 @@ use crate::app::{Message, Oryxis, SIDEBAR_WIDTH, SIDEBAR_WIDTH_COLLAPSED};
 use crate::sftp_helpers::sort_local_entries;
 
 impl Oryxis {
-    /// Refresh the local SFTP pane from `self.sftp.local_path`. Errors
-    /// (missing dir, permission denied) surface as a user-visible string
-    /// instead of a panic.
-    pub(crate) fn refresh_sftp_local(&mut self) {
-        self.sftp.local_entries.clear();
-        self.sftp.local_error = None;
+    /// Refresh a local pane from its `local_path`. Errors (missing dir,
+    /// permission denied) surface as a user-visible string instead of a
+    /// panic. No-op if the pane is currently a remote host.
+    pub(crate) fn refresh_sftp_local(&mut self, side: crate::state::SftpPaneSide) {
+        if self.sftp.pane(side).is_remote {
+            return;
+        }
+        let sort = self.sftp.pane(side).sort;
+        let local_path = self.sftp.pane(side).local_path.clone();
+        {
+            let pane = self.sftp.pane_mut(side);
+            pane.local_entries.clear();
+            pane.error = None;
+        }
 
         // Bare WSL UNC roots (`\\wsl$`, `\\wsl.localhost`) can't be
         // enumerated via `read_dir`, Windows treats them as servers
         // with no share and returns ERROR_PATH_NOT_FOUND. Synthesize
         // distro entries from `wsl.exe -l -q` instead so the user can
         // step into a distro just by clicking it.
-        if is_wsl_root(&self.sftp.local_path) {
+        if is_wsl_root(&local_path) {
+            let pane = self.sftp.pane_mut(side);
             for distro in list_wsl_distros_for_pane() {
-                self.sftp.local_entries.push(crate::state::LocalEntry {
+                pane.local_entries.push(crate::state::LocalEntry {
                     name: distro,
                     is_dir: true,
                     size: 0,
                     modified: None,
                 });
             }
-            sort_local_entries(&mut self.sftp.local_entries, self.sftp.local_sort);
+            sort_local_entries(&mut pane.local_entries, sort);
             return;
         }
 
-        let read = match std::fs::read_dir(&self.sftp.local_path) {
+        let read = match std::fs::read_dir(&local_path) {
             Ok(r) => r,
             Err(e) => {
-                self.sftp.local_error = Some(e.to_string());
+                self.sftp.pane_mut(side).error = Some(e.to_string());
                 return;
             }
         };
+        let pane = self.sftp.pane_mut(side);
         for entry in read.flatten() {
             let metadata = match entry.metadata() {
                 Ok(m) => m,
                 Err(_) => continue,
             };
             let name = entry.file_name().to_string_lossy().into_owned();
-            self.sftp.local_entries.push(crate::state::LocalEntry {
+            pane.local_entries.push(crate::state::LocalEntry {
                 name,
                 is_dir: metadata.is_dir(),
                 size: metadata.len(),
                 modified: metadata.modified().ok(),
             });
         }
-        sort_local_entries(&mut self.sftp.local_entries, self.sftp.local_sort);
+        sort_local_entries(&mut pane.local_entries, sort);
     }
 
     /// Parsed and clamped concurrency setting, picks how many parallel
@@ -92,54 +102,43 @@ impl Oryxis {
         &self,
         side: crate::state::SftpPaneSide,
     ) -> Vec<String> {
-        match side {
-            crate::state::SftpPaneSide::Local => {
-                let needle = self.sftp.local_filter.to_lowercase();
-                self.sftp
-                    .local_entries
-                    .iter()
-                    .filter(|e| {
-                        if !self.sftp.local_show_hidden && e.name.starts_with('.') {
-                            return false;
-                        }
-                        if !needle.is_empty() && !e.name.to_lowercase().contains(&needle) {
-                            return false;
-                        }
-                        true
-                    })
-                    .map(|e| {
-                        self.sftp
-                            .local_path
-                            .join(&e.name)
-                            .to_string_lossy()
-                            .into_owned()
-                    })
-                    .collect()
-            }
-            crate::state::SftpPaneSide::Remote => {
-                let needle = self.sftp.remote_filter.to_lowercase();
-                let parent = self.sftp.remote_path.trim_end_matches('/');
-                self.sftp
-                    .remote_entries
-                    .iter()
-                    .filter(|e| {
-                        if !self.sftp.remote_show_hidden && e.name.starts_with('.') {
-                            return false;
-                        }
-                        if !needle.is_empty() && !e.name.to_lowercase().contains(&needle) {
-                            return false;
-                        }
-                        true
-                    })
-                    .map(|e| {
-                        if parent.is_empty() {
-                            format!("/{}", e.name)
-                        } else {
-                            format!("{}/{}", parent, e.name)
-                        }
-                    })
-                    .collect()
-            }
+        let pane = self.sftp.pane(side);
+        let needle = pane.filter.to_lowercase();
+        if !pane.is_remote {
+            pane.local_entries
+                .iter()
+                .filter(|e| {
+                    if !pane.show_hidden && e.name.starts_with('.') {
+                        return false;
+                    }
+                    if !needle.is_empty() && !e.name.to_lowercase().contains(&needle) {
+                        return false;
+                    }
+                    true
+                })
+                .map(|e| pane.local_path.join(&e.name).to_string_lossy().into_owned())
+                .collect()
+        } else {
+            let parent = pane.remote_path.trim_end_matches('/');
+            pane.remote_entries
+                .iter()
+                .filter(|e| {
+                    if !pane.show_hidden && e.name.starts_with('.') {
+                        return false;
+                    }
+                    if !needle.is_empty() && !e.name.to_lowercase().contains(&needle) {
+                        return false;
+                    }
+                    true
+                })
+                .map(|e| {
+                    if parent.is_empty() {
+                        format!("/{}", e.name)
+                    } else {
+                        format!("{}/{}", parent, e.name)
+                    }
+                })
+                .collect()
         }
     }
 
@@ -191,70 +190,69 @@ impl Oryxis {
         side: crate::state::SftpPaneSide,
         path: &str,
     ) -> bool {
-        match side {
-            crate::state::SftpPaneSide::Local => {
-                let p = std::path::Path::new(path);
-                if let Some(name) = p.file_name().and_then(|n| n.to_str())
-                    && let Some(entry) =
-                        self.sftp.local_entries.iter().find(|e| e.name == name)
-                {
-                    return entry.is_dir;
-                }
-                p.is_dir()
+        let pane = self.sftp.pane(side);
+        if !pane.is_remote {
+            let p = std::path::Path::new(path);
+            if let Some(name) = p.file_name().and_then(|n| n.to_str())
+                && let Some(entry) = pane.local_entries.iter().find(|e| e.name == name)
+            {
+                return entry.is_dir;
             }
-            crate::state::SftpPaneSide::Remote => {
-                let basename = path.rsplit('/').find(|s| !s.is_empty()).unwrap_or(path);
-                self.sftp
-                    .remote_entries
-                    .iter()
-                    .find(|e| e.name == basename)
-                    .map(|e| e.is_dir)
-                    .unwrap_or(false)
-            }
+            p.is_dir()
+        } else {
+            let basename = path.rsplit('/').find(|s| !s.is_empty()).unwrap_or(path);
+            pane.remote_entries
+                .iter()
+                .find(|e| e.name == basename)
+                .map(|e| e.is_dir)
+                .unwrap_or(false)
         }
     }
 
-    /// Resolve an active internal drag drop, figure out which pane the
-    /// cursor is over and dispatch a transfer for each dragged item.
-    /// Cross-pane drags from local → remote upload, remote → local
-    /// download. Drops onto a hovered folder go *inside* that folder;
-    /// otherwise they land in the target pane's current directory.
+    /// Resolve an active internal drag drop: figure out which pane the
+    /// cursor is over (the destination) and dispatch a transfer for each
+    /// dragged item, routing by the source and destination pane natures:
+    /// Local -> remote uploads, remote -> Local downloads, remote ->
+    /// remote relays. Drops onto a hovered folder go *inside* that
+    /// folder; otherwise they land in the target pane's current
+    /// directory.
     pub(crate) fn handle_internal_drag_drop(
         &mut self,
         drag: crate::state::SftpInternalDrag,
     ) -> Task<Message> {
-        let target_remote_folder = self
+        use crate::state::SftpPaneSide::{Left, Right};
+        // Destination is the pane the cursor lands on, which must be the
+        // pane opposite the drag origin (same-pane drops are no-ops).
+        let dest_side = if drag.origin_side == Left { Right } else { Left };
+        // A folder row in the destination pane redirects the drop inside
+        // that folder.
+        let target_folder = self
             .sftp
             .hovered_row
             .as_ref()
-            .filter(|(s, _, is_dir)| *s == crate::state::SftpPaneSide::Remote && *is_dir)
+            .filter(|(s, _, is_dir)| *s == dest_side && *is_dir)
             .map(|(_, p, _)| p.clone());
-        let target_local_folder = self
-            .sftp
-            .hovered_row
-            .as_ref()
-            .filter(|(s, _, is_dir)| *s == crate::state::SftpPaneSide::Local && *is_dir)
-            .map(|(_, p, _)| p.clone());
-        let in_remote = target_remote_folder.is_some() || self.is_cursor_over_remote_pane();
-        let in_local = target_local_folder.is_some() || self.is_cursor_over_local_pane();
-        match drag.origin_side {
-            crate::state::SftpPaneSide::Local if in_remote => {
-                if let Some(dir) = target_remote_folder {
+        let over_dest = target_folder.is_some()
+            || match dest_side {
+                Left => self.is_cursor_over_local_pane(),
+                Right => self.is_cursor_over_remote_pane(),
+            };
+        if !over_dest {
+            return Task::none();
+        }
+        let src_remote = self.sftp.pane(drag.origin_side).is_remote;
+        let dst_remote = self.sftp.pane(dest_side).is_remote;
+        match (src_remote, dst_remote) {
+            // Local -> remote: upload.
+            (false, true) => {
+                if let Some(dir) = target_folder {
                     self.sftp.upload_dest_override = Some(dir);
                 }
-                // Single item still uses the existing single-message
-                // path so the standalone single-file conflict modal
-                // fires; multi flows through the batched queue runner
-                // so the apply-to-all checkbox works.
-                if drag.items.len() == 1 {
-                    let (path, is_dir) = drag.items.into_iter().next().unwrap();
-                    let pb = std::path::PathBuf::from(path);
-                    return if is_dir {
-                        Task::done(Message::SftpUploadFolder(pb))
-                    } else {
-                        Task::done(Message::SftpUpload(pb))
-                    };
-                }
+                // Always route through the batched queue runner, even for a
+                // single file, so the transfer shows the progress strip +
+                // per-file panel and refreshes the remote pane on
+                // completion. (Name conflicts use the queue's overwrite
+                // modal instead of the standalone single-file one.)
                 let paths: Vec<std::path::PathBuf> = drag
                     .items
                     .into_iter()
@@ -262,12 +260,9 @@ impl Oryxis {
                     .collect();
                 Task::done(Message::SftpUploadBatch(paths))
             }
-            crate::state::SftpPaneSide::Remote if in_local => {
-                // Direct the download to the hovered local folder via
-                // a one-shot override, same pattern as upload, lets
-                // the message handler consume the destination without
-                // mutating the pane's actual `local_path`.
-                if let Some(dir) = target_local_folder {
+            // Remote -> Local: download.
+            (true, false) => {
+                if let Some(dir) = target_folder {
                     self.sftp.download_dest_override = Some(std::path::PathBuf::from(dir));
                 }
                 let mut tasks = Vec::with_capacity(drag.items.len());
@@ -280,7 +275,24 @@ impl Oryxis {
                 }
                 Task::batch(tasks)
             }
-            _ => Task::none(),
+            // Remote -> remote: server-to-server relay.
+            (true, true) => {
+                if let Some(dir) = target_folder {
+                    self.sftp.upload_dest_override = Some(dir);
+                }
+                let from = drag.origin_side;
+                let mut tasks = Vec::with_capacity(drag.items.len());
+                for (path, is_dir) in drag.items {
+                    tasks.push(if is_dir {
+                        Task::done(Message::SftpRelayFolder(from, path))
+                    } else {
+                        Task::done(Message::SftpRelay(from, path))
+                    });
+                }
+                Task::batch(tasks)
+            }
+            // Local -> Local: not reachable (Local is left-only), no-op.
+            (false, false) => Task::none(),
         }
     }
 }

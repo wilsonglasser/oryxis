@@ -12,28 +12,35 @@ use iced::Task;
 use crate::app::{Message, Oryxis};
 use crate::sftp_helpers::{
     apply_overwrite_for_item, build_client_pool, do_download_item, do_local_duplicate_item,
-    do_upload_item, parent_path, remote_join, transfer_item_label, unique_entry_name,
-    walk_local_for_duplicate, walk_local_for_upload, walk_remote_for_download, UploadOutcome,
-    UploadStepOutcome,
+    do_relay_item, do_upload_item, parent_path, remote_join, transfer_item_label,
+    unique_entry_name, walk_local_for_duplicate, walk_local_for_upload, walk_remote_for_download,
+    walk_remote_for_relay, UploadOutcome, UploadStepOutcome,
 };
+use crate::state::SftpPaneSide;
 
 impl Oryxis {
     pub(crate) fn handle_sftp_transfers(
         &mut self,
         message: Message,
     ) -> Result<Task<Message>, Message> {
+        // The remote destination/source side for upload/download. Both
+        // paths only run with exactly one remote pane, so this resolves
+        // unambiguously. Default to Right for state mutations when no
+        // remote pane exists (the early returns below short-circuit).
+        let remote_side = self.sftp.remote_side().unwrap_or(SftpPaneSide::Right);
+        let local_side = self.sftp.local_side().unwrap_or(SftpPaneSide::Left);
         match message {
             Message::SftpUpload(local_path) => {
                 self.sftp.row_menu = None;
-                let Some(client) = self.sftp.client.clone() else {
-                    self.sftp.remote_error = Some("Not connected to a host".into());
+                let Some(client) = self.sftp.pane(remote_side).client.clone() else {
+                    self.sftp.pane_mut(remote_side).error = Some("Not connected to a host".into());
                     return Ok(Task::none());
                 };
                 let remote_dir = self
                     .sftp
                     .upload_dest_override
                     .take()
-                    .unwrap_or_else(|| self.sftp.remote_path.clone());
+                    .unwrap_or_else(|| self.sftp.pane(remote_side).remote_path.clone());
                 return Ok(Task::perform(
                     async move {
                         let basename = local_path
@@ -73,10 +80,12 @@ impl Oryxis {
                             .map_err(|e| e.to_string())?;
                         Ok(UploadOutcome::Done(remote_dir))
                     },
-                    |result| match result {
-                        Ok(UploadOutcome::Done(reload)) => Message::SftpNavigateRemote(reload),
+                    move |result| match result {
+                        Ok(UploadOutcome::Done(reload)) => {
+                            Message::SftpNavigateRemote(remote_side, reload)
+                        }
                         Ok(UploadOutcome::Conflict(prompt)) => Message::SftpAskOverwrite(prompt),
-                        Err(e) => Message::SftpOpResult(e, true),
+                        Err(e) => Message::SftpOpResult(remote_side, e, true),
                     },
                 ));
             }
@@ -93,8 +102,8 @@ impl Oryxis {
                     return Ok(Task::none());
                 };
                 let apply_to_all = prompt.apply_to_all;
-                let Some(client) = self.sftp.client.clone() else {
-                    self.sftp.remote_error = Some("Not connected to a host".into());
+                let Some(client) = self.sftp.pane(remote_side).client.clone() else {
+                    self.sftp.pane_mut(remote_side).error = Some("Not connected to a host".into());
                     return Ok(Task::none());
                 };
                 // Pull a parked transfer item if this prompt fired from
@@ -189,9 +198,9 @@ impl Oryxis {
                                     .map_err(|e| e.to_string())?;
                                 Ok::<String, String>(reload)
                             },
-                            |r| match r {
-                                Ok(reload) => Message::SftpNavigateRemote(reload),
-                                Err(e) => Message::SftpOpResult(e, true),
+                            move |r| match r {
+                                Ok(reload) => Message::SftpNavigateRemote(remote_side, reload),
+                                Err(e) => Message::SftpOpResult(remote_side, e, true),
                             },
                         )
                     }
@@ -212,24 +221,24 @@ impl Oryxis {
                                 .map_err(|e| e.to_string())?;
                             Ok::<String, String>(reload)
                         },
-                        |r| match r {
-                            Ok(reload) => Message::SftpNavigateRemote(reload),
-                            Err(e) => Message::SftpOpResult(e, true),
+                        move |r| match r {
+                            Ok(reload) => Message::SftpNavigateRemote(remote_side, reload),
+                            Err(e) => Message::SftpOpResult(remote_side, e, true),
                         },
                     ),
                 });
             }
             Message::SftpDownload(remote_path) => {
                 self.sftp.row_menu = None;
-                let Some(client) = self.sftp.client.clone() else {
-                    self.sftp.remote_error = Some("Not connected to a host".into());
+                let Some(client) = self.sftp.pane(remote_side).client.clone() else {
+                    self.sftp.pane_mut(remote_side).error = Some("Not connected to a host".into());
                     return Ok(Task::none());
                 };
                 let local_dir = self
                     .sftp
                     .download_dest_override
                     .take()
-                    .unwrap_or_else(|| self.sftp.local_path.clone());
+                    .unwrap_or_else(|| self.sftp.pane(local_side).local_path.clone());
                 return Ok(Task::perform(
                     async move {
                         let basename = remote_path
@@ -256,21 +265,20 @@ impl Oryxis {
                             .map_err(|e| e.to_string())?;
                         Ok::<(), String>(())
                     },
-                    |result| match result {
-                        Ok(()) => Message::SftpRefreshLocal,
-                        Err(e) => Message::SftpOpResult(e, true),
+                    move |result| match result {
+                        Ok(()) => Message::SftpRefreshLocal(local_side),
+                        Err(e) => Message::SftpOpResult(remote_side, e, true),
                     },
                 ));
             }
             Message::SftpDuplicate(side, path) => {
                 self.sftp.row_menu = None;
-                match side {
-                    crate::state::SftpPaneSide::Local => {
+                if !self.sftp.pane(side).is_remote {
                         let src = std::path::PathBuf::from(&path);
                         let parent = match src.parent() {
                             Some(p) => p.to_path_buf(),
                             None => {
-                                self.sftp.local_error = Some("Cannot duplicate root".into());
+                                self.sftp.pane_mut(side).error = Some("Cannot duplicate root".into());
                                 return Ok(Task::none());
                             }
                         };
@@ -290,12 +298,11 @@ impl Oryxis {
                         let unique = unique_entry_name(&basename, |n| !listing.contains(n));
                         let dest = parent.join(&unique);
                         if let Err(e) = std::fs::copy(&src, &dest) {
-                            self.sftp.local_error = Some(format!("copy: {e}"));
+                            self.sftp.pane_mut(side).error = Some(format!("copy: {e}"));
                         }
-                        self.refresh_sftp_local();
-                    }
-                    crate::state::SftpPaneSide::Remote => {
-                        let Some(client) = self.sftp.client.clone() else {
+                        self.refresh_sftp_local(side);
+                } else {
+                        let Some(client) = self.sftp.pane(side).client.clone() else {
                             return Ok(Task::none());
                         };
                         let parent = parent_path(&path);
@@ -304,7 +311,7 @@ impl Oryxis {
                             .find(|s| !s.is_empty())
                             .unwrap_or(&path)
                             .to_string();
-                        let reload = self.sftp.remote_path.clone();
+                        let reload = self.sftp.pane(side).remote_path.clone();
                         let src = path.clone();
                         return Ok(Task::perform(
                             async move {
@@ -341,12 +348,11 @@ impl Oryxis {
                                     })
                                 }
                             },
-                            |result| match result {
-                                Ok(reload) => Message::SftpNavigateRemote(reload),
-                                Err(e) => Message::SftpOpResult(e, true),
+                            move |result| match result {
+                                Ok(reload) => Message::SftpNavigateRemote(side, reload),
+                                Err(e) => Message::SftpOpResult(side, e, true),
                             },
                         ));
-                    }
                 }
             }
             Message::SftpFileHovered => {
@@ -358,12 +364,12 @@ impl Oryxis {
             Message::SftpFileDropped(path) => {
                 let was_active = self.sftp.drop_active;
                 // OS drops only land in a remote folder when the
-                // hovered row is on the remote side AND a folder.
+                // hovered row is on the remote pane AND a folder.
                 let target_folder = self
                     .sftp
                     .hovered_row
                     .as_ref()
-                    .filter(|(s, _, is_dir)| *s == crate::state::SftpPaneSide::Remote && *is_dir)
+                    .filter(|(s, _, is_dir)| *s == remote_side && *is_dir)
                     .map(|(_, p, _)| p.clone());
                 self.sftp.drop_active = false;
                 if !was_active || self.active_view != crate::state::View::Sftp {
@@ -374,8 +380,8 @@ impl Oryxis {
                 if !in_remote_pane {
                     return Ok(Task::none());
                 }
-                if self.sftp.client.is_none() {
-                    self.sftp.remote_error = Some("Not connected to a host".into());
+                if self.sftp.pane(remote_side).client.is_none() {
+                    self.sftp.pane_mut(remote_side).error = Some("Not connected to a host".into());
                     return Ok(Task::none());
                 }
                 // The upload handlers below consume `upload_dest_override`
@@ -391,15 +397,15 @@ impl Oryxis {
             }
             Message::SftpUploadFolder(local_root) => {
                 self.sftp.row_menu = None;
-                let Some(client) = self.sftp.client.clone() else {
-                    self.sftp.remote_error = Some("Not connected to a host".into());
+                let Some(client) = self.sftp.pane(remote_side).client.clone() else {
+                    self.sftp.pane_mut(remote_side).error = Some("Not connected to a host".into());
                     return Ok(Task::none());
                 };
                 let remote_dir = self
                     .sftp
                     .upload_dest_override
                     .take()
-                    .unwrap_or_else(|| self.sftp.remote_path.clone());
+                    .unwrap_or_else(|| self.sftp.pane(remote_side).remote_path.clone());
                 let concurrency = self.sftp_concurrency();
                 return Ok(Task::perform(
                     async move {
@@ -442,27 +448,29 @@ impl Oryxis {
                             pending_conflict_item: None,
                             pending_conflict_slot: None,
                             clients,
+                            dest_client: None,
+                            dest_side: None,
                             busy_slots: vec![false; concurrency as usize],
                             paused: false,
                         })
                     },
-                    |result| match result {
+                    move |result| match result {
                         Ok(state) => Message::SftpTransferQueueReady(state),
-                        Err(e) => Message::SftpOpResult(e, true),
+                        Err(e) => Message::SftpOpResult(remote_side, e, true),
                     },
                 ));
             }
             Message::SftpDownloadFolder(remote_root) => {
                 self.sftp.row_menu = None;
-                let Some(client) = self.sftp.client.clone() else {
-                    self.sftp.remote_error = Some("Not connected to a host".into());
+                let Some(client) = self.sftp.pane(remote_side).client.clone() else {
+                    self.sftp.pane_mut(remote_side).error = Some("Not connected to a host".into());
                     return Ok(Task::none());
                 };
                 let local_dir = self
                     .sftp
                     .download_dest_override
                     .take()
-                    .unwrap_or_else(|| self.sftp.local_path.clone());
+                    .unwrap_or_else(|| self.sftp.pane(local_side).local_path.clone());
                 let concurrency = self.sftp_concurrency();
                 return Ok(Task::perform(
                     async move {
@@ -504,25 +512,26 @@ impl Oryxis {
                             pending_conflict_item: None,
                             pending_conflict_slot: None,
                             clients,
+                            dest_client: None,
+                            dest_side: None,
                             busy_slots: vec![false; concurrency as usize],
                             paused: false,
                         })
                     },
-                    |result| match result {
+                    move |result| match result {
                         Ok(state) => Message::SftpTransferQueueReady(state),
-                        Err(e) => Message::SftpOpResult(e, true),
+                        Err(e) => Message::SftpOpResult(remote_side, e, true),
                     },
                 ));
             }
             Message::SftpDuplicateFolder(side, path) => {
                 self.sftp.row_menu = None;
-                match side {
-                    crate::state::SftpPaneSide::Local => {
+                if !self.sftp.pane(side).is_remote {
                         let src = std::path::PathBuf::from(&path);
                         let parent = match src.parent() {
                             Some(p) => p.to_path_buf(),
                             None => {
-                                self.sftp.local_error = Some("Cannot duplicate root".into());
+                                self.sftp.pane_mut(side).error = Some("Cannot duplicate root".into());
                                 return Ok(Task::none());
                             }
                         };
@@ -551,7 +560,7 @@ impl Oryxis {
                             size: None,
                         });
                         if let Err(e) = walk_local_for_duplicate(&src, &target_root, &mut queue) {
-                            self.sftp.local_error = Some(e);
+                            self.sftp.pane_mut(side).error = Some(e);
                             return Ok(Task::none());
                         }
                         let total = queue.len();
@@ -573,13 +582,14 @@ impl Oryxis {
                             pending_conflict_item: None,
                             pending_conflict_slot: None,
                             clients: Vec::new(),
+                            dest_client: None,
+                            dest_side: None,
                             busy_slots: vec![false; 1],
                             paused: false,
                         };
                         return Ok(Task::done(Message::SftpTransferQueueReady(state)));
-                    }
-                    crate::state::SftpPaneSide::Remote => {
-                        let Some(client) = self.sftp.client.clone() else {
+                } else {
+                        let Some(client) = self.sftp.pane(side).client.clone() else {
                             return Ok(Task::none());
                         };
                         let parent = parent_path(&path);
@@ -588,7 +598,7 @@ impl Oryxis {
                             .find(|s| !s.is_empty())
                             .unwrap_or(&path)
                             .to_string();
-                        let reload = self.sftp.remote_path.clone();
+                        let reload = self.sftp.pane(side).remote_path.clone();
                         let src = path.clone();
                         // `cp -r --`, single fast call, no progress bar
                         // needed since the user can't usefully observe
@@ -627,16 +637,18 @@ impl Oryxis {
                                     })
                                 }
                             },
-                            |result| match result {
-                                Ok(reload) => Message::SftpNavigateRemote(reload),
-                                Err(e) => Message::SftpOpResult(e, true),
+                            move |result| match result {
+                                Ok(reload) => Message::SftpNavigateRemote(side, reload),
+                                Err(e) => Message::SftpOpResult(side, e, true),
                             },
                         ));
-                    }
                 }
             }
             Message::SftpTransferQueueReady(state) => {
                 let slot_count = state.busy_slots.len().max(1);
+                // Fresh transfer: reset the per-file panel log + collapse it.
+                self.sftp.transfer_done_log.clear();
+                self.sftp.transfer_panel_open = false;
                 self.sftp.transfer = Some(state);
                 // Kick off one Next per slot so the worker pool fills
                 // up immediately. Each completion will dispatch its
@@ -673,14 +685,28 @@ impl Oryxis {
                     // to drain.
                     if transfer.busy_slots.iter().all(|b| !b) {
                         let kind = transfer.kind;
+                        // Relay refreshes its actual destination pane,
+                        // which may be the left pane (right-to-left relay),
+                        // not the canonical remote (`remote_side`).
+                        let relay_dest = transfer.dest_side;
                         self.sftp.transfer = None;
                         return Ok(match kind {
+                            crate::state::TransferKind::Relay => {
+                                let dst = relay_dest.unwrap_or(remote_side);
+                                Task::done(Message::SftpNavigateRemote(
+                                    dst,
+                                    self.sftp.pane(dst).remote_path.clone(),
+                                ))
+                            }
                             crate::state::TransferKind::Upload => Task::done(
-                                Message::SftpNavigateRemote(self.sftp.remote_path.clone()),
+                                Message::SftpNavigateRemote(
+                                    remote_side,
+                                    self.sftp.pane(remote_side).remote_path.clone(),
+                                ),
                             ),
                             crate::state::TransferKind::Download
                             | crate::state::TransferKind::DuplicateLocal => {
-                                self.refresh_sftp_local();
+                                self.refresh_sftp_local(local_side);
                                 Task::none()
                             }
                         });
@@ -718,6 +744,24 @@ impl Oryxis {
                             },
                         ));
                     }
+                    crate::state::TransferKind::Relay => {
+                        // Source client for the slot, plus the single
+                        // dest-host client (relay runs at concurrency 1).
+                        let src_client = transfer.clients[slot as usize].clone();
+                        let Some(dst_client) = transfer.dest_client.clone() else {
+                            return Ok(Task::done(Message::SftpTransferError(
+                                "relay: missing destination client".into(),
+                                slot,
+                            )));
+                        };
+                        return Ok(Task::perform(
+                            do_relay_item(src_client, dst_client, item),
+                            move |r| match r {
+                                Ok(()) => Message::SftpTransferItemDone(slot),
+                                Err(e) => Message::SftpTransferError(e, slot),
+                            },
+                        ));
+                    }
                     crate::state::TransferKind::DuplicateLocal => {
                         // Sync, no need for an async task.
                         return Ok(match do_local_duplicate_item(&item) {
@@ -728,6 +772,11 @@ impl Oryxis {
                 }
             }
             Message::SftpTransferItemDone(slot) => {
+                // Record the finished item's label for the per-file panel.
+                // `current` is the label set when this item was dispatched
+                // (exact at the relay's concurrency of 1; an approximation
+                // at higher concurrency, good enough for a status list).
+                let finished = self.sftp.transfer.as_ref().and_then(|t| t.current.clone());
                 if let Some(transfer) = self.sftp.transfer.as_mut() {
                     transfer.completed += 1;
                     transfer.current = None;
@@ -735,7 +784,13 @@ impl Oryxis {
                         transfer.busy_slots[slot as usize] = false;
                     }
                 }
+                if let Some(label) = finished {
+                    self.sftp.transfer_done_log.push(label);
+                }
                 return Ok(Task::done(Message::SftpTransferNext));
+            }
+            Message::SftpToggleTransferPanel => {
+                self.sftp.transfer_panel_open = !self.sftp.transfer_panel_open;
             }
             Message::SftpTransferConflict(prompt, item, slot) => {
                 // Park the popped item alongside the prompt so the
@@ -757,15 +812,15 @@ impl Oryxis {
                 if paths.is_empty() {
                     return Ok(Task::none());
                 }
-                let Some(client) = self.sftp.client.clone() else {
-                    self.sftp.remote_error = Some("Not connected to a host".into());
+                let Some(client) = self.sftp.pane(remote_side).client.clone() else {
+                    self.sftp.pane_mut(remote_side).error = Some("Not connected to a host".into());
                     return Ok(Task::none());
                 };
                 let remote_dir = self
                     .sftp
                     .upload_dest_override
                     .take()
-                    .unwrap_or_else(|| self.sftp.remote_path.clone());
+                    .unwrap_or_else(|| self.sftp.pane(remote_side).remote_path.clone());
                 let concurrency = self.sftp_concurrency();
                 return Ok(Task::perform(
                     async move {
@@ -829,13 +884,15 @@ impl Oryxis {
                             pending_conflict_item: None,
                             pending_conflict_slot: None,
                             clients,
+                            dest_client: None,
+                            dest_side: None,
                             busy_slots: vec![false; concurrency as usize],
                             paused: false,
                         })
                     },
-                    |result| match result {
+                    move |result| match result {
                         Ok(state) => Message::SftpTransferQueueReady(state),
-                        Err(e) => Message::SftpOpResult(e, true),
+                        Err(e) => Message::SftpOpResult(remote_side, e, true),
                     },
                 ));
             }
@@ -845,7 +902,7 @@ impl Oryxis {
                     .sftp
                     .selected_rows
                     .iter()
-                    .filter(|(s, _)| *s == crate::state::SftpPaneSide::Local)
+                    .filter(|(s, _)| !self.sftp.pane(*s).is_remote)
                     .map(|(_, p)| std::path::PathBuf::from(p))
                     .collect();
                 if paths.is_empty() {
@@ -855,16 +912,16 @@ impl Oryxis {
             }
             Message::SftpDownloadSelection => {
                 self.sftp.row_menu = None;
-                let Some(client) = self.sftp.client.clone() else {
-                    self.sftp.remote_error = Some("Not connected to a host".into());
+                let Some(client) = self.sftp.pane(remote_side).client.clone() else {
+                    self.sftp.pane_mut(remote_side).error = Some("Not connected to a host".into());
                     return Ok(Task::none());
                 };
                 let remote_items: Vec<(String, bool)> = self
                     .sftp
                     .selected_rows
                     .iter()
-                    .filter(|(s, _)| *s == crate::state::SftpPaneSide::Remote)
-                    .map(|(_, p)| (p.clone(), self.row_is_dir_in_pane(crate::state::SftpPaneSide::Remote, p)))
+                    .filter(|(s, _)| self.sftp.pane(*s).is_remote)
+                    .map(|(s, p)| (p.clone(), self.row_is_dir_in_pane(*s, p)))
                     .collect();
                 if remote_items.is_empty() {
                     return Ok(Task::none());
@@ -873,7 +930,7 @@ impl Oryxis {
                     .sftp
                     .download_dest_override
                     .take()
-                    .unwrap_or_else(|| self.sftp.local_path.clone());
+                    .unwrap_or_else(|| self.sftp.pane(local_side).local_path.clone());
                 let concurrency = self.sftp_concurrency();
                 return Ok(Task::perform(
                     async move {
@@ -931,13 +988,15 @@ impl Oryxis {
                             pending_conflict_item: None,
                             pending_conflict_slot: None,
                             clients,
+                            dest_client: None,
+                            dest_side: None,
                             busy_slots: vec![false; concurrency as usize],
                             paused: false,
                         })
                     },
-                    |result| match result {
+                    move |result| match result {
                         Ok(state) => Message::SftpTransferQueueReady(state),
-                        Err(e) => Message::SftpOpResult(e, true),
+                        Err(e) => Message::SftpOpResult(remote_side, e, true),
                     },
                 ));
             }
@@ -971,35 +1030,189 @@ impl Oryxis {
                 // failed and we don't try to be clever about retrying
                 // siblings (a network blip is likely to nuke them all).
                 let kind = self.sftp.transfer.as_ref().map(|t| t.kind);
+                let relay_dest = self.sftp.transfer.as_ref().and_then(|t| t.dest_side);
                 self.sftp.transfer = None;
                 match kind {
                     Some(crate::state::TransferKind::DuplicateLocal) => {
-                        self.sftp.local_error = Some(e);
-                        self.refresh_sftp_local();
+                        self.sftp.pane_mut(local_side).error = Some(e);
+                        self.refresh_sftp_local(local_side);
+                    }
+                    Some(crate::state::TransferKind::Relay) => {
+                        let dst = relay_dest.unwrap_or(remote_side);
+                        self.sftp.pane_mut(dst).error = Some(e);
                     }
                     _ => {
-                        self.sftp.remote_error = Some(e);
+                        self.sftp.pane_mut(remote_side).error = Some(e);
                     }
                 }
             }
             Message::SftpCancelTransfer => {
                 let kind = self.sftp.transfer.as_ref().map(|t| t.kind);
+                let relay_dest = self.sftp.transfer.as_ref().and_then(|t| t.dest_side);
                 self.sftp.transfer = None;
                 // The in-flight item can't be aborted mid-byte (russh-sftp
                 // doesn't expose a cancel token), but no further items
                 // will run, and the user can refresh to see the partial
                 // result.
                 match kind {
+                    Some(crate::state::TransferKind::Relay) => {
+                        let dst = relay_dest.unwrap_or(remote_side);
+                        return Ok(Task::done(Message::SftpNavigateRemote(
+                            dst,
+                            self.sftp.pane(dst).remote_path.clone(),
+                        )));
+                    }
                     Some(crate::state::TransferKind::Upload) => {
                         return Ok(Task::done(Message::SftpNavigateRemote(
-                            self.sftp.remote_path.clone(),
+                            remote_side,
+                            self.sftp.pane(remote_side).remote_path.clone(),
                         )));
                     }
                     Some(_) => {
-                        self.refresh_sftp_local();
+                        self.refresh_sftp_local(local_side);
                     }
                     None => {}
                 }
+            }
+            Message::SftpRelay(from, src_path) => {
+                // Server-to-server single-file transfer: source pane is
+                // `from`, destination is the other (also remote) pane.
+                self.sftp.row_menu = None;
+                let dest_side = if from == SftpPaneSide::Left {
+                    SftpPaneSide::Right
+                } else {
+                    SftpPaneSide::Left
+                };
+                let (Some(src_client), Some(dst_client)) = (
+                    self.sftp.pane(from).client.clone(),
+                    self.sftp.pane(dest_side).client.clone(),
+                ) else {
+                    self.sftp.pane_mut(from).error = Some("Both panes must be connected".into());
+                    return Ok(Task::none());
+                };
+                let dest_dir = self
+                    .sftp
+                    .upload_dest_override
+                    .take()
+                    .unwrap_or_else(|| self.sftp.pane(dest_side).remote_path.clone());
+                return Ok(Task::perform(
+                    async move {
+                        let basename = src_path
+                            .rsplit('/')
+                            .find(|s| !s.is_empty())
+                            .unwrap_or(&src_path)
+                            .to_string();
+                        // Pick a non-colliding name on the destination so
+                        // a relay never silently clobbers an existing
+                        // file with the same name.
+                        let entries = dst_client
+                            .list_dir(&dest_dir)
+                            .await
+                            .map_err(|e| e.to_string())?;
+                        let names: std::collections::HashSet<String> =
+                            entries.into_iter().map(|e| e.name).collect();
+                        let unique = unique_entry_name(&basename, |n| !names.contains(n));
+                        let target = remote_join(&dest_dir, &unique);
+                        let mut queue = std::collections::VecDeque::new();
+                        queue.push_back(crate::state::TransferItem {
+                            src: src_path,
+                            dst: target,
+                            is_dir: false,
+                            size: None,
+                        });
+                        Ok::<crate::state::TransferState, String>(crate::state::TransferState {
+                            kind: crate::state::TransferKind::Relay,
+                            root_label: basename,
+                            queue,
+                            current: None,
+                            completed: 0,
+                            total: 1,
+                            overwrite_default: None,
+                            pending_conflict_item: None,
+                            pending_conflict_slot: None,
+                            // Relay runs at concurrency 1: one source
+                            // client slot plus the single dest client.
+                            clients: vec![src_client],
+                            dest_client: Some(dst_client),
+                            dest_side: Some(dest_side),
+                            busy_slots: vec![false; 1],
+                            paused: false,
+                        })
+                    },
+                    move |result| match result {
+                        Ok(state) => Message::SftpTransferQueueReady(state),
+                        Err(e) => Message::SftpOpResult(from, e, true),
+                    },
+                ));
+            }
+            Message::SftpRelayFolder(from, src_root) => {
+                self.sftp.row_menu = None;
+                let dest_side = if from == SftpPaneSide::Left {
+                    SftpPaneSide::Right
+                } else {
+                    SftpPaneSide::Left
+                };
+                let (Some(src_client), Some(dst_client)) = (
+                    self.sftp.pane(from).client.clone(),
+                    self.sftp.pane(dest_side).client.clone(),
+                ) else {
+                    self.sftp.pane_mut(from).error = Some("Both panes must be connected".into());
+                    return Ok(Task::none());
+                };
+                let dest_dir = self
+                    .sftp
+                    .upload_dest_override
+                    .take()
+                    .unwrap_or_else(|| self.sftp.pane(dest_side).remote_path.clone());
+                return Ok(Task::perform(
+                    async move {
+                        let basename = src_root
+                            .rsplit('/')
+                            .find(|s| !s.is_empty())
+                            .unwrap_or(&src_root)
+                            .to_string();
+                        let entries = dst_client
+                            .list_dir(&dest_dir)
+                            .await
+                            .map_err(|e| e.to_string())?;
+                        let names: std::collections::HashSet<String> =
+                            entries.into_iter().map(|e| e.name).collect();
+                        let unique = unique_entry_name(&basename, |n| !names.contains(n));
+                        let target_root = remote_join(&dest_dir, &unique);
+                        let mut queue = std::collections::VecDeque::new();
+                        queue.push_back(crate::state::TransferItem {
+                            src: src_root.clone(),
+                            dst: target_root.clone(),
+                            is_dir: true,
+                            size: None,
+                        });
+                        // Walk the SOURCE remote tree, mapping each entry
+                        // onto a destination POSIX path under target_root.
+                        walk_remote_for_relay(&src_client, &src_root, &target_root, &mut queue)
+                            .await?;
+                        let total = queue.len();
+                        Ok::<crate::state::TransferState, String>(crate::state::TransferState {
+                            kind: crate::state::TransferKind::Relay,
+                            root_label: unique,
+                            queue,
+                            current: None,
+                            completed: 0,
+                            total,
+                            overwrite_default: None,
+                            pending_conflict_item: None,
+                            pending_conflict_slot: None,
+                            clients: vec![src_client],
+                            dest_client: Some(dst_client),
+                            dest_side: Some(dest_side),
+                            busy_slots: vec![false; 1],
+                            paused: false,
+                        })
+                    },
+                    move |result| match result {
+                        Ok(state) => Message::SftpTransferQueueReady(state),
+                        Err(e) => Message::SftpOpResult(from, e, true),
+                    },
+                ));
             }
             m => return Err(m),
         }

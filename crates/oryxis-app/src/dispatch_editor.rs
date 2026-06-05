@@ -25,8 +25,10 @@ impl Oryxis {
                 self.cloud_form_visible = false;
                 self.cloud_dynamic_form_visible = false;
                 self.cloud_discover_visible = false;
+                self.show_session_group_panel = false;
                 self.show_host_panel = true;
                 self.editor_form = ConnectionForm::default();
+                self.editor_initial_command = iced::widget::text_editor::Content::new();
                 if let Some(gid) = self.active_group
                     && let Some(g) = self.groups.iter().find(|g| g.id == gid)
                 {
@@ -48,6 +50,7 @@ impl Oryxis {
                     self.cloud_form_visible = false;
                     self.cloud_dynamic_form_visible = false;
                     self.cloud_discover_visible = false;
+                    self.show_session_group_panel = false;
                     self.show_host_panel = true;
                     self.host_panel_error = None;
                     let has_pw = self.vault.as_ref()
@@ -131,10 +134,12 @@ impl Oryxis {
                             .cloud_ref
                             .as_ref()
                             .map(|r| r.transport_pref),
-                        initial_command: conn.initial_command.clone().unwrap_or_default(),
                         icon_style: conn.icon_style.clone(),
                         encoding: conn.encoding.clone(),
                     };
+                    self.editor_initial_command = iced::widget::text_editor::Content::with_text(
+                        conn.initial_command.as_deref().unwrap_or_default(),
+                    );
                     return Ok(iced::widget::operation::focus(iced::widget::Id::new(
                         "editor-hostname",
                     )));
@@ -255,8 +260,8 @@ impl Oryxis {
             Message::EditorCloudTransportChanged(t) => {
                 self.editor_form.cloud_transport = Some(t);
             }
-            Message::EditorInitialCommandChanged(v) => {
-                self.editor_form.initial_command = v;
+            Message::EditorInitialCommandChanged(action) => {
+                self.editor_initial_command.perform(action);
             }
             Message::EditorIconStyleChanged(v) => {
                 // "" clears the override; anything else is normalized to
@@ -375,10 +380,12 @@ impl Oryxis {
                 conn.icon_style = self.editor_form.icon_style.clone();
                 conn.encoding = self.editor_form.encoding.clone();
                 // Initial command, empty == None (no command sent).
-                conn.initial_command = if self.editor_form.initial_command.trim().is_empty() {
+                // `.text()` appends a trailing newline, so trim before checking.
+                let initial_command = self.editor_initial_command.text();
+                conn.initial_command = if initial_command.trim().is_empty() {
                     None
                 } else {
-                    Some(self.editor_form.initial_command.clone())
+                    Some(initial_command.trim_end().to_string())
                 };
                 // If the host is cloud-imported (carries a cloud_ref)
                 // and the user picked a transport in the editor,

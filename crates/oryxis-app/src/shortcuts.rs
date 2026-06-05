@@ -81,6 +81,7 @@ impl Oryxis {
             || self.show_icon_picker
             || self.show_theme_picker
             || self.show_jump_host_picker
+            || self.show_session_group_panel
             || self.folder_rename.is_some()
             || self.folder_delete.is_some()
     }
@@ -120,6 +121,11 @@ impl Oryxis {
         }
         if self.folder_delete.is_some() {
             self.folder_delete = None;
+            return true;
+        }
+        if self.show_session_group_panel {
+            self.show_session_group_panel = false;
+            self.session_group_panel_error = None;
             return true;
         }
         // Burger menu last; it's a dropdown rather than a modal but

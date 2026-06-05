@@ -62,6 +62,10 @@ pub enum EntityType {
     /// reference a `Connection` by `host_id`), so the bare model travels
     /// over the wire like `Snippet`.
     PortForwardRule,
+    /// Saved split-panel arrangements. No credentials (leaves reference
+    /// hosts by id or are local shells), so the bare model travels over the
+    /// wire like `Group`.
+    SessionGroup,
 }
 
 impl std::fmt::Display for EntityType {
@@ -76,6 +80,7 @@ impl std::fmt::Display for EntityType {
             Self::ProxyIdentity => write!(f, "proxy_identity"),
             Self::CloudProfile => write!(f, "cloud_profile"),
             Self::PortForwardRule => write!(f, "port_forward_rule"),
+            Self::SessionGroup => write!(f, "session_group"),
         }
     }
 }
@@ -97,6 +102,7 @@ impl EntityType {
             "proxy_identity" => Some(Self::ProxyIdentity),
             "cloud_profile" => Some(Self::CloudProfile),
             "port_forward_rule" => Some(Self::PortForwardRule),
+            "session_group" => Some(Self::SessionGroup),
             _ => None,
         }
     }

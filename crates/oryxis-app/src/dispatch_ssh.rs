@@ -163,6 +163,10 @@ impl Oryxis {
                                 Arc::clone(&terminal),
                             );
                             new_tab.active_mut().session_log_id = session_log_id;
+                            // Referenceable by id, so a session group saved
+                            // from this tab can reconnect this pane.
+                            new_tab.active_mut().origin =
+                                crate::state::PaneOrigin::Host(conn.id);
                             // Stable id of this tab's pane: PTY output and
                             // session events route to it, so the right pane
                             // gets the bytes even after the tab is split.
@@ -587,26 +591,38 @@ impl Oryxis {
                             session.resize(state.cols(), state.rows());
                         }
                     }
-                    // Per-host initial command, fired as keystrokes right
-                    // after the session is wired. The SSH channel buffers
-                    // input until the shell is ready, so the line lands
-                    // cleanly; the newline triggers `Enter` on the remote.
-                    if let Some(conn) = self.connections.iter().find(|c| c.label == label)
-                        && let Some(cmd) = conn.initial_command.as_deref()
-                        && !cmd.trim().is_empty()
-                    {
+                    // Startup command, fired as keystrokes right after the
+                    // session is wired. The SSH channel buffers input until
+                    // the shell is ready, so the line lands cleanly; the
+                    // newline triggers `Enter` on the remote.
+                    //
+                    // A session-group per-pane script (keyed by pane_id) wins
+                    // over the host's own `initial_command`. The fallback is
+                    // resolved via the pane's origin rather than the tab label
+                    // so it stays correct for group tabs (whose label is the
+                    // group name) and for two panes sharing one host.
+                    let fallback_cmd = self
+                        .pane_origin_connection(pane_id)
+                        .and_then(|c| c.initial_command.clone());
+                    let initial = self
+                        .pane_script_overrides
+                        .remove(&pane_id)
+                        .filter(|s| !s.trim().is_empty())
+                        .or(fallback_cmd)
+                        .filter(|s| !s.trim().is_empty());
+                    if let Some(cmd) = initial {
                         let payload = format!("{cmd}\n");
                         if let Err(e) = session.write(payload.as_bytes()) {
                             tracing::warn!(
                                 target = "oryxis::dispatch_ssh",
                                 error = %e,
-                                "failed to send initial_command"
+                                "failed to send startup command"
                             );
                         } else {
                             tracing::info!(
                                 target = "oryxis::dispatch_ssh",
                                 bytes = payload.len(),
-                                "sent initial_command after session ready"
+                                "sent startup command after session ready"
                             );
                         }
                     }
@@ -972,9 +988,11 @@ impl Oryxis {
         axis: iced::widget::pane_grid::Axis,
         label: String,
         terminal: Arc<Mutex<TerminalState>>,
+        origin: crate::state::PaneOrigin,
     ) -> Option<Uuid> {
         let tab = self.tabs.get_mut(tab_idx)?;
-        let pane = crate::state::Pane::new(label, terminal);
+        let mut pane = crate::state::Pane::new(label, terminal);
+        pane.origin = origin;
         let pane_id = pane.id;
         let (handle, _split) = tab.pane_grid.split(axis, target, pane)?;
         tab.focused = handle;
@@ -996,12 +1014,40 @@ impl Oryxis {
         state.palette = self.terminal_palette.clone();
         let terminal = Arc::new(Mutex::new(state));
         let label = crate::i18n::t("local_shell").to_string();
-        let Some(pane_id) = self.make_split_pane(tab_idx, target, axis, label, terminal) else {
+        // Default OS shell (empty program). Restored verbatim by the
+        // session-group open path.
+        let origin = crate::state::PaneOrigin::Local(crate::state::LocalShellSpec {
+            label: label.clone(),
+            program: String::new(),
+            args: Vec::new(),
+        });
+        let Some(pane_id) = self.make_split_pane(tab_idx, target, axis, label, terminal, origin)
+        else {
             return Task::none();
         };
         self.active_tab = Some(tab_idx);
         let stream = tokio_stream::wrappers::UnboundedReceiverStream::new(rx);
         Task::stream(stream).map(move |bytes| Message::PtyOutput(pane_id, bytes))
+    }
+
+    /// Resolve the `Connection` a pane was opened from, via its `PaneOrigin`
+    /// (not the tab label). Returns `None` for local / ephemeral panes or a
+    /// dangling host reference.
+    pub(crate) fn pane_origin_connection(
+        &self,
+        pane_id: Uuid,
+    ) -> Option<&oryxis_core::models::Connection> {
+        let origin = self
+            .tabs
+            .iter()
+            .flat_map(|t| t.pane_grid.panes.values())
+            .find(|p| p.id == pane_id)
+            .map(|p| &p.origin)?;
+        if let crate::state::PaneOrigin::Host(id) = origin {
+            self.connections.iter().find(|c| c.id == *id)
+        } else {
+            None
+        }
     }
 
     /// Connect a saved host into a new split pane. Uses the one-shot
@@ -1015,7 +1061,7 @@ impl Oryxis {
         target: iced::widget::pane_grid::Pane,
         axis: iced::widget::pane_grid::Axis,
     ) -> Task<Message> {
-        let Some(mut conn) = self.connections.get(conn_idx).cloned() else {
+        let Some(conn) = self.connections.get(conn_idx).cloned() else {
             return Task::none();
         };
         // SSM / ECS / kubectl transports need their own plugin PTY, not a
@@ -1028,13 +1074,6 @@ impl Oryxis {
         {
             return self.update(Message::ConnectSsh(conn_idx));
         }
-        if let Some(vault) = self.vault.as_ref() {
-            conn.proxy = vault.resolve_proxy(&conn).ok().flatten();
-        }
-        let (password, private_key) = self.resolve_forward_credentials(&conn);
-        let resolver = self.build_jump_resolver(&conn);
-        let host_key_check = self.build_host_key_check();
-        let keepalive = self.effective_keepalive(&conn);
 
         // Display-only terminal, fed by the SSH stream (same as a normal SSH
         // tab). Seed a "Connecting…" line for immediate feedback.
@@ -1049,12 +1088,41 @@ impl Oryxis {
                 .as_bytes(),
         );
         let terminal = Arc::new(Mutex::new(term));
-        let Some(pane_id) =
-            self.make_split_pane(tab_idx, target, axis, conn.label.clone(), terminal)
-        else {
+        let Some(pane_id) = self.make_split_pane(
+            tab_idx,
+            target,
+            axis,
+            conn.label.clone(),
+            terminal,
+            crate::state::PaneOrigin::Host(conn.id),
+        ) else {
             return Task::none();
         };
         self.active_tab = Some(tab_idx);
+        self.spawn_ssh_for_pane(conn_idx, tab_idx, pane_id)
+    }
+
+    /// Establish an SSH session for an EXISTING pane (already created in
+    /// `tab_idx`'s grid with id `pane_id`) and wire its byte stream to that
+    /// pane. Split out of `connect_ssh_into_pane` so the session-group open
+    /// path can build the whole splitted tab up front (via
+    /// `pane_grid::State::with_configuration`) and then connect each pane.
+    pub(crate) fn spawn_ssh_for_pane(
+        &mut self,
+        conn_idx: usize,
+        tab_idx: usize,
+        pane_id: Uuid,
+    ) -> Task<Message> {
+        let Some(mut conn) = self.connections.get(conn_idx).cloned() else {
+            return Task::none();
+        };
+        if let Some(vault) = self.vault.as_ref() {
+            conn.proxy = vault.resolve_proxy(&conn).ok().flatten();
+        }
+        let (password, private_key) = self.resolve_forward_credentials(&conn);
+        let resolver = self.build_jump_resolver(&conn);
+        let host_key_check = self.build_host_key_check();
+        let keepalive = self.effective_keepalive(&conn);
 
         let session_log_id = self.vault.as_ref().map(|v| {
             let id = Uuid::new_v4();
@@ -1075,6 +1143,12 @@ impl Oryxis {
             tokio::sync::oneshot::Sender<bool>,
         )>(1);
         let (hk_resp_tx, mut hk_resp_rx) = tokio::sync::mpsc::channel::<bool>(1);
+        // NOTE: a single shared response channel. When a session group opens
+        // several panes at once, each call overwrites this, so simultaneous
+        // host-key prompts for multiple *first-time-unknown* hosts could
+        // mis-route. Deliberate: saved-group hosts are normally already in
+        // known_hosts, so no prompt fires. Revisit if batch first-connect
+        // becomes common.
         self.host_key_response_tx = Some(hk_resp_tx);
 
         let stream = iced::stream::channel::<PaneConnMsg>(128, move |mut sender: iced::futures::channel::mpsc::Sender<PaneConnMsg>| async move {

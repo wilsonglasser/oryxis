@@ -147,6 +147,7 @@ impl Oryxis {
                 logo_small_handle: svg::Handle::from_memory(include_bytes!("../../../resources/logo.svg").as_slice()),
                 connections: Vec::new(),
                 groups: Vec::new(),
+                session_groups: Vec::new(),
                 active_view: View::Dashboard,
                 active_group: None,
                 host_search: String::new(),
@@ -180,7 +181,14 @@ impl Oryxis {
                 host_key_response_tx: None,
                 show_host_panel: false,
                 editor_form: ConnectionForm::default(),
+                editor_initial_command: text_editor::Content::new(),
                 host_panel_error: None,
+                show_session_group_panel: false,
+                editor_session_group: crate::state::SessionGroupForm::default(),
+                session_group_script_editor: text_editor::Content::new(),
+                session_group_panel_error: None,
+                hovered_session_group_card: None,
+                pane_script_overrides: std::collections::HashMap::new(),
                 hovered_card: None,
                 hovered_folder_card: None,
                 hovered_key_card: None,
@@ -200,10 +208,18 @@ impl Oryxis {
                     None
                 },
                 sftp: crate::state::SftpState {
-                    local_path: std::env::var_os("HOME")
-                        .or_else(|| std::env::var_os("USERPROFILE"))
-                        .map(std::path::PathBuf::from)
-                        .unwrap_or_else(|| std::path::PathBuf::from("/")),
+                    left: crate::state::PaneState {
+                        is_remote: false,
+                        local_path: std::env::var_os("HOME")
+                            .or_else(|| std::env::var_os("USERPROFILE"))
+                            .map(std::path::PathBuf::from)
+                            .unwrap_or_else(|| std::path::PathBuf::from("/")),
+                        ..Default::default()
+                    },
+                    right: crate::state::PaneState {
+                        is_remote: true,
+                        ..Default::default()
+                    },
                     picker_open: true,
                     ..Default::default()
                 },
@@ -341,6 +357,7 @@ impl Oryxis {
                 plugin_install_modal: None,
                 snippets: Vec::new(),
                 custom_terminal_themes: Vec::new(),
+                custom_ui_themes: Vec::new(),
                 theme_editor: None,
                 hovered_theme_card: None,
                 theme_color_popover: None,
@@ -348,6 +365,10 @@ impl Oryxis {
                 theme_import_content: text_editor::Content::new(),
                 theme_import_name: String::new(),
                 theme_import_error: None,
+                ui_theme_editor: None,
+                ui_color_popover: None,
+                hovered_ui_theme_card: None,
+                active_app_theme_name: "Oryxis Dark".to_string(),
                 known_hosts: Vec::new(),
                 logs: Vec::new(),
                 logs_page: 0,
@@ -599,6 +620,7 @@ impl Oryxis {
             }
             self.connections = vault.list_connections().unwrap_or_default();
             self.groups = vault.list_groups().unwrap_or_default();
+            self.session_groups = vault.list_session_groups().unwrap_or_default();
             self.keys = vault.list_keys().unwrap_or_default();
             self.identities = vault.list_identities().unwrap_or_default();
             self.identities_with_password = vault
@@ -622,6 +644,7 @@ impl Oryxis {
             self.snippets = vault.list_snippets().unwrap_or_default();
             self.custom_terminal_themes =
                 vault.list_custom_terminal_themes().unwrap_or_default();
+            self.custom_ui_themes = vault.list_custom_ui_themes().unwrap_or_default();
             self.port_forward_rules = vault.list_port_forward_rules().unwrap_or_default();
             self.known_hosts = vault.list_known_hosts().unwrap_or_default();
             self.logs_total = vault.count_logs().unwrap_or(0);
@@ -645,12 +668,14 @@ impl Oryxis {
                 LayoutDirection::set_active(LayoutDirection::from_code(&v));
             }
 
-            // App theme, re-hydrate by display name. Unknown values
-            // fall back to the default in `AppTheme::from_name`, so a
-            // renamed theme can never wedge the app on boot.
-            if let Ok(Some(v)) = vault.get_setting("app_theme") {
-                use crate::theme::AppTheme;
-                AppTheme::set_active(AppTheme::from_name(&v));
+            // App theme, re-hydrate by display name (built-in or a custom
+            // UI theme, now that `custom_ui_themes` is loaded). Unknown
+            // values leave the early-boot default in place, so a renamed /
+            // deleted theme can never wedge the app on boot.
+            if let Ok(Some(v)) = vault.get_setting("app_theme")
+                && self.apply_app_theme_name(&v)
+            {
+                self.active_app_theme_name = v;
             }
             if let Ok(Some(v)) = vault.get_setting("terminal_theme_override")
                 && !v.is_empty()

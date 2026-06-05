@@ -85,7 +85,7 @@ pub enum Message {
     /// Per-host initial command, sent as keystrokes after the shell
     /// opens. Empty = none. Useful for hosts that drop into `/bin/sh`
     /// when you really want `bash`.
-    EditorInitialCommandChanged(String),
+    EditorInitialCommandChanged(text_editor::Action),
     /// Set the per-host icon shape override. Empty string clears the
     /// override (falls back to the global `default_host_icon`).
     EditorIconStyleChanged(String),
@@ -99,38 +99,39 @@ pub enum Message {
     DuplicateTab(usize),
     DuplicateInNewWindow(usize),
 
-    // SFTP browser
+    // SFTP browser. Most pane operations are side-addressed: the
+    // `SftpPaneSide` says *which* pane (Left / Right), and the handler
+    // branches on that pane's `is_remote` flag to pick filesystem vs
+    // SFTP behaviour.
     SftpPickHost(usize),
-    SftpHostMounted(String, Arc<SshSession>, oryxis_ssh::SftpClient, String, Vec<oryxis_ssh::SftpEntry>),
-    SftpRemoteLoaded(String, Vec<oryxis_ssh::SftpEntry>),
-    SftpRemoteError(String),
-    SftpNavigateRemote(String),
-    SftpRemoteUp,
-    SftpNavigateLocal(std::path::PathBuf),
-    SftpLocalUp,
-    #[allow(dead_code)] // wired by next iteration's Actions menu
-    SftpRefreshLocal,
-    SftpOpenPicker,
+    SftpHostMounted(crate::state::SftpPaneSide, String, Arc<SshSession>, oryxis_ssh::SftpClient, String, Vec<oryxis_ssh::SftpEntry>),
+    SftpRemoteLoaded(crate::state::SftpPaneSide, String, Vec<oryxis_ssh::SftpEntry>),
+    SftpRemoteError(crate::state::SftpPaneSide, String),
+    /// Navigate a *remote* pane to a POSIX path.
+    SftpNavigateRemote(crate::state::SftpPaneSide, String),
+    /// Navigate a *local* pane to a filesystem path.
+    SftpNavigateLocal(crate::state::SftpPaneSide, std::path::PathBuf),
+    /// Go up one directory in the given pane (local or remote).
+    SftpUp(crate::state::SftpPaneSide),
+    /// Refresh a local pane's listing from its current path.
+    SftpRefreshLocal(crate::state::SftpPaneSide),
+    /// Open the host picker, choosing for the given pane.
+    SftpOpenPicker(crate::state::SftpPaneSide),
+    /// Pick "Local" for the left pane (only offered there).
+    SftpPickLocal,
     SftpClosePicker,
     SftpPickerSearch(String),
-    SftpToggleLocalHidden,
-    SftpToggleRemoteHidden,
-    SftpLocalFilter(String),
-    SftpRemoteFilter(String),
-    SftpToggleLocalActions,
-    SftpToggleRemoteActions,
-    SftpToggleLocalDrives,
+    SftpToggleHidden(crate::state::SftpPaneSide),
+    SftpFilter(crate::state::SftpPaneSide, String),
+    SftpToggleActions(crate::state::SftpPaneSide),
+    SftpToggleDrives(crate::state::SftpPaneSide),
     SftpCloseMenus,
-    SftpStartEditLocalPath,
-    SftpStartEditRemotePath,
-    SftpEditLocalPath(String),
-    SftpEditRemotePath(String),
-    SftpCommitLocalPath,
-    SftpCommitRemotePath,
+    SftpStartEditPath(crate::state::SftpPaneSide),
+    SftpEditPath(crate::state::SftpPaneSide, String),
+    SftpCommitPath(crate::state::SftpPaneSide),
     #[allow(dead_code)] // wired by upcoming Esc handler
     SftpCancelEditPath,
-    SftpSortLocal(crate::state::SftpSortColumn),
-    SftpSortRemote(crate::state::SftpSortColumn),
+    SftpSort(crate::state::SftpPaneSide, crate::state::SftpSortColumn),
 
     // Row interactions
     SftpRowRightClick(crate::state::SftpPaneSide, String, bool),
@@ -142,6 +143,12 @@ pub enum Message {
     SftpAskDeleteSelection,
     SftpConfirmDelete,
     SftpCancelDelete,
+    /// Remote delete succeeded: drop these (full) paths from the given
+    /// pane's listing in place, no re-list.
+    SftpEntriesRemoved(crate::state::SftpPaneSide, Vec<String>),
+    /// Toggle the per-file progress panel that drops down from the
+    /// transfer status strip.
+    SftpToggleTransferPanel,
     SftpStartNewEntry(crate::state::SftpPaneSide, crate::state::SftpEntryKind),
     SftpNewEntryInput(String),
     SftpNewEntryCommit,
@@ -180,11 +187,11 @@ pub enum Message {
     SftpEditSave,
     SftpEditDiscard,
     SftpEditWatchTick,
-    SftpCancelRemoteLoad,
+    SftpCancelRemoteLoad(crate::state::SftpPaneSide),
     /// Retry the last failed remote action, either re-list the
     /// current path (if a session is still mounted) or re-run the
     /// full host-pick flow (if the connect itself failed).
-    SftpRetryRemote,
+    SftpRetryRemote(crate::state::SftpPaneSide),
     SftpShowProperties(crate::state::SftpPaneSide, String, bool),
     SftpPropertiesLoaded(crate::state::PropertiesView),
     SftpPropertiesToggleBit(crate::state::PermBit),
@@ -209,7 +216,15 @@ pub enum Message {
     SftpTransferItemDone(u8),
     SftpTransferError(String, u8),
     SftpCancelTransfer,
-    SftpOpResult(String, bool),
+    /// Operation result for a remote pane. `SftpPaneSide` names the pane
+    /// whose error banner should show the message on failure.
+    SftpOpResult(crate::state::SftpPaneSide, String, bool),
+    /// Relay a single remote file from the `from` side's host to the
+    /// other side's host (server-to-server). `from` is the source pane.
+    SftpRelay(crate::state::SftpPaneSide, String),
+    /// Relay a remote folder tree from the `from` side's host to the
+    /// other side's host.
+    SftpRelayFolder(crate::state::SftpPaneSide, String),
 
     // Folder (group) actions
     ShowFolderActions(Uuid),
@@ -323,6 +338,26 @@ pub enum Message {
     DeleteConnection(usize),
     DuplicateConnection(usize),
 
+    // Session groups (saved split-panel arrangements)
+    /// Open the editor to save / edit the arrangement of tab `idx`.
+    ShowSaveSessionGroup(usize),
+    /// Open the editor for an existing saved group (index into session_groups).
+    EditSessionGroup(usize),
+    /// Open the saved group (index into session_groups) into a new split tab.
+    OpenSessionGroup(usize),
+    DeleteSessionGroup(usize),
+    SessionGroupFormLabelChanged(String),
+    SessionGroupFormGroupChanged(String),
+    SessionGroupFormColorChanged(String),
+    /// Multi-line edit on the currently-shown pane's startup script.
+    SessionGroupScriptAction(text_editor::Action),
+    /// Step the visible pane in the editor; `true` = next, `false` = previous.
+    SessionGroupPaneNav(bool),
+    SessionGroupFormSave,
+    SessionGroupFormCancel,
+    SessionGroupCardHovered(usize),
+    SessionGroupCardUnhovered,
+
     // SSH
     ConnectSsh(usize),
     SshProgress(ConnectionStep, String),
@@ -406,6 +441,20 @@ pub enum Message {
     ThemeImportNameChanged(String),
     /// Parse the pasted scheme; on success open it in the editor for review.
     ThemeImportApply,
+
+    // Custom UI (chrome) themes (Settings -> Interface). `usize` is the
+    // color-field index into `theme::UI_COLOR_FIELDS`.
+    UiThemeEditorNew,
+    UiThemeEditorEdit(usize),
+    UiThemeEditorClose,
+    UiThemeEditorNameChanged(String),
+    UiThemeColorChanged(usize, String),
+    UiThemeEditorOpenPicker(usize),
+    UiThemeEditorClosePicker,
+    UiThemeEditorSave,
+    UiThemeDelete(usize),
+    UiThemeCardHovered(usize),
+    UiThemeCardUnhovered,
     /// Hover tracking for the floating edit / delete icons on a custom
     /// theme card.
     ThemeCardHovered(usize),

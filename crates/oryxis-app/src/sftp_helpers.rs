@@ -191,6 +191,70 @@ pub(crate) fn walk_remote_for_download<'a>(
     })
 }
 
+/// Walk a remote directory via SFTP for a server-to-server relay. Like
+/// `walk_remote_for_download`, but both ends are remote: `dst` is a
+/// destination-host POSIX path (not a local path), and each enqueued
+/// item's `dst` is built by joining onto it.
+pub(crate) fn walk_remote_for_relay<'a>(
+    client: &'a oryxis_ssh::SftpClient,
+    src: &'a str,
+    dst: &'a str,
+    queue: &'a mut std::collections::VecDeque<crate::state::TransferItem>,
+) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), String>> + Send + 'a>> {
+    Box::pin(async move {
+        let entries = client.list_dir(src).await.map_err(|e| e.to_string())?;
+        for entry in entries {
+            let child_src = if src == "/" {
+                format!("/{}", entry.name)
+            } else {
+                format!("{}/{}", src.trim_end_matches('/'), entry.name)
+            };
+            let child_dst = remote_join(dst, &entry.name);
+            if entry.is_dir {
+                queue.push_back(crate::state::TransferItem {
+                    src: child_src.clone(),
+                    dst: child_dst.clone(),
+                    is_dir: true,
+                    size: None,
+                });
+                walk_remote_for_relay(client, &child_src, &child_dst, queue).await?;
+            } else {
+                queue.push_back(crate::state::TransferItem {
+                    src: child_src,
+                    dst: child_dst,
+                    is_dir: false,
+                    size: Some(entry.size),
+                });
+            }
+        }
+        Ok(())
+    })
+}
+
+/// Apply a single relay-queue item: create the destination directory on
+/// the dest host, or stream a single file from the source host to the
+/// dest host via `relay_to`. `relay_to` opens the destination with
+/// TRUNCATE, so an existing same-named file is overwritten silently;
+/// the queue-building step picks a non-colliding root name to avoid the
+/// common case, but nested collisions are not prompted (a known v1 gap).
+pub(crate) async fn do_relay_item(
+    src_client: oryxis_ssh::SftpClient,
+    dst_client: oryxis_ssh::SftpClient,
+    item: crate::state::TransferItem,
+) -> Result<(), String> {
+    if item.is_dir {
+        // create_dir errors when the dir already exists; harmless for a
+        // recursive relay since later child writes need it present.
+        let _ = dst_client.create_dir(&item.dst).await;
+        Ok(())
+    } else {
+        src_client
+            .relay_to(&item.src, &dst_client, &item.dst, item.size)
+            .await
+            .map_err(|e| e.to_string())
+    }
+}
+
 /// Apply a single upload-queue item with conflict awareness. Files
 /// existence-check the destination; if a conflict comes up and there's
 /// a sticky default action, apply it; otherwise return a Conflict outcome
@@ -370,22 +434,19 @@ pub(crate) fn unique_entry_name(basename: &str, is_free: impl Fn(&str) -> bool) 
     }
 }
 
-/// Final path component, suitable for prefilling a rename dialog. Pane
-/// side disambiguates the separator convention (POSIX `/` for remote vs.
-/// platform-native for local).
-pub(crate) fn file_basename(
-    path: &str,
-    side: crate::state::SftpPaneSide,
-) -> String {
-    match side {
-        crate::state::SftpPaneSide::Local => std::path::Path::new(path)
+/// Final path component, suitable for prefilling a rename dialog. The
+/// pane nature disambiguates the separator convention (POSIX `/` for
+/// remote vs. platform-native for local).
+pub(crate) fn file_basename(path: &str, is_remote: bool) -> String {
+    if is_remote {
+        path.rsplit_once('/')
+            .map(|(_, n)| n.to_string())
+            .unwrap_or_else(|| path.to_string())
+    } else {
+        std::path::Path::new(path)
             .file_name()
             .map(|n| n.to_string_lossy().into_owned())
-            .unwrap_or_default(),
-        crate::state::SftpPaneSide::Remote => path
-            .rsplit_once('/')
-            .map(|(_, n)| n.to_string())
-            .unwrap_or_else(|| path.to_string()),
+            .unwrap_or_default()
     }
 }
 

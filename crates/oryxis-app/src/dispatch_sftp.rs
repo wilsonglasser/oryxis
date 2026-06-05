@@ -2,9 +2,15 @@
 //! filtering, transfers (upload/download/duplicate), property edits,
 //! row interactions, drag-and-drop, edit-in-place. The single biggest
 //! domain in the dispatch table.
+//!
+//! Pane operations are side-addressed: a `SftpPaneSide` (Left / Right)
+//! names which pane, and the handler branches on `pane(side).is_remote`
+//! to choose filesystem vs SFTP behaviour, so either pane can be Local
+//! or a remote host.
 
 #![allow(clippy::result_large_err)]
 
+use iced::futures::SinkExt;
 use iced::Task;
 
 use std::sync::Arc;
@@ -13,6 +19,26 @@ use oryxis_ssh::SshEngine;
 
 use crate::app::{Message, Oryxis};
 use crate::sftp_helpers::{file_basename, parent_path, sort_local_entries, sort_remote_entries};
+use crate::state::SftpPaneSide;
+
+/// Stream events from a fresh SFTP connect. `HostKey` surfaces an
+/// unknown/changed server key to the shared verification modal mid-connect
+/// (the connect blocks until the user answers); `Done` carries the final
+/// mounted session or the error.
+enum SftpConnectMsg {
+    HostKey(oryxis_ssh::HostKeyQuery),
+    Done(
+        Result<
+            (
+                Arc<oryxis_ssh::SshSession>,
+                oryxis_ssh::SftpClient,
+                String,
+                Vec<oryxis_ssh::SftpEntry>,
+            ),
+            String,
+        >,
+    ),
+}
 
 impl Oryxis {
     pub(crate) fn handle_sftp(
@@ -25,13 +51,20 @@ impl Oryxis {
                     Some(c) => c,
                     None => return Ok(Task::none()),
                 };
+                // The picker connects the host into whichever pane it was
+                // opened for.
+                let target = self.sftp.picker_target;
                 // Always close the picker so the user sees the loading
                 // state (or eventual error) on the panes themselves.
                 self.sftp.picker_open = false;
-                self.sftp.host_label = Some(conn.label.clone());
-                self.sftp.remote_loading = true;
-                self.sftp.remote_error = None;
-                self.sftp.remote_entries.clear();
+                {
+                    let pane = self.sftp.pane_mut(target);
+                    pane.is_remote = true;
+                    pane.host_label = Some(conn.label.clone());
+                    pane.remote_loading = true;
+                    pane.error = None;
+                    pane.remote_entries.clear();
+                }
 
                 // Reuse an existing SSH session whenever a terminal tab is
                 // already pointed at this host, saves a TCP round-trip
@@ -65,13 +98,14 @@ impl Oryxis {
                         },
                         move |result| match result {
                             Ok((client, path, entries)) => Message::SftpHostMounted(
+                                target,
                                 label.clone(),
                                 session.clone(),
                                 client,
                                 path,
                                 entries,
                             ),
-                            Err(e) => Message::SftpRemoteError(e),
+                            Err(e) => Message::SftpRemoteError(target, e),
                         },
                     ));
                 }
@@ -87,80 +121,145 @@ impl Oryxis {
                 let connect_to = self.sftp_connect_timeout();
                 let auth_to = self.sftp_auth_timeout();
                 let session_to = self.sftp_session_timeout();
-                return Ok(Task::perform(
-                    async move {
+
+                // Wire the host-key ask channel so an unknown/changed key
+                // prompts the same verification modal the terminal uses
+                // instead of being silently TOFU-accepted. The bridge below
+                // forwards each query to the modal and waits for the user's
+                // answer on `host_key_response_tx` (driven by the shared
+                // SshHostKey* handlers).
+                let (hk_ask_tx, mut hk_ask_rx) = tokio::sync::mpsc::channel::<(
+                    oryxis_ssh::HostKeyQuery,
+                    tokio::sync::oneshot::Sender<bool>,
+                )>(1);
+                let (hk_resp_tx, mut hk_resp_rx) = tokio::sync::mpsc::channel::<bool>(1);
+                self.host_key_response_tx = Some(hk_resp_tx);
+
+                let stream = iced::stream::channel::<SftpConnectMsg>(
+                    8,
+                    move |mut sender: iced::futures::channel::mpsc::Sender<SftpConnectMsg>| async move {
                         let engine = SshEngine::new()
                             .with_host_key_check(host_key_check)
+                            .with_host_key_ask(hk_ask_tx)
                             .with_keepalive(keepalive)
                             .with_connect_timeout(connect_to)
                             .with_auth_timeout(auth_to)
                             .with_session_timeout(session_to);
-                        let (session, _rx) = engine
-                            .connect_with_resolver(
-                                &conn,
-                                password.as_deref(),
-                                private_key.as_deref(),
-                                80,
-                                24,
-                                resolver.as_ref(),
-                            )
-                            .await
-                            .map_err(|e| e.to_string())?;
-                        let session = Arc::new(session);
-                        let client = session
-                            .open_sftp()
-                            .await
-                            .map_err(|e| e.to_string())?;
-                        let initial = client
-                            .canonicalize(".")
-                            .await
-                            .unwrap_or_else(|_| "/".to_string());
-                        let entries = client
-                            .list_dir(&initial)
-                            .await
-                            .map_err(|e| e.to_string())?;
-                        Ok::<_, String>((session, client, initial, entries))
+
+                        let mut sender_clone = sender.clone();
+                        let _bridge = tokio::spawn(async move {
+                            while let Some((query, resp_tx)) = hk_ask_rx.recv().await {
+                                let _ = sender_clone.send(SftpConnectMsg::HostKey(query)).await;
+                                let accepted = hk_resp_rx.recv().await.unwrap_or(false);
+                                let _ = resp_tx.send(accepted);
+                            }
+                        });
+
+                        let result = async {
+                            let (session, _rx) = engine
+                                .connect_with_resolver(
+                                    &conn,
+                                    password.as_deref(),
+                                    private_key.as_deref(),
+                                    80,
+                                    24,
+                                    resolver.as_ref(),
+                                )
+                                .await
+                                .map_err(|e| e.to_string())?;
+                            let session = Arc::new(session);
+                            let client = session.open_sftp().await.map_err(|e| e.to_string())?;
+                            let initial = client
+                                .canonicalize(".")
+                                .await
+                                .unwrap_or_else(|_| "/".to_string());
+                            let entries =
+                                client.list_dir(&initial).await.map_err(|e| e.to_string())?;
+                            Ok::<_, String>((session, client, initial, entries))
+                        }
+                        .await;
+                        let _ = sender.send(SftpConnectMsg::Done(result)).await;
                     },
-                    move |result| match result {
-                        Ok((session, client, path, entries)) => Message::SftpHostMounted(
-                            label.clone(),
-                            session,
-                            client,
-                            path,
-                            entries,
-                        ),
-                        Err(e) => Message::SftpRemoteError(e),
-                    },
-                ));
+                );
+                return Ok(Task::stream(stream).map(move |m| match m {
+                    SftpConnectMsg::HostKey(q) => Message::SshHostKeyVerify(q),
+                    SftpConnectMsg::Done(Ok((session, client, path, entries))) => {
+                        Message::SftpHostMounted(target, label.clone(), session, client, path, entries)
+                    }
+                    SftpConnectMsg::Done(Err(e)) => Message::SftpRemoteError(target, e),
+                }));
             }
-            Message::SftpHostMounted(label, session, client, path, entries) => {
-                self.sftp.host_label = Some(label);
-                self.sftp.session = Some(session);
+            Message::SftpPickLocal => {
+                // "Local" is only offered for the left pane. Switch the
+                // target pane back to local browsing and refresh.
+                let target = self.sftp.picker_target;
+                self.sftp.picker_open = false;
+                {
+                    let pane = self.sftp.pane_mut(target);
+                    pane.is_remote = false;
+                    pane.session = None;
+                    pane.client = None;
+                    pane.host_label = None;
+                    pane.remote_entries.clear();
+                    pane.error = None;
+                    if pane.local_path.as_os_str().is_empty() {
+                        pane.local_path = std::env::var_os("HOME")
+                            .or_else(|| std::env::var_os("USERPROFILE"))
+                            .map(std::path::PathBuf::from)
+                            .unwrap_or_else(|| std::path::PathBuf::from("/"));
+                    }
+                }
+                self.refresh_sftp_local(target);
+            }
+            Message::SftpHostMounted(side, label, session, client, path, entries) => {
                 // Apply the user-configured op timeout to this fresh
                 // client so list_dir/read/write calls respect it.
                 client.set_op_timeout(self.sftp_op_timeout());
-                self.sftp.client = Some(client);
-                self.sftp.remote_path = path;
+                let sort = self.sftp.pane(side).sort;
                 let mut entries = entries;
-                sort_remote_entries(&mut entries, self.sftp.remote_sort);
-                self.sftp.remote_entries = entries;
-                self.sftp.remote_loading = false;
-                self.sftp.remote_error = None;
+                sort_remote_entries(&mut entries, sort);
+                let pane = self.sftp.pane_mut(side);
+                pane.is_remote = true;
+                pane.host_label = Some(label);
+                pane.session = Some(session);
+                pane.client = Some(client);
+                pane.remote_path = path;
+                pane.remote_entries = entries;
+                pane.remote_loading = false;
+                pane.error = None;
             }
-            Message::SftpRemoteError(msg) => {
-                self.sftp.remote_loading = false;
-                self.sftp.remote_error = Some(msg);
+            Message::SftpRemoteError(side, msg) => {
+                let pane = self.sftp.pane_mut(side);
+                pane.remote_loading = false;
+                if pane.remote_entries.is_empty() {
+                    // Nothing to fall back on (initial connect / first list
+                    // failed): take the pane over with the error + retry.
+                    pane.error = Some(msg);
+                } else {
+                    // A navigation/refresh failed but the previous listing
+                    // is still valid (e.g. trying to enter a symlink that
+                    // points at a file). Keep it on screen and surface the
+                    // error as a transient toast instead of wiping the pane.
+                    self.toast = Some(msg);
+                    return Ok(Task::perform(
+                        async {
+                            tokio::time::sleep(std::time::Duration::from_millis(2600)).await
+                        },
+                        |_| Message::ToastClear,
+                    ));
+                }
             }
-            Message::SftpCancelRemoteLoad => {
+            Message::SftpCancelRemoteLoad(side) => {
                 // Drop the loading visual. The underlying Task::perform
                 // can't be aborted (russh-sftp has no cancel token), so
                 // a late success will still flow through SftpHostMounted
                 // / SftpRemoteLoaded, but at least the user gets the
                 // UI back and can retry/pick another host.
-                self.sftp.remote_loading = false;
-                self.sftp.remote_error = Some("Cancelled by user".into());
+                let pane = self.sftp.pane_mut(side);
+                pane.remote_loading = false;
+                pane.error = Some("Cancelled by user".into());
             }
-            Message::SftpRetryRemote => {
+            Message::SftpRetryRemote(side) => {
                 // Three cases the retry button has to cover:
                 // 1. Session is mounted (client is Some), just re-list
                 //    the current path. Network blip / op-timeout case.
@@ -168,70 +267,84 @@ impl Oryxis {
                 //    is still around, re-run the full pick flow for
                 //    that host. Connect-failed case.
                 // 3. No host label, fall back to the picker.
-                if self.sftp.client.is_some() {
+                if self.sftp.pane(side).client.is_some() {
                     return Ok(Task::done(Message::SftpNavigateRemote(
-                        self.sftp.remote_path.clone(),
+                        side,
+                        self.sftp.pane(side).remote_path.clone(),
                     )));
                 }
-                if let Some(label) = self.sftp.host_label.clone()
+                if let Some(label) = self.sftp.pane(side).host_label.clone()
                     && let Some(idx) = self
                         .connections
                         .iter()
                         .position(|c| c.label == label)
                 {
+                    self.sftp.picker_target = side;
                     return Ok(Task::done(Message::SftpPickHost(idx)));
                 }
+                self.sftp.picker_target = side;
                 self.sftp.picker_open = true;
             }
-            Message::SftpNavigateRemote(path) => {
-                let client = match self.sftp.client.clone() {
+            Message::SftpNavigateRemote(side, path) => {
+                let client = match self.sftp.pane(side).client.clone() {
                     Some(c) => c,
                     None => return Ok(Task::none()),
                 };
-                self.sftp.remote_loading = true;
-                self.sftp.remote_error = None;
+                {
+                    let pane = self.sftp.pane_mut(side);
+                    pane.remote_loading = true;
+                    pane.error = None;
+                }
                 let target = path.clone();
                 return Ok(Task::perform(
                     async move { client.list_dir(&target).await.map_err(|e| e.to_string()) },
                     move |result| match result {
-                        Ok(entries) => Message::SftpRemoteLoaded(path.clone(), entries),
-                        Err(e) => Message::SftpRemoteError(e),
+                        Ok(entries) => Message::SftpRemoteLoaded(side, path.clone(), entries),
+                        Err(e) => Message::SftpRemoteError(side, e),
                     },
                 ));
             }
-            Message::SftpRemoteLoaded(path, entries) => {
-                self.sftp.remote_path = path;
+            Message::SftpRemoteLoaded(side, path, entries) => {
+                let sort = self.sftp.pane(side).sort;
                 let mut entries = entries;
-                sort_remote_entries(&mut entries, self.sftp.remote_sort);
-                self.sftp.remote_entries = entries;
-                self.sftp.remote_loading = false;
+                sort_remote_entries(&mut entries, sort);
+                let pane = self.sftp.pane_mut(side);
+                pane.remote_path = path;
+                pane.remote_entries = entries;
+                pane.remote_loading = false;
                 // Selection is path-keyed; navigation invalidates it.
                 self.sftp.selected_rows.clear();
                 self.sftp.selection_anchor = None;
             }
-            Message::SftpRemoteUp => {
-                let parent = parent_path(&self.sftp.remote_path);
-                return Ok(Task::done(Message::SftpNavigateRemote(parent)));
-            }
-            Message::SftpNavigateLocal(path) => {
-                self.sftp.local_path = path;
-                self.sftp.selected_rows.clear();
-                self.sftp.selection_anchor = None;
-                self.sftp.local_drives_open = false;
-                self.sftp.local_actions_open = false;
-                self.sftp.remote_actions_open = false;
-                self.refresh_sftp_local();
-            }
-            Message::SftpLocalUp => {
-                if let Some(p) = self.sftp.local_path.parent() {
-                    self.sftp.local_path = p.to_path_buf();
-                    self.refresh_sftp_local();
+            Message::SftpUp(side) => {
+                if self.sftp.pane(side).is_remote {
+                    let parent = parent_path(&self.sftp.pane(side).remote_path);
+                    return Ok(Task::done(Message::SftpNavigateRemote(side, parent)));
+                }
+                if let Some(p) = self.sftp.pane(side).local_path.parent() {
+                    let p = p.to_path_buf();
+                    self.sftp.pane_mut(side).local_path = p;
+                    self.refresh_sftp_local(side);
                 }
             }
-            Message::SftpRefreshLocal => {
-                self.refresh_sftp_local();
+            Message::SftpNavigateLocal(side, path) => {
+                {
+                    let pane = self.sftp.pane_mut(side);
+                    pane.local_path = path;
+                    pane.drives_open = false;
+                    pane.actions_open = false;
+                }
+                self.sftp.left.actions_open = false;
+                self.sftp.right.actions_open = false;
+                self.sftp.selected_rows.clear();
+                self.sftp.selection_anchor = None;
+                self.refresh_sftp_local(side);
             }
-            Message::SftpOpenPicker => {
+            Message::SftpRefreshLocal(side) => {
+                self.refresh_sftp_local(side);
+            }
+            Message::SftpOpenPicker(side) => {
+                self.sftp.picker_target = side;
                 self.sftp.picker_open = true;
                 self.sftp.picker_search.clear();
             }
@@ -241,97 +354,83 @@ impl Oryxis {
             Message::SftpPickerSearch(s) => {
                 self.sftp.picker_search = s;
             }
-            Message::SftpToggleLocalHidden => {
-                self.sftp.local_show_hidden = !self.sftp.local_show_hidden;
+            Message::SftpToggleHidden(side) => {
+                let pane = self.sftp.pane_mut(side);
+                pane.show_hidden = !pane.show_hidden;
             }
-            Message::SftpToggleRemoteHidden => {
-                self.sftp.remote_show_hidden = !self.sftp.remote_show_hidden;
+            Message::SftpFilter(side, s) => {
+                self.sftp.pane_mut(side).filter = s;
             }
-            Message::SftpLocalFilter(s) => {
-                self.sftp.local_filter = s;
+            Message::SftpToggleActions(side) => {
+                let now = !self.sftp.pane(side).actions_open;
+                self.sftp.left.actions_open = false;
+                self.sftp.right.actions_open = false;
+                self.sftp.left.drives_open = false;
+                self.sftp.pane_mut(side).actions_open = now;
             }
-            Message::SftpRemoteFilter(s) => {
-                self.sftp.remote_filter = s;
-            }
-            Message::SftpToggleLocalActions => {
-                self.sftp.local_actions_open = !self.sftp.local_actions_open;
-                self.sftp.remote_actions_open = false;
-                self.sftp.local_drives_open = false;
-            }
-            Message::SftpToggleRemoteActions => {
-                self.sftp.remote_actions_open = !self.sftp.remote_actions_open;
-                self.sftp.local_actions_open = false;
-                self.sftp.local_drives_open = false;
-            }
-            Message::SftpToggleLocalDrives => {
-                self.sftp.local_drives_open = !self.sftp.local_drives_open;
-                self.sftp.local_actions_open = false;
-                self.sftp.remote_actions_open = false;
+            Message::SftpToggleDrives(side) => {
+                let now = !self.sftp.pane(side).drives_open;
+                self.sftp.left.actions_open = false;
+                self.sftp.right.actions_open = false;
+                self.sftp.left.drives_open = false;
+                self.sftp.right.drives_open = false;
+                self.sftp.pane_mut(side).drives_open = now;
             }
             Message::SftpCloseMenus => {
-                self.sftp.local_actions_open = false;
-                self.sftp.remote_actions_open = false;
-                self.sftp.local_drives_open = false;
+                self.sftp.left.actions_open = false;
+                self.sftp.right.actions_open = false;
+                self.sftp.left.drives_open = false;
+                self.sftp.right.drives_open = false;
             }
-            Message::SftpStartEditLocalPath => {
-                self.sftp.local_path_editing =
-                    Some(self.sftp.local_path.display().to_string());
+            Message::SftpStartEditPath(side) => {
+                let value = if self.sftp.pane(side).is_remote {
+                    self.sftp.pane(side).remote_path.clone()
+                } else {
+                    self.sftp.pane(side).local_path.display().to_string()
+                };
+                self.sftp.pane_mut(side).path_editing = Some(value);
             }
-            Message::SftpStartEditRemotePath => {
-                self.sftp.remote_path_editing = Some(self.sftp.remote_path.clone());
-            }
-            Message::SftpEditLocalPath(s) => {
-                if self.sftp.local_path_editing.is_some() {
-                    self.sftp.local_path_editing = Some(s);
+            Message::SftpEditPath(side, s) => {
+                if self.sftp.pane(side).path_editing.is_some() {
+                    self.sftp.pane_mut(side).path_editing = Some(s);
                 }
             }
-            Message::SftpEditRemotePath(s) => {
-                if self.sftp.remote_path_editing.is_some() {
-                    self.sftp.remote_path_editing = Some(s);
+            Message::SftpCommitPath(side) => {
+                let Some(input) = self.sftp.pane_mut(side).path_editing.take() else {
+                    return Ok(Task::none());
+                };
+                if self.sftp.pane(side).is_remote {
+                    return Ok(Task::done(Message::SftpNavigateRemote(side, input)));
                 }
-            }
-            Message::SftpCommitLocalPath => {
-                if let Some(input) = self.sftp.local_path_editing.take() {
-                    let p = std::path::PathBuf::from(input);
-                    if p.is_dir() {
-                        self.sftp.local_path = p;
-                        self.refresh_sftp_local();
-                    } else {
-                        self.sftp.local_error = Some(format!(
-                            "Not a directory: {}",
-                            p.display()
-                        ));
-                    }
-                }
-            }
-            Message::SftpCommitRemotePath => {
-                if let Some(target) = self.sftp.remote_path_editing.take() {
-                    return Ok(Task::done(Message::SftpNavigateRemote(target)));
+                let p = std::path::PathBuf::from(input);
+                if p.is_dir() {
+                    self.sftp.pane_mut(side).local_path = p;
+                    self.refresh_sftp_local(side);
+                } else {
+                    self.sftp.pane_mut(side).error =
+                        Some(format!("Not a directory: {}", p.display()));
                 }
             }
             Message::SftpCancelEditPath => {
-                self.sftp.local_path_editing = None;
-                self.sftp.remote_path_editing = None;
+                self.sftp.left.path_editing = None;
+                self.sftp.right.path_editing = None;
             }
-            Message::SftpSortLocal(col) => {
-                if self.sftp.local_sort.column == col {
-                    self.sftp.local_sort.ascending = !self.sftp.local_sort.ascending;
-                } else {
-                    self.sftp.local_sort.column = col;
-                    self.sftp.local_sort.ascending = true;
+            Message::SftpSort(side, col) => {
+                {
+                    let pane = self.sftp.pane_mut(side);
+                    if pane.sort.column == col {
+                        pane.sort.ascending = !pane.sort.ascending;
+                    } else {
+                        pane.sort.column = col;
+                        pane.sort.ascending = true;
+                    }
                 }
-                let sort = self.sftp.local_sort;
-                sort_local_entries(&mut self.sftp.local_entries, sort);
-            }
-            Message::SftpSortRemote(col) => {
-                if self.sftp.remote_sort.column == col {
-                    self.sftp.remote_sort.ascending = !self.sftp.remote_sort.ascending;
+                let sort = self.sftp.pane(side).sort;
+                if self.sftp.pane(side).is_remote {
+                    sort_remote_entries(&mut self.sftp.pane_mut(side).remote_entries, sort);
                 } else {
-                    self.sftp.remote_sort.column = col;
-                    self.sftp.remote_sort.ascending = true;
+                    sort_local_entries(&mut self.sftp.pane_mut(side).local_entries, sort);
                 }
-                let sort = self.sftp.remote_sort;
-                sort_remote_entries(&mut self.sftp.remote_entries, sort);
             }
             Message::SftpRowRightClick(side, path, is_dir) => {
                 // If the user right-clicks a row that wasn't part of the
@@ -359,7 +458,7 @@ impl Oryxis {
             Message::SftpStartRename(side, path) => {
                 self.sftp.row_menu = None;
                 let original_path = path.clone();
-                let basename = file_basename(&path, side);
+                let basename = file_basename(&path, self.sftp.pane(side).is_remote);
                 self.sftp.rename = Some(crate::state::SftpRename {
                     side,
                     original_path,
@@ -379,42 +478,40 @@ impl Oryxis {
                 if new_name.is_empty() {
                     return Ok(Task::none());
                 }
-                match rn.side {
-                    crate::state::SftpPaneSide::Local => {
-                        let original = std::path::PathBuf::from(&rn.original_path);
-                        let parent = original.parent().map(|p| p.to_path_buf());
-                        let Some(parent) = parent else {
-                            self.sftp.local_error = Some("Cannot rename root".into());
-                            return Ok(Task::none());
-                        };
-                        let dest = parent.join(&new_name);
-                        if let Err(e) = std::fs::rename(&original, &dest) {
-                            self.sftp.local_error = Some(e.to_string());
-                        }
-                        self.refresh_sftp_local();
+                if !self.sftp.pane(rn.side).is_remote {
+                    let original = std::path::PathBuf::from(&rn.original_path);
+                    let parent = original.parent().map(|p| p.to_path_buf());
+                    let Some(parent) = parent else {
+                        self.sftp.pane_mut(rn.side).error = Some("Cannot rename root".into());
+                        return Ok(Task::none());
+                    };
+                    let dest = parent.join(&new_name);
+                    if let Err(e) = std::fs::rename(&original, &dest) {
+                        self.sftp.pane_mut(rn.side).error = Some(e.to_string());
                     }
-                    crate::state::SftpPaneSide::Remote => {
-                        let Some(client) = self.sftp.client.clone() else {
-                            return Ok(Task::none());
-                        };
-                        let parent = parent_path(&rn.original_path);
-                        let dest = if parent == "/" {
-                            format!("/{}", new_name)
-                        } else {
-                            format!("{}/{}", parent.trim_end_matches('/'), new_name)
-                        };
-                        let from = rn.original_path;
-                        let reload_path = self.sftp.remote_path.clone();
-                        return Ok(Task::perform(
-                            async move {
-                                client.rename(&from, &dest).await.map_err(|e| e.to_string())
-                            },
-                            move |result| match result {
-                                Ok(()) => Message::SftpNavigateRemote(reload_path.clone()),
-                                Err(e) => Message::SftpOpResult(e, true),
-                            },
-                        ));
-                    }
+                    self.refresh_sftp_local(rn.side);
+                } else {
+                    let Some(client) = self.sftp.pane(rn.side).client.clone() else {
+                        return Ok(Task::none());
+                    };
+                    let parent = parent_path(&rn.original_path);
+                    let dest = if parent == "/" {
+                        format!("/{}", new_name)
+                    } else {
+                        format!("{}/{}", parent.trim_end_matches('/'), new_name)
+                    };
+                    let from = rn.original_path;
+                    let side = rn.side;
+                    let reload_path = self.sftp.pane(side).remote_path.clone();
+                    return Ok(Task::perform(
+                        async move {
+                            client.rename(&from, &dest).await.map_err(|e| e.to_string())
+                        },
+                        move |result| match result {
+                            Ok(()) => Message::SftpNavigateRemote(side, reload_path.clone()),
+                            Err(e) => Message::SftpOpResult(side, e, true),
+                        },
+                    ));
                 }
             }
             Message::SftpAskDelete(side, path, is_dir) => {
@@ -446,41 +543,49 @@ impl Oryxis {
                 if targets.is_empty() {
                     return Ok(Task::none());
                 }
-                // Process locals synchronously, then fire one chained
-                // async task that walks remote deletes in series and
-                // navigates once at the end. Avoids N parallel
-                // navigates racing each other after a bulk delete.
-                let mut local_touched = false;
-                let remote_targets: Vec<crate::state::SftpDeleteTarget> = targets
-                    .into_iter()
-                    .filter(|t| {
-                        if t.side == crate::state::SftpPaneSide::Local {
-                            let path = std::path::PathBuf::from(&t.path);
-                            let result = if t.is_dir {
-                                std::fs::remove_dir_all(&path)
-                            } else {
-                                std::fs::remove_file(&path)
-                            };
-                            if let Err(e) = result {
-                                self.sftp.local_error = Some(e.to_string());
-                            }
-                            local_touched = true;
-                            false
+                // Process local-pane targets synchronously, then fire one
+                // chained async task per remote pane that walks remote
+                // deletes in series and navigates once at the end. Avoids
+                // N parallel navigates racing after a bulk delete.
+                let mut local_sides: Vec<SftpPaneSide> = Vec::new();
+                let mut remote_targets: Vec<crate::state::SftpDeleteTarget> = Vec::new();
+                for t in targets {
+                    if self.sftp.pane(t.side).is_remote {
+                        remote_targets.push(t);
+                    } else {
+                        let path = std::path::PathBuf::from(&t.path);
+                        let result = if t.is_dir {
+                            std::fs::remove_dir_all(&path)
                         } else {
-                            true
+                            std::fs::remove_file(&path)
+                        };
+                        if let Err(e) = result {
+                            self.sftp.pane_mut(t.side).error = Some(e.to_string());
                         }
-                    })
-                    .collect();
-                if local_touched {
-                    self.refresh_sftp_local();
+                        if !local_sides.contains(&t.side) {
+                            local_sides.push(t.side);
+                        }
+                    }
+                }
+                for side in local_sides {
+                    self.refresh_sftp_local(side);
                     self.sftp.selected_rows.clear();
                 }
                 if !remote_targets.is_empty() {
-                    let Some(client) = self.sftp.client.clone() else {
+                    // All remote targets share a pane in practice (the
+                    // selection is single-pane), so route via the first
+                    // target's side.
+                    let side = remote_targets[0].side;
+                    let Some(client) = self.sftp.pane(side).client.clone() else {
                         return Ok(Task::none());
                     };
-                    let reload_path = self.sftp.remote_path.clone();
                     self.sftp.selected_rows.clear();
+                    // Full paths of what we're deleting, so on success we
+                    // can drop them from the listing in place instead of
+                    // re-listing the whole directory (no network round trip,
+                    // no "Loading..." flash).
+                    let removed_paths: Vec<String> =
+                        remote_targets.iter().map(|t| t.path.clone()).collect();
                     return Ok(Task::perform(
                         async move {
                             for tgt in remote_targets {
@@ -496,11 +601,11 @@ impl Oryxis {
                                         .map_err(|e| e.to_string())?;
                                 }
                             }
-                            Ok::<String, String>(reload_path)
+                            Ok::<(), String>(())
                         },
-                        |r| match r {
-                            Ok(reload) => Message::SftpNavigateRemote(reload),
-                            Err(e) => Message::SftpOpResult(e, true),
+                        move |r| match r {
+                            Ok(()) => Message::SftpEntriesRemoved(side, removed_paths.clone()),
+                            Err(e) => Message::SftpOpResult(side, e, true),
                         },
                     ));
                 }
@@ -508,9 +613,24 @@ impl Oryxis {
             Message::SftpCancelDelete => {
                 self.sftp.delete_confirm.clear();
             }
+            Message::SftpEntriesRemoved(side, paths) => {
+                // Drop the just-deleted entries from the listing in place,
+                // keeping scroll position and skipping a re-list round trip.
+                let removed: std::collections::HashSet<String> = paths.into_iter().collect();
+                let pane = self.sftp.pane_mut(side);
+                let base = pane.remote_path.trim_end_matches('/').to_string();
+                pane.remote_entries.retain(|e| {
+                    let full = if base.is_empty() {
+                        format!("/{}", e.name)
+                    } else {
+                        format!("{}/{}", base, e.name)
+                    };
+                    !removed.contains(&full)
+                });
+            }
             Message::SftpStartNewEntry(side, kind) => {
-                self.sftp.local_actions_open = false;
-                self.sftp.remote_actions_open = false;
+                self.sftp.left.actions_open = false;
+                self.sftp.right.actions_open = false;
                 self.sftp.new_entry = Some(crate::state::SftpNewEntry {
                     side,
                     kind,
@@ -530,48 +650,48 @@ impl Oryxis {
                 if name.is_empty() {
                     return Ok(Task::none());
                 }
-                match ne.side {
-                    crate::state::SftpPaneSide::Local => {
-                        let target = self.sftp.local_path.join(&name);
-                        let result = match ne.kind {
-                            crate::state::SftpEntryKind::Folder => std::fs::create_dir(&target),
-                            crate::state::SftpEntryKind::File => std::fs::File::create(&target).map(|_| ()),
-                        };
-                        if let Err(e) = result {
-                            self.sftp.local_error = Some(e.to_string());
+                if !self.sftp.pane(ne.side).is_remote {
+                    let target = self.sftp.pane(ne.side).local_path.join(&name);
+                    let result = match ne.kind {
+                        crate::state::SftpEntryKind::Folder => std::fs::create_dir(&target),
+                        crate::state::SftpEntryKind::File => {
+                            std::fs::File::create(&target).map(|_| ())
                         }
-                        self.refresh_sftp_local();
+                    };
+                    if let Err(e) = result {
+                        self.sftp.pane_mut(ne.side).error = Some(e.to_string());
                     }
-                    crate::state::SftpPaneSide::Remote => {
-                        let Some(client) = self.sftp.client.clone() else {
-                            return Ok(Task::none());
-                        };
-                        let parent = self.sftp.remote_path.trim_end_matches('/').to_string();
-                        let target = if parent.is_empty() {
-                            format!("/{}", name)
-                        } else {
-                            format!("{}/{}", parent, name)
-                        };
-                        let kind = ne.kind;
-                        let reload_path = self.sftp.remote_path.clone();
-                        return Ok(Task::perform(
-                            async move {
-                                match kind {
-                                    crate::state::SftpEntryKind::Folder => {
-                                        client.create_dir(&target).await.map_err(|e| e.to_string())
-                                    }
-                                    crate::state::SftpEntryKind::File => client
-                                        .write_file(&target, b"")
-                                        .await
-                                        .map_err(|e| e.to_string()),
+                    self.refresh_sftp_local(ne.side);
+                } else {
+                    let Some(client) = self.sftp.pane(ne.side).client.clone() else {
+                        return Ok(Task::none());
+                    };
+                    let parent = self.sftp.pane(ne.side).remote_path.trim_end_matches('/').to_string();
+                    let target = if parent.is_empty() {
+                        format!("/{}", name)
+                    } else {
+                        format!("{}/{}", parent, name)
+                    };
+                    let kind = ne.kind;
+                    let side = ne.side;
+                    let reload_path = self.sftp.pane(side).remote_path.clone();
+                    return Ok(Task::perform(
+                        async move {
+                            match kind {
+                                crate::state::SftpEntryKind::Folder => {
+                                    client.create_dir(&target).await.map_err(|e| e.to_string())
                                 }
-                            },
-                            move |result| match result {
-                                Ok(()) => Message::SftpNavigateRemote(reload_path.clone()),
-                                Err(e) => Message::SftpOpResult(e, true),
-                            },
-                        ));
-                    }
+                                crate::state::SftpEntryKind::File => client
+                                    .write_file(&target, b"")
+                                    .await
+                                    .map_err(|e| e.to_string()),
+                            }
+                        },
+                        move |result| match result {
+                            Ok(()) => Message::SftpNavigateRemote(side, reload_path.clone()),
+                            Err(e) => Message::SftpOpResult(side, e, true),
+                        },
+                    ));
                 }
             }
             Message::SftpNewEntryCancel => {
@@ -675,22 +795,22 @@ impl Oryxis {
                     // while files act as selectable items.
                     self.sftp.selected_rows.clear();
                     self.sftp.selection_anchor = None;
-                    return Ok(match side {
-                        crate::state::SftpPaneSide::Local => Task::done(
-                            Message::SftpNavigateLocal(std::path::PathBuf::from(path)),
-                        ),
-                        crate::state::SftpPaneSide::Remote => {
-                            Task::done(Message::SftpNavigateRemote(path))
-                        }
+                    return Ok(if self.sftp.pane(side).is_remote {
+                        Task::done(Message::SftpNavigateRemote(side, path))
+                    } else {
+                        Task::done(Message::SftpNavigateLocal(
+                            side,
+                            std::path::PathBuf::from(path),
+                        ))
                     });
                 } else {
                     self.sftp.selected_rows = vec![target.clone()];
                     self.sftp.selection_anchor = Some(target);
                 }
             }
-            Message::SftpOpResult(msg, is_error) => {
+            Message::SftpOpResult(side, msg, is_error) => {
                 if is_error {
-                    self.sftp.remote_error = Some(msg);
+                    self.sftp.pane_mut(side).error = Some(msg);
                 } else {
                     tracing::info!("sftp op: {}", msg);
                 }

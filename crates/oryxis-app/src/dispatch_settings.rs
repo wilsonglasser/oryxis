@@ -243,6 +243,104 @@ impl Oryxis {
     }
 }
 
+impl Oryxis {
+    /// Apply an app-theme name (built-in or a custom UI theme) to the global
+    /// `OryxisColors`, tracking it in `active_app_theme_name`. Returns false
+    /// if the name matches neither. Does not persist; callers that handle a
+    /// user action persist + repaint.
+    /// Caller sets `active_app_theme_name` on a `true` result (kept `&self`
+    /// so it can be called while `self.vault` is borrowed during boot).
+    pub(crate) fn apply_app_theme_name(&self, name: &str) -> bool {
+        if let Some(theme) = AppTheme::ALL.iter().find(|t| t.name() == name).copied() {
+            AppTheme::set_active(theme); // also clears any active custom UI theme
+            true
+        } else if let Some(colors) = self
+            .custom_ui_themes
+            .iter()
+            .find(|t| t.name == name)
+            .map(|t| t.colors.clone())
+        {
+            crate::theme::set_active_custom_ui(crate::theme::theme_colors_from_hex(&colors));
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Validate + persist the in-progress custom UI theme. Returns
+    /// `Some(error)` on failure. On success, if the saved theme is the
+    /// active one, re-applies it live.
+    fn save_ui_theme_editor(&mut self) -> Option<String> {
+        use oryxis_core::models::custom_ui_theme::CustomUiTheme;
+        let form = self.ui_theme_editor.clone()?;
+        let name = form.name.trim().to_string();
+        if name.is_empty() {
+            return Some(crate::i18n::t("theme_error_name_required").to_string());
+        }
+        if AppTheme::ALL.iter().any(|t| t.name() == name) {
+            return Some(crate::i18n::t("theme_error_name_builtin").to_string());
+        }
+        if self
+            .custom_ui_themes
+            .iter()
+            .any(|t| t.name == name && Some(t.id) != form.editing_id)
+        {
+            return Some(crate::i18n::t("theme_error_name_taken").to_string());
+        }
+        if form
+            .colors
+            .iter()
+            .any(|h| crate::widgets::parse_hex_color(h).is_none())
+        {
+            return Some(crate::i18n::t("theme_error_color_invalid").to_string());
+        }
+
+        let existing = form
+            .editing_id
+            .and_then(|id| self.custom_ui_themes.iter().find(|t| t.id == id).cloned());
+        let old_name = existing.as_ref().map(|e| e.name.clone());
+        let created_at = existing
+            .as_ref()
+            .map(|e| e.created_at)
+            .unwrap_or_else(chrono::Utc::now);
+        let theme = CustomUiTheme {
+            id: form.editing_id.unwrap_or_else(uuid::Uuid::new_v4),
+            name: name.clone(),
+            colors: form.colors,
+            created_at,
+            updated_at: chrono::Utc::now(),
+        };
+
+        {
+            let Some(vault) = &self.vault else {
+                return Some(crate::i18n::t("theme_error_save_failed").to_string());
+            };
+            if vault.save_custom_ui_theme(&theme).is_err() {
+                return Some(crate::i18n::t("theme_error_save_failed").to_string());
+            }
+        }
+        self.custom_ui_themes = self
+            .vault
+            .as_ref()
+            .and_then(|v| v.list_custom_ui_themes().ok())
+            .unwrap_or_default();
+
+        // If editing the active theme (by old or new name), re-apply live.
+        let was_active = old_name.as_deref() == Some(self.active_app_theme_name.as_str())
+            || self.active_app_theme_name == name;
+        if was_active {
+            crate::theme::set_active_custom_ui(crate::theme::theme_colors_from_hex(
+                &theme.colors,
+            ));
+            self.active_app_theme_name = name.clone();
+            self.persist_setting("app_theme", &name);
+            self.terminal_palette = self.resolve_global_terminal_palette();
+            self.repaint_all_terminal_palettes();
+        }
+        None
+    }
+}
+
 /// Build a `TerminalPalette` from a user-defined theme's hex strings.
 /// Unparseable entries fall back to white/black so a malformed color never
 /// crashes the render.
@@ -298,7 +396,22 @@ impl Oryxis {
                 self.hovered_theme_card = None;
             }
             Message::ThemeEditorNew => {
-                self.theme_editor = Some(crate::state::ThemeEditorForm::new_blank());
+                // Seed from the active terminal palette so the user starts
+                // from the currently-selected theme.
+                let p = self.terminal_palette.clone();
+                let hex = |c: iced::Color| {
+                    let q = |x: f32| (x.clamp(0.0, 1.0) * 255.0).round() as u8;
+                    format!("#{:02x}{:02x}{:02x}", q(c.r), q(c.g), q(c.b))
+                };
+                self.theme_editor = Some(crate::state::ThemeEditorForm {
+                    editing_id: None,
+                    name: String::new(),
+                    foreground: hex(p.foreground),
+                    background: hex(p.background),
+                    cursor: hex(p.cursor),
+                    ansi: std::array::from_fn(|i| hex(p.ansi[i])),
+                    error: None,
+                });
             }
             Message::ThemeImportOpen => {
                 self.show_theme_import = true;
@@ -334,6 +447,84 @@ impl Oryxis {
                     }
                     Err(e) => self.theme_import_error = Some(e),
                 }
+            }
+            // -- Custom UI (chrome) themes --
+            Message::UiThemeEditorNew => {
+                // Seed from the currently active chrome colors so the user
+                // starts from a working theme.
+                let seed = crate::theme::theme_colors_to_hex(crate::theme::OryxisColors::t());
+                self.ui_theme_editor =
+                    Some(crate::state::UiThemeEditorForm::new_from_colors(seed));
+            }
+            Message::UiThemeEditorEdit(idx) => {
+                if let Some(theme) = self.custom_ui_themes.get(idx) {
+                    self.ui_theme_editor =
+                        Some(crate::state::UiThemeEditorForm::from_theme(theme));
+                }
+            }
+            Message::UiThemeEditorClose => {
+                self.ui_theme_editor = None;
+                self.ui_color_popover = None;
+            }
+            Message::UiThemeEditorNameChanged(name) => {
+                if let Some(form) = &mut self.ui_theme_editor {
+                    form.name = name;
+                    form.error = None;
+                }
+            }
+            Message::UiThemeColorChanged(idx, value) => {
+                if let Some(form) = &mut self.ui_theme_editor
+                    && idx < 21
+                {
+                    let cleaned: String = value
+                        .chars()
+                        .filter(|c| *c == '#' || c.is_ascii_hexdigit())
+                        .take(7)
+                        .collect();
+                    form.colors[idx] = cleaned;
+                }
+            }
+            Message::UiThemeEditorOpenPicker(idx) => {
+                self.ui_color_popover = Some((idx, self.mouse_position));
+            }
+            Message::UiThemeEditorClosePicker => {
+                self.ui_color_popover = None;
+            }
+            Message::UiThemeEditorSave => {
+                if let Some(err) = self.save_ui_theme_editor() {
+                    if let Some(form) = &mut self.ui_theme_editor {
+                        form.error = Some(err);
+                    }
+                } else {
+                    self.ui_theme_editor = None;
+                    self.ui_color_popover = None;
+                }
+            }
+            Message::UiThemeDelete(idx) => {
+                if let Some(theme) = self.custom_ui_themes.get(idx)
+                    && let Some(vault) = &self.vault
+                {
+                    let was_active = self.active_app_theme_name == theme.name;
+                    let _ = vault.delete_custom_ui_theme(&theme.id);
+                    self.custom_ui_themes =
+                        vault.list_custom_ui_themes().unwrap_or_default();
+                    if was_active {
+                        // The active theme is gone; fall back to the default.
+                        crate::theme::AppTheme::set_active(
+                            crate::theme::AppTheme::OryxisDark,
+                        );
+                        self.active_app_theme_name = "Oryxis Dark".to_string();
+                        self.persist_setting("app_theme", "Oryxis Dark");
+                        self.terminal_palette = self.resolve_global_terminal_palette();
+                        self.repaint_all_terminal_palettes();
+                    }
+                }
+            }
+            Message::UiThemeCardHovered(idx) => {
+                self.hovered_ui_theme_card = Some(idx);
+            }
+            Message::UiThemeCardUnhovered => {
+                self.hovered_ui_theme_card = None;
             }
             Message::ThemeEditorEdit(idx) => {
                 if let Some(theme) = self.custom_terminal_themes.get(idx) {
@@ -416,9 +607,9 @@ impl Oryxis {
                 }
             }
             Message::AppThemeChanged(name) => {
-                if let Some(theme) = AppTheme::ALL.iter().find(|t| t.name() == name) {
-                    AppTheme::set_active(*theme);
-                    self.persist_setting("app_theme", theme.name());
+                if self.apply_app_theme_name(&name) {
+                    self.active_app_theme_name = name.clone();
+                    self.persist_setting("app_theme", &name);
                     // Refresh the global derived palette and re-paint
                     // every tab. Tabs whose connection has its own
                     // terminal_theme override pick that up via
@@ -683,10 +874,14 @@ impl Oryxis {
                 if self.setting_sftp_op_timeout == "0" {
                     self.setting_sftp_op_timeout = "1".into();
                 }
-                // Apply live to the active SFTP client so the user
-                // doesn't have to reconnect to feel the change.
-                if let Some(client) = &self.sftp.client {
-                    client.set_op_timeout(self.sftp_op_timeout());
+                // Apply live to both panes' active SFTP clients so the
+                // user doesn't have to reconnect to feel the change.
+                let to = self.sftp_op_timeout();
+                if let Some(client) = &self.sftp.left.client {
+                    client.set_op_timeout(to);
+                }
+                if let Some(client) = &self.sftp.right.client {
+                    client.set_op_timeout(to);
                 }
                 self.persist_setting("sftp_op_timeout", &self.setting_sftp_op_timeout);
             }
@@ -849,10 +1044,18 @@ fn spawn_local_shell(
                 .as_ref()
                 .map(|(_, _, l)| l.clone())
                 .unwrap_or_else(|| "Local Shell".to_string());
+            // Capture the exact shell so a saved session group restores it.
+            // No pick = default OS shell (empty program).
+            let origin = crate::state::PaneOrigin::Local(crate::state::LocalShellSpec {
+                label: label.clone(),
+                program: pick.as_ref().map(|(p, _, _)| p.clone()).unwrap_or_default(),
+                args: pick.as_ref().map(|(_, a, _)| a.clone()).unwrap_or_default(),
+            });
             app.tabs.push(TerminalTab::new_single(
                 label,
                 Arc::new(Mutex::new(state)),
             ));
+            app.tabs[tab_idx].active_mut().origin = origin;
             let pane_id = app.tabs[tab_idx].active().id;
             app.active_tab = Some(tab_idx);
             app.remember_terminal_tab_focus(tab_idx);

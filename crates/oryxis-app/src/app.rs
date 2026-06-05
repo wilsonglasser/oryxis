@@ -161,6 +161,9 @@ pub struct Oryxis {
     // Data
     pub(crate) connections: Vec<Connection>,
     pub(crate) groups: Vec<Group>,
+    /// Saved split-panel arrangements. Each references hosts by id and/or
+    /// local shells; opening one rebuilds a single splitted tab.
+    pub(crate) session_groups: Vec<oryxis_core::models::SessionGroup>,
 
     // UI state
     pub(crate) active_view: View,
@@ -256,7 +259,26 @@ pub struct Oryxis {
     // Connection editor
     pub(crate) show_host_panel: bool,
     pub(crate) editor_form: ConnectionForm,
+    /// Multi-line buffer for the host's initial command. Kept out of the
+    /// form struct because `text_editor::Content` isn't Clone.
+    pub(crate) editor_initial_command: iced::widget::text_editor::Content,
     pub(crate) host_panel_error: Option<String>,
+
+    // Session group editor (save / edit a split arrangement)
+    pub(crate) show_session_group_panel: bool,
+    pub(crate) editor_session_group: crate::state::SessionGroupForm,
+    /// Multi-line buffer for the currently-shown pane's startup script. Kept
+    /// out of the form struct because `text_editor::Content` isn't Clone.
+    pub(crate) session_group_script_editor: iced::widget::text_editor::Content,
+    pub(crate) session_group_panel_error: Option<String>,
+    /// Hovered session-group card on the dashboard, drives the `⋮` menu,
+    /// mirroring `hovered_card`.
+    pub(crate) hovered_session_group_card: Option<usize>,
+    /// Per-pane initial-script overrides, keyed by the pane's stable id.
+    /// Populated when a session group is opened; consumed (and removed)
+    /// once the pane's shell is ready and the script is injected. Lets the
+    /// override win over the host's own `initial_command` for that pane.
+    pub(crate) pane_script_overrides: std::collections::HashMap<Uuid, String>,
 
     // Card hover & context menu
     pub(crate) hovered_card: Option<usize>,
@@ -587,6 +609,10 @@ pub struct Oryxis {
     /// alongside the built-in presets and resolved by name.
     pub(crate) custom_terminal_themes:
         Vec<oryxis_core::models::custom_terminal_theme::CustomTerminalTheme>,
+    /// User-defined chrome (UI) themes, shown in Interface alongside the
+    /// built-in app themes and resolved by name.
+    pub(crate) custom_ui_themes:
+        Vec<oryxis_core::models::custom_ui_theme::CustomUiTheme>,
     /// Open custom-theme editor modal. `None` = closed.
     pub(crate) theme_editor: Option<crate::state::ThemeEditorForm>,
     /// Hovered custom terminal theme card (index into
@@ -602,6 +628,15 @@ pub struct Oryxis {
     pub(crate) theme_import_content: iced::widget::text_editor::Content,
     pub(crate) theme_import_name: String,
     pub(crate) theme_import_error: Option<String>,
+    /// Custom UI (chrome) theme editor modal + its color-picker popover and
+    /// the hovered card (mirrors the terminal-theme editor).
+    pub(crate) ui_theme_editor: Option<crate::state::UiThemeEditorForm>,
+    pub(crate) ui_color_popover: Option<(usize, iced::Point)>,
+    pub(crate) hovered_ui_theme_card: Option<usize>,
+    /// Name of the active app theme (built-in or custom UI theme). The
+    /// `AppTheme` enum can't name a custom theme, so this tracks the
+    /// selection for highlighting + delete/rename bookkeeping.
+    pub(crate) active_app_theme_name: String,
     pub(crate) show_snippet_panel: bool,
     pub(crate) snippet_label: String,
     pub(crate) snippet_command: text_editor::Content,

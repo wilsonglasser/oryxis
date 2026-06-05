@@ -954,6 +954,20 @@ impl Oryxis {
             );
         }
 
+        // Custom UI (chrome) theme editor (Settings -> Interface).
+        if self.ui_theme_editor.is_some() {
+            let editor = self.view_ui_theme_editor_modal();
+            return wrap_with_resize(
+                Stack::new()
+                    .push(base)
+                    .push(editor)
+                    .width(Length::Fill)
+                    .height(Length::Fill)
+                    .into(),
+                resize_overlay,
+            );
+        }
+
         // Note: the update modal is rendered at the top-level `view()`
         // dispatcher (see `Oryxis::view`) so it overlays the lock screen
         // too. Don't re-render it here.
@@ -1009,7 +1023,24 @@ impl Oryxis {
         // window-coord click position lines up with the menu origin
         // without having to compensate for the title + tab bar height.
         if let Some(ref row_menu) = self.sftp.row_menu {
-            let remote_connected = self.sftp.client.is_some();
+            // "Cross-pane action available" = the pane opposite the
+            // right-clicked row is connected (remote with a client) or is
+            // a local destination. The row menu uses this to decide
+            // whether to offer Upload / Download / Relay.
+            let other_side = if row_menu.side == crate::state::SftpPaneSide::Left {
+                crate::state::SftpPaneSide::Right
+            } else {
+                crate::state::SftpPaneSide::Left
+            };
+            let other = self.sftp.pane(other_side);
+            let cross_pane_ready = if other.is_remote {
+                other.client.is_some()
+            } else {
+                true
+            };
+            let other_is_remote = other.is_remote;
+            let source_is_remote = self.sftp.pane(row_menu.side).is_remote;
+            let other_label = other.host_label.clone();
             // Count of selected rows in the same pane as the right-
             // clicked row, drives the bulk vs single menu mode.
             let selection_count_same_pane = self
@@ -1020,7 +1051,10 @@ impl Oryxis {
                 .count();
             let menu = crate::views::sftp::row_context_menu_box(
                 row_menu,
-                remote_connected,
+                cross_pane_ready,
+                source_is_remote,
+                other_is_remote,
+                other_label,
                 selection_count_same_pane,
             );
             let backdrop: Element<'_, Message> = MouseArea::new(
@@ -1045,7 +1079,9 @@ impl Oryxis {
             let nudged_y = row_menu.y + 2.0;
             let menu_height = crate::views::sftp::row_context_menu_height(
                 row_menu,
-                remote_connected,
+                cross_pane_ready,
+                source_is_remote,
+                other_is_remote,
                 selection_count_same_pane,
             );
             let x = nudged_x
@@ -1380,6 +1416,20 @@ impl Oryxis {
                     context_menu_item(iced_fonts::lucide::rows_two(), crate::i18n::t("split_stacked"), Message::SplitTabPane(idx, iced::widget::pane_grid::Axis::Horizontal), OryxisColors::t().text_secondary),
                     context_menu_item(iced_fonts::lucide::copy(), crate::i18n::t("duplicate_tab"), Message::DuplicateTab(idx), OryxisColors::t().text_secondary),
                 ];
+                // Save the whole arrangement (panes + splits + per-pane
+                // scripts) as a reusable session group, or edit it if this
+                // tab already came from one.
+                let sg_label = if self
+                    .tabs
+                    .get(idx)
+                    .map(|t| t.session_group_id.is_some())
+                    .unwrap_or(false)
+                {
+                    crate::i18n::t("edit_session_group")
+                } else {
+                    crate::i18n::t("save_session_group")
+                };
+                items = items.push(context_menu_item(iced_fonts::lucide::boxes(), sg_label, Message::ShowSaveSessionGroup(idx), OryxisColors::t().text_secondary));
                 // "Duplicate in New Window" spawns a fresh process that
                 // can only re-open hosts saved in the vault. ECS Exec /
                 // kubectl tabs are ephemeral dynamic-group sessions (no

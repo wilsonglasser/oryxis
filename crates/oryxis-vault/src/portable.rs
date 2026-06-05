@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 
 use oryxis_core::models::{
     CloudProfile, Connection, Group, Identity, KnownHost, PortForwardRule, ProxyIdentity,
-    Snippet, SshKey,
+    SessionGroup, Snippet, SshKey,
 };
 
 use crate::store::{encrypt, decrypt, VaultError, VaultStore};
@@ -46,6 +46,11 @@ struct ExportPayload {
     #[serde(default)]
     port_forward_rules: Vec<PortForwardRule>,
     known_hosts: Vec<KnownHost>,
+    /// Saved split-panel arrangements. No credentials (they reference hosts
+    /// by id or are local shells). Defaults to empty for backwards compat
+    /// with export files written before this field existed.
+    #[serde(default)]
+    session_groups: Vec<SessionGroup>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -133,6 +138,8 @@ pub struct ImportResult {
     pub port_forward_rules_skipped: usize,
     pub known_hosts_added: usize,
     pub known_hosts_skipped: usize,
+    pub session_groups_added: usize,
+    pub session_groups_skipped: usize,
 }
 
 // ---------------------------------------------------------------------------
@@ -184,6 +191,7 @@ pub fn export_vault(
     let all_snippets = store.list_snippets()?;
     let all_port_forward_rules = store.list_port_forward_rules()?;
     let all_known_hosts = store.list_known_hosts()?;
+    let all_session_groups = store.list_session_groups()?;
 
     // Apply filter to select which connections to export
     let filtered_connections: Vec<&Connection> = match &options.filter {
@@ -359,10 +367,14 @@ pub fn export_vault(
         }
     }
 
-    // Snippets, port forward rules and known_hosts: only included in full export
+    // Cross-cutting entities (snippets, port forward rules, known_hosts,
+    // session groups) only ship in a full export. Session groups reference
+    // hosts across arbitrary folders, so a filtered subset can't carry them
+    // without dangling references, same reasoning as snippets.
     let snippets = if is_filtered { Vec::new() } else { all_snippets };
     let port_forward_rules = if is_filtered { Vec::new() } else { all_port_forward_rules };
     let known_hosts = if is_filtered { Vec::new() } else { all_known_hosts };
+    let session_groups = if is_filtered { Vec::new() } else { all_session_groups };
 
     let payload = ExportPayload {
         version: FORMAT_VERSION,
@@ -377,6 +389,7 @@ pub fn export_vault(
         snippets,
         port_forward_rules,
         known_hosts,
+        session_groups,
     };
 
     let json = serde_json::to_vec(&payload)
@@ -429,10 +442,13 @@ pub fn import_vault(
         port_forward_rules_skipped: 0,
         known_hosts_added: 0,
         known_hosts_skipped: 0,
+        session_groups_added: 0,
+        session_groups_skipped: 0,
     };
 
     // Existing data for merge checks
     let existing_groups = store.list_groups()?;
+    let existing_session_groups = store.list_session_groups()?;
     let existing_connections = store.list_connections()?;
     let existing_keys = store.list_keys()?;
     let existing_identities = store.list_identities()?;
@@ -584,6 +600,17 @@ pub fn import_vault(
         } else {
             store.save_known_host(kh)?;
             result.known_hosts_added += 1;
+        }
+    }
+
+    // Session groups (skip if exists). No credentials; their host references
+    // are by id and resolve against whatever hosts the import brought in.
+    for sg in &payload.session_groups {
+        if existing_session_groups.iter().any(|g| g.id == sg.id) {
+            result.session_groups_skipped += 1;
+        } else {
+            store.save_session_group(sg)?;
+            result.session_groups_added += 1;
         }
     }
 

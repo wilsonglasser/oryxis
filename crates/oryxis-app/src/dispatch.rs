@@ -55,6 +55,7 @@ impl Oryxis {
         let message = try_handler!(self, message, handle_cloud);
         let message = try_handler!(self, message, handle_ai);
         let message = try_handler!(self, message, handle_editor);
+        let message = try_handler!(self, message, handle_session_group);
         let message = try_handler!(self, message, handle_tabs);
         let message = try_handler!(self, message, handle_terminal);
         let message = try_handler!(self, message, handle_share);
@@ -199,7 +200,10 @@ impl Oryxis {
                 // on the view (or returns to it after the underlying dir
                 // changed). Cheap enough to redo unconditionally.
                 if view == View::Sftp {
-                    self.refresh_sftp_local();
+                    // Refresh whichever pane(s) are Local; remote panes
+                    // ignore this (refresh_sftp_local early-returns).
+                    self.refresh_sftp_local(crate::state::SftpPaneSide::Left);
+                    self.refresh_sftp_local(crate::state::SftpPaneSide::Right);
                 }
             }
             Message::QuickHostInput(v) => {
@@ -371,6 +375,8 @@ impl Oryxis {
             Message::QuickHostContinue => {
                 if !self.quick_host_input.is_empty() {
                     self.editor_form = ConnectionForm::default();
+                    self.editor_initial_command =
+                        iced::widget::text_editor::Content::new();
                     self.editor_form.hostname = self.quick_host_input.clone();
                     if let Some(gid) = self.active_group
                         && let Some(g) = self.groups.iter().find(|g| g.id == gid)

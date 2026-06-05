@@ -112,6 +112,14 @@ pub(crate) fn build_manifest(
             is_deleted: false,
         });
     }
+    for sg in v.list_session_groups()? {
+        entries.push(ManifestEntry {
+            entity_type: EntityType::SessionGroup,
+            entity_id: sg.id,
+            updated_at: sg.updated_at,
+            is_deleted: false,
+        });
+    }
 
     // Tombstones. A live entity always wins over a stale tombstone for
     // the same id (the entity was re-created from a newer peer copy
@@ -274,6 +282,12 @@ pub(crate) fn collect_records(
                     .find(|g| g.id == delta.entity_id)
                     .and_then(|g| encode!(g, "Group"))
             }
+            EntityType::SessionGroup => {
+                let session_groups = v.list_session_groups()?;
+                session_groups.iter()
+                    .find(|sg| sg.id == delta.entity_id)
+                    .and_then(|sg| encode!(sg, "SessionGroup"))
+            }
             EntityType::Snippet => {
                 let snippets = v.list_snippets()?;
                 snippets.iter()
@@ -360,6 +374,7 @@ pub(crate) fn apply_records(
                 EntityType::Identity => v.delete_identity(&record.entity_id),
                 EntityType::ProxyIdentity => v.delete_proxy_identity(&record.entity_id),
                 EntityType::Group => v.delete_group(&record.entity_id),
+                EntityType::SessionGroup => v.delete_session_group(&record.entity_id),
                 EntityType::Snippet => v.delete_snippet(&record.entity_id),
                 EntityType::KnownHost => v.delete_known_host(&record.entity_id),
                 EntityType::CloudProfile => v.delete_cloud_profile(&record.entity_id),
@@ -465,6 +480,15 @@ pub(crate) fn apply_records(
                     Ok(group) => log_save!(v.save_group(&group)),
                     Err(e) => tracing::warn!(
                         "sync: bad Group payload for {}: {e}",
+                        record.entity_id
+                    ),
+                }
+            }
+            EntityType::SessionGroup => {
+                match serde_json::from_slice::<oryxis_core::models::SessionGroup>(&payload) {
+                    Ok(sg) => log_save!(v.save_session_group(&sg)),
+                    Err(e) => tracing::warn!(
+                        "sync: bad SessionGroup payload for {}: {e}",
                         record.entity_id
                     ),
                 }

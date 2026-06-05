@@ -16,11 +16,17 @@ use uuid::Uuid;
 // SFTP view state
 // ---------------------------------------------------------------------------
 
-/// State for the SFTP browser. One session at a time for v0.3, the user
-/// picks a host, we connect (reusing the SSH connect flow), open the SFTP
-/// subsystem, and browse the remote tree side-by-side with a local one.
+/// Per-pane state for the SFTP browser. Each pane is either Local
+/// (`is_remote == false`, browsing the OS filesystem) or a mounted
+/// remote host (`is_remote == true`, browsing via SFTP). The two panes
+/// of [`SftpState`] are positional (Left / Right); their *nature* is
+/// this `is_remote` flag, so either pane can be Local or remote
+/// (with the rule that Local is only ever offered on the left).
 #[derive(Default)]
-pub(crate) struct SftpState {
+pub(crate) struct PaneState {
+    /// false = Local pane, true = Remote pane.
+    pub is_remote: bool,
+    // Remote connection (Some only when `is_remote` and connected).
     /// Currently mounted SSH session, if any. Cloned from the source host
     /// when the user picks one from the connection list.
     pub session: Option<Arc<SshSession>>,
@@ -31,34 +37,44 @@ pub(crate) struct SftpState {
     pub remote_path: String,
     pub remote_entries: Vec<SftpEntry>,
     pub remote_loading: bool,
-    pub remote_error: Option<String>,
-    pub remote_filter: String,
+    // Local (used when `!is_remote`).
     pub local_path: std::path::PathBuf,
     pub local_entries: Vec<LocalEntry>,
-    pub local_error: Option<String>,
-    pub local_filter: String,
+    /// Whether the Windows-style drive picker dropdown is open. Only
+    /// rendered on Windows hosts.
+    pub drives_open: bool,
+    // Shared per-pane UI.
+    pub error: Option<String>,
+    pub filter: String,
+    /// Sort column + direction for this pane.
+    pub sort: SftpSort,
     /// When false (default), entries whose name starts with `.` are
     /// hidden, matches `ls` / Finder / Explorer convention. Toggleable
     /// from each pane's Actions menu independently so the user can show
     /// hidden remote files without exposing all the local dotfiles.
-    pub local_show_hidden: bool,
-    pub remote_show_hidden: bool,
-    /// Actions popover anchored to one of the pane headers.
-    pub local_actions_open: bool,
-    pub remote_actions_open: bool,
-    /// Whether the Windows-style drive picker dropdown is open. Only
-    /// rendered on Windows hosts.
-    pub local_drives_open: bool,
+    pub show_hidden: bool,
     /// When `Some`, the breadcrumb is replaced by a text input the user
     /// can type a full path into. The string is the in-progress edit.
-    pub local_path_editing: Option<String>,
-    pub remote_path_editing: Option<String>,
-    /// Sort column + direction per pane.
-    pub local_sort: SftpSort,
-    pub remote_sort: SftpSort,
+    pub path_editing: Option<String>,
+    /// Actions popover anchored to this pane's header.
+    pub actions_open: bool,
+}
+
+/// State for the SFTP browser. Two panes, side-by-side: the left pane is
+/// Local by default but can be switched to any host; the right pane is
+/// always a remote host. When both panes are remote, a transfer between
+/// them uses the server-to-server relay primitive instead of
+/// upload/download.
+pub(crate) struct SftpState {
+    /// Left pane, Local by default.
+    pub left: PaneState,
+    /// Right pane, a remote host (never Local).
+    pub right: PaneState,
     /// True while the host picker overlay is visible (default at boot,
     /// hidden once a host is chosen).
     pub picker_open: bool,
+    /// Which pane the currently open picker is choosing a host for.
+    pub picker_target: SftpPaneSide,
     /// Search filter applied to the host picker.
     pub picker_search: String,
     /// Right-click row context menu, anchored to the click location
@@ -119,6 +135,96 @@ pub(crate) struct SftpState {
     /// of the current metadata + the user's in-progress edits to the
     /// permission bits so Apply can diff.
     pub properties: Option<PropertiesView>,
+    /// True when the per-file progress panel (a dropdown above the
+    /// transfer strip) is expanded. Toggled by clicking the strip.
+    pub transfer_panel_open: bool,
+    /// Labels of the items finished so far in the active transfer, for
+    /// the per-file panel. Cleared when a new transfer starts.
+    pub transfer_done_log: Vec<String>,
+}
+
+impl Default for SftpState {
+    fn default() -> Self {
+        // The derived `Default` for `PaneState` gives `is_remote == false`
+        // for both panes; the right pane is always remote, so it has to be
+        // constructed explicitly. Hand-writing this guarantees every
+        // default site (tests, resets, boot) gets a correctly-natured
+        // right pane.
+        Self {
+            left: PaneState {
+                is_remote: false,
+                ..Default::default()
+            },
+            right: PaneState {
+                is_remote: true,
+                ..Default::default()
+            },
+            picker_open: false,
+            picker_target: SftpPaneSide::Right,
+            picker_search: String::new(),
+            row_menu: None,
+            rename: None,
+            delete_confirm: Vec::new(),
+            new_entry: None,
+            drop_active: false,
+            hovered_row: None,
+            drag: None,
+            transfer: None,
+            upload_dest_override: None,
+            download_dest_override: None,
+            selected_rows: Vec::new(),
+            selection_anchor: None,
+            edit_session: None,
+            overwrite_prompt: None,
+            properties: None,
+            transfer_panel_open: false,
+            transfer_done_log: Vec::new(),
+        }
+    }
+}
+
+impl SftpState {
+    pub(crate) fn pane(&self, side: SftpPaneSide) -> &PaneState {
+        match side {
+            SftpPaneSide::Left => &self.left,
+            SftpPaneSide::Right => &self.right,
+        }
+    }
+
+    pub(crate) fn pane_mut(&mut self, side: SftpPaneSide) -> &mut PaneState {
+        match side {
+            SftpPaneSide::Left => &mut self.left,
+            SftpPaneSide::Right => &mut self.right,
+        }
+    }
+
+    /// The side of the remote pane used as an upload destination /
+    /// download source. With the current model the right pane is always
+    /// remote, and the left pane can also be remote; the upload/download
+    /// paths only run with exactly one remote and one local pane, so we
+    /// return the first remote side, preferring the right (the canonical
+    /// remote pane). Returns `None` if neither pane is remote.
+    pub(crate) fn remote_side(&self) -> Option<SftpPaneSide> {
+        if self.right.is_remote {
+            Some(SftpPaneSide::Right)
+        } else if self.left.is_remote {
+            Some(SftpPaneSide::Left)
+        } else {
+            None
+        }
+    }
+
+    /// The side of the local pane (download destination / upload source).
+    /// Returns `None` if neither pane is local.
+    pub(crate) fn local_side(&self) -> Option<SftpPaneSide> {
+        if !self.left.is_remote {
+            Some(SftpPaneSide::Left)
+        } else if !self.right.is_remote {
+            Some(SftpPaneSide::Right)
+        } else {
+            None
+        }
+    }
 }
 
 /// Per-bit permission state shown by the Properties dialog. Maps 1-1
@@ -246,6 +352,10 @@ pub(crate) enum TransferKind {
     /// Local-side `cp -r` equivalent, `std::fs` doesn't expose recursive
     /// copy so we walk the tree and copy each entry ourselves.
     DuplicateLocal,
+    /// Server-to-server transfer: both `src` and `dst` are remote POSIX
+    /// paths, on the source pane's host and the dest pane's host
+    /// respectively. The runner streams via `SftpClient::relay_to`.
+    Relay,
 }
 
 #[derive(Debug, Clone)]
@@ -290,7 +400,18 @@ pub(crate) struct TransferState {
     pub pending_conflict_slot: Option<u8>,
     /// One SFTP client per parallel slot. Empty for `DuplicateLocal`
     /// (no SFTP needed). For `Upload`/`Download` size is `concurrency`.
+    /// For `Relay` these are the *source* host's clients.
     pub clients: Vec<SftpClient>,
+    /// Destination-host SFTP client, populated only for `Relay`. The
+    /// relay runs at concurrency 1 (a single dest client would otherwise
+    /// contend on its inner lock / raw sessions across slots), so one
+    /// dest client is enough.
+    pub dest_client: Option<SftpClient>,
+    /// Destination pane for a `Relay`. Needed so the finalize / cancel /
+    /// error arms refresh the *destination* pane: a right-to-left relay
+    /// has its destination on the left, which `remote_side()` (which
+    /// prefers Right) would not pick. `None` for non-relay transfers.
+    pub dest_side: Option<SftpPaneSide>,
     /// Per-slot "is in flight" flag. The Next handler picks the first
     /// `false` slot to dispatch to, keeping each slot mapped 1-1 with
     /// its `clients[i]` so workers never fight for the same channel.
@@ -300,10 +421,14 @@ pub(crate) struct TransferState {
     pub paused: bool,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Which pane (by position) a side-addressed SFTP message / state item
+/// refers to. This is *position* only; whether a pane is Local or remote
+/// is its `PaneState::is_remote` flag, not its side.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub(crate) enum SftpPaneSide {
-    Local,
-    Remote,
+    Left,
+    #[default]
+    Right,
 }
 
 /// Internal drag state, a row being dragged from one pane towards the
@@ -542,6 +667,22 @@ pub(crate) struct ErrorDialogLink {
 // Terminal tab
 // ---------------------------------------------------------------------------
 
+/// What a pane reconnects to, so a saved session group can reference it.
+/// This is an explicit discriminator rather than inferring "local" from a
+/// missing connection id: cloud/SSM/ECS panes also lack a saved
+/// `Connection`, so `None`-means-local would mis-save them. `Ephemeral`
+/// covers those (and any pane we can't reference by id); they are pruned
+/// when a tab is saved as a session group.
+#[derive(Debug, Clone)]
+pub(crate) enum PaneOrigin {
+    /// Live reference to a saved Connection by id.
+    Host(Uuid),
+    /// A local terminal; the spec is captured so the same shell is restored.
+    Local(LocalShellSpec),
+    /// Cloud/SSM/ECS or otherwise non-referenceable pane.
+    Ephemeral,
+}
+
 /// One terminal pane, owns its alacritty grid and (optionally) the SSH
 /// session feeding it. A `TerminalTab` holds one or more panes in a
 /// `pane_grid::State`, which owns their split layout.
@@ -559,6 +700,10 @@ pub(crate) struct Pane {
     pub ssh_session: Option<Arc<SshSession>>,
     /// Session log ID for terminal recording.
     pub session_log_id: Option<Uuid>,
+    /// What this pane reconnects to when restored from a saved session group.
+    /// Defaults to `Ephemeral`; the creating site overrides it to `Host` or
+    /// `Local` when the pane is referenceable.
+    pub origin: PaneOrigin,
 }
 
 impl Pane {
@@ -569,6 +714,7 @@ impl Pane {
             terminal,
             ssh_session: None,
             session_log_id: None,
+            origin: PaneOrigin::Ephemeral,
         }
     }
 }
@@ -608,6 +754,10 @@ pub(crate) struct TerminalTab {
     /// tabs are connection-backed and duplicate via label lookup
     /// instead, so they leave this `None`.
     pub relaunch: Option<Box<crate::messages::Message>>,
+    /// Set when this tab was opened from a saved session group (or just
+    /// saved as one). Drives the tab context menu label ("Save group" vs
+    /// "Edit group") and lets the editor update the existing group in place.
+    pub session_group_id: Option<Uuid>,
 }
 
 impl TerminalTab {
@@ -625,6 +775,7 @@ impl TerminalTab {
             chat_always_run_commands: Vec::new(),
             ssm_keepalive: false,
             relaunch: None,
+            session_group_id: None,
         }
     }
 
@@ -745,6 +896,43 @@ mod terminal_tab_tests {
     }
 }
 
+/// One editable row in the session-group editor: a pane's display label
+/// (read-only) plus its per-pane initial script. Rows are ordered the same
+/// as the layout's leaf walk, so scripts merge back by index on save.
+#[derive(Debug, Clone, Default)]
+pub(crate) struct PaneScriptRow {
+    /// Read-only label for the pane ("user@host", "Local Shell", ...).
+    pub label: String,
+    /// Per-pane initial script (override-with-fallback).
+    pub script: String,
+}
+
+/// Session-group editor form state. The structural `layout` is snapshotted
+/// from the tab when the editor opens; `pane_rows` exposes each leaf's script
+/// for editing and merges back into the layout (by leaf order) on save.
+#[derive(Debug, Clone, Default)]
+pub(crate) struct SessionGroupForm {
+    pub label: String,
+    /// Folder (Group) label, same convention as `ConnectionForm.group_name`.
+    pub group_name: String,
+    pub color: Option<String>,
+    pub icon_style: Option<String>,
+    /// Some when editing an existing session group (update in place).
+    pub editing_id: Option<Uuid>,
+    /// Index of the tab this group was snapshotted from, so saving can stamp
+    /// its `session_group_id`.
+    pub source_tab: Option<usize>,
+    /// Structural snapshot of the split tree. Leaf scripts are placeholders
+    /// here; the live values live in `pane_rows` and merge back on save.
+    pub layout: Option<oryxis_core::models::PaneLayout>,
+    pub pane_rows: Vec<PaneScriptRow>,
+    /// Which pane's script is currently shown in the editor (the chevrons
+    /// step this). The live multi-line buffer for it lives in
+    /// `Oryxis::session_group_script_editor` (text_editor::Content isn't
+    /// Clone, so it can't sit in this form struct).
+    pub current_pane: usize,
+}
+
 /// Connection editor form state.
 #[derive(Debug, Clone)]
 pub(crate) struct ConnectionForm {
@@ -807,10 +995,6 @@ pub(crate) struct ConnectionForm {
     /// preserved when the user doesn't touch this picker.
     pub cloud_transport:
         Option<oryxis_core::models::cloud::TransportKind>,
-    /// Per-host initial command sent right after the shell opens.
-    /// Empty == no initial command. Mirrors `Connection.initial_command`
-    /// while the editor is open.
-    pub initial_command: String,
     /// Per-host icon shape override. `None` falls back to the global
     /// `default_host_icon` setting. Mirrors `Connection.icon_style`.
     pub icon_style: Option<String>,
@@ -944,7 +1128,6 @@ impl Default for ConnectionForm {
             terminal_theme: None,
             keepalive_interval: String::new(),
             cloud_transport: None,
-            initial_command: String::new(),
             icon_style: None,
             encoding: None,
         }
@@ -1333,15 +1516,6 @@ impl ThemeEditorForm {
         }
     }
 
-    /// Blank editor seeded from a sensible dark default.
-    pub fn new_blank() -> Self {
-        let t = oryxis_core::models::custom_terminal_theme::CustomTerminalTheme::new_default(
-            String::new(),
-        );
-        let mut form = Self::from_theme(&t);
-        form.editing_id = None;
-        form
-    }
 
     /// Write the color string for a slot.
     pub fn set_slot(&mut self, slot: ThemeColorSlot, value: String) {
@@ -1351,6 +1525,35 @@ impl ThemeEditorForm {
             ThemeColorSlot::Cursor => self.cursor = value,
             ThemeColorSlot::Ansi(i) => self.ansi[i as usize] = value,
         }
+    }
+}
+
+/// In-progress edit of a custom UI (chrome) theme. `colors` holds the 21
+/// `"#rrggbb"` strings indexed by `theme::UI_COLOR_FIELDS`.
+#[derive(Debug, Clone)]
+pub(crate) struct UiThemeEditorForm {
+    pub editing_id: Option<uuid::Uuid>,
+    pub name: String,
+    pub colors: [String; 21],
+    pub error: Option<String>,
+}
+
+impl UiThemeEditorForm {
+    pub fn from_theme(
+        t: &oryxis_core::models::custom_ui_theme::CustomUiTheme,
+    ) -> Self {
+        Self {
+            editing_id: Some(t.id),
+            name: t.name.clone(),
+            colors: t.colors.clone(),
+            error: None,
+        }
+    }
+
+    /// New theme seeded from a base palette (the 21 hex of an existing
+    /// theme), so the user starts from something that already works.
+    pub fn new_from_colors(colors: [String; 21]) -> Self {
+        Self { editing_id: None, name: String::new(), colors, error: None }
     }
 }
 

@@ -16,14 +16,14 @@ const ROW_HEIGHT: f32 = 28.0;
 impl Oryxis {
     pub(crate) fn view_sftp(&self) -> Element<'_, Message> {
         let panes = row![
-            self.view_sftp_local_pane(),
+            self.view_sftp_pane(SftpPaneSide::Left),
             container(Space::new().width(1))
                 .height(Length::Fill)
                 .style(|_| container::Style {
                     background: Some(Background::Color(OryxisColors::t().border)),
                     ..Default::default()
                 }),
-            self.view_sftp_remote_pane(),
+            self.view_sftp_pane(SftpPaneSide::Right),
         ]
         .width(Length::Fill)
         .height(Length::Fill);
@@ -32,10 +32,17 @@ impl Oryxis {
         // folder transfer is running we surface a thin status bar with
         // counts + a cancel button, otherwise the panes own all the space.
         let body: Element<'_, Message> = if let Some(transfer) = &self.sftp.transfer {
-            column![panes, transfer_progress_strip(transfer)]
-                .width(Length::Fill)
-                .height(Length::Fill)
-                .into()
+            // Clicking the strip toggles a per-file panel that rises above
+            // it. (Clicking the inner Cancel button also cancels, which
+            // clears the transfer and hides both, so the extra toggle is
+            // harmless.)
+            let strip = MouseArea::new(transfer_progress_strip(transfer))
+                .on_press(Message::SftpToggleTransferPanel);
+            let mut col = column![panes].width(Length::Fill).height(Length::Fill);
+            if self.sftp.transfer_panel_open {
+                col = col.push(transfer_file_panel(transfer, &self.sftp.transfer_done_log));
+            }
+            col.push(strip).into()
         } else {
             panes.into()
         };
@@ -70,45 +77,119 @@ impl Oryxis {
         stack.into()
     }
 
-    fn view_sftp_local_pane(&self) -> Element<'_, Message> {
-        // Match the right-pane chip dimensions exactly so the two
-        // toolbars sit on the same baseline, earlier the host chip
-        // (icon + chevron + button padding) was a few pixels taller
-        // than the bare "Local" label, throwing the breadcrumbs and
-        // column headers out of alignment between panes.
-        let local_badge = container(
-            iced_fonts::lucide::monitor()
-                .size(12)
-                .color(Color::WHITE),
-        )
-        .center_x(Length::Fixed(20.0))
-        .center_y(Length::Fixed(20.0))
-        .style(|_| container::Style {
-            background: Some(Background::Color(OryxisColors::t().accent)),
-            border: Border { radius: Radius::from(4.0), ..Default::default() },
-            ..Default::default()
-        });
-        let header_title = container(
-            row![
-                local_badge,
-                Space::new().width(8),
-                text(t("sftp_local")).size(14).color(OryxisColors::t().text_primary),
-            ]
-            .align_y(iced::Alignment::Center),
-        )
-        .padding(Padding { top: 4.0, right: 8.0, bottom: 4.0, left: 4.0 });
+    /// Render one pane (Left or Right). Branches on the pane's
+    /// `is_remote` nature to draw either the Local filesystem browser or
+    /// the remote SFTP browser. The header always renders the
+    /// host-picker chip; for a Local pane it reads "Local", for a remote
+    /// pane it reads the mounted host label.
+    fn view_sftp_pane(&self, side: SftpPaneSide) -> Element<'_, Message> {
+        let pane = self.sftp.pane(side);
+        let is_remote = pane.is_remote;
+        // Stable per-pane scroll id so the file list keeps its scroll
+        // offset across re-renders (e.g. while dragging a row, or when a
+        // reload swaps the entries) instead of snapping back to the top.
+        let list_scroll_id = match side {
+            SftpPaneSide::Left => "sftp-list-left",
+            SftpPaneSide::Right => "sftp-list-right",
+        };
 
-        let actions_btn: Element<'_, Message> = pane_actions_btn(Message::SftpToggleLocalActions);
+        // Header chip: a button that opens the host picker targeting this
+        // pane. Local panes show a monitor badge + "Local"; remote panes
+        // show the host's OS badge + label + a chevron.
+        let chip_icon: Element<'_, Message> = if !is_remote {
+            container(
+                iced_fonts::lucide::monitor().size(12).color(Color::WHITE),
+            )
+            .center_x(Length::Fixed(20.0))
+            .center_y(Length::Fixed(20.0))
+            .style(|_| container::Style {
+                background: Some(Background::Color(OryxisColors::t().accent)),
+                border: Border { radius: Radius::from(4.0), ..Default::default() },
+                ..Default::default()
+            })
+            .into()
+        } else {
+            let mounted_conn = pane.host_label.as_ref().and_then(|label| {
+                self.connections.iter().find(|c| &c.label == label)
+            });
+            if let Some(conn) = mounted_conn {
+                let (glyph, badge_color) = crate::os_icon::resolve_icon(
+                    conn.detected_os.as_deref(),
+                    OryxisColors::t().accent,
+                );
+                container(glyph.view(14.0, Color::WHITE))
+                    .center_x(Length::Fixed(20.0))
+                    .center_y(Length::Fixed(20.0))
+                    .style(move |_| container::Style {
+                        background: Some(Background::Color(badge_color)),
+                        border: Border { radius: Radius::from(4.0), ..Default::default() },
+                        ..Default::default()
+                    })
+                    .into()
+            } else {
+                container(
+                    iced_fonts::lucide::server()
+                        .size(12)
+                        .color(OryxisColors::t().text_muted),
+                )
+                .center_x(Length::Fixed(20.0))
+                .center_y(Length::Fixed(20.0))
+                .into()
+            }
+        };
+        let chip_label = if !is_remote {
+            t("sftp_local").to_string()
+        } else {
+            pane.host_label
+                .clone()
+                .unwrap_or_else(|| t("pick_a_host").to_string())
+        };
+        let mut chip_row = row![
+            chip_icon,
+            Space::new().width(8),
+            text(chip_label).size(14).color(OryxisColors::t().text_primary),
+        ]
+        .align_y(iced::Alignment::Center);
+        chip_row = chip_row.push(Space::new().width(8));
+        chip_row = chip_row.push(
+            iced_fonts::lucide::chevron_down()
+                .size(10)
+                .color(OryxisColors::t().text_muted),
+        );
+        let header_title: Element<'_, Message> = button(chip_row)
+            .padding(Padding { top: 4.0, right: 8.0, bottom: 4.0, left: 4.0 })
+            .on_press(Message::SftpOpenPicker(side))
+            .style(|_, status| {
+                let bg = match status {
+                    BtnStatus::Hovered => OryxisColors::t().bg_hover,
+                    _ => Color::TRANSPARENT,
+                };
+                button::Style {
+                    background: Some(Background::Color(bg)),
+                    border: Border { radius: Radius::from(6.0), ..Default::default() },
+                    ..Default::default()
+                }
+            })
+            .into();
+
+        let actions_btn: Element<'_, Message> = pane_actions_btn(Message::SftpToggleActions(side));
+
+        let filter_placeholder = if is_remote { "Filter…" } else { t("filter_placeholder") };
+        let mut filter_input = text_input(filter_placeholder, &pane.filter)
+            .on_input(move |s| Message::SftpFilter(side, s))
+            .padding(Padding { top: 4.0, right: 8.0, bottom: 4.0, left: 8.0 })
+            .size(11)
+            .width(140)
+            .style(crate::widgets::rounded_input_style)
+            .align_x(dir_align_x());
+        if is_remote {
+            filter_input = filter_input.id(iced::widget::Id::new("search-sftp-remote"));
+        }
 
         let toolbar = row![
             header_title,
             Space::new().width(Length::Fill),
-            text_input(t("filter_placeholder"), &self.sftp.local_filter)
-                .on_input(Message::SftpLocalFilter)
-                .padding(Padding { top: 4.0, right: 8.0, bottom: 4.0, left: 8.0 })
-                .size(11)
-                .width(140)
-                .style(crate::widgets::rounded_input_style).align_x(dir_align_x()),
+            filter_input,
             Space::new().width(8),
             actions_btn,
         ]
@@ -117,261 +198,110 @@ impl Oryxis {
 
         // The path bar swaps between a clickable breadcrumb and a text
         // input, same area, two modes, like Finder / Files / Explorer.
-        let path_bar: Element<'_, Message> = if let Some(input) = &self.sftp.local_path_editing {
-            text_input(
-                &self.sftp.local_path.display().to_string(),
-                input,
-            )
-            .on_input(Message::SftpEditLocalPath)
-            .on_submit(Message::SftpCommitLocalPath)
-            .padding(Padding { top: 4.0, right: 8.0, bottom: 4.0, left: 8.0 })
-            .size(11)
-            .style(crate::widgets::rounded_input_style).align_x(dir_align_x())
-            .into()
+        let path_bar: Element<'_, Message> = if let Some(input) = &pane.path_editing {
+            let placeholder = if is_remote {
+                pane.remote_path.clone()
+            } else {
+                pane.local_path.display().to_string()
+            };
+            text_input(&placeholder, input)
+                .on_input(move |s| Message::SftpEditPath(side, s))
+                .on_submit(Message::SftpCommitPath(side))
+                .padding(Padding { top: 4.0, right: 8.0, bottom: 4.0, left: 8.0 })
+                .size(11)
+                .style(crate::widgets::rounded_input_style)
+                .align_x(dir_align_x())
+                .into()
         } else {
-            // Wrap the breadcrumb in a `Fill` container so the click
-            // area covers the whole bar instead of shrinking to fit the
-            // visible crumbs. Inner crumb buttons still claim their own
-            // clicks for direct navigation; the gutter falls through to
-            // the MouseArea and opens the address-bar text input.
-            MouseArea::new(
-                container(local_breadcrumb(&self.sftp.local_path))
-                    .width(Length::Fill),
-            )
-            .on_press(Message::SftpStartEditLocalPath)
-            .into()
+            let crumbs: Element<'_, Message> = if is_remote {
+                remote_breadcrumb(side, &pane.remote_path)
+            } else {
+                local_breadcrumb(side, &pane.local_path)
+            };
+            MouseArea::new(container(crumbs).width(Length::Fill))
+                .on_press(Message::SftpStartEditPath(side))
+                .into()
         };
 
-        let needle = self.sftp.local_filter.to_lowercase();
+        let needle = pane.filter.to_lowercase();
         let header_band = pane_header_band(
             column![
                 toolbar,
                 container(path_bar)
                     .padding(Padding { top: 0.0, right: 14.0, bottom: 8.0, left: 14.0 })
                     .width(Length::Fill),
-                column_headers(true, self.sftp.local_sort),
+                column_headers(side, pane.sort),
             ]
             .width(Length::Fill),
         );
 
-        let body: Element<'_, Message> = if let Some(err) = &self.sftp.local_error {
-            container(text(err.clone()).size(12).color(OryxisColors::t().error))
-                .padding(12)
-                .into()
-        } else {
-            let mut col = column![].spacing(0);
-            if self.sftp.local_path.parent().is_some() {
-                col = col.push(parent_row(true));
-            }
-            for entry in &self.sftp.local_entries {
-                if !self.sftp.local_show_hidden && entry.name.starts_with('.') {
-                    continue;
+        let body: Element<'_, Message> = if !is_remote {
+            if let Some(err) = &pane.error {
+                container(text(err.clone()).size(12).color(OryxisColors::t().error))
+                    .padding(12)
+                    .into()
+            } else {
+                let mut col = column![].spacing(0);
+                if pane.local_path.parent().is_some() {
+                    col = col.push(parent_row(side));
                 }
-                if !needle.is_empty() && !entry.name.to_lowercase().contains(&needle) {
-                    continue;
-                }
-                let path = self.sftp.local_path.join(&entry.name);
-                let path_str = path.to_string_lossy().into_owned();
-                let rename_input = self.sftp.rename.as_ref().and_then(|r| {
-                    if r.side == SftpPaneSide::Local && r.original_path == path_str {
-                        Some(r.input.as_str())
-                    } else {
-                        None
+                for entry in &pane.local_entries {
+                    if !pane.show_hidden && entry.name.starts_with('.') {
+                        continue;
                     }
-                });
-                let is_selected = self
-                    .sftp
-                    .selected_rows
-                    .iter()
-                    .any(|(s, p)| *s == SftpPaneSide::Local && p == &path_str);
-                // Tint a local folder row that's the drop target while
-                // a remote→local internal drag is in flight.
-                let internal_cross_pane = self
-                    .sftp
-                    .drag
-                    .as_ref()
-                    .is_some_and(|d| d.active && d.origin_side != SftpPaneSide::Local);
-                let is_drop_target = internal_cross_pane
-                    && entry.is_dir
-                    && self
+                    if !needle.is_empty() && !entry.name.to_lowercase().contains(&needle) {
+                        continue;
+                    }
+                    let path = pane.local_path.join(&entry.name);
+                    let path_str = path.to_string_lossy().into_owned();
+                    let rename_input = self.sftp.rename.as_ref().and_then(|r| {
+                        if r.side == side && r.original_path == path_str {
+                            Some(r.input.as_str())
+                        } else {
+                            None
+                        }
+                    });
+                    let is_selected = self
                         .sftp
-                        .hovered_row
+                        .selected_rows
+                        .iter()
+                        .any(|(s, p)| *s == side && p == &path_str);
+                    // Tint a local folder row that's the drop target while
+                    // a cross-pane internal drag is in flight.
+                    let internal_cross_pane = self
+                        .sftp
+                        .drag
                         .as_ref()
-                        .is_some_and(|(s, p, _)| {
-                            *s == SftpPaneSide::Local && p == &path_str
-                        });
-                col = col.push(file_row_local(
-                    entry.name.clone(),
-                    entry.is_dir,
-                    if entry.is_dir { String::new() } else { format_size(entry.size) },
-                    entry.modified,
-                    path,
-                    rename_input,
-                    is_selected,
-                    is_drop_target,
-                ));
-            }
-            scrollable(col).width(Length::Fill).height(Length::Fill).into()
-        };
-
-        let mut stack = iced::widget::Stack::new()
-            .push(
-                column![header_band, body]
-                    .width(Length::Fill)
-                    .height(Length::Fill),
-            )
-            .width(Length::Fill)
-            .height(Length::Fill);
-
-        if self.sftp.local_actions_open {
-            stack = stack.push(actions_menu_overlay(
-                true,
-                self.sftp.local_show_hidden,
-            ));
-        }
-        if self.sftp.local_drives_open {
-            stack = stack.push(drives_menu_overlay());
-        }
-        // Local-pane drop highlight when the user is dragging *from* the
-        // remote pane. Mirrors the right-pane outline so the user has
-        // symmetric visual feedback for both directions.
-        let internal_drag_in =
-            self.sftp.drag.as_ref().is_some_and(|d| {
-                d.active && d.origin_side != SftpPaneSide::Local
-            });
-        if internal_drag_in {
-            let outline = container(Space::new())
+                        .is_some_and(|d| d.active && d.origin_side != side);
+                    let is_drop_target = internal_cross_pane
+                        && entry.is_dir
+                        && self
+                            .sftp
+                            .hovered_row
+                            .as_ref()
+                            .is_some_and(|(s, p, _)| *s == side && p == &path_str);
+                    col = col.push(file_row_local(
+                        side,
+                        entry.name.clone(),
+                        entry.is_dir,
+                        if entry.is_dir { String::new() } else { format_size(entry.size) },
+                        entry.modified,
+                        path,
+                        rename_input,
+                        is_selected,
+                        is_drop_target,
+                    ));
+                }
+                scrollable(col)
+                .id(iced::widget::Id::new(list_scroll_id))
                 .width(Length::Fill)
                 .height(Length::Fill)
-                .style(|_| container::Style {
-                    border: Border {
-                        radius: Radius::from(0.0),
-                        color: OryxisColors::t().accent,
-                        width: 2.0,
-                    },
-                    ..Default::default()
-                });
-            stack = stack.push(outline);
-        }
-        stack.into()
-    }
-
-    fn view_sftp_remote_pane(&self) -> Element<'_, Message> {
-        // Right-pane title, same OS-coloured badge the host cards use,
-        // followed by the host label and a chevron. Click anywhere on
-        // the chip opens the picker, same affordance as Termius.
-        let chip_label = self
-            .sftp
-            .host_label
-            .clone()
-            .unwrap_or_else(|| t("pick_a_host").to_string());
-        let mounted_conn = self.sftp.host_label.as_ref().and_then(|label| {
-            self.connections.iter().find(|c| &c.label == label)
-        });
-        let chip_icon: Element<'_, Message> = if let Some(conn) = mounted_conn {
-            let (glyph, badge_color) = crate::os_icon::resolve_icon(
-                conn.detected_os.as_deref(),
-                OryxisColors::t().accent,
-            );
-            container(glyph.view(14.0, Color::WHITE))
-                .center_x(Length::Fixed(20.0))
-                .center_y(Length::Fixed(20.0))
-                .style(move |_| container::Style {
-                    background: Some(Background::Color(badge_color)),
-                    border: Border { radius: Radius::from(4.0), ..Default::default() },
-                    ..Default::default()
-                })
                 .into()
-        } else {
-            // No mount yet, show a faint server placeholder.
-            container(
-                iced_fonts::lucide::server()
-                    .size(12)
-                    .color(OryxisColors::t().text_muted),
-            )
-            .center_x(Length::Fixed(20.0))
-            .center_y(Length::Fixed(20.0))
-            .into()
-        };
-        let header_title: Element<'_, Message> = button(
-            row![
-                chip_icon,
-                Space::new().width(8),
-                text(chip_label).size(14).color(OryxisColors::t().text_primary),
-                Space::new().width(8),
-                iced_fonts::lucide::chevron_down().size(10).color(OryxisColors::t().text_muted),
-            ]
-            .align_y(iced::Alignment::Center),
-        )
-        .padding(Padding { top: 4.0, right: 8.0, bottom: 4.0, left: 4.0 })
-        .on_press(Message::SftpOpenPicker)
-        .style(|_, status| {
-            let bg = match status {
-                BtnStatus::Hovered => OryxisColors::t().bg_hover,
-                _ => Color::TRANSPARENT,
-            };
-            button::Style {
-                background: Some(Background::Color(bg)),
-                border: Border { radius: Radius::from(6.0), ..Default::default() },
-                ..Default::default()
             }
-        })
-        .into();
-
-        let actions_btn: Element<'_, Message> = pane_actions_btn(Message::SftpToggleRemoteActions);
-
-        let toolbar = row![
-            header_title,
-            Space::new().width(Length::Fill),
-            text_input("Filter…", &self.sftp.remote_filter)
-                .id(iced::widget::Id::new("search-sftp-remote"))
-                .on_input(Message::SftpRemoteFilter)
-                .padding(Padding { top: 4.0, right: 8.0, bottom: 4.0, left: 8.0 })
-                .size(11)
-                .width(140)
-                .style(crate::widgets::rounded_input_style).align_x(dir_align_x()),
-            Space::new().width(8),
-            actions_btn,
-        ]
-        .align_y(iced::Alignment::Center)
-        .padding(Padding { top: 12.0, right: 14.0, bottom: 8.0, left: 14.0 });
-
-        let path_bar: Element<'_, Message> = if let Some(input) = &self.sftp.remote_path_editing {
-            text_input(&self.sftp.remote_path, input)
-                .on_input(Message::SftpEditRemotePath)
-                .on_submit(Message::SftpCommitRemotePath)
-                .padding(Padding { top: 4.0, right: 8.0, bottom: 4.0, left: 8.0 })
-                .size(11)
-                .style(crate::widgets::rounded_input_style).align_x(dir_align_x())
-                .into()
-        } else {
-            MouseArea::new(
-                container(remote_breadcrumb(&self.sftp.remote_path))
-                    .width(Length::Fill),
-            )
-            .on_press(Message::SftpStartEditRemotePath)
-            .into()
-        };
-        let needle = self.sftp.remote_filter.to_lowercase();
-
-        let header_band = pane_header_band(
-            column![
-                toolbar,
-                container(path_bar)
-                    .padding(Padding { top: 0.0, right: 14.0, bottom: 8.0, left: 14.0 })
-                    .width(Length::Fill),
-                column_headers(false, self.sftp.remote_sort),
-            ]
-            .width(Length::Fill),
-        );
-
-        let body: Element<'_, Message> = if let Some(err) = &self.sftp.remote_error {
+        } else if let Some(err) = &pane.error {
             // Retry routes through SftpRetryRemote which knows whether
             // the session is still up (re-list) or whether the connect
-            // itself failed (re-run the full pick flow). The simpler
-            // SftpNavigateRemote path silently no-ops when client is
-            // None, which is exactly what happens after a connect
-            // failure, that was the original "retry does nothing" bug.
+            // itself failed (re-run the full pick flow).
             container(
                 column![
                     row![
@@ -389,13 +319,13 @@ impl Oryxis {
                     row![
                         crate::widgets::styled_button(
                             t("retry"),
-                            Message::SftpRetryRemote,
+                            Message::SftpRetryRemote(side),
                             OryxisColors::t().accent,
                         ),
                         Space::new().width(8),
                         crate::widgets::styled_button(
                             t("pick_another_host"),
-                            Message::SftpOpenPicker,
+                            Message::SftpOpenPicker(side),
                             OryxisColors::t().text_muted,
                         ),
                     ],
@@ -403,21 +333,25 @@ impl Oryxis {
                 .padding(16),
             )
             .into()
-        } else if self.sftp.remote_loading {
+        } else if pane.remote_loading && pane.remote_entries.is_empty() {
+            // Only take over the pane with a loading screen on the first
+            // load (nothing to show yet). On navigation/refresh we keep the
+            // current listing visible until the new one arrives, like
+            // FileZilla, so there's no jarring flash to "Loading...".
             container(
                 column![
                     text(t("loading")).size(12).color(OryxisColors::t().text_muted),
                     Space::new().height(10),
                     crate::widgets::styled_button(
                         t("cancel"),
-                        Message::SftpCancelRemoteLoad,
+                        Message::SftpCancelRemoteLoad(side),
                         OryxisColors::t().text_muted,
                     ),
                 ]
                 .padding(12),
             )
             .into()
-        } else if self.sftp.host_label.is_none() {
+        } else if pane.host_label.is_none() {
             container(
                 text(t("pick_host_to_start"))
                     .size(12)
@@ -427,39 +361,34 @@ impl Oryxis {
             .into()
         } else {
             let mut col = column![].spacing(0);
-            if self.sftp.remote_path != "/" && !self.sftp.remote_path.is_empty() {
-                col = col.push(parent_row(false));
+            if pane.remote_path != "/" && !pane.remote_path.is_empty() {
+                col = col.push(parent_row(side));
             }
-            for entry in &self.sftp.remote_entries {
-                if !self.sftp.remote_show_hidden && entry.name.starts_with('.') {
+            for entry in &pane.remote_entries {
+                if !pane.show_hidden && entry.name.starts_with('.') {
                     continue;
                 }
                 if !needle.is_empty() && !entry.name.to_lowercase().contains(&needle) {
                     continue;
                 }
-                let parent = self.sftp.remote_path.trim_end_matches('/');
+                let parent = pane.remote_path.trim_end_matches('/');
                 let full = if parent.is_empty() {
                     format!("/{}", entry.name)
                 } else {
                     format!("{}/{}", parent, entry.name)
                 };
                 let rename_input = self.sftp.rename.as_ref().and_then(|r| {
-                    if r.side == SftpPaneSide::Remote && r.original_path == full {
+                    if r.side == side && r.original_path == full {
                         Some(r.input.as_str())
                     } else {
                         None
                     }
                 });
-                // Drop target: applies to both OS drag (drop_active) and
-                // internal cross-pane drag, but only when the hovered
-                // row IS this entry, lives on the remote pane, and is a
-                // folder. Internal drag from the remote pane onto its
-                // own pane is a no-op so we don't highlight in that case.
                 let internal_cross_pane = self
                     .sftp
                     .drag
                     .as_ref()
-                    .is_some_and(|d| d.active && d.origin_side != SftpPaneSide::Remote);
+                    .is_some_and(|d| d.active && d.origin_side != side);
                 let drop_phase = self.sftp.drop_active || internal_cross_pane;
                 let is_drop_target = drop_phase
                     && entry.is_dir
@@ -467,15 +396,14 @@ impl Oryxis {
                         .sftp
                         .hovered_row
                         .as_ref()
-                        .is_some_and(|(s, p, _)| {
-                            *s == SftpPaneSide::Remote && p == &full
-                        });
+                        .is_some_and(|(s, p, _)| *s == side && p == &full);
                 let is_selected = self
                     .sftp
                     .selected_rows
                     .iter()
-                    .any(|(s, p)| *s == SftpPaneSide::Remote && p == &full);
+                    .any(|(s, p)| *s == side && p == &full);
                 col = col.push(file_row_remote(
+                    side,
                     entry.name.clone(),
                     entry.is_dir,
                     entry.is_symlink,
@@ -487,7 +415,11 @@ impl Oryxis {
                     is_selected,
                 ));
             }
-            scrollable(col).width(Length::Fill).height(Length::Fill).into()
+            scrollable(col)
+                .id(iced::widget::Id::new(list_scroll_id))
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .into()
         };
 
         let mut stack = iced::widget::Stack::new()
@@ -499,23 +431,27 @@ impl Oryxis {
             .width(Length::Fill)
             .height(Length::Fill);
 
-        if self.sftp.remote_actions_open {
+        if pane.actions_open {
             stack = stack.push(actions_menu_overlay(
-                false,
-                self.sftp.remote_show_hidden,
+                side,
+                is_remote,
+                &pane.remote_path,
+                pane.show_hidden,
             ));
         }
+        if !is_remote && pane.drives_open {
+            stack = stack.push(drives_menu_overlay(side));
+        }
 
-        // While a drag is in progress, surround the pane with an accent
-        // outline so the user sees that the remote pane is the drop
-        // target. We layer a transparent container with a colored border
-        // on top instead of restyling the pane container itself, so the
-        // border shows above the file rows.
-        let internal_drag_in =
-            self.sftp.drag.as_ref().is_some_and(|d| {
-                d.active && d.origin_side != SftpPaneSide::Remote
-            });
-        if self.sftp.drop_active || internal_drag_in {
+        // Drop highlight when a cross-pane internal drag (or, for a
+        // remote pane, an OS file drag) targets this pane.
+        let internal_drag_in = self
+            .sftp
+            .drag
+            .as_ref()
+            .is_some_and(|d| d.active && d.origin_side != side);
+        let show_outline = internal_drag_in || (is_remote && self.sftp.drop_active);
+        if show_outline {
             let outline = container(Space::new())
                 .width(Length::Fill)
                 .height(Length::Fill)
@@ -550,6 +486,53 @@ impl Oryxis {
             .collect();
 
         let mut list = column![].spacing(4);
+        // The left pane can be Local; the right pane can't. Offer a
+        // "Local" entry at the top of the list only when picking for the
+        // left pane.
+        if self.sftp.picker_target == SftpPaneSide::Left {
+            let local_match = needle.is_empty() || t("sftp_local").to_lowercase().contains(&needle);
+            if local_match {
+                let badge = container(
+                    iced_fonts::lucide::monitor().size(14).color(Color::WHITE),
+                )
+                .center_x(Length::Fixed(24.0))
+                .center_y(Length::Fixed(24.0))
+                .style(|_| container::Style {
+                    background: Some(Background::Color(OryxisColors::t().accent)),
+                    border: Border { radius: Radius::from(6.0), ..Default::default() },
+                    ..Default::default()
+                });
+                let local_btn = button(
+                    crate::widgets::dir_row(vec![
+                        badge.into(),
+                        Space::new().width(10).into(),
+                        column![
+                            text(t("sftp_local")).size(13).color(OryxisColors::t().text_primary),
+                            text(t("sftp_local_machine")).size(10).color(OryxisColors::t().text_muted),
+                        ]
+                        .width(Length::Fill)
+                        .align_x(dir_align_x())
+                        .into(),
+                    ])
+                    .align_y(iced::Alignment::Center),
+                )
+                .on_press(Message::SftpPickLocal)
+                .padding(Padding { top: 8.0, right: 12.0, bottom: 8.0, left: 12.0 })
+                .width(Length::Fill)
+                .style(|_, status| {
+                    let bg = match status {
+                        BtnStatus::Hovered => OryxisColors::t().bg_hover,
+                        _ => Color::TRANSPARENT,
+                    };
+                    button::Style {
+                        background: Some(Background::Color(bg)),
+                        border: Border { radius: Radius::from(6.0), ..Default::default() },
+                        ..Default::default()
+                    }
+                });
+                list = list.push(local_btn);
+            }
+        }
         for ci in matches {
             let conn = &self.connections[ci];
             let active = self
@@ -729,18 +712,20 @@ fn pane_actions_btn<'a>(toggle_msg: Message) -> Element<'a, Message> {
 
 /// Floating Actions menu for a pane, anchored to the top-right via a
 /// container that pushes it to the corner.
-fn actions_menu_overlay<'a>(local: bool, show_hidden: bool) -> Element<'a, Message> {
-    let refresh_msg = if local {
-        Message::SftpRefreshLocal
+fn actions_menu_overlay<'a>(
+    side: SftpPaneSide,
+    is_remote: bool,
+    remote_path: &str,
+    show_hidden: bool,
+) -> Element<'a, Message> {
+    // Refresh re-reads the local listing, or re-lists the current remote
+    // directory for a remote pane.
+    let refresh_msg = if is_remote {
+        Message::SftpNavigateRemote(side, remote_path.to_string())
     } else {
-        Message::SftpCloseMenus
+        Message::SftpRefreshLocal(side)
     };
-    let side = if local { SftpPaneSide::Local } else { SftpPaneSide::Remote };
-    let hidden_msg = if local {
-        Message::SftpToggleLocalHidden
-    } else {
-        Message::SftpToggleRemoteHidden
-    };
+    let hidden_msg = Message::SftpToggleHidden(side);
     let hidden_label = if show_hidden { t("hide_hidden_files") } else { t("show_hidden_files") };
     let menu = container(
         column![
@@ -813,22 +798,28 @@ fn menu_separator<'a>() -> Element<'a, Message> {
 /// ops (Rename, Edit) hide.
 pub(crate) fn row_context_menu_box<'a>(
     menu: &crate::state::SftpRowMenu,
-    remote_connected: bool,
+    cross_pane_ready: bool,
+    source_is_remote: bool,
+    other_is_remote: bool,
+    other_label: Option<String>,
     selection_count_same_pane: usize,
 ) -> Element<'a, Message> {
     let multi = selection_count_same_pane > 1;
     let mut items = column![].spacing(2).padding(4);
-    // Upload, local files/folders when a remote session is mounted.
-    // Multi mode batches the whole same-pane selection.
     let accent = OryxisColors::t().accent;
     let secondary = OryxisColors::t().text_secondary;
     let danger = OryxisColors::t().error;
-    if menu.side == SftpPaneSide::Local {
-        if remote_connected {
+    // Cross-pane action, picked by the source and the opposite pane's
+    // natures: Local -> remote uploads, remote -> Local downloads,
+    // remote -> remote relays. Only offered when the other pane is a
+    // ready destination (connected remote, or a Local pane).
+    if !source_is_remote && other_is_remote {
+        // Upload to the (remote) other pane.
+        if cross_pane_ready {
             if multi {
                 items = items.push(menu_item_owned_tinted(
                     iced_fonts::lucide::upload(),
-                    format!("Upload {} items", selection_count_same_pane),
+                    t("upload_n_items").replacen("{n}", &selection_count_same_pane.to_string(), 1),
                     Message::SftpUploadSelection,
                     accent,
                 ));
@@ -838,18 +829,19 @@ pub(crate) fn row_context_menu_box<'a>(
                 } else {
                     Message::SftpUpload(std::path::PathBuf::from(&menu.path))
                 };
-                items = items.push(menu_item_tinted(
+                let upload_label = match &other_label {
+                    Some(h) => t("upload_to_host").replacen("{host}", h, 1),
+                    None => t("upload_to_host").replacen("{host}", t("the_other_host"), 1),
+                };
+                items = items.push(menu_item_owned_tinted(
                     iced_fonts::lucide::upload(),
-                    t("upload_to_remote"),
+                    upload_label,
                     upload_msg,
                     accent,
                 ));
             }
         }
-        // Open the file in the OS default editor. Unlike the remote
-        // Edit (which has to download to temp + watch mtime), here we
-        // just hand the path to `open`, the user's edits hit the
-        // file directly with no roundtrip.
+        // Open the local file in the OS default editor.
         if !multi && !menu.is_dir {
             items = items.push(menu_item_owned_tinted(
                 iced_fonts::lucide::pencil(),
@@ -858,36 +850,67 @@ pub(crate) fn row_context_menu_box<'a>(
                 secondary,
             ));
         }
-    }
-    if menu.side == SftpPaneSide::Remote {
-        if multi {
-            items = items.push(menu_item_owned_tinted(
-                iced_fonts::lucide::download(),
-                t("download_n_items").replacen("{n}", &selection_count_same_pane.to_string(), 1),
-                Message::SftpDownloadSelection,
-                accent,
-            ));
-        } else {
-            let download_msg = if menu.is_dir {
-                Message::SftpDownloadFolder(menu.path.clone())
-            } else {
-                Message::SftpDownload(menu.path.clone())
-            };
-            items = items.push(menu_item_tinted(
-                iced_fonts::lucide::download(),
-                t("download_to_local"),
-                download_msg,
-                accent,
-            ));
-            // Edit-in-place, only meaningful for single files.
-            if !menu.is_dir {
+    } else if source_is_remote && !other_is_remote {
+        // Download to the (Local) other pane.
+        if cross_pane_ready {
+            if multi {
                 items = items.push(menu_item_owned_tinted(
-                    iced_fonts::lucide::pencil(),
-                    crate::i18n::t("edit").to_string(),
-                    Message::SftpStartEdit(menu.path.clone()),
-                    secondary,
+                    iced_fonts::lucide::download(),
+                    t("download_n_items").replacen("{n}", &selection_count_same_pane.to_string(), 1),
+                    Message::SftpDownloadSelection,
+                    accent,
+                ));
+            } else {
+                let download_msg = if menu.is_dir {
+                    Message::SftpDownloadFolder(menu.path.clone())
+                } else {
+                    Message::SftpDownload(menu.path.clone())
+                };
+                items = items.push(menu_item_tinted(
+                    iced_fonts::lucide::download(),
+                    t("download_to_local"),
+                    download_msg,
+                    accent,
                 ));
             }
+        }
+        // Edit-in-place for a single remote file.
+        if !multi && !menu.is_dir {
+            items = items.push(menu_item_owned_tinted(
+                iced_fonts::lucide::pencil(),
+                crate::i18n::t("edit").to_string(),
+                Message::SftpStartEdit(menu.path.clone()),
+                secondary,
+            ));
+        }
+    } else if source_is_remote && other_is_remote {
+        // Relay to the other (remote) host. Single-item only for now,
+        // multi falls back to per-item relays via the row each.
+        if cross_pane_ready {
+            let label = match &other_label {
+                Some(h) => t("relay_to_remote").replacen("{host}", h, 1),
+                None => t("relay_to_remote").replacen("{host}", t("the_other_host"), 1),
+            };
+            let relay_msg = if menu.is_dir {
+                Message::SftpRelayFolder(menu.side, menu.path.clone())
+            } else {
+                Message::SftpRelay(menu.side, menu.path.clone())
+            };
+            items = items.push(menu_item_owned_tinted(
+                iced_fonts::lucide::arrow_right_left(),
+                label,
+                relay_msg,
+                accent,
+            ));
+        }
+        // Edit-in-place for a single remote file.
+        if !multi && !menu.is_dir {
+            items = items.push(menu_item_owned_tinted(
+                iced_fonts::lucide::pencil(),
+                crate::i18n::t("edit").to_string(),
+                Message::SftpStartEdit(menu.path.clone()),
+                secondary,
+            ));
         }
     }
     if multi {
@@ -962,21 +985,26 @@ pub(crate) fn row_context_menu_box<'a>(
 /// never spills off the bottom or right edge of the window.
 pub(crate) fn row_context_menu_height(
     menu: &crate::state::SftpRowMenu,
-    remote_connected: bool,
+    cross_pane_ready: bool,
+    source_is_remote: bool,
+    other_is_remote: bool,
     selection_count_same_pane: usize,
 ) -> f32 {
     let multi = selection_count_same_pane > 1;
-    // Multi mode: Upload OR Download (one based on side) + Duplicate +
-    // Delete. Single mode: Duplicate + Rename + Properties + Delete +
-    // optional Upload/Download/Edit.
+    // Always present: Duplicate + Rename + Properties + Delete (single),
+    // or Duplicate + Delete (multi).
     let mut count = if multi { 2.0 } else { 4.0 };
-    if menu.side == SftpPaneSide::Local && remote_connected {
-        count += 1.0; // Upload
+    // Cross-pane action (Upload / Download / Relay) when the other pane
+    // is a ready destination.
+    if cross_pane_ready {
+        count += 1.0;
     }
-    if menu.side == SftpPaneSide::Remote {
-        count += 1.0; // Download
-        if !multi && !menu.is_dir {
-            count += 1.0; // Edit
+    // Edit-in-place / open-local for a single remote-source file, or a
+    // single local file when uploading.
+    if !multi && !menu.is_dir {
+        let editable = source_is_remote || other_is_remote;
+        if editable {
+            count += 1.0;
         }
     }
     // Each item ~30px (padding 6+6 + ~12px text + 2px gap) plus 8px container padding.
@@ -1065,7 +1093,7 @@ fn menu_item_tinted<'a>(
 
 /// Drive picker dropdown for Windows local pane. Lists `C:`, `D:`, etc.
 /// based on what's actually mounted. Closed via the scrim.
-fn drives_menu_overlay<'a>() -> Element<'a, Message> {
+fn drives_menu_overlay<'a>(side: SftpPaneSide) -> Element<'a, Message> {
     let drives = list_windows_drives();
     let mut col = column![].spacing(2).padding(4);
     if drives.is_empty() {
@@ -1087,7 +1115,7 @@ fn drives_menu_overlay<'a>() -> Element<'a, Message> {
                     ]
                     .align_y(iced::Alignment::Center),
                 )
-                .on_press(Message::SftpNavigateLocal(drive_path))
+                .on_press(Message::SftpNavigateLocal(side, drive_path))
                 .padding(Padding { top: 6.0, right: 16.0, bottom: 6.0, left: 10.0 })
                 .width(Length::Fixed(160.0))
                 .style(|_, status| {
@@ -1189,9 +1217,9 @@ fn list_windows_drives() -> Vec<String> {
 /// in between, never *after* the root crumb itself, which avoids the
 /// `/ / home` doubling that crept in when separators were emitted at the
 /// start of every iteration.
-fn remote_breadcrumb<'a>(path: &str) -> Element<'a, Message> {
+fn remote_breadcrumb<'a>(side: SftpPaneSide, path: &str) -> Element<'a, Message> {
     let mut row = iced::widget::Row::new().align_y(iced::Alignment::Center).spacing(2);
-    row = row.push(crumb_remote("/", "/"));
+    row = row.push(crumb_remote(side, "/", "/"));
     let mut accumulated = String::new();
     let mut first_segment = true;
     for segment in path.split('/').filter(|s| !s.is_empty()) {
@@ -1201,7 +1229,7 @@ fn remote_breadcrumb<'a>(path: &str) -> Element<'a, Message> {
             row = row.push(text("/").size(11).color(OryxisColors::t().text_muted));
         }
         first_segment = false;
-        row = row.push(crumb_remote(segment, &accumulated));
+        row = row.push(crumb_remote(side, segment, &accumulated));
     }
     row.into()
 }
@@ -1212,7 +1240,7 @@ fn remote_breadcrumb<'a>(path: &str) -> Element<'a, Message> {
 /// the visual reads `/ home / user` instead of `/ / home / user`. On
 /// Windows the implicit `RootDir` component after the drive prefix is
 /// skipped (its job is taken by the drive chip itself).
-fn local_breadcrumb<'a>(path: &std::path::Path) -> Element<'a, Message> {
+fn local_breadcrumb<'a>(side: SftpPaneSide, path: &std::path::Path) -> Element<'a, Message> {
     // Pick the separator from the path's flavor: real Windows drives
     // (`C:\`, `D:\`) get `\`; everything else (Unix paths, WSL UNC like
     // `\\wsl$\Ubuntu\…`, bare network shares) keeps the Unix `/` since
@@ -1267,7 +1295,7 @@ fn local_breadcrumb<'a>(path: &std::path::Path) -> Element<'a, Message> {
                     ]
                     .align_y(iced::Alignment::Center),
                 )
-                .on_press(Message::SftpToggleLocalDrives)
+                .on_press(Message::SftpToggleDrives(side))
                 .padding(Padding { top: 2.0, right: 6.0, bottom: 2.0, left: 6.0 })
                 .style(|_, status| {
                     let bg = match status {
@@ -1282,17 +1310,17 @@ fn local_breadcrumb<'a>(path: &std::path::Path) -> Element<'a, Message> {
                 }),
             );
         } else {
-            row = row.push(local_crumb(label, accumulated.clone()));
+            row = row.push(local_crumb(side, label, accumulated.clone()));
         }
     }
     row.into()
 }
 
-fn crumb_remote<'a>(label: &str, full: &str) -> Element<'a, Message> {
+fn crumb_remote<'a>(side: SftpPaneSide, label: &str, full: &str) -> Element<'a, Message> {
     let label = label.to_string();
     let full = full.to_string();
     button(text(label).size(11).color(OryxisColors::t().text_secondary))
-        .on_press(Message::SftpNavigateRemote(full))
+        .on_press(Message::SftpNavigateRemote(side, full))
         .padding(Padding { top: 2.0, right: 6.0, bottom: 2.0, left: 6.0 })
         .style(|_, status| {
             let bg = match status {
@@ -1308,9 +1336,9 @@ fn crumb_remote<'a>(label: &str, full: &str) -> Element<'a, Message> {
         .into()
 }
 
-fn local_crumb<'a>(label: String, full: std::path::PathBuf) -> Element<'a, Message> {
+fn local_crumb<'a>(side: SftpPaneSide, label: String, full: std::path::PathBuf) -> Element<'a, Message> {
     button(text(label).size(11).color(OryxisColors::t().text_secondary))
-        .on_press(Message::SftpNavigateLocal(full))
+        .on_press(Message::SftpNavigateLocal(side, full))
         .padding(Padding { top: 2.0, right: 6.0, bottom: 2.0, left: 6.0 })
         .style(|_, status| {
             let bg = match status {
@@ -1326,8 +1354,8 @@ fn local_crumb<'a>(label: String, full: std::path::PathBuf) -> Element<'a, Messa
         .into()
 }
 
-fn parent_row<'a>(local: bool) -> Element<'a, Message> {
-    let msg = if local { Message::SftpLocalUp } else { Message::SftpRemoteUp };
+fn parent_row<'a>(side: SftpPaneSide) -> Element<'a, Message> {
+    let msg = Message::SftpUp(side);
     let inner = row![
         iced_fonts::lucide::folder()
             .size(13)
@@ -1381,7 +1409,7 @@ fn pane_header_band<'a>(content: iced::widget::Column<'a, Message>) -> Element<'
 /// Sortable column header strip. Click on a column to set / flip the
 /// active sort. The active column shows an arrow indicator.
 fn column_headers<'a>(
-    local: bool,
+    side: SftpPaneSide,
     sort: crate::state::SftpSort,
 ) -> Element<'a, Message> {
     use crate::state::SftpSortColumn;
@@ -1398,7 +1426,7 @@ fn column_headers<'a>(
             } else {
                 OryxisColors::t().text_muted
             });
-        let msg = if local { Message::SftpSortLocal(col) } else { Message::SftpSortRemote(col) };
+        let msg = Message::SftpSort(side, col);
         let mut btn = button(txt)
             .on_press(msg)
             .padding(Padding { top: 4.0, right: 6.0, bottom: 4.0, left: 6.0 })
@@ -1463,6 +1491,7 @@ fn format_modified_remote(mtime: Option<u32>) -> String {
 
 #[allow(clippy::too_many_arguments)]
 fn file_row_local<'a>(
+    side: SftpPaneSide,
     name: String,
     is_dir: bool,
     size_str: String,
@@ -1515,11 +1544,7 @@ fn file_row_local<'a>(
     let on_click = if rename_input.is_some() {
         None
     } else {
-        Some(Message::SftpSelectRow(
-            SftpPaneSide::Local,
-            path_str.clone(),
-            is_dir,
-        ))
+        Some(Message::SftpSelectRow(side, path_str.clone(), is_dir))
     };
     let path_for_enter = path_str.clone();
     let mut btn = button(inner)
@@ -1550,22 +1575,15 @@ fn file_row_local<'a>(
     // internal drag-drop press handler, needed even on file rows since
     // a file is a valid drag *source* (just not a drop *target*).
     MouseArea::new(btn)
-        .on_right_press(Message::SftpRowRightClick(
-            SftpPaneSide::Local,
-            path_str,
-            is_dir,
-        ))
-        .on_enter(Message::SftpRowEnter(
-            SftpPaneSide::Local,
-            path_for_enter,
-            is_dir,
-        ))
+        .on_right_press(Message::SftpRowRightClick(side, path_str, is_dir))
+        .on_enter(Message::SftpRowEnter(side, path_for_enter, is_dir))
         .on_exit(Message::SftpRowExit)
         .into()
 }
 
 #[allow(clippy::too_many_arguments)]
 fn file_row_remote<'a>(
+    side: SftpPaneSide,
     name: String,
     is_dir: bool,
     is_symlink: bool,
@@ -1598,7 +1616,7 @@ fn file_row_remote<'a>(
         None
     } else {
         Some(Message::SftpSelectRow(
-            SftpPaneSide::Remote,
+            side,
             full_path.clone(),
             is_dir || is_symlink,
         ))
@@ -1645,16 +1663,8 @@ fn file_row_remote<'a>(
     // serves the OS drop target picker, the internal drag-drop press
     // handler, and the cross-pane folder drop highlight.
     MouseArea::new(btn)
-        .on_right_press(Message::SftpRowRightClick(
-            SftpPaneSide::Remote,
-            full_path.clone(),
-            is_dir,
-        ))
-        .on_enter(Message::SftpRowEnter(
-            SftpPaneSide::Remote,
-            full_path,
-            is_dir,
-        ))
+        .on_right_press(Message::SftpRowRightClick(side, full_path.clone(), is_dir))
+        .on_enter(Message::SftpRowEnter(side, full_path, is_dir))
         .on_exit(Message::SftpRowExit)
         .into()
 }
@@ -2502,6 +2512,56 @@ fn overwrite_apply_to_all_checkbox<'a>(checked: bool) -> Element<'a, Message> {
     .into()
 }
 
+/// Per-file progress panel that rises above the transfer strip when the
+/// user clicks it. Lists finished items, the one in flight, and what's
+/// still queued, so a multi-file (or slow single-file) transfer shows
+/// exactly where it is.
+fn transfer_file_panel<'a>(
+    transfer: &crate::state::TransferState,
+    done_log: &[String],
+) -> Element<'a, Message> {
+    fn marker_row<'b>(
+        glyph: &str,
+        glyph_color: Color,
+        label: String,
+        label_color: Color,
+    ) -> Element<'b, Message> {
+        crate::widgets::dir_row(vec![
+            text(glyph.to_string()).size(12).color(glyph_color).into(),
+            Space::new().width(8).into(),
+            text(label).size(12).color(label_color).into(),
+        ])
+        .align_y(iced::Alignment::Center)
+        .into()
+    }
+
+    let theme = OryxisColors::t();
+    let mut list = column![].spacing(3);
+    for label in done_log {
+        list = list.push(marker_row("\u{2713}", theme.success, label.clone(), theme.text_secondary));
+    }
+    if let Some(cur) = &transfer.current {
+        list = list.push(marker_row("\u{25B8}", theme.accent, cur.clone(), theme.text_primary));
+    }
+    for item in &transfer.queue {
+        let label = crate::sftp_helpers::transfer_item_label(item);
+        list = list.push(marker_row("\u{2022}", theme.text_muted, label, theme.text_muted));
+    }
+    container(scrollable(list).height(Length::Fixed(180.0)))
+        .padding(10)
+        .width(Length::Fill)
+        .style(|_| container::Style {
+            background: Some(Background::Color(OryxisColors::t().bg_surface)),
+            border: Border {
+                radius: Radius::from(8.0),
+                color: OryxisColors::t().border,
+                width: 1.0,
+            },
+            ..Default::default()
+        })
+        .into()
+}
+
 /// Bottom-of-view strip that surfaces an in-progress folder transfer:
 /// kind label, current item, count, slim progress bar, and a cancel
 /// button. Stays compact so the file panes lose as little vertical
@@ -2513,6 +2573,7 @@ fn transfer_progress_strip<'a>(
         crate::state::TransferKind::Upload => t("transfer_uploading"),
         crate::state::TransferKind::Download => t("transfer_downloading"),
         crate::state::TransferKind::DuplicateLocal => t("transfer_duplicating"),
+        crate::state::TransferKind::Relay => t("transfer_relaying"),
     };
     let current = transfer
         .current

@@ -101,6 +101,30 @@ impl Oryxis {
                         let _ = vault.append_session_data(&log_id, &bytes);
                     }
                 }
+                // Session-group per-pane startup script for LOCAL panes. SSH
+                // panes inject on `SshConnected`, but a local shell has no
+                // such ready event, so we gate on its first output (the
+                // prompt) to be sure the shell is reading stdin.
+                if self.pane_script_overrides.contains_key(&pane_id) {
+                    let is_local = self
+                        .tabs
+                        .iter()
+                        .flat_map(|t| t.pane_grid.panes.values())
+                        .find(|p| p.id == pane_id)
+                        .map(|p| matches!(p.origin, crate::state::PaneOrigin::Local(_)))
+                        .unwrap_or(false);
+                    if is_local
+                        && let Some(script) = self.pane_script_overrides.remove(&pane_id)
+                        && let Some(pane) = self
+                            .tabs
+                            .iter()
+                            .flat_map(|t| t.pane_grid.panes.values())
+                            .find(|p| p.id == pane_id)
+                        && let Ok(mut state) = pane.terminal.lock()
+                    {
+                        state.write(format!("{script}\n").as_bytes());
+                    }
+                }
             }
             // Right-click paste from the terminal widget. Mirrors the
             // Ctrl+Shift+V path below: SSH session if active, local PTY

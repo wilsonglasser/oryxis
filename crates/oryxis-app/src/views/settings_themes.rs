@@ -384,84 +384,22 @@ impl Oryxis {
 /// "+ New custom theme" card that sits at the end of the terminal theme
 /// grid and opens the editor.
 pub(crate) fn terminal_theme_add_card<'a>() -> Element<'a, Message> {
-    button(
-        container(
-            dir_row(vec![
-                iced_fonts::lucide::plus()
-                    .size(14)
-                    .color(OryxisColors::t().accent)
-                    .into(),
-                Space::new().width(8).into(),
-                text(t("theme_new_custom"))
-                    .size(13)
-                    .color(OryxisColors::t().accent)
-                    .into(),
-            ])
-            .align_y(iced::Alignment::Center),
-        )
-        .padding(Padding { top: 10.0, right: 12.0, bottom: 10.0, left: 12.0 })
-        .width(Length::Fill),
+    crate::widgets::theme_outline_card(
+        iced_fonts::lucide::plus(),
+        t("theme_new_custom"),
+        OryxisColors::t().accent,
+        Message::ThemeEditorNew,
     )
-    .on_press(Message::ThemeEditorNew)
-    .padding(0)
-    .width(Length::Fill)
-    .style(|_, status| {
-        let bg = match status {
-            button::Status::Hovered => OryxisColors::t().bg_hover,
-            _ => Color::TRANSPARENT,
-        };
-        button::Style {
-            background: Some(Background::Color(bg)),
-            border: Border {
-                radius: Radius::from(8.0),
-                color: OryxisColors::t().border,
-                width: 1.0,
-            },
-            ..Default::default()
-        }
-    })
-    .into()
 }
 
 /// "Import" card that opens the paste-a-scheme modal.
 pub(crate) fn terminal_theme_import_card<'a>() -> Element<'a, Message> {
-    button(
-        container(
-            dir_row(vec![
-                iced_fonts::lucide::download()
-                    .size(14)
-                    .color(OryxisColors::t().text_secondary)
-                    .into(),
-                Space::new().width(8).into(),
-                text(t("theme_import"))
-                    .size(13)
-                    .color(OryxisColors::t().text_secondary)
-                    .into(),
-            ])
-            .align_y(iced::Alignment::Center),
-        )
-        .padding(Padding { top: 10.0, right: 12.0, bottom: 10.0, left: 12.0 })
-        .width(Length::Fill),
+    crate::widgets::theme_outline_card(
+        iced_fonts::lucide::download(),
+        t("theme_import"),
+        OryxisColors::t().text_secondary,
+        Message::ThemeImportOpen,
     )
-    .on_press(Message::ThemeImportOpen)
-    .padding(0)
-    .width(Length::Fill)
-    .style(|_, status| {
-        let bg = match status {
-            button::Status::Hovered => OryxisColors::t().bg_hover,
-            _ => Color::TRANSPARENT,
-        };
-        button::Style {
-            background: Some(Background::Color(bg)),
-            border: Border {
-                radius: Radius::from(8.0),
-                color: OryxisColors::t().border,
-                width: 1.0,
-            },
-            ..Default::default()
-        }
-    })
-    .into()
 }
 
 /// Small floating icon button used for the per-card edit / delete actions.

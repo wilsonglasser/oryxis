@@ -85,7 +85,12 @@ impl Oryxis {
             } else {
                 kh.fingerprint.clone()
             };
-            let seen = kh.last_seen.format("%Y-%m-%d %H:%M").to_string();
+            // Stored UTC; show it in the user's local timezone.
+            let seen = kh
+                .last_seen
+                .with_timezone(&chrono::Local)
+                .format("%Y-%m-%d %H:%M")
+                .to_string();
 
             // Trash button: icon + label, visible hover state in error red.
             let del_btn = button(

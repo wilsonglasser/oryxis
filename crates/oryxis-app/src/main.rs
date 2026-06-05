@@ -22,6 +22,7 @@ mod dispatch_proxy_identity;
 mod dispatch_cloud;
 mod dispatch_plugins;
 mod dispatch_port_forwards;
+mod dispatch_session_group;
 mod dispatch_settings;
 mod dispatch_sftp;
 mod dispatch_sftp_files;
@@ -47,6 +48,7 @@ mod root_view;
 // the AWS provider moved into its plugin subprocess.
 mod session_manager_plugin;
 mod hotkeys;
+mod session_group_helpers;
 mod sftp_helpers;
 mod sftp_methods;
 mod shortcuts;

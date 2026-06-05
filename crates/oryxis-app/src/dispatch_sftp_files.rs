@@ -15,11 +15,16 @@ impl Oryxis {
         &mut self,
         message: Message,
     ) -> Result<Task<Message>, Message> {
+        use crate::state::SftpPaneSide;
+        // Edit-in-place is a remote-pane operation; resolve the remote
+        // side for error reporting / reload. Defaults to Right when no
+        // remote pane exists (the early returns guard real use).
+        let remote_side = self.sftp.remote_side().unwrap_or(SftpPaneSide::Right);
+        let local_side = self.sftp.local_side().unwrap_or(SftpPaneSide::Left);
         match message {
             Message::SftpShowProperties(side, path, is_dir) => {
                 self.sftp.row_menu = None;
-                match side {
-                    crate::state::SftpPaneSide::Local => {
+                if !self.sftp.pane(side).is_remote {
                         // Local stat is sync, populate the modal in
                         // place. Permissions on Windows are coarser so
                         // Apply will refuse to chmod there (the dialog
@@ -28,7 +33,7 @@ impl Oryxis {
                         let meta = match std::fs::metadata(p) {
                             Ok(m) => m,
                             Err(e) => {
-                                self.sftp.local_error = Some(e.to_string());
+                                self.sftp.pane_mut(side).error = Some(e.to_string());
                                 return Ok(Task::none());
                             }
                         };
@@ -69,10 +74,9 @@ impl Oryxis {
                             error: None,
                         };
                         self.sftp.properties = Some(view);
-                    }
-                    crate::state::SftpPaneSide::Remote => {
-                        let Some(client) = self.sftp.client.clone() else {
-                            self.sftp.remote_error = Some("Not connected".into());
+                } else {
+                        let Some(client) = self.sftp.pane(side).client.clone() else {
+                            self.sftp.pane_mut(side).error = Some("Not connected".into());
                             return Ok(Task::none());
                         };
                         let target = path.clone();
@@ -97,10 +101,9 @@ impl Oryxis {
                                         error: None,
                                     })
                                 }
-                                Err(e) => Message::SftpOpResult(e, true),
+                                Err(e) => Message::SftpOpResult(side, e, true),
                             },
                         ));
-                    }
                 }
             }
             Message::SftpPropertiesLoaded(view) => {
@@ -141,8 +144,8 @@ impl Oryxis {
                 p.applying = true;
                 p.error = None;
                 let path = p.path.clone();
-                match p.side {
-                    crate::state::SftpPaneSide::Local => {
+                let side = p.side;
+                if !self.sftp.pane(side).is_remote {
                         #[cfg(unix)]
                         {
                             use std::os::unix::fs::PermissionsExt as _;
@@ -159,9 +162,8 @@ impl Oryxis {
                                 "chmod not supported on this platform".into(),
                             ))));
                         }
-                    }
-                    crate::state::SftpPaneSide::Remote => {
-                        let Some(client) = self.sftp.client.clone() else {
+                } else {
+                        let Some(client) = self.sftp.pane(side).client.clone() else {
                             return Ok(Task::done(Message::SftpPropertiesDone(Err(
                                 "Not connected".into(),
                             ))));
@@ -172,26 +174,24 @@ impl Oryxis {
                             },
                             Message::SftpPropertiesDone,
                         ));
-                    }
                 }
             }
             Message::SftpPropertiesDone(result) => {
                 match result {
                     Ok(()) => {
-                        let kind = self.sftp.properties.as_ref().map(|p| p.side);
+                        let side = self.sftp.properties.as_ref().map(|p| p.side);
                         self.sftp.properties = None;
                         // Refresh whichever pane we just touched so
                         // the new permissions show up immediately.
-                        return Ok(match kind {
-                            Some(crate::state::SftpPaneSide::Local) => {
-                                self.refresh_sftp_local();
+                        return Ok(match side {
+                            Some(side) if !self.sftp.pane(side).is_remote => {
+                                self.refresh_sftp_local(side);
                                 Task::none()
                             }
-                            Some(crate::state::SftpPaneSide::Remote) => {
-                                Task::done(Message::SftpNavigateRemote(
-                                    self.sftp.remote_path.clone(),
-                                ))
-                            }
+                            Some(side) => Task::done(Message::SftpNavigateRemote(
+                                side,
+                                self.sftp.pane(side).remote_path.clone(),
+                            )),
                             None => Task::none(),
                         });
                     }
@@ -209,7 +209,7 @@ impl Oryxis {
             Message::SftpOpenLocal(path) => {
                 self.sftp.row_menu = None;
                 if let Err(e) = open::that(&path) {
-                    self.sftp.local_error = Some(format!(
+                    self.sftp.pane_mut(local_side).error = Some(format!(
                         "Failed to open {}: {e}",
                         path.display()
                     ));
@@ -217,8 +217,8 @@ impl Oryxis {
             }
             Message::SftpStartEdit(remote_path) => {
                 self.sftp.row_menu = None;
-                let Some(client) = self.sftp.client.clone() else {
-                    self.sftp.remote_error = Some("Not connected to a host".into());
+                let Some(client) = self.sftp.pane(remote_side).client.clone() else {
+                    self.sftp.pane_mut(remote_side).error = Some("Not connected to a host".into());
                     return Ok(Task::none());
                 };
                 return Ok(Task::perform(
@@ -276,9 +276,9 @@ impl Oryxis {
                             dirty: false,
                         })
                     },
-                    |result| match result {
+                    move |result| match result {
                         Ok(session) => Message::SftpEditReady(session),
-                        Err(e) => Message::SftpOpResult(e, true),
+                        Err(e) => Message::SftpOpResult(remote_side, e, true),
                     },
                 ));
             }
@@ -289,12 +289,12 @@ impl Oryxis {
                 let Some(session) = self.sftp.edit_session.take() else {
                     return Ok(Task::none());
                 };
-                let Some(client) = self.sftp.client.clone() else {
-                    self.sftp.remote_error = Some("Not connected to a host".into());
+                let Some(client) = self.sftp.pane(remote_side).client.clone() else {
+                    self.sftp.pane_mut(remote_side).error = Some("Not connected to a host".into());
                     let _ = std::fs::remove_file(&session.temp_path);
                     return Ok(Task::none());
                 };
-                let reload = self.sftp.remote_path.clone();
+                let reload = self.sftp.pane(remote_side).remote_path.clone();
                 return Ok(Task::perform(
                     async move {
                         let bytes = tokio::fs::read(&session.temp_path)
@@ -307,9 +307,9 @@ impl Oryxis {
                         let _ = tokio::fs::remove_file(&session.temp_path).await;
                         Ok::<String, String>(reload)
                     },
-                    |result| match result {
-                        Ok(reload) => Message::SftpNavigateRemote(reload),
-                        Err(e) => Message::SftpOpResult(e, true),
+                    move |result| match result {
+                        Ok(reload) => Message::SftpNavigateRemote(remote_side, reload),
+                        Err(e) => Message::SftpOpResult(remote_side, e, true),
                     },
                 ));
             }

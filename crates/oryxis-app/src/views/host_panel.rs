@@ -1,7 +1,7 @@
 //! Host editor / connection editor side panel.
 
 use iced::border::Radius;
-use iced::widget::{button, column, container, pick_list, scrollable, text, text_input, Space};
+use iced::widget::{button, column, container, pick_list, scrollable, text, text_editor, text_input, Space};
 use iced::widget::button::Status as BtnStatus;
 use iced::{Background, Border, Color, Element, Length, Padding};
 
@@ -398,14 +398,18 @@ impl Oryxis {
             )
             .push(Space::new().height(8))
             .push(
-                text_input(
-                    t("initial_command_ph"),
-                    &self.editor_form.initial_command,
+                // Multi-line, auto-grows with content; container caps the
+                // height (~8 lines) and then it scrolls internally. Supports
+                // multi-command scripts (one command per line).
+                container(
+                    text_editor(&self.editor_initial_command)
+                        .placeholder(t("initial_command_ph"))
+                        .on_action(Message::EditorInitialCommandChanged)
+                        .padding(10)
+                        .height(Length::Shrink)
+                        .style(crate::widgets::rounded_editor_style),
                 )
-                .on_input(Message::EditorInitialCommandChanged)
-                .on_submit(Message::EditorSave)
-                .padding(10)
-                .style(crate::widgets::rounded_input_style).align_x(dir_align_x()),
+                .max_height(200.0),
             );
 
         let ssh_section = panel_section(ssh_items);
