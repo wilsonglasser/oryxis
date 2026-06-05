@@ -342,7 +342,7 @@ pub enum Message {
     ShowSnippetPanel,
     HideSnippetPanel,
     SnippetLabelChanged(String),
-    SnippetCommandChanged(String),
+    SnippetCommandAction(text_editor::Action),
     SaveSnippet,
     EditSnippet(usize),
     DeleteSnippet(usize),

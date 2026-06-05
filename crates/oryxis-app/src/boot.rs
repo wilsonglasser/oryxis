@@ -358,7 +358,7 @@ impl Oryxis {
                 viewing_session_log: None,
                 show_snippet_panel: false,
                 snippet_label: String::new(),
-                snippet_command: String::new(),
+                snippet_command: text_editor::Content::new(),
                 snippet_editing_id: None,
                 snippet_error: None,
                 port_forward_rules: Vec::new(),

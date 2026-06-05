@@ -1,7 +1,9 @@
 //! Snippets (saved commands) list and editor panel.
 
 use iced::border::Radius;
-use iced::widget::{button, column, container, scrollable, text, text_input, MouseArea, Space};
+use iced::widget::{
+    button, column, container, scrollable, text, text_editor, text_input, MouseArea, Space,
+};
 use iced::widget::button::Status as BtnStatus;
 use iced::{Background, Border, Color, Element, Length, Padding};
 
@@ -322,10 +324,17 @@ impl Oryxis {
             Space::new().height(14),
             text(t("command_label")).size(12).color(OryxisColors::t().text_secondary),
             Space::new().height(4),
-            text_input("sudo systemctl restart nginx", &self.snippet_command)
-                .on_input(Message::SnippetCommandChanged)
-                .padding(10)
-                .style(crate::widgets::rounded_input_style).align_x(dir_align_x()),
+            // Multi-line, auto-grows with content; container caps the height
+            // (~10 lines) and then it scrolls internally.
+            container(
+                text_editor(&self.snippet_command)
+                    .placeholder("sudo systemctl restart nginx")
+                    .on_action(Message::SnippetCommandAction)
+                    .padding(10)
+                    .height(Length::Shrink)
+                    .style(crate::widgets::rounded_editor_style),
+            )
+            .max_height(240.0),
         ]
         .width(Length::Fill)
         .align_x(dir_align_x());

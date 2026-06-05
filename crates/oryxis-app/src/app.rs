@@ -604,7 +604,7 @@ pub struct Oryxis {
     pub(crate) theme_import_error: Option<String>,
     pub(crate) show_snippet_panel: bool,
     pub(crate) snippet_label: String,
-    pub(crate) snippet_command: String,
+    pub(crate) snippet_command: text_editor::Content,
     pub(crate) snippet_editing_id: Option<Uuid>,
     pub(crate) snippet_error: Option<String>,
 

@@ -6,7 +6,7 @@
 
 use iced::border::Radius;
 use iced::widget::button::Status as BtnStatus;
-use iced::widget::{button, container, pick_list, text, text_input, Row, Space, Stack};
+use iced::widget::{button, container, pick_list, text, text_editor, text_input, Row, Space, Stack};
 use iced::{Background, Border, Color, Element, Length, Padding, Theme};
 
 use crate::app::Message;
@@ -257,6 +257,28 @@ pub fn rounded_input_style(_theme: &Theme, status: text_input::Status) -> text_i
             color: border_color,
         },
         icon: c.text_muted,
+        placeholder: c.text_muted,
+        value: c.text_primary,
+        selection: c.accent,
+    }
+}
+
+/// Shared style closure for `text_editor` (multi-line). Mirrors
+/// `rounded_input_style` so single-line and multi-line fields look identical:
+/// same surface, border, radius, and accent-on-focus.
+pub fn rounded_editor_style(_theme: &Theme, status: text_editor::Status) -> text_editor::Style {
+    let c = OryxisColors::t();
+    let (border_color, border_width) = match status {
+        text_editor::Status::Focused { .. } => (c.accent, 1.5),
+        _ => (c.border, 1.0),
+    };
+    text_editor::Style {
+        background: Background::Color(c.bg_surface),
+        border: Border {
+            radius: Radius::from(INPUT_RADIUS),
+            width: border_width,
+            color: border_color,
+        },
         placeholder: c.text_muted,
         value: c.text_primary,
         selection: c.accent,

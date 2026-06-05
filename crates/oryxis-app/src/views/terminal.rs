@@ -919,13 +919,19 @@ impl Oryxis {
                 .size(13)
                 .style(crate::widgets::rounded_input_style)
                 .into();
-        let command_input: Element<'_, Message> =
-            iced::widget::text_input("sudo systemctl restart nginx", &self.snippet_command)
-                .on_input(Message::SnippetCommandChanged)
+        // Multi-line, auto-grows with content; container caps the height
+        // (~8 lines) and then it scrolls internally.
+        let command_input: Element<'_, Message> = container(
+            iced::widget::text_editor(&self.snippet_command)
+                .placeholder("sudo systemctl restart nginx")
+                .on_action(Message::SnippetCommandAction)
                 .padding(8)
                 .size(13)
-                .style(crate::widgets::rounded_input_style)
-                .into();
+                .height(Length::Shrink)
+                .style(crate::widgets::rounded_editor_style),
+        )
+        .max_height(180.0)
+        .into();
 
         let error: Element<'_, Message> = if let Some(err) = &self.snippet_error {
             text(err.clone()).size(11).color(c.error).into()

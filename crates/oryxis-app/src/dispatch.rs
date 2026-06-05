@@ -387,7 +387,7 @@ impl Oryxis {
             Message::ShowSnippetPanel => {
                 self.show_snippet_panel = true;
                 self.snippet_label.clear();
-                self.snippet_command.clear();
+                self.snippet_command = iced::widget::text_editor::Content::new();
                 self.snippet_editing_id = None;
                 self.snippet_error = None;
             }
@@ -395,18 +395,19 @@ impl Oryxis {
                 self.show_snippet_panel = false;
             }
             Message::SnippetLabelChanged(v) => self.snippet_label = v,
-            Message::SnippetCommandChanged(v) => self.snippet_command = v,
+            Message::SnippetCommandAction(action) => self.snippet_command.perform(action),
             Message::EditSnippet(idx) => {
                 if let Some(snip) = self.snippets.get(idx) {
                     self.show_snippet_panel = true;
                     self.snippet_label = snip.label.clone();
-                    self.snippet_command = snip.command.clone();
+                    self.snippet_command =
+                        iced::widget::text_editor::Content::with_text(&snip.command);
                     self.snippet_editing_id = Some(snip.id);
                     self.snippet_error = None;
                 }
             }
             Message::SaveSnippet => {
-                if self.snippet_label.is_empty() || self.snippet_command.is_empty() {
+                if self.snippet_label.is_empty() || self.snippet_command.text().trim().is_empty() {
                     self.snippet_error = Some("Label and command are required".into());
                     return Task::none();
                 }
@@ -417,7 +418,7 @@ impl Oryxis {
                     oryxis_core::models::snippet::Snippet::new("", "")
                 };
                 snip.label = self.snippet_label.clone();
-                snip.command = self.snippet_command.clone();
+                snip.command = self.snippet_command.text().trim_end().to_string();
                 if let Some(vault) = &self.vault {
                     match vault.save_snippet(&snip) {
                         Ok(()) => {
