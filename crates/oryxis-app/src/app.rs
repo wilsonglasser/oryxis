@@ -955,6 +955,10 @@ pub struct Oryxis {
     pub(crate) share_include_keys: bool,
     pub(crate) share_filter: Option<oryxis_vault::ExportFilter>,
     pub(crate) share_status: Option<Result<String, String>>,
+    /// Default file name suggested in the save dialog, derived from the
+    /// connection label (single host) or group label. `None` falls back
+    /// to a generic name.
+    pub(crate) share_suggested_name: Option<String>,
 }
 
 

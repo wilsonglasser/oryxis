@@ -1347,37 +1347,31 @@ impl Oryxis {
                 ].into()
             }
             OverlayContent::CloudProviderPicker => {
-                // One menu entry per configured profile. Empty list
-                // shouldn't happen because the chevron stays hidden
-                // when there are no profiles, but render a hint
-                // anyway as a safety net for race conditions on
-                // delete.
-                if self.cloud_profiles.is_empty() {
-                    column![
-                        context_menu_item(
-                            iced_fonts::lucide::cloud(),
-                            crate::i18n::t("cloud_empty_title"),
-                            Message::HideOverlayMenu,
-                            OryxisColors::t().text_muted,
-                        ),
-                    ]
-                    .into()
-                } else {
-                    let mut items = column![];
-                    for cp in &self.cloud_profiles {
-                        let (glyph, brand) = crate::os_icon::provider_icon(
-                            &cp.provider,
-                            OryxisColors::t().accent,
-                        );
-                        items = items.push(context_menu_item(
-                            glyph,
-                            cp.label.as_str(),
-                            Message::ShowCloudDiscover(cp.id),
-                            brand,
-                        ));
-                    }
-                    items.into()
+                // The "+ Host ▾" add menu. Always offers importing a
+                // `.oryxis` file (a full vault export or a single
+                // shared host), then one entry per configured cloud
+                // profile for discovery. Import lives here so it's
+                // reachable from where hosts are added instead of being
+                // buried in Settings.
+                let mut items = column![context_menu_item(
+                    iced_fonts::lucide::download(),
+                    crate::i18n::t("import_from_file"),
+                    Message::ImportVault,
+                    OryxisColors::t().text_secondary,
+                )];
+                for cp in &self.cloud_profiles {
+                    let (glyph, brand) = crate::os_icon::provider_icon(
+                        &cp.provider,
+                        OryxisColors::t().accent,
+                    );
+                    items = items.push(context_menu_item(
+                        glyph,
+                        cp.label.as_str(),
+                        Message::ShowCloudDiscover(cp.id),
+                        brand,
+                    ));
                 }
+                items.into()
             }
             OverlayContent::TabActions(idx) => {
                 let idx = *idx;

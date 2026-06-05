@@ -106,22 +106,19 @@ impl Oryxis {
         };
 
         // "+ Host [▾]" split button, primary half opens the manual
-        // SSH editor (unchanged), the chevron half opens a cloud
-        // provider picker overlay so discovery launches from the
-        // Hosts view (where the user naturally goes to add hosts).
-        // Layout mirrors the keychain "+ ADD ▼" split exactly so both
-        // toolbars stay visually consistent. The chevron half is only
-        // emitted when at least one cloud profile is configured
-        // when there's no chevron, the primary button takes back its
-        // full corner radius so it doesn't look "cut" on the right.
-        let has_chevron = !self.cloud_profiles.is_empty();
+        // SSH editor (unchanged), the chevron half opens the add menu
+        // overlay: import a `.oryxis` file (vault or shared host) plus
+        // cloud discovery per configured profile. Launching from the
+        // Hosts view keeps every "add a host" path in one place (the
+        // user naturally goes here to add hosts). Layout mirrors the
+        // keychain "+ ADD ▼" split exactly so both toolbars stay
+        // visually consistent. The chevron is always emitted so import
+        // stays reachable even before any cloud profile exists.
         let rtl = crate::i18n::is_rtl_layout();
         // Pre-compute the rounded-corner radii so the leading half
-        // always rounds the leading edge and the chevron always
-        // rounds the trailing edge, flipped under RTL.
-        let label_radius = if !has_chevron {
-            Radius::from(6.0)
-        } else if rtl {
+        // rounds the leading edge and the chevron rounds the trailing
+        // edge, flipped under RTL.
+        let label_radius = if rtl {
             Radius { top_left: 0.0, bottom_left: 0.0, top_right: 6.0, bottom_right: 6.0 }
         } else {
             Radius { top_left: 6.0, bottom_left: 6.0, top_right: 0.0, bottom_right: 0.0 }
@@ -162,41 +159,38 @@ impl Oryxis {
             }
         });
 
-        let action_group: Element<'_, Message> = if has_chevron {
-            // 1px divider between the two halves, same alpha-tinted
-            // black the keychain split uses.
-            let separator = container(Space::new().width(1).height(16))
-                .style(|_| container::Style {
-                    background: Some(Background::Color(Color { a: 0.3, ..Color::BLACK })),
-                    ..Default::default()
-                });
-            let chevron_btn = button(
-                container(
-                    iced_fonts::lucide::chevron_down::<iced::Theme, iced::Renderer>()
-                        .size(12)
-                        .color(OryxisColors::t().button_text),
-                )
-                .center_y(Length::Fixed(24.0))
-                .padding(Padding { top: 0.0, right: 4.0, bottom: 0.0, left: 4.0 }),
-            )
-            .on_press(Message::ShowCloudProviderPicker)
-            .style(move |_, status| {
-                let bg = match status {
-                    BtnStatus::Hovered => OryxisColors::t().button_bg_hover,
-                    _ => OryxisColors::t().button_bg,
-                };
-                button::Style {
-                    background: Some(Background::Color(bg)),
-                    border: Border { radius: chevron_radius, ..Default::default() },
-                    ..Default::default()
-                }
+        // 1px divider between the two halves, same alpha-tinted black
+        // the keychain split uses.
+        let separator = container(Space::new().width(1).height(16))
+            .style(|_| container::Style {
+                background: Some(Background::Color(Color { a: 0.3, ..Color::BLACK })),
+                ..Default::default()
             });
+        let chevron_btn = button(
+            container(
+                iced_fonts::lucide::chevron_down::<iced::Theme, iced::Renderer>()
+                    .size(12)
+                    .color(OryxisColors::t().button_text),
+            )
+            .center_y(Length::Fixed(24.0))
+            .padding(Padding { top: 0.0, right: 4.0, bottom: 0.0, left: 4.0 }),
+        )
+        .on_press(Message::ShowCloudProviderPicker)
+        .style(move |_, status| {
+            let bg = match status {
+                BtnStatus::Hovered => OryxisColors::t().button_bg_hover,
+                _ => OryxisColors::t().button_bg,
+            };
+            button::Style {
+                background: Some(Background::Color(bg)),
+                border: Border { radius: chevron_radius, ..Default::default() },
+                ..Default::default()
+            }
+        });
+        let action_group: Element<'_, Message> =
             dir_row(vec![primary_btn.into(), separator.into(), chevron_btn.into()])
                 .align_y(iced::Alignment::Center)
-                .into()
-        } else {
-            primary_btn.into()
-        };
+                .into();
 
         // Context-aware toolbar action: inside a dynamic group there
         // is no "+ host", tasks come from the cloud resolver. Inside

@@ -503,6 +503,7 @@ impl Oryxis {
                 share_include_keys: false,
                 share_filter: None,
                 share_status: None,
+                share_suggested_name: None,
             },
             Task::none(),
         );

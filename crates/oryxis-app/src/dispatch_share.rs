@@ -160,6 +160,8 @@ impl Oryxis {
                 }
             }
             Message::ImportVault => {
+                // Close the "+ Host ▾" add menu when reached from there.
+                self.overlay = None;
                 self.import_status = None;
                 self.import_password = String::new();
                 self.import_file_data = None;
@@ -243,6 +245,7 @@ impl Oryxis {
                 self.overlay = None;
                 if let Some(conn) = self.connections.get(idx) {
                     self.share_filter = Some(oryxis_vault::ExportFilter::Hosts(vec![conn.id]));
+                    self.share_suggested_name = Some(share_file_name(&conn.label));
                     self.show_share_dialog = true;
                     self.share_password = String::new();
                     self.share_include_keys = false;
@@ -252,6 +255,11 @@ impl Oryxis {
             Message::ShareGroup(group_id) => {
                 self.overlay = None;
                 self.share_filter = Some(oryxis_vault::ExportFilter::Group(group_id));
+                self.share_suggested_name = self
+                    .groups
+                    .iter()
+                    .find(|g| g.id == group_id)
+                    .map(|g| share_file_name(&g.label));
                 self.show_share_dialog = true;
                 self.share_password = String::new();
                 self.share_include_keys = false;
@@ -269,26 +277,48 @@ impl Oryxis {
                     return Ok(Task::none());
                 }
                 if let (Some(vault), Some(filter)) = (&self.vault, &self.share_filter) {
+                    // Open the save dialog FIRST, then encrypt. Argon2 takes
+                    // tens-to-hundreds of ms and would otherwise freeze the UI
+                    // before the dialog even appears. Picking the path first
+                    // also skips the work entirely when the user cancels.
+                    let default_name = self
+                        .share_suggested_name
+                        .clone()
+                        .unwrap_or_else(|| "shared.oryxis".to_string());
+                    let dialog = rfd::FileDialog::new()
+                        .set_title("Share")
+                        .add_filter("Oryxis Export", &["oryxis"])
+                        .set_file_name(&default_name)
+                        .save_file();
+                    let Some(path) = dialog else {
+                        return Ok(Task::none());
+                    };
                     let options = oryxis_vault::ExportOptions {
                         include_private_keys: self.share_include_keys,
                         filter: filter.clone(),
                     };
                     match oryxis_vault::export_vault(vault, &self.share_password, options) {
                         Ok(data) => {
-                            let dialog = rfd::FileDialog::new()
-                                .set_title("Share")
-                                .add_filter("Oryxis Export", &["oryxis"])
-                                .set_file_name("shared.oryxis")
-                                .save_file();
-                            if let Some(path) = dialog {
-                                match std::fs::write(&path, &data) {
-                                    Ok(()) => {
-                                        self.share_status = Some(Ok(format!("Saved to {}", path.display())));
-                                        self.show_share_dialog = false;
+                            match std::fs::write(&path, &data) {
+                                Ok(()) => {
+                                    // Lock the file to 0600. Even though the
+                                    // share is encrypted, defense in depth
+                                    // keeps a stranger from the easy first
+                                    // step of copy/exfiltrate, matching the
+                                    // full-vault export path.
+                                    #[cfg(unix)]
+                                    {
+                                        use std::os::unix::fs::PermissionsExt as _;
+                                        let _ = std::fs::set_permissions(
+                                            &path,
+                                            std::fs::Permissions::from_mode(0o600),
+                                        );
                                     }
-                                    Err(e) => {
-                                        self.share_status = Some(Err(format!("Write failed: {}", e)));
-                                    }
+                                    self.share_status = Some(Ok(format!("Saved to {}", path.display())));
+                                    self.show_share_dialog = false;
+                                }
+                                Err(e) => {
+                                    self.share_status = Some(Err(format!("Write failed: {}", e)));
                                 }
                             }
                         }
@@ -302,9 +332,61 @@ impl Oryxis {
                 self.show_share_dialog = false;
                 self.share_filter = None;
                 self.share_status = None;
+                self.share_suggested_name = None;
             }
             m => return Err(m),
         }
         Ok(Task::none())
+    }
+}
+
+/// Build a filesystem-safe `*.oryxis` default file name from a connection
+/// or group label. Strips path separators, control characters and other
+/// reserved bytes so the suggestion can't escape the picked directory or
+/// produce an unusable name. Falls back to `shared.oryxis` when nothing
+/// printable survives.
+fn share_file_name(label: &str) -> String {
+    let cleaned: String = label
+        .chars()
+        .map(|c| match c {
+            '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|' => '_',
+            c if c.is_control() => '_',
+            c => c,
+        })
+        .collect();
+    let trimmed = cleaned.trim().trim_matches('.').trim();
+    if trimmed.is_empty() {
+        "shared.oryxis".to_string()
+    } else {
+        format!("{trimmed}.oryxis")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::share_file_name;
+
+    #[test]
+    fn share_file_name_uses_label() {
+        assert_eq!(share_file_name("my-server"), "my-server.oryxis");
+        assert_eq!(share_file_name("Prod DB"), "Prod DB.oryxis");
+    }
+
+    #[test]
+    fn share_file_name_strips_path_and_reserved_chars() {
+        // No separator survives, so the suggestion can't escape the
+        // directory the user picks in the save dialog. A leftover ".."
+        // with no separator is just a harmless filename component.
+        let name = share_file_name("../../etc/passwd");
+        assert!(!name.contains('/'));
+        assert!(!name.contains('\\'));
+        assert_eq!(share_file_name("a:b*c?"), "a_b_c_.oryxis");
+    }
+
+    #[test]
+    fn share_file_name_falls_back_when_empty() {
+        assert_eq!(share_file_name(""), "shared.oryxis");
+        assert_eq!(share_file_name("   "), "shared.oryxis");
+        assert_eq!(share_file_name("..."), "shared.oryxis");
     }
 }
