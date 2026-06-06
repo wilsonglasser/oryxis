@@ -507,7 +507,7 @@ impl Oryxis {
     /// Resolve the OS / brand icon hint for a tab from its (de-suffixed)
     /// label: a saved connection's detected OS, else a local-shell hint, else
     /// the cloud brand parsed from an `ECS · ...` / `K8s · ...` prefix.
-    fn tab_detected_os(&self, base_label: &str) -> Option<String> {
+    pub(crate) fn tab_detected_os(&self, base_label: &str) -> Option<String> {
         self.connections
             .iter()
             .find(|c| c.label == base_label)
