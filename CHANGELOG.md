@@ -4,66 +4,52 @@ All notable changes to Oryxis are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the
 project uses [SemVer](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.8.0] - 2026-06-06
 
 ### Added
-- **Pinned tabs.** Pin a tab from its context menu and it renders first in
-  the strip, survives "close other tabs" / "close all tabs" (like a browser),
-  and reappears on the next launch. Two styles, chosen in Settings -> Interface:
-  a compact Chrome-style icon chip, or the full tab with a distinct accent
-  border. Restore is lazy: a pinned tab comes back dormant (a placeholder in
-  the strip) and only reconnects the host (or respawns the local shell) the
-  first time you select it, so launch stays fast. Works for saved hosts, local
-  shells, and ECS Exec / kubectl pods (the latter reopen via the same reconnect
-  path, re-resolving the group if the task recycled). SSM sessions can be pinned
-  for the session but are not yet restored across restarts.
-- **Drag to reorder tabs.** Drag a tab in the strip to reposition it: it lifts
-  into a floating ghost that follows the cursor while the other tabs slide out
-  of the way live to open the drop slot. Reordering is scoped to within a group
-  (pinned among pinned, normal among normal), so the pinned-first layout stays
-  consistent. The pinned order persists across restarts.
-- **Multi-hop host chaining.** The host editor's "Host Chaining" row now
-  opens a dedicated chain editor (Termius style) instead of a single-host
-  picker: build an ordered chain of jump hosts, reorder them, and remove
-  them, with the host being edited shown as the final destination. The
-  session tunnels through each hop in order before reaching the host. The
-  data model and SSH engine already supported arbitrary-length chains; this
-  exposes them in the UI. The old read-only "Host Chaining" display row and
-  the separate single-host "Jump Host" picker (which both edited the same
-  field) are collapsed into this one entry point.
-
-### Fixed
-- **Chain editor / host-editor modal overlays.** Picker and editor modals
-  opened from the host editor no longer leak hover and scroll events to the
-  host list and editor behind them (the backdrop now captures every mouse
-  event, not just clicks), and opening one no longer resets the scroll
-  position of the host list / editor underneath it.
-
-- **Custom themes.** Create your own terminal color schemes (the 16 ANSI
-  colors plus foreground / background / cursor) and your own UI / chrome
-  themes (the 21 app colors), each with a built-in graphical color picker
-  (saturation/value square + hue bar, no third-party crate) and a live
-  preview. Custom terminal themes appear in the Settings -> Terminal grid
-  (and the per-host theme picker) alongside the presets; custom UI themes
-  appear in Settings -> Interface, seeded from the active theme so you start
-  from something that works. Terminal schemes can also be imported by pasting
-  an iTerm `.itermcolors`, Windows Terminal JSON, or base16 YAML.
-- **Custom host icon picker overhaul.** The per-host icon/color dialog now
-  uses the same graphical color picker as the custom-theme editor (the
-  saturation/value square + hue bar) instead of a fixed swatch palette, and
-  the icon section gained a search box that filters the entire Lucide library
-  (~1500 glyphs) on top of the curated presets. The whole icon font already
-  ships in the binary, so searching every glyph adds no extra weight. The
-  modal's backdrop is now opaque too, so hover / scroll / clicks no longer
-  bleed through to the host list underneath it.
-- **Graceful plugin shutdown.** Cloud-provider plugin subprocesses (AWS,
-  Kubernetes) are now drained before they are reaped: on idle teardown,
-  rebind, and app exit the host lets in-flight requests finish, sends a
-  `shutdown` notification, and closes stdin so the plugin exits on its own
-  (flushing logs / closing SDK clients) instead of being hard-killed. The
-  hard kill stays only as a time-bounded fallback for a wedged plugin, so
-  app close can't hang. The `shutdown` notification is additive (no protocol
-  bump; plugins that predate it still exit cleanly on the stdin EOF).
+- **AI assistant that runs commands.** The terminal-side AI chat now drives
+  the session directly through an `execute_command` tool instead of printing
+  commands for you to copy: ask it to check, fix, or inspect something and it
+  runs the command in the focused pane and reads the output back. Auto-exec is
+  gated by three independent safety layers so a destructive command can never
+  run unattended: a deterministic floor that always forces a confirmation for
+  catastrophic host-level commands (`rm -rf`, `mkfs`, `dd` to a raw device,
+  `reboot`, fork bombs, `DROP DATABASE`, ...) no matter how the model
+  classified it; an independent LLM judge that vets the nuanced rest and fails
+  safe (any error or ambiguity blocks); and a per-session "always run X"
+  allow-list that is keyed on a single simple command and refuses to shortcut
+  anything containing shell chaining, pipes, redirection, or substitution
+  (`ls; rm -rf ~` can't ride a trusted `ls`). The chat also warns up front that
+  the assistant executes commands on your live servers.
+- **Kubernetes cloud provider.** A new "Kubernetes" option in Cloud
+  Accounts, authenticated by a kubeconfig (optional path + context). It
+  discovers workloads (Deployments / StatefulSets / DaemonSets) across
+  namespaces, imports the selected ones as dynamic groups that resolve to
+  their live pods on expand, and opens an interactive shell in a pod. The
+  provider ships as a subprocess plugin like AWS, but is a thin wrapper that
+  drives the `kubectl` CLI (no heavy SDK): discovery / resolve run
+  `kubectl get ... -o json`, and the pod shell spawns `kubectl exec -it` in a
+  local PTY. `kubectl` must be on PATH; a missing binary surfaces a clear
+  dialog. The dynamic-group editor lets you change the context, namespace and
+  label selector of an imported group. A workload whose selector can't be
+  resolved to concrete labels is reported rather than silently resolving to
+  every pod in the namespace.
+- **Port forwarding as a standalone entity.** Port forwards are no longer
+  tied to a terminal session. A new "Port Forwarding" area in the sidebar
+  manages `PortForwardRule` entities, each with a per-row on/off toggle that
+  opens a dedicated PTY-less SSH connection holding the tunnel until turned
+  off, plus an "auto-start on launch" option. All three directions are
+  supported: Local (`-L`), Remote (`-R`, via `tcpip-forward`, with a
+  `GatewayPorts yes` hint when binding `0.0.0.0`), and Dynamic SOCKS5 (`-D`,
+  a local SOCKS5 proxy that opens a `direct-tcpip` channel per request). A
+  dynamic forward bound to a non-loopback address warns that it exposes an
+  unauthenticated open proxy into the remote network. Toggling a rule on for
+  an untrusted host surfaces the same host-key verification modal the terminal
+  uses; boot auto-start stays known-only and silent. A dropped connection
+  flips the row back to off. Rules sync over P2P and travel in portable
+  export/import; legacy inline `Connection.port_forwards` are migrated into
+  `Local` rules (`auto_start = false`) on first launch, with the legacy field
+  kept as the "raise with the terminal" shortcut.
 - **Split panes.** A terminal tab can now be split into an arbitrary grid
   of panes (tmux / iTerm style), built on iced's `pane_grid`. Ctrl+Shift+E
   splits the focused pane side-by-side, Ctrl+Shift+O stacks it. You can also
@@ -90,32 +76,84 @@ project uses [SemVer](https://semver.org/spec/v2.0.0.html).
   the meantime is dropped with a warning rather than failing the whole open.
   Groups appear on the dashboard alongside hosts, sync as a credential-free
   entity, and travel in a full portable export.
-- **Kubernetes cloud provider.** A new "Kubernetes" option in Cloud
-  Accounts, authenticated by a kubeconfig (optional path + context). It
-  discovers workloads (Deployments / StatefulSets / DaemonSets) across
-  namespaces, imports the selected ones as dynamic groups that resolve to
-  their live pods on expand, and opens an interactive shell in a pod. The
-  provider ships as a subprocess plugin like AWS, but is a thin wrapper that
-  drives the `kubectl` CLI (no heavy SDK): discovery / resolve run
-  `kubectl get ... -o json`, and the pod shell spawns `kubectl exec -it` in a
-  local PTY. `kubectl` must be on PATH; a missing binary surfaces a clear
-  dialog. The dynamic-group editor lets you change the context, namespace and
-  label selector of an imported group.
-- **Port forwarding as a standalone entity.** Port forwards are no longer
-  tied to a terminal session. A new "Port Forwarding" area in the sidebar
-  manages `PortForwardRule` entities, each with a per-row on/off toggle that
-  opens a dedicated PTY-less SSH connection holding the tunnel until turned
-  off, plus an "auto-start on launch" option. All three directions are
-  supported: Local (`-L`), Remote (`-R`, via `tcpip-forward`, with a
-  `GatewayPorts yes` hint when binding `0.0.0.0`), and Dynamic SOCKS5 (`-D`,
-  a local SOCKS5 proxy that opens a `direct-tcpip` channel per request).
-  Toggling a rule on for an untrusted host surfaces the same host-key
-  verification modal the terminal uses; boot auto-start stays known-only and
-  silent. A dropped connection flips the row back to off. Rules sync over
-  P2P and travel in portable export/import; legacy inline
-  `Connection.port_forwards` are migrated into `Local` rules
-  (`auto_start = false`) on first launch, with the legacy field kept as the
-  "raise with the terminal" shortcut.
+- **Server-to-server file copy in the SFTP tab.** Transfer files directly
+  between two remote hosts in the dual-pane SFTP browser, with the bytes
+  streamed host-to-host through the app (no full local round-trip to disk) and
+  a live byte-level progress bar. A failed transfer removes the partial file
+  on the destination rather than leaving a truncated one behind.
+- **SFTP dual-pane UX pass.** A reworked two-pane browser with type-ahead row
+  selection, drag-and-drop (including from the Windows / WSL host), modal
+  operations that block interaction with the panes underneath, and live
+  byte-level progress on every transfer (upload, download, and server-to-server
+  relay).
+- **Custom themes.** Create your own terminal color schemes (the 16 ANSI
+  colors plus foreground / background / cursor) and your own UI / chrome
+  themes (the 21 app colors), each with a built-in graphical color picker
+  (saturation/value square + hue bar, no third-party crate) and a live
+  preview. Custom terminal themes appear in the Settings -> Terminal grid
+  (and the per-host theme picker) alongside the presets; custom UI themes
+  appear in Settings -> Interface, seeded from the active theme so you start
+  from something that works. Terminal schemes can also be imported by pasting
+  an iTerm `.itermcolors`, Windows Terminal JSON, or base16 YAML.
+- **Custom host icon picker overhaul.** The per-host icon/color dialog now
+  uses the same graphical color picker as the custom-theme editor (the
+  saturation/value square + hue bar) instead of a fixed swatch palette, and
+  the icon section gained a search box that filters the entire Lucide library
+  (~1500 glyphs) on top of the curated presets. The whole icon font already
+  ships in the binary, so searching every glyph adds no extra weight. The
+  modal's backdrop is now opaque too, so hover / scroll / clicks no longer
+  bleed through to the host list underneath it.
+- **Graceful plugin shutdown.** Cloud-provider plugin subprocesses (AWS,
+  Kubernetes) are now drained before they are reaped: on idle teardown,
+  rebind, and app exit the host lets in-flight requests finish, sends a
+  `shutdown` notification, and closes stdin so the plugin exits on its own
+  (flushing logs / closing SDK clients) instead of being hard-killed. The
+  hard kill stays only as a time-bounded fallback for a wedged plugin, so
+  app close can't hang. The `shutdown` notification is additive (no protocol
+  bump; plugins that predate it still exit cleanly on the stdin EOF).
+- **Multi-hop host chaining.** The host editor's "Host Chaining" row now
+  opens a dedicated chain editor (Termius style) instead of a single-host
+  picker: build an ordered chain of jump hosts, reorder them, and remove
+  them, with the host being edited shown as the final destination. The
+  session tunnels through each hop in order before reaching the host. The
+  data model and SSH engine already supported arbitrary-length chains; this
+  exposes them in the UI. The old read-only "Host Chaining" display row and
+  the separate single-host "Jump Host" picker (which both edited the same
+  field) are collapsed into this one entry point.
+- **Pinned tabs.** Pin a tab from its context menu and it renders first in
+  the strip, survives "close other tabs" / "close all tabs" (like a browser),
+  and reappears on the next launch. Two styles, chosen in Settings -> Interface:
+  a compact Chrome-style icon chip, or the full tab with a distinct accent
+  border. Restore is lazy: a pinned tab comes back dormant (a placeholder in
+  the strip) and only reconnects the host (or respawns the local shell) the
+  first time you select it, so launch stays fast. Works for saved hosts, local
+  shells, and ECS Exec / kubectl pods (the latter reopen via the same reconnect
+  path, re-resolving the group if the task recycled). Pinning is offered on
+  single-pane tabs (a split or session-group tab is saved as a session group
+  instead). SSM sessions can be pinned for the session but are not yet restored
+  across restarts.
+- **Drag to reorder tabs.** Drag a tab in the strip to reposition it: it lifts
+  into a floating ghost that follows the cursor while the other tabs slide out
+  of the way live to open the drop slot. Reordering is scoped to within a group
+  (pinned among pinned, normal among normal), so the pinned-first layout stays
+  consistent. The pinned order persists across restarts.
+- **Multi-line snippets.** The snippet command field auto-grows into a
+  multi-line editor, so a snippet can hold a small script instead of a single
+  line.
+- **Import a shared host from the "+ Host" menu.** The share / import flow is
+  reachable directly from the "+ Host" menu, with a smoother end-to-end import.
+- **Full AGPL-3.0 license text.** The complete license is now shipped in the
+  repository.
+
+### Fixed
+- **Modal overlays.** Picker and editor modals (the chain editor, host editor,
+  icon picker, theme editors) no longer leak hover and scroll events to the
+  list and editor behind them: every modal now routes through one shared
+  overlay whose backdrop captures every mouse event, not just clicks, and
+  opening one no longer resets the scroll position of the content underneath.
+- **Vault sub-navigation.** The "Hosts" top tab stays selected across all
+  vault sub-sections (Keys / Snippets / Port Forwarding / History) instead of
+  losing the highlight.
 
 ## [0.7.4] - 2026-06-01
 

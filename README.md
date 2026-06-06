@@ -122,7 +122,8 @@ Most SSH clients are either powerful but ugly (PuTTY), pretty but Electron-heavy
 
 ### SSH & Connectivity
 - **Auto-authentication.** Tries key, agent, password, and keyboard-interactive in order.
-- **Full SSH pipeline.** Direct, SOCKS4/5, HTTP CONNECT, ProxyCommand, jump host chaining, and local port forwarding via [russh 0.60](https://github.com/warp-tech/russh).
+- **Full SSH pipeline.** Direct, SOCKS4/5, HTTP CONNECT, ProxyCommand, multi-hop jump host chaining, and port forwarding via [russh 0.61](https://github.com/warp-tech/russh).
+- **Standalone port forwarding.** Local (`-L`), Remote (`-R`) and Dynamic SOCKS5 (`-D`) forwards live as their own entities with per-row on/off toggles, auto-start at boot, and no terminal required.
 - **Authenticated proxies.** SOCKS5 and HTTP CONNECT Basic auth, with proxy passwords in their own encrypted column.
 - **Proxy + jump host stacking.** A jump host behind a proxy dials through it on the first hop.
 - **Reusable Proxy Identities.** Save SOCKS5 / HTTP / SOCKS4 configs once and link them from any host.
@@ -132,8 +133,11 @@ Most SSH clients are either powerful but ugly (PuTTY), pretty but Electron-heavy
 
 ### Terminal
 - **Embedded emulator.** [alacritty_terminal 0.26](https://github.com/alacritty/alacritty) with 256-color, truecolor, mouse selection, scrollback.
+- **Split panes.** Split a tab into a tmux/iTerm-style grid; each pane is its own session (saved host or local shell), with keyboard / paste / snippets / AI targeting the focused pane.
+- **Session groups.** Save a split arrangement (panes + split tree + per-pane startup scripts) as a reusable, credential-free entity.
+- **Pinned & reorderable tabs.** Pin tabs (restored on next launch, lazy reconnect) and drag to reorder, browser-style.
 - **Syntax highlighting.** IPs, URLs, and file paths auto-detected and colored.
-- **13 terminal palettes.** Picker with inline swatch previews, global or per-host.
+- **13 terminal palettes plus custom schemes.** Picker with inline swatch previews, global or per-host; build your own or import iTerm / Windows Terminal / base16.
 - **Bundled Nerd Fonts.** SauceCodePro plus a Symbols Nerd Font fallback so Powerline and icon glyphs always render.
 - **System mono font enumeration**, configurable font size (10-24px, `Ctrl + = / - / 0`), bold-to-bright colors, and full session recording.
 
@@ -144,22 +148,25 @@ Most SSH clients are either powerful but ugly (PuTTY), pretty but Electron-heavy
 - **Multi-select.** Ctrl/Cmd-click and Shift-range; batch Delete / Download / Duplicate / Upload.
 - **Edit-in-place.** Opens a remote file in your OS editor and prompts to upload on save.
 - **Properties dialog.** Per-row chmod grid, size, mtime, owner.
+- **Server-to-server copy.** Transfer files directly between two remote hosts, streamed host-to-host with no local round-trip and a live byte-level progress bar.
 - **Overwrite handling**, configurable parallelism (1-8 channels), `rm -rf` over exec, a live progress bar, and tunable timeouts.
 
 ### AI Chat Assistant
 - **Integrated AI sidebar.** Collapsible chat panel per terminal session.
 - **Streaming responses.** Tokens land as the model emits them; markdown re-renders progressively.
-- **Bash tool execution.** The AI can run commands in the active terminal and analyze the output.
+- **Runs commands for you.** The assistant drives the focused pane through an `execute_command` tool and reads the output back, instead of printing commands to copy.
+- **Three-layer auto-exec safety.** A deterministic floor force-prompts catastrophic commands, an independent fail-safe LLM judge vets the rest, and the "always run" allow-list refuses chained / piped / substituted commands so a trusted name can't smuggle a destructive payload.
 - **Multiple providers.** Anthropic, OpenAI, Google Gemini, or any OpenAI-compatible endpoint.
 - **Terminal context**, smart output capture, and a custom system prompt option.
 
-### Cloud Accounts (AWS)
+### Cloud Accounts (AWS & Kubernetes)
 - **First-class AWS provider.** Encrypted profiles (named profile, static keys, or IAM Identity Center / SSO) with a "Test credentials" button.
 - **Discovery & import.** Lists EC2 instances and ECS services grouped by region and cluster, with live filter and per-row import.
 - **Provider folder layout.** Imports nest under a folder named after the profile; ECS services become dynamic groups.
 - **EC2 Instance Connect.** One-shot key push with AMI-aware OS user inference.
 - **SSM Session.** Reach private instances with no open ports via Session Manager.
 - **ECS Exec.** Expand a dynamic group to its live tasks and exec into a container.
+- **Kubernetes provider.** Kubeconfig auth (path + context), discovers Deployments / StatefulSets / DaemonSets across namespaces, imports them as dynamic groups that resolve to live pods, and opens an interactive shell via `kubectl exec -it`. A thin `kubectl`-CLI wrapper, no heavy SDK.
 - **Brand SVG icons** for providers, dynamic groups, and distros.
 
 ### Identity System
@@ -170,7 +177,7 @@ Most SSH clients are either powerful but ugly (PuTTY), pretty but Electron-heavy
 - **Encrypted SSH key import.** Passphrase-protected keys are decrypted on import; the vault master password protects them at rest.
 
 ### Themes & Internationalization
-- **13 global themes.** Switch the entire UI instantly.
+- **13 global themes plus custom UI schemes.** Switch the entire UI instantly, or build your own (21 colors) with a built-in graphical color picker and live preview.
 - **Per-theme button colors** with WCAG contrast guards enforced in CI.
 - **11 languages.** English, Português, Español, Français, Deutsch, Italiano, 中文, 日本語, Русский, فارسی, العربية.
 - **RTL layout support.** Persian and Arabic flip the chrome; `Settings → Theme → Layout direction` overrides with Auto / LTR / RTL.
@@ -406,8 +413,8 @@ Full step-by-step in [SELF_HOSTING.md](SELF_HOSTING.md).
 | **v0.7.2** | **Released** | **Right-click-to-copy** selection mode: a copy-on-select sub-option (the Windows console "QuickEdit" model) where a finished selection waits for a right-click to copy instead of copying on release, with right-click-to-paste preserved when nothing is selected. **MCP config for WSL clients** (Windows): a Native / WSL target toggle in the MCP setup panel; Copy JSON and Install emit the `/mnt/c/...` mount path, and Install merges the entry into the WSL distro's `~/.claude/.mcp.json` via `wsl.exe`, for a Claude Code / Cursor instance running inside WSL. Fix: Linux `WM_CLASS` / Wayland `app_id` so GNOME resolves the app icon |
 | **v0.7.3** | **Released** | **Terminal mouse reporting** (xterm SGR 1006 + legacy X10, click / drag / any-motion tracking) so tmux `mouse on`, vim `mouse=a`, htop, less and lazygit see the mouse; Shift bypasses to local text selection. Fixes wheel-scroll in alt-screen apps over SSH. **Opt-in nightly update channel**: Settings -> Updates channel picker, in-app self-update that tracks the rolling `nightly` release by commit (installs the bare binary in place, no installer / UAC), with a clean switch back to Stable. Vector app logo (`logo.svg`) for crisp rendering at any DPI |
 | **v0.7.4** | **Released** | **Graphics renderer picker** (Settings -> Interface): Automatic / OpenGL (GPU) / Software (CPU), an escape hatch for GPU/driver stacks that corrupt the wgpu surface (Vulkan-on-Mesa under GNOME), mapped to `WGPU_BACKEND` / `ICED_BACKEND` at startup. **macOS `.dmg`**: a signed/notarizable `Oryxis.app` bundle packaged into a disk image for Apple Silicon, alongside the tarball. Dependency bumps (`russh` 0.61) |
-| **v0.8** | Planned | Port forwarding as standalone entity (independent of terminal session, with on/off toggle, auto-start at boot, dedicated sidebar) covering Local (`-L`), Remote (`-R`) and Dynamic SOCKS (`-D`); Kubernetes provider (`kubectl exec` into pods, namespace + label discovery); split panes; session groups (save a split arrangement as a reusable entity with per-pane startup scripts); custom themes; graceful plugin shutdown (drain in-flight before reap); pinned tabs (persist across restart, reopened lazily on first select, compact icon-chip or bordered style) |
-| **v0.9** | Planned | Google Cloud provider (Compute Engine + GKE); Azure provider (VMs + AKS); server-to-server file copy in the SFTP tab (transfer directly between two remote hosts, no local round-trip); biometric unlock; Windows ConPTY local shell; XChaCha20-Poly1305 wire format (192-bit nonce) on a sync v6 protocol bump |
+| **v0.8** | **Released** | **AI assistant that runs commands**: the terminal chat drives the session through an `execute_command` tool instead of narrating, gated by three independent auto-exec safety layers (a deterministic catastrophic-command floor, an independent fail-safe LLM judge, and a shell-chaining-guarded "always run" allow-list). **Kubernetes provider** (`kubectl exec` into pods, namespace + Deployment/StatefulSet/DaemonSet discovery, kubeconfig auth, thin `kubectl`-CLI wrapper). **Port forwarding as a standalone entity** (independent of any terminal, per-row on/off toggle, auto-start at boot, dedicated sidebar) covering Local (`-L`), Remote (`-R` via `tcpip-forward`) and Dynamic SOCKS5 (`-D`, with an open-proxy warning on non-loopback binds). **Split panes** (tmux/iTerm-style `pane_grid`, per-pane session). **Session groups** (save a split arrangement as a reusable, credential-free entity with per-pane startup scripts). **Server-to-server file copy in the SFTP tab** (host-to-host streaming, no local round-trip) plus a dual-pane UX pass with live byte-level transfer progress. **Custom themes** (terminal + UI color schemes with a built-in graphical color picker; iTerm / Windows Terminal / base16 import) and an icon-picker overhaul (full Lucide search). **Multi-hop host chaining** editor; **pinned tabs** (persist across restart, lazy reopen, compact icon-chip or bordered style) and **drag-to-reorder**; multi-line snippets; graceful plugin shutdown (drain in-flight before reap); `--connect <uuid>` IPC routing for the tray |
+| **v0.9** | Planned | Google Cloud provider (Compute Engine + GKE); Azure provider (VMs + AKS); biometric unlock; Windows ConPTY local shell; Windows JumpList (recent hosts in the taskbar menu); XChaCha20-Poly1305 wire format (192-bit nonce) on a sync v6 protocol bump |
 
 ## Contributing
 
