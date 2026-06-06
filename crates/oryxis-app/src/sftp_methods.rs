@@ -232,7 +232,19 @@ impl Oryxis {
             .as_ref()
             .filter(|(s, _, is_dir)| *s == dest_side && *is_dir)
             .map(|(_, p, _)| p.clone());
-        let over_dest = target_folder.is_some()
+        // The drop lands on the destination pane if the cursor is hovering
+        // one of its rows. `hovered_row` is updated by row-hover events,
+        // which fire even while a button is held (unlike cursor-move on
+        // WSLg), so this is the reliable cross-platform signal. The
+        // cursor-over-pane geometry check is kept as a fallback for empty
+        // areas on platforms that do deliver moves during the hold.
+        let hovered_dest = self
+            .sftp
+            .hovered_row
+            .as_ref()
+            .is_some_and(|(s, _, _)| *s == dest_side);
+        let over_dest = hovered_dest
+            || target_folder.is_some()
             || match dest_side {
                 Left => self.is_cursor_over_local_pane(),
                 Right => self.is_cursor_over_remote_pane(),

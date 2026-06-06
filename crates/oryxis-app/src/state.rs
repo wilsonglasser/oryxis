@@ -141,6 +141,24 @@ pub(crate) struct SftpState {
     /// Labels of the items finished so far in the active transfer, for
     /// the per-file panel. Cleared when a new transfer starts.
     pub transfer_done_log: Vec<String>,
+    /// Type-ahead search buffer: characters typed while a row is selected,
+    /// used to jump the selection to the first matching entry. Reset after
+    /// a short pause between keystrokes.
+    pub type_ahead: String,
+    /// Instant of the last type-ahead keystroke, for the reset timeout.
+    pub type_ahead_at: Option<std::time::Instant>,
+    /// The previous completed type-ahead sequence. When the user re-types
+    /// the same string (after a pause), the search advances to the next
+    /// match instead of restarting, so repeated typing cycles results.
+    pub type_ahead_committed: String,
+    /// Last plain row click `(side, path, when)`, used to detect a
+    /// double-click (single click selects a folder, double click opens it).
+    pub last_click: Option<(SftpPaneSide, String, std::time::Instant)>,
+    /// Generation counter for the debounced type-ahead search. Each
+    /// keystroke bumps it and schedules a deferred fire; only the fire
+    /// whose generation still matches runs, so fast typing searches once
+    /// (with the full buffer) instead of jumping on every key.
+    pub type_ahead_gen: u64,
 }
 
 impl Default for SftpState {
@@ -179,6 +197,11 @@ impl Default for SftpState {
             properties: None,
             transfer_panel_open: false,
             transfer_done_log: Vec::new(),
+            type_ahead: String::new(),
+            type_ahead_at: None,
+            type_ahead_committed: String::new(),
+            last_click: None,
+            type_ahead_gen: 0,
         }
     }
 }

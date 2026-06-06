@@ -154,6 +154,10 @@ pub enum Message {
     /// Toggle the per-file progress panel that drops down from the
     /// transfer status strip.
     SftpToggleTransferPanel,
+    /// Deferred type-ahead search fire. Carries the generation it was
+    /// scheduled for; runs only if no newer keystroke superseded it
+    /// (debounce, so fast typing searches once with the full buffer).
+    SftpTypeAheadFire(u64),
     SftpStartNewEntry(crate::state::SftpPaneSide, crate::state::SftpEntryKind),
     SftpNewEntryInput(String),
     SftpNewEntryCommit,

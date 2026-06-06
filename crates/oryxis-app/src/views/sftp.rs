@@ -486,15 +486,7 @@ impl Oryxis {
                 });
             stack = stack.push(outline);
         }
-        // Route cursor moves over the pane to `MouseMoved` directly. The
-        // global event subscription stops delivering `CursorMoved` while a
-        // row button holds the press (so a pending drag never crossed the
-        // activation threshold); a `MouseArea` over the pane still sees the
-        // motion and drives the same promotion. `on_move` doesn't capture
-        // clicks, so row navigation still works.
-        MouseArea::new(stack)
-            .on_move(Message::MouseMoved)
-            .into()
+        stack.into()
     }
 
     fn view_sftp_picker(&self) -> Element<'_, Message> {

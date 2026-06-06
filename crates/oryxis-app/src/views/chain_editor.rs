@@ -262,7 +262,9 @@ impl Oryxis {
             } else {
                 Color::TRANSPARENT
             };
+            let badge = self.chain_host_badge(Some(conn));
             rows.push(pick_row(
+                badge,
                 &conn.label,
                 breadcrumb,
                 zebra_bg,
@@ -488,12 +490,15 @@ fn chain_connector<'a>() -> Element<'a, Message> {
 
 /// Selectable host row used by the add-a-hop list.
 fn pick_row<'a>(
+    badge: Element<'a, Message>,
     label: &'a str,
     breadcrumb: String,
     zebra_bg: Color,
     on_press: Message,
 ) -> Element<'a, Message> {
     let inner = dir_row(vec![
+        badge,
+        Space::new().width(12).into(),
         text(label.to_string())
             .size(13)
             .font(iced::Font {
