@@ -102,6 +102,15 @@ impl Oryxis {
                     .map(|_| Message::SftpEditWatchTick),
             );
         }
+        // Live transfer bar: poll the shared byte counter a few times a
+        // second while a transfer runs, so the progress bar advances
+        // smoothly. Idle otherwise.
+        if self.sftp.transfer.is_some() {
+            subs.push(
+                iced::time::every(std::time::Duration::from_millis(120))
+                    .map(|_| Message::SftpTransferTick),
+            );
+        }
         // Intercept the user's close verb (Alt+F4, OS taskbar Close,
         // any path that produces a winit CloseRequested). iced 0.14
         // exposes a dedicated subscription for this; we route it

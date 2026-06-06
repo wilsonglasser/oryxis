@@ -154,6 +154,9 @@ pub enum Message {
     /// Toggle the per-file progress panel that drops down from the
     /// transfer status strip.
     SftpToggleTransferPanel,
+    /// Periodic tick while a transfer runs: forces a redraw so the live
+    /// byte-progress bar advances (it reads a shared atomic counter).
+    SftpTransferTick,
     /// Deferred type-ahead search fire. Carries the generation it was
     /// scheduled for; runs only if no newer keystroke superseded it
     /// (debounce, so fast typing searches once with the full buffer).

@@ -109,7 +109,9 @@ pub(crate) fn walk_local_for_upload(
                 src: child_src.to_string_lossy().into_owned(),
                 dst: child_dst,
                 is_dir: false,
-                size: None,
+                // Carry the byte size so the transfer's total is known up
+                // front and the progress bar can advance by bytes.
+                size: Some(metadata.len()),
             });
         }
     }
@@ -241,6 +243,7 @@ pub(crate) async fn do_relay_item(
     src_client: oryxis_ssh::SftpClient,
     dst_client: oryxis_ssh::SftpClient,
     item: crate::state::TransferItem,
+    progress: Option<std::sync::Arc<std::sync::atomic::AtomicU64>>,
 ) -> Result<(), String> {
     if item.is_dir {
         // create_dir errors when the dir already exists; harmless for a
@@ -249,7 +252,7 @@ pub(crate) async fn do_relay_item(
         Ok(())
     } else {
         src_client
-            .relay_to(&item.src, &dst_client, &item.dst, item.size)
+            .relay_to_progress(&item.src, &dst_client, &item.dst, item.size, progress)
             .await
             .map_err(|e| e.to_string())
     }
@@ -264,6 +267,7 @@ pub(crate) async fn do_upload_item(
     item: crate::state::TransferItem,
     overwrite_default: Option<crate::state::OverwriteAction>,
     multi: bool,
+    progress: Option<std::sync::Arc<std::sync::atomic::AtomicU64>>,
 ) -> Result<UploadStepOutcome, String> {
     if item.is_dir {
         // `create_dir` errors when the dir already exists; harmless for
@@ -306,7 +310,7 @@ pub(crate) async fn do_upload_item(
         return Ok(UploadStepOutcome::Conflict { prompt, item });
     }
     client
-        .upload_from(std::path::Path::new(&item.src), &item.dst)
+        .upload_from_progress(std::path::Path::new(&item.src), &item.dst, progress)
         .await
         .map_err(|e| e.to_string())?;
     Ok(UploadStepOutcome::Done)
@@ -382,6 +386,7 @@ pub(crate) async fn apply_overwrite_for_item(
 pub(crate) async fn do_download_item(
     client: oryxis_ssh::SftpClient,
     item: crate::state::TransferItem,
+    progress: Option<std::sync::Arc<std::sync::atomic::AtomicU64>>,
 ) -> Result<(), String> {
     if item.is_dir {
         tokio::fs::create_dir_all(&item.dst)
@@ -389,7 +394,7 @@ pub(crate) async fn do_download_item(
             .map_err(|e| format!("mkdir {}: {e}", item.dst))
     } else {
         client
-            .download_to(&item.src, std::path::Path::new(&item.dst), item.size)
+            .download_to_progress(&item.src, std::path::Path::new(&item.dst), item.size, progress)
             .await
             .map_err(|e| e.to_string())
     }

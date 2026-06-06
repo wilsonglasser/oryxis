@@ -649,6 +649,16 @@ impl Oryxis {
                 // Fresh transfer: reset the per-file panel log + collapse it.
                 self.sftp.transfer_done_log.clear();
                 self.sftp.transfer_panel_open = false;
+                // Live byte progress: total = sum of known item sizes (0 if
+                // unknown, bar falls back to item counts). Use a *fresh*
+                // counter rather than resetting the old one, so a lingering
+                // worker from a previous/cancelled transfer (whose task may
+                // still be draining) can't keep incrementing this transfer's
+                // counter and spike the bar to 100% before its first byte.
+                self.sftp.transfer_bytes_total =
+                    state.queue.iter().filter_map(|i| i.size).sum();
+                self.sftp.transfer_bytes_done =
+                    std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0));
                 self.sftp.transfer = Some(state);
                 // Kick off one Next per slot so the worker pool fills
                 // up immediately. Each completion will dispatch its
@@ -718,11 +728,14 @@ impl Oryxis {
                 let kind = transfer.kind;
                 let overwrite_default = transfer.overwrite_default;
                 let multi = transfer.total > 1;
+                // Shared live-byte counter the worker increments as chunks
+                // move; the tick subscription polls it for the bar.
+                let bytes_done = self.sftp.transfer_bytes_done.clone();
                 match kind {
                     crate::state::TransferKind::Upload => {
                         let client = transfer.clients[slot as usize].clone();
                         return Ok(Task::perform(
-                            do_upload_item(client, item, overwrite_default, multi),
+                            do_upload_item(client, item, overwrite_default, multi, Some(bytes_done)),
                             move |r| match r {
                                 Ok(UploadStepOutcome::Done) => {
                                     Message::SftpTransferItemDone(slot)
@@ -737,7 +750,7 @@ impl Oryxis {
                     crate::state::TransferKind::Download => {
                         let client = transfer.clients[slot as usize].clone();
                         return Ok(Task::perform(
-                            do_download_item(client, item),
+                            do_download_item(client, item, Some(bytes_done)),
                             move |r| match r {
                                 Ok(()) => Message::SftpTransferItemDone(slot),
                                 Err(e) => Message::SftpTransferError(e, slot),
@@ -755,7 +768,7 @@ impl Oryxis {
                             )));
                         };
                         return Ok(Task::perform(
-                            do_relay_item(src_client, dst_client, item),
+                            do_relay_item(src_client, dst_client, item, Some(bytes_done)),
                             move |r| match r {
                                 Ok(()) => Message::SftpTransferItemDone(slot),
                                 Err(e) => Message::SftpTransferError(e, slot),
@@ -792,6 +805,9 @@ impl Oryxis {
             Message::SftpToggleTransferPanel => {
                 self.sftp.transfer_panel_open = !self.sftp.transfer_panel_open;
             }
+            // No-op: the redraw it triggers is the point (the bar reads the
+            // shared byte counter during view()).
+            Message::SftpTransferTick => {}
             Message::SftpTransferConflict(prompt, item, slot) => {
                 // Park the popped item alongside the prompt so the
                 // resolve handler knows which destination the user is
@@ -858,7 +874,9 @@ impl Oryxis {
                                     src: path.to_string_lossy().into_owned(),
                                     dst: target,
                                     is_dir: false,
-                                    size: None,
+                                    // Byte size up front so the total is known
+                                    // and the bar advances by bytes.
+                                    size: path.metadata().map(|m| m.len()).ok(),
                                 });
                             }
                         }

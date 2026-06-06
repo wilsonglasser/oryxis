@@ -36,8 +36,14 @@ impl Oryxis {
             // it. (Clicking the inner Cancel button also cancels, which
             // clears the transfer and hides both, so the extra toggle is
             // harmless.)
-            let strip = MouseArea::new(transfer_progress_strip(transfer))
-                .on_press(Message::SftpToggleTransferPanel);
+            let strip = MouseArea::new(transfer_progress_strip(
+                transfer,
+                self.sftp
+                    .transfer_bytes_done
+                    .load(std::sync::atomic::Ordering::Relaxed),
+                self.sftp.transfer_bytes_total,
+            ))
+            .on_press(Message::SftpToggleTransferPanel);
             let mut col = column![panes].width(Length::Fill).height(Length::Fill);
             if self.sftp.transfer_panel_open {
                 col = col.push(transfer_file_panel(transfer, &self.sftp.transfer_done_log));
@@ -1555,6 +1561,8 @@ fn file_row_local<'a>(
             .color(OryxisColors::t().text_muted)
             .width(Length::Fixed(SIZE_COL_W)),
     ]
+    // Fill the button's fixed height so the content centers vertically.
+    .height(Length::Fill)
     .align_y(iced::Alignment::Center);
 
     // Click action priority: while renaming, swallow clicks; folders
@@ -1659,6 +1667,10 @@ fn file_row_remote<'a>(
             .color(OryxisColors::t().text_muted)
             .width(Length::Fixed(SIZE_COL_W)),
     ]
+    // Fill the button's fixed height so `align_y(Center)` actually centers
+    // the content vertically inside the row (otherwise a shrink-height row
+    // sits at the top of the slot and reads as misaligned).
+    .height(Length::Fill)
     .align_y(iced::Alignment::Center);
     let mut btn = button(inner)
         .padding(Padding { top: 4.0, right: 12.0, bottom: 4.0, left: 12.0 })
@@ -2593,6 +2605,8 @@ fn transfer_file_panel<'a>(
 /// space as possible.
 fn transfer_progress_strip<'a>(
     transfer: &crate::state::TransferState,
+    bytes_done: u64,
+    bytes_total: u64,
 ) -> Element<'a, Message> {
     let label = match transfer.kind {
         crate::state::TransferKind::Upload => t("transfer_uploading"),
@@ -2604,24 +2618,44 @@ fn transfer_progress_strip<'a>(
         .current
         .clone()
         .unwrap_or_else(|| t("transfer_preparing").to_string());
-    let count = format!("{} / {}", transfer.completed, transfer.total);
-    let pct = if transfer.total == 0 {
-        0.0
+    // When the total byte size is known, drive the bar + count by bytes so a
+    // single large file shows live movement; otherwise fall back to item
+    // counts (e.g. all-directory transfers, where sizes are 0).
+    let (count, pct) = if bytes_total > 0 {
+        let done = bytes_done.min(bytes_total);
+        (
+            format!("{} / {}", format_size(done), format_size(bytes_total)),
+            (done as f32 / bytes_total as f32).clamp(0.0, 1.0),
+        )
+    } else if transfer.total == 0 {
+        (format!("{} / {}", transfer.completed, transfer.total), 0.0)
     } else {
-        (transfer.completed as f32 / transfer.total as f32).clamp(0.0, 1.0)
+        (
+            format!("{} / {}", transfer.completed, transfer.total),
+            (transfer.completed as f32 / transfer.total as f32).clamp(0.0, 1.0),
+        )
     };
-    // Ratio-based progress bar built from two stacked containers, iced
-    // 0.14 has ProgressBar, but a manual bar lets us match the rest of
-    // the chrome's styling exactly.
+    // Ratio-based progress bar: a filled portion + a remaining portion in
+    // a row so the `FillPortion` weights actually divide the track. (A lone
+    // FillPortion child fills 100% regardless of its weight, which made the
+    // bar look full even at 0%.)
+    let filled = (pct * 1000.0) as u16;
+    let remaining = 1000u16.saturating_sub(filled);
     let bar = container(
-        container(Space::new())
-            .width(Length::FillPortion((pct * 1000.0) as u16))
-            .height(Length::Fixed(4.0))
-            .style(|_| container::Style {
-                background: Some(Background::Color(OryxisColors::t().accent)),
-                border: Border { radius: Radius::from(2.0), ..Default::default() },
-                ..Default::default()
-            }),
+        row![
+            container(Space::new())
+                .width(Length::FillPortion(filled))
+                .height(Length::Fixed(4.0))
+                .style(|_| container::Style {
+                    background: Some(Background::Color(OryxisColors::t().accent)),
+                    border: Border { radius: Radius::from(2.0), ..Default::default() },
+                    ..Default::default()
+                }),
+            container(Space::new())
+                .width(Length::FillPortion(remaining))
+                .height(Length::Fixed(4.0)),
+        ]
+        .width(Length::Fill),
     )
     .width(Length::Fill)
     .height(Length::Fixed(4.0))

@@ -211,12 +211,25 @@ impl SftpClient {
     /// entry matches the `set_op_timeout` contract (in-flight ops keep
     /// their existing deadline) and keeps the loop itself free-standing
     /// and unit-testable.
-    async fn pump<R, W>(&self, op_name: &str, reader: R, writer: W) -> Result<(), SshError>
+    async fn pump<R, W>(
+        &self,
+        op_name: &str,
+        reader: R,
+        writer: W,
+        progress: Option<std::sync::Arc<std::sync::atomic::AtomicU64>>,
+    ) -> Result<(), SshError>
     where
         R: tokio::io::AsyncRead + Unpin,
         W: tokio::io::AsyncWrite + Unpin,
     {
-        pump_bytes(reader, writer, self.current_op_timeout(), op_name).await
+        pump_bytes(
+            reader,
+            writer,
+            self.current_op_timeout(),
+            op_name,
+            progress.as_deref(),
+        )
+        .await
     }
 
     /// Stream a remote file down to a local path without buffering the
@@ -238,6 +251,19 @@ impl SftpClient {
         local: &std::path::Path,
         size_hint: Option<u64>,
     ) -> Result<(), SshError> {
+        self.download_to_progress(remote, local, size_hint, None)
+            .await
+    }
+
+    /// Like [`download_to`](Self::download_to) but reports bytes transferred
+    /// into `progress` (a shared counter the UI polls for a live bar).
+    pub async fn download_to_progress(
+        &self,
+        remote: &str,
+        local: &std::path::Path,
+        size_hint: Option<u64>,
+        progress: Option<std::sync::Arc<std::sync::atomic::AtomicU64>>,
+    ) -> Result<(), SshError> {
         let label = format!("download({remote})");
         let size = match size_hint {
             Some(s) => s,
@@ -256,7 +282,7 @@ impl SftpClient {
             let local_file = tokio::fs::File::create(local)
                 .await
                 .map_err(|e| SshError::Channel(format!("create {}: {e}", local.display())))?;
-            let r = self.pump(&label, remote_file, local_file).await;
+            let r = self.pump(&label, remote_file, local_file, progress).await;
             if r.is_err() {
                 // Don't leave a partial download behind.
                 let _ = tokio::fs::remove_file(local).await;
@@ -317,8 +343,13 @@ impl SftpClient {
                 use std::io::{Seek, SeekFrom, Write};
                 out.seek(SeekFrom::Start(off))
                     .map_err(|e| SshError::Channel(format!("seek {}: {e}", local.display())))?;
+                let n = data.len() as u64;
                 out.write_all(&data)
-                    .map_err(|e| SshError::Channel(format!("write {}: {e}", local.display())))
+                    .map_err(|e| SshError::Channel(format!("write {}: {e}", local.display())))?;
+                if let Some(p) = &progress {
+                    p.fetch_add(n, std::sync::atomic::Ordering::Relaxed);
+                }
+                Ok(())
             },
         )
         .await;
@@ -340,6 +371,17 @@ impl SftpClient {
     /// then carry a sliding window of concurrent writes on one handle (see
     /// `windowed_upload_copy`).
     pub async fn upload_from(&self, local: &std::path::Path, remote: &str) -> Result<(), SshError> {
+        self.upload_from_progress(local, remote, None).await
+    }
+
+    /// Like [`upload_from`](Self::upload_from) but reports bytes transferred
+    /// into `progress` (a shared counter the UI polls for a live bar).
+    pub async fn upload_from_progress(
+        &self,
+        local: &std::path::Path,
+        remote: &str,
+        progress: Option<std::sync::Arc<std::sync::atomic::AtomicU64>>,
+    ) -> Result<(), SshError> {
         let label = format!("upload({remote})");
         let size = tokio::fs::metadata(local)
             .await
@@ -361,7 +403,7 @@ impl SftpClient {
                     .map_err(|e| SshError::Channel(format!("sftp open(W,{remote}): {e}")))
                 })
                 .await?;
-            return self.pump(&label, local_file, remote_file).await;
+            return self.pump(&label, local_file, remote_file, progress).await;
         }
 
         // Large file: one streaming handle carrying a sliding window of
@@ -405,11 +447,17 @@ impl SftpClient {
             move |off, data| {
                 let raw = raw_write.clone();
                 let handle = handle_write.clone();
+                let prog = progress.clone();
                 async move {
+                    let n = data.len() as u64;
                     raw.write(handle, off, data)
                         .await
                         .map(|_| ())
-                        .map_err(|e| SshError::Channel(format!("sftp write({off}): {e}")))
+                        .map_err(|e| SshError::Channel(format!("sftp write({off}): {e}")))?;
+                    if let Some(p) = &prog {
+                        p.fetch_add(n, std::sync::atomic::Ordering::Relaxed);
+                    }
+                    Ok(())
                 }
             },
         )
@@ -447,15 +495,30 @@ impl SftpClient {
         dst_remote: &str,
         size_hint: Option<u64>,
     ) -> Result<(), SshError> {
+        self.relay_to_progress(src_remote, dst, dst_remote, size_hint, None)
+            .await
+    }
+
+    /// Like [`relay_to`](Self::relay_to) but reports bytes transferred into
+    /// `progress` (a shared counter the UI polls for a live bar).
+    pub async fn relay_to_progress(
+        &self,
+        src_remote: &str,
+        dst: &SftpClient,
+        dst_remote: &str,
+        size_hint: Option<u64>,
+        progress: Option<std::sync::Arc<std::sync::atomic::AtomicU64>>,
+    ) -> Result<(), SshError> {
         let label = format!("relay({src_remote} -> {dst_remote})");
         let size = match size_hint {
             Some(s) => s,
             None => self.stat(src_remote).await?.size,
         };
         let result = if size < STREAM_THRESHOLD {
-            self.relay_small(&label, src_remote, dst, dst_remote).await
+            self.relay_small(&label, src_remote, dst, dst_remote, progress)
+                .await
         } else {
-            self.relay_windowed(&label, src_remote, size, dst, dst_remote)
+            self.relay_windowed(&label, src_remote, size, dst, dst_remote, progress)
                 .await
         };
         if result.is_err() {
@@ -473,6 +536,7 @@ impl SftpClient {
         src_remote: &str,
         dst: &SftpClient,
         dst_remote: &str,
+        progress: Option<std::sync::Arc<std::sync::atomic::AtomicU64>>,
     ) -> Result<(), SshError> {
         let src_file = self
             .with_op_timeout(label, async {
@@ -495,7 +559,7 @@ impl SftpClient {
             .await?;
         // pump_bytes shuts the writer down (closing the dst handle); the
         // src handle closes on drop.
-        self.pump(label, src_file, dst_file).await
+        self.pump(label, src_file, dst_file, progress).await
     }
 
     async fn relay_windowed(
@@ -505,6 +569,7 @@ impl SftpClient {
         size: u64,
         dst: &SftpClient,
         dst_remote: &str,
+        progress: Option<std::sync::Arc<std::sync::atomic::AtomicU64>>,
     ) -> Result<(), SshError> {
         let src_raw = self.open_raw_streaming().await?;
         let src_handle = src_raw
@@ -552,11 +617,17 @@ impl SftpClient {
             move |off, data| {
                 let raw = dst_raw_w.clone();
                 let h = dst_h.clone();
+                let prog = progress.clone();
                 async move {
+                    let n = data.len() as u64;
                     raw.write(h, off, data)
                         .await
                         .map(|_| ())
-                        .map_err(|e| SshError::Channel(format!("sftp relay write({off}): {e}")))
+                        .map_err(|e| SshError::Channel(format!("sftp relay write({off}): {e}")))?;
+                    if let Some(p) = &prog {
+                        p.fetch_add(n, std::sync::atomic::Ordering::Relaxed);
+                    }
+                    Ok(())
                 }
             },
         )
@@ -830,6 +901,7 @@ async fn pump_bytes<R, W>(
     mut writer: W,
     timeout: std::time::Duration,
     op_name: &str,
+    progress: Option<&std::sync::atomic::AtomicU64>,
 ) -> Result<(), SshError>
 where
     R: tokio::io::AsyncRead + Unpin,
@@ -854,6 +926,9 @@ where
         match tokio::time::timeout(timeout, writer.write_all(&buf[..n])).await {
             Ok(r) => r.map_err(|e| SshError::Channel(format!("sftp {op_name} write: {e}")))?,
             Err(_) => return Err(timed("write")),
+        }
+        if let Some(p) = progress {
+            p.fetch_add(n as u64, std::sync::atomic::Ordering::Relaxed);
         }
     }
     match tokio::time::timeout(timeout, writer.shutdown()).await {
@@ -1078,7 +1153,7 @@ mod tests {
         let mut dst: Vec<u8> = Vec::new();
         // `&[u8]` is AsyncRead, `&mut Vec<u8>` is AsyncWrite (shutdown is
         // a no-op for Vec), so this drives the loop end to end.
-        pump_bytes(src.as_slice(), &mut dst, Duration::from_secs(5), "test")
+        pump_bytes(src.as_slice(), &mut dst, Duration::from_secs(5), "test", None)
             .await
             .expect("pump_bytes");
         assert_eq!(dst, src, "round trip mismatch at len {len}");

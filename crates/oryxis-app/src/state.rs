@@ -159,6 +159,13 @@ pub(crate) struct SftpState {
     /// whose generation still matches runs, so fast typing searches once
     /// (with the full buffer) instead of jumping on every key.
     pub type_ahead_gen: u64,
+    /// Bytes transferred so far in the active transfer, incremented by the
+    /// SFTP engine as chunks move. Drives the live progress bar (polled by
+    /// a tick subscription while a transfer runs).
+    pub transfer_bytes_done: Arc<std::sync::atomic::AtomicU64>,
+    /// Total bytes the active transfer will move (sum of file sizes), for
+    /// the bar's denominator. 0 when unknown (falls back to item counts).
+    pub transfer_bytes_total: u64,
 }
 
 impl Default for SftpState {
@@ -202,6 +209,8 @@ impl Default for SftpState {
             type_ahead_committed: String::new(),
             last_click: None,
             type_ahead_gen: 0,
+            transfer_bytes_done: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+            transfer_bytes_total: 0,
         }
     }
 }
