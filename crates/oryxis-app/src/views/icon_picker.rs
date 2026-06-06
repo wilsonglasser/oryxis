@@ -270,10 +270,24 @@ impl Oryxis {
             .and_then(parse_hex_color)
             .unwrap_or(OryxisColors::t().accent);
 
+        // Same layout as the custom-theme color popover: HSV picker, a
+        // hex field, then the preset palette below it.
         let card = container(
-            crate::color_picker::color_picker(current, Message::IconPickerSelectColor),
+            column![
+                crate::color_picker::color_picker(current, Message::IconPickerSelectColor),
+                Space::new().height(10),
+                text_input("#RRGGBB", &self.icon_picker_hex_input)
+                    .on_input(Message::IconPickerHexInputChanged)
+                    .padding(7)
+                    .size(12)
+                    .style(crate::widgets::rounded_input_style),
+                Space::new().height(10),
+                preset_grid(),
+            ]
+            .spacing(0),
         )
         .padding(12)
+        .width(Length::Fixed(238.0))
         .style(|_| container::Style {
             background: Some(Background::Color(OryxisColors::t().bg_primary)),
             border: Border {
@@ -288,7 +302,7 @@ impl Oryxis {
 
         // Picker box footprint, used to clamp it inside the window.
         const PW: f32 = 238.0;
-        const PH: f32 = 228.0;
+        const PH: f32 = 340.0;
         let x = anchor.x.min((self.window_size.width - PW).max(0.0)).max(0.0);
         let y = anchor.y.min((self.window_size.height - PH).max(0.0)).max(0.0);
         let positioned = column![
@@ -309,6 +323,42 @@ impl Oryxis {
             .height(Length::Fill)
             .into()
     }
+}
+
+/// Preset color palette shown inside the popover, below the HSV picker.
+/// Mirrors the custom-theme color popover's grid; each swatch commits the
+/// color straight away via `IconPickerSelectColor`.
+fn preset_grid<'a>() -> Element<'a, Message> {
+    let mut rows = column![].spacing(5);
+    let mut current = row![].spacing(5);
+    let mut n = 0;
+    for hex in os_icon::PRESET_COLORS.iter() {
+        let color = parse_hex_color(hex).unwrap_or(OryxisColors::t().accent);
+        let sw = button(Space::new().width(18).height(18))
+            .on_press(Message::IconPickerSelectColor((*hex).to_string()))
+            .padding(0)
+            .style(move |_, status| {
+                let border = match status {
+                    BtnStatus::Hovered => OryxisColors::t().text_primary,
+                    _ => OryxisColors::t().border,
+                };
+                button::Style {
+                    background: Some(Background::Color(color)),
+                    border: Border { radius: Radius::from(4.0), color: border, width: 1.0 },
+                    ..Default::default()
+                }
+            });
+        current = current.push(sw);
+        n += 1;
+        if n % 9 == 0 {
+            rows = rows.push(current);
+            current = row![].spacing(5);
+        }
+    }
+    if n % 9 != 0 {
+        rows = rows.push(current);
+    }
+    rows.into()
 }
 
 fn icon_cell<'a>(id: &'static str, is_selected: bool) -> Element<'a, Message> {
