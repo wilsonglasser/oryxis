@@ -1115,3 +1115,68 @@ pub(crate) fn bounds_reporter<'a, Message: 'a>(
         cell,
     })
 }
+
+/// The single, canonical full-window modal overlay: `base` view, a scrim
+/// that absorbs both click and hover, and a centered `card` that traps its
+/// own clicks. Every blocking modal should route through this so the scrim
+/// can never reintroduce mouse bleed-through to the live UI behind it.
+///
+/// - `on_scrim_click`: `Some(msg)` makes an outside click dismiss the modal;
+///   `None` is for auth-style modals (host key, 2FA, update) that must not
+///   dismiss on a stray backdrop click. Either way the scrim fully absorbs
+///   the click, so nothing reaches `base`.
+/// - `top_reserve`: a transparent band (px) at the top of the *scrim only*,
+///   so the window title bar (drag / minimize / maximize / close) stays
+///   hittable while the modal is open. The card still centers over the full
+///   height. Pass `40.0` for app-level modals, `0.0` for in-view ones.
+///
+/// `interaction(Idle)` on the scrim is load-bearing: without it iced lets
+/// hover events bleed through the `Stack` to widgets below. The card's own
+/// `MouseArea` is what stops a click *on the card* from falling through to
+/// the scrim and triggering a dismiss, this helper owns that step because it
+/// is the one every hand-rolled modal forgot.
+pub(crate) fn modal_overlay<'a>(
+    base: Element<'a, Message>,
+    card: Element<'a, Message>,
+    on_scrim_click: Option<Message>,
+    top_reserve: f32,
+) -> Element<'a, Message> {
+    use iced::widget::{column, MouseArea};
+
+    let scrim_fill = container(Space::new())
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .style(|_| container::Style {
+            background: Some(Background::Color(Color::from_rgba(0.0, 0.0, 0.0, 0.5))),
+            ..Default::default()
+        });
+    let scrim_body: Element<'a, Message> = if top_reserve > 0.0 {
+        column![Space::new().height(Length::Fixed(top_reserve)), scrim_fill]
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .into()
+    } else {
+        scrim_fill.into()
+    };
+
+    let scrim: Element<'a, Message> = MouseArea::new(scrim_body)
+        .interaction(iced::mouse::Interaction::Idle)
+        .on_press(on_scrim_click.unwrap_or(Message::NoOp))
+        .into();
+
+    let card_trap: Element<'a, Message> =
+        MouseArea::new(card).on_press(Message::NoOp).into();
+    let centered = container(card_trap)
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .center_x(Length::Fill)
+        .center_y(Length::Fill);
+
+    Stack::new()
+        .push(base)
+        .push(scrim)
+        .push(centered)
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .into()
+}

@@ -60,6 +60,13 @@ impl Oryxis {
         // captures every mouse event (move + click) and nothing bleeds
         // through to the file panes underneath, e.g. hovering/clicking rows
         // behind the overwrite prompt.
+        //
+        // These intentionally do NOT use `widgets::modal_overlay`: they
+        // overlay the SFTP view's own content (not the whole window) and
+        // compose into this local Stack. Mouse safety comes from `opaque`
+        // here; keyboard safety for the ones with text fields (new_entry,
+        // rename, properties, overwrite, picker) comes from
+        // `any_modal_blocks_input` in shortcuts.rs.
         if !self.sftp.delete_confirm.is_empty() {
             stack = stack.push(iced::widget::opaque(delete_confirm_modal(
                 &self.sftp.delete_confirm,

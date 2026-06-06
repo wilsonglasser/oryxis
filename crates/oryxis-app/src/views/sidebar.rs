@@ -345,11 +345,7 @@ impl Oryxis {
                 }),
         )
         .on_press(Message::NoOp);
-        container(dialog)
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .center_x(Length::Fill)
-            .center_y(Length::Fill)
-            .into()
+        // Bare card; `widgets::modal_overlay` (the caller) centers + scrims.
+        dialog.into()
     }
 }

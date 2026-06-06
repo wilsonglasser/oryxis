@@ -12,7 +12,7 @@
 
 use iced::border::Radius;
 use iced::widget::button::Status as BtnStatus;
-use iced::widget::{button, column, container, scrollable, text, text_input, MouseArea, Space};
+use iced::widget::{button, column, container, scrollable, text, text_input, Space};
 use iced::{Background, Border, Color, Element, Length, Padding};
 
 use oryxis_core::models::Group;
@@ -131,18 +131,9 @@ impl Oryxis {
             ..Default::default()
         });
 
-        // Wrap the body in a MouseArea with a no-op press so clicks inside
-        // the picker don't fall through to the dismiss backdrop below.
-        let body_trap: Element<'_, Message> = MouseArea::new(body)
-            .on_press(Message::NoOp)
-            .into();
-
-        container(body_trap)
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .center_x(Length::Fill)
-            .center_y(Length::Fill)
-            .into()
+        // Bare card; `widgets::modal_overlay` (the caller) owns centering,
+        // the absorbing scrim, and the click-trap.
+        body.into()
     }
 
     /// Top-level rows: a "Groups" section (root groups as drillable
@@ -167,6 +158,15 @@ impl Oryxis {
         let mut group_rows: Vec<Element<'_, Message>> = Vec::new();
         for g in self.groups.iter().filter(|g| g.parent_id.is_none()) {
             if filling_pane && g.cloud_query.is_some() {
+                continue;
+            }
+            // Hide empty manual folders (no hosts, no sub-groups): there's
+            // nothing to open inside, so they'd just be dead rows. Mirrors
+            // the dashboard, which only renders a root folder with a direct
+            // connection or a sub-group. Cloud-query groups always show:
+            // they resolve their hosts dynamically and carry an ECS/K8S tag
+            // instead of a count.
+            if g.cloud_query.is_none() && self.picker_group_child_count(g.id) == 0 {
                 continue;
             }
             if !needle.is_empty() && !g.label.to_lowercase().contains(needle) {
@@ -235,6 +235,10 @@ impl Oryxis {
         let mut any = false;
         for g in self.groups.iter().filter(|g| g.parent_id == Some(group.id)) {
             if filling_pane && g.cloud_query.is_some() {
+                continue;
+            }
+            // Same empty-folder hiding as the top level (see there).
+            if g.cloud_query.is_none() && self.picker_group_child_count(g.id) == 0 {
                 continue;
             }
             if !needle.is_empty() && !g.label.to_lowercase().contains(needle) {
@@ -373,6 +377,24 @@ impl Oryxis {
         }
     }
 
+    /// Direct child count of a manual folder: its own connections plus its
+    /// immediate sub-groups. Drives both the trailing count badge and the
+    /// empty-folder hiding, so the number shown always matches whether the
+    /// folder is shown at all (count 0 -> hidden).
+    fn picker_group_child_count(&self, gid: uuid::Uuid) -> usize {
+        let conns = self
+            .connections
+            .iter()
+            .filter(|c| c.group_id == Some(gid))
+            .count();
+        let subs = self
+            .groups
+            .iter()
+            .filter(|g| g.parent_id == Some(gid))
+            .count();
+        conns + subs
+    }
+
     /// A drillable folder row for `group`, emitting `NewTabPickerOpenGroup`.
     /// Cloud-query groups get a cloud glyph + a kind tag (ECS / K8S); manual
     /// groups get a folder glyph + a child count.
@@ -393,19 +415,7 @@ impl Oryxis {
         let subtitle = match group.cloud_query.as_ref().map(|q| &q.kind) {
             Some(oryxis_core::models::cloud::CloudQueryKind::EcsTasks { .. }) => "ECS".to_string(),
             Some(oryxis_core::models::cloud::CloudQueryKind::K8sPods { .. }) => "K8S".to_string(),
-            None => {
-                let conns = self
-                    .connections
-                    .iter()
-                    .filter(|c| c.group_id == Some(group.id))
-                    .count();
-                let subs = self
-                    .groups
-                    .iter()
-                    .filter(|g| g.parent_id == Some(group.id))
-                    .count();
-                (conns + subs).to_string()
-            }
+            None => self.picker_group_child_count(group.id).to_string(),
         };
 
         // Trailing chevron points into the group; mirror it under RTL.
@@ -738,21 +748,5 @@ fn picker_row<'a>(
             ..Default::default()
         }
     })
-    .into()
-}
-
-/// Semi-transparent black backdrop that dismisses the picker on click.
-/// Meant to be stacked below the picker body.
-pub(crate) fn new_tab_picker_backdrop<'a>() -> Element<'a, Message> {
-    MouseArea::new(
-        container(Space::new())
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .style(|_| container::Style {
-                background: Some(Background::Color(Color::from_rgba(0.0, 0.0, 0.0, 0.5))),
-                ..Default::default()
-            }),
-    )
-    .on_press(Message::HideNewTabPicker)
     .into()
 }

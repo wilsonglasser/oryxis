@@ -221,7 +221,7 @@ impl Oryxis {
                 // PTY below, so typing in the picker echoes into the
                 // terminal. Esc still closes the modal because that's
                 // handled earlier in `handle_hotkey_keypress`.
-                if self.global_modal_captures_keys() {
+                if self.any_modal_blocks_input() {
                     return Ok(Task::none());
                 }
 

@@ -579,11 +579,8 @@ impl Oryxis {
                 ..Default::default()
             });
 
-        container(card)
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .center(Length::Fill)
-            .into()
+        // Bare card; `widgets::modal_overlay` (the caller) centers + scrims.
+        card.into()
     }
 
     /// Standalone keyboard-interactive (2FA / OTP) modal, used when a
@@ -669,10 +666,7 @@ impl Oryxis {
                 ..Default::default()
             });
 
-        container(card)
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .center(Length::Fill)
-            .into()
+        // Bare card; `widgets::modal_overlay` (the caller) centers + scrims.
+        card.into()
     }
 }

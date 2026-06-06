@@ -4,8 +4,8 @@
 //! card commits to `editor_form.terminal_theme` and closes the modal.
 
 use iced::border::Radius;
-use iced::widget::{column, container, scrollable, text, MouseArea, Space};
-use iced::{Background, Border, Color, Element, Length};
+use iced::widget::{column, container, scrollable, text, Space};
+use iced::{Background, Border, Element, Length};
 
 use crate::app::{Message, Oryxis};
 use crate::i18n::t;
@@ -99,31 +99,8 @@ impl Oryxis {
             ..Default::default()
         });
 
-        // Inner MouseArea swallows clicks on the dialog so they don't
-        // bubble out to the scrim's HideIconPicker, same pattern as
-        // tab_jump and the icon picker.
-        let dialog_capture: Element<'_, Message> = MouseArea::new(dialog)
-            .on_press(Message::NoOp)
-            .into();
-
-        let centered = container(dialog_capture)
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .center_x(Length::Fill)
-            .center_y(Length::Fill);
-
-        MouseArea::new(
-            container(centered)
-                .width(Length::Fill)
-                .height(Length::Fill)
-                .style(|_| container::Style {
-                    background: Some(Background::Color(Color::from_rgba(
-                        0.0, 0.0, 0.0, 0.5,
-                    ))),
-                    ..Default::default()
-                }),
-        )
-        .on_press(Message::EditorCloseThemePicker)
-        .into()
+        // Bare card; `widgets::modal_overlay` (the caller) owns centering,
+        // the absorbing scrim, and the click-trap.
+        dialog.into()
     }
 }

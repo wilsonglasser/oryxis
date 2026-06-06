@@ -160,6 +160,14 @@ impl Oryxis {
         } else { self.active_tab.and_then(|idx| {
             let tab = self.tabs.get(idx)?;
             let label = tab.label.trim_end_matches(" (disconnected)");
+            // 0) session-group tabs breathe the group's own color, the same
+            //    way per-host tabs use their custom color.
+            if let Some(sg_id) = tab.session_group_id
+                && let Some(g) = self.session_groups.iter().find(|g| g.id == sg_id)
+                && let Some(col) = g.color.as_deref().and_then(crate::widgets::parse_hex_color)
+            {
+                return Some(col);
+            }
             // 1) per-host color from a matching saved Connection.
             // `custom_color` is what the icon picker writes; `color`
             // is the legacy field that's never set today but kept as
@@ -326,32 +334,13 @@ impl Oryxis {
                 ..Default::default()
             });
 
-            let scrim: Element<'_, Message> = MouseArea::new(
-                container(Space::new())
-                    .width(Length::Fill)
-                    .height(Length::Fill)
-                    .style(|_| container::Style {
-                        background: Some(Background::Color(Color::from_rgba(0.0, 0.0, 0.0, 0.5))),
-                        ..Default::default()
-                    }),
-            )
-            .on_press(Message::ShareDismiss)
-            .into();
-
-            let centered = container(MouseArea::new(dialog_content).on_press(Message::NoOp))
-                .width(Length::Fill)
-                .height(Length::Fill)
-                .center_x(Length::Fill)
-                .center_y(Length::Fill);
-
             return wrap_with_resize(
-                Stack::new()
-                    .push(base)
-                    .push(scrim)
-                    .push(centered)
-                    .width(Length::Fill)
-                    .height(Length::Fill)
-                    .into(),
+                crate::widgets::modal_overlay(
+                    base,
+                    dialog_content.into(),
+                    Some(Message::ShareDismiss),
+                    0.0,
+                ),
                 resize_overlay,
             );
         }
@@ -408,32 +397,13 @@ impl Oryxis {
                 ..Default::default()
             });
 
-            let scrim: Element<'_, Message> = MouseArea::new(
-                container(Space::new())
-                    .width(Length::Fill)
-                    .height(Length::Fill)
-                    .style(|_| container::Style {
-                        background: Some(Background::Color(Color::from_rgba(0.0, 0.0, 0.0, 0.5))),
-                        ..Default::default()
-                    }),
-            )
-            .on_press(Message::ErrorDialogDismiss)
-            .into();
-
-            let centered = container(MouseArea::new(dialog_content).on_press(Message::NoOp))
-                .width(Length::Fill)
-                .height(Length::Fill)
-                .center_x(Length::Fill)
-                .center_y(Length::Fill);
-
             return wrap_with_resize(
-                Stack::new()
-                    .push(base)
-                    .push(scrim)
-                    .push(centered)
-                    .width(Length::Fill)
-                    .height(Length::Fill)
-                    .into(),
+                crate::widgets::modal_overlay(
+                    base,
+                    dialog_content.into(),
+                    Some(Message::ErrorDialogDismiss),
+                    0.0,
+                ),
                 resize_overlay,
             );
         }
@@ -619,6 +589,12 @@ impl Oryxis {
             .center_x(Length::Fill)
             .center_y(Length::Fill);
 
+            // Intentionally NOT routed through `widgets::modal_overlay`:
+            // this modal injects a positioned group-picker popover into its
+            // own Stack (below) and uses a context-dependent scrim message,
+            // neither of which the simple helper hosts. It stays mouse-safe
+            // via `opaque` and keyboard-safe via `any_modal_blocks_input`.
+            //
             // Scrim behaviour: while the group picker is open,
             // off-dialog clicks dismiss only the picker so the user
             // doesn't accidentally cancel the whole import. Wrapped
@@ -738,32 +714,13 @@ impl Oryxis {
                 ..Default::default()
             });
 
-            let scrim: Element<'_, Message> = MouseArea::new(
-                container(Space::new())
-                    .width(Length::Fill)
-                    .height(Length::Fill)
-                    .style(|_| container::Style {
-                        background: Some(Background::Color(Color::from_rgba(0.0, 0.0, 0.0, 0.5))),
-                        ..Default::default()
-                    }),
-            )
-            .on_press(Message::CancelFolderModal)
-            .into();
-
-            let centered = container(MouseArea::new(dialog).on_press(Message::NoOp))
-                .width(Length::Fill)
-                .height(Length::Fill)
-                .center_x(Length::Fill)
-                .center_y(Length::Fill);
-
             return wrap_with_resize(
-                Stack::new()
-                    .push(base)
-                    .push(scrim)
-                    .push(centered)
-                    .width(Length::Fill)
-                    .height(Length::Fill)
-                    .into(),
+                crate::widgets::modal_overlay(
+                    base,
+                    dialog.into(),
+                    Some(Message::CancelFolderModal),
+                    0.0,
+                ),
                 resize_overlay,
             );
         }
@@ -820,48 +777,26 @@ impl Oryxis {
                 ..Default::default()
             });
 
-            let scrim: Element<'_, Message> = MouseArea::new(
-                container(Space::new())
-                    .width(Length::Fill)
-                    .height(Length::Fill)
-                    .style(|_| container::Style {
-                        background: Some(Background::Color(Color::from_rgba(0.0, 0.0, 0.0, 0.5))),
-                        ..Default::default()
-                    }),
-            )
-            .on_press(Message::CancelFolderModal)
-            .into();
-
-            let centered = container(MouseArea::new(dialog).on_press(Message::NoOp))
-                .width(Length::Fill)
-                .height(Length::Fill)
-                .center_x(Length::Fill)
-                .center_y(Length::Fill);
-
             return wrap_with_resize(
-                Stack::new()
-                    .push(base)
-                    .push(scrim)
-                    .push(centered)
-                    .width(Length::Fill)
-                    .height(Length::Fill)
-                    .into(),
+                crate::widgets::modal_overlay(
+                    base,
+                    dialog.into(),
+                    Some(Message::CancelFolderModal),
+                    0.0,
+                ),
                 resize_overlay,
             );
         }
 
         // New-tab picker (opens via the "+" button in the tab bar).
         if self.show_new_tab_picker {
-            let picker = self.view_new_tab_picker();
-            let backdrop = crate::views::new_tab_picker::new_tab_picker_backdrop();
             return wrap_with_resize(
-                Stack::new()
-                    .push(base)
-                    .push(backdrop)
-                    .push(picker)
-                    .width(Length::Fill)
-                    .height(Length::Fill)
-                    .into(),
+                crate::widgets::modal_overlay(
+                    base,
+                    self.view_new_tab_picker(),
+                    Some(Message::HideNewTabPicker),
+                    0.0,
+                ),
                 resize_overlay,
             );
         }
@@ -869,21 +804,21 @@ impl Oryxis {
         // Tab-jump modal, Termius-style "Jump to" list. Opens via the
         // ⋯ button in the tab bar or the global Ctrl+J shortcut.
         if self.show_tab_jump {
-            let modal = self.view_tab_jump_modal();
             return wrap_with_resize(
-                Stack::new()
-                    .push(base)
-                    .push(modal)
-                    .width(Length::Fill)
-                    .height(Length::Fill)
-                    .into(),
+                crate::widgets::modal_overlay(
+                    base,
+                    self.view_tab_jump_modal(),
+                    Some(Message::HideTabJump),
+                    0.0,
+                ),
                 resize_overlay,
             );
         }
 
-        // Icon/color picker (from the host editor). The picker
-        // already wraps itself in scrim + absorb-click MouseAreas, so
-        // it goes on top of the base view as a single Element.
+        // Icon/color picker (from the host editor). Intentionally NOT routed
+        // through `widgets::modal_overlay`: it injects a color-popover layer
+        // into its own Stack, which the simple helper can't host. Stays
+        // mouse-safe via `opaque` and keyboard-safe via `any_modal_blocks_input`.
         if self.show_icon_picker {
             let picker = self.view_icon_picker();
             return wrap_with_resize(
@@ -897,36 +832,43 @@ impl Oryxis {
             );
         }
 
-        // Chain editor (from the host editor's "Host Chaining" row).
+        // Chain editor (from the host editor's "Host Chaining" row). Scrim
+        // dismiss is context-dependent: pop the add-a-hop sub-view first,
+        // else close the editor (mirrors Esc).
         if self.show_chain_editor {
-            let editor = self.view_chain_editor();
+            let on_scrim = if self.chain_editor_adding {
+                Message::ChainEditorCancelAdd
+            } else {
+                Message::CloseChainEditor
+            };
             return wrap_with_resize(
-                Stack::new()
-                    .push(base)
-                    .push(editor)
-                    .width(Length::Fill)
-                    .height(Length::Fill)
-                    .into(),
+                crate::widgets::modal_overlay(
+                    base,
+                    self.view_chain_editor(),
+                    Some(on_scrim),
+                    0.0,
+                ),
                 resize_overlay,
             );
         }
 
         // Per-host terminal theme picker (from the host editor).
         if self.show_theme_picker {
-            let picker = self.view_terminal_theme_picker();
             return wrap_with_resize(
-                Stack::new()
-                    .push(base)
-                    .push(picker)
-                    .width(Length::Fill)
-                    .height(Length::Fill)
-                    .into(),
+                crate::widgets::modal_overlay(
+                    base,
+                    self.view_terminal_theme_picker(),
+                    Some(Message::EditorCloseThemePicker),
+                    0.0,
+                ),
                 resize_overlay,
             );
         }
 
         // Custom terminal theme editor (from the "+" card / edit affordance
-        // in Settings -> Terminal).
+        // in Settings -> Terminal). Exempt from `modal_overlay` (nested color
+        // popover in its own Stack); mouse-safe via `opaque`, keyboard-safe
+        // via `any_modal_blocks_input`.
         if self.theme_editor.is_some() {
             let editor = self.view_theme_editor_modal();
             return wrap_with_resize(
@@ -942,19 +884,20 @@ impl Oryxis {
 
         // Import-a-scheme modal (Settings -> Terminal "Import" card).
         if self.show_theme_import {
-            let importer = self.view_theme_import_modal();
             return wrap_with_resize(
-                Stack::new()
-                    .push(base)
-                    .push(importer)
-                    .width(Length::Fill)
-                    .height(Length::Fill)
-                    .into(),
+                crate::widgets::modal_overlay(
+                    base,
+                    self.view_theme_import_modal(),
+                    Some(Message::ThemeImportClose),
+                    0.0,
+                ),
                 resize_overlay,
             );
         }
 
-        // Custom UI (chrome) theme editor (Settings -> Interface).
+        // Custom UI (chrome) theme editor (Settings -> Interface). Exempt
+        // from `modal_overlay` (nested color popover in its own Stack);
+        // mouse-safe via `opaque`, keyboard-safe via `any_modal_blocks_input`.
         if self.ui_theme_editor.is_some() {
             let editor = self.view_ui_theme_editor_modal();
             return wrap_with_resize(
@@ -975,14 +918,15 @@ impl Oryxis {
         if let Some(ref overlay) = self.overlay {
             let menu = self.render_overlay_menu(overlay);
 
-            // Transparent backdrop that dismisses the menu on click
-            let backdrop: Element<'_, Message> = MouseArea::new(
-                container(Space::new())
-                    .width(Length::Fill)
-                    .height(Length::Fill),
-            )
-            .on_press(Message::HideOverlayMenu)
-            .into();
+            // The `+` split popover is hover-driven: it opens on hover and
+            // dismisses on mouse-out (`SplitMenuLeave`), so a click-dismiss
+            // backdrop is redundant for it. Worse, a full-screen backdrop sits
+            // on top of the `+` button and swallows the click, so the first
+            // click on `+` only closes the popover and a second is needed to
+            // open a new tab. Skip the backdrop here so the click reaches the
+            // button. Every other overlay through this path is click-triggered
+            // and keeps its click-outside dismissal.
+            let is_hover_popover = matches!(overlay.content, OverlayContent::SplitMenu);
 
             // Position the menu, clamping to window bounds to prevent clipping.
             // Under RTL, anchor by the menu's right edge so it grows toward
@@ -1007,10 +951,20 @@ impl Oryxis {
             ]
             .into();
 
+            let mut stack = Stack::new().push(base);
+            if !is_hover_popover {
+                // Transparent backdrop that dismisses the menu on click.
+                let backdrop: Element<'_, Message> = MouseArea::new(
+                    container(Space::new())
+                        .width(Length::Fill)
+                        .height(Length::Fill),
+                )
+                .on_press(Message::HideOverlayMenu)
+                .into();
+                stack = stack.push(backdrop);
+            }
             return wrap_with_resize(
-                Stack::new()
-                    .push(base)
-                    .push(backdrop)
+                stack
                     .push(positioned_menu)
                     .width(Length::Fill)
                     .height(Length::Fill)

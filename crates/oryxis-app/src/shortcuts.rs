@@ -75,7 +75,18 @@ impl Oryxis {
     /// (minus the burger menu, which carries no text field). Used by the
     /// keyboard router in `dispatch_terminal.rs` so typing in a picker's
     /// search field doesn't also leak into the terminal behind it.
-    pub(crate) fn global_modal_captures_keys(&self) -> bool {
+    /// True when a blocking modal owns the keyboard, so the global key
+    /// subscription must NOT route the press to the active PTY.
+    ///
+    /// INVARIANT: every modal that contains a text field MUST appear here.
+    /// The terminal input arrives via a global subscription
+    /// (`subscription.rs`) that bypasses the widget tree, so a modal's own
+    /// focused `text_input` does not stop the same press from also reaching
+    /// the PTY, only this predicate does. Global modals must ALSO appear in
+    /// `close_topmost_modal` so Esc dismisses them. View-local modals (e.g.
+    /// the SFTP browser's) are out of this global Esc path; they currently
+    /// have no Esc-close of their own (a pre-existing gap, not handled here).
+    pub(crate) fn any_modal_blocks_input(&self) -> bool {
         self.show_new_tab_picker
             || self.show_tab_jump
             || self.show_icon_picker
@@ -90,6 +101,18 @@ impl Oryxis {
             // the OTP into the PTY as well. The inline connect-progress
             // path is already covered by the `connecting.is_none()` gate.
             || self.pending_kbi_prompt.is_some()
+            // Theme + share + cloud-import modals (all carry text inputs).
+            || self.theme_editor.is_some()
+            || self.show_theme_import
+            || self.ui_theme_editor.is_some()
+            || self.show_share_dialog
+            || self.cloud_import_confirm_visible
+            // SFTP modals with a text field (render over a live terminal tab).
+            || self.sftp.rename.is_some()
+            || self.sftp.new_entry.is_some()
+            || self.sftp.properties.is_some()
+            || self.sftp.overwrite_prompt.is_some()
+            || self.sftp.picker_open
     }
 
     /// Closes the topmost open modal / overlay if any, and returns
@@ -139,6 +162,34 @@ impl Oryxis {
         if self.show_session_group_panel {
             self.show_session_group_panel = false;
             self.session_group_panel_error = None;
+            return true;
+        }
+        // Settings theme + share + cloud-import modals. Cleanup mirrors each
+        // modal's own Cancel handler so Esc leaves no stale companion state.
+        if self.theme_editor.is_some() {
+            self.theme_editor = None;
+            self.theme_color_popover = None;
+            return true;
+        }
+        if self.ui_theme_editor.is_some() {
+            self.ui_theme_editor = None;
+            self.ui_color_popover = None;
+            return true;
+        }
+        if self.show_theme_import {
+            self.show_theme_import = false;
+            return true;
+        }
+        if self.show_share_dialog {
+            self.show_share_dialog = false;
+            self.share_filter = None;
+            self.share_status = None;
+            self.share_suggested_name = None;
+            return true;
+        }
+        if self.cloud_import_confirm_visible {
+            self.cloud_import_confirm_visible = false;
+            self.cloud_discover_default_group_picker_open = false;
             return true;
         }
         // Burger menu last; it's a dropdown rather than a modal but

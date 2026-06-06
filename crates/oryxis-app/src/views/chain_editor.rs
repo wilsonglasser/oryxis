@@ -16,7 +16,7 @@
 
 use iced::border::Radius;
 use iced::widget::button::Status as BtnStatus;
-use iced::widget::{button, column, container, scrollable, text, text_input, MouseArea, Space};
+use iced::widget::{button, column, container, scrollable, text, text_input, Space};
 use iced::{Background, Border, Color, Element, Length, Padding};
 
 use oryxis_core::models::Connection;
@@ -48,38 +48,10 @@ impl Oryxis {
                 ..Default::default()
             });
 
-        let body_trap: Element<'_, Message> = MouseArea::new(body).on_press(Message::NoOp).into();
-
-        let centered = container(body_trap)
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .center_x(Length::Fill)
-            .center_y(Length::Fill);
-
-        // Off-modal click dismisses one level, matching Esc: from the
-        // add-a-hop sub-view it pops back to the chain list; from the
-        // list it closes the editor.
-        let on_scrim = if self.chain_editor_adding {
-            Message::ChainEditorCancelAdd
-        } else {
-            Message::CloseChainEditor
-        };
-
-        // `iced::widget::opaque` makes the scrim capture every mouse
-        // event (hover + scroll, not just clicks) so nothing bleeds
-        // through to the host editor stacked beneath the modal.
-        iced::widget::opaque(
-            MouseArea::new(
-                container(centered)
-                    .width(Length::Fill)
-                    .height(Length::Fill)
-                    .style(|_| container::Style {
-                        background: Some(Background::Color(Color::from_rgba(0.0, 0.0, 0.0, 0.5))),
-                        ..Default::default()
-                    }),
-            )
-            .on_press(on_scrim),
-        )
+        // Bare card; `widgets::modal_overlay` (the caller) owns centering,
+        // the absorbing scrim, and the click-trap. The caller also picks the
+        // context-dependent scrim dismiss (pop the add sub-view vs close).
+        body.into()
     }
 
     /// List mode: the ordered chain, the destination host, and the

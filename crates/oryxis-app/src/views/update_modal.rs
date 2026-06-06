@@ -158,12 +158,9 @@ impl Oryxis {
             ..Default::default()
         });
 
-        container(body)
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .center_x(Length::Fill)
-            .center_y(Length::Fill)
-            .into()
+        // Return the bare card; `widgets::modal_overlay` (the caller) owns
+        // centering, the absorbing scrim, and the click-trap.
+        body.into()
     }
 }
 

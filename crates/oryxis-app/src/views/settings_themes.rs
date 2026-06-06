@@ -314,30 +314,9 @@ impl Oryxis {
                 },
                 ..Default::default()
             });
-        let card_trap: Element<'_, Message> =
-            MouseArea::new(card).on_press(Message::NoOp).into();
-        let backdrop: Element<'_, Message> = MouseArea::new(
-            container(Space::new()).width(Length::Fill).height(Length::Fill).style(|_| {
-                container::Style {
-                    background: Some(Background::Color(Color::from_rgba(0.0, 0.0, 0.0, 0.5))),
-                    ..Default::default()
-                }
-            }),
-        )
-        .on_press(Message::ThemeImportClose)
-        .into();
-        let stack = iced::widget::Stack::new()
-            .push(backdrop)
-            .push(
-                container(card_trap)
-                    .width(Length::Fill)
-                    .height(Length::Fill)
-                    .center_x(Length::Fill)
-                    .center_y(Length::Fill),
-            )
-            .width(Length::Fill)
-            .height(Length::Fill);
-        iced::widget::opaque(stack)
+        // Bare card; `widgets::modal_overlay` (the caller) owns centering,
+        // the absorbing scrim, and the click-trap.
+        card.into()
     }
 }
 

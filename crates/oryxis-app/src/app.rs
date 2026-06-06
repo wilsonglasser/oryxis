@@ -266,6 +266,16 @@ pub struct Oryxis {
     /// clean.
     pub(crate) last_window_press_at: Option<std::time::Instant>,
 
+    // MODAL FIELDS: the booleans / options below (and others scattered in
+    // this struct: theme_editor, ui_theme_editor, show_theme_import,
+    // show_share_dialog, cloud_import_confirm_visible, folder_rename,
+    // folder_delete, show_*_picker, ...) each drive a modal overlay. Any new
+    // one that carries a text field MUST be added to
+    // `any_modal_blocks_input()` (and, if global, `close_topmost_modal()`)
+    // in shortcuts.rs, or its keystrokes leak into the terminal behind it.
+    // Render every blocking modal through `widgets::modal_overlay` so the
+    // scrim can't reintroduce mouse bleed-through.
+
     // Host key verification dialog
     pub(crate) pending_host_key: Option<oryxis_ssh::HostKeyQuery>,
     pub(crate) host_key_response_tx: Option<tokio::sync::mpsc::Sender<bool>>,

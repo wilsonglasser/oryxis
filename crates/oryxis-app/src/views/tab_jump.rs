@@ -6,7 +6,7 @@
 
 use iced::border::Radius;
 use iced::widget::button::Status as BtnStatus;
-use iced::widget::{button, column, container, scrollable, text, text_input, MouseArea, Space};
+use iced::widget::{button, column, container, scrollable, text, text_input, Space};
 use iced::{Background, Border, Color, Element, Length, Padding};
 
 use crate::app::{Message, Oryxis};
@@ -226,31 +226,9 @@ impl Oryxis {
             ..Default::default()
         });
 
-        // Compose as a single tree (no internal Stack) so the dark fill
-        // on the scrim layer actually occludes the screen behind. Two
-        // MouseAreas: outer = dismiss-on-empty, inner = absorb clicks
-        // on the dialog itself so they don't bubble out.
-        let dialog_capture: Element<'_, Message> = MouseArea::new(dialog)
-            .on_press(Message::NoOp)
-            .into();
-
-        let centered = container(dialog_capture)
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .center_x(Length::Fill)
-            .center_y(Length::Fill);
-
-        MouseArea::new(
-            container(centered)
-                .width(Length::Fill)
-                .height(Length::Fill)
-                .style(|_| container::Style {
-                    background: Some(Background::Color(Color::from_rgba(0.0, 0.0, 0.0, 0.5))),
-                    ..Default::default()
-                }),
-        )
-        .on_press(Message::HideTabJump)
-        .into()
+        // Bare card; `widgets::modal_overlay` (the caller) owns centering,
+        // the absorbing scrim, and the click-trap.
+        dialog.into()
     }
 }
 
