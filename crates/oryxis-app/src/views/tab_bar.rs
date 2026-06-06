@@ -19,6 +19,8 @@ use crate::theme::{OryxisColors, SYSTEM_UI_SEMIBOLD};
 
 const TAB_HEIGHT: f32 = 26.0;
 const TAB_ICON_SLOT: f32 = 16.0;
+/// Fixed width of a compact (Chrome-style) pinned tab chip.
+const CHIP_W: f32 = 38.0;
 
 /// Maximum width a tab claims when it has the room. Sized to fit a typical
 /// label like "user@hostname.example.com" without truncation. The active
@@ -157,6 +159,11 @@ impl Oryxis {
         // underlying `self.tabs` Vec and every tab's index are unchanged, so
         // SelectTab / CloseTab and the routing stay valid.
         let compact_pins = self.setting_pinned_tab_style == "compact";
+        // While a drag is active every tab renders at the inactive width so
+        // the strip geometry is uniform. The active-vs-inactive width
+        // difference otherwise shifts positions on each live-slide swap and
+        // bounces the dragged tab back and forth over a seam.
+        let dragging_any = self.tab_drag.map(|d| d.active).unwrap_or(false);
         let mut tab_order: Vec<usize> =
             (0..self.tabs.len()).filter(|&i| self.tabs[i].pinned).collect();
         tab_order.extend((0..self.tabs.len()).filter(|&i| !self.tabs[i].pinned));
@@ -175,27 +182,10 @@ impl Oryxis {
             // pane shows the tab's own label.
             let display_label = tab.display_label();
             let base_label = display_label.trim_end_matches(" (disconnected)");
-            let detected_os = self
-                .connections
-                .iter()
-                .find(|c| c.label == base_label)
-                .and_then(|c| c.detected_os.clone())
-                // Fall back to deriving the OS from the tab label
-                // for Local Shell tabs (`"Ubuntu (WSL)"`,
-                // `"PowerShell"`, `"Command Prompt"`, …), those
-                // never go through the SSH `detect_os` round-trip.
-                .or_else(|| crate::os_icon::local_shell_os_hint(base_label))
-                // Cloud-transport tabs (`ECS · ...`, `SSM · ...`,
-                // `K8s · ...`) need to inherit the parent dynamic
-                // group's brand instead of the generic Tux fallback.
-                .or_else(|| {
-                    crate::os_icon::tab_label_cloud_brand(base_label).map(|s| s.to_string())
-                });
-            // While being dragged, the active tab drops to the inactive width
-            // so every tab in play is uniform. The width asymmetry otherwise
-            // shifts the strip geometry on each live-slide swap and makes the
-            // dragged active tab oscillate when held over a seam.
-            let width = if is_active && !is_dragging {
+            let detected_os = self.tab_detected_os(base_label);
+            // During a drag every tab is uniform (inactive width); otherwise
+            // the active tab claims its wider width as usual.
+            let width = if is_active && !dragging_any {
                 active_width
             } else {
                 inactive_width
@@ -265,7 +255,18 @@ impl Oryxis {
             let sg_custom_icon = session_group
                 .and_then(|g| g.icon_style.as_deref())
                 .filter(|s| !s.is_empty());
-            if tab.pinned && compact_pins {
+            if is_dragging {
+                // The dragged tab floats as a ghost following the cursor
+                // (built below); leave a same-width gap here that the other
+                // tabs slide around as the reorder happens.
+                let gap_w = if tab.pinned && compact_pins { CHIP_W } else { width };
+                tab_items.push(
+                    Space::new()
+                        .width(gap_w)
+                        .height(TAB_HEIGHT)
+                        .into(),
+                );
+            } else if tab.pinned && compact_pins {
                 // Chrome-style: icon-only chip, fixed width, stuck left.
                 tab_items.push(pinned_tab_chip(
                     idx,
@@ -432,7 +433,7 @@ impl Oryxis {
         // Fill area in between. `dir_row` flips the row under RTL so the
         // leading-edge controls always sit next to the sidebar (which the
         // outer layout also flips to the trailing edge).
-        container(
+        let bar: Element<'_, Message> = container(
             crate::widgets::dir_row(leading)
                 .align_y(iced::Alignment::Center),
         )
@@ -442,7 +443,60 @@ impl Oryxis {
             background: Some(Background::Color(OryxisColors::t().bg_sidebar)),
             ..Default::default()
         })
-        .into()
+        .into();
+
+        // Floating ghost of the tab being dragged. The bar spans the window's
+        // top-left, so window-space cursor x maps directly to bar-local x. The
+        // ghost is a plain (non-interactive) container, so the tab MouseAreas
+        // underneath still receive the hover events that drive the live-slide.
+        if dragging_any
+            && let Some(drag) = self.tab_drag
+            && let Some(tab) = self.tabs.iter().find(|t| t._id == drag.from_id)
+        {
+            let base_label = tab
+                .display_label()
+                .trim_end_matches(" (disconnected)")
+                .to_string();
+            let detected_os = self.tab_detected_os(&base_label);
+            let compact = tab.pinned && compact_pins;
+            let session_group = tab
+                .session_group_id
+                .and_then(|id| self.session_groups.iter().find(|g| g.id == id));
+            let sg_color = session_group
+                .and_then(|g| g.color.as_deref())
+                .and_then(crate::widgets::parse_hex_color);
+            let sg_icon = session_group
+                .and_then(|g| g.icon_style.as_deref())
+                .filter(|s| !s.is_empty())
+                .map(|s| s.to_string());
+            let accent = sg_color.unwrap_or_else(|| OryxisColors::t().accent);
+            let ghost_w = if compact { CHIP_W } else { inactive_width };
+            let ghost = drag_ghost(
+                base_label,
+                detected_os,
+                compact,
+                ghost_w,
+                accent,
+                sg_icon,
+                sg_color,
+            );
+            let gx = (self.mouse_position.x - ghost_w / 2.0).max(0.0);
+            let positioned: Element<'_, Message> = iced::widget::Column::new()
+                .push(Space::new().height(7.0))
+                .push(
+                    iced::widget::Row::new()
+                        .push(Space::new().width(gx))
+                        .push(ghost),
+                )
+                .into();
+            return iced::widget::Stack::new()
+                .push(bar)
+                .push(positioned)
+                .width(Length::Fill)
+                .height(Length::Fixed(BAR_HEIGHT))
+                .into();
+        }
+        bar
     }
 }
 
@@ -452,6 +506,20 @@ impl Oryxis {
     /// new tab gets focused (manual select, opening a local shell,
     /// connecting an SSH session, etc.), without this the new tab
     /// can land off-screen when the strip is in scroll mode.
+    /// Resolve the OS / brand icon hint for a tab from its (de-suffixed)
+    /// label: a saved connection's detected OS, else a local-shell hint, else
+    /// the cloud brand parsed from an `ECS · ...` / `K8s · ...` prefix.
+    fn tab_detected_os(&self, base_label: &str) -> Option<String> {
+        self.connections
+            .iter()
+            .find(|c| c.label == base_label)
+            .and_then(|c| c.detected_os.clone())
+            .or_else(|| crate::os_icon::local_shell_os_hint(base_label))
+            .or_else(|| {
+                crate::os_icon::tab_label_cloud_brand(base_label).map(|s| s.to_string())
+            })
+    }
+
     pub(crate) fn tab_scroll_to_active(&self) -> iced::Task<Message> {
         let Some(active_idx) = self.active_tab else {
             return iced::Task::none();
@@ -938,7 +1006,6 @@ fn pinned_tab_chip<'a>(
     } else {
         base
     };
-    const CHIP_W: f32 = 38.0;
     let btn = button(
         container(badge)
             .center_x(Length::Fixed(CHIP_W))
@@ -965,6 +1032,74 @@ fn pinned_tab_chip<'a>(
         .on_enter(Message::TabHovered(idx))
         .on_exit(Message::TabUnhovered)
         .on_right_press(Message::ShowTabMenu(idx))
+        .into()
+}
+
+/// Floating chip shown over the strip while a tab is being drag-reordered:
+/// a non-interactive copy of the dragged tab that tracks the cursor while
+/// the real slot sits empty and the other tabs slide around it. Mirrors the
+/// tab's badge (and label, unless it's a compact pinned chip) so the user
+/// keeps sight of what they're moving.
+#[allow(clippy::too_many_arguments)]
+fn drag_ghost<'a>(
+    label: String,
+    detected_os: Option<String>,
+    compact: bool,
+    width: f32,
+    accent: Color,
+    custom_icon: Option<String>,
+    custom_color: Option<Color>,
+) -> Element<'a, Message> {
+    let (glyph, badge_color) = if let Some(name) = custom_icon.as_deref() {
+        (crate::os_icon::custom_icon_glyph(name), custom_color.unwrap_or(accent))
+    } else {
+        crate::os_icon::resolve_icon(detected_os.as_deref(), accent)
+    };
+    let glyph_el: Element<'_, Message> = glyph.view(12.0, Color::WHITE);
+    let badge = crate::widgets::host_icon(
+        crate::widgets::HostIconStyle::Rounded,
+        badge_color,
+        &label,
+        Some(glyph_el),
+        TAB_ICON_SLOT,
+    );
+    let content: Element<'a, Message> = if compact {
+        container(badge)
+            .center_x(Length::Fixed(CHIP_W))
+            .center_y(Length::Fixed(TAB_HEIGHT))
+            .into()
+    } else {
+        crate::widgets::dir_row(vec![
+            container(badge)
+                .center_x(Length::Fixed(TAB_ICON_SLOT))
+                .center_y(Length::Fixed(TAB_ICON_SLOT))
+                .into(),
+            Space::new().width(5).into(),
+            text(truncate_label(&label, width))
+                .size(12)
+                .line_height(1.0)
+                .wrapping(iced::widget::text::Wrapping::None)
+                .font(SYSTEM_UI_SEMIBOLD)
+                .color(accent)
+                .into(),
+        ])
+        .align_y(iced::Alignment::Center)
+        .into()
+    };
+    container(content)
+        .center_y(Length::Fixed(TAB_HEIGHT))
+        .padding(Padding { top: 0.0, right: 6.0, bottom: 0.0, left: 4.0 })
+        .width(Length::Fixed(width))
+        .style(move |_| container::Style {
+            background: Some(Background::Color(Color { a: 0.96, ..OryxisColors::t().bg_hover })),
+            border: Border { radius: Radius::from(6.0), color: accent, width: 1.5 },
+            shadow: iced::Shadow {
+                color: Color::from_rgba(0.0, 0.0, 0.0, 0.35),
+                offset: iced::Vector::new(0.0, 2.0),
+                blur_radius: 6.0,
+            },
+            ..Default::default()
+        })
         .into()
 }
 
