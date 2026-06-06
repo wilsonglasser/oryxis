@@ -183,6 +183,7 @@ impl Oryxis {
                 last_window_press_at: None,
                 pending_host_key: None,
                 host_key_response_tx: None,
+                active_host_key_tx: None,
                 pending_kbi_prompt: None,
                 kbi_inputs: Vec::new(),
                 kbi_response_tx: None,

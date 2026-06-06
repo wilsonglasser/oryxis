@@ -119,6 +119,33 @@ async fn workload_match_labels(
     Ok(wl.spec.selector.match_labels)
 }
 
+/// Run `kubectl get pods -l SELECTOR` for a non-empty label selector. An
+/// empty selector is rejected rather than sent: `kubectl get pods -l ""`
+/// matches *every* pod in the namespace, so a workload whose `matchLabels`
+/// came back empty (e.g. an expression-only selector we don't parse) would
+/// silently resolve to all pods instead of its own.
+async fn get_pods_by_selector(
+    cfg: &K8sConfig,
+    namespace: &str,
+    sel: &str,
+) -> Result<Vec<u8>, CloudError> {
+    require_non_empty_selector(namespace, sel)?;
+    run_kubectl(cfg, &["get", "pods", "-n", namespace, "-l", sel, "-o", "json"]).await
+}
+
+/// Reject an empty label selector before it reaches `kubectl`. Pure +
+/// tested: keeps the dangerous `-l ""` (matches every pod) out of the
+/// subprocess call.
+fn require_non_empty_selector(namespace: &str, sel: &str) -> Result<(), CloudError> {
+    if sel.trim().is_empty() {
+        return Err(CloudError::Other(format!(
+            "empty label selector for namespace {namespace}: refusing to match all pods \
+             (the workload may use matchExpressions, which is not supported)"
+        )));
+    }
+    Ok(())
+}
+
 /// Resolve the pods matching a `K8sPods` selector in a namespace.
 pub(crate) async fn resolve_pods(
     cfg: &K8sConfig,
@@ -128,7 +155,7 @@ pub(crate) async fn resolve_pods(
     let json = match selector {
         PodSelector::Labels(labels) => {
             let sel = labels_to_selector(labels);
-            run_kubectl(cfg, &["get", "pods", "-n", namespace, "-l", &sel, "-o", "json"]).await?
+            get_pods_by_selector(cfg, namespace, &sel).await?
         }
         PodSelector::Name(name) => {
             run_kubectl(
@@ -149,12 +176,12 @@ pub(crate) async fn resolve_pods(
         PodSelector::Deployment(name) => {
             let labels = workload_match_labels(cfg, namespace, "deployment", name).await?;
             let sel = labels_to_selector(&labels);
-            run_kubectl(cfg, &["get", "pods", "-n", namespace, "-l", &sel, "-o", "json"]).await?
+            get_pods_by_selector(cfg, namespace, &sel).await?
         }
         PodSelector::StatefulSet(name) => {
             let labels = workload_match_labels(cfg, namespace, "statefulset", name).await?;
             let sel = labels_to_selector(&labels);
-            run_kubectl(cfg, &["get", "pods", "-n", namespace, "-l", &sel, "-o", "json"]).await?
+            get_pods_by_selector(cfg, namespace, &sel).await?
         }
     };
     parse_pods(&json)
@@ -195,5 +222,16 @@ mod tests {
     #[test]
     fn empty_pod_list_is_ok() {
         assert!(parse_pods(b"{\"items\":[]}").unwrap().is_empty());
+    }
+
+    #[test]
+    fn empty_selector_is_rejected() {
+        // An empty BTreeMap (e.g. a workload that only uses matchExpressions,
+        // which we don't parse) yields an empty selector string. That must be
+        // rejected, not sent as `-l ""` (which matches every pod).
+        assert_eq!(labels_to_selector(&BTreeMap::new()), "");
+        assert!(require_non_empty_selector("default", "").is_err());
+        assert!(require_non_empty_selector("default", "   ").is_err());
+        assert!(require_non_empty_selector("default", "app=nginx").is_ok());
     }
 }

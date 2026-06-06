@@ -1066,6 +1066,25 @@ impl VaultStore {
             params![id.to_string()],
         )?;
         self.record_tombstone("connection", id)?;
+        // Cascade to port-forward rules: `host_id` is NOT NULL, so a rule is
+        // useless once its host is gone and would otherwise linger as an
+        // orphan that still enumerates into sync and portable export. Drop
+        // each referencing rule with its own tombstone so the delete
+        // propagates to peers. Session groups are intentionally left intact:
+        // a group can reference several hosts and prunes dead panes at open
+        // time, so deleting the whole group on one host's removal is wrong.
+        let orphan_rules: Vec<Uuid> = {
+            let mut stmt = self
+                .db
+                .prepare("SELECT id FROM port_forward_rules WHERE host_id = ?1")?;
+            stmt.query_map(params![id.to_string()], |row| row.get::<_, String>(0))?
+                .filter_map(|r| r.ok())
+                .filter_map(|s| Uuid::parse_str(&s).ok())
+                .collect()
+        };
+        for rid in orphan_rules {
+            self.delete_port_forward_rule(&rid)?;
+        }
         Ok(())
     }
 

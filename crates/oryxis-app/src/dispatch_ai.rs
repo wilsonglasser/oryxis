@@ -425,8 +425,13 @@ impl Oryxis {
                             .any(|c| c == &first_token)
                     })
                     .unwrap_or(false);
-                // User-trusted commands ("always run X") bypass every gate.
-                if allowed {
+                // User-trusted commands ("always run X") bypass every gate,
+                // but only as a single simple command. A chained / piped /
+                // redirected / substituted command (e.g. `ls; rm -rf ~`)
+                // reuses a trusted first token to smuggle past the gates, so
+                // it never takes the shortcut and falls through to the floor
+                // and judge below. This guardrail is always on.
+                if allowed && !crate::ai::has_shell_chaining(&command) {
                     return Ok(Task::done(Message::ChatToolExec(command)));
                 }
                 // A model-claimed `safe` command auto-runs only after it

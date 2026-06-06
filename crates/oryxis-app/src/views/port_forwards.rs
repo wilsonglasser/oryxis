@@ -413,6 +413,17 @@ impl Oryxis {
                 .push(text(t("gateway_ports_hint")).size(11).color(OryxisColors::t().warning));
         }
 
+        // A dynamic SOCKS forward is an unauthenticated proxy. Bound to a
+        // non-loopback address it becomes an open proxy into the remote
+        // network for anyone who can reach this host. Warn explicitly.
+        let listen = self.pf_listen_host.trim();
+        let exposed = !matches!(listen, "" | "127.0.0.1" | "localhost" | "::1" | "[::1]");
+        if self.pf_kind == ForwardKind::Dynamic && exposed {
+            form = form
+                .push(Space::new().height(10))
+                .push(text(t("socks_open_proxy_hint")).size(11).color(OryxisColors::t().warning));
+        }
+
         form = form
             .push(Space::new().height(14))
             .push(

@@ -276,9 +276,18 @@ pub struct Oryxis {
     // Render every blocking modal through `widgets::modal_overlay` so the
     // scrim can't reintroduce mouse bleed-through.
 
-    // Host key verification dialog
+    // Host key verification dialog.
     pub(crate) pending_host_key: Option<oryxis_ssh::HostKeyQuery>,
+    // Staging slot: each connect writes its host-key responder here at
+    // start. It is *consumed* into `active_host_key_tx` the moment the
+    // prompt is shown (see `SshHostKeyVerify`), so a second connect that
+    // starts while a prompt is up overwrites only the staging slot, never
+    // the responder bound to the visible query.
     pub(crate) host_key_response_tx: Option<tokio::sync::mpsc::Sender<bool>>,
+    // Responder paired with the currently-displayed `pending_host_key`.
+    // The accept / reject handlers answer this, so the user's decision can
+    // never be routed to a different connect's host (TOFU bypass).
+    pub(crate) active_host_key_tx: Option<tokio::sync::mpsc::Sender<bool>>,
 
     // Keyboard-interactive (2FA / OTP) prompt dialog. `pending_kbi_prompt`
     // is the current challenge round; `kbi_inputs` holds one answer buffer

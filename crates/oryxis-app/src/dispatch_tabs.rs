@@ -915,6 +915,13 @@ impl Oryxis {
                     // Keep the clicked tab and every pinned tab (pinned tabs
                     // survive "close others", like a browser).
                     let target_id = self.tabs[idx]._id;
+                    // Capture the connecting tab's id before filtering, so the
+                    // progress state can be re-anchored / dropped afterwards.
+                    let connecting_id = self
+                        .connecting
+                        .as_ref()
+                        .and_then(|p| self.tabs.get(p.tab_idx))
+                        .map(|t| t._id);
                     self.tabs.retain(|t| t._id == target_id || t.pinned);
                     let new_active = self
                         .tabs
@@ -923,19 +930,27 @@ impl Oryxis {
                         .unwrap_or(0);
                     self.active_tab = Some(new_active);
                     self.remember_terminal_tab_focus(new_active);
+                    self.reanchor_connecting_after_filter(connecting_id);
                 }
             }
             Message::CloseAllTabs => {
                 self.overlay = None;
+                let connecting_id = self
+                    .connecting
+                    .as_ref()
+                    .and_then(|p| self.tabs.get(p.tab_idx))
+                    .map(|t| t._id);
                 // Pinned tabs survive "close all".
                 self.tabs.retain(|t| t.pinned);
                 if self.tabs.is_empty() {
                     self.active_tab = None;
                     self.clear_terminal_tab_memory();
                     self.active_view = View::Dashboard;
+                    self.connecting = None;
                 } else {
                     self.active_tab = Some(0);
                     self.remember_terminal_tab_focus(0);
+                    self.reanchor_connecting_after_filter(connecting_id);
                 }
             }
 
@@ -1097,5 +1112,25 @@ impl Oryxis {
         }
         // Note: no persist here. Live-slide calls this on every crossed tab
         // during a drag; the pinned order is persisted once on drop.
+    }
+
+    /// Re-anchor (or clear) the in-flight connect progress after the tab
+    /// list was filtered by close-others / close-all (both keep pinned
+    /// tabs). `connecting_id` is the connecting tab's id captured *before*
+    /// the filter: if that tab survived, point `tab_idx` at its new slot;
+    /// if it was closed, drop the progress so a later SshRetry /
+    /// SshCloseProgress can't `remove()` the wrong (surviving / pinned) tab.
+    fn reanchor_connecting_after_filter(&mut self, connecting_id: Option<uuid::Uuid>) {
+        if self.connecting.is_none() {
+            return;
+        }
+        match connecting_id.and_then(|cid| self.tabs.iter().position(|t| t._id == cid)) {
+            Some(i) => {
+                if let Some(p) = self.connecting.as_mut() {
+                    p.tab_idx = i;
+                }
+            }
+            None => self.connecting = None,
+        }
     }
 }

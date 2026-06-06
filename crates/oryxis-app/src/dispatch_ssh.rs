@@ -573,17 +573,25 @@ impl Oryxis {
             }
             Message::SshHostKeyVerify(query) => {
                 self.pending_host_key = Some(query);
+                // Bind the responder to this prompt by cloning the staging
+                // slot. A connect that starts later overwrites only the
+                // staging slot, so the answer the user gives here still goes
+                // back to the connect whose host they actually saw. Clone
+                // (not take): one connect's bridge is a loop that can raise
+                // several host-key prompts (e.g. a jump chain with two
+                // unknown hops), and every answer rides the same sender.
+                self.active_host_key_tx = self.host_key_response_tx.clone();
             }
             Message::SshHostKeyReject => {
                 self.pending_host_key = None;
-                if let Some(ref tx) = self.host_key_response_tx {
+                if let Some(tx) = self.active_host_key_tx.take() {
                     let _ = tx.try_send(false);
                 }
             }
             Message::SshHostKeyContinue => {
                 // Accept for this session but don't save to known hosts
                 self.pending_host_key = None;
-                if let Some(ref tx) = self.host_key_response_tx {
+                if let Some(tx) = self.active_host_key_tx.take() {
                     let _ = tx.try_send(true);
                 }
             }
@@ -597,7 +605,7 @@ impl Oryxis {
                     self.known_hosts = vault.list_known_hosts().unwrap_or_default();
                 }
                 self.pending_host_key = None;
-                if let Some(ref tx) = self.host_key_response_tx {
+                if let Some(tx) = self.active_host_key_tx.take() {
                     let _ = tx.try_send(true);
                 }
             }

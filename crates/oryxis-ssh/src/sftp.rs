@@ -403,7 +403,13 @@ impl SftpClient {
                     .map_err(|e| SshError::Channel(format!("sftp open(W,{remote}): {e}")))
                 })
                 .await?;
-            return self.pump(&label, local_file, remote_file, progress).await;
+            let result = self.pump(&label, local_file, remote_file, progress).await;
+            if result.is_err() {
+                // TRUNCATE already clobbered any prior remote file; remove the
+                // partial so a failed upload doesn't masquerade as complete.
+                let _ = self.remove_file(remote).await;
+            }
+            return result;
         }
 
         // Large file: one streaming handle carrying a sliding window of
@@ -469,7 +475,16 @@ impl SftpClient {
             .await
             .map(|_| ())
             .map_err(|e| SshError::Channel(format!("sftp close({remote}): {e}")));
-        result.and(close)
+        let result = result.and(close);
+        if result.is_err() {
+            // TRUNCATE clobbered any prior remote file and the window only
+            // laid down part of the new bytes; remove the partial so its
+            // size doesn't masquerade as a complete upload (mirrors the
+            // download and relay paths). A .part + rename is a later
+            // refinement.
+            let _ = self.remove_file(remote).await;
+        }
+        result
     }
 
     /// Relay a file directly between two remote servers, `self` (source)

@@ -1423,13 +1423,19 @@ impl Oryxis {
                     items = items.push(context_menu_item(iced_fonts::lucide::boxes(), sg_label, Message::ShowSaveSessionGroup(idx), OryxisColors::t().text_secondary));
                 }
                 // Pin / unpin: pinned tabs render first and restore on launch.
+                // The restore spec captures only a single pane's origin, so
+                // pinning is offered only on single-pane, non-group tabs (a
+                // split / session-group tab would silently restore just its
+                // focused pane). An already-pinned tab always shows "unpin".
                 let is_pinned = tab_ref.map(|t| t.pinned).unwrap_or(false);
-                let (pin_icon, pin_label) = if is_pinned {
-                    (iced_fonts::lucide::pin_off(), crate::i18n::t("unpin_tab"))
-                } else {
-                    (iced_fonts::lucide::pin(), crate::i18n::t("pin_tab"))
-                };
-                items = items.push(context_menu_item(pin_icon, pin_label, Message::ToggleTabPin(idx), OryxisColors::t().text_secondary));
+                if is_pinned || (!is_split && !is_group) {
+                    let (pin_icon, pin_label) = if is_pinned {
+                        (iced_fonts::lucide::pin_off(), crate::i18n::t("unpin_tab"))
+                    } else {
+                        (iced_fonts::lucide::pin(), crate::i18n::t("pin_tab"))
+                    };
+                    items = items.push(context_menu_item(pin_icon, pin_label, Message::ToggleTabPin(idx), OryxisColors::t().text_secondary));
+                }
                 // "Duplicate in New Window" spawns a fresh process that
                 // can only re-open hosts saved in the vault. ECS Exec /
                 // kubectl tabs are ephemeral dynamic-group sessions (no

@@ -123,13 +123,19 @@ impl Oryxis {
                 }
             }
             Message::PortForwardStarted(id, res) => {
-                self.port_forward_starting.remove(&id);
+                // `remove` returns false when StopPortForward already pulled
+                // this id from the in-flight set, i.e. the user toggled the
+                // rule off while the connect was still running. In that case
+                // honor the stop and drop the freshly-made session rather than
+                // silently re-activating a forward the user turned off.
+                let was_starting = self.port_forward_starting.remove(&id);
                 match res {
                     Ok(session) => {
-                        // Guard against a delete (or stop) that landed while
-                        // the connect was in flight: if the rule is gone, drop
-                        // the session so it doesn't linger with no UI to stop.
-                        if self.port_forward_rules.iter().any(|r| r.id == id) {
+                        // Guard against a delete or stop that landed while the
+                        // connect was in flight: if the rule is gone, or a stop
+                        // was requested, drop the session so it doesn't linger
+                        // with no UI to stop (or against the user's intent).
+                        if was_starting && self.port_forward_rules.iter().any(|r| r.id == id) {
                             self.active_forwards.insert(id, session);
                             self.pf_error = None;
                         } else {
