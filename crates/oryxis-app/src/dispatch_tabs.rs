@@ -1005,23 +1005,24 @@ impl Oryxis {
                 })
             }
         };
-        // Remove the placeholder; the connect / spawn path creates the live
-        // tab (sync for host / local, async for cloud).
-        self.tabs.remove(idx);
-        self.adjust_last_terminal_tab_after_remove(idx);
-
         if cloud {
-            // The cloud tab is born later in `spawn_plugin_tab`, which
-            // consumes this slot to pin it, move it back into place, and take
-            // focus. We deliberately don't persist here: the dormant spec
-            // stays in the setting as a safety net until the live tab
-            // re-persists. Show Hosts during the async connect instead of
-            // flashing another dormant tab's "select to connect" placeholder.
-            self.pin_next_plugin_tab = Some(idx);
+            // Cloud sessions spawn asynchronously. Keep the dormant
+            // placeholder in the strip (so its chip doesn't blink out) and let
+            // `spawn_plugin_tab` replace it in place by id, inheriting its slot
+            // + pin. We don't persist here: the dormant spec stays in the
+            // setting as a safety net until the live tab re-persists. Show
+            // Hosts during the connect instead of the dormant's placeholder
+            // terminal.
+            self.pin_next_plugin_tab = Some(self.tabs[idx]._id);
             self.active_tab = None;
             self.active_view = View::Dashboard;
             return open.map(|m| self.update(m)).unwrap_or_else(Task::none);
         }
+
+        // Host / local: the connect appends a live tab synchronously, so
+        // remove the placeholder and slot the live tab into its place.
+        self.tabs.remove(idx);
+        self.adjust_last_terminal_tab_after_remove(idx);
 
         let before = self.tabs.len();
         let task = open.map(|m| self.update(m)).unwrap_or_else(Task::none);

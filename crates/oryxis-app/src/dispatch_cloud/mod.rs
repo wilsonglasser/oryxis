@@ -160,18 +160,28 @@ impl Oryxis {
                 self.active_tab = Some(tab_idx);
                 self.remember_terminal_tab_focus(tab_idx);
                 self.active_view = View::Terminal;
-                // Reopening a pinned cloud tab: the spawn is async so the pin
-                // can't ride the synchronous len-check the host / local paths
-                // use. Move the freshly-spawned tab back to the dormant's old
-                // slot (so reopening doesn't reorder), pin it, and re-persist
-                // (reopen skipped persisting to keep the dormant spec as a net).
-                if let Some(slot) = self.pin_next_plugin_tab.take() {
-                    let mut at = tab_idx;
-                    if slot < tab_idx {
+                // Reopening a pinned cloud tab: the dormant placeholder is
+                // still in the strip. Replace it in place (by id) with the
+                // freshly-spawned live tab so its chip doesn't blink out, keep
+                // its slot + pin, and re-persist (reopen skipped persisting to
+                // keep the dormant spec as a net).
+                if let Some(dormant_id) = self.pin_next_plugin_tab.take() {
+                    let at = if let Some(dpos) =
+                        self.tabs.iter().position(|t| t._id == dormant_id)
+                    {
+                        // `tab_idx` is the just-pushed live tab (end); `dpos`
+                        // the dormant (before it). Drop the live, drop the
+                        // dormant, reinsert the live at the dormant's slot.
                         let live = self.tabs.remove(tab_idx);
-                        at = slot;
-                        self.tabs.insert(slot, live);
-                    }
+                        self.tabs.remove(dpos);
+                        let at = dpos.min(self.tabs.len());
+                        self.tabs.insert(at, live);
+                        at
+                    } else {
+                        // Dormant gone (e.g. closed mid-connect): leave the
+                        // live tab where it was pushed.
+                        tab_idx
+                    };
                     self.tabs[at].pinned = true;
                     self.active_tab = Some(at);
                     self.remember_terminal_tab_focus(at);

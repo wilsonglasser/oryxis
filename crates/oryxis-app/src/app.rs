@@ -802,9 +802,10 @@ pub struct Oryxis {
     /// cloud spawn is async (the tab is born later, in `spawn_plugin_tab`),
     /// the pin intent can't ride the synchronous len-check the host / local
     /// paths use; this carries it instead and is consumed on the next
-    /// plugin-tab spawn. `Some(slot)` = pin the spawned tab and move it back
-    /// to `slot` (the dormant's old position) so reopening doesn't reorder.
-    pub(crate) pin_next_plugin_tab: Option<usize>,
+    /// plugin-tab spawn. `Some(dormant_id)` = replace the dormant placeholder
+    /// (found by this id) in place, so its strip chip doesn't blink out during
+    /// the async connect, and inherit its slot + pin.
+    pub(crate) pin_next_plugin_tab: Option<uuid::Uuid>,
     /// In-progress tab reorder drag (see `TabDrag`). `None` when not dragging.
     pub(crate) tab_drag: Option<crate::state::TabDrag>,
     /// When on, each tab paints a small colored dot over its OS badge:

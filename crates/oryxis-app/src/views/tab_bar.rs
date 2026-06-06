@@ -164,6 +164,13 @@ impl Oryxis {
             let tab = &self.tabs[idx];
             let is_active = active_idx == Some(idx);
             let is_hovered = self.hovered_tab == Some(idx);
+            // Reorder drag: the dragged tab gets the accent outline so the
+            // user sees which one they picked up.
+            let is_dragging = self
+                .tab_drag
+                .filter(|d| d.active)
+                .map(|d| d.from_id == tab._id)
+                .unwrap_or(false);
             // A split tab shows the focused pane's label + icon; a single
             // pane shows the tab's own label.
             let display_label = tab.display_label();
@@ -184,7 +191,15 @@ impl Oryxis {
                 .or_else(|| {
                     crate::os_icon::tab_label_cloud_brand(base_label).map(|s| s.to_string())
                 });
-            let width = if is_active { active_width } else { inactive_width };
+            // While being dragged, the active tab drops to the inactive width
+            // so every tab in play is uniform. The width asymmetry otherwise
+            // shifts the strip geometry on each live-slide swap and makes the
+            // dragged active tab oscillate when held over a seam.
+            let width = if is_active && !is_dragging {
+                active_width
+            } else {
+                inactive_width
+            };
             // Per-host accent override: when this tab points at a
             // saved connection that has a custom `color`, tint the
             // active-tab fill and the tab text with that color
@@ -250,13 +265,6 @@ impl Oryxis {
             let sg_custom_icon = session_group
                 .and_then(|g| g.icon_style.as_deref())
                 .filter(|s| !s.is_empty());
-            // Reorder drag: the dragged tab itself gets the accent outline so
-            // the user can see which one they picked up as it live-slides.
-            let is_dragging = self
-                .tab_drag
-                .filter(|d| d.active)
-                .map(|d| d.from_id == tab._id)
-                .unwrap_or(false);
             if tab.pinned && compact_pins {
                 // Chrome-style: icon-only chip, fixed width, stuck left.
                 tab_items.push(pinned_tab_chip(
