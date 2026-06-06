@@ -158,15 +158,17 @@ impl Oryxis {
                 {
                     return Ok(self.handle_internal_drag_drop(drag));
                 }
-                // And ends a tab reorder drag: drop the dragged tab onto the
-                // hovered tab (within the same group). A plain click (never
-                // promoted to `active`) just clears.
+                // And ends a tab reorder drag. The live-slide already moved
+                // the tab into place during the drag (see TabHovered); on
+                // drop we just persist the new pinned order (if the dragged
+                // tab is pinned) and clear. A plain click (never promoted to
+                // `active`) clears with no persist.
                 if let Some(drag) = self.tab_drag.take()
                     && drag.active
-                    && let Some(to) = self.hovered_tab
                     && let Some(from) = self.tabs.iter().position(|t| t._id == drag.from_id)
+                    && self.tabs[from].pinned
                 {
-                    self.move_tab(from, to);
+                    self.persist_pinned_tabs();
                 }
             }
             Message::SendChat => {

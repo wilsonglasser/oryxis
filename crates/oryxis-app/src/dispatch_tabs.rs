@@ -439,6 +439,19 @@ impl Oryxis {
             }
             Message::TabHovered(idx) => {
                 self.hovered_tab = Some(idx);
+                // Live-slide: while a drag is active, entering another tab in
+                // the same group slides the dragged tab into that slot right
+                // away. Stable because after the move the dragged tab sits
+                // under the cursor, so it won't re-trigger until the cursor
+                // crosses into a genuinely different tab.
+                if let Some(drag) = self.tab_drag.filter(|d| d.active)
+                    && let Some(from) = self.tabs.iter().position(|t| t._id == drag.from_id)
+                    && from != idx
+                    && idx < self.tabs.len()
+                    && self.tabs[from].pinned == self.tabs[idx].pinned
+                {
+                    self.move_tab(from, idx);
+                }
             }
             Message::TabUnhovered => {
                 self.hovered_tab = None;
@@ -1081,9 +1094,7 @@ impl Oryxis {
         {
             p.tab_idx = i;
         }
-        // Persist if the pinned set's order changed.
-        if self.tabs[dest].pinned {
-            self.persist_pinned_tabs();
-        }
+        // Note: no persist here. Live-slide calls this on every crossed tab
+        // during a drag; the pinned order is persisted once on drop.
     }
 }
