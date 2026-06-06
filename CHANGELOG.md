@@ -7,6 +7,23 @@ project uses [SemVer](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- **Multi-hop host chaining.** The host editor's "Host Chaining" row now
+  opens a dedicated chain editor (Termius style) instead of a single-host
+  picker: build an ordered chain of jump hosts, reorder them, and remove
+  them, with the host being edited shown as the final destination. The
+  session tunnels through each hop in order before reaching the host. The
+  data model and SSH engine already supported arbitrary-length chains; this
+  exposes them in the UI. The old read-only "Host Chaining" display row and
+  the separate single-host "Jump Host" picker (which both edited the same
+  field) are collapsed into this one entry point.
+
+### Fixed
+- **Chain editor / host-editor modal overlays.** Picker and editor modals
+  opened from the host editor no longer leak hover and scroll events to the
+  host list and editor behind them (the backdrop now captures every mouse
+  event, not just clicks), and opening one no longer resets the scroll
+  position of the host list / editor underneath it.
+
 - **Custom themes.** Create your own terminal color schemes (the 16 ANSI
   colors plus foreground / background / cursor) and your own UI / chrome
   themes (the 21 app colors), each with a built-in graphical color picker

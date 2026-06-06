@@ -1,17 +1,31 @@
-//! Session-group editor modal: name, folder, color, and a per-pane startup
-//! script for each pane in the saved arrangement. Rendered as a centered
-//! modal (over a scrim) from `root_view`, so it works whether it was opened
-//! from a terminal tab or a dashboard card without leaking input into the
-//! terminal underneath.
+//! Session-group editor side panel: name, parent group, color, and a
+//! per-pane startup script for each pane in the saved arrangement. Rendered
+//! in the same right-hand slot as the host editor (from `view_terminal` when
+//! opened from a tab, from `view_dashboard` when opened from a card).
+//!
+//! Interactive controls use `MouseArea` rather than `button`: a `button`
+//! rendered beside the terminal canvas has its clicks eaten by an iced
+//! widget-tree quirk (the chat sidebar hit the same thing, see
+//! `view_terminal.rs::sidebar_tab_btn`). `MouseArea` sidesteps it.
 
 use iced::border::Radius;
-use iced::widget::{button, column, container, scrollable, text, text_input, MouseArea, Space};
+use iced::widget::{column, container, scrollable, text, text_input, MouseArea, Space};
 use iced::{Background, Border, Color, Element, Length, Padding};
 
-use crate::app::{Message, Oryxis};
+use crate::app::{Message, Oryxis, PANEL_WIDTH};
 use crate::i18n::t;
+use crate::os_icon::BrandIcon;
 use crate::theme::OryxisColors;
-use crate::widgets::{dir_align_x, dir_row, panel_field, panel_section};
+use crate::widgets::{bounds_reporter, dir_align_x, dir_row, panel_field, panel_section};
+
+/// A pressable element built on `MouseArea` (see module docs for why not
+/// `button`). The pointer cursor matches the rest of the chrome.
+fn press<'a>(content: impl Into<Element<'a, Message>>, msg: Message) -> Element<'a, Message> {
+    MouseArea::new(content)
+        .on_press(msg)
+        .interaction(iced::mouse::Interaction::Pointer)
+        .into()
+}
 
 impl Oryxis {
     pub(crate) fn view_session_group_panel(&self) -> Element<'_, Message> {
@@ -24,6 +38,15 @@ impl Oryxis {
         };
 
         // ── Header ──
+        let close_btn = press(
+            container(
+                iced_fonts::lucide::chevron_right()
+                    .size(14)
+                    .color(OryxisColors::t().text_muted),
+            )
+            .padding(Padding { top: 4.0, right: 8.0, bottom: 4.0, left: 8.0 }),
+            Message::SessionGroupFormCancel,
+        );
         let panel_header = container(
             dir_row(vec![
                 text(title)
@@ -31,39 +54,90 @@ impl Oryxis {
                     .color(OryxisColors::t().text_primary)
                     .into(),
                 Space::new().width(Length::Fill).into(),
-                button(
-                    iced_fonts::lucide::x()
-                        .size(14)
-                        .color(OryxisColors::t().text_muted),
-                )
-                .on_press(Message::SessionGroupFormCancel)
-                .padding(Padding {
-                    top: 4.0,
-                    right: 8.0,
-                    bottom: 4.0,
-                    left: 8.0,
-                })
-                .style(|_, _| button::Style {
-                    background: Some(Background::Color(Color::TRANSPARENT)),
-                    border: Border::default(),
-                    ..Default::default()
-                })
-                .into(),
+                close_btn,
             ])
             .align_y(iced::Alignment::Center),
         )
-        .padding(Padding {
-            top: 16.0,
-            right: 16.0,
-            bottom: 12.0,
-            left: 16.0,
-        });
+        .padding(Padding { top: 16.0, right: 16.0, bottom: 12.0, left: 16.0 });
+
+        // ── Parent-group combo: typeable text input (creates a new group on
+        // save) + chevron opening the shared group-picker popover. Same
+        // component as the host editor's Parent Group field. ──
+        const COMBO_HEIGHT: f32 = 36.0;
+        let folder_input = text_input(t("group_placeholder"), &form.group_name)
+            .on_input(Message::SessionGroupFormGroupChanged)
+            .on_submit(Message::SessionGroupFormSave)
+            .padding(10)
+            .width(Length::Fill)
+            .style(crate::widgets::rounded_input_style)
+            .align_x(dir_align_x());
+        let folder_chevron = press(
+            container(
+                iced_fonts::lucide::chevron_down::<iced::Theme, iced::Renderer>()
+                    .size(12)
+                    .color(OryxisColors::t().text_muted),
+            )
+            .center_x(Length::Fixed(32.0))
+            .center_y(Length::Fixed(COMBO_HEIGHT))
+            .style(|_| container::Style {
+                background: Some(Background::Color(OryxisColors::t().bg_surface)),
+                border: Border {
+                    radius: Radius::from(6.0),
+                    color: OryxisColors::t().border,
+                    width: 1.0,
+                },
+                ..Default::default()
+            }),
+            Message::ToggleGroupPicker(crate::state::GroupPickerTarget::SessionGroupFolder),
+        );
+        let folder_combo: Element<'_, Message> = bounds_reporter(
+            dir_row(vec![
+                container(folder_input)
+                    .width(Length::Fill)
+                    .height(Length::Fixed(COMBO_HEIGHT))
+                    .into(),
+                Space::new().width(6).into(),
+                container(folder_chevron)
+                    .height(Length::Fixed(COMBO_HEIGHT))
+                    .into(),
+            ])
+            .align_y(iced::Alignment::Center),
+            self.session_group_folder_combo_bounds.clone(),
+        );
+
+        // Icon + color badge. Clicking opens the shared host icon/color
+        // picker (swatches + custom hex + icon grid), seeded from the form.
+        let badge_bg = form
+            .color
+            .as_deref()
+            .and_then(crate::os_icon::parse_hex_color)
+            .unwrap_or_else(|| OryxisColors::t().accent);
+        let badge_glyph = form
+            .icon_style
+            .as_deref()
+            .filter(|s| !s.is_empty())
+            .map(crate::os_icon::custom_icon_glyph)
+            .unwrap_or(BrandIcon::Glyph(iced_fonts::lucide::boxes()));
+        let icon_badge = press(
+            container(badge_glyph.view(18.0, Color::WHITE))
+                .width(Length::Fixed(36.0))
+                .height(Length::Fixed(36.0))
+                .center_x(Length::Fixed(36.0))
+                .center_y(Length::Fixed(36.0))
+                .style(move |_| container::Style {
+                    background: Some(Background::Color(badge_bg)),
+                    border: Border { radius: Radius::from(8.0), ..Default::default() },
+                    ..Default::default()
+                }),
+            Message::ShowSessionGroupIconPicker,
+        );
 
         // ── Section: General ──
         let general_section = panel_section(column![
             panel_field(
                 t("session_group_label"),
                 text_input(t("session_group_label_placeholder"), &form.label)
+                    .id(iced::widget::Id::new("session-group-name"))
                     .on_input(Message::SessionGroupFormLabelChanged)
                     .on_submit(Message::SessionGroupFormSave)
                     .padding(10)
@@ -72,27 +146,9 @@ impl Oryxis {
                     .into(),
             ),
             Space::new().height(10),
-            panel_field(
-                t("session_group_folder"),
-                text_input(t("group_placeholder"), &form.group_name)
-                    .on_input(Message::SessionGroupFormGroupChanged)
-                    .on_submit(Message::SessionGroupFormSave)
-                    .padding(10)
-                    .style(crate::widgets::rounded_input_style)
-                    .align_x(dir_align_x())
-                    .into(),
-            ),
+            panel_field(t("parent_group"), folder_combo),
             Space::new().height(10),
-            panel_field(
-                t("session_group_color"),
-                text_input("#3b82f6", form.color.as_deref().unwrap_or(""))
-                    .on_input(Message::SessionGroupFormColorChanged)
-                    .on_submit(Message::SessionGroupFormSave)
-                    .padding(10)
-                    .style(crate::widgets::rounded_input_style)
-                    .align_x(dir_align_x())
-                    .into(),
-            ),
+            panel_field(t("session_group_color"), icon_badge),
         ]);
 
         // ── Section: Panes (one pane shown at a time; chevrons step) ──
@@ -107,35 +163,23 @@ impl Oryxis {
                 .map(|r| r.label.clone())
                 .unwrap_or_default();
 
-            // Chevron nav buttons. Disabled (no on_press, dimmed) at the ends.
-            let nav_btn = |glyph: iced::widget::Text<'static>, enabled: bool, msg: Message| {
+            // Chevron nav. Pressable only when there's somewhere to go; the
+            // dimmed end-state is a plain container with no handler.
+            let nav = |glyph: iced::widget::Text<'static>, enabled: bool, msg: Message| {
                 let color = if enabled {
                     OryxisColors::t().text_secondary
                 } else {
                     OryxisColors::t().text_muted
                 };
-                let mut b = button(glyph.size(14).color(color))
-                    .padding(Padding { top: 4.0, right: 8.0, bottom: 4.0, left: 8.0 })
-                    .style(move |_, status| {
-                        let bg = match status {
-                            iced::widget::button::Status::Hovered if enabled => {
-                                OryxisColors::t().bg_hover
-                            }
-                            _ => Color::TRANSPARENT,
-                        };
-                        button::Style {
-                            background: Some(Background::Color(bg)),
-                            border: Border { radius: Radius::from(6.0), ..Default::default() },
-                            ..Default::default()
-                        }
-                    });
+                let inner = container(glyph.size(14).color(color))
+                    .padding(Padding { top: 4.0, right: 8.0, bottom: 4.0, left: 8.0 });
                 if enabled {
-                    b = b.on_press(msg);
+                    press(inner, msg)
+                } else {
+                    inner.into()
                 }
-                b
             };
 
-            // Header: [<]  "Pane i/N + label"  [>]
             let counter = column![
                 text(format!("{} / {}", cur + 1, total))
                     .size(11)
@@ -150,19 +194,17 @@ impl Oryxis {
             .width(Length::Fill);
 
             let header = dir_row(vec![
-                nav_btn(
+                nav(
                     iced_fonts::lucide::chevron_left(),
                     cur > 0,
                     Message::SessionGroupPaneNav(false),
-                )
-                .into(),
+                ),
                 counter.into(),
-                nav_btn(
+                nav(
                     iced_fonts::lucide::chevron_right(),
                     cur + 1 < total,
                     Message::SessionGroupPaneNav(true),
-                )
-                .into(),
+                ),
             ])
             .align_y(iced::Alignment::Center)
             .width(Length::Fill);
@@ -182,12 +224,17 @@ impl Oryxis {
                     text(t("session_group_panes"))
                         .size(12)
                         .color(OryxisColors::t().text_muted),
+                    Space::new().height(2),
+                    text(t("session_group_panes_hint"))
+                        .size(10)
+                        .color(OryxisColors::t().text_muted),
                     Space::new().height(8),
                     header,
                     Space::new().height(8),
                     editor,
                 ]
-                .width(Length::Fill),
+                .width(Length::Fill)
+                .align_x(dir_align_x()),
             )
         };
 
@@ -196,12 +243,7 @@ impl Oryxis {
             container(Element::from(
                 text(err.clone()).size(11).color(OryxisColors::t().error),
             ))
-            .padding(Padding {
-                top: 4.0,
-                right: 16.0,
-                bottom: 4.0,
-                left: 16.0,
-            })
+            .padding(Padding { top: 4.0, right: 16.0, bottom: 4.0, left: 16.0 })
             .into()
         } else {
             Space::new().height(0).into()
@@ -213,45 +255,30 @@ impl Oryxis {
         } else {
             OryxisColors::t().accent
         };
-        let save_btn = button(
+        let save_btn = press(
             container(
                 text(t("save"))
                     .size(14)
                     .color(OryxisColors::t().text_primary),
             )
-            .padding(Padding {
-                top: 12.0,
-                right: 0.0,
-                bottom: 12.0,
-                left: 0.0,
-            })
+            .padding(Padding { top: 12.0, right: 0.0, bottom: 12.0, left: 0.0 })
             .width(Length::Fill)
-            .center_x(Length::Fill),
-        )
-        .on_press(Message::SessionGroupFormSave)
-        .width(Length::Fill)
-        .style(move |_, _| button::Style {
-            background: Some(Background::Color(save_btn_bg)),
-            border: Border {
-                radius: Radius::from(8.0),
+            .center_x(Length::Fill)
+            .style(move |_| container::Style {
+                background: Some(Background::Color(save_btn_bg)),
+                border: Border { radius: Radius::from(8.0), ..Default::default() },
                 ..Default::default()
-            },
-            ..Default::default()
-        });
+            }),
+            Message::SessionGroupFormSave,
+        );
 
         let bottom = column![panel_error, save_btn].spacing(8);
 
-        // Body scrolls inside a capped height so the modal never grows past
-        // the window on a many-pane group.
         let form_scroll = scrollable(
-            column![general_section, Space::new().height(8), panes_section,].padding(Padding {
-                top: 0.0,
-                right: 16.0,
-                bottom: 16.0,
-                left: 16.0,
-            }),
+            column![general_section, Space::new().height(8), panes_section]
+                .padding(Padding { top: 0.0, right: 16.0, bottom: 16.0, left: 16.0 }),
         )
-        .height(Length::Fixed(380.0));
+        .height(Length::Fill);
 
         let panel_content = column![
             panel_header,
@@ -262,36 +289,21 @@ impl Oryxis {
                 bottom: 16.0,
                 left: 16.0,
             }),
-        ];
+        ]
+        .height(Length::Fill);
 
-        // Fixed-width card, centered over the scrim. The MouseArea(NoOp)
-        // swallows clicks on the card so they don't reach the scrim and
-        // dismiss it (same pattern as the local-shell picker).
-        let card = MouseArea::new(
-            container(panel_content)
-                .width(Length::Fixed(440.0))
-                .style(|_| container::Style {
-                    background: Some(Background::Color(OryxisColors::t().bg_surface)),
-                    border: Border {
-                        color: OryxisColors::t().border,
-                        width: 1.0,
-                        radius: Radius::from(12.0),
-                    },
-                    shadow: iced::Shadow {
-                        color: Color::from_rgba(0.0, 0.0, 0.0, 0.30),
-                        offset: iced::Vector::new(0.0, 8.0),
-                        blur_radius: 24.0,
-                    },
-                    ..Default::default()
-                }),
-        )
-        .on_press(Message::NoOp);
-
-        container(card)
-            .width(Length::Fill)
+        container(panel_content)
+            .width(PANEL_WIDTH)
             .height(Length::Fill)
-            .center_x(Length::Fill)
-            .center_y(Length::Fill)
+            .style(|_| container::Style {
+                background: Some(Background::Color(OryxisColors::t().bg_surface)),
+                border: Border {
+                    color: OryxisColors::t().border,
+                    width: 1.0,
+                    radius: Radius::from(0.0),
+                },
+                ..Default::default()
+            })
             .into()
     }
 }

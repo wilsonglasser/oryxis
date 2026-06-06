@@ -77,9 +77,7 @@ impl Oryxis {
                         selected_key: conn.key_id.and_then(|kid| {
                             self.keys.iter().find(|k| k.id == kid).map(|k| k.label.clone())
                         }),
-                        jump_host: conn.jump_chain.first().and_then(|jid| {
-                            self.connections.iter().find(|c| c.id == *jid).map(|c| c.label.clone())
-                        }),
+                        jump_chain: conn.jump_chain.clone(),
                         selected_identity: conn.identity_id.and_then(|iid| {
                             self.identities.iter().find(|i| i.id == iid).map(|i| i.label.clone())
                         }),
@@ -182,21 +180,50 @@ impl Oryxis {
             Message::EditorKeyChanged(v) => {
                 self.editor_form.selected_key = if v == "(none)" { None } else { Some(v) };
             }
-            Message::EditorJumpHostChanged(v) => {
-                self.editor_form.jump_host = if v == "(none)" { None } else { Some(v) };
-                self.show_jump_host_picker = false;
-                self.jump_host_search.clear();
+            Message::OpenChainEditor => {
+                self.show_chain_editor = true;
+                self.chain_editor_adding = false;
+                self.chain_editor_search.clear();
             }
-            Message::OpenJumpHostPicker => {
-                self.show_jump_host_picker = true;
-                self.jump_host_search.clear();
+            Message::CloseChainEditor => {
+                self.show_chain_editor = false;
+                self.chain_editor_adding = false;
+                self.chain_editor_search.clear();
             }
-            Message::HideJumpHostPicker => {
-                self.show_jump_host_picker = false;
-                self.jump_host_search.clear();
+            Message::ChainEditorStartAdd => {
+                self.chain_editor_adding = true;
+                self.chain_editor_search.clear();
             }
-            Message::JumpHostSearchChanged(v) => {
-                self.jump_host_search = v;
+            Message::ChainEditorCancelAdd => {
+                self.chain_editor_adding = false;
+                self.chain_editor_search.clear();
+            }
+            Message::ChainEditorSearchChanged(v) => {
+                self.chain_editor_search = v;
+            }
+            Message::ChainEditorAddHop(id) => {
+                // Append the hop, ignoring duplicates so the same host
+                // can't appear twice in one chain.
+                if !self.editor_form.jump_chain.contains(&id) {
+                    self.editor_form.jump_chain.push(id);
+                }
+                self.chain_editor_adding = false;
+                self.chain_editor_search.clear();
+            }
+            Message::ChainEditorRemoveHop(idx) => {
+                if idx < self.editor_form.jump_chain.len() {
+                    self.editor_form.jump_chain.remove(idx);
+                }
+            }
+            Message::ChainEditorMoveHopUp(idx) => {
+                if idx > 0 && idx < self.editor_form.jump_chain.len() {
+                    self.editor_form.jump_chain.swap(idx, idx - 1);
+                }
+            }
+            Message::ChainEditorMoveHopDown(idx) => {
+                if idx + 1 < self.editor_form.jump_chain.len() {
+                    self.editor_form.jump_chain.swap(idx, idx + 1);
+                }
             }
             Message::EditorProxyKindChanged(kind) => {
                 let prev = self.editor_form.proxy_kind;
@@ -348,11 +375,19 @@ impl Oryxis {
                 conn.identity_id = self.editor_form.selected_identity.as_ref().and_then(|label| {
                     self.identities.iter().find(|i| i.label == *label).map(|i| i.id)
                 });
-                conn.jump_chain = self.editor_form.jump_host.as_ref()
-                    .and_then(|label| {
-                        self.connections.iter().find(|c| c.label == *label).map(|c| vec![c.id])
-                    })
-                    .unwrap_or_default();
+                // Persist the full ordered chain. Drop any hop pointing
+                // at a host that no longer exists or at this host itself
+                // (a self-reference would be a connect-time loop), so a
+                // stale form never writes a broken chain.
+                let self_id = self.editor_form.editing_id;
+                conn.jump_chain = self
+                    .editor_form
+                    .jump_chain
+                    .iter()
+                    .filter(|id| Some(**id) != self_id)
+                    .filter(|id| self.connections.iter().any(|c| c.id == **id))
+                    .copied()
+                    .collect();
                 conn.port_forwards = self.editor_form.port_forwards.iter().filter_map(|pf| {
                     let local_port = pf.local_port.parse::<u16>().ok()?;
                     let remote_port = pf.remote_port.parse::<u16>().ok()?;

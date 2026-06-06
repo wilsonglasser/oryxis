@@ -30,6 +30,7 @@ use crate::util::open_in_browser;
 /// the shared modal, data/connect/disconnect route by pane id.
 enum PaneConnMsg {
     HostKey(oryxis_ssh::HostKeyQuery),
+    Kbi(oryxis_ssh::KbiQuery),
     Connected(Arc<SshSession>),
     Data(Vec<u8>),
     Disconnected,
@@ -216,6 +217,12 @@ impl Oryxis {
                             let (hk_resp_tx, mut hk_resp_rx) = tokio::sync::mpsc::channel::<bool>(1);
                             self.host_key_response_tx = Some(hk_resp_tx);
 
+                            // Same ask/answer pair for keyboard-interactive
+                            // (2FA / OTP) prompts when auth method is Interactive.
+                            let (kbi_ask_tx, mut kbi_ask_rx) = tokio::sync::mpsc::channel::<(oryxis_ssh::KbiQuery, tokio::sync::oneshot::Sender<Option<Vec<String>>>)>(1);
+                            let (kbi_resp_tx, mut kbi_resp_rx) = tokio::sync::mpsc::channel::<Option<Vec<String>>>(1);
+                            self.kbi_response_tx = Some(kbi_resp_tx);
+
                             let conn_host = conn.hostname.clone();
                             let conn_port = conn.port;
                             let username = conn.username.clone()
@@ -328,6 +335,7 @@ impl Oryxis {
                                     let engine = SshEngine::new()
                                         .with_host_key_check(host_key_check)
                                         .with_host_key_ask(hk_ask_tx)
+                                        .with_kbi_ask(kbi_ask_tx)
                                         .with_keepalive(keepalive)
                                         .with_agent_forwarding(agent_forwarding)
                                         .with_env_vars(env_vars)
@@ -343,6 +351,19 @@ impl Oryxis {
                                             // Wait for UI response
                                             let accepted = hk_resp_rx.recv().await.unwrap_or(false);
                                             let _ = resp_tx.send(accepted);
+                                        }
+                                    });
+
+                                    // Same bridge for keyboard-interactive prompts.
+                                    // A dropped response channel resolves to `None`
+                                    // (cancel), which the engine treats as a clean
+                                    // auth abort rather than a hang.
+                                    let mut kbi_sender_clone = sender.clone();
+                                    let _kbi_bridge = tokio::spawn(async move {
+                                        while let Some((query, resp_tx)) = kbi_ask_rx.recv().await {
+                                            let _ = kbi_sender_clone.send(SshStreamMsg::KbiPrompt(query)).await;
+                                            let answers = kbi_resp_rx.recv().await.unwrap_or(None);
+                                            let _ = resp_tx.send(answers);
                                         }
                                     });
 
@@ -517,6 +538,9 @@ impl Oryxis {
                                     SshStreamMsg::HostKeyVerify(query) => {
                                         Message::SshHostKeyVerify(query)
                                     }
+                                    SshStreamMsg::KbiPrompt(query) => {
+                                        Message::SshKbiPrompt(query)
+                                    }
                                     SshStreamMsg::Data(data) => {
                                         Message::PtyOutput(pane_id, data)
                                     }
@@ -575,6 +599,35 @@ impl Oryxis {
                 self.pending_host_key = None;
                 if let Some(ref tx) = self.host_key_response_tx {
                     let _ = tx.try_send(true);
+                }
+            }
+            Message::SshKbiPrompt(query) => {
+                // One empty answer buffer per prompt, parallel to query.prompts.
+                self.kbi_inputs = vec![String::new(); query.prompts.len()];
+                self.pending_kbi_prompt = Some(query);
+                // Land focus in the first prompt field so OTP entry is
+                // type-and-Enter without a click.
+                return Ok(iced::widget::operation::focus(iced::widget::Id::new(
+                    crate::state::KBI_FIRST_INPUT_ID,
+                )));
+            }
+            Message::SshKbiInput(idx, value) => {
+                if let Some(slot) = self.kbi_inputs.get_mut(idx) {
+                    *slot = value;
+                }
+            }
+            Message::SshKbiSubmit => {
+                let answers = std::mem::take(&mut self.kbi_inputs);
+                self.pending_kbi_prompt = None;
+                if let Some(ref tx) = self.kbi_response_tx {
+                    let _ = tx.try_send(Some(answers));
+                }
+            }
+            Message::SshKbiCancel => {
+                self.pending_kbi_prompt = None;
+                self.kbi_inputs.clear();
+                if let Some(ref tx) = self.kbi_response_tx {
+                    let _ = tx.try_send(None);
                 }
             }
             Message::SshConnected(pane_id, session) => {
@@ -1151,10 +1204,24 @@ impl Oryxis {
         // becomes common.
         self.host_key_response_tx = Some(hk_resp_tx);
 
+        // Keyboard-interactive (2FA / OTP) bridge, mirroring the host-key one.
+        // NOTE: shares the same single-response-channel limitation documented
+        // above for host keys. If a session group opens several panes that
+        // each hit Interactive auth at once, this `kbi_response_tx` is
+        // overwritten per pane and answers could mis-route. Rare in practice
+        // (Interactive 2FA + simultaneous group open); revisit if it bites.
+        let (kbi_ask_tx, mut kbi_ask_rx) = tokio::sync::mpsc::channel::<(
+            oryxis_ssh::KbiQuery,
+            tokio::sync::oneshot::Sender<Option<Vec<String>>>,
+        )>(1);
+        let (kbi_resp_tx, mut kbi_resp_rx) = tokio::sync::mpsc::channel::<Option<Vec<String>>>(1);
+        self.kbi_response_tx = Some(kbi_resp_tx);
+
         let stream = iced::stream::channel::<PaneConnMsg>(128, move |mut sender: iced::futures::channel::mpsc::Sender<PaneConnMsg>| async move {
             let engine = SshEngine::new()
                 .with_host_key_check(host_key_check)
                 .with_host_key_ask(hk_ask_tx)
+                .with_kbi_ask(kbi_ask_tx)
                 .with_keepalive(keepalive);
 
             let mut sender_clone = sender.clone();
@@ -1163,6 +1230,15 @@ impl Oryxis {
                     let _ = sender_clone.send(PaneConnMsg::HostKey(query)).await;
                     let accepted = hk_resp_rx.recv().await.unwrap_or(false);
                     let _ = resp_tx.send(accepted);
+                }
+            });
+
+            let mut kbi_sender_clone = sender.clone();
+            let _kbi_bridge = tokio::spawn(async move {
+                while let Some((query, resp_tx)) = kbi_ask_rx.recv().await {
+                    let _ = kbi_sender_clone.send(PaneConnMsg::Kbi(query)).await;
+                    let answers = kbi_resp_rx.recv().await.unwrap_or(None);
+                    let _ = resp_tx.send(answers);
                 }
             });
 
@@ -1195,6 +1271,7 @@ impl Oryxis {
 
         Task::stream(stream).map(move |m| match m {
             PaneConnMsg::HostKey(q) => Message::SshHostKeyVerify(q),
+            PaneConnMsg::Kbi(q) => Message::SshKbiPrompt(q),
             PaneConnMsg::Connected(s) => Message::SshConnected(pane_id, s),
             PaneConnMsg::Data(d) => Message::PtyOutput(pane_id, d),
             PaneConnMsg::Disconnected => Message::SshDisconnected(pane_id),

@@ -68,9 +68,20 @@ impl Oryxis {
                 // carries its own floating sparkle overlay.
                 let term_with_toggle: Element<'_, Message> = grid.into();
 
-                if chat_visible {
-                    let sidebar = self.view_terminal_sidebar(tab);
-                    dir_row(vec![term_with_toggle, sidebar])
+                // The session-group editor renders here, as a sibling of the
+                // grid inside the terminal area, the same way the chat sidebar
+                // does. Wrapping the whole terminal container from outside
+                // (view_content) instead left the canvas eating clicks meant
+                // for the panel, so keep it inside.
+                if chat_visible || self.show_session_group_panel {
+                    let mut children = vec![term_with_toggle];
+                    if chat_visible {
+                        children.push(self.view_terminal_sidebar(tab));
+                    }
+                    if self.show_session_group_panel {
+                        children.push(self.view_session_group_panel());
+                    }
+                    dir_row(children)
                         .width(Length::Fill)
                         .height(Length::Fill)
                         .into()

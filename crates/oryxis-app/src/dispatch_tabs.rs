@@ -111,8 +111,11 @@ impl Oryxis {
                 {
                     let dx = pos.x - drag.press_pos.x;
                     let dy = pos.y - drag.press_pos.y;
-                    if (dx * dx + dy * dy).sqrt() > 5.0 {
+                    let dist = (dx * dx + dy * dy).sqrt();
+                    eprintln!("[DRAG] move while pending: dist={dist:.1}");
+                    if dist > 5.0 {
                         drag.active = true;
+                        eprintln!("[DRAG] promoted to active (ghost should show)");
                     }
                 }
             }

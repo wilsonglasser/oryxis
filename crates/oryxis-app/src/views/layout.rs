@@ -897,13 +897,13 @@ impl Oryxis {
             );
         }
 
-        // Jump host picker (from the host editor's "Jump Host" row).
-        if self.show_jump_host_picker {
-            let picker = self.view_jump_host_picker();
+        // Chain editor (from the host editor's "Host Chaining" row).
+        if self.show_chain_editor {
+            let editor = self.view_chain_editor();
             return wrap_with_resize(
                 Stack::new()
                     .push(base)
-                    .push(picker)
+                    .push(editor)
                     .width(Length::Fill)
                     .height(Length::Fill)
                     .into(),
@@ -1147,7 +1147,22 @@ impl Oryxis {
             );
         }
 
-        wrap_with_resize(base, resize_overlay)
+        // No modal open. Wrap `base` in a single-child Stack so it sits
+        // at exactly the same tree position as in the modal branches
+        // above (every one of which passes `Stack::new().push(base)
+        // .push(modal)` as the content). iced keys scrollable offsets by
+        // tree position, not by Id, so if `base`'s depth shifted when a
+        // modal opened (bare `base` here vs. nested under a Stack there)
+        // every scrollable inside it (host list, editor form, ...) would
+        // reset to the top. Keeping the depth constant preserves them.
+        wrap_with_resize(
+            Stack::new()
+                .push(base)
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .into(),
+            resize_overlay,
+        )
     }
 
     /// Browser-style immersive-mode overlays: on-enter hint banner and
@@ -1274,6 +1289,9 @@ impl Oryxis {
                     }
                     crate::state::GroupPickerTarget::DynamicFormParent => {
                         self.dynamic_form_parent_combo_bounds.get()
+                    }
+                    crate::state::GroupPickerTarget::SessionGroupFolder => {
+                        self.session_group_folder_combo_bounds.get()
                     }
                 };
                 if b.width > 0.0 { b.width } else { 308.0 }
@@ -1418,18 +1436,21 @@ impl Oryxis {
                 ];
                 // Save the whole arrangement (panes + splits + per-pane
                 // scripts) as a reusable session group, or edit it if this
-                // tab already came from one.
-                let sg_label = if self
-                    .tabs
-                    .get(idx)
-                    .map(|t| t.session_group_id.is_some())
-                    .unwrap_or(false)
-                {
-                    crate::i18n::t("edit_session_group")
-                } else {
-                    crate::i18n::t("save_session_group")
-                };
-                items = items.push(context_menu_item(iced_fonts::lucide::boxes(), sg_label, Message::ShowSaveSessionGroup(idx), OryxisColors::t().text_secondary));
+                // tab already came from one. Only meaningful for a split tab
+                // (>1 pane); a single-pane tab is just a host, not a group.
+                // Already-saved groups keep the "Edit" entry so they stay
+                // editable even if pruned down to one pane.
+                let tab_ref = self.tabs.get(idx);
+                let is_group = tab_ref.map(|t| t.session_group_id.is_some()).unwrap_or(false);
+                let is_split = tab_ref.map(|t| t.pane_count() > 1).unwrap_or(false);
+                if is_split || is_group {
+                    let sg_label = if is_group {
+                        crate::i18n::t("edit_session_group")
+                    } else {
+                        crate::i18n::t("save_session_group")
+                    };
+                    items = items.push(context_menu_item(iced_fonts::lucide::boxes(), sg_label, Message::ShowSaveSessionGroup(idx), OryxisColors::t().text_secondary));
+                }
                 // "Duplicate in New Window" spawns a fresh process that
                 // can only re-open hosts saved in the vault. ECS Exec /
                 // kubectl tabs are ephemeral dynamic-group sessions (no

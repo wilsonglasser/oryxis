@@ -240,10 +240,13 @@ pub struct Oryxis {
     /// a card.
     pub(crate) show_theme_picker: bool,
     /// Whether the jump host picker modal is open. Opened from the
-    /// "Jump Host" row in the host editor's Advanced section. Search
-    /// filters by label, hostname, group, or username.
-    pub(crate) show_jump_host_picker: bool,
-    pub(crate) jump_host_search: String,
+    /// Chain editor (Termius-style multi-hop jump-host editor), opened
+    /// from the "Host Chaining" row in the host editor. `adding` flips
+    /// the modal into "pick a host to append" mode; the search filters
+    /// that list by label, hostname, group, or username.
+    pub(crate) show_chain_editor: bool,
+    pub(crate) chain_editor_adding: bool,
+    pub(crate) chain_editor_search: String,
     pub(crate) connecting: Option<ConnectionProgress>,
     /// Counter that advances ~every 100ms while a connection is in progress.
     /// Used only to drive the pulsing "loading" ring on the active step dot.

@@ -80,7 +80,7 @@ impl Oryxis {
             || self.show_tab_jump
             || self.show_icon_picker
             || self.show_theme_picker
-            || self.show_jump_host_picker
+            || self.show_chain_editor
             || self.show_session_group_panel
             || self.folder_rename.is_some()
             || self.folder_delete.is_some()
@@ -111,8 +111,15 @@ impl Oryxis {
             self.show_theme_picker = false;
             return true;
         }
-        if self.show_jump_host_picker {
-            self.show_jump_host_picker = false;
+        if self.show_chain_editor {
+            // Esc in "add a hop" mode pops back to the chain list;
+            // only a second Esc closes the whole editor.
+            if self.chain_editor_adding {
+                self.chain_editor_adding = false;
+                self.chain_editor_search.clear();
+            } else {
+                self.show_chain_editor = false;
+            }
             return true;
         }
         if self.folder_rename.is_some() {

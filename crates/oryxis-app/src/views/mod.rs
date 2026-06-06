@@ -5,6 +5,7 @@
 //! unchanged: `self.view_dashboard()`, `self.view_settings()`, etc., Rust
 //! allows `impl` blocks for the same type to be scattered across files.
 
+pub(crate) mod chain_editor;
 pub(crate) mod chrome;
 pub(crate) mod cloud_accounts;
 pub(crate) mod connection_progress;
@@ -12,7 +13,6 @@ pub(crate) mod dashboard;
 pub(crate) mod history;
 pub(crate) mod host_panel;
 pub(crate) mod icon_picker;
-pub(crate) mod jump_host_picker;
 pub(crate) mod keys;
 pub(crate) mod known_hosts;
 pub(crate) mod layout;

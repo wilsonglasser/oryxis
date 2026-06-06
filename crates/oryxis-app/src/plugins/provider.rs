@@ -61,6 +61,13 @@ impl PluginProvider {
         let binary = resolve_binary(self.id);
         self.host.rebind(binary).await;
     }
+
+    /// Gracefully tear down this provider's plugin subprocess (drain
+    /// in-flight, flush, close stdin, wait for exit). Called on app
+    /// shutdown. A no-op when the subprocess was never spawned.
+    pub async fn shutdown(&self) {
+        self.host.shutdown().await;
+    }
 }
 
 /// Resolve the plugin binary path for a provider.

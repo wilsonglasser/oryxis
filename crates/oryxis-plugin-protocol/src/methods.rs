@@ -22,6 +22,11 @@ use oryxis_core::models::{CloudProfile, CloudQuery, CloudResourceType, Transport
 /// renaming the existing ones.
 pub mod method {
     pub const INITIALIZE: &str = "initialize";
+    /// Host -> plugin notification (no id, no response) asking the plugin
+    /// to flush logs / close SDK clients before its stdin is closed. Purely
+    /// additive: plugins that don't recognize it still exit cleanly on the
+    /// stdin EOF that follows, so no protocol-version bump is needed.
+    pub const SHUTDOWN: &str = "shutdown";
     pub const TEST_CREDENTIALS: &str = "provider.test_credentials";
     pub const DISCOVER: &str = "provider.discover";
     pub const RESOLVE_QUERY: &str = "provider.resolve_query";

@@ -73,6 +73,33 @@ pub type HostKeyCheckCallback = Arc<dyn Fn(&str, u16, &str, &str) -> HostKeyStat
 /// Channel for asking the UI to verify a host key. The UI sends `true` (accept) or `false` (reject).
 pub type HostKeyAskSender = tokio::sync::mpsc::Sender<(HostKeyQuery, tokio::sync::oneshot::Sender<bool>)>;
 
+/// A single keyboard-interactive prompt line. `prompt` is the raw label
+/// the server sent (e.g. `"Password:"`, `"Verification code:"`) and must
+/// be rendered verbatim, never translated. `echo` says whether the typed
+/// answer should be visible (`true`) or masked (`false`).
+#[derive(Debug, Clone)]
+pub struct KbiPromptField {
+    pub prompt: String,
+    pub echo: bool,
+}
+
+/// A keyboard-interactive challenge round the UI must answer. `name` and
+/// `instructions` are server-provided headers (e.g. `"Two-factor
+/// authentication"`); both can be empty. One round can carry several
+/// prompts (password + OTP, etc.).
+#[derive(Debug, Clone)]
+pub struct KbiQuery {
+    pub name: String,
+    pub instructions: String,
+    pub prompts: Vec<KbiPromptField>,
+}
+
+/// Channel for asking the UI to answer a keyboard-interactive round. The
+/// UI sends `Some(answers)` (one per prompt, in order) or `None` to
+/// cancel the authentication.
+pub type KbiAskSender =
+    tokio::sync::mpsc::Sender<(KbiQuery, tokio::sync::oneshot::Sender<Option<Vec<String>>>)>;
+
 pub(crate) struct ClientHandler {
     hostname: String,
     port: u16,
@@ -855,6 +882,12 @@ pub struct ConnectionResolver {
 pub struct SshEngine {
     host_key_check: Option<HostKeyCheckCallback>,
     host_key_ask_tx: Option<HostKeyAskSender>,
+    /// Optional channel for surfacing keyboard-interactive prompts to the
+    /// UI (set only for `AuthMethod::Interactive` on the terminal path).
+    /// When absent, interactive auth degrades to filling every prompt with
+    /// the stored password, so headless callers (boot port forwards) still
+    /// work without a modal.
+    kbi_ask_tx: Option<KbiAskSender>,
     /// Optional client-side keepalive: when set, russh sends a no-op
     /// SSH_MSG_GLOBAL_REQUEST every N seconds so NAT / firewall idle
     /// timeouts don't kill the session.
@@ -903,6 +936,7 @@ impl SshEngine {
         Self {
             host_key_check: None,
             host_key_ask_tx: None,
+            kbi_ask_tx: None,
             keepalive_interval: None,
             connect_timeout: std::time::Duration::from_secs(15),
             auth_timeout: std::time::Duration::from_secs(30),
@@ -976,6 +1010,14 @@ impl SshEngine {
     /// Set a channel for asking the UI to verify unknown/changed host keys.
     pub fn with_host_key_ask(mut self, tx: HostKeyAskSender) -> Self {
         self.host_key_ask_tx = Some(tx);
+        self
+    }
+
+    /// Set a channel for surfacing keyboard-interactive prompts to the UI.
+    /// Only meaningful for `AuthMethod::Interactive`; without it, interactive
+    /// auth falls back to answering every prompt with the stored password.
+    pub fn with_kbi_ask(mut self, tx: KbiAskSender) -> Self {
+        self.kbi_ask_tx = Some(tx);
         self
     }
 
@@ -1123,10 +1165,34 @@ impl SshEngine {
         password: Option<&str>,
         private_key_pem: Option<&str>,
     ) -> Result<(), SshError> {
+        self.authenticate_handle_bounded(&mut handle.0, connection, password, private_key_pem)
+            .await
+    }
+
+    /// Run `authenticate_handle` under the auth-stage timeout, EXCEPT for
+    /// `AuthMethod::Interactive`. Interactive parks on human input (reading
+    /// a prompt, fetching an OTP from a phone), which routinely exceeds any
+    /// sane network bound, so the blanket `auth_timeout` would abort the very
+    /// 2FA flow it's meant to protect. For Interactive the network
+    /// round-trips are bounded individually inside `try_keyboard_interactive`
+    /// instead, so a misbehaving server is still capped while a slow human is
+    /// not. The user can always cancel the prompt to fail the auth cleanly.
+    async fn authenticate_handle_bounded(
+        &self,
+        handle: &mut client::Handle<ClientHandler>,
+        connection: &Connection,
+        password: Option<&str>,
+        private_key_pem: Option<&str>,
+    ) -> Result<(), SshError> {
+        if connection.auth_method == AuthMethod::Interactive {
+            return self
+                .authenticate_handle(handle, connection, password, private_key_pem)
+                .await;
+        }
         let auth_timeout = self.auth_timeout;
         tokio::time::timeout(
             auth_timeout,
-            self.authenticate_handle(&mut handle.0, connection, password, private_key_pem),
+            self.authenticate_handle(handle, connection, password, private_key_pem),
         )
         .await
         .map_err(|_| {
@@ -1662,10 +1728,14 @@ impl SshEngine {
                         Err(e) => tracing::info!("Auto: password error: {}", e),
                     }
 
-                    // 4. Try keyboard-interactive with password
+                    // 4. Try keyboard-interactive with password. Auto never
+                    // surfaces a modal (use_callback = false): it only reaches
+                    // here after password already failed, so a prompt at the
+                    // tail of Auto would be surprising. The user picks
+                    // AuthMethod::Interactive when they want the modal.
                     tried.push("keyboard-interactive");
                     tracing::info!("Auto: trying keyboard-interactive auth for {}", username);
-                    if self.try_keyboard_interactive(handle, username, pw).await? {
+                    if self.try_keyboard_interactive(handle, username, Some(pw), false).await? {
                         return Ok(true);
                     }
                 }
@@ -1733,9 +1803,8 @@ impl SshEngine {
                 }
             }
             AuthMethod::Interactive => {
-                let pw = password.unwrap_or("");
                 tracing::info!("Trying keyboard-interactive auth for {}", username);
-                if self.try_keyboard_interactive(handle, username, pw).await? {
+                if self.try_keyboard_interactive(handle, username, password, true).await? {
                     Ok(true)
                 } else {
                     Err(SshError::Key("Keyboard-interactive auth rejected".into()))
@@ -1763,27 +1832,105 @@ impl SshEngine {
         Ok(res.success())
     }
 
-    /// Try keyboard-interactive auth with a password response.
+    /// Drive a keyboard-interactive exchange to completion.
+    ///
+    /// `_start` is called once, then we loop on `_respond` round by round
+    /// until the server returns `Success` or `Failure` (a single auth can
+    /// span several `InfoRequest` rounds, e.g. password then OTP). The loop
+    /// is bounded so a misbehaving server can't pop prompts forever.
+    ///
+    /// Each round's answers come from one of three sources, in order:
+    /// - `use_callback` + a `kbi_ask_tx` channel: surface the prompts to the
+    ///   UI and wait for typed answers. The user cancelling (`None`) aborts
+    ///   the auth cleanly (`Ok(false)`).
+    /// - otherwise `fallback_pw`: answer every prompt with the stored
+    ///   password (the Auto path, and the headless degrade path).
+    /// - neither available: fail cleanly (`Ok(false)`).
+    ///
+    /// A round carrying zero prompts is answered with an empty response, so
+    /// servers that send an informational-only `InfoRequest` keep advancing.
     async fn try_keyboard_interactive(
         &self,
         handle: &mut client::Handle<ClientHandler>,
         username: &str,
-        pw: &str,
+        fallback_pw: Option<&str>,
+        use_callback: bool,
     ) -> Result<bool, SshError> {
-        let resp = handle
-            .authenticate_keyboard_interactive_start(username, None::<String>)
-            .await?;
-        match resp {
-            client::KeyboardInteractiveAuthResponse::Success => Ok(true),
-            client::KeyboardInteractiveAuthResponse::Failure { .. } => Ok(false),
-            client::KeyboardInteractiveAuthResponse::InfoRequest { prompts, .. } => {
-                let responses: Vec<String> = prompts.iter().map(|_| pw.to_string()).collect();
-                let resp2 = handle
-                    .authenticate_keyboard_interactive_respond(responses)
-                    .await?;
-                Ok(matches!(resp2, client::KeyboardInteractiveAuthResponse::Success))
-            }
+        // Cap on the number of challenge rounds. Real flows use 1-2; this is
+        // just a backstop against a server that loops InfoRequest forever.
+        const MAX_ROUNDS: usize = 16;
+
+        // The outer auth-stage timeout is skipped for Interactive (it would
+        // abort while the user types an OTP), so bound the individual network
+        // round-trips here instead. The human-input wait below stays
+        // unbounded but cancellable.
+        let net_timeout = self.auth_timeout;
+        let net_err = || {
+            SshError::ConnectionFailed(format!(
+                "keyboard-interactive server response timed out after {}s",
+                net_timeout.as_secs()
+            ))
+        };
+
+        let mut resp = tokio::time::timeout(
+            net_timeout,
+            handle.authenticate_keyboard_interactive_start(username, None::<String>),
+        )
+        .await
+        .map_err(|_| net_err())??;
+
+        for _ in 0..MAX_ROUNDS {
+            let (name, instructions, prompts) = match resp {
+                client::KeyboardInteractiveAuthResponse::Success => return Ok(true),
+                client::KeyboardInteractiveAuthResponse::Failure { .. } => return Ok(false),
+                client::KeyboardInteractiveAuthResponse::InfoRequest {
+                    name,
+                    instructions,
+                    prompts,
+                } => (name, instructions, prompts),
+            };
+
+            let answers: Vec<String> = if prompts.is_empty() {
+                Vec::new()
+            } else if use_callback && self.kbi_ask_tx.is_some() {
+                let tx = self.kbi_ask_tx.as_ref().unwrap();
+                let query = KbiQuery {
+                    name,
+                    instructions,
+                    prompts: prompts
+                        .iter()
+                        .map(|p| KbiPromptField {
+                            prompt: p.prompt.clone(),
+                            echo: p.echo,
+                        })
+                        .collect(),
+                };
+                let (resp_tx, resp_rx) = tokio::sync::oneshot::channel();
+                if tx.send((query, resp_tx)).await.is_err() {
+                    // UI bridge is gone; treat as cancellation.
+                    return Ok(false);
+                }
+                match resp_rx.await {
+                    Ok(Some(answers)) => answers,
+                    // User cancelled, or the responder dropped: abort cleanly.
+                    Ok(None) | Err(_) => return Ok(false),
+                }
+            } else if let Some(pw) = fallback_pw {
+                prompts.iter().map(|_| pw.to_string()).collect()
+            } else {
+                return Ok(false);
+            };
+
+            resp = tokio::time::timeout(
+                net_timeout,
+                handle.authenticate_keyboard_interactive_respond(answers),
+            )
+            .await
+            .map_err(|_| net_err())??;
         }
+
+        tracing::warn!("keyboard-interactive exceeded {} rounds, giving up", MAX_ROUNDS);
+        Ok(false)
     }
 
     /// Authenticate and open a PTY session on the handle.
@@ -1871,20 +2018,11 @@ impl SshEngine {
         // Apply the same per-phase timeouts the public 2-step API uses
         //, single-call connects via `connect_with_resolver` were
         // bypassing them, leaving auth/session free to hang on the OS
-        // default ceilings.
-        let auth_timeout = self.auth_timeout;
+        // default ceilings. Auth honours the Interactive exemption (human
+        // input isn't a network stall) via `authenticate_handle_bounded`.
         let session_timeout = self.session_timeout;
-        tokio::time::timeout(
-            auth_timeout,
-            self.authenticate_handle(&mut handle, connection, password, private_key_pem),
-        )
-        .await
-        .map_err(|_| {
-            SshError::ConnectionFailed(format!(
-                "auth timed out after {}s",
-                auth_timeout.as_secs()
-            ))
-        })??;
+        self.authenticate_handle_bounded(&mut handle, connection, password, private_key_pem)
+            .await?;
         let listeners = bind_port_forward_listeners(&connection.port_forwards).await?;
         let (mut session, rx) = tokio::time::timeout(
             session_timeout,

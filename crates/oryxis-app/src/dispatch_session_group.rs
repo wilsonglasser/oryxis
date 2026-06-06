@@ -94,8 +94,7 @@ impl Oryxis {
                     }
                 }
 
-                self.open_session_group_editor(form);
-                Ok(Task::none())
+                Ok(self.open_session_group_editor(form))
             }
 
             Message::EditSessionGroup(idx) => {
@@ -121,8 +120,7 @@ impl Oryxis {
                     pane_rows: rows,
                     current_pane: 0,
                 };
-                self.open_session_group_editor(form);
-                Ok(Task::none())
+                Ok(self.open_session_group_editor(form))
             }
 
             Message::SessionGroupFormLabelChanged(v) => {
@@ -131,12 +129,6 @@ impl Oryxis {
             }
             Message::SessionGroupFormGroupChanged(v) => {
                 self.editor_session_group.group_name = v;
-                Ok(Task::none())
-            }
-            Message::SessionGroupFormColorChanged(v) => {
-                let trimmed = v.trim();
-                self.editor_session_group.color =
-                    (!trimmed.is_empty()).then(|| trimmed.to_string());
                 Ok(Task::none())
             }
             Message::SessionGroupScriptAction(action) => {
@@ -186,6 +178,22 @@ impl Oryxis {
                 Ok(Task::none())
             }
 
+            Message::ShowSessionGroupIconPicker => {
+                // Reuse the host icon/color picker, seeded from the form. The
+                // choice flows back into `editor_session_group` on the
+                // picker's Save (deferred, like the dynamic-group form).
+                let form = &self.editor_session_group;
+                self.icon_picker_icon =
+                    form.icon_style.clone().or_else(|| Some("boxes".to_string()));
+                self.icon_picker_color = form.color.clone();
+                self.icon_picker_hex_input = form.color.clone().unwrap_or_default();
+                self.icon_picker_for = None;
+                self.icon_picker_for_group_form = false;
+                self.icon_picker_for_session_group = true;
+                self.show_icon_picker = true;
+                Ok(Task::none())
+            }
+
             Message::DeleteSessionGroup(idx) => {
                 if let Some(group) = self.session_groups.get(idx)
                     && let Some(vault) = &self.vault
@@ -213,7 +221,7 @@ impl Oryxis {
 
     /// Shared editor-open bookkeeping: claim the right-panel slot and reset
     /// any stale error.
-    fn open_session_group_editor(&mut self, mut form: SessionGroupForm) {
+    fn open_session_group_editor(&mut self, mut form: SessionGroupForm) -> Task<Message> {
         // Mutually exclusive right-panel slot, close other panels first.
         self.show_host_panel = false;
         self.cloud_form_visible = false;
@@ -231,6 +239,9 @@ impl Oryxis {
         self.editor_session_group = form;
         self.session_group_panel_error = None;
         self.show_session_group_panel = true;
+        // Land focus in the name field so the user can type immediately
+        // (otherwise the first keystrokes go nowhere, reading as broken).
+        iced::widget::operation::focus(iced::widget::Id::new("session-group-name"))
     }
 
     fn save_session_group_form(&mut self) -> Task<Message> {
@@ -291,16 +302,18 @@ impl Oryxis {
         };
 
         let group_id_saved = group.id;
+        let group_label = group.label.clone();
         let source_tab = form.source_tab;
         if let Some(vault) = &self.vault {
             match vault.save_session_group(&group) {
                 Ok(()) => {
                     // Stamp the originating tab so its context menu reads
-                    // "Edit group" next time.
+                    // "Edit group" next time, and rename it to the group.
                     if let Some(idx) = source_tab
                         && let Some(tab) = self.tabs.get_mut(idx)
                     {
                         tab.session_group_id = Some(group_id_saved);
+                        tab.label = group_label.clone();
                     }
                     self.show_session_group_panel = false;
                     self.session_group_panel_error = None;

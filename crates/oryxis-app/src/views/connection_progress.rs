@@ -3,7 +3,7 @@
 
 use iced::alignment::Horizontal;
 use iced::border::Radius;
-use iced::widget::{button, column, container, row, scrollable, text, Space};
+use iced::widget::{button, column, container, row, scrollable, text, text_input, Space};
 use iced::{Background, Border, Color, Element, Length, Padding};
 
 use crate::app::{Message, Oryxis};
@@ -97,7 +97,101 @@ impl Oryxis {
             Element<'_, Message>,
             Element<'_, Message>,
             Element<'_, Message>,
-        ) = if let Some(ref query) = self.pending_host_key {
+        ) = if let Some(ref kbi) = self.pending_kbi_prompt {
+            // Keyboard-interactive (2FA / OTP). `name` and the prompt labels
+            // are server strings, rendered verbatim, never translated. Only
+            // the chrome (title fallback, buttons) goes through i18n.
+            let title = if kbi.name.trim().is_empty() {
+                crate::i18n::t("kbi_title").to_string()
+            } else {
+                kbi.name.clone()
+            };
+            let status: Element<'_, Message> =
+                text(title).size(14).color(OryxisColors::t().accent).into();
+
+            let mut body_col = column![].push(Space::new().height(8));
+
+            if !kbi.instructions.trim().is_empty() {
+                body_col = body_col
+                    .push(text(kbi.instructions.clone()).size(13).color(OryxisColors::t().text_secondary))
+                    .push(Space::new().height(12));
+            }
+
+            for (i, prompt) in kbi.prompts.iter().enumerate() {
+                let value = self.kbi_inputs.get(i).map(|s| s.as_str()).unwrap_or("");
+                let mut input = text_input(&prompt.prompt, value)
+                    .on_input(move |v| Message::SshKbiInput(i, v))
+                    .on_submit(Message::SshKbiSubmit)
+                    .padding(10)
+                    .size(14);
+                // First field gets the shared id so the prompt handler can
+                // focus it (type-and-Enter without a click).
+                if i == 0 {
+                    input = input.id(iced::widget::Id::new(crate::state::KBI_FIRST_INPUT_ID));
+                }
+                // echo == false means a secret (password / OTP): mask it.
+                if !prompt.echo {
+                    input = input.secure(true);
+                }
+                body_col = body_col
+                    .push(text(prompt.prompt.clone()).size(12).color(OryxisColors::t().text_muted))
+                    .push(Space::new().height(4))
+                    .push(input)
+                    .push(Space::new().height(12));
+            }
+
+            let body: Element<'_, Message> = container(body_col)
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .padding(Padding { top: 8.0, right: 16.0, bottom: 8.0, left: 16.0 })
+                .style(|_| container::Style {
+                    background: Some(Background::Color(OryxisColors::t().bg_sidebar)),
+                    border: Border { radius: Radius::from(10.0), ..Default::default() },
+                    ..Default::default()
+                })
+                .into();
+
+            let cancel_btn = button(
+                container(text(crate::i18n::t("cancel")).size(13).color(OryxisColors::t().text_primary))
+                    .padding(Padding { top: 10.0, right: 24.0, bottom: 10.0, left: 24.0 }),
+            )
+            .on_press(Message::SshKbiCancel)
+            .style(|_, _| button::Style {
+                background: Some(Background::Color(OryxisColors::t().bg_surface)),
+                border: Border { radius: Radius::from(8.0), ..Default::default() },
+                ..Default::default()
+            });
+
+            let submit_btn = {
+                let fg = crate::theme::contrast_text_for(OryxisColors::t().accent);
+                button(
+                    container(
+                        text(crate::i18n::t("kbi_submit"))
+                            .size(13)
+                            .font(iced::Font {
+                                weight: iced::font::Weight::Semibold,
+                                ..iced::Font::new(crate::theme::SYSTEM_UI_FAMILY)
+                            })
+                            .color(fg),
+                    )
+                    .padding(Padding { top: 10.0, right: 24.0, bottom: 10.0, left: 24.0 }),
+                )
+                .on_press(Message::SshKbiSubmit)
+                .style(|_, _| button::Style {
+                    background: Some(Background::Color(OryxisColors::t().accent)),
+                    border: Border { radius: Radius::from(8.0), ..Default::default() },
+                    ..Default::default()
+                })
+            };
+
+            let btm: Element<'_, Message> = row![
+                cancel_btn,
+                Space::new().width(Length::Fill),
+                submit_btn,
+            ].align_y(iced::Alignment::Center).into();
+
+            (status, body, btm)
+        } else if let Some(ref query) = self.pending_host_key {
             let is_changed = matches!(query.status, oryxis_ssh::HostKeyStatus::Changed { .. });
 
             let question_text = if is_changed {

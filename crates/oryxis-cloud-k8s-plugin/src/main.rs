@@ -17,7 +17,7 @@ mod dispatch;
 
 use std::io::{self, BufRead, Write};
 
-use oryxis_plugin_protocol::{error_codes, JsonRpcRequest, JsonRpcResponse};
+use oryxis_plugin_protocol::{error_codes, method, JsonRpcRequest, JsonRpcResponse};
 
 #[tokio::main]
 async fn main() {
@@ -65,6 +65,13 @@ async fn main() {
         };
 
         if request.is_notification() {
+            // The host sends a `shutdown` notification (then closes stdin)
+            // when tearing the plugin down. Exit proactively so we flush and
+            // stop before the EOF that follows.
+            if request.method == method::SHUTDOWN {
+                tracing::info!("received shutdown notification, exiting");
+                break;
+            }
             continue;
         }
         let id = request.id.clone().unwrap_or(serde_json::Value::Null);

@@ -14,7 +14,7 @@ use crate::state::ProxyKind;
 use crate::theme::OryxisColors;
 use crate::app::PANEL_WIDTH;
 use crate::widgets::{
-    dir_align_x, dir_row, panel_divider, panel_field, panel_option_pick, panel_option_row,
+    dir_align_x, dir_row, panel_divider, panel_field, panel_option_pick,
     panel_section, password_input_with_eye,
 };
 
@@ -415,7 +415,27 @@ impl Oryxis {
         let ssh_section = panel_section(ssh_items);
 
         // ── Section: Advanced Options ──
-        let jump_host_value = self.editor_form.jump_host.clone().unwrap_or_else(|| t("disabled").to_string());
+        // Chain summary for the "Host Chaining" row: the hop labels
+        // joined in order (bastion > db-proxy > ...), or "disabled"
+        // when empty. Hops pointing at a since-deleted host resolve to
+        // a placeholder rather than vanishing, so the count stays
+        // honest until the user opens the editor and prunes them.
+        let chain_summary = if self.editor_form.jump_chain.is_empty() {
+            t("disabled").to_string()
+        } else {
+            self.editor_form
+                .jump_chain
+                .iter()
+                .map(|id| {
+                    self.connections
+                        .iter()
+                        .find(|c| c.id == *id)
+                        .map(|c| c.label.clone())
+                        .unwrap_or_else(|| t("unknown").to_string())
+                })
+                .collect::<Vec<_>>()
+                .join(" › ")
+        };
         let auth_value = match self.editor_form.auth_method {
             AuthMethod::Auto => t("auth_auto"),
             AuthMethod::Password => t("auth_password"),
@@ -425,10 +445,40 @@ impl Oryxis {
         };
 
         let advanced_section = panel_section(column![
-            panel_option_row(
-                iced_fonts::lucide::link(),
-                t("host_chaining"),
-                jump_host_value,
+            // Single "Host Chaining" entry point. Clicking opens the
+            // chain editor (Termius-style multi-hop). Replaces the old
+            // read-only row + separate single-host "Jump Host" picker,
+            // which both edited the same `jump_chain` and were
+            // redundant.
+            container(
+                button(
+                    dir_row(vec![
+                        iced_fonts::lucide::link().size(14).color(OryxisColors::t().text_muted).into(),
+                        Space::new().width(10).into(),
+                        text(t("host_chaining")).size(13).color(OryxisColors::t().text_secondary).into(),
+                        Space::new().width(Length::Fill).into(),
+                        text(chain_summary)
+                            .size(13)
+                            .color(OryxisColors::t().text_primary)
+                            .into(),
+                        Space::new().width(8).into(),
+                        iced_fonts::lucide::chevron_right().size(12).color(OryxisColors::t().text_muted).into(),
+                    ])
+                    .align_y(iced::Alignment::Center),
+                )
+                .on_press(Message::OpenChainEditor)
+                .padding(Padding { top: 6.0, right: 8.0, bottom: 6.0, left: 0.0 })
+                .style(|_, status| {
+                    let bg = match status {
+                        BtnStatus::Hovered => OryxisColors::t().bg_hover,
+                        _ => Color::TRANSPARENT,
+                    };
+                    button::Style {
+                        background: Some(Background::Color(bg)),
+                        border: Border { radius: Radius::from(6.0), ..Default::default() },
+                        ..Default::default()
+                    }
+                })
             ),
             panel_divider(),
             panel_option_pick(
@@ -443,37 +493,6 @@ impl Oryxis {
                 ],
                 auth_value.to_string(),
                 Message::EditorAuthMethodChanged,
-            ),
-            panel_divider(),
-            container(
-                button(
-                    dir_row(vec![
-                        iced_fonts::lucide::network().size(14).color(OryxisColors::t().text_muted).into(),
-                        Space::new().width(10).into(),
-                        text(t("jump_host")).size(13).color(OryxisColors::t().text_secondary).into(),
-                        Space::new().width(Length::Fill).into(),
-                        text(self.editor_form.jump_host.clone().unwrap_or_else(|| "(none)".into()))
-                            .size(13)
-                            .color(OryxisColors::t().text_primary)
-                            .into(),
-                        Space::new().width(8).into(),
-                        iced_fonts::lucide::chevron_down().size(12).color(OryxisColors::t().text_muted).into(),
-                    ])
-                    .align_y(iced::Alignment::Center),
-                )
-                .on_press(Message::OpenJumpHostPicker)
-                .padding(Padding { top: 6.0, right: 8.0, bottom: 6.0, left: 0.0 })
-                .style(|_, status| {
-                    let bg = match status {
-                        BtnStatus::Hovered => OryxisColors::t().bg_hover,
-                        _ => Color::TRANSPARENT,
-                    };
-                    button::Style {
-                        background: Some(Background::Color(bg)),
-                        border: Border { radius: Radius::from(6.0), ..Default::default() },
-                        ..Default::default()
-                    }
-                })
             ),
             panel_divider(),
             container(

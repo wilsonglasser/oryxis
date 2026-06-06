@@ -25,7 +25,7 @@ mod dispatch;
 
 use std::io::{self, BufRead, Write};
 
-use oryxis_plugin_protocol::{error_codes, JsonRpcRequest, JsonRpcResponse};
+use oryxis_plugin_protocol::{error_codes, method, JsonRpcRequest, JsonRpcResponse};
 
 #[tokio::main]
 async fn main() {
@@ -86,6 +86,12 @@ async fn main() {
 
         // A request without an id is a notification, no response.
         if request.is_notification() {
+            // Host `shutdown` notification (followed by stdin close): exit
+            // proactively so we flush before the EOF.
+            if request.method == method::SHUTDOWN {
+                tracing::info!("received shutdown notification, exiting");
+                break;
+            }
             continue;
         }
         let id = request.id.clone().unwrap_or(serde_json::Value::Null);

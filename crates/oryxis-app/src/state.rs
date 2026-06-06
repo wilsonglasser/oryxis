@@ -817,12 +817,15 @@ impl TerminalTab {
         self.pane_grid.panes.len()
     }
 
-    /// Label to show in the tab strip. A split tab follows the *focused*
-    /// pane (so a tab split across two hosts reads as whichever pane you're
-    /// in); a single-pane tab uses the tab's own label, which carries the
-    /// "(disconnected)" suffix the focused-pane label doesn't.
+    /// Label to show in the tab strip. A tab opened from (or saved as) a
+    /// session group shows the group's name. Otherwise a split tab follows
+    /// the *focused* pane (so a tab split across two hosts reads as whichever
+    /// pane you're in); a single-pane tab uses the tab's own label, which
+    /// carries the "(disconnected)" suffix the focused-pane label doesn't.
     pub fn display_label(&self) -> &str {
-        if self.pane_count() > 1 {
+        if self.session_group_id.is_some() {
+            &self.label
+        } else if self.pane_count() > 1 {
             &self.active().label
         } else {
             &self.label
@@ -944,7 +947,10 @@ pub(crate) struct ConnectionForm {
     pub auth_method: AuthMethod,
     pub group_name: String,
     pub selected_key: Option<String>,
-    pub jump_host: Option<String>,  // label of jump host connection
+    /// Ordered jump-host chain (connection ids). The session tunnels
+    /// through each hop in order before reaching this host. Mirrors
+    /// `Connection.jump_chain` one-to-one; edited via the chain editor.
+    pub jump_chain: Vec<Uuid>,
     /// Selected identity label (if any).
     pub selected_identity: Option<String>,
     /// If editing, the connection ID.
@@ -1106,7 +1112,7 @@ impl Default for ConnectionForm {
             auth_method: AuthMethod::Auto,
             group_name: String::new(),
             selected_key: None,
-            jump_host: None,
+            jump_chain: Vec::new(),
             selected_identity: None,
             editing_id: None,
             has_existing_password: false,
@@ -1182,6 +1188,7 @@ pub(crate) enum OverlayContent {
 pub(crate) enum GroupPickerTarget {
     EditorParent,
     DynamicFormParent,
+    SessionGroupFolder,
 }
 
 /// Which list the open sort menu controls. Drives both the dispatched
@@ -1584,6 +1591,11 @@ pub enum ConnectionStep {
 // SSH stream (messages from the background SSH task)
 // ---------------------------------------------------------------------------
 
+/// Widget id of the first keyboard-interactive prompt field, so the
+/// prompt handler can land focus there on appearance (type-and-Enter for
+/// OTP entry without a click).
+pub(crate) const KBI_FIRST_INPUT_ID: &str = "kbi-first-input";
+
 /// Internal message type for SSH connection streams.
 pub(crate) enum SshStreamMsg {
     Progress(ConnectionStep, String), // (step, log message)
@@ -1591,6 +1603,7 @@ pub(crate) enum SshStreamMsg {
     #[allow(dead_code)]
     NewKnownHosts(Vec<oryxis_core::models::known_host::KnownHost>),
     HostKeyVerify(oryxis_ssh::HostKeyQuery),
+    KbiPrompt(oryxis_ssh::KbiQuery),
     Data(Vec<u8>),
     Error(String),
     Disconnected,

@@ -85,13 +85,21 @@ impl Oryxis {
     fn view_sftp_pane(&self, side: SftpPaneSide) -> Element<'_, Message> {
         let pane = self.sftp.pane(side);
         let is_remote = pane.is_remote;
-        // Stable per-pane scroll id so the file list keeps its scroll
-        // offset across re-renders (e.g. while dragging a row, or when a
-        // reload swaps the entries) instead of snapping back to the top.
-        let list_scroll_id = match side {
-            SftpPaneSide::Left => "sftp-list-left",
-            SftpPaneSide::Right => "sftp-list-right",
+        // Per-pane scroll id keyed by the current directory. Within one
+        // directory the id is stable, so the list keeps its scroll offset
+        // across re-renders (dragging a row, an in-place reload). Changing
+        // directory changes the id, so iced treats it as a fresh
+        // scrollable and the new listing starts at the top.
+        let cur_path = if is_remote {
+            pane.remote_path.clone()
+        } else {
+            pane.local_path.to_string_lossy().into_owned()
         };
+        let side_key = match side {
+            SftpPaneSide::Left => "left",
+            SftpPaneSide::Right => "right",
+        };
+        let list_scroll_id = format!("sftp-list-{side_key}-{cur_path}");
 
         // Header chip: a button that opens the host picker targeting this
         // pane. Local panes show a monitor badge + "Local"; remote panes
@@ -293,7 +301,7 @@ impl Oryxis {
                     ));
                 }
                 scrollable(col)
-                .id(iced::widget::Id::new(list_scroll_id))
+                .id(iced::widget::Id::from(list_scroll_id.clone()))
                 .width(Length::Fill)
                 .height(Length::Fill)
                 .into()
@@ -416,7 +424,7 @@ impl Oryxis {
                 ));
             }
             scrollable(col)
-                .id(iced::widget::Id::new(list_scroll_id))
+                .id(iced::widget::Id::from(list_scroll_id.clone()))
                 .width(Length::Fill)
                 .height(Length::Fill)
                 .into()
@@ -827,7 +835,11 @@ pub(crate) fn row_context_menu_box<'a>(
                 let upload_msg = if menu.is_dir {
                     Message::SftpUploadFolder(std::path::PathBuf::from(&menu.path))
                 } else {
-                    Message::SftpUpload(std::path::PathBuf::from(&menu.path))
+                    // Route even a single file through the batch queue so the
+                    // transfer shows the progress strip + per-file panel
+                    // (SftpUpload alone creates no TransferState, hence no
+                    // on-screen indicator).
+                    Message::SftpUploadBatch(vec![std::path::PathBuf::from(&menu.path)])
                 };
                 let upload_label = match &other_label {
                     Some(h) => t("upload_to_host").replacen("{host}", h, 1),

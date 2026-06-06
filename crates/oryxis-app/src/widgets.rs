@@ -497,26 +497,6 @@ pub(crate) fn panel_divider<'a>() -> Element<'a, Message> {
         .into()
 }
 
-/// An option row: [icon] [label] ... [value]
-pub(crate) fn panel_option_row<'a>(
-    icon_widget: iced::widget::Text<'a>,
-    label: &'a str,
-    value: String,
-) -> Element<'a, Message> {
-    container(
-        dir_row(vec![
-            icon_widget.size(13).color(OryxisColors::t().text_muted).into(),
-            Space::new().width(10).into(),
-            text(label).size(13).color(OryxisColors::t().text_secondary).into(),
-            Space::new().width(Length::Fill).into(),
-            text(value).size(12).color(OryxisColors::t().text_muted).into(),
-        ])
-        .align_y(iced::Alignment::Center),
-    )
-    .padding(Padding { top: 8.0, right: 0.0, bottom: 8.0, left: 0.0 })
-    .into()
-}
-
 /// Toolbar trigger button that opens the Sort dropdown. The glyph
 /// reflects the active sort so the user can read the current mode
 /// without opening the menu (A-z / Z-a / new-first / old-first).

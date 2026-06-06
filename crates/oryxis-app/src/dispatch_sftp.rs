@@ -709,6 +709,10 @@ impl Oryxis {
                 // pending (active=false) until the user moves past the
                 // threshold, that way plain clicks still flow to the
                 // button's on_press handler.
+                eprintln!(
+                    "[DRAG] press: active_view={:?} hovered_row={:?}",
+                    self.active_view, self.sftp.hovered_row
+                );
                 if self.active_view != crate::state::View::Sftp {
                     return Ok(Task::none());
                 }
@@ -749,6 +753,7 @@ impl Oryxis {
                     press_pos: self.mouse_position,
                     active: false,
                 });
+                eprintln!("[DRAG] created pending at {:?}", self.mouse_position);
             }
             Message::SftpSelectRow(side, path, is_dir) => {
                 let target = (side, path.clone());

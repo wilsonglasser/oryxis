@@ -42,6 +42,12 @@ impl Oryxis {
                 .width(Length::Fill)
                 .height(Length::Fill)
                 .into()
+        } else if self.show_session_group_panel {
+            let panel = self.view_session_group_panel();
+            dir_row(vec![main_content, panel])
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .into()
         } else {
             main_content
         }

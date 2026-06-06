@@ -99,7 +99,20 @@ impl PluginHost {
             *guard = new_binary;
         }
         let mut conn_guard = self.inner.lock().await;
-        *conn_guard = None;
+        if let Some(mut conn) = conn_guard.take() {
+            conn.graceful_shutdown(DRAIN_TIMEOUT).await;
+        }
+    }
+
+    /// Tear down the live subprocess gracefully (drain in-flight, flush,
+    /// close stdin, wait for exit). Used on app shutdown so plugins flush
+    /// logs / close SDK clients instead of being hard-killed. A no-op when
+    /// no subprocess is running.
+    pub async fn shutdown(&self) {
+        let mut guard = self.inner.lock().await;
+        if let Some(mut conn) = guard.take() {
+            conn.graceful_shutdown(DRAIN_TIMEOUT).await;
+        }
     }
 
     /// Override the idle / call timeouts. Builder-style, mainly for
@@ -211,7 +224,12 @@ struct Connection {
     /// `kill_on_drop(true)` is set, so the subprocess dies with this
     /// struct even before `Drop` gets to `start_kill`.
     child: Child,
-    stdin: ChildStdin,
+    /// `Option` so `graceful_shutdown` can `take()` it and let the writer
+    /// drop, which is the canonical way to deliver stdin EOF to the plugin
+    /// (a plugin's read loop ends on EOF and it exits on its own). `None`
+    /// after a graceful shutdown; the request path treats `None` as a dead
+    /// pipe.
+    stdin: Option<ChildStdin>,
     /// In-flight requests, the reader task fulfils each oneshot when
     /// the matching response line arrives.
     pending: PendingMap,
@@ -230,18 +248,16 @@ struct Connection {
 
 impl Drop for Connection {
     fn drop(&mut self) {
-        // A dropped `JoinHandle` does not stop its task, abort the
-        // reader and stderr drain explicitly. The child itself dies
-        // via `kill_on_drop`, `start_kill` just makes it immediate.
+        // A dropped `JoinHandle` does not stop its task, abort the reader
+        // and stderr drain explicitly.
         //
-        // TODO(v0.8): graceful shutdown. Today even a well-behaved
-        // plugin doing in-flight work (AWS pagination, an open SDK
-        // client) loses it on every idle reap. Wire a `shutdown`
-        // JSON-RPC notification + a short drain window (200-500 ms)
-        // BEFORE `start_kill`, so plugins can flush logs and close
-        // SDK clients cleanly. Out of scope for the audit fixes
-        // because the protocol bump touches `oryxis-plugin-protocol`
-        // and every shipped plugin binary.
+        // Hard kill is now a *fallback*: the clean teardown paths (idle
+        // reap, rebind, app shutdown) call `graceful_shutdown` first, which
+        // closes stdin and waits for the plugin to exit on its own. If that
+        // already happened, `start_kill` is a harmless no-op on a reaped
+        // child. `start_kill` still covers the paths that can't drain (a
+        // dead pipe on the call-error arm, or a panic), and `kill_on_drop`
+        // is the last resort if even `start_kill` is skipped.
         self.reader.abort();
         self.stderr.abort();
         let _ = self.child.start_kill();
@@ -343,7 +359,7 @@ impl Connection {
 
         Ok(Connection {
             child,
-            stdin,
+            stdin: Some(stdin),
             pending,
             next_id: 1,
             init,
@@ -363,9 +379,68 @@ impl Connection {
     ) -> Result<JsonRpcResponse, PluginError> {
         let id = self.next_id;
         self.next_id += 1;
-        send_rpc(&mut self.stdin, &self.pending, id, method, params, timeout).await
+        let stdin = self.stdin.as_mut().ok_or(PluginError::ProcessGone)?;
+        send_rpc(stdin, &self.pending, id, method, params, timeout).await
+    }
+
+    /// Graceful teardown: let in-flight requests finish (briefly), nudge the
+    /// plugin to flush via a `shutdown` notification, then close stdin so it
+    /// exits on EOF, and wait for that exit. Returns `true` if the child
+    /// exited on its own within the grace window (the `Drop` hard-kill never
+    /// fired). The reader / stderr tasks are aborted by `Drop` afterwards.
+    async fn graceful_shutdown(&mut self, drain: Duration) -> bool {
+        // 1. Let already-sent requests land (near-no-op on the idle path,
+        // where `pending` is empty by definition).
+        let deadline = Instant::now() + drain;
+        while Instant::now() < deadline
+            && !self.pending.lock().map(|p| p.is_empty()).unwrap_or(true)
+        {
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+        // 2. Best-effort `shutdown` notification, then drop stdin -> EOF.
+        if let Some(mut stdin) = self.stdin.take() {
+            let note = JsonRpcRequest::notification(method::SHUTDOWN, Value::Null);
+            if let Ok(line) = serde_json::to_string(&note) {
+                let _ = stdin.write_all(line.as_bytes()).await;
+                let _ = stdin.write_all(b"\n").await;
+                let _ = stdin.flush().await;
+            }
+            // `stdin` drops here, closing the write side (EOF to the plugin).
+        }
+        // 3. Wait for a clean self-exit; the hard kill in `Drop` is only a
+        // fallback for a wedged plugin.
+        match tokio::time::timeout(EXIT_GRACE, self.child.wait()).await {
+            Ok(Ok(status)) => {
+                tracing::debug!(
+                    target = "oryxis::plugins",
+                    epoch = self.epoch,
+                    "plugin exited cleanly on shutdown ({status})"
+                );
+                true
+            }
+            Ok(Err(e)) => {
+                tracing::warn!(target = "oryxis::plugins", error = %e, "plugin wait failed");
+                false
+            }
+            Err(_) => {
+                tracing::warn!(
+                    target = "oryxis::plugins",
+                    epoch = self.epoch,
+                    "plugin did not exit within {EXIT_GRACE:?} of stdin close, hard-killing"
+                );
+                false
+            }
+        }
     }
 }
+
+/// Drain window: how long to let in-flight requests finish before closing
+/// stdin. Short by design (this is "let the plugin flush", not "let a long
+/// discovery finish").
+const DRAIN_TIMEOUT: Duration = Duration::from_millis(400);
+/// How long to wait for the plugin to exit on its own after stdin EOF
+/// before the `Drop` hard-kill takes over.
+const EXIT_GRACE: Duration = Duration::from_millis(800);
 
 /// Write one request frame and await the matching response. Free
 /// function rather than a method so `Connection::spawn` can run the
@@ -520,7 +595,11 @@ async fn reaper_task(
                     provider = %provider_id,
                     "plugin idle for {idle_timeout:?}, shutting down subprocess"
                 );
-                *guard = None; // drops Connection: kills child, aborts tasks
+                if let Some(mut conn) = guard.take() {
+                    conn.graceful_shutdown(DRAIN_TIMEOUT).await;
+                    // `conn` drops here; its `Drop` aborts the reader / stderr
+                    // tasks and hard-kills only if the graceful exit timed out.
+                }
                 return;
             }
             // Still warm, keep watching.
@@ -557,5 +636,33 @@ mod tests {
         assert_eq!(host.provider_id(), "test");
         assert_eq!(host.idle_timeout, Duration::from_secs(10));
         assert_eq!(host.call_timeout, Duration::from_secs(5));
+    }
+
+    /// The mechanism `graceful_shutdown` relies on: dropping `ChildStdin`
+    /// closes the write side, the child sees EOF on its read loop and exits
+    /// on its own, so the `Drop` hard-kill never has to fire. This is the
+    /// check the whole feature hinges on (a broken EOF would silently fall
+    /// back to the hard kill and look like it works).
+    #[tokio::test]
+    async fn dropping_child_stdin_delivers_eof() {
+        // `cat` reads stdin until EOF, then exits 0, a stand-in for a plugin
+        // whose stdio read loop ends on stdin close (how real plugins exit).
+        let mut child = match Command::new("cat")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::null())
+            .kill_on_drop(true)
+            .spawn()
+        {
+            Ok(c) => c,
+            Err(_) => return, // `cat` unavailable on a minimal env; skip.
+        };
+        let stdin = child.stdin.take().expect("stdin piped");
+        // Drop the writer with nothing pending -> EOF to the child.
+        drop(stdin);
+        let status = tokio::time::timeout(EXIT_GRACE, child.wait())
+            .await
+            .expect("child must exit on stdin EOF within the grace window")
+            .expect("wait succeeds");
+        assert!(status.success(), "cat should exit 0 on EOF");
     }
 }

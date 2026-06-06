@@ -37,6 +37,17 @@ impl JsonRpcRequest {
         }
     }
 
+    /// Build a notification frame (no `id`, so the plugin must not reply).
+    /// Pass `Value::Null` for a parameterless notification.
+    pub fn notification(method: impl Into<String>, params: Value) -> Self {
+        Self {
+            jsonrpc: "2.0".into(),
+            id: None,
+            method: method.into(),
+            params: if params.is_null() { None } else { Some(params) },
+        }
+    }
+
     /// True when this frame is a notification (no `id`) and therefore
     /// must not receive a response.
     pub fn is_notification(&self) -> bool {

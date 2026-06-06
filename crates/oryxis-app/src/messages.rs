@@ -317,16 +317,21 @@ pub enum Message {
     EditorAuthMethodChanged(String),
     EditorGroupChanged(String),
     EditorKeyChanged(String),
-    EditorJumpHostChanged(String),
-    // Jump-host picker modal variants, wired in a follow-up PR. Mark
-    // the trio as allowed-dead-code so the workspace clippy gate
-    // doesn't fail while the dispatch path is still being built out.
-    #[allow(dead_code)]
-    OpenJumpHostPicker,
-    #[allow(dead_code)]
-    HideJumpHostPicker,
-    #[allow(dead_code)]
-    JumpHostSearchChanged(String),
+    // Chain editor (Termius-style multi-hop jump-host editor). Opens
+    // from the "Host Chaining" row in the host editor; edits the
+    // ordered `editor_form.jump_chain`.
+    OpenChainEditor,
+    CloseChainEditor,
+    /// Switch the chain editor into "add a hop" mode (host picker).
+    ChainEditorStartAdd,
+    /// Back out of "add a hop" mode to the chain list.
+    ChainEditorCancelAdd,
+    ChainEditorSearchChanged(String),
+    /// Append the selected connection as the next hop.
+    ChainEditorAddHop(Uuid),
+    ChainEditorRemoveHop(usize),
+    ChainEditorMoveHopUp(usize),
+    ChainEditorMoveHopDown(usize),
     EditorProxyKindChanged(crate::state::ProxyKind),
     EditorProxyHostChanged(String),
     EditorProxyPortChanged(String),

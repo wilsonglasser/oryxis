@@ -46,40 +46,6 @@ impl Oryxis {
                 .width(Length::Fill)
                 .height(Length::Fill)
                 .into()
-        } else if self.show_session_group_panel {
-            use iced::widget::{column, container, Space, Stack};
-            use iced::{Color, Length};
-            let modal = self.view_session_group_panel();
-            let scrim: Element<'_, Message> = column![
-                Space::new().height(Length::Fixed(40.0)),
-                container(Space::new())
-                    .width(Length::Fill)
-                    .height(Length::Fill)
-                    .style(|_| container::Style {
-                        background: Some(iced::Background::Color(Color::from_rgba(
-                            0.0, 0.0, 0.0, 0.5,
-                        ))),
-                        ..Default::default()
-                    }),
-            ]
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .into();
-            // Outside-click dismisses (same pattern as the other modals).
-            // `interaction(Idle)` blocks hover / key bleed-through to the
-            // terminal underneath, which is what caused keystrokes to leak
-            // into the PTY when this was a side panel.
-            let scrim: Element<'_, Message> = iced::widget::MouseArea::new(scrim)
-                .interaction(iced::mouse::Interaction::Idle)
-                .on_press(Message::SessionGroupFormCancel)
-                .into();
-            Stack::new()
-                .push(base)
-                .push(scrim)
-                .push(modal)
-                .width(Length::Fill)
-                .height(Length::Fill)
-                .into()
         } else if self.local_shell_picker_open {
             use iced::widget::{column, container, Space, Stack};
             use iced::{Color, Length};
@@ -142,6 +108,36 @@ impl Oryxis {
                 .interaction(iced::mouse::Interaction::Idle)
                 .on_press(Message::HidePluginInstallModal)
                 .into();
+            Stack::new()
+                .push(base)
+                .push(scrim)
+                .push(modal)
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .into()
+        } else if self.pending_kbi_prompt.is_some() && self.connecting.is_none() {
+            // Keyboard-interactive (2FA / OTP) prompt for a split-pane
+            // connect, which has no connect-progress screen. During a normal
+            // terminal connect `connecting` is Some and the prompt renders
+            // inline, so this app-level overlay only fires otherwise.
+            use iced::widget::{column, container, Space, Stack};
+            use iced::{Color, Length};
+            let modal = self.view_kbi_modal();
+            let scrim: Element<'_, Message> = column![
+                Space::new().height(Length::Fixed(40.0)),
+                container(Space::new())
+                    .width(Length::Fill)
+                    .height(Length::Fill)
+                    .style(|_| container::Style {
+                        background: Some(iced::Background::Color(Color::from_rgba(0.0, 0.0, 0.0, 0.5))),
+                        ..Default::default()
+                    }),
+            ]
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .into();
+            // No outside-click dismiss: the user must submit or cancel so the
+            // in-flight auth gets a definite answer.
             Stack::new()
                 .push(base)
                 .push(scrim)

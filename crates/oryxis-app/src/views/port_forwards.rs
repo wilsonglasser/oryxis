@@ -585,4 +585,94 @@ impl Oryxis {
             .center(Length::Fill)
             .into()
     }
+
+    /// Standalone keyboard-interactive (2FA / OTP) modal, used when a
+    /// split-pane connect (which has no connect-progress screen) hits an
+    /// Interactive auth challenge. Reuses the same `SshKbi*` messages as
+    /// the inline connect-progress prompt. `name` and the prompt labels
+    /// are server strings, rendered verbatim, never translated.
+    pub(crate) fn view_kbi_modal(&self) -> Element<'_, Message> {
+        let Some(kbi) = self.pending_kbi_prompt.as_ref() else {
+            return Space::new().into();
+        };
+        let title = if kbi.name.trim().is_empty() {
+            t("kbi_title").to_string()
+        } else {
+            kbi.name.clone()
+        };
+
+        let mut body = column![
+            text(title).size(16).color(OryxisColors::t().accent),
+            Space::new().height(10),
+        ];
+        if !kbi.instructions.trim().is_empty() {
+            body = body
+                .push(text(kbi.instructions.clone()).size(13).color(OryxisColors::t().text_secondary))
+                .push(Space::new().height(10));
+        }
+        for (i, prompt) in kbi.prompts.iter().enumerate() {
+            let value = self.kbi_inputs.get(i).map(|s| s.as_str()).unwrap_or("");
+            let mut input = text_input(&prompt.prompt, value)
+                .on_input(move |v| Message::SshKbiInput(i, v))
+                .on_submit(Message::SshKbiSubmit)
+                .padding(10)
+                .size(14);
+            if i == 0 {
+                input = input.id(iced::widget::Id::new(crate::state::KBI_FIRST_INPUT_ID));
+            }
+            if !prompt.echo {
+                input = input.secure(true);
+            }
+            body = body
+                .push(text(prompt.prompt.clone()).size(12).color(OryxisColors::t().text_muted))
+                .push(Space::new().height(4))
+                .push(input)
+                .push(Space::new().height(12));
+        }
+        body = body.push(Space::new().height(6));
+
+        let cancel_btn = button(
+            container(text(t("cancel")).size(13).color(OryxisColors::t().text_primary))
+                .padding(Padding { top: 9.0, right: 18.0, bottom: 9.0, left: 18.0 }),
+        )
+        .on_press(Message::SshKbiCancel)
+        .style(|_, _| button::Style {
+            background: Some(Background::Color(OryxisColors::t().bg_surface)),
+            border: Border { radius: Radius::from(8.0), ..Default::default() },
+            ..Default::default()
+        });
+        let submit_fg = crate::theme::contrast_text_for(OryxisColors::t().accent);
+        let submit_btn = button(
+            container(text(t("kbi_submit")).size(13).color(submit_fg))
+                .padding(Padding { top: 9.0, right: 18.0, bottom: 9.0, left: 18.0 }),
+        )
+        .on_press(Message::SshKbiSubmit)
+        .style(|_, _| button::Style {
+            background: Some(Background::Color(OryxisColors::t().accent)),
+            border: Border { radius: Radius::from(8.0), ..Default::default() },
+            ..Default::default()
+        });
+
+        let buttons = dir_row(vec![
+            cancel_btn.into(),
+            Space::new().width(Length::Fill).into(),
+            submit_btn.into(),
+        ])
+        .align_y(iced::Alignment::Center);
+
+        let card = container(column![body, buttons].width(Length::Fill))
+            .width(Length::Fixed(480.0))
+            .padding(24)
+            .style(|_| container::Style {
+                background: Some(Background::Color(OryxisColors::t().bg_sidebar)),
+                border: Border { color: OryxisColors::t().border, width: 1.0, radius: Radius::from(12.0) },
+                ..Default::default()
+            });
+
+        container(card)
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .center(Length::Fill)
+            .into()
+    }
 }

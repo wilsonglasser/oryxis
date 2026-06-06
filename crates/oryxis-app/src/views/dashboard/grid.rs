@@ -76,18 +76,23 @@ impl Oryxis {
             .and_then(crate::os_icon::parse_hex_color)
             .unwrap_or_else(|| OryxisColors::t().accent);
 
-        let icon_box = container(
-            iced_fonts::lucide::boxes().size(16).color(Color::WHITE),
-        )
-        .width(Length::Fixed(32.0))
-        .height(Length::Fixed(32.0))
-        .center_x(Length::Fixed(32.0))
-        .center_y(Length::Fixed(32.0))
-        .style(move |_| container::Style {
-            background: Some(Background::Color(bg_color)),
-            border: Border { radius: Radius::from(8.0), ..Default::default() },
-            ..Default::default()
-        });
+        // Custom icon when the user picked one, else the default group glyph.
+        let glyph = group
+            .icon_style
+            .as_deref()
+            .filter(|s| !s.is_empty())
+            .map(crate::os_icon::custom_icon_glyph)
+            .unwrap_or(BrandIcon::Glyph(iced_fonts::lucide::boxes()));
+        let icon_box = container(glyph.view(16.0, Color::WHITE))
+            .width(Length::Fixed(32.0))
+            .height(Length::Fixed(32.0))
+            .center_x(Length::Fixed(32.0))
+            .center_y(Length::Fixed(32.0))
+            .style(move |_| container::Style {
+                background: Some(Background::Color(bg_color)),
+                border: Border { radius: Radius::from(8.0), ..Default::default() },
+                ..Default::default()
+            });
 
         let panes = count_leaves(&group.layout);
         let subtitle = format!("{} {}", panes, t("session_group_panes"));

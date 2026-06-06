@@ -252,6 +252,9 @@ impl Oryxis {
                         GroupPickerTarget::DynamicFormParent => {
                             self.dynamic_form_parent_combo_bounds.get()
                         }
+                        GroupPickerTarget::SessionGroupFolder => {
+                            self.session_group_folder_combo_bounds.get()
+                        }
                     };
                     self.group_picker_search.clear();
                     // 6 px gap below the combo. Falls back to mouse
@@ -283,6 +286,9 @@ impl Oryxis {
                     }
                     GroupPickerTarget::DynamicFormParent => {
                         self.cloud_dynamic_form_parent_label = label;
+                    }
+                    GroupPickerTarget::SessionGroupFolder => {
+                        self.editor_session_group.group_name = label;
                     }
                 }
                 if matches!(
