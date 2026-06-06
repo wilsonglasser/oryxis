@@ -84,6 +84,12 @@ impl Oryxis {
             || self.show_session_group_panel
             || self.folder_rename.is_some()
             || self.folder_delete.is_some()
+            // Keyboard-interactive (2FA / OTP) prompt: its text fields own
+            // the keyboard. Without this, a split-pane connect (where the
+            // terminal stays live behind the app-level modal) would echo
+            // the OTP into the PTY as well. The inline connect-progress
+            // path is already covered by the `connecting.is_none()` gate.
+            || self.pending_kbi_prompt.is_some()
     }
 
     /// Closes the topmost open modal / overlay if any, and returns

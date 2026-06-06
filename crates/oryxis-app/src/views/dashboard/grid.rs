@@ -139,63 +139,58 @@ impl Oryxis {
             }
         });
 
-        // Floating, hover-revealed actions (edit + delete).
-        let actions_overlay: Element<'a, Message> = if hovered {
-            let edit_btn = button(
-                iced_fonts::lucide::pencil().size(13).color(OryxisColors::t().text_muted),
-            )
-            .on_press(Message::EditSessionGroup(idx))
-            .padding(Padding { top: 3.0, right: 6.0, bottom: 3.0, left: 6.0 })
-            .style(|_, status| button::Style {
-                background: Some(Background::Color(match status {
-                    BtnStatus::Hovered => OryxisColors::t().bg_hover,
-                    _ => Color::TRANSPARENT,
-                })),
-                border: Border { radius: Radius::from(6.0), ..Default::default() },
-                ..Default::default()
-            });
-            let delete_btn = button(
-                iced_fonts::lucide::trash().size(13).color(OryxisColors::t().error),
-            )
-            .on_press(Message::DeleteSessionGroup(idx))
-            .padding(Padding { top: 3.0, right: 6.0, bottom: 3.0, left: 6.0 })
-            .style(|_, status| button::Style {
-                background: Some(Background::Color(match status {
-                    BtnStatus::Hovered => OryxisColors::t().bg_hover,
-                    _ => Color::TRANSPARENT,
-                })),
-                border: Border { radius: Radius::from(6.0), ..Default::default() },
-                ..Default::default()
-            });
-            let actions_align = if rtl {
-                iced::alignment::Horizontal::Left
-            } else {
-                iced::alignment::Horizontal::Right
-            };
-            let actions_pad = if rtl {
-                Padding { top: 0.0, right: 0.0, bottom: 0.0, left: 4.0 }
-            } else {
-                Padding { top: 0.0, right: 4.0, bottom: 0.0, left: 0.0 }
-            };
-            container(dir_row(vec![edit_btn.into(), delete_btn.into()]))
-                .width(Length::Fill)
-                .height(Length::Fill)
-                .align_x(actions_align)
-                .align_y(iced::alignment::Vertical::Center)
-                .padding(actions_pad)
-                .into()
+        // `⋮` kebab → context menu (Open / Edit / Duplicate / Delete), same
+        // as the host card. Shown on hover or while this card's menu is open.
+        let menu_open = matches!(
+            self.overlay.as_ref().map(|o| &o.content),
+            Some(crate::state::OverlayContent::SessionGroupActions(i)) if *i == idx
+        );
+        let show_dots = hovered || menu_open;
+        let dots_glyph_color = if show_dots {
+            OryxisColors::t().text_muted
         } else {
-            Space::new().into()
+            Color::TRANSPARENT
         };
+        let dots_btn = button(text("\u{22EE}").size(14).color(dots_glyph_color))
+            .on_press(Message::ShowSessionGroupMenu(idx))
+            .padding(Padding { top: 1.0, right: 6.0, bottom: 1.0, left: 6.0 })
+            .style(move |_, status| {
+                let bg = match status {
+                    BtnStatus::Hovered if show_dots => OryxisColors::t().bg_hover,
+                    _ => Color::TRANSPARENT,
+                };
+                button::Style {
+                    background: Some(Background::Color(bg)),
+                    border: Border { radius: Radius::from(6.0), ..Default::default() },
+                    ..Default::default()
+                }
+            });
+        let dots_align = if rtl {
+            iced::alignment::Horizontal::Left
+        } else {
+            iced::alignment::Horizontal::Right
+        };
+        let dots_pad = if rtl {
+            Padding { top: 0.0, right: 0.0, bottom: 0.0, left: 4.0 }
+        } else {
+            Padding { top: 0.0, right: 4.0, bottom: 0.0, left: 0.0 }
+        };
+        let dots_overlay = container(dots_btn)
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .align_x(dots_align)
+            .align_y(iced::alignment::Vertical::Center)
+            .padding(dots_pad);
 
         let card_element: Element<'a, Message> = iced::widget::Stack::new()
             .push(card_btn)
-            .push(actions_overlay)
+            .push(dots_overlay)
             .into();
 
         let wrapped = MouseArea::new(card_element)
             .on_enter(Message::SessionGroupCardHovered(idx))
-            .on_exit(Message::SessionGroupCardUnhovered);
+            .on_exit(Message::SessionGroupCardUnhovered)
+            .on_right_press(Message::ShowSessionGroupMenu(idx));
 
         container(wrapped).width(Length::Fill).clip(true).into()
     }

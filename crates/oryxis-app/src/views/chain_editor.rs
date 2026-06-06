@@ -19,12 +19,12 @@ use iced::widget::button::Status as BtnStatus;
 use iced::widget::{button, column, container, scrollable, text, text_input, MouseArea, Space};
 use iced::{Background, Border, Color, Element, Length, Padding};
 
-use uuid::Uuid;
+use oryxis_core::models::Connection;
 
 use crate::app::{Message, Oryxis};
 use crate::i18n::t;
 use crate::theme::OryxisColors;
-use crate::widgets::{dir_align_x, dir_row};
+use crate::widgets::{dir_align_x, dir_row, HostIconStyle};
 
 impl Oryxis {
     pub(crate) fn view_chain_editor(&self) -> Element<'_, Message> {
@@ -121,21 +121,43 @@ impl Oryxis {
         }
 
         for (idx, id) in self.editor_form.jump_chain.iter().enumerate() {
-            let (label, breadcrumb) = self.resolve_hop(id);
-            items.push(self.chain_hop_card(idx, total, label, breadcrumb));
+            let conn = self.connections.iter().find(|c| c.id == *id);
+            let badge = self.chain_host_badge(conn);
+            let (label, breadcrumb) = match conn {
+                Some(c) => (c.label.clone(), self.breadcrumb_for(c)),
+                None => (t("unknown").to_string(), t("chain_hop_missing").to_string()),
+            };
+            items.push(self.chain_hop_card(idx, total, badge, label, breadcrumb));
             items.push(chain_connector());
         }
 
         // Destination card: the host being edited, shown as the final
         // node so the user reads the chain end to end. Not removable.
+        // Resolve its badge from the saved host (a brand-new host has no
+        // id yet, so it falls back to the generic badge).
+        let dest_conn = self
+            .editor_form
+            .editing_id
+            .and_then(|id| self.connections.iter().find(|c| c.id == id));
+        let dest_badge = self.chain_host_badge(dest_conn);
         let dest_label = if self.editor_form.label.trim().is_empty() {
             t("new_host").to_string()
         } else {
             self.editor_form.label.clone()
         };
-        items.push(destination_card(dest_label));
+        items.push(destination_card(dest_badge, dest_label));
 
-        let list = scrollable(column(items).spacing(0)).height(Length::Fill);
+        // Right padding keeps the cards (and their trash buttons) clear
+        // of the scrollbar once the chain is long enough to scroll.
+        let list = scrollable(
+            container(column(items).spacing(0)).padding(Padding {
+                top: 0.0,
+                right: 10.0,
+                bottom: 0.0,
+                left: 0.0,
+            }),
+        )
+        .height(Length::Fill);
 
         let add_btn = container(button(
             dir_row(vec![
@@ -294,38 +316,92 @@ impl Oryxis {
             );
         }
 
-        let list = scrollable(column(rows)).height(Length::Fill);
+        let list = scrollable(
+            container(column(rows)).padding(Padding {
+                top: 0.0,
+                right: 10.0,
+                bottom: 0.0,
+                left: 0.0,
+            }),
+        )
+        .height(Length::Fill);
 
         column![header, Space::new().height(16), search, Space::new().height(12), list].into()
     }
 
-    /// Resolve a hop id to (label, breadcrumb). A hop pointing at a
-    /// since-deleted host degrades to a placeholder so the editor still
-    /// renders and the user can prune it.
-    fn resolve_hop(&self, id: &Uuid) -> (String, String) {
-        match self.connections.iter().find(|c| c.id == *id) {
+    /// "Personal / Group" breadcrumb for a connection, or just
+    /// "Personal" when it has no group.
+    fn breadcrumb_for(&self, c: &Connection) -> String {
+        match c
+            .group_id
+            .and_then(|gid| self.groups.iter().find(|g| g.id == gid))
+        {
+            Some(g) => format!("{} / {}", t("personal"), g.label),
+            None => t("personal").to_string(),
+        }
+    }
+
+    /// Build the colored host badge (custom icon + color, falling back
+    /// to the detected-OS glyph) shown on each chain node. Mirrors the
+    /// resolution used in the tab bar and new-tab picker so a host looks
+    /// the same everywhere. A `None` connection (a since-deleted hop)
+    /// gets a neutral muted circle.
+    fn chain_host_badge<'a>(&self, conn: Option<&Connection>) -> Element<'a, Message> {
+        const SIZE: f32 = 26.0;
+        match conn {
             Some(c) => {
-                let breadcrumb = match c
-                    .group_id
-                    .and_then(|gid| self.groups.iter().find(|g| g.id == gid))
-                {
-                    Some(g) => format!("{} / {}", t("personal"), g.label),
-                    None => t("personal").to_string(),
+                let fallback = OryxisColors::t().accent;
+                let (glyph, badge_color) = if let Some(name) = c.custom_icon.as_deref() {
+                    (
+                        crate::os_icon::custom_icon_glyph(name),
+                        c.custom_color
+                            .as_deref()
+                            .and_then(crate::widgets::parse_hex_color)
+                            .unwrap_or(fallback),
+                    )
+                } else {
+                    let (g, default_color) =
+                        crate::os_icon::resolve_icon(c.detected_os.as_deref(), fallback);
+                    let color = c
+                        .custom_color
+                        .as_deref()
+                        .or(c.color.as_deref())
+                        .and_then(crate::widgets::parse_hex_color)
+                        .unwrap_or(default_color);
+                    (g, color)
                 };
-                (c.label.clone(), breadcrumb)
+                let style = crate::widgets::resolve_host_icon_style(
+                    c.icon_style.as_deref(),
+                    &self.setting_default_host_icon,
+                );
+                let glyph_el: Element<'a, Message> = glyph.view(13.0, Color::WHITE);
+                crate::widgets::host_icon(style, badge_color, &c.label, Some(glyph_el), SIZE)
             }
-            None => (t("unknown").to_string(), t("chain_hop_missing").to_string()),
+            None => {
+                let glyph_el: Element<'a, Message> = iced_fonts::lucide::server()
+                    .size(13)
+                    .color(Color::WHITE)
+                    .into();
+                crate::widgets::host_icon(
+                    HostIconStyle::Circular,
+                    OryxisColors::t().text_muted,
+                    "",
+                    Some(glyph_el),
+                    SIZE,
+                )
+            }
         }
     }
 
     /// One hop card with reorder (up/down) and remove controls.
-    fn chain_hop_card(
+    fn chain_hop_card<'a>(
         &self,
         idx: usize,
         total: usize,
+        badge: Element<'a, Message>,
         label: String,
         breadcrumb: String,
-    ) -> Element<'_, Message> {
+    ) -> Element<'a, Message> {
         let info = column![
             text(label)
                 .size(13)
@@ -355,10 +431,7 @@ impl Oryxis {
         .align_y(iced::Alignment::Center);
 
         let row = dir_row(vec![
-            iced_fonts::lucide::server()
-                .size(15)
-                .color(OryxisColors::t().accent)
-                .into(),
+            badge,
             Space::new().width(12).into(),
             info.into(),
             Space::new().width(Length::Fill).into(),
@@ -389,12 +462,9 @@ impl Oryxis {
 
 /// The "→ destination" node closing the chain (the host being edited).
 /// Accent-tinted and non-interactive so it reads as the endpoint.
-fn destination_card<'a>(label: String) -> Element<'a, Message> {
+fn destination_card<'a>(badge: Element<'a, Message>, label: String) -> Element<'a, Message> {
     let row = dir_row(vec![
-        iced_fonts::lucide::circle_check()
-            .size(15)
-            .color(OryxisColors::t().accent)
-            .into(),
+        badge,
         Space::new().width(12).into(),
         text(label)
             .size(13)

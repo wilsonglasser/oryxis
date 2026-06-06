@@ -40,7 +40,7 @@ impl Oryxis {
         // ── Header ──
         let close_btn = press(
             container(
-                iced_fonts::lucide::chevron_right()
+                text("\u{00D7}")
                     .size(14)
                     .color(OryxisColors::t().text_muted),
             )

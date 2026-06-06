@@ -1345,6 +1345,16 @@ impl Oryxis {
                     .push(context_menu_item(remove_icon, remove_label, Message::DeleteConnection(idx), OryxisColors::t().error))
                     .into()
             }
+            OverlayContent::SessionGroupActions(idx) => {
+                let idx = *idx;
+                column![
+                    context_menu_item(iced_fonts::lucide::play(), crate::i18n::t("open_session_group"), Message::OpenSessionGroup(idx), OryxisColors::t().success),
+                    context_menu_item(iced_fonts::lucide::pencil(), crate::i18n::t("edit"), Message::EditSessionGroup(idx), OryxisColors::t().text_secondary),
+                    context_menu_item(iced_fonts::lucide::copy(), crate::i18n::t("duplicate"), Message::DuplicateSessionGroup(idx), OryxisColors::t().text_secondary),
+                    context_menu_item(iced_fonts::lucide::trash(), crate::i18n::t("remove"), Message::DeleteSessionGroup(idx), OryxisColors::t().error),
+                ]
+                .into()
+            }
             OverlayContent::KeyActions(idx) => {
                 let idx = *idx;
                 column![
@@ -1357,6 +1367,13 @@ impl Oryxis {
                 column![
                     context_menu_item(iced_fonts::lucide::pencil(), crate::i18n::t("edit"), Message::EditIdentity(idx), OryxisColors::t().text_secondary),
                     context_menu_item(iced_fonts::lucide::trash(), crate::i18n::t("remove"), Message::DeleteIdentity(idx), OryxisColors::t().error),
+                ].into()
+            }
+            OverlayContent::SnippetActions(idx) => {
+                let idx = *idx;
+                column![
+                    context_menu_item(iced_fonts::lucide::pencil(), crate::i18n::t("edit"), Message::EditSnippet(idx), OryxisColors::t().text_secondary),
+                    context_menu_item(iced_fonts::lucide::trash(), crate::i18n::t("delete"), Message::DeleteSnippet(idx), OryxisColors::t().error),
                 ].into()
             }
             OverlayContent::KeychainAdd => {

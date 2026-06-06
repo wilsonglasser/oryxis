@@ -30,7 +30,7 @@ impl Oryxis {
                     .into(),
                 Space::new().width(Length::Fill).into(),
                 button(
-                    iced_fonts::lucide::chevron_right()
+                    text("\u{00D7}")
                         .size(14)
                         .color(OryxisColors::t().text_muted),
                 )

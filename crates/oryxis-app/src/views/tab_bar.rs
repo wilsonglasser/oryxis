@@ -232,6 +232,16 @@ impl Oryxis {
             } else {
                 None
             };
+            // Session-group tabs carry the group's own icon + color.
+            let session_group = tab
+                .session_group_id
+                .and_then(|id| self.session_groups.iter().find(|g| g.id == id));
+            let sg_custom_color = session_group
+                .and_then(|g| g.color.as_deref())
+                .and_then(crate::widgets::parse_hex_color);
+            let sg_custom_icon = session_group
+                .and_then(|g| g.icon_style.as_deref())
+                .filter(|s| !s.is_empty());
             tab_items.push(session_tab(
                 idx,
                 display_label,
@@ -242,8 +252,10 @@ impl Oryxis {
                 width,
                 self.setting_tab_close_button_side == "right",
                 status_dot,
-                host_accent,
+                sg_custom_color.or(host_accent),
                 host_icon_style,
+                sg_custom_icon,
+                sg_custom_color,
             ));
         }
 
@@ -590,6 +602,10 @@ fn session_tab<'a>(
     status_dot: Option<Color>,
     host_accent: Option<Color>,
     host_icon_style: crate::widgets::HostIconStyle,
+    // Session-group tabs override the OS-derived badge with the icon + color
+    // the user set on the group, so the strip matches the dashboard card.
+    custom_icon: Option<&'a str>,
+    custom_color: Option<Color>,
 ) -> Element<'a, Message> {
     let effective_accent = host_accent.unwrap_or_else(|| OryxisColors::t().accent);
     let fg = if is_active {
@@ -635,7 +651,14 @@ fn session_tab<'a>(
         } else {
             OryxisColors::t().accent
         };
-        let (glyph, mut badge_color) = crate::os_icon::resolve_icon(detected_os, fallback);
+        let (glyph, mut badge_color) = if let Some(name) = custom_icon {
+            (
+                crate::os_icon::custom_icon_glyph(name),
+                custom_color.unwrap_or(fallback),
+            )
+        } else {
+            crate::os_icon::resolve_icon(detected_os, fallback)
+        };
         if is_disconnected {
             badge_color = OryxisColors::t().text_muted;
         }

@@ -6,8 +6,10 @@
 
 use iced::border::Radius;
 use iced::widget::button::Status as BtnStatus;
-use iced::widget::{button, column, container, scrollable, text, text_input, MouseArea, Space};
-use iced::{Background, Border, Color, Element, Length};
+use iced::widget::{
+    button, column, container, row, scrollable, text, text_input, MouseArea, Space, Stack,
+};
+use iced::{Background, Border, Color, Element, Length, Point};
 
 use crate::app::{Message, Oryxis};
 use crate::i18n::t;
@@ -96,8 +98,10 @@ impl Oryxis {
             icon_grid,
         ];
 
-        // ── Background color: the shared HSV picker (same widget the
-        // custom-theme editor uses) with a hex field beneath it. ──
+        // ── Background color: a swatch + hex field. Clicking the swatch
+        // opens the shared HSV picker (same widget the custom-theme
+        // editor uses) as a popover, so the picker isn't always taking
+        // up vertical space in the modal. ──
         let current_color = self
             .icon_picker_color
             .as_deref()
@@ -111,17 +115,34 @@ impl Oryxis {
             .width(120)
             .style(crate::widgets::rounded_input_style).align_x(dir_align_x());
 
+        let swatch = button(Space::new().width(28).height(28))
+            .on_press(Message::IconPickerOpenColorPopover)
+            .padding(0)
+            .style(move |_, status| {
+                let border_color = match status {
+                    BtnStatus::Hovered => OryxisColors::t().text_primary,
+                    _ => OryxisColors::t().border,
+                };
+                button::Style {
+                    background: Some(Background::Color(current_color)),
+                    border: Border {
+                        radius: Radius::from(6.0),
+                        color: border_color,
+                        width: 1.0,
+                    },
+                    ..Default::default()
+                }
+            });
+
         let colors_block = column![
             text(t("background_color")).size(12).font(iced::Font {
                 weight: iced::font::Weight::Semibold,
                 ..iced::Font::new(crate::theme::SYSTEM_UI_FAMILY)
             }).color(OryxisColors::t().text_secondary),
             Space::new().height(8),
-            crate::color_picker::color_picker(current_color, Message::IconPickerSelectColor),
-            Space::new().height(10),
             dir_row(vec![
-                text(t("custom_label")).size(11).color(OryxisColors::t().text_muted).into(),
-                Space::new().width(8).into(),
+                swatch.into(),
+                Space::new().width(10).into(),
                 hex_input.into(),
             ]).align_y(iced::Alignment::Center),
         ];
@@ -213,20 +234,80 @@ impl Oryxis {
         // scroll, not just clicks) so nothing bleeds through to the host
         // list / editor stacked beneath the modal. Without it iced's
         // Stack lets hover/scroll propagate to the lower layer.
-        iced::widget::opaque(
-            MouseArea::new(
-                container(centered)
-                    .width(Length::Fill)
-                    .height(Length::Fill)
-                    .style(|_| container::Style {
-                        background: Some(Background::Color(Color::from_rgba(
-                            0.0, 0.0, 0.0, 0.5,
-                        ))),
-                        ..Default::default()
-                    }),
-            )
-            .on_press(Message::HideIconPicker),
+        let modal: Element<'_, Message> = MouseArea::new(
+            container(centered)
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .style(|_| container::Style {
+                    background: Some(Background::Color(Color::from_rgba(
+                        0.0, 0.0, 0.0, 0.5,
+                    ))),
+                    ..Default::default()
+                }),
         )
+        .on_press(Message::HideIconPicker)
+        .into();
+
+        // The HSV color picker floats on top of the modal as a popover
+        // anchored at the cursor, so the swatch acts like a context menu.
+        let mut stack = Stack::new()
+            .push(modal)
+            .width(Length::Fill)
+            .height(Length::Fill);
+        if let Some(anchor) = self.icon_color_popover {
+            stack = stack.push(self.icon_color_popover_view(anchor));
+        }
+        iced::widget::opaque(stack)
+    }
+
+    /// The floating HSV picker shown when the background-color swatch is
+    /// clicked. Positioned at `anchor` (clamped to the window) with a
+    /// full-screen backdrop that dismisses it on click-outside.
+    fn icon_color_popover_view(&self, anchor: Point) -> Element<'_, Message> {
+        let current = self
+            .icon_picker_color
+            .as_deref()
+            .and_then(parse_hex_color)
+            .unwrap_or(OryxisColors::t().accent);
+
+        let card = container(
+            crate::color_picker::color_picker(current, Message::IconPickerSelectColor),
+        )
+        .padding(12)
+        .style(|_| container::Style {
+            background: Some(Background::Color(OryxisColors::t().bg_primary)),
+            border: Border {
+                radius: Radius::from(10.0),
+                color: OryxisColors::t().border,
+                width: 1.0,
+            },
+            ..Default::default()
+        });
+        let card_trap: Element<'_, Message> =
+            MouseArea::new(card).on_press(Message::NoOp).into();
+
+        // Picker box footprint, used to clamp it inside the window.
+        const PW: f32 = 238.0;
+        const PH: f32 = 228.0;
+        let x = anchor.x.min((self.window_size.width - PW).max(0.0)).max(0.0);
+        let y = anchor.y.min((self.window_size.height - PH).max(0.0)).max(0.0);
+        let positioned = column![
+            Space::new().height(y),
+            row![Space::new().width(x), card_trap],
+        ];
+
+        let pop_backdrop: Element<'_, Message> = MouseArea::new(
+            container(Space::new()).width(Length::Fill).height(Length::Fill),
+        )
+        .on_press(Message::IconPickerCloseColorPopover)
+        .into();
+
+        Stack::new()
+            .push(pop_backdrop)
+            .push(positioned)
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .into()
     }
 }
 

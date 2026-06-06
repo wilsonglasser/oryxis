@@ -136,8 +136,15 @@ impl Oryxis {
             .width(Length::Fill)
             .height(Length::Fill)
             .into();
-            // No outside-click dismiss: the user must submit or cancel so the
-            // in-flight auth gets a definite answer.
+            // Absorb clicks on the scrim so they don't fall through to the
+            // live terminal behind. `interaction(Idle)` also blocks hover
+            // bleed-through. No outside-click dismiss (on_press is a NoOp
+            // sink): the user must submit or cancel so the in-flight auth
+            // gets a definite answer.
+            let scrim: Element<'_, Message> = iced::widget::MouseArea::new(scrim)
+                .interaction(iced::mouse::Interaction::Idle)
+                .on_press(Message::NoOp)
+                .into();
             Stack::new()
                 .push(base)
                 .push(scrim)

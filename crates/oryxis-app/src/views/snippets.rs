@@ -169,10 +169,13 @@ impl Oryxis {
             // placeholder reserves the slot in the unhovered state so
             // the label column width stays constant.
             const SNIP_DOTS_SLOT_W: f32 = 22.0;
-            let show_dots = self.hovered_snippet_card == Some(idx);
+            // Keep the kebab mounted while its context menu is open, even
+            // if the pointer drifts off the card, mirroring the host cards.
+            let show_dots = self.hovered_snippet_card == Some(idx)
+                || self.snippet_context_menu == Some(idx);
             let edit_btn: Element<'_, Message> = if show_dots {
                 button(text("\u{22EE}").size(14).color(OryxisColors::t().text_muted))
-                    .on_press(Message::EditSnippet(idx))
+                    .on_press(Message::ShowSnippetMenu(idx))
                     .padding(Padding { top: 1.0, right: 6.0, bottom: 1.0, left: 6.0 })
                     .style(|_, status| {
                         let bg = match status {
@@ -358,24 +361,10 @@ impl Oryxis {
             ..Default::default()
         });
 
-        let mut bottom = column![save_btn];
-        if let Some(edit_id) = self.snippet_editing_id
-            && let Some(idx) = self.snippets.iter().position(|s| s.id == edit_id) {
-                let del_btn = button(
-                    container(text(crate::i18n::t("delete")).size(13).color(OryxisColors::t().error))
-                        .padding(Padding { top: 10.0, right: 0.0, bottom: 10.0, left: 0.0 })
-                        .width(Length::Fill).center_x(Length::Fill),
-                )
-                .on_press(Message::DeleteSnippet(idx))
-                .width(Length::Fill)
-                .style(|_, _| button::Style {
-                    background: Some(Background::Color(Color::TRANSPARENT)),
-                    border: Border { radius: Radius::from(8.0), color: OryxisColors::t().error, width: 1.0 },
-                    ..Default::default()
-                });
-                bottom = bottom.push(Space::new().height(8));
-                bottom = bottom.push(del_btn);
-            }
+        // The edit panel only saves. Deleting a snippet lives on the
+        // card's ⋮ context menu (Edit / Delete), so the destructive
+        // action isn't buried inside the editor form.
+        let bottom = column![save_btn];
 
         let panel_content = column![
             panel_header,

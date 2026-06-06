@@ -194,12 +194,48 @@ impl Oryxis {
                 Ok(Task::none())
             }
 
+            Message::DuplicateSessionGroup(idx) => {
+                self.overlay = None;
+                if let Some(src) = self.session_groups.get(idx).cloned() {
+                    let mut dup = oryxis_core::models::SessionGroup::new(
+                        format!("{} (copy)", src.label),
+                        src.layout.clone(),
+                    );
+                    dup.group_id = src.group_id;
+                    dup.color = src.color.clone();
+                    dup.icon_style = src.icon_style.clone();
+                    if let Some(vault) = &self.vault {
+                        let _ = vault.save_session_group(&dup);
+                        self.load_data_from_vault();
+                    }
+                }
+                Ok(Task::none())
+            }
+
             Message::DeleteSessionGroup(idx) => {
+                self.overlay = None;
                 if let Some(group) = self.session_groups.get(idx)
                     && let Some(vault) = &self.vault
                 {
                     let _ = vault.delete_session_group(&group.id);
                     self.load_data_from_vault();
+                }
+                Ok(Task::none())
+            }
+
+            Message::ShowSessionGroupMenu(idx) => {
+                use crate::state::{OverlayContent, OverlayState};
+                if matches!(
+                    self.overlay.as_ref().map(|o| &o.content),
+                    Some(OverlayContent::SessionGroupActions(i)) if *i == idx
+                ) {
+                    self.overlay = None;
+                } else {
+                    self.overlay = Some(OverlayState {
+                        content: OverlayContent::SessionGroupActions(idx),
+                        x: self.mouse_position.x,
+                        y: self.mouse_position.y,
+                    });
                 }
                 Ok(Task::none())
             }
@@ -213,7 +249,10 @@ impl Oryxis {
                 Ok(Task::none())
             }
 
-            Message::OpenSessionGroup(idx) => Ok(self.open_session_group(idx)),
+            Message::OpenSessionGroup(idx) => {
+                self.overlay = None;
+                Ok(self.open_session_group(idx))
+            }
 
             m => Err(m),
         }

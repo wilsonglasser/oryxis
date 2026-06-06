@@ -72,6 +72,10 @@ pub enum Message {
     IconPickerSelectColor(String),
     IconPickerHexInputChanged(String),
     IconPickerIconSearchChanged(String),
+    /// Open the HSV color popover, anchored at the current cursor.
+    IconPickerOpenColorPopover,
+    /// Dismiss the HSV color popover (click outside / pick done).
+    IconPickerCloseColorPopover,
     IconPickerSave,
     IconPickerResetAuto,
     // Per-host terminal theme picker (modal opened from the host
@@ -351,7 +355,11 @@ pub enum Message {
     EditSessionGroup(usize),
     /// Open the saved group (index into session_groups) into a new split tab.
     OpenSessionGroup(usize),
+    /// Save a copy of the group (new id, "… copy" label).
+    DuplicateSessionGroup(usize),
     DeleteSessionGroup(usize),
+    /// Open the card context menu (dots / right-click) for a session group.
+    ShowSessionGroupMenu(usize),
     SessionGroupFormLabelChanged(String),
     SessionGroupFormGroupChanged(String),
     /// Multi-line edit on the currently-shown pane's startup script.
@@ -394,6 +402,8 @@ pub enum Message {
     SnippetLabelChanged(String),
     SnippetCommandAction(text_editor::Action),
     SaveSnippet,
+    /// Open the kebab (⋮) context menu on a snippet card (Edit / Delete).
+    ShowSnippetMenu(usize),
     EditSnippet(usize),
     DeleteSnippet(usize),
     RunSnippet(usize),

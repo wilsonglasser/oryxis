@@ -1147,8 +1147,13 @@ impl Default for ConnectionForm {
 #[derive(Debug, Clone)]
 pub(crate) enum OverlayContent {
     HostActions(usize),
+    /// Kebab / right-click menu on a session-group card. Items: Open, Edit,
+    /// Duplicate, Delete.
+    SessionGroupActions(usize),
     KeyActions(usize),
     IdentityActions(usize),
+    /// Kebab menu on a snippet card. Items: Edit and Delete.
+    SnippetActions(usize),
     KeychainAdd,
     TabActions(usize),
     /// Hover popover under the `+` tab button: New Tab + Split actions for

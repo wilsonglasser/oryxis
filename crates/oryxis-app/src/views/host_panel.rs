@@ -29,7 +29,7 @@ impl Oryxis {
             dir_row(vec![
                 text(title).size(16).color(OryxisColors::t().text_primary).into(),
                 Space::new().width(Length::Fill).into(),
-                button(iced_fonts::lucide::chevron_right().size(14).color(OryxisColors::t().text_muted))
+                button(text("\u{00D7}").size(14).color(OryxisColors::t().text_muted))
                     .on_press(Message::EditorCancel)
                     .padding(Padding { top: 4.0, right: 8.0, bottom: 4.0, left: 8.0 })
                     .style(|_, _| button::Style {

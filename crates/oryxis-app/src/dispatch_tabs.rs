@@ -387,6 +387,7 @@ impl Oryxis {
             Message::HideOverlayMenu => {
                 self.overlay = None;
                 self.card_context_menu = None;
+                self.snippet_context_menu = None;
                 self.key_context_menu = None;
                 self.identity_context_menu = None;
                 self.show_keychain_add_menu = false;
@@ -521,6 +522,7 @@ impl Oryxis {
                     self.icon_picker_hex_input = conn.custom_color.clone().unwrap_or_default();
                 }
                 self.icon_picker_icon_search.clear();
+                self.icon_color_popover = None;
                 self.icon_picker_for = Some(conn_id);
                 self.show_icon_picker = true;
             }
@@ -530,12 +532,19 @@ impl Oryxis {
                 self.icon_picker_for_group_form = false;
                 self.icon_picker_for_session_group = false;
                 self.icon_picker_icon_search.clear();
+                self.icon_color_popover = None;
             }
             Message::IconPickerSelectIcon(name) => {
                 self.icon_picker_icon = Some(name);
             }
             Message::IconPickerIconSearchChanged(q) => {
                 self.icon_picker_icon_search = q;
+            }
+            Message::IconPickerOpenColorPopover => {
+                self.icon_color_popover = Some(self.mouse_position);
+            }
+            Message::IconPickerCloseColorPopover => {
+                self.icon_color_popover = None;
             }
             Message::IconPickerSelectColor(hex) => {
                 self.icon_picker_hex_input = hex.clone();
@@ -582,6 +591,7 @@ impl Oryxis {
                 self.icon_picker_for_group_form = false;
                 self.icon_picker_for_session_group = false;
                 self.icon_picker_icon_search.clear();
+                self.icon_color_popover = None;
             }
             Message::IconPickerResetAuto => {
                 // Clears the icon/color override, letting OS detection
@@ -606,6 +616,7 @@ impl Oryxis {
                 self.icon_picker_for = None;
                 self.icon_picker_for_group_form = false;
                 self.icon_picker_for_session_group = false;
+                self.icon_color_popover = None;
             }
             Message::CloseTab(idx) => {
                 // Also dismiss any open context menu so the menu doesn't linger

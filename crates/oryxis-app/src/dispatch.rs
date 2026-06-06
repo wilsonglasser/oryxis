@@ -408,7 +408,26 @@ impl Oryxis {
             }
             Message::SnippetLabelChanged(v) => self.snippet_label = v,
             Message::SnippetCommandAction(action) => self.snippet_command.perform(action),
+            Message::ShowSnippetMenu(idx) => {
+                use crate::state::{OverlayContent, OverlayState};
+                // Toggle: clicking the kebab again (or on the same card)
+                // dismisses the popup, mirroring the host-card menu.
+                if self.snippet_context_menu == Some(idx) {
+                    self.snippet_context_menu = None;
+                    self.overlay = None;
+                } else {
+                    self.snippet_context_menu = Some(idx);
+                    self.overlay = Some(OverlayState {
+                        content: OverlayContent::SnippetActions(idx),
+                        x: self.mouse_position.x,
+                        y: self.mouse_position.y,
+                    });
+                }
+            }
             Message::EditSnippet(idx) => {
+                // Reached from the card kebab menu, close the popup.
+                self.snippet_context_menu = None;
+                self.overlay = None;
                 if let Some(snip) = self.snippets.get(idx) {
                     self.show_snippet_panel = true;
                     self.snippet_label = snip.label.clone();
@@ -443,6 +462,10 @@ impl Oryxis {
                 }
             }
             Message::DeleteSnippet(idx) => {
+                // Reached from the card kebab menu or the edit panel,
+                // close the popup either way.
+                self.snippet_context_menu = None;
+                self.overlay = None;
                 if let Some(snip) = self.snippets.get(idx) {
                     let id = snip.id;
                     if let Some(vault) = &self.vault {

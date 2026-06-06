@@ -56,20 +56,26 @@ impl Oryxis {
         // root instead, its position is in window coordinates so
         // clamping it from inside view_sftp would be off by the title +
         // tab bar height.
+        // Each modal is wrapped in `iced::widget::opaque` so its scrim
+        // captures every mouse event (move + click) and nothing bleeds
+        // through to the file panes underneath, e.g. hovering/clicking rows
+        // behind the overwrite prompt.
         if !self.sftp.delete_confirm.is_empty() {
-            stack = stack.push(delete_confirm_modal(&self.sftp.delete_confirm));
+            stack = stack.push(iced::widget::opaque(delete_confirm_modal(
+                &self.sftp.delete_confirm,
+            )));
         }
         if let Some(entry) = &self.sftp.new_entry {
-            stack = stack.push(new_entry_modal(entry));
+            stack = stack.push(iced::widget::opaque(new_entry_modal(entry)));
         }
         if let Some(session) = &self.sftp.edit_session {
-            stack = stack.push(edit_in_place_modal(session));
+            stack = stack.push(iced::widget::opaque(edit_in_place_modal(session)));
         }
         if let Some(prompt) = &self.sftp.overwrite_prompt {
-            stack = stack.push(overwrite_modal(prompt));
+            stack = stack.push(iced::widget::opaque(overwrite_modal(prompt)));
         }
         if let Some(props) = &self.sftp.properties {
-            stack = stack.push(properties_modal(props));
+            stack = stack.push(iced::widget::opaque(properties_modal(props)));
         }
         if self.sftp.picker_open {
             stack = stack.push(self.view_sftp_picker());
@@ -473,7 +479,15 @@ impl Oryxis {
                 });
             stack = stack.push(outline);
         }
-        stack.into()
+        // Route cursor moves over the pane to `MouseMoved` directly. The
+        // global event subscription stops delivering `CursorMoved` while a
+        // row button holds the press (so a pending drag never crossed the
+        // activation threshold); a `MouseArea` over the pane still sees the
+        // motion and drives the same promotion. `on_move` doesn't capture
+        // clicks, so row navigation still works.
+        MouseArea::new(stack)
+            .on_move(Message::MouseMoved)
+            .into()
     }
 
     fn view_sftp_picker(&self) -> Element<'_, Message> {

@@ -234,6 +234,10 @@ pub struct Oryxis {
     /// Search query for the icon picker's full-library Lucide search.
     /// Empty shows the curated preset grid; non-empty shows matches.
     pub(crate) icon_picker_icon_search: String,
+    /// When set, the icon picker's HSV color popover is open, anchored at
+    /// this point (the cursor position when the swatch was clicked). None
+    /// keeps the picker collapsed behind the swatch + hex row.
+    pub(crate) icon_color_popover: Option<iced::Point>,
     /// Whether the per-host terminal theme picker modal is open.
     /// Drawn on top of the host editor; the form's
     /// `terminal_theme` field is updated as soon as the user picks
@@ -308,6 +312,10 @@ pub struct Oryxis {
     pub(crate) hovered_key_card: Option<usize>,
     pub(crate) hovered_identity_card: Option<usize>,
     pub(crate) hovered_snippet_card: Option<usize>,
+    /// Snippet card whose `⋮` context menu (Edit / Delete) is open;
+    /// keeps the kebab visible while the popup is up, mirroring
+    /// `card_context_menu` for hosts.
+    pub(crate) snippet_context_menu: Option<usize>,
     pub(crate) card_context_menu: Option<usize>,
 
     // Floating overlay menu
