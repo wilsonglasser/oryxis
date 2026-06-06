@@ -405,6 +405,8 @@ impl Oryxis {
             ssm_keepalive: false,
             relaunch: None,
             session_group_id: Some(group.id),
+            pinned: false,
+            pending_reopen: None,
         };
         let tab_idx = self.tabs.len();
         self.tabs.push(tab);

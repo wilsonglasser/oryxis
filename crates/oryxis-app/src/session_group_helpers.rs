@@ -321,6 +321,8 @@ mod tests {
             ssm_keepalive: false,
             relaunch: None,
             session_group_id: None,
+            pinned: false,
+            pending_reopen: None,
         };
 
         let (restored, rows) = snapshot_tab_layout(&tab).expect("nothing pruned");

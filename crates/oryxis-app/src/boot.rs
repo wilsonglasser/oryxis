@@ -425,6 +425,8 @@ impl Oryxis {
                 is_window_hidden: false,
                 ipc_state_signature: 0,
                 setting_tab_close_button_side: "left".into(),
+                setting_pinned_tab_style: "compact".into(),
+                pin_next_plugin_tab: None,
                 setting_show_tab_status_dot: true,
                 setting_tab_accent_line: true,
                 sftp_enabled: true,
@@ -799,6 +801,11 @@ impl Oryxis {
             {
                 self.setting_tab_close_button_side = v;
             }
+            if let Ok(Some(v)) = vault.get_setting("pinned_tab_style")
+                && (v == "compact" || v == "full")
+            {
+                self.setting_pinned_tab_style = v;
+            }
             if let Ok(Some(v)) = vault.get_setting("show_tab_status_dot") {
                 self.setting_show_tab_status_dot = v == "true";
             }
@@ -927,6 +934,9 @@ impl Oryxis {
             self.migrate_port_forwards(&vault);
             self.vault = Some(vault);
         }
+
+        // Recreate pinned tabs (dormant; reopen on first select).
+        self.restore_pinned_tabs_dormant();
     }
 
     /// One-shot migration of legacy inline `Connection.port_forwards` into
@@ -970,6 +980,46 @@ impl Oryxis {
         {
             tracing::warn!("failed to persist setting {key}: {e}");
         }
+    }
+
+    /// Snapshot the currently-pinned tabs (those with a reopenable spec) to
+    /// the `pinned_tabs` setting so they reappear, dormant, next launch.
+    /// Cloud / ephemeral pinned tabs have no spec and are skipped.
+    pub(crate) fn persist_pinned_tabs(&self) {
+        let specs: Vec<crate::state::PinnedTabSpec> = self
+            .tabs
+            .iter()
+            .filter(|t| t.pinned)
+            .filter_map(|t| t.pin_spec())
+            .collect();
+        let json = serde_json::to_string(&specs).unwrap_or_else(|_| "[]".into());
+        self.persist_setting("pinned_tabs", &json);
+    }
+
+    /// Recreate pinned tabs as dormant placeholders at boot. They show in the
+    /// strip with their saved label but hold no live session; selecting one
+    /// the first time reopens it (see `reopen_dormant_tab`). Called once data
+    /// is loaded so the reopen path can resolve host ids.
+    pub(crate) fn restore_pinned_tabs_dormant(&mut self) {
+        let json = self
+            .vault
+            .as_ref()
+            .and_then(|v| v.get_setting("pinned_tabs").ok().flatten());
+        let Some(json) = json else { return };
+        let specs: Vec<crate::state::PinnedTabSpec> =
+            serde_json::from_str(&json).unwrap_or_default();
+        if specs.is_empty() {
+            return;
+        }
+        for spec in specs {
+            let label = spec.label().to_string();
+            self.tabs
+                .push(crate::state::TerminalTab::new_dormant_pinned(label, spec));
+        }
+        // The tabs sit dormant in the strip; the app still boots to its
+        // default view (Hosts). We deliberately do not focus a pinned tab or
+        // switch to the terminal: opening always lands on Hosts, and a
+        // dormant tab only connects on an explicit select.
     }
 
     /// Idempotent normalization of cloud-backed groups in the vault.

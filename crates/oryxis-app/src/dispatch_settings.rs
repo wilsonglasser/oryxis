@@ -778,6 +778,14 @@ impl Oryxis {
                 self.setting_tab_close_button_side = normalized.into();
                 self.persist_setting("tab_close_button_side", normalized);
             }
+            Message::SettingPinnedTabStyleChanged(val) => {
+                let normalized = match val.as_str() {
+                    "full" => "full",
+                    _ => "compact",
+                };
+                self.setting_pinned_tab_style = normalized.into();
+                self.persist_setting("pinned_tab_style", normalized);
+            }
             Message::SettingKeepaliveChanged(val) => {
                 // Accept only digits; cap at 86_400 (1 day) so users can't
                 // accidentally type a runaway value.

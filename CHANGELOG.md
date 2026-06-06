@@ -7,6 +7,16 @@ project uses [SemVer](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- **Pinned tabs.** Pin a tab from its context menu and it renders first in
+  the strip, survives "close other tabs" / "close all tabs" (like a browser),
+  and reappears on the next launch. Two styles, chosen in Settings -> Interface:
+  a compact Chrome-style icon chip, or the full tab with a distinct accent
+  border. Restore is lazy: a pinned tab comes back dormant (a placeholder in
+  the strip) and only reconnects the host (or respawns the local shell) the
+  first time you select it, so launch stays fast. Works for saved hosts, local
+  shells, and ECS Exec / kubectl pods (the latter reopen via the same reconnect
+  path, re-resolving the group if the task recycled). SSM sessions can be pinned
+  for the session but are not yet restored across restarts.
 - **Multi-hop host chaining.** The host editor's "Host Chaining" row now
   opens a dedicated chain editor (Termius style) instead of a single-host
   picker: build an ordered chain of jump hosts, reorder them, and remove

@@ -103,6 +103,9 @@ pub enum Message {
     ReconnectTab(usize),
     DuplicateTab(usize),
     DuplicateInNewWindow(usize),
+    /// Pin / unpin a tab (from its context menu). Pinned tabs render first
+    /// and are restored on the next launch.
+    ToggleTabPin(usize),
 
     // SFTP browser. Most pane operations are side-addressed: the
     // `SftpPaneSide` says *which* pane (Left / Right), and the handler
@@ -590,6 +593,7 @@ pub enum Message {
     SettingToggleMinimizeToTray,
     SettingToggleTabAccentLine,
     SettingTabCloseButtonSideChanged(String),
+    SettingPinnedTabStyleChanged(String),
     SettingToggleShowTabStatusDot,
     /// Show/hide the top-left burger menu (Settings / Updates / About /
     /// Exit). Mirrors Termius's `☰` strip at the start of the tab bar.

@@ -887,6 +887,31 @@ impl Oryxis {
                         .into(),
                     ]).align_y(iced::Alignment::Center),
                     Space::new().height(8),
+                    dir_row(vec![
+                        text(crate::i18n::t("pinned_tab_style"))
+                            .size(13)
+                            .color(OryxisColors::t().text_primary)
+                            .into(),
+                        Space::new().width(Length::Fill).into(),
+                        pick_list(
+                            Some(self.setting_pinned_tab_style.clone()),
+                            vec!["compact".to_string(), "full".to_string()],
+                            |s: &String| {
+                                crate::i18n::t(if s == "full" {
+                                    "pinned_tab_style_full"
+                                } else {
+                                    "pinned_tab_style_compact"
+                                })
+                                .to_string()
+                            },
+                        )
+                        .on_select(Message::SettingPinnedTabStyleChanged)
+                        .width(180)
+                        .padding(10)
+                        .style(crate::widgets::rounded_pick_list_style)
+                        .into(),
+                    ]).align_y(iced::Alignment::Center),
+                    Space::new().height(8),
                     toggle_row(
                         crate::i18n::t("show_tab_status_dot"),
                         self.setting_show_tab_status_dot,

@@ -790,6 +790,57 @@ pub(crate) struct TerminalTab {
     /// saved as one). Drives the tab context menu label ("Save group" vs
     /// "Edit group") and lets the editor update the existing group in place.
     pub session_group_id: Option<Uuid>,
+    /// Pinned tabs render first in the strip (compact icon chip or a
+    /// bordered tab, per the `pinned_tab_style` setting) and are restored on
+    /// the next launch. Toggled from the tab context menu.
+    pub pinned: bool,
+    /// Set on a *dormant* pinned tab recreated at boot: the tab shows in the
+    /// strip but isn't connected. The first time it's selected, this spec
+    /// reopens it (connect host / spawn local shell), then clears. `None` on
+    /// a live tab.
+    pub pending_reopen: Option<PinnedTabSpec>,
+}
+
+/// Persisted restore spec for a pinned tab. Stored as JSON in the
+/// `pinned_tabs` setting; on boot each becomes a dormant pinned tab that
+/// reopens lazily on first select. Cloud / ephemeral tabs have no spec and
+/// aren't persisted.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub(crate) enum PinnedTabSpec {
+    /// A saved host, reopened with `ConnectSsh` (id resolved to an index
+    /// fresh at reopen time, so it survives connection reordering).
+    Host { id: Uuid, label: String },
+    /// A local shell, reopened with the captured program / args.
+    LocalShell { program: String, args: Vec<String>, label: String },
+    /// An ECS Exec session, reopened with `ConnectEcsExecTask` (same
+    /// mechanism the in-session reconnect uses; the task id may have
+    /// recycled, in which case the reconnect re-resolves the group).
+    EcsExec {
+        group_id: Uuid,
+        task_id: String,
+        task_label: String,
+        container: String,
+        label: String,
+    },
+    /// A kubectl exec session, reopened with `ConnectKubectlExecPod`.
+    KubectlExec {
+        group_id: Uuid,
+        namespace: String,
+        pod: String,
+        container: String,
+        label: String,
+    },
+}
+
+impl PinnedTabSpec {
+    pub fn label(&self) -> &str {
+        match self {
+            PinnedTabSpec::Host { label, .. } => label,
+            PinnedTabSpec::LocalShell { label, .. } => label,
+            PinnedTabSpec::EcsExec { label, .. } => label,
+            PinnedTabSpec::KubectlExec { label, .. } => label,
+        }
+    }
 }
 
 impl TerminalTab {
@@ -808,6 +859,71 @@ impl TerminalTab {
             ssm_keepalive: false,
             relaunch: None,
             session_group_id: None,
+            pinned: false,
+            pending_reopen: None,
+        }
+    }
+
+    /// A dormant pinned tab recreated at boot: shows in the strip with the
+    /// saved label but holds no live session. The placeholder pane carries a
+    /// hint; selecting the tab the first time fires `spec` to reopen it.
+    pub fn new_dormant_pinned(label: String, spec: PinnedTabSpec) -> Self {
+        let mut term = TerminalState::new_no_pty(80, 24).unwrap();
+        let hint = format!("\x1b[2m  {}\x1b[0m\r\n", crate::i18n::t("pinned_tab_dormant_hint"));
+        term.process(hint.as_bytes());
+        let mut tab = Self::new_single(label, Arc::new(Mutex::new(term)));
+        tab.pinned = true;
+        tab.pending_reopen = Some(spec);
+        tab
+    }
+
+    /// Restore spec for persisting this pinned tab, or `None` if it can't be
+    /// reopened (cloud / ephemeral pane with no stable reference). A dormant
+    /// tab keeps the spec it was created with; a live tab derives one from
+    /// its focused pane's origin.
+    pub fn pin_spec(&self) -> Option<PinnedTabSpec> {
+        if let Some(spec) = &self.pending_reopen {
+            return Some(spec.clone());
+        }
+        let base = self.label.trim_end_matches(" (disconnected)").to_string();
+        match &self.active().origin {
+            PaneOrigin::Host(id) => Some(PinnedTabSpec::Host { id: *id, label: base }),
+            PaneOrigin::Local(spec) => Some(PinnedTabSpec::LocalShell {
+                program: spec.program.clone(),
+                args: spec.args.clone(),
+                label: spec.label.clone(),
+            }),
+            // Cloud exec tabs have no saved Connection, but carry the
+            // relaunch message that recreates them; mirror it into a
+            // serializable spec. SSM (relaunch None) and anything else stay
+            // unpersisted.
+            PaneOrigin::Ephemeral => match self.relaunch.as_deref() {
+                Some(crate::messages::Message::ConnectEcsExecTask {
+                    group_id,
+                    task_id,
+                    task_label,
+                    container,
+                }) => Some(PinnedTabSpec::EcsExec {
+                    group_id: *group_id,
+                    task_id: task_id.clone(),
+                    task_label: task_label.clone(),
+                    container: container.clone(),
+                    label: base,
+                }),
+                Some(crate::messages::Message::ConnectKubectlExecPod {
+                    group_id,
+                    namespace,
+                    pod,
+                    container,
+                }) => Some(PinnedTabSpec::KubectlExec {
+                    group_id: *group_id,
+                    namespace: namespace.clone(),
+                    pod: pod.clone(),
+                    container: container.clone(),
+                    label: base,
+                }),
+                _ => None,
+            },
         }
     }
 

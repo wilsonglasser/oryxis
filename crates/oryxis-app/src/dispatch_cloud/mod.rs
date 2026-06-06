@@ -160,6 +160,23 @@ impl Oryxis {
                 self.active_tab = Some(tab_idx);
                 self.remember_terminal_tab_focus(tab_idx);
                 self.active_view = View::Terminal;
+                // Reopening a pinned cloud tab: the spawn is async so the pin
+                // can't ride the synchronous len-check the host / local paths
+                // use. Move the freshly-spawned tab back to the dormant's old
+                // slot (so reopening doesn't reorder), pin it, and re-persist
+                // (reopen skipped persisting to keep the dormant spec as a net).
+                if let Some(slot) = self.pin_next_plugin_tab.take() {
+                    let mut at = tab_idx;
+                    if slot < tab_idx {
+                        let live = self.tabs.remove(tab_idx);
+                        at = slot;
+                        self.tabs.insert(slot, live);
+                    }
+                    self.tabs[at].pinned = true;
+                    self.active_tab = Some(at);
+                    self.remember_terminal_tab_focus(at);
+                    self.persist_pinned_tabs();
+                }
                 // ECS Exec and SSM Session don't go through SshConnected,
                 // so the History view never picked them up. Mirror the
                 // SSH path's add_log call here so cloud sessions show up

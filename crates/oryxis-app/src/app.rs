@@ -795,6 +795,16 @@ pub struct Oryxis {
     /// slot at the trailing edge of the tab). Anything else is treated
     /// as `"left"`.
     pub(crate) setting_tab_close_button_side: String,
+    /// Pinned-tab visual style: "compact" (Chrome-style icon-only chip) or
+    /// "full" (a normal tab with a special pinned border, stuck to the left).
+    pub(crate) setting_pinned_tab_style: String,
+    /// One-shot: set when reopening a *pinned cloud* dormant tab. Because the
+    /// cloud spawn is async (the tab is born later, in `spawn_plugin_tab`),
+    /// the pin intent can't ride the synchronous len-check the host / local
+    /// paths use; this carries it instead and is consumed on the next
+    /// plugin-tab spawn. `Some(slot)` = pin the spawned tab and move it back
+    /// to `slot` (the dormant's old position) so reopening doesn't reorder.
+    pub(crate) pin_next_plugin_tab: Option<usize>,
     /// When on, each tab paints a small colored dot over its OS badge:
     /// green for an active SSH session, orange while connecting, red
     /// for a tab that lost its session. Defaults on; the user can hide

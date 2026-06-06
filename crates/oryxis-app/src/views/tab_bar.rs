@@ -153,7 +153,15 @@ impl Oryxis {
             }
         }
 
-        for (idx, tab) in self.tabs.iter().enumerate() {
+        // Pinned tabs render first. This is a visual reorder only: the
+        // underlying `self.tabs` Vec and every tab's index are unchanged, so
+        // SelectTab / CloseTab and the routing stay valid.
+        let compact_pins = self.setting_pinned_tab_style == "compact";
+        let mut tab_order: Vec<usize> =
+            (0..self.tabs.len()).filter(|&i| self.tabs[i].pinned).collect();
+        tab_order.extend((0..self.tabs.len()).filter(|&i| !self.tabs[i].pinned));
+        for idx in tab_order {
+            let tab = &self.tabs[idx];
             let is_active = active_idx == Some(idx);
             let is_hovered = self.hovered_tab == Some(idx);
             // A split tab shows the focused pane's label + icon; a single
@@ -242,21 +250,36 @@ impl Oryxis {
             let sg_custom_icon = session_group
                 .and_then(|g| g.icon_style.as_deref())
                 .filter(|s| !s.is_empty());
-            tab_items.push(session_tab(
-                idx,
-                display_label,
-                tab.pane_count(),
-                is_active,
-                is_hovered,
-                detected_os.as_deref(),
-                width,
-                self.setting_tab_close_button_side == "right",
-                status_dot,
-                sg_custom_color.or(host_accent),
-                host_icon_style,
-                sg_custom_icon,
-                sg_custom_color,
-            ));
+            if tab.pinned && compact_pins {
+                // Chrome-style: icon-only chip, fixed width, stuck left.
+                tab_items.push(pinned_tab_chip(
+                    idx,
+                    detected_os.as_deref(),
+                    is_active,
+                    sg_custom_color.or(host_accent),
+                    host_icon_style,
+                    sg_custom_icon,
+                    sg_custom_color,
+                    status_dot,
+                ));
+            } else {
+                tab_items.push(session_tab(
+                    idx,
+                    display_label,
+                    tab.pane_count(),
+                    is_active,
+                    is_hovered,
+                    detected_os.as_deref(),
+                    width,
+                    self.setting_tab_close_button_side == "right",
+                    status_dot,
+                    sg_custom_color.or(host_accent),
+                    host_icon_style,
+                    sg_custom_icon,
+                    sg_custom_color,
+                    tab.pinned,
+                ));
+            }
         }
 
         // The tab strip lives in an auto-width container, Length::Fill
@@ -606,6 +629,8 @@ fn session_tab<'a>(
     // the user set on the group, so the strip matches the dashboard card.
     custom_icon: Option<&'a str>,
     custom_color: Option<Color>,
+    // Full-style pinned tab: draws a distinct left-edge accent border.
+    pinned: bool,
 ) -> Element<'a, Message> {
     let effective_accent = host_accent.unwrap_or_else(|| OryxisColors::t().accent);
     let fg = if is_active {
@@ -822,14 +847,95 @@ fn session_tab<'a>(
             }
             _ => bg,
         };
+        // Full-style pinned tabs get a distinct accent outline.
+        let border = if pinned {
+            Border { radius: Radius::from(6.0), color: effective_accent, width: 1.5 }
+        } else {
+            Border { radius: Radius::from(6.0), ..Default::default() }
+        };
         button::Style {
             background: Some(hover_bg),
-            border: Border { radius: Radius::from(6.0), ..Default::default() },
+            border,
             ..Default::default()
         }
     });
 
     MouseArea::new(tab_btn)
+        .on_enter(Message::TabHovered(idx))
+        .on_exit(Message::TabUnhovered)
+        .on_right_press(Message::ShowTabMenu(idx))
+        .into()
+}
+
+/// Compact (Chrome-style) pinned tab: an icon-only chip at a fixed width,
+/// with the same OS / host / session-group badge as a full tab. Select on
+/// click, right-click opens the same context menu (to unpin, etc.).
+#[allow(clippy::too_many_arguments)]
+fn pinned_tab_chip<'a>(
+    idx: usize,
+    detected_os: Option<&str>,
+    is_active: bool,
+    host_accent: Option<Color>,
+    host_icon_style: crate::widgets::HostIconStyle,
+    custom_icon: Option<&'a str>,
+    custom_color: Option<Color>,
+    status_dot: Option<Color>,
+) -> Element<'a, Message> {
+    let accent = host_accent.unwrap_or_else(|| OryxisColors::t().accent);
+    let fallback = OryxisColors::t().accent;
+    let (glyph, badge_color) = if let Some(name) = custom_icon {
+        (crate::os_icon::custom_icon_glyph(name), custom_color.unwrap_or(fallback))
+    } else {
+        crate::os_icon::resolve_icon(detected_os, fallback)
+    };
+    let glyph_el: Element<'_, Message> = glyph.view(13.0, Color::WHITE);
+    let base = crate::widgets::host_icon(host_icon_style, badge_color, "", Some(glyph_el), TAB_ICON_SLOT);
+    let badge: Element<'_, Message> = if let Some(dot_color) = status_dot {
+        let dot_disc = container(Space::new().width(6).height(6)).style(move |_| container::Style {
+            background: Some(Background::Color(dot_color)),
+            border: Border { radius: Radius::from(3.0), color: OryxisColors::t().bg_sidebar, width: 1.0 },
+            ..Default::default()
+        });
+        let dot_pin = container(dot_disc)
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .align_x(iced::alignment::Horizontal::Right)
+            .align_y(iced::alignment::Vertical::Bottom);
+        iced::widget::Stack::new()
+            .push(
+                container(base)
+                    .center_x(Length::Fixed(TAB_ICON_SLOT))
+                    .center_y(Length::Fixed(TAB_ICON_SLOT)),
+            )
+            .push(dot_pin)
+            .width(Length::Fixed(TAB_ICON_SLOT))
+            .height(Length::Fixed(TAB_ICON_SLOT))
+            .into()
+    } else {
+        base
+    };
+    const CHIP_W: f32 = 38.0;
+    let btn = button(
+        container(badge)
+            .center_x(Length::Fixed(CHIP_W))
+            .center_y(Length::Fixed(TAB_HEIGHT)),
+    )
+    .width(Length::Fixed(CHIP_W))
+    .on_press(Message::SelectTab(idx))
+    .style(move |_, status| {
+        let bg = match status {
+            _ if is_active => Background::Color(Color { a: 0.18, ..accent }),
+            BtnStatus::Hovered => Background::Color(Color::from_rgba(1.0, 1.0, 1.0, 0.06)),
+            _ => Background::Color(Color::TRANSPARENT),
+        };
+        let border = if is_active {
+            Border { radius: Radius::from(6.0), color: accent, width: 1.5 }
+        } else {
+            Border { radius: Radius::from(6.0), ..Default::default() }
+        };
+        button::Style { background: Some(bg), border, ..Default::default() }
+    });
+    MouseArea::new(btn)
         .on_enter(Message::TabHovered(idx))
         .on_exit(Message::TabUnhovered)
         .on_right_press(Message::ShowTabMenu(idx))

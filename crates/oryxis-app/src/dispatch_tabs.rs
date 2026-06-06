@@ -410,6 +410,11 @@ impl Oryxis {
             // -- Tabs --
             Message::SelectTab(idx) => {
                 if idx < self.tabs.len() {
+                    // Lazy reopen: a dormant pinned tab (restored at boot) has
+                    // no live session; entering it the first time connects.
+                    if self.tabs[idx].pending_reopen.is_some() {
+                        return Ok(self.reopen_dormant_tab(idx));
+                    }
                     // Switching tabs dismisses the session-group editor (it's
                     // tied to the tab it was opened from).
                     self.show_session_group_panel = false;
@@ -622,7 +627,12 @@ impl Oryxis {
                 // Closing a tab dismisses the session-group editor it spawned.
                 self.show_session_group_panel = false;
                 if idx < self.tabs.len() {
+                    // Closing a pinned tab drops it from the persisted set.
+                    let was_pinned = self.tabs[idx].pinned;
                     self.tabs.remove(idx);
+                    if was_pinned {
+                        self.persist_pinned_tabs();
+                    }
                     // Keep the in-flight connection progress in sync with
                     // the tab list. Closing the connecting tab clears the
                     // progress (otherwise the stale screen, including a
@@ -702,6 +712,13 @@ impl Oryxis {
                 {
                     self.overlay = None;
                 }
+            }
+            Message::ToggleTabPin(idx) => {
+                self.overlay = None;
+                if let Some(tab) = self.tabs.get_mut(idx) {
+                    tab.pinned = !tab.pinned;
+                }
+                self.persist_pinned_tabs();
             }
             Message::ReconnectTab(idx) => {
                 self.overlay = None;
@@ -869,23 +886,148 @@ impl Oryxis {
             Message::CloseOtherTabs(idx) => {
                 self.overlay = None;
                 if idx < self.tabs.len() {
-                    let keep = self.tabs.remove(idx);
-                    self.tabs.clear();
-                    self.tabs.push(keep);
-                    self.active_tab = Some(0);
-                    self.remember_terminal_tab_focus(0);
+                    // Keep the clicked tab and every pinned tab (pinned tabs
+                    // survive "close others", like a browser).
+                    let target_id = self.tabs[idx]._id;
+                    self.tabs.retain(|t| t._id == target_id || t.pinned);
+                    let new_active = self
+                        .tabs
+                        .iter()
+                        .position(|t| t._id == target_id)
+                        .unwrap_or(0);
+                    self.active_tab = Some(new_active);
+                    self.remember_terminal_tab_focus(new_active);
                 }
             }
             Message::CloseAllTabs => {
                 self.overlay = None;
-                self.tabs.clear();
-                self.active_tab = None;
-                self.clear_terminal_tab_memory();
-                self.active_view = View::Dashboard;
+                // Pinned tabs survive "close all".
+                self.tabs.retain(|t| t.pinned);
+                if self.tabs.is_empty() {
+                    self.active_tab = None;
+                    self.clear_terminal_tab_memory();
+                    self.active_view = View::Dashboard;
+                } else {
+                    self.active_tab = Some(0);
+                    self.remember_terminal_tab_focus(0);
+                }
             }
 
             m => return Err(m),
         }
         Ok(Task::none())
+    }
+
+    /// First select of a dormant pinned tab: drop the placeholder and fire
+    /// the saved spec to reopen it (connect host / spawn local shell). The
+    /// freshly-opened tab inherits the pin.
+    fn reopen_dormant_tab(&mut self, idx: usize) -> Task<Message> {
+        use crate::state::PinnedTabSpec;
+        let Some(spec) = self
+            .tabs
+            .get_mut(idx)
+            .and_then(|t| t.pending_reopen.take())
+        else {
+            return Task::none();
+        };
+        // Resolve the open message fresh (the host id maps to a possibly
+        // different index than last session; the connection may be gone).
+        // Cloud sessions spawn asynchronously, so they can't ride the
+        // synchronous len-check below; flag them instead.
+        let mut cloud = false;
+        let open = match &spec {
+            PinnedTabSpec::Host { id, .. } => self
+                .connections
+                .iter()
+                .position(|c| c.id == *id)
+                .map(Message::ConnectSsh),
+            PinnedTabSpec::LocalShell { program, args, label } => {
+                Some(Message::OpenLocalShellWith {
+                    program: program.clone(),
+                    args: args.clone(),
+                    label: label.clone(),
+                })
+            }
+            PinnedTabSpec::EcsExec {
+                group_id,
+                task_id,
+                task_label,
+                container,
+                ..
+            } => {
+                cloud = true;
+                Some(Message::ConnectEcsExecTask {
+                    group_id: *group_id,
+                    task_id: task_id.clone(),
+                    task_label: task_label.clone(),
+                    container: container.clone(),
+                })
+            }
+            PinnedTabSpec::KubectlExec {
+                group_id,
+                namespace,
+                pod,
+                container,
+                ..
+            } => {
+                cloud = true;
+                Some(Message::ConnectKubectlExecPod {
+                    group_id: *group_id,
+                    namespace: namespace.clone(),
+                    pod: pod.clone(),
+                    container: container.clone(),
+                })
+            }
+        };
+        // Remove the placeholder; the connect / spawn path creates the live
+        // tab (sync for host / local, async for cloud).
+        self.tabs.remove(idx);
+        self.adjust_last_terminal_tab_after_remove(idx);
+
+        if cloud {
+            // The cloud tab is born later in `spawn_plugin_tab`, which
+            // consumes this slot to pin it, move it back into place, and take
+            // focus. We deliberately don't persist here: the dormant spec
+            // stays in the setting as a safety net until the live tab
+            // re-persists. Show Hosts during the async connect instead of
+            // flashing another dormant tab's "select to connect" placeholder.
+            self.pin_next_plugin_tab = Some(idx);
+            self.active_tab = None;
+            self.active_view = View::Dashboard;
+            return open.map(|m| self.update(m)).unwrap_or_else(Task::none);
+        }
+
+        let before = self.tabs.len();
+        let task = open.map(|m| self.update(m)).unwrap_or_else(Task::none);
+        if self.tabs.len() > before {
+            // A live tab was appended at the end; move it back to the
+            // dormant's old slot so reopening doesn't reorder, and pin it.
+            let live = self.tabs.pop().expect("a tab was just appended");
+            let at = idx.min(self.tabs.len());
+            self.tabs.insert(at, live);
+            self.tabs[at].pinned = true;
+            self.active_tab = Some(at);
+            self.remember_terminal_tab_focus(at);
+            self.active_view = View::Terminal;
+            // ConnectSsh set `connecting.tab_idx` to the append index; the
+            // move just shifted it, so retarget the progress overlay.
+            if let Some(p) = &mut self.connecting
+                && p.tab_idx == before
+            {
+                p.tab_idx = at;
+            }
+        } else if self.tabs.is_empty() {
+            // Nothing reopened (e.g. the host was deleted) and no tabs left.
+            self.active_tab = None;
+            self.active_view = View::Dashboard;
+        } else {
+            // Nothing reopened but other tabs remain: clamp the selection so
+            // `active_tab` never dangles past the removed placeholder.
+            let i = idx.min(self.tabs.len() - 1);
+            self.active_tab = Some(i);
+            self.remember_terminal_tab_focus(i);
+        }
+        self.persist_pinned_tabs();
+        Task::batch([task, self.tab_scroll_to_active()])
     }
 }
