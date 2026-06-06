@@ -832,6 +832,22 @@ pub(crate) enum PinnedTabSpec {
     },
 }
 
+/// In-progress drag of a tab in the strip, for reordering. Started on press
+/// (`SelectTab`), promoted to `active` once the cursor moves past a small
+/// threshold (so a plain click isn't a drag), committed on mouse release
+/// onto the hovered tab. Reorder is restricted to within the same group
+/// (pinned among pinned, normal among normal).
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct TabDrag {
+    /// The tab being dragged, by id so it survives any reindexing (a tab
+    /// closing mid-drag) and resolves to the right source at drop time.
+    pub from_id: Uuid,
+    /// Cursor position at press, for the move threshold.
+    pub start: iced::Point,
+    /// Promoted past the threshold (a real drag, not a click).
+    pub active: bool,
+}
+
 impl PinnedTabSpec {
     pub fn label(&self) -> &str {
         match self {

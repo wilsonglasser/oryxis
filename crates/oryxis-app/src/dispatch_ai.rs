@@ -158,6 +158,16 @@ impl Oryxis {
                 {
                     return Ok(self.handle_internal_drag_drop(drag));
                 }
+                // And ends a tab reorder drag: drop the dragged tab onto the
+                // hovered tab (within the same group). A plain click (never
+                // promoted to `active`) just clears.
+                if let Some(drag) = self.tab_drag.take()
+                    && drag.active
+                    && let Some(to) = self.hovered_tab
+                    && let Some(from) = self.tabs.iter().position(|t| t._id == drag.from_id)
+                {
+                    self.move_tab(from, to);
+                }
             }
             Message::SendChat => {
                 let input = self.chat_input.text().trim().to_string();

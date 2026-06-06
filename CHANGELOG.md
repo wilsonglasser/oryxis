@@ -17,6 +17,10 @@ project uses [SemVer](https://semver.org/spec/v2.0.0.html).
   shells, and ECS Exec / kubectl pods (the latter reopen via the same reconnect
   path, re-resolving the group if the task recycled). SSM sessions can be pinned
   for the session but are not yet restored across restarts.
+- **Drag to reorder tabs.** Drag a tab in the strip to reposition it; the drop
+  target highlights as you go. Reordering is scoped to within a group (pinned
+  among pinned, normal among normal), so the pinned-first layout stays
+  consistent. The pinned order persists across restarts.
 - **Multi-hop host chaining.** The host editor's "Host Chaining" row now
   opens a dedicated chain editor (Termius style) instead of a single-host
   picker: build an ordered chain of jump hosts, reorder them, and remove

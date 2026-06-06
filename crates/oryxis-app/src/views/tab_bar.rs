@@ -250,6 +250,15 @@ impl Oryxis {
             let sg_custom_icon = session_group
                 .and_then(|g| g.icon_style.as_deref())
                 .filter(|s| !s.is_empty());
+            // Reorder-drag drop target: highlight this tab when an active
+            // drag is hovering it, it isn't the dragged tab itself, and it's
+            // in the same group (pinned stays with pinned).
+            let is_drop_target = self
+                .tab_drag
+                .filter(|d| d.active && self.hovered_tab == Some(idx))
+                .and_then(|d| self.tabs.iter().position(|t| t._id == d.from_id))
+                .map(|from| from != idx && self.tabs[from].pinned == tab.pinned)
+                .unwrap_or(false);
             if tab.pinned && compact_pins {
                 // Chrome-style: icon-only chip, fixed width, stuck left.
                 tab_items.push(pinned_tab_chip(
@@ -261,6 +270,7 @@ impl Oryxis {
                     sg_custom_icon,
                     sg_custom_color,
                     status_dot,
+                    is_drop_target,
                 ));
             } else {
                 tab_items.push(session_tab(
@@ -278,6 +288,7 @@ impl Oryxis {
                     sg_custom_icon,
                     sg_custom_color,
                     tab.pinned,
+                    is_drop_target,
                 ));
             }
         }
@@ -631,6 +642,9 @@ fn session_tab<'a>(
     custom_color: Option<Color>,
     // Full-style pinned tab: draws a distinct left-edge accent border.
     pinned: bool,
+    // Drop target of an in-progress reorder drag: draws a thicker accent
+    // outline so the user sees where the dragged tab will land.
+    drop_target: bool,
 ) -> Element<'a, Message> {
     let effective_accent = host_accent.unwrap_or_else(|| OryxisColors::t().accent);
     let fg = if is_active {
@@ -847,8 +861,11 @@ fn session_tab<'a>(
             }
             _ => bg,
         };
-        // Full-style pinned tabs get a distinct accent outline.
-        let border = if pinned {
+        // Reorder drop target gets the strongest outline; full-style pinned
+        // tabs get a lighter accent outline.
+        let border = if drop_target {
+            Border { radius: Radius::from(6.0), color: effective_accent, width: 2.5 }
+        } else if pinned {
             Border { radius: Radius::from(6.0), color: effective_accent, width: 1.5 }
         } else {
             Border { radius: Radius::from(6.0), ..Default::default() }
@@ -880,6 +897,7 @@ fn pinned_tab_chip<'a>(
     custom_icon: Option<&'a str>,
     custom_color: Option<Color>,
     status_dot: Option<Color>,
+    drop_target: bool,
 ) -> Element<'a, Message> {
     let accent = host_accent.unwrap_or_else(|| OryxisColors::t().accent);
     let fallback = OryxisColors::t().accent;
@@ -928,7 +946,9 @@ fn pinned_tab_chip<'a>(
             BtnStatus::Hovered => Background::Color(Color::from_rgba(1.0, 1.0, 1.0, 0.06)),
             _ => Background::Color(Color::TRANSPARENT),
         };
-        let border = if is_active {
+        let border = if drop_target {
+            Border { radius: Radius::from(6.0), color: accent, width: 2.5 }
+        } else if is_active {
             Border { radius: Radius::from(6.0), color: accent, width: 1.5 }
         } else {
             Border { radius: Radius::from(6.0), ..Default::default() }

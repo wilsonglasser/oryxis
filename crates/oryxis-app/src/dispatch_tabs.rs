@@ -87,7 +87,20 @@ impl Oryxis {
                     y: (pos.y / SNAP).round() * SNAP,
                 };
                 let needs_drag_update = self.chat_sidebar_drag.is_some()
-                    || self.sftp.drag.is_some();
+                    || self.sftp.drag.is_some()
+                    || self.tab_drag.is_some();
+                // Promote an armed tab drag to active once the cursor moves
+                // past a small threshold, so a plain click never reorders.
+                if let Some(drag) = self.tab_drag.as_mut()
+                    && !drag.active
+                {
+                    const TAB_DRAG_THRESHOLD: f32 = 6.0;
+                    let dx = pos.x - drag.start.x;
+                    let dy = pos.y - drag.start.y;
+                    if (dx * dx + dy * dy).sqrt() > TAB_DRAG_THRESHOLD {
+                        drag.active = true;
+                    }
+                }
                 let changed = (snapped.x - self.mouse_position.x).abs() > 0.5
                     || (snapped.y - self.mouse_position.y).abs() > 0.5;
                 if !changed && !needs_drag_update {
@@ -1029,5 +1042,48 @@ impl Oryxis {
         }
         self.persist_pinned_tabs();
         Task::batch([task, self.tab_scroll_to_active()])
+    }
+
+    /// Reorder a tab by dropping `from` onto `to` (a drag commit). Restricted
+    /// to within the same group: a pinned tab can only move among pinned
+    /// tabs, a normal tab among normal tabs, so the pinned-first strip layout
+    /// stays consistent and the visual index maps to the real index. The
+    /// active tab and any in-flight connection follow their tab (by id).
+    pub(crate) fn move_tab(&mut self, from: usize, to: usize) {
+        if from == to || from >= self.tabs.len() || to >= self.tabs.len() {
+            return;
+        }
+        if self.tabs[from].pinned != self.tabs[to].pinned {
+            return;
+        }
+        let active_id = self
+            .active_tab
+            .and_then(|i| self.tabs.get(i))
+            .map(|t| t._id);
+        let connecting_id = self
+            .connecting
+            .as_ref()
+            .and_then(|p| self.tabs.get(p.tab_idx))
+            .map(|t| t._id);
+        let tab = self.tabs.remove(from);
+        let dest = to.min(self.tabs.len());
+        self.tabs.insert(dest, tab);
+        // Re-anchor active / connecting to their tabs by id.
+        if let Some(aid) = active_id
+            && let Some(i) = self.tabs.iter().position(|t| t._id == aid)
+        {
+            self.active_tab = Some(i);
+            self.remember_terminal_tab_focus(i);
+        }
+        if let Some(cid) = connecting_id
+            && let Some(i) = self.tabs.iter().position(|t| t._id == cid)
+            && let Some(p) = self.connecting.as_mut()
+        {
+            p.tab_idx = i;
+        }
+        // Persist if the pinned set's order changed.
+        if self.tabs[dest].pinned {
+            self.persist_pinned_tabs();
+        }
     }
 }

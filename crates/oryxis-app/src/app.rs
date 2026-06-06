@@ -805,6 +805,8 @@ pub struct Oryxis {
     /// plugin-tab spawn. `Some(slot)` = pin the spawned tab and move it back
     /// to `slot` (the dormant's old position) so reopening doesn't reorder.
     pub(crate) pin_next_plugin_tab: Option<usize>,
+    /// In-progress tab reorder drag (see `TabDrag`). `None` when not dragging.
+    pub(crate) tab_drag: Option<crate::state::TabDrag>,
     /// When on, each tab paints a small colored dot over its OS badge:
     /// green for an active SSH session, orange while connecting, red
     /// for a tab that lost its session. Defaults on; the user can hide

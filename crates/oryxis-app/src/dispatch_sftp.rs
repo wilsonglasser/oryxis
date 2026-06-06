@@ -717,6 +717,19 @@ impl Oryxis {
                 self.sftp.hovered_row = None;
             }
             Message::SftpMouseLeftPressed => {
+                // A physical left press over a tab arms a potential reorder
+                // drag. Armed here (on the real button press) rather than in
+                // SelectTab, so programmatic SelectTab dispatches (the
+                // tab-jump modal, etc.) can't trigger a phantom drag.
+                if let Some(idx) = self.hovered_tab
+                    && let Some(tab) = self.tabs.get(idx)
+                {
+                    self.tab_drag = Some(crate::state::TabDrag {
+                        from_id: tab._id,
+                        start: self.mouse_position,
+                        active: false,
+                    });
+                }
                 // Begin a potential internal drag if the cursor is
                 // currently on a row in the SFTP view. The drag stays
                 // pending (active=false) until the user moves past the
