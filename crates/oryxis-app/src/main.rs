@@ -277,11 +277,14 @@ fn main() -> iced::Result {
             platform_specific: window::settings::PlatformSpecific {
                 // Sets the X11 WM_CLASS and the Wayland app_id. GNOME
                 // (and other desktops) match a running window to its
-                // installed `oryxis.desktop` entry by this id to resolve
-                // the taskbar / dock icon. The id must equal the
-                // .desktop basename ("oryxis"). Without it the id stays
-                // empty and the window falls back to a generic icon.
-                application_id: "oryxis".to_string(),
+                // installed `.desktop` entry by this id to resolve the
+                // taskbar / dock icon. The id must equal the .desktop
+                // basename. For the .deb / AppImage that is "oryxis"; inside
+                // a Flatpak the runtime exports FLATPAK_ID (the app id, e.g.
+                // "app.oryxis.Oryxis"), which is also the installed .desktop
+                // basename there, so honor it when present.
+                application_id: std::env::var("FLATPAK_ID")
+                    .unwrap_or_else(|_| "oryxis".to_string()),
                 ..Default::default()
             },
             ..Default::default()

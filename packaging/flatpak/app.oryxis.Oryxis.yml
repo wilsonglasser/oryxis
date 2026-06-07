@@ -1,6 +1,6 @@
 id: app.oryxis.Oryxis
 runtime: org.freedesktop.Platform
-runtime-version: '24.08'
+runtime-version: '25.08'
 sdk: org.freedesktop.Sdk
 sdk-extensions:
   - org.freedesktop.Sdk.Extension.rust-stable
@@ -25,7 +25,7 @@ modules:
         CARGO_HOME: /run/build/oryxis/cargo
         CARGO_NET_OFFLINE: 'true'
     build-commands:
-      - cargo build --release --offline -p oryxis-app
+      - cargo build --release --offline --locked -p oryxis-app
       - install -Dm755 target/release/oryxis /app/bin/oryxis
       # The .desktop and metainfo are shipped next to the manifest because the
       # v0.8.0 release tag predates them; later releases ship them upstream.
