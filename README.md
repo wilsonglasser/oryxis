@@ -240,52 +240,71 @@ Most SSH clients are either powerful but ugly (PuTTY), pretty but Electron-heavy
 ## Architecture
 
 ```
-+----- Iced Application (wgpu) ---------------------------------+
-|                                                               |
-|  Sidebar -- Navigation (Hosts, Keys, Snippets, etc.)          |
-|  Tab Bar -- Open terminal sessions                            |
-|  Content -- Grid cards / terminal canvas / AI chat sidebar    |
-|  Panels  -- Slide-in editors (Host, Key, Identity)            |
-|  Overlay -- Floating context menus                            |
-|                                                               |
-+---------------------------------------------------------------+
-|  oryxis-ssh               |  oryxis-vault                     |
-|  (russh 0.60 + auto-auth  |  (SQLite + Argon2id +             |
-|   + jump hosts + proxy    |   ChaCha20Poly1305 +              |
-|   + RSA-SHA2 + exec)      |   Export/Import .oryxis)          |
-+---------------------------+-----------------------------------+
-|  oryxis-sync              |  oryxis-mcp                       |
-|  (quinn QUIC + mDNS +     |  (JSON-RPC 2.0 stdio,             |
-|   STUN + Ed25519/X25519   |  list/get/exec SSH hosts          |
-|   + LWW conflict)         |   for AI assistants)              |
-+---------------------------+-----------------------------------+
-|  oryxis-terminal          |  oryxis-core                      |
-|  (alacritty_terminal 0.26 |  (Connection, Key, Identity,      |
-|   + syntax highlight      |   Group, Snippet, KnownHost,      |
-|   + 6 themes + recording) |   LogEntry)                       |
-+---------------------------------------------------------------+
++--------------------------------------------------------------------+
+| Iced Application (wgpu, GPU-accelerated)      oryxis-app           |
+| Sidebar / Tab bar / Card grid / Terminal / SFTP / AI               |
+| Slide-in editors . Split panes . Modals & overlays                 |
++------------------------------+-------------------------------------+
+| SSH engine                   | Encrypted vault                     |
+| oryxis-ssh                   | oryxis-vault                        |
+| russh 0.61, auto-auth,       | SQLite, Argon2id,                   |
+| jump hosts, SOCKS/HTTP/      | ChaCha20Poly1305 per-field,         |
+| Command proxy, -L/-R/-D,     | .oryxis export / import             |
+| SFTP, TOFU                   |                                     |
++--------------------------------------------------------------------+
+| Cloud providers + plugin subsystem                                 |
+| oryxis-cloud            provider trait (discover +                 |
+|                         transport)                                 |
+| oryxis-cloud-aws/-k8s   AWS & Kubernetes impls                     |
+| *-aws-plugin/-k8s-plugin  subprocess (JSON-RPC 2.0)                |
+| oryxis-plugin-protocol  stdio wire contract                        |
+| oryxis-plugin-signer    Ed25519 sign + SHA-256                     |
++------------------------------+-------------------------------------+
+| P2P sync                     | AI / automation                     |
+| oryxis-sync                  | oryxis-mcp                          |
+| quinn QUIC, mDNS, STUN,      | JSON-RPC 2.0 over stdio,            |
+| signaling + relay,           | list / get / exec SSH hosts         |
+| Ed25519/X25519, LWW          | for AI assistants                   |
+| oryxis-relay (self-host)     |                                     |
++------------------------------+-------------------------------------+
+| Terminal                     | Core model types                    |
+| oryxis-terminal              | oryxis-core                         |
+| alacritty_terminal 0.26,     | Connection, Key, Identity,          |
+| custom widget + PTY,         | ProxyIdentity, Group, Snippet,      |
+| 13 themes + custom themes    | KnownHost, PortForwardRule,         |
+|                              | SessionGroup, CloudAccount, ...     |
++--------------------------------------------------------------------+
 ```
 
 | Crate | Purpose |
 |-------|---------|
-| `oryxis-app` | Iced app, views, themes, i18n, AI chat, overlay system |
-| `oryxis-core` | Shared types: Connection, SshKey, Identity, ProxyIdentity, Group, Snippet, KnownHost, LogEntry |
-| `oryxis-terminal` | Terminal widget (alacritty + canvas + PTY + syntax highlight + 6 themes) |
-| `oryxis-ssh` | SSH engine: auto-auth, jump hosts, SOCKS/HTTP proxy, ProxyCommand, TOFU, RSA-SHA2 |
-| `oryxis-vault` | Encrypted vault: SQLite + Argon2id + ChaCha20Poly1305 + Identity + Session logs + Export/Import |
+| `oryxis-app` | Iced app: views, themes, i18n, AI chat, SFTP browser, cloud UI, split panes, overlays |
+| `oryxis-core` | Shared model types: Connection, SshKey, Identity, ProxyIdentity, Group, Snippet, KnownHost, PortForwardRule, SessionGroup, CloudAccount, custom themes, LogEntry |
+| `oryxis-terminal` | Terminal widget: alacritty_terminal 0.26 + custom canvas widget + PTY + 13 themes + custom themes + URL/IP/path detection |
+| `oryxis-ssh` | SSH engine: auto-auth, jump hosts, SOCKS/HTTP/Command proxy, Local/Remote/Dynamic forwarding, SFTP, TOFU, RSA-SHA2 |
+| `oryxis-vault` | Encrypted vault: SQLite + Argon2id + ChaCha20Poly1305 per-field + session logs + `.oryxis` export/import |
 | `oryxis-sync` | P2P sync engine: QUIC (quinn) + mDNS + STUN + signaling + HTTP relay fallback + Ed25519/X25519 + LWW conflict resolution |
 | `oryxis-relay` | Self-hostable signaling + relay HTTP server (axum + in-memory queues) |
-| `oryxis-mcp` | MCP server binary: JSON-RPC 2.0 over stdio, exposes SSH hosts to AI assistants |
+| `oryxis-mcp` | MCP server binary: JSON-RPC 2.0 over stdio, exposes SSH hosts to AI assistants. Distributed as a plugin, not bundled in the OS installers |
+| `oryxis-cloud` | Cloud provider abstraction: a `CloudProvider` trait split into discovery (list resources) and transport (open a channel: SSH / SSM / ECS Exec / kubectl exec) |
+| `oryxis-cloud-aws` | AWS provider: named profiles, static keys, IAM Identity Center (SSO), EC2 + ECS discovery |
+| `oryxis-cloud-k8s` | Kubernetes provider: kubeconfig auth, workload discovery and pod shells driven through the `kubectl` CLI |
+| `oryxis-cloud-aws-plugin` | AWS provider packaged as a standalone subprocess (JSON-RPC 2.0 over stdio) |
+| `oryxis-cloud-k8s-plugin` | Kubernetes provider packaged as a standalone subprocess (JSON-RPC 2.0 over stdio) |
+| `oryxis-plugin-protocol` | Wire protocol for cloud-provider plugins: line-delimited JSON-RPC 2.0 over stdio |
+| `oryxis-plugin-signer` | CLI that signs a plugin binary with the Ed25519 key and computes the SHA-256 the manifest needs |
 
 ## Tech Stack
 
 | Layer | Technology |
 |-------|-----------|
-| UI | Iced 0.14 (wgpu, GPU-accelerated) |
-| Icons | Bootstrap Icons (iced_fonts) |
+| UI | Iced (wilsonglasser fork, branch `oryxis`, wgpu GPU-accelerated) |
+| Icons | Lucide + Codicon (iced_fonts) + brand SVG icons |
+| Fonts | Noto Sans (UI, CJK on demand) + SauceCodePro / Symbols Nerd Font (terminal) |
 | Terminal | alacritty_terminal 0.26 |
-| SSH | russh 0.60 (async, pure Rust, RSA-SHA2) |
-| AI | reqwest + Anthropic/OpenAI/Gemini APIs |
+| SSH | russh 0.61 (async, pure Rust, RSA-SHA2) |
+| Cloud | AWS (EC2/ECS, SSM, EC2 Instance Connect) + Kubernetes (kubectl), as Ed25519-signed subprocess plugins |
+| AI | reqwest + Anthropic / OpenAI-compatible / Gemini APIs |
 | MCP | JSON-RPC 2.0 over stdio |
 | P2P Sync | quinn (QUIC), mDNS, STUN, HTTP relay fallback, Ed25519/X25519 |
 | Encryption | Argon2id + ChaCha20Poly1305 |
