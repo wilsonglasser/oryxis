@@ -981,7 +981,7 @@ impl Oryxis {
         };
 
         // Save button
-        let save_label = if self.editing_identity_id.is_some() { "Update Identity" } else { "Save Identity" };
+        let save_label = if self.editing_identity_id.is_some() { crate::i18n::t("update_identity") } else { crate::i18n::t("save_identity") };
         let has_label = !self.identity_form_label.trim().is_empty();
         let save_btn = button(
             container(text(save_label).size(13).color(OryxisColors::t().text_primary))

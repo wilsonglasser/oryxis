@@ -897,6 +897,9 @@ impl Oryxis {
             if let Ok(Some(v)) = vault.get_setting("scrollback_rows") {
                 self.setting_scrollback_rows = v;
             }
+            oryxis_terminal::set_default_scrollback(
+                crate::dispatch_settings::resolve_scrollback_rows(&self.setting_scrollback_rows),
+            );
             if let Ok(Some(v)) = vault.get_setting("cloud_auto_refresh_enabled") {
                 self.setting_cloud_auto_refresh_enabled = v == "true";
             }

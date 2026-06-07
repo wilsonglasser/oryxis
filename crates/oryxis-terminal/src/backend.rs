@@ -2,8 +2,25 @@ use alacritty_terminal::event::{Event, EventListener};
 use alacritty_terminal::grid::Dimensions;
 use alacritty_terminal::term::{Config as TermConfig, Term};
 use alacritty_terminal::vte::ansi;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use tokio::sync::mpsc;
+
+/// Process-wide scrollback (lines of history) applied to every terminal
+/// created afterwards. The app sets this from the user's `scrollback_rows`
+/// setting at boot and whenever it changes; terminals already open keep
+/// their current buffer. Defaults to 10,000 to match the historical
+/// hard-coded value, so behavior is unchanged until the app overrides it.
+static DEFAULT_SCROLLBACK: AtomicUsize = AtomicUsize::new(10_000);
+
+/// Set the scrollback used by terminals created after this call.
+pub fn set_default_scrollback(lines: usize) {
+    DEFAULT_SCROLLBACK.store(lines, Ordering::Relaxed);
+}
+
+fn default_scrollback() -> usize {
+    DEFAULT_SCROLLBACK.load(Ordering::Relaxed)
+}
 
 /// Event proxy that collects terminal events.
 #[derive(Clone)]
@@ -77,7 +94,7 @@ impl TerminalBackend {
     pub fn new(cols: u16, rows: u16) -> Self {
         let size = TermSize { cols, rows };
         let config = TermConfig {
-            scrolling_history: 10_000,
+            scrolling_history: default_scrollback(),
             ..Default::default()
         };
         let event_proxy = EventProxy::new();

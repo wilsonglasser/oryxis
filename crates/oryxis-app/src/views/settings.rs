@@ -596,7 +596,7 @@ impl Oryxis {
                         .width(280)
                         .style(crate::widgets::rounded_input_style).align_x(dir_align_x())
                         .into();
-                    let save_btn = styled_button("Save", Message::SaveAiApiKey, OryxisColors::t().accent);
+                    let save_btn = styled_button(crate::i18n::t("save"), Message::SaveAiApiKey, OryxisColors::t().accent);
                     let key_status: Element<'_, Message> = if self.ai_api_key_set {
                         dir_row(vec![
                             iced_fonts::lucide::circle_check().size(13).color(OryxisColors::t().success).into(),
@@ -630,7 +630,7 @@ impl Oryxis {
                             .into();
                         provider_col = provider_col
                             .push(Space::new().height(12))
-                            .push(panel_field("API URL", url_input));
+                            .push(panel_field(crate::i18n::t("api_url"), url_input));
                     }
 
                     provider_col = provider_col

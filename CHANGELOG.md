@@ -4,6 +4,18 @@ All notable changes to Oryxis are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the
 project uses [SemVer](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.1] - 2026-06-07
+
+### Fixed
+- **Terminal scrollback size now applies.** The scrollback-lines setting was
+  saved to the vault and read on boot, but the terminal backend hard-coded a
+  10,000-line history and never received the configured value, so changing it
+  did nothing. The setting is now passed through to the backend.
+- **Three untranslated UI strings.** The identity editor's Save / Update
+  button, the AI settings Save button, and the AI settings "API URL" label
+  were hard-coded in English instead of going through `i18n::t`. They are now
+  translated across all 17 languages.
+
 ## [0.8.0] - 2026-06-06
 
 ### Added

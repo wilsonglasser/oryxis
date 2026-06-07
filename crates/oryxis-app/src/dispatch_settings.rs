@@ -16,6 +16,18 @@ use crate::state::{TerminalTab, VaultState, View};
 use crate::theme::AppTheme;
 use crate::util::sanitize_uint;
 
+/// Resolve the persisted `scrollback_rows` string into a concrete line
+/// count for the terminal backend. The setting treats "0" as "maximum",
+/// which maps to the same 1M ceiling the input field is capped at; an
+/// empty or unparseable value falls back to the 10,000 default.
+pub(crate) fn resolve_scrollback_rows(rows: &str) -> usize {
+    match rows.trim().parse::<usize>() {
+        Ok(0) => 1_000_000,
+        Ok(n) => n,
+        Err(_) => 10_000,
+    }
+}
+
 /// Map the active app theme to its companion terminal palette. Used
 /// as the bottom-of-the-stack fallback in
 /// `resolve_global_terminal_theme` when neither a global override nor a
@@ -844,6 +856,11 @@ impl Oryxis {
                 // both unreasonable and a foot-gun for memory pressure.
                 self.setting_scrollback_rows = sanitize_uint(&val, 1_000_000);
                 self.persist_setting("scrollback_rows", &self.setting_scrollback_rows);
+                // Applies to terminals opened after this point; existing
+                // sessions keep their current buffer.
+                oryxis_terminal::set_default_scrollback(resolve_scrollback_rows(
+                    &self.setting_scrollback_rows,
+                ));
             }
             Message::SettingCloudAutoRefreshToggle => {
                 self.setting_cloud_auto_refresh_enabled =
