@@ -56,9 +56,10 @@ Two ways to ship it:
 ## Flathub (Linux) — `flatpak/`
 
 App ID `app.oryxis.Oryxis` (3-segment rDNS under the oryxis.app domain). The
-folder is self-contained: manifest, the generated cargo sources, and the
-desktop + metainfo files (the v0.8.0 tag predates the latter two, so they ship
-beside the manifest for now).
+manifest builds from a pinned post-v0.8.0 commit (the one that adds the
+metainfo, desktop file and Wayland app_id fix, all absent from the v0.8.0 tag);
+the desktop, metainfo and icons come from that checkout. Only two files ship to
+the Flathub repo: the manifest and `cargo-sources.json`.
 
 Regenerate `cargo-sources.json` whenever `Cargo.lock` changes:
 
@@ -72,7 +73,7 @@ python flatpak-cargo-generator.py Cargo.lock -o packaging/flatpak/cargo-sources.
 Publish:
 
 1. Fork `flathub/flathub`, branch `app.oryxis.Oryxis`.
-2. Copy the four files from `flatpak/` to the repo root.
+2. Copy `app.oryxis.Oryxis.yml` and `cargo-sources.json` to the repo root.
 3. Open a PR against the `master` branch. The Flathub buildbot compiles the
    app in the sandbox; iterate until it goes green, then a reviewer merges and
    `flathub/app.oryxis.Oryxis` is created.
