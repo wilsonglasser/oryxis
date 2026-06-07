@@ -142,6 +142,11 @@ project uses [SemVer](https://semver.org/spec/v2.0.0.html).
   line.
 - **Import a shared host from the "+ Host" menu.** The share / import flow is
   reachable directly from the "+ Host" menu, with a smoother end-to-end import.
+- **Six new languages.** Korean, Polish, Turkish, Indonesian, Vietnamese and
+  Ukrainian bring the UI to 17 languages. The i18n tables were split from one
+  monolithic file into a module per language (`i18n/<code>.rs`), and the UI
+  font switched to Noto Sans (with Noto Sans Arabic and a CJK menu fallback)
+  for full coverage of the new scripts.
 - **Full AGPL-3.0 license text.** The complete license is now shipped in the
   repository.
 
