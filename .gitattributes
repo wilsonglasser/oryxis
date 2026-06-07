@@ -1,0 +1,4 @@
+# Package manager manifests must keep LF endings regardless of core.autocrlf.
+# AUR makepkg runs PKGBUILD through bash (CRLF breaks it) and Scoop/.SRCINFO
+# parsers expect LF.
+packaging/** text eol=lf
