@@ -2,3 +2,8 @@
 # AUR makepkg runs PKGBUILD through bash (CRLF breaks it) and Scoop/.SRCINFO
 # parsers expect LF.
 packaging/** text eol=lf
+
+# Desktop entries and AppStream metainfo must be LF: freedesktop validators
+# (and the Flathub lint) reject a desktop file with carriage returns.
+*.desktop text eol=lf
+*.metainfo.xml text eol=lf
