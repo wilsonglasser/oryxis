@@ -307,16 +307,56 @@ fn load_icon() -> Option<window::Icon> {
     window::icon::from_rgba(img.into_raw(), w, h).ok()
 }
 
+/// Decide how to recover from a panic, given the retry count, the panic text
+/// (message + source file), and which backend is currently forced. Returns the
+/// `(renderer_backend setting, env key, env value)` to relaunch with, or `None`
+/// to let the process crash. Pure so it can be unit-tested without a GPU.
+///
+/// Ladder: auto -> GL -> software. `retry >= 2` and "already on software" both
+/// stop, so a genuinely unrenderable setup can't loop forever.
+fn renderer_fallback_action(
+    retry: u32,
+    panic_text: &str,
+    on_gl: bool,
+    on_software: bool,
+) -> Option<(&'static str, &'static str, &'static str)> {
+    // Hard loop guard.
+    if retry >= 2 {
+        return None;
+    }
+    // Only act on renderer-related panics.
+    const RENDERER_MARKERS: &[&str] = &[
+        "wgpu",
+        "naga",
+        "create_shader",
+        "Validation Error",
+        "surface",
+        "Surface",
+        "adapter",
+        "Backends",
+        "iced_wgpu",
+    ];
+    if !RENDERER_MARKERS.iter().any(|k| panic_text.contains(k)) {
+        return None;
+    }
+    if on_software {
+        None // already on the software renderer, nothing safer to try
+    } else if on_gl {
+        Some(("software", "ICED_BACKEND", "tiny-skia"))
+    } else {
+        Some(("opengl", "WGPU_BACKEND", "gl"))
+    }
+}
+
 /// Install a panic hook that self-heals a renderer crash by relaunching with a
 /// safer wgpu backend. Some GPU/driver stacks (VMs, old drivers, software
 /// Vulkan) expose an adapter whose shader capabilities don't match what
 /// iced_wgpu requires (e.g. `SHADER_FLOAT16_IN_FLOAT32`), so wgpu panics during
 /// shader validation *after* the device is created, which is past the point
 /// where iced would fall back to its tiny-skia software renderer. We catch that
-/// panic, escalate the renderer (auto -> GL -> software), persist the choice in
-/// the `renderer_backend` setting so the next cold launch skips the crash, and
-/// re-exec. Bounded to two escalations via `ORYXIS_RENDER_RETRY` so a genuinely
-/// unrenderable setup can't loop forever.
+/// panic, escalate the renderer (see [`renderer_fallback_action`]), persist the
+/// choice in the `renderer_backend` setting so the next cold launch skips the
+/// crash, and re-exec.
 fn install_renderer_fallback_hook() {
     let Ok(exe) = std::env::current_exe() else {
         return;
@@ -327,17 +367,10 @@ fn install_renderer_fallback_hook() {
         // Surface the panic first (stderr / logs), then try to heal.
         prev(info);
 
-        // Hard loop guard: at most two escalations (auto -> GL -> software).
         let retry: u32 = std::env::var("ORYXIS_RENDER_RETRY")
             .ok()
             .and_then(|v| v.parse().ok())
             .unwrap_or(0);
-        if retry >= 2 {
-            return;
-        }
-
-        // Only act on renderer-related panics; let everything else crash as
-        // usual (the previous hook already printed it).
         let msg = info
             .payload()
             .downcast_ref::<&str>()
@@ -348,33 +381,14 @@ fn install_renderer_fallback_hook() {
             .location()
             .map(|l| l.file().to_string())
             .unwrap_or_default();
-        let hay = format!("{msg} {file}");
-        let is_renderer = [
-            "wgpu",
-            "naga",
-            "create_shader",
-            "Validation Error",
-            "surface",
-            "Surface",
-            "adapter",
-            "Backends",
-            "iced_wgpu",
-        ]
-        .iter()
-        .any(|k| hay.contains(k));
-        if !is_renderer {
-            return;
-        }
-
-        // Escalate from whatever backend is currently active.
+        let panic_text = format!("{msg} {file}");
         let on_software = std::env::var("ICED_BACKEND").ok().as_deref() == Some("tiny-skia");
         let on_gl = std::env::var("WGPU_BACKEND").ok().as_deref() == Some("gl");
-        let (setting, env_key, env_val) = if on_software {
-            return; // already on the software renderer, nothing safer to try
-        } else if on_gl {
-            ("software", "ICED_BACKEND", "tiny-skia")
-        } else {
-            ("opengl", "WGPU_BACKEND", "gl")
+
+        let Some((setting, env_key, env_val)) =
+            renderer_fallback_action(retry, &panic_text, on_gl, on_software)
+        else {
+            return;
         };
 
         // Persist so future cold launches skip the crash, then relaunch with
@@ -388,4 +402,72 @@ fn install_renderer_fallback_hook() {
             .env("ORYXIS_RENDER_RETRY", (retry + 1).to_string())
             .spawn();
     }));
+}
+
+#[cfg(test)]
+mod renderer_fallback_tests {
+    use super::renderer_fallback_action;
+
+    #[test]
+    fn ignores_non_renderer_panics() {
+        // A normal panic (no renderer marker) must not relaunch anything.
+        assert_eq!(
+            renderer_fallback_action(0, "index out of bounds: the len is 3 at app.rs", false, false),
+            None
+        );
+    }
+
+    #[test]
+    fn auto_escalates_to_gl() {
+        // The real-world float16 crash text, on the default (auto) backend.
+        let text = "wgpu error: Validation Error in Device::create_shader_module wgpu_core.rs";
+        assert_eq!(
+            renderer_fallback_action(0, text, false, false),
+            Some(("opengl", "WGPU_BACKEND", "gl"))
+        );
+    }
+
+    #[test]
+    fn gl_escalates_to_software() {
+        assert_eq!(
+            renderer_fallback_action(1, "wgpu_core surface error", true, false),
+            Some(("software", "ICED_BACKEND", "tiny-skia"))
+        );
+    }
+
+    #[test]
+    fn software_is_the_end_of_the_ladder() {
+        assert_eq!(
+            renderer_fallback_action(1, "wgpu Validation Error", false, true),
+            None
+        );
+    }
+
+    #[test]
+    fn retry_cap_stops_the_loop() {
+        assert_eq!(
+            renderer_fallback_action(2, "wgpu Validation Error", false, false),
+            None
+        );
+    }
+
+    #[test]
+    fn detects_each_renderer_marker() {
+        for marker in [
+            "wgpu",
+            "naga",
+            "create_shader",
+            "Validation Error",
+            "iced_wgpu",
+            "Surface",
+            "adapter",
+            "Backends",
+        ] {
+            let text = format!("thread 'main' panicked: {marker}");
+            assert!(
+                renderer_fallback_action(0, &text, false, false).is_some(),
+                "marker {marker:?} should be detected as a renderer panic"
+            );
+        }
+    }
 }
