@@ -414,7 +414,7 @@ Full step-by-step in [SELF_HOSTING.md](SELF_HOSTING.md).
 | **v0.7.3** | **Released** | **Terminal mouse reporting** (xterm SGR 1006 + legacy X10, click / drag / any-motion tracking) so tmux `mouse on`, vim `mouse=a`, htop, less and lazygit see the mouse; Shift bypasses to local text selection. Fixes wheel-scroll in alt-screen apps over SSH. **Opt-in nightly update channel**: Settings -> Updates channel picker, in-app self-update that tracks the rolling `nightly` release by commit (installs the bare binary in place, no installer / UAC), with a clean switch back to Stable. Vector app logo (`logo.svg`) for crisp rendering at any DPI |
 | **v0.7.4** | **Released** | **Graphics renderer picker** (Settings -> Interface): Automatic / OpenGL (GPU) / Software (CPU), an escape hatch for GPU/driver stacks that corrupt the wgpu surface (Vulkan-on-Mesa under GNOME), mapped to `WGPU_BACKEND` / `ICED_BACKEND` at startup. **macOS `.dmg`**: a signed/notarizable `Oryxis.app` bundle packaged into a disk image for Apple Silicon, alongside the tarball. Dependency bumps (`russh` 0.61) |
 | **v0.8** | **Released** | **AI assistant that runs commands**: the terminal chat drives the session through an `execute_command` tool instead of narrating, gated by three independent auto-exec safety layers (a deterministic catastrophic-command floor, an independent fail-safe LLM judge, and a shell-chaining-guarded "always run" allow-list). **Kubernetes provider** (`kubectl exec` into pods, namespace + Deployment/StatefulSet/DaemonSet discovery, kubeconfig auth, thin `kubectl`-CLI wrapper). **Port forwarding as a standalone entity** (independent of any terminal, per-row on/off toggle, auto-start at boot, dedicated sidebar) covering Local (`-L`), Remote (`-R` via `tcpip-forward`) and Dynamic SOCKS5 (`-D`, with an open-proxy warning on non-loopback binds). **Split panes** (tmux/iTerm-style `pane_grid`, per-pane session). **Session groups** (save a split arrangement as a reusable, credential-free entity with per-pane startup scripts). **Server-to-server file copy in the SFTP tab** (host-to-host streaming, no local round-trip) plus a dual-pane UX pass with live byte-level transfer progress. **Custom themes** (terminal + UI color schemes with a built-in graphical color picker; iTerm / Windows Terminal / base16 import) and an icon-picker overhaul (full Lucide search). **Multi-hop host chaining** editor; **pinned tabs** (persist across restart, lazy reopen, compact icon-chip or bordered style) and **drag-to-reorder**; multi-line snippets; graceful plugin shutdown (drain in-flight before reap); `--connect <uuid>` IPC routing for the tray |
-| **v0.9** | Planned | Google Cloud provider (Compute Engine + GKE); Azure provider (VMs + AKS); biometric unlock; Windows ConPTY local shell; Windows JumpList (recent hosts in the taskbar menu); XChaCha20-Poly1305 wire format (192-bit nonce) on a sync v6 protocol bump |
+| **v0.9** | Planned | Google Cloud provider (Compute Engine + GKE); Azure provider (VMs + AKS); **RDP / VNC over SSH in one click** (a port-forward rule or host opens the OS-native remote-desktop client through an auto-provisioned `-L` tunnel: `mstsc` on Windows, FreeRDP / Remmina on Linux, Microsoft Remote Desktop on macOS), cross-platform where Bitvise is Windows-only; biometric unlock; Windows ConPTY local shell; Windows JumpList (recent hosts in the taskbar menu); XChaCha20-Poly1305 wire format (192-bit nonce) on a sync v6 protocol bump |
 
 ## Contributing
 
@@ -422,7 +422,10 @@ Contributions welcome. Open an issue to discuss before submitting large PRs.
 
 ## License
 
-[AGPL-3.0](LICENSE). Free and open-source forever.
+Copyright (C) 2026 Wilson Glasser. Licensed under [AGPL-3.0-or-later](LICENSE).
+Free and open-source forever: anyone can use, modify, and distribute Oryxis, but
+any modified version made available over a network must also share its source
+code under the same license. See [NOTICE](NOTICE) for details.
 
 ---
 
