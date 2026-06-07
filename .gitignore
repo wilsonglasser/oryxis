@@ -8,6 +8,12 @@ winget/
 .wrangler
 site
 
+# Flatpak local build artifacts (from flatpak-builder)
+.flatpak-builder/
+/build-dir/
+/.flatpak/
+/repo/
+
 /*.md
 !/README.md
 !/CHANGELOG.md
