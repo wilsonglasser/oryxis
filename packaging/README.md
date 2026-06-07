@@ -52,3 +52,37 @@ Two ways to ship it:
   `ScoopInstaller/Extras` adding `bucket/oryxis.json`. Users then install with
   `scoop install extras/oryxis` without adding a custom bucket. This is the
   better path for discovery.
+
+## Flathub (Linux) — `flatpak/`
+
+App ID `app.oryxis.Oryxis` (3-segment rDNS under the oryxis.app domain). The
+folder is self-contained: manifest, the generated cargo sources, and the
+desktop + metainfo files (the v0.8.0 tag predates the latter two, so they ship
+beside the manifest for now).
+
+Regenerate `cargo-sources.json` whenever `Cargo.lock` changes:
+
+```bash
+pip install aiohttp tomlkit
+python flatpak-cargo-generator.py Cargo.lock -o packaging/flatpak/cargo-sources.json
+```
+
+(`flatpak-cargo-generator.py` lives in flatpak/flatpak-builder-tools.)
+
+Publish:
+
+1. Fork `flathub/flathub`, branch `app.oryxis.Oryxis`.
+2. Copy the four files from `flatpak/` to the repo root.
+3. Open a PR against the `master` branch. The Flathub buildbot compiles the
+   app in the sandbox; iterate until it goes green, then a reviewer merges and
+   `flathub/app.oryxis.Oryxis` is created.
+4. After publishing, claim the "Verified" badge from the oryxis.app domain
+   (DNS TXT or `.well-known`).
+
+Local test (needs flatpak + flatpak-builder):
+
+```bash
+flatpak install flathub org.freedesktop.Sdk//24.08 org.freedesktop.Platform//24.08 \
+  org.freedesktop.Sdk.Extension.rust-stable//24.08
+flatpak-builder --user --install --force-clean build-dir packaging/flatpak/app.oryxis.Oryxis.yml
+```

@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Copyright 2026 Wilson Glasser -->
+<component type="desktop-application">
+  <id>app.oryxis.Oryxis</id>
+
+  <name>Oryxis</name>
+  <summary>Rust-native SSH client</summary>
+
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>AGPL-3.0-or-later</project_license>
+
+  <developer id="app.oryxis">
+    <name>Wilson Glasser</name>
+  </developer>
+
+  <description>
+    <p>
+      Oryxis is a modern, Rust-native SSH client with a focus on privacy and
+      speed. It keeps your connections in a local encrypted vault, syncs them
+      directly between your devices over a peer-to-peer link, and embeds a full
+      terminal.
+    </p>
+    <p>Features:</p>
+    <ul>
+      <li>Encrypted local vault (Argon2id + ChaCha20Poly1305) for hosts, keys and identities</li>
+      <li>Peer-to-peer device sync over QUIC, with no mandatory cloud</li>
+      <li>Embedded terminal with split panes and session groups</li>
+      <li>Jump hosts, SOCKS/HTTP/command proxies and SFTP</li>
+      <li>Standalone port forwarding (local, remote and dynamic)</li>
+      <li>Per-session AI chat with command execution</li>
+      <li>Kubernetes and cloud integrations</li>
+      <li>17 interface languages, with right-to-left support</li>
+    </ul>
+  </description>
+
+  <launchable type="desktop-id">app.oryxis.Oryxis.desktop</launchable>
+
+  <screenshots>
+    <screenshot type="default">
+      <caption>Connection manager and embedded terminal</caption>
+      <image>https://raw.githubusercontent.com/wilsonglasser/oryxis/main/resources/screen_1.png</image>
+    </screenshot>
+    <screenshot>
+      <caption>Split panes with per-session AI chat</caption>
+      <image>https://raw.githubusercontent.com/wilsonglasser/oryxis/main/resources/screen_2.png</image>
+    </screenshot>
+    <screenshot>
+      <caption>Encrypted vault and identities</caption>
+      <image>https://raw.githubusercontent.com/wilsonglasser/oryxis/main/resources/screen_3.png</image>
+    </screenshot>
+  </screenshots>
+
+  <url type="homepage">https://github.com/wilsonglasser/oryxis</url>
+  <url type="bugtracker">https://github.com/wilsonglasser/oryxis/issues</url>
+  <url type="vcs-browser">https://github.com/wilsonglasser/oryxis</url>
+
+  <categories>
+    <category>Network</category>
+    <category>RemoteAccess</category>
+  </categories>
+
+  <keywords>
+    <keyword>ssh</keyword>
+    <keyword>terminal</keyword>
+    <keyword>sftp</keyword>
+    <keyword>remote</keyword>
+  </keywords>
+
+  <content_rating type="oars-1.1"/>
+
+  <releases>
+    <release version="0.8.0" date="2026-06-07">
+      <description>
+        <p>
+          Adds AI command execution, Kubernetes support, standalone port
+          forwarding, split panes, session groups and six new languages.
+        </p>
+      </description>
+      <url>https://github.com/wilsonglasser/oryxis/releases/tag/v0.8.0</url>
+    </release>
+  </releases>
+</component>

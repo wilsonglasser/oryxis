@@ -1,0 +1,46 @@
+id: app.oryxis.Oryxis
+runtime: org.freedesktop.Platform
+runtime-version: '24.08'
+sdk: org.freedesktop.Sdk
+sdk-extensions:
+  - org.freedesktop.Sdk.Extension.rust-stable
+command: oryxis
+
+finish-args:
+  - --share=ipc
+  - --share=network
+  - --socket=wayland
+  - --socket=fallback-x11
+  - --socket=ssh-auth
+  - --device=dri
+  # SFTP browsing and ~/.ssh/config import need access to the user's files.
+  - --filesystem=home
+
+modules:
+  - name: oryxis
+    buildsystem: simple
+    build-options:
+      append-path: /usr/lib/sdk/rust-stable/bin
+      env:
+        CARGO_HOME: /run/build/oryxis/cargo
+        CARGO_NET_OFFLINE: 'true'
+    build-commands:
+      - cargo build --release --offline -p oryxis-app
+      - install -Dm755 target/release/oryxis /app/bin/oryxis
+      # The .desktop and metainfo are shipped next to the manifest because the
+      # v0.8.0 release tag predates them; later releases ship them upstream.
+      - install -Dm644 app.oryxis.Oryxis.desktop /app/share/applications/app.oryxis.Oryxis.desktop
+      - install -Dm644 app.oryxis.Oryxis.metainfo.xml /app/share/metainfo/app.oryxis.Oryxis.metainfo.xml
+      - install -Dm644 resources/logo_64.png /app/share/icons/hicolor/64x64/apps/app.oryxis.Oryxis.png
+      - install -Dm644 resources/logo_128.png /app/share/icons/hicolor/128x128/apps/app.oryxis.Oryxis.png
+      - install -Dm644 resources/logo_256.png /app/share/icons/hicolor/256x256/apps/app.oryxis.Oryxis.png
+    sources:
+      - type: git
+        url: https://github.com/wilsonglasser/oryxis.git
+        tag: v0.8.0
+        commit: 9b54a321347606815bd8967e01854a4ecab3af80
+      - cargo-sources.json
+      - type: file
+        path: app.oryxis.Oryxis.desktop
+      - type: file
+        path: app.oryxis.Oryxis.metainfo.xml
