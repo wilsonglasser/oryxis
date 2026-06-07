@@ -6,23 +6,16 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 // System UI font stack
 // ---------------------------------------------------------------------------
 //
-// The UI uses the native system font on each OS (same strategy as Termius /
-// any modern Electron app), so widgets render with the weights, hinting and
-// AA the user expects for that platform:
-//
-//   * Windows → Segoe UI / Segoe UI Variable (bundled with Win10/11)
-//   * macOS   → SF Pro Text (bundled with macOS)
-//   * Linux   → Inter (we ship the TTF; no ubiquitous system UI font)
-//
-// cosmic-text resolves the family via fontdb, which on Win/Mac scans the
-// system font directories. On Linux we fall back to our bundled Inter.
+// The UI uses one bundled font, Noto Sans, on every platform. A single
+// standard means the UI looks identical regardless of OS and never depends
+// on a system font being installed. Noto Sans covers Latin, Latin Extended,
+// Cyrillic, Greek and Vietnamese in one family (so all of our Latin/Cyrillic
+// languages render from the bundle); Arabic script comes from the bundled
+// Noto Sans Arabic and CJK is downloaded on demand. cosmic-text resolves the
+// "Noto Sans" family from the fonts we register in `main.rs` via fontdb, and
+// falls back per-codepoint to the Arabic / CJK / Nerd faces as needed.
 
-#[cfg(target_os = "windows")]
-pub const SYSTEM_UI_FAMILY: &str = "Segoe UI";
-#[cfg(target_os = "macos")]
-pub const SYSTEM_UI_FAMILY: &str = "SF Pro Text";
-#[cfg(not(any(target_os = "windows", target_os = "macos")))]
-pub const SYSTEM_UI_FAMILY: &str = "Inter";
+pub const SYSTEM_UI_FAMILY: &str = "Noto Sans";
 
 /// System UI font at Regular (400), the default for body text, labels,
 /// inputs and sidebar items.

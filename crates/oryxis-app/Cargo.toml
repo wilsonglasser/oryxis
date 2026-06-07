@@ -130,3 +130,12 @@ tray-icon = { version = "0.24", default-features = false, features = ["common-co
 # Property-based fuzzing for path/name helpers, generates random
 # inputs to flush out edge cases the hand-written cases missed.
 proptest = "1"
+# Same fontdb cosmic-text/iced resolve the UI font through, pinned to
+# the transitive version. Used by the bundled-font test to assert the
+# three Noto Sans weights group under one family (the assumption the
+# whole Inter -> Noto swap rests on).
+fontdb = "0.23"
+# Parse the bundled MenuCJK subset's cmap to prove it covers every
+# CJK language-picker name (한국어 / 中文 / 日本語), so those entries are
+# always renderable from the bundle, even before the on-demand CJK font.
+ttf-parser = "0.25"

@@ -579,13 +579,60 @@ impl Oryxis {
             }
             Message::LanguageChanged(name) => {
                 use crate::i18n::Language;
-                if let Some(lang) = Language::ALL.iter().find(|l| l.name() == name) {
-                    Language::set_active(*lang);
+                if let Some(lang) =
+                    Language::ALL.iter().find(|l| l.name() == name).copied()
+                {
+                    Language::set_active(lang);
                     if let Some(vault) = &self.vault {
                         let _ = vault.set_setting("language", lang.code());
                     }
+                    // Switching to a CJK language pulls its font on
+                    // demand (once per session). Show a hint while it
+                    // downloads; a cached font loads silently.
+                    if let Some(code) = crate::fonts::asset_code(lang)
+                        && !self.loaded_cjk_fonts.contains(code)
+                    {
+                        self.loaded_cjk_fonts.insert(code.to_string());
+                        if !crate::fonts::is_language_cached(lang) {
+                            self.toast = Some(
+                                crate::i18n::t("cjk_font_downloading").to_string(),
+                            );
+                        }
+                        return Ok(crate::fonts::ensure_task(lang));
+                    }
                 }
             }
+            Message::CjkFontReady(code, result) => match result {
+                Ok(bytes) => {
+                    // Clear the "downloading" hint and register the font
+                    // with the iced font system so cosmic-text can fall
+                    // back to it. `iced::font::Error` is uninhabited, so
+                    // the load result is discarded.
+                    self.toast = None;
+                    return Ok(iced::font::load(bytes).discard());
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        target = "oryxis::fonts",
+                        lang = %code,
+                        error = %e,
+                        "CJK font download failed; using system fallback"
+                    );
+                    // Drop the guard so a later switch can retry.
+                    self.loaded_cjk_fonts.remove(&code);
+                    self.toast =
+                        Some(crate::i18n::t("cjk_font_failed").to_string());
+                    return Ok(Task::perform(
+                        async {
+                            tokio::time::sleep(
+                                std::time::Duration::from_millis(2600),
+                            )
+                            .await;
+                        },
+                        |_| Message::ToastClear,
+                    ));
+                }
+            },
             Message::FlattenHostsToggle => {
                 self.flatten_hosts = !self.flatten_hosts;
                 self.persist_setting(

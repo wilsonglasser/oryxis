@@ -473,6 +473,7 @@ impl Oryxis {
                 vault_password_error: None,
                 vault_destroy_confirm: false,
                 toast: None,
+                loaded_cjk_fonts: std::collections::HashSet::new(),
                 error_dialog: None,
                 local_shells: None,
                 local_shell_picker_open: false,
@@ -599,6 +600,19 @@ impl Oryxis {
                     Message::PluginInstallDone("mcp".to_string(), result)
                 },
             ));
+        }
+
+        // If the saved language uses a CJK script (Korean / Chinese /
+        // Japanese), fetch + load its on-demand font now so the lock
+        // screen and the rest of the UI render it instead of tofu. The
+        // language was already the user's choice, so this is silent (no
+        // toast). A missing font degrades to the system CJK font.
+        {
+            let lang = crate::i18n::Language::active();
+            if let Some(code) = crate::fonts::asset_code(lang) {
+                app.loaded_cjk_fonts.insert(code.to_string());
+                tasks.push(crate::fonts::ensure_task(lang));
+            }
         }
 
         let boot_task = Task::batch(tasks);

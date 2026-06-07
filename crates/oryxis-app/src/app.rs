@@ -915,6 +915,12 @@ pub struct Oryxis {
     /// `Task::perform`-spawned `ToastClear` round-trip.
     pub(crate) toast: Option<String>,
 
+    /// CJK language codes (`"ko"`/`"zh"`/`"ja"`) whose font has already
+    /// been requested this session, so switching language back and forth
+    /// doesn't re-download or re-load. A code is removed on a failed
+    /// download so a later retry can happen. See `crate::fonts`.
+    pub(crate) loaded_cjk_fonts: std::collections::HashSet<String>,
+
     /// Generic blocking error dialog. Use for cases the user must read
     /// (install instructions, fatal config errors) where a 1.8 s toast
     /// would vanish before they can act on it. `None` = no dialog.

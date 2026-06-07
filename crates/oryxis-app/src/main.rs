@@ -31,6 +31,7 @@ mod dispatch_share;
 mod dispatch_ssh;
 mod dispatch_tabs;
 mod dispatch_terminal;
+mod fonts;
 mod i18n;
 mod mcp;
 mod mcp_install;
@@ -202,10 +203,35 @@ fn main() -> iced::Result {
         // Brand glyphs are bundled per-brand as SVGs in
         // `resources/icons/brand/`, no additional font needed. See
         // `os_icon::BRAND_ICONS`.
-        // Inter (default UI font, matches Termius' UI aesthetic).
-        .font(include_bytes!("../../../resources/fonts/Inter-Regular.ttf").as_slice())
-        .font(include_bytes!("../../../resources/fonts/Inter-SemiBold.ttf").as_slice())
-        .font(include_bytes!("../../../resources/fonts/Inter-Bold.ttf").as_slice())
+        // Noto Sans, the single bundled UI font across every platform (one
+        // standard look instead of per-OS system fonts). Covers Latin,
+        // Latin Extended, Cyrillic, Greek and Vietnamese in one family, so
+        // English, Portuguese, Spanish, French, German, Italian, Russian,
+        // Polish, Turkish, Indonesian, Vietnamese and Ukrainian all render
+        // from the bundle with no system font dependency. Regular (400),
+        // SemiBold (600) and Bold (700) share the "Noto Sans" typographic
+        // family (name ID 16), so weight selection resolves to the right
+        // file. Licensed under SIL OFL 1.1 (see resources/fonts/OFL.txt).
+        .font(include_bytes!("../../../resources/fonts/NotoSans-Regular.ttf").as_slice())
+        .font(include_bytes!("../../../resources/fonts/NotoSans-SemiBold.ttf").as_slice())
+        .font(include_bytes!("../../../resources/fonts/NotoSans-Bold.ttf").as_slice())
+        // Noto Sans Arabic, bundled so the already-shipped Arabic and
+        // Persian languages render offline. cosmic-text falls back to it
+        // per-codepoint for Arabic-script glyphs the Latin Noto lacks.
+        // CJK (Chinese / Japanese / Korean) is the genuinely large script
+        // set and is downloaded on demand instead (see mcp_install-style
+        // font cache), not bundled here.
+        .font(include_bytes!("../../../resources/fonts/NotoSansArabic-Regular.ttf").as_slice())
+        .font(include_bytes!("../../../resources/fonts/NotoSansArabic-SemiBold.ttf").as_slice())
+        .font(include_bytes!("../../../resources/fonts/NotoSansArabic-Bold.ttf").as_slice())
+        // Tiny (~4 KB) CJK subset holding only the glyphs for the
+        // language-picker names (한국어 / 中文 / 日本語). Bundling it means
+        // those entries always render, even on a fresh install before the
+        // full CJK font has been downloaded on demand, so the user can
+        // always read and pick a CJK language. Distinct family
+        // ("Oryxis Menu CJK") so it is a pure per-codepoint fallback and
+        // never shadows the full Noto Sans / downloaded CJK faces.
+        .font(include_bytes!("../../../resources/fonts/MenuCJK.ttf").as_slice())
         // SauceCodePro Nerd Font, default terminal font (Source Code
         // Pro patched with the full Nerd Font glyph set: Powerline,
         // Font Awesome, Devicons, Octicons, Codicons, Material). One
@@ -222,13 +248,13 @@ fn main() -> iced::Result {
         // but with no Latin coverage, purpose-built as a fallback-only
         // font. Loaded into the iced fontdb so cosmic-text picks it up
         // automatically for nerd glyph codepoints in proportional text
-        // (Inter/Segoe/SF Pro have no PUA coverage). Keeps prose
+        // (Noto Sans / system fonts have no PUA coverage). Keeps prose
         // proportional while still rendering Powerline/Devicon/etc.
         // characters in chat messages, host labels, snippets, etc.
         .font(include_bytes!("../../../resources/fonts/SymbolsNerdFont-Regular.ttf").as_slice())
-        // Default UI font is the system font (Segoe UI on Windows, SF Pro
-        // on macOS, bundled Inter on Linux), matches how Electron apps
-        // like Termius render and keeps the UI feeling native per-OS.
+        // Default UI font is the bundled Noto Sans on every platform, so
+        // the UI looks identical everywhere and never depends on a system
+        // font being installed.
         .default_font(theme::SYSTEM_UI)
         .window(window::Settings {
             size: Size::new(WINDOW_WIDTH, WINDOW_HEIGHT),

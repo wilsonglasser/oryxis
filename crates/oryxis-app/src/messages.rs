@@ -910,6 +910,12 @@ pub enum Message {
     /// Remove a provider's cached binaries.
     PluginUninstall(String),
 
+    /// A CJK font (Korean / Chinese / Japanese) finished downloading or
+    /// was read from cache; `Ok` carries the font bytes to hand to
+    /// `iced::font::load`. Carries the language code so the in-memory
+    /// "already loaded" guard can be cleared on failure for a retry.
+    CjkFontReady(String, Result<Vec<u8>, String>),
+
     // Edit dynamic group panel, sets template fields (key, identity,
     // transport, initial command) on a `Group.cloud_query`.
     EditDynamicGroup(Uuid),
