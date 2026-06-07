@@ -38,5 +38,5 @@ modules:
       # tag). Cargo.lock is unchanged from v0.8.0, so cargo-sources.json holds.
       - type: git
         url: https://github.com/wilsonglasser/oryxis.git
-        commit: 77ee5e951680ecbd2c6fa3c43a8b0c4cfa3706ee
+        commit: f5891d1394c8b8eba90f0586033d95c7a5359a86
       - cargo-sources.json
