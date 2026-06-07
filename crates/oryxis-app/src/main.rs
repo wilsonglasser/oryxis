@@ -118,6 +118,13 @@ fn main() -> iced::Result {
         }
     }
 
+    // Self-heal a renderer crash on GPU/driver stacks that can't satisfy
+    // iced_wgpu's shader capabilities (VMs, old drivers, software Vulkan):
+    // catch the wgpu panic and relaunch with a safer backend. Installed after
+    // the vault-driven backend env above so it escalates from whatever backend
+    // is currently active.
+    install_renderer_fallback_hook();
+
     // CLI arg pickup, flags set when another Oryxis instance spawned
     // us via "Duplicate in New Window". Unknown flags are silently
     // ignored so future flags / OS double-click args don't crash boot.
@@ -298,4 +305,87 @@ fn load_icon() -> Option<window::Icon> {
     let img = image::load_from_memory(bytes).ok()?.into_rgba8();
     let (w, h) = img.dimensions();
     window::icon::from_rgba(img.into_raw(), w, h).ok()
+}
+
+/// Install a panic hook that self-heals a renderer crash by relaunching with a
+/// safer wgpu backend. Some GPU/driver stacks (VMs, old drivers, software
+/// Vulkan) expose an adapter whose shader capabilities don't match what
+/// iced_wgpu requires (e.g. `SHADER_FLOAT16_IN_FLOAT32`), so wgpu panics during
+/// shader validation *after* the device is created, which is past the point
+/// where iced would fall back to its tiny-skia software renderer. We catch that
+/// panic, escalate the renderer (auto -> GL -> software), persist the choice in
+/// the `renderer_backend` setting so the next cold launch skips the crash, and
+/// re-exec. Bounded to two escalations via `ORYXIS_RENDER_RETRY` so a genuinely
+/// unrenderable setup can't loop forever.
+fn install_renderer_fallback_hook() {
+    let Ok(exe) = std::env::current_exe() else {
+        return;
+    };
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    let prev = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        // Surface the panic first (stderr / logs), then try to heal.
+        prev(info);
+
+        // Hard loop guard: at most two escalations (auto -> GL -> software).
+        let retry: u32 = std::env::var("ORYXIS_RENDER_RETRY")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(0);
+        if retry >= 2 {
+            return;
+        }
+
+        // Only act on renderer-related panics; let everything else crash as
+        // usual (the previous hook already printed it).
+        let msg = info
+            .payload()
+            .downcast_ref::<&str>()
+            .map(|s| (*s).to_string())
+            .or_else(|| info.payload().downcast_ref::<String>().cloned())
+            .unwrap_or_default();
+        let file = info
+            .location()
+            .map(|l| l.file().to_string())
+            .unwrap_or_default();
+        let hay = format!("{msg} {file}");
+        let is_renderer = [
+            "wgpu",
+            "naga",
+            "create_shader",
+            "Validation Error",
+            "surface",
+            "Surface",
+            "adapter",
+            "Backends",
+            "iced_wgpu",
+        ]
+        .iter()
+        .any(|k| hay.contains(k));
+        if !is_renderer {
+            return;
+        }
+
+        // Escalate from whatever backend is currently active.
+        let on_software = std::env::var("ICED_BACKEND").ok().as_deref() == Some("tiny-skia");
+        let on_gl = std::env::var("WGPU_BACKEND").ok().as_deref() == Some("gl");
+        let (setting, env_key, env_val) = if on_software {
+            return; // already on the software renderer, nothing safer to try
+        } else if on_gl {
+            ("software", "ICED_BACKEND", "tiny-skia")
+        } else {
+            ("opengl", "WGPU_BACKEND", "gl")
+        };
+
+        // Persist so future cold launches skip the crash, then relaunch with
+        // the safer backend forced directly (works even if the write failed).
+        if let Ok(vault) = oryxis_vault::VaultStore::open_default() {
+            let _ = vault.set_setting("renderer_backend", setting);
+        }
+        let _ = std::process::Command::new(&exe)
+            .args(&args)
+            .env(env_key, env_val)
+            .env("ORYXIS_RENDER_RETRY", (retry + 1).to_string())
+            .spawn();
+    }));
 }
