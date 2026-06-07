@@ -1,0 +1,10 @@
+[Desktop Entry]
+Name=Oryxis
+Comment=Modern SSH client built in Rust
+Exec=oryxis
+Icon=app.oryxis.Oryxis
+Terminal=false
+Type=Application
+Categories=Network;RemoteAccess;
+Keywords=ssh;terminal;remote;
+StartupWMClass=oryxis
