@@ -4,9 +4,29 @@ All notable changes to Oryxis are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the
 project uses [SemVer](https://semver.org/spec/v2.0.0.html).
 
-## [0.8.1] - 2026-06-07
+## [0.8.1] - 2026-06-08
 
 ### Fixed
+- **Terminal input was dead after connecting.** Since v0.8.0 the terminal
+  accepted no keystrokes at all (characters or Enter) on every launch and
+  every platform: the SFTP host picker's open-state flag defaulted to `true`
+  at boot, and v0.8.0 had started treating that flag as a focus-owning modal
+  in the global keyboard gate, so it silently swallowed every key before it
+  reached the session, with no SFTP UI ever shown. The flag now defaults to
+  off, and all SFTP dialogs (host picker, rename, new, properties, overwrite,
+  delete) are layered at the app root as full-window blocking overlays like
+  every other modal, so a set modal flag always corresponds to a visible
+  modal and can never freeze a terminal behind it. The empty SFTP remote pane
+  also gained a centered prompt with a "Pick a host" button, and Esc closes
+  the host picker.
+- **Renderer crash self-heal on incompatible GPUs.** On GPU/driver stacks
+  that can't satisfy `iced_wgpu`'s shader requirements (VMs, old drivers,
+  software Vulkan), the app panicked during shader validation after the
+  device was created, past the point where iced falls back to its tiny-skia
+  software renderer. A panic hook now catches that, escalates the backend
+  (auto -> GL -> software), persists the choice, and relaunches, bounded to
+  two escalations so an unrenderable setup can't loop. Working GPUs keep
+  hardware acceleration since it only triggers on an actual crash.
 - **Terminal scrollback size now applies.** The scrollback-lines setting was
   saved to the vault and read on boot, but the terminal backend hard-coded a
   10,000-line history and never received the configured value, so changing it
