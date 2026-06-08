@@ -229,7 +229,11 @@ impl Oryxis {
                         is_remote: true,
                         ..Default::default()
                     },
-                    picker_open: true,
+                    // picker_open defaults to false. It must NOT start open:
+                    // `any_modal_blocks_input()` treats an open SFTP picker as
+                    // a focus-owning modal and swallows every terminal
+                    // keystroke, so a stale boot-true silently kills all input
+                    // until the picker is opened and closed once.
                     ..Default::default()
                 },
                 mouse_position: Point::ORIGIN,

@@ -53,47 +53,62 @@ impl Oryxis {
             panes.into()
         };
 
-        let mut stack = iced::widget::Stack::new()
-            .push(body)
-            .width(Length::Fill)
-            .height(Length::Fill);
+        // The SFTP modals (picker, rename, new entry, properties,
+        // overwrite, delete) are NOT composed here. They're layered at the
+        // app root via `layer_sftp_modals` so they behave like every other
+        // modal: a full-window blocking overlay. Keeping them view-local
+        // used to leave their flags (e.g. `picker_open`) set while the user
+        // switched to a terminal tab, where `any_modal_blocks_input` then
+        // silently swallowed every keystroke. Layering at the root keeps the
+        // invariant "flag set <=> modal visible on screen".
+        body
+    }
 
-        // The right-click row context menu is rendered at the layout
-        // root instead, its position is in window coordinates so
-        // clamping it from inside view_sftp would be off by the title +
-        // tab bar height.
-        // Each modal is wrapped in `iced::widget::opaque` so its scrim
-        // captures every mouse event (move + click) and nothing bleeds
-        // through to the file panes underneath, e.g. hovering/clicking rows
-        // behind the overwrite prompt.
-        //
-        // These intentionally do NOT use `widgets::modal_overlay`: they
-        // overlay the SFTP view's own content (not the whole window) and
-        // compose into this local Stack. Mouse safety comes from `opaque`
-        // here; keyboard safety for the ones with text fields (new_entry,
-        // rename, properties, overwrite, picker) comes from
-        // `any_modal_blocks_input` in shortcuts.rs.
-        if !self.sftp.delete_confirm.is_empty() {
-            stack = stack.push(iced::widget::opaque(delete_confirm_modal(
-                &self.sftp.delete_confirm,
-            )));
-        }
-        if let Some(entry) = &self.sftp.new_entry {
-            stack = stack.push(iced::widget::opaque(new_entry_modal(entry)));
-        }
-        if let Some(session) = &self.sftp.edit_session {
-            stack = stack.push(iced::widget::opaque(edit_in_place_modal(session)));
-        }
-        if let Some(prompt) = &self.sftp.overwrite_prompt {
-            stack = stack.push(iced::widget::opaque(overwrite_modal(prompt)));
-        }
-        if let Some(props) = &self.sftp.properties {
-            stack = stack.push(iced::widget::opaque(properties_modal(props)));
-        }
-        if self.sftp.picker_open {
-            stack = stack.push(self.view_sftp_picker());
-        }
-        stack.into()
+    /// Layer the active SFTP modal over `base` (the whole composed app), so
+    /// SFTP dialogs blanket the window like the global pickers instead of
+    /// only the SFTP panes. Returns `base` untouched when no modal is open.
+    /// Each modal keeps its own scrim / `opaque` wrapper, this only moves
+    /// where they compose (root vs. inside `view_sftp`). The right-click row
+    /// context menu stays at the layout root (window-coordinate clamping).
+    pub(crate) fn layer_sftp_modals<'a>(
+        &'a self,
+        base: Element<'a, Message>,
+    ) -> Element<'a, Message> {
+        // Exactly one SFTP modal is open at a time (opening one closes the
+        // others), so pick the topmost rather than stacking. Each builder
+        // returns its own scrim + centered card wrapped so its `opaque`
+        // scrim still swallows scroll/motion over the panes behind it.
+        let modal: Option<Element<'a, Message>> = if !self.sftp.delete_confirm.is_empty() {
+            Some(delete_confirm_modal(&self.sftp.delete_confirm))
+        } else if let Some(entry) = &self.sftp.new_entry {
+            Some(new_entry_modal(entry))
+        } else if let Some(session) = &self.sftp.edit_session {
+            Some(edit_in_place_modal(session))
+        } else if let Some(prompt) = &self.sftp.overwrite_prompt {
+            Some(overwrite_modal(prompt))
+        } else if let Some(props) = &self.sftp.properties {
+            Some(properties_modal(props))
+        } else if self.sftp.picker_open {
+            Some(self.view_sftp_picker())
+        } else {
+            None
+        };
+        let Some(modal) = modal else { return base };
+        // Full-window scrim, NO top reserve: a modal must block everything
+        // behind it, including the tab bar. If the top chrome stayed
+        // clickable the user could switch to a terminal tab with the modal
+        // still open, and `any_modal_blocks_input` would then freeze that
+        // terminal's keyboard (the exact bug this whole change fixes).
+        // Covering the whole window makes dismissing the modal (Esc / scrim
+        // click / Cancel) the only way forward, which is the point of a
+        // blocking modal. `opaque` swallows scroll/motion too, not just
+        // clicks, so nothing bleeds through to the panes behind.
+        iced::widget::Stack::new()
+            .push(base)
+            .push(iced::widget::opaque(modal))
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .into()
     }
 
     /// Render one pane (Left or Right). Branches on the pane's
@@ -379,12 +394,32 @@ impl Oryxis {
             )
             .into()
         } else if pane.host_label.is_none() {
+            // Empty remote pane: a centered prompt with a button that opens
+            // the host picker, instead of a lone line of muted text in the
+            // corner. The picker no longer auto-opens on boot, so this is the
+            // user's entry point into mounting a host.
             container(
-                text(t("pick_host_to_start"))
-                    .size(12)
-                    .color(OryxisColors::t().text_muted),
+                column![
+                    iced_fonts::lucide::server()
+                        .size(44)
+                        .color(OryxisColors::t().text_muted),
+                    Space::new().height(16),
+                    text(t("pick_host_to_start"))
+                        .size(15)
+                        .color(OryxisColors::t().text_primary),
+                    Space::new().height(16),
+                    crate::widgets::styled_button(
+                        t("pick_a_host"),
+                        Message::SftpOpenPicker(side),
+                        OryxisColors::t().accent,
+                    ),
+                ]
+                .align_x(iced::Alignment::Center),
             )
-            .padding(12)
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .center_x(Length::Fill)
+            .center_y(Length::Fill)
             .into()
         } else {
             let mut col = column![].spacing(0);

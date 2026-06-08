@@ -51,6 +51,13 @@ impl Oryxis {
             base
         };
 
+        // SFTP dialogs (picker / rename / new / properties / overwrite /
+        // delete) layer here so they blanket the whole window like the
+        // global pickers above, instead of only the SFTP panes. No-op when
+        // no SFTP modal is open. This keeps the invariant that a set modal
+        // flag always corresponds to a visible, input-owning overlay.
+        let composed = self.layer_sftp_modals(composed);
+
         // Browser-style fullscreen overlays: on-enter hint banner and
         // hover-only round X. Both stack above any modal scrim so the
         // user can always escape immersive mode even when a picker is

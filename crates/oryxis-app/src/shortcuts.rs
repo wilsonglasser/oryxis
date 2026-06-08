@@ -82,10 +82,11 @@ impl Oryxis {
     /// The terminal input arrives via a global subscription
     /// (`subscription.rs`) that bypasses the widget tree, so a modal's own
     /// focused `text_input` does not stop the same press from also reaching
-    /// the PTY, only this predicate does. Global modals must ALSO appear in
-    /// `close_topmost_modal` so Esc dismisses them. View-local modals (e.g.
-    /// the SFTP browser's) are out of this global Esc path; they currently
-    /// have no Esc-close of their own (a pre-existing gap, not handled here).
+    /// the PTY, only this predicate does. Every modal here MUST also be a
+    /// full-window overlay (so a set flag always means a visible, input-
+    /// owning modal) and SHOULD appear in `close_topmost_modal` so Esc
+    /// dismisses it. The SFTP modals now layer at the app root via
+    /// `layer_sftp_modals`, so they satisfy that invariant too.
     pub(crate) fn any_modal_blocks_input(&self) -> bool {
         self.show_new_tab_picker
             || self.show_tab_jump
@@ -107,7 +108,7 @@ impl Oryxis {
             || self.ui_theme_editor.is_some()
             || self.show_share_dialog
             || self.cloud_import_confirm_visible
-            // SFTP modals with a text field (render over a live terminal tab).
+            // SFTP modals (full-window overlays via `layer_sftp_modals`).
             || self.sftp.rename.is_some()
             || self.sftp.new_entry.is_some()
             || self.sftp.properties.is_some()
@@ -190,6 +191,13 @@ impl Oryxis {
         if self.cloud_import_confirm_visible {
             self.cloud_import_confirm_visible = false;
             self.cloud_discover_default_group_picker_open = false;
+            return true;
+        }
+        // SFTP host picker: no inline Cancel button (it dismisses on a
+        // backdrop click), so Esc is its keyboard equivalent. Mirrors the
+        // `SftpClosePicker` handler, which only flips the flag.
+        if self.sftp.picker_open {
+            self.sftp.picker_open = false;
             return true;
         }
         // Burger menu last; it's a dropdown rather than a modal but
