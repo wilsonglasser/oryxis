@@ -338,6 +338,45 @@ impl Oryxis {
                         }
                     }
             }
+            // Text committed by the OS IME (composed CJK characters, etc.),
+            // delivered by the global subscription separately from
+            // KeyboardEvent. Only forward to the PTY when the terminal
+            // genuinely owns input: terminal view, no host editor panel or
+            // modal stealing focus, cursor not over the chat sidebar. When a
+            // text_input is focused it handles its own Commit and inserts the
+            // text itself, so forwarding here would also echo it into the
+            // live session. Mirrors the KeyboardEvent guards, plus the
+            // host-panel check (which KeyboardEvent handles via Tab routing).
+            Message::TerminalImeCommit(text) => {
+                if text.is_empty()
+                    || self.active_view != crate::state::View::Terminal
+                    || self.show_host_panel
+                    || self.any_modal_blocks_input()
+                {
+                    return Ok(Task::none());
+                }
+                let cursor_in_chat_sidebar = self
+                    .active_tab
+                    .and_then(|i| self.tabs.get(i))
+                    .map(|t| t.chat_visible)
+                    .unwrap_or(false)
+                    && self.mouse_position.x
+                        > (self.window_size.width - self.chat_sidebar_width);
+                if cursor_in_chat_sidebar {
+                    return Ok(Task::none());
+                }
+                if let Some(tab_idx) = self.active_tab
+                    && self.connecting.is_none()
+                    && let Some(tab) = self.tabs.get(tab_idx)
+                {
+                    let bytes = text.into_bytes();
+                    if let Some(ref ssh) = tab.active().ssh_session {
+                        let _ = ssh.write(&bytes);
+                    } else if let Ok(mut state) = tab.active().terminal.lock() {
+                        state.write(&bytes);
+                    }
+                }
+            }
             m => return Err(m),
         }
         Ok(Task::none())

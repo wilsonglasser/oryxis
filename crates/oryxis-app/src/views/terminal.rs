@@ -129,10 +129,13 @@ impl Oryxis {
             .on_font_size_decrease(Message::TerminalFontSizeDecrease)
             .on_paste_request(Message::TerminalPasteFromClipboard)
             .on_terminal_input(Message::TerminalInput);
-        canvas(term_view)
+        // Wrap the canvas so the focused pane asks the OS to enable its IME.
+        // The terminal is a canvas (not a text_input), so without this winit
+        // keeps the IME disabled and CJK input can't be switched on.
+        let term_canvas = canvas(term_view)
             .width(Length::Fill)
-            .height(Length::Fill)
-            .into()
+            .height(Length::Fill);
+        crate::widgets::ime_host(term_canvas, is_focused)
     }
 
     pub(crate) fn view_terminal_sidebar<'a>(&'a self, tab: &'a TerminalTab) -> Element<'a, Message> {

@@ -1116,6 +1116,156 @@ pub(crate) fn bounds_reporter<'a, Message: 'a>(
     })
 }
 
+/// Wraps `content` (a terminal pane canvas) and, while `enabled` is true,
+/// asks the runtime to turn the OS IME on for this surface. The terminal is
+/// an `iced` canvas, not a `text_input`, so nothing in its widget tree ever
+/// requests an input method, and winit defaults `set_ime_allowed(false)`,
+/// which locks the IME to direct (English) mode and blocks CJK composition.
+/// This decorator closes that gap: every other behaviour delegates straight
+/// to the inner widget, so it is transparent apart from the IME request.
+///
+/// The request is only honoured by the shell during a `RedrawRequested`
+/// frame, so we issue it there. Only the focused pane (`enabled`) drives the
+/// IME, so split panes don't fight over the cursor area. The committed text
+/// itself arrives as `Event::InputMethod(Commit(..))` and is routed to the
+/// PTY in `subscription.rs` / `dispatch_terminal.rs`, not here.
+///
+/// The candidate box is anchored near the bottom-left (the usual prompt row)
+/// rather than the live caret. Caret-following is a future polish; this keeps
+/// the popup on-screen and functional.
+pub(crate) fn ime_host<'a, Message: 'a>(
+    content: impl Into<Element<'a, Message>>,
+    enabled: bool,
+) -> Element<'a, Message> {
+    use iced::advanced::widget::{tree, Operation, Tree, Widget};
+    use iced::advanced::{input_method, layout, mouse, overlay, renderer, Layout, Shell};
+    use iced::{Event, Length as L, Point, Rectangle, Size, Vector};
+
+    struct ImeHost<'a, Message> {
+        content: Element<'a, Message>,
+        enabled: bool,
+    }
+
+    impl<Message> Widget<Message, Theme, iced::Renderer> for ImeHost<'_, Message> {
+        fn tag(&self) -> tree::Tag {
+            self.content.as_widget().tag()
+        }
+        fn state(&self) -> tree::State {
+            self.content.as_widget().state()
+        }
+        fn children(&self) -> Vec<Tree> {
+            self.content.as_widget().children()
+        }
+        fn diff(&self, tree: &mut Tree) {
+            self.content.as_widget().diff(tree);
+        }
+        fn size(&self) -> Size<L> {
+            self.content.as_widget().size()
+        }
+        fn size_hint(&self) -> Size<L> {
+            self.content.as_widget().size_hint()
+        }
+        fn layout(
+            &mut self,
+            tree: &mut Tree,
+            renderer: &iced::Renderer,
+            limits: &layout::Limits,
+        ) -> layout::Node {
+            self.content.as_widget_mut().layout(tree, renderer, limits)
+        }
+        fn draw(
+            &self,
+            tree: &Tree,
+            renderer: &mut iced::Renderer,
+            theme: &Theme,
+            style: &renderer::Style,
+            layout: Layout<'_>,
+            cursor: mouse::Cursor,
+            viewport: &Rectangle,
+        ) {
+            self.content
+                .as_widget()
+                .draw(tree, renderer, theme, style, layout, cursor, viewport);
+        }
+        fn operate(
+            &mut self,
+            tree: &mut Tree,
+            layout: Layout<'_>,
+            renderer: &iced::Renderer,
+            operation: &mut dyn Operation,
+        ) {
+            self.content
+                .as_widget_mut()
+                .operate(tree, layout, renderer, operation);
+        }
+        fn update(
+            &mut self,
+            tree: &mut Tree,
+            event: &Event,
+            layout: Layout<'_>,
+            cursor: mouse::Cursor,
+            renderer: &iced::Renderer,
+            shell: &mut Shell<'_, Message>,
+            viewport: &Rectangle,
+        ) {
+            self.content
+                .as_widget_mut()
+                .update(tree, event, layout, cursor, renderer, shell, viewport);
+
+            // The shell only honours an input-method request issued during a
+            // redraw frame; only the focused pane requests it.
+            if self.enabled
+                && matches!(
+                    event,
+                    Event::Window(iced::window::Event::RedrawRequested(_))
+                )
+            {
+                let b = layout.bounds();
+                let h = 18.0_f32.min(b.height);
+                let cursor_area = Rectangle::new(
+                    Point::new(b.x + 8.0, b.y + (b.height - h).max(0.0)),
+                    Size::new(2.0, h),
+                );
+                let ime: input_method::InputMethod = input_method::InputMethod::Enabled {
+                    cursor: cursor_area,
+                    purpose: input_method::Purpose::Normal,
+                    preedit: None,
+                };
+                shell.request_input_method(&ime);
+            }
+        }
+        fn mouse_interaction(
+            &self,
+            tree: &Tree,
+            layout: Layout<'_>,
+            cursor: mouse::Cursor,
+            viewport: &Rectangle,
+            renderer: &iced::Renderer,
+        ) -> mouse::Interaction {
+            self.content
+                .as_widget()
+                .mouse_interaction(tree, layout, cursor, viewport, renderer)
+        }
+        fn overlay<'b>(
+            &'b mut self,
+            tree: &'b mut Tree,
+            layout: Layout<'b>,
+            renderer: &iced::Renderer,
+            viewport: &Rectangle,
+            translation: Vector,
+        ) -> Option<overlay::Element<'b, Message, Theme, iced::Renderer>> {
+            self.content
+                .as_widget_mut()
+                .overlay(tree, layout, renderer, viewport, translation)
+        }
+    }
+
+    Element::new(ImeHost {
+        content: content.into(),
+        enabled,
+    })
+}
+
 /// The single, canonical full-window modal overlay: `base` view, a scrim
 /// that absorbs both click and hover, and a centered `card` that traps its
 /// own clicks. Every blocking modal should route through this so the scrim

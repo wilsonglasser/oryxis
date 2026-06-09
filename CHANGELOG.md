@@ -4,6 +4,22 @@ All notable changes to Oryxis are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the
 project uses [SemVer](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.2] - Unreleased
+
+### Fixed
+- **IME / CJK input was blocked in the terminal.** With a terminal open, the
+  OS input method (IME) stayed locked in direct (English) mode and could not
+  be switched to Korean / Chinese / Japanese composition. The terminal is an
+  `iced` canvas rather than a `text_input`, so nothing in its widget tree ever
+  asked the runtime for an input method, and winit defaults `set_ime_allowed`
+  to off, which is exactly the "stuck in EN" state. The focused terminal pane
+  now requests the input method on every redraw, so the IME can be switched to
+  any Asian script just like in the app's text fields, and the composed text
+  (delivered as a separate IME commit event) is forwarded to the active local
+  or SSH session, behind the same focus guards as keystrokes so it never leaks
+  into a focused text field or modal. The candidate popup is anchored near the
+  prompt area; following the live caret is a future refinement.
+
 ## [0.8.1] - 2026-06-08
 
 ### Fixed

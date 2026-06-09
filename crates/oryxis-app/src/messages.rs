@@ -256,6 +256,10 @@ pub enum Message {
     // Terminal I/O
     PtyOutput(Uuid, Vec<u8>),  // (pane_id, bytes)
     KeyboardEvent(keyboard::Event),
+    /// Text committed by the OS IME (e.g. a composed CJK character).
+    /// Arrives separately from `KeyboardEvent`; forwarded to the active
+    /// PTY in `dispatch_terminal` behind the same focus guards.
+    TerminalImeCommit(String),
     MouseMoved(Point),
     WindowResized(iced::Size),
     /// OS window gained (`true`) or lost (`false`) focus. Gates the

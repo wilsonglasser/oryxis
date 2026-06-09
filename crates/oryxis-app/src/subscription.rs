@@ -19,9 +19,22 @@ static LAST_MOUSE_Y: AtomicI32 = AtomicI32::new(i32::MIN);
 
 impl Oryxis {
     pub fn subscription(&self) -> Subscription<Message> {
-        let events = iced::event::listen_with(|event, _status, _window| {
+        let events = iced::event::listen_with(|event, status, _window| {
             match event {
                 iced::event::Event::Keyboard(ke) => Some(Message::KeyboardEvent(ke)),
+                // Text committed by the OS IME (composed CJK characters,
+                // etc.). Routed to the active PTY in dispatch_terminal,
+                // behind the same focus guards as KeyboardEvent. Preedit /
+                // open / close phases are handled by the OS overlay; only
+                // the final commit needs forwarding. The `Ignored` guard
+                // drops commits that a focused text_input already consumed
+                // (it captures the event), so composing into a text field
+                // never echoes into the terminal underneath.
+                iced::event::Event::InputMethod(
+                    iced::advanced::input_method::Event::Commit(text),
+                ) if status == iced::event::Status::Ignored => {
+                    Some(Message::TerminalImeCommit(text))
+                }
                 iced::event::Event::Mouse(iced::mouse::Event::CursorMoved { position }) => {
                     // Quantise to a 4 px grid. Same cell as last forward
                     // → drop the event before it hits the subscription
