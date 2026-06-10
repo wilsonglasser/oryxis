@@ -340,29 +340,17 @@ impl Oryxis {
             }
             // Text committed by the OS IME (composed CJK characters, etc.),
             // delivered by the global subscription separately from
-            // KeyboardEvent. Only forward to the PTY when the terminal
-            // genuinely owns input: terminal view, no host editor panel or
-            // modal stealing focus, cursor not over the chat sidebar. When a
-            // text_input is focused it handles its own Commit and inserts the
-            // text itself, so forwarding here would also echo it into the
-            // live session. Mirrors the KeyboardEvent guards, plus the
-            // host-panel check (which KeyboardEvent handles via Tab routing).
+            // KeyboardEvent. Forward to the PTY under the same conditions as
+            // a keystroke: no host editor panel or modal stealing focus, and
+            // the cursor not over the chat sidebar. Deliberately does NOT
+            // gate on active_view: in workspace mode a focused terminal runs
+            // under the Dashboard view, not a dedicated Terminal view, so the
+            // KeyboardEvent path doesn't check it either. When a text_input is
+            // focused it handles its own Commit and inserts the text itself;
+            // the host-panel / modal guards keep that from also hitting the
+            // session.
             Message::TerminalImeCommit(text) => {
-                // TEMP diagnostic for the IME-into-terminal investigation.
-                crate::util::ime_debug(&format!(
-                    "commit handler: text={:?} view={:?} host_panel={} modal={} active_tab={:?} connecting={}",
-                    text,
-                    self.active_view,
-                    self.show_host_panel,
-                    self.any_modal_blocks_input(),
-                    self.active_tab,
-                    self.connecting.is_some(),
-                ));
-                if text.is_empty()
-                    || self.active_view != crate::state::View::Terminal
-                    || self.show_host_panel
-                    || self.any_modal_blocks_input()
-                {
+                if text.is_empty() || self.show_host_panel || self.any_modal_blocks_input() {
                     return Ok(Task::none());
                 }
                 let cursor_in_chat_sidebar = self
