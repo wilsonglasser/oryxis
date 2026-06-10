@@ -26,14 +26,18 @@ impl Oryxis {
                 // etc.). Routed to the active PTY in dispatch_terminal,
                 // behind the same focus guards as KeyboardEvent. Preedit /
                 // open / close phases are handled by the OS overlay; only
-                // the final commit needs forwarding. The `Ignored` guard
-                // drops commits that a focused text_input already consumed
-                // (it captures the event), so composing into a text field
-                // never echoes into the terminal underneath.
-                iced::event::Event::InputMethod(
-                    iced::advanced::input_method::Event::Commit(text),
-                ) if status == iced::event::Status::Ignored => {
-                    Some(Message::TerminalImeCommit(text))
+                // the final commit needs forwarding.
+                iced::event::Event::InputMethod(ime_event) => {
+                    // TEMP diagnostic for the IME-into-terminal investigation.
+                    // Silent unless ORYXIS_IME_DEBUG is set; remove before release.
+                    if std::env::var_os("ORYXIS_IME_DEBUG").is_some() {
+                        eprintln!("[oryxis-ime] event={ime_event:?} status={status:?}");
+                    }
+                    if let iced::advanced::input_method::Event::Commit(text) = ime_event {
+                        Some(Message::TerminalImeCommit(text))
+                    } else {
+                        None
+                    }
                 }
                 iced::event::Event::Mouse(iced::mouse::Event::CursorMoved { position }) => {
                     // Quantise to a 4 px grid. Same cell as last forward
