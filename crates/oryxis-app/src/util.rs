@@ -159,6 +159,21 @@ pub(crate) fn ctrl_key_bytes(key: &keyboard::Key) -> Option<Vec<u8>> {
     }
 }
 
+/// TEMP diagnostic for the IME-into-terminal investigation. Appends a line
+/// to `oryxis-ime.log` in the OS temp dir, but only when ORYXIS_IME_DEBUG is
+/// set, so it works in the release build (which has no console). Remove
+/// before cutting v0.8.2.
+pub(crate) fn ime_debug(line: &str) {
+    if std::env::var_os("ORYXIS_IME_DEBUG").is_none() {
+        return;
+    }
+    use std::io::Write;
+    let path = std::env::temp_dir().join("oryxis-ime.log");
+    if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(path) {
+        let _ = writeln!(f, "{line}");
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

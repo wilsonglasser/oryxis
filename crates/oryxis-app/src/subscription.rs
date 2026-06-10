@@ -29,10 +29,9 @@ impl Oryxis {
                 // the final commit needs forwarding.
                 iced::event::Event::InputMethod(ime_event) => {
                     // TEMP diagnostic for the IME-into-terminal investigation.
-                    // Silent unless ORYXIS_IME_DEBUG is set; remove before release.
-                    if std::env::var_os("ORYXIS_IME_DEBUG").is_some() {
-                        eprintln!("[oryxis-ime] event={ime_event:?} status={status:?}");
-                    }
+                    crate::util::ime_debug(&format!(
+                        "subscription: event={ime_event:?} status={status:?}"
+                    ));
                     if let iced::advanced::input_method::Event::Commit(text) = ime_event {
                         Some(Message::TerminalImeCommit(text))
                     } else {

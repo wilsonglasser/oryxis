@@ -349,18 +349,15 @@ impl Oryxis {
             // host-panel check (which KeyboardEvent handles via Tab routing).
             Message::TerminalImeCommit(text) => {
                 // TEMP diagnostic for the IME-into-terminal investigation.
-                // Silent unless ORYXIS_IME_DEBUG is set; remove before release.
-                if std::env::var_os("ORYXIS_IME_DEBUG").is_some() {
-                    eprintln!(
-                        "[oryxis-ime] commit handler text={:?} view={:?} host_panel={} modal={} active_tab={:?} connecting={}",
-                        text,
-                        self.active_view,
-                        self.show_host_panel,
-                        self.any_modal_blocks_input(),
-                        self.active_tab,
-                        self.connecting.is_some(),
-                    );
-                }
+                crate::util::ime_debug(&format!(
+                    "commit handler: text={:?} view={:?} host_panel={} modal={} active_tab={:?} connecting={}",
+                    text,
+                    self.active_view,
+                    self.show_host_panel,
+                    self.any_modal_blocks_input(),
+                    self.active_tab,
+                    self.connecting.is_some(),
+                ));
                 if text.is_empty()
                     || self.active_view != crate::state::View::Terminal
                     || self.show_host_panel
@@ -385,9 +382,15 @@ impl Oryxis {
                     let bytes = text.into_bytes();
                     if let Some(ref ssh) = tab.active().ssh_session {
                         let _ = ssh.write(&bytes);
+                        crate::util::ime_debug(&format!("wrote {} bytes to SSH", bytes.len()));
                     } else if let Ok(mut state) = tab.active().terminal.lock() {
                         state.write(&bytes);
+                        crate::util::ime_debug(&format!("wrote {} bytes to local PTY", bytes.len()));
+                    } else {
+                        crate::util::ime_debug("guards passed but no ssh and PTY lock failed");
                     }
+                } else {
+                    crate::util::ime_debug("dropped after sidebar guard: no active_tab or connecting");
                 }
             }
             m => return Err(m),
