@@ -17,8 +17,8 @@ project uses [SemVer](https://semver.org/spec/v2.0.0.html).
   any Asian script just like in the app's text fields, and the composed text
   (delivered as a separate IME commit event) is forwarded to the active local
   or SSH session, behind the same focus guards as keystrokes so it never leaks
-  into a focused text field or modal. The candidate popup is anchored near the
-  prompt area; following the live caret is a future refinement.
+  into a focused text field or modal. The candidate popup follows the terminal
+  caret.
 
 ## [0.8.1] - 2026-06-08
 

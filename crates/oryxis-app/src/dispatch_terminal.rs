@@ -370,15 +370,9 @@ impl Oryxis {
                     let bytes = text.into_bytes();
                     if let Some(ref ssh) = tab.active().ssh_session {
                         let _ = ssh.write(&bytes);
-                        crate::util::ime_debug(&format!("wrote {} bytes to SSH", bytes.len()));
                     } else if let Ok(mut state) = tab.active().terminal.lock() {
                         state.write(&bytes);
-                        crate::util::ime_debug(&format!("wrote {} bytes to local PTY", bytes.len()));
-                    } else {
-                        crate::util::ime_debug("guards passed but no ssh and PTY lock failed");
                     }
-                } else {
-                    crate::util::ime_debug("dropped after sidebar guard: no active_tab or connecting");
                 }
             }
             m => return Err(m),

@@ -19,7 +19,7 @@ static LAST_MOUSE_Y: AtomicI32 = AtomicI32::new(i32::MIN);
 
 impl Oryxis {
     pub fn subscription(&self) -> Subscription<Message> {
-        let events = iced::event::listen_with(|event, status, _window| {
+        let events = iced::event::listen_with(|event, _status, _window| {
             match event {
                 iced::event::Event::Keyboard(ke) => Some(Message::KeyboardEvent(ke)),
                 // Text committed by the OS IME (composed CJK characters,
@@ -27,17 +27,9 @@ impl Oryxis {
                 // behind the same focus guards as KeyboardEvent. Preedit /
                 // open / close phases are handled by the OS overlay; only
                 // the final commit needs forwarding.
-                iced::event::Event::InputMethod(ime_event) => {
-                    // TEMP diagnostic for the IME-into-terminal investigation.
-                    crate::util::ime_debug(&format!(
-                        "subscription: event={ime_event:?} status={status:?}"
-                    ));
-                    if let iced::advanced::input_method::Event::Commit(text) = ime_event {
-                        Some(Message::TerminalImeCommit(text))
-                    } else {
-                        None
-                    }
-                }
+                iced::event::Event::InputMethod(
+                    iced::advanced::input_method::Event::Commit(text),
+                ) => Some(Message::TerminalImeCommit(text)),
                 iced::event::Event::Mouse(iced::mouse::Event::CursorMoved { position }) => {
                     // Quantise to a 4 px grid. Same cell as last forward
                     // → drop the event before it hits the subscription
