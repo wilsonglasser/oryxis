@@ -391,8 +391,13 @@ impl Oryxis {
         }
         cluster_items.push(plus_btn);
         cluster_items.push(Space::new().width(2).into());
-        cluster_items.push(sidebar_btn());
-        cluster_items.push(Space::new().width(2).into());
+        // The side-panel toggle (Chat / Snippets / History) only makes
+        // sense inside a connection tab, so skip it on the navigation
+        // views where there's no terminal session to attach a panel to.
+        if self.active_tab.is_some() {
+            cluster_items.push(sidebar_btn());
+            cluster_items.push(Space::new().width(2).into());
+        }
         cluster_items.push(chrome_row.into());
         let right_cluster: Element<'_, Message> = crate::widgets::dir_row(cluster_items)
             .align_y(iced::Alignment::Center)

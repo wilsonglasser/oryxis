@@ -836,6 +836,11 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "max_reconnect_attempts" => "Maximale Wiederverbindungsversuche",
         "terminal_font" => "Terminal-Schriftart",
         "os_detection" => "Remote-OS nach Verbindung erkennen",
+        "session_logging" => "Sitzungsaufzeichnung",
+        "setting_session_logging_desc" => "Zeichnet die Terminalausgabe von SSH-Sitzungen im Tresor auf. Eine Host-Einstellung kann dies überschreiben.",
+        "session_log_default" => "Standard",
+        "session_log_on" => "Ein",
+        "session_log_off" => "Aus",
         "share" => "Teilen",
 
 

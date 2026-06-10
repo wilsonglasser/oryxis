@@ -150,6 +150,21 @@ impl Oryxis {
             );
         }
 
+        // Session-log flush ticker. Only mounts while at least one pane
+        // is recording; drains the per-pane output buffers into the vault
+        // every 2 s so an idle-but-trickling session still persists
+        // promptly without a write per SSH chunk.
+        if self
+            .tabs
+            .iter()
+            .any(|t| t.pane_grid.panes.values().any(|p| p.session_log_id.is_some()))
+        {
+            subs.push(
+                iced::time::every(std::time::Duration::from_secs(2))
+                    .map(|_| Message::SessionLogFlushTick),
+            );
+        }
+
         // Cloud auto-refresh ticker. Only mounts the subscription when
         // the user enabled the toggle in Settings; otherwise zero
         // background API calls. Interval reads the persisted setting

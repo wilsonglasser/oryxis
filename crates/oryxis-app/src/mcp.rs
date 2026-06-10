@@ -87,6 +87,42 @@ fn oryxis_mcp_entry(cmd: &str, token: &str) -> serde_json::Value {
     }
 }
 
+/// MCP entry for an AI client running *inside* WSL on a Windows host.
+///
+/// A Windows process spawned from WSL inherits the *Linux* environment,
+/// and WSL does not forward custom variables (`ORYXIS_MCP_TOKEN`)
+/// across the boundary. A plain `env` block on a `/mnt/c/...exe` entry
+/// therefore never reaches `oryxis-mcp.exe`: the token gate sees an
+/// empty token and rejects every call with "token mismatch". (The
+/// binary still resolves the correct Windows vault via the interop
+/// user's profile, so the token is the only thing missing.)
+///
+/// When a token is set we launch through `cmd.exe`, which rebuilds the
+/// Windows environment, and inject the token Windows-side with `set`
+/// before invoking the binary. `cmd.exe`'s UNC-cwd warning lands on
+/// stderr, so the JSON-RPC stream on stdout stays clean. `win_exe` is
+/// the native `C:\...exe` path (cmd is a Windows program), emitted
+/// unquoted: the WSL argv -> Windows command-line translation rewrites
+/// embedded quotes to `\"`, which cmd rejects. A username with a space
+/// in `C:\Users\<name>` is the one unsupported case; standard profile
+/// folders have none.
+///
+/// With no token, auth is off and the plain `/mnt/c/...exe` launch
+/// already works, so we keep `wsl_exe` for that path.
+fn oryxis_mcp_entry_wsl(wsl_exe: &str, win_exe: &str, token: &str) -> serde_json::Value {
+    if token.is_empty() {
+        return serde_json::json!({ "command": wsl_exe });
+    }
+    // cmd.exe lives under the Windows root; the WSL mount is the only
+    // path the Linux-side client can exec it through.
+    const CMD: &str = "/mnt/c/Windows/System32/cmd.exe";
+    let inner = format!("set ORYXIS_MCP_TOKEN={token}&& {win_exe}");
+    serde_json::json!({
+        "command": CMD,
+        "args": ["/c", inner],
+    })
+}
+
 /// The JSON snippet users need to copy. When `token` is non-empty
 /// the snippet includes an `env` block that passes
 /// `ORYXIS_MCP_TOKEN` to the spawned MCP server; the server refuses
@@ -102,16 +138,16 @@ pub(crate) fn mcp_config_json(token: &str) -> String {
     serde_json::to_string_pretty(&root).unwrap_or_else(|_| String::from("{}"))
 }
 
-/// Same as [`mcp_config_json`] but with the binary expressed as its
-/// WSL mount path (`/mnt/c/...`), for an AI client (Claude Code,
-/// Cursor) running *inside* a WSL distro on a Windows host. The
-/// Windows app produces this so the user doesn't have to translate the
-/// `C:\...` path into `/mnt/c/...` by hand.
+/// Same as [`mcp_config_json`] but for an AI client (Claude Code,
+/// Cursor) running *inside* a WSL distro on a Windows host. See
+/// [`oryxis_mcp_entry_wsl`] for the cmd.exe wrapper that carries the
+/// token across the WSL -> Windows boundary; the Windows app produces
+/// this so the user doesn't have to assemble it by hand.
 pub(crate) fn mcp_config_json_wsl(token: &str) -> String {
-    let cmd = mcp_wsl_command();
+    let entry = oryxis_mcp_entry_wsl(&mcp_wsl_command(), &mcp_binary_command(), token);
     let root = serde_json::json!({
         "mcpServers": {
-            "oryxis": oryxis_mcp_entry(&cmd, token),
+            "oryxis": entry,
         }
     });
     serde_json::to_string_pretty(&root).unwrap_or_else(|_| String::from("{}"))
@@ -165,8 +201,8 @@ pub(crate) fn install_mcp_config_to_file(token: &str) -> Result<String, String> 
 /// inside WSL on a Windows host. Shells out to `wsl.exe` (default
 /// distro): reads the current config, merges in Rust so the JSON stays
 /// well-formed, and writes the result back through stdin so the
-/// payload never has to survive shell quoting. The `command` field
-/// uses the `/mnt/c/...` mount path from [`mcp_wsl_command`].
+/// payload never has to survive shell quoting. The entry shape comes
+/// from [`oryxis_mcp_entry_wsl`] (cmd.exe wrapper when a token is set).
 ///
 /// Only meaningful on Windows; returns an error elsewhere, where there
 /// is no `wsl.exe` to talk to.
@@ -220,8 +256,8 @@ pub(crate) fn install_mcp_config_to_wsl(token: &str) -> Result<String, String> {
         let servers_map = servers
             .as_object_mut()
             .ok_or("mcpServers is not an object")?;
-        let cmd = mcp_wsl_command();
-        servers_map.insert("oryxis".to_string(), oryxis_mcp_entry(&cmd, token));
+        let entry = oryxis_mcp_entry_wsl(&mcp_wsl_command(), &mcp_binary_command(), token);
+        servers_map.insert("oryxis".to_string(), entry);
 
         let output =
             serde_json::to_string_pretty(&root).map_err(|e| format!("Failed to serialize: {e}"))?;
@@ -565,4 +601,37 @@ pub(crate) fn mcp_info_panel<'a>(
             ..Default::default()
         })
         .into()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::oryxis_mcp_entry_wsl;
+
+    const WSL: &str = "/mnt/c/Users/wilso/.oryxis/bin/oryxis-mcp.exe";
+    const WIN: &str = "C:\\Users\\wilso\\.oryxis\\bin\\oryxis-mcp.exe";
+
+    // With a token, the WSL entry must launch through cmd.exe and inject
+    // the token Windows-side. A plain `env` block is wrong here: WSL does
+    // not forward env vars to a spawned Windows process, so the binary
+    // would see an empty token and reject every call.
+    #[test]
+    fn wsl_entry_with_token_wraps_through_cmd() {
+        let v = oryxis_mcp_entry_wsl(WSL, WIN, "deadbeef");
+        assert_eq!(v["command"], "/mnt/c/Windows/System32/cmd.exe");
+        let args = v["args"].as_array().expect("args array");
+        assert_eq!(args[0], "/c");
+        assert_eq!(args[1], format!("set ORYXIS_MCP_TOKEN=deadbeef&& {WIN}"));
+        // The token must not also leak into an env block that never arrives.
+        assert!(v.get("env").is_none());
+    }
+
+    // No token means auth is off; the direct /mnt/c/...exe launch already
+    // works, so no cmd.exe wrapper is emitted.
+    #[test]
+    fn wsl_entry_without_token_stays_direct() {
+        let v = oryxis_mcp_entry_wsl(WSL, WIN, "");
+        assert_eq!(v["command"], WSL);
+        assert!(v.get("args").is_none());
+        assert!(v.get("env").is_none());
+    }
 }

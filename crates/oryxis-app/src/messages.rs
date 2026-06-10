@@ -526,6 +526,8 @@ pub enum Message {
     PortForwardStarted(Uuid, Result<Arc<ForwardSession>, String>),
     /// Periodic liveness sweep; drops forwards whose connection died.
     PortForwardLivenessTick,
+    /// Periodic flush of buffered session-log output to the vault.
+    SessionLogFlushTick,
     PortForwardCardHovered(usize),
     PortForwardCardUnhovered,
     PortForwardSearchChanged(String),
@@ -615,6 +617,8 @@ pub enum Message {
     SettingToggleAutoReconnect,
     SettingMaxReconnectChanged(String),
     SettingToggleOsDetection,
+    /// Toggle the global "record terminal sessions" setting.
+    SettingToggleSessionLogging,
     OsDetected(Uuid, Option<String>),
     SettingToggleAutoCheckUpdates,
 
@@ -1009,6 +1013,8 @@ pub enum Message {
 
     // MCP
     EditorToggleMcpEnabled,
+    /// Cycle the per-host session-recording override: Default -> On -> Off.
+    EditorCycleSessionLogging,
     ToggleMcpServer,
     ShowMcpInfo,
     HideMcpInfo,

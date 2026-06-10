@@ -38,6 +38,18 @@ enum PaneConnMsg {
 }
 
 impl Oryxis {
+    /// Whether a new session should be recorded to the vault. A per-host
+    /// `Connection.session_logging` override wins; otherwise the global
+    /// `session_logging` setting decides. Panes without a saved
+    /// connection (cloud / SSM / local) fall through to the global value.
+    pub(crate) fn should_record_session(
+        &self,
+        conn: Option<&oryxis_core::models::connection::Connection>,
+    ) -> bool {
+        conn.and_then(|c| c.session_logging)
+            .unwrap_or(self.setting_session_logging)
+    }
+
     pub(crate) fn handle_ssh(
         &mut self,
         message: Message,
@@ -150,11 +162,17 @@ impl Oryxis {
                             let terminal = Arc::new(Mutex::new(state));
                             let tab_idx = self.tabs.len();
 
-                            // Create session log for terminal recording
-                            let session_log_id = if let Some(vault) = &self.vault {
-                                let log_id = Uuid::new_v4();
-                                let _ = vault.create_session_log(&log_id, &conn.id, &conn.label);
-                                Some(log_id)
+                            // Create session log for terminal recording,
+                            // unless recording is disabled (per-host
+                            // override or the global setting).
+                            let session_log_id = if self.should_record_session(Some(&conn)) {
+                                if let Some(vault) = &self.vault {
+                                    let log_id = Uuid::new_v4();
+                                    let _ = vault.create_session_log(&log_id, &conn.id, &conn.label);
+                                    Some(log_id)
+                                } else {
+                                    None
+                                }
                             } else {
                                 None
                             };
@@ -735,6 +753,13 @@ impl Oryxis {
                     if self.setting_os_detection { "true" } else { "false" },
                 );
             }
+            Message::SettingToggleSessionLogging => {
+                self.setting_session_logging = !self.setting_session_logging;
+                self.persist_setting(
+                    "session_logging",
+                    if self.setting_session_logging { "true" } else { "false" },
+                );
+            }
             Message::SettingToggleAutoCheckUpdates => {
                 self.setting_auto_check_updates = !self.setting_auto_check_updates;
                 self.persist_setting(
@@ -746,11 +771,24 @@ impl Oryxis {
                 self.setting_update_channel = channel;
                 self.persist_setting("update_channel", channel.as_setting());
                 // A channel switch invalidates any "skip this version" so
-                // the user is offered the other stream's build right away
-                // (and a manual re-check feels responsive).
+                // the user is offered the other stream's build right away.
                 if let Some(vault) = &self.vault {
                     let _ = vault.set_setting("skipped_update_version", "");
                 }
+                // Switching channel is an explicit intent to follow that
+                // stream, so re-check immediately (surfacing the same
+                // "Checking…" status + toast as a manual check) instead of
+                // waiting for the next boot check.
+                self.update_error = None;
+                self.update_check_status = Some("Checking\u{2026}".into());
+                self.toast = Some(crate::i18n::t("update_check_checking").to_string());
+                return Ok(Task::perform(
+                    crate::update::check_latest_release(channel),
+                    |info| match info {
+                        Some(i) => Message::UpdateCheckResult(Some(i)),
+                        None => Message::UpdateCheckResult(None),
+                    },
+                ));
             }
             Message::CheckForUpdate => {
                 if !self.setting_auto_check_updates {
@@ -907,6 +945,9 @@ impl Oryxis {
                 }
             }
             Message::SshDisconnected(pane_id) => {
+                // Persist whatever this pane recorded before we mark the
+                // log ended; otherwise the tail of the session is lost.
+                self.flush_session_logs();
                 if let Some(tab_idx) = self.pane_tab_index(pane_id) {
                     let label = self.tabs[tab_idx].label.replace(" (disconnected)", "");
                     // Clear the disconnected pane's session + end its log.
@@ -1185,11 +1226,15 @@ impl Oryxis {
         let host_key_check = self.build_host_key_check();
         let keepalive = self.effective_keepalive(&conn);
 
-        let session_log_id = self.vault.as_ref().map(|v| {
-            let id = Uuid::new_v4();
-            let _ = v.create_session_log(&id, &conn.id, &conn.label);
-            id
-        });
+        let session_log_id = if self.should_record_session(Some(&conn)) {
+            self.vault.as_ref().map(|v| {
+                let id = Uuid::new_v4();
+                let _ = v.create_session_log(&id, &conn.id, &conn.label);
+                id
+            })
+        } else {
+            None
+        };
         if let Some(log_id) = session_log_id
             && let Some(pane) = self.tabs[tab_idx].pane_by_id_mut(pane_id)
         {

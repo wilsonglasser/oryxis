@@ -836,6 +836,11 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "max_reconnect_attempts" => "最大再接続試行回数",
         "terminal_font" => "ターミナルフォント",
         "os_detection" => "接続後にリモートOSを検出",
+        "session_logging" => "セッションログ",
+        "setting_session_logging_desc" => "SSHセッションのターミナル出力をボールトに記録します。ホストごとの設定で上書きできます。",
+        "session_log_default" => "デフォルト",
+        "session_log_on" => "オン",
+        "session_log_off" => "オフ",
         "share" => "共有",
 
 

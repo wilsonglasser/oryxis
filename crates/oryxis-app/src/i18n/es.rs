@@ -836,6 +836,11 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "max_reconnect_attempts" => "Máximo de intentos de reconexión",
         "terminal_font" => "Fuente del terminal",
         "os_detection" => "Detectar SO remoto al conectar",
+        "session_logging" => "Registro de sesión",
+        "setting_session_logging_desc" => "Graba la salida del terminal de las sesiones SSH en la bóveda. Un ajuste por host puede anular esto.",
+        "session_log_default" => "Predeterminado",
+        "session_log_on" => "Activado",
+        "session_log_off" => "Desactivado",
         "share" => "Compartir",
 
 

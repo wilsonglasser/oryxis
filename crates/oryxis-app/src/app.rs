@@ -878,6 +878,9 @@ pub struct Oryxis {
     pub(crate) setting_auto_reconnect: bool,
     pub(crate) setting_max_reconnect_attempts: String,
     pub(crate) setting_os_detection: bool,
+    /// Global default for recording terminal sessions to the vault. A
+    /// per-host `Connection.session_logging` override wins over this.
+    pub(crate) setting_session_logging: bool,
     pub(crate) setting_auto_check_updates: bool,
     /// Release stream the updater follows (`stable` / `nightly`).
     pub(crate) setting_update_channel: crate::update::UpdateChannel,

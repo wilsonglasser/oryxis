@@ -289,80 +289,6 @@ impl Oryxis {
                     .width(260).padding(10).style(crate::widgets::rounded_pick_list_style),
                 ]);
 
-                let auto_update_enabled = self.setting_auto_check_updates;
-                let current_version_line = text(format!(
-                    "{} {}", t("current_version"), env!("CARGO_PKG_VERSION"),
-                ))
-                .size(11)
-                .color(OryxisColors::t().text_muted);
-                let check_now_btn = styled_button(
-                    t("check_for_updates_now"),
-                    Message::CheckForUpdateManual,
-                    OryxisColors::t().accent,
-                );
-                let status_line: Element<'_, Message> = match &self.update_check_status {
-                    Some(msg) => {
-                        let is_checking = msg == "Checking\u{2026}";
-                        let color = if is_checking {
-                            OryxisColors::t().text_muted
-                        } else if msg.starts_with("You're") {
-                            OryxisColors::t().success
-                        } else {
-                            OryxisColors::t().error
-                        };
-                        container(text(msg.clone()).size(11).color(color))
-                            .padding(Padding { top: 8.0, right: 0.0, bottom: 0.0, left: 0.0 })
-                            .into()
-                    }
-                    None => Space::new().height(0).into(),
-                };
-                let channel_picker = pick_list(
-                    Some(self.setting_update_channel),
-                    crate::update::UPDATE_CHANNELS.to_vec(),
-                    |c: &crate::update::UpdateChannel| match c {
-                        crate::update::UpdateChannel::Stable => t("update_channel_stable").to_string(),
-                        crate::update::UpdateChannel::Nightly => t("update_channel_nightly").to_string(),
-                    },
-                )
-                .on_select(Message::SettingUpdateChannelChanged)
-                .width(260)
-                .padding(10)
-                .style(crate::widgets::rounded_pick_list_style);
-                // Bleeding-edge warning, only while the nightly channel is
-                // selected, so stable users don't see scary copy.
-                let channel_note: Element<'_, Message> =
-                    if self.setting_update_channel == crate::update::UpdateChannel::Nightly {
-                        container(
-                            text(t("update_channel_nightly_warning"))
-                                .size(11)
-                                .color(OryxisColors::t().text_muted),
-                        )
-                        .padding(Padding { top: 4.0, right: 0.0, bottom: 0.0, left: 0.0 })
-                        .into()
-                    } else {
-                        Space::new().height(0).into()
-                    };
-                let auto_update_section = panel_section(column![
-                    toggle_row(
-                        crate::i18n::t("auto_check_updates"),
-                        auto_update_enabled,
-                        Message::SettingToggleAutoCheckUpdates,
-                    ),
-                    Space::new().height(4),
-                    text(t("setting_update_check_desc"))
-                        .size(11).color(OryxisColors::t().text_muted),
-                    Space::new().height(12),
-                    text(t("update_channel")).size(12).color(OryxisColors::t().text_secondary),
-                    Space::new().height(4),
-                    channel_picker,
-                    channel_note,
-                    Space::new().height(10),
-                    current_version_line,
-                    Space::new().height(8),
-                    check_now_btn,
-                    status_line,
-                ]);
-
                 let os_detection_enabled = self.setting_os_detection;
                 let os_detection_section = panel_section(column![
                     toggle_row(
@@ -372,6 +298,18 @@ impl Oryxis {
                     ),
                     Space::new().height(4),
                     text(t("setting_os_detect_desc"))
+                        .size(11).color(OryxisColors::t().text_muted),
+                ]);
+
+                let session_logging_enabled = self.setting_session_logging;
+                let session_logging_section = panel_section(column![
+                    toggle_row(
+                        crate::i18n::t("session_logging"),
+                        session_logging_enabled,
+                        Message::SettingToggleSessionLogging,
+                    ),
+                    Space::new().height(4),
+                    text(t("setting_session_logging_desc"))
                         .size(11).color(OryxisColors::t().text_muted),
                 ]);
 
@@ -410,7 +348,7 @@ impl Oryxis {
                             Space::new().height(12),
                             os_detection_section,
                             Space::new().height(12),
-                            auto_update_section,
+                            session_logging_section,
                             Space::new().height(12),
                             font_size_section,
                             Space::new().height(12),
@@ -1800,8 +1738,21 @@ impl Oryxis {
             }
 
             SettingsSection::About => {
+                // Channel-aware build string: nightly builds append the
+                // channel + short commit so a nightly user sees exactly what
+                // they're running, not just the base version number.
+                let version_str = match crate::update::build_channel() {
+                    crate::update::UpdateChannel::Nightly => format!(
+                        "Oryxis v{} nightly ({})",
+                        env!("CARGO_PKG_VERSION"),
+                        env!("ORYXIS_GIT_SHA").chars().take(7).collect::<String>(),
+                    ),
+                    crate::update::UpdateChannel::Stable => {
+                        format!("Oryxis v{}", env!("CARGO_PKG_VERSION"))
+                    }
+                };
                 let about_section = panel_section(column![
-                    text(concat!("Oryxis v", env!("CARGO_PKG_VERSION"))).size(16).color(OryxisColors::t().text_primary),
+                    text(version_str).size(16).color(OryxisColors::t().text_primary),
                     Space::new().height(4),
                     text(t("app_tagline")).size(13).color(OryxisColors::t().text_secondary),
                     Space::new().height(16),
@@ -1834,12 +1785,81 @@ impl Oryxis {
                     settings_row(t("groups"), self.groups.len().to_string()),
                 ]);
 
+                let auto_update_enabled = self.setting_auto_check_updates;
+                let check_now_btn = styled_button(
+                    t("check_for_updates_now"),
+                    Message::CheckForUpdateManual,
+                    OryxisColors::t().accent,
+                );
+                let status_line: Element<'_, Message> = match &self.update_check_status {
+                    Some(msg) => {
+                        let is_checking = msg == "Checking\u{2026}";
+                        let color = if is_checking {
+                            OryxisColors::t().text_muted
+                        } else if msg.starts_with("You're") {
+                            OryxisColors::t().success
+                        } else {
+                            OryxisColors::t().error
+                        };
+                        container(text(msg.clone()).size(11).color(color))
+                            .padding(Padding { top: 8.0, right: 0.0, bottom: 0.0, left: 0.0 })
+                            .into()
+                    }
+                    None => Space::new().height(0).into(),
+                };
+                let channel_picker = pick_list(
+                    Some(self.setting_update_channel),
+                    crate::update::UPDATE_CHANNELS.to_vec(),
+                    |c: &crate::update::UpdateChannel| match c {
+                        crate::update::UpdateChannel::Stable => t("update_channel_stable").to_string(),
+                        crate::update::UpdateChannel::Nightly => t("update_channel_nightly").to_string(),
+                    },
+                )
+                .on_select(Message::SettingUpdateChannelChanged)
+                .width(260)
+                .padding(10)
+                .style(crate::widgets::rounded_pick_list_style);
+                // Bleeding-edge warning, only while the nightly channel is
+                // selected, so stable users don't see scary copy.
+                let channel_note: Element<'_, Message> =
+                    if self.setting_update_channel == crate::update::UpdateChannel::Nightly {
+                        container(
+                            text(t("update_channel_nightly_warning"))
+                                .size(11)
+                                .color(OryxisColors::t().text_muted),
+                        )
+                        .padding(Padding { top: 4.0, right: 0.0, bottom: 0.0, left: 0.0 })
+                        .into()
+                    } else {
+                        Space::new().height(0).into()
+                    };
+                let auto_update_section = panel_section(column![
+                    toggle_row(
+                        crate::i18n::t("auto_check_updates"),
+                        auto_update_enabled,
+                        Message::SettingToggleAutoCheckUpdates,
+                    ),
+                    Space::new().height(4),
+                    text(t("setting_update_check_desc"))
+                        .size(11).color(OryxisColors::t().text_muted),
+                    Space::new().height(12),
+                    text(t("update_channel")).size(12).color(OryxisColors::t().text_secondary),
+                    Space::new().height(4),
+                    channel_picker,
+                    channel_note,
+                    Space::new().height(10),
+                    check_now_btn,
+                    status_line,
+                ]);
+
                 scrollable(
                     container(
                         column![
                             text(crate::i18n::t("about")).size(18).color(OryxisColors::t().text_primary),
                             Space::new().height(16),
                             about_section,
+                            Space::new().height(12),
+                            auto_update_section,
                             Space::new().height(12),
                             vault_section,
                             Space::new().height(24),

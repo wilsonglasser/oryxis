@@ -521,6 +521,34 @@ impl Oryxis {
             panel_divider(),
             container(
                 dir_row(vec![
+                    iced_fonts::lucide::file_text().size(14).color(OryxisColors::t().text_muted).into(),
+                    Space::new().width(10).into(),
+                    text(t("session_logging")).size(13).color(OryxisColors::t().text_secondary).into(),
+                    Space::new().width(Length::Fill).into(),
+                    {
+                        // Tri-state: Default (inherit global) / On / Off.
+                        let (label_key, bg) = match self.editor_form.session_logging {
+                            None => ("session_log_default", OryxisColors::t().bg_hover),
+                            Some(true) => ("session_log_on", OryxisColors::t().success),
+                            Some(false) => ("session_log_off", OryxisColors::t().error),
+                        };
+                        let fg = crate::theme::contrast_text_for(bg);
+                        button(text(t(label_key)).size(12).color(fg))
+                            .on_press(Message::EditorCycleSessionLogging)
+                            .style(move |_theme, _status| button::Style {
+                                background: Some(Background::Color(bg)),
+                                border: Border { radius: Radius::from(4.0), ..Default::default() },
+                                text_color: fg,
+                                ..Default::default()
+                            })
+                            .into()
+                    },
+                ]).align_y(iced::Alignment::Center)
+            )
+            .padding(Padding { top: 8.0, right: 0.0, bottom: 8.0, left: 0.0 }),
+            panel_divider(),
+            container(
+                dir_row(vec![
                     iced_fonts::lucide::key_round().size(14).color(OryxisColors::t().text_muted).into(),
                     Space::new().width(10).into(),
                     text(t("forward_ssh_agent")).size(13).color(OryxisColors::t().text_secondary).into(),

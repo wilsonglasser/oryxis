@@ -836,6 +836,11 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "max_reconnect_attempts" => "Максимум попыток переподключения",
         "terminal_font" => "Шрифт терминала",
         "os_detection" => "Определять удалённую ОС после подключения",
+        "session_logging" => "Журнал сессий",
+        "setting_session_logging_desc" => "Записывать вывод терминала SSH-сессий в хранилище. Настройка для отдельного хоста имеет приоритет.",
+        "session_log_default" => "По умолчанию",
+        "session_log_on" => "Вкл",
+        "session_log_off" => "Выкл",
         "share" => "Поделиться",
 
 

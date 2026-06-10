@@ -112,6 +112,12 @@ pub struct Connection {
     /// flag more without a schema change.
     #[serde(default)]
     pub customized_fields: Vec<String>,
+    /// Per-host override for terminal session recording. `None` follows
+    /// the global `session_logging` setting; `Some(true)` always records
+    /// this host (even when the global toggle is off); `Some(false)`
+    /// never records it (even when the global toggle is on).
+    #[serde(default)]
+    pub session_logging: Option<bool>,
 }
 
 impl Connection {
@@ -150,6 +156,7 @@ impl Connection {
             keepalive_interval: None,
             icon_style: None,
             customized_fields: Vec::new(),
+            session_logging: None,
         }
     }
 }

@@ -211,7 +211,16 @@ impl VaultStore {
         // own handle on the same file, see `oryxis-app::sync_runtime`)
         // so a contended write waits briefly instead of failing with
         // SQLITE_BUSY.
-        db.execute_batch("PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000;")?;
+        //
+        // `synchronous=NORMAL` is the SQLite-recommended pairing with WAL:
+        // the writer no longer fsyncs on every commit (only at checkpoint),
+        // which is what made high-frequency writers (session-log appends)
+        // hammer the disk. The durability trade-off is bounded: a power
+        // loss can drop the last committed transaction, never corrupt the
+        // file. Acceptable here, the vault is re-derivable user state.
+        db.execute_batch(
+            "PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA busy_timeout=5000;",
+        )?;
 
         // Tighten file permissions to 0600 on Unix, the vault holds
         // encrypted credentials but if another local user can read the
@@ -424,6 +433,23 @@ impl VaultStore {
                 data          BLOB
             );
 
+            -- Append-only recorded terminal output. The original design
+            -- stored the whole stream in `session_logs.data` and rewrote
+            -- that growing BLOB on every chunk (O(n^2) writes, disk-bound
+            -- on verbose sessions). Each append is now one INSERT of just
+            -- the new bytes; `get_session_data` concatenates by rowid. The
+            -- monotonic `id` (plain rowid, no AUTOINCREMENT needed since we
+            -- only ever delete whole logs) preserves append order. Legacy
+            -- rows keep their inline `session_logs.data` and are read back
+            -- as a prefix.
+            CREATE TABLE IF NOT EXISTS session_log_chunks (
+                id     INTEGER PRIMARY KEY,
+                log_id TEXT NOT NULL,
+                data   BLOB NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_session_log_chunks_log
+                ON session_log_chunks(log_id);
+
             -- Cloud account credentials (AWS profile / SSO / access key,
             -- K8s kubeconfig path, ...). `config` carries the non-secret
             -- JSON payload owned by each provider crate. `secret` is the
@@ -476,6 +502,10 @@ impl VaultStore {
         let _ = self.db.execute_batch("ALTER TABLE connections ADD COLUMN env_vars TEXT;");
         // Per-host character encoding label (NULL = UTF-8).
         let _ = self.db.execute_batch("ALTER TABLE connections ADD COLUMN encoding TEXT;");
+        // Per-host session-recording override. NULL = inherit the global
+        // `session_logging` setting, 0 = never record, 1 = always record.
+        // Existing rows stay NULL, so behavior is unchanged on upgrade.
+        let _ = self.db.execute_batch("ALTER TABLE connections ADD COLUMN session_logging INTEGER;");
         // Backing query for dynamic groups (ECS services / K8s workloads).
         // JSON-encoded `CloudQuery`. NULL for manual groups.
         let _ = self.db.execute_batch("ALTER TABLE groups ADD COLUMN cloud_query TEXT;");
@@ -806,8 +836,8 @@ impl VaultStore {
             "INSERT OR REPLACE INTO connections
              (id, label, hostname, port, username, auth_method, key_id, group_id,
               jump_chain, proxy, tags, notes, color, password, last_used, created_at, updated_at, identity_id, mcp_enabled, port_forwards,
-              detected_os, custom_icon, custom_color, agent_forwarding, proxy_identity_id, terminal_theme, cloud_ref, initial_command, keepalive_interval, icon_style, customized_fields, env_vars, encoding)
-             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20,?21,?22,?23,?24,?25,?26,?27,?28,?29,?30,?31,?32,?33)",
+              detected_os, custom_icon, custom_color, agent_forwarding, proxy_identity_id, terminal_theme, cloud_ref, initial_command, keepalive_interval, icon_style, customized_fields, env_vars, encoding, session_logging)
+             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20,?21,?22,?23,?24,?25,?26,?27,?28,?29,?30,?31,?32,?33,?34)",
             params![
                 conn.id.to_string(),
                 conn.label,
@@ -849,6 +879,7 @@ impl VaultStore {
                 },
                 if conn.env_vars.is_empty() { None } else { Some(serde_json::to_string(&conn.env_vars).unwrap_or_default()) },
                 conn.encoding,
+                conn.session_logging.map(|b| b as i32),
             ],
         )?;
         // Re-creation clears any stale tombstone for this id (the
@@ -871,12 +902,12 @@ impl VaultStore {
         let query = match mcp_filter {
             Some(true) => {
                 "SELECT id, label, hostname, port, username, auth_method, key_id, group_id,
-                        jump_chain, proxy, tags, notes, color, last_used, created_at, updated_at, identity_id, mcp_enabled, port_forwards, detected_os, custom_icon, custom_color, agent_forwarding, proxy_identity_id, terminal_theme, cloud_ref, initial_command, keepalive_interval, icon_style, customized_fields, env_vars, encoding
+                        jump_chain, proxy, tags, notes, color, last_used, created_at, updated_at, identity_id, mcp_enabled, port_forwards, detected_os, custom_icon, custom_color, agent_forwarding, proxy_identity_id, terminal_theme, cloud_ref, initial_command, keepalive_interval, icon_style, customized_fields, env_vars, encoding, session_logging
                  FROM connections WHERE mcp_enabled = 1 ORDER BY label"
             }
             _ => {
                 "SELECT id, label, hostname, port, username, auth_method, key_id, group_id,
-                        jump_chain, proxy, tags, notes, color, last_used, created_at, updated_at, identity_id, mcp_enabled, port_forwards, detected_os, custom_icon, custom_color, agent_forwarding, proxy_identity_id, terminal_theme, cloud_ref, initial_command, keepalive_interval, icon_style, customized_fields, env_vars, encoding
+                        jump_chain, proxy, tags, notes, color, last_used, created_at, updated_at, identity_id, mcp_enabled, port_forwards, detected_os, custom_icon, custom_color, agent_forwarding, proxy_identity_id, terminal_theme, cloud_ref, initial_command, keepalive_interval, icon_style, customized_fields, env_vars, encoding, session_logging
                  FROM connections ORDER BY label"
             }
         };
@@ -986,6 +1017,11 @@ impl VaultStore {
                         .flatten()
                         .and_then(|s| serde_json::from_str(&s).ok())
                         .unwrap_or_default(),
+                    session_logging: row
+                        .get::<_, Option<i64>>(32)
+                        .ok()
+                        .flatten()
+                        .map(|n| n != 0),
                 })
             })?
             .collect::<Result<Vec<_>, _>>()?;
@@ -2039,23 +2075,17 @@ impl VaultStore {
         Ok(())
     }
 
-    /// Append bytes to an existing session log's data BLOB.
+    /// Append recorded terminal bytes to a session log. One INSERT of just
+    /// the new bytes, no read-modify-write of the growing stream. Callers
+    /// should batch (see the app's per-pane buffer) so this fires at a
+    /// human cadence rather than once per SSH chunk.
     pub fn append_session_data(&self, id: &Uuid, data: &[u8]) -> Result<(), VaultError> {
-        let id_str = id.to_string();
-        let existing: Option<Vec<u8>> = self
-            .db
-            .query_row(
-                "SELECT data FROM session_logs WHERE id = ?1",
-                params![id_str],
-                |row| row.get(0),
-            )
-            .ok()
-            .flatten();
-        let mut buf = existing.unwrap_or_default();
-        buf.extend_from_slice(data);
+        if data.is_empty() {
+            return Ok(());
+        }
         self.db.execute(
-            "UPDATE session_logs SET data = ?1 WHERE id = ?2",
-            params![buf, id_str],
+            "INSERT INTO session_log_chunks (log_id, data) VALUES (?1, ?2)",
+            params![id.to_string(), data],
         )?;
         Ok(())
     }
@@ -2073,7 +2103,10 @@ impl VaultStore {
     /// List all session logs (metadata only, no data blob).
     pub fn list_session_logs(&self) -> Result<Vec<SessionLogEntry>, VaultError> {
         let mut stmt = self.db.prepare(
-            "SELECT id, connection_id, label, started_at, ended_at, LENGTH(COALESCE(data, X''))
+            "SELECT id, connection_id, label, started_at, ended_at,
+                    LENGTH(COALESCE(data, X'')) + COALESCE(
+                        (SELECT SUM(LENGTH(c.data)) FROM session_log_chunks c
+                         WHERE c.log_id = session_logs.id), 0)
              FROM session_logs ORDER BY started_at DESC",
         )?;
         let logs = stmt
@@ -2107,7 +2140,10 @@ impl VaultStore {
         limit: usize,
     ) -> Result<Vec<SessionLogEntry>, VaultError> {
         let mut stmt = self.db.prepare(
-            "SELECT id, connection_id, label, started_at, ended_at, LENGTH(COALESCE(data, X''))
+            "SELECT id, connection_id, label, started_at, ended_at,
+                    LENGTH(COALESCE(data, X'')) + COALESCE(
+                        (SELECT SUM(LENGTH(c.data)) FROM session_log_chunks c
+                         WHERE c.log_id = session_logs.id), 0)
              FROM session_logs ORDER BY started_at DESC LIMIT ?1 OFFSET ?2",
         )?;
         let logs = stmt
@@ -2143,30 +2179,48 @@ impl VaultStore {
         Ok(n as usize)
     }
 
-    /// Drop every session log row.
+    /// Drop every session log row (and its recorded chunks).
     pub fn clear_session_logs(&self) -> Result<(), VaultError> {
+        self.db.execute("DELETE FROM session_log_chunks", [])?;
         self.db.execute("DELETE FROM session_logs", [])?;
         Ok(())
     }
 
-    /// Get the raw data bytes for a session log.
+    /// Get the raw recorded bytes for a session log: the legacy inline
+    /// blob (empty for sessions recorded after the chunk migration)
+    /// followed by every appended chunk in append order. The row lookup
+    /// doubles as the existence check (NotFound when the log is gone).
     pub fn get_session_data(&self, id: &Uuid) -> Result<Option<Vec<u8>>, VaultError> {
-        let data: Option<Vec<u8>> = self
+        let id_str = id.to_string();
+        let legacy: Option<Vec<u8>> = self
             .db
             .query_row(
                 "SELECT data FROM session_logs WHERE id = ?1",
-                params![id.to_string()],
+                params![id_str],
                 |row| row.get(0),
             )
             .map_err(|_| VaultError::NotFound(format!("Session log {}", id)))?;
-        Ok(data)
+        let mut buf = legacy.unwrap_or_default();
+        let mut stmt = self.db.prepare(
+            "SELECT data FROM session_log_chunks WHERE log_id = ?1 ORDER BY id",
+        )?;
+        let rows = stmt.query_map(params![id_str], |row| row.get::<_, Vec<u8>>(0))?;
+        for chunk in rows {
+            buf.extend_from_slice(&chunk?);
+        }
+        Ok(Some(buf))
     }
 
-    /// Delete a session log.
+    /// Delete a session log and its recorded chunks.
     pub fn delete_session_log(&self, id: &Uuid) -> Result<(), VaultError> {
+        let id_str = id.to_string();
+        self.db.execute(
+            "DELETE FROM session_log_chunks WHERE log_id = ?1",
+            params![id_str],
+        )?;
         self.db.execute(
             "DELETE FROM session_logs WHERE id = ?1",
-            params![id.to_string()],
+            params![id_str],
         )?;
         Ok(())
     }
@@ -2781,6 +2835,116 @@ mod tests {
 
         vault.delete_session_group(&sg.id).unwrap();
         assert!(vault.list_session_groups().unwrap().is_empty());
+    }
+
+    // ── Session logs (append-only chunk recording) ──
+
+    #[test]
+    fn session_log_chunks_concatenate_in_append_order() {
+        let vault = temp_vault();
+        let log_id = Uuid::new_v4();
+        let conn_id = Uuid::new_v4();
+        vault
+            .create_session_log(&log_id, &conn_id, "web-01")
+            .unwrap();
+
+        // Append in three writes; the recorded stream must read back as
+        // the exact byte-for-byte concatenation, in order.
+        vault.append_session_data(&log_id, b"$ apt update\n").unwrap();
+        vault.append_session_data(&log_id, b"Hit:1 http://deb\n").unwrap();
+        vault.append_session_data(&log_id, b"Reading package lists\n").unwrap();
+        // Empty appends are no-ops, never a stray zero-length chunk.
+        vault.append_session_data(&log_id, b"").unwrap();
+
+        let data = vault.get_session_data(&log_id).unwrap().unwrap();
+        assert_eq!(
+            data,
+            b"$ apt update\nHit:1 http://deb\nReading package lists\n"
+        );
+
+        // Metadata size reflects the chunk bytes (no inline blob here).
+        let entry = vault
+            .list_session_logs()
+            .unwrap()
+            .into_iter()
+            .find(|e| e.id == log_id)
+            .expect("log listed");
+        assert_eq!(entry.data_size, data.len());
+    }
+
+    #[test]
+    fn session_log_reads_legacy_inline_blob_then_chunks() {
+        let vault = temp_vault();
+        let log_id = Uuid::new_v4();
+        let conn_id = Uuid::new_v4();
+        vault
+            .create_session_log(&log_id, &conn_id, "legacy")
+            .unwrap();
+        // Simulate a row recorded before the chunk migration: bytes live
+        // in the inline `data` column. New appends go to chunks; the read
+        // path must stitch legacy-prefix + chunks.
+        vault
+            .db
+            .execute(
+                "UPDATE session_logs SET data = ?1 WHERE id = ?2",
+                params![b"OLD".to_vec(), log_id.to_string()],
+            )
+            .unwrap();
+        vault.append_session_data(&log_id, b"NEW").unwrap();
+
+        let data = vault.get_session_data(&log_id).unwrap().unwrap();
+        assert_eq!(data, b"OLDNEW");
+
+        let entry = vault
+            .list_session_logs()
+            .unwrap()
+            .into_iter()
+            .find(|e| e.id == log_id)
+            .unwrap();
+        assert_eq!(entry.data_size, 6);
+    }
+
+    #[test]
+    fn deleting_session_log_drops_its_chunks() {
+        let vault = temp_vault();
+        let log_id = Uuid::new_v4();
+        vault
+            .create_session_log(&log_id, &Uuid::new_v4(), "doomed")
+            .unwrap();
+        vault.append_session_data(&log_id, b"transient").unwrap();
+
+        vault.delete_session_log(&log_id).unwrap();
+
+        // No orphan chunks left behind.
+        let orphans: i64 = vault
+            .db
+            .query_row(
+                "SELECT COUNT(*) FROM session_log_chunks WHERE log_id = ?1",
+                params![log_id.to_string()],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(orphans, 0);
+        assert!(vault.get_session_data(&log_id).is_err());
+    }
+
+    #[test]
+    fn connection_session_logging_override_round_trips() {
+        let vault = unlocked_vault();
+        // All three states survive a save/list cycle: None (inherit
+        // global), Some(true) (force on), Some(false) (force off).
+        for value in [None, Some(true), Some(false)] {
+            let mut conn = Connection::new("h", "example.com");
+            conn.session_logging = value;
+            vault.save_connection(&conn, None).unwrap();
+            let loaded = vault
+                .list_connections()
+                .unwrap()
+                .into_iter()
+                .find(|c| c.id == conn.id)
+                .expect("connection listed");
+            assert_eq!(loaded.session_logging, value);
+        }
     }
 
     // ── Crypto ──

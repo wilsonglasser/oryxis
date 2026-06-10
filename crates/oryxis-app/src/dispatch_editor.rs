@@ -97,6 +97,7 @@ impl Oryxis {
                         }).collect(),
                         mcp_enabled: conn.mcp_enabled,
                         agent_forwarding: conn.agent_forwarding,
+                        session_logging: conn.session_logging,
                         // Saved-identity reference takes precedence over
                         // an inline proxy when both are populated, mirroring
                         // the runtime resolver in `Vault::resolve_proxy`.
@@ -411,6 +412,7 @@ impl Oryxis {
                 }).collect();
                 conn.mcp_enabled = self.editor_form.mcp_enabled;
                 conn.agent_forwarding = self.editor_form.agent_forwarding;
+                conn.session_logging = self.editor_form.session_logging;
                 conn.terminal_theme = self.editor_form.terminal_theme.clone();
                 conn.icon_style = self.editor_form.icon_style.clone();
                 conn.encoding = self.editor_form.encoding.clone();

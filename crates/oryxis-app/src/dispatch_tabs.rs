@@ -292,6 +292,9 @@ impl Oryxis {
                 }));
             }
             Message::WindowClose => {
+                // Persist any buffered session-log output before the
+                // window goes away (real close or hide-to-tray both).
+                self.flush_session_logs();
                 // Honour the close-to-tray setting: when on, the
                 // user's "close" verb (custom title bar X, Alt+F4
                 // via CloseRequested subscription, etc.) hides the
@@ -653,6 +656,9 @@ impl Oryxis {
                 // Closing a tab dismisses the session-group editor it spawned.
                 self.show_session_group_panel = false;
                 if idx < self.tabs.len() {
+                    // Persist recorded output before the tab (and its
+                    // panes' buffers) are dropped.
+                    self.flush_session_logs();
                     // Closing a pinned tab drops it from the persisted set.
                     let was_pinned = self.tabs[idx].pinned;
                     self.tabs.remove(idx);

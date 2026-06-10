@@ -836,6 +836,11 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "max_reconnect_attempts" => "Tentatives de reconnexion maximales",
         "terminal_font" => "Police du terminal",
         "os_detection" => "Détecter l'OS distant après connexion",
+        "session_logging" => "Journalisation des sessions",
+        "setting_session_logging_desc" => "Enregistre la sortie du terminal des sessions SSH dans le coffre. Un réglage par hôte peut remplacer ce choix.",
+        "session_log_default" => "Par défaut",
+        "session_log_on" => "Activé",
+        "session_log_off" => "Désactivé",
         "share" => "Partager",
 
 

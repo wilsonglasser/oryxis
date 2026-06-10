@@ -836,6 +836,11 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "max_reconnect_attempts" => "最大重连尝试次数",
         "terminal_font" => "终端字体",
         "os_detection" => "连接后检测远程操作系统",
+        "session_logging" => "会话记录",
+        "setting_session_logging_desc" => "将 SSH 会话的终端输出记录到保险库。单个主机的设置可覆盖此项。",
+        "session_log_default" => "默认",
+        "session_log_on" => "开启",
+        "session_log_off" => "关闭",
         "share" => "分享",
 
 

@@ -732,6 +732,11 @@ pub(crate) struct Pane {
     pub ssh_session: Option<Arc<SshSession>>,
     /// Session log ID for terminal recording.
     pub session_log_id: Option<Uuid>,
+    /// Recorded bytes not yet flushed to the vault. PTY output appends
+    /// here; `Oryxis::flush_session_logs` drains it (size threshold, a
+    /// periodic tick, disconnect, or window close). Batching keeps the
+    /// vault from taking one write per SSH chunk.
+    pub session_log_buf: Vec<u8>,
     /// What this pane reconnects to when restored from a saved session group.
     /// Defaults to `Ephemeral`; the creating site overrides it to `Host` or
     /// `Local` when the pane is referenceable.
@@ -746,6 +751,7 @@ impl Pane {
             terminal,
             ssh_session: None,
             session_log_id: None,
+            session_log_buf: Vec::new(),
             origin: PaneOrigin::Ephemeral,
         }
     }
@@ -1135,6 +1141,10 @@ pub(crate) struct ConnectionForm {
     /// Forward the local ssh-agent socket to the remote shell. See the
     /// matching field on `Connection`.
     pub agent_forwarding: bool,
+    /// Per-host session-recording override. `None` follows the global
+    /// setting; `Some(true)`/`Some(false)` force on/off. See the matching
+    /// field on `Connection`.
+    pub session_logging: Option<bool>,
     /// Proxy kind selection (None = disabled). The picker stores the
     /// typed enum so language switches don't break selection identity.
     pub proxy_kind: ProxyKind,
@@ -1287,6 +1297,7 @@ impl Default for ConnectionForm {
             env_vars: Vec::new(),
             mcp_enabled: true,
             agent_forwarding: false,
+            session_logging: None,
             proxy_kind: ProxyKind::None,
             proxy_host: String::new(),
             proxy_port: String::new(),

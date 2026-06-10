@@ -622,6 +622,10 @@ impl Oryxis {
                 }
             }
             Message::ViewSessionLog(log_id) => {
+                // Flush buffered output first so viewing a still-active
+                // session shows everything recorded up to this moment,
+                // not just what was last persisted.
+                self.flush_session_logs();
                 if let Some(vault) = &self.vault
                     && let Ok(Some(data)) = vault.get_session_data(&log_id) {
                         let rendered = strip_ansi(&data);
@@ -769,6 +773,15 @@ impl Oryxis {
             }
             Message::EditorToggleAgentForwarding => {
                 self.editor_form.agent_forwarding = !self.editor_form.agent_forwarding;
+            }
+            // Cycle the per-host recording override: Default (inherit the
+            // global setting) -> On -> Off -> Default.
+            Message::EditorCycleSessionLogging => {
+                self.editor_form.session_logging = match self.editor_form.session_logging {
+                    None => Some(true),
+                    Some(true) => Some(false),
+                    Some(false) => None,
+                };
             }
             Message::EditorAddPortForward => {
                 self.editor_form.port_forwards.push(PortForwardForm::default());

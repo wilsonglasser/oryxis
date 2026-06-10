@@ -10,7 +10,38 @@ use iced::Task;
 use crate::app::{Message, Oryxis};
 use crate::util::{ctrl_key_bytes, key_to_named_bytes};
 
+/// Flush a pane's recorded-output buffer to the vault once it reaches
+/// this size, so a burst (e.g. an `apt upgrade` dump) doesn't sit in
+/// RAM unbounded between the periodic flush ticks.
+const SESSION_LOG_FLUSH_BYTES: usize = 64 * 1024;
+
 impl Oryxis {
+    /// Drain every pane's recorded-output buffer into the vault, one
+    /// append per pane. Driven by the size threshold, the flush tick,
+    /// disconnect, and window close, so the vault sees batched writes
+    /// instead of one per SSH chunk (the old per-chunk path rewrote the
+    /// whole growing blob and hammered the disk).
+    pub(crate) fn flush_session_logs(&mut self) {
+        let mut pending: Vec<(uuid::Uuid, Vec<u8>)> = Vec::new();
+        for tab in &mut self.tabs {
+            for pane in tab.pane_grid.panes.values_mut() {
+                if let Some(log_id) = pane.session_log_id
+                    && !pane.session_log_buf.is_empty()
+                {
+                    pending.push((log_id, std::mem::take(&mut pane.session_log_buf)));
+                }
+            }
+        }
+        if pending.is_empty() {
+            return;
+        }
+        if let Some(vault) = &self.vault {
+            for (log_id, bytes) in pending {
+                let _ = vault.append_session_data(&log_id, &bytes);
+            }
+        }
+    }
+
     pub(crate) fn handle_terminal(
         &mut self,
         message: Message,
@@ -68,6 +99,8 @@ impl Oryxis {
                 if self.tabs[tab_idx].pane_grid.panes.len() <= 1 {
                     return Ok(self.update(Message::CloseTab(tab_idx)));
                 }
+                // Persist the closing pane's recorded output before it goes.
+                self.flush_session_logs();
                 let tab = &mut self.tabs[tab_idx];
                 let target = tab.focused;
                 if let Some((_closed, sibling)) = tab.pane_grid.close(target) {
@@ -86,20 +119,27 @@ impl Oryxis {
             Message::PtyOutput(pane_id, bytes) => {
                 // Route to the specific pane (a tab may have several, each
                 // with its own PTY). Scan is trivial at these counts.
+                let mut over_threshold = false;
                 if let Some(pane) = self
                     .tabs
-                    .iter()
-                    .flat_map(|t| t.pane_grid.panes.values())
+                    .iter_mut()
+                    .flat_map(|t| t.pane_grid.panes.values_mut())
                     .find(|p| p.id == pane_id)
                 {
                     if let Ok(mut state) = pane.terminal.lock() {
                         state.process(&bytes);
                     }
-                    if let Some(log_id) = pane.session_log_id
-                        && let Some(vault) = &self.vault
-                    {
-                        let _ = vault.append_session_data(&log_id, &bytes);
+                    // Buffer the bytes; the vault write is batched (see
+                    // `flush_session_logs`). Flush early once the buffer
+                    // grows large so a burst doesn't balloon in RAM.
+                    if pane.session_log_id.is_some() {
+                        pane.session_log_buf.extend_from_slice(&bytes);
+                        over_threshold =
+                            pane.session_log_buf.len() >= SESSION_LOG_FLUSH_BYTES;
                     }
+                }
+                if over_threshold {
+                    self.flush_session_logs();
                 }
                 // Session-group per-pane startup script for LOCAL panes. SSH
                 // panes inject on `SshConnected`, but a local shell has no
@@ -125,6 +165,11 @@ impl Oryxis {
                         state.write(format!("{script}\n").as_bytes());
                     }
                 }
+            }
+            // Periodic batched write of recorded output. Only mounted by
+            // the subscription while at least one pane is recording.
+            Message::SessionLogFlushTick => {
+                self.flush_session_logs();
             }
             // Right-click paste from the terminal widget. Mirrors the
             // Ctrl+Shift+V path below: SSH session if active, local PTY
