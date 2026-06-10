@@ -27,6 +27,27 @@ fn main() {
         );
         res.compile().expect("Failed to compile Windows resources");
     }
+
+    // Cross-compiling to Windows from a non-Windows host: the winresource
+    // block above is skipped (its `#[cfg(windows)]` evaluates the host, and
+    // it needs an rc.exe we don't have). Without the SxS manifest the exe
+    // fails to load, rfd statically imports comctl32 v6's `TaskDialogIndirect`,
+    // which only exists in the v6 assembly the manifest pulls in. Embed at
+    // least the manifest straight through the MSVC-style linker (lld-link /
+    // link.exe), no resource compiler required, so the cross-built exe starts.
+    #[cfg(not(windows))]
+    {
+        let target_os = std::env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
+        let target_env = std::env::var("CARGO_CFG_TARGET_ENV").unwrap_or_default();
+        if target_os == "windows" && target_env == "msvc" {
+            let manifest = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../resources/manifest.xml");
+            let manifest = manifest.canonicalize().unwrap_or(manifest);
+            println!("cargo:rustc-link-arg=/MANIFEST:EMBED");
+            println!("cargo:rustc-link-arg=/MANIFESTINPUT:{}", manifest.display());
+            println!("cargo:rerun-if-changed=../../resources/manifest.xml");
+        }
+    }
 }
 
 /// Bake the commit SHA and release channel into the binary so the
