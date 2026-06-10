@@ -161,6 +161,16 @@ impl TerminalState {
     pub fn cols(&self) -> u16 { self.backend.cols() }
     pub fn rows(&self) -> u16 { self.backend.rows() }
 
+    /// Visible cursor cell as `(column, line)`, 0-based from the top-left of
+    /// the active screen. Used to anchor the OS IME candidate window near the
+    /// caret. Ignores the widget's scrollback offset (during composition the
+    /// view sits at the bottom), so it is exact while typing and only
+    /// approximate if the user has scrolled into history.
+    pub fn cursor_cell(&self) -> (u16, u16) {
+        let p = self.backend.term.renderable_content().cursor.point;
+        (p.column.0 as u16, p.line.0.max(0) as u16)
+    }
+
     /// Extract text from a selection range.
     pub fn get_selection_text(&self, sel: &Selection) -> String {
         use alacritty_terminal::grid::Dimensions;
@@ -775,6 +785,20 @@ const TERM_PAD: f32 = 8.0;
 /// remote session emits a leading clear / cursor-move sequence that
 /// blanks the top rows.
 const TERM_PAD_TOP: f32 = 8.0;
+
+/// Screen-space rectangle for the OS IME candidate window, anchored at the
+/// terminal caret. `bounds` is the widget's on-screen rect, `font_size` the
+/// configured terminal font size, `cell` the cursor cell from
+/// [`TerminalState::cursor_cell`]. Mirrors the cursor-rendering math in
+/// `draw` so the candidate window lines up with the block cursor.
+pub fn ime_caret_rect(bounds: Rectangle, font_size: f32, cell: (u16, u16)) -> Rectangle {
+    let cell_w = font_size * 0.6;
+    let cell_h = font_size * 1.15;
+    let (col, row) = cell;
+    let x = bounds.x + col as f32 * cell_w + TERM_PAD;
+    let y = bounds.y + row as f32 * cell_h + TERM_PAD_TOP;
+    Rectangle::new(Point::new(x, y), Size::new(cell_w.max(1.0), cell_h))
+}
 
 /// Rolling per-frame samples for the perf overlay. We track the
 /// **max** of each phase over a short window so transient spikes

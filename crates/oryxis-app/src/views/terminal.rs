@@ -135,7 +135,12 @@ impl Oryxis {
         let term_canvas = canvas(term_view)
             .width(Length::Fill)
             .height(Length::Fill);
-        crate::widgets::ime_host(term_canvas, is_focused)
+        crate::widgets::ime_host(
+            term_canvas,
+            is_focused,
+            Arc::clone(&pane.terminal),
+            self.terminal_font_size,
+        )
     }
 
     pub(crate) fn view_terminal_sidebar<'a>(&'a self, tab: &'a TerminalTab) -> Element<'a, Message> {

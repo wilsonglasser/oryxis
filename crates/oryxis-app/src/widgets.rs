@@ -1136,6 +1136,8 @@ pub(crate) fn bounds_reporter<'a, Message: 'a>(
 pub(crate) fn ime_host<'a, Message: 'a>(
     content: impl Into<Element<'a, Message>>,
     enabled: bool,
+    terminal: std::sync::Arc<std::sync::Mutex<oryxis_terminal::TerminalState>>,
+    font_size: f32,
 ) -> Element<'a, Message> {
     use iced::advanced::widget::{tree, Operation, Tree, Widget};
     use iced::advanced::{input_method, layout, mouse, overlay, renderer, Layout, Shell};
@@ -1144,6 +1146,8 @@ pub(crate) fn ime_host<'a, Message: 'a>(
     struct ImeHost<'a, Message> {
         content: Element<'a, Message>,
         enabled: bool,
+        terminal: std::sync::Arc<std::sync::Mutex<oryxis_terminal::TerminalState>>,
+        font_size: f32,
     }
 
     impl<Message> Widget<Message, Theme, iced::Renderer> for ImeHost<'_, Message> {
@@ -1221,11 +1225,23 @@ pub(crate) fn ime_host<'a, Message: 'a>(
                 )
             {
                 let b = layout.bounds();
-                let h = 18.0_f32.min(b.height);
-                let cursor_area = Rectangle::new(
-                    Point::new(b.x + 8.0, b.y + (b.height - h).max(0.0)),
-                    Size::new(2.0, h),
-                );
+                // Anchor the candidate window at the terminal caret. try_lock
+                // so a frame that races the render thread just falls back to
+                // the bottom-left instead of blocking the UI.
+                let cursor_area = match self.terminal.try_lock() {
+                    Ok(state) => oryxis_terminal::ime_caret_rect(
+                        b,
+                        self.font_size,
+                        state.cursor_cell(),
+                    ),
+                    Err(_) => {
+                        let h = 18.0_f32.min(b.height);
+                        Rectangle::new(
+                            Point::new(b.x + 8.0, b.y + (b.height - h).max(0.0)),
+                            Size::new(2.0, h),
+                        )
+                    }
+                };
                 let ime: input_method::InputMethod = input_method::InputMethod::Enabled {
                     cursor: cursor_area,
                     purpose: input_method::Purpose::Normal,
@@ -1263,6 +1279,8 @@ pub(crate) fn ime_host<'a, Message: 'a>(
     Element::new(ImeHost {
         content: content.into(),
         enabled,
+        terminal,
+        font_size,
     })
 }
 
