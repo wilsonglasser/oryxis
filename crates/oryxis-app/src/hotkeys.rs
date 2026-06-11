@@ -621,7 +621,13 @@ pub fn default_bindings() -> HotkeyMap {
     let primary_logo = mac;
     put(&mut m, ShowNewTabPicker, primary_ctrl, false, false, primary_logo, Char('k'));
     put(&mut m, ShowTabJump, primary_ctrl, false, false, primary_logo, Char('j'));
-    put(&mut m, OpenLocalShell, primary_ctrl, false, false, primary_logo, Char('l'));
+    // Ctrl+Shift+L (Cmd+Shift+L on macOS), not plain Ctrl+L: a bare
+    // Ctrl+letter is a terminal control sequence (Ctrl+L = clear) and
+    // is_terminal_control_sequence() suppresses it inside the terminal
+    // view, which is exactly where opening a local shell is useful. The
+    // Shift modifier lifts it out of that gate so the action fires
+    // everywhere while plain Ctrl+L still reaches the PTY to clear.
+    put(&mut m, OpenLocalShell, primary_ctrl, true, false, primary_logo, Char('l'));
     put(&mut m, NewWindow, primary_ctrl, true, false, primary_logo, Char('n'));
     put(&mut m, CloseActiveTab, primary_ctrl, true, false, primary_logo, Char('w'));
     put(&mut m, OpenPortForwards, primary_ctrl, false, false, primary_logo, Char('p'));
