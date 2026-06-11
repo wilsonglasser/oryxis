@@ -48,6 +48,16 @@ VIAddVersionKey "LegalCopyright" "AGPL-3.0-or-later"
 !insertmacro MUI_PAGE_WELCOME
 !insertmacro MUI_PAGE_DIRECTORY
 !insertmacro MUI_PAGE_INSTFILES
+
+; Offer to relaunch the app from the Finish page (checked by default).
+; The auto-updater exits the running app before handing off to this
+; installer, so without this the app never comes back after an update.
+; Relaunch through LaunchOryxis (explorer.exe) instead of running
+; oryxis.exe directly: this installer is elevated, and a direct Exec
+; would start the app with the admin token.
+!define MUI_FINISHPAGE_RUN
+!define MUI_FINISHPAGE_RUN_TEXT "Launch Oryxis"
+!define MUI_FINISHPAGE_RUN_FUNCTION LaunchOryxis
 !insertmacro MUI_PAGE_FINISH
 
 !insertmacro MUI_UNPAGE_CONFIRM
@@ -78,6 +88,13 @@ FunctionEnd
 
 Function un.onInit
     !insertmacro KillRunningOryxis
+FunctionEnd
+
+; Relaunch the app via explorer.exe so it inherits the user's normal
+; (non-elevated) token. Running "$INSTDIR\oryxis.exe" directly from
+; this elevated installer would start the app as administrator.
+Function LaunchOryxis
+    Exec '"$WINDIR\explorer.exe" "$INSTDIR\oryxis.exe"'
 FunctionEnd
 
 Section "Install"
