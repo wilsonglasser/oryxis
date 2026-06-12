@@ -633,7 +633,7 @@ impl Oryxis {
                 // Flush buffered output first so viewing a still-active
                 // session shows everything recorded up to this moment,
                 // not just what was last persisted.
-                self.flush_session_logs();
+                self.flush_session_logs_final();
                 if let Some(vault) = &self.vault
                     && let Ok(Some(data)) = vault.get_session_data(&log_id) {
                         let rendered = strip_ansi(&data);

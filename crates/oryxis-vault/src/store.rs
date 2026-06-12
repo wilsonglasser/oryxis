@@ -189,6 +189,10 @@ pub struct VaultStore {
     db: SqliteConn,
     /// Derived key material (password bytes kept for field-level encryption).
     master_key: Option<Vec<u8>>,
+    /// Unwrapped session-recording content key, cached after first use so
+    /// chunk writes don't pay the master-key KDF. Interior mutability
+    /// because append/read paths only hold `&self`. Cleared on `lock()`.
+    session_log_key: std::sync::Mutex<Option<[u8; KEY_LEN]>>,
     db_path: PathBuf,
 }
 
@@ -232,6 +236,7 @@ impl VaultStore {
         let mut store = Self {
             db,
             master_key: None,
+            session_log_key: std::sync::Mutex::new(None),
             db_path: path,
         };
         store.create_tables()?;
@@ -620,6 +625,7 @@ impl VaultStore {
 
     pub fn lock(&mut self) {
         self.master_key = None;
+        *self.session_log_key.lock().unwrap() = None;
         tracing::info!("Vault locked");
     }
 
@@ -2075,6 +2081,73 @@ impl VaultStore {
         Ok(())
     }
 
+    /// Content key for session recordings: a random 256-bit key wrapped
+    /// with the master key in `vault_meta` (`session_log_key`). Chunks
+    /// are sealed with this key directly (no per-chunk KDF), so appends
+    /// stay cheap; only the first use after unlock pays the unwrap.
+    /// Generated lazily on the first recording of a vault's lifetime.
+    fn session_log_key(&self) -> Result<[u8; KEY_LEN], VaultError> {
+        if let Some(k) = *self.session_log_key.lock().unwrap() {
+            return Ok(k);
+        }
+        let master = self.require_unlocked()?;
+        let wrapped: Option<Vec<u8>> = self
+            .db
+            .query_row(
+                "SELECT value FROM vault_meta WHERE key = 'session_log_key'",
+                [],
+                |row| row.get(0),
+            )
+            .ok();
+        let key: [u8; KEY_LEN] = match wrapped {
+            Some(w) => decrypt(&w, master)?
+                .try_into()
+                .map_err(|_| VaultError::Crypto("malformed session log key".into()))?,
+            None => {
+                let mut k = [0u8; KEY_LEN];
+                OsRng.fill_bytes(&mut k);
+                let w = encrypt(&k, master)?;
+                self.db.execute(
+                    "INSERT OR REPLACE INTO vault_meta (key, value) VALUES ('session_log_key', ?1)",
+                    params![w],
+                )?;
+                k
+            }
+        };
+        *self.session_log_key.lock().unwrap() = Some(key);
+        Ok(key)
+    }
+
+    /// Seal a chunk with the session content key: random nonce(12) +
+    /// ciphertext(+16 tag).
+    fn seal_chunk(&self, data: &[u8]) -> Result<Vec<u8>, VaultError> {
+        let key = self.session_log_key()?;
+        let cipher = ChaCha20Poly1305::new_from_slice(&key)
+            .map_err(|e| VaultError::Crypto(e.to_string()))?;
+        let mut nonce_bytes = [0u8; NONCE_LEN];
+        OsRng.fill_bytes(&mut nonce_bytes);
+        let ct = cipher
+            .encrypt(Nonce::from_slice(&nonce_bytes), data)
+            .map_err(|e| VaultError::Crypto(e.to_string()))?;
+        let mut blob = Vec::with_capacity(NONCE_LEN + ct.len());
+        blob.extend_from_slice(&nonce_bytes);
+        blob.extend_from_slice(&ct);
+        Ok(blob)
+    }
+
+    /// Inverse of `seal_chunk`. `None` when the blob isn't a sealed
+    /// chunk under `key` (i.e. a chunk recorded by an older version),
+    /// in which case the caller uses the raw bytes as-is.
+    fn unseal_chunk(key: &[u8; KEY_LEN], blob: &[u8]) -> Option<Vec<u8>> {
+        if blob.len() < NONCE_LEN + 16 {
+            return None;
+        }
+        let cipher = ChaCha20Poly1305::new_from_slice(key).ok()?;
+        cipher
+            .decrypt(Nonce::from_slice(&blob[..NONCE_LEN]), &blob[NONCE_LEN..])
+            .ok()
+    }
+
     /// Append recorded terminal bytes to a session log. One INSERT of just
     /// the new bytes, no read-modify-write of the growing stream. Callers
     /// should batch (see the app's per-pane buffer) so this fires at a
@@ -2083,9 +2156,10 @@ impl VaultStore {
         if data.is_empty() {
             return Ok(());
         }
+        let sealed = self.seal_chunk(data)?;
         self.db.execute(
             "INSERT INTO session_log_chunks (log_id, data) VALUES (?1, ?2)",
-            params![id.to_string(), data],
+            params![id.to_string(), sealed],
         )?;
         Ok(())
     }
@@ -2190,6 +2264,8 @@ impl VaultStore {
     /// blob (empty for sessions recorded after the chunk migration)
     /// followed by every appended chunk in append order. The row lookup
     /// doubles as the existence check (NotFound when the log is gone).
+    /// Sealed chunks are opened with the session content key; chunks
+    /// recorded by older versions pass through as-is.
     pub fn get_session_data(&self, id: &Uuid) -> Result<Option<Vec<u8>>, VaultError> {
         let id_str = id.to_string();
         let legacy: Option<Vec<u8>> = self
@@ -2200,13 +2276,18 @@ impl VaultStore {
                 |row| row.get(0),
             )
             .map_err(|_| VaultError::NotFound(format!("Session log {}", id)))?;
+        let key = self.session_log_key().ok();
         let mut buf = legacy.unwrap_or_default();
         let mut stmt = self.db.prepare(
             "SELECT data FROM session_log_chunks WHERE log_id = ?1 ORDER BY id",
         )?;
         let rows = stmt.query_map(params![id_str], |row| row.get::<_, Vec<u8>>(0))?;
         for chunk in rows {
-            buf.extend_from_slice(&chunk?);
+            let chunk = chunk?;
+            match key.as_ref().and_then(|k| Self::unseal_chunk(k, &chunk)) {
+                Some(plain) => buf.extend_from_slice(&plain),
+                None => buf.extend_from_slice(&chunk),
+            }
         }
         Ok(Some(buf))
     }
@@ -2261,22 +2342,36 @@ impl VaultStore {
         self.has_master_password().unwrap_or(false)
     }
 
-    /// Destroy the vault database and recreate it fresh.
+    /// Destroy the vault database and recreate it fresh. Every table is
+    /// dropped (the list must cover everything `create_tables` creates,
+    /// since that uses IF NOT EXISTS and would silently keep surviving
+    /// rows), then VACUUM releases the freed pages so the destroyed
+    /// data doesn't linger in the file.
     pub fn destroy_and_recreate(&mut self) -> Result<(), VaultError> {
-        // Drop all tables and recreate
         self.db.execute_batch(
             "DROP TABLE IF EXISTS vault_meta;
+             DROP TABLE IF EXISTS settings;
+             DROP TABLE IF EXISTS groups;
+             DROP TABLE IF EXISTS session_groups;
              DROP TABLE IF EXISTS connections;
              DROP TABLE IF EXISTS keys;
-             DROP TABLE IF EXISTS groups;
+             DROP TABLE IF EXISTS snippets;
+             DROP TABLE IF EXISTS custom_terminal_themes;
+             DROP TABLE IF EXISTS custom_ui_themes;
+             DROP TABLE IF EXISTS port_forward_rules;
+             DROP TABLE IF EXISTS identities;
+             DROP TABLE IF EXISTS proxy_identities;
              DROP TABLE IF EXISTS known_hosts;
              DROP TABLE IF EXISTS logs;
-             DROP TABLE IF EXISTS snippets;
              DROP TABLE IF EXISTS session_logs;
-             DROP TABLE IF EXISTS identities;
-             DROP TABLE IF EXISTS settings;"
+             DROP TABLE IF EXISTS session_log_chunks;
+             DROP TABLE IF EXISTS cloud_profiles;
+             DROP TABLE IF EXISTS sync_peers;
+             DROP TABLE IF EXISTS sync_metadata;
+             VACUUM;"
         )?;
         self.master_key = None;
+        *self.session_log_key.lock().unwrap() = None;
         self.create_tables()?;
         tracing::info!("Vault destroyed and recreated");
         Ok(())
@@ -2298,6 +2393,10 @@ impl VaultStore {
         self.re_encrypt_ai_api_key(&old_key, &new_key)?;
         // Re-encrypt sync device identity if present
         self.re_encrypt_sync_device_identity(&old_key, &new_key)?;
+        // Re-wrap the session-recording content key (the chunks
+        // themselves are sealed with the content key, so only the
+        // wrapper needs the new master key).
+        self.re_encrypt_session_log_key(&old_key, &new_key)?;
 
         // Update the password_check with the new password
         let check = encrypt(b"oryxis_vault_ok", &new_key)?;
@@ -2747,6 +2846,26 @@ impl VaultStore {
         Ok(())
     }
 
+    fn re_encrypt_session_log_key(&self, old_key: &[u8], new_key: &[u8]) -> Result<(), VaultError> {
+        let wrapped: Option<Vec<u8>> = self
+            .db
+            .query_row(
+                "SELECT value FROM vault_meta WHERE key = 'session_log_key'",
+                [],
+                |row| row.get(0),
+            )
+            .ok();
+        if let Some(w) = wrapped {
+            let plain = decrypt(&w, old_key)?;
+            let re_wrapped = encrypt(&plain, new_key)?;
+            self.db.execute(
+                "INSERT OR REPLACE INTO vault_meta (key, value) VALUES ('session_log_key', ?1)",
+                params![re_wrapped],
+            )?;
+        }
+        Ok(())
+    }
+
     fn re_encrypt_identities(&self, old_key: &[u8], new_key: &[u8]) -> Result<(), VaultError> {
         let mut stmt = self.db.prepare("SELECT id, password FROM identities WHERE password IS NOT NULL")?;
         let rows: Vec<(String, Vec<u8>)> = stmt
@@ -2790,6 +2909,90 @@ mod tests {
         let mut vault = temp_vault();
         vault.set_master_password("testpass123").unwrap();
         vault
+    }
+
+    // ── Session logs ──
+
+    #[test]
+    fn session_log_roundtrips_appended_chunks() {
+        let vault = unlocked_vault();
+        let log_id = Uuid::new_v4();
+        let conn_id = Uuid::new_v4();
+        vault.create_session_log(&log_id, &conn_id, "host-a").unwrap();
+        vault.append_session_data(&log_id, b"first chunk\n").unwrap();
+        vault.append_session_data(&log_id, b"second chunk\n").unwrap();
+        let data = vault.get_session_data(&log_id).unwrap().unwrap();
+        assert_eq!(data, b"first chunk\nsecond chunk\n");
+    }
+
+    #[test]
+    fn session_log_chunks_are_not_stored_in_the_clear() {
+        let vault = unlocked_vault();
+        let log_id = Uuid::new_v4();
+        let conn_id = Uuid::new_v4();
+        let marker = b"TOP-SECRET-OUTPUT-MARKER";
+        vault.create_session_log(&log_id, &conn_id, "host-a").unwrap();
+        vault.append_session_data(&log_id, marker).unwrap();
+        // Structural check straight against the column: the stored blob
+        // must not contain the recorded bytes.
+        let raw: Vec<u8> = vault
+            .db
+            .query_row(
+                "SELECT data FROM session_log_chunks WHERE log_id = ?1",
+                params![log_id.to_string()],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert!(
+            !raw.windows(marker.len()).any(|w| w == marker),
+            "recorded output stored in the clear"
+        );
+        // And it still reads back through the API.
+        let data = vault.get_session_data(&log_id).unwrap().unwrap();
+        assert_eq!(data, marker);
+    }
+
+    #[test]
+    fn session_log_chunks_survive_master_password_change() {
+        let mut vault = unlocked_vault();
+        let log_id = Uuid::new_v4();
+        let conn_id = Uuid::new_v4();
+        vault.create_session_log(&log_id, &conn_id, "host-a").unwrap();
+        vault.append_session_data(&log_id, b"before change\n").unwrap();
+        vault.set_user_password("brand-new-password").unwrap();
+        // Drop the cached content key to force a re-unwrap with the new
+        // master key, as a fresh process would.
+        *vault.session_log_key.lock().unwrap() = None;
+        vault.append_session_data(&log_id, b"after change\n").unwrap();
+        let data = vault.get_session_data(&log_id).unwrap().unwrap();
+        assert_eq!(data, b"before change\nafter change\n");
+    }
+
+    #[test]
+    fn destroy_and_recreate_drops_every_table() {
+        let mut vault = unlocked_vault();
+        let log_id = Uuid::new_v4();
+        let conn_id = Uuid::new_v4();
+        vault.create_session_log(&log_id, &conn_id, "host-a").unwrap();
+        vault.append_session_data(&log_id, b"sensitive recording").unwrap();
+        vault.destroy_and_recreate().unwrap();
+        // No table created by create_tables may carry surviving rows.
+        let mut stmt = vault
+            .db
+            .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")
+            .unwrap();
+        let tables: Vec<String> = stmt
+            .query_map([], |row| row.get::<_, String>(0))
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+        for table in tables {
+            let count: i64 = vault
+                .db
+                .query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |r| r.get(0))
+                .unwrap();
+            assert_eq!(count, 0, "table {table} survived destroy_and_recreate");
+        }
     }
 
     // ── Session groups ──
@@ -2857,7 +3060,7 @@ mod tests {
 
     #[test]
     fn session_log_chunks_concatenate_in_append_order() {
-        let vault = temp_vault();
+        let vault = unlocked_vault();
         let log_id = Uuid::new_v4();
         let conn_id = Uuid::new_v4();
         vault
@@ -2878,19 +3081,20 @@ mod tests {
             b"$ apt update\nHit:1 http://deb\nReading package lists\n"
         );
 
-        // Metadata size reflects the chunk bytes (no inline blob here).
+        // Metadata size reflects the stored chunk bytes; each sealed
+        // chunk carries a nonce + AEAD tag on top of the recording.
         let entry = vault
             .list_session_logs()
             .unwrap()
             .into_iter()
             .find(|e| e.id == log_id)
             .expect("log listed");
-        assert_eq!(entry.data_size, data.len());
+        assert_eq!(entry.data_size, data.len() + 3 * (NONCE_LEN + 16));
     }
 
     #[test]
     fn session_log_reads_legacy_inline_blob_then_chunks() {
-        let vault = temp_vault();
+        let vault = unlocked_vault();
         let log_id = Uuid::new_v4();
         let conn_id = Uuid::new_v4();
         vault
@@ -2917,12 +3121,13 @@ mod tests {
             .into_iter()
             .find(|e| e.id == log_id)
             .unwrap();
-        assert_eq!(entry.data_size, 6);
+        // Inline legacy bytes are raw; the appended chunk is sealed.
+        assert_eq!(entry.data_size, 3 + 3 + NONCE_LEN + 16);
     }
 
     #[test]
     fn deleting_session_log_drops_its_chunks() {
-        let vault = temp_vault();
+        let vault = unlocked_vault();
         let log_id = Uuid::new_v4();
         vault
             .create_session_log(&log_id, &Uuid::new_v4(), "doomed")

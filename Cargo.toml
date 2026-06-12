@@ -81,6 +81,7 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 thiserror = "2"
 chrono = { version = "0.4", features = ["serde"] }
+regex = "1"
 
 # Internal crates
 oryxis-core = { path = "crates/oryxis-core" }

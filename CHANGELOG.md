@@ -6,6 +6,24 @@ project uses [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## [0.8.2] - Unreleased
 
+### Security
+- **Session recordings now scrub secrets and PII before persisting.**
+  Private key blocks, cloud/API token shapes (AWS, GitHub, Slack,
+  OpenAI/Anthropic, JWT, Bearer/Basic credentials), `password=`-style
+  assignments and email addresses are masked as `[REDACTED]` when a
+  recording buffer is flushed to the vault. Recordings are also sealed
+  at rest with a dedicated content key wrapped by the master password.
+- **Signed app updates.** Every release and nightly asset now ships a
+  detached Ed25519 signature, and the auto-updater verifies it against
+  the baked-in production key before launching an installer or
+  swapping the nightly binary. Updater HTTP clients are HTTPS-only.
+- **SFTP recursive downloads validate server-supplied names.** A
+  hostile server can no longer steer files outside the chosen
+  destination folder via crafted directory-entry names.
+- **Destroy Vault now drops every table** (including ones added in
+  recent releases) and VACUUMs the database file so wiped data doesn't
+  linger.
+
 ### Added
 - **One-time terminal link hint.** The "Ctrl + Click to open the link"
   hover hint retires itself permanently after the first successful

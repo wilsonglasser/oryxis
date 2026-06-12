@@ -21,14 +21,47 @@ impl Oryxis {
     /// disconnect, and window close, so the vault sees batched writes
     /// instead of one per SSH chunk (the old per-chunk path rewrote the
     /// whole growing blob and hammered the disk).
+    ///
+    /// Secrets/PII are scrubbed per flushed chunk (`session_redact`).
+    /// Patterns can't match across chunk boundaries, so the periodic
+    /// (non-final) flush holds back everything after the buffer's last
+    /// newline; the partial line rides along to the next flush unless
+    /// the buffer is oversized anyway.
     pub(crate) fn flush_session_logs(&mut self) {
+        self.flush_session_logs_inner(false);
+    }
+
+    /// Flush including trailing partial lines. Use when the pane, tab,
+    /// session, or window is going away (or the log is about to be
+    /// read), so the recorded tail isn't lost.
+    pub(crate) fn flush_session_logs_final(&mut self) {
+        self.flush_session_logs_inner(true);
+    }
+
+    fn flush_session_logs_inner(&mut self, final_flush: bool) {
         let mut pending: Vec<(uuid::Uuid, Vec<u8>)> = Vec::new();
         for tab in &mut self.tabs {
             for pane in tab.pane_grid.panes.values_mut() {
                 if let Some(log_id) = pane.session_log_id
                     && !pane.session_log_buf.is_empty()
                 {
-                    pending.push((log_id, std::mem::take(&mut pane.session_log_buf)));
+                    let buf = &mut pane.session_log_buf;
+                    let take = if final_flush || buf.len() >= SESSION_LOG_FLUSH_BYTES {
+                        buf.len()
+                    } else {
+                        // Hold back the partial trailing line so a secret
+                        // mid-echo isn't split across redaction chunks.
+                        match buf.iter().rposition(|&b| b == b'\n') {
+                            Some(pos) => pos + 1,
+                            None => 0,
+                        }
+                    };
+                    if take == 0 {
+                        continue;
+                    }
+                    let tail = buf.split_off(take);
+                    let head = std::mem::replace(buf, tail);
+                    pending.push((log_id, head));
                 }
             }
         }
@@ -37,7 +70,8 @@ impl Oryxis {
         }
         if let Some(vault) = &self.vault {
             for (log_id, bytes) in pending {
-                let _ = vault.append_session_data(&log_id, &bytes);
+                let scrubbed = crate::session_redact::redact_secrets(&bytes);
+                let _ = vault.append_session_data(&log_id, &scrubbed);
             }
         }
     }
@@ -124,7 +158,7 @@ impl Oryxis {
                     return Ok(self.update(Message::CloseTab(tab_idx)));
                 }
                 // Persist the closing pane's recorded output before it goes.
-                self.flush_session_logs();
+                self.flush_session_logs_final();
                 let tab = &mut self.tabs[tab_idx];
                 let target = tab.focused;
                 if let Some((_closed, sibling)) = tab.pane_grid.close(target) {

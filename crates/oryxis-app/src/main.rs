@@ -50,6 +50,7 @@ mod root_view;
 mod session_manager_plugin;
 mod hotkeys;
 mod session_group_helpers;
+mod session_redact;
 mod sftp_helpers;
 mod sftp_methods;
 mod shortcuts;

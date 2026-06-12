@@ -991,7 +991,7 @@ impl Oryxis {
             Message::SshDisconnected(pane_id) => {
                 // Persist whatever this pane recorded before we mark the
                 // log ended; otherwise the tail of the session is lost.
-                self.flush_session_logs();
+                self.flush_session_logs_final();
                 if let Some(tab_idx) = self.pane_tab_index(pane_id) {
                     let label = self.tabs[tab_idx].label.replace(" (disconnected)", "");
                     // Clear the disconnected pane's session + end its log.

@@ -5481,6 +5481,7 @@ dependencies = [
  "oryxis-vault",
  "proptest",
  "rand 0.8.6",
+ "regex",
  "reqwest",
  "rfd",
  "rustls",
