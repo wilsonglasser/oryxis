@@ -101,7 +101,7 @@ impl Oryxis {
             .width(Length::Fill)
             .height(Length::Fill)
             .style(|_| container::Style {
-                background: Some(Background::Color(OryxisColors::TERMINAL_BG)),
+                background: Some(Background::Color(OryxisColors::t().terminal_bg)),
                 ..Default::default()
             })
             .into()
@@ -214,6 +214,10 @@ impl Oryxis {
                 .padding(Padding { top: 40.0, right: 0.0, bottom: 0.0, left: 0.0 }),
             );
         } else {
+            // Markdown settings are identical for every assistant
+            // bubble, so build them once per sidebar render instead of
+            // re-deriving the style from the theme per message.
+            let md_settings = self.chat_markdown_settings();
             for msg in &tab.chat_history {
                 // Skip empty assistant placeholders, they exist as
                 // staging slots for streaming chunks; an empty one is
@@ -226,7 +230,7 @@ impl Oryxis {
                 {
                     continue;
                 }
-                let bubble = self.view_chat_message(msg);
+                let bubble = self.view_chat_message(msg, md_settings);
                 messages_col = messages_col.push(bubble);
             }
         }
@@ -423,7 +427,47 @@ impl Oryxis {
         .into()
     }
 
-    pub(crate) fn view_chat_message<'a>(&'a self, msg: &'a ChatMessage) -> Element<'a, Message> {
+    /// Markdown settings shared by every assistant bubble in the chat
+    /// sidebar. Built once per sidebar render by the caller; deriving
+    /// the style from the theme per message per frame was measurable
+    /// on long conversations.
+    ///
+    /// Compact heading scale, `with_text_size` ramps h1=2x and
+    /// h2=1.75x base which reads as huge in a narrow sidebar. We
+    /// override to a tighter ladder anchored at 13 px body.
+    /// SauceCodePro Nerd Font is bundled in main.rs and carries the
+    /// full Nerd Font PUA glyph set. Wire it into the markdown style
+    /// so inline `code` and fenced code blocks render
+    /// Powerline/Devicon/etc. glyphs the user pastes or the AI emits,
+    /// matching what the terminal panel already shows. Body prose
+    /// stays on the proportional default; cosmic-text's PUA fallback
+    /// isn't reliable enough to count on for non-code text.
+    fn chat_markdown_settings(&self) -> iced::widget::markdown::Settings {
+        let mut md_style = iced::widget::markdown::Style::from(self.theme());
+        let nerd = iced::Font::new("SauceCodePro Nerd Font");
+        md_style.inline_code_font = nerd;
+        md_style.code_block_font = nerd;
+        iced::widget::markdown::Settings {
+            text_size: 13.into(),
+            h1_size: 17.into(),
+            h2_size: 15.into(),
+            h3_size: 14.into(),
+            h4_size: 13.into(),
+            h5_size: 13.into(),
+            h6_size: 13.into(),
+            code_size: 12.into(),
+            spacing: 8.into(),
+            style: md_style,
+            selectable: true,
+            group_selection: true,
+        }
+    }
+
+    pub(crate) fn view_chat_message<'a>(
+        &'a self,
+        msg: &'a ChatMessage,
+        md_settings: iced::widget::markdown::Settings,
+    ) -> Element<'a, Message> {
         match msg.role {
             ChatRole::User => {
                 // The accent fill pairs with the per-theme `button_text`
@@ -431,7 +475,7 @@ impl Oryxis {
                 // messages stay capped at 280 px and right-aligned to
                 // keep the standard chat shape.
                 let bubble = container(
-                    text(msg.content.clone())
+                    text(msg.content.as_str())
                         .size(13)
                         .color(OryxisColors::t().button_text),
                 )
@@ -454,35 +498,8 @@ impl Oryxis {
                 // needs to borrow that slice, so it must outlive the
                 // returned Element, which is why we cache, instead of
                 // parsing per render.
-                // Compact heading scale, `with_text_size` ramps h1=2x and
-                // h2=1.75x base which reads as huge in a narrow sidebar.
-                // We override to a tighter ladder anchored at 13 px body.
-                // SauceCodePro Nerd Font is bundled in main.rs and carries
-                // the full Nerd Font PUA glyph set. Wire it into the
-                // markdown style so inline `code` and fenced code blocks
-                // render Powerline/Devicon/etc. glyphs the user pastes
-                // or the AI emits, matching what the terminal panel
-                // already shows. Body prose stays on the proportional
-                // default; cosmic-text's PUA fallback isn't reliable
-                // enough to count on for non-code text.
-                let mut md_style = iced::widget::markdown::Style::from(self.theme());
-                let nerd = iced::Font::new("SauceCodePro Nerd Font");
-                md_style.inline_code_font = nerd;
-                md_style.code_block_font = nerd;
-                let md_settings = iced::widget::markdown::Settings {
-                    text_size: 13.into(),
-                    h1_size: 17.into(),
-                    h2_size: 15.into(),
-                    h3_size: 14.into(),
-                    h4_size: 13.into(),
-                    h5_size: 13.into(),
-                    h6_size: 13.into(),
-                    code_size: 12.into(),
-                    spacing: 8.into(),
-                    style: md_style,
-                    selectable: true,
-                    group_selection: true,
-                };
+                // Heading scale / fonts come from `md_settings`, built
+                // once per sidebar render in `chat_markdown_settings`.
                 // Custom viewer overrides `code_block` to add Copy +
                 // Play buttons inside each fenced block; everything
                 // else (paragraphs, headings, lists) renders with the
@@ -517,7 +534,7 @@ impl Oryxis {
             }
             ChatRole::System => {
                 let bubble = container(
-                    text(msg.content.clone()).size(11).color(OryxisColors::t().text_muted),
+                    text(msg.content.as_str()).size(11).color(OryxisColors::t().text_muted),
                 )
                 .padding(Padding { top: 6.0, right: 10.0, bottom: 6.0, left: 10.0 })
                 .max_width(300)
@@ -537,10 +554,11 @@ impl Oryxis {
                 // RUN / ALWAYS RUN / DENY buttons. Warning-tinted
                 // surface so the user notices it's an action prompt,
                 // not a regular message.
-                let cmd = msg.content.clone();
-                let cmd_for_run = cmd.clone();
-                let cmd_for_always = cmd.clone();
-                let cmd_for_deny = cmd.clone();
+                // The three action messages each need an owned copy of
+                // the command; the displayed text below borrows it.
+                let cmd_for_run = msg.content.clone();
+                let cmd_for_always = msg.content.clone();
+                let cmd_for_deny = msg.content.clone();
                 let warning_subtle = Color {
                     a: 0.12,
                     ..OryxisColors::t().warning
@@ -569,7 +587,7 @@ impl Oryxis {
                         .align_y(iced::Alignment::Center),
                         iced::widget::Space::new().height(6),
                         container(
-                            text(cmd.clone())
+                            text(msg.content.as_str())
                                 .size(12)
                                 .font(iced::Font::new("SauceCodePro Nerd Font"))
                                 .color(OryxisColors::t().text_primary),
@@ -656,7 +674,7 @@ impl Oryxis {
                         ]
                         .align_y(iced::Alignment::Center),
                         iced::widget::Space::new().height(4),
-                        text(msg.content.clone())
+                        text(msg.content.as_str())
                             .size(11)
                             .color(OryxisColors::t().text_muted),
                         iced::widget::Space::new().height(8),

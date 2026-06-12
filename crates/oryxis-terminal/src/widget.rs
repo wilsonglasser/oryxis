@@ -412,8 +412,11 @@ struct Highlight {
 }
 
 /// Scan row text for IPv4 addresses, URLs, and Unix file paths (no regex).
+/// Takes `(row, non-blank cells)` pairs; rows with no printable chars are
+/// simply absent (the draw pass builds this per frame, so a dense Vec
+/// beats re-hashing every row into a map).
 fn detect_highlights(
-    row_chars: &std::collections::HashMap<u16, Vec<(u16, char)>>,
+    row_chars: &[(u16, Vec<(u16, char)>)],
     palette: &TerminalPalette,
 ) -> Vec<Highlight> {
     let ip_color = palette.ansi[5];   // magenta
@@ -423,7 +426,8 @@ fn detect_highlights(
 
     let mut highlights = Vec::new();
 
-    for (&row, cols) in row_chars {
+    for (row, cols) in row_chars {
+        let row = *row;
         let max_col = cols.iter().map(|(c, _)| *c).max().unwrap_or(0) as usize;
         let mut chars = vec![' '; max_col + 1];
         for &(col, ch) in cols {
@@ -732,17 +736,22 @@ fn url_at_cell(
     target_row: u16,
     target_col: u16,
 ) -> Option<String> {
-    let content = term.renderable_content();
-    let mut row_chars: Vec<(u16, char)> = Vec::new();
-    for item in content.display_iter {
-        let row = item.point.line.0 as u16;
-        if row != target_row {
-            continue;
-        }
-        let col = item.point.column.0 as u16;
-        let c = item.cell.c;
+    use alacritty_terminal::index::{Column, Line};
+    // Index the one grid row directly (the way `smart_span_at` does)
+    // instead of walking the whole viewport display iterator to pick
+    // a single row out of it.
+    let grid = term.grid();
+    let line = Line(target_row as i32);
+    if line < grid.topmost_line() || line > grid.bottommost_line() {
+        return None;
+    }
+    let row_data = &grid[line];
+    let ncols = grid.columns();
+    let mut row_chars: Vec<(u16, char)> = Vec::with_capacity(ncols);
+    for ci in 0..ncols {
+        let c = row_data[Column(ci)].c;
         if c != ' ' && c != '\0' {
-            row_chars.push((col, c));
+            row_chars.push((ci as u16, c));
         }
     }
     if row_chars.is_empty() {
@@ -805,7 +814,8 @@ fn url_at_cell(
 /// falls back to delimiter-word selection). Numbers are excluded, they are
 /// too granular to be a useful "word" target. Reads the grid directly by
 /// line so it stays correct when scrolled into history (unlike
-/// `url_at_cell`, which walks the live `display_iter`).
+/// `url_at_cell`, which indexes by on-screen row number and so only
+/// matches the live screen).
 fn smart_span_at(
     term: &alacritty_terminal::Term<crate::backend::EventProxy>,
     palette: &TerminalPalette,
@@ -846,11 +856,10 @@ fn smart_span_at(
     // highlight, so plain prose words still fall through to delimiter-word
     // selection. The highlighter's own URL span may be shorter than the
     // token (its matcher is loose), hence the overlap test rather than a
-    // containment test. `detect_highlights` keys by row; a single synthetic
-    // row 0 is enough as long as we look it up with the same key.
-    let mut map = std::collections::HashMap::new();
-    map.insert(0u16, cols);
-    let hit = detect_highlights(&map, palette).into_iter().any(|h| {
+    // containment test. `detect_highlights` takes (row, cells) pairs; a
+    // single synthetic row 0 is enough as long as we match on the same key.
+    let rows = [(0u16, cols)];
+    let hit = detect_highlights(&rows, palette).into_iter().any(|h| {
         h.row == 0
             && h.kind != HighlightKind::Number
             && h.start_col <= right
@@ -1125,6 +1134,27 @@ fn scrollbar_geom(
     })
 }
 
+/// Process-wide font-name interner. `iced::Font::new` needs a
+/// `&'static str`, so each unique family name is leaked exactly once
+/// and the cached reference is handed back on every later call. The
+/// previous approach leaked a fresh copy per view pass per pane, which
+/// added up over a long session.
+fn intern_font_name(name: &str) -> &'static str {
+    use std::collections::HashMap;
+    use std::sync::OnceLock;
+    static FONT_NAMES: OnceLock<Mutex<HashMap<String, &'static str>>> = OnceLock::new();
+    let mut map = FONT_NAMES
+        .get_or_init(|| Mutex::new(HashMap::new()))
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    if let Some(interned) = map.get(name) {
+        return interned;
+    }
+    let leaked: &'static str = Box::leak(name.to_string().into_boxed_str());
+    map.insert(name.to_string(), leaked);
+    leaked
+}
+
 impl<Message> TerminalView<Message> {
     pub fn new(state: Arc<Mutex<TerminalState>>) -> Self {
         let font_size = 14.0;
@@ -1255,11 +1285,7 @@ impl<Message> TerminalView<Message> {
     /// Override the font used for cell rendering. If the font can't be resolved
     /// by cosmic-text, it falls back to the system default monospace.
     pub fn with_font_name(mut self, name: &str) -> Self {
-        // Leak the string so Font::new can hold a 'static &str. The number
-        // of unique names is bounded (~20 from the picker), so the total leak is
-        // tiny and amortized across the process lifetime.
-        let leaked: &'static str = Box::leak(name.to_string().into_boxed_str());
-        self.font = Font::new(leaked);
+        self.font = Font::new(intern_font_name(name));
         self
     }
 
@@ -1506,6 +1532,27 @@ impl<Message> TerminalView<Message> {
             line > start.1 && line < end.1
         }
     }
+}
+
+/// Per-cell snapshot taken in `draw()` while the state mutex is held.
+/// Pass 2 renders from these without touching the mutex, so geometry
+/// building never contends with `process()` on the output path.
+struct CellData {
+    col: u16,
+    row: u16,
+    c: char,
+    fg: Color,
+    bg: Color,
+    flags: CellFlags,
+}
+
+thread_local! {
+    /// Reusable cell-snapshot buffer for `draw()` (which always runs on
+    /// the renderer thread). Taken out for the duration of a frame and
+    /// put back afterwards so its capacity survives across frames and
+    /// panes instead of reallocating per draw.
+    static DRAW_CELLS: std::cell::RefCell<Vec<CellData>> =
+        const { std::cell::RefCell::new(Vec::new()) };
 }
 
 impl<Message> canvas::Program<Message, Theme> for TerminalView<Message>
@@ -1981,17 +2028,21 @@ where
                     mouse::ScrollDelta::Lines { y, .. } => *y as i32 * 3,
                     mouse::ScrollDelta::Pixels { y, .. } => (*y / self.cell_height) as i32,
                 };
-                let in_alt_screen = self
-                    .state
-                    .lock()
-                    .ok()
-                    .map(|s| {
-                        s.backend
+                // One lock for both the alt-screen test and the scroll
+                // clamp, this handler fires for every wheel tick and
+                // locking twice doubled the contention with `process()`.
+                let (in_alt_screen, max_scroll) = match self.state.lock() {
+                    Ok(s) => {
+                        let in_alt = s
+                            .backend
                             .term
                             .mode()
-                            .contains(alacritty_terminal::term::TermMode::ALT_SCREEN)
-                    })
-                    .unwrap_or(false);
+                            .contains(alacritty_terminal::term::TermMode::ALT_SCREEN);
+                        let grid = s.backend.term.grid();
+                        (in_alt, (grid.total_lines() - grid.screen_lines()) as i32)
+                    }
+                    Err(_) => (false, i32::MAX),
+                };
                 if in_alt_screen {
                     // Translate wheel into arrow-key bytes for the remote
                     // app, `top`/`vim`/`less` all listen for these. Routed
@@ -2007,12 +2058,8 @@ where
                     }
                     return Some(self.emit_input(bytes));
                 }
-                widget_state.scroll_offset = (widget_state.scroll_offset + lines).max(0);
-                if let Ok(state) = self.state.lock() {
-                    let grid = state.backend.term.grid();
-                    let max_scroll = (grid.total_lines() - grid.screen_lines()) as i32;
-                    widget_state.scroll_offset = widget_state.scroll_offset.min(max_scroll);
-                }
+                widget_state.scroll_offset =
+                    (widget_state.scroll_offset + lines).max(0).min(max_scroll);
                 return Some(CanvasAction::request_redraw().and_capture());
             }
             // Modifier tracking for the URL Ctrl+Click gate. iced
@@ -2100,122 +2147,177 @@ where
         bounds: Rectangle,
         _cursor: mouse::Cursor,
     ) -> Vec<Geometry> {
+        use alacritty_terminal::vte::ansi::{Color as AnsiColor, NamedColor};
+
         let perf_on = perf_overlay_enabled();
         let draw_start = perf_on.then(std::time::Instant::now);
-
-        let lock_start = perf_on.then(std::time::Instant::now);
-        let mut state = match self.state.lock() {
-            Ok(s) => s,
-            Err(poisoned) => poisoned.into_inner(),
-        };
-        let lock_dur = lock_start.map(|t| t.elapsed()).unwrap_or_default();
-
-        // Auto-resize
-        let (new_cols, new_rows) = Self::grid_size_for(bounds.width, bounds.height, self.font_size);
-        state.resize(new_cols, new_rows);
-
-        // Alt-screen apps (top, vim, less, htop, …) own the entire
-        // viewport with cursor positioning, there's no scrollback to
-        // page through. Force scroll_offset=0 so the user can't get
-        // stuck looking at stale history while the app keeps redrawing.
-        let in_alt_screen = state
-            .backend
-            .term
-            .mode()
-            .contains(alacritty_terminal::term::TermMode::ALT_SCREEN);
-
-        // Clamp scroll offset against the current grid bounds, resizes
-        // between frames can shrink history, so the offset stored in
-        // widget_state may exceed the new max.
-        let scroll_offset = if in_alt_screen {
-            0
-        } else {
-            let grid = state.backend.term.grid();
-            let max_scroll = (grid.total_lines() - grid.screen_lines()) as i32;
-            widget_state.scroll_offset.clamp(0, max_scroll)
-        };
-
-        let term = &state.backend.term;
-        let palette = &state.palette;
-        let colors = term.colors();
-
-        let mut frame = Frame::new(renderer, bounds.size());
-        frame.fill_rectangle(Point::ORIGIN, bounds.size(), palette.background);
 
         let cell_w = self.cell_width;
         let cell_h = self.cell_height;
         let selection = &widget_state.selection;
 
-        let term_cursor = term.renderable_content().cursor;
-        let grid = term.grid();
-        let screen_lines = grid.screen_lines();
-        let cols_count = grid.columns();
-        let topmost = grid.topmost_line();
-        let bottommost = grid.bottommost_line();
+        let mut cells: Vec<CellData> = DRAW_CELLS.take();
+        cells.clear();
+        let mut row_chars: Vec<(u16, Vec<(u16, char)>)> = Vec::new();
 
-        // --- Pass 1: collect cell data and build row character map ---
-        // Iterate the grid manually using `scroll_offset` as a row offset
-        // instead of mutating alacritty's `display_offset` via
-        // `scroll_display`. The previous approach yielded `display_iter`
-        // entries with negative `point.line.0` for scrollback rows, which
-        // when cast to `u16` wrapped to enormous numbers, those cells
-        // ended up rendered far off-screen, leaving blank rows in their
-        // place. Manual indexing keeps the math sane.
-        struct CellData {
-            col: u16,
-            row: u16,
-            c: char,
-            fg: Color,
-            bg: Color,
-            flags: CellFlags,
-        }
+        // --- Snapshot phase, the only part that holds the state mutex ---
+        // Everything draw needs (resolved cells, cursor, sizes, palette)
+        // is copied out here and the lock is dropped before any text /
+        // quad geometry is built, so drawing doesn't contend with
+        // `process()` on the output path (see the typing-lag note on
+        // `hovered_cell`).
+        let lock_start = perf_on.then(std::time::Instant::now);
+        let (
+            lock_dur,
+            cells_dur,
+            palette,
+            term_cursor,
+            screen_lines,
+            total_lines,
+            in_alt_screen,
+            scroll_offset,
+        ) = {
+            let mut state = match self.state.lock() {
+                Ok(s) => s,
+                Err(poisoned) => poisoned.into_inner(),
+            };
+            let lock_dur = lock_start.map(|t| t.elapsed()).unwrap_or_default();
 
-        let cells_start = perf_on.then(std::time::Instant::now);
-        let mut cells: Vec<CellData> = Vec::new();
-        let mut row_chars: std::collections::HashMap<u16, Vec<(u16, char)>>
-            = std::collections::HashMap::new();
+            // Auto-resize
+            let (new_cols, new_rows) =
+                Self::grid_size_for(bounds.width, bounds.height, self.font_size);
+            state.resize(new_cols, new_rows);
 
-        for visible_row in 0..screen_lines {
-            let line = alacritty_terminal::index::Line(visible_row as i32 - scroll_offset);
-            if line < topmost || line > bottommost {
-                continue;
-            }
-            let row_data = &grid[line];
-            for col_i in 0..cols_count {
-                let cell = &row_data[alacritty_terminal::index::Column(col_i)];
+            // Alt-screen apps (top, vim, less, htop, …) own the entire
+            // viewport with cursor positioning, there's no scrollback to
+            // page through. Force scroll_offset=0 so the user can't get
+            // stuck looking at stale history while the app keeps redrawing.
+            let in_alt_screen = state
+                .backend
+                .term
+                .mode()
+                .contains(alacritty_terminal::term::TermMode::ALT_SCREEN);
 
-                if cell.flags.contains(CellFlags::WIDE_CHAR_SPACER) {
+            // Clamp scroll offset against the current grid bounds, resizes
+            // between frames can shrink history, so the offset stored in
+            // widget_state may exceed the new max.
+            let scroll_offset = if in_alt_screen {
+                0
+            } else {
+                let grid = state.backend.term.grid();
+                let max_scroll = (grid.total_lines() - grid.screen_lines()) as i32;
+                widget_state.scroll_offset.clamp(0, max_scroll)
+            };
+
+            let term = &state.backend.term;
+            let palette = &state.palette;
+            let colors = term.colors();
+
+            let term_cursor = term.renderable_content().cursor;
+            let grid = term.grid();
+            let screen_lines = grid.screen_lines();
+            let cols_count = grid.columns();
+            let total_lines = grid.total_lines();
+            let topmost = grid.topmost_line();
+            let bottommost = grid.bottommost_line();
+
+            // --- Pass 1: collect cell data and build row character map ---
+            // Iterate the grid manually using `scroll_offset` as a row offset
+            // instead of mutating alacritty's `display_offset` via
+            // `scroll_display`. The previous approach yielded `display_iter`
+            // entries with negative `point.line.0` for scrollback rows, which
+            // when cast to `u16` wrapped to enormous numbers, those cells
+            // ended up rendered far off-screen, leaving blank rows in their
+            // place. Manual indexing keeps the math sane.
+            let cells_start = perf_on.then(std::time::Instant::now);
+            cells.reserve(screen_lines * cols_count);
+            row_chars.reserve(screen_lines);
+
+            // Flags that keep an otherwise blank default cell visible:
+            // INVERSE swaps the background in, underlines / strikeout
+            // paint rules over it.
+            let blank_visible_flags =
+                CellFlags::INVERSE | CellFlags::ALL_UNDERLINES | CellFlags::STRIKEOUT;
+
+            for visible_row in 0..screen_lines {
+                let line =
+                    alacritty_terminal::index::Line(visible_row as i32 - scroll_offset);
+                if line < topmost || line > bottommost {
                     continue;
                 }
+                let row_data = &grid[line];
+                let mut chars: Vec<(u16, char)> = Vec::new();
+                for col_i in 0..cols_count {
+                    let cell = &row_data[alacritty_terminal::index::Column(col_i)];
 
-                let col = col_i as u16;
-                let row = visible_row as u16;
+                    if cell.flags.contains(CellFlags::WIDE_CHAR_SPACER) {
+                        continue;
+                    }
 
-                let effective_fg = if cell.flags.contains(CellFlags::BOLD) && self.bold_is_bright {
-                    brighten_named(&cell.fg)
-                } else {
-                    cell.fg
-                };
-                let fg = palette.resolve(&effective_fg, colors);
-                let bg = palette.resolve(&cell.bg, colors);
+                    let col = col_i as u16;
+                    let row = visible_row as u16;
+                    let c = cell.c;
 
-                let c = cell.c;
-                if c != ' ' && c != '\0' {
-                    row_chars.entry(row).or_default().push((col, c));
+                    // Skip cells that produce zero geometry: a blank glyph
+                    // on the default background with no visible flags and
+                    // no selection overlap. On a mostly empty screen this
+                    // is the vast majority of the grid. (The cursor is
+                    // painted independently of the cell snapshot, so a
+                    // blank cell under it can be skipped too.)
+                    if (c == ' ' || c == '\0')
+                        && cell.bg == AnsiColor::Named(NamedColor::Background)
+                        && !cell.flags.intersects(blank_visible_flags)
+                        && !selection
+                            .as_ref()
+                            .is_some_and(|s| Self::is_in_selection(s, col, line.0))
+                    {
+                        continue;
+                    }
+
+                    let effective_fg =
+                        if cell.flags.contains(CellFlags::BOLD) && self.bold_is_bright {
+                            brighten_named(&cell.fg)
+                        } else {
+                            cell.fg
+                        };
+                    let fg = palette.resolve(&effective_fg, colors);
+                    let bg = palette.resolve(&cell.bg, colors);
+
+                    if c != ' ' && c != '\0' {
+                        chars.push((col, c));
+                    }
+
+                    cells.push(CellData {
+                        col,
+                        row,
+                        c,
+                        fg,
+                        bg,
+                        flags: cell.flags,
+                    });
                 }
-
-                cells.push(CellData {
-                    col,
-                    row,
-                    c,
-                    fg,
-                    bg,
-                    flags: cell.flags,
-                });
+                if !chars.is_empty() {
+                    row_chars.push((visible_row as u16, chars));
+                }
             }
-        }
 
-        let cells_dur = cells_start.map(|t| t.elapsed()).unwrap_or_default();
+            let cells_dur = cells_start.map(|t| t.elapsed()).unwrap_or_default();
+
+            (
+                lock_dur,
+                cells_dur,
+                state.palette.clone(),
+                term_cursor,
+                screen_lines,
+                total_lines,
+                in_alt_screen,
+                scroll_offset,
+            )
+        };
+        let palette = &palette;
+
+        let mut frame = Frame::new(renderer, bounds.size());
+        frame.fill_rectangle(Point::ORIGIN, bounds.size(), palette.background);
 
         // --- Detect syntax highlights ---
         let highlights_start = perf_on.then(std::time::Instant::now);
@@ -2262,6 +2364,46 @@ where
         };
 
         // --- Pass 2: draw cells with highlight overrides ---
+        // Consecutive plain ASCII glyphs in a row that share the same
+        // foreground (and the base font) are merged into one fill_text
+        // run, one String + one shaping pass per run instead of per
+        // glyph. This leans on the monospace advance matching the cell
+        // width; runs are kept short and re-anchored to the grid so a
+        // font whose advance is off by a hair can only drift
+        // sub-pixel within one run. Wide chars, PUA symbols and
+        // non-ASCII glyphs keep per-cell positioning because their
+        // glyphs (often from a fallback font) need not advance by one
+        // cell.
+        struct GlyphRun {
+            row: u16,
+            start_col: u16,
+            next_col: u16,
+            fg: Color,
+            content: String,
+        }
+        // Re-anchor at most every 32 cells; bounds intra-run drift.
+        const MAX_RUN_LEN: usize = 32;
+        // Bridge small gaps (skipped blank cells) with spaces so a row
+        // of short tokens still coalesces into few runs.
+        const MAX_RUN_GAP: u16 = 4;
+        let mut run: Option<GlyphRun> = None;
+        let font_size = self.font_size;
+        let base_font = self.font;
+        let flush_run = |frame: &mut Frame, run: GlyphRun| {
+            frame.fill_text(CanvasText {
+                content: run.content,
+                position: Point::new(
+                    run.start_col as f32 * cell_w + TERM_PAD,
+                    run.row as f32 * cell_h + TERM_PAD_TOP,
+                ),
+                color: run.fg,
+                size: Pixels(font_size),
+                font: base_font,
+                align_x: alignment::Horizontal::Left.into(),
+                align_y: alignment::Vertical::Top,
+                ..Default::default()
+            });
+        };
         for cd in &cells {
             let x = cd.col as f32 * cell_w + TERM_PAD;
             let y = cd.row as f32 * cell_h + TERM_PAD_TOP;
@@ -2367,23 +2509,55 @@ where
                 // where Nerd Font v3+ stuffed the Material Design
                 // Icons. Regular fonts don't use either area, so we
                 // can safely force the bundled Nerd Font across both.
-                let font = if (0xE000..=0xF8FF).contains(&cp)
-                    || (0xF0000..=0xFFFFD).contains(&cp)
-                {
-                    NERD_FONT
+                let is_pua =
+                    (0xE000..=0xF8FF).contains(&cp) || (0xF0000..=0xFFFFD).contains(&cp);
+                let is_wide = cd.flags.contains(CellFlags::WIDE_CHAR);
+                if !is_pua && !is_wide && cd.c.is_ascii_graphic() {
+                    // Batchable glyph: extend the open run when it lines
+                    // up (same row, same color, contiguous or within a
+                    // short bridgeable gap), otherwise start a new one.
+                    let fits = run.as_ref().is_some_and(|r| {
+                        r.row == cd.row
+                            && r.fg == fg
+                            && cd.col >= r.next_col
+                            && cd.col - r.next_col <= MAX_RUN_GAP
+                            && r.content.len() < MAX_RUN_LEN
+                    });
+                    if fits {
+                        let r = run.as_mut().expect("checked by fits");
+                        for _ in r.next_col..cd.col {
+                            r.content.push(' ');
+                        }
+                        r.content.push(cd.c);
+                        r.next_col = cd.col + 1;
+                    } else {
+                        if let Some(r) = run.take() {
+                            flush_run(&mut frame, r);
+                        }
+                        run = Some(GlyphRun {
+                            row: cd.row,
+                            start_col: cd.col,
+                            next_col: cd.col + 1,
+                            fg,
+                            content: cd.c.to_string(),
+                        });
+                    }
                 } else {
-                    self.font
-                };
-                frame.fill_text(CanvasText {
-                    content: cd.c.to_string(),
-                    position: Point::new(x, y),
-                    color: fg,
-                    size: Pixels(self.font_size),
-                    font,
-                    align_x: alignment::Horizontal::Left.into(),
-                    align_y: alignment::Vertical::Top,
-                    ..Default::default()
-                });
+                    if let Some(r) = run.take() {
+                        flush_run(&mut frame, r);
+                    }
+                    let font = if is_pua { NERD_FONT } else { self.font };
+                    frame.fill_text(CanvasText {
+                        content: cd.c.to_string(),
+                        position: Point::new(x, y),
+                        color: fg,
+                        size: Pixels(self.font_size),
+                        font,
+                        align_x: alignment::Horizontal::Left.into(),
+                        align_y: alignment::Vertical::Top,
+                        ..Default::default()
+                    });
+                }
             }
 
             // Underline, from explicit ANSI SGR flags, or for URL
@@ -2405,6 +2579,13 @@ where
                 frame.fill_rectangle(Point::new(x, y + cell_h / 2.0), Size::new(width, 1.0), fg);
             }
         }
+        if let Some(r) = run.take() {
+            flush_run(&mut frame, r);
+        }
+
+        // Hand the cell snapshot buffer back so its capacity is reused
+        // by the next frame.
+        DRAW_CELLS.set(cells);
 
         // Cursor, only render when its visible row falls inside the
         // viewport. When the user scrolls into history, the cursor sits
@@ -2455,8 +2636,8 @@ where
         if visible_scrollbar
             && let Some(sb) = scrollbar_geom(
                 bounds,
-                grid.total_lines(),
-                grid.screen_lines(),
+                total_lines,
+                screen_lines,
                 scroll_offset,
             )
         {

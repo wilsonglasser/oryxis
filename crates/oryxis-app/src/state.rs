@@ -6,7 +6,6 @@
 use std::sync::{Arc, Mutex};
 
 use iced::widget::pane_grid;
-use iced::widget::text_editor;
 use oryxis_core::models::connection::AuthMethod;
 use oryxis_ssh::{SftpClient, SftpEntry, SshSession};
 use oryxis_terminal::widget::TerminalState;
@@ -591,15 +590,15 @@ impl ListSort {
         FTime: FnMut(&T) -> chrono::DateTime<chrono::Utc>,
     {
         match self {
-            ListSort::LabelAsc => items.sort_by(|a, b| {
-                label_of(a)
-                    .to_lowercase()
-                    .cmp(&label_of(b).to_lowercase())
-            }),
-            ListSort::LabelDesc => items.sort_by(|a, b| {
-                label_of(b)
-                    .to_lowercase()
-                    .cmp(&label_of(a).to_lowercase())
+            // `sort_by_cached_key` lowercases each label once per item
+            // instead of allocating two fresh Strings per comparison;
+            // these sorts run on every redraw of the dashboard / keys /
+            // snippets views.
+            ListSort::LabelAsc => {
+                items.sort_by_cached_key(|i| label_of(i).to_lowercase())
+            }
+            ListSort::LabelDesc => items.sort_by_cached_key(|i| {
+                std::cmp::Reverse(label_of(i).to_lowercase())
             }),
             ListSort::NewestFirst => {
                 items.sort_by_key(|i| std::cmp::Reverse(created_at(i)))
@@ -614,9 +613,6 @@ pub(crate) struct LocalEntry {
     pub name: String,
     pub is_dir: bool,
     pub size: u64,
-    /// Reserved for upcoming sort-by-modified column; populated now so
-    /// the UI can opt in without a follow-up state migration.
-    #[allow(dead_code)]
     pub modified: Option<std::time::SystemTime>,
 }
 
@@ -665,8 +661,6 @@ pub(crate) enum ChatRole {
 pub(crate) struct ChatMessage {
     pub role: ChatRole,
     pub content: String,
-    #[allow(dead_code)]
-    pub timestamp: chrono::DateTime<chrono::Utc>,
     /// Parsed Markdown items for assistant messages, cached so the view
     /// can borrow them across renders. Iced's `markdown::view` returns an
     /// Element borrowing the items slice, so we can't parse on the fly.
@@ -1801,21 +1795,12 @@ pub(crate) const KBI_FIRST_INPUT_ID: &str = "kbi-first-input";
 pub(crate) enum SshStreamMsg {
     Progress(ConnectionStep, String), // (step, log message)
     Connected(Arc<SshSession>),
-    #[allow(dead_code)]
-    NewKnownHosts(Vec<oryxis_core::models::known_host::KnownHost>),
     HostKeyVerify(oryxis_ssh::HostKeyQuery),
     KbiPrompt(oryxis_ssh::KbiQuery),
     Data(Vec<u8>),
     Error(String),
     Disconnected,
 }
-
-// ---------------------------------------------------------------------------
-// Keep the text_editor import referenced, required for Message enum split later.
-// ---------------------------------------------------------------------------
-
-#[allow(dead_code)]
-pub(crate) type _EditorContent = text_editor::Content;
 
 #[cfg(test)]
 #[path = "state_tests.rs"]

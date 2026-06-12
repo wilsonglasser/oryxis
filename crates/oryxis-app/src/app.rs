@@ -97,45 +97,54 @@ const TERMINAL_FONT_FALLBACK: &[&str] = &[
 ///
 /// On error or empty enumeration we fall back to
 /// `TERMINAL_FONT_FALLBACK` so the picker is never empty.
-pub(crate) fn enumerate_terminal_fonts() -> Vec<String> {
-    let mut db = fontdb::Database::new();
-    db.load_system_fonts();
+///
+/// The scan reads every system font file from disk, which is far too
+/// heavy to repeat per frame (the Settings view calls this on every
+/// redraw while the Terminal tab is open), so the result is computed
+/// once and cached for the process lifetime. Fonts installed while
+/// the app is running show up after a restart.
+pub(crate) fn enumerate_terminal_fonts() -> &'static [String] {
+    static FONTS: std::sync::OnceLock<Vec<String>> = std::sync::OnceLock::new();
+    FONTS.get_or_init(|| {
+        let mut db = fontdb::Database::new();
+        db.load_system_fonts();
 
-    let mut names: std::collections::BTreeSet<String> =
-        std::collections::BTreeSet::new();
-    for face in db.faces() {
-        if !face.monospaced {
-            continue;
-        }
-        if let Some((family, _lang)) = face.families.first() {
-            // Filter out empty / placeholder names defensively; some
-            // systems carry symbol-only faces marked monospace.
-            let trimmed = family.trim();
-            if !trimmed.is_empty() {
-                names.insert(trimmed.to_string());
+        let mut names: std::collections::BTreeSet<String> =
+            std::collections::BTreeSet::new();
+        for face in db.faces() {
+            if !face.monospaced {
+                continue;
+            }
+            if let Some((family, _lang)) = face.families.first() {
+                // Filter out empty / placeholder names defensively; some
+                // systems carry symbol-only faces marked monospace.
+                let trimmed = family.trim();
+                if !trimmed.is_empty() {
+                    names.insert(trimmed.to_string());
+                }
             }
         }
-    }
 
-    if names.is_empty() {
-        return TERMINAL_FONT_FALLBACK.iter().map(|s| s.to_string()).collect();
-    }
-
-    // Prepend the bundled family so it's always picker entry #1
-    // regardless of what the system scan returned. cosmic-text
-    // resolves it by family name, fontdb has it registered via
-    // `application.font(include_bytes!(...))` in main.rs.
-    let bundled: &[&str] = &["SauceCodePro Nerd Font"];
-    let mut out: Vec<String> = Vec::with_capacity(names.len() + bundled.len());
-    for b in bundled {
-        out.push((*b).to_string());
-    }
-    for n in names {
-        if !bundled.contains(&n.as_str()) {
-            out.push(n);
+        if names.is_empty() {
+            return TERMINAL_FONT_FALLBACK.iter().map(|s| s.to_string()).collect();
         }
-    }
-    out
+
+        // Prepend the bundled family so it's always picker entry #1
+        // regardless of what the system scan returned. cosmic-text
+        // resolves it by family name, fontdb has it registered via
+        // `application.font(include_bytes!(...))` in main.rs.
+        let bundled: &[&str] = &["SauceCodePro Nerd Font"];
+        let mut out: Vec<String> = Vec::with_capacity(names.len() + bundled.len());
+        for b in bundled {
+            out.push((*b).to_string());
+        }
+        for n in names {
+            if !bundled.contains(&n.as_str()) {
+                out.push(n);
+            }
+        }
+        out
+    })
 }
 
 // ---------------------------------------------------------------------------

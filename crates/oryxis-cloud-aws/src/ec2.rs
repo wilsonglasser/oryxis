@@ -1,11 +1,22 @@
 //! EC2 discovery, `DescribeInstances` per region, mapped to
 //! `oryxis_cloud::DiscoveredEc2`.
 
+use aws_config::{Region, SdkConfig};
 use aws_sdk_ec2::Client as Ec2Client;
 use aws_sdk_ec2instanceconnect::Client as InstanceConnectClient;
 use oryxis_cloud::{CloudError, CloudProfile, DiscoveredEc2};
 
 use crate::auth::{build_sdk_config, AwsConfigJson};
+
+/// Derive a per-region EC2 client from an already-loaded `SdkConfig`,
+/// overriding only the region. Avoids re-running the full credential
+/// chain (profile files, SSO cache, IMDS, ...) once per region.
+fn region_client(sdk: &SdkConfig, region: &str) -> Ec2Client {
+    let conf = aws_sdk_ec2::config::Builder::from(sdk)
+        .region(Region::new(region.to_string()))
+        .build();
+    Ec2Client::from_conf(conf)
+}
 
 /// Run discovery against every region the profile lists. When no region
 /// list is configured, falls back to the profile's default region. The
@@ -29,9 +40,48 @@ pub async fn discover_ec2(profile: &CloudProfile) -> Result<Vec<DiscoveredEc2>, 
         ));
     }
 
+    // Load the credential chain once and share it across regions; the
+    // serial code paid this cost once per region. A failed load is
+    // degraded to "every region skipped" (one warn instead of N), the
+    // same empty-result contract as before.
+    let sdk = match build_sdk_config(profile, None, None).await {
+        Ok(sdk) => sdk,
+        Err(err) => {
+            tracing::warn!(
+                target = "oryxis_cloud_aws",
+                error = %err,
+                "EC2 discovery failed to build the AWS SDK config, skipping all regions"
+            );
+            return Ok(Vec::new());
+        }
+    };
+
+    // Fan out all regions concurrently; results are awaited in the
+    // sorted-region order so output stays deterministic.
+    let handles: Vec<_> = regions
+        .iter()
+        .map(|region| {
+            let client = region_client(&sdk, region);
+            let region = region.clone();
+            tokio::spawn(async move { describe_one_region(&client, &region).await })
+        })
+        .collect();
+
     let mut out = Vec::new();
-    for region in &regions {
-        match describe_one_region(profile, region).await {
+    for (region, handle) in regions.iter().zip(handles) {
+        let result = match handle.await {
+            Ok(result) => result,
+            Err(err) => {
+                tracing::warn!(
+                    target = "oryxis_cloud_aws",
+                    region = %region,
+                    error = %err,
+                    "EC2 discovery task panicked for region, skipping"
+                );
+                continue;
+            }
+        };
+        match result {
             Ok(mut found) => out.append(&mut found),
             Err(err) => {
                 tracing::warn!(
@@ -47,13 +97,14 @@ pub async fn discover_ec2(profile: &CloudProfile) -> Result<Vec<DiscoveredEc2>, 
 }
 
 async fn describe_one_region(
-    profile: &CloudProfile,
+    client: &Ec2Client,
     region: &str,
 ) -> Result<Vec<DiscoveredEc2>, CloudError> {
-    let sdk = build_sdk_config(profile, Some(region), None).await?;
-    let client = Ec2Client::new(&sdk);
-
-    let mut raw_instances: Vec<aws_sdk_ec2::types::Instance> = Vec::new();
+    // Map each page as it arrives instead of deep-cloning every SDK
+    // `Instance`. `amis` runs parallel to `out` so the username pass
+    // below can patch entries in place once DescribeImages resolves.
+    let mut out: Vec<DiscoveredEc2> = Vec::new();
+    let mut amis: Vec<Option<String>> = Vec::new();
     let mut next_token: Option<String> = None;
     loop {
         let mut req = client.describe_instances();
@@ -67,7 +118,10 @@ async fn describe_one_region(
 
         for reservation in resp.reservations() {
             for instance in reservation.instances() {
-                raw_instances.push(instance.clone());
+                if let Some(d) = map_instance(instance, region) {
+                    amis.push(instance.image_id().map(str::to_string));
+                    out.push(d);
+                }
             }
         }
 
@@ -85,17 +139,15 @@ async fn describe_one_region(
     // "ec2-user" as the universal default downstream.
     let unique_amis: Vec<String> = {
         let mut s: std::collections::HashSet<String> = std::collections::HashSet::new();
-        for inst in &raw_instances {
-            if let Some(ami) = inst.image_id() {
-                s.insert(ami.to_string());
-            }
+        for ami in amis.iter().flatten() {
+            s.insert(ami.clone());
         }
         s.into_iter().collect()
     };
     let ami_user_map: std::collections::HashMap<String, String> = if unique_amis.is_empty() {
         std::collections::HashMap::new()
     } else {
-        match describe_images_username_map(&client, region, &unique_amis).await {
+        match describe_images_username_map(client, region, &unique_amis).await {
             Ok(m) => m,
             Err(err) => {
                 tracing::warn!(
@@ -109,10 +161,9 @@ async fn describe_one_region(
         }
     };
 
-    let mut out = Vec::new();
-    for instance in &raw_instances {
-        if let Some(d) = map_instance(instance, region, &ami_user_map) {
-            out.push(d);
+    for (d, ami) in out.iter_mut().zip(&amis) {
+        if let Some(ami) = ami {
+            d.default_username = ami_user_map.get(ami).cloned();
         }
     }
     Ok(out)
@@ -162,11 +213,11 @@ async fn describe_images_username_map(
 
 /// Map an EC2 `Instance` row to our wire type. Returns `None` only when
 /// the instance has no `instance_id` (which the SDK guarantees is never
-/// the case in practice, defensive).
+/// the case in practice, defensive). `default_username` starts as `None`
+/// and is patched by the caller once the AMI batch lookup completes.
 fn map_instance(
     instance: &aws_sdk_ec2::types::Instance,
     region: &str,
-    ami_user_map: &std::collections::HashMap<String, String>,
 ) -> Option<DiscoveredEc2> {
     let instance_id = instance.instance_id()?.to_string();
 
@@ -183,10 +234,6 @@ fn map_instance(
         .map(|n| n.as_str().to_string())
         .unwrap_or_else(|| "unknown".into());
 
-    let default_username = instance
-        .image_id()
-        .and_then(|ami| ami_user_map.get(ami).cloned());
-
     Some(DiscoveredEc2 {
         instance_id,
         region: region.to_string(),
@@ -196,7 +243,7 @@ fn map_instance(
         public_ip: non_empty(instance.public_ip_address()),
         private_ip: non_empty(instance.private_ip_address()),
         state,
-        default_username,
+        default_username: None,
     })
 }
 

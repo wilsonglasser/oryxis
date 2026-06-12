@@ -1058,6 +1058,12 @@ impl Oryxis {
                         self.keys.clear();
                         self.snippets.clear();
                         self.groups.clear();
+                        // Close live SSH sessions, not just the panes
+                        // referencing them, so locking the vault really
+                        // severs the remote connections.
+                        for tab in &self.tabs {
+                            Self::close_tab_ssh_sessions(tab);
+                        }
                         self.tabs.clear();
                         self.active_tab = None;
                         self.clear_terminal_tab_memory();

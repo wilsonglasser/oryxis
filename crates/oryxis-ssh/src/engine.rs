@@ -389,9 +389,12 @@ pub struct SshSession {
     /// columns and our local alacritty wraps the overflow into extra
     /// rows ("double line" effect).
     resize_tx: mpsc::UnboundedSender<(u16, u16)>,
-    _reader_task: tokio::task::JoinHandle<()>,
-    _writer_task: tokio::task::JoinHandle<()>,
-    _port_forward_tasks: Vec<tokio::task::JoinHandle<()>>,
+    reader_task: tokio::task::JoinHandle<()>,
+    writer_task: tokio::task::JoinHandle<()>,
+    port_forward_tasks: Vec<tokio::task::JoinHandle<()>>,
+    /// Latched by `close()` so teardown runs exactly once even when both
+    /// an explicit close and the `Drop` backstop fire.
+    closed: std::sync::atomic::AtomicBool,
     /// Cap on how long `open_sftp` (and the per-sibling open in the
     /// transfer pool) wait before giving up. Set by `SshEngine`'s
     /// builder so the user can tune it from the SFTP settings panel.
@@ -463,6 +466,39 @@ impl SshSession {
         !self.writer_tx.is_closed()
     }
 
+    /// Tear the session down. Idempotent: only the first call acts.
+    ///
+    /// Aborts the reader / writer / port-forward tasks (releasing any
+    /// locally bound `-L` listeners) and disconnects the underlying SSH
+    /// connection so the remote side tears its half down too. Aborting
+    /// the reader task drops the output channel sender, so the app-side
+    /// output stream ends cleanly (recv returns `None`) instead of
+    /// hanging on a dead session.
+    pub fn close(&self) {
+        use std::sync::atomic::Ordering;
+        if self.closed.swap(true, Ordering::SeqCst) {
+            return;
+        }
+        self.reader_task.abort();
+        self.writer_task.abort();
+        for task in &self.port_forward_tasks {
+            task.abort();
+        }
+        // Politely disconnect the transport. Needs a runtime to spawn
+        // on; when close() runs outside one (e.g. a late Drop during
+        // process shutdown) the aborts above already killed the tasks
+        // and the TCP socket dies with the last handle clone.
+        if let Ok(rt) = tokio::runtime::Handle::try_current() {
+            let handle = Arc::clone(&self._handle);
+            rt.spawn(async move {
+                let h = handle.lock().await;
+                let _ = h
+                    .disconnect(russh::Disconnect::ByApplication, "session closed", "")
+                    .await;
+            });
+        }
+    }
+
     /// Detect the remote OS by executing a silent probe on a side channel
     /// (no output goes to the user's PTY). Parses `/etc/os-release` for
     /// Linux; falls back to `uname -s` for non-Linux (Darwin, FreeBSD…).
@@ -507,6 +543,15 @@ impl SshSession {
         let u = uname_s.to_lowercase();
         if !u.is_empty() && u != "linux" { return Some(u); }
         None
+    }
+}
+
+impl Drop for SshSession {
+    fn drop(&mut self) {
+        // Backstop: an SshSession dropped without an explicit close()
+        // must not leak its tokio tasks, the live SSH connection, or
+        // any bound port-forward listeners.
+        self.close();
     }
 }
 
@@ -2157,9 +2202,17 @@ impl SshEngine {
             // Stateful decoder so a multi-byte char split across two reads
             // still decodes correctly. `None` for UTF-8 (passthrough).
             let mut decoder = enc.map(|e| e.new_decoder());
+            // Cap on one forwarded message. Data messages already queued on
+            // the channel are folded into a single send so the UI runs one
+            // update+view+draw cycle per batch instead of one per SSH packet.
+            const COALESCE_MAX: usize = 64 * 1024;
             loop {
                 tokio::select! {
                     msg = channel.wait() => {
+                        // Set when EOF / exit-status arrives mid-batch: the
+                        // accumulated bytes are flushed first, then the loop
+                        // exits, so no trailing output is dropped.
+                        let mut closed = false;
                         let bytes: Option<Vec<u8>> = match msg {
                             Some(ChannelMsg::Data { data }) => Some(data.to_vec()),
                             Some(ChannelMsg::ExtendedData { data, ext: 1 }) => Some(data.to_vec()),
@@ -2174,7 +2227,40 @@ impl SshEngine {
                             }
                             _ => continue,
                         };
-                        if let Some(b) = bytes {
+                        if let Some(mut b) = bytes {
+                            // Coalesce: drain messages that are already
+                            // queued (zero timeout never waits for new
+                            // data, so interactive echo latency is
+                            // unchanged) up to the batch cap.
+                            while b.len() < COALESCE_MAX {
+                                match tokio::time::timeout(
+                                    std::time::Duration::ZERO,
+                                    channel.wait(),
+                                ).await {
+                                    Ok(Some(ChannelMsg::Data { data })) => {
+                                        b.extend_from_slice(&data);
+                                    }
+                                    Ok(Some(ChannelMsg::ExtendedData { data, ext: 1 })) => {
+                                        b.extend_from_slice(&data);
+                                    }
+                                    Ok(Some(ChannelMsg::ExtendedData { .. })) => continue,
+                                    Ok(Some(ChannelMsg::ExitStatus { exit_status })) => {
+                                        tracing::info!(
+                                            "Remote exited with status {}", exit_status,
+                                        );
+                                        closed = true;
+                                        break;
+                                    }
+                                    Ok(Some(ChannelMsg::Eof)) | Ok(None) => {
+                                        tracing::info!("SSH channel closed");
+                                        closed = true;
+                                        break;
+                                    }
+                                    Ok(Some(_)) => continue,
+                                    // Nothing queued right now: flush.
+                                    Err(_) => break,
+                                }
+                            }
                             let out = match &mut decoder {
                                 Some(dec) => {
                                     let mut s = String::with_capacity(b.len() + 16);
@@ -2186,6 +2272,9 @@ impl SshEngine {
                             if output_tx.send(out).is_err() {
                                 break;
                             }
+                        }
+                        if closed {
+                            break;
                         }
                     }
                     Some((cols, rows)) = resize_rx.recv() => {
@@ -2233,9 +2322,10 @@ impl SshEngine {
                 _handle: shared_handle,
                 writer_tx,
                 resize_tx,
-                _reader_task: reader_task,
-                _writer_task: writer_task,
-                _port_forward_tasks: pf_tasks,
+                reader_task,
+                writer_task,
+                port_forward_tasks: pf_tasks,
+                closed: std::sync::atomic::AtomicBool::new(false),
                 // Default, overridden by the engine right after this
                 // returns via `sftp_open_timeout` assignment.
                 sftp_open_timeout: std::time::Duration::from_secs(10),

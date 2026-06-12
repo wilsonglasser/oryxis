@@ -304,10 +304,12 @@ impl Oryxis {
                     theme_grid,
                 ]);
 
-                // Font picker. The list comes from a live fontdb scan
-                // of monospace families installed on the system, with a
-                // hardcoded fallback when the scan returns nothing.
-                let fonts: Vec<String> = crate::app::enumerate_terminal_fonts();
+                // Font picker. The list comes from a fontdb scan of
+                // monospace families installed on the system (cached
+                // for the process lifetime; rescanning per frame read
+                // every font file from disk), with a hardcoded
+                // fallback when the scan returns nothing.
+                let fonts: &'static [String] = crate::app::enumerate_terminal_fonts();
                 let font_picker_section = panel_section(column![
                     text(crate::i18n::t("terminal_font")).size(13).color(OryxisColors::t().text_primary),
                     Space::new().height(4),

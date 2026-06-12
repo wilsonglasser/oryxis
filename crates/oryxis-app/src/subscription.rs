@@ -130,10 +130,11 @@ impl Oryxis {
         // its own thread that pushes menu / icon events into a pair
         // of crossbeam channels; the dispatcher's `TrayPoll` handler
         // calls `tray::poll_*` to drain them. 100 ms is the same
-        // cadence Tauri uses internally for the same job. On non-
-        // Windows targets the polls are no-ops, so mounting the
-        // subscription unconditionally costs only the timer thread,
-        // which iced shares across all `time::every` ticks anyway.
+        // cadence Tauri uses internally for the same job. Windows
+        // only: on other targets the polls are no-ops, and mounting
+        // the ticker anyway would force an update+view pass 10x/s on
+        // an otherwise idle app.
+        #[cfg(target_os = "windows")]
         subs.push(
             iced::time::every(std::time::Duration::from_millis(100))
                 .map(|_| Message::TrayPoll),

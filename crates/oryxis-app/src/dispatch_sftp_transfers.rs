@@ -297,10 +297,17 @@ impl Oryxis {
                         }
                         let unique = unique_entry_name(&basename, |n| !listing.contains(n));
                         let dest = parent.join(&unique);
-                        if let Err(e) = std::fs::copy(&src, &dest) {
-                            self.sftp.pane_mut(side).error = Some(format!("copy: {e}"));
-                        }
-                        self.refresh_sftp_local(side);
+                        // The copy can be multi-GB; run it off the event
+                        // loop instead of freezing update() for the
+                        // duration, mirroring the remote branch below.
+                        return Ok(Task::perform(
+                            tokio::task::spawn_blocking(move || std::fs::copy(&src, &dest)),
+                            move |res| match res {
+                                Ok(Ok(_)) => Message::SftpRefreshLocal(side),
+                                Ok(Err(e)) => Message::SftpOpResult(side, format!("copy: {e}"), true),
+                                Err(e) => Message::SftpOpResult(side, format!("copy: {e}"), true),
+                            },
+                        ));
                 } else {
                         let Some(client) = self.sftp.pane(side).client.clone() else {
                             return Ok(Task::none());

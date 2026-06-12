@@ -228,7 +228,10 @@ pub(super) async fn handle_sync_session(
 }
 
 
-/// Sync with all active paired peers.
+/// Sync with all active paired peers. Peers run concurrently: an
+/// offline peer burns its own 5s QUIC timeout (plus relay fallback)
+/// without stalling the peers behind it, where the previous serial
+/// loop made N offline peers cost N x the per-peer budget per tick.
 pub(super) async fn sync_all_peers(
     vault: &Arc<std::sync::Mutex<VaultStore>>,
     identity: &DeviceIdentity,
@@ -240,100 +243,142 @@ pub(super) async fn sync_all_peers(
         v.list_sync_peers()?
     };
 
-    for peer in peers.iter().filter(|p| p.is_active) {
-        let _ = event_tx.send(SyncEvent::SyncStarted { peer_id: peer.peer_id });
+    // Each task owns its clones (the vault is an Arc, the rest are
+    // cheap Clone types) and reports through events, so a failing
+    // peer is isolated from the others by construction: nothing here
+    // short-circuits the set.
+    let mut tasks = tokio::task::JoinSet::new();
+    for peer in peers.into_iter().filter(|p| p.is_active) {
+        let vault = vault.clone();
+        let identity = identity.clone();
+        let config = config.clone();
+        let event_tx = event_tx.clone();
+        tasks.spawn(async move {
+            sync_one_peer(&vault, &identity, &config, &event_tx, &peer).await;
+        });
+    }
+    // Drain every task. A panicked task is logged and skipped; it
+    // must not cancel the remaining peers.
+    while let Some(joined) = tasks.join_next().await {
+        if let Err(e) = joined {
+            tracing::warn!("sync: peer sync task panicked: {e}");
+        }
+    }
 
-        // Tier 1: direct QUIC to the last known endpoint. Skipped
-        // for peers paired via relay (no endpoint recorded) or peers
-        // whose endpoint is the `0.0.0.0` sentinel.
-        let mut last_err: Option<SyncError> = None;
-        let quic_result = match (&peer.last_known_ip, peer.last_known_port) {
-            (Some(ip), Some(port)) if !ip.is_empty() && ip != "0.0.0.0" => {
-                match format!("{ip}:{port}").parse::<SocketAddr>() {
-                    Ok(addr) => Some(
-                        tokio::time::timeout(
-                            std::time::Duration::from_secs(5),
-                            sync_with_peer(vault, identity, &peer.peer_id, addr, event_tx),
-                        )
-                        .await,
-                    ),
-                    Err(e) => {
-                        last_err = Some(SyncError::Transport(format!(
-                            "Parse addr: {e}"
-                        )));
-                        None
-                    }
+    Ok(())
+}
+
+/// Budget for the tier-2 relay fallback. The relay long-poll retries
+/// forever on empty responses, so without a cap an unresponsive peer
+/// would park this task (and the whole sync tick awaiting it) for
+/// good. A full session is a handful of HTTP round-trips; 60s is
+/// generous even on slow links.
+const RELAY_SYNC_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(60);
+
+/// One peer's full sync attempt: QUIC tier with a 5s cap, relay
+/// fallback tier, vault stamp + UI events on the way out. Never
+/// returns an error; every failure path lands in `SyncFailed`.
+async fn sync_one_peer(
+    vault: &Arc<std::sync::Mutex<VaultStore>>,
+    identity: &DeviceIdentity,
+    config: &SyncConfig,
+    event_tx: &mpsc::UnboundedSender<SyncEvent>,
+    peer: &oryxis_vault::SyncPeerRow,
+) {
+    let _ = event_tx.send(SyncEvent::SyncStarted { peer_id: peer.peer_id });
+
+    // Tier 1: direct QUIC to the last known endpoint. Skipped
+    // for peers paired via relay (no endpoint recorded) or peers
+    // whose endpoint is the `0.0.0.0` sentinel.
+    let mut last_err: Option<SyncError> = None;
+    let quic_result = match (&peer.last_known_ip, peer.last_known_port) {
+        (Some(ip), Some(port)) if !ip.is_empty() && ip != "0.0.0.0" => {
+            match format!("{ip}:{port}").parse::<SocketAddr>() {
+                Ok(addr) => Some(
+                    tokio::time::timeout(
+                        std::time::Duration::from_secs(5),
+                        sync_with_peer(vault, identity, &peer.peer_id, addr, event_tx),
+                    )
+                    .await,
+                ),
+                Err(e) => {
+                    last_err = Some(SyncError::Transport(format!(
+                        "Parse addr: {e}"
+                    )));
+                    None
                 }
             }
-            _ => None,
-        };
-
-        let mut sync_outcome: Option<(usize, usize)> = None;
-        match quic_result {
-            Some(Ok(Ok(r))) => sync_outcome = Some(r),
-            Some(Ok(Err(e))) => {
-                tracing::debug!(
-                    "sync: QUIC to {} failed, trying relay: {e}",
-                    peer.peer_id
-                );
-                last_err = Some(e);
-            }
-            Some(Err(_)) => {
-                tracing::debug!(
-                    "sync: QUIC to {} timed out after 5s, trying relay",
-                    peer.peer_id
-                );
-                last_err = Some(SyncError::Timeout);
-            }
-            None => {}
         }
+        _ => None,
+    };
 
-        // Tier 2: relay fallback. Engaged when QUIC failed (or never
-        // ran because the peer has no direct endpoint) AND a relay
-        // URL is configured.
-        if sync_outcome.is_none() {
-            if let Some(relay_url) = &config.signaling_url {
-                let token = config.signaling_token.clone().unwrap_or_default();
-                match sync_with_peer_via_relay(
+    let mut sync_outcome: Option<(usize, usize)> = None;
+    match quic_result {
+        Some(Ok(Ok(r))) => sync_outcome = Some(r),
+        Some(Ok(Err(e))) => {
+            tracing::debug!(
+                "sync: QUIC to {} failed, trying relay: {e}",
+                peer.peer_id
+            );
+            last_err = Some(e);
+        }
+        Some(Err(_)) => {
+            tracing::debug!(
+                "sync: QUIC to {} timed out after 5s, trying relay",
+                peer.peer_id
+            );
+            last_err = Some(SyncError::Timeout);
+        }
+        None => {}
+    }
+
+    // Tier 2: relay fallback. Engaged when QUIC failed (or never
+    // ran because the peer has no direct endpoint) AND a relay
+    // URL is configured.
+    if sync_outcome.is_none() {
+        if let Some(relay_url) = &config.signaling_url {
+            let token = config.signaling_token.clone().unwrap_or_default();
+            match tokio::time::timeout(
+                RELAY_SYNC_TIMEOUT,
+                sync_with_peer_via_relay(
                     vault,
                     identity,
                     relay_url,
                     &token,
                     &peer.peer_id,
                     event_tx,
-                )
-                .await
-                {
-                    Ok(r) => sync_outcome = Some(r),
-                    Err(e) => last_err = Some(e),
-                }
-            }
-        }
-
-        match sync_outcome {
-            Some((pushed, pulled)) => {
-                if let Ok(v) = vault.lock() {
-                    let _ = v.update_sync_peer_last_synced(&peer.peer_id);
-                }
-                let _ = event_tx.send(SyncEvent::SyncCompleted {
-                    peer_id: peer.peer_id,
-                    pushed,
-                    pulled,
-                });
-            }
-            None => {
-                let error = last_err
-                    .map(|e| e.to_string())
-                    .unwrap_or_else(|| "No reachable transport".into());
-                let _ = event_tx.send(SyncEvent::SyncFailed {
-                    peer_id: peer.peer_id,
-                    error,
-                });
+                ),
+            )
+            .await
+            {
+                Ok(Ok(r)) => sync_outcome = Some(r),
+                Ok(Err(e)) => last_err = Some(e),
+                Err(_) => last_err = Some(SyncError::Timeout),
             }
         }
     }
 
-    Ok(())
+    match sync_outcome {
+        Some((pushed, pulled)) => {
+            if let Ok(v) = vault.lock() {
+                let _ = v.update_sync_peer_last_synced(&peer.peer_id);
+            }
+            let _ = event_tx.send(SyncEvent::SyncCompleted {
+                peer_id: peer.peer_id,
+                pushed,
+                pulled,
+            });
+        }
+        None => {
+            let error = last_err
+                .map(|e| e.to_string())
+                .unwrap_or_else(|| "No reachable transport".into());
+            let _ = event_tx.send(SyncEvent::SyncFailed {
+                peer_id: peer.peer_id,
+                error,
+            });
+        }
+    }
 }
 
 /// Client side of a relay-based sync session: bind a `RelayClient`
@@ -551,14 +596,26 @@ async fn run_sync_session_as_client(
     // Build local manifest
     let local_manifest = build_manifest(vault)?;
 
-    // Compare manifests using LWW
+    // Compare manifests using LWW. Index both sides by (type, id)
+    // first so the diff is O(local + remote) instead of the previous
+    // O(local x remote) nested scan.
+    let local_by_key: std::collections::HashMap<_, _> = local_manifest
+        .iter()
+        .map(|l| ((l.entity_type, l.entity_id), l))
+        .collect();
+    let remote_keys: std::collections::HashSet<_> = remote_manifest
+        .iter()
+        .map(|r| (r.entity_type, r.entity_id))
+        .collect();
+
     let mut needed_from_remote = Vec::new();
     let mut to_push_to_remote = Vec::new();
 
     for remote_entry in &remote_manifest {
-        if let Some(local_entry) = local_manifest.iter().find(|l| {
-            l.entity_type == remote_entry.entity_type && l.entity_id == remote_entry.entity_id
-        }) {
+        if let Some(local_entry) = local_by_key
+            .get(&(remote_entry.entity_type, remote_entry.entity_id))
+            .copied()
+        {
             match crate::conflict::resolve(local_entry, remote_entry) {
                 crate::conflict::SyncAction::AcceptRemote => {
                     needed_from_remote.push(protocol::DeltaRef {
@@ -585,9 +642,7 @@ async fn run_sync_session_as_client(
 
     // Records only in local, push to remote
     for local_entry in &local_manifest {
-        if !remote_manifest.iter().any(|r| {
-            r.entity_type == local_entry.entity_type && r.entity_id == local_entry.entity_id
-        }) {
+        if !remote_keys.contains(&(local_entry.entity_type, local_entry.entity_id)) {
             to_push_to_remote.push(protocol::DeltaRef {
                 entity_type: local_entry.entity_type,
                 entity_id: local_entry.entity_id,

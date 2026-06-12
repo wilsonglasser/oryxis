@@ -39,36 +39,25 @@ impl Oryxis {
                     };
                     match oryxis_vault::export_vault(vault, &self.export_password, options) {
                         Ok(data) => {
-                            // Open save dialog
-                            let dialog = rfd::FileDialog::new()
-                                .set_title("Export Vault")
-                                .add_filter("Oryxis Export", &["oryxis"])
-                                .set_file_name("vault.oryxis")
-                                .save_file();
-                            if let Some(path) = dialog {
-                                match std::fs::write(&path, &data) {
-                                    Ok(()) => {
-                                        // Even though the export is age-
-                                        // encrypted, lock the file down
-                                        // to 0600, defense in depth so
-                                        // a stranger reading the bytes
-                                        // doesn't get the easy step of
-                                        // copy/exfiltrate first.
-                                        #[cfg(unix)]
-                                        {
-                                            use std::os::unix::fs::PermissionsExt as _;
-                                            let _ = std::fs::set_permissions(
-                                                &path,
-                                                std::fs::Permissions::from_mode(0o600),
-                                            );
-                                        }
-                                        self.export_status = Some(Ok(format!("Exported to {}", path.display())));
-                                    }
-                                    Err(e) => {
-                                        self.export_status = Some(Err(format!("Write failed: {}", e)));
-                                    }
-                                }
-                            }
+                            // The native save dialog blocks its thread for as
+                            // long as the user browses; run it (and the write)
+                            // off the event loop so the UI keeps painting.
+                            return Ok(Task::perform(
+                                tokio::task::spawn_blocking(move || {
+                                    let path = rfd::FileDialog::new()
+                                        .set_title("Export Vault")
+                                        .add_filter("Oryxis Export", &["oryxis"])
+                                        .set_file_name("vault.oryxis")
+                                        .save_file()?;
+                                    Some(write_export_file(&path, &data))
+                                }),
+                                |res| match res {
+                                    Ok(Some(status)) => Message::ExportCompleted(status),
+                                    // Dialog cancelled or task panicked: leave
+                                    // the status untouched.
+                                    _ => Message::NoOp,
+                                },
+                            ));
                         }
                         Err(e) => {
                             self.export_status = Some(Err(e.to_string()));
@@ -81,25 +70,32 @@ impl Oryxis {
             }
             Message::ImportSshConfig => {
                 self.ssh_config_import_status = None;
-                let mut dialog = rfd::FileDialog::new()
-                    .set_title("Import SSH config")
-                    .add_filter("SSH config", &["", "config"]);
-                if let Some(default) = crate::ssh_config::default_config_path()
-                    && let Some(parent) = default.parent()
-                {
-                    dialog = dialog.set_directory(parent);
-                }
-                let Some(path) = dialog.pick_file() else {
-                    return Ok(Task::none());
-                };
-                let text = match std::fs::read_to_string(&path) {
-                    Ok(t) => t,
-                    Err(e) => {
-                        self.ssh_config_import_status =
-                            Some(Err(format!("Read failed: {e}")));
-                        return Ok(Task::none());
-                    }
-                };
+                return Ok(Task::perform(
+                    tokio::task::spawn_blocking(|| {
+                        let mut dialog = rfd::FileDialog::new()
+                            .set_title("Import SSH config")
+                            .add_filter("SSH config", &["", "config"]);
+                        if let Some(default) = crate::ssh_config::default_config_path()
+                            && let Some(parent) = default.parent()
+                        {
+                            dialog = dialog.set_directory(parent);
+                        }
+                        let path = dialog.pick_file()?;
+                        Some(
+                            std::fs::read_to_string(&path)
+                                .map_err(|e| format!("Read failed: {e}")),
+                        )
+                    }),
+                    |res| match res {
+                        Ok(Some(text)) => Message::SshConfigFileLoaded(text),
+                        _ => Message::NoOp,
+                    },
+                ));
+            }
+            Message::SshConfigFileLoaded(Err(e)) => {
+                self.ssh_config_import_status = Some(Err(e));
+            }
+            Message::SshConfigFileLoaded(Ok(text)) => {
                 let parsed = crate::ssh_config::parse(&text);
                 if parsed.is_empty() {
                     self.ssh_config_import_status =
@@ -136,16 +132,30 @@ impl Oryxis {
                     to_save.push(crate::ssh_config::to_connection(host));
                 }
                 crate::ssh_config::link_proxy_jumps(&parsed_to_save.iter().map(|p| (*p).clone()).collect::<Vec<_>>(), &mut to_save);
+                // One transaction for the batch, and patch the in-memory
+                // list with the rows that saved instead of re-reading
+                // the whole vault.
+                let _ = vault.begin_batch();
+                let mut saved: Vec<oryxis_core::models::connection::Connection> = Vec::new();
                 for (host, conn) in parsed_to_save.iter().zip(to_save.iter()) {
                     // No password yet, `~/.ssh/config` doesn't carry
                     // credentials. The user can add one later in the
                     // host editor; for now save without it.
                     match vault.save_connection(conn, None) {
-                        Ok(()) => imported += 1,
+                        Ok(()) => {
+                            imported += 1;
+                            saved.push(conn.clone());
+                        }
                         Err(e) => errors.push(format!("{}: {e}", host.alias)),
                     }
                 }
-                self.load_data_from_vault();
+                if let Err(e) = vault.commit_batch() {
+                    vault.rollback_batch();
+                    saved.clear();
+                    imported = 0;
+                    errors.push(format!("commit: {e}"));
+                }
+                self.connections.extend(saved);
                 let mut summary = format!(
                     "{} {} / {}",
                     crate::i18n::t("import_summary_imported"),
@@ -173,26 +183,26 @@ impl Oryxis {
                 self.import_status = None;
                 self.import_password = String::new();
                 self.import_file_data = None;
-                // Open file picker
-                let dialog = rfd::FileDialog::new()
-                    .set_title("Import Vault")
-                    .add_filter("Oryxis Export", &["oryxis"])
-                    .pick_file();
-                if let Some(path) = dialog {
-                    match std::fs::read(&path) {
-                        Ok(data) => {
-                            if oryxis_vault::is_valid_export(&data) {
-                                self.import_file_data = Some(data);
-                                self.show_import_dialog = true;
-                            } else {
-                                self.import_status = Some(Err("Invalid export file".into()));
-                            }
-                        }
-                        Err(e) => {
-                            self.import_status = Some(Err(format!("Read failed: {}", e)));
-                        }
-                    }
-                }
+                // Picker + read off the event loop; the follow-up
+                // messages route back into the dialog state.
+                return Ok(Task::perform(
+                    tokio::task::spawn_blocking(|| {
+                        let path = rfd::FileDialog::new()
+                            .set_title("Import Vault")
+                            .add_filter("Oryxis Export", &["oryxis"])
+                            .pick_file()?;
+                        Some(match std::fs::read(&path) {
+                            Ok(data) if oryxis_vault::is_valid_export(&data) => Ok(data),
+                            Ok(_) => Err("Invalid export file".to_string()),
+                            Err(e) => Err(format!("Read failed: {}", e)),
+                        })
+                    }),
+                    |res| match res {
+                        Ok(Some(Ok(data))) => Message::ImportFileLoaded(data),
+                        Ok(Some(Err(e))) => Message::ImportCompleted(Err(e)),
+                        _ => Message::NoOp,
+                    },
+                ));
             }
             Message::ImportFileLoaded(data) => {
                 self.import_file_data = Some(data);
@@ -284,23 +294,33 @@ impl Oryxis {
                     self.share_status = Some(Err("Password is required".into()));
                     return Ok(Task::none());
                 }
-                if let (Some(vault), Some(filter)) = (&self.vault, &self.share_filter) {
-                    // Open the save dialog FIRST, then encrypt. Argon2 takes
-                    // tens-to-hundreds of ms and would otherwise freeze the UI
-                    // before the dialog even appears. Picking the path first
-                    // also skips the work entirely when the user cancels.
+                if self.vault.is_some() && self.share_filter.is_some() {
+                    // Open the save dialog FIRST (off the event loop), then
+                    // encrypt on the follow-up message. Argon2 takes tens of
+                    // ms and the dialog can block for as long as the user
+                    // browses; picking the path first also skips the work
+                    // entirely when the user cancels.
                     let default_name = self
                         .share_suggested_name
                         .clone()
                         .unwrap_or_else(|| "shared.oryxis".to_string());
-                    let dialog = rfd::FileDialog::new()
-                        .set_title("Share")
-                        .add_filter("Oryxis Export", &["oryxis"])
-                        .set_file_name(&default_name)
-                        .save_file();
-                    let Some(path) = dialog else {
-                        return Ok(Task::none());
-                    };
+                    return Ok(Task::perform(
+                        tokio::task::spawn_blocking(move || {
+                            rfd::FileDialog::new()
+                                .set_title("Share")
+                                .add_filter("Oryxis Export", &["oryxis"])
+                                .set_file_name(&default_name)
+                                .save_file()
+                        }),
+                        |res| match res {
+                            Ok(Some(path)) => Message::SharePathChosen(path),
+                            _ => Message::NoOp,
+                        },
+                    ));
+                }
+            }
+            Message::SharePathChosen(path) => {
+                if let (Some(vault), Some(filter)) = (&self.vault, &self.share_filter) {
                     let options = oryxis_vault::ExportOptions {
                         include_private_keys: self.share_include_keys,
                         filter: filter.clone(),
@@ -345,6 +365,24 @@ impl Oryxis {
             m => return Err(m),
         }
         Ok(Task::none())
+    }
+}
+
+/// Write an export payload to the chosen path, tightening permissions
+/// to 0600 on Unix (the export is encrypted, but defense in depth
+/// keeps a stranger from the easy first step of copy/exfiltrate).
+/// Returns the status line for the dialog.
+fn write_export_file(path: &std::path::Path, data: &[u8]) -> Result<String, String> {
+    match std::fs::write(path, data) {
+        Ok(()) => {
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt as _;
+                let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600));
+            }
+            Ok(format!("Exported to {}", path.display()))
+        }
+        Err(e) => Err(format!("Write failed: {}", e)),
     }
 }
 

@@ -114,6 +114,12 @@ struct BucketState {
     last: Instant,
 }
 
+/// How long a rate-limiter bucket may sit untouched before the
+/// sweeper evicts it. A few minutes comfortably outlives any
+/// in-flight session burst while keeping the map bounded by the
+/// number of senders active in that window.
+const BUCKET_IDLE_TTL: Duration = Duration::from_secs(300);
+
 impl RateLimiter {
     fn new(capacity: f64, refill_per_sec: f64) -> Self {
         Self {
@@ -121,6 +127,38 @@ impl RateLimiter {
             capacity,
             refill_per_sec,
         }
+    }
+
+    /// Evict buckets whose last refill is older than `max_idle`. An
+    /// idle bucket has refilled to capacity anyway, so dropping it
+    /// loses nothing: the next request from that sender just
+    /// re-creates it full. Without eviction the map grows by one
+    /// entry per distinct `X-Sender-Id` ever seen.
+    fn evict_idle(&self, max_idle: Duration) {
+        let mut map = match self.inner.lock() {
+            Ok(g) => g,
+            Err(p) => p.into_inner(),
+        };
+        let now = Instant::now();
+        map.retain(|_, b| now.duration_since(b.last) < max_idle);
+    }
+
+    /// Periodic eviction task, mirroring the device-table and inbox
+    /// sweepers spawned next to it in `main`.
+    fn spawn_sweeper(self, interval: Duration) {
+        tokio::spawn(async move {
+            let mut ticker = tokio::time::interval(interval);
+            ticker.set_missed_tick_behavior(
+                tokio::time::MissedTickBehavior::Delay,
+            );
+            // Skip the immediate first tick so the sweeper doesn't
+            // run before the server even bound its port.
+            ticker.tick().await;
+            loop {
+                ticker.tick().await;
+                self.evict_idle(BUCKET_IDLE_TTL);
+            }
+        });
     }
 
     /// Returns `true` when the request was admitted (a token consumed)
@@ -176,6 +214,10 @@ async fn main() -> anyhow::Result<()> {
         .spawn_sweeper(Duration::from_secs(60));
     state
         .inboxes
+        .clone()
+        .spawn_sweeper(Duration::from_secs(60));
+    state
+        .push_limiter
         .clone()
         .spawn_sweeper(Duration::from_secs(60));
 

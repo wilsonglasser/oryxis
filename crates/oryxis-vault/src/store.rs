@@ -1583,6 +1583,44 @@ impl VaultStore {
         Ok(rows)
     }
 
+    /// Fetch a single proxy identity by id. `None` when the row is gone
+    /// (used by `resolve_proxy`, where a dangling reference must
+    /// degrade gracefully rather than error).
+    pub fn get_proxy_identity(&self, id: &Uuid) -> Result<Option<ProxyIdentity>, VaultError> {
+        let mut stmt = self.db.prepare(
+            "SELECT id, label, proxy_type, host, port, username, created_at, updated_at
+             FROM proxy_identities WHERE id = ?1",
+        )?;
+        let mut rows = stmt
+            .query_map(params![id.to_string()], |row| {
+                let proxy_type_str: String = row.get(2)?;
+                let proxy_type: ProxyType = serde_json::from_str(&proxy_type_str)
+                    .unwrap_or(ProxyType::Socks5);
+                Ok(ProxyIdentity {
+                    id: Uuid::parse_str(&row.get::<_, String>(0)?).unwrap_or_default(),
+                    label: row.get(1)?,
+                    proxy_type,
+                    host: row.get(3)?,
+                    port: row.get(4)?,
+                    username: row.get(5)?,
+                    created_at: row
+                        .get::<_, String>(6)
+                        .ok()
+                        .and_then(|s| chrono::DateTime::parse_from_rfc3339(&s).ok())
+                        .map(|d| d.with_timezone(&chrono::Utc))
+                        .unwrap_or_else(chrono::Utc::now),
+                    updated_at: row
+                        .get::<_, String>(7)
+                        .ok()
+                        .and_then(|s| chrono::DateTime::parse_from_rfc3339(&s).ok())
+                        .map(|d| d.with_timezone(&chrono::Utc))
+                        .unwrap_or_else(chrono::Utc::now),
+                })
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(rows.pop())
+    }
+
     /// Get the decrypted password for a proxy identity.
     pub fn get_proxy_identity_password(
         &self,
@@ -1762,8 +1800,7 @@ impl VaultStore {
             //, the user removed the identity but the connection still
             // points at it. Surfacing this as an error would block
             // connecting to every host that referenced it.
-            let identities = self.list_proxy_identities()?;
-            let Some(ident) = identities.into_iter().find(|i| i.id == pid) else {
+            let Some(ident) = self.get_proxy_identity(&pid)? else {
                 tracing::warn!(
                     "proxy_identity_id {} not found for connection {}, falling back to no proxy",
                     pid,
@@ -2821,6 +2858,76 @@ impl VaultStore {
             params![cutoff],
         )?;
         Ok(removed)
+    }
+
+    // -----------------------------------------------------------------------
+    // Sync batch helpers
+    // -----------------------------------------------------------------------
+
+    /// Lean `(id, updated_at)` projection of a syncable table. The sync
+    /// engine's manifest build only needs LWW stamps, so this skips the
+    /// full-row SELECT + JSON decode that the `list_*` methods do.
+    /// `table` is matched against an explicit whitelist (never
+    /// interpolated from caller input) so the dynamic SQL cannot be
+    /// abused for injection.
+    pub fn list_entity_stamps(
+        &self,
+        table: &str,
+    ) -> Result<Vec<(Uuid, DateTime<Utc>)>, VaultError> {
+        match table {
+            "connections" | "keys" | "identities" | "proxy_identities" | "groups"
+            | "snippets" | "port_forward_rules" | "known_hosts" | "cloud_profiles"
+            | "session_groups" => {}
+            other => {
+                return Err(VaultError::Database(format!(
+                    "list_entity_stamps: unknown table {other}"
+                )))
+            }
+        }
+        let mut stmt = self
+            .db
+            .prepare(&format!("SELECT id, updated_at FROM {table}"))?;
+        let rows = stmt
+            .query_map([], |row| {
+                Ok((
+                    Uuid::parse_str(&row.get::<_, String>(0)?).unwrap_or_default(),
+                    // `updated_at` is nullable on tables where it was
+                    // backfilled via ALTER TABLE; fall back to "now"
+                    // exactly like the full list_* readers do.
+                    row.get::<_, Option<String>>(1)?
+                        .and_then(|s| DateTime::parse_from_rfc3339(&s).ok())
+                        .map(|d| d.with_timezone(&Utc))
+                        .unwrap_or_else(Utc::now),
+                ))
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(rows)
+    }
+
+    /// Open an explicit transaction for a batch of `save_*` /
+    /// `delete_*` calls. Without it each call runs as its own implicit
+    /// SQLite transaction (one fsync per row, even under WAL), which
+    /// makes applying a large sync delta dramatically slower than a
+    /// single commit for the whole batch. Pair with
+    /// [`Self::commit_batch`] or [`Self::rollback_batch`].
+    pub fn begin_batch(&self) -> Result<(), VaultError> {
+        self.db.execute_batch("BEGIN")?;
+        Ok(())
+    }
+
+    /// Commit a batch opened with [`Self::begin_batch`].
+    pub fn commit_batch(&self) -> Result<(), VaultError> {
+        self.db.execute_batch("COMMIT")?;
+        Ok(())
+    }
+
+    /// Roll back a batch opened with [`Self::begin_batch`]. Best
+    /// effort: an error here usually means SQLite already rolled the
+    /// transaction back on its own, so it is logged and swallowed.
+    pub fn rollback_batch(&self) {
+        if let Err(e) = self.db.execute_batch("ROLLBACK") {
+            tracing::warn!("rollback_batch: {e}");
+        }
     }
 
     // -----------------------------------------------------------------------

@@ -438,22 +438,23 @@ fn nightly_asset_fragment() -> Vec<&'static str> {
     }
 }
 
-/// Download the installer to a temp file. Reads the full response body into
-/// memory first, simpler than streaming chunks, fine for our installer
-/// sizes (~80 MB). The progress closure is accepted for API symmetry but
-/// only fires once (0.0 then 1.0) in this implementation.
+/// Download the installer to a temp file, streaming chunks straight to
+/// disk (an ~80 MB body no longer sits in RAM during the transfer) and
+/// reporting real progress through the closure.
 ///
-/// Before anything is written to disk the artifact's detached Ed25519
-/// signature (the sibling `<asset>.sig` release asset, published by the
-/// release/nightly workflows) is fetched and checked against the same
-/// trust anchors the plugin pipeline uses. A missing or invalid
-/// signature aborts the update: TLS alone is not the trust boundary
-/// for code we are about to execute.
+/// The artifact's detached Ed25519 signature (the sibling `<asset>.sig`
+/// release asset, published by the release/nightly workflows) is then
+/// checked against the same trust anchors the plugin pipeline uses. A
+/// missing or invalid signature deletes the download and aborts the
+/// update: TLS alone is not the trust boundary for code we are about
+/// to execute.
 pub async fn download_installer(
     url: &str,
     file_name: &str,
     mut progress: impl FnMut(f32) + Send,
 ) -> Result<PathBuf, String> {
+    use tokio::io::AsyncWriteExt as _;
+
     let client = reqwest::Client::builder()
         .user_agent(concat!("Oryxis/", env!("CARGO_PKG_VERSION")))
         .timeout(std::time::Duration::from_secs(600))
@@ -462,26 +463,42 @@ pub async fn download_installer(
         .map_err(|e| e.to_string())?;
 
     progress(0.0);
-    let resp = client.get(url).send().await.map_err(|e| e.to_string())?;
+    let mut resp = client.get(url).send().await.map_err(|e| e.to_string())?;
     if !resp.status().is_success() {
         return Err(format!("HTTP {}", resp.status()));
     }
-    let bytes = resp.bytes().await.map_err(|e| e.to_string())?;
+    let total = resp.content_length().unwrap_or(0);
+    let dest = std::env::temp_dir().join(file_name);
+    let mut file = tokio::fs::File::create(&dest)
+        .await
+        .map_err(|e| e.to_string())?;
+    let mut downloaded: u64 = 0;
+    while let Some(chunk) = resp.chunk().await.map_err(|e| e.to_string())? {
+        file.write_all(&chunk).await.map_err(|e| e.to_string())?;
+        downloaded += chunk.len() as u64;
+        if total > 0 {
+            progress((downloaded as f32 / total as f32).min(0.99));
+        }
+    }
+    file.flush().await.map_err(|e| e.to_string())?;
+    drop(file);
 
     let sig_url = format!("{url}.sig");
     let sig_resp = client.get(&sig_url).send().await.map_err(|e| e.to_string())?;
     if !sig_resp.status().is_success() {
+        let _ = tokio::fs::remove_file(&dest).await;
         return Err(format!(
             "update signature missing ({} on {file_name}.sig)",
             sig_resp.status()
         ));
     }
     let sig_b64 = sig_resp.text().await.map_err(|e| e.to_string())?;
-    crate::plugins::verify::verify(&bytes, sig_b64.trim())
-        .map_err(|e| format!("update signature verification failed: {e}"))?;
+    let bytes = tokio::fs::read(&dest).await.map_err(|e| e.to_string())?;
+    if let Err(e) = crate::plugins::verify::verify(&bytes, sig_b64.trim()) {
+        let _ = tokio::fs::remove_file(&dest).await;
+        return Err(format!("update signature verification failed: {e}"));
+    }
 
-    let dest = std::env::temp_dir().join(file_name);
-    std::fs::write(&dest, &bytes).map_err(|e| e.to_string())?;
     progress(1.0);
     Ok(dest)
 }

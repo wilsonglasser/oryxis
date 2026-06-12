@@ -932,14 +932,14 @@ impl Oryxis {
 
         // Capture the identities by reference so the closure can render
         // the user-chosen label for `Identity(_)` entries instead of
-        // the generic Display fallback. The closure runs once per
-        // option per render, which is fine.
-        let identities = self.proxy_identities.clone();
-        let identities_for_picker = identities.clone();
+        // the generic Display fallback. The borrow lives as long as
+        // `self`, which covers the returned Element, so no clone of
+        // the Vec is needed per render.
+        let identities = &self.proxy_identities;
         let picker = panel_field(
             crate::i18n::t("proxy_type"),
             pick_list(Some(kind), options, move |k: &ProxyKind| match k {
-                ProxyKind::Identity(id) => identities_for_picker
+                ProxyKind::Identity(id) => identities
                     .iter()
                     .find(|pi| pi.id == *id)
                     .map(|pi| format!("📌 {}", pi.label))

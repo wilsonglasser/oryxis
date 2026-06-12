@@ -371,7 +371,7 @@ impl Oryxis {
                 };
                 if let Some(v) = &self.vault {
                     if let Err(e) = v.set_setting(key, sort.as_storage_str()) {
-                        eprintln!("[sort] failed to persist {key}: {e}");
+                        tracing::warn!("failed to persist sort setting {key}: {e}");
                     }
                 }
                 self.overlay = None;
@@ -1306,9 +1306,17 @@ impl Oryxis {
                 // Rebuild the dynamic submenu (Active sessions +
                 // Recent hosts) when the state behind it changed.
                 // Signature is a hash of the tab count + connection
-                // last_used times; cheap enough to recompute every
-                // 100 ms and skips the actual rebuild on no-change.
-                {
+                // last_used times. The hash itself is cheap, but the
+                // IPC registry scan behind it stats files, so the
+                // signature pass runs every 5th tick (500 ms) while
+                // the event drain below keeps the 100 ms cadence for
+                // click responsiveness.
+                static TRAY_SIG_TICK: std::sync::atomic::AtomicU32 =
+                    std::sync::atomic::AtomicU32::new(0);
+                let run_signature_pass = TRAY_SIG_TICK
+                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+                    .is_multiple_of(5);
+                if run_signature_pass {
                     use std::collections::hash_map::DefaultHasher;
                     use std::hash::{Hash, Hasher};
 

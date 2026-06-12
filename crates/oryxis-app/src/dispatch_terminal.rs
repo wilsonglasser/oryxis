@@ -38,6 +38,19 @@ impl Oryxis {
         self.flush_session_logs_inner(true);
     }
 
+    /// Tear down every SSH session in a tab. Dropping the pane alone
+    /// is not enough: the connect stream task holds its own Arc to the
+    /// session, so without an explicit close() the engine tasks, the
+    /// channel, and any per-connection port-forward listeners keep
+    /// running (and generating UI messages) forever.
+    pub(crate) fn close_tab_ssh_sessions(tab: &crate::state::TerminalTab) {
+        for pane in tab.pane_grid.panes.values() {
+            if let Some(session) = &pane.ssh_session {
+                session.close();
+            }
+        }
+    }
+
     fn flush_session_logs_inner(&mut self, final_flush: bool) {
         let mut pending: Vec<(uuid::Uuid, Vec<u8>)> = Vec::new();
         for tab in &mut self.tabs {
@@ -161,6 +174,13 @@ impl Oryxis {
                 self.flush_session_logs_final();
                 let tab = &mut self.tabs[tab_idx];
                 let target = tab.focused;
+                // Tear down the pane's SSH session (the connect stream
+                // holds its own Arc; see close_tab_ssh_sessions).
+                if let Some(pane) = tab.pane_grid.panes.get(&target)
+                    && let Some(session) = &pane.ssh_session
+                {
+                    session.close();
+                }
                 if let Some((_closed, sibling)) = tab.pane_grid.close(target) {
                     tab.focused = sibling;
                 }

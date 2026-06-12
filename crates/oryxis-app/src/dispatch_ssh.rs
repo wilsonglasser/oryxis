@@ -145,7 +145,15 @@ impl Oryxis {
                             }
                         }
                         Some(oryxis_ssh::ConnectionResolver {
-                            connections: self.connections.clone(),
+                            // Only the jump-chain hosts are looked up by
+                            // the engine; cloning the full host list per
+                            // connect is wasted work on large vaults.
+                            connections: self
+                                .connections
+                                .iter()
+                                .filter(|c| conn.jump_chain.contains(&c.id))
+                                .cloned()
+                                .collect(),
                             passwords,
                             private_keys: keys,
                             proxies,
@@ -569,9 +577,6 @@ impl Oryxis {
                                     SshStreamMsg::Connected(session) => {
                                         Message::SshConnected(pane_id, session)
                                     }
-                                    SshStreamMsg::NewKnownHosts(hosts) => {
-                                        Message::SshNewKnownHosts(hosts)
-                                    }
                                     SshStreamMsg::HostKeyVerify(query) => {
                                         Message::SshHostKeyVerify(query)
                                     }
@@ -598,14 +603,6 @@ impl Oryxis {
                 if let Some(ref mut progress) = self.connecting {
                     progress.step = step;
                     progress.logs.push((step, log));
-                }
-            }
-            Message::SshNewKnownHosts(hosts) => {
-                if let Some(vault) = &self.vault {
-                    for kh in &hosts {
-                        let _ = vault.save_known_host(kh);
-                    }
-                    self.known_hosts = vault.list_known_hosts().unwrap_or_default();
                 }
             }
             Message::SshHostKeyVerify(query) => {
@@ -958,12 +955,41 @@ impl Oryxis {
                 self.update_downloading = true;
                 self.update_progress = 0.0;
                 self.update_error = None;
-                return Ok(Task::perform(
-                    async move {
-                        crate::update::download_installer(&url, &name, |_| {}).await
+                // Stream so the modal's progress bar moves with the
+                // download instead of jumping 0 to done. The sync
+                // progress closure forwards into the async sink via an
+                // unbounded channel.
+                let stream = iced::stream::channel::<Message>(
+                    100,
+                    move |mut sender: iced::futures::channel::mpsc::Sender<Message>| async move {
+                        use iced::futures::SinkExt as _;
+                        let (ptx, mut prx) = tokio::sync::mpsc::unbounded_channel::<f32>();
+                        let mut dl = tokio::spawn(async move {
+                            crate::update::download_installer(&url, &name, move |p| {
+                                let _ = ptx.send(p);
+                            })
+                            .await
+                        });
+                        loop {
+                            tokio::select! {
+                                Some(p) = prx.recv() => {
+                                    let _ = sender
+                                        .send(Message::UpdateDownloadProgress(p))
+                                        .await;
+                                }
+                                res = &mut dl => {
+                                    let result =
+                                        res.unwrap_or_else(|e| Err(e.to_string()));
+                                    let _ = sender
+                                        .send(Message::UpdateDownloadComplete(result))
+                                        .await;
+                                    break;
+                                }
+                            }
+                        }
                     },
-                    Message::UpdateDownloadComplete,
-                ));
+                );
+                return Ok(Task::stream(stream));
             }
             Message::UpdateDownloadProgress(p) => {
                 self.update_progress = p;

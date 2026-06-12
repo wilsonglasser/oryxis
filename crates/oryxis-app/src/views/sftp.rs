@@ -287,6 +287,25 @@ impl Oryxis {
                 if pane.local_path.parent().is_some() {
                     col = col.push(parent_row(side));
                 }
+                // Per-pane invariants hoisted out of the entry loop:
+                // rename state for this side, the selected-row paths as
+                // a set for O(1) membership, and the cross-pane drag
+                // flag (it doesn't depend on the entry).
+                let rename = self.sftp.rename.as_ref().filter(|r| r.side == side);
+                let selected_paths: std::collections::HashSet<&str> = self
+                    .sftp
+                    .selected_rows
+                    .iter()
+                    .filter(|(s, _)| *s == side)
+                    .map(|(_, p)| p.as_str())
+                    .collect();
+                // Tint a local folder row that's the drop target while
+                // a cross-pane internal drag is in flight.
+                let internal_cross_pane = self
+                    .sftp
+                    .drag
+                    .as_ref()
+                    .is_some_and(|d| d.active && d.origin_side != side);
                 for entry in &pane.local_entries {
                     if !pane.show_hidden && entry.name.starts_with('.') {
                         continue;
@@ -296,25 +315,10 @@ impl Oryxis {
                     }
                     let path = pane.local_path.join(&entry.name);
                     let path_str = path.to_string_lossy().into_owned();
-                    let rename_input = self.sftp.rename.as_ref().and_then(|r| {
-                        if r.side == side && r.original_path == path_str {
-                            Some(r.input.as_str())
-                        } else {
-                            None
-                        }
-                    });
-                    let is_selected = self
-                        .sftp
-                        .selected_rows
-                        .iter()
-                        .any(|(s, p)| *s == side && p == &path_str);
-                    // Tint a local folder row that's the drop target while
-                    // a cross-pane internal drag is in flight.
-                    let internal_cross_pane = self
-                        .sftp
-                        .drag
-                        .as_ref()
-                        .is_some_and(|d| d.active && d.origin_side != side);
+                    let rename_input = rename
+                        .filter(|r| r.original_path == path_str)
+                        .map(|r| r.input.as_str());
+                    let is_selected = selected_paths.contains(path_str.as_str());
                     let is_drop_target = internal_cross_pane
                         && entry.is_dir
                         && self
@@ -426,6 +430,24 @@ impl Oryxis {
             if pane.remote_path != "/" && !pane.remote_path.is_empty() {
                 col = col.push(parent_row(side));
             }
+            // Same per-pane invariants as the local branch, hoisted out
+            // of the entry loop: rename state, the selected paths as a
+            // set for O(1) membership, parent path, and the drag phase.
+            let rename = self.sftp.rename.as_ref().filter(|r| r.side == side);
+            let selected_paths: std::collections::HashSet<&str> = self
+                .sftp
+                .selected_rows
+                .iter()
+                .filter(|(s, _)| *s == side)
+                .map(|(_, p)| p.as_str())
+                .collect();
+            let parent = pane.remote_path.trim_end_matches('/');
+            let internal_cross_pane = self
+                .sftp
+                .drag
+                .as_ref()
+                .is_some_and(|d| d.active && d.origin_side != side);
+            let drop_phase = self.sftp.drop_active || internal_cross_pane;
             for entry in &pane.remote_entries {
                 if !pane.show_hidden && entry.name.starts_with('.') {
                     continue;
@@ -433,25 +455,14 @@ impl Oryxis {
                 if !needle.is_empty() && !entry.name.to_lowercase().contains(&needle) {
                     continue;
                 }
-                let parent = pane.remote_path.trim_end_matches('/');
                 let full = if parent.is_empty() {
                     format!("/{}", entry.name)
                 } else {
                     format!("{}/{}", parent, entry.name)
                 };
-                let rename_input = self.sftp.rename.as_ref().and_then(|r| {
-                    if r.side == side && r.original_path == full {
-                        Some(r.input.as_str())
-                    } else {
-                        None
-                    }
-                });
-                let internal_cross_pane = self
-                    .sftp
-                    .drag
-                    .as_ref()
-                    .is_some_and(|d| d.active && d.origin_side != side);
-                let drop_phase = self.sftp.drop_active || internal_cross_pane;
+                let rename_input = rename
+                    .filter(|r| r.original_path == full)
+                    .map(|r| r.input.as_str());
                 let is_drop_target = drop_phase
                     && entry.is_dir
                     && self
@@ -459,11 +470,7 @@ impl Oryxis {
                         .hovered_row
                         .as_ref()
                         .is_some_and(|(s, p, _)| *s == side && p == &full);
-                let is_selected = self
-                    .sftp
-                    .selected_rows
-                    .iter()
-                    .any(|(s, p)| *s == side && p == &full);
+                let is_selected = selected_paths.contains(full.as_str());
                 col = col.push(file_row_remote(
                     side,
                     entry.name.clone(),
@@ -1160,7 +1167,7 @@ fn menu_item_tinted<'a>(
 /// Drive picker dropdown for Windows local pane. Lists `C:`, `D:`, etc.
 /// based on what's actually mounted. Closed via the scrim.
 fn drives_menu_overlay<'a>(side: SftpPaneSide) -> Element<'a, Message> {
-    let drives = list_windows_drives();
+    let drives = list_windows_drives_cached();
     let mut col = column![].spacing(2).padding(4);
     if drives.is_empty() {
         col = col.push(
@@ -1239,6 +1246,27 @@ fn is_windows_disk_path(path: &std::path::Path) -> bool {
                 std::path::Prefix::Disk(_) | std::path::Prefix::VerbatimDisk(_)
             )
     )
+}
+
+/// Cached front for `list_windows_drives`. The raw probe touches the
+/// filesystem for every drive letter (A: through Z:) and stats
+/// `wsl.exe`, far too heavy to run per frame while the drive popover
+/// is open, so the result is reused for a few seconds. Plugging or
+/// unplugging a drive shows up on the next refresh window.
+fn list_windows_drives_cached() -> Vec<String> {
+    use std::sync::Mutex;
+    use std::time::{Duration, Instant};
+    const TTL: Duration = Duration::from_secs(5);
+    static CACHE: Mutex<Option<(Instant, Vec<String>)>> = Mutex::new(None);
+    let mut guard = CACHE.lock().unwrap();
+    if let Some((probed_at, drives)) = guard.as_ref()
+        && probed_at.elapsed() < TTL
+    {
+        return drives.clone();
+    }
+    let drives = list_windows_drives();
+    *guard = Some((Instant::now(), drives.clone()));
+    drives
 }
 
 /// Enumerate available drive letters on Windows. Empty on non-Windows

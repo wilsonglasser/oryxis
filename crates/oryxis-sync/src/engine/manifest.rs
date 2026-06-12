@@ -7,6 +7,7 @@
 //! `pub(crate)` so the in-crate integration tests can drive a manifest
 //! round-trip without a live engine.
 
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use uuid::Uuid;
@@ -29,6 +30,22 @@ pub(super) fn peer_shared_secret(
     Ok(bytes.and_then(|b| <[u8; 32]>::try_from(b.as_slice()).ok()))
 }
 
+/// SQLite table behind each syncable entity type, in manifest order.
+/// Drives the lean stamp queries in [`build_manifest`]; the names are
+/// re-validated against a whitelist inside `list_entity_stamps`.
+const STAMP_TABLES: [(EntityType, &str); 10] = [
+    (EntityType::Connection, "connections"),
+    (EntityType::SshKey, "keys"),
+    (EntityType::Identity, "identities"),
+    (EntityType::ProxyIdentity, "proxy_identities"),
+    (EntityType::Group, "groups"),
+    (EntityType::Snippet, "snippets"),
+    (EntityType::PortForwardRule, "port_forward_rules"),
+    (EntityType::KnownHost, "known_hosts"),
+    (EntityType::CloudProfile, "cloud_profiles"),
+    (EntityType::SessionGroup, "session_groups"),
+];
+
 /// Build a manifest of all syncable entities in the vault, plus a
 /// deletion entry (`is_deleted = true`) for every tombstone recorded
 /// in `sync_metadata`. The tombstones are what let a delete propagate:
@@ -40,85 +57,19 @@ pub(crate) fn build_manifest(
     let v = vault.lock().map_err(|_| SyncError::Vault("Lock".into()))?;
     let mut entries = Vec::new();
 
-    for c in v.list_connections()? {
-        entries.push(ManifestEntry {
-            entity_type: EntityType::Connection,
-            entity_id: c.id,
-            updated_at: c.updated_at,
-            is_deleted: false,
-        });
-    }
-    for k in v.list_keys()? {
-        entries.push(ManifestEntry {
-            entity_type: EntityType::SshKey,
-            entity_id: k.id,
-            updated_at: k.updated_at,
-            is_deleted: false,
-        });
-    }
-    for i in v.list_identities()? {
-        entries.push(ManifestEntry {
-            entity_type: EntityType::Identity,
-            entity_id: i.id,
-            updated_at: i.updated_at,
-            is_deleted: false,
-        });
-    }
-    for pi in v.list_proxy_identities()? {
-        entries.push(ManifestEntry {
-            entity_type: EntityType::ProxyIdentity,
-            entity_id: pi.id,
-            updated_at: pi.updated_at,
-            is_deleted: false,
-        });
-    }
-    for g in v.list_groups()? {
-        entries.push(ManifestEntry {
-            entity_type: EntityType::Group,
-            entity_id: g.id,
-            updated_at: g.updated_at,
-            is_deleted: false,
-        });
-    }
-    for s in v.list_snippets()? {
-        entries.push(ManifestEntry {
-            entity_type: EntityType::Snippet,
-            entity_id: s.id,
-            updated_at: s.updated_at,
-            is_deleted: false,
-        });
-    }
-    for r in v.list_port_forward_rules()? {
-        entries.push(ManifestEntry {
-            entity_type: EntityType::PortForwardRule,
-            entity_id: r.id,
-            updated_at: r.updated_at,
-            is_deleted: false,
-        });
-    }
-    for kh in v.list_known_hosts()? {
-        entries.push(ManifestEntry {
-            entity_type: EntityType::KnownHost,
-            entity_id: kh.id,
-            updated_at: kh.updated_at,
-            is_deleted: false,
-        });
-    }
-    for cp in v.list_cloud_profiles()? {
-        entries.push(ManifestEntry {
-            entity_type: EntityType::CloudProfile,
-            entity_id: cp.id,
-            updated_at: cp.updated_at,
-            is_deleted: false,
-        });
-    }
-    for sg in v.list_session_groups()? {
-        entries.push(ManifestEntry {
-            entity_type: EntityType::SessionGroup,
-            entity_id: sg.id,
-            updated_at: sg.updated_at,
-            is_deleted: false,
-        });
+    // Lean `(id, updated_at)` projections per table. The manifest only
+    // needs the LWW stamps, so the full-row SELECT + JSON decode that
+    // the `list_*` methods do would be wasted work here (and this runs
+    // at least twice per peer per sync tick).
+    for (entity_type, table) in STAMP_TABLES {
+        for (entity_id, updated_at) in v.list_entity_stamps(table)? {
+            entries.push(ManifestEntry {
+                entity_type,
+                entity_id,
+                updated_at,
+                is_deleted: false,
+            });
+        }
     }
 
     // Tombstones. A live entity always wins over a stale tombstone for
@@ -161,9 +112,22 @@ pub(crate) fn collect_records(
     shared_secret: Option<&[u8; 32]>,
 ) -> Result<Vec<protocol::SyncRecord>, SyncError> {
     let v = vault.lock().map_err(|_| SyncError::Vault("Lock".into()))?;
-    // Tombstones recorded in `sync_metadata`. Loaded once up front so a
-    // large `needed` list doesn't re-query per ref.
-    let tombstones = v.list_tombstones()?;
+    // Tombstones recorded in `sync_metadata`. Loaded once up front and
+    // indexed by (type, id) so a large `needed` list neither re-queries
+    // nor re-scans per ref.
+    let tombstones: HashMap<(EntityType, Uuid), chrono::DateTime<chrono::Utc>> = v
+        .list_tombstones()?
+        .into_iter()
+        .filter_map(|t| {
+            EntityType::from_wire_str(&t.entity_type)
+                .map(|et| ((et, t.entity_id), t.deleted_at))
+        })
+        .collect();
+    // Per-peer AEAD cipher, built once instead of once per record.
+    let cipher = match shared_secret {
+        Some(secret) => Some(crypto::PayloadCipher::new(secret)?),
+        None => None,
+    };
     // Off by default. When on, password fields are included in the
     // wrapper payloads, older peers ignore them automatically. The
     // setting lives in the SQLite `settings` table so it flips per
@@ -176,19 +140,47 @@ pub(crate) fn collect_records(
         == Some("true");
     let mut records = Vec::new();
 
+    // Lazily-loaded per-entity-type caches keyed by id. Each table is
+    // read (and JSON-decoded) at most once per call instead of once
+    // per requested ref, which used to make a large `needed` list
+    // O(refs x rows).
+    let mut conn_cache = None;
+    let mut key_cache = None;
+    let mut ident_cache = None;
+    let mut proxy_ident_cache = None;
+    let mut group_cache = None;
+    let mut session_group_cache = None;
+    let mut snippet_cache = None;
+    let mut rule_cache = None;
+    let mut known_host_cache = None;
+    let mut cloud_profile_cache = None;
+
+    // Fill `$cache` from `v.$list()` on first use, then hand back a
+    // `&HashMap<Uuid, T>` for lookup.
+    macro_rules! cached {
+        ($cache:ident, $list:ident) => {{
+            if $cache.is_none() {
+                $cache = Some(
+                    v.$list()?
+                        .into_iter()
+                        .map(|item| (item.id, item))
+                        .collect::<HashMap<_, _>>(),
+                );
+            }
+            $cache.as_ref().expect("cache filled above")
+        }};
+    }
+
     for delta in needed {
         // A requested ref that matches a tombstone is a deletion: emit
         // a marker record with an empty payload carrying the deletion
         // timestamp, so the receiver's LWW resolves it like any other
         // record and `apply_records` runs the local delete.
-        if let Some(tomb) = tombstones.iter().find(|t| {
-            t.entity_id == delta.entity_id
-                && EntityType::from_wire_str(&t.entity_type) == Some(delta.entity_type)
-        }) {
+        if let Some(deleted_at) = tombstones.get(&(delta.entity_type, delta.entity_id)) {
             records.push(protocol::SyncRecord {
                 entity_type: delta.entity_type,
                 entity_id: delta.entity_id,
-                updated_at: tomb.deleted_at,
+                updated_at: *deleted_at,
                 is_deleted: true,
                 payload: Vec::new(),
             });
@@ -220,8 +212,8 @@ pub(crate) fn collect_records(
 
         let payload = match delta.entity_type {
             EntityType::Connection => {
-                let conns = v.list_connections()?;
-                conns.iter().find(|c| c.id == delta.entity_id).and_then(|c| {
+                let conns = cached!(conn_cache, list_connections);
+                conns.get(&delta.entity_id).and_then(|c| {
                     let password = if sync_passwords {
                         v.get_connection_password(&c.id).ok().flatten()
                     } else {
@@ -241,14 +233,13 @@ pub(crate) fn collect_records(
                 })
             }
             EntityType::SshKey => {
-                let keys = v.list_keys()?;
-                keys.iter()
-                    .find(|k| k.id == delta.entity_id)
+                let keys = cached!(key_cache, list_keys);
+                keys.get(&delta.entity_id)
                     .and_then(|k| encode!(k, "SshKey"))
             }
             EntityType::Identity => {
-                let idents = v.list_identities()?;
-                idents.iter().find(|i| i.id == delta.entity_id).and_then(|i| {
+                let idents = cached!(ident_cache, list_identities);
+                idents.get(&delta.entity_id).and_then(|i| {
                     let password = if sync_passwords {
                         v.get_identity_password(&i.id).ok().flatten()
                     } else {
@@ -262,8 +253,8 @@ pub(crate) fn collect_records(
                 })
             }
             EntityType::ProxyIdentity => {
-                let items = v.list_proxy_identities()?;
-                items.iter().find(|pi| pi.id == delta.entity_id).and_then(|pi| {
+                let items = cached!(proxy_ident_cache, list_proxy_identities);
+                items.get(&delta.entity_id).and_then(|pi| {
                     let password = if sync_passwords {
                         v.get_proxy_identity_password(&pi.id).ok().flatten()
                     } else {
@@ -277,38 +268,33 @@ pub(crate) fn collect_records(
                 })
             }
             EntityType::Group => {
-                let groups = v.list_groups()?;
-                groups.iter()
-                    .find(|g| g.id == delta.entity_id)
+                let groups = cached!(group_cache, list_groups);
+                groups.get(&delta.entity_id)
                     .and_then(|g| encode!(g, "Group"))
             }
             EntityType::SessionGroup => {
-                let session_groups = v.list_session_groups()?;
-                session_groups.iter()
-                    .find(|sg| sg.id == delta.entity_id)
+                let session_groups = cached!(session_group_cache, list_session_groups);
+                session_groups.get(&delta.entity_id)
                     .and_then(|sg| encode!(sg, "SessionGroup"))
             }
             EntityType::Snippet => {
-                let snippets = v.list_snippets()?;
-                snippets.iter()
-                    .find(|s| s.id == delta.entity_id)
+                let snippets = cached!(snippet_cache, list_snippets);
+                snippets.get(&delta.entity_id)
                     .and_then(|s| encode!(s, "Snippet"))
             }
             EntityType::PortForwardRule => {
-                let rules = v.list_port_forward_rules()?;
-                rules.iter()
-                    .find(|r| r.id == delta.entity_id)
+                let rules = cached!(rule_cache, list_port_forward_rules);
+                rules.get(&delta.entity_id)
                     .and_then(|r| encode!(r, "PortForwardRule"))
             }
             EntityType::KnownHost => {
-                let hosts = v.list_known_hosts()?;
-                hosts.iter()
-                    .find(|kh| kh.id == delta.entity_id)
+                let hosts = cached!(known_host_cache, list_known_hosts);
+                hosts.get(&delta.entity_id)
                     .and_then(|kh| encode!(kh, "KnownHost"))
             }
             EntityType::CloudProfile => {
-                let items = v.list_cloud_profiles()?;
-                items.iter().find(|cp| cp.id == delta.entity_id).and_then(|cp| {
+                let items = cached!(cloud_profile_cache, list_cloud_profiles);
+                items.get(&delta.entity_id).and_then(|cp| {
                     let secret = if sync_passwords {
                         v.get_cloud_profile_secret(&cp.id).ok().flatten()
                     } else {
@@ -328,8 +314,8 @@ pub(crate) fn collect_records(
             // missing secret means we're talking to a legacy peer that
             // never did the X25519 exchange; ship the plaintext so
             // they can still parse it.
-            let wire_payload = match shared_secret {
-                Some(secret) => crypto::encrypt_payload(&data, secret)?,
+            let wire_payload = match &cipher {
+                Some(c) => c.encrypt(&data)?,
                 None => data,
             };
             records.push(protocol::SyncRecord {
@@ -360,6 +346,21 @@ pub(crate) fn apply_records(
     shared_secret: Option<&[u8; 32]>,
 ) -> Result<(), SyncError> {
     let v = vault.lock().map_err(|_| SyncError::Vault("Lock".into()))?;
+
+    // Per-peer AEAD cipher, built once instead of once per record.
+    let cipher = match shared_secret {
+        Some(secret) => Some(crypto::PayloadCipher::new(secret)?),
+        None => None,
+    };
+
+    // One explicit transaction for the whole batch. Each save_* /
+    // delete_* below would otherwise run as its own implicit SQLite
+    // transaction (one fsync per record); a large delta then costs
+    // hundreds of fsyncs instead of one. Per-record failures keep
+    // their existing semantics (warn and continue), so the loop has
+    // no early-error exit; keep it that way, or the open transaction
+    // would leak past the `?`.
+    v.begin_batch()?;
 
     for record in records {
         if record.is_deleted {
@@ -396,8 +397,8 @@ pub(crate) fn apply_records(
         // failure (tampering, key mismatch, legacy peer that didn't
         // encrypt) returns owned bytes either way; the deserializer
         // catches the garbage path with a parse error and we skip.
-        let payload: std::borrow::Cow<'_, [u8]> = match shared_secret {
-            Some(secret) => match crypto::decrypt_payload(&record.payload, secret) {
+        let payload: std::borrow::Cow<'_, [u8]> = match &cipher {
+            Some(c) => match c.decrypt(&record.payload) {
                 Ok(plain) => std::borrow::Cow::Owned(plain),
                 Err(e) => {
                     tracing::warn!(
@@ -530,6 +531,13 @@ pub(crate) fn apply_records(
                 }
             }
         }
+    }
+
+    // A failed COMMIT can leave the transaction open; roll it back so
+    // the next batch on this connection doesn't trip over it.
+    if let Err(e) = v.commit_batch() {
+        v.rollback_batch();
+        return Err(e.into());
     }
 
     Ok(())

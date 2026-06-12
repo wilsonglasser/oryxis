@@ -181,7 +181,6 @@ impl Oryxis {
                         tab.chat_history.push(ChatMessage {
                             role: ChatRole::User,
                             content: input,
-                            timestamp: chrono::Utc::now(),
                             parsed_md: Vec::new(),
                         });
                         self.chat_input = text_editor::Content::new();
@@ -289,7 +288,6 @@ impl Oryxis {
                         tab.chat_history.push(ChatMessage {
                             role: ChatRole::Assistant,
                             content: String::new(),
-                            timestamp: chrono::Utc::now(),
                             parsed_md: Vec::new(),
                         });
 
@@ -314,19 +312,40 @@ impl Oryxis {
                     && last.role == ChatRole::Assistant
                 {
                     last.content.push_str(&delta);
-                    // Re-parse markdown on every delta so code blocks
-                    // and lists render progressively. Cheap on the
-                    // sub-2KB messages we typically see; if this ever
-                    // shows up in profiling, throttle to every Nth
-                    // chunk or batch by token count.
-                    last.parsed_md =
-                        iced::widget::markdown::parse(&last.content).collect();
+                    // Markdown parse is O(content), so re-parsing on
+                    // every token makes a long streamed reply O(n^2).
+                    // Throttle to ~10 parses/s; `ChatStreamDone` does
+                    // the final authoritative parse. Single static is
+                    // enough: one chat stream runs at a time.
+                    static LAST_MD_PARSE: std::sync::Mutex<Option<std::time::Instant>> =
+                        std::sync::Mutex::new(None);
+                    let now = std::time::Instant::now();
+                    let mut guard = LAST_MD_PARSE.lock().unwrap();
+                    let due = guard
+                        .map(|t| now.duration_since(t).as_millis() >= 100)
+                        .unwrap_or(true);
+                    if due {
+                        *guard = Some(now);
+                        drop(guard);
+                        last.parsed_md =
+                            iced::widget::markdown::parse(&last.content).collect();
+                    }
                 }
                 if self.chat_scroll_at_bottom {
                     return Ok(chat_scroll_to_end());
                 }
             }
             Message::ChatStreamDone => {
+                // Final parse so the rendered markdown can't lag behind
+                // the throttled streaming parses above.
+                if let Some(idx) = self.active_tab
+                    && let Some(tab) = self.tabs.get_mut(idx)
+                    && let Some(last) = tab.chat_history.last_mut()
+                    && last.role == ChatRole::Assistant
+                {
+                    last.parsed_md =
+                        iced::widget::markdown::parse(&last.content).collect();
+                }
                 // Empty assistant placeholders are filtered out at the
                 // view layer and excluded from the message-builder when
                 // we send to the model, so we don't try to pop them
@@ -357,7 +376,6 @@ impl Oryxis {
                     tab.chat_history.push(ChatMessage {
                         role: ChatRole::Error,
                         content: e,
-                        timestamp: chrono::Utc::now(),
                         parsed_md: Vec::new(),
                     });
                 }
@@ -491,7 +509,6 @@ impl Oryxis {
                     tab.chat_history.push(ChatMessage {
                         role: ChatRole::PendingTool,
                         content: command,
-                        timestamp: chrono::Utc::now(),
                         parsed_md: Vec::new(),
                     });
                 }
@@ -516,7 +533,6 @@ impl Oryxis {
                     tab.chat_history.push(ChatMessage {
                         role: ChatRole::PendingTool,
                         content: command,
-                        timestamp: chrono::Utc::now(),
                         parsed_md: Vec::new(),
                     });
                 }
@@ -581,7 +597,6 @@ impl Oryxis {
                         tab.chat_history.push(ChatMessage {
                             role: ChatRole::System,
                             content: format!("$ {}", command),
-                            timestamp: chrono::Utc::now(),
                             parsed_md: Vec::new(),
                         });
 
@@ -640,7 +655,6 @@ impl Oryxis {
                         tab.chat_history.push(ChatMessage {
                             role: ChatRole::Assistant,
                             content: String::new(),
-                            timestamp: chrono::Utc::now(),
                             parsed_md: Vec::new(),
                         });
 
@@ -729,7 +743,6 @@ impl Oryxis {
                         tab.chat_history.push(ChatMessage {
                             role: ChatRole::System,
                             content: output,
-                            timestamp: chrono::Utc::now(),
                             parsed_md: Vec::new(),
                         });
                 }

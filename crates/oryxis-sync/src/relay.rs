@@ -58,16 +58,16 @@ impl RelayClient {
         recipient: Uuid,
         msg: &SyncMessage,
     ) -> Result<(), SyncError> {
-        let frame = crate::protocol::encode_message(msg)
+        let mut frame_body = crate::protocol::encode_message(msg)
             .map_err(|e| SyncError::Protocol(format!("relay encode: {e}")))?;
         // `encode_message` prepends a 4-byte length header for QUIC
         // streams; the relay carries one frame per HTTP request, so we
-        // strip it before posting.
-        let frame_body = if frame.len() >= 4 {
-            frame[4..].to_vec()
-        } else {
+        // strip it before posting. `drain` shifts in place rather than
+        // reallocating a second copy of the whole frame.
+        if frame_body.len() < 4 {
             return Err(SyncError::Protocol("relay encode: short frame".into()));
-        };
+        }
+        frame_body.drain(..4);
         if frame_body.len() > MAX_FRAME_BYTES {
             return Err(SyncError::Protocol(format!(
                 "relay frame too large: {} bytes (max {MAX_FRAME_BYTES})",

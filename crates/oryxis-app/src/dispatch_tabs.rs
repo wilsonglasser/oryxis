@@ -659,6 +659,10 @@ impl Oryxis {
                     // Persist recorded output before the tab (and its
                     // panes' buffers) are dropped.
                     self.flush_session_logs_final();
+                    // Actively tear down the tab's SSH sessions; the
+                    // connect streams hold their own Arcs, so dropping
+                    // the panes alone would leak the live sessions.
+                    Self::close_tab_ssh_sessions(&self.tabs[idx]);
                     // Closing a pinned tab drops it from the persisted set.
                     let was_pinned = self.tabs[idx].pinned;
                     self.tabs.remove(idx);

@@ -510,6 +510,10 @@ impl SyncEngine {
             let event_tx = self.event_tx.clone();
             let hosting_pairing = self.hosting_pairing.clone();
             let mut shutdown_rx = shutdown_tx.subscribe();
+            // Cloned into the listener so every spawned session can
+            // subscribe and die with the engine instead of lingering
+            // until its transport errors out.
+            let session_shutdown_tx = shutdown_tx.clone();
             tokio::spawn(async move {
                 let client = crate::relay::RelayClient::new(&relay_url, &token, my_id);
                 // device_id -> mpsc to its in-flight session. New
@@ -589,17 +593,30 @@ impl SyncEngine {
                             let event_tx = event_tx.clone();
                             let hosting_pairing = hosting_pairing.clone();
                             let sessions = sessions.clone();
+                            let mut session_shutdown_rx =
+                                session_shutdown_tx.subscribe();
                             tokio::spawn(async move {
-                                run_relay_inbound_session(
-                                    session_client,
-                                    from,
-                                    rx,
-                                    vault,
-                                    identity,
-                                    hosting_pairing,
-                                    event_tx,
-                                )
-                                .await;
+                                // The per-recv idle timeout inside
+                                // `SessionTransport::RelayServer` bounds a
+                                // silent peer; this select makes `stop()`
+                                // tear the session down immediately
+                                // instead of waiting that timeout out.
+                                tokio::select! {
+                                    _ = run_relay_inbound_session(
+                                        session_client,
+                                        from,
+                                        rx,
+                                        vault,
+                                        identity,
+                                        hosting_pairing,
+                                        event_tx,
+                                    ) => {}
+                                    _ = session_shutdown_rx.recv() => {
+                                        tracing::debug!(
+                                            "relay session with {from} aborted on engine stop"
+                                        );
+                                    }
+                                }
                                 match sessions.lock() {
                                     Ok(mut g) => g.remove(&from),
                                     Err(p) => p.into_inner().remove(&from),

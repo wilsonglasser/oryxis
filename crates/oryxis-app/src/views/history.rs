@@ -64,14 +64,24 @@ impl Oryxis {
                 kind: TimelineKind::Failure(entry),
             });
         }
+        // One-pass lookup maps so each row resolves its connection in
+        // O(1) instead of scanning the full connection list per row on
+        // every frame. `conn_by_label` keeps the first match to mirror
+        // the old `find` semantics for duplicate labels.
+        let hostname_by_id: std::collections::HashMap<uuid::Uuid, &str> = self
+            .connections
+            .iter()
+            .map(|c| (c.id, c.hostname.as_str()))
+            .collect();
+        let mut conn_by_label: std::collections::HashMap<&str, _> =
+            std::collections::HashMap::new();
+        for c in &self.connections {
+            conn_by_label.entry(c.label.as_str()).or_insert(c);
+        }
         for (idx, entry) in self.session_logs.iter().enumerate() {
             // Look up the connection by id so we can show its
             // hostname next to the label (matches the Termius row).
-            let hostname = self
-                .connections
-                .iter()
-                .find(|c| c.id == entry.connection_id)
-                .map(|c| c.hostname.as_str());
+            let hostname = hostname_by_id.get(&entry.connection_id).copied();
             rows.push(TimelineRow {
                 ts: entry.started_at,
                 label: &entry.label,
@@ -79,17 +89,18 @@ impl Oryxis {
                 kind: TimelineKind::Session { idx, entry },
             });
         }
-        rows.sort_by_key(|r| std::cmp::Reverse(r.ts));
 
         // Filter by the contextual sub-nav search before paginating
         // so the page counts reflect what the user actually sees.
-        rows.retain(|r| {
-            if needle.is_empty() {
-                return true;
-            }
-            r.label.to_lowercase().contains(&needle)
-                || r.hostname.is_some_and(|h| h.to_lowercase().contains(&needle))
-        });
+        // Filtering before the sort also keeps the sort to the rows
+        // that survive.
+        if !needle.is_empty() {
+            rows.retain(|r| {
+                r.label.to_lowercase().contains(&needle)
+                    || r.hostname.is_some_and(|h| h.to_lowercase().contains(&needle))
+            });
+        }
+        rows.sort_by_key(|r| std::cmp::Reverse(r.ts));
 
         let total = rows.len();
         let max_page = total.saturating_sub(1) / per_page.max(1);
@@ -195,7 +206,8 @@ impl Oryxis {
             let start = page * per_page;
             let end = ((page + 1) * per_page).min(total);
             for row_data in &rows[start..end] {
-                row_elements.push(self.render_timeline_row(row_data));
+                let conn = conn_by_label.get(row_data.label).copied();
+                row_elements.push(self.render_timeline_row(row_data, conn));
                 row_elements.push(Space::new().height(4).into());
             }
         }
@@ -316,14 +328,19 @@ impl Oryxis {
     /// `event chip` is "Session" / "Auth Failed" / "Error".
     /// `meta` and `actions` only show for session rows; failure rows
     /// add their underlying message under the label instead.
-    fn render_timeline_row<'a>(&'a self, row: &TimelineRow<'a>) -> Element<'a, Message> {
+    fn render_timeline_row<'a>(
+        &'a self,
+        row: &TimelineRow<'a>,
+        conn: Option<&'a oryxis_core::models::connection::Connection>,
+    ) -> Element<'a, Message> {
         use oryxis_core::models::log_entry::LogEvent;
 
         // Host badge through the shared host_icon helper so per-host
-        // shape + accent color are honoured here too. Look up the
-        // matching connection by label; missing connections (host
-        // deleted but log row stays) fall back to the global accent.
-        let conn = self.connections.iter().find(|c| c.label == row.label);
+        // shape + accent color are honoured here too. `conn` is the
+        // connection matching the row's label, resolved by the caller
+        // through a map built once per view call; missing connections
+        // (host deleted but log row stays) fall back to the global
+        // accent.
         let icon_style = crate::widgets::resolve_host_icon_style(
             conn.and_then(|c| c.icon_style.as_deref()),
             &self.setting_default_host_icon,

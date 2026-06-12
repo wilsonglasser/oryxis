@@ -116,8 +116,12 @@ impl PtyHandle {
                 tracing::debug!("PTY writer thread exiting for {}", program_label);
             })?;
 
-        // Spawn a thread to read PTY output (blocking IO)
+        // Spawn a thread to read PTY output (blocking IO). Raw chunks go
+        // to a coalescer thread (below) instead of straight to the UI, so
+        // a heavy output burst becomes a few large messages rather than
+        // one update+view+draw cycle per 8KB read.
         let program_log = program.unwrap_or("<default>").to_string();
+        let (raw_tx, raw_rx) = std::sync::mpsc::channel::<Vec<u8>>();
         std::thread::Builder::new()
             .name("pty-reader".into())
             .spawn(move || {
@@ -137,7 +141,7 @@ impl PtyHandle {
                         Ok(n) => {
                             chunk_count += 1;
                             total_bytes += n as u64;
-                            if tx.send(buf[..n].to_vec()).is_err() {
+                            if raw_tx.send(buf[..n].to_vec()).is_err() {
                                 tracing::warn!(
                                     "PTY receiver dropped for {} after {} bytes",
                                     program_log, total_bytes,
@@ -155,6 +159,50 @@ impl PtyHandle {
                     }
                 }
                 tracing::debug!("PTY reader thread exiting for {}", program_log);
+            })?;
+
+        // Coalescer thread: batches raw chunks into one message per burst.
+        // The first chunk is taken with a blocking recv (zero added latency
+        // for interactive echo); after that, anything already queued is
+        // drained with try_recv. A short grace wait is only used once the
+        // batch already looks like bulk output (>= one typical read), so a
+        // lone keystroke echo is never delayed by it. Exits when the reader
+        // thread drops its sender, which drops `tx` and ends the UI stream.
+        let coalesce_log = program.unwrap_or("<default>").to_string();
+        std::thread::Builder::new()
+            .name("pty-coalesce".into())
+            .spawn(move || {
+                use std::sync::mpsc::TryRecvError;
+                // Cap one forwarded message at ~64KB so a giant paste of
+                // output still yields steady redraws instead of one stall.
+                const COALESCE_MAX: usize = 64 * 1024;
+                // Batches at or above this are treated as a burst in
+                // flight, worth a short wait for the next read to land.
+                const BURST_THRESHOLD: usize = 2048;
+                const GRACE: std::time::Duration = std::time::Duration::from_millis(2);
+                while let Ok(first) = raw_rx.recv() {
+                    let mut batch = first;
+                    while batch.len() < COALESCE_MAX {
+                        match raw_rx.try_recv() {
+                            Ok(more) => batch.extend_from_slice(&more),
+                            Err(TryRecvError::Empty) => {
+                                if batch.len() >= BURST_THRESHOLD {
+                                    match raw_rx.recv_timeout(GRACE) {
+                                        Ok(more) => batch.extend_from_slice(&more),
+                                        Err(_) => break,
+                                    }
+                                } else {
+                                    break;
+                                }
+                            }
+                            Err(TryRecvError::Disconnected) => break,
+                        }
+                    }
+                    if tx.send(batch).is_err() {
+                        break;
+                    }
+                }
+                tracing::debug!("PTY coalescer thread exiting for {}", coalesce_log);
             })?;
 
         Ok((

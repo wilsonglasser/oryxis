@@ -164,14 +164,3 @@ impl Oryxis {
     }
 }
 
-/// Hard-modal: the update card is only dismissible via one of the three
-/// buttons. We still expose a no-op backdrop helper here so other call
-/// sites keep compiling, but the top-level dispatcher renders its own
-/// non-interactive scrim that leaves the window chrome uncovered.
-#[allow(dead_code)]
-pub(crate) fn update_modal_backdrop<'a>() -> Element<'a, Message> {
-    MouseArea::new(
-        container(Space::new()).width(Length::Fill).height(Length::Fill),
-    )
-    .into()
-}

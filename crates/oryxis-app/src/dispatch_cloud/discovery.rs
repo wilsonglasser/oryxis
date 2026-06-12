@@ -334,14 +334,36 @@ impl Oryxis {
                                 cp
                             });
                         if let Some(vault) = &self.vault {
+                            // One transaction for the whole refresh batch
+                            // (a save per row used to mean a commit per
+                            // row), and patch the in-memory lists instead
+                            // of re-reading the entire vault.
+                            let _ = vault.begin_batch();
                             for conn in &updated {
                                 let _ = vault.save_connection(conn, None);
                             }
-                            if let Some(cp) = cp_to_save {
-                                let _ = vault.save_cloud_profile(&cp, None);
+                            if let Some(cp) = &cp_to_save {
+                                let _ = vault.save_cloud_profile(cp, None);
+                            }
+                            if vault.commit_batch().is_err() {
+                                vault.rollback_batch();
                             }
                         }
-                        self.load_data_from_vault();
+                        for conn in updated {
+                            if let Some(slot) =
+                                self.connections.iter_mut().find(|c| c.id == conn.id)
+                            {
+                                *slot = conn;
+                            } else {
+                                self.connections.push(conn);
+                            }
+                        }
+                        if let Some(cp) = cp_to_save
+                            && let Some(slot) =
+                                self.cloud_profiles.iter_mut().find(|p| p.id == cp.id)
+                        {
+                            *slot = cp;
+                        }
                     }
                     Err(msg) => {
                         tracing::error!(

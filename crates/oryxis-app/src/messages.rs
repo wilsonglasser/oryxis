@@ -396,7 +396,6 @@ pub enum Message {
     ConnectSsh(usize),
     SshProgress(ConnectionStep, String),
     SshConnected(Uuid, Arc<SshSession>),  // (pane_id, session)
-    SshNewKnownHosts(Vec<oryxis_core::models::known_host::KnownHost>),
     SshDisconnected(Uuid),  // (pane_id)
     SshError(String),
     SshHostKeyVerify(oryxis_ssh::HostKeyQuery),
@@ -575,7 +574,6 @@ pub enum Message {
 
     // Settings
     LockVault,
-    #[allow(dead_code)]
     TerminalThemeChanged(String),
     AppThemeChanged(String),
     TerminalFontSizeIncrease,
@@ -650,7 +648,6 @@ pub enum Message {
     UpdateSkipVersion,
     UpdateLater,
     UpdateStartDownload,
-    #[allow(dead_code)]
     UpdateDownloadProgress(f32),
     UpdateDownloadComplete(Result<std::path::PathBuf, String>),
     UpdateOpenRelease,
@@ -1114,7 +1111,6 @@ pub enum Message {
     ExportPasswordChanged(String),
     ExportToggleKeys,
     ExportConfirm,
-    #[allow(dead_code)]
     ExportCompleted(Result<String, String>),
     ImportVault,
     /// Pick `~/.ssh/config` (or any file the user chooses), parse Host
@@ -1122,12 +1118,16 @@ pub enum Message {
     /// modal yet, batch-imports everything non-wildcard and shows a
     /// status banner.
     ImportSshConfig,
-    #[allow(dead_code)]
+    /// File contents picked + read by the background task spawned from
+    /// `ImportSshConfig`; the handler parses and saves on the UI side.
+    SshConfigFileLoaded(Result<String, String>),
     ImportFileLoaded(Vec<u8>),
     ImportPasswordChanged(String),
     ImportConfirm,
-    #[allow(dead_code)]
     ImportCompleted(Result<String, String>),
+    /// Destination chosen in the async Share save dialog; the handler
+    /// encrypts the filtered export and writes it there.
+    SharePathChosen(std::path::PathBuf),
     ExportImportDismiss,
 
     // System tray (Windows only at runtime; messages compile on
@@ -1139,6 +1139,9 @@ pub enum Message {
     /// Polling here is acceptable noise (~10 ticks/sec, each a
     /// non-blocking `try_recv`) and avoids wiring a custom
     /// Subscription stream that bridges crossbeam into iced.
+    /// The ticker only mounts on Windows (the tray lives there),
+    /// hence the cfg'd allow.
+    #[cfg_attr(not(target_os = "windows"), allow(dead_code))]
     TrayPoll,
     /// User clicked "Show Oryxis" in the tray menu, or left-clicked
     /// the tray icon. Bring the main window back from hidden state

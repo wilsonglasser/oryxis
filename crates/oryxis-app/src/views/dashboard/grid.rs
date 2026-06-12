@@ -33,30 +33,47 @@ fn count_leaves(layout: &oryxis_core::models::PaneLayout) -> usize {
 }
 
 impl Oryxis {
-    /// Recursively check whether a group contains at least one host or
-    /// nested dynamic group whose cloud origin matches `profile_id`.
+    /// Build the set of groups whose subtree contains at least one host
+    /// or nested dynamic group whose cloud origin matches `profile_id`.
     /// Used by the cloud-profile filter chip so a parent folder stays
-    /// visible when only its descendants match. Bounded by the
-    /// underlying acyclic group structure; if upstream data ever holds
-    /// a cycle, the visited set would need to be carried explicitly.
-    fn group_contains_cloud_profile(&self, gid: Uuid, profile_id: Uuid) -> bool {
-        if self.connections.iter().any(|c| {
-            c.group_id == Some(gid)
-                && c.cloud_ref.as_ref().map(|r| r.profile_id) == Some(profile_id)
-        }) {
-            return true;
-        }
-        for child in self.groups.iter().filter(|g| g.parent_id == Some(gid)) {
-            if let Some(q) = &child.cloud_query
-                && q.profile_id == profile_id
-            {
-                return true;
+    /// visible when only its descendants match. Each match marks its
+    /// whole ancestor chain in one upward walk, so the full set costs
+    /// one pass over connections + groups per view call instead of a
+    /// recursive subtree scan per folder card per frame.
+    fn groups_containing_cloud_profile(
+        &self,
+        profile_id: Uuid,
+    ) -> std::collections::HashSet<Uuid> {
+        let parent_of: std::collections::HashMap<Uuid, Option<Uuid>> =
+            self.groups.iter().map(|g| (g.id, g.parent_id)).collect();
+        let mut set = std::collections::HashSet::new();
+        // Walk up the parent chain marking every ancestor. The insert
+        // check doubles as cycle protection should upstream data ever
+        // hold a parent loop.
+        let mark_up = |start: Option<Uuid>,
+                       set: &mut std::collections::HashSet<Uuid>| {
+            let mut cur = start;
+            while let Some(g) = cur {
+                if !set.insert(g) {
+                    break;
+                }
+                cur = parent_of.get(&g).copied().flatten();
             }
-            if self.group_contains_cloud_profile(child.id, profile_id) {
-                return true;
+        };
+        for conn in &self.connections {
+            if conn.cloud_ref.as_ref().map(|r| r.profile_id) == Some(profile_id) {
+                mark_up(conn.group_id, &mut set);
             }
         }
-        false
+        for g in &self.groups {
+            if g.cloud_query.as_ref().is_some_and(|q| q.profile_id == profile_id) {
+                // A matching dynamic group makes its *ancestors*
+                // visible; the dynamic card itself renders through the
+                // dedicated dynamic-group pass below.
+                mark_up(g.parent_id, &mut set);
+            }
+        }
+        set
     }
 
     /// One session-group card: primary click opens the saved arrangement;
@@ -775,21 +792,63 @@ impl Oryxis {
                     roots_to_render.push(g.id);
                 }
             }
+            // Pre-pass over connections + groups, one scan each per
+            // view call. The per-card lookups below (group resolve,
+            // host / nested counts, brand inference) all hit these maps
+            // in O(1) instead of rescanning the full lists for every
+            // folder card on every frame.
+            let group_by_id: std::collections::HashMap<Uuid, _> =
+                self.groups.iter().map(|g| (g.id, g)).collect();
+            let mut direct_host_count: std::collections::HashMap<Uuid, usize> =
+                std::collections::HashMap::new();
+            // First cloud_ref profile seen per group (connections
+            // order), feeding the brand-inference fallback below.
+            let mut first_cloud_profile: std::collections::HashMap<Uuid, Uuid> =
+                std::collections::HashMap::new();
+            for conn in &self.connections {
+                if let Some(cgid) = conn.group_id {
+                    *direct_host_count.entry(cgid).or_insert(0) += 1;
+                    if let Some(cref) = conn.cloud_ref.as_ref() {
+                        first_cloud_profile.entry(cgid).or_insert(cref.profile_id);
+                    }
+                }
+            }
+            let mut nested_group_count: std::collections::HashMap<Uuid, usize> =
+                std::collections::HashMap::new();
+            // First nested cloud-query brand per parent (groups order),
+            // the primary brand-inference source.
+            let mut child_query_brand: std::collections::HashMap<Uuid, &'static str> =
+                std::collections::HashMap::new();
+            for g in &self.groups {
+                if let Some(pgid) = g.parent_id {
+                    *nested_group_count.entry(pgid).or_insert(0) += 1;
+                    if let Some(q) = g.cloud_query.as_ref() {
+                        child_query_brand.entry(pgid).or_insert(match q.kind {
+                            oryxis_core::models::cloud::CloudQueryKind::EcsTasks { .. } => "ecs",
+                            oryxis_core::models::cloud::CloudQueryKind::K8sPods { .. } => "kubernetes",
+                        });
+                    }
+                }
+            }
+            // Subtree-match set for the cloud-profile filter chip,
+            // built once per view call (None when the filter is off).
+            let cloud_filter_groups: Option<std::collections::HashSet<Uuid>> =
+                self.host_filter_cloud_profile
+                    .map(|pid| self.groups_containing_cloud_profile(pid));
+
             // Apply the toolbar sort to folder cards. Hidden groups (no
             // direct match) just fall through the search filter below.
             self.hosts_sort.sort_items(
                 &mut roots_to_render,
                 |gid| {
-                    self.groups
-                        .iter()
-                        .find(|g| g.id == *gid)
+                    group_by_id
+                        .get(gid)
                         .map(|g| g.label.clone())
                         .unwrap_or_default()
                 },
                 |gid| {
-                    self.groups
-                        .iter()
-                        .find(|g| g.id == *gid)
+                    group_by_id
+                        .get(gid)
                         .map(|g| g.created_at)
                         .unwrap_or_else(chrono::Utc::now)
                 },
@@ -800,21 +859,21 @@ impl Oryxis {
                 // Active filter intentionally hides every manual,
                 // non-cloud folder at root, the chip is the user's
                 // explicit "show me only this provider" lens.
-                if let Some(filter_pid) = self.host_filter_cloud_profile
-                    && !self.group_contains_cloud_profile(gid, filter_pid)
+                if let Some(visible) = cloud_filter_groups.as_ref()
+                    && !visible.contains(&gid)
                 {
                     continue;
                 }
-                if let Some(group) = self.groups.iter().find(|g| g.id == gid)
+                if let Some(&group) = group_by_id.get(&gid)
                         && (search_lower.is_empty()
                             || group.label.to_lowercase().contains(&search_lower)) {
                             // Count = direct connections + nested groups
                             // (each nested dynamic group is a record,
                             // even if its tasks are resolved on expand).
-                            let direct_hosts = self.connections.iter()
-                                .filter(|c| c.group_id == Some(gid)).count();
-                            let nested_groups = self.groups.iter()
-                                .filter(|g| g.parent_id == Some(gid)).count();
+                            let direct_hosts =
+                                direct_host_count.get(&gid).copied().unwrap_or(0);
+                            let nested_groups =
+                                nested_group_count.get(&gid).copied().unwrap_or(0);
                             let count = direct_hosts + nested_groups;
                             let label = group.label.clone();
                             let count_text = crate::i18n::host_count(count);
@@ -839,26 +898,19 @@ impl Oryxis {
                                 .as_deref()
                                 .filter(|s| !s.is_empty())
                                 .and_then(crate::os_icon::canonical_brand_id);
-                            let inferred_brand = self.groups.iter()
-                                .filter(|g| g.parent_id == Some(gid))
-                                .find_map(|g| g.cloud_query.as_ref())
-                                .map(|q| match q.kind {
-                                    oryxis_core::models::cloud::CloudQueryKind::EcsTasks { .. } => "ecs",
-                                    oryxis_core::models::cloud::CloudQueryKind::K8sPods { .. } => "kubernetes",
-                                })
+                            let inferred_brand = child_query_brand
+                                .get(&gid)
+                                .copied()
                                 .or_else(|| {
-                                    self.connections.iter()
-                                        .filter(|c| c.group_id == Some(gid))
-                                        .find_map(|c| c.cloud_ref.as_ref())
-                                        .and_then(|cref| {
-                                            self.cloud_profiles.iter()
-                                                .find(|p| p.id == cref.profile_id)
-                                                .map(|p| match p.provider.as_str() {
-                                                    "aws" => "aws",
-                                                    "k8s" | "kubernetes" => "kubernetes",
-                                                    _ => "cloud",
-                                                })
-                                        })
+                                    first_cloud_profile.get(&gid).and_then(|pid| {
+                                        self.cloud_profiles.iter()
+                                            .find(|p| p.id == *pid)
+                                            .map(|p| match p.provider.as_str() {
+                                                "aws" => "aws",
+                                                "k8s" | "kubernetes" => "kubernetes",
+                                                _ => "cloud",
+                                            })
+                                    })
                                 });
 
                             let (folder_glyph, folder_bg): (BrandIcon, Color) =
@@ -1019,7 +1071,22 @@ impl Oryxis {
             // manual nested groups would. Sorted indices keep dynamic
             // groups interleaved with manual folders by the same rule
             // (label / created_at) instead of vault-insertion order.
-            let mut dyn_group_order: Vec<usize> = (0..self.groups.len()).collect();
+            // Filter first so the sort only touches the cards that
+            // actually render instead of the whole group list.
+            let mut dyn_group_order: Vec<usize> = (0..self.groups.len())
+                .filter(|&i| {
+                    let g = &self.groups[i];
+                    let Some(query) = g.cloud_query.as_ref() else {
+                        return false;
+                    };
+                    g.parent_id.is_none()
+                        && (search_lower.is_empty()
+                            || g.label.to_lowercase().contains(&search_lower))
+                        && self
+                            .host_filter_cloud_profile
+                            .is_none_or(|pid| query.profile_id == pid)
+                })
+                .collect();
             self.hosts_sort.sort_items(
                 &mut dyn_group_order,
                 |&i| self.groups[i].label.clone(),
@@ -1028,17 +1095,6 @@ impl Oryxis {
             for dyn_i in dyn_group_order {
                 let group = &self.groups[dyn_i];
                 let Some(query) = group.cloud_query.as_ref() else { continue };
-                if group.parent_id.is_some() { continue }
-                if !search_lower.is_empty()
-                    && !group.label.to_lowercase().contains(&search_lower)
-                {
-                    continue;
-                }
-                if let Some(filter_pid) = self.host_filter_cloud_profile
-                    && query.profile_id != filter_pid
-                {
-                    continue;
-                }
                 let gid = group.id;
                 let subtitle = match &query.kind {
                     oryxis_core::models::cloud::CloudQueryKind::EcsTasks {
@@ -1194,7 +1250,22 @@ impl Oryxis {
             // `parent_id` points at this folder). Same card style as
             // the root pass, just filtered by parent. Same sort rule
             // too so the nested view stays consistent with the root.
-            let mut nested_dyn_order: Vec<usize> = (0..self.groups.len()).collect();
+            // Filter first, same as the root pass, so the sort only
+            // covers the cards that actually render.
+            let mut nested_dyn_order: Vec<usize> = (0..self.groups.len())
+                .filter(|&i| {
+                    let g = &self.groups[i];
+                    let Some(query) = g.cloud_query.as_ref() else {
+                        return false;
+                    };
+                    g.parent_id == Some(active_gid)
+                        && (search_lower.is_empty()
+                            || g.label.to_lowercase().contains(&search_lower))
+                        && self
+                            .host_filter_cloud_profile
+                            .is_none_or(|pid| query.profile_id == pid)
+                })
+                .collect();
             self.hosts_sort.sort_items(
                 &mut nested_dyn_order,
                 |&i| self.groups[i].label.clone(),
@@ -1203,17 +1274,6 @@ impl Oryxis {
             for nested_i in nested_dyn_order {
                 let group = &self.groups[nested_i];
                 let Some(query) = group.cloud_query.as_ref() else { continue };
-                if group.parent_id != Some(active_gid) { continue }
-                if !search_lower.is_empty()
-                    && !group.label.to_lowercase().contains(&search_lower)
-                {
-                    continue;
-                }
-                if let Some(filter_pid) = self.host_filter_cloud_profile
-                    && query.profile_id != filter_pid
-                {
-                    continue;
-                }
                 let gid = group.id;
                 let subtitle = match &query.kind {
                     oryxis_core::models::cloud::CloudQueryKind::EcsTasks {
@@ -1349,10 +1409,45 @@ impl Oryxis {
         }
 
         // Show host cards, filtered by active group and search.
-        // Reorder by the toolbar sort first; `idx` still references the
-        // vault position so downstream messages (EditConnection,
-        // ConnectSsh, …) keep targeting the right row.
-        let mut host_order: Vec<usize> = (0..self.connections.len()).collect();
+        // Filter first so the toolbar sort only touches surviving
+        // rows; `idx` still references the vault position so
+        // downstream messages (EditConnection, ConnectSsh, …) keep
+        // targeting the right row.
+        let mut host_order: Vec<usize> = (0..self.connections.len())
+            .filter(|&i| {
+                let conn = &self.connections[i];
+                // Filter: inside a folder always restrict to that
+                // group; at root, hide grouped hosts only when not
+                // flattening (flatten = on means show every host,
+                // including grouped ones, in the Hosts section).
+                if let Some(gid) = self.active_group {
+                    if conn.group_id != Some(gid) {
+                        return false;
+                    }
+                } else if conn.group_id.is_some() && !flatten {
+                    return false;
+                }
+
+                // Filter by search query
+                if !search_lower.is_empty()
+                    && !conn.label.to_lowercase().contains(&search_lower)
+                    && !conn.hostname.to_lowercase().contains(&search_lower)
+                {
+                    return false;
+                }
+
+                // Cloud-profile filter, only hosts imported from the
+                // active filter profile survive. Hosts without a cloud
+                // origin are hidden too so the lens stays consistent.
+                if let Some(filter_pid) = self.host_filter_cloud_profile
+                    && conn.cloud_ref.as_ref().map(|r| r.profile_id)
+                        != Some(filter_pid)
+                {
+                    return false;
+                }
+                true
+            })
+            .collect();
         self.hosts_sort.sort_items(
             &mut host_order,
             |&i| self.connections[i].label.clone(),
@@ -1360,34 +1455,6 @@ impl Oryxis {
         );
         for idx in host_order {
             let conn = &self.connections[idx];
-            // Filter: inside a folder always restrict to that group;
-            // at root, hide grouped hosts only when not flattening
-            // (flatten = on means show every host, including grouped
-            // ones, in the Hosts section).
-            if let Some(gid) = self.active_group {
-                if conn.group_id != Some(gid) { continue; }
-            } else if conn.group_id.is_some() && !flatten {
-                continue;
-            }
-
-            // Filter by search query
-            if !search_lower.is_empty() {
-                let label_match = conn.label.to_lowercase().contains(&search_lower);
-                let host_match = conn.hostname.to_lowercase().contains(&search_lower);
-                if !label_match && !host_match { continue; }
-            }
-
-            // Cloud-profile filter, only hosts imported from the
-            // active filter profile survive. Hosts without a cloud
-            // origin are hidden too so the lens stays consistent.
-            if let Some(filter_pid) = self.host_filter_cloud_profile {
-                let matches =
-                    conn.cloud_ref.as_ref().map(|r| r.profile_id) == Some(filter_pid);
-                if !matches {
-                    continue;
-                }
-            }
-
             let is_connected = self.tabs.iter().any(|t| t.label == conn.label);
             let auth_label = match conn.auth_method {
                 AuthMethod::Auto => t("auth_auto"),
