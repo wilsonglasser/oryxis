@@ -4,7 +4,31 @@
 
 #[allow(unused_imports)]
 use super::*;
-use crate::sftp_helpers::{parent_path, remote_join, transfer_item_label, unique_entry_name};
+use crate::sftp_helpers::{
+    is_safe_remote_entry_name, parent_path, remote_join, transfer_item_label, unique_entry_name,
+};
+
+#[test]
+fn unsafe_remote_entry_names_are_rejected() {
+    // Server-controlled names must never escape the download root.
+    for bad in [
+        "",
+        ".",
+        "..",
+        "../etc",
+        "a/b",
+        "/etc/cron.d/x",
+        "..\\evil",
+        "C:\\evil",
+        "C:evil",
+        "a\0b",
+    ] {
+        assert!(!is_safe_remote_entry_name(bad), "accepted {bad:?}");
+    }
+    for good in ["file.txt", ".bashrc", "...", "a b c", "weird:name", "über"] {
+        assert!(is_safe_remote_entry_name(good), "rejected {good:?}");
+    }
+}
 
 #[test]
 fn remote_join_root_special_case() {

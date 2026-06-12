@@ -52,6 +52,26 @@ pub(crate) async fn build_client_pool(
     Ok(pool)
 }
 
+/// True when a directory-listing entry name from the SFTP server is a
+/// single plain path component. Anything else (separators, `..`,
+/// absolute paths, drive prefixes) would let a hostile server steer
+/// the recursive walks outside the destination the user picked, so
+/// such entries are skipped rather than joined onto a local path.
+pub(crate) fn is_safe_remote_entry_name(name: &str) -> bool {
+    if name.is_empty() || name == "." || name == ".." {
+        return false;
+    }
+    if name.contains('/') || name.contains('\\') || name.contains('\0') {
+        return false;
+    }
+    // Windows absolute/drive-relative forms ("C:foo") survive the
+    // separator check above but still re-root PathBuf::join there.
+    if name.as_bytes().get(1) == Some(&b':') {
+        return false;
+    }
+    true
+}
+
 /// Join a basename onto a POSIX directory path, handling the root case
 /// (which would otherwise produce `//foo`).
 pub(crate) fn remote_join(dir: &str, basename: &str) -> String {
@@ -166,6 +186,10 @@ pub(crate) fn walk_remote_for_download<'a>(
     Box::pin(async move {
         let entries = client.list_dir(src).await.map_err(|e| e.to_string())?;
         for entry in entries {
+            if !is_safe_remote_entry_name(&entry.name) {
+                tracing::warn!("sftp download: skipping unsafe entry name {:?} in {src}", entry.name);
+                continue;
+            }
             let child_src = if src == "/" {
                 format!("/{}", entry.name)
             } else {
@@ -206,6 +230,10 @@ pub(crate) fn walk_remote_for_relay<'a>(
     Box::pin(async move {
         let entries = client.list_dir(src).await.map_err(|e| e.to_string())?;
         for entry in entries {
+            if !is_safe_remote_entry_name(&entry.name) {
+                tracing::warn!("sftp relay: skipping unsafe entry name {:?} in {src}", entry.name);
+                continue;
+            }
             let child_src = if src == "/" {
                 format!("/{}", entry.name)
             } else {
