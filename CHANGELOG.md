@@ -6,6 +6,33 @@ project uses [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## [0.8.2] - Unreleased
 
+### Performance
+- **Vault operations no longer freeze the UI.** The master key is
+  derived once at unlock instead of running a full Argon2id pass per
+  encrypted field, making connects (especially through jump chains),
+  AI chat sends, cloud refreshes and port-forward starts effectively
+  instant on the crypto side. Existing vaults migrate automatically on
+  the first unlock.
+- **Smoother terminal under heavy output.** SSH/PTY output is coalesced
+  into larger batches instead of one redraw per 8 KB chunk, and the
+  renderer batches same-style glyph runs, skips blank cells and stops
+  holding the terminal lock while building geometry.
+- **Closing a tab now really closes the session.** Live SSH sessions,
+  their background tasks and per-connection forward listeners are torn
+  down on tab/pane close and on vault lock (they used to keep running
+  invisibly).
+- **Faster sync ticks**: manifest building reads lean id/timestamp
+  rows, record collection loads each table once, applies run in a
+  single transaction, and peers sync concurrently (one offline peer no
+  longer stalls the others).
+- **Faster AWS discovery**: regions, clusters and services are queried
+  concurrently with one shared credential load, and task definitions
+  are cached within a pass.
+- Many per-frame allocations removed from the dashboard, history, SFTP
+  and chat views; system font enumeration is cached; file dialogs no
+  longer block the event loop; the updater streams its download with a
+  live progress bar.
+
 ### Security
 - **Session recordings now scrub secrets and PII before persisting.**
   Private key blocks, cloud/API token shapes (AWS, GitHub, Slack,
