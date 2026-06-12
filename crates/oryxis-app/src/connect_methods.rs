@@ -98,12 +98,17 @@ impl Oryxis {
     /// in the connect handler itself.
     pub(crate) fn make_host_key_check(&self) -> oryxis_ssh::HostKeyCheckCallback {
         let snapshot = Arc::new(Mutex::new(self.known_hosts.clone()));
-        Arc::new(move |host, port, _key_type, fingerprint| {
+        Arc::new(move |host, port, key_type, fingerprint| {
             let hosts = match snapshot.lock() {
                 Ok(g) => g,
                 Err(p) => p.into_inner(),
             };
-            if let Some(existing) = hosts.iter().find(|h| h.hostname == host && h.port == port) {
+            // Per (host, port, key_type): a different offered algorithm is
+            // Unknown (verify + accept), not a "Changed" MITM warning.
+            if let Some(existing) = hosts
+                .iter()
+                .find(|h| h.hostname == host && h.port == port && h.key_type == key_type)
+            {
                 if existing.fingerprint != fingerprint {
                     return oryxis_ssh::HostKeyStatus::Changed {
                         old_fingerprint: existing.fingerprint.clone(),

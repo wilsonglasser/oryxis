@@ -184,7 +184,7 @@ pub struct EnvVar {
     pub value: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct ProxyConfig {
     pub proxy_type: ProxyType,
     pub host: String,
@@ -196,6 +196,20 @@ pub struct ProxyConfig {
     ///, the credential lives in the encrypted `proxy_password` column.
     #[serde(skip)]
     pub password: Option<String>,
+}
+
+// Hand-written so a hydrated proxy formatted with `{:?}` (logs, error
+// chains) can never print the password.
+impl std::fmt::Debug for ProxyConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ProxyConfig")
+            .field("proxy_type", &self.proxy_type)
+            .field("host", &self.host)
+            .field("port", &self.port)
+            .field("username", &self.username)
+            .field("password", &self.password.as_ref().map(|_| "<redacted>"))
+            .finish()
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

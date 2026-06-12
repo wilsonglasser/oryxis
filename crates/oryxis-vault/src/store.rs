@@ -7,6 +7,7 @@ use chacha20poly1305::{
 };
 use rand::RngCore;
 use rusqlite::{params, Connection as SqliteConn};
+use zeroize::Zeroizing;
 use uuid::Uuid;
 
 use oryxis_core::models::cloud::{CloudQuery, CloudRef};
@@ -187,8 +188,10 @@ pub(crate) fn decrypt(data: &[u8], password: &[u8]) -> Result<Vec<u8>, VaultErro
 /// Vault store, manages SQLite database with encrypted secrets.
 pub struct VaultStore {
     db: SqliteConn,
-    /// Derived key material (password bytes kept for field-level encryption).
-    master_key: Option<Vec<u8>>,
+    /// Derived key material (password bytes kept for field-level
+    /// encryption). `Zeroizing` wipes the buffer on lock/replace/drop
+    /// so the master password doesn't linger in freed heap.
+    master_key: Option<Zeroizing<Vec<u8>>>,
     /// Unwrapped session-recording content key, cached after first use so
     /// chunk writes don't pay the master-key KDF. Interior mutability
     /// because append/read paths only hold `&self`. Cleared on `lock()`.
@@ -596,7 +599,7 @@ impl VaultStore {
             "INSERT OR REPLACE INTO settings (key, value) VALUES ('has_user_password', ?1)",
             params![flag],
         )?;
-        self.master_key = Some(pw_bytes.to_vec());
+        self.master_key = Some(Zeroizing::new(pw_bytes.to_vec()));
         tracing::info!("Vault master password set");
         Ok(())
     }
@@ -618,7 +621,7 @@ impl VaultStore {
             return Err(VaultError::InvalidPassword);
         }
 
-        self.master_key = Some(pw_bytes.to_vec());
+        self.master_key = Some(Zeroizing::new(pw_bytes.to_vec()));
         tracing::info!("Vault unlocked");
         Ok(())
     }
@@ -630,7 +633,10 @@ impl VaultStore {
     }
 
     fn require_unlocked(&self) -> Result<&[u8], VaultError> {
-        self.master_key.as_deref().ok_or(VaultError::Locked)
+        self.master_key
+            .as_ref()
+            .map(|k| k.as_slice())
+            .ok_or(VaultError::Locked)
     }
 
     // -----------------------------------------------------------------------
@@ -1940,6 +1946,27 @@ impl VaultStore {
     // -----------------------------------------------------------------------
 
     pub fn save_known_host(&self, kh: &oryxis_core::models::known_host::KnownHost) -> Result<(), VaultError> {
+        // One row per (hostname, port, key_type): accepting a changed
+        // fingerprint must replace the stale entry, not pile a second
+        // row onto the same endpoint (which would keep re-triggering
+        // the "Changed" prompt depending on row order). The stale ids
+        // get proper tombstones so sync peers drop them too.
+        let stale: Vec<String> = {
+            let mut stmt = self.db.prepare(
+                "SELECT id FROM known_hosts
+                 WHERE hostname = ?1 AND port = ?2 AND key_type = ?3 AND id <> ?4",
+            )?;
+            let rows = stmt.query_map(
+                params![kh.hostname, kh.port, kh.key_type, kh.id.to_string()],
+                |row| row.get::<_, String>(0),
+            )?;
+            rows.collect::<Result<Vec<_>, _>>()?
+        };
+        for id in stale {
+            if let Ok(uuid) = Uuid::parse_str(&id) {
+                self.delete_known_host(&uuid)?;
+            }
+        }
         self.db.execute(
             "INSERT OR REPLACE INTO known_hosts (id, hostname, port, key_type, fingerprint, first_seen, last_seen, updated_at)
              VALUES (?1,?2,?3,?4,?5,?6,?7,?8)",
@@ -2383,20 +2410,7 @@ impl VaultStore {
         let old_key = self.require_unlocked()?.to_vec();
         let new_key = new_password.as_bytes().to_vec();
 
-        // Re-encrypt all connection passwords
-        self.re_encrypt_connections(&old_key, &new_key)?;
-        // Re-encrypt all key private keys
-        self.re_encrypt_keys(&old_key, &new_key)?;
-        // Re-encrypt all identity passwords
-        self.re_encrypt_identities(&old_key, &new_key)?;
-        // Re-encrypt AI API key if present
-        self.re_encrypt_ai_api_key(&old_key, &new_key)?;
-        // Re-encrypt sync device identity if present
-        self.re_encrypt_sync_device_identity(&old_key, &new_key)?;
-        // Re-wrap the session-recording content key (the chunks
-        // themselves are sealed with the content key, so only the
-        // wrapper needs the new master key).
-        self.re_encrypt_session_log_key(&old_key, &new_key)?;
+        self.re_encrypt_all(&old_key, &new_key)?;
 
         // Update the password_check with the new password
         let check = encrypt(b"oryxis_vault_ok", &new_key)?;
@@ -2411,7 +2425,7 @@ impl VaultStore {
             [],
         )?;
 
-        self.master_key = Some(new_key);
+        self.master_key = Some(Zeroizing::new(new_key));
         tracing::info!("Vault user password set");
         Ok(())
     }
@@ -2422,12 +2436,7 @@ impl VaultStore {
         let old_key = self.require_unlocked()?.to_vec();
         let new_key = b"".to_vec();
 
-        // Re-encrypt all encrypted fields
-        self.re_encrypt_connections(&old_key, &new_key)?;
-        self.re_encrypt_keys(&old_key, &new_key)?;
-        self.re_encrypt_identities(&old_key, &new_key)?;
-        self.re_encrypt_ai_api_key(&old_key, &new_key)?;
-        self.re_encrypt_sync_device_identity(&old_key, &new_key)?;
+        self.re_encrypt_all(&old_key, &new_key)?;
 
         // Update the password_check with empty password
         let check = encrypt(b"oryxis_vault_ok", &new_key)?;
@@ -2442,7 +2451,7 @@ impl VaultStore {
             [],
         )?;
 
-        self.master_key = Some(new_key);
+        self.master_key = Some(Zeroizing::new(new_key));
         tracing::info!("Vault user password removed");
         Ok(())
     }
@@ -2765,32 +2774,49 @@ impl VaultStore {
     // Re-encryption helpers
     // -----------------------------------------------------------------------
 
-    fn re_encrypt_connections(&self, old_key: &[u8], new_key: &[u8]) -> Result<(), VaultError> {
-        let mut stmt = self.db.prepare("SELECT id, password FROM connections WHERE password IS NOT NULL")?;
-        let rows: Vec<(String, Vec<u8>)> = stmt
-            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
-            .collect::<Result<Vec<_>, _>>()?;
-        for (id, encrypted_pw) in rows {
-            let plain = decrypt(&encrypted_pw, old_key)?;
-            let re_encrypted = encrypt(&plain, new_key)?;
-            self.db.execute(
-                "UPDATE connections SET password = ?1 WHERE id = ?2",
-                params![re_encrypted, id],
-            )?;
-        }
+    /// Re-encrypt every encrypted field from `old_key` to `new_key`.
+    /// This list must cover everything `encrypt_field` ever writes; a
+    /// column missed here becomes undecryptable after a master password
+    /// change.
+    fn re_encrypt_all(&self, old_key: &[u8], new_key: &[u8]) -> Result<(), VaultError> {
+        self.re_encrypt_blob_column("connections", "id", "password", old_key, new_key)?;
+        self.re_encrypt_blob_column("connections", "id", "proxy_password", old_key, new_key)?;
+        self.re_encrypt_blob_column("keys", "id", "private_key", old_key, new_key)?;
+        self.re_encrypt_blob_column("identities", "id", "password", old_key, new_key)?;
+        self.re_encrypt_blob_column("proxy_identities", "id", "password", old_key, new_key)?;
+        self.re_encrypt_blob_column("cloud_profiles", "id", "secret", old_key, new_key)?;
+        self.re_encrypt_blob_column("sync_peers", "peer_id", "shared_secret", old_key, new_key)?;
+        self.re_encrypt_ai_api_key(old_key, new_key)?;
+        self.re_encrypt_sync_device_identity(old_key, new_key)?;
+        // The session-recording content key only needs its wrapper
+        // re-encrypted; the chunks themselves are sealed with the
+        // (unchanged) content key.
+        self.re_encrypt_session_log_key(old_key, new_key)?;
         Ok(())
     }
 
-    fn re_encrypt_keys(&self, old_key: &[u8], new_key: &[u8]) -> Result<(), VaultError> {
-        let mut stmt = self.db.prepare("SELECT id, private_key FROM keys WHERE private_key IS NOT NULL")?;
+    /// Re-encrypt one BLOB column of one table. The identifiers are
+    /// compile-time constants from `re_encrypt_all`, never user input,
+    /// so the `format!`-built SQL stays injection-free.
+    fn re_encrypt_blob_column(
+        &self,
+        table: &str,
+        id_col: &str,
+        col: &str,
+        old_key: &[u8],
+        new_key: &[u8],
+    ) -> Result<(), VaultError> {
+        let mut stmt = self.db.prepare(&format!(
+            "SELECT {id_col}, {col} FROM {table} WHERE {col} IS NOT NULL"
+        ))?;
         let rows: Vec<(String, Vec<u8>)> = stmt
             .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
             .collect::<Result<Vec<_>, _>>()?;
-        for (id, encrypted_key) in rows {
-            let plain = decrypt(&encrypted_key, old_key)?;
+        for (id, blob) in rows {
+            let plain = decrypt(&blob, old_key)?;
             let re_encrypted = encrypt(&plain, new_key)?;
             self.db.execute(
-                "UPDATE keys SET private_key = ?1 WHERE id = ?2",
+                &format!("UPDATE {table} SET {col} = ?1 WHERE {id_col} = ?2"),
                 params![re_encrypted, id],
             )?;
         }
@@ -2866,21 +2892,6 @@ impl VaultStore {
         Ok(())
     }
 
-    fn re_encrypt_identities(&self, old_key: &[u8], new_key: &[u8]) -> Result<(), VaultError> {
-        let mut stmt = self.db.prepare("SELECT id, password FROM identities WHERE password IS NOT NULL")?;
-        let rows: Vec<(String, Vec<u8>)> = stmt
-            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
-            .collect::<Result<Vec<_>, _>>()?;
-        for (id, encrypted_pw) in rows {
-            let plain = decrypt(&encrypted_pw, old_key)?;
-            let re_encrypted = encrypt(&plain, new_key)?;
-            self.db.execute(
-                "UPDATE identities SET password = ?1 WHERE id = ?2",
-                params![re_encrypted, id],
-            )?;
-        }
-        Ok(())
-    }
 }
 
 #[cfg(test)]
@@ -2909,6 +2920,56 @@ mod tests {
         let mut vault = temp_vault();
         vault.set_master_password("testpass123").unwrap();
         vault
+    }
+
+    #[test]
+    fn every_encrypted_field_survives_master_password_change() {
+        let mut vault = unlocked_vault();
+
+        // One row in every table with an encrypted column.
+        let conn = Connection::new("host-a", "h.example");
+        vault.save_connection(&conn, Some("conn-pw")).unwrap();
+        vault.set_proxy_password(&conn.id, Some("proxy-pw")).unwrap();
+
+        let key = SshKey::new("k", KeyAlgorithm::Ed25519);
+        vault.save_key(&key, Some("PRIVATE-PEM")).unwrap();
+
+        let ident = Identity::new("i");
+        vault.save_identity(&ident, Some("ident-pw")).unwrap();
+
+        let proxy_ident = ProxyIdentity::new("p");
+        vault.save_proxy_identity(&proxy_ident, Some("proxy-ident-pw")).unwrap();
+
+        let profile = CloudProfile::new("aws-prod", "aws");
+        vault.save_cloud_profile(&profile, Some("cloud-secret")).unwrap();
+
+        let peer_id = Uuid::new_v4();
+        vault
+            .save_sync_peer(&peer_id, "laptop", b"pubkey", Some(b"shared-secret"), &Utc::now())
+            .unwrap();
+
+        vault.set_user_password("the-new-master-password").unwrap();
+
+        // Every secret must decrypt under the new master key.
+        assert_eq!(
+            vault.get_connection_password(&conn.id).unwrap().as_deref(),
+            Some("conn-pw")
+        );
+        assert_eq!(vault.get_proxy_password(&conn.id).unwrap().as_deref(), Some("proxy-pw"));
+        assert_eq!(vault.get_key_private(&key.id).unwrap().as_deref(), Some("PRIVATE-PEM"));
+        assert_eq!(vault.get_identity_password(&ident.id).unwrap().as_deref(), Some("ident-pw"));
+        assert_eq!(
+            vault.get_proxy_identity_password(&proxy_ident.id).unwrap().as_deref(),
+            Some("proxy-ident-pw")
+        );
+        assert_eq!(
+            vault.get_cloud_profile_secret(&profile.id).unwrap().as_deref(),
+            Some("cloud-secret")
+        );
+        assert_eq!(
+            vault.get_sync_peer_shared_secret(&peer_id).unwrap().as_deref(),
+            Some(b"shared-secret".as_slice())
+        );
     }
 
     // ── Session logs ──

@@ -23,6 +23,20 @@ project uses [SemVer](https://semver.org/spec/v2.0.0.html).
 - **Destroy Vault now drops every table** (including ones added in
   recent releases) and VACUUMs the database file so wiped data doesn't
   linger.
+- **Master password changes re-encrypt every secret.** Proxy passwords
+  (inline and proxy-identity), cloud profile secrets and sync peer
+  shared secrets were missing from the re-encryption pass, so changing
+  the master password made them undecryptable. A structural test now
+  pins every encrypted column.
+- **Known hosts are tracked per host, port and key type.** Accepting a
+  changed host key replaces the stale entry instead of stacking a
+  duplicate row (which kept the warning coming back), and a server
+  offering a different key algorithm prompts as an unknown key instead
+  of a false "key changed" MITM warning.
+- **Hardening:** cached cloud-provider plugins are re-verified against
+  their install-time signature at spawn; the in-memory master password
+  buffer is zeroized on lock/drop; proxy configurations redact the
+  password from debug formatting.
 
 ### Added
 - **One-time terminal link hint.** The "Ctrl + Click to open the link"

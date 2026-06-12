@@ -277,6 +277,25 @@ impl Connection {
         if !binary.exists() {
             return Err(PluginError::BinaryNotFound(binary.to_path_buf()));
         }
+        // Re-verify the cached binary against its install-time detached
+        // signature before executing it, so a file swapped in the cache
+        // after install doesn't run. Installs predating the sidecar
+        // `.sig` can't be checked; log and proceed for those.
+        let sig_path = binary.with_extension("sig");
+        match std::fs::read_to_string(&sig_path) {
+            Ok(sig) => {
+                let bytes = std::fs::read(binary)
+                    .map_err(|e| PluginError::Spawn(format!("read plugin binary: {e}")))?;
+                super::verify::verify(&bytes, sig.trim())?;
+            }
+            Err(_) => {
+                tracing::warn!(
+                    target = "oryxis::plugins",
+                    binary = %binary.display(),
+                    "no cached signature for plugin binary; skipping spawn-time re-verification"
+                );
+            }
+        }
         let mut cmd = Command::new(binary);
         cmd.stdin(Stdio::piped())
             .stdout(Stdio::piped())

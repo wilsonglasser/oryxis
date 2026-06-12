@@ -220,7 +220,7 @@ impl Oryxis {
                             let known_hosts_snapshot: Arc<Mutex<Vec<oryxis_core::models::known_host::KnownHost>>> =
                                 Arc::new(Mutex::new(self.known_hosts.clone()));
                             let kh_ref = known_hosts_snapshot.clone();
-                            let host_key_check: oryxis_ssh::HostKeyCheckCallback = Arc::new(move |host, port, _key_type, fingerprint| {
+                            let host_key_check: oryxis_ssh::HostKeyCheckCallback = Arc::new(move |host, port, key_type, fingerprint| {
                                 // Tolerate a poisoned mutex (some other lock-holder panicked)
                                 // by recovering the inner data rather than panicking the SSH
                                 // verification callback, better to fall back to "Unknown" and
@@ -229,7 +229,15 @@ impl Oryxis {
                                     Ok(guard) => guard,
                                     Err(poison) => poison.into_inner(),
                                 };
-                                if let Some(existing) = hosts.iter().find(|h| h.hostname == host && h.port == port) {
+                                // Match on key type too: a server legitimately
+                                // offering a different algorithm than the one
+                                // stored is an "Unknown" (verify and accept),
+                                // not a scary "Changed" MITM warning, which
+                                // must stay reserved for a real fingerprint
+                                // mismatch on the same key type.
+                                if let Some(existing) = hosts.iter().find(|h| {
+                                    h.hostname == host && h.port == port && h.key_type == key_type
+                                }) {
                                     if existing.fingerprint != fingerprint {
                                         return oryxis_ssh::HostKeyStatus::Changed {
                                             old_fingerprint: existing.fingerprint.clone(),

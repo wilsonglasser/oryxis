@@ -209,6 +209,13 @@ pub async fn download_and_install(
     }
     set_executable(&tmp_path)?;
     std::fs::rename(&tmp_path, &final_path)?;
+    // Persist the detached signature next to the binary so the host
+    // can re-verify the cached file at spawn time (closes the gap
+    // between install-time verification and a later tampered cache).
+    std::fs::write(
+        final_path.with_extension("sig"),
+        binary.signature.as_bytes(),
+    )?;
     #[cfg(unix)]
     {
         // fsync the parent directory so the rename itself is durable.
