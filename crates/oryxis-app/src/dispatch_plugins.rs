@@ -400,6 +400,7 @@ impl Oryxis {
                     action: Some(crate::state::ErrorDialogAction {
                         label: crate::i18n::t("plugin_action_uninstall").to_string(),
                         message: Box::new(Message::PluginUninstallConfirmed(id)),
+                        danger: true,
                     }),
                 });
                 Ok(Task::none())

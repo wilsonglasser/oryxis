@@ -675,6 +675,7 @@ impl Oryxis {
                     action: Some(crate::state::ErrorDialogAction {
                         label: crate::i18n::t("delete").to_string(),
                         message: Box::new(Message::DeleteSessionLog(idx)),
+                        danger: true,
                     }),
                 });
             }

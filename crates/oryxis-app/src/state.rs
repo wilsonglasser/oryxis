@@ -697,6 +697,9 @@ pub(crate) struct ErrorDialogLink {
 pub(crate) struct ErrorDialogAction {
     pub label: String,
     pub message: Box<crate::app::Message>,
+    /// Destructive actions (delete, uninstall) render in the error
+    /// red; recovery actions keep the accent.
+    pub danger: bool,
 }
 
 /// Armed when the user asked to reconnect an ECS Exec session whose

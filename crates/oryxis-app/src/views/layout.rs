@@ -22,8 +22,12 @@ const RESIZE_EDGE: f32 = 5.0;
 /// (the text comes from dialog state, not a 'static i18n ref); pressing
 /// fires `ErrorDialogRunAction`, which dismisses the dialog and
 /// dispatches the action's carried message.
-fn dialog_action_button<'a>(label: String) -> Element<'a, Message> {
-    let color = OryxisColors::t().accent;
+fn dialog_action_button<'a>(label: String, danger: bool) -> Element<'a, Message> {
+    let color = if danger {
+        OryxisColors::t().error
+    } else {
+        OryxisColors::t().accent
+    };
     let fg = OryxisColors::t().button_text;
     button(
         container(
@@ -405,7 +409,7 @@ impl Oryxis {
                 // Recovery action, accent-styled like the link button;
                 // dispatching goes through ErrorDialogRunAction so the
                 // dialog also dismisses itself.
-                buttons = buttons.push(dialog_action_button(action.label));
+                buttons = buttons.push(dialog_action_button(action.label, action.danger));
             }
 
             // Body uses Rich text with `.selectable(true)` so the user
@@ -860,15 +864,15 @@ impl Oryxis {
                     Space::new().height(16),
                     crate::widgets::dir_row(vec![
                         styled_button(
-                            crate::i18n::t("clear_all"),
-                            Message::ClearLogs,
-                            OryxisColors::t().error,
-                        ),
-                        Space::new().width(8).into(),
-                        styled_button(
                             crate::i18n::t("cancel"),
                             Message::CancelClearHistory,
                             OryxisColors::t().text_muted,
+                        ),
+                        Space::new().width(8).into(),
+                        styled_button(
+                            crate::i18n::t("clear_all"),
+                            Message::ClearLogs,
+                            OryxisColors::t().error,
                         ),
                     ])
                     .align_y(iced::Alignment::Center),

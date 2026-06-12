@@ -476,6 +476,7 @@ impl Oryxis {
                                     container,
                                     fallback_task_id: task_id,
                                 }),
+                                danger: false,
                             }),
                         });
                         // Land on the group's task listing behind the dialog
