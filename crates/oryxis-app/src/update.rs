@@ -160,6 +160,7 @@ async fn fetch_release(path: &str) -> Result<serde_json::Value, UpdateError> {
     let client = reqwest::Client::builder()
         .user_agent(concat!("Oryxis/", env!("CARGO_PKG_VERSION")))
         .timeout(std::time::Duration::from_secs(10))
+        .https_only(true)
         .build()
         .map_err(|e| UpdateError::Network(concise_cause(&e)))?;
     let resp = client
@@ -441,6 +442,13 @@ fn nightly_asset_fragment() -> Vec<&'static str> {
 /// memory first, simpler than streaming chunks, fine for our installer
 /// sizes (~80 MB). The progress closure is accepted for API symmetry but
 /// only fires once (0.0 then 1.0) in this implementation.
+///
+/// Before anything is written to disk the artifact's detached Ed25519
+/// signature (the sibling `<asset>.sig` release asset, published by the
+/// release/nightly workflows) is fetched and checked against the same
+/// trust anchors the plugin pipeline uses. A missing or invalid
+/// signature aborts the update: TLS alone is not the trust boundary
+/// for code we are about to execute.
 pub async fn download_installer(
     url: &str,
     file_name: &str,
@@ -449,6 +457,7 @@ pub async fn download_installer(
     let client = reqwest::Client::builder()
         .user_agent(concat!("Oryxis/", env!("CARGO_PKG_VERSION")))
         .timeout(std::time::Duration::from_secs(600))
+        .https_only(true)
         .build()
         .map_err(|e| e.to_string())?;
 
@@ -458,6 +467,19 @@ pub async fn download_installer(
         return Err(format!("HTTP {}", resp.status()));
     }
     let bytes = resp.bytes().await.map_err(|e| e.to_string())?;
+
+    let sig_url = format!("{url}.sig");
+    let sig_resp = client.get(&sig_url).send().await.map_err(|e| e.to_string())?;
+    if !sig_resp.status().is_success() {
+        return Err(format!(
+            "update signature missing ({} on {file_name}.sig)",
+            sig_resp.status()
+        ));
+    }
+    let sig_b64 = sig_resp.text().await.map_err(|e| e.to_string())?;
+    crate::plugins::verify::verify(&bytes, sig_b64.trim())
+        .map_err(|e| format!("update signature verification failed: {e}"))?;
+
     let dest = std::env::temp_dir().join(file_name);
     std::fs::write(&dest, &bytes).map_err(|e| e.to_string())?;
     progress(1.0);

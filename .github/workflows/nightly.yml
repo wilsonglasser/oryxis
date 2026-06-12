@@ -231,6 +231,23 @@ jobs:
           STAMP=$(date -u +'%Y-%m-%dT%H:%M:%SZ')
           echo "sha_short=$SHA_SHORT" >> "$GITHUB_OUTPUT"
           echo "stamp=$STAMP" >> "$GITHUB_OUTPUT"
+
+      # Detached Ed25519 signature per asset (`<asset>.sig`, base64).
+      # The in-app nightly self-update verifies the bare binary against
+      # the baked-in PROD_PUBKEY before swapping it in.
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Sign nightly assets
+        env:
+          ORYXIS_SIGNING_KEY: ${{ secrets.ORYXIS_SIGNING_KEY }}
+        run: |
+          set -euo pipefail
+          cargo build --release -p oryxis-plugin-signer
+          for f in dist/*; do
+            case "$f" in *.sig) continue ;; esac
+            ./target/release/oryxis-plugin-signer sign "$f" > "$f.signinfo"
+            grep '^signature_b64' "$f.signinfo" | awk '{print $3}' > "$f.sig"
+            rm "$f.signinfo"
+          done
       - name: Replace nightly release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

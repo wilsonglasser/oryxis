@@ -406,6 +406,24 @@ jobs:
         with:
           name: oryxis-windows-aarch64
 
+      # Detached Ed25519 signature per asset (`<asset>.sig`, base64).
+      # The auto-updater verifies the downloaded artifact against the
+      # baked-in PROD_PUBKEY before launching it, so every published
+      # asset must carry its signature.
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Sign release assets
+        env:
+          ORYXIS_SIGNING_KEY: ${{ secrets.ORYXIS_SIGNING_KEY }}
+        run: |
+          set -euo pipefail
+          cargo build --release -p oryxis-plugin-signer
+          for f in oryxis-*; do
+            case "$f" in *.sig) continue ;; esac
+            ./target/release/oryxis-plugin-signer sign "$f" > "$f.signinfo"
+            grep '^signature_b64' "$f.signinfo" | awk '{print $3}' > "$f.sig"
+            rm "$f.signinfo"
+          done
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
@@ -425,6 +443,7 @@ jobs:
             oryxis-windows-aarch64.zip
             oryxis-setup-aarch64.exe
             oryxis-user-setup-aarch64.exe
+            oryxis-*.sig
 
   winget:
     name: Publish to winget
