@@ -4,7 +4,7 @@ All notable changes to Oryxis are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the
 project uses [SemVer](https://semver.org/spec/v2.0.0.html).
 
-## [0.8.2] - Unreleased
+## [0.8.2] - 2026-06-12
 
 ### Performance
 - **Vault operations no longer freeze the UI.** The master key is
@@ -142,6 +142,26 @@ project uses [SemVer](https://semver.org/spec/v2.0.0.html).
   it's wanted.
 
 ### Fixed
+- **Pinned ECS tabs survive task recycling.** Reopening a pinned ECS
+  Exec tab resolves the dynamic group and connects to the task
+  currently running (the saved task id is ephemeral by design). When
+  the exec still fails, the error dialog offers a "Connect to current
+  task" recovery button and the app lands on the group's task listing;
+  the dormant placeholder re-arms so selecting the tab again retries
+  instead of staying a dead pane. Reopening a cloud pin also stays on
+  its placeholder with a connecting hint instead of flashing the Hosts
+  view during the spawn.
+- **Pinned tabs no longer duplicate.** Pins de-duplicate by identity
+  (host id / cloud group + container, ignoring recycled task and pod
+  ids) when persisting and when restoring at boot, healing strips that
+  had already accumulated duplicate chips.
+- **Logs view shows new activity.** Entering Logs re-reads the
+  timeline from the vault; sessions recorded after boot only existed
+  in the database and were invisible until an unrelated full reload.
+- **Consistent confirmation dialogs.** Destructive confirmations
+  (delete recording, uninstall plugin, clear all) use the error red
+  for the primary action and the same button order (Cancel leading,
+  action trailing).
 - **IME / CJK input was blocked in the terminal.** With a terminal open, the
   OS input method (IME) stayed locked in direct (English) mode and could not
   be switched to Korean / Chinese / Japanese composition. The terminal is an
