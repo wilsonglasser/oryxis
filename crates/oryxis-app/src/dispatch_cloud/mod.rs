@@ -170,7 +170,7 @@ impl Oryxis {
                     // forcing it: a dead *unpinned* cloud tab also rides
                     // this reopen path now (PluginSessionEnded) and must
                     // not come back pinned.
-                    let mut keep_pin = true;
+                    let keep_pin;
                     let at = if let Some(dpos) =
                         self.tabs.iter().position(|t| t._id == dormant_id)
                     {
@@ -185,7 +185,9 @@ impl Oryxis {
                         at
                     } else {
                         // Dormant gone (e.g. closed mid-connect): leave the
-                        // live tab where it was pushed.
+                        // live tab where it was pushed, and don't force a
+                        // pin it wouldn't inherit from anything.
+                        keep_pin = false;
                         tab_idx
                     };
                     self.tabs[at].pinned = keep_pin;

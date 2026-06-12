@@ -663,6 +663,12 @@ impl Oryxis {
                     // connect streams hold their own Arcs, so dropping
                     // the panes alone would leak the live sessions.
                     Self::close_tab_ssh_sessions(&self.tabs[idx]);
+                    // A pending placeholder replacement aimed at this tab
+                    // would otherwise go stale and hijack the next
+                    // unrelated cloud spawn.
+                    if self.pin_next_plugin_tab == Some(self.tabs[idx]._id) {
+                        self.pin_next_plugin_tab = None;
+                    }
                     // Closing a pinned tab drops it from the persisted set.
                     let was_pinned = self.tabs[idx].pinned;
                     self.tabs.remove(idx);
@@ -1037,12 +1043,22 @@ impl Oryxis {
             // placeholder in the strip (so its chip doesn't blink out) and let
             // `spawn_plugin_tab` replace it in place by id, inheriting its slot
             // + pin. We don't persist here: the dormant spec stays in the
-            // setting as a safety net until the live tab re-persists. Show
-            // Hosts during the connect instead of the dormant's placeholder
-            // terminal.
+            // setting as a safety net until the live tab re-persists. Stay on
+            // the placeholder pane with a connecting hint instead of bouncing
+            // to Hosts while the session resolves + spawns.
             self.pin_next_plugin_tab = Some(self.tabs[idx]._id);
-            self.active_tab = None;
-            self.active_view = View::Dashboard;
+            self.active_tab = Some(idx);
+            self.remember_terminal_tab_focus(idx);
+            self.active_view = View::Terminal;
+            if let Some(pane) = self.tabs[idx].pane_grid.panes.values().next()
+                && let Ok(mut term) = pane.terminal.lock()
+            {
+                let hint = format!(
+                    "\r\n\x1b[2m  {}\x1b[0m\r\n",
+                    crate::i18n::t("connecting_status")
+                );
+                term.process(hint.as_bytes());
+            }
             return open.map(|m| self.update(m)).unwrap_or_else(Task::none);
         }
 

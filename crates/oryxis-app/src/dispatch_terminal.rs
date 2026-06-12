@@ -84,7 +84,9 @@ impl Oryxis {
         if let Some(vault) = &self.vault {
             for (log_id, bytes) in pending {
                 let scrubbed = crate::session_redact::redact_secrets(&bytes);
-                let _ = vault.append_session_data(&log_id, &scrubbed);
+                if let Err(e) = vault.append_session_data(&log_id, &scrubbed) {
+                    tracing::warn!("session log append failed for {log_id}: {e}");
+                }
             }
         }
     }

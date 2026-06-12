@@ -205,6 +205,22 @@ impl Oryxis {
                     self.refresh_sftp_local(crate::state::SftpPaneSide::Left);
                     self.refresh_sftp_local(crate::state::SftpPaneSide::Right);
                 }
+                // Entering Logs re-reads the timeline from the vault:
+                // rows created since boot (a session that just started
+                // recording, fresh connection events) only exist in the
+                // tables, not in the cached page state.
+                if view == View::History
+                    && let Some(vault) = &self.vault
+                {
+                    self.logs_total = vault.count_logs().unwrap_or(0);
+                    self.logs = vault
+                        .list_logs_page(self.logs_page * 50, 50)
+                        .unwrap_or_default();
+                    self.session_logs_total = vault.count_session_logs().unwrap_or(0);
+                    self.session_logs = vault
+                        .list_session_logs_page(self.session_logs_page * 50, 50)
+                        .unwrap_or_default();
+                }
             }
             Message::QuickHostInput(v) => {
                 self.quick_host_input = v;

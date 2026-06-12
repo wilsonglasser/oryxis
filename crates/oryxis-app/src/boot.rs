@@ -1029,11 +1029,17 @@ impl Oryxis {
     /// the `pinned_tabs` setting so they reappear, dormant, next launch.
     /// Cloud / ephemeral pinned tabs have no spec and are skipped.
     pub(crate) fn persist_pinned_tabs(&self) {
+        // De-duplicate by pin identity: a dormant placeholder and its
+        // freshly-reopened live tab can briefly coexist (or a missed
+        // replacement can leave both around), and persisting both
+        // turns into duplicate chips on the next boot.
+        let mut seen = std::collections::HashSet::new();
         let specs: Vec<crate::state::PinnedTabSpec> = self
             .tabs
             .iter()
             .filter(|t| t.pinned)
             .filter_map(|t| t.pin_spec())
+            .filter(|s| seen.insert(s.dedupe_key()))
             .collect();
         let json = serde_json::to_string(&specs).unwrap_or_else(|_| "[]".into());
         self.persist_setting("pinned_tabs", &json);
@@ -1054,7 +1060,13 @@ impl Oryxis {
         if specs.is_empty() {
             return;
         }
+        // Heal any duplicates an older version persisted: one chip
+        // per pin identity.
+        let mut seen = std::collections::HashSet::new();
         for spec in specs {
+            if !seen.insert(spec.dedupe_key()) {
+                continue;
+            }
             let label = spec.label().to_string();
             self.tabs
                 .push(crate::state::TerminalTab::new_dormant_pinned(label, spec));

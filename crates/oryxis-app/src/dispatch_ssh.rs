@@ -183,7 +183,11 @@ impl Oryxis {
                             let session_log_id = if self.should_record_session(Some(&conn)) {
                                 if let Some(vault) = &self.vault {
                                     let log_id = Uuid::new_v4();
-                                    let _ = vault.create_session_log(&log_id, &conn.id, &conn.label);
+                                    if let Err(e) =
+                                        vault.create_session_log(&log_id, &conn.id, &conn.label)
+                                    {
+                                        tracing::warn!("session log create failed: {e}");
+                                    }
                                     // Keep the in-memory count live so the
                                     // History nav stays visible if logging is
                                     // toggled off mid-session.
@@ -1309,7 +1313,9 @@ impl Oryxis {
         let session_log_id = if self.should_record_session(Some(&conn)) {
             self.vault.as_ref().map(|v| {
                 let id = Uuid::new_v4();
-                let _ = v.create_session_log(&id, &conn.id, &conn.label);
+                if let Err(e) = v.create_session_log(&id, &conn.id, &conn.label) {
+                    tracing::warn!("session log create failed: {e}");
+                }
                 id
             })
         } else {

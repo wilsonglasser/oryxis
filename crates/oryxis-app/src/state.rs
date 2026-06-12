@@ -879,6 +879,25 @@ impl PinnedTabSpec {
             PinnedTabSpec::KubectlExec { label, .. } => label,
         }
     }
+
+    /// Identity key for de-duplicating pins. Ephemeral resource ids
+    /// (ECS task, K8s pod) are excluded on purpose: a recycled task
+    /// produces a spec with a different task_id but it is still the
+    /// same pin, and keeping both is how duplicate chips appear.
+    pub fn dedupe_key(&self) -> String {
+        match self {
+            PinnedTabSpec::Host { id, .. } => format!("host:{id}"),
+            PinnedTabSpec::LocalShell { program, args, label } => {
+                format!("local:{program}:{}:{label}", args.join("\u{1f}"))
+            }
+            PinnedTabSpec::EcsExec { group_id, container, .. } => {
+                format!("ecs:{group_id}:{container}")
+            }
+            PinnedTabSpec::KubectlExec { group_id, namespace, container, .. } => {
+                format!("k8s:{group_id}:{namespace}:{container}")
+            }
+        }
+    }
 }
 
 impl TerminalTab {
