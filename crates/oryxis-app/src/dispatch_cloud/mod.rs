@@ -191,7 +191,8 @@ impl Oryxis {
                 // so the History view never picked them up. Mirror the
                 // SSH path's add_log call here so cloud sessions show up
                 // alongside regular hosts.
-                if let Some(vault) = &self.vault {
+                if self.should_record_history()
+                    && let Some(vault) = &self.vault {
                     let entry = oryxis_core::models::log_entry::LogEntry::new(
                         &label,
                         &label,
@@ -212,7 +213,8 @@ impl Oryxis {
                     error = %e,
                     "Failed to spawn session-manager-plugin in PTY"
                 );
-                if let Some(vault) = &self.vault {
+                if self.should_record_history()
+                    && let Some(vault) = &self.vault {
                     let entry = oryxis_core::models::log_entry::LogEntry::new(
                         tab_label,
                         tab_label,

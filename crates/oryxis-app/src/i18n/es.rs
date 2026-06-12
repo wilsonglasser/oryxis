@@ -838,6 +838,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "os_detection" => "Detectar SO remoto al conectar",
         "session_logging" => "Registro de sesión",
         "setting_session_logging_desc" => "Graba la salida del terminal de las sesiones SSH en la bóveda. Un ajuste por host puede anular esto.",
+        "connection_history" => "Historial de conexiones",
+        "setting_connection_history_desc" => "Graba eventos de conexión (conexiones, desconexiones, fallos de autenticación, errores) en la bóveda.",
         "session_log_default" => "Predeterminado",
         "session_log_on" => "Activado",
         "session_log_off" => "Desactivado",

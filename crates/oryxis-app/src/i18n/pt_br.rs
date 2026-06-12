@@ -330,6 +330,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "os_detection" => "Detectar SO remoto após conectar",
         "session_logging" => "Registro de sessão",
         "setting_session_logging_desc" => "Grava a saída do terminal das sessões SSH no cofre. Uma configuração por host pode sobrescrever isto.",
+        "connection_history" => "Histórico de conexões",
+        "setting_connection_history_desc" => "Grava eventos de conexão (conexões, desconexões, falhas de autenticação, erros) no cofre.",
         "session_log_default" => "Padrão",
         "session_log_on" => "Ligado",
         "session_log_off" => "Desligado",

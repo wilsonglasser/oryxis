@@ -838,6 +838,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "os_detection" => "连接后检测远程操作系统",
         "session_logging" => "会话记录",
         "setting_session_logging_desc" => "将 SSH 会话的终端输出记录到保险库。单个主机的设置可覆盖此项。",
+        "connection_history" => "连接历史",
+        "setting_connection_history_desc" => "将连接事件（连接、断开、认证失败、错误）记录到保险库。",
         "session_log_default" => "默认",
         "session_log_on" => "开启",
         "session_log_off" => "关闭",

@@ -229,7 +229,8 @@ impl Oryxis {
                             %msg,
                             "SSM Session start failed"
                         );
-                        if let Some(vault) = &self.vault {
+                        if self.should_record_history()
+                            && let Some(vault) = &self.vault {
                             let entry = oryxis_core::models::log_entry::LogEntry::new(
                                 &host_label,
                                 &host_label,
@@ -254,7 +255,8 @@ impl Oryxis {
                                 error = %e,
                                 "session-manager-plugin missing, install it to use SSM Session"
                             );
-                            if let Some(vault) = &self.vault {
+                            if self.should_record_history()
+                                && let Some(vault) = &self.vault {
                                 let entry = oryxis_core::models::log_entry::LogEntry::new(
                                     &host_label,
                                     &host_label,
@@ -306,7 +308,8 @@ impl Oryxis {
                             %msg,
                             "ECS Exec session start failed"
                         );
-                        if let Some(vault) = &self.vault {
+                        if self.should_record_history()
+                            && let Some(vault) = &self.vault {
                             let entry = oryxis_core::models::log_entry::LogEntry::new(
                                 &task_label,
                                 &task_label,
@@ -343,7 +346,8 @@ impl Oryxis {
                                 error = %e,
                                 "session-manager-plugin missing, install it to use ECS Exec"
                             );
-                            if let Some(vault) = &self.vault {
+                            if self.should_record_history()
+                                && let Some(vault) = &self.vault {
                                 let entry = oryxis_core::models::log_entry::LogEntry::new(
                                     &task_label,
                                     &task_label,

@@ -838,6 +838,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "os_detection" => "Remote-OS nach Verbindung erkennen",
         "session_logging" => "Sitzungsaufzeichnung",
         "setting_session_logging_desc" => "Zeichnet die Terminalausgabe von SSH-Sitzungen im Tresor auf. Eine Host-Einstellung kann dies überschreiben.",
+        "connection_history" => "Verbindungsverlauf",
+        "setting_connection_history_desc" => "Zeichnet Verbindungsereignisse (Verbindungen, Trennungen, Authentifizierungsfehler, Fehler) im Tresor auf.",
         "session_log_default" => "Standard",
         "session_log_on" => "Ein",
         "session_log_off" => "Aus",

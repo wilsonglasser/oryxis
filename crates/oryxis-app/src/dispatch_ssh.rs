@@ -50,6 +50,13 @@ impl Oryxis {
             .unwrap_or(self.setting_session_logging)
     }
 
+    /// Whether connection events (connect / disconnect / auth failure /
+    /// error) should be written to the vault log. Gated by the global
+    /// `connection_history` setting (off by default).
+    pub(crate) fn should_record_history(&self) -> bool {
+        self.setting_connection_history
+    }
+
     pub(crate) fn handle_ssh(
         &mut self,
         message: Message,
@@ -169,6 +176,10 @@ impl Oryxis {
                                 if let Some(vault) = &self.vault {
                                     let log_id = Uuid::new_v4();
                                     let _ = vault.create_session_log(&log_id, &conn.id, &conn.label);
+                                    // Keep the in-memory count live so the
+                                    // History nav stays visible if logging is
+                                    // toggled off mid-session.
+                                    self.session_logs_total += 1;
                                     Some(log_id)
                                 } else {
                                     None
@@ -706,7 +717,8 @@ impl Oryxis {
                         }
                     }
                     tracing::info!("SSH connected: {}", label);
-                    if let Some(vault) = &self.vault {
+                    if self.should_record_history()
+                        && let Some(vault) = &self.vault {
                         let entry = oryxis_core::models::log_entry::LogEntry::new(
                             &label, &label, oryxis_core::models::log_entry::LogEvent::Connected, "Session established",
                         );
@@ -758,6 +770,13 @@ impl Oryxis {
                 self.persist_setting(
                     "session_logging",
                     if self.setting_session_logging { "true" } else { "false" },
+                );
+            }
+            Message::SettingToggleConnectionHistory => {
+                self.setting_connection_history = !self.setting_connection_history;
+                self.persist_setting(
+                    "connection_history",
+                    if self.setting_connection_history { "true" } else { "false" },
                 );
             }
             Message::SettingToggleAutoCheckUpdates => {
@@ -960,7 +979,8 @@ impl Oryxis {
                     {
                         let _ = vault.end_session_log(&log_id);
                     }
-                    if let Some(vault) = &self.vault {
+                    if self.should_record_history()
+                        && let Some(vault) = &self.vault {
                         let entry = oryxis_core::models::log_entry::LogEntry::new(
                             &label, &label, oryxis_core::models::log_entry::LogEvent::Disconnected, "Session ended",
                         );
@@ -1060,7 +1080,8 @@ impl Oryxis {
             }
             Message::SshError(err) => {
                 tracing::error!("SSH error: {}", err);
-                if let Some(vault) = &self.vault {
+                if self.should_record_history()
+                    && let Some(vault) = &self.vault {
                     let label = self.connecting.as_ref().map(|p| p.label.as_str()).unwrap_or("unknown");
                     let entry = oryxis_core::models::log_entry::LogEntry::new(
                         label, label, oryxis_core::models::log_entry::LogEvent::Error, &err,
@@ -1235,6 +1256,11 @@ impl Oryxis {
         } else {
             None
         };
+        if session_log_id.is_some() {
+            // Keep the count live so the History nav doesn't vanish if
+            // logging is toggled off while this session is still open.
+            self.session_logs_total += 1;
+        }
         if let Some(log_id) = session_log_id
             && let Some(pane) = self.tabs[tab_idx].pane_by_id_mut(pane_id)
         {

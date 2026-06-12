@@ -838,6 +838,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "os_detection" => "Rileva sistema operativo remoto dopo la connessione",
         "session_logging" => "Registrazione sessione",
         "setting_session_logging_desc" => "Registra l'output del terminale delle sessioni SSH nel vault. Un'impostazione per host può prevalere su questa.",
+        "connection_history" => "Cronologia connessioni",
+        "setting_connection_history_desc" => "Registra gli eventi di connessione (connessioni, disconnessioni, errori di autenticazione, errori) nel vault.",
         "session_log_default" => "Predefinito",
         "session_log_on" => "Attivo",
         "session_log_off" => "Disattivo",

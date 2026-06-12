@@ -457,7 +457,8 @@ impl Oryxis {
                 setting_auto_reconnect: true,
                 setting_max_reconnect_attempts: "5".into(),
                 setting_os_detection: true,
-                setting_session_logging: true,
+                setting_session_logging: false,
+                setting_connection_history: false,
                 setting_auto_check_updates: true,
                 setting_update_channel: crate::update::UpdateChannel::default(),
                 pending_update: None,
@@ -928,6 +929,9 @@ impl Oryxis {
             }
             if let Ok(Some(v)) = vault.get_setting("session_logging") {
                 self.setting_session_logging = v == "true";
+            }
+            if let Ok(Some(v)) = vault.get_setting("connection_history") {
+                self.setting_connection_history = v == "true";
             }
             if let Ok(Some(v)) = vault.get_setting("auto_check_updates") {
                 self.setting_auto_check_updates = v == "true";

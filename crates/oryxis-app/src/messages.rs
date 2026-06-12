@@ -619,6 +619,8 @@ pub enum Message {
     SettingToggleOsDetection,
     /// Toggle the global "record terminal sessions" setting.
     SettingToggleSessionLogging,
+    /// Toggle the global "record connection events" (history) setting.
+    SettingToggleConnectionHistory,
     OsDetected(Uuid, Option<String>),
     SettingToggleAutoCheckUpdates,
 

@@ -349,6 +349,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "os_detection" => "Phát hiện HĐH từ xa sau khi kết nối",
         "session_logging" => "Ghi nhật ký phiên",
         "setting_session_logging_desc" => "Ghi đầu ra terminal của các phiên SSH vào kho. Cài đặt riêng từng máy chủ sẽ được ưu tiên.",
+        "connection_history" => "Lịch sử kết nối",
+        "setting_connection_history_desc" => "Ghi các sự kiện kết nối (kết nối, ngắt kết nối, lỗi xác thực, lỗi) vào kho.",
         "session_log_default" => "Mặc định",
         "session_log_on" => "Bật",
         "session_log_off" => "Tắt",

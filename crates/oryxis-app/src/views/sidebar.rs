@@ -20,6 +20,17 @@ impl Oryxis {
         }
     }
 
+    /// Whether the History nav entry is shown. Both recording toggles
+    /// default off, so the entry stays hidden until the user opts into
+    /// session logging or connection history, or there's already
+    /// recorded data from a prior run.
+    fn history_nav_visible(&self) -> bool {
+        self.setting_session_logging
+            || self.setting_connection_history
+            || self.logs_total > 0
+            || self.session_logs_total > 0
+    }
+
     fn view_sidebar_expanded(&self) -> Element<'_, Message> {
         // Header: centered logo. Collapse toggle lives in the tab bar now
         // so the logo stays visible in both sidebar states.
@@ -37,7 +48,9 @@ impl Oryxis {
         nav_buttons.push(sidebar_nav_btn(iced_fonts::lucide::key_round(), crate::i18n::t("keychain"), View::Keys, active_is_nav && self.active_view == View::Keys));
         nav_buttons.push(sidebar_nav_btn(iced_fonts::lucide::code(), crate::i18n::t("snippets"), View::Snippets, active_is_nav && self.active_view == View::Snippets));
         nav_buttons.push(sidebar_nav_btn(iced_fonts::lucide::route(), crate::i18n::t("port_forwards"), View::PortForwarding, active_is_nav && self.active_view == View::PortForwarding));
-        nav_buttons.push(sidebar_nav_btn(iced_fonts::lucide::history(), crate::i18n::t("history"), View::History, active_is_nav && self.active_view == View::History));
+        if self.history_nav_visible() {
+            nav_buttons.push(sidebar_nav_btn(iced_fonts::lucide::history(), crate::i18n::t("history"), View::History, active_is_nav && self.active_view == View::History));
+        }
         nav_buttons.push(sidebar_nav_btn(iced_fonts::lucide::settings(), crate::i18n::t("settings"), View::Settings, active_is_nav && self.active_view == View::Settings));
 
         let local_btn = button(
@@ -110,7 +123,9 @@ impl Oryxis {
         icons.push(collapsed_nav_btn(iced_fonts::lucide::key_round(), View::Keys, active_is_nav && self.active_view == View::Keys));
         icons.push(collapsed_nav_btn(iced_fonts::lucide::code(), View::Snippets, active_is_nav && self.active_view == View::Snippets));
         icons.push(collapsed_nav_btn(iced_fonts::lucide::route(), View::PortForwarding, active_is_nav && self.active_view == View::PortForwarding));
-        icons.push(collapsed_nav_btn(iced_fonts::lucide::history(), View::History, active_is_nav && self.active_view == View::History));
+        if self.history_nav_visible() {
+            icons.push(collapsed_nav_btn(iced_fonts::lucide::history(), View::History, active_is_nav && self.active_view == View::History));
+        }
         icons.push(collapsed_nav_btn(iced_fonts::lucide::settings(), View::Settings, active_is_nav && self.active_view == View::Settings));
 
         let local_btn = button(

@@ -349,6 +349,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "os_detection" => "Deteksi OS remote setelah terhubung",
         "session_logging" => "Pencatatan sesi",
         "setting_session_logging_desc" => "Rekam keluaran terminal sesi SSH ke vault. Pengaturan per-host dapat menggantikan ini.",
+        "connection_history" => "Riwayat koneksi",
+        "setting_connection_history_desc" => "Rekam peristiwa koneksi (koneksi, pemutusan, kegagalan autentikasi, kesalahan) ke vault.",
         "session_log_default" => "Bawaan",
         "session_log_on" => "Nyala",
         "session_log_off" => "Mati",

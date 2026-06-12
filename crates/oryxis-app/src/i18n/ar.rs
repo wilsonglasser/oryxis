@@ -349,6 +349,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "os_detection" => "كشف نظام التشغيل البعيد بعد الاتصال",
         "session_logging" => "تسجيل الجلسة",
         "setting_session_logging_desc" => "تسجيل مخرجات طرفية جلسات SSH في الخزنة. يمكن لإعداد كل مضيف تجاوز هذا.",
+        "connection_history" => "سجل الاتصالات",
+        "setting_connection_history_desc" => "تسجيل أحداث الاتصال (الاتصالات، قطع الاتصال، فشل المصادقة، الأخطاء) في الخزنة.",
         "session_log_default" => "افتراضي",
         "session_log_on" => "تشغيل",
         "session_log_off" => "إيقاف",

@@ -349,6 +349,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "os_detection" => "연결 후 원격 OS 감지",
         "session_logging" => "세션 로깅",
         "setting_session_logging_desc" => "SSH 세션의 터미널 출력을 보관소에 기록합니다. 호스트별 설정이 우선합니다.",
+        "connection_history" => "연결 기록",
+        "setting_connection_history_desc" => "연결 이벤트(연결, 연결 해제, 인증 실패, 오류)를 보관소에 기록합니다.",
         "session_log_default" => "기본값",
         "session_log_on" => "켜짐",
         "session_log_off" => "꺼짐",

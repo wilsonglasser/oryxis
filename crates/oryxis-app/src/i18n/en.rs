@@ -349,6 +349,8 @@ pub(super) fn lookup(key: &str) -> &'static str {
         "os_detection" => "Detect remote OS after connect",
         "session_logging" => "Session logging",
         "setting_session_logging_desc" => "Record terminal output of SSH sessions to the vault. A per-host setting can override this.",
+        "connection_history" => "Connection history",
+        "setting_connection_history_desc" => "Record connection events (connects, disconnects, auth failures, errors) to the vault.",
         "session_log_default" => "Default",
         "session_log_on" => "On",
         "session_log_off" => "Off",

@@ -349,6 +349,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "os_detection" => "Визначати віддалену ОС після підключення",
         "session_logging" => "Журнал сесій",
         "setting_session_logging_desc" => "Записувати вивід терміналу SSH-сесій у сховище. Налаштування для окремого хоста має пріоритет.",
+        "connection_history" => "Історія підключень",
+        "setting_connection_history_desc" => "Записувати події підключення (підключення, відключення, помилки автентифікації, помилки) у сховище.",
         "session_log_default" => "За замовчуванням",
         "session_log_on" => "Увімк.",
         "session_log_off" => "Вимк.",

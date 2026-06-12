@@ -881,6 +881,9 @@ pub struct Oryxis {
     /// Global default for recording terminal sessions to the vault. A
     /// per-host `Connection.session_logging` override wins over this.
     pub(crate) setting_session_logging: bool,
+    /// Whether connection events (connect / disconnect / auth failure /
+    /// error) are recorded to the vault log. Gates every `add_log` site.
+    pub(crate) setting_connection_history: bool,
     pub(crate) setting_auto_check_updates: bool,
     /// Release stream the updater follows (`stable` / `nightly`).
     pub(crate) setting_update_channel: crate::update::UpdateChannel,

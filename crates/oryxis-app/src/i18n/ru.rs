@@ -838,6 +838,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "os_detection" => "Определять удалённую ОС после подключения",
         "session_logging" => "Журнал сессий",
         "setting_session_logging_desc" => "Записывать вывод терминала SSH-сессий в хранилище. Настройка для отдельного хоста имеет приоритет.",
+        "connection_history" => "История подключений",
+        "setting_connection_history_desc" => "Записывать события подключения (подключения, отключения, ошибки аутентификации, ошибки) в хранилище.",
         "session_log_default" => "По умолчанию",
         "session_log_on" => "Вкл",
         "session_log_off" => "Выкл",

@@ -6,6 +6,16 @@ project uses [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## [0.8.2] - Unreleased
 
+### Changed
+- **Recording is now opt-in.** Session logging (terminal output capture)
+  now defaults to off instead of on, so a fresh install records nothing
+  until you ask it to. The new **Connection history** toggle (Settings →
+  Terminal) likewise defaults to off and gates whether connection events
+  (connects, disconnects, auth failures, errors) are written to the vault.
+  The History nav entry hides itself entirely while both toggles are off
+  and no recorded data exists, so the feature stays out of the way until
+  it's wanted.
+
 ### Fixed
 - **IME / CJK input was blocked in the terminal.** With a terminal open, the
   OS input method (IME) stayed locked in direct (English) mode and could not

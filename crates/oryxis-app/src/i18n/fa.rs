@@ -349,6 +349,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "os_detection" => "تشخیص سیستم‌عامل از راه دور پس از اتصال",
         "session_logging" => "ثبت نشست",
         "setting_session_logging_desc" => "خروجی ترمینال نشست‌های SSH را در گاوصندوق ضبط می‌کند. تنظیم هر میزبان می‌تواند این را لغو کند.",
+        "connection_history" => "تاریخچه اتصال",
+        "setting_connection_history_desc" => "رویدادهای اتصال (اتصال‌ها، قطع اتصال‌ها، خطاهای احراز هویت، خطاها) را در گاوصندوق ضبط می‌کند.",
         "session_log_default" => "پیش‌فرض",
         "session_log_on" => "روشن",
         "session_log_off" => "خاموش",

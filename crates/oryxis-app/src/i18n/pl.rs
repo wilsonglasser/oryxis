@@ -349,6 +349,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "os_detection" => "Wykryj zdalny system po połączeniu",
         "session_logging" => "Rejestrowanie sesji",
         "setting_session_logging_desc" => "Zapisuje wyjście terminala sesji SSH w sejfie. Ustawienie dla hosta ma pierwszeństwo.",
+        "connection_history" => "Historia połączeń",
+        "setting_connection_history_desc" => "Zapisuje zdarzenia połączeń (połączenia, rozłączenia, błędy uwierzytelniania, błędy) w sejfie.",
         "session_log_default" => "Domyślnie",
         "session_log_on" => "Wł.",
         "session_log_off" => "Wył.",

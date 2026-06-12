@@ -313,6 +313,18 @@ impl Oryxis {
                         .size(11).color(OryxisColors::t().text_muted),
                 ]);
 
+                let connection_history_enabled = self.setting_connection_history;
+                let connection_history_section = panel_section(column![
+                    toggle_row(
+                        crate::i18n::t("connection_history"),
+                        connection_history_enabled,
+                        Message::SettingToggleConnectionHistory,
+                    ),
+                    Space::new().height(4),
+                    text(t("setting_connection_history_desc"))
+                        .size(11).color(OryxisColors::t().text_muted),
+                ]);
+
                 let auto_reconnect_enabled = self.setting_auto_reconnect;
                 let auto_reconnect_section = panel_section(column![
                     toggle_row(
@@ -349,6 +361,8 @@ impl Oryxis {
                             os_detection_section,
                             Space::new().height(12),
                             session_logging_section,
+                            Space::new().height(12),
+                            connection_history_section,
                             Space::new().height(12),
                             font_size_section,
                             Space::new().height(12),

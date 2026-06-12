@@ -349,6 +349,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "os_detection" => "Bağlantıdan sonra uzak işletim sistemini algıla",
         "session_logging" => "Oturum kaydı",
         "setting_session_logging_desc" => "SSH oturumlarının terminal çıktısını kasaya kaydeder. Ana bilgisayara özel ayar bunu geçersiz kılabilir.",
+        "connection_history" => "Bağlantı geçmişi",
+        "setting_connection_history_desc" => "Bağlantı olaylarını (bağlantılar, kesilmeler, kimlik doğrulama hataları, hatalar) kasaya kaydeder.",
         "session_log_default" => "Varsayılan",
         "session_log_on" => "Açık",
         "session_log_off" => "Kapalı",

@@ -838,6 +838,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "os_detection" => "接続後にリモートOSを検出",
         "session_logging" => "セッションログ",
         "setting_session_logging_desc" => "SSHセッションのターミナル出力をボールトに記録します。ホストごとの設定で上書きできます。",
+        "connection_history" => "接続履歴",
+        "setting_connection_history_desc" => "接続イベント（接続、切断、認証失敗、エラー）をボールトに記録します。",
         "session_log_default" => "デフォルト",
         "session_log_on" => "オン",
         "session_log_off" => "オフ",
