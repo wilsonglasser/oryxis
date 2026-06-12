@@ -70,6 +70,17 @@ fn rules() -> &'static [Rule] {
                 r"\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b",
                 b"[REDACTED]",
             ),
+            // Credentials embedded in URLs / connection strings
+            // (postgres://user:pass@host, https://user:pass@host, ...).
+            // Keeps scheme + user, masks only the password.
+            rule(
+                r"(?<pre>[A-Za-z][A-Za-z0-9+.-]*://[^/\s:@]+:)[^@\s/]+@",
+                b"${pre}[REDACTED]@",
+            ),
+            // Brazilian CPF / CNPJ in their formatted forms (the raw
+            // digit runs are far too ambiguous to match safely).
+            rule(r"\b\d{3}\.\d{3}\.\d{3}-\d{2}\b", b"[REDACTED CPF]"),
+            rule(r"\b\d{2}\.\d{3}\.\d{3}/\d{4}-\d{2}\b", b"[REDACTED CNPJ]"),
             // Email addresses (PII rather than a credential).
             rule(
                 r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}\b",
@@ -77,6 +88,62 @@ fn rules() -> &'static [Rule] {
             ),
         ]
     })
+}
+
+/// Candidate payment-card numbers: 13-19 digits, optionally grouped by
+/// single spaces or dashes. Confirmed with a Luhn check before masking
+/// so order ids / timestamps / hashes don't get eaten.
+fn card_candidates() -> &'static Regex {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    RE.get_or_init(|| {
+        Regex::new(r"\b\d(?:[ -]?\d){12,18}\b").expect("card pattern")
+    })
+}
+
+fn luhn_valid(digits: &[u8]) -> bool {
+    if !(13..=19).contains(&digits.len()) {
+        return false;
+    }
+    let mut sum = 0u32;
+    let mut double = false;
+    for &d in digits.iter().rev() {
+        let mut v = (d - b'0') as u32;
+        if double {
+            v *= 2;
+            if v > 9 {
+                v -= 9;
+            }
+        }
+        sum += v;
+        double = !double;
+    }
+    sum.is_multiple_of(10)
+}
+
+/// Mask Luhn-valid card numbers in `data`, leaving everything else
+/// untouched. Separate pass from the regex rules because the validity
+/// check can't be expressed as a pattern.
+fn redact_cards(data: &[u8]) -> Option<Vec<u8>> {
+    let mut out: Option<Vec<u8>> = None;
+    let mut last = 0usize;
+    for m in card_candidates().find_iter(data) {
+        let digits: Vec<u8> = m
+            .as_bytes()
+            .iter()
+            .copied()
+            .filter(u8::is_ascii_digit)
+            .collect();
+        if !luhn_valid(&digits) {
+            continue;
+        }
+        let buf = out.get_or_insert_with(|| Vec::with_capacity(data.len()));
+        buf.extend_from_slice(&data[last..m.start()]);
+        buf.extend_from_slice(b"[REDACTED CARD]");
+        last = m.end();
+    }
+    let mut buf = out?;
+    buf.extend_from_slice(&data[last..]);
+    Some(buf)
 }
 
 /// Scrub secrets/PII from a chunk of terminal output about to be
@@ -89,6 +156,9 @@ pub(crate) fn redact_secrets(data: &[u8]) -> Cow<'_, [u8]> {
             let replaced = rule.re.replace_all(&out, rule.rep).into_owned();
             out = Cow::Owned(replaced);
         }
+    }
+    if let Some(carded) = redact_cards(&out) {
+        out = Cow::Owned(carded);
     }
     out
 }
@@ -135,6 +205,46 @@ mod tests {
     #[test]
     fn masks_emails() {
         assert_eq!(red("admin@example.com logged in"), "[REDACTED EMAIL] logged in");
+    }
+
+    #[test]
+    fn masks_url_embedded_credentials() {
+        assert_eq!(
+            red("postgres://app:s3cr3t@db.internal:5432/prod"),
+            "postgres://app:[REDACTED]@db.internal:5432/prod"
+        );
+        assert_eq!(
+            red("DATABASE_URL=mysql://root:hunter2@10.0.0.5/app"),
+            // The assignment rule fires first on DATABASE_URL (it ends in
+            // `_URL`? no, it doesn't match the key list), so only the URL
+            // rule applies here.
+            "DATABASE_URL=mysql://root:[REDACTED]@10.0.0.5/app"
+        );
+        // No password segment: untouched.
+        assert_eq!(red("https://example.com/user:guide"), "https://example.com/user:guide");
+    }
+
+    #[test]
+    fn masks_cpf_and_cnpj() {
+        assert_eq!(red("cliente CPF 123.456.789-09 ativo"), "cliente CPF [REDACTED CPF] ativo");
+        assert_eq!(
+            red("empresa 12.345.678/0001-95 ok"),
+            "empresa [REDACTED CNPJ] ok"
+        );
+        // Bare digit runs stay (too ambiguous to be worth the false
+        // positives on ids and timestamps).
+        assert_eq!(red("id 12345678909"), "id 12345678909");
+    }
+
+    #[test]
+    fn masks_luhn_valid_cards_only() {
+        // Classic test PANs (Luhn-valid).
+        assert_eq!(red("paid with 4111 1111 1111 1111 ok"), "paid with [REDACTED CARD] ok");
+        assert_eq!(red("card=5500-0000-0000-0004"), "card=[REDACTED CARD]");
+        // Same shape but Luhn-invalid: left alone.
+        assert_eq!(red("order 4111 1111 1111 1112 shipped"), "order 4111 1111 1111 1112 shipped");
+        // 16-digit hashes / ids without separators that fail Luhn.
+        assert_eq!(red("trace 1234567890123456"), "trace 1234567890123456");
     }
 
     #[test]

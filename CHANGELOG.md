@@ -37,8 +37,10 @@ project uses [SemVer](https://semver.org/spec/v2.0.0.html).
 - **Session recordings now scrub secrets and PII before persisting.**
   Private key blocks, cloud/API token shapes (AWS, GitHub, Slack,
   OpenAI/Anthropic, JWT, Bearer/Basic credentials), `password=`-style
-  assignments and email addresses are masked as `[REDACTED]` when a
-  recording buffer is flushed to the vault. Recordings are also sealed
+  assignments, credentials embedded in connection-string URLs,
+  formatted CPF/CNPJ numbers, Luhn-valid payment card numbers and
+  email addresses are masked as `[REDACTED]` when a recording buffer
+  is flushed to the vault. Recordings are also sealed
   at rest with a dedicated content key wrapped by the master password.
 - **Signed app updates.** Every release and nightly asset now ships a
   detached Ed25519 signature, and the auto-updater verifies it against
