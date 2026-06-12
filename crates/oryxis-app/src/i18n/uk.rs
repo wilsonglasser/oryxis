@@ -322,7 +322,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "enter_password" => "Введіть майстер-пароль для розблокування.",
         "forgot_password" => "Забули пароль? Скинути сховище",
         "destroy_vault" => "Так, знищити сховище",
-        "vault_destroy_confirm" => "Це назавжди видалить усі збережені дані.",
+        "vault_destroy_confirm" => "Це назавжди видалить усе: хости, ключі, ідентичності, сніпети, журнали та налаштування. Застосунок повернеться до стану першого запуску.",
 
         // Terminal shortcuts
         "copy_terminal" => "Копіювати з термінала",
@@ -775,7 +775,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "import_ssh_config_btn" => "Імпортувати ~/.ssh/config",
         "app_tagline" => "Сучасний SSH-клієнт, створений на Rust",
         "current_version" => "Поточна версія:",
-        "check_for_updates_now" => "Перевірити оновлення зараз",
+        "check_for_updates_now" => "Перевірити оновлення",
         "update_check_checking" => "Перевірка оновлень…",
         "update_check_up_to_date" => "У вас найновіша версія",
         "update_check_available" => "Доступне оновлення:",
@@ -883,6 +883,27 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "cjk_font_downloading" => "Завантаження шрифту мови...",
         "cjk_font_failed" => "Не вдалося завантажити шрифт мови. Використовується системний шрифт.",
 
-        _ => return None,
+        "logs" => "Журнали",
+        "vault" => "Сховище",
+        "search_logs" => "Пошук журналів...",
+        "clear_all" => "Очистити все",
+        "clear_history_title" => "Очистити всі журнали?",
+        "clear_history_confirm" => "Це назавжди видалить усі записи сесій та події підключень.",
+        "update_check_failed" => "Не вдалося перевірити оновлення",
+        "terminal_link_hint" => "Ctrl + клік, щоб відкрити посилання",
+        "reset_hints" => "Скинути підказки",
+        "reset_hints_desc" => "Знову показувати всі одноразові поради та підказки.",
+        "ai_key_saved_placeholder" => "\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}\u{2022} збережено, введіть, щоб замінити",
+        "host_count_one" => "1 хост",
+        "host_count_other" => "хостів",
+        "import_summary_imported" => "Імпортовано хостів:",
+        "import_summary_skipped" => "пропущено, мітка вже існує",
+        "password_too_short" => "Пароль має містити щонайменше 4 символи",
+        "vault_already_has_password" => "Це сховище вже має пароль. Введіть його вище, щоб розблокувати.",
+
+                "ecs_exec_group_missing" => "Хмарна група цього сеансу більше не існує. Відкріпіть вкладку та перепідключіться з панелі.",
+        "cloud_session_ended" => "сеанс завершено",
+        "cloud_session_ended_hint" => "сеанс завершено, виберіть цю вкладку знову, щоб перепідключитися",
+_ => return None,
     })
 }

@@ -118,15 +118,18 @@ impl Oryxis {
             can_next,
         );
 
+        // "Clear all" reads as a destructive main action (error tint,
+        // bold uppercase) and only *requests* the wipe; the actual
+        // ClearLogs runs from the confirmation modal in layout.rs.
         let clear_btn = button(
             container(
-                text(crate::i18n::t("clear").to_uppercase())
+                text(crate::i18n::t("clear_all").to_uppercase())
                     .size(11)
                     .font(iced::Font {
                         weight: iced::font::Weight::Bold,
                         ..iced::Font::new(crate::theme::SYSTEM_UI_FAMILY)
                     })
-                    .color(OryxisColors::t().text_muted),
+                    .color(OryxisColors::t().error),
             )
             .center_y(Length::Fixed(24.0))
             .padding(Padding {
@@ -136,7 +139,7 @@ impl Oryxis {
                 left: 14.0,
             }),
         )
-        .on_press(Message::ClearLogs)
+        .on_press(Message::RequestClearHistory)
         .style(|_, status| {
             let bg = match status {
                 BtnStatus::Hovered => Color { a: 0.15, ..OryxisColors::t().error },
@@ -146,7 +149,7 @@ impl Oryxis {
                 background: Some(Background::Color(bg)),
                 border: Border {
                     radius: Radius::from(6.0),
-                    color: OryxisColors::t().border,
+                    color: Color { a: 0.5, ..OryxisColors::t().error },
                     width: 1.0,
                 },
                 ..Default::default()
@@ -155,7 +158,7 @@ impl Oryxis {
 
         let toolbar = container(
             crate::widgets::dir_row(vec![
-                text(crate::i18n::t("history"))
+                text(crate::i18n::t("logs"))
                     .size(20)
                     .color(OryxisColors::t().text_primary)
                     .into(),

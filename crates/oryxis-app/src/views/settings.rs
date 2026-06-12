@@ -238,8 +238,19 @@ impl Oryxis {
                 // overrides configured via the icon picker still win
                 // over this global pick.
                 let mut theme_cards: Vec<Element<'_, Message>> = Vec::new();
-                theme_cards.push(crate::widgets::terminal_theme_inherit_card(
-                    t("terminal_theme_follow_app"),
+                // The sentinel renders as a real palette card previewing
+                // the app-theme-derived palette (every app theme has a
+                // same-named terminal palette), instead of the old
+                // input-looking box that read as a text field.
+                let app_theme_name = crate::theme::AppTheme::active().name();
+                let follow_palette = self
+                    .terminal_palette_for_name(app_theme_name)
+                    .unwrap_or_default();
+                let follow_label =
+                    format!("{} ({})", t("terminal_theme_follow_app"), app_theme_name);
+                theme_cards.push(crate::widgets::terminal_theme_card(
+                    follow_palette,
+                    &follow_label,
                     self.terminal_theme_override.is_none(),
                     Message::TerminalThemeChanged(String::new()),
                 ));
@@ -561,18 +572,26 @@ impl Oryxis {
                     // for security but the placeholder communicates that
                     // a key exists, typing replaces it on save.
                     let key_placeholder = if self.ai_api_key_set {
-                        "\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}\u{2022} saved, type to replace"
+                        t("ai_key_saved_placeholder")
                     } else {
                         "sk-..."
                     };
-                    let key_input: Element<'_, Message> = text_input(key_placeholder, &self.ai_api_key)
-                        .on_input(Message::AiApiKeyChanged)
-                        .on_submit(Message::SaveAiApiKey)
-                        .secure(true)
-                        .padding(10)
-                        .width(280)
-                        .style(crate::widgets::rounded_input_style).align_x(dir_align_x())
-                        .into();
+                    let key_input: Element<'_, Message> = container(
+                        crate::widgets::password_input_with_eye(
+                            key_placeholder,
+                            &self.ai_api_key,
+                            Message::AiApiKeyChanged,
+                            Some(Message::SaveAiApiKey),
+                            self.revealed_secrets
+                                .contains(&crate::state::SecretField::AiApiKey),
+                            Message::ToggleSecretVisibility(
+                                crate::state::SecretField::AiApiKey,
+                            ),
+                            10.0,
+                        ),
+                    )
+                    .width(280)
+                    .into();
                     let save_btn = styled_button(crate::i18n::t("save"), Message::SaveAiApiKey, OryxisColors::t().accent);
                     let key_status: Element<'_, Message> = if self.ai_api_key_set {
                         dir_row(vec![
@@ -1015,6 +1034,29 @@ impl Oryxis {
                         .color(OryxisColors::t().text_muted),
                 ]);
 
+                // One-time tips (e.g. the terminal's "Ctrl + Click to
+                // open the link") retire themselves after first use;
+                // this brings them all back in one action.
+                let hints_section = panel_section(column![
+                    dir_row(vec![
+                        text(crate::i18n::t("reset_hints"))
+                            .size(13)
+                            .color(OryxisColors::t().text_primary)
+                            .into(),
+                        Space::new().width(Length::Fill).into(),
+                        styled_button(
+                            crate::i18n::t("reset_hints"),
+                            Message::ResetHints,
+                            OryxisColors::t().text_muted,
+                        ),
+                    ])
+                    .align_y(iced::Alignment::Center),
+                    Space::new().height(4),
+                    text(crate::i18n::t("reset_hints_desc"))
+                        .size(11)
+                        .color(OryxisColors::t().text_muted),
+                ]);
+
                 // Explicit `Space::new()` between elements (no
                 // `.spacing()`) so the gap before the first panel
                 // matches the SFTP section's 16 px exactly; the
@@ -1038,6 +1080,8 @@ impl Oryxis {
                     icon_section,
                     Space::new().height(12),
                     rendering_section,
+                    Space::new().height(12),
+                    hints_section,
                     Space::new().height(12),
                 ]
                 .width(Length::Fill)
@@ -1146,13 +1190,19 @@ impl Oryxis {
 
                 let password_section: Element<'_, Message> = if !self.vault_has_user_password {
                     // Show password input to enable
-                    let input = text_input(t("new_master_password_placeholder"), &self.vault_new_password)
-                        .on_input(Message::VaultNewPasswordChanged)
-                        .on_submit(Message::SetVaultPassword)
-                        .secure(true)
-                        .padding(10)
-                        .width(300)
-                        .style(crate::widgets::rounded_input_style).align_x(dir_align_x());
+                    let input = container(crate::widgets::password_input_with_eye(
+                        t("new_master_password_placeholder"),
+                        &self.vault_new_password,
+                        Message::VaultNewPasswordChanged,
+                        Some(Message::SetVaultPassword),
+                        self.revealed_secrets
+                            .contains(&crate::state::SecretField::VaultNewPassword),
+                        Message::ToggleSecretVisibility(
+                            crate::state::SecretField::VaultNewPassword,
+                        ),
+                        10.0,
+                    ))
+                    .width(300);
                     let btn = styled_button(crate::i18n::t("set_password"), Message::SetVaultPassword, OryxisColors::t().accent);
                     let error: Element<'_, Message> = if let Some(err) = &self.vault_password_error {
                         text(err.clone()).size(12).color(OryxisColors::t().error).into()
@@ -1233,12 +1283,19 @@ impl Oryxis {
 
                 // Show export dialog inline
                 if self.show_export_dialog {
-                    let pw_input = text_input(crate::i18n::t("export_password"), &self.export_password)
-                        .on_input(Message::ExportPasswordChanged)
-                        .secure(true)
-                        .padding(10)
-                        .width(300)
-                        .style(crate::widgets::rounded_input_style).align_x(dir_align_x());
+                    let pw_input = container(crate::widgets::password_input_with_eye(
+                        crate::i18n::t("export_password"),
+                        &self.export_password,
+                        Message::ExportPasswordChanged,
+                        None,
+                        self.revealed_secrets
+                            .contains(&crate::state::SecretField::ExportPassword),
+                        Message::ToggleSecretVisibility(
+                            crate::state::SecretField::ExportPassword,
+                        ),
+                        10.0,
+                    ))
+                    .width(300);
                     let keys_toggle = dir_row(vec![
                         text(crate::i18n::t("include_private_keys")).size(13).color(OryxisColors::t().text_secondary).into(),
                         Space::new().width(Length::Fill).into(),
@@ -1266,13 +1323,19 @@ impl Oryxis {
 
                 // Show import dialog inline
                 if self.show_import_dialog {
-                    let pw_input = text_input(crate::i18n::t("import_password"), &self.import_password)
-                        .on_input(Message::ImportPasswordChanged)
-                        .on_submit(Message::ImportConfirm)
-                        .secure(true)
-                        .padding(10)
-                        .width(300)
-                        .style(crate::widgets::rounded_input_style).align_x(dir_align_x());
+                    let pw_input = container(crate::widgets::password_input_with_eye(
+                        crate::i18n::t("import_password"),
+                        &self.import_password,
+                        Message::ImportPasswordChanged,
+                        Some(Message::ImportConfirm),
+                        self.revealed_secrets
+                            .contains(&crate::state::SecretField::ImportPassword),
+                        Message::ToggleSecretVisibility(
+                            crate::state::SecretField::ImportPassword,
+                        ),
+                        10.0,
+                    ))
+                    .width(300);
                     let confirm_btn = styled_button(crate::i18n::t("import_confirm"), Message::ImportConfirm, OryxisColors::t().success);
                     let cancel_btn = styled_button(crate::i18n::t("cancel"), Message::ExportImportDismiss, OryxisColors::t().text_muted);
                     export_import_section = export_import_section
@@ -1706,16 +1769,21 @@ impl Oryxis {
                     .padding(8)
                     .width(300)
                     .style(crate::widgets::rounded_input_style).align_x(dir_align_x());
-                let signaling_token_input = text_input(
-                    crate::i18n::t("sync_signaling_token_placeholder"),
-                    &self.sync_signaling_token,
+                let signaling_token_input = container(
+                    crate::widgets::password_input_with_eye(
+                        crate::i18n::t("sync_signaling_token_placeholder"),
+                        &self.sync_signaling_token,
+                        Message::SyncSignalingTokenChanged,
+                        None,
+                        self.revealed_secrets
+                            .contains(&crate::state::SecretField::SyncSignalingToken),
+                        Message::ToggleSecretVisibility(
+                            crate::state::SecretField::SyncSignalingToken,
+                        ),
+                        8.0,
+                    ),
                 )
-                .on_input(Message::SyncSignalingTokenChanged)
-                .secure(true)
-                .padding(8)
-                .width(300)
-                .style(crate::widgets::rounded_input_style)
-                .align_x(dir_align_x());
+                .width(300);
                 let relay_input = text_input(crate::i18n::t("sync_relay_optional"), &self.sync_relay_url)
                     .on_input(Message::SyncRelayUrlChanged)
                     .padding(8)
@@ -1812,16 +1880,42 @@ impl Oryxis {
                     ),
                 ]);
 
+                // Each stat row navigates to its section (issue #38):
+                // the count doubles as a shortcut into the data it
+                // describes. Logs combines connection events + session
+                // recordings, matching what the Logs view lists.
                 let vault_section = panel_section(column![
                     text(crate::i18n::t("vault_stats")).size(14).color(OryxisColors::t().text_muted),
                     Space::new().height(8),
-                    settings_row(crate::i18n::t("hosts"), self.connections.len().to_string()),
+                    crate::widgets::settings_row_nav(
+                        crate::i18n::t("hosts"),
+                        self.connections.len().to_string(),
+                        Message::ChangeView(crate::state::View::Dashboard),
+                    ),
                     Space::new().height(6),
-                    settings_row(crate::i18n::t("keychain"), self.keys.len().to_string()),
+                    crate::widgets::settings_row_nav(
+                        crate::i18n::t("keychain"),
+                        self.keys.len().to_string(),
+                        Message::ChangeView(crate::state::View::Keys),
+                    ),
                     Space::new().height(6),
-                    settings_row(crate::i18n::t("snippets"), self.snippets.len().to_string()),
+                    crate::widgets::settings_row_nav(
+                        crate::i18n::t("snippets"),
+                        self.snippets.len().to_string(),
+                        Message::ChangeView(crate::state::View::Snippets),
+                    ),
                     Space::new().height(6),
-                    settings_row(t("groups"), self.groups.len().to_string()),
+                    crate::widgets::settings_row_nav(
+                        t("groups"),
+                        self.groups.len().to_string(),
+                        Message::ChangeView(crate::state::View::Dashboard),
+                    ),
+                    Space::new().height(6),
+                    crate::widgets::settings_row_nav(
+                        t("logs"),
+                        (self.logs_total + self.session_logs_total).to_string(),
+                        Message::ChangeView(crate::state::View::History),
+                    ),
                 ]);
 
                 let auto_update_enabled = self.setting_auto_check_updates;
@@ -1831,16 +1925,41 @@ impl Oryxis {
                     OryxisColors::t().accent,
                 );
                 let status_line: Element<'_, Message> = match &self.update_check_status {
-                    Some(msg) => {
-                        let is_checking = msg == "Checking\u{2026}";
-                        let color = if is_checking {
-                            OryxisColors::t().text_muted
-                        } else if msg.starts_with("You're") {
-                            OryxisColors::t().success
-                        } else {
-                            OryxisColors::t().error
+                    Some(status) => {
+                        use crate::update::UpdateStatus;
+                        let (msg, color) = match status {
+                            UpdateStatus::Checking => (
+                                t("update_check_checking").to_string(),
+                                OryxisColors::t().text_muted,
+                            ),
+                            UpdateStatus::UpToDate => (
+                                format!(
+                                    "{} ({})",
+                                    t("update_check_up_to_date"),
+                                    env!("CARGO_PKG_VERSION"),
+                                ),
+                                OryxisColors::t().success,
+                            ),
+                            UpdateStatus::Failed(cause) => (
+                                format!("{}: {}", t("update_check_failed"), cause),
+                                OryxisColors::t().error,
+                            ),
                         };
-                        container(text(msg.clone()).size(11).color(color))
+                        // Failures get an inline Retry next to the cause so
+                        // the user doesn't have to hunt for the check button.
+                        let mut line_items: Vec<Element<'_, Message>> =
+                            vec![text(msg).size(11).color(color).into()];
+                        if matches!(status, UpdateStatus::Failed(_)) {
+                            line_items.push(Space::new().width(10).into());
+                            line_items.push(styled_button(
+                                t("retry"),
+                                Message::CheckForUpdateManual,
+                                OryxisColors::t().text_muted,
+                            ));
+                        }
+                        let line = crate::widgets::dir_row(line_items)
+                            .align_y(iced::Alignment::Center);
+                        container(line)
                             .padding(Padding { top: 8.0, right: 0.0, bottom: 0.0, left: 0.0 })
                             .into()
                     }

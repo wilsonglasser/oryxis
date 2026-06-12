@@ -696,6 +696,32 @@ pub(crate) fn settings_row_link<'a>(
         .into()
 }
 
+/// Same shape as `settings_row`, but the whole row is clickable and
+/// dispatches an arbitrary message (pointer cursor as the affordance).
+/// Used by the About > Vault Statistics rows to jump to each section.
+pub(crate) fn settings_row_nav<'a>(
+    label: &'a str,
+    value: String,
+    msg: Message,
+) -> Element<'a, Message> {
+    let body = container(
+        dir_row(vec![
+            text(label.to_owned())
+                .size(13)
+                .color(OryxisColors::t().text_secondary)
+                .into(),
+            Space::new().width(Length::Fill).into(),
+            text(value).size(13).color(OryxisColors::t().text_primary).into(),
+        ]),
+    )
+    .padding(Padding { top: 6.0, right: 4.0, bottom: 6.0, left: 4.0 })
+    .width(Length::Fill);
+    iced::widget::MouseArea::new(body)
+        .on_press(msg)
+        .interaction(iced::mouse::Interaction::Pointer)
+        .into()
+}
+
 /// Wide call-to-action button, Semibold label, theme-defined
 /// `button_bg` / `button_text` pair, fixed 380-wide / 8 px radius.
 /// Used for empty-state primary actions on Keys / Snippets and
@@ -811,7 +837,7 @@ pub(crate) fn shortcut_row<'a>(keys: Vec<Element<'a, Message>>, action: &'a str)
 /// in `fg`, and `dots` (representative palette colors) on the trailing edge.
 /// Selected gets a 2px accent border; hover lightens the fill.
 pub(crate) fn theme_preview_card<'a>(
-    name: &'a str,
+    name: &str,
     bg: Color,
     fg: Color,
     dots: Vec<Color>,
@@ -832,7 +858,7 @@ pub(crate) fn theme_preview_card<'a>(
         .collect();
 
     let body = dir_row(vec![
-        text(name).size(13).color(fg).into(),
+        text(name.to_owned()).size(13).color(fg).into(),
         Space::new().width(Length::Fill).into(),
         Row::with_children(dot_els).spacing(4).into(),
     ])
@@ -917,7 +943,7 @@ pub(crate) fn theme_outline_card<'a>(
 
 pub(crate) fn terminal_theme_card<'a>(
     palette: oryxis_terminal::TerminalPalette,
-    name: &'a str,
+    name: &str,
     selected: bool,
     on_press: Message,
 ) -> Element<'a, Message> {
@@ -926,51 +952,6 @@ pub(crate) fn terminal_theme_card<'a>(
     theme_preview_card(name, palette.background, palette.foreground, dots, selected, on_press)
 }
 
-/// Companion to `terminal_theme_card` for the "no override" sentinel
-/// row that sits at the top of every theme picker. Uses the app's
-/// surface color rather than a palette so it doesn't pretend to be a
-/// theme of its own.
-pub(crate) fn terminal_theme_inherit_card<'a>(
-    label: &'a str,
-    selected: bool,
-    on_press: Message,
-) -> Element<'a, Message> {
-    let border_color = if selected {
-        OryxisColors::t().accent
-    } else {
-        OryxisColors::t().border
-    };
-    let border_width = if selected { 2.0 } else { 1.0 };
-
-    button(
-        container(
-            text(label.to_owned())
-                .size(13)
-                .color(OryxisColors::t().text_primary),
-        )
-        .padding(Padding { top: 10.0, right: 12.0, bottom: 10.0, left: 12.0 })
-        .width(Length::Fill),
-    )
-    .on_press(on_press)
-    .padding(0)
-    .width(Length::Fill)
-    .style(move |_, status| {
-        let bg = match status {
-            BtnStatus::Hovered => OryxisColors::t().bg_hover,
-            _ => OryxisColors::t().bg_surface,
-        };
-        button::Style {
-            background: Some(Background::Color(bg)),
-            border: Border {
-                radius: Radius::from(8.0),
-                color: border_color,
-                width: border_width,
-            },
-            ..Default::default()
-        }
-    })
-    .into()
-}
 
 /// Shared cell type for `bounds_reporter`. Single-threaded
 /// (`Rc<Cell<_>>`) is fine for iced's event loop in 0.13; bump to

@@ -12,6 +12,47 @@ impl Oryxis {
         message: Message,
     ) -> Result<Task<Message>, Message> {
         match message {
+            Message::PluginSessionEnded(pane_id) => {
+                // The plugin process (session-manager-plugin / kubectl)
+                // exited: stale task, idle timeout, remote close. The
+                // pane used to just go silently dead; now the tab marks
+                // itself disconnected, prints a notice, and (for tabs
+                // that carry a relaunch message) re-arms the dormant
+                // `pending_reopen` machinery so selecting the tab again
+                // reconnects, same gesture as a pinned dormant tab.
+                let Some(tidx) = self.tabs.iter().position(|t| {
+                    t.pane_grid.panes.values().any(|p| p.id == pane_id)
+                }) else {
+                    // Tab already closed by the user; nothing to mark.
+                    return Ok(Task::none());
+                };
+                // Derive the reopen spec from the relaunch message
+                // before touching the label (pin_spec trims suffixes
+                // itself, the order just keeps intent obvious).
+                let spec = self.tabs[tidx].pin_spec();
+                let tab = &mut self.tabs[tidx];
+                let reconnectable =
+                    tab.relaunch.is_some() && spec.is_some();
+                let hint = if reconnectable {
+                    crate::i18n::t("cloud_session_ended_hint")
+                } else {
+                    crate::i18n::t("cloud_session_ended")
+                };
+                if let Some(pane) =
+                    tab.pane_grid.panes.values().find(|p| p.id == pane_id)
+                    && let Ok(mut term) = pane.terminal.lock()
+                {
+                    let notice = format!("\r\n\x1b[2m  {}\x1b[0m\r\n", hint);
+                    term.process(notice.as_bytes());
+                }
+                if !tab.label.ends_with(" (disconnected)") {
+                    tab.label.push_str(" (disconnected)");
+                }
+                if reconnectable {
+                    tab.pending_reopen = spec;
+                }
+                Ok(Task::none())
+            }
             Message::ConnectEcsExecTask {
                 group_id,
                 task_id,
@@ -25,12 +66,24 @@ impl Oryxis {
                 // next SSH pick into a pane. No-op when the picker is closed.
                 self.show_new_tab_picker = false;
                 self.pending_pane_split = None;
-                // Resolve the dynamic group + its cloud_query.
+                // Resolve the dynamic group + its cloud_query. These
+                // used to fail silently, which left a reopened pinned
+                // tab as a dead placeholder with no explanation when
+                // its backing group had been deleted; surface a dialog
+                // instead.
                 let Some(group) = self.groups.iter().find(|g| g.id == group_id).cloned()
                 else {
+                    self.show_error_dialog(
+                        crate::i18n::t("ecs_exec_start_failed_title").to_string(),
+                        crate::i18n::t("ecs_exec_group_missing").to_string(),
+                    );
                     return Ok(Task::none());
                 };
                 let Some(query) = group.cloud_query.clone() else {
+                    self.show_error_dialog(
+                        crate::i18n::t("ecs_exec_start_failed_title").to_string(),
+                        crate::i18n::t("ecs_exec_group_missing").to_string(),
+                    );
                     return Ok(Task::none());
                 };
                 let oryxis_core::models::cloud::CloudQueryKind::EcsTasks {
@@ -368,7 +421,33 @@ impl Oryxis {
                     arg_count = args.len(),
                     "ECS Exec: spawning session-manager-plugin"
                 );
-                let tab_label = format!("ECS · {task_label}");
+                // Tab title: prefer the human name (service, falling
+                // back to container) over the bare task id, which is an
+                // opaque hex string truncated to uselessness in a tab.
+                // A short task-id suffix keeps two tasks of the same
+                // service distinguishable.
+                let human = self
+                    .groups
+                    .iter()
+                    .find(|g| g.id == group_id)
+                    .and_then(|g| g.cloud_query.as_ref())
+                    .and_then(|q| match &q.kind {
+                        oryxis_core::models::cloud::CloudQueryKind::EcsTasks {
+                            service,
+                            ..
+                        } if !service.is_empty() => Some(service.clone()),
+                        _ => None,
+                    })
+                    .or_else(|| {
+                        (!container.is_empty()).then(|| container.clone())
+                    });
+                let tab_label = match human {
+                    Some(name) => {
+                        let short: String = task_label.chars().take(8).collect();
+                        format!("ECS · {name} ({short})")
+                    }
+                    None => format!("ECS · {task_label}"),
+                };
                 // Relaunch payload for Duplicate Tab: ECS tasks have no
                 // saved Connection, so the tab carries the message that
                 // re-opens an exec session into the same task/container.

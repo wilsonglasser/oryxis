@@ -116,6 +116,24 @@ impl Oryxis {
         let natural_total =
             n_f * TAB_NATURAL_WIDTH + (n_f - 1.0).max(0.0) * TAB_SPACING;
         let scroll_mode = natural_total > approx_strip_width;
+        // True overflow: even at TAB_MIN_WIDTH (compact pins at CHIP_W)
+        // the tabs don't fit, so the scrollable actually scrolls. This
+        // is the trigger that docks the "+" at the strip edge; the
+        // softer `scroll_mode` above (tabs merely compressed below
+        // natural) only brings in the `⋯` jump button. Without the
+        // distinction the "+" jumped to the right cluster as soon as
+        // three tabs compressed, long before anything scrolled.
+        let compact_pin_style = self.setting_pinned_tab_style == "compact";
+        let pin_n = if compact_pin_style {
+            self.tabs.iter().filter(|t| t.pinned).count()
+        } else {
+            0
+        } as f32;
+        let reg_n = n_f - pin_n;
+        let min_total = pin_n * (CHIP_W + TAB_SPACING)
+            + reg_n * TAB_MIN_WIDTH
+            + (reg_n - 1.0).max(0.0) * TAB_SPACING;
+        let strip_overflow = min_total > approx_strip_width;
 
         let mut tab_items: Vec<Element<'_, Message>> = Vec::new();
 
@@ -139,9 +157,13 @@ impl Oryxis {
                     | View::PortForwarding
                     | View::History
             );
+            // Labeled "Vault" (not "Hosts"): this area tab covers the
+            // whole vault surface (hosts, keychain, snippets, port
+            // forwarding, logs) and the name prepares multi-vault,
+            // where it becomes the active vault's name (issue #38).
             tab_items.push(area_tab(
-                crate::i18n::t("hosts"),
-                iced_fonts::lucide::server(),
+                crate::i18n::t("vault"),
+                iced_fonts::lucide::vault(),
                 View::Dashboard,
                 nav_active && in_vault_area,
             ));
@@ -298,6 +320,22 @@ impl Oryxis {
             }
         }
 
+        // "+" trails the last tab, browser-style (issue #38). Only when
+        // the strip TRULY overflows (tabs at min width still don't fit,
+        // so the scrollable scrolls) it docks at the strip's trailing
+        // edge instead, just before the right cluster, so it can never
+        // scroll out of reach with the tabs.
+        let plus_btn = crate::widgets::bounds_reporter(
+            new_tab_btn(!strip_overflow),
+            self.plus_btn_bounds.clone(),
+        );
+        let mut docked_plus: Option<Element<'_, Message>> = None;
+        if strip_overflow {
+            docked_plus = Some(plus_btn);
+        } else {
+            tab_items.push(plus_btn);
+        }
+
         // The tab strip lives in an auto-width container, Length::Fill
         // so the row gives it whatever's left after the sidebar toggle
         // and right cluster claim their Shrink widths. The scrollable
@@ -344,12 +382,10 @@ impl Oryxis {
         })
         .into();
 
-        // Right cluster, never pushed off. Always contains `+` and the
-        // window chrome; the `⋯` jump-to button only joins when the bar
-        // is actually overflowing (scroll_mode), positioned BEFORE the
-        // `+` so the natural reading order is "scroll-related controls,
-        // then add a new tab, then window chrome".
-        let plus_btn = crate::widgets::bounds_reporter(new_tab_btn(), self.plus_btn_bounds.clone());
+        // Right cluster, never pushed off. The `+` now lives with the
+        // tabs (or docked at the strip edge under overflow), so the
+        // cluster holds the `⋯` jump-to button (overflow only), the
+        // side-panel toggle and the window chrome.
         let dots_btn: Option<Element<'_, Message>> =
             if scroll_mode { Some(tab_jump_btn()) } else { None };
 
@@ -389,8 +425,6 @@ impl Oryxis {
             cluster_items.push(dots);
             cluster_items.push(Space::new().width(2).into());
         }
-        cluster_items.push(plus_btn);
-        cluster_items.push(Space::new().width(2).into());
         // The side-panel toggle (Chat / Snippets / History) only makes
         // sense inside a connection tab, so skip it on the navigation
         // views where there's no terminal session to attach a panel to.
@@ -428,6 +462,9 @@ impl Oryxis {
             leading.push(super::sidebar::sidebar_toggle_btn(!self.sidebar_collapsed));
         }
         leading.push(tab_strip);
+        if let Some(plus) = docked_plus {
+            leading.push(plus);
+        }
         leading.push(right_cluster);
 
         // Four-block row: [logo?] [burger] [sidebar_toggle] [tab_strip(Fill)] [right_cluster].
@@ -659,10 +696,21 @@ fn area_tab<'a>(
     } else {
         OryxisColors::t().text_muted
     };
-    let bg = if is_active {
-        Color { a: 0.15, ..OryxisColors::t().accent }
+    // Same "lit from above" vertical gradient as the active session
+    // tab, in the app accent, so the strip carries exactly one visual
+    // language for "active" (issue #38: the old flat teal pill read as
+    // a different kind of element next to gradient session tabs).
+    let bg: Background = if is_active {
+        let accent = OryxisColors::t().accent;
+        let top = Color { a: 0.28, ..accent };
+        let bot = Color { a: 0.04, ..accent };
+        Background::Gradient(iced::Gradient::Linear(
+            iced::gradient::Linear::new(iced::Radians(std::f32::consts::PI))
+                .add_stop(0.0, top)
+                .add_stop(1.0, bot),
+        ))
     } else {
-        Color::TRANSPARENT
+        Background::Color(Color::TRANSPARENT)
     };
     button(
         container(
@@ -687,12 +735,14 @@ fn area_tab<'a>(
     )
     .on_press(Message::ChangeView(view))
     .style(move |_, status| {
-        let hover_bg = match status {
-            BtnStatus::Hovered if !is_active => Color::from_rgba(1.0, 1.0, 1.0, 0.06),
+        let hover_bg: Background = match status {
+            BtnStatus::Hovered if !is_active => {
+                Background::Color(Color::from_rgba(1.0, 1.0, 1.0, 0.06))
+            }
             _ => bg,
         };
         button::Style {
-            background: Some(Background::Color(hover_bg)),
+            background: Some(hover_bg),
             border: Border { radius: Radius::from(6.0), ..Default::default() },
             ..Default::default()
         }
@@ -1010,16 +1060,25 @@ fn pinned_tab_chip<'a>(
     .width(Length::Fixed(CHIP_W))
     .on_press(Message::SelectTab(idx))
     .style(move |_, status| {
+        // Active chip paints the same "lit from above" gradient as the
+        // other tabs (one visual language for "active" in the strip);
+        // the icon-only chip shape is already the pin affordance, so
+        // the old 1.5 px accent outline just read as a different kind
+        // of element.
         let bg = match status {
-            _ if is_active => Background::Color(Color { a: 0.18, ..accent }),
+            _ if is_active => {
+                let top = Color { a: 0.28, ..accent };
+                let bot = Color { a: 0.04, ..accent };
+                Background::Gradient(iced::Gradient::Linear(
+                    iced::gradient::Linear::new(iced::Radians(std::f32::consts::PI))
+                        .add_stop(0.0, top)
+                        .add_stop(1.0, bot),
+                ))
+            }
             BtnStatus::Hovered => Background::Color(Color::from_rgba(1.0, 1.0, 1.0, 0.06)),
             _ => Background::Color(Color::TRANSPARENT),
         };
-        let border = if is_active {
-            Border { radius: Radius::from(6.0), color: accent, width: 1.5 }
-        } else {
-            Border { radius: Radius::from(6.0), ..Default::default() }
-        };
+        let border = Border { radius: Radius::from(6.0), ..Default::default() };
         button::Style { background: Some(bg), border, ..Default::default() }
     });
     MouseArea::new(btn)
@@ -1097,22 +1156,25 @@ fn drag_ghost<'a>(
         .into()
 }
 
-/// Plus button at the end of the tab row, opens the new-tab picker
-/// (search + recent connections) as a centered modal overlay. Width +
-/// height + border match the window-chrome buttons next to it so the
-/// whole right cluster reads as one strip; `PLUS_BUTTON_WIDTH` was
-/// only used for the layout-math `RIGHT_CLUSTER_WIDTH` calculation,
-/// which still applies because we publish the same constant value.
+/// Plus button that trails the last tab (browser-style), opening the
+/// new-tab picker (search + recent connections) as a centered modal
+/// overlay. `inline` renders it tab-strip-sized with rounded hover
+/// (sitting among the tabs); the docked variant (strip overflow) keeps
+/// the squared full-height look so it reads as part of the chrome
+/// strip next to it. `PLUS_BUTTON_WIDTH` still feeds the layout-math
+/// `RIGHT_CLUSTER_WIDTH` budget in both placements.
 ///
 /// Uses `lucide::plus` instead of a literal `+` text character, on
 /// Windows, Segoe UI's `+` renders much chunkier than the codicon
 /// `−` / `□` / `✕` glyphs right next to it, breaking visual rhythm.
-fn new_tab_btn<'a>() -> Element<'a, Message> {
+fn new_tab_btn<'a>(inline: bool) -> Element<'a, Message> {
     let hover_color = OryxisColors::t().text_secondary;
+    let height = if inline { BAR_HEIGHT - 8.0 } else { BAR_HEIGHT };
+    let radius = if inline { 6.0 } else { 0.0 };
     let btn = button(
         container(iced_fonts::lucide::plus().size(15).color(hover_color))
             .center(Length::Fixed(PLUS_BUTTON_WIDTH))
-            .height(Length::Fixed(BAR_HEIGHT)),
+            .height(Length::Fixed(height)),
     )
     .on_press(Message::ShowNewTabPicker)
     .padding(0)
@@ -1124,7 +1186,7 @@ fn new_tab_btn<'a>() -> Element<'a, Message> {
         };
         button::Style {
             background: Some(Background::Color(bg)),
-            border: Border::default(),
+            border: Border { radius: Radius::from(radius), ..Default::default() },
             ..Default::default()
         }
     });

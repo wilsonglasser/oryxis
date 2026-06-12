@@ -322,7 +322,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "enter_password" => "Kilidi açmak için ana parolanızı girin.",
         "forgot_password" => "Parolayı mı unuttunuz? Kasayı sıfırla",
         "destroy_vault" => "Evet, kasayı yok et",
-        "vault_destroy_confirm" => "Bu, kaydedilen tüm verileri kalıcı olarak siler.",
+        "vault_destroy_confirm" => "Bu, her şeyi kalıcı olarak siler: sunucular, anahtarlar, kimlikler, snippet'ler, kayıtlar ve ayarlar. Uygulama ilk çalıştırma durumuna sıfırlanır.",
 
         // Terminal shortcuts
         "copy_terminal" => "Terminalden Kopyala",
@@ -775,7 +775,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "import_ssh_config_btn" => "~/.ssh/config içe aktar",
         "app_tagline" => "Rust ile yapılmış modern bir SSH istemcisi",
         "current_version" => "Mevcut sürüm:",
-        "check_for_updates_now" => "Güncellemeleri şimdi denetle",
+        "check_for_updates_now" => "Güncellemeleri denetle",
         "update_check_checking" => "Güncellemeler denetleniyor…",
         "update_check_up_to_date" => "En son sürümdesiniz",
         "update_check_available" => "Güncelleme mevcut:",
@@ -883,6 +883,27 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "cjk_font_downloading" => "Dil yazi tipi indiriliyor...",
         "cjk_font_failed" => "Dil yazi tipi indirilemedi. Sistem yazi tipi kullaniliyor.",
 
-        _ => return None,
+        "logs" => "Kayıtlar",
+        "vault" => "Kasa",
+        "search_logs" => "Kayıtları ara...",
+        "clear_all" => "Tümünü temizle",
+        "clear_history_title" => "Tüm kayıtlar silinsin mi?",
+        "clear_history_confirm" => "Bu, tüm oturum kayıtlarını ve bağlantı olaylarını kalıcı olarak siler.",
+        "update_check_failed" => "Güncelleme denetimi başarısız",
+        "terminal_link_hint" => "Bağlantıyı açmak için Ctrl + Tık",
+        "reset_hints" => "İpuçlarını sıfırla",
+        "reset_hints_desc" => "Tüm tek seferlik ipuçlarını ve önerileri yeniden göster.",
+        "ai_key_saved_placeholder" => "\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}\u{2022} kaydedildi, değiştirmek için yazın",
+        "host_count_one" => "1 sunucu",
+        "host_count_other" => "sunucu",
+        "import_summary_imported" => "İçe aktarılan sunucular:",
+        "import_summary_skipped" => "atlandı, etiket zaten mevcut",
+        "password_too_short" => "Parola en az 4 karakter olmalı",
+        "vault_already_has_password" => "Bu kasanın zaten bir parolası var. Kilidi açmak için yukarıya girin.",
+
+                "ecs_exec_group_missing" => "Bu oturumun arkasındaki bulut grubu artık yok. Sekmenin sabitlemesini kaldırın ve panodan yeniden bağlanın.",
+        "cloud_session_ended" => "oturum sona erdi",
+        "cloud_session_ended_hint" => "oturum sona erdi, yeniden bağlanmak için bu sekmeyi tekrar seçin",
+_ => return None,
     })
 }

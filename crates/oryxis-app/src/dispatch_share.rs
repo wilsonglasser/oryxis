@@ -146,10 +146,18 @@ impl Oryxis {
                     }
                 }
                 self.load_data_from_vault();
-                let mut summary =
-                    format!("Imported {} of {} hosts", imported, parsed.len());
+                let mut summary = format!(
+                    "{} {} / {}",
+                    crate::i18n::t("import_summary_imported"),
+                    imported,
+                    parsed.len(),
+                );
                 if skipped > 0 {
-                    summary.push_str(&format!(" ({} skipped, label already exists)", skipped));
+                    summary.push_str(&format!(
+                        " ({} {})",
+                        skipped,
+                        crate::i18n::t("import_summary_skipped"),
+                    ));
                 }
                 if errors.is_empty() {
                     self.ssh_config_import_status = Some(Ok(summary));

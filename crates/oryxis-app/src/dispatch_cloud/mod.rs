@@ -166,6 +166,11 @@ impl Oryxis {
                 // its slot + pin, and re-persist (reopen skipped persisting to
                 // keep the dormant spec as a net).
                 if let Some(dormant_id) = self.pin_next_plugin_tab.take() {
+                    // Inherit the placeholder's pin state instead of
+                    // forcing it: a dead *unpinned* cloud tab also rides
+                    // this reopen path now (PluginSessionEnded) and must
+                    // not come back pinned.
+                    let mut keep_pin = true;
                     let at = if let Some(dpos) =
                         self.tabs.iter().position(|t| t._id == dormant_id)
                     {
@@ -173,6 +178,7 @@ impl Oryxis {
                         // the dormant (before it). Drop the live, drop the
                         // dormant, reinsert the live at the dormant's slot.
                         let live = self.tabs.remove(tab_idx);
+                        keep_pin = self.tabs[dpos].pinned;
                         self.tabs.remove(dpos);
                         let at = dpos.min(self.tabs.len());
                         self.tabs.insert(at, live);
@@ -182,7 +188,7 @@ impl Oryxis {
                         // live tab where it was pushed.
                         tab_idx
                     };
-                    self.tabs[at].pinned = true;
+                    self.tabs[at].pinned = keep_pin;
                     self.active_tab = Some(at);
                     self.remember_terminal_tab_focus(at);
                     self.persist_pinned_tabs();
@@ -204,7 +210,12 @@ impl Oryxis {
                 let stream = UnboundedReceiverStream::new(rx);
                 Task::batch(vec![
                     self.tab_scroll_to_active(),
-                    Task::stream(stream).map(move |bytes| Message::PtyOutput(pane_id, bytes)),
+                    // When the plugin process exits the stream closes;
+                    // chain the end-of-session notice so the pane never
+                    // goes silently dead (issue #38 follow-up).
+                    Task::stream(stream)
+                        .map(move |bytes| Message::PtyOutput(pane_id, bytes))
+                        .chain(Task::done(Message::PluginSessionEnded(pane_id))),
                 ])
             }
             Err(e) => {

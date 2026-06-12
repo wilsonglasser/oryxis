@@ -298,6 +298,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "word_delimiters" => "فواصل الكلمات",
         "setting_word_delimiters_desc" => "الأحرف التي تفصل الكلمات عند التحديد بالنقر المزدوج. النقر الثلاثي يحدد السطر بأكمله دائمًا.",
         "word_delimiters_reset" => "إعادة التعيين",
+        "reset_hints" => "إعادة تعيين التلميحات",
+        "reset_hints_desc" => "إظهار جميع النصائح والتلميحات التي تظهر مرة واحدة من جديد.",
         "vault_password" => "كلمة مرور الخزنة",
 
         // AI Chat
@@ -312,6 +314,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "model" => "النموذج",
         "api_key" => "مفتاح API",
         "api_key_saved" => "تم حفظ مفتاح API",
+        "ai_key_saved_placeholder" => "\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}\u{2022} محفوظ، اكتب للاستبدال",
         "system_prompt" => "موجه النظام",
 
         // Vault
@@ -322,7 +325,10 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "enter_password" => "أدخل كلمة المرور الرئيسية لفتح القفل.",
         "forgot_password" => "نسيت كلمة المرور؟ إعادة تعيين الخزنة",
         "destroy_vault" => "نعم، دمّر الخزنة",
-        "vault_destroy_confirm" => "سيؤدي هذا إلى حذف جميع البيانات المخزنة نهائيًا.",
+        "vault_destroy_confirm" => "سيؤدي هذا إلى حذف كل شيء نهائيًا: المضيفون والمفاتيح والهويات والمقتطفات والسجلات والإعدادات. سيعود التطبيق إلى حالة التشغيل الأول.",
+        "vault" => "الخزنة",
+        "password_too_short" => "يجب أن تتكون كلمة المرور من 4 أحرف على الأقل",
+        "vault_already_has_password" => "هذه الخزنة لديها كلمة مرور بالفعل. أدخلها أعلاه لفتح القفل.",
 
         // Terminal shortcuts
         "copy_terminal" => "نسخ من الطرفية",
@@ -369,6 +375,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "font_zoom_out" => "تصغير حجم الخط",
         "font_zoom_reset" => "إعادة ضبط حجم الخط",
         "font_zoom_wheel" => "تعديل حجم الخط",
+        "terminal_link_hint" => "Ctrl + نقرة لفتح الرابط",
         "keyboard_shortcuts" => "اختصارات لوحة المفاتيح",
 
         // Session logs
@@ -379,6 +386,11 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "duration" => "المدة",
         "in_progress" => "قيد التنفيذ",
         "clear" => "مسح",
+        "logs" => "السجلات",
+        "search_logs" => "البحث في السجلات...",
+        "clear_all" => "مسح الكل",
+        "clear_history_title" => "مسح جميع السجلات؟",
+        "clear_history_confirm" => "سيؤدي هذا إلى حذف جميع تسجيلات الجلسات وأحداث الاتصال نهائيًا.",
         "entries" => "إدخال",
         "of" => "من",
         "no_activity" => "لم يتم تسجيل أي نشاط بعد.",
@@ -760,12 +772,17 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "ssh_config_import" => "استيراد SSH config",
         "ssh_config_import_desc" => "اختر ملف تكوين OpenSSH (الافتراضي ~/.ssh/config). يتم تحويل كل كتلة `Host` إلى سجل اتصال؛ يتم تجاهل أحرف البدل والتسميات الموجودة.",
         "import_ssh_config_btn" => "استيراد ~/.ssh/config",
+        "host_count_one" => "مضيف واحد",
+        "host_count_other" => "مضيفين",
+        "import_summary_imported" => "المضيفون المستوردون:",
+        "import_summary_skipped" => "تم التخطي، التسمية موجودة بالفعل",
         "app_tagline" => "عميل SSH حديث مبني بـ Rust",
         "current_version" => "الإصدار الحالي:",
-        "check_for_updates_now" => "التحقق من التحديثات الآن",
+        "check_for_updates_now" => "التحقق من التحديثات",
         "update_check_checking" => "جارٍ التحقق من التحديثات…",
         "update_check_up_to_date" => "أنت على آخر إصدار",
         "update_check_available" => "يوجد تحديث:",
+        "update_check_failed" => "فشل التحقق من التحديثات",
         "connect_timeout" => "مهلة الاتصال (ثوان)",
         "connect_timeout_desc" => "كم من الوقت ينتظر اتصال TCP ومصافحة SSH قبل الإخفاق. الافتراضي ١٥.",
         "auth_timeout" => "مهلة المصادقة (ثوان)",
@@ -870,6 +887,9 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "cjk_font_downloading" => "جارٍ تنزيل خط اللغة...",
         "cjk_font_failed" => "تعذّر تنزيل خط اللغة. سيتم استخدام خط النظام.",
 
-        _ => return None,
+                "ecs_exec_group_missing" => "مجموعة السحابة وراء هذه الجلسة لم تعد موجودة. ألغ تثبيت التبويب وأعد الاتصال من لوحة التحكم.",
+        "cloud_session_ended" => "انتهت الجلسة",
+        "cloud_session_ended_hint" => "انتهت الجلسة، حدد هذا التبويب مرة أخرى لإعادة الاتصال",
+_ => return None,
     })
 }

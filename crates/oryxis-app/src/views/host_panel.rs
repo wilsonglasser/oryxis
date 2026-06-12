@@ -1060,13 +1060,18 @@ impl Oryxis {
                 .push(Space::new().height(8))
                 .push(panel_field(
                     crate::i18n::t("proxy_password"),
-                    text_input(placeholder, &self.editor_form.proxy_password)
-                        .on_input(Message::EditorProxyPasswordChanged)
-                        .on_submit(Message::EditorSave)
-                        .secure(true)
-                        .padding(10)
-                        .style(crate::widgets::rounded_input_style).align_x(dir_align_x())
-                        .into(),
+                    crate::widgets::password_input_with_eye(
+                        placeholder,
+                        &self.editor_form.proxy_password,
+                        Message::EditorProxyPasswordChanged,
+                        Some(Message::EditorSave),
+                        self.revealed_secrets
+                            .contains(&crate::state::SecretField::ProxyPassword),
+                        Message::ToggleSecretVisibility(
+                            crate::state::SecretField::ProxyPassword,
+                        ),
+                        10.0,
+                    ),
                 ));
         }
 

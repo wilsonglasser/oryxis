@@ -322,7 +322,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "enter_password" => "잠금을 해제하려면 마스터 비밀번호를 입력하세요.",
         "forgot_password" => "비밀번호를 잊으셨나요? 볼트 재설정",
         "destroy_vault" => "예, 볼트를 파기합니다",
-        "vault_destroy_confirm" => "저장된 모든 데이터가 영구적으로 삭제됩니다.",
+        "vault_destroy_confirm" => "호스트, 키, ID, 스니펫, 로그, 설정 등 모든 데이터가 영구적으로 삭제됩니다. 앱이 처음 실행 상태로 재설정됩니다.",
 
         // Terminal shortcuts
         "copy_terminal" => "터미널에서 복사",
@@ -775,8 +775,9 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "import_ssh_config_btn" => "~/.ssh/config 가져오기",
         "app_tagline" => "Rust로 만든 최신 SSH 클라이언트",
         "current_version" => "현재 버전:",
-        "check_for_updates_now" => "지금 업데이트 확인",
+        "check_for_updates_now" => "업데이트 확인",
         "update_check_checking" => "업데이트 확인 중…",
+        "update_check_failed" => "업데이트 확인 실패",
         "update_check_up_to_date" => "최신 버전을 사용 중입니다",
         "update_check_available" => "업데이트 사용 가능:",
         "connect_timeout" => "연결 시간 초과 (초)",
@@ -883,6 +884,26 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "cjk_font_downloading" => "언어 글꼴 다운로드 중...",
         "cjk_font_failed" => "언어 글꼴을 다운로드하지 못했습니다. 시스템 글꼴을 사용합니다.",
 
-        _ => return None,
+        "logs" => "로그",
+        "vault" => "볼트",
+        "search_logs" => "로그 검색...",
+        "clear_all" => "모두 지우기",
+        "clear_history_title" => "모든 로그를 삭제할까요?",
+        "clear_history_confirm" => "모든 세션 기록과 연결 이벤트가 영구적으로 삭제됩니다.",
+        "terminal_link_hint" => "Ctrl + 클릭으로 링크 열기",
+        "reset_hints" => "힌트 초기화",
+        "reset_hints_desc" => "모든 일회성 팁과 힌트를 다시 표시합니다.",
+        "ai_key_saved_placeholder" => "\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}\u{2022} 저장됨, 입력하면 교체됩니다",
+        "host_count_one" => "호스트 1개",
+        "host_count_other" => "호스트",
+        "import_summary_imported" => "가져온 호스트:",
+        "import_summary_skipped" => "건너뜀, 레이블이 이미 존재함",
+        "password_too_short" => "비밀번호는 4자 이상이어야 합니다",
+        "vault_already_has_password" => "이 볼트에는 이미 비밀번호가 설정되어 있습니다. 잠금을 해제하려면 위에 입력하세요.",
+
+                "ecs_exec_group_missing" => "이 세션의 클라우드 그룹이 더 이상 존재하지 않습니다. 탭 고정을 해제하고 대시보드에서 다시 연결하세요.",
+        "cloud_session_ended" => "세션이 종료되었습니다",
+        "cloud_session_ended_hint" => "세션이 종료되었습니다. 다시 연결하려면 이 탭을 다시 선택하세요",
+_ => return None,
     })
 }

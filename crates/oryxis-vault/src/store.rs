@@ -2598,6 +2598,22 @@ impl VaultStore {
         Ok(())
     }
 
+    /// Delete every setting whose key starts with `prefix`. Backs the
+    /// "Reset hints" action, which clears all `hint_*` one-time flags
+    /// in one sweep so future hints don't each need their own reset.
+    pub fn delete_settings_with_prefix(&self, prefix: &str) -> Result<(), VaultError> {
+        // ESCAPE so a literal `_`/`%` in the prefix can't wildcard-match.
+        let pattern = format!(
+            "{}%",
+            prefix.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_")
+        );
+        self.db.execute(
+            "DELETE FROM settings WHERE key LIKE ?1 ESCAPE '\\'",
+            params![pattern],
+        )?;
+        Ok(())
+    }
+
     /// Store an AI API key encrypted in the settings table (base64-encoded).
     pub fn set_ai_api_key(&self, api_key: &str) -> Result<(), VaultError> {
         let encrypted = self.encrypt_field(api_key)?;

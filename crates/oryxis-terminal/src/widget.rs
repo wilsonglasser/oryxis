@@ -945,6 +945,13 @@ pub struct TerminalView<Message = ()> {
     /// so they reach the active SSH session; without it the widget
     /// falls back to a local-PTY write, which is dead on SSH tabs.
     on_terminal_input: Option<Box<dyn Fn(Vec<u8>) -> Message>>,
+    /// Localized "Ctrl + Click to open the link" tooltip text. `None`
+    /// disables the hover hint entirely (the app stops passing it once
+    /// the user has ctrl-clicked a link for the first time).
+    link_hint_text: Option<String>,
+    /// Emitted after a Ctrl+Click successfully opens a URL, so the app
+    /// can persist "the user knows the gesture" and drop the hint.
+    on_link_opened: Option<Message>,
     /// Whether this pane currently has focus. Only the focused pane emits
     /// mouse-tracking reports, so a click that merely focuses an inactive
     /// split pane (e.g. one running htop, which leaves mouse mode on)
@@ -1137,6 +1144,8 @@ impl<Message> TerminalView<Message> {
             on_font_size_decrease: None,
             on_paste_request: None,
             on_terminal_input: None,
+            link_hint_text: None,
+            on_link_opened: None,
             focused: true,
         }
     }
@@ -1211,6 +1220,19 @@ impl<Message> TerminalView<Message> {
     /// Ctrl+Shift+V takes. Without this hook, the widget falls back to
     /// writing the clipboard text directly to the local PTY, which only
     /// works for local-shell tabs.
+    /// Localized hover-hint text for ctrl-clickable URLs; `None` hides
+    /// the hint (one-time onboarding, see `on_link_opened`).
+    pub fn with_link_hint(mut self, hint: Option<String>) -> Self {
+        self.link_hint_text = hint;
+        self
+    }
+
+    /// Message emitted after a Ctrl+Click opens a URL.
+    pub fn on_link_opened(mut self, msg: Message) -> Self {
+        self.on_link_opened = Some(msg);
+        self
+    }
+
     pub fn on_paste_request(mut self, msg: Message) -> Self {
         self.on_paste_request = Some(msg);
         self
@@ -1581,6 +1603,11 @@ where
                     {
                         drop(state);
                         open_url(&url);
+                        // Tell the app the gesture landed so the
+                        // one-time hover hint can retire itself.
+                        if let Some(msg) = self.on_link_opened.clone() {
+                            return Some(CanvasAction::publish(msg).and_capture());
+                        }
                         return Some(CanvasAction::capture());
                     }
                     // Shift+Click extends the current selection from its
@@ -2453,19 +2480,28 @@ where
         // hovered URL with a small offset so it doesn't sit directly
         // under the cursor. Stays put once anchored to the URL row;
         // we don't follow per-pixel mouse moves to avoid jitter.
-        if let Some((_url, hover_pos)) = widget_state.hovered_url.as_ref() {
+        // The text comes localized from the app; `None` means the user
+        // already knows the gesture and the hint stays hidden.
+        if let (Some(hint), Some((_url, hover_pos))) = (
+            self.link_hint_text.as_ref(),
+            widget_state.hovered_url.as_ref(),
+        ) {
+            // Width estimate at ~11 px: ASCII glyphs ~6.2 px, anything
+            // else (CJK and friends) ~11 px, plus 8 px padding per side.
+            let text_w: f32 = hint
+                .chars()
+                .map(|c| if c.is_ascii() { 6.2 } else { 11.0 })
+                .sum();
+            let tip_w = text_w + 16.0;
+            let tip_h = 22.0;
             let tip_y_offset = -28.0; // above the cursor
-            let tip_x = (hover_pos.x + 6.0).min(bounds.width - 220.0).max(4.0);
+            let tip_x = (hover_pos.x + 6.0).min(bounds.width - tip_w - 4.0).max(4.0);
             let tip_y = (hover_pos.y + tip_y_offset).max(4.0);
             // Solid terminal background under the tooltip, anything
             // less than fully opaque lets the underlying URL text bleed
             // through and makes the label illegible.
             let bg = palette.background;
             let border = Color { a: 0.6, ..palette.foreground };
-            // Width fits "Ctrl + Click to open the link" at ~11 px
-            // font with symmetric 8 px padding on both sides.
-            let tip_w = 216.0;
-            let tip_h = 22.0;
             frame.fill_rectangle(
                 Point::new(tip_x, tip_y),
                 Size::new(tip_w, tip_h),
@@ -2485,7 +2521,7 @@ where
                 border,
             );
             frame.fill_text(CanvasText {
-                content: "Ctrl + Click to open the link".to_string(),
+                content: hint.clone(),
                 position: Point::new(tip_x + 8.0, tip_y + tip_h / 2.0),
                 color: palette.foreground,
                 size: Pixels(11.0),

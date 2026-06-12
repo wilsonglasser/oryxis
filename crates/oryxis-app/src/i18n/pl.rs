@@ -312,6 +312,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "model" => "Model",
         "api_key" => "Klucz API",
         "api_key_saved" => "Klucz API zapisany",
+        "ai_key_saved_placeholder" => "\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}\u{2022} zapisano, wpisz aby zastąpić",
         "system_prompt" => "Monit systemowy",
 
         // Vault
@@ -322,7 +323,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "enter_password" => "Wprowadź hasło główne, aby odblokować.",
         "forgot_password" => "Nie pamiętasz hasła? Zresetuj sejf",
         "destroy_vault" => "Tak, zniszcz sejf",
-        "vault_destroy_confirm" => "To trwale usunie wszystkie zapisane dane.",
+        "vault_destroy_confirm" => "To trwale usunie wszystko: hosty, klucze, tożsamości, fragmenty, dzienniki i ustawienia. Aplikacja zresetuje się do stanu pierwszego uruchomienia.",
 
         // Terminal shortcuts
         "copy_terminal" => "Kopiuj z terminala",
@@ -374,6 +375,11 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         // Session logs
         "session_logs" => "Dzienniki sesji",
         "session_log" => "Dziennik sesji",
+        "logs" => "Dzienniki",
+        "search_logs" => "Szukaj w dziennikach...",
+        "clear_all" => "Wyczyść wszystko",
+        "clear_history_title" => "Wyczyścić wszystkie dzienniki?",
+        "clear_history_confirm" => "To trwale usunie wszystkie nagrania sesji i zdarzenia połączeń.",
         "view_log" => "Wyświetl dziennik",
         "view" => "Widok",
         "duration" => "Czas trwania",
@@ -775,10 +781,11 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "import_ssh_config_btn" => "Importuj ~/.ssh/config",
         "app_tagline" => "Nowoczesny klient SSH zbudowany w Rust",
         "current_version" => "Bieżąca wersja:",
-        "check_for_updates_now" => "Sprawdź aktualizacje teraz",
+        "check_for_updates_now" => "Sprawdź aktualizacje",
         "update_check_checking" => "Sprawdzanie aktualizacji…",
         "update_check_up_to_date" => "Masz najnowszą wersję",
         "update_check_available" => "Dostępna aktualizacja:",
+        "update_check_failed" => "Sprawdzanie aktualizacji nie powiodło się",
         "connect_timeout" => "Limit czasu połączenia (s)",
         "connect_timeout_desc" => "Jak długo czekać na połączenie TCP + uzgadnianie transportu SSH, zanim nastąpi szybkie niepowodzenie. Domyślnie 15.",
         "auth_timeout" => "Limit czasu uwierzytelniania (s)",
@@ -880,9 +887,23 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "pf_unknown_host" => "nieznany host",
 
 
+        "vault" => "Sejf",
+        "terminal_link_hint" => "Ctrl + kliknięcie, aby otworzyć link",
+        "reset_hints" => "Resetuj podpowiedzi",
+        "reset_hints_desc" => "Pokaż ponownie wszystkie jednorazowe wskazówki i podpowiedzi.",
+        "host_count_one" => "1 host",
+        "host_count_other" => "hostów",
+        "import_summary_imported" => "Zaimportowane hosty:",
+        "import_summary_skipped" => "pominięto, etykieta już istnieje",
+        "password_too_short" => "Hasło musi mieć co najmniej 4 znaki",
+        "vault_already_has_password" => "Ten sejf ma już hasło. Wprowadź je powyżej, aby odblokować.",
+
         "cjk_font_downloading" => "Pobieranie czcionki jezyka...",
         "cjk_font_failed" => "Nie udalo sie pobrac czcionki jezyka. Uzywana jest czcionka systemowa.",
 
-        _ => return None,
+                "ecs_exec_group_missing" => "Grupa chmurowa tej sesji już nie istnieje. Odepnij kartę i połącz się ponownie z poziomu pulpitu.",
+        "cloud_session_ended" => "sesja zakończona",
+        "cloud_session_ended_hint" => "sesja zakończona, wybierz tę kartę ponownie, aby połączyć się ponownie",
+_ => return None,
     })
 }

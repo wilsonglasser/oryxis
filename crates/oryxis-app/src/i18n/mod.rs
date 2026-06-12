@@ -236,6 +236,17 @@ pub fn t(key: &str) -> &'static str {
     translate(key, lang)
 }
 
+/// "1 host" / "N hosts" with the count inlined. One/other is an
+/// approximation (Slavic languages have richer plural classes), good
+/// enough for a count label, and it fixes the "1 hosts" card subtitle.
+pub fn host_count(n: usize) -> String {
+    if n == 1 {
+        t("host_count_one").to_string()
+    } else {
+        format!("{} {}", n, t("host_count_other"))
+    }
+}
+
 fn translate(key: &str, lang: Language) -> &'static str {
     match lang {
         Language::English => en::lookup(key),

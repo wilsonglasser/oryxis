@@ -322,7 +322,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "enter_password" => "Masukkan kata sandi master Anda untuk membuka kunci.",
         "forgot_password" => "Lupa kata sandi? Reset vault",
         "destroy_vault" => "Ya, hancurkan vault",
-        "vault_destroy_confirm" => "Ini akan menghapus permanen semua data yang tersimpan.",
+        "vault_destroy_confirm" => "Ini akan menghapus permanen semuanya: host, kunci, identitas, snippet, log, dan pengaturan. Aplikasi kembali ke kondisi awal.",
 
         // Terminal shortcuts
         "copy_terminal" => "Salin dari Terminal",
@@ -775,7 +775,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "import_ssh_config_btn" => "Impor ~/.ssh/config",
         "app_tagline" => "Klien SSH modern yang dibangun dengan Rust",
         "current_version" => "Versi saat ini:",
-        "check_for_updates_now" => "Periksa pembaruan sekarang",
+        "check_for_updates_now" => "Periksa pembaruan",
         "update_check_checking" => "Memeriksa pembaruan…",
         "update_check_up_to_date" => "Anda memakai versi terbaru",
         "update_check_available" => "Pembaruan tersedia:",
@@ -883,6 +883,27 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "cjk_font_downloading" => "Mengunduh font bahasa...",
         "cjk_font_failed" => "Tidak dapat mengunduh font bahasa. Memakai font sistem.",
 
-        _ => return None,
+        "logs" => "Log",
+        "vault" => "Vault",
+        "search_logs" => "Cari log...",
+        "clear_all" => "Hapus semua",
+        "clear_history_title" => "Hapus semua log?",
+        "clear_history_confirm" => "Ini akan menghapus permanen semua rekaman sesi dan peristiwa koneksi.",
+        "update_check_failed" => "Pemeriksaan pembaruan gagal",
+        "terminal_link_hint" => "Ctrl + Klik untuk membuka tautan",
+        "reset_hints" => "Setel ulang petunjuk",
+        "reset_hints_desc" => "Tampilkan kembali semua tips dan petunjuk sekali tampil.",
+        "ai_key_saved_placeholder" => "\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}\u{2022} tersimpan, ketik untuk mengganti",
+        "host_count_one" => "1 host",
+        "host_count_other" => "host",
+        "import_summary_imported" => "Host yang diimpor:",
+        "import_summary_skipped" => "dilewati, label sudah ada",
+        "password_too_short" => "Kata sandi harus minimal 4 karakter",
+        "vault_already_has_password" => "Vault ini sudah memiliki kata sandi. Masukkan di atas untuk membuka kunci.",
+
+                "ecs_exec_group_missing" => "Grup cloud di balik sesi ini sudah tidak ada. Lepas pin tab dan sambungkan kembali dari dasbor.",
+        "cloud_session_ended" => "sesi berakhir",
+        "cloud_session_ended_hint" => "sesi berakhir, pilih tab ini lagi untuk menyambung kembali",
+_ => return None,
     })
 }

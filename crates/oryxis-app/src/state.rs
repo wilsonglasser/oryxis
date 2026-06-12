@@ -1408,6 +1408,27 @@ pub enum TerminalSidebarTab {
     Snippets,
 }
 
+/// Identifies a secret text field whose reveal/eye toggle is on. One
+/// shared enum + a `HashSet` in app state instead of a bool per field,
+/// so adding the eye to a new password input is a one-variant change.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum SecretField {
+    /// Inline proxy password in the host editor.
+    ProxyPassword,
+    /// Password on the Share (portable export) dialog.
+    SharePassword,
+    /// AI assistant API key (Settings > AI).
+    AiApiKey,
+    /// New master password (Settings > Security).
+    VaultNewPassword,
+    /// Portable export password (Settings > Security).
+    ExportPassword,
+    /// Portable import password (Settings > Security).
+    ImportPassword,
+    /// Sync signaling token (Settings > Sync).
+    SyncSignalingToken,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum View {
     Dashboard,

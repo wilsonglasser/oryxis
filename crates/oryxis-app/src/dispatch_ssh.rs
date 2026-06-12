@@ -799,13 +799,13 @@ impl Oryxis {
                 // "Checking…" status + toast as a manual check) instead of
                 // waiting for the next boot check.
                 self.update_error = None;
-                self.update_check_status = Some("Checking\u{2026}".into());
+                self.update_check_status = Some(crate::update::UpdateStatus::Checking);
                 self.toast = Some(crate::i18n::t("update_check_checking").to_string());
                 return Ok(Task::perform(
                     crate::update::check_latest_release(channel),
-                    |info| match info {
-                        Some(i) => Message::UpdateCheckResult(Some(i)),
-                        None => Message::UpdateCheckResult(None),
+                    |res| match res {
+                        Ok(info) => Message::UpdateCheckResult(info),
+                        Err(e) => Message::UpdateCheckFailed(e.to_string()),
                     },
                 ));
             }
@@ -821,10 +821,16 @@ impl Oryxis {
                     .and_then(|v| v.get_setting("skipped_update_version").ok().flatten());
                 return Ok(Task::perform(
                     crate::update::check_latest_release(self.setting_update_channel),
-                    move |opt| {
-                        match opt {
-                            Some(info) if Some(&info.version) != skipped.as_ref() => {
+                    move |res| {
+                        match res {
+                            Ok(Some(info)) if Some(&info.version) != skipped.as_ref() => {
                                 Message::UpdateCheckResult(Some(info))
+                            }
+                            // Boot check is best-effort: log the failure
+                            // but never surface it in the UI.
+                            Err(e) => {
+                                tracing::warn!("update check failed: {e}");
+                                Message::UpdateCheckResult(None)
                             }
                             _ => Message::UpdateCheckResult(None),
                         }
@@ -833,24 +839,26 @@ impl Oryxis {
             }
             Message::CheckForUpdateManual => {
                 // Manual trigger from the settings button OR the burger
-                // menu; dismiss the burger so the resulting "Checking..."
-                // status (and any modal that follows) isn't hidden by
-                // the dropdown that's still open. Also surface a
-                // toast so users who fired this from the burger menu
-                // (where the Settings panel's `update_check_status`
-                // line is invisible) still see feedback.
+                // menu. Navigate to Settings > About so the result
+                // (up-to-date / error + retry) is on screen regardless
+                // of where the check was fired from (issue #38: the
+                // burger-menu path previously looked like a no-op).
                 self.show_burger_menu = false;
+                self.editing_hotkey = None;
+                self.active_view = crate::state::View::Settings;
+                self.settings_section = crate::state::SettingsSection::About;
+                self.active_tab = None;
                 self.update_error = None;
-                self.update_check_status = Some("Checking…".into());
+                self.update_check_status = Some(crate::update::UpdateStatus::Checking);
                 self.toast = Some(crate::i18n::t("update_check_checking").to_string());
                 if let Some(vault) = &self.vault {
                     let _ = vault.set_setting("skipped_update_version", "");
                 }
                 return Ok(Task::perform(
                     crate::update::check_latest_release(self.setting_update_channel),
-                    |info| match info {
-                        Some(i) => Message::UpdateCheckResult(Some(i)),
-                        None => Message::UpdateCheckResult(None),
+                    |res| match res {
+                        Ok(info) => Message::UpdateCheckResult(info),
+                        Err(e) => Message::UpdateCheckFailed(e.to_string()),
                     },
                 ));
             }
@@ -870,14 +878,12 @@ impl Oryxis {
                     }
                     None => {
                         // Only surface the "up to date" message if a manual
-                        // check is in flight (status was set to "Checking…").
+                        // check is in flight (status was set to Checking).
                         // A silent boot check that finds nothing should not
                         // change the settings UI.
                         if self.update_check_status.is_some() {
-                            self.update_check_status = Some(format!(
-                                "You're running the latest version ({}).",
-                                env!("CARGO_PKG_VERSION"),
-                            ));
+                            self.update_check_status =
+                                Some(crate::update::UpdateStatus::UpToDate);
                             self.toast = Some(format!(
                                 "{} ({})",
                                 crate::i18n::t("update_check_up_to_date"),
@@ -889,6 +895,25 @@ impl Oryxis {
                 // Auto-dismiss the toast after the standard 1.8 s
                 // window matches the existing "copied to clipboard"
                 // toast cadence so users get consistent feedback timing.
+                return Ok(Task::perform(
+                    async {
+                        tokio::time::sleep(std::time::Duration::from_millis(2_500)).await;
+                    },
+                    |_| Message::ToastClear,
+                ));
+            }
+            Message::UpdateCheckFailed(cause) => {
+                // Same gating as the up-to-date arm: only a manual check
+                // (status in flight) reports; boot checks already logged.
+                if self.update_check_status.is_some() {
+                    self.update_check_status =
+                        Some(crate::update::UpdateStatus::Failed(cause.clone()));
+                    self.toast = Some(format!(
+                        "{}: {}",
+                        crate::i18n::t("update_check_failed"),
+                        cause,
+                    ));
+                }
                 return Ok(Task::perform(
                     async {
                         tokio::time::sleep(std::time::Duration::from_millis(2_500)).await;

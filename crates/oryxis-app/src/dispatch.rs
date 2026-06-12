@@ -70,7 +70,8 @@ impl Oryxis {
             }
             Message::VaultSetup => {
                 if self.vault_password_input.len() < 4 {
-                    self.vault_error = Some("Password must be at least 4 characters".into());
+                    self.vault_error =
+                        Some(crate::i18n::t("password_too_short").to_string());
                     return Task::none();
                 }
                 if let Some(vault) = &mut self.vault {
@@ -102,7 +103,7 @@ impl Oryxis {
                         }
                         Err(VaultError::InvalidPassword) => {
                             self.vault_error = Some(
-                                "This vault already has a password. Enter it above to unlock.".into()
+                                crate::i18n::t("vault_already_has_password").to_string(),
                             );
                         }
                         Err(e) => {
@@ -591,7 +592,14 @@ impl Oryxis {
             // so the user gets a true "empty list" instead of seeing
             // every previously recorded session reappear after the
             // wipe finishes.
+            Message::RequestClearHistory => {
+                self.clear_history_confirm = true;
+            }
+            Message::CancelClearHistory => {
+                self.clear_history_confirm = false;
+            }
             Message::ClearLogs => {
+                self.clear_history_confirm = false;
                 if let Some(vault) = &self.vault {
                     let _ = vault.clear_logs();
                     let _ = vault.clear_session_logs();
@@ -750,7 +758,8 @@ impl Oryxis {
             }
             Message::SetVaultPassword => {
                 if self.vault_new_password.len() < 4 {
-                    self.vault_password_error = Some("Password must be at least 4 characters".into());
+                    self.vault_password_error =
+                        Some(crate::i18n::t("password_too_short").to_string());
                     return Task::none();
                 }
                 if let Some(vault) = &mut self.vault {

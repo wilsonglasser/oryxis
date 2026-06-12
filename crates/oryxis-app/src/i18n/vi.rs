@@ -322,7 +322,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "enter_password" => "Nhập mật khẩu chính để mở khóa.",
         "forgot_password" => "Quên mật khẩu? Đặt lại kho",
         "destroy_vault" => "Có, hủy kho",
-        "vault_destroy_confirm" => "Việc này sẽ xóa vĩnh viễn toàn bộ dữ liệu đã lưu.",
+        "vault_destroy_confirm" => "Việc này sẽ xóa vĩnh viễn mọi thứ: máy chủ, khóa, danh tính, đoạn lệnh, nhật ký và cài đặt. Ứng dụng sẽ trở về trạng thái chạy lần đầu.",
 
         // Terminal shortcuts
         "copy_terminal" => "Chép từ Terminal",
@@ -775,7 +775,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "import_ssh_config_btn" => "Nhập ~/.ssh/config",
         "app_tagline" => "Một client SSH hiện đại được xây bằng Rust",
         "current_version" => "Phiên bản hiện tại:",
-        "check_for_updates_now" => "Kiểm tra cập nhật ngay",
+        "check_for_updates_now" => "Kiểm tra cập nhật",
         "update_check_checking" => "Đang kiểm tra cập nhật…",
         "update_check_up_to_date" => "Bạn đang ở phiên bản mới nhất",
         "update_check_available" => "Có bản cập nhật:",
@@ -883,6 +883,27 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "cjk_font_downloading" => "Đang tải phông chữ ngôn ngữ...",
         "cjk_font_failed" => "Không tải được phông chữ ngôn ngữ. Đang dùng phông hệ thống.",
 
-        _ => return None,
+        "logs" => "Nhật ký",
+        "vault" => "Kho",
+        "search_logs" => "Tìm trong nhật ký...",
+        "clear_all" => "Xóa tất cả",
+        "clear_history_title" => "Xóa tất cả nhật ký?",
+        "clear_history_confirm" => "Việc này sẽ xóa vĩnh viễn mọi bản ghi phiên và sự kiện kết nối.",
+        "update_check_failed" => "Kiểm tra cập nhật thất bại",
+        "terminal_link_hint" => "Ctrl + Nhấp chuột để mở liên kết",
+        "reset_hints" => "Đặt lại gợi ý",
+        "reset_hints_desc" => "Hiển thị lại tất cả các mẹo và gợi ý một lần.",
+        "ai_key_saved_placeholder" => "\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}\u{2022} đã lưu, gõ để thay thế",
+        "host_count_one" => "1 máy chủ",
+        "host_count_other" => "máy chủ",
+        "import_summary_imported" => "Máy chủ đã nhập:",
+        "import_summary_skipped" => "bị bỏ qua, nhãn đã tồn tại",
+        "password_too_short" => "Mật khẩu phải có ít nhất 4 ký tự",
+        "vault_already_has_password" => "Kho này đã có mật khẩu. Nhập mật khẩu ở trên để mở khóa.",
+
+                "ecs_exec_group_missing" => "Nhóm cloud của phiên này không còn tồn tại. Bỏ ghim tab và kết nối lại từ bảng điều khiển.",
+        "cloud_session_ended" => "phiên đã kết thúc",
+        "cloud_session_ended_hint" => "phiên đã kết thúc, chọn lại tab này để kết nối lại",
+_ => return None,
     })
 }

@@ -817,10 +817,7 @@ impl Oryxis {
                                 .filter(|g| g.parent_id == Some(gid)).count();
                             let count = direct_hosts + nested_groups;
                             let label = group.label.clone();
-                            // Plural form differs across languages (English
-                            // pluralizes, Persian/Chinese/Japanese don't); use
-                            // the bare i18n word so every locale stays correct.
-                            let count_text = format!("{} {}", count, t("hosts").to_lowercase());
+                            let count_text = crate::i18n::host_count(count);
 
                             // Folder card icon precedence:
                             //   1. Explicit BRAND icon on the group
@@ -942,10 +939,24 @@ impl Oryxis {
                                 })
                                 .into()
                             } else {
-                                Space::new()
-                                    .width(Length::Fixed(FOLDER_DOTS_SLOT_W))
-                                    .height(Length::Fixed(1.0))
-                                    .into()
+                                // Folder affordance: a muted chevron on
+                                // the trailing edge distinguishes group
+                                // cards from host cards at a glance
+                                // (they were visually identical, issue
+                                // #38 polish). Same slot width as the
+                                // hover ⋮ so the label budget is stable.
+                                let chevron = if crate::i18n::is_rtl_layout() {
+                                    iced_fonts::lucide::chevron_left()
+                                } else {
+                                    iced_fonts::lucide::chevron_right()
+                                };
+                                container(
+                                    chevron
+                                        .size(14)
+                                        .color(OryxisColors::t().text_muted),
+                                )
+                                .center_x(Length::Fixed(FOLDER_DOTS_SLOT_W))
+                                .into()
                             };
 
                             let folder_card = button(
@@ -1109,9 +1120,15 @@ impl Oryxis {
                         })
                         .into()
                 } else {
-                    Space::new()
-                        .width(Length::Fixed(DG_DOTS_SLOT_W))
-                        .height(Length::Fixed(1.0))
+                    // Same trailing chevron affordance as manual folder
+                    // cards (group cards read as "openable" at a glance).
+                    let chevron = if crate::i18n::is_rtl_layout() {
+                        iced_fonts::lucide::chevron_left()
+                    } else {
+                        iced_fonts::lucide::chevron_right()
+                    };
+                    container(chevron.size(14).color(OryxisColors::t().text_muted))
+                        .center_x(Length::Fixed(DG_DOTS_SLOT_W))
                         .into()
                 };
 
@@ -1268,9 +1285,15 @@ impl Oryxis {
                         })
                         .into()
                 } else {
-                    Space::new()
-                        .width(Length::Fixed(DG_DOTS_SLOT_W))
-                        .height(Length::Fixed(1.0))
+                    // Same trailing chevron affordance as manual folder
+                    // cards (group cards read as "openable" at a glance).
+                    let chevron = if crate::i18n::is_rtl_layout() {
+                        iced_fonts::lucide::chevron_left()
+                    } else {
+                        iced_fonts::lucide::chevron_right()
+                    };
+                    container(chevron.size(14).color(OryxisColors::t().text_muted))
+                        .center_x(Length::Fixed(DG_DOTS_SLOT_W))
                         .into()
                 };
 

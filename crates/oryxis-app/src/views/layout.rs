@@ -289,12 +289,19 @@ impl Oryxis {
                 column![
                     text(crate::i18n::t("share")).size(16).color(OryxisColors::t().text_primary),
                     Space::new().height(12),
-                    text_input(crate::i18n::t("export_password"), &self.share_password)
-                        .on_input(Message::SharePasswordChanged)
-                        .secure(true)
-                        .padding(10)
-                        .width(280)
-                        .style(crate::widgets::rounded_input_style).align_x(dir_align_x()),
+                    container(crate::widgets::password_input_with_eye(
+                        crate::i18n::t("export_password"),
+                        &self.share_password,
+                        Message::SharePasswordChanged,
+                        None,
+                        self.revealed_secrets
+                            .contains(&crate::state::SecretField::SharePassword),
+                        Message::ToggleSecretVisibility(
+                            crate::state::SecretField::SharePassword,
+                        ),
+                        10.0,
+                    ))
+                    .width(280),
                     Space::new().height(8),
                     row![
                         text(crate::i18n::t("include_private_keys")).size(13).color(OryxisColors::t().text_secondary),
@@ -746,7 +753,11 @@ impl Oryxis {
                         .size(16)
                         .color(OryxisColors::t().text_primary),
                     Space::new().height(6),
-                    text(format!("\"{}\", {} hosts", folder_name, host_count))
+                    text(format!(
+                        "\"{}\", {}",
+                        folder_name,
+                        crate::i18n::host_count(host_count)
+                    ))
                         .size(13)
                         .color(OryxisColors::t().text_muted),
                     Space::new().height(16),
@@ -782,6 +793,57 @@ impl Oryxis {
                     base,
                     dialog.into(),
                     Some(Message::CancelFolderModal),
+                    0.0,
+                ),
+                resize_overlay,
+            );
+        }
+
+        // "Clear all" confirmation for the Logs view: states exactly
+        // what gets wiped (recordings + connection events) before the
+        // irreversible ClearLogs runs.
+        if self.clear_history_confirm {
+            let total = self.logs_total + self.session_logs_total;
+            let dialog = container(
+                column![
+                    text(crate::i18n::t("clear_history_title"))
+                        .size(16)
+                        .color(OryxisColors::t().text_primary),
+                    Space::new().height(6),
+                    text(crate::i18n::t("clear_history_confirm"))
+                        .size(13)
+                        .color(OryxisColors::t().text_secondary),
+                    Space::new().height(4),
+                    text(format!("{} {}", total, crate::i18n::t("entries")))
+                        .size(13)
+                        .color(OryxisColors::t().text_muted),
+                    Space::new().height(16),
+                    styled_button(
+                        crate::i18n::t("clear_all"),
+                        Message::ClearLogs,
+                        OryxisColors::t().error,
+                    ),
+                    Space::new().height(8),
+                    styled_button(
+                        crate::i18n::t("cancel"),
+                        Message::CancelClearHistory,
+                        OryxisColors::t().text_muted,
+                    ),
+                ]
+                .padding(24)
+                .width(360),
+            )
+            .style(|_| container::Style {
+                background: Some(Background::Color(OryxisColors::t().bg_surface)),
+                border: Border { radius: Radius::from(12.0), color: OryxisColors::t().border, width: 1.0 },
+                ..Default::default()
+            });
+
+            return wrap_with_resize(
+                crate::widgets::modal_overlay(
+                    base,
+                    dialog.into(),
+                    Some(Message::CancelClearHistory),
                     0.0,
                 ),
                 resize_overlay,
@@ -1898,15 +1960,21 @@ impl Oryxis {
             })
             .into()
         };
-        let pills = dir_row(vec![
+        // The Logs pill auto-hides until the feature is real for this
+        // user: either recording toggle on, or recorded data already in
+        // the vault (issue #38, instead of a visibility setting).
+        let mut pill_items = vec![
             pill("hosts", View::Dashboard),
             pill("keychain", View::Keys),
             pill("snippets", View::Snippets),
             pill("port_forwards", View::PortForwarding),
-            pill("history", View::History),
-        ])
-        .spacing(4)
-        .align_y(iced::Alignment::Center);
+        ];
+        if self.logs_surface_visible() {
+            pill_items.push(pill("logs", View::History));
+        }
+        let pills = dir_row(pill_items)
+            .spacing(4)
+            .align_y(iced::Alignment::Center);
         // Compact search input on the trailing edge of the sub-nav.
         // Each vault sub-section has its own backing string + message
         // so the same row serves every view; the placeholder text
@@ -1935,7 +2003,7 @@ impl Oryxis {
                 Message::PortForwardSearchChanged,
             )),
             View::History => Some((
-                "search_history",
+                "search_logs",
                 self.history_search.as_str(),
                 Message::HistorySearchChanged,
             )),
@@ -2099,13 +2167,46 @@ impl Oryxis {
         } else {
             Space::new().height(0).into()
         };
+        // "VAULT" section header + indented children: the flat list
+        // read as if Hosts/Keychain/... sat outside the Vault (issue
+        // #38 review feedback); mirroring the top strip's Vault tab
+        // here keeps one mental model. Indentation goes through
+        // dir_row so it flips under RTL.
+        let section = |label: &'static str| -> Element<'_, Message> {
+            container(
+                text(crate::i18n::t(label).to_uppercase())
+                    .size(10)
+                    .font(iced::Font {
+                        weight: iced::font::Weight::Semibold,
+                        ..iced::Font::new(crate::theme::SYSTEM_UI_FAMILY)
+                    })
+                    .color(OryxisColors::t().text_muted),
+            )
+            .padding(Padding { top: 8.0, right: 16.0, bottom: 2.0, left: 16.0 })
+            .width(Length::Fill)
+            .align_x(dir_align_x())
+            .into()
+        };
+        fn indent(inner: Element<'_, Message>) -> Element<'_, Message> {
+            dir_row(vec![Space::new().width(10).into(), inner]).into()
+        }
         let menu_col = column![
-            item("hosts", Message::ChangeView(View::Dashboard), hk_hosts),
+            section("vault"),
+            indent(item("hosts", Message::ChangeView(View::Dashboard), hk_hosts)),
+            indent(item("keychain", Message::ChangeView(View::Keys), None)),
+            indent(item("snippets", Message::ChangeView(View::Snippets), None)),
+            indent(item(
+                "port_forwards",
+                Message::ChangeView(View::PortForwarding),
+                None
+            )),
+            if self.logs_surface_visible() {
+                indent(item("logs", Message::ChangeView(View::History), None))
+            } else {
+                Space::new().height(0).into()
+            },
+            Space::new().height(4),
             sftp_item,
-            item("keychain", Message::ChangeView(View::Keys), None),
-            item("snippets", Message::ChangeView(View::Snippets), None),
-            item("port_forwards", Message::ChangeView(View::PortForwarding), None),
-            item("history", Message::ChangeView(View::History), None),
             item("settings", Message::ChangeView(View::Settings), hk_settings),
             sep,
             item("local_shell", Message::OpenLocalShell, hk_local_shell),

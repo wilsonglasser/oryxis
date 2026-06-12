@@ -6,7 +6,56 @@ project uses [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## [0.8.2] - Unreleased
 
+### Added
+- **One-time terminal link hint.** The "Ctrl + Click to open the link"
+  hover hint retires itself permanently after the first successful
+  ctrl-click, and is now localized (it was hardcoded English). A new
+  **Reset hints** action in Settings → Interface brings every one-time
+  tip back. (#38)
+- **Reveal (eye) toggles on hidden fields.** The host editor's proxy
+  password, the Share dialog, the AI API key, the master password and
+  export/import passwords, and the sync signaling token can now be
+  shown while typing, the same affordance the unlock screen already
+  had. (#38)
+- **Clickable vault statistics.** About → Vault Statistics gained a
+  Logs count, and every stat row navigates to its section on click. (#38)
+- **Cloud session end notice + reconnect.** When an ECS Exec / kubectl
+  session's process exits (recycled task, idle timeout), the tab marks
+  itself disconnected, prints a notice in the pane and reconnects when
+  the tab is selected again; previously the pane just went silently
+  dead. If the backing dynamic group no longer exists, an error dialog
+  says so instead of failing silently.
+
 ### Changed
+- **"Hosts" area tab is now "Vault"; "History" is now "Logs".** The
+  top-strip tab covers the whole vault surface (hosts, keychain,
+  snippets, port forwarding, logs), so it carries the vault name and a
+  vault icon; the History pill/view was renamed Logs. The burger menu
+  groups the vault surfaces under a "VAULT" section header. (#38)
+- **[+] new-tab button sits next to the last tab** (browser-style).
+  When the strip truly overflows (tabs at minimum width still don't
+  fit) it docks at the strip's trailing edge so it never scrolls out of
+  reach. (#38)
+- **One visual language for the active tab.** Active nav tabs (Vault,
+  SFTP) and the active compact pinned chip paint the same vertical
+  gradient as session tabs; the pinned chip's accent outline was
+  removed. Full-style pins keep their border. (#38)
+- **Honest update checks.** Network failures (DNS, timeout, firewall)
+  are no longer reported as "you're on the latest version": the real
+  cause shows in Settings → About with an inline Retry button, and a
+  manual check from the menu navigates there so the result is always
+  visible. Menu item reworded to "Check for updates". (#38)
+- **"Clear all" in Logs asks for confirmation** and states how many
+  entries are deleted; the button was relabeled and restyled as a
+  destructive action. (#38)
+- **ECS tab titles** prefer the service/container name over the raw
+  task id: "ECS · web (d9808c7b)" instead of a truncated hex string. (#38)
+- Group cards show a trailing chevron so folders read as "openable" at
+  a glance; the theme pickers' "use global theme" row is now a real
+  palette card previewing the effective global palette; "1 hosts"
+  pluralization fixed everywhere; the destroy-vault warning now
+  enumerates exactly what gets deleted; several remaining hardcoded
+  English strings localized across all 17 languages. (#38)
 - **Recording is now opt-in.** Session logging (terminal output capture)
   now defaults to off instead of on, so a fresh install records nothing
   until you ask it to. The new **Connection history** toggle (Settings →

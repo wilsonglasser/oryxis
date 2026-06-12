@@ -129,7 +129,12 @@ impl Oryxis {
             .on_font_size_increase(Message::TerminalFontSizeIncrease)
             .on_font_size_decrease(Message::TerminalFontSizeDecrease)
             .on_paste_request(Message::TerminalPasteFromClipboard)
-            .on_terminal_input(Message::TerminalInput);
+            .on_terminal_input(Message::TerminalInput)
+            .with_link_hint(
+                (!self.hint_link_click_used)
+                    .then(|| crate::i18n::t("terminal_link_hint").to_string()),
+            )
+            .on_link_opened(Message::TerminalLinkOpened);
         // Wrap the canvas so the focused pane asks the OS to enable its IME.
         // The terminal is a canvas (not a text_input), so without this winit
         // keeps the IME disabled and CJK input can't be switched on.

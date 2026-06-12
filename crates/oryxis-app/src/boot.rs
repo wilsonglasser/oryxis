@@ -387,6 +387,7 @@ impl Oryxis {
                 logs: Vec::new(),
                 logs_page: 0,
                 logs_total: 0,
+                clear_history_confirm: false,
                 session_logs: Vec::new(),
                 session_logs_page: 0,
                 session_logs_total: 0,
@@ -450,6 +451,8 @@ impl Oryxis {
                 setting_cloud_orphan_archive_days: "7".into(),
                 setting_scrollback_rows: "10000".into(),
                 setting_word_delimiters: oryxis_terminal::DEFAULT_WORD_DELIMITERS.into(),
+                revealed_secrets: std::collections::HashSet::new(),
+                hint_link_click_used: false,
                 setting_sftp_concurrency: "2".into(),
                 setting_sftp_connect_timeout: "15".into(),
                 setting_sftp_auth_timeout: "30".into(),
@@ -909,6 +912,9 @@ impl Oryxis {
             );
             if let Ok(Some(v)) = vault.get_setting("word_delimiters") {
                 self.setting_word_delimiters = v;
+            }
+            if let Ok(Some(v)) = vault.get_setting("hint_link_click_used") {
+                self.hint_link_click_used = v == "true";
             }
             if let Ok(Some(v)) = vault.get_setting("cloud_auto_refresh_enabled") {
                 self.setting_cloud_auto_refresh_enabled = v == "true";

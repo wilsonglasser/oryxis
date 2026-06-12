@@ -29,10 +29,23 @@ impl Oryxis {
 
         // Cards, first row is the inherit sentinel, the rest are
         // real palette previews. Click commits + closes via the
-        // EditorTerminalThemeChanged handler.
+        // EditorTerminalThemeChanged handler. The inherit row renders
+        // as a real theme card previewing the GLOBAL palette (it used
+        // to be an input-looking box that read as a text field), so
+        // "use global" shows exactly what inheriting means.
         let mut cards: Vec<Element<'_, Message>> = Vec::new();
-        cards.push(crate::widgets::terminal_theme_inherit_card(
+        let global_name = self.resolve_global_terminal_theme_name();
+        let global_palette = self
+            .terminal_palette_for_name(&global_name)
+            .unwrap_or_default();
+        let inherit_label = format!(
+            "{} ({})",
             t("terminal_theme_inherit_global"),
+            global_name,
+        );
+        cards.push(crate::widgets::terminal_theme_card(
+            global_palette,
+            &inherit_label,
             self.editor_form.terminal_theme.is_none(),
             Message::EditorTerminalThemeChanged(String::new()),
         ));
@@ -74,6 +87,13 @@ impl Oryxis {
             Message::EditorCloseThemePicker,
             OryxisColors::t().bg_hover,
         );
+        // Dismiss action hugs the trailing edge (dialog convention),
+        // mirrored under RTL.
+        let close_align = if crate::i18n::is_rtl_layout() {
+            iced::alignment::Horizontal::Left
+        } else {
+            iced::alignment::Horizontal::Right
+        };
 
         let dialog = container(
             column![
@@ -83,7 +103,7 @@ impl Oryxis {
                 Space::new().height(12),
                 container(close_btn)
                     .width(Length::Fill)
-                    .align_x(crate::widgets::dir_align_x()),
+                    .align_x(close_align),
             ],
         )
         .padding(20)

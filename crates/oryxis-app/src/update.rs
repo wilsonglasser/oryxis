@@ -77,6 +77,52 @@ pub enum UpdateArtifact {
     Binary,
 }
 
+/// Why an update check failed, kept separate from "no update available"
+/// so the UI can report the truth instead of claiming up-to-date while
+/// the network is down or firewalled (issue #38).
+#[derive(Debug, Clone)]
+pub enum UpdateError {
+    /// DNS / connect / timeout / TLS failure, with a concise root cause.
+    Network(String),
+    /// Non-2xx HTTP status from the GitHub API.
+    Http(u16),
+    /// Payload didn't contain the expected fields.
+    Parse,
+}
+
+impl std::fmt::Display for UpdateError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            UpdateError::Network(cause) => write!(f, "{cause}"),
+            UpdateError::Http(status) => write!(f, "HTTP {status}"),
+            UpdateError::Parse => write!(f, "unexpected API response"),
+        }
+    }
+}
+
+/// Settings > About status line for the manual update check. An enum
+/// (not a pre-rendered string) so the view picks color + i18n at render
+/// time and language switches don't strand a stale English string.
+#[derive(Debug, Clone, PartialEq)]
+pub enum UpdateStatus {
+    Checking,
+    UpToDate,
+    Failed(String),
+}
+
+/// Boil a reqwest error chain down to its root cause, the part the user
+/// can act on ("failed to lookup address", "connection refused", ...).
+fn concise_cause(e: &reqwest::Error) -> String {
+    if e.is_timeout() {
+        return "timeout".to_string();
+    }
+    let mut src: &dyn std::error::Error = e;
+    while let Some(inner) = src.source() {
+        src = inner;
+    }
+    src.to_string()
+}
+
 /// Release metadata extracted from the GitHub API payload.
 #[derive(Debug, Clone)]
 pub struct UpdateInfo {
@@ -96,9 +142,12 @@ pub struct UpdateInfo {
 }
 
 /// Query the GitHub API for an available update on the given channel.
-/// Returns `None` when already up to date or on any network / parse
-/// error, update notifications are best-effort and never break startup.
-pub async fn check_latest_release(channel: UpdateChannel) -> Option<UpdateInfo> {
+/// `Ok(None)` means genuinely up to date; failures (network, HTTP,
+/// parse) come back as `Err` so callers can distinguish. The silent
+/// boot check logs and ignores errors; the manual check surfaces them.
+pub async fn check_latest_release(
+    channel: UpdateChannel,
+) -> Result<Option<UpdateInfo>, UpdateError> {
     match channel {
         UpdateChannel::Stable => check_stable().await,
         UpdateChannel::Nightly => check_nightly().await,
@@ -106,68 +155,85 @@ pub async fn check_latest_release(channel: UpdateChannel) -> Option<UpdateInfo> 
 }
 
 /// Fetch a release JSON payload from a `releases/...` API path.
-async fn fetch_release(path: &str) -> Option<serde_json::Value> {
+async fn fetch_release(path: &str) -> Result<serde_json::Value, UpdateError> {
     let url = format!("https://api.github.com/repos/{RELEASE_REPO}/{path}");
     let client = reqwest::Client::builder()
         .user_agent(concat!("Oryxis/", env!("CARGO_PKG_VERSION")))
         .timeout(std::time::Duration::from_secs(10))
         .build()
-        .ok()?;
-    let resp = client.get(&url).send().await.ok()?;
+        .map_err(|e| UpdateError::Network(concise_cause(&e)))?;
+    let resp = client
+        .get(&url)
+        .send()
+        .await
+        .map_err(|e| UpdateError::Network(concise_cause(&e)))?;
     if !resp.status().is_success() {
-        return None;
+        return Err(UpdateError::Http(resp.status().as_u16()));
     }
-    resp.json().await.ok()
+    resp.json().await.map_err(|_| UpdateError::Parse)
 }
 
 /// Stable channel: the newest tagged release. Normally only offered when
 /// strictly newer than the running version, but a binary built on the
 /// nightly channel always gets offered the latest stable so flipping the
 /// channel toggle back actually lands the user on a stable build.
-async fn check_stable() -> Option<UpdateInfo> {
+async fn check_stable() -> Result<Option<UpdateInfo>, UpdateError> {
     let json = fetch_release("releases/latest").await?;
-    let tag = json.get("tag_name")?.as_str()?.trim_start_matches('v').to_string();
+    let tag = json
+        .get("tag_name")
+        .and_then(|v| v.as_str())
+        .ok_or(UpdateError::Parse)?
+        .trim_start_matches('v')
+        .to_string();
     let running_nightly = build_channel() == UpdateChannel::Nightly;
     if !running_nightly && !is_newer(&tag, env!("CARGO_PKG_VERSION")) {
-        return None;
+        return Ok(None);
     }
-    let html_url = json.get("html_url")?.as_str()?.to_string();
+    let html_url = json
+        .get("html_url")
+        .and_then(|v| v.as_str())
+        .ok_or(UpdateError::Parse)?
+        .to_string();
     let body = json.get("body").and_then(|v| v.as_str()).unwrap_or("").to_string();
     let (installer_url, installer_name) = pick_asset(&json, UpdateChannel::Stable);
-    Some(UpdateInfo {
+    Ok(Some(UpdateInfo {
         version: tag,
         html_url,
         body,
         installer_url,
         installer_name,
         artifact: UpdateArtifact::Installer,
-    })
+    }))
 }
 
 /// Nightly channel: the rolling `nightly` prerelease. Version numbers
 /// don't move between nightlies, so "newer" means a different target
 /// commit than the one baked into this binary. `/releases/latest` skips
 /// prereleases, hence the explicit tag lookup.
-async fn check_nightly() -> Option<UpdateInfo> {
+async fn check_nightly() -> Result<Option<UpdateInfo>, UpdateError> {
     let json = fetch_release("releases/tags/nightly").await?;
-    let remote_sha = nightly_commit(&json)?;
+    let remote_sha = nightly_commit(&json).ok_or(UpdateError::Parse)?;
     let local_sha = env!("ORYXIS_GIT_SHA");
     // Dev build with no embedded SHA: can't compare, so never nag.
     if local_sha == "unknown" || commit_eq(&remote_sha, local_sha) {
-        return None;
+        return Ok(None);
     }
-    let html_url = json.get("html_url")?.as_str()?.to_string();
+    let html_url = json
+        .get("html_url")
+        .and_then(|v| v.as_str())
+        .ok_or(UpdateError::Parse)?
+        .to_string();
     let body = json.get("body").and_then(|v| v.as_str()).unwrap_or("").to_string();
     let (installer_url, installer_name) = pick_asset(&json, UpdateChannel::Nightly);
     let short: String = remote_sha.chars().take(8).collect();
-    Some(UpdateInfo {
+    Ok(Some(UpdateInfo {
         version: format!("nightly ({short})"),
         html_url,
         body,
         installer_url,
         installer_name,
         artifact: UpdateArtifact::Binary,
-    })
+    }))
 }
 
 /// Extract the commit the `nightly` release points at. The publish job

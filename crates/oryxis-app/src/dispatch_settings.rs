@@ -758,6 +758,27 @@ impl Oryxis {
                     if self.setting_keyword_highlight { "true" } else { "false" },
                 );
             }
+            Message::TerminalLinkOpened => {
+                // First successful ctrl-click on a link: the hint did
+                // its job, retire it permanently (until "Reset hints").
+                if !self.hint_link_click_used {
+                    self.hint_link_click_used = true;
+                    self.persist_setting("hint_link_click_used", "true");
+                }
+            }
+            Message::ToggleSecretVisibility(field) => {
+                if !self.revealed_secrets.remove(&field) {
+                    self.revealed_secrets.insert(field);
+                }
+            }
+            Message::ResetHints => {
+                if let Some(vault) = &self.vault
+                    && let Err(e) = vault.delete_settings_with_prefix("hint_")
+                {
+                    tracing::warn!("failed to reset hints: {e}");
+                }
+                self.hint_link_click_used = false;
+            }
             Message::ToggleSmartContrast => {
                 self.setting_smart_contrast = !self.setting_smart_contrast;
                 self.persist_setting(

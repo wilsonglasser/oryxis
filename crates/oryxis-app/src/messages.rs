@@ -255,6 +255,11 @@ pub enum Message {
 
     // Terminal I/O
     PtyOutput(Uuid, Vec<u8>),  // (pane_id, bytes)
+    /// A cloud plugin PTY stream ended (session-manager-plugin /
+    /// kubectl exited). Marks the tab disconnected, prints an in-pane
+    /// notice and re-arms `pending_reopen` so selecting the tab again
+    /// reconnects (the pane previously just went silently dead).
+    PluginSessionEnded(Uuid),
     KeyboardEvent(keyboard::Event),
     /// Text committed by the OS IME (e.g. a composed CJK character).
     /// Arrives separately from `KeyboardEvent`; forwarded to the active
@@ -546,6 +551,8 @@ pub enum Message {
     ClearAllKnownHosts,
 
     // History
+    RequestClearHistory,
+    CancelClearHistory,
     ClearLogs,
     LogsPageNext,
     LogsPagePrev,
@@ -582,6 +589,13 @@ pub enum Message {
     /// reports, wheel-to-arrow translation). Routed to the active SSH
     /// session, falling back to the local PTY.
     TerminalInput(Vec<u8>),
+    /// The user ctrl-clicked a link in the terminal: retire the
+    /// one-time hover hint (persisted as `hint_link_click_used`).
+    TerminalLinkOpened,
+    /// Settings: clear every `hint_*` one-time flag so all tips show again.
+    ResetHints,
+    /// Flip the reveal/eye state of a secret input field.
+    ToggleSecretVisibility(crate::state::SecretField),
     /// Settings: switch the auto-update release channel (stable/nightly).
     SettingUpdateChannelChanged(crate::update::UpdateChannel),
     ChangeSettingsSection(SettingsSection),
@@ -630,6 +644,9 @@ pub enum Message {
     CheckForUpdate,
     CheckForUpdateManual,
     UpdateCheckResult(Option<crate::update::UpdateInfo>),
+    /// Manual update check failed (network / HTTP / parse); carries the
+    /// concise cause for the Settings > About status line + toast.
+    UpdateCheckFailed(String),
     UpdateSkipVersion,
     UpdateLater,
     UpdateStartDownload,

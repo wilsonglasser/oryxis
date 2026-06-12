@@ -720,6 +720,8 @@ pub struct Oryxis {
     pub(crate) logs: Vec<oryxis_core::models::log_entry::LogEntry>,
     pub(crate) logs_page: usize,
     pub(crate) logs_total: usize,
+    /// "Clear all" confirmation modal for the Logs view.
+    pub(crate) clear_history_confirm: bool,
 
     // Session logs (terminal recording)
     pub(crate) session_logs: Vec<oryxis_vault::SessionLogEntry>,
@@ -864,6 +866,14 @@ pub struct Oryxis {
     /// `oryxis_terminal::DEFAULT_WORD_DELIMITERS`; the Terminal settings
     /// panel lets the user customise or reset it.
     pub(crate) setting_word_delimiters: String,
+    /// Secret fields currently revealed via their eye toggle. Render
+    /// state only, never persisted; cleared per-field on toggle.
+    pub(crate) revealed_secrets: std::collections::HashSet<crate::state::SecretField>,
+    /// One-time hint state: true once the user has ctrl-clicked a link
+    /// in the terminal, which permanently retires the hover hint.
+    /// Persisted as the `hint_link_click_used` setting; "Reset hints"
+    /// clears every `hint_*` key and flips this back.
+    pub(crate) hint_link_click_used: bool,
     /// Max parallel SFTP transfer slots (uploads/downloads). 1 = serial,
     /// up to 8 = aggressive. Each slot gets its own SFTP subsystem
     /// channel on the same SSH connection so they don't fight for the
@@ -899,9 +909,9 @@ pub struct Oryxis {
     pub(crate) update_progress: f32,
     pub(crate) update_error: Option<String>,
     /// Last manual-check outcome shown near the "Check now" button in
-    /// settings. `Some("")` → in-flight; `Some("Up to date.")` → no newer
-    /// release; `Some("Error: …")` on failure. `None` hides the line.
-    pub(crate) update_check_status: Option<String>,
+    /// settings. `None` hides the line; the enum picks i18n + color at
+    /// render time (Checking / UpToDate / Failed(cause)).
+    pub(crate) update_check_status: Option<crate::update::UpdateStatus>,
     /// Attempt counters keyed by connection UUID, persists across tab recreations.
     pub(crate) reconnect_counters: std::collections::HashMap<Uuid, u32>,
 
@@ -1081,6 +1091,17 @@ pub struct Oryxis {
 // `boot`, `load_data_from_vault`, `persist_setting` live in `crate::boot`.
 
 impl Oryxis {
+    /// Whether the Logs surface (sub-nav pill, sidebar entry, burger
+    /// menu item) should render at all. Auto-hidden until the feature
+    /// is real for this user: a recording toggle is on, or the vault
+    /// already holds recorded data (issue #38, zero-config visibility).
+    pub(crate) fn logs_surface_visible(&self) -> bool {
+        self.setting_session_logging
+            || self.setting_connection_history
+            || self.logs_total > 0
+            || self.session_logs_total > 0
+    }
+
     /// Vertical offset (px) that toolbar dropdown anchors should use
     /// to land below the toolbar buttons on the dashboard, regardless
     /// of layout mode. Stack of contributions, top to bottom:
