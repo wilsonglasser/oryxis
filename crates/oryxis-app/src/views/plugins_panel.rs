@@ -381,6 +381,17 @@ fn plugin_card(entry: &PluginUiEntry) -> Element<'_, Message> {
                 OryxisColors::t().text_secondary,
                 false,
             ));
+            // The dev binary itself isn't managed here, but cached
+            // downloads it shadows (and the MCP launcher copy) are.
+            if entry.cached_install {
+                actions.push(Space::new().width(8).into());
+                actions.push(pill_button(
+                    crate::i18n::t("plugin_action_remove_downloads"),
+                    Some(Message::PluginUninstall(id.clone())),
+                    OryxisColors::t().error,
+                    false,
+                ));
+            }
         }
         PluginUiStatus::Failed(_) => {
             actions.push(pill_button(

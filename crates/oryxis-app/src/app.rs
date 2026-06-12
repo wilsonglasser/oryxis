@@ -914,6 +914,9 @@ pub struct Oryxis {
     /// Whether connection events (connect / disconnect / auth failure /
     /// error) are recorded to the vault log. Gates every `add_log` site.
     pub(crate) setting_connection_history: bool,
+    /// Auto-delete retention for Logs ("off", "1d", "3d", "7d",
+    /// "14d", "30d", "90d"). Applied at boot and when changed.
+    pub(crate) setting_logs_retention: String,
     pub(crate) setting_auto_check_updates: bool,
     /// Release stream the updater follows (`stable` / `nightly`).
     pub(crate) setting_update_channel: crate::update::UpdateChannel,
@@ -1106,6 +1109,19 @@ pub struct Oryxis {
 // `boot`, `load_data_from_vault`, `persist_setting` live in `crate::boot`.
 
 impl Oryxis {
+    /// Days for a retention code; `None` = retention off.
+    pub(crate) fn retention_days(code: &str) -> Option<i64> {
+        match code {
+            "1d" => Some(1),
+            "3d" => Some(3),
+            "7d" => Some(7),
+            "14d" => Some(14),
+            "30d" => Some(30),
+            "90d" => Some(90),
+            _ => None,
+        }
+    }
+
     /// Whether the Logs surface (sub-nav pill, sidebar entry, burger
     /// menu item) should render at all. Auto-hidden until the feature
     /// is real for this user: a recording toggle is on, or the vault

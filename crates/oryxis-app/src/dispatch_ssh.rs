@@ -788,6 +788,29 @@ impl Oryxis {
                     if self.setting_connection_history { "true" } else { "false" },
                 );
             }
+            Message::LogsRetentionChanged(code) => {
+                self.setting_logs_retention = code.to_string();
+                self.persist_setting("logs_retention", code);
+                // Apply right away so picking a shorter window has a
+                // visible effect, then refresh the cached Logs state.
+                if let Some(days) = Self::retention_days(code)
+                    && let Some(vault) = &self.vault
+                {
+                    let cutoff = chrono::Utc::now() - chrono::Duration::days(days);
+                    match vault.prune_logs_older_than(cutoff) {
+                        Ok(0) => {}
+                        Ok(n) => tracing::info!("logs retention pruned {n} rows"),
+                        Err(e) => tracing::warn!("logs retention prune failed: {e}"),
+                    }
+                    self.logs_page = 0;
+                    self.session_logs_page = 0;
+                    self.logs_total = vault.count_logs().unwrap_or(0);
+                    self.logs = vault.list_logs_page(0, 50).unwrap_or_default();
+                    self.session_logs_total = vault.count_session_logs().unwrap_or(0);
+                    self.session_logs =
+                        vault.list_session_logs_page(0, 50).unwrap_or_default();
+                }
+            }
             Message::SettingToggleAutoCheckUpdates => {
                 self.setting_auto_check_updates = !self.setting_auto_check_updates;
                 self.persist_setting(

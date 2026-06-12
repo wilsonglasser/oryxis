@@ -55,10 +55,24 @@ pub(crate) fn load_plugin_entries(
                 status: detect_status(provider_id),
                 auto_update,
                 pinned_version,
+                cached_install: cached_install_present(provider_id),
                 manifest: None,
             }
         })
         .collect()
+}
+
+/// True when the plugin cache holds downloaded files for this
+/// provider (any cached version, or the MCP launcher copy). Drives
+/// the remove action even when a dev binary shadows the cache.
+pub(crate) fn cached_install_present(provider_id: &str) -> bool {
+    let cached = cache::installed_versions(provider_id)
+        .map(|v| !v.is_empty())
+        .unwrap_or(false);
+    if cached {
+        return true;
+    }
+    provider_id == "mcp" && crate::mcp_install::is_installed()
 }
 
 /// Resolve a provider's install status from disk: a freshly-built
@@ -433,6 +447,7 @@ impl Oryxis {
                     self.plugins.iter_mut().find(|p| p.provider_id == id)
                 {
                     entry.status = detect_status(&id);
+                    entry.cached_install = cached_install_present(&id);
                     entry.manifest = None;
                 }
                 Ok(Task::none())

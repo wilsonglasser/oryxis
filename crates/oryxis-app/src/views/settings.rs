@@ -361,6 +361,44 @@ impl Oryxis {
                         .size(11).color(OryxisColors::t().text_muted),
                 ]);
 
+                // Retention: auto-delete connection events + finished
+                // recordings past the picked age. Codes are stable
+                // setting values; the mapper localizes per code.
+                const RETENTION_CODES: [&str; 7] =
+                    ["off", "1d", "3d", "7d", "14d", "30d", "90d"];
+                let retention_selected = RETENTION_CODES
+                    .iter()
+                    .copied()
+                    .find(|c| *c == self.setting_logs_retention)
+                    .unwrap_or("off");
+                let logs_retention_section = panel_section(column![
+                    text(crate::i18n::t("log_retention_label"))
+                        .size(13)
+                        .color(OryxisColors::t().text_primary),
+                    Space::new().height(4),
+                    text(t("setting_log_retention_desc"))
+                        .size(11).color(OryxisColors::t().text_muted),
+                    Space::new().height(8),
+                    pick_list(
+                        Some(retention_selected),
+                        &RETENTION_CODES[..],
+                        |code: &&str| {
+                            crate::i18n::t(match *code {
+                                "1d" => "log_retention_1d",
+                                "3d" => "log_retention_3d",
+                                "7d" => "log_retention_7d",
+                                "14d" => "log_retention_14d",
+                                "30d" => "log_retention_30d",
+                                "90d" => "log_retention_90d",
+                                _ => "log_retention_off",
+                            })
+                            .to_string()
+                        },
+                    )
+                    .on_select(Message::LogsRetentionChanged)
+                    .width(260).padding(10).style(crate::widgets::rounded_pick_list_style),
+                ]);
+
                 let auto_reconnect_enabled = self.setting_auto_reconnect;
                 let auto_reconnect_section = panel_section(column![
                     toggle_row(
@@ -401,6 +439,8 @@ impl Oryxis {
                             session_logging_section,
                             Space::new().height(12),
                             connection_history_section,
+                            Space::new().height(12),
+                            logs_retention_section,
                             Space::new().height(12),
                             font_size_section,
                             Space::new().height(12),

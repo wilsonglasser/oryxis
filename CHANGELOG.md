@@ -77,7 +77,12 @@ project uses [SemVer](https://semver.org/spec/v2.0.0.html).
   the buttons used to be.
 - **Plugin uninstall confirmation.** Removing a plugin asks first, and
   removing the MCP plugin also deletes the stable launcher copy and
-  flips the MCP Server toggle off.
+  flips the MCP Server toggle off. Dev builds offer "Remove downloaded
+  files" when cached plugin downloads exist alongside the local binary.
+- **Log retention setting.** Settings can auto-delete connection events
+  and finished session recordings older than 1/3/7 days, 2 weeks, or
+  1/3 months (default: never). Applied at boot and immediately when
+  the option changes; in-progress recordings are never pruned.
 - **One-time terminal link hint.** The "Ctrl + Click to open the link"
   hover hint retires itself permanently after the first successful
   ctrl-click, and is now localized (it was hardcoded English). A new

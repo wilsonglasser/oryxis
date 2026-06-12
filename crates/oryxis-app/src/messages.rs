@@ -584,6 +584,9 @@ pub enum Message {
     // Settings
     LockVault,
     TerminalThemeChanged(String),
+    /// Retention code picked in Settings ("off" / "1d" / ... / "90d");
+    /// persists and prunes immediately.
+    LogsRetentionChanged(&'static str),
     AppThemeChanged(String),
     TerminalFontSizeIncrease,
     TerminalFontSizeDecrease,

@@ -465,6 +465,7 @@ impl Oryxis {
                 setting_os_detection: true,
                 setting_session_logging: false,
                 setting_connection_history: false,
+                setting_logs_retention: "off".into(),
                 setting_auto_check_updates: true,
                 setting_update_channel: crate::update::UpdateChannel::default(),
                 pending_update: None,
@@ -686,6 +687,19 @@ impl Oryxis {
             self.custom_ui_themes = vault.list_custom_ui_themes().unwrap_or_default();
             self.port_forward_rules = vault.list_port_forward_rules().unwrap_or_default();
             self.known_hosts = vault.list_known_hosts().unwrap_or_default();
+            // Retention: drop events + finished recordings past the
+            // configured age before the lists are loaded, so the boot
+            // state never shows rows that are about to disappear.
+            if let Ok(Some(code)) = vault.get_setting("logs_retention")
+                && let Some(days) = Self::retention_days(&code)
+            {
+                let cutoff = chrono::Utc::now() - chrono::Duration::days(days);
+                match vault.prune_logs_older_than(cutoff) {
+                    Ok(0) => {}
+                    Ok(n) => tracing::info!("logs retention pruned {n} rows"),
+                    Err(e) => tracing::warn!("logs retention prune failed: {e}"),
+                }
+            }
             self.logs_total = vault.count_logs().unwrap_or(0);
             self.logs = vault.list_logs_page(self.logs_page * 50, 50).unwrap_or_default();
             self.session_logs_total = vault.count_session_logs().unwrap_or(0);
@@ -944,6 +958,9 @@ impl Oryxis {
             }
             if let Ok(Some(v)) = vault.get_setting("connection_history") {
                 self.setting_connection_history = v == "true";
+            }
+            if let Ok(Some(v)) = vault.get_setting("logs_retention") {
+                self.setting_logs_retention = v;
             }
             if let Ok(Some(v)) = vault.get_setting("auto_check_updates") {
                 self.setting_auto_check_updates = v == "true";

@@ -1502,6 +1502,10 @@ pub struct PluginUiEntry {
     pub auto_update: bool,
     /// User-pinned version. When set, the updater won't move off it.
     pub pinned_version: Option<String>,
+    /// Downloaded binaries exist in the plugin cache (or, for MCP,
+    /// the launcher copy). Lets a dev build still offer "remove
+    /// downloaded files" for the cache it shadows.
+    pub cached_install: bool,
     /// Last successfully fetched manifest. Drives the install modal's
     /// size / changelog. `None` until a check runs (and on every
     /// machine until the manifest host exists, see PR 6).

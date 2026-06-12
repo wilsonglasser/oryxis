@@ -2440,6 +2440,32 @@ impl VaultStore {
         Ok(n as usize)
     }
 
+    /// Delete connection events and *finished* session recordings
+    /// older than `cutoff` (retention setting). In-progress sessions
+    /// are never pruned: their rows are still being appended to.
+    /// Returns how many rows (events + sessions) were removed.
+    pub fn prune_logs_older_than(
+        &self,
+        cutoff: chrono::DateTime<Utc>,
+    ) -> Result<usize, VaultError> {
+        let cutoff = cutoff.to_rfc3339();
+        let events = self.db.execute(
+            "DELETE FROM logs WHERE timestamp < ?1",
+            params![cutoff],
+        )?;
+        self.db.execute(
+            "DELETE FROM session_log_chunks WHERE log_id IN
+                 (SELECT id FROM session_logs
+                  WHERE ended_at IS NOT NULL AND started_at < ?1)",
+            params![cutoff],
+        )?;
+        let sessions = self.db.execute(
+            "DELETE FROM session_logs WHERE ended_at IS NOT NULL AND started_at < ?1",
+            params![cutoff],
+        )?;
+        Ok(events + sessions)
+    }
+
     /// Drop every session log row (and its recorded chunks).
     pub fn clear_session_logs(&self) -> Result<(), VaultError> {
         self.db.execute("DELETE FROM session_log_chunks", [])?;
