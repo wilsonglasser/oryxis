@@ -1002,16 +1002,18 @@ impl Oryxis {
             PinnedTabSpec::EcsExec {
                 group_id,
                 task_id,
-                task_label,
                 container,
                 ..
             } => {
                 cloud = true;
-                Some(Message::ConnectEcsExecTask {
+                // ECS task ids are ephemeral (services recycle tasks), so
+                // a saved id is expected to go stale. Resolve the group
+                // and connect to the task currently running; the saved id
+                // only wins when it still exists.
+                Some(Message::EcsExecConnectFreshTask {
                     group_id: *group_id,
-                    task_id: task_id.clone(),
-                    task_label: task_label.clone(),
                     container: container.clone(),
+                    fallback_task_id: task_id.clone(),
                 })
             }
             PinnedTabSpec::KubectlExec {

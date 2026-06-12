@@ -83,7 +83,27 @@ impl Oryxis {
                     },
                     Err(msg) => DynamicGroupState::Failed(msg),
                 };
+                let loaded = matches!(next, DynamicGroupState::Loaded { .. });
                 self.cloud_dynamic_group_state.insert(gid, next);
+                // A deferred connect-to-current-task was waiting on this
+                // resolve: replay it now that the listing is fresh. Only
+                // on Loaded; a Failed resolve must not loop the resolve.
+                if let Some(pending) = self
+                    .pending_ecs_autoconnect
+                    .take_if(|p| p.group_id == gid)
+                {
+                    if loaded {
+                        return Ok(self.update(Message::EcsExecConnectFreshTask {
+                            group_id: pending.group_id,
+                            container: pending.container,
+                            fallback_task_id: pending.fallback_task_id,
+                        }));
+                    }
+                    self.show_error_dialog(
+                        crate::i18n::t("ecs_exec_start_failed_title").to_string(),
+                        crate::i18n::t("ecs_exec_no_running_tasks").to_string(),
+                    );
+                }
             }
 
             // ---- Edit dynamic group panel ----

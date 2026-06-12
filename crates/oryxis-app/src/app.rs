@@ -826,6 +826,9 @@ pub struct Oryxis {
     /// (found by this id) in place, so its strip chip doesn't blink out during
     /// the async connect, and inherit its slot + pin.
     pub(crate) pin_next_plugin_tab: Option<uuid::Uuid>,
+    /// See `state::PendingEcsAutoConnect`: deferred connect-to-current
+    /// ECS task while the dynamic group re-resolves.
+    pub(crate) pending_ecs_autoconnect: Option<crate::state::PendingEcsAutoConnect>,
     /// In-progress tab reorder drag (see `TabDrag`). `None` when not dragging.
     pub(crate) tab_drag: Option<crate::state::TabDrag>,
     /// When on, each tab paints a small colored dot over its OS badge:

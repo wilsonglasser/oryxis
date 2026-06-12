@@ -433,6 +433,7 @@ impl Oryxis {
                 setting_tab_close_button_side: "left".into(),
                 setting_pinned_tab_style: "compact".into(),
                 pin_next_plugin_tab: None,
+                pending_ecs_autoconnect: None,
                 tab_drag: None,
                 setting_show_tab_status_dot: true,
                 setting_tab_accent_line: true,

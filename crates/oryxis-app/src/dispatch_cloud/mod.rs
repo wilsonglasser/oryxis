@@ -322,6 +322,7 @@ impl Oryxis {
             title,
             body,
             link: None,
+            action: None,
         });
     }
 
@@ -337,6 +338,7 @@ impl Oryxis {
                 label: crate::i18n::t("error_dialog_open_aws_docs").to_string(),
                 url: crate::session_manager_plugin::AWS_DOCS_INSTALL_URL.to_string(),
             }),
+            action: None,
         });
     }
 

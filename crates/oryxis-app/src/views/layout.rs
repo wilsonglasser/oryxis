@@ -18,6 +18,40 @@ const RESIZE_EDGE: f32 = 5.0;
 /// Owned-label variant of `styled_button` for the error dialog link. The
 /// label and URL come from `ErrorDialog` clones with no static lifetime,
 /// so `styled_button(&str, ...)` would dangle on return.
+/// Primary recovery-action button for the error dialog. Owned label
+/// (the text comes from dialog state, not a 'static i18n ref); pressing
+/// fires `ErrorDialogRunAction`, which dismisses the dialog and
+/// dispatches the action's carried message.
+fn dialog_action_button<'a>(label: String) -> Element<'a, Message> {
+    let color = OryxisColors::t().accent;
+    let fg = OryxisColors::t().button_text;
+    button(
+        container(
+            text(label).size(12).font(iced::Font {
+                weight: iced::font::Weight::Bold,
+                ..iced::Font::new(crate::theme::SYSTEM_UI_FAMILY)
+            }).color(fg),
+        )
+        .padding(Padding { top: 5.0, right: 18.0, bottom: 5.0, left: 18.0 }),
+    )
+    .on_press(Message::ErrorDialogRunAction)
+    .style(move |_, status| {
+        let bg = match status {
+            iced::widget::button::Status::Hovered => Color { a: 0.85, ..color },
+            _ => color,
+        };
+        iced::widget::button::Style {
+            background: Some(Background::Color(bg)),
+            border: Border {
+                radius: Radius::from(6.0),
+                ..Default::default()
+            },
+            ..Default::default()
+        }
+    })
+    .into()
+}
+
 fn open_link_button<'a>(label: String, url: String) -> Element<'a, Message> {
     let color = OryxisColors::t().accent;
     let fg = OryxisColors::t().button_text;
@@ -366,6 +400,12 @@ impl Oryxis {
             .spacing(8);
             if let Some(link) = dialog.link.clone() {
                 buttons = buttons.push(open_link_button(link.label, link.url));
+            }
+            if let Some(action) = dialog.action.clone() {
+                // Recovery action, accent-styled like the link button;
+                // dispatching goes through ErrorDialogRunAction so the
+                // dialog also dismisses itself.
+                buttons = buttons.push(dialog_action_button(action.label));
             }
 
             // Body uses Rich text with `.selectable(true)` so the user

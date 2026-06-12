@@ -681,12 +681,34 @@ pub(crate) struct ErrorDialog {
     /// Optional learn-more / install-instructions link. Rendered as a
     /// secondary button. `None` = no link button.
     pub link: Option<ErrorDialogLink>,
+    /// Optional recovery action rendered as a primary button; pressing
+    /// it dismisses the dialog and dispatches the carried message
+    /// (`Message::ErrorDialogRunAction`). `None` = Close only.
+    pub action: Option<ErrorDialogAction>,
 }
 
 #[derive(Debug, Clone)]
 pub(crate) struct ErrorDialogLink {
     pub label: String,
     pub url: String,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct ErrorDialogAction {
+    pub label: String,
+    pub message: Box<crate::app::Message>,
+}
+
+/// Armed when the user asked to reconnect an ECS Exec session whose
+/// task is gone while the dynamic group is still resolving. Once
+/// `DynamicGroupResolved` lands for `group_id`, the handler picks the
+/// running task (preferring `fallback_task_id` when it survived) and
+/// connects.
+#[derive(Debug, Clone)]
+pub(crate) struct PendingEcsAutoConnect {
+    pub group_id: Uuid,
+    pub container: String,
+    pub fallback_task_id: String,
 }
 
 // ---------------------------------------------------------------------------

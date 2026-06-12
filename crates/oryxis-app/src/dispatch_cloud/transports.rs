@@ -53,6 +53,62 @@ impl Oryxis {
                 }
                 Ok(Task::none())
             }
+            Message::EcsExecConnectFreshTask {
+                group_id,
+                container,
+                fallback_task_id,
+            } => {
+                self.error_dialog = None;
+                match self.cloud_dynamic_group_state.get(&group_id) {
+                    Some(crate::state::DynamicGroupState::Loaded { hosts, .. }) => {
+                        let running: Vec<&oryxis_cloud::DiscoveredHost> = hosts
+                            .iter()
+                            .filter(|h| h.status.as_deref() == Some("RUNNING"))
+                            .collect();
+                        // Prefer the original task when it still exists
+                        // (e.g. the failure was transient), else take the
+                        // first task currently running.
+                        let pick = running
+                            .iter()
+                            .find(|h| h.resource_id == fallback_task_id)
+                            .or_else(|| running.first());
+                        if let Some(host) = pick {
+                            let container = host
+                                .container_name
+                                .clone()
+                                .filter(|c| !c.is_empty())
+                                .unwrap_or(container);
+                            return Ok(self.update(Message::ConnectEcsExecTask {
+                                group_id,
+                                task_id: host.resource_id.clone(),
+                                task_label: host.label.clone(),
+                                container,
+                            }));
+                        }
+                        // Nothing running: land on the listing so the task
+                        // states are visible, with a dialog saying why.
+                        self.show_error_dialog(
+                            crate::i18n::t("ecs_exec_start_failed_title").to_string(),
+                            crate::i18n::t("ecs_exec_no_running_tasks").to_string(),
+                        );
+                        Ok(self.update(Message::OpenGroup(group_id)))
+                    }
+                    _ => {
+                        // Listing missing, stale, or still resolving: arm the
+                        // deferred connect and (re-)kick the resolve. The
+                        // DynamicGroupResolved handler completes the jump.
+                        self.pending_ecs_autoconnect =
+                            Some(crate::state::PendingEcsAutoConnect {
+                                group_id,
+                                container,
+                                fallback_task_id,
+                            });
+                        Ok(self
+                            .handle_cloud(Message::DynamicGroupResolve(group_id))
+                            .unwrap_or_else(|_| Task::none()))
+                    }
+                }
+            }
             Message::ConnectEcsExecTask {
                 group_id,
                 task_id,
@@ -371,18 +427,65 @@ impl Oryxis {
                             );
                             let _ = vault.add_log(&entry);
                         }
-                        self.show_error_dialog(
-                            crate::i18n::t("ecs_exec_start_failed_title").to_string(),
-                            msg,
-                        );
-                        // A failed connect usually means the cached task
-                        // recycled out from under us (the clicked task_id
-                        // no longer exists). Re-resolve the group so the
-                        // live task replaces the dead row, sparing the
-                        // user the manual Refresh click before retrying.
-                        return Ok(self
+                        // Re-arm the dormant pinned placeholder (when this
+                        // connect came from one) so selecting the tab again
+                        // retries through the fresh-task path instead of
+                        // staying a dead pane, and tell the user why inside
+                        // the pane itself.
+                        if let Some(dormant_id) = self.pin_next_plugin_tab
+                            && let Some(tab) =
+                                self.tabs.iter_mut().find(|t| t._id == dormant_id)
+                        {
+                            tab.pending_reopen =
+                                Some(crate::state::PinnedTabSpec::EcsExec {
+                                    group_id,
+                                    task_id: task_id.clone(),
+                                    task_label: task_label.clone(),
+                                    container: container.clone(),
+                                    label: tab.label.clone(),
+                                });
+                            if let Some(pane) = tab.pane_grid.panes.values().next()
+                                && let Ok(mut term) = pane.terminal.lock()
+                            {
+                                let notice = format!(
+                                    "
+[2m  {}[0m
+",
+                                    crate::i18n::t("ecs_exec_retry_hint")
+                                );
+                                term.process(notice.as_bytes());
+                            }
+                        }
+                        // Dialog with a recovery button: connect to the task
+                        // currently running instead of the recycled one.
+                        self.error_dialog = Some(crate::state::ErrorDialog {
+                            title: crate::i18n::t("ecs_exec_start_failed_title")
+                                .to_string(),
+                            body: format!(
+                                "{msg}
+
+{}",
+                                crate::i18n::t("ecs_exec_retry_hint")
+                            ),
+                            link: None,
+                            action: Some(crate::state::ErrorDialogAction {
+                                label: crate::i18n::t("ecs_exec_connect_current")
+                                    .to_string(),
+                                message: Box::new(Message::EcsExecConnectFreshTask {
+                                    group_id,
+                                    container,
+                                    fallback_task_id: task_id,
+                                }),
+                            }),
+                        });
+                        // Land on the group's task listing behind the dialog
+                        // (so the live tasks are visible either way) and
+                        // re-resolve it so the dead row is replaced.
+                        let nav = self.update(Message::OpenGroup(group_id));
+                        let resolve = self
                             .handle_cloud(Message::DynamicGroupResolve(group_id))
-                            .unwrap_or_else(|_| Task::none()));
+                            .unwrap_or_else(|_| Task::none());
+                        return Ok(Task::batch([nav, resolve]));
                     }
                 };
 

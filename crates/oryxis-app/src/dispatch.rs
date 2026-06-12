@@ -727,6 +727,13 @@ impl Oryxis {
             Message::ToastClear => {
                 self.toast = None;
             }
+            Message::ErrorDialogRunAction => {
+                if let Some(dialog) = self.error_dialog.take()
+                    && let Some(action) = dialog.action
+                {
+                    return self.update(*action.message);
+                }
+            }
             Message::ErrorDialogDismiss => {
                 self.error_dialog = None;
             }

@@ -198,6 +198,9 @@ pub enum Message {
     /// Dismiss the blocking error dialog (`Oryxis.error_dialog`). Fired
     /// by the OK button or by clicking the scrim.
     ErrorDialogDismiss,
+    /// Fire the dialog's optional recovery action: dismisses the
+    /// dialog and dispatches the message it carries.
+    ErrorDialogRunAction,
     SftpEditReady(crate::state::EditSession),
     SftpEditSave,
     SftpEditDiscard,
@@ -866,6 +869,17 @@ pub enum Message {
     /// User clicked a task row inside an open dynamic group. Carries
     /// the group id (so we can find the cloud_query) and the task's
     /// `resource_id` (the task ARN suffix). Triggers ECS Exec.
+    /// Connect to whichever task of the dynamic group is currently
+    /// running, re-resolving first when the cached listing is stale.
+    /// Used by pinned-tab reopen (the stored task id is ephemeral by
+    /// nature) and by the "connect to current task" recovery button
+    /// after an exec failure. `fallback_task_id` wins when it still
+    /// exists; otherwise the first RUNNING task is picked.
+    EcsExecConnectFreshTask {
+        group_id: Uuid,
+        container: String,
+        fallback_task_id: String,
+    },
     ConnectEcsExecTask {
         group_id: Uuid,
         task_id: String,
