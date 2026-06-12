@@ -295,6 +295,9 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "smart_contrast" => "Akıllı kontrast (mavi-üstüne-mavi kurtarma)",
         "keepalive_interval" => "Keepalive Aralığı",
         "scrollback" => "Geri kaydırma",
+        "word_delimiters" => "Sözcük ayırıcıları",
+        "setting_word_delimiters_desc" => "Çift tıklamayla seçimde sözcükleri ayıran karakterler. Üç tıklama her zaman tüm satırı seçer.",
+        "word_delimiters_reset" => "Varsayılana sıfırla",
         "vault_password" => "Kasa Parolası",
 
         // AI Chat

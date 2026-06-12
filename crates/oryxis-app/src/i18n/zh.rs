@@ -294,6 +294,9 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "smart_contrast" => "智能对比度（拯救蓝底蓝字）",
         "keepalive_interval" => "心跳间隔",
         "scrollback" => "回滚行数",
+        "word_delimiters" => "单词分隔符",
+        "setting_word_delimiters_desc" => "双击选择时用于分隔单词的字符。三击始终选择整行。",
+        "word_delimiters_reset" => "恢复默认",
         "vault_password" => "保险库密码",
 
         "ai_chat" => "AI 对话",

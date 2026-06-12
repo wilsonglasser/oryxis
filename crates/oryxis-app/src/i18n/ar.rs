@@ -295,6 +295,9 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "smart_contrast" => "تباين ذكي (تصحيح الأزرق على الأزرق)",
         "keepalive_interval" => "فاصل البقاء على قيد الاتصال",
         "scrollback" => "سجل التمرير",
+        "word_delimiters" => "فواصل الكلمات",
+        "setting_word_delimiters_desc" => "الأحرف التي تفصل الكلمات عند التحديد بالنقر المزدوج. النقر الثلاثي يحدد السطر بأكمله دائمًا.",
+        "word_delimiters_reset" => "إعادة التعيين",
         "vault_password" => "كلمة مرور الخزنة",
 
         // AI Chat

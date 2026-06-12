@@ -208,6 +208,29 @@ impl Oryxis {
                         .style(crate::widgets::rounded_input_style).align_x(dir_align_x()),
                 ]);
 
+                let word_delimiters_section = panel_section(column![
+                    text(crate::i18n::t("word_delimiters")).size(13).color(OryxisColors::t().text_primary),
+                    Space::new().height(4),
+                    text(t("setting_word_delimiters_desc"))
+                        .size(11).color(OryxisColors::t().text_muted),
+                    Space::new().height(8),
+                    dir_row(vec![
+                        text_input(oryxis_terminal::DEFAULT_WORD_DELIMITERS, &self.setting_word_delimiters)
+                            .on_input(Message::SettingWordDelimitersChanged)
+                            .padding(10)
+                            .width(240)
+                            .style(crate::widgets::rounded_input_style)
+                            .align_x(dir_align_x())
+                            .into(),
+                        Space::new().width(8).into(),
+                        styled_button(
+                            crate::i18n::t("word_delimiters_reset"),
+                            Message::SettingResetWordDelimiters,
+                            OryxisColors::t().bg_selected,
+                        ),
+                    ]).align_y(iced::Alignment::Center),
+                ]);
+
                 // Terminal theme picker. First card is the "follow
                 // app theme" sentinel (terminal_theme_override = None);
                 // the rest are explicit palette previews so the user
@@ -355,6 +378,8 @@ impl Oryxis {
                             keepalive_section,
                             Space::new().height(12),
                             scrollback_section,
+                            Space::new().height(12),
+                            word_delimiters_section,
                             Space::new().height(12),
                             auto_reconnect_section,
                             Space::new().height(12),

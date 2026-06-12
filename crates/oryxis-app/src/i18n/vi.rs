@@ -295,6 +295,9 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "smart_contrast" => "Tương phản thông minh (cứu xanh-trên-xanh)",
         "keepalive_interval" => "Khoảng Keepalive",
         "scrollback" => "Vùng cuộn lại",
+        "word_delimiters" => "Ký tự phân tách từ",
+        "setting_word_delimiters_desc" => "Các ký tự phân tách từ khi chọn bằng nhấp đúp. Nhấp ba lần luôn chọn toàn bộ dòng.",
+        "word_delimiters_reset" => "Đặt lại mặc định",
         "vault_password" => "Mật khẩu kho",
 
         // AI Chat

@@ -294,6 +294,9 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "smart_contrast" => "Contrasto intelligente (recupera blu-su-blu)",
         "keepalive_interval" => "Intervallo Keepalive",
         "scrollback" => "Cronologia scorrimento",
+        "word_delimiters" => "Delimitatori di parola",
+        "setting_word_delimiters_desc" => "Caratteri che separano le parole nella selezione con doppio clic. Il triplo clic seleziona sempre l'intera riga.",
+        "word_delimiters_reset" => "Ripristina",
         "vault_password" => "Password del Vault",
 
         "ai_chat" => "Chat IA",

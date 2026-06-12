@@ -859,6 +859,11 @@ pub struct Oryxis {
     pub(crate) setting_cloud_auto_archive_orphans: bool,
     pub(crate) setting_cloud_orphan_archive_days: String,
     pub(crate) setting_scrollback_rows: String,
+    /// Characters that terminate a word for double-click selection in the
+    /// terminal (the "word delimiters" set). Defaults to
+    /// `oryxis_terminal::DEFAULT_WORD_DELIMITERS`; the Terminal settings
+    /// panel lets the user customise or reset it.
+    pub(crate) setting_word_delimiters: String,
     /// Max parallel SFTP transfer slots (uploads/downloads). 1 = serial,
     /// up to 8 = aggressive. Each slot gets its own SFTP subsystem
     /// channel on the same SSH connection so they don't fight for the

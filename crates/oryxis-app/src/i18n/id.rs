@@ -295,6 +295,9 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "smart_contrast" => "Kontras pintar (selamatkan biru di atas biru)",
         "keepalive_interval" => "Interval Keepalive",
         "scrollback" => "Scrollback",
+        "word_delimiters" => "Pembatas kata",
+        "setting_word_delimiters_desc" => "Karakter yang memisahkan kata saat memilih dengan klik ganda. Klik tiga kali selalu memilih seluruh baris.",
+        "word_delimiters_reset" => "Setel ulang",
         "vault_password" => "Kata Sandi Vault",
 
         // AI Chat

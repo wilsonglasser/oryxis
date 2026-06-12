@@ -42,6 +42,30 @@ impl Oryxis {
         }
     }
 
+    /// Paste `text` into the active tab's session, wrapping it for
+    /// bracketed-paste when the focused app enabled it. Routes to the SSH
+    /// session when one is attached, otherwise the local PTY. Shared by the
+    /// clipboard (right-click / Ctrl+Shift+V) and PRIMARY (middle-click)
+    /// paste paths.
+    pub(crate) fn paste_text_into_active(&mut self, text: &str) {
+        if let Some(tab_idx) = self.active_tab
+            && let Some(tab) = self.tabs.get(tab_idx)
+        {
+            let bracketed = tab
+                .active()
+                .terminal
+                .lock()
+                .map(|s| s.bracketed_paste_enabled())
+                .unwrap_or(false);
+            let payload = oryxis_terminal::wrap_paste(text, bracketed);
+            if let Some(ref ssh) = tab.active().ssh_session {
+                let _ = ssh.write(&payload);
+            } else if let Ok(mut state) = tab.active().terminal.lock() {
+                state.write(&payload);
+            }
+        }
+    }
+
     pub(crate) fn handle_terminal(
         &mut self,
         message: Message,
@@ -177,23 +201,10 @@ impl Oryxis {
             // reached the local PTY and right-click looked broken on
             // every SSH tab.
             Message::TerminalPasteFromClipboard => {
-                if let Some(tab_idx) = self.active_tab
-                    && let Some(tab) = self.tabs.get(tab_idx)
-                    && let Ok(mut clip) = arboard::Clipboard::new()
+                if let Ok(mut clip) = arboard::Clipboard::new()
                     && let Ok(text) = clip.get_text()
                 {
-                    let bracketed = tab
-                        .active()
-                        .terminal
-                        .lock()
-                        .map(|s| s.bracketed_paste_enabled())
-                        .unwrap_or(false);
-                    let payload = oryxis_terminal::wrap_paste(&text, bracketed);
-                    if let Some(ref ssh) = tab.active().ssh_session {
-                        let _ = ssh.write(&payload);
-                    } else if let Ok(mut state) = tab.active().terminal.lock() {
-                        state.write(&payload);
-                    }
+                    self.paste_text_into_active(&text);
                 }
             }
             // Synthesized input from the terminal widget: mouse-tracking

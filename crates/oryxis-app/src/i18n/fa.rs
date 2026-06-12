@@ -295,6 +295,9 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "smart_contrast" => "کنتراست هوشمند (اصلاح آبی روی آبی)",
         "keepalive_interval" => "فاصله Keepalive",
         "scrollback" => "تاریخچه پیمایش",
+        "word_delimiters" => "جداکننده‌های واژه",
+        "setting_word_delimiters_desc" => "نویسه‌هایی که هنگام انتخاب با دوبار کلیک، واژه‌ها را جدا می‌کنند. سه‌بار کلیک همیشه کل خط را انتخاب می‌کند.",
+        "word_delimiters_reset" => "بازنشانی",
         "vault_password" => "گذرواژه صندوقچه",
 
         // AI Chat

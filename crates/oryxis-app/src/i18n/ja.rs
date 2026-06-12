@@ -294,6 +294,9 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "smart_contrast" => "スマートコントラスト（青地に青を救済）",
         "keepalive_interval" => "キープアライブ間隔",
         "scrollback" => "スクロールバック",
+        "word_delimiters" => "単語区切り文字",
+        "setting_word_delimiters_desc" => "ダブルクリック選択で単語を区切る文字。トリプルクリックは常に行全体を選択します。",
+        "word_delimiters_reset" => "デフォルトに戻す",
         "vault_password" => "ボールトパスワード",
 
         "ai_chat" => "AIチャット",

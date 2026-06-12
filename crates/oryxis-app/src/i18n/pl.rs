@@ -295,6 +295,9 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "smart_contrast" => "Inteligentny kontrast (ratuje niebieski na niebieskim)",
         "keepalive_interval" => "Interwał keepalive",
         "scrollback" => "Bufor przewijania",
+        "word_delimiters" => "Separatory słów",
+        "setting_word_delimiters_desc" => "Znaki oddzielające słowa przy zaznaczaniu podwójnym kliknięciem. Potrójne kliknięcie zawsze zaznacza cały wiersz.",
+        "word_delimiters_reset" => "Przywróć domyślne",
         "vault_password" => "Hasło sejfu",
 
         // AI Chat

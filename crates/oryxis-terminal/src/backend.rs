@@ -22,6 +22,15 @@ fn default_scrollback() -> usize {
     DEFAULT_SCROLLBACK.load(Ordering::Relaxed)
 }
 
+/// Default set of characters that terminate a word for double-click
+/// selection (the "word delimiters" / semantic-escape set). Matches
+/// alacritty's own default minus the literal tab: terminal cells never
+/// hold a raw `\t` (the emulator expands tabs into cursor moves and
+/// spaces), so the tab delimiter is behaviorally inert and only made
+/// the Settings text field awkward to edit. Space is kept since it is
+/// the most common word boundary.
+pub const DEFAULT_WORD_DELIMITERS: &str = ",│`|:\"' ()[]{}<>";
+
 /// Event proxy that collects terminal events.
 #[derive(Clone)]
 pub struct EventProxy {
@@ -88,6 +97,9 @@ pub struct TerminalBackend {
     pub event_proxy: EventProxy,
     cols: u16,
     rows: u16,
+    /// Kept so `set_word_delimiters` can hand a full `Config` back to
+    /// `Term::set_options` (alacritty has no narrower setter exposed).
+    config: TermConfig,
 }
 
 impl TerminalBackend {
@@ -95,10 +107,11 @@ impl TerminalBackend {
         let size = TermSize { cols, rows };
         let config = TermConfig {
             scrolling_history: default_scrollback(),
+            semantic_escape_chars: DEFAULT_WORD_DELIMITERS.to_string(),
             ..Default::default()
         };
         let event_proxy = EventProxy::new();
-        let term = Term::new(config, &size, event_proxy.clone());
+        let term = Term::new(config.clone(), &size, event_proxy.clone());
         let processor = ansi::Processor::new();
 
         Self {
@@ -107,7 +120,20 @@ impl TerminalBackend {
             event_proxy,
             cols,
             rows,
+            config,
         }
+    }
+
+    /// Update the word-delimiter set used by double-click semantic
+    /// selection. No-op when unchanged so the per-click sync stays
+    /// cheap (`set_options` marks the grid fully damaged, so we must
+    /// not call it on every mouse event).
+    pub fn set_word_delimiters(&mut self, delimiters: &str) {
+        if self.config.semantic_escape_chars == delimiters {
+            return;
+        }
+        self.config.semantic_escape_chars = delimiters.to_string();
+        self.term.set_options(self.config.clone());
     }
 
     /// Feed raw bytes from PTY into the terminal emulator.
@@ -156,5 +182,31 @@ impl Dimensions for TermSize {
 
     fn columns(&self) -> usize {
         self.cols as usize
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use alacritty_terminal::index::{Column, Line, Point};
+
+    /// `set_word_delimiters` must actually drive alacritty's native
+    /// semantic search: with the default set, `foo-bar` is one word
+    /// (no `-` delimiter), but after adding `-` it splits at the dash.
+    /// This is the behavior the double-click word selection rides on.
+    #[test]
+    fn word_delimiters_drive_semantic_search() {
+        let mut backend = TerminalBackend::new(40, 5);
+        backend.process(b"foo-bar baz");
+        let origin = Point::new(Line(0), Column(0));
+
+        // Default set has no `-`: the word spans the whole `foo-bar`.
+        let right_default = backend.term.semantic_search_right(origin).column.0;
+        assert_eq!(right_default, 6, "default should treat foo-bar as one word");
+
+        // Adding `-` as a delimiter stops the word at `foo`.
+        backend.set_word_delimiters("-");
+        let right_dash = backend.term.semantic_search_right(origin).column.0;
+        assert_eq!(right_dash, 2, "`-` delimiter should split foo|bar");
     }
 }

@@ -163,7 +163,12 @@ fn main() -> iced::Result {
     }
 
     tracing_subscriber::registry()
-        .with(tracing_subscriber::EnvFilter::new("oryxis=debug,info"))
+        // `arboard` logs a WARN on every clipboard op when the Wayland
+        // data-control protocol is unavailable (common under WSL / some
+        // compositors) and it falls back to X11, which works fine. Quiet
+        // that one target so copy-on-select doesn't spam the log on every
+        // click; everything else stays at info.
+        .with(tracing_subscriber::EnvFilter::new("oryxis=debug,info,arboard=error"))
         .with(tracing_subscriber::fmt::layer())
         .init();
 

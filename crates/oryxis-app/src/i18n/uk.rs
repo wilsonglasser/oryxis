@@ -295,6 +295,9 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "smart_contrast" => "Розумний контраст (рятує синє на синьому)",
         "keepalive_interval" => "Інтервал keepalive",
         "scrollback" => "Буфер прокручування",
+        "word_delimiters" => "Роздільники слів",
+        "setting_word_delimiters_desc" => "Символи, що розділяють слова під час вибору подвійним клацанням. Потрійне клацання завжди вибирає весь рядок.",
+        "word_delimiters_reset" => "Скинути",
         "vault_password" => "Пароль сховища",
 
         // AI Chat

@@ -295,6 +295,9 @@ pub(super) fn lookup(key: &str) -> &'static str {
         "smart_contrast" => "Smart contrast (rescue blue-on-blue)",
         "keepalive_interval" => "Keepalive Interval",
         "scrollback" => "Scrollback",
+        "word_delimiters" => "Word delimiters",
+        "setting_word_delimiters_desc" => "Characters that separate words when double-clicking to select. Triple-click always selects the whole line.",
+        "word_delimiters_reset" => "Reset to default",
         "vault_password" => "Vault Password",
 
         // AI Chat

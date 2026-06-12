@@ -862,6 +862,18 @@ impl Oryxis {
                     &self.setting_scrollback_rows,
                 ));
             }
+            Message::SettingWordDelimitersChanged(val) => {
+                // Free-text: any character may delimit a word. Stored as
+                // typed; the widget syncs it into the terminal backend on
+                // the next double-click. Empty is allowed (no delimiters).
+                self.setting_word_delimiters = val;
+                self.persist_setting("word_delimiters", &self.setting_word_delimiters);
+            }
+            Message::SettingResetWordDelimiters => {
+                self.setting_word_delimiters =
+                    oryxis_terminal::DEFAULT_WORD_DELIMITERS.to_string();
+                self.persist_setting("word_delimiters", &self.setting_word_delimiters);
+            }
             Message::SettingCloudAutoRefreshToggle => {
                 self.setting_cloud_auto_refresh_enabled =
                     !self.setting_cloud_auto_refresh_enabled;

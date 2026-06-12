@@ -295,6 +295,9 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "smart_contrast" => "스마트 대비 (파랑 위 파랑 구제)",
         "keepalive_interval" => "Keepalive 간격",
         "scrollback" => "스크롤백",
+        "word_delimiters" => "단어 구분자",
+        "setting_word_delimiters_desc" => "더블 클릭으로 선택할 때 단어를 구분하는 문자입니다. 트리플 클릭은 항상 줄 전체를 선택합니다.",
+        "word_delimiters_reset" => "기본값으로 재설정",
         "vault_password" => "볼트 비밀번호",
 
         // AI Chat

@@ -180,12 +180,41 @@ impl TerminalState {
         let bottommost = grid.bottommost_line();
         let cols = grid.columns();
         let last_col = cols.saturating_sub(1) as u16;
-        let (start, end) = sel.ordered();
-        let mut result = String::new();
 
+        // Block (column) selection: every row takes the same column slice.
+        // The slice is kept verbatim, including trailing spaces, so the
+        // rectangle preserves its column alignment (trimming would ragged
+        // a multi-column block, e.g. two columns of a table).
+        if sel.block {
+            let (c0, c1, l0, l1) = sel.block_bounds();
+            let mut rows: Vec<String> = Vec::new();
+            for line_idx in l0..=l1 {
+                let line = Line(line_idx);
+                if !(topmost..=bottommost).contains(&line) {
+                    rows.push(String::new());
+                    continue;
+                }
+                let row = &grid[line];
+                let mut line_str = String::new();
+                for c in c0..=c1.min(last_col) {
+                    let cell = &row[Column(c as usize)];
+                    if cell.c != '\0' {
+                        line_str.push(cell.c);
+                    }
+                }
+                rows.push(line_str);
+            }
+            return rows.join("\n");
+        }
+
+        let (start, end) = sel.ordered();
         // Iterate over the line range manually, selection lines are in
         // grid coordinates (negative for scrollback) which `display_iter`
         // alone wouldn't reach unless we mutated the display offset.
+        // Each row is trimmed of trailing whitespace before joining, the
+        // standard terminal behaviour so a wrapped/multi-line copy doesn't
+        // carry the blank padding out to the right margin.
+        let mut rows: Vec<String> = Vec::new();
         for line_idx in start.1..=end.1 {
             let line = Line(line_idx);
             if line < topmost || line > bottommost {
@@ -201,18 +230,17 @@ impl TerminalState {
             } else {
                 (0, last_col)
             };
+            let mut line_str = String::new();
             for c in start_col..=end_col {
                 let cell = &row[Column(c as usize)];
                 if cell.c != '\0' {
-                    result.push(cell.c);
+                    line_str.push(cell.c);
                 }
             }
-            if line_idx < end.1 {
-                result.push('\n');
-            }
+            rows.push(line_str.trim_end().to_string());
         }
 
-        result.trim_end().to_string()
+        rows.join("\n")
     }
 }
 
@@ -229,10 +257,17 @@ impl TerminalState {
 pub struct Selection {
     pub start: (u16, i32), // (col, line)
     pub end: (u16, i32),
+    /// When true this is a rectangular (column / block) selection
+    /// (Alt+drag): every row takes the same `[min_col, max_col]` slice,
+    /// instead of the flowing line-by-line range. Carried so the draw
+    /// highlight and text extraction agree.
+    pub block: bool,
 }
 
 impl Selection {
-    /// Returns (start, end) ordered top-left to bottom-right.
+    /// Returns (start, end) ordered top-left to bottom-right. Only
+    /// meaningful for flowing (non-block) selections; block selections
+    /// use [`Selection::block_bounds`] instead.
     pub fn ordered(&self) -> ((u16, i32), (u16, i32)) {
         if self.start.1 < self.end.1
             || (self.start.1 == self.end.1 && self.start.0 <= self.end.0)
@@ -243,8 +278,58 @@ impl Selection {
         }
     }
 
+    /// `(min_col, max_col, min_line, max_line)` of the rectangle spanned
+    /// by the two corners. Used for block selections, where each axis is
+    /// ordered independently.
+    pub fn block_bounds(&self) -> (u16, u16, i32, i32) {
+        (
+            self.start.0.min(self.end.0),
+            self.start.0.max(self.end.0),
+            self.start.1.min(self.end.1),
+            self.start.1.max(self.end.1),
+        )
+    }
+
     pub fn is_empty(&self) -> bool {
         self.start == self.end
+    }
+}
+
+/// Granularity of a double/triple-click selection. A plain single-click
+/// drag uses per-cell granularity and is represented by `None` in the
+/// widget's `select_anchor`, so this enum only needs the two expanded
+/// modes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SelectGranularity {
+    Word,
+    Line,
+    Paragraph,
+}
+
+/// Next click count given the previous count and whether this press is
+/// consecutive (within the time + distance window of the last one). Cycles
+/// 1->2->3->4->1 so a fifth rapid click restarts at single-click, matching
+/// the iTerm / GNOME behaviour. Pure so the classification can be tested
+/// without driving real mouse timing.
+fn next_click_count(prev: Option<u8>, consecutive: bool) -> u8 {
+    match prev {
+        Some(c) if consecutive => (c % 4) + 1,
+        _ => 1,
+    }
+}
+
+/// Combine two selections into the range spanning from the earliest
+/// ordered start to the latest ordered end. Used to extend a word/line
+/// drag: the anchor's word/line unioned with the cursor's word/line.
+fn union_selection(a: Selection, b: Selection) -> Selection {
+    let (a0, a1) = a.ordered();
+    let (b0, b1) = b.ordered();
+    // Compare cells in (line, col) order.
+    let lt = |x: (u16, i32), y: (u16, i32)| x.1 < y.1 || (x.1 == y.1 && x.0 < y.0);
+    Selection {
+        start: if lt(a0, b0) { a0 } else { b0 },
+        end: if lt(a1, b1) { b1 } else { a1 },
+        block: false,
     }
 }
 
@@ -286,6 +371,24 @@ pub struct TerminalWidgetState {
     /// Last `(col, row)` reported to the remote app, used to suppress
     /// duplicate motion reports while the cursor stays inside one cell.
     report_cell: Option<(u16, u16)>,
+    /// Previous left-click as `(time, position, count)`, used to classify
+    /// the next press as single / double / triple / quad (300 ms / 6 px
+    /// window). Rolled here rather than via `iced`'s `mouse::Click` because
+    /// that caps at triple and we need a fourth count for paragraph select.
+    last_click: Option<(std::time::Instant, Point, u8)>,
+    /// `Some((granularity, anchor_cell))` while a double/triple-click
+    /// selection is active, so a drag extends by whole words/lines
+    /// instead of by cell. `None` for a plain single-click drag.
+    select_anchor: Option<(SelectGranularity, (u16, i32))>,
+    /// Last grid cell the word/line drag recomputed against. Throttles
+    /// the union recompute to one per cell crossing (the recompute locks
+    /// the mutex + runs two semantic searches; running it per pixel
+    /// would contend with the SSH echo path, see the URL-hover note).
+    last_extend_cell: Option<(u16, i32)>,
+    /// Time of the last edge auto-scroll step. Rate-limits the scroll so
+    /// its speed is tied to wall-clock, not the (very high) mouse-move
+    /// event rate, which otherwise made the buffer rocket past the edge.
+    last_autoscroll: Option<std::time::Instant>,
 }
 
 // ---------------------------------------------------------------------------
@@ -696,6 +799,77 @@ fn url_at_cell(
     None
 }
 
+/// Smart-select span for double-click: if the cell at grid-line `line`,
+/// column `col` falls inside a detected URL / IP / path token, return its
+/// `(start_col, end_col)` (inclusive). Returns `None` otherwise (caller
+/// falls back to delimiter-word selection). Numbers are excluded, they are
+/// too granular to be a useful "word" target. Reads the grid directly by
+/// line so it stays correct when scrolled into history (unlike
+/// `url_at_cell`, which walks the live `display_iter`).
+fn smart_span_at(
+    term: &alacritty_terminal::Term<crate::backend::EventProxy>,
+    palette: &TerminalPalette,
+    line: i32,
+    col: u16,
+) -> Option<(u16, u16)> {
+    use alacritty_terminal::grid::Dimensions;
+    use alacritty_terminal::index::{Column, Line};
+    let grid = term.grid();
+    let l = Line(line);
+    if l < grid.topmost_line() || l > grid.bottommost_line() {
+        return None;
+    }
+    let row = &grid[l];
+    let ncols = grid.columns();
+    let mut present = vec![false; ncols];
+    let mut cols: Vec<(u16, char)> = Vec::new();
+    for ci in 0..ncols {
+        let c = row[Column(ci)].c;
+        if c != ' ' && c != '\0' {
+            present[ci] = true;
+            cols.push((ci as u16, c));
+        }
+    }
+    if cols.is_empty() || !present.get(col as usize).copied().unwrap_or(false) {
+        return None;
+    }
+    // Expand to the whitespace-bounded token containing the click.
+    let mut left = col;
+    while left > 0 && present[left as usize - 1] {
+        left -= 1;
+    }
+    let mut right = col;
+    while (right as usize + 1) < ncols && present[right as usize + 1] {
+        right += 1;
+    }
+    // Trigger only when that token overlaps a detected URL / IP / path
+    // highlight, so plain prose words still fall through to delimiter-word
+    // selection. The highlighter's own URL span may be shorter than the
+    // token (its matcher is loose), hence the overlap test rather than a
+    // containment test. `detect_highlights` keys by row; a single synthetic
+    // row 0 is enough as long as we look it up with the same key.
+    let mut map = std::collections::HashMap::new();
+    map.insert(0u16, cols);
+    let hit = detect_highlights(&map, palette).into_iter().any(|h| {
+        h.row == 0
+            && h.kind != HighlightKind::Number
+            && h.start_col <= right
+            && h.end_col >= left
+    });
+    hit.then_some((left, right))
+}
+
+/// Write `text` to the system clipboard, best-effort. Errors are swallowed
+/// (a backend may be unavailable on a headless box or under a compositor
+/// without the data-control protocol); a failed copy should never panic
+/// the UI. Shared by the copy-on-select, right-click-copy and Ctrl+Shift+C
+/// paths so the three sites stay in sync.
+fn set_clipboard_text(text: &str) {
+    if let Ok(mut clip) = arboard::Clipboard::new() {
+        let _ = clip.set_text(text);
+    }
+}
+
 /// Best-effort spawn of the OS default handler for a URL. Runs detached; the
 /// terminal widget never blocks on it and errors are swallowed, a failed
 /// launch just means nothing happens visibly, same as any other click miss.
@@ -751,6 +925,11 @@ pub struct TerminalView<Message = ()> {
     /// the text stays legible. Off paints the cell exactly as the
     /// emulator asked, which a few colour-precise tools rely on.
     smart_contrast: bool,
+    /// Characters that terminate a word for double-click selection
+    /// (the semantic-escape / "word delimiters" set). Threaded from the
+    /// user's Terminal setting each frame and synced into the backend on
+    /// the next word-select. Defaults to [`crate::backend::DEFAULT_WORD_DELIMITERS`].
+    word_delimiters: String,
     /// Optional callback messages for Ctrl+Wheel font zoom. When unset,
     /// Ctrl+Wheel still gets captured but produces no state change.
     on_font_size_increase: Option<Message>,
@@ -953,6 +1132,7 @@ impl<Message> TerminalView<Message> {
             bold_is_bright: true,
             keyword_highlight: true,
             smart_contrast: true,
+            word_delimiters: crate::backend::DEFAULT_WORD_DELIMITERS.to_string(),
             on_font_size_increase: None,
             on_font_size_decrease: None,
             on_paste_request: None,
@@ -1000,6 +1180,14 @@ impl<Message> TerminalView<Message> {
 
     pub fn with_keyword_highlight(mut self, on: bool) -> Self {
         self.keyword_highlight = on;
+        self
+    }
+
+    /// Set the word-delimiter set used for double-click word selection.
+    /// Empty means no character terminates a word (double-click then
+    /// grabs the whole logical line, like triple-click).
+    pub fn with_word_delimiters(mut self, delimiters: &str) -> Self {
+        self.word_delimiters = delimiters.to_string();
         self
     }
 
@@ -1073,6 +1261,69 @@ impl<Message> TerminalView<Message> {
     /// the current scroll offset. Visible row 0 is the top of the canvas.
     fn visible_row_to_line(visible_row: u16, scroll_offset: i32) -> i32 {
         visible_row as i32 - scroll_offset
+    }
+
+    /// Compute a word- or line-granularity selection around `cell` using
+    /// alacritty's native semantic / line search. `cell` is `(col, line)`
+    /// in grid-line coordinates (negative line = scrollback). The current
+    /// delimiter set is synced into the backend first (a cheap no-op when
+    /// unchanged).
+    fn semantic_selection(
+        &self,
+        backend: &mut TerminalBackend,
+        cell: (u16, i32),
+        gran: SelectGranularity,
+    ) -> Selection {
+        use alacritty_terminal::grid::Dimensions;
+        use alacritty_terminal::index::{Column, Line, Point as TermPoint};
+        backend.set_word_delimiters(&self.word_delimiters);
+        let term = &backend.term;
+        let grid = term.grid();
+        // Clamp into the grid before building the point: the semantic /
+        // line search routines index `grid[point]` up front and only
+        // clamp the lower line bound, so an edge click (col >= cols or a
+        // line past the last row, neither of which `pixel_to_cell`
+        // clamps high) would panic.
+        let line = cell.1.clamp(grid.topmost_line().0, grid.bottommost_line().0);
+        let col = (cell.0 as usize).min(grid.columns().saturating_sub(1));
+        let point = TermPoint::new(Line(line), Column(col));
+        let (l, r) = match gran {
+            SelectGranularity::Word => {
+                (term.semantic_search_left(point), term.semantic_search_right(point))
+            }
+            SelectGranularity::Line => {
+                (term.line_search_left(point), term.line_search_right(point))
+            }
+            SelectGranularity::Paragraph => {
+                // Expand to the run of non-blank lines around the click,
+                // bounded by blank rows (all spaces / NUL). Full width.
+                let last_col = grid.columns().saturating_sub(1) as u16;
+                let top_lim = grid.topmost_line().0;
+                let bot_lim = grid.bottommost_line().0;
+                let is_blank = |li: i32| {
+                    let r = &grid[Line(li)];
+                    (0..grid.columns()).all(|c| matches!(r[Column(c)].c, ' ' | '\0'))
+                };
+                let mut top = line;
+                while top > top_lim && !is_blank(top - 1) {
+                    top -= 1;
+                }
+                let mut bot = line;
+                while bot < bot_lim && !is_blank(bot + 1) {
+                    bot += 1;
+                }
+                return Selection {
+                    start: (0, top),
+                    end: (last_col, bot),
+                    block: false,
+                };
+            }
+        };
+        Selection {
+            start: (l.column.0 as u16, l.line.0),
+            end: (r.column.0 as u16, r.line.0),
+            block: false,
+        }
     }
 
     /// Map an iced mouse button to its mouse-report button, or `None`
@@ -1218,6 +1469,10 @@ impl<Message> TerminalView<Message> {
     }
 
     fn is_in_selection(sel: &Selection, col: u16, line: i32) -> bool {
+        if sel.block {
+            let (c0, c1, l0, l1) = sel.block_bounds();
+            return line >= l0 && line <= l1 && col >= c0 && col <= c1;
+        }
         let (start, end) = sel.ordered();
         if start.1 == end.1 {
             line == start.1 && col >= start.0 && col <= end.0
@@ -1328,11 +1583,104 @@ where
                         open_url(&url);
                         return Some(CanvasAction::capture());
                     }
+                    // Shift+Click extends the current selection from its
+                    // existing anchor instead of starting a new one (xterm
+                    // behaviour). Handled before click-kind classification so
+                    // a quick shift+click can't be misread as a double-click
+                    // word grab. Block-ness carries over.
+                    if widget_state.modifiers.shift()
+                        && let Some(prev) = widget_state.selection
+                    {
+                        widget_state.select_anchor = None;
+                        widget_state.selecting = true;
+                        widget_state.last_extend_cell = Some((col, line));
+                        widget_state.selection = Some(Selection {
+                            start: prev.start,
+                            end: (col, line),
+                            block: prev.block,
+                        });
+                        return Some(CanvasAction::request_redraw().and_capture());
+                    }
+                    // Classify the press as single / double / triple / quad
+                    // (300 ms / 6 px window). 1=cell (Alt=block), 2=word
+                    // (smart-select on URL/IP/path), 3=line, 4=paragraph.
+                    let now = std::time::Instant::now();
+                    let consecutive = widget_state
+                        .last_click
+                        .map(|(t, p, _)| {
+                            now.duration_since(t) <= std::time::Duration::from_millis(300)
+                                && p.distance(pos) < 6.0
+                        })
+                        .unwrap_or(false);
+                    let count = next_click_count(
+                        widget_state.last_click.map(|(_, _, c)| c),
+                        consecutive,
+                    );
+                    widget_state.last_click = Some((now, pos, count));
                     widget_state.selecting = true;
-                    widget_state.selection = Some(Selection {
-                        start: (col, line),
-                        end: (col, line),
-                    });
+                    widget_state.last_extend_cell = Some((col, line));
+                    match count {
+                        1 => {
+                            widget_state.select_anchor = None;
+                            // Alt+drag starts a rectangular (column) selection.
+                            widget_state.selection = Some(Selection {
+                                start: (col, line),
+                                end: (col, line),
+                                block: widget_state.modifiers.alt(),
+                            });
+                        }
+                        2 => {
+                            if let Ok(mut state) = self.state.lock() {
+                                // Smart-select: a double-click inside a URL /
+                                // IP / path grabs the whole token instead of
+                                // the delimiter word. Falls back to word.
+                                if let Some((c0, c1)) = smart_span_at(
+                                    &state.backend.term,
+                                    &state.palette,
+                                    line,
+                                    col,
+                                ) {
+                                    widget_state.select_anchor = None;
+                                    widget_state.selection = Some(Selection {
+                                        start: (c0, line),
+                                        end: (c1, line),
+                                        block: false,
+                                    });
+                                } else {
+                                    widget_state.select_anchor =
+                                        Some((SelectGranularity::Word, (col, line)));
+                                    widget_state.selection = Some(self.semantic_selection(
+                                        &mut state.backend,
+                                        (col, line),
+                                        SelectGranularity::Word,
+                                    ));
+                                }
+                            }
+                        }
+                        3 => {
+                            widget_state.select_anchor =
+                                Some((SelectGranularity::Line, (col, line)));
+                            if let Ok(mut state) = self.state.lock() {
+                                widget_state.selection = Some(self.semantic_selection(
+                                    &mut state.backend,
+                                    (col, line),
+                                    SelectGranularity::Line,
+                                ));
+                            }
+                        }
+                        // 4 (and the cycle restarts after): paragraph.
+                        _ => {
+                            widget_state.select_anchor =
+                                Some((SelectGranularity::Paragraph, (col, line)));
+                            if let Ok(mut state) = self.state.lock() {
+                                widget_state.selection = Some(self.semantic_selection(
+                                    &mut state.backend,
+                                    (col, line),
+                                    SelectGranularity::Paragraph,
+                                ));
+                            }
+                        }
+                    }
                     return Some(CanvasAction::request_redraw().and_capture());
                 }
             }
@@ -1360,10 +1708,93 @@ where
                     }
                 }
                 if widget_state.selecting
-                    && let Some(pos) = cursor.position_in(bounds) {
-                        let (col, vrow) = self.pixel_to_cell(pos);
+                    && let Some(abs) = cursor.position() {
+                        // Use the absolute cursor position (not
+                        // `position_in`, which is `None` outside the widget)
+                        // so a drag that leaves the widget but stays in the
+                        // window still extends + auto-scrolls, matching other
+                        // terminals. Once the pointer leaves the window the OS
+                        // stops sending events, which we can't work around
+                        // without a pointer grab iced doesn't expose.
+                        let rel = Point::new(abs.x - bounds.x, abs.y - bounds.y);
+                        // Auto-scroll when the drag passes the top/bottom
+                        // edge so the selection extends into scrollback. The
+                        // step grows with how far past the edge the cursor is
+                        // (deliberately aggressive: 2 lines per overshoot
+                        // cell). Events only fire on motion, so this follows
+                        // the mouse rather than ticking while held still.
+                        let top_edge = TERM_PAD_TOP;
+                        let bot_edge = (bounds.height - TERM_PAD).max(top_edge);
+                        // Rate-limit to one step per ~40 ms so the scroll
+                        // speed tracks wall-clock instead of the mouse-move
+                        // event rate (dozens per second at the edge), which
+                        // is what made it feel like it rocketed.
+                        let now = std::time::Instant::now();
+                        let due = widget_state
+                            .last_autoscroll
+                            .map(|t| {
+                                now.duration_since(t)
+                                    >= std::time::Duration::from_millis(40)
+                            })
+                            .unwrap_or(true);
+                        if (rel.y < top_edge || rel.y > bot_edge)
+                            && due
+                            && let Ok(state) = self.state.lock()
+                        {
+                            use alacritty_terminal::grid::Dimensions;
+                            let grid = state.backend.term.grid();
+                            let history = (grid
+                                .total_lines()
+                                .saturating_sub(grid.screen_lines()))
+                                as i32;
+                            let past = if rel.y < top_edge {
+                                top_edge - rel.y
+                            } else {
+                                rel.y - bot_edge
+                            };
+                            // 1 line per tick at the edge, +1 per cell of
+                            // overshoot, capped so a far pointer stays sane.
+                            let step =
+                                ((past / self.cell_height).floor() as i32 + 1).clamp(1, 4);
+                            widget_state.last_autoscroll = Some(now);
+                            if rel.y < top_edge {
+                                widget_state.scroll_offset =
+                                    (widget_state.scroll_offset + step).min(history);
+                            } else {
+                                widget_state.scroll_offset =
+                                    (widget_state.scroll_offset - step).max(0);
+                            }
+                        }
+                        // Clamp back into the widget for cell mapping (the
+                        // pointer may be outside the bounds now).
+                        let clamped = Point::new(
+                            rel.x.clamp(0.0, bounds.width),
+                            rel.y.clamp(0.0, bounds.height),
+                        );
+                        let (col, vrow) = self.pixel_to_cell(clamped);
                         let line = Self::visible_row_to_line(vrow, widget_state.scroll_offset);
-                        if let Some(ref mut sel) = widget_state.selection {
+                        if let Some((gran, anchor)) = widget_state.select_anchor {
+                            // Word/line drag: extend by unioning the anchor's
+                            // word/line with the cursor's. Throttle to one
+                            // recompute per cell crossing, it locks the mutex
+                            // and runs two semantic searches, which must not
+                            // happen per pixel (same reasoning as the URL
+                            // hover throttle below).
+                            if widget_state.last_extend_cell != Some((col, line)) {
+                                widget_state.last_extend_cell = Some((col, line));
+                                if let Ok(mut state) = self.state.lock() {
+                                    let head = self.semantic_selection(
+                                        &mut state.backend, anchor, gran,
+                                    );
+                                    let tail = self.semantic_selection(
+                                        &mut state.backend, (col, line), gran,
+                                    );
+                                    drop(state);
+                                    widget_state.selection =
+                                        Some(union_selection(head, tail));
+                                }
+                            }
+                        } else if let Some(ref mut sel) = widget_state.selection {
                             sel.end = (col, line);
                         }
                         return Some(CanvasAction::request_redraw().and_capture());
@@ -1407,7 +1838,13 @@ where
                 let was_dragging = widget_state.scrollbar_drag.is_some();
                 widget_state.scrollbar_drag = None;
                 let was_selecting = widget_state.selecting;
+                // A double/triple-click selection is intentional even when
+                // it lands on a single cell (a one-character word), so it
+                // must still auto-copy despite `is_empty()`.
+                let was_semantic = widget_state.select_anchor.is_some();
                 widget_state.selecting = false;
+                widget_state.select_anchor = None;
+                widget_state.last_extend_cell = None;
                 // Auto-copy the just-finished selection when the setting is
                 // enabled (XTerm / iTerm behaviour). Skip degenerate
                 // selections that didn't move (single click). When
@@ -1417,15 +1854,13 @@ where
                     && self.copy_on_select
                     && !self.right_click_copy
                     && let Some(ref sel) = widget_state.selection
-                    && !sel.is_empty()
+                    && (!sel.is_empty() || was_semantic)
                     && let Ok(state) = self.state.lock()
                 {
                     let text = state.get_selection_text(sel);
                     drop(state);
-                    if !text.is_empty()
-                        && let Ok(mut clip) = arboard::Clipboard::new()
-                    {
-                        let _ = clip.set_text(&text);
+                    if !text.is_empty() {
+                        set_clipboard_text(&text);
                     }
                 }
                 if was_dragging {
@@ -1456,10 +1891,8 @@ where
                     if let Ok(state) = self.state.lock() {
                         let text = state.get_selection_text(&sel);
                         drop(state);
-                        if !text.is_empty()
-                            && let Ok(mut clip) = arboard::Clipboard::new()
-                        {
-                            let _ = clip.set_text(&text);
+                        if !text.is_empty() {
+                            set_clipboard_text(&text);
                         }
                     }
                     widget_state.selection = None;
@@ -1580,13 +2013,34 @@ where
                     && let Ok(state) = self.state.lock()
                 {
                     let text = state.get_selection_text(sel);
-                    if !text.is_empty()
-                        && let Ok(mut clip) = arboard::Clipboard::new()
-                    {
-                        let _ = clip.set_text(&text);
+                    if !text.is_empty() {
+                        set_clipboard_text(&text);
                     }
                 }
                 return Some(CanvasAction::capture());
+            }
+            // Keyboard, Ctrl+Shift+A select-all. Selects the entire buffer
+            // (scrollback + screen); copy stays a separate gesture
+            // (Ctrl+Shift+C or copy-on-select on the next release).
+            iced::Event::Keyboard(keyboard::Event::KeyPressed {
+                key: keyboard::Key::Character(c),
+                modifiers,
+                ..
+            }) if modifiers.control() && modifiers.shift() && matches!(c.as_str(), "A" | "a") => {
+                if let Ok(state) = self.state.lock() {
+                    use alacritty_terminal::grid::Dimensions;
+                    let grid = state.backend.term.grid();
+                    let top = grid.topmost_line().0;
+                    let bot = grid.bottommost_line().0;
+                    let last_col = grid.columns().saturating_sub(1) as u16;
+                    widget_state.selection = Some(Selection {
+                        start: (0, top),
+                        end: (last_col, bot),
+                        block: false,
+                    });
+                    widget_state.select_anchor = None;
+                }
+                return Some(CanvasAction::request_redraw().and_capture());
             }
             _ => {}
         }
@@ -1964,8 +2418,13 @@ where
         // Scrollbar, only painted while the cursor is over the canvas
         // (or actively dragging), there's actual history to scroll, and
         // we're not in alt-screen mode (no scrollback there).
-        let visible_scrollbar =
-            !in_alt_screen && (widget_state.hover || widget_state.scrollbar_drag.is_some());
+        // Keep the scrollbar visible during an active text-selection drag
+        // too, even if the cursor leaves the widget (hover goes false), so
+        // it doesn't blink out while auto-scrolling at the edge.
+        let visible_scrollbar = !in_alt_screen
+            && (widget_state.hover
+                || widget_state.scrollbar_drag.is_some()
+                || widget_state.selecting);
         if visible_scrollbar
             && let Some(sb) = scrollbar_geom(
                 bounds,
@@ -2187,5 +2646,129 @@ mod paste_tests {
         // close the bracket early or open a nested one.
         let out = wrap_paste("a\x1b[201~b\x1b[200~c", true);
         assert_eq!(out, b"\x1b[200~abc\x1b[201~");
+    }
+}
+
+#[cfg(test)]
+mod selection_tests {
+    use super::{Selection, TerminalState};
+
+    fn state_with(lines: &[&str]) -> TerminalState {
+        let mut state = TerminalState::new_no_pty(40, 6).unwrap();
+        // Each line ends with CRLF so the emulator moves to column 0 of the
+        // next row (LF alone only moves down, keeping the column).
+        let mut text = String::new();
+        for l in lines {
+            text.push_str(l);
+            text.push_str("\r\n");
+        }
+        state.process(text.as_bytes());
+        state
+    }
+
+    #[test]
+    fn flowing_selection_spans_full_middle_rows() {
+        // Selected from col 3 of row 0 to col 2 of row 2, a flowing
+        // selection takes the tail of row 0, the WHOLE middle row, and the
+        // head of row 2. The full middle row is what distinguishes it from
+        // a block grab. (Trailing whitespace on intermediate rows is
+        // pre-existing behaviour, so assert structure, not the exact run.)
+        let state = state_with(&["abcde", "fghij", "klmno"]);
+        let sel = Selection { start: (3, 0), end: (2, 2), block: false };
+        let text = state.get_selection_text(&sel);
+        let rows: Vec<&str> = text.split('\n').collect();
+        assert_eq!(rows.len(), 3);
+        assert_eq!(rows[0].trim_end(), "de");
+        assert_eq!(rows[1].trim_end(), "fghij"); // full middle row
+        assert_eq!(rows[2], "klm");
+    }
+
+    #[test]
+    fn block_selection_takes_same_columns_each_row() {
+        // The same two corners as a block grab only the [3..=4] column
+        // slice of every row, not the flowing range.
+        let state = state_with(&["abcde", "fghij", "klmno"]);
+        let sel = Selection { start: (3, 0), end: (2, 2), block: true };
+        // cols 2..=3 (min/max of 3 and 2) per row: "cd", "hi", "mn".
+        assert_eq!(state.get_selection_text(&sel), "cd\nhi\nmn");
+    }
+
+    #[test]
+    fn block_selection_preserves_interior_trailing_spaces() {
+        // Two "columns" of unequal width: the block must keep each row's
+        // slice verbatim (including trailing spaces) so the columns stay
+        // aligned. Row 1's slice is shorter, padded with spaces.
+        let state = state_with(&["aa  bb", "cc  dd", "x     "]);
+        // Grab cols 0..=3: "aa  ", "cc  ", "x   ". Per-row trim would
+        // collapse these to "aa", "cc", "x" and break alignment.
+        let sel = Selection { start: (0, 0), end: (3, 2), block: true };
+        assert_eq!(state.get_selection_text(&sel), "aa  \ncc  \nx   ");
+    }
+
+    #[test]
+    fn flowing_selection_trims_trailing_per_row() {
+        // A flowing single-row selection that runs into trailing blanks
+        // drops them (standard terminal copy behaviour).
+        let state = state_with(&["hello     ", "world"]);
+        let sel = Selection { start: (0, 0), end: (9, 0), block: false };
+        assert_eq!(state.get_selection_text(&sel), "hello");
+    }
+
+    #[test]
+    fn smart_select_grabs_whole_url() {
+        // A click anywhere inside the URL returns the full token span,
+        // even though "/" and ":" are word delimiters that would split it.
+        let state = state_with(&["see https://example.com x"]);
+        let (c0, c1) =
+            super::smart_span_at(&state.backend.term, &state.palette, 0, 8)
+                .expect("URL should be detected");
+        let sel = Selection { start: (c0, 0), end: (c1, 0), block: false };
+        assert_eq!(state.get_selection_text(&sel), "https://example.com");
+    }
+
+    #[test]
+    fn smart_select_misses_plain_word() {
+        // A click on a non-token word returns None so the caller falls
+        // back to delimiter-word selection.
+        let state = state_with(&["see https://example.com x"]);
+        assert!(super::smart_span_at(&state.backend.term, &state.palette, 0, 1).is_none());
+    }
+
+    #[test]
+    fn click_count_classification_cycles_1_to_4() {
+        use super::next_click_count;
+        // No previous click, or a non-consecutive press, is always single.
+        assert_eq!(next_click_count(None, false), 1);
+        assert_eq!(next_click_count(None, true), 1);
+        assert_eq!(next_click_count(Some(2), false), 1);
+        assert_eq!(next_click_count(Some(4), false), 1);
+        // Consecutive presses advance single -> double -> triple -> quad,
+        // then wrap back to single on the fifth.
+        assert_eq!(next_click_count(Some(1), true), 2);
+        assert_eq!(next_click_count(Some(2), true), 3);
+        assert_eq!(next_click_count(Some(3), true), 4);
+        assert_eq!(next_click_count(Some(4), true), 1);
+    }
+
+    #[test]
+    fn paragraph_selection_spans_to_blank_lines() {
+        use std::sync::{Arc, Mutex};
+        let arc = Arc::new(Mutex::new(TerminalState::new_no_pty(40, 8).unwrap()));
+        // Two paragraphs separated by a blank line.
+        arc.lock()
+            .unwrap()
+            .process(b"para one a\r\npara one b\r\n\r\npara two\r\n");
+        let view = super::TerminalView::<()>::new(Arc::clone(&arc));
+        let sel = {
+            let mut guard = arc.lock().unwrap();
+            // Click on the second line of the first paragraph.
+            view.semantic_selection(
+                &mut guard.backend,
+                (0, 1),
+                super::SelectGranularity::Paragraph,
+            )
+        };
+        let text = arc.lock().unwrap().get_selection_text(&sel);
+        assert_eq!(text, "para one a\npara one b");
     }
 }

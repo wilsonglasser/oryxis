@@ -609,6 +609,8 @@ pub enum Message {
     SettingDefaultHostIconChanged(String),
     SettingKeepaliveChanged(String),
     SettingScrollbackChanged(String),
+    SettingWordDelimitersChanged(String),
+    SettingResetWordDelimiters,
     SettingSftpConcurrencyChanged(String),
     SettingSftpConnectTimeoutChanged(String),
     SettingSftpAuthTimeoutChanged(String),

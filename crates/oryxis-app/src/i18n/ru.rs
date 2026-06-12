@@ -294,6 +294,9 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "smart_contrast" => "Умный контраст (исправляет синее на синем)",
         "keepalive_interval" => "Интервал Keepalive",
         "scrollback" => "Буфер прокрутки",
+        "word_delimiters" => "Разделители слов",
+        "setting_word_delimiters_desc" => "Символы, разделяющие слова при выделении двойным щелчком. Тройной щелчок всегда выделяет всю строку.",
+        "word_delimiters_reset" => "Сбросить",
         "vault_password" => "Пароль хранилища",
 
         "ai_chat" => "ИИ-чат",

@@ -125,6 +125,7 @@ impl Oryxis {
             .with_bold_is_bright(self.setting_bold_is_bright)
             .with_keyword_highlight(self.setting_keyword_highlight)
             .with_smart_contrast(self.setting_smart_contrast)
+            .with_word_delimiters(&self.setting_word_delimiters)
             .on_font_size_increase(Message::TerminalFontSizeIncrease)
             .on_font_size_decrease(Message::TerminalFontSizeDecrease)
             .on_paste_request(Message::TerminalPasteFromClipboard)

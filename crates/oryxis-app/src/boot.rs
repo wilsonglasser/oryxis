@@ -449,6 +449,7 @@ impl Oryxis {
                 setting_cloud_auto_archive_orphans: false,
                 setting_cloud_orphan_archive_days: "7".into(),
                 setting_scrollback_rows: "10000".into(),
+                setting_word_delimiters: oryxis_terminal::DEFAULT_WORD_DELIMITERS.into(),
                 setting_sftp_concurrency: "2".into(),
                 setting_sftp_connect_timeout: "15".into(),
                 setting_sftp_auth_timeout: "30".into(),
@@ -906,6 +907,9 @@ impl Oryxis {
             oryxis_terminal::set_default_scrollback(
                 crate::dispatch_settings::resolve_scrollback_rows(&self.setting_scrollback_rows),
             );
+            if let Ok(Some(v)) = vault.get_setting("word_delimiters") {
+                self.setting_word_delimiters = v;
+            }
             if let Ok(Some(v)) = vault.get_setting("cloud_auto_refresh_enabled") {
                 self.setting_cloud_auto_refresh_enabled = v == "true";
             }
