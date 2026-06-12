@@ -736,7 +736,10 @@ pub struct Oryxis {
     pub(crate) session_logs: Vec<oryxis_vault::SessionLogEntry>,
     pub(crate) session_logs_page: usize,
     pub(crate) session_logs_total: usize,
-    pub(crate) viewing_session_log: Option<(Uuid, String)>, // (log_id, rendered_text)
+    pub(crate) viewing_session_log: Option<(Uuid, Vec<crate::ansi_render::AnsiSpan>)>,
+    /// Session-log row under the cursor (Logs view); drives the
+    /// clickable-row hover highlight.
+    pub(crate) hovered_log_row: Option<Uuid>,
 
     // Terminal theme
     /// Theme derived from the active app theme, used as the global

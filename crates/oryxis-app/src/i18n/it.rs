@@ -308,7 +308,6 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "keyboard_shortcuts" => "Scorciatoie da Tastiera",
 
         "session_log" => "Registro di Sessione",
-        "view" => "Visualizza",
         "entries" => "voci",
         "of" => "di",
         "no_activity" => "Nessuna attività registrata.",
@@ -701,6 +700,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "plugin_action_update" => "Aggiorna",
         "plugin_action_uninstall" => "Disinstalla",
         "plugin_uninstall_confirm_title" => "Rimuovere il plugin?",
+        "log_delete_confirm_title" => "Eliminare la registrazione?",
+        "log_delete_confirm_body" => "questa registrazione di sessione verrà eliminata definitivamente.",
         "plugin_uninstall_confirm_body" => "i binari scaricati verranno eliminati da questa macchina. Puoi reinstallarlo da questo pannello in qualsiasi momento.",
         "plugin_action_check_updates" => "Cerca aggiornamenti",
         "plugin_action_retry" => "Riprova",

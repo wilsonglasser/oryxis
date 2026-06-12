@@ -346,7 +346,6 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
 
         // Session logs
         "session_log" => "Журнал сесії",
-        "view" => "Перегляд",
         "in_progress" => "У процесі",
         "entries" => "записів",
         "of" => "з",
@@ -762,6 +761,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "plugin_action_update" => "Оновити",
         "plugin_action_uninstall" => "Видалити",
         "plugin_uninstall_confirm_title" => "Видалити плагін?",
+        "log_delete_confirm_title" => "Видалити запис?",
+        "log_delete_confirm_body" => "цей запис сесії буде видалено назавжди.",
         "plugin_uninstall_confirm_body" => "завантажені двійкові файли буде видалено з цього комп'ютера. Ви можете перевстановити його з цієї панелі будь-коли.",
         "plugin_action_check_updates" => "Перевірити оновлення",
         "plugin_action_retry" => "Повторити",

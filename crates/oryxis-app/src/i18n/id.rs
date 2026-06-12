@@ -346,7 +346,6 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
 
         // Session logs
         "session_log" => "Log Sesi",
-        "view" => "Lihat",
         "in_progress" => "Berlangsung",
         "entries" => "entri",
         "of" => "dari",
@@ -762,6 +761,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "plugin_action_update" => "Perbarui",
         "plugin_action_uninstall" => "Copot",
         "plugin_uninstall_confirm_title" => "Hapus plugin?",
+        "log_delete_confirm_title" => "Hapus rekaman?",
+        "log_delete_confirm_body" => "rekaman sesi ini akan dihapus secara permanen.",
         "plugin_uninstall_confirm_body" => "biner yang diunduh akan dihapus dari mesin ini. Anda dapat memasangnya kembali dari panel ini kapan saja.",
         "plugin_action_check_updates" => "Periksa pembaruan",
         "plugin_action_retry" => "Coba lagi",

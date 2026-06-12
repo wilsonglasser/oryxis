@@ -308,7 +308,6 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "keyboard_shortcuts" => "Горячие клавиши",
 
         "session_log" => "Журнал сеанса",
-        "view" => "Просмотр",
         "entries" => "записей",
         "of" => "из",
         "no_activity" => "Активность пока не записана.",
@@ -701,6 +700,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "plugin_action_update" => "Обновить",
         "plugin_action_uninstall" => "Удалить",
         "plugin_uninstall_confirm_title" => "Удалить плагин?",
+        "log_delete_confirm_title" => "Удалить запись?",
+        "log_delete_confirm_body" => "эта запись сессии будет удалена безвозвратно.",
         "plugin_uninstall_confirm_body" => "загруженные двоичные файлы будут удалены с этого компьютера. Вы можете переустановить его из этой панели в любой момент.",
         "plugin_action_check_updates" => "Проверить обновления",
         "plugin_action_retry" => "Повторить",

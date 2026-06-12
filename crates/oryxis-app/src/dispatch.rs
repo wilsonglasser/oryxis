@@ -17,7 +17,6 @@ use crate::mcp::{
     install_mcp_config_to_file, install_mcp_config_to_wsl, mcp_config_json, mcp_config_json_wsl,
 };
 use crate::state::{ConnectionForm, EnvVarForm, PortForwardForm, VaultState, View};
-use crate::util::strip_ansi;
 
 /// How long a dynamic group's resolved host list stays "fresh" before
 /// re-opening the group triggers a background re-resolve. Cloud
@@ -636,12 +635,38 @@ impl Oryxis {
                 self.flush_session_logs_final();
                 if let Some(vault) = &self.vault
                     && let Ok(Some(data)) = vault.get_session_data(&log_id) {
-                        let rendered = strip_ansi(&data);
-                        self.viewing_session_log = Some((log_id, rendered));
+                        let palette = self.resolve_global_terminal_palette();
+                        let spans = crate::ansi_render::render(&data, &palette);
+                        self.viewing_session_log = Some((log_id, spans));
                 }
             }
             Message::CloseSessionLogView => {
                 self.viewing_session_log = None;
+            }
+            Message::RequestDeleteSessionLog(idx) => {
+                let label = self
+                    .session_logs
+                    .get(idx)
+                    .map(|e| e.label.clone())
+                    .unwrap_or_default();
+                self.error_dialog = Some(crate::state::ErrorDialog {
+                    title: crate::i18n::t("log_delete_confirm_title").to_string(),
+                    body: format!(
+                        "{label}: {}",
+                        crate::i18n::t("log_delete_confirm_body")
+                    ),
+                    link: None,
+                    action: Some(crate::state::ErrorDialogAction {
+                        label: crate::i18n::t("delete").to_string(),
+                        message: Box::new(Message::DeleteSessionLog(idx)),
+                    }),
+                });
+            }
+            Message::LogRowHovered(id) => {
+                self.hovered_log_row = Some(id);
+            }
+            Message::LogRowUnhovered => {
+                self.hovered_log_row = None;
             }
             Message::DeleteSessionLog(idx) => {
                 if let Some(entry) = self.session_logs.get(idx) {

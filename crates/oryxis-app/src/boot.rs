@@ -392,6 +392,7 @@ impl Oryxis {
                 session_logs_page: 0,
                 session_logs_total: 0,
                 viewing_session_log: None,
+                hovered_log_row: None,
                 show_snippet_panel: false,
                 snippet_label: String::new(),
                 snippet_command: text_editor::Content::new(),

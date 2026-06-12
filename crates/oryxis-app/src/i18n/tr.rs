@@ -346,7 +346,6 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
 
         // Session logs
         "session_log" => "Oturum Kaydı",
-        "view" => "Görüntüle",
         "in_progress" => "Devam Ediyor",
         "entries" => "kayıt",
         "of" => "/",
@@ -762,6 +761,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "plugin_action_update" => "Güncelle",
         "plugin_action_uninstall" => "Kaldır",
         "plugin_uninstall_confirm_title" => "Eklenti kaldırılsın mı?",
+        "log_delete_confirm_title" => "Kayıt silinsin mi?",
+        "log_delete_confirm_body" => "bu oturum kaydı kalıcı olarak silinecek.",
         "plugin_uninstall_confirm_body" => "indirilen ikili dosyalar bu makineden silinecek. İstediğiniz zaman bu panelden yeniden yükleyebilirsiniz.",
         "plugin_action_check_updates" => "Güncellemeleri denetle",
         "plugin_action_retry" => "Tekrar dene",

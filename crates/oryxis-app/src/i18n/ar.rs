@@ -353,7 +353,6 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
 
         // Session logs
         "session_log" => "سجل الجلسة",
-        "view" => "عرض",
         "in_progress" => "قيد التنفيذ",
         "logs" => "السجلات",
         "search_logs" => "البحث في السجلات...",
@@ -766,6 +765,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "plugin_action_update" => "تحديث",
         "plugin_action_uninstall" => "إلغاء التثبيت",
         "plugin_uninstall_confirm_title" => "إزالة الإضافة؟",
+        "log_delete_confirm_title" => "حذف التسجيل؟",
+        "log_delete_confirm_body" => "سيتم حذف تسجيل الجلسة هذا نهائيًا.",
         "plugin_uninstall_confirm_body" => "سيتم حذف الملفات الثنائية التي تم تنزيلها من هذا الجهاز. يمكنك إعادة التثبيت من هذه اللوحة في أي وقت.",
         "plugin_action_check_updates" => "تحقق من التحديثات",
         "plugin_action_retry" => "إعادة المحاولة",

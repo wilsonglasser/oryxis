@@ -858,17 +858,20 @@ impl Oryxis {
                         .size(13)
                         .color(OryxisColors::t().text_muted),
                     Space::new().height(16),
-                    styled_button(
-                        crate::i18n::t("clear_all"),
-                        Message::ClearLogs,
-                        OryxisColors::t().error,
-                    ),
-                    Space::new().height(8),
-                    styled_button(
-                        crate::i18n::t("cancel"),
-                        Message::CancelClearHistory,
-                        OryxisColors::t().text_muted,
-                    ),
+                    crate::widgets::dir_row(vec![
+                        styled_button(
+                            crate::i18n::t("clear_all"),
+                            Message::ClearLogs,
+                            OryxisColors::t().error,
+                        ),
+                        Space::new().width(8).into(),
+                        styled_button(
+                            crate::i18n::t("cancel"),
+                            Message::CancelClearHistory,
+                            OryxisColors::t().text_muted,
+                        ),
+                    ])
+                    .align_y(iced::Alignment::Center),
                 ]
                 .padding(24)
                 .width(360),

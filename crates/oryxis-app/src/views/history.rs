@@ -129,9 +129,10 @@ impl Oryxis {
             can_next,
         );
 
-        // "Clear all" reads as a destructive main action (error tint,
-        // bold uppercase) and only *requests* the wipe; the actual
-        // ClearLogs runs from the confirmation modal in layout.rs.
+        // "Clear all" reads as a destructive main action (solid error
+        // fill, same look as the confirm modal's primary button) and
+        // only *requests* the wipe; the actual ClearLogs runs from the
+        // confirmation modal in layout.rs.
         let clear_btn = button(
             container(
                 text(crate::i18n::t("clear_all").to_uppercase())
@@ -140,7 +141,7 @@ impl Oryxis {
                         weight: iced::font::Weight::Bold,
                         ..iced::Font::new(crate::theme::SYSTEM_UI_FAMILY)
                     })
-                    .color(OryxisColors::t().error),
+                    .color(OryxisColors::t().button_text),
             )
             .center_y(Length::Fixed(24.0))
             .padding(Padding {
@@ -152,16 +153,17 @@ impl Oryxis {
         )
         .on_press(Message::RequestClearHistory)
         .style(|_, status| {
+            let base = OryxisColors::t().error;
             let bg = match status {
-                BtnStatus::Hovered => Color { a: 0.15, ..OryxisColors::t().error },
-                _ => Color::TRANSPARENT,
+                BtnStatus::Hovered => Color { a: 0.85, ..base },
+                BtnStatus::Pressed => Color { a: 0.70, ..base },
+                _ => base,
             };
             button::Style {
                 background: Some(Background::Color(bg)),
                 border: Border {
                     radius: Radius::from(6.0),
-                    color: Color { a: 0.5, ..OryxisColors::t().error },
-                    width: 1.0,
+                    ..Default::default()
                 },
                 ..Default::default()
             }
@@ -223,7 +225,23 @@ impl Oryxis {
         .height(Length::Fill);
 
         // ── Session viewer overlay ──
-        if let Some((_log_id, ref rendered_text)) = self.viewing_session_log {
+        if let Some((_log_id, ref spans)) = self.viewing_session_log {
+            // Recreate the terminal's look: palette colors parsed from
+            // the recording's SGR sequences over the theme background.
+            let palette = self.resolve_global_terminal_palette();
+            let default_fg = palette.foreground;
+            let term_bg = palette.background;
+            let rich_spans: Vec<iced::widget::text::Span<'_, ()>> = spans
+                .iter()
+                .map(|s| {
+                    iced::widget::text::Span::new(s.text.as_str())
+                        .color(s.color.unwrap_or(default_fg))
+                })
+                .collect();
+            let body = iced::widget::text::Rich::<'_, (), Message>::with_spans(rich_spans)
+                .size(12)
+                .font(iced::Font::MONOSPACE)
+                .selectable(true);
             let viewer = container(
                 column![
                     container(
@@ -268,14 +286,13 @@ impl Oryxis {
                         top: 16.0, right: 20.0, bottom: 12.0, left: 20.0,
                     }),
                     scrollable(
-                        container(
-                            text(rendered_text)
-                                .size(12)
-                                .color(OryxisColors::t().text_primary)
-                                .font(iced::Font::MONOSPACE),
-                        )
-                        .padding(16)
-                        .width(Length::Fill),
+                        container(body)
+                            .padding(16)
+                            .width(Length::Fill)
+                            .style(move |_| container::Style {
+                                background: Some(Background::Color(term_bg)),
+                                ..Default::default()
+                            }),
                     )
                     .height(Length::Fill),
                 ],
@@ -439,37 +456,12 @@ impl Oryxis {
             }
         };
 
-        // Action buttons (Session rows only).
-        let actions: Element<'_, Message> = match &row.kind {
-            TimelineKind::Session { idx, entry } => {
-                let log_id = entry.id;
+        // Trailing controls. Session rows: timestamp then Delete in
+        // the last column; opening the recording is the row click
+        // itself (no View button). Failure rows: timestamp only.
+        let trailing: Element<'_, Message> = match &row.kind {
+            TimelineKind::Session { idx, .. } => {
                 let idx = *idx;
-                let view_btn = button(
-                    container(
-                        text(crate::i18n::t("view"))
-                            .size(11)
-                            .color(OryxisColors::t().accent),
-                    )
-                    .padding(Padding {
-                        top: 4.0, right: 10.0, bottom: 4.0, left: 10.0,
-                    }),
-                )
-                .on_press(Message::ViewSessionLog(log_id))
-                .style(|_, status| {
-                    let bg = match status {
-                        BtnStatus::Hovered => Color { a: 0.15, ..OryxisColors::t().accent },
-                        _ => Color::TRANSPARENT,
-                    };
-                    button::Style {
-                        background: Some(Background::Color(bg)),
-                        border: Border {
-                            radius: Radius::from(6.0),
-                            color: OryxisColors::t().accent,
-                            width: 1.0,
-                        },
-                        ..Default::default()
-                    }
-                });
                 let delete_btn = button(
                     container(
                         text(crate::i18n::t("delete"))
@@ -480,7 +472,7 @@ impl Oryxis {
                         top: 4.0, right: 10.0, bottom: 4.0, left: 10.0,
                     }),
                 )
-                .on_press(Message::DeleteSessionLog(idx))
+                .on_press(Message::RequestDeleteSessionLog(idx))
                 .style(|_, status| {
                     let bg = match status {
                         BtnStatus::Hovered => Color { a: 0.15, ..OryxisColors::t().error },
@@ -497,17 +489,32 @@ impl Oryxis {
                     }
                 });
                 crate::widgets::dir_row(vec![
-                    view_btn.into(),
-                    Space::new().width(6).into(),
+                    text(ts)
+                        .size(10)
+                        .color(OryxisColors::t().text_muted)
+                        .into(),
+                    Space::new().width(12).into(),
                     delete_btn.into(),
                 ])
                 .align_y(iced::Alignment::Center)
                 .into()
             }
-            TimelineKind::Failure(_) => Space::new().width(0).into(),
+            TimelineKind::Failure(_) => text(ts)
+                .size(10)
+                .color(OryxisColors::t().text_muted)
+                .into(),
         };
 
-        container(
+        // Session rows are clickable (the whole row opens the
+        // recording) and highlight on hover; failure rows have nothing
+        // to open, so they keep the flat card look.
+        let viewable = match &row.kind {
+            TimelineKind::Session { entry, .. } => Some(entry.id),
+            TimelineKind::Failure(_) => None,
+        };
+        let hovered = viewable.is_some() && viewable == self.hovered_log_row;
+
+        let card = container(
             crate::widgets::dir_row(vec![
                 badge,
                 Space::new().width(12).into(),
@@ -530,26 +537,34 @@ impl Oryxis {
                 .align_x(crate::widgets::dir_align_x())
                 .into(),
                 Space::new().width(12).into(),
-                actions,
-                Space::new().width(12).into(),
-                text(ts)
-                    .size(10)
-                    .color(OryxisColors::t().text_muted)
-                    .into(),
+                trailing,
             ])
             .align_y(iced::Alignment::Center),
         )
         .padding(Padding { top: 8.0, right: 16.0, bottom: 8.0, left: 16.0 })
         .width(Length::Fill)
-        .style(|_| container::Style {
-            background: Some(Background::Color(OryxisColors::t().bg_surface)),
+        .style(move |_| container::Style {
+            background: Some(Background::Color(if hovered {
+                OryxisColors::t().bg_hover
+            } else {
+                OryxisColors::t().bg_surface
+            })),
             border: Border {
                 radius: Radius::from(8.0),
                 ..Default::default()
             },
             ..Default::default()
-        })
-        .into()
+        });
+
+        match viewable {
+            Some(log_id) => iced::widget::MouseArea::new(card)
+                .on_press(Message::ViewSessionLog(log_id))
+                .on_enter(Message::LogRowHovered(log_id))
+                .on_exit(Message::LogRowUnhovered)
+                .interaction(iced::mouse::Interaction::Pointer)
+                .into(),
+            None => card.into(),
+        }
     }
 }
 

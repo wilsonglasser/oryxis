@@ -346,7 +346,6 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
 
         // Session logs
         "session_log" => "Nhật ký phiên",
-        "view" => "Xem",
         "in_progress" => "Đang diễn ra",
         "entries" => "mục",
         "of" => "trên",
@@ -762,6 +761,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "plugin_action_update" => "Cập nhật",
         "plugin_action_uninstall" => "Gỡ cài đặt",
         "plugin_uninstall_confirm_title" => "Gỡ plugin?",
+        "log_delete_confirm_title" => "Xóa bản ghi?",
+        "log_delete_confirm_body" => "bản ghi phiên này sẽ bị xóa vĩnh viễn.",
         "plugin_uninstall_confirm_body" => "các tệp nhị phân đã tải xuống sẽ bị xóa khỏi máy này. Bạn có thể cài lại từ bảng này bất cứ lúc nào.",
         "plugin_action_check_updates" => "Kiểm tra cập nhật",
         "plugin_action_retry" => "Thử lại",

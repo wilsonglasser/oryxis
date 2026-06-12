@@ -68,6 +68,16 @@ project uses [SemVer](https://semver.org/spec/v2.0.0.html).
   password from debug formatting.
 
 ### Added
+- **Colorized session log viewer.** Recordings render with the terminal
+  theme's palette (ANSI colors parsed, carriage-return redraws and
+  escape sequences handled properly instead of leaking broken
+  characters over a plain dump). Log rows are now clickable to open the
+  recording (the View button is gone), the Delete action moved to the
+  last column and asks for confirmation, and the timestamp sits where
+  the buttons used to be.
+- **Plugin uninstall confirmation.** Removing a plugin asks first, and
+  removing the MCP plugin also deletes the stable launcher copy and
+  flips the MCP Server toggle off.
 - **One-time terminal link hint.** The "Ctrl + Click to open the link"
   hover hint retires itself permanently after the first successful
   ctrl-click, and is now localized (it was hardcoded English). A new

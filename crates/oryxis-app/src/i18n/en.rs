@@ -349,7 +349,6 @@ pub(super) fn lookup(key: &str) -> &'static str {
 
         // Session logs
         "session_log" => "Session Log",
-        "view" => "View",
         "in_progress" => "In Progress",
         "clear_all" => "Clear all",
         "clear_history_title" => "Clear all logs?",
@@ -782,6 +781,8 @@ pub(super) fn lookup(key: &str) -> &'static str {
         "plugin_action_update" => "Update",
         "plugin_action_uninstall" => "Uninstall",
         "plugin_uninstall_confirm_title" => "Remove plugin?",
+        "log_delete_confirm_title" => "Delete recording?",
+        "log_delete_confirm_body" => "this session recording is permanently deleted.",
         "plugin_uninstall_confirm_body" => "the downloaded binaries are deleted from this machine. You can reinstall from this panel at any time.",
         "plugin_action_check_updates" => "Check for updates",
         "plugin_action_retry" => "Retry",

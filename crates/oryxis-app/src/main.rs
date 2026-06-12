@@ -49,6 +49,7 @@ mod root_view;
 // the AWS provider moved into its plugin subprocess.
 mod session_manager_plugin;
 mod hotkeys;
+mod ansi_render;
 mod session_group_helpers;
 mod session_redact;
 mod sftp_helpers;

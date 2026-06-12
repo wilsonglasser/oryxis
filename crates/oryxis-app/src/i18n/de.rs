@@ -308,7 +308,6 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "keyboard_shortcuts" => "Tastenkürzel",
 
         "session_log" => "Sitzungsprotokoll",
-        "view" => "Anzeigen",
         "entries" => "Einträge",
         "of" => "von",
         "no_activity" => "Noch keine Aktivität protokolliert.",
@@ -702,6 +701,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "plugin_action_update" => "Aktualisieren",
         "plugin_action_uninstall" => "Deinstallieren",
         "plugin_uninstall_confirm_title" => "Plugin entfernen?",
+        "log_delete_confirm_title" => "Aufzeichnung löschen?",
+        "log_delete_confirm_body" => "diese Sitzungsaufzeichnung wird dauerhaft gelöscht.",
         "plugin_uninstall_confirm_body" => "die heruntergeladenen Binärdateien werden von diesem Rechner gelöscht. Sie können es jederzeit über dieses Panel neu installieren.",
         "plugin_action_check_updates" => "Auf Updates prüfen",
         "plugin_action_retry" => "Erneut versuchen",

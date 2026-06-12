@@ -562,7 +562,13 @@ pub enum Message {
     // Session logs
     ViewSessionLog(Uuid),
     CloseSessionLogView,
+    /// Ask for confirmation before deleting one recording; the
+    /// dialog's action carries `DeleteSessionLog`.
+    RequestDeleteSessionLog(usize),
     DeleteSessionLog(usize),
+    /// Hover tracking for clickable session rows in the Logs view.
+    LogRowHovered(Uuid),
+    LogRowUnhovered,
     // History was split in v0.6 (logs + session logs in two panes
     // with independent pagination); v0.7 merges both into one timeline
     // so the per-section Clear / Next / Prev controls don't render

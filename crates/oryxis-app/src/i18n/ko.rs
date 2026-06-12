@@ -346,7 +346,6 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
 
         // Session logs
         "session_log" => "세션 로그",
-        "view" => "보기",
         "in_progress" => "진행 중",
         "entries" => "항목",
         "of" => "/",
@@ -763,6 +762,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "plugin_action_update" => "업데이트",
         "plugin_action_uninstall" => "제거",
         "plugin_uninstall_confirm_title" => "플러그인을 제거할까요?",
+        "log_delete_confirm_title" => "기록을 삭제할까요?",
+        "log_delete_confirm_body" => "이 세션 기록은 영구적으로 삭제됩니다.",
         "plugin_uninstall_confirm_body" => "다운로드된 바이너리가 이 컴퓨터에서 삭제됩니다. 언제든지 이 패널에서 다시 설치할 수 있습니다.",
         "plugin_action_check_updates" => "업데이트 확인",
         "plugin_action_retry" => "재시도",

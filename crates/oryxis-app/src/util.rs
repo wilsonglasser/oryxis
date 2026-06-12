@@ -2,27 +2,6 @@
 
 use iced::keyboard;
 
-/// Strip ANSI escape sequences from raw terminal output bytes.
-pub(crate) fn strip_ansi(input: &[u8]) -> String {
-    let text = String::from_utf8_lossy(input);
-    let mut result = String::new();
-    let mut in_escape = false;
-    for ch in text.chars() {
-        if ch == '\x1b' {
-            in_escape = true;
-            continue;
-        }
-        if in_escape {
-            if ch.is_ascii_alphabetic() || ch == '~' {
-                in_escape = false;
-            }
-            continue;
-        }
-        result.push(ch);
-    }
-    result
-}
-
 /// Format byte size for display (e.g. "12.3 KB").
 pub(crate) fn format_data_size(bytes: usize) -> String {
     if bytes < 1024 {
