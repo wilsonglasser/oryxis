@@ -700,6 +700,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "plugin_action_install" => "Установить",
         "plugin_action_update" => "Обновить",
         "plugin_action_uninstall" => "Удалить",
+        "plugin_uninstall_confirm_title" => "Удалить плагин?",
+        "plugin_uninstall_confirm_body" => "загруженные двоичные файлы будут удалены с этого компьютера. Вы можете переустановить его из этой панели в любой момент.",
         "plugin_action_check_updates" => "Проверить обновления",
         "plugin_action_retry" => "Повторить",
         "plugin_pinned" => "Закреплено на",

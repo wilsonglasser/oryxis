@@ -762,6 +762,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "plugin_action_install" => "설치",
         "plugin_action_update" => "업데이트",
         "plugin_action_uninstall" => "제거",
+        "plugin_uninstall_confirm_title" => "플러그인을 제거할까요?",
+        "plugin_uninstall_confirm_body" => "다운로드된 바이너리가 이 컴퓨터에서 삭제됩니다. 언제든지 이 패널에서 다시 설치할 수 있습니다.",
         "plugin_action_check_updates" => "업데이트 확인",
         "plugin_action_retry" => "재시도",
         "plugin_pinned" => "고정 대상",

@@ -700,6 +700,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "plugin_action_install" => "Installa",
         "plugin_action_update" => "Aggiorna",
         "plugin_action_uninstall" => "Disinstalla",
+        "plugin_uninstall_confirm_title" => "Rimuovere il plugin?",
+        "plugin_uninstall_confirm_body" => "i binari scaricati verranno eliminati da questa macchina. Puoi reinstallarlo da questo pannello in qualsiasi momento.",
         "plugin_action_check_updates" => "Cerca aggiornamenti",
         "plugin_action_retry" => "Riprova",
         "plugin_pinned" => "Bloccato su",

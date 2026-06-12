@@ -949,6 +949,9 @@ pub enum Message {
     PluginInstallDone(String, Result<String, String>),
     /// Remove a provider's cached binaries.
     PluginUninstall(String),
+    /// Confirmed from the uninstall dialog: actually remove the
+    /// cached binaries (and the MCP launcher copy for `mcp`).
+    PluginUninstallConfirmed(String),
 
     /// A CJK font (Korean / Chinese / Japanese) finished downloading or
     /// was read from cache; `Ok` carries the font bytes to hand to

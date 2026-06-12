@@ -751,6 +751,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "plugin_action_install" => "نصب",
         "plugin_action_update" => "به‌روزرسانی",
         "plugin_action_uninstall" => "حذف نصب",
+        "plugin_uninstall_confirm_title" => "افزونه حذف شود؟",
+        "plugin_uninstall_confirm_body" => "فایل‌های دانلودشده از این دستگاه حذف می‌شوند. هر زمان می‌توانید از همین پنل دوباره نصب کنید.",
         "plugin_action_check_updates" => "بررسی به‌روزرسانی‌ها",
         "plugin_action_retry" => "تلاش دوباره",
         "plugin_pinned" => "ثابت‌شده روی",

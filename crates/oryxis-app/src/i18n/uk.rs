@@ -761,6 +761,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "plugin_action_install" => "Установити",
         "plugin_action_update" => "Оновити",
         "plugin_action_uninstall" => "Видалити",
+        "plugin_uninstall_confirm_title" => "Видалити плагін?",
+        "plugin_uninstall_confirm_body" => "завантажені двійкові файли буде видалено з цього комп'ютера. Ви можете перевстановити його з цієї панелі будь-коли.",
         "plugin_action_check_updates" => "Перевірити оновлення",
         "plugin_action_retry" => "Повторити",
         "plugin_pinned" => "Закріплено на",

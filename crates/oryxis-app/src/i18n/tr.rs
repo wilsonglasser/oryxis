@@ -761,6 +761,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "plugin_action_install" => "Kur",
         "plugin_action_update" => "Güncelle",
         "plugin_action_uninstall" => "Kaldır",
+        "plugin_uninstall_confirm_title" => "Eklenti kaldırılsın mı?",
+        "plugin_uninstall_confirm_body" => "indirilen ikili dosyalar bu makineden silinecek. İstediğiniz zaman bu panelden yeniden yükleyebilirsiniz.",
         "plugin_action_check_updates" => "Güncellemeleri denetle",
         "plugin_action_retry" => "Tekrar dene",
         "plugin_pinned" => "Şuna sabitlendi",

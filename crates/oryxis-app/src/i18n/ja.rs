@@ -712,6 +712,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "plugin_action_install" => "インストール",
         "plugin_action_update" => "更新",
         "plugin_action_uninstall" => "アンインストール",
+        "plugin_uninstall_confirm_title" => "プラグインを削除しますか？",
+        "plugin_uninstall_confirm_body" => "ダウンロードされたバイナリはこのマシンから削除されます。いつでもこのパネルから再インストールできます。",
         "plugin_action_check_updates" => "更新を確認",
         "plugin_action_retry" => "再試行",
         "plugin_pinned" => "固定先",

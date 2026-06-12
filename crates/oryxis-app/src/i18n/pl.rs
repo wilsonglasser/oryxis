@@ -768,6 +768,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "plugin_action_install" => "Zainstaluj",
         "plugin_action_update" => "Aktualizuj",
         "plugin_action_uninstall" => "Odinstaluj",
+        "plugin_uninstall_confirm_title" => "Usunąć wtyczkę?",
+        "plugin_uninstall_confirm_body" => "pobrane pliki binarne zostaną usunięte z tego komputera. Możesz ją w każdej chwili zainstalować ponownie z tego panelu.",
         "plugin_action_check_updates" => "Sprawdź aktualizacje",
         "plugin_action_retry" => "Ponów",
         "plugin_pinned" => "Przypięte do",

@@ -710,6 +710,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "plugin_action_install" => "安装",
         "plugin_action_update" => "更新",
         "plugin_action_uninstall" => "卸载",
+        "plugin_uninstall_confirm_title" => "移除插件？",
+        "plugin_uninstall_confirm_body" => "已下载的二进制文件将从本机删除。您可以随时从此面板重新安装。",
         "plugin_action_check_updates" => "检查更新",
         "plugin_action_retry" => "重试",
         "plugin_pinned" => "固定到",

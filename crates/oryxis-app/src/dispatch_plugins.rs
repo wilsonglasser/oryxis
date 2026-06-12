@@ -382,8 +382,51 @@ impl Oryxis {
             }
 
             Message::PluginUninstall(id) => {
+                // Destructive: route through a confirmation dialog whose
+                // primary action carries the real removal message.
+                let display = self
+                    .plugins
+                    .iter()
+                    .find(|p| p.provider_id == id)
+                    .map(|p| p.display_name.clone())
+                    .unwrap_or_else(|| id.clone());
+                self.error_dialog = Some(crate::state::ErrorDialog {
+                    title: crate::i18n::t("plugin_uninstall_confirm_title").to_string(),
+                    body: format!(
+                        "{display}: {}",
+                        crate::i18n::t("plugin_uninstall_confirm_body")
+                    ),
+                    link: None,
+                    action: Some(crate::state::ErrorDialogAction {
+                        label: crate::i18n::t("plugin_action_uninstall").to_string(),
+                        message: Box::new(Message::PluginUninstallConfirmed(id)),
+                    }),
+                });
+                Ok(Task::none())
+            }
+            Message::PluginUninstallConfirmed(id) => {
                 if let Ok(dir) = cache::provider_dir(&id) {
                     let _ = std::fs::remove_dir_all(&dir);
+                }
+                // The MCP plugin also keeps a stable launcher copy in
+                // ~/.oryxis/bin that external clients spawn; removing
+                // the plugin must remove it too (Windows fallback: a
+                // held-open exe is renamed aside and swept next boot).
+                if id == "mcp" {
+                    if let Ok(launcher) = crate::mcp_install::launcher_path()
+                        && launcher.exists()
+                        && std::fs::remove_file(&launcher).is_err()
+                    {
+                        let _ = std::fs::rename(
+                            &launcher,
+                            launcher.with_extension("old.exe"),
+                        );
+                    }
+                    // A removed server shouldn't stay toggled on.
+                    self.mcp_server_enabled = false;
+                    if let Some(vault) = &self.vault {
+                        let _ = vault.set_setting("mcp_server_enabled", "false");
+                    }
                 }
                 if let Some(entry) =
                     self.plugins.iter_mut().find(|p| p.provider_id == id)

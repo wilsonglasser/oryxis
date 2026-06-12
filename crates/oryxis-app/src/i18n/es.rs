@@ -707,6 +707,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "plugin_action_install" => "Instalar",
         "plugin_action_update" => "Actualizar",
         "plugin_action_uninstall" => "Desinstalar",
+        "plugin_uninstall_confirm_title" => "¿Quitar el plugin?",
+        "plugin_uninstall_confirm_body" => "los binarios descargados se eliminarán de este equipo. Puedes reinstalarlo desde este panel en cualquier momento.",
         "plugin_action_check_updates" => "Buscar actualizaciones",
         "plugin_action_retry" => "Reintentar",
         "plugin_pinned" => "Fijado en",

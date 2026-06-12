@@ -761,6 +761,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "plugin_action_install" => "Pasang",
         "plugin_action_update" => "Perbarui",
         "plugin_action_uninstall" => "Copot",
+        "plugin_uninstall_confirm_title" => "Hapus plugin?",
+        "plugin_uninstall_confirm_body" => "biner yang diunduh akan dihapus dari mesin ini. Anda dapat memasangnya kembali dari panel ini kapan saja.",
         "plugin_action_check_updates" => "Periksa pembaruan",
         "plugin_action_retry" => "Coba lagi",
         "plugin_pinned" => "Disematkan ke",

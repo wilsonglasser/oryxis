@@ -781,6 +781,8 @@ pub(super) fn lookup(key: &str) -> &'static str {
         "plugin_action_install" => "Install",
         "plugin_action_update" => "Update",
         "plugin_action_uninstall" => "Uninstall",
+        "plugin_uninstall_confirm_title" => "Remove plugin?",
+        "plugin_uninstall_confirm_body" => "the downloaded binaries are deleted from this machine. You can reinstall from this panel at any time.",
         "plugin_action_check_updates" => "Check for updates",
         "plugin_action_retry" => "Retry",
         "plugin_pinned" => "Pinned to",

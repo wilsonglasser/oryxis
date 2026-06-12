@@ -765,6 +765,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "plugin_action_install" => "تثبيت",
         "plugin_action_update" => "تحديث",
         "plugin_action_uninstall" => "إلغاء التثبيت",
+        "plugin_uninstall_confirm_title" => "إزالة الإضافة؟",
+        "plugin_uninstall_confirm_body" => "سيتم حذف الملفات الثنائية التي تم تنزيلها من هذا الجهاز. يمكنك إعادة التثبيت من هذه اللوحة في أي وقت.",
         "plugin_action_check_updates" => "تحقق من التحديثات",
         "plugin_action_retry" => "إعادة المحاولة",
         "plugin_pinned" => "مثبت على",
