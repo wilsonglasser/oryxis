@@ -20,7 +20,6 @@ mdns-sd = { workspace = true }
 x25519-dalek = { workspace = true }
 ed25519-dalek = { workspace = true }
 rand = { workspace = true }
-base64 = { workspace = true }
 bincode = { workspace = true }
 hex = { workspace = true }
 chacha20poly1305 = { workspace = true }

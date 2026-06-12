@@ -5510,7 +5510,6 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror 2.0.18",
- "uuid",
 ]
 
 [[package]]
@@ -5526,13 +5525,10 @@ dependencies = [
  "aws-sdk-sts",
  "chrono",
  "oryxis-cloud",
- "oryxis-core",
  "serde",
  "serde_json",
- "thiserror 2.0.18",
  "tokio",
  "tracing",
- "uuid",
 ]
 
 [[package]]
@@ -5557,11 +5553,9 @@ dependencies = [
  "async-trait",
  "chrono",
  "oryxis-cloud",
- "oryxis-core",
  "serde",
  "serde_json",
  "tokio",
- "tracing",
 ]
 
 [[package]]
@@ -5583,7 +5577,6 @@ name = "oryxis-core"
 version = "0.1.0"
 dependencies = [
  "chrono",
- "secrecy",
  "serde",
  "serde_json",
  "thiserror 2.0.18",
@@ -5594,7 +5587,6 @@ dependencies = [
 name = "oryxis-mcp"
 version = "0.1.0"
 dependencies = [
- "chrono",
  "oryxis-core",
  "oryxis-ssh",
  "oryxis-vault",
@@ -5669,7 +5661,6 @@ dependencies = [
 name = "oryxis-sync"
 version = "0.1.0"
 dependencies = [
- "base64 0.22.1",
  "bincode",
  "chacha20poly1305",
  "chrono",
@@ -5703,9 +5694,7 @@ dependencies = [
  "alacritty_terminal",
  "arboard",
  "iced",
- "oryxis-core",
  "portable-pty",
- "thiserror 2.0.18",
  "tokio",
  "tracing",
  "vte",
@@ -5730,7 +5719,6 @@ dependencies = [
  "rand 0.8.6",
  "rsa 0.9.10",
  "rusqlite",
- "secrecy",
  "serde",
  "serde_json",
  "sha1 0.10.6",
@@ -5739,7 +5727,6 @@ dependencies = [
  "subtle",
  "tempfile",
  "thiserror 2.0.18",
- "tokio",
  "tracing",
  "uuid",
  "zeroize",
@@ -7560,16 +7547,6 @@ dependencies = [
  "der 0.8.0",
  "hybrid-array",
  "subtle",
- "zeroize",
-]
-
-[[package]]
-name = "secrecy"
-version = "0.10.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e891af845473308773346dc847b2c23ee78fe442e0472ac50e22a18a93d3ae5a"
-dependencies = [
- "serde",
  "zeroize",
 ]
 

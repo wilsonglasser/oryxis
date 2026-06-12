@@ -114,27 +114,6 @@ impl HotkeyAction {
         !matches!(self, HotkeyAction::SwitchToTabSlot | HotkeyAction::CycleTabs)
     }
 
-    /// Skip this action while the active view is the Terminal so the
-    /// shell still receives the keystroke (Ctrl+L = clear, Ctrl+T =
-    /// transpose, Ctrl+P = previous history, Ctrl+F = forward char).
-    /// Pre-v0.7 marker that was checked per-action to decide whether
-    /// the app should claim a key while the terminal view was active.
-    /// Kept around for any caller that still wants a hint, but the
-    /// dispatcher now uses [`HotkeyBinding::is_terminal_control_sequence`]
-    /// against the CURRENT binding so rebinding `CloseActiveTab` away
-    /// from a shell sequence frees that key for the PTY, and rebinding
-    /// a non-gated action TO a shell sequence correctly gates it.
-    #[deprecated(note = "use HotkeyBinding::is_terminal_control_sequence on the active binding")]
-    #[allow(dead_code)]
-    pub fn gate_in_terminal(self) -> bool {
-        matches!(
-            self,
-            HotkeyAction::ShowNewTabPicker
-                | HotkeyAction::OpenLocalShell
-                | HotkeyAction::OpenPortForwards
-                | HotkeyAction::FocusViewSearch
-        )
-    }
 }
 
 /// The non-modifier half of a binding.

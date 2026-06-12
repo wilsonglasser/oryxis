@@ -334,21 +334,6 @@ pub fn random_challenge() -> [u8; 32] {
     challenge
 }
 
-/// Perform X25519 key exchange to derive a shared secret in one step.
-/// Returns (our_public_key, shared_secret). The DH output is run through
-/// HKDF-SHA256 with the [`PEER_SECRET_HKDF_INFO`] domain separator before
-/// being returned, so the secret is uniformly distributed AEAD-grade key
-/// material and cannot be reused for a different protocol purpose. Used
-/// by tests and by any caller that has the peer's pubkey available when
-/// generating.
-pub fn x25519_key_exchange(peer_public_key: &[u8; 32]) -> ([u8; 32], [u8; 32]) {
-    let secret = EphemeralSecret::random_from_rng(OsRng);
-    let our_public = X25519PublicKey::from(&secret);
-    let peer_public = X25519PublicKey::from(*peer_public_key);
-    let shared = secret.diffie_hellman(&peer_public);
-    (our_public.to_bytes(), derive_peer_secret(shared.as_bytes()))
-}
-
 /// Generate a fresh ephemeral X25519 keypair, returning the secret
 /// (held across an `.await` until the peer's pubkey arrives) and the
 /// public bytes we send on the wire. Pair it with [`x25519_dh`] to
@@ -419,38 +404,56 @@ pub fn derive_peer_secret(dh_output: &[u8]) -> [u8; 32] {
 /// protocol-version bump and a coordinated re-pair across every
 /// paired device. Worth it on the next breaking v6 bump, not before.
 pub fn encrypt_payload(plaintext: &[u8], shared_secret: &[u8; 32]) -> Result<Vec<u8>, SyncError> {
-    let cipher = ChaCha20Poly1305::new_from_slice(shared_secret)
-        .map_err(|e| SyncError::Crypto(format!("Cipher init: {}", e)))?;
-
-    let mut nonce_bytes = [0u8; 12];
-    OsRng.fill_bytes(&mut nonce_bytes);
-    let nonce = Nonce::from_slice(&nonce_bytes);
-
-    let ciphertext = cipher
-        .encrypt(nonce, plaintext)
-        .map_err(|e| SyncError::Crypto(format!("Encrypt: {}", e)))?;
-
-    let mut result = Vec::with_capacity(12 + ciphertext.len());
-    result.extend_from_slice(&nonce_bytes);
-    result.extend_from_slice(&ciphertext);
-    Ok(result)
+    PayloadCipher::new(shared_secret)?.encrypt(plaintext)
 }
 
 /// Decrypt payload with shared secret.
 pub fn decrypt_payload(data: &[u8], shared_secret: &[u8; 32]) -> Result<Vec<u8>, SyncError> {
-    if data.len() < 12 + 16 {
-        return Err(SyncError::Crypto("Data too short".into()));
+    PayloadCipher::new(shared_secret)?.decrypt(data)
+}
+
+/// Per-peer AEAD cipher, built once per session or batch. Callers that
+/// seal / open many records in a loop (`collect_records` /
+/// `apply_records`) should construct this once instead of paying the
+/// ChaCha20-Poly1305 key setup per record via [`encrypt_payload`] /
+/// [`decrypt_payload`] (which remain as one-shot conveniences).
+pub struct PayloadCipher(ChaCha20Poly1305);
+
+impl PayloadCipher {
+    pub fn new(shared_secret: &[u8; 32]) -> Result<Self, SyncError> {
+        let cipher = ChaCha20Poly1305::new_from_slice(shared_secret)
+            .map_err(|e| SyncError::Crypto(format!("Cipher init: {}", e)))?;
+        Ok(Self(cipher))
     }
-    let nonce_bytes = &data[..12];
-    let ciphertext = &data[12..];
 
-    let cipher = ChaCha20Poly1305::new_from_slice(shared_secret)
-        .map_err(|e| SyncError::Crypto(format!("Cipher init: {}", e)))?;
-    let nonce = Nonce::from_slice(nonce_bytes);
+    /// Seal `plaintext`. Wire layout: 12-byte random nonce || ciphertext.
+    pub fn encrypt(&self, plaintext: &[u8]) -> Result<Vec<u8>, SyncError> {
+        let mut nonce_bytes = [0u8; 12];
+        OsRng.fill_bytes(&mut nonce_bytes);
+        let nonce = Nonce::from_slice(&nonce_bytes);
 
-    cipher
-        .decrypt(nonce, ciphertext)
-        .map_err(|_| SyncError::Crypto("Decryption failed (wrong key?)".into()))
+        let ciphertext = self
+            .0
+            .encrypt(nonce, plaintext)
+            .map_err(|e| SyncError::Crypto(format!("Encrypt: {}", e)))?;
+
+        let mut result = Vec::with_capacity(12 + ciphertext.len());
+        result.extend_from_slice(&nonce_bytes);
+        result.extend_from_slice(&ciphertext);
+        Ok(result)
+    }
+
+    /// Open a payload sealed by [`Self::encrypt`].
+    pub fn decrypt(&self, data: &[u8]) -> Result<Vec<u8>, SyncError> {
+        if data.len() < 12 + 16 {
+            return Err(SyncError::Crypto("Data too short".into()));
+        }
+        let nonce = Nonce::from_slice(&data[..12]);
+
+        self.0
+            .decrypt(nonce, &data[12..])
+            .map_err(|_| SyncError::Crypto("Decryption failed (wrong key?)".into()))
+    }
 }
 
 /// Generate a self-signed TLS certificate for QUIC, using the device's Ed25519 key as identity.

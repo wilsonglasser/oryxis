@@ -124,6 +124,12 @@ pub async fn recv_message_capped(
     decode_message(&buf).map_err(|e| SyncError::Protocol(format!("Decode: {}", e)))
 }
 
+/// How long the responder side of a relay session waits on its inbox
+/// before giving up. The QUIC path gets the equivalent for free from
+/// the connection's idle timeout; the relay inbox is a plain mpsc
+/// with no liveness of its own.
+const RELAY_INBOX_IDLE: std::time::Duration = std::time::Duration::from_secs(60);
+
 /// Per-session transport. Same `send` / `recv` shape regardless of
 /// whether the bytes go over a QUIC stream or HTTP-relayed inboxes,
 /// so `handle_sync_session` and the client-side flow don't have to
@@ -185,10 +191,19 @@ impl SessionTransport {
                     "relay: dropping frame from unexpected sender {from} (expected {peer_id})"
                 );
             },
-            Self::RelayServer { inbox, .. } => inbox
-                .recv()
-                .await
-                .ok_or_else(|| SyncError::Transport("relay inbox closed".into())),
+            // Idle timeout: the inbox mpsc only ever closes when the
+            // demux loop evicts this session, so a peer that goes
+            // silent mid-session would otherwise park the session
+            // task on this recv forever. Every frame of a relay
+            // session is machine-paced, so a minute of silence means
+            // the peer is gone.
+            Self::RelayServer { inbox, .. } => {
+                match tokio::time::timeout(RELAY_INBOX_IDLE, inbox.recv()).await {
+                    Ok(Some(msg)) => Ok(msg),
+                    Ok(None) => Err(SyncError::Transport("relay inbox closed".into())),
+                    Err(_) => Err(SyncError::Timeout),
+                }
+            }
         }
     }
 }

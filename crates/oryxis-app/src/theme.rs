@@ -159,12 +159,9 @@ impl AppTheme {
 
 /// Oryxis UI colors, resolved from the active theme.
 /// All methods are static lookups so existing `OryxisColors::ACCENT` style calls
-/// can be migrated to `OryxisColors::accent()` etc.
-/// For now, `const` versions remain for backward compat; theme-aware versions
-/// use function calls.
+/// resolve through `OryxisColors::t()`, which follows the active theme.
 pub struct OryxisColors;
 
-#[allow(dead_code)]
 impl OryxisColors {
     // ── Theme-aware accessors ──
     pub fn t() -> &'static ThemeColors {
@@ -176,46 +173,6 @@ impl OryxisColors {
         }
         AppTheme::active().colors_ref()
     }
-
-    // Keep const aliases for backward compat (default theme)
-    // These will be used until all call sites are migrated
-
-    // ── Backgrounds ──
-    pub const BG_PRIMARY: Color = ORYXIS_DARK.bg_primary;
-    pub const BG_SIDEBAR: Color = ORYXIS_DARK.bg_sidebar;
-    pub const BG_SURFACE: Color = ORYXIS_DARK.bg_surface;
-    pub const BG_HOVER: Color = ORYXIS_DARK.bg_hover;
-    pub const BG_SELECTED: Color = ORYXIS_DARK.bg_selected;
-
-    // ── Text ──
-    pub const TEXT_PRIMARY: Color = ORYXIS_DARK.text_primary;
-    pub const TEXT_SECONDARY: Color = ORYXIS_DARK.text_secondary;
-    pub const TEXT_MUTED: Color = ORYXIS_DARK.text_muted;
-
-    // ── Accent ──
-    pub const ACCENT: Color = ORYXIS_DARK.accent;
-    pub const ACCENT_HOVER: Color = ORYXIS_DARK.accent_hover;
-
-    // ── Semantic ──
-    pub const SUCCESS: Color = ORYXIS_DARK.success;
-    pub const WARNING: Color = ORYXIS_DARK.warning;
-    pub const ERROR: Color = ORYXIS_DARK.error;
-
-    // ── Terminal ──
-    pub const TERMINAL_BG: Color = ORYXIS_DARK.terminal_bg;
-    pub const TERMINAL_FG: Color = ORYXIS_DARK.terminal_fg;
-    pub const TERMINAL_CURSOR: Color = ORYXIS_DARK.terminal_cursor;
-
-    // ── Borders ──
-    pub const BORDER: Color = ORYXIS_DARK.border;
-    pub const BORDER_FOCUS: Color = ORYXIS_DARK.border_focus;
-
-    // ── Alpha variants ──
-    pub const ACCENT_SUBTLE: Color = Color::from_rgba(0.133, 0.60, 0.569, 0.15);
-    pub const ACCENT_PRESSED: Color = Color::from_rgba(0.133, 0.60, 0.569, 0.25);
-    pub const ERROR_SUBTLE: Color = Color::from_rgba(0.92, 0.33, 0.38, 0.15);
-    pub const WARNING_SUBTLE: Color = Color::from_rgba(0.95, 0.73, 0.25, 0.15);
-    pub const WHITE_SUBTLE: Color = Color::from_rgba(1.0, 1.0, 1.0, 0.08);
 }
 
 /// Raw color data for a theme.
