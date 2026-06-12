@@ -181,6 +181,49 @@ pub(crate) fn decrypt(data: &[u8], password: &[u8]) -> Result<Vec<u8>, VaultErro
         .map_err(|_| VaultError::InvalidPassword)
 }
 
+/// Byte-to-byte field codec used by `convert_all_fields` (decrypt with
+/// one key/format, re-encrypt with another).
+type FieldCodec<'a> = &'a dyn Fn(&[u8]) -> Result<Vec<u8>, VaultError>;
+
+/// Format tag for fields encrypted directly with the derived vault key.
+/// Legacy blobs (per-field Argon2id, `encrypt` above) start with a
+/// random salt byte and are at least 60 bytes; the tag plus the AEAD
+/// makes the two formats unambiguous in practice, and the eager
+/// migration on unlock removes legacy blobs from the vault anyway.
+const FIELD_FORMAT_V2: u8 = 2;
+
+/// Encrypt with an already-derived 256-bit key. Returns:
+/// tag(1) + nonce(12) + ciphertext. No KDF, so per-field operations
+/// are microseconds instead of an Argon2id pass each.
+pub(crate) fn encrypt_with_key(plaintext: &[u8], key: &[u8]) -> Result<Vec<u8>, VaultError> {
+    let mut nonce_bytes = [0u8; NONCE_LEN];
+    OsRng.fill_bytes(&mut nonce_bytes);
+    let cipher = ChaCha20Poly1305::new_from_slice(key)
+        .map_err(|e| VaultError::Crypto(format!("Cipher init: {}", e)))?;
+    let ciphertext = cipher
+        .encrypt(Nonce::from_slice(&nonce_bytes), plaintext)
+        .map_err(|e| VaultError::Crypto(format!("Encrypt: {}", e)))?;
+    let mut result = Vec::with_capacity(1 + NONCE_LEN + ciphertext.len());
+    result.push(FIELD_FORMAT_V2);
+    result.extend_from_slice(&nonce_bytes);
+    result.extend_from_slice(&ciphertext);
+    Ok(result)
+}
+
+/// Decrypt data produced by `encrypt_with_key`.
+pub(crate) fn decrypt_with_key(data: &[u8], key: &[u8]) -> Result<Vec<u8>, VaultError> {
+    if data.len() < 1 + NONCE_LEN + 16 || data[0] != FIELD_FORMAT_V2 {
+        return Err(VaultError::Crypto("not a derived-key field".into()));
+    }
+    let nonce_bytes = &data[1..1 + NONCE_LEN];
+    let ciphertext = &data[1 + NONCE_LEN..];
+    let cipher = ChaCha20Poly1305::new_from_slice(key)
+        .map_err(|e| VaultError::Crypto(format!("Cipher init: {}", e)))?;
+    cipher
+        .decrypt(Nonce::from_slice(nonce_bytes), ciphertext)
+        .map_err(|_| VaultError::InvalidPassword)
+}
+
 // ---------------------------------------------------------------------------
 // VaultStore
 // ---------------------------------------------------------------------------
@@ -188,9 +231,10 @@ pub(crate) fn decrypt(data: &[u8], password: &[u8]) -> Result<Vec<u8>, VaultErro
 /// Vault store, manages SQLite database with encrypted secrets.
 pub struct VaultStore {
     db: SqliteConn,
-    /// Derived key material (password bytes kept for field-level
-    /// encryption). `Zeroizing` wipes the buffer on lock/replace/drop
-    /// so the master password doesn't linger in freed heap.
+    /// The vault key derived once at unlock (Argon2id over the master
+    /// password and the vault-level `kdf_salt`). Field operations use
+    /// it directly, so they don't pay a KDF each. `Zeroizing` wipes
+    /// the buffer on lock/replace/drop.
     master_key: Option<Zeroizing<Vec<u8>>>,
     /// Unwrapped session-recording content key, cached after first use so
     /// chunk writes don't pay the master-key KDF. Interior mutability
@@ -584,8 +628,9 @@ impl VaultStore {
             ));
         }
         let pw_bytes = password.as_bytes();
+        let key = self.derive_vault_key(pw_bytes)?;
         // Store an encrypted known value so we can verify the password on unlock.
-        let check = encrypt(b"oryxis_vault_ok", pw_bytes)?;
+        let check = encrypt_with_key(b"oryxis_vault_ok", &key)?;
         self.db.execute(
             "INSERT INTO vault_meta (key, value) VALUES ('password_check', ?1)",
             params![check],
@@ -599,7 +644,7 @@ impl VaultStore {
             "INSERT OR REPLACE INTO settings (key, value) VALUES ('has_user_password', ?1)",
             params![flag],
         )?;
-        self.master_key = Some(Zeroizing::new(pw_bytes.to_vec()));
+        self.master_key = Some(Zeroizing::new(key.to_vec()));
         tracing::info!("Vault master password set");
         Ok(())
     }
@@ -616,14 +661,92 @@ impl VaultStore {
             .map_err(|_| VaultError::Locked)?;
 
         let pw_bytes = password.as_bytes();
-        let plain = decrypt(&check, pw_bytes)?;
-        if plain != b"oryxis_vault_ok" {
-            return Err(VaultError::InvalidPassword);
+        if check.first() == Some(&FIELD_FORMAT_V2) {
+            // Current format: one KDF over the vault salt, then the
+            // check value verifies password + key in one shot.
+            let key = self.derive_vault_key(pw_bytes)?;
+            let plain = decrypt_with_key(&check, &key)?;
+            if plain != b"oryxis_vault_ok" {
+                return Err(VaultError::InvalidPassword);
+            }
+            self.master_key = Some(Zeroizing::new(key.to_vec()));
+        } else {
+            // Vault written by an older version: verify through the
+            // legacy per-field-KDF path, then migrate every encrypted
+            // blob to the derived-key format. One-time cost (an Argon2
+            // pass per stored secret), after which every field
+            // operation is microseconds.
+            let plain = decrypt(&check, pw_bytes)?;
+            if plain != b"oryxis_vault_ok" {
+                return Err(VaultError::InvalidPassword);
+            }
+            let key = self.derive_vault_key(pw_bytes)?;
+            self.migrate_fields_to_derived_key(pw_bytes, &key)?;
+            self.master_key = Some(Zeroizing::new(key.to_vec()));
         }
-
-        self.master_key = Some(Zeroizing::new(pw_bytes.to_vec()));
         tracing::info!("Vault unlocked");
         Ok(())
+    }
+
+    /// Argon2id over the vault-level salt stored in `vault_meta`
+    /// (`kdf_salt`), created on first use.
+    fn derive_vault_key(&self, password: &[u8]) -> Result<[u8; KEY_LEN], VaultError> {
+        let salt: Option<Vec<u8>> = self
+            .db
+            .query_row(
+                "SELECT value FROM vault_meta WHERE key = 'kdf_salt'",
+                [],
+                |row| row.get(0),
+            )
+            .ok();
+        let salt = match salt {
+            Some(s) if s.len() == SALT_LEN => s,
+            _ => {
+                let mut s = [0u8; SALT_LEN];
+                OsRng.fill_bytes(&mut s);
+                self.db.execute(
+                    "INSERT OR REPLACE INTO vault_meta (key, value) VALUES ('kdf_salt', ?1)",
+                    params![s.to_vec()],
+                )?;
+                s.to_vec()
+            }
+        };
+        derive_key(password, &salt)
+    }
+
+    /// One-time migration from the legacy per-field-KDF format to the
+    /// derived-key format, run inside a transaction during the first
+    /// unlock after the update. Lenient per row: a blob that fails to
+    /// decrypt was already unreadable, so it's left in place rather
+    /// than blocking the unlock.
+    fn migrate_fields_to_derived_key(
+        &mut self,
+        password: &[u8],
+        key: &[u8; KEY_LEN],
+    ) -> Result<(), VaultError> {
+        let dec = |b: &[u8]| decrypt(b, password);
+        let enc = |p: &[u8]| encrypt_with_key(p, key);
+        self.db.execute_batch("BEGIN")?;
+        let result = (|| -> Result<(), VaultError> {
+            self.convert_all_fields(&dec, &enc, true)?;
+            let check = encrypt_with_key(b"oryxis_vault_ok", key)?;
+            self.db.execute(
+                "INSERT OR REPLACE INTO vault_meta (key, value) VALUES ('password_check', ?1)",
+                params![check],
+            )?;
+            Ok(())
+        })();
+        match result {
+            Ok(()) => {
+                self.db.execute_batch("COMMIT")?;
+                tracing::info!("Vault fields migrated to derived-key format");
+                Ok(())
+            }
+            Err(e) => {
+                let _ = self.db.execute_batch("ROLLBACK");
+                Err(e)
+            }
+        }
     }
 
     pub fn lock(&mut self) {
@@ -645,12 +768,12 @@ impl VaultStore {
 
     fn encrypt_field(&self, plaintext: &str) -> Result<Vec<u8>, VaultError> {
         let key = self.require_unlocked()?;
-        encrypt(plaintext.as_bytes(), key)
+        encrypt_with_key(plaintext.as_bytes(), key)
     }
 
     fn decrypt_field(&self, data: &[u8]) -> Result<String, VaultError> {
         let key = self.require_unlocked()?;
-        let plain = decrypt(data, key)?;
+        let plain = decrypt_with_key(data, key)?;
         String::from_utf8(plain).map_err(|e| VaultError::Crypto(e.to_string()))
     }
 
@@ -2127,13 +2250,13 @@ impl VaultStore {
             )
             .ok();
         let key: [u8; KEY_LEN] = match wrapped {
-            Some(w) => decrypt(&w, master)?
+            Some(w) => decrypt_with_key(&w, master)?
                 .try_into()
                 .map_err(|_| VaultError::Crypto("malformed session log key".into()))?,
             None => {
                 let mut k = [0u8; KEY_LEN];
                 OsRng.fill_bytes(&mut k);
-                let w = encrypt(&k, master)?;
+                let w = encrypt_with_key(&k, master)?;
                 self.db.execute(
                     "INSERT OR REPLACE INTO vault_meta (key, value) VALUES ('session_log_key', ?1)",
                     params![w],
@@ -2408,50 +2531,70 @@ impl VaultStore {
     /// from the current master key to the new password.
     pub fn set_user_password(&mut self, new_password: &str) -> Result<(), VaultError> {
         let old_key = self.require_unlocked()?.to_vec();
-        let new_key = new_password.as_bytes().to_vec();
+        let new_key = self.rotate_vault_key(new_password)?;
 
-        self.re_encrypt_all(&old_key, &new_key)?;
-
-        // Update the password_check with the new password
-        let check = encrypt(b"oryxis_vault_ok", &new_key)?;
-        self.db.execute(
-            "INSERT OR REPLACE INTO vault_meta (key, value) VALUES ('password_check', ?1)",
-            params![check],
-        )?;
-
-        // Mark that user has set a password
-        self.db.execute(
-            "INSERT OR REPLACE INTO settings (key, value) VALUES ('has_user_password', '1')",
-            [],
-        )?;
-
-        self.master_key = Some(Zeroizing::new(new_key));
+        self.change_master_key(&old_key, &new_key, "1")?;
         tracing::info!("Vault user password set");
         Ok(())
+    }
+
+    /// Generate a fresh `kdf_salt` and derive the vault key for
+    /// `password` over it. The salt write participates in the caller's
+    /// transaction when one is open.
+    fn rotate_vault_key(&self, password: &str) -> Result<Vec<u8>, VaultError> {
+        let mut salt = [0u8; SALT_LEN];
+        OsRng.fill_bytes(&mut salt);
+        self.db.execute(
+            "INSERT OR REPLACE INTO vault_meta (key, value) VALUES ('kdf_salt', ?1)",
+            params![salt.to_vec()],
+        )?;
+        Ok(derive_key(password.as_bytes(), &salt)?.to_vec())
+    }
+
+    /// Shared tail of a master password change: re-encrypt every
+    /// field, rewrite the password check and the `has_user_password`
+    /// flag, all inside one transaction so a crash mid-change can't
+    /// leave the vault half re-encrypted.
+    fn change_master_key(
+        &mut self,
+        old_key: &[u8],
+        new_key: &[u8],
+        user_flag: &str,
+    ) -> Result<(), VaultError> {
+        self.db.execute_batch("BEGIN")?;
+        let result = (|| -> Result<(), VaultError> {
+            self.re_encrypt_all(old_key, new_key)?;
+            let check = encrypt_with_key(b"oryxis_vault_ok", new_key)?;
+            self.db.execute(
+                "INSERT OR REPLACE INTO vault_meta (key, value) VALUES ('password_check', ?1)",
+                params![check],
+            )?;
+            self.db.execute(
+                "INSERT OR REPLACE INTO settings (key, value) VALUES ('has_user_password', ?1)",
+                params![user_flag],
+            )?;
+            Ok(())
+        })();
+        match result {
+            Ok(()) => {
+                self.db.execute_batch("COMMIT")?;
+                self.master_key = Some(Zeroizing::new(new_key.to_vec()));
+                Ok(())
+            }
+            Err(e) => {
+                let _ = self.db.execute_batch("ROLLBACK");
+                Err(e)
+            }
+        }
     }
 
     /// Remove the user password, reverting to the default empty password.
     /// Re-encrypts all encrypted fields from the current key to empty string.
     pub fn remove_user_password(&mut self) -> Result<(), VaultError> {
         let old_key = self.require_unlocked()?.to_vec();
-        let new_key = b"".to_vec();
+        let new_key = self.rotate_vault_key("")?;
 
-        self.re_encrypt_all(&old_key, &new_key)?;
-
-        // Update the password_check with empty password
-        let check = encrypt(b"oryxis_vault_ok", &new_key)?;
-        self.db.execute(
-            "INSERT OR REPLACE INTO vault_meta (key, value) VALUES ('password_check', ?1)",
-            params![check],
-        )?;
-
-        // Mark no user password
-        self.db.execute(
-            "INSERT OR REPLACE INTO settings (key, value) VALUES ('has_user_password', '0')",
-            [],
-        )?;
-
-        self.master_key = Some(Zeroizing::new(new_key));
+        self.change_master_key(&old_key, &new_key, "0")?;
         tracing::info!("Vault user password removed");
         Ok(())
     }
@@ -2748,7 +2891,7 @@ impl VaultStore {
     /// base64-encode for storage in the `settings` text column.
     pub fn set_sync_device_identity(&self, bytes: &[u8]) -> Result<(), VaultError> {
         let key = self.require_unlocked()?;
-        let encrypted = encrypt(bytes, key)?;
+        let encrypted = encrypt_with_key(bytes, key)?;
         let encoded = BASE64.encode(&encrypted);
         self.set_setting("sync_device_identity", &encoded)
     }
@@ -2756,7 +2899,7 @@ impl VaultStore {
     /// Retrieve and decrypt the sync `DeviceIdentity` blob, or `None`
     /// if no identity has been persisted yet. Returns an error if the
     /// stored value is corrupt or the master key has rotated without
-    /// re-encryption (see `re_encrypt_sync_device_identity`).
+    /// re-encryption (see `convert_all_fields`).
     pub fn get_sync_device_identity(&self) -> Result<Option<Vec<u8>>, VaultError> {
         let key = self.require_unlocked()?;
         match self.get_setting("sync_device_identity")? {
@@ -2764,7 +2907,7 @@ impl VaultStore {
                 let encrypted = BASE64
                     .decode(encoded.as_bytes())
                     .map_err(|e| VaultError::Crypto(format!("Base64 decode: {}", e)))?;
-                Ok(Some(decrypt(&encrypted, key)?))
+                Ok(Some(decrypt_with_key(&encrypted, key)?))
             }
             None => Ok(None),
         }
@@ -2774,37 +2917,58 @@ impl VaultStore {
     // Re-encryption helpers
     // -----------------------------------------------------------------------
 
-    /// Re-encrypt every encrypted field from `old_key` to `new_key`.
-    /// This list must cover everything `encrypt_field` ever writes; a
-    /// column missed here becomes undecryptable after a master password
-    /// change.
+    /// Re-encrypt every encrypted field from `old_key` to `new_key`
+    /// (both derived vault keys). This list must cover everything
+    /// `encrypt_field` ever writes; a column missed here becomes
+    /// undecryptable after a master password change.
     fn re_encrypt_all(&self, old_key: &[u8], new_key: &[u8]) -> Result<(), VaultError> {
-        self.re_encrypt_blob_column("connections", "id", "password", old_key, new_key)?;
-        self.re_encrypt_blob_column("connections", "id", "proxy_password", old_key, new_key)?;
-        self.re_encrypt_blob_column("keys", "id", "private_key", old_key, new_key)?;
-        self.re_encrypt_blob_column("identities", "id", "password", old_key, new_key)?;
-        self.re_encrypt_blob_column("proxy_identities", "id", "password", old_key, new_key)?;
-        self.re_encrypt_blob_column("cloud_profiles", "id", "secret", old_key, new_key)?;
-        self.re_encrypt_blob_column("sync_peers", "peer_id", "shared_secret", old_key, new_key)?;
-        self.re_encrypt_ai_api_key(old_key, new_key)?;
-        self.re_encrypt_sync_device_identity(old_key, new_key)?;
+        let dec = |b: &[u8]| decrypt_with_key(b, old_key);
+        let enc = |p: &[u8]| encrypt_with_key(p, new_key);
+        self.convert_all_fields(&dec, &enc, false)
+    }
+
+    /// Walk every encrypted field, decoding with `dec` and re-encoding
+    /// with `enc`. `lenient` skips rows whose blob fails to decode
+    /// (used by the format migration, where an unreadable blob was
+    /// already unreadable); the strict mode aborts, used by password
+    /// changes where every secret is expected to convert.
+    fn convert_all_fields(
+        &self,
+        dec: FieldCodec,
+        enc: FieldCodec,
+        lenient: bool,
+    ) -> Result<(), VaultError> {
+        for (table, id_col, col) in [
+            ("connections", "id", "password"),
+            ("connections", "id", "proxy_password"),
+            ("keys", "id", "private_key"),
+            ("identities", "id", "password"),
+            ("proxy_identities", "id", "password"),
+            ("cloud_profiles", "id", "secret"),
+            ("sync_peers", "peer_id", "shared_secret"),
+        ] {
+            self.convert_blob_column(table, id_col, col, dec, enc, lenient)?;
+        }
+        self.convert_settings_b64("ai_api_key", dec, enc, lenient)?;
+        self.convert_settings_b64("sync_device_identity", dec, enc, lenient)?;
         // The session-recording content key only needs its wrapper
-        // re-encrypted; the chunks themselves are sealed with the
+        // converted; the chunks themselves are sealed with the
         // (unchanged) content key.
-        self.re_encrypt_session_log_key(old_key, new_key)?;
+        self.convert_meta_blob("session_log_key", dec, enc, lenient)?;
         Ok(())
     }
 
-    /// Re-encrypt one BLOB column of one table. The identifiers are
-    /// compile-time constants from `re_encrypt_all`, never user input,
-    /// so the `format!`-built SQL stays injection-free.
-    fn re_encrypt_blob_column(
+    /// Convert one BLOB column of one table. The identifiers are
+    /// compile-time constants from `convert_all_fields`, never user
+    /// input, so the `format!`-built SQL stays injection-free.
+    fn convert_blob_column(
         &self,
         table: &str,
         id_col: &str,
         col: &str,
-        old_key: &[u8],
-        new_key: &[u8],
+        dec: FieldCodec,
+        enc: FieldCodec,
+        lenient: bool,
     ) -> Result<(), VaultError> {
         let mut stmt = self.db.prepare(&format!(
             "SELECT {id_col}, {col} FROM {table} WHERE {col} IS NOT NULL"
@@ -2813,8 +2977,15 @@ impl VaultStore {
             .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
             .collect::<Result<Vec<_>, _>>()?;
         for (id, blob) in rows {
-            let plain = decrypt(&blob, old_key)?;
-            let re_encrypted = encrypt(&plain, new_key)?;
+            let plain = match dec(&blob) {
+                Ok(p) => p,
+                Err(e) if lenient => {
+                    tracing::warn!("skipping unreadable {table}.{col} for {id}: {e}");
+                    continue;
+                }
+                Err(e) => return Err(e),
+            };
+            let re_encrypted = enc(&plain)?;
             self.db.execute(
                 &format!("UPDATE {table} SET {col} = ?1 WHERE {id_col} = ?2"),
                 params![re_encrypted, id],
@@ -2823,74 +2994,77 @@ impl VaultStore {
         Ok(())
     }
 
-    fn re_encrypt_ai_api_key(&self, old_key: &[u8], new_key: &[u8]) -> Result<(), VaultError> {
-        let encoded: Option<String> = self
-            .db
-            .query_row(
-                "SELECT value FROM settings WHERE key = 'ai_api_key'",
-                [],
-                |row| row.get(0),
-            )
-            .ok();
-        if let Some(encoded) = encoded
-            && let Ok(encrypted) = BASE64.decode(encoded.as_bytes()) {
-                let plain = decrypt(&encrypted, old_key)?;
-                let re_encrypted = encrypt(&plain, new_key)?;
-                let re_encoded = BASE64.encode(&re_encrypted);
-                self.db.execute(
-                    "INSERT OR REPLACE INTO settings (key, value) VALUES ('ai_api_key', ?1)",
-                    params![re_encoded],
-                )?;
-        }
-        Ok(())
-    }
-
-    fn re_encrypt_sync_device_identity(
+    /// Convert a base64-encoded encrypted value in the `settings` table.
+    fn convert_settings_b64(
         &self,
-        old_key: &[u8],
-        new_key: &[u8],
+        setting: &str,
+        dec: FieldCodec,
+        enc: FieldCodec,
+        lenient: bool,
     ) -> Result<(), VaultError> {
         let encoded: Option<String> = self
             .db
             .query_row(
-                "SELECT value FROM settings WHERE key = 'sync_device_identity'",
-                [],
+                "SELECT value FROM settings WHERE key = ?1",
+                params![setting],
                 |row| row.get(0),
             )
             .ok();
         if let Some(encoded) = encoded
             && let Ok(encrypted) = BASE64.decode(encoded.as_bytes())
         {
-            let plain = decrypt(&encrypted, old_key)?;
-            let re_encrypted = encrypt(&plain, new_key)?;
-            let re_encoded = BASE64.encode(&re_encrypted);
+            let plain = match dec(&encrypted) {
+                Ok(p) => p,
+                Err(e) if lenient => {
+                    tracing::warn!("skipping unreadable setting {setting}: {e}");
+                    return Ok(());
+                }
+                Err(e) => return Err(e),
+            };
+            let re_encoded = BASE64.encode(&enc(&plain)?);
             self.db.execute(
-                "INSERT OR REPLACE INTO settings (key, value) VALUES ('sync_device_identity', ?1)",
-                params![re_encoded],
+                "INSERT OR REPLACE INTO settings (key, value) VALUES (?1, ?2)",
+                params![setting, re_encoded],
             )?;
         }
         Ok(())
     }
 
-    fn re_encrypt_session_log_key(&self, old_key: &[u8], new_key: &[u8]) -> Result<(), VaultError> {
+    /// Convert a raw encrypted BLOB in `vault_meta`.
+    fn convert_meta_blob(
+        &self,
+        key_name: &str,
+        dec: FieldCodec,
+        enc: FieldCodec,
+        lenient: bool,
+    ) -> Result<(), VaultError> {
         let wrapped: Option<Vec<u8>> = self
             .db
             .query_row(
-                "SELECT value FROM vault_meta WHERE key = 'session_log_key'",
-                [],
+                "SELECT value FROM vault_meta WHERE key = ?1",
+                params![key_name],
                 |row| row.get(0),
             )
             .ok();
         if let Some(w) = wrapped {
-            let plain = decrypt(&w, old_key)?;
-            let re_wrapped = encrypt(&plain, new_key)?;
+            let plain = match dec(&w) {
+                Ok(p) => p,
+                Err(e) if lenient => {
+                    tracing::warn!("skipping unreadable vault_meta {key_name}: {e}");
+                    return Ok(());
+                }
+                Err(e) => return Err(e),
+            };
             self.db.execute(
-                "INSERT OR REPLACE INTO vault_meta (key, value) VALUES ('session_log_key', ?1)",
-                params![re_wrapped],
+                "INSERT OR REPLACE INTO vault_meta (key, value) VALUES (?1, ?2)",
+                params![key_name, enc(&plain)?],
             )?;
         }
         Ok(())
     }
+
+
+
 
 }
 
@@ -2920,6 +3094,65 @@ mod tests {
         let mut vault = temp_vault();
         vault.set_master_password("testpass123").unwrap();
         vault
+    }
+
+    #[test]
+    fn legacy_vault_migrates_to_derived_key_on_unlock() {
+        let mut vault = temp_vault();
+        let pw = "legacy-pass";
+
+        // Hand-craft a vault in the legacy format: per-field-KDF
+        // password check plus a legacy-encrypted connection password
+        // and AI API key, exactly what a pre-update vault holds.
+        let check = encrypt(b"oryxis_vault_ok", pw.as_bytes()).unwrap();
+        vault
+            .db
+            .execute(
+                "INSERT INTO vault_meta (key, value) VALUES ('password_check', ?1)",
+                params![check],
+            )
+            .unwrap();
+        let conn = Connection::new("h", "example.com");
+        vault.save_connection(&conn, None).unwrap();
+        let legacy_pw_blob = encrypt(b"old-secret", pw.as_bytes()).unwrap();
+        vault
+            .db
+            .execute(
+                "UPDATE connections SET password = ?1 WHERE id = ?2",
+                params![legacy_pw_blob, conn.id.to_string()],
+            )
+            .unwrap();
+        let legacy_api_key = BASE64.encode(encrypt(b"sk-legacy", pw.as_bytes()).unwrap());
+        vault.set_setting("ai_api_key", &legacy_api_key).unwrap();
+
+        // Wrong password must still fail before any migration runs.
+        assert!(vault.unlock("not-it").is_err());
+
+        vault.unlock(pw).unwrap();
+
+        // Secrets read back, and the stored blobs are in the new format.
+        assert_eq!(
+            vault.get_connection_password(&conn.id).unwrap().as_deref(),
+            Some("old-secret")
+        );
+        assert_eq!(vault.get_ai_api_key().unwrap().as_deref(), Some("sk-legacy"));
+        let migrated: Vec<u8> = vault
+            .db
+            .query_row(
+                "SELECT password FROM connections WHERE id = ?1",
+                params![conn.id.to_string()],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(migrated[0], FIELD_FORMAT_V2);
+
+        // A second unlock takes the fast path and still works.
+        vault.lock();
+        vault.unlock(pw).unwrap();
+        assert_eq!(
+            vault.get_connection_password(&conn.id).unwrap().as_deref(),
+            Some("old-secret")
+        );
     }
 
     #[test]
