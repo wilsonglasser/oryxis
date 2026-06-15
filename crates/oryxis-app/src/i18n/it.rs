@@ -79,6 +79,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "cloud_aws_sso_role_name" => "Nome ruolo",
         "cloud_aws_sso_hint" => "Esegui `aws sso login` prima per la cache del token. Flusso nativo nella prossima release.",
         "initial_command_label" => "Comando iniziale",
+        "startup_none" => "Nessuno",
+        "startup_custom" => "Comando personalizzato",
         "initial_command_ph" => "exec bash",
         "cloud_err_label_required" => "Etichetta richiesta",
         "cloud_discover" => "Scopri host",

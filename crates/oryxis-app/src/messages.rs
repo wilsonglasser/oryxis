@@ -637,6 +637,12 @@ pub enum Message {
     ToggleCardAccentGlass,
     /// Flip showing of the `user@host:port` address on host cards.
     ToggleShowHostAddress,
+    /// Host editor form scrolled; carries the viewport so the group
+    /// picker popover anchors under the chevron when scrolled.
+    EditorFormScrolled(iced::widget::scrollable::Viewport),
+    /// Host editor startup-command source changed (the picker label:
+    /// the None sentinel, the Custom sentinel, or a snippet label).
+    EditorStartupChoiceChanged(String),
     SettingToggleCloseToTray,
     SettingToggleMinimizeToTray,
     SettingToggleTabAccentLine,

@@ -49,6 +49,10 @@ project uses [SemVer](https://semver.org/spec/v2.0.0.html).
 - **Provider brand logos** on plugin cards (AWS, Kubernetes) instead of
   a generic package icon; descriptions under each Plugins feature
   toggle explaining what it does.
+- **Startup command from a snippet.** The host editor's initial command
+  is now a picker: None, any saved snippet (seeds the command from its
+  body), or Custom command (the free-text editor). The choice is
+  recovered on reopen by matching the stored command against snippets.
 
 ### Changed
 - **One layout, two nav orientations.** The Classic sidebar and the
@@ -114,6 +118,9 @@ project uses [SemVer](https://semver.org/spec/v2.0.0.html).
 - Side-panel editor headers (Host, Group, Session Group) align the title
   with the left gutter (the tall close button was pushing it down).
 - The About section shows the app logo beside the name and tagline.
+- The host editor's group-picker dropdown now anchors under the chevron
+  when the form is scrolled (its anchor ignored the scroll offset before,
+  so the popover opened too low).
 
 ## [0.8.2] - 2026-06-12
 

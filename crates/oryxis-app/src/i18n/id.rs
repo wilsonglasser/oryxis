@@ -80,6 +80,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "cloud_aws_sso_role_name" => "Nama Role",
         "cloud_aws_sso_hint" => "Jalankan `aws sso login` dulu agar cache token SSO ada. Alur browser native menyusul di rilis berikutnya.",
         "initial_command_label" => "Perintah Awal",
+        "startup_none" => "Tidak ada",
+        "startup_custom" => "Perintah khusus",
         "initial_command_ph" => "exec bash",
         "cloud_err_label_required" => "Label wajib diisi",
         "cloud_discover" => "Temukan host",

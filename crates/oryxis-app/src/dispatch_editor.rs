@@ -30,6 +30,7 @@ impl Oryxis {
                 self.show_host_panel = true;
                 self.editor_form = ConnectionForm::default();
                 self.editor_initial_command = iced::widget::text_editor::Content::new();
+                self.editor_startup_choice = crate::state::StartupChoice::None;
                 if let Some(gid) = self.active_group
                     && let Some(g) = self.groups.iter().find(|g| g.id == gid)
                 {
@@ -138,9 +139,21 @@ impl Oryxis {
                         icon_style: conn.icon_style.clone(),
                         encoding: conn.encoding.clone(),
                     };
-                    self.editor_initial_command = iced::widget::text_editor::Content::with_text(
-                        conn.initial_command.as_deref().unwrap_or_default(),
-                    );
+                    let cmd = conn.initial_command.as_deref().unwrap_or_default();
+                    self.editor_initial_command =
+                        iced::widget::text_editor::Content::with_text(cmd);
+                    // Recover the startup source: empty -> None; an exact
+                    // match against a snippet body -> that snippet; else
+                    // free-text -> Custom.
+                    self.editor_startup_choice = if cmd.trim().is_empty() {
+                        crate::state::StartupChoice::None
+                    } else if let Some(s) =
+                        self.snippets.iter().find(|s| s.command == cmd)
+                    {
+                        crate::state::StartupChoice::Snippet(s.id)
+                    } else {
+                        crate::state::StartupChoice::Custom
+                    };
                     return Ok(iced::widget::operation::focus(iced::widget::Id::new(
                         "editor-hostname",
                     )));
@@ -292,6 +305,26 @@ impl Oryxis {
             }
             Message::EditorInitialCommandChanged(action) => {
                 self.editor_initial_command.perform(action);
+            }
+            Message::EditorStartupChoiceChanged(label) => {
+                use crate::state::StartupChoice;
+                // Map the picker label back to a source. The None / Custom
+                // sentinels come from i18n; anything else is a snippet
+                // label. Picking a snippet seeds the command text with its
+                // body; None clears it; Custom keeps whatever's there.
+                if label == crate::i18n::t("startup_none") {
+                    self.editor_startup_choice = StartupChoice::None;
+                    self.editor_initial_command =
+                        iced::widget::text_editor::Content::new();
+                } else if label == crate::i18n::t("startup_custom") {
+                    self.editor_startup_choice = StartupChoice::Custom;
+                } else if let Some(s) =
+                    self.snippets.iter().find(|s| s.label == label)
+                {
+                    self.editor_startup_choice = StartupChoice::Snippet(s.id);
+                    self.editor_initial_command =
+                        iced::widget::text_editor::Content::with_text(&s.command);
+                }
             }
             Message::EditorIconStyleChanged(v) => {
                 // "" clears the override; anything else is normalized to

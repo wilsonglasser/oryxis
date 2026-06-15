@@ -80,6 +80,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "cloud_aws_sso_role_name" => "اسم الدور",
         "cloud_aws_sso_hint" => "شغّل `aws sso login` أولاً لملء كاش الرمز. تدفق المتصفح الأصلي في الإصدار القادم.",
         "initial_command_label" => "الأمر الأولي",
+        "startup_none" => "لا شيء",
+        "startup_custom" => "أمر مخصص",
         "initial_command_ph" => "exec bash",
         "cloud_err_label_required" => "التسمية مطلوبة",
         "cloud_discover" => "اكتشاف المضيفين",

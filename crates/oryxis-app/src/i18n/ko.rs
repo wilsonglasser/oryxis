@@ -80,6 +80,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "cloud_aws_sso_role_name" => "역할 이름",
         "cloud_aws_sso_hint" => "먼저 `aws sso login`을 실행하여 SSO 토큰 캐시가 존재하도록 하세요. 네이티브 브라우저 흐름은 후속 릴리스에서 제공됩니다.",
         "initial_command_label" => "초기 명령",
+        "startup_none" => "없음",
+        "startup_custom" => "사용자 지정 명령",
         "initial_command_ph" => "exec bash",
         "cloud_err_label_required" => "레이블은 필수입니다",
         "cloud_discover" => "호스트 탐색",

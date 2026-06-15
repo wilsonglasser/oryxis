@@ -80,6 +80,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "cloud_aws_sso_role_name" => "Tên Role",
         "cloud_aws_sso_hint" => "Chạy `aws sso login` trước để bộ nhớ đệm token SSO tồn tại. Luồng trình duyệt gốc sẽ có ở bản phát hành sau.",
         "initial_command_label" => "Lệnh khởi đầu",
+        "startup_none" => "Không",
+        "startup_custom" => "Lệnh tùy chỉnh",
         "initial_command_ph" => "exec bash",
         "cloud_err_label_required" => "Cần có nhãn",
         "cloud_discover" => "Khám phá máy chủ",

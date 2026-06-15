@@ -392,6 +392,36 @@ impl Oryxis {
         // when the user wanted `bash`, or to `cd` somewhere by
         // default. Lives at the end of the SSH section because it's
         // a per-shell concern, not auth.
+        // Startup command source: None / a saved snippet / Custom. The
+        // free-text editor only shows for Custom; picking a snippet seeds
+        // the command from its body (see EditorStartupChoiceChanged).
+        let startup_none = t("startup_none").to_string();
+        let startup_custom = t("startup_custom").to_string();
+        let mut startup_options: Vec<String> = vec![startup_none.clone()];
+        for s in &self.snippets {
+            startup_options.push(s.label.clone());
+        }
+        startup_options.push(startup_custom.clone());
+        let startup_selected: String = match &self.editor_startup_choice {
+            crate::state::StartupChoice::None => startup_none.clone(),
+            crate::state::StartupChoice::Custom => startup_custom.clone(),
+            crate::state::StartupChoice::Snippet(id) => self
+                .snippets
+                .iter()
+                .find(|s| s.id == *id)
+                .map(|s| s.label.clone())
+                .unwrap_or_else(|| startup_custom.clone()),
+        };
+        let startup_picker = pick_list(
+            Some(startup_selected),
+            startup_options,
+            |s: &String| s.clone(),
+        )
+        .on_select(Message::EditorStartupChoiceChanged)
+        .width(Length::Fill)
+        .padding(10)
+        .style(crate::widgets::rounded_pick_list_style);
+
         ssh_items = ssh_items
             .push(Space::new().height(12))
             .push(
@@ -400,7 +430,9 @@ impl Oryxis {
                     .color(OryxisColors::t().text_muted),
             )
             .push(Space::new().height(8))
-            .push(
+            .push(startup_picker);
+        if matches!(self.editor_startup_choice, crate::state::StartupChoice::Custom) {
+            ssh_items = ssh_items.push(Space::new().height(8)).push(
                 // Multi-line, auto-grows with content; container caps the
                 // height (~8 lines) and then it scrolls internally. Supports
                 // multi-command scripts (one command per line).
@@ -414,6 +446,7 @@ impl Oryxis {
                 )
                 .max_height(200.0),
             );
+        }
 
         let ssh_section = panel_section(ssh_items);
 
@@ -897,7 +930,10 @@ impl Oryxis {
             ]
             .padding(Padding { top: 0.0, right: 16.0, bottom: 16.0, left: 16.0 }),
         )
-        .height(Length::Fill);
+        .height(Length::Fill)
+        // Track the scroll offset so the group-picker popover anchors
+        // under the chevron even when the form is scrolled.
+        .on_scroll(Message::EditorFormScrolled);
 
         let panel_content = column![
             panel_header,

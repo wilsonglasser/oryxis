@@ -80,6 +80,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "cloud_aws_sso_role_name" => "Назва ролі",
         "cloud_aws_sso_hint" => "Спершу виконайте `aws sso login`, щоб існував кеш токена SSO. Нативний потік у браузері з'явиться в наступному релізі.",
         "initial_command_label" => "Початкова команда",
+        "startup_none" => "Немає",
+        "startup_custom" => "Власна команда",
         "initial_command_ph" => "exec bash",
         "cloud_err_label_required" => "Мітка є обов'язковою",
         "cloud_discover" => "Знайти хости",

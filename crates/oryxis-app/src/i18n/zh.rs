@@ -79,6 +79,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "cloud_aws_sso_role_name" => "角色名",
         "cloud_aws_sso_hint" => "先运行 `aws sso login` 填充 token 缓存。原生浏览器流程在下个版本。",
         "initial_command_label" => "初始命令",
+        "startup_none" => "无",
+        "startup_custom" => "自定义命令",
         "initial_command_ph" => "exec bash",
         "cloud_err_label_required" => "标签必填",
         "cloud_discover" => "发现主机",

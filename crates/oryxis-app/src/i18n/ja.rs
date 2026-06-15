@@ -79,6 +79,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "cloud_aws_sso_role_name" => "ロール名",
         "cloud_aws_sso_hint" => "先に `aws sso login` を実行してトークンキャッシュを作成してください。ネイティブフローは次回リリース。",
         "initial_command_label" => "初期コマンド",
+        "startup_none" => "なし",
+        "startup_custom" => "カスタムコマンド",
         "initial_command_ph" => "exec bash",
         "cloud_err_label_required" => "ラベル必須",
         "cloud_discover" => "ホストを検出",

@@ -80,6 +80,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "cloud_aws_sso_role_name" => "Rol Adı",
         "cloud_aws_sso_hint" => "SSO token önbelleğinin var olması için önce `aws sso login` çalıştırın. Yerel tarayıcı akışı sonraki bir sürümde gelecek.",
         "initial_command_label" => "Başlangıç Komutu",
+        "startup_none" => "Yok",
+        "startup_custom" => "Özel komut",
         "initial_command_ph" => "exec bash",
         "cloud_err_label_required" => "Etiket gerekli",
         "cloud_discover" => "Sunucuları keşfet",

@@ -1409,6 +1409,17 @@ pub(crate) enum GroupPickerTarget {
     SessionGroupFolder,
 }
 
+/// Host editor's startup-command source. `None` runs nothing; `Snippet`
+/// seeds the command from a saved snippet (snapshotted into the command
+/// text on save); `Custom` is the free-text editor. On reopen the choice
+/// is recovered by matching the stored command against snippet bodies.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum StartupChoice {
+    None,
+    Custom,
+    Snippet(uuid::Uuid),
+}
+
 /// Which list the open sort menu controls. Drives both the dispatched
 /// `Set*Sort` message and the icon shown on the trigger button.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

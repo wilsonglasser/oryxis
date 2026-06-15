@@ -300,6 +300,14 @@ impl Oryxis {
                         }
                     };
                     self.group_picker_search.clear();
+                    // The combo bounds are cached in content space; inside
+                    // the host editor's scrollable, scroll is a renderer
+                    // translation, so subtract the form's scroll offset to
+                    // land the popover under the chevron when scrolled.
+                    let scroll_adjust = match target {
+                        GroupPickerTarget::EditorParent => self.editor_form_scroll_y,
+                        _ => 0.0,
+                    };
                     // 6 px gap below the combo. Falls back to mouse
                     // coords if the cell hasn't been populated yet
                     // (first ever open before any draw pass).
@@ -311,12 +319,15 @@ impl Oryxis {
                             self.mouse_position.x
                         },
                         y: if bounds.height > 0.0 {
-                            bounds.y + bounds.height + 6.0
+                            bounds.y + bounds.height + 6.0 - scroll_adjust
                         } else {
                             self.mouse_position.y + 26.0
                         },
                     });
                 }
+            }
+            Message::EditorFormScrolled(viewport) => {
+                self.editor_form_scroll_y = viewport.absolute_offset().y;
             }
             Message::GroupPickerSearchChanged(v) => {
                 self.group_picker_search = v;

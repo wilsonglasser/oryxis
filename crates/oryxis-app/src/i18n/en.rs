@@ -83,6 +83,8 @@ pub(super) fn lookup(key: &str) -> &'static str {
         "cloud_aws_sso_role_name" => "Role Name",
         "cloud_aws_sso_hint" => "Run `aws sso login` first so the SSO token cache exists. Native browser flow comes in a follow-up release.",
         "initial_command_label" => "Initial Command",
+        "startup_none" => "None",
+        "startup_custom" => "Custom command",
         "initial_command_ph" => "exec bash",
         "cloud_err_label_required" => "Label is required",
         "cloud_discover" => "Discover hosts",

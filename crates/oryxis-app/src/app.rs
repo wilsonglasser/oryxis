@@ -636,6 +636,13 @@ pub struct Oryxis {
     pub(crate) group_picker_search: String,
     /// Bounds of the host editor's Parent Group combo row.
     pub(crate) editor_parent_combo_bounds: crate::widgets::BoundsCell,
+    /// Vertical scroll offset of the host editor's form scrollable. The
+    /// combo bounds above are cached in content space (scroll is a
+    /// renderer translation, not a layout shift), so the group-picker
+    /// anchor subtracts this to land under the chevron when scrolled.
+    pub(crate) editor_form_scroll_y: f32,
+    /// Host editor's startup-command source (None / a snippet / custom).
+    pub(crate) editor_startup_choice: crate::state::StartupChoice,
     /// Bounds of the dynamic group editor's Parent Group combo row.
     pub(crate) dynamic_form_parent_combo_bounds: crate::widgets::BoundsCell,
     /// Bounds of the session-group editor's Folder combo row.

@@ -338,6 +338,8 @@ impl Oryxis {
                 cloud_discover_default_group_combo_bounds: crate::widgets::new_bounds_cell(),
                 group_picker_search: String::new(),
                 editor_parent_combo_bounds: crate::widgets::new_bounds_cell(),
+                editor_form_scroll_y: 0.0,
+                editor_startup_choice: crate::state::StartupChoice::None,
                 dynamic_form_parent_combo_bounds: crate::widgets::new_bounds_cell(),
                 session_group_folder_combo_bounds: crate::widgets::new_bounds_cell(),
                 plus_btn_bounds: crate::widgets::new_bounds_cell(),

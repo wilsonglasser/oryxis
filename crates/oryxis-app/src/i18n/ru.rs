@@ -79,6 +79,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "cloud_aws_sso_role_name" => "Имя роли",
         "cloud_aws_sso_hint" => "Сначала запустите `aws sso login` для кеша токена. Нативный браузер-флоу, в следующем релизе.",
         "initial_command_label" => "Начальная команда",
+        "startup_none" => "Нет",
+        "startup_custom" => "Своя команда",
         "initial_command_ph" => "exec bash",
         "cloud_err_label_required" => "Метка обязательна",
         "cloud_discover" => "Найти хосты",

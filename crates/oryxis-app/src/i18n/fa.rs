@@ -80,6 +80,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "cloud_aws_sso_role_name" => "نام نقش",
         "cloud_aws_sso_hint" => "ابتدا `aws sso login` را اجرا کنید تا کش توکن ساخته شود. جریان مرورگر بومی در نسخه بعد.",
         "initial_command_label" => "دستور اولیه",
+        "startup_none" => "هیچ‌کدام",
+        "startup_custom" => "فرمان سفارشی",
         "initial_command_ph" => "exec bash",
         "cloud_err_label_required" => "برچسب الزامی است",
         "cloud_discover" => "کشف میزبان‌ها",

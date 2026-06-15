@@ -80,6 +80,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "cloud_aws_sso_role_name" => "Nazwa roli",
         "cloud_aws_sso_hint" => "Najpierw uruchom `aws sso login`, aby istniała pamięć podręczna tokenu SSO. Natywny przepływ w przeglądarce pojawi się w kolejnym wydaniu.",
         "initial_command_label" => "Polecenie początkowe",
+        "startup_none" => "Brak",
+        "startup_custom" => "Własne polecenie",
         "initial_command_ph" => "exec bash",
         "cloud_err_label_required" => "Etykieta jest wymagana",
         "cloud_discover" => "Wykryj hosty",

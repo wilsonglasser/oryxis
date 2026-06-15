@@ -79,6 +79,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "cloud_aws_sso_role_name" => "Rollenname",
         "cloud_aws_sso_hint" => "Vorher `aws sso login` ausführen für den Token-Cache. Nativer Browserflow im nächsten Release.",
         "initial_command_label" => "Startbefehl",
+        "startup_none" => "Keiner",
+        "startup_custom" => "Eigener Befehl",
         "initial_command_ph" => "exec bash",
         "cloud_err_label_required" => "Label erforderlich",
         "cloud_discover" => "Hosts entdecken",
