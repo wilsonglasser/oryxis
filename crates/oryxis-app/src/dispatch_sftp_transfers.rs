@@ -447,24 +447,16 @@ impl Oryxis {
                         });
                         walk_local_for_upload(&local_root, &target_root, &mut queue)
                             .map_err(|e| e.to_string())?;
-                        let total = queue.len();
                         let clients = build_client_pool(client, concurrency).await?;
-                        Ok::<crate::state::TransferState, String>(crate::state::TransferState {
-                            kind: crate::state::TransferKind::Upload,
-                            root_label: unique,
+                        Ok::<crate::state::TransferState, String>(crate::state::TransferState::new(
+                            crate::state::TransferKind::Upload,
+                            unique,
                             queue,
-                            current: None,
-                            completed: 0,
-                            total,
-                            overwrite_default: None,
-                            pending_conflict_item: None,
-                            pending_conflict_slot: None,
                             clients,
-                            dest_client: None,
-                            dest_side: None,
-                            busy_slots: vec![false; concurrency as usize],
-                            paused: false,
-                        })
+                            None,
+                            None,
+                            concurrency,
+                        ))
                     },
                     move |result| match result {
                         Ok(state) => Message::SftpTransferQueueReady(owner, state),
@@ -511,24 +503,16 @@ impl Oryxis {
                         });
                         walk_remote_for_download(&client, &remote_root, &target_root, &mut queue)
                             .await?;
-                        let total = queue.len();
                         let clients = build_client_pool(client, concurrency).await?;
-                        Ok::<crate::state::TransferState, String>(crate::state::TransferState {
-                            kind: crate::state::TransferKind::Download,
-                            root_label: unique,
+                        Ok::<crate::state::TransferState, String>(crate::state::TransferState::new(
+                            crate::state::TransferKind::Download,
+                            unique,
                             queue,
-                            current: None,
-                            completed: 0,
-                            total,
-                            overwrite_default: None,
-                            pending_conflict_item: None,
-                            pending_conflict_slot: None,
                             clients,
-                            dest_client: None,
-                            dest_side: None,
-                            busy_slots: vec![false; concurrency as usize],
-                            paused: false,
-                        })
+                            None,
+                            None,
+                            concurrency,
+                        ))
                     },
                     move |result| match result {
                         Ok(state) => Message::SftpTransferQueueReady(owner, state),
@@ -575,7 +559,6 @@ impl Oryxis {
                             self.sftp.pane_mut(side).error = Some(e);
                             return Ok(Task::none());
                         }
-                        let total = queue.len();
                         // Local duplicate uses sync std::fs::copy in
                         // the queue runner, no SFTP channels needed,
                         // so the client pool stays empty. Concurrency
@@ -583,22 +566,15 @@ impl Oryxis {
                         // multiple sync workers wouldn't help (they'd
                         // hammer the OS file cache from the same
                         // thread).
-                        let state = crate::state::TransferState {
-                            kind: crate::state::TransferKind::DuplicateLocal,
-                            root_label: unique,
+                        let state = crate::state::TransferState::new(
+                            crate::state::TransferKind::DuplicateLocal,
+                            unique,
                             queue,
-                            current: None,
-                            completed: 0,
-                            total,
-                            overwrite_default: None,
-                            pending_conflict_item: None,
-                            pending_conflict_slot: None,
-                            clients: Vec::new(),
-                            dest_client: None,
-                            dest_side: None,
-                            busy_slots: vec![false; 1],
-                            paused: false,
-                        };
+                            Vec::new(),
+                            None,
+                            None,
+                            1,
+                        );
                         return Ok(Task::done(Message::SftpTransferQueueReady(owner, state)));
                 } else {
                         let Some(client) = self.sftp.pane(side).client.clone() else {
@@ -893,7 +869,6 @@ impl Oryxis {
                                 });
                             }
                         }
-                        let total = queue.len();
                         let label = if paths.len() == 1 {
                             paths[0]
                                 .file_name()
@@ -904,22 +879,15 @@ impl Oryxis {
                             format!("{} items", paths.len())
                         };
                         let clients = build_client_pool(client, concurrency).await?;
-                        Ok::<crate::state::TransferState, String>(crate::state::TransferState {
-                            kind: crate::state::TransferKind::Upload,
-                            root_label: label,
+                        Ok::<crate::state::TransferState, String>(crate::state::TransferState::new(
+                            crate::state::TransferKind::Upload,
+                            label,
                             queue,
-                            current: None,
-                            completed: 0,
-                            total,
-                            overwrite_default: None,
-                            pending_conflict_item: None,
-                            pending_conflict_slot: None,
                             clients,
-                            dest_client: None,
-                            dest_side: None,
-                            busy_slots: vec![false; concurrency as usize],
-                            paused: false,
-                        })
+                            None,
+                            None,
+                            concurrency,
+                        ))
                     },
                     move |result| match result {
                         Ok(state) => Message::SftpTransferQueueReady(owner, state),
@@ -996,7 +964,6 @@ impl Oryxis {
                                 });
                             }
                         }
-                        let total = queue.len();
                         let label = if remote_items.len() == 1 {
                             remote_items[0]
                                 .0
@@ -1008,22 +975,15 @@ impl Oryxis {
                             format!("{} items", remote_items.len())
                         };
                         let clients = build_client_pool(client, concurrency).await?;
-                        Ok::<crate::state::TransferState, String>(crate::state::TransferState {
-                            kind: crate::state::TransferKind::Download,
-                            root_label: label,
+                        Ok::<crate::state::TransferState, String>(crate::state::TransferState::new(
+                            crate::state::TransferKind::Download,
+                            label,
                             queue,
-                            current: None,
-                            completed: 0,
-                            total,
-                            overwrite_default: None,
-                            pending_conflict_item: None,
-                            pending_conflict_slot: None,
                             clients,
-                            dest_client: None,
-                            dest_side: None,
-                            busy_slots: vec![false; concurrency as usize],
-                            paused: false,
-                        })
+                            None,
+                            None,
+                            concurrency,
+                        ))
                     },
                     move |result| match result {
                         Ok(state) => Message::SftpTransferQueueReady(owner, state),
@@ -1151,24 +1111,17 @@ impl Oryxis {
                             is_dir: false,
                             size: None,
                         });
-                        Ok::<crate::state::TransferState, String>(crate::state::TransferState {
-                            kind: crate::state::TransferKind::Relay,
-                            root_label: basename,
+                        // Relay runs at concurrency 1: one source client
+                        // slot plus the single dest client.
+                        Ok::<crate::state::TransferState, String>(crate::state::TransferState::new(
+                            crate::state::TransferKind::Relay,
+                            basename,
                             queue,
-                            current: None,
-                            completed: 0,
-                            total: 1,
-                            overwrite_default: None,
-                            pending_conflict_item: None,
-                            pending_conflict_slot: None,
-                            // Relay runs at concurrency 1: one source
-                            // client slot plus the single dest client.
-                            clients: vec![src_client],
-                            dest_client: Some(dst_client),
-                            dest_side: Some(dest_side),
-                            busy_slots: vec![false; 1],
-                            paused: false,
-                        })
+                            vec![src_client],
+                            Some(dst_client),
+                            Some(dest_side),
+                            1,
+                        ))
                     },
                     move |result| match result {
                         Ok(state) => Message::SftpTransferQueueReady(owner, state),
@@ -1221,23 +1174,15 @@ impl Oryxis {
                         // onto a destination POSIX path under target_root.
                         walk_remote_for_relay(&src_client, &src_root, &target_root, &mut queue)
                             .await?;
-                        let total = queue.len();
-                        Ok::<crate::state::TransferState, String>(crate::state::TransferState {
-                            kind: crate::state::TransferKind::Relay,
-                            root_label: unique,
+                        Ok::<crate::state::TransferState, String>(crate::state::TransferState::new(
+                            crate::state::TransferKind::Relay,
+                            unique,
                             queue,
-                            current: None,
-                            completed: 0,
-                            total,
-                            overwrite_default: None,
-                            pending_conflict_item: None,
-                            pending_conflict_slot: None,
-                            clients: vec![src_client],
-                            dest_client: Some(dst_client),
-                            dest_side: Some(dest_side),
-                            busy_slots: vec![false; 1],
-                            paused: false,
-                        })
+                            vec![src_client],
+                            Some(dst_client),
+                            Some(dest_side),
+                            1,
+                        ))
                     },
                     move |result| match result {
                         Ok(state) => Message::SftpTransferQueueReady(owner, state),

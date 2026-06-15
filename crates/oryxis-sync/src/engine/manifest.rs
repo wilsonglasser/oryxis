@@ -30,6 +30,23 @@ pub(super) fn peer_shared_secret(
     Ok(bytes.and_then(|b| <[u8; 32]>::try_from(b.as_slice()).ok()))
 }
 
+/// Fetch the stored Ed25519 public key of an active paired peer. Returns
+/// `None` for an unknown or deactivated peer; callers decide whether that
+/// is a soft fall-through (don't leak verify timing) or a hard
+/// `PeerNotFound`.
+pub(super) fn active_peer_pubkey(
+    vault: &Arc<std::sync::Mutex<VaultStore>>,
+    peer_id: &Uuid,
+) -> Result<Option<Vec<u8>>, SyncError> {
+    let v = vault
+        .lock()
+        .map_err(|_| SyncError::Vault("Lock failed".into()))?;
+    Ok(v.list_sync_peers()?
+        .into_iter()
+        .find(|p| p.peer_id == *peer_id && p.is_active)
+        .map(|p| p.public_key))
+}
+
 /// SQLite table behind each syncable entity type, in manifest order.
 /// Drives the lean stamp queries in [`build_manifest`]; the names are
 /// re-validated against a whitelist inside `list_entity_stamps`.

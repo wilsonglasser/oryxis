@@ -25,7 +25,9 @@ use crate::error::SyncError;
 use crate::protocol::{self, SyncMessage, PROTOCOL_VERSION};
 use crate::transport;
 
-use super::manifest::{apply_records, build_manifest, collect_records, peer_shared_secret};
+use super::manifest::{
+    active_peer_pubkey, apply_records, build_manifest, collect_records, peer_shared_secret,
+};
 use super::{pairing, HostingPairing, SyncEvent};
 
 /// Handle an incoming QUIC connection.
@@ -116,14 +118,7 @@ pub(super) async fn handle_incoming(
     // channel-bound signature BEFORE doing anything else with the peer.
     // Unknown / inactive peers fall through to the "Bye" path below
     // without a verify attempt, so we never leak verify timing.
-    let peer_pubkey = {
-        let vault_guard = vault.lock().map_err(|_| SyncError::Vault("Lock failed".into()))?;
-        let peers = vault_guard.list_sync_peers()?;
-        peers
-            .into_iter()
-            .find(|p| p.peer_id == peer_id && p.is_active)
-            .map(|p| p.public_key)
-    };
+    let peer_pubkey = active_peer_pubkey(&vault, &peer_id)?;
 
     let Some(peer_pubkey) = peer_pubkey else {
         tracing::warn!("Unknown peer {} tried to connect", peer_id);
@@ -442,16 +437,8 @@ async fn sync_with_peer_via_relay(
             "RelayHelloAck version mismatch: peer v{protocol_version}, local v{PROTOCOL_VERSION}"
         )));
     }
-    let peer_pubkey = {
-        let v = vault
-            .lock()
-            .map_err(|_| SyncError::Vault("Lock failed".into()))?;
-        v.list_sync_peers()?
-            .into_iter()
-            .find(|p| p.peer_id == *peer_id && p.is_active)
-            .map(|p| p.public_key)
-            .ok_or_else(|| SyncError::PeerNotFound(peer_id.to_string()))?
-    };
+    let peer_pubkey = active_peer_pubkey(vault, peer_id)?
+        .ok_or_else(|| SyncError::PeerNotFound(peer_id.to_string()))?;
     let transcript = crypto::relay_handshake_transcript(
         &identity.device_id,
         peer_id,
@@ -550,15 +537,8 @@ async fn sync_with_peer(
         _ => return Err(SyncError::Protocol("Expected HelloAck".into())),
     };
 
-    let peer_pubkey = {
-        let vault_guard = vault.lock().map_err(|_| SyncError::Vault("Lock failed".into()))?;
-        let peers = vault_guard.list_sync_peers()?;
-        peers
-            .into_iter()
-            .find(|p| p.peer_id == *peer_id && p.is_active)
-            .map(|p| p.public_key)
-            .ok_or_else(|| SyncError::PeerNotFound(peer_id.to_string()))?
-    };
+    let peer_pubkey = active_peer_pubkey(vault, peer_id)?
+        .ok_or_else(|| SyncError::PeerNotFound(peer_id.to_string()))?;
 
     crypto::verify_session_handshake(&peer_pubkey, &exporter, &peer_auth_sig).map_err(|e| {
         SyncError::PairingFailed(format!(

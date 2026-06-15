@@ -439,6 +439,40 @@ pub(crate) struct TransferState {
     pub paused: bool,
 }
 
+impl TransferState {
+    /// Build a fresh transfer. `total` is derived from the queue and
+    /// `busy_slots` gets one flag per slot (kept 1-1 with the dispatch
+    /// loop's `clients`); all the progress / conflict fields start empty.
+    /// `slots` is the parallel-worker count (1 for DuplicateLocal/Relay).
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        kind: TransferKind,
+        root_label: String,
+        queue: std::collections::VecDeque<TransferItem>,
+        clients: Vec<SftpClient>,
+        dest_client: Option<SftpClient>,
+        dest_side: Option<SftpPaneSide>,
+        slots: u8,
+    ) -> Self {
+        Self {
+            kind,
+            root_label,
+            total: queue.len(),
+            queue,
+            current: None,
+            completed: 0,
+            overwrite_default: None,
+            pending_conflict_item: None,
+            pending_conflict_slot: None,
+            clients,
+            dest_client,
+            dest_side,
+            busy_slots: vec![false; slots as usize],
+            paused: false,
+        }
+    }
+}
+
 /// Which pane (by position) a side-addressed SFTP message / state item
 /// refers to. This is *position* only; whether a pane is Local or remote
 /// is its `PaneState::is_remote` flag, not its side.
