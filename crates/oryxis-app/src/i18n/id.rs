@@ -231,6 +231,11 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
 
         // Settings
         "interface" => "Antarmuka",
+        "interface_group_general" => "Umum",
+        "interface_group_dashboard" => "Dasbor",
+        "interface_group_tabs" => "Tab & bilah atas",
+        "interface_group_theme" => "Tema aplikasi",
+        "interface_group_advanced" => "Lanjutan",
         "show_status_bar" => "Tampilkan bilah status",
         "system_tray" => "System tray",
         "close_to_tray" => "Tutup ke tray",
@@ -258,10 +263,14 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "terminal_font_size" => "Ukuran Font Terminal",
         "vault_stats" => "Statistik Vault",
         "security" => "Keamanan",
+        "connection" => "Koneksi",
+        "security_privacy" => "Keamanan & Privasi",
         "lock_vault" => "Kunci Vault",
         "lock_vault_requires_password" => "Atur kata sandi master di atas untuk mengaktifkan penguncian.",
         "about" => "Tentang",
         "terminal_settings" => "Pengaturan Terminal",
+        "terminal_group_behavior" => "Perilaku",
+        "terminal_group_appearance" => "Tampilan",
         "shortcuts" => "Pintasan",
         "ai_assistant" => "Asisten AI",
         "language" => "Bahasa",
@@ -538,6 +547,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "flatten_hosts_label" => "Tampilkan semua host di root",
         "card_accent_glass_label" => "Kartu kaca aksen",
         "card_accent_glass_desc" => "Gradasi lembut warna tiap kartu (warna host/grup memudar).",
+        "show_host_address_label" => "Tampilkan alamat host",
+        "show_host_address_desc" => "Menampilkan user@host:port pada kartu. Nonaktif secara default menjaga alamat dari tangkapan layar. Port 22 selalu dihilangkan.",
         "flatten_hosts_desc" => "Saat aktif, root dashboard menampilkan bagian Grup di atas daftar datar semua host. Saat nonaktif, host di dalam grup disembunyikan hingga Anda membuka grup.",
 
         // Sync passwords toggle
@@ -568,8 +579,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "edit_snippet" => "Edit Snippet",
 
         "re_verify_all" => "Verifikasi ulang semua",
-        "no_known_hosts_yet" => "Belum ada host dikenal. Entri muncul di sini saat Anda terhubung dan menyetujui sidik jari host.",
-        "known_hosts_remove_hint" => "Hapus entri untuk memaksa dialog verifikasi muncul lagi pada koneksi berikutnya.",
+        "no_known_hosts_yet" => "Belum ada host dikenal",
+        "known_hosts_empty_desc" => "Entri muncul di sini saat Anda terhubung dan menyetujui sidik jari host.",
         "last_seen" => "Terakhir terlihat:",
 
         "icon" => "Ikon",
@@ -757,6 +768,9 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         // Plugins panel
         "plugins" => "Plugin",
         "features" => "Fitur",
+        "feature_ai_desc" => "Obrolan AI dalam terminal yang dapat menjalankan perintah di server yang terhubung.",
+        "feature_sftp_desc" => "Jelajahi dan transfer berkas lewat SSH dengan pengelola dua panel.",
+        "feature_sync_desc" => "Sinkronisasi peer-to-peer terenkripsi brankas Anda antarperangkat.",
         "plugins_subtitle" => "Kelola plugin penyedia cloud yang telah diunduh.",
         "plugins_empty" => "Belum ada plugin tersedia.",
         "plugins_auto_update_global" => "Perbarui otomatis semua",
@@ -768,7 +782,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "plugin_status_checking" => "memeriksa pembaruan…",
         "plugin_status_downloading" => "mengunduh…",
         "plugin_status_error" => "kesalahan",
-        "plugin_dev_build_hint" => "Menjalankan biner yang dibangun lokal. Pembaruan dikelola oleh build Anda, bukan panel ini.",
+        "plugin_dev_build_hint" => "Dibangun lokal, tidak dikelola di sini.",
         "plugin_action_install" => "Pasang",
         "plugin_action_update" => "Perbarui",
         "plugin_action_uninstall" => "Copot",

@@ -231,6 +231,11 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
 
         // Settings
         "interface" => "Arayüz",
+        "interface_group_general" => "Genel",
+        "interface_group_dashboard" => "Panel",
+        "interface_group_tabs" => "Sekmeler ve üst çubuk",
+        "interface_group_theme" => "Uygulama teması",
+        "interface_group_advanced" => "Gelişmiş",
         "show_status_bar" => "Durum çubuğunu göster",
         "system_tray" => "Sistem tepsisi",
         "close_to_tray" => "Tepsiye küçült",
@@ -258,10 +263,14 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "terminal_font_size" => "Terminal Yazı Tipi Boyutu",
         "vault_stats" => "Kasa İstatistikleri",
         "security" => "Güvenlik",
+        "connection" => "Bağlantı",
+        "security_privacy" => "Güvenlik ve Gizlilik",
         "lock_vault" => "Kasayı Kilitle",
         "lock_vault_requires_password" => "Kilitlemeyi etkinleştirmek için yukarıdan bir ana parola belirleyin.",
         "about" => "Hakkında",
         "terminal_settings" => "Terminal Ayarları",
+        "terminal_group_behavior" => "Davranış",
+        "terminal_group_appearance" => "Görünüm",
         "shortcuts" => "Kısayollar",
         "ai_assistant" => "Yapay Zeka Asistanı",
         "language" => "Dil",
@@ -538,6 +547,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "flatten_hosts_label" => "Tüm sunucuları kökte göster",
         "card_accent_glass_label" => "Vurgu camlı kartlar",
         "card_accent_glass_desc" => "Her kartın renginde hafif geçiş (sunucu/grup rengi solarak).",
+        "show_host_address_label" => "Ana makine adresini göster",
+        "show_host_address_desc" => "Kartlarda user@host:port'u gösterir. Varsayılan olarak kapalıdır, adresleri ekran görüntülerinin dışında tutar. 22 numaralı bağlantı noktası her zaman atlanır.",
         "flatten_hosts_desc" => "Açıkken pano kökü, her sunucunun düz bir listesinin üstünde bir Gruplar bölümü gösterir. Kapalıyken gruplardaki sunucular siz grubu açana kadar gizli kalır.",
 
         // Sync passwords toggle
@@ -568,8 +579,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "edit_snippet" => "Snippet'i Düzenle",
 
         "re_verify_all" => "Tümünü yeniden doğrula",
-        "no_known_hosts_yet" => "Henüz bilinen sunucu yok. Bağlanıp bir sunucunun parmak izini onayladığınızda kayıtlar burada görünür.",
-        "known_hosts_remove_hint" => "Bir sonraki bağlantıda doğrulama penceresinin yeniden görünmesini zorlamak için bir kaydı kaldırın.",
+        "no_known_hosts_yet" => "Henüz bilinen ana makine yok",
+        "known_hosts_empty_desc" => "Bağlanıp bir ana makinenin parmak izini onayladığınızda girişler burada görünür.",
         "last_seen" => "Son görülme:",
 
         "icon" => "Simge",
@@ -757,6 +768,9 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         // Plugins panel
         "plugins" => "Eklentiler",
         "features" => "Özellikler",
+        "feature_ai_desc" => "Bağlı sunucuda komut çalıştırabilen terminal içi yapay zeka sohbeti.",
+        "feature_sftp_desc" => "Çift bölmeli yöneticiyle SSH üzerinden dosya gezin ve aktar.",
+        "feature_sync_desc" => "Kasanızın cihazlar arası şifreli eşler arası senkronizasyonu.",
         "plugins_subtitle" => "İndirilen bulut sağlayıcı eklentilerini yönetin.",
         "plugins_empty" => "Henüz kullanılabilir eklenti yok.",
         "plugins_auto_update_global" => "Tümünü otomatik güncelle",
@@ -768,7 +782,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "plugin_status_checking" => "güncellemeler denetleniyor…",
         "plugin_status_downloading" => "indiriliyor…",
         "plugin_status_error" => "hata",
-        "plugin_dev_build_hint" => "Yerel olarak derlenmiş bir ikili dosya çalışıyor. Güncellemeler bu panel tarafından değil, derlemeniz tarafından yönetilir.",
+        "plugin_dev_build_hint" => "Yerel olarak derlendi, burada yönetilmez.",
         "plugin_action_install" => "Kur",
         "plugin_action_update" => "Güncelle",
         "plugin_action_uninstall" => "Kaldır",

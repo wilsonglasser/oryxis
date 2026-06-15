@@ -838,6 +838,11 @@ pub struct Oryxis {
     /// wash (the host brand / group colour fading left to right); when
     /// off, cards stay pure (no overlay).
     pub(crate) setting_card_accent_glass: bool,
+    /// When on, the host cards' subtitle shows the `user@host:port`
+    /// address; when off (the default) it shows only the auth method,
+    /// keeping addresses out of screenshots / screen shares. Port 22 is
+    /// always omitted from the address regardless of this toggle.
+    pub(crate) setting_show_host_address: bool,
     /// When on, clicking the window's close button hides to the
     /// system tray instead of quitting. Only honoured on Windows
     /// (the tray module is a no-op everywhere else). Default off

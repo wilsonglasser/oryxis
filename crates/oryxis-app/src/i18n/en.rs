@@ -234,6 +234,11 @@ pub(super) fn lookup(key: &str) -> &'static str {
 
         // Settings
         "interface" => "Interface",
+        "interface_group_general" => "General",
+        "interface_group_dashboard" => "Dashboard",
+        "interface_group_tabs" => "Tabs & top bar",
+        "interface_group_theme" => "App theme",
+        "interface_group_advanced" => "Advanced",
         "show_status_bar" => "Show status bar",
         "system_tray" => "System tray",
         "close_to_tray" => "Close to tray",
@@ -261,10 +266,14 @@ pub(super) fn lookup(key: &str) -> &'static str {
         "terminal_font_size" => "Terminal Font Size",
         "vault_stats" => "Vault Statistics",
         "security" => "Security",
+        "connection" => "Connection",
+        "security_privacy" => "Security & Privacy",
         "lock_vault" => "Lock Vault",
         "lock_vault_requires_password" => "Set a master password above to enable locking.",
         "about" => "About",
         "terminal_settings" => "Terminal Settings",
+        "terminal_group_behavior" => "Behavior",
+        "terminal_group_appearance" => "Appearance",
         "shortcuts" => "Shortcuts",
         "ai_assistant" => "AI Assistant",
         "language" => "Language",
@@ -544,6 +553,8 @@ pub(super) fn lookup(key: &str) -> &'static str {
         "flatten_hosts_label" => "Show all hosts at root",
         "card_accent_glass_label" => "Accent glass cards",
         "card_accent_glass_desc" => "Soft per-colour wash on dashboard cards (host/group colour fading across).",
+        "show_host_address_label" => "Show host address",
+        "show_host_address_desc" => "Show user@host:port on host cards. Off by default keeps addresses out of screenshots. Port 22 is always omitted.",
         "flatten_hosts_desc" => "When on, the dashboard root shows a Groups section above a flat list of every host. When off, hosts inside groups are hidden until you open the group.",
 
         // Sync passwords toggle
@@ -574,8 +585,8 @@ pub(super) fn lookup(key: &str) -> &'static str {
         "edit_snippet" => "Edit Snippet",
 
         "re_verify_all" => "Re-verify all",
-        "no_known_hosts_yet" => "No known hosts yet. Entries appear here when you connect and approve a host's fingerprint.",
-        "known_hosts_remove_hint" => "Remove an entry to force the verification dialog to appear again on the next connect.",
+        "no_known_hosts_yet" => "No known hosts yet",
+        "known_hosts_empty_desc" => "Entries appear here when you connect and approve a host's fingerprint.",
         "last_seen" => "Last seen:",
 
         "icon" => "Icon",
@@ -777,6 +788,9 @@ pub(super) fn lookup(key: &str) -> &'static str {
         // Plugins panel
         "plugins" => "Plugins",
         "features" => "Features",
+        "feature_ai_desc" => "In-terminal AI chat that can run commands on the connected server.",
+        "feature_sftp_desc" => "Browse and transfer files over SSH with a dual-pane manager.",
+        "feature_sync_desc" => "Encrypted peer-to-peer sync of your vault across your devices.",
         "plugins_subtitle" => "Manage downloaded cloud-provider plugins.",
         "plugins_empty" => "No plugins available yet.",
         "plugins_auto_update_global" => "Auto-update all",
@@ -788,7 +802,7 @@ pub(super) fn lookup(key: &str) -> &'static str {
         "plugin_status_checking" => "checking for updates…",
         "plugin_status_downloading" => "downloading…",
         "plugin_status_error" => "error",
-        "plugin_dev_build_hint" => "Running a locally built binary. Updates are managed by your build, not this panel.",
+        "plugin_dev_build_hint" => "Locally built, not managed here.",
         "plugin_action_install" => "Install",
         "plugin_action_update" => "Update",
         "plugin_action_uninstall" => "Uninstall",

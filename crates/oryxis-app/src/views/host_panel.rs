@@ -39,7 +39,10 @@ impl Oryxis {
                     }).into(),
             ]).align_y(iced::Alignment::Center),
         )
-        .padding(Padding { top: 16.0, right: 16.0, bottom: 12.0, left: 16.0 });
+        // top 12 (not 16): the taller ×-button row centres the title, so a
+        // 16 top padding optically reads ~4px lower than the 16 left. 12
+        // lands the title's top edge level with the left gutter.
+        .padding(Padding { top: 12.0, right: 16.0, bottom: 12.0, left: 16.0 });
 
         // ── Section: Address ──
         // Icon + color reflect the detected OS (once the silent probe has

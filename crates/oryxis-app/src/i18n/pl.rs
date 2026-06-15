@@ -231,6 +231,11 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
 
         // Settings
         "interface" => "Interfejs",
+        "interface_group_general" => "Ogólne",
+        "interface_group_dashboard" => "Pulpit",
+        "interface_group_tabs" => "Karty i górny pasek",
+        "interface_group_theme" => "Motyw aplikacji",
+        "interface_group_advanced" => "Zaawansowane",
         "show_status_bar" => "Pokaż pasek stanu",
         "system_tray" => "Zasobnik systemowy",
         "close_to_tray" => "Zamykaj do zasobnika",
@@ -258,10 +263,14 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "terminal_font_size" => "Rozmiar czcionki terminala",
         "vault_stats" => "Statystyki sejfu",
         "security" => "Bezpieczeństwo",
+        "connection" => "Połączenie",
+        "security_privacy" => "Bezpieczeństwo i prywatność",
         "lock_vault" => "Zablokuj sejf",
         "lock_vault_requires_password" => "Ustaw hasło główne powyżej, aby włączyć blokowanie.",
         "about" => "O programie",
         "terminal_settings" => "Ustawienia terminala",
+        "terminal_group_behavior" => "Zachowanie",
+        "terminal_group_appearance" => "Wygląd",
         "shortcuts" => "Skróty",
         "ai_assistant" => "Asystent AI",
         "language" => "Język",
@@ -544,6 +553,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "flatten_hosts_label" => "Pokaż wszystkie hosty w katalogu głównym",
         "card_accent_glass_label" => "Karty ze szklanym akcentem",
         "card_accent_glass_desc" => "Delikatny gradient w kolorze każdej karty (kolor hosta/grupy).",
+        "show_host_address_label" => "Pokaż adres hosta",
+        "show_host_address_desc" => "Pokazuje user@host:port na kartach. Domyślnie wyłączone, aby adresy nie trafiały na zrzuty ekranu. Port 22 jest zawsze pomijany.",
         "flatten_hosts_desc" => "Gdy włączone, katalog główny pulpitu pokazuje sekcję Grupy nad płaską listą wszystkich hostów. Gdy wyłączone, hosty w grupach są ukryte do czasu otwarcia grupy.",
 
         // Sync passwords toggle
@@ -574,8 +585,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "edit_snippet" => "Edytuj fragment",
 
         "re_verify_all" => "Zweryfikuj ponownie wszystkie",
-        "no_known_hosts_yet" => "Brak znanych hostów. Wpisy pojawiają się tutaj, gdy łączysz się i zatwierdzasz odcisk palca hosta.",
-        "known_hosts_remove_hint" => "Usuń wpis, aby przy następnym połączeniu ponownie pojawiło się okno weryfikacji.",
+        "no_known_hosts_yet" => "Brak znanych hostów",
+        "known_hosts_empty_desc" => "Wpisy pojawią się tutaj, gdy połączysz się i zatwierdzisz odcisk hosta.",
         "last_seen" => "Ostatnio widziany:",
 
         "icon" => "Ikona",
@@ -764,6 +775,9 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         // Plugins panel
         "plugins" => "Wtyczki",
         "features" => "Funkcje",
+        "feature_ai_desc" => "Czat AI w terminalu, który może uruchamiać polecenia na połączonym serwerze.",
+        "feature_sftp_desc" => "Przeglądaj i przesyłaj pliki przez SSH dwupanelowym menedżerem.",
+        "feature_sync_desc" => "Szyfrowana synchronizacja peer-to-peer sejfu między urządzeniami.",
         "plugins_subtitle" => "Zarządzaj pobranymi wtyczkami dostawców chmury.",
         "plugins_empty" => "Brak dostępnych wtyczek.",
         "plugins_auto_update_global" => "Aktualizuj wszystkie automatycznie",
@@ -775,7 +789,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "plugin_status_checking" => "sprawdzanie aktualizacji…",
         "plugin_status_downloading" => "pobieranie…",
         "plugin_status_error" => "błąd",
-        "plugin_dev_build_hint" => "Działa lokalnie skompilowany plik binarny. Aktualizacjami zarządza twoja kompilacja, a nie ten panel.",
+        "plugin_dev_build_hint" => "Zbudowane lokalnie, nie zarządzane tutaj.",
         "plugin_action_install" => "Zainstaluj",
         "plugin_action_update" => "Aktualizuj",
         "plugin_action_uninstall" => "Odinstaluj",

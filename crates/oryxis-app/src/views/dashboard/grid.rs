@@ -1664,7 +1664,25 @@ impl Oryxis {
                 AuthMethod::Agent => t("auth_agent"),
                 AuthMethod::Interactive => t("auth_interactive"),
             };
-            let subtitle = format!("{}@{}:{} · {}", conn.username.as_deref().unwrap_or("root"), conn.hostname, conn.port, auth_label);
+            // Address shown only when the (off-by-default) setting is on,
+            // so addresses stay out of screenshots / screen shares by
+            // default. Port 22 is the SSH default, so it's always omitted.
+            let subtitle = if self.setting_show_host_address {
+                let port_part = if conn.port == 22 {
+                    String::new()
+                } else {
+                    format!(":{}", conn.port)
+                };
+                format!(
+                    "{}@{}{} · {}",
+                    conn.username.as_deref().unwrap_or("root"),
+                    conn.hostname,
+                    port_part,
+                    auth_label
+                )
+            } else {
+                auth_label.to_string()
+            };
 
             // Resolve icon + brand color from detected OS (if any). Disconnected
             // hosts use the app accent; connected ones use the brand color or

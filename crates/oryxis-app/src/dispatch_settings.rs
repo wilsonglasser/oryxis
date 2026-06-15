@@ -807,6 +807,13 @@ impl Oryxis {
                     if self.setting_card_accent_glass { "true" } else { "false" },
                 );
             }
+            Message::ToggleShowHostAddress => {
+                self.setting_show_host_address = !self.setting_show_host_address;
+                self.persist_setting(
+                    "show_host_address",
+                    if self.setting_show_host_address { "true" } else { "false" },
+                );
+            }
             Message::SettingToggleCloseToTray => {
                 self.setting_close_to_tray = !self.setting_close_to_tray;
                 self.persist_setting(

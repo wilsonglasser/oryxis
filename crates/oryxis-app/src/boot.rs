@@ -439,6 +439,7 @@ impl Oryxis {
                 setting_show_status_bar: true,
                 setting_host_list_view: false,
                 setting_card_accent_glass: true,
+                setting_show_host_address: false,
                 setting_close_to_tray: false,
                 setting_minimize_to_tray: false,
                 tray_menu_signature: 0,
@@ -851,6 +852,9 @@ impl Oryxis {
             }
             if let Ok(Some(v)) = vault.get_setting("card_accent_glass") {
                 self.setting_card_accent_glass = v == "true";
+            }
+            if let Ok(Some(v)) = vault.get_setting("show_host_address") {
+                self.setting_show_host_address = v == "true";
             }
             if let Ok(Some(v)) = vault.get_setting("close_to_tray") {
                 self.setting_close_to_tray = v == "true";

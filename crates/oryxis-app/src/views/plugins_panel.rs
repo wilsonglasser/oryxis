@@ -15,7 +15,7 @@ use iced::{Background, Border, Color, Element, Length, Padding};
 use crate::app::{Message, Oryxis};
 use crate::state::{PluginUiEntry, PluginUiStatus};
 use crate::theme::OryxisColors;
-use crate::widgets::{dir_align_x, dir_row, panel_section, toggle_row};
+use crate::widgets::{dir_align_x, dir_row, panel_section, toggle_row_desc};
 
 impl Oryxis {
     pub(crate) fn view_plugins_panel(&self) -> Element<'_, Message> {
@@ -29,13 +29,30 @@ impl Oryxis {
                 .into(),
             Space::new().height(8).into(),
             panel_section(column![
-                toggle_row(crate::i18n::t("ai_assistant"), self.ai_enabled, Message::ToggleAiEnabled),
-                Space::new().height(8),
-                toggle_row(crate::i18n::t("mcp_server"), self.mcp_server_enabled, Message::ToggleMcpServer),
-                Space::new().height(8),
-                toggle_row("SFTP", self.sftp_enabled, Message::SettingToggleSftpEnabled),
-                Space::new().height(8),
-                toggle_row(crate::i18n::t("sync"), self.sync_enabled, Message::SyncToggleEnabled),
+                toggle_row_desc(
+                    crate::i18n::t("ai_assistant"),
+                    crate::i18n::t("feature_ai_desc"),
+                    self.ai_enabled,
+                    Message::ToggleAiEnabled,
+                ),
+                Space::new().height(12),
+                // MCP is not listed here: it's a real plugin binary (the
+                // "Oryxis MCP Server" card below), so it's activated and
+                // managed there, and its server on/off lives in the MCP
+                // settings section that appears once the plugin is present.
+                toggle_row_desc(
+                    "SFTP",
+                    crate::i18n::t("feature_sftp_desc"),
+                    self.sftp_enabled,
+                    Message::SettingToggleSftpEnabled,
+                ),
+                Space::new().height(12),
+                toggle_row_desc(
+                    crate::i18n::t("sync"),
+                    crate::i18n::t("feature_sync_desc"),
+                    self.sync_enabled,
+                    Message::SyncToggleEnabled,
+                ),
             ]),
             Space::new().height(18).into(),
             // Plugins list header: subtitle on the leading edge, the
@@ -307,11 +324,19 @@ fn plugin_card(entry: &PluginUiEntry) -> Element<'_, Message> {
         ..Default::default()
     });
 
+    // Provider brand logo (AWS smile, Kubernetes wheel, ...) instead of
+    // a generic package box. MCP has no brand SVG, so it gets a server
+    // glyph; unknown cloud providers fall back to the cloud glyph.
+    let (brand_icon, brand_icon_color) = if entry.provider_id == "mcp" {
+        (
+            crate::os_icon::BrandIcon::Glyph(iced_fonts::lucide::server()),
+            OryxisColors::t().accent,
+        )
+    } else {
+        crate::os_icon::provider_icon(&entry.provider_id, OryxisColors::t().accent)
+    };
     let header = dir_row(vec![
-        iced_fonts::lucide::package()
-            .size(15)
-            .color(OryxisColors::t().accent)
-            .into(),
+        brand_icon.view(16.0, brand_icon_color),
         Space::new().width(10).into(),
         text(&entry.display_name)
             .size(14)
@@ -381,16 +406,11 @@ fn plugin_card(entry: &PluginUiEntry) -> Element<'_, Message> {
             ));
         }
         PluginUiStatus::DevBuild => {
-            actions.push(pill_button(
-                crate::i18n::t("plugin_action_check_updates"),
-                Some(Message::PluginCheckUpdates(id.clone())),
-                OryxisColors::t().text_secondary,
-                false,
-            ));
-            // The dev binary itself isn't managed here, but cached
-            // downloads it shadows (and the MCP launcher copy) are.
+            // No "Check for updates" here: a locally built dev binary
+            // can't be updated by this panel, so the button was just
+            // noise repeated on every card. Only the cached downloads it
+            // shadows (and the MCP launcher copy) are removable.
             if entry.cached_install {
-                actions.push(Space::new().width(8).into());
                 actions.push(pill_button(
                     crate::i18n::t("plugin_action_remove_downloads"),
                     Some(Message::PluginUninstall(id.clone())),

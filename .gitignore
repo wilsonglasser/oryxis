@@ -18,3 +18,7 @@ site
 !/README.md
 !/CHANGELOG.md
 !/SELF_HOSTING.md
+
+# Local app run logs (debug launches)
+nohup.out
+nohup_x11.out

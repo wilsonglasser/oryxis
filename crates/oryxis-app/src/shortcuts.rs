@@ -62,11 +62,9 @@ impl Oryxis {
                 // most.
                 Some(widget::Id::new("search-sftp-remote"))
             }
-            View::Settings
-            | View::Terminal
-            | View::Cloud
-            | View::Proxies
-            | View::KnownHosts => None,
+            View::Cloud => Some(widget::Id::new("search-cloud")),
+            View::Proxies => Some(widget::Id::new("search-proxies")),
+            View::Settings | View::Terminal | View::KnownHosts => None,
         }
     }
 

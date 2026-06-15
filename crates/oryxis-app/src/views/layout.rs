@@ -2442,7 +2442,10 @@ impl Oryxis {
     /// iced exposes no pre-render measurement, so this is a heuristic:
     /// ~7.5px per glyph + 21px padding + 2px inter-pill spacing.
     fn subnav_pill_width(key: &str) -> f32 {
-        crate::i18n::t(key).chars().count() as f32 * 7.5 + 21.0 + 2.0
+        // ~6.3 px/char matches Noto Sans at 12 px; the old 7.5 over-
+        // estimated and tripped the "…" collapse a pill or two early.
+        // 16 px is the pill's horizontal padding (8+8), +6 for the row gap.
+        crate::i18n::t(key).chars().count() as f32 * 6.3 + 16.0 + 6.0
     }
 
     /// Full ordered list of vault sub-nav destinations (Logs auto-hides
@@ -2562,12 +2565,17 @@ impl Oryxis {
                 ..Default::default()
             });
         // Estimated x of the "…" trigger: row left padding + chip + gap
-        // + the inline pills. Lands the dropdown just under the cue.
+        // + the inline pills. Lands the dropdown just under the cue. The
+        // chip is only present when the vault switcher shows (must match
+        // `subnav_pill_split`), otherwise the menu lands ~115 px too far
+        // right and clips off the window edge.
+        let chip = if self.show_vault_switcher() { 115.0 + 8.0 } else { 0.0 };
         let inline_w: f32 = inline
             .iter()
             .map(|(k, _)| Self::subnav_pill_width(k))
             .sum();
-        let dots_x = 8.0 + 115.0 + 8.0 + inline_w;
+        // Clamp so the 200 px panel never runs past the right edge.
+        let dots_x = (8.0 + chip + inline_w).min((self.window_size.width - 206.0).max(0.0));
         let pinned = container(panel)
             .width(Length::Fill)
             .height(Length::Fill)

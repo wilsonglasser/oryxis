@@ -58,7 +58,7 @@ impl Oryxis {
             ])
             .align_y(iced::Alignment::Center),
         )
-        .padding(Padding { top: 16.0, right: 16.0, bottom: 12.0, left: 16.0 });
+        .padding(Padding { top: 12.0, right: 16.0, bottom: 12.0, left: 16.0 });
 
         // ── Parent-group combo: typeable text input (creates a new group on
         // save) + chevron opening the shared group-picker popover. Same

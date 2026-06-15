@@ -137,6 +137,12 @@ impl Oryxis {
                 }
             }
             Message::VaultUnlock => {
+                // Ignore the submit when no password was typed (pressing
+                // Enter on an empty field or clicking Unlock with it blank
+                // shouldn't run a doomed unlock attempt or surface an error).
+                if self.vault_password_input.is_empty() {
+                    return Task::none();
+                }
                 if let Some(vault) = &mut self.vault {
                     match vault.unlock(&self.vault_password_input) {
                         Ok(()) => {

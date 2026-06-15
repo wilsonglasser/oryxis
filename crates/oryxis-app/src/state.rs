@@ -1693,6 +1693,11 @@ pub(crate) enum SyncPairingState {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum SettingsSection {
     Terminal,
+    /// SSH connection behaviour shared across hosts: keepalive
+    /// interval, auto-reconnect, OS detection. Split out of the
+    /// Terminal section, which had grown into a grab-bag of terminal
+    /// display, connection and logging knobs.
+    Connection,
     Sftp,
     AI,
     /// Visual + layout preferences. Absorbs the legacy "Theme" section

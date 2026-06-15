@@ -32,14 +32,19 @@ impl Oryxis {
             let mut items: Vec<(&str, SettingsSection)> = vec![
                 (crate::i18n::t("interface"), SettingsSection::Interface),
                 (crate::i18n::t("terminal_settings"), SettingsSection::Terminal),
+                (crate::i18n::t("connection"), SettingsSection::Connection),
                 (crate::i18n::t("shortcuts"), SettingsSection::Shortcuts),
-                (crate::i18n::t("security"), SettingsSection::Security),
+                (crate::i18n::t("security_privacy"), SettingsSection::Security),
                 (crate::i18n::t("plugins"), SettingsSection::Plugins),
             ];
             if self.ai_enabled {
                 items.push((crate::i18n::t("ai_assistant"), SettingsSection::AI));
             }
-            if self.mcp_server_enabled {
+            // MCP gets its settings section once the MCP plugin is
+            // present (installed / dev build), mirroring how Cloud Sync
+            // appears once a cloud provider plugin is installed. The
+            // server on/off toggle lives inside that section.
+            if self.cloud_provider_installed("mcp") {
                 items.push((crate::i18n::t("mcp_server"), SettingsSection::Mcp));
             }
             if self.sftp_enabled {
@@ -145,15 +150,18 @@ impl Oryxis {
                             .padding(indent),
                         );
                 }
-                let toggles_section = panel_section(
-                    toggles_col
-                        .push(Space::new().height(10))
-                        .push(toggle_row(crate::i18n::t("bold_bright"), self.setting_bold_is_bright, Message::ToggleBoldIsBright))
-                        .push(Space::new().height(10))
-                        .push(toggle_row(crate::i18n::t("keyword_highlight"), self.setting_keyword_highlight, Message::ToggleKeywordHighlight))
-                        .push(Space::new().height(10))
-                        .push(toggle_row(crate::i18n::t("smart_contrast"), self.setting_smart_contrast, Message::ToggleSmartContrast)),
-                );
+                // Selection / clipboard behaviour.
+                let toggles_section = panel_section(toggles_col);
+
+                // Text rendering toggles (their own card so they sit under
+                // the Appearance group, not mixed with clipboard behaviour).
+                let text_render_section = panel_section(column![
+                    toggle_row(crate::i18n::t("bold_bright"), self.setting_bold_is_bright, Message::ToggleBoldIsBright),
+                    Space::new().height(10),
+                    toggle_row(crate::i18n::t("keyword_highlight"), self.setting_keyword_highlight, Message::ToggleKeywordHighlight),
+                    Space::new().height(10),
+                    toggle_row(crate::i18n::t("smart_contrast"), self.setting_smart_contrast, Message::ToggleSmartContrast),
+                ]);
 
                 let font_size_section = panel_section(column![
                     dir_row(vec![
@@ -195,19 +203,6 @@ impl Oryxis {
                             }
                         }).into(),
                     ]).align_y(iced::Alignment::Center),
-                ]);
-
-                let keepalive_section = panel_section(column![
-                    text(crate::i18n::t("keepalive_interval")).size(13).color(OryxisColors::t().text_primary),
-                    Space::new().height(4),
-                    text(t("setting_keepalive_desc"))
-                        .size(11).color(OryxisColors::t().text_muted),
-                    Space::new().height(8),
-                    text_input("30", &self.setting_keepalive_interval)
-                        .on_input(Message::SettingKeepaliveChanged)
-                        .padding(10)
-                        .width(240)
-                        .style(crate::widgets::rounded_input_style).align_x(dir_align_x()),
                 ]);
 
                 let scrollback_section = panel_section(column![
@@ -325,6 +320,64 @@ impl Oryxis {
                 // every font file from disk), with a hardcoded
                 // fallback when the scan returns nothing.
                 let fonts: &'static [String] = crate::app::enumerate_terminal_fonts();
+                // Live sample rendered in the picked font on the active
+                // terminal palette: the user can confirm the font exists
+                // on their machine and preview the theme at a glance. The
+                // font name comes straight from the (`'static`) enumerated
+                // list, so `Family::Name` needs no leak.
+                let preview_font = fonts
+                    .iter()
+                    .find(|f| f.as_str() == self.terminal_font_name)
+                    .map(|f| iced::Font {
+                        family: iced::font::Family::Name(f.as_str()),
+                        ..iced::Font::MONOSPACE
+                    })
+                    .unwrap_or(iced::Font::MONOSPACE);
+                let active_term_theme = self
+                    .terminal_theme_override
+                    .clone()
+                    .unwrap_or_else(|| crate::theme::AppTheme::active().name().to_string());
+                let pal = self
+                    .terminal_palette_for_name(&active_term_theme)
+                    .unwrap_or_default();
+                let (fg, bg) = (pal.foreground, pal.background);
+                let (c_green, c_blue, c_cyan, c_yellow) =
+                    (pal.ansi[2], pal.ansi[4], pal.ansi[6], pal.ansi[3]);
+                let fs = self.terminal_font_size;
+                let font_preview = container(
+                    column![
+                        text("The quick brown fox 1234567890 {}[]()<>")
+                            .font(preview_font).size(fs).color(fg),
+                        Space::new().height(4),
+                        dir_row(vec![
+                            text("user").font(preview_font).size(fs).color(c_green).into(),
+                            text("@").font(preview_font).size(fs).color(fg).into(),
+                            text("host").font(preview_font).size(fs).color(c_blue).into(),
+                            text(":").font(preview_font).size(fs).color(fg).into(),
+                            text("~/dev").font(preview_font).size(fs).color(c_cyan).into(),
+                            text("$ ").font(preview_font).size(fs).color(fg).into(),
+                            text("git status").font(preview_font).size(fs).color(c_yellow).into(),
+                        ]),
+                        Space::new().height(4),
+                        // Nerd Font glyphs (branch, powerline, home, folder,
+                        // github, git, code, terminal). Render as tofu boxes
+                        // if the picked font lacks Nerd Font icon coverage,
+                        // which is exactly the at-a-glance check we want.
+                        text("\u{e0a0} \u{e0b0} \u{f015} \u{f07b} \u{f09b} \u{e702} \u{f121} \u{f120}")
+                            .font(preview_font).size(fs).color(c_green),
+                    ],
+                )
+                .padding(12)
+                .width(Length::Fill)
+                .style(move |_| container::Style {
+                    background: Some(Background::Color(bg)),
+                    border: Border {
+                        radius: Radius::from(8.0),
+                        color: OryxisColors::t().border,
+                        width: 1.0,
+                    },
+                    ..Default::default()
+                });
                 let font_picker_section = panel_section(column![
                     text(crate::i18n::t("terminal_font")).size(13).color(OryxisColors::t().text_primary),
                     Space::new().height(4),
@@ -338,80 +391,58 @@ impl Oryxis {
                     )
                     .on_select(Message::TerminalFontChanged)
                     .width(260).padding(10).style(crate::widgets::rounded_pick_list_style),
+                    Space::new().height(12),
+                    font_preview,
                 ]);
 
-                let os_detection_enabled = self.setting_os_detection;
-                let os_detection_section = panel_section(column![
-                    toggle_row(
-                        crate::i18n::t("os_detection"),
-                        os_detection_enabled,
-                        Message::SettingToggleOsDetection,
-                    ),
-                    Space::new().height(4),
-                    text(t("setting_os_detect_desc"))
-                        .size(11).color(OryxisColors::t().text_muted),
-                ]);
+                // Grouped under "h2" headers, same pattern as Interface:
+                // Behavior (selection, delimiters, scrollback) then
+                // Appearance (rendering, font, theme). Connection + logging
+                // knobs live in their own sections.
+                use crate::widgets::settings_group_header as gh;
+                scrollable(
+                    container(
+                        column![
+                            gh(crate::i18n::t("terminal_group_behavior")),
+                            Space::new().height(8),
+                            toggles_section,
+                            Space::new().height(12),
+                            word_delimiters_section,
+                            Space::new().height(12),
+                            scrollback_section,
+                            Space::new().height(18),
+                            gh(crate::i18n::t("terminal_group_appearance")),
+                            Space::new().height(8),
+                            text_render_section,
+                            Space::new().height(12),
+                            font_size_section,
+                            Space::new().height(12),
+                            font_picker_section,
+                            Space::new().height(12),
+                            theme_picker_section,
+                            Space::new().height(24),
+                        ]
+                        .width(Length::Fill)
+                        .align_x(dir_align_x()),
+                    )
+                    .padding(Padding { top: 24.0, right: 24.0, bottom: 24.0, left: 24.0 }),
+                )
+                .height(Length::Fill)
+                .into()
+            }
 
-                let session_logging_enabled = self.setting_session_logging;
-                let session_logging_section = panel_section(column![
-                    toggle_row(
-                        crate::i18n::t("session_logging"),
-                        session_logging_enabled,
-                        Message::SettingToggleSessionLogging,
-                    ),
+            SettingsSection::Connection => {
+                let keepalive_section = panel_section(column![
+                    text(crate::i18n::t("keepalive_interval")).size(13).color(OryxisColors::t().text_primary),
                     Space::new().height(4),
-                    text(t("setting_session_logging_desc"))
-                        .size(11).color(OryxisColors::t().text_muted),
-                ]);
-
-                let connection_history_enabled = self.setting_connection_history;
-                let connection_history_section = panel_section(column![
-                    toggle_row(
-                        crate::i18n::t("connection_history"),
-                        connection_history_enabled,
-                        Message::SettingToggleConnectionHistory,
-                    ),
-                    Space::new().height(4),
-                    text(t("setting_connection_history_desc"))
-                        .size(11).color(OryxisColors::t().text_muted),
-                ]);
-
-                // Retention: auto-delete connection events + finished
-                // recordings past the picked age. Codes are stable
-                // setting values; the mapper localizes per code.
-                const RETENTION_CODES: [&str; 7] =
-                    ["off", "1d", "3d", "7d", "14d", "30d", "90d"];
-                let retention_selected = RETENTION_CODES
-                    .iter()
-                    .copied()
-                    .find(|c| *c == self.setting_logs_retention)
-                    .unwrap_or("off");
-                let logs_retention_section = panel_section(column![
-                    text(crate::i18n::t("log_retention_label"))
-                        .size(13)
-                        .color(OryxisColors::t().text_primary),
-                    Space::new().height(4),
-                    text(t("setting_log_retention_desc"))
+                    text(t("setting_keepalive_desc"))
                         .size(11).color(OryxisColors::t().text_muted),
                     Space::new().height(8),
-                    pick_list(
-                        Some(retention_selected),
-                        &RETENTION_CODES[..],
-                        |code: &&str| {
-                            crate::i18n::t(match *code {
-                                "1d" => "log_retention_1d",
-                                "3d" => "log_retention_3d",
-                                "7d" => "log_retention_7d",
-                                "14d" => "log_retention_14d",
-                                "30d" => "log_retention_30d",
-                                "90d" => "log_retention_90d",
-                                _ => "log_retention_off",
-                            })
-                            .to_string()
-                        },
-                    )
-                    .on_select(Message::LogsRetentionChanged)
-                    .width(260).padding(10).style(crate::widgets::rounded_pick_list_style),
+                    text_input("30", &self.setting_keepalive_interval)
+                        .on_input(Message::SettingKeepaliveChanged)
+                        .padding(10)
+                        .width(240)
+                        .style(crate::widgets::rounded_input_style).align_x(dir_align_x()),
                 ]);
 
                 let auto_reconnect_enabled = self.setting_auto_reconnect;
@@ -434,34 +465,26 @@ impl Oryxis {
                         .style(crate::widgets::rounded_input_style).align_x(dir_align_x()),
                 ]);
 
+                let os_detection_enabled = self.setting_os_detection;
+                let os_detection_section = panel_section(column![
+                    toggle_row(
+                        crate::i18n::t("os_detection"),
+                        os_detection_enabled,
+                        Message::SettingToggleOsDetection,
+                    ),
+                    Space::new().height(4),
+                    text(t("setting_os_detect_desc"))
+                        .size(11).color(OryxisColors::t().text_muted),
+                ]);
+
                 scrollable(
                     container(
                         column![
-                            Space::new().height(0),
-                            Space::new().height(16),
-                            toggles_section,
-                            Space::new().height(12),
                             keepalive_section,
-                            Space::new().height(12),
-                            scrollback_section,
-                            Space::new().height(12),
-                            word_delimiters_section,
                             Space::new().height(12),
                             auto_reconnect_section,
                             Space::new().height(12),
                             os_detection_section,
-                            Space::new().height(12),
-                            session_logging_section,
-                            Space::new().height(12),
-                            connection_history_section,
-                            Space::new().height(12),
-                            logs_retention_section,
-                            Space::new().height(12),
-                            font_size_section,
-                            Space::new().height(12),
-                            font_picker_section,
-                            Space::new().height(12),
-                            theme_picker_section,
                             Space::new().height(24),
                         ]
                         .width(Length::Fill)
@@ -536,15 +559,12 @@ impl Oryxis {
                 // Enable/disable lives on the Plugins screen now; this
                 // section only renders while SFTP is enabled, showing its
                 // tuning knobs (parallelism, timeouts).
-                let mut content_col: iced::widget::Column<'_, Message> = column![
-                    Space::new().height(16),
-                ]
-                .width(Length::Fill)
-                .align_x(dir_align_x());
+                let mut content_col: iced::widget::Column<'_, Message> = column![]
+                    .width(Length::Fill)
+                    .align_x(dir_align_x());
 
                 if self.sftp_enabled {
                     content_col = content_col
-                        .push(Space::new().height(12))
                         .push(concurrency_section)
                         .push(Space::new().height(12))
                         .push(connect_section)
@@ -569,7 +589,6 @@ impl Oryxis {
                 // Enable/disable lives on the Plugins screen now; this
                 // section only renders while AI is enabled.
                 let mut content_col = column![
-                    Space::new().height(16),
                     // The assistant runs commands on connected servers
                     // (some auto-execute); keep the warning in view.
                     text(crate::i18n::t("ai_enable_warning")).size(12).color(OryxisColors::t().text_muted),
@@ -834,7 +853,9 @@ impl Oryxis {
                     text(crate::i18n::t("flatten_hosts_desc"))
                         .size(11)
                         .color(OryxisColors::t().text_muted),
-                    Space::new().height(12),
+                ]);
+
+                let glass_section = panel_section(column![
                     toggle_row(
                         crate::i18n::t("card_accent_glass_label"),
                         self.setting_card_accent_glass,
@@ -842,6 +863,18 @@ impl Oryxis {
                     ),
                     Space::new().height(4),
                     text(crate::i18n::t("card_accent_glass_desc"))
+                        .size(11)
+                        .color(OryxisColors::t().text_muted),
+                ]);
+
+                let hide_address_section = panel_section(column![
+                    toggle_row(
+                        crate::i18n::t("show_host_address_label"),
+                        self.setting_show_host_address,
+                        Message::ToggleShowHostAddress,
+                    ),
+                    Space::new().height(4),
+                    text(crate::i18n::t("show_host_address_desc"))
                         .size(11)
                         .color(OryxisColors::t().text_muted),
                 ]);
@@ -1112,45 +1145,67 @@ impl Oryxis {
                 // matches the SFTP section's 16 px exactly; the
                 // previous `.spacing(12)` was stacking on top of the
                 // explicit gaps to roughly double them.
+                // Grouped under "h2" headers so related cards read as a
+                // cluster (the section had grown into a flat list that was
+                // hard to scan). Group gaps are 18 px, intra-group 12 px,
+                // header-to-first-card 8 px.
+                use crate::widgets::settings_group_header as gh;
                 let mut content_col = column![
-                    Space::new().height(0),
-                    Space::new().height(16),
+                    gh(crate::i18n::t("interface_group_general")),
+                    Space::new().height(8),
                     language_section,
                     Space::new().height(12),
                     layout_dir_section,
                     Space::new().height(12),
+                    layout_section,
+                    Space::new().height(18),
+                    gh(crate::i18n::t("interface_group_dashboard")),
+                    Space::new().height(8),
                     flatten_section,
                     Space::new().height(12),
-                    status_bar_section,
+                    hide_address_section,
                     Space::new().height(12),
-                    tabs_section,
-                    Space::new().height(12),
-                    layout_section,
+                    glass_section,
                     Space::new().height(12),
                     icon_section,
+                    Space::new().height(18),
+                    gh(crate::i18n::t("interface_group_tabs")),
+                    Space::new().height(8),
+                    tabs_section,
                     Space::new().height(12),
-                    rendering_section,
-                    Space::new().height(12),
-                    hints_section,
-                    Space::new().height(12),
+                    status_bar_section,
+                    Space::new().height(18),
+                    gh(crate::i18n::t("interface_group_theme")),
+                    Space::new().height(8),
                 ]
                 .width(Length::Fill)
                 .align_x(dir_align_x());
 
-                // Tray section sits at the end so it doesn't push the
-                // more-common toggles down on Linux/macOS (where it's
-                // suppressed entirely).
+                // App-theme swatch grid sits under the Theme header.
+                for row_el in grid_rows {
+                    content_col = content_col
+                        .push(row_el)
+                        .push(Space::new().height(8));
+                }
+
+                // Advanced: renderer backend + reset hints, plus the
+                // system tray toggles on Windows (a no-op elsewhere, so
+                // hidden on macOS/Linux).
+                content_col = content_col
+                    .push(Space::new().height(10))
+                    .push(gh(crate::i18n::t("interface_group_advanced")))
+                    .push(Space::new().height(8))
+                    .push(rendering_section)
+                    .push(Space::new().height(12))
+                    .push(hints_section);
                 if cfg!(target_os = "windows") {
-                    content_col = content_col.push(tray_section).push(Space::new().height(12));
+                    content_col = content_col
+                        .push(Space::new().height(12))
+                        .push(tray_section);
                 } else {
                     let _ = tray_section; // keep helper construction warning-free.
                 }
-
-                for row_el in grid_rows {
-                    content_col = content_col
-                        .push(Space::new().height(12))
-                        .push(row_el);
-                }
+                content_col = content_col.push(Space::new().height(24));
 
                 scrollable(
                     container(content_col)
@@ -1442,15 +1497,85 @@ impl Oryxis {
                         .push(text(msg).size(12).color(color));
                 }
 
+                // Privacy & logging: session recordings, connection
+                // history and the retention window. Moved here from the
+                // Terminal section, recordings are scrubbed for secrets
+                // and sealed at rest, so they belong with the vault.
+                let session_logging_enabled = self.setting_session_logging;
+                let session_logging_section = panel_section(column![
+                    toggle_row(
+                        crate::i18n::t("session_logging"),
+                        session_logging_enabled,
+                        Message::SettingToggleSessionLogging,
+                    ),
+                    Space::new().height(4),
+                    text(t("setting_session_logging_desc"))
+                        .size(11).color(OryxisColors::t().text_muted),
+                ]);
+
+                let connection_history_enabled = self.setting_connection_history;
+                let connection_history_section = panel_section(column![
+                    toggle_row(
+                        crate::i18n::t("connection_history"),
+                        connection_history_enabled,
+                        Message::SettingToggleConnectionHistory,
+                    ),
+                    Space::new().height(4),
+                    text(t("setting_connection_history_desc"))
+                        .size(11).color(OryxisColors::t().text_muted),
+                ]);
+
+                // Retention: auto-delete connection events + finished
+                // recordings past the picked age. Codes are stable
+                // setting values; the mapper localizes per code.
+                const RETENTION_CODES: [&str; 7] =
+                    ["off", "1d", "3d", "7d", "14d", "30d", "90d"];
+                let retention_selected = RETENTION_CODES
+                    .iter()
+                    .copied()
+                    .find(|c| *c == self.setting_logs_retention)
+                    .unwrap_or("off");
+                let logs_retention_section = panel_section(column![
+                    text(crate::i18n::t("log_retention_label"))
+                        .size(13)
+                        .color(OryxisColors::t().text_primary),
+                    Space::new().height(4),
+                    text(t("setting_log_retention_desc"))
+                        .size(11).color(OryxisColors::t().text_muted),
+                    Space::new().height(8),
+                    pick_list(
+                        Some(retention_selected),
+                        &RETENTION_CODES[..],
+                        |code: &&str| {
+                            crate::i18n::t(match *code {
+                                "1d" => "log_retention_1d",
+                                "3d" => "log_retention_3d",
+                                "7d" => "log_retention_7d",
+                                "14d" => "log_retention_14d",
+                                "30d" => "log_retention_30d",
+                                "90d" => "log_retention_90d",
+                                _ => "log_retention_off",
+                            })
+                            .to_string()
+                        },
+                    )
+                    .on_select(Message::LogsRetentionChanged)
+                    .width(260).padding(10).style(crate::widgets::rounded_pick_list_style),
+                ]);
+
                 scrollable(
                     container(
                         column![
-                            Space::new().height(0),
-                            Space::new().height(16),
                             panel_section(column![password_toggle]),
                             password_section,
                             Space::new().height(24),
                             lock_btn,
+                            Space::new().height(24),
+                            session_logging_section,
+                            Space::new().height(12),
+                            connection_history_section,
+                            Space::new().height(12),
+                            logs_retention_section,
                             Space::new().height(24),
                             panel_section(export_import_section),
                             Space::new().height(12),
@@ -1854,8 +1979,6 @@ impl Oryxis {
                 ]);
 
                 let mut content_col: iced::widget::Column<'_, Message> = column![
-                    Space::new().height(0),
-                    Space::new().height(16),
                     panel_section(enable_section),
                 ]
                 .width(Length::Fill)
@@ -1896,10 +2019,24 @@ impl Oryxis {
                         format!("Oryxis v{}", env!("CARGO_PKG_VERSION"))
                     }
                 };
+                // Logo beside the name + tagline, like the lock screen.
+                let about_header = dir_row(vec![
+                    iced::widget::svg(self.logo_handle.clone())
+                        .width(Length::Fixed(48.0))
+                        .height(Length::Fixed(48.0))
+                        .into(),
+                    Space::new().width(14).into(),
+                    column![
+                        text(version_str).size(16).color(OryxisColors::t().text_primary),
+                        Space::new().height(4),
+                        text(t("app_tagline")).size(13).color(OryxisColors::t().text_secondary),
+                    ]
+                    .align_x(dir_align_x())
+                    .into(),
+                ])
+                .align_y(iced::Alignment::Center);
                 let about_section = panel_section(column![
-                    text(version_str).size(16).color(OryxisColors::t().text_primary),
-                    Space::new().height(4),
-                    text(t("app_tagline")).size(13).color(OryxisColors::t().text_secondary),
+                    about_header,
                     Space::new().height(16),
                     settings_row(t("built_with"), "Iced, russh, alacritty_terminal".into()),
                     Space::new().height(6),
@@ -2051,8 +2188,6 @@ impl Oryxis {
                 scrollable(
                     container(
                         column![
-                            Space::new().height(0),
-                            Space::new().height(16),
                             about_section,
                             Space::new().height(12),
                             auto_update_section,
@@ -2324,7 +2459,8 @@ impl Oryxis {
     /// plugin distribution + setup-guide affordances deserve room
     /// without competing with the Security toggles.
     fn view_settings_mcp(&self) -> Element<'_, Message> {
-        // Enable/disable lives on the Plugins screen now.
+        // The MCP plugin is managed (installed / updated) from the
+        // Plugins screen; the server's own on/off lives here.
         let mcp_guide_btn = button(
             container(text(crate::i18n::t("mcp_setup_guide")).size(12).color(OryxisColors::t().accent))
                 .padding(Padding { top: 6.0, right: 16.0, bottom: 6.0, left: 16.0 }),
@@ -2342,6 +2478,12 @@ impl Oryxis {
             }
         });
         let mut mcp_col = column![
+            toggle_row(
+                crate::i18n::t("mcp_server"),
+                self.mcp_server_enabled,
+                Message::ToggleMcpServer,
+            ),
+            Space::new().height(12),
             dir_row(vec![
                 text(crate::i18n::t("mcp_server_desc")).size(11).color(OryxisColors::t().text_muted).into(),
                 Space::new().width(Length::Fill).into(),
@@ -2363,8 +2505,6 @@ impl Oryxis {
         scrollable(
             container(
                 column![
-                    Space::new().height(0),
-                    Space::new().height(16),
                     panel_section(mcp_col),
                     Space::new().height(24),
                 ]

@@ -231,6 +231,11 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
 
         // Settings
         "interface" => "Giao diện",
+        "interface_group_general" => "Chung",
+        "interface_group_dashboard" => "Bảng điều khiển",
+        "interface_group_tabs" => "Tab & thanh trên",
+        "interface_group_theme" => "Giao diện ứng dụng",
+        "interface_group_advanced" => "Nâng cao",
         "show_status_bar" => "Hiện thanh trạng thái",
         "system_tray" => "Khay hệ thống",
         "close_to_tray" => "Đóng vào khay",
@@ -258,10 +263,14 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "terminal_font_size" => "Cỡ phông Terminal",
         "vault_stats" => "Thống kê kho",
         "security" => "Bảo mật",
+        "connection" => "Kết nối",
+        "security_privacy" => "Bảo mật & Quyền riêng tư",
         "lock_vault" => "Khóa kho",
         "lock_vault_requires_password" => "Đặt mật khẩu chính ở trên để bật khóa.",
         "about" => "Giới thiệu",
         "terminal_settings" => "Cài đặt Terminal",
+        "terminal_group_behavior" => "Hành vi",
+        "terminal_group_appearance" => "Giao diện",
         "shortcuts" => "Phím tắt",
         "ai_assistant" => "Trợ lý AI",
         "language" => "Ngôn ngữ",
@@ -538,6 +547,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "flatten_hosts_label" => "Hiện tất cả máy chủ ở gốc",
         "card_accent_glass_label" => "Thẻ kính nhấn màu",
         "card_accent_glass_desc" => "Lớp phủ nhẹ theo màu từng thẻ (màu host/nhóm mờ dần).",
+        "show_host_address_label" => "Hiển thị địa chỉ host",
+        "show_host_address_desc" => "Hiển thị user@host:port trên thẻ. Mặc định tắt để địa chỉ không lọt vào ảnh chụp màn hình. Cổng 22 luôn được bỏ qua.",
         "flatten_hosts_desc" => "Khi bật, gốc bảng điều khiển hiện một mục Nhóm phía trên danh sách phẳng gồm mọi máy chủ. Khi tắt, máy chủ bên trong nhóm bị ẩn cho tới khi bạn mở nhóm.",
 
         // Sync passwords toggle
@@ -568,8 +579,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "edit_snippet" => "Sửa đoạn lệnh",
 
         "re_verify_all" => "Xác minh lại tất cả",
-        "no_known_hosts_yet" => "Chưa có máy chủ đã biết. Các mục xuất hiện ở đây khi bạn kết nối và duyệt dấu vân tay của một máy chủ.",
-        "known_hosts_remove_hint" => "Gỡ một mục để buộc hộp thoại xác minh xuất hiện lại trong lần kết nối tiếp theo.",
+        "no_known_hosts_yet" => "Chưa có host đã biết",
+        "known_hosts_empty_desc" => "Các mục xuất hiện ở đây khi bạn kết nối và phê duyệt vân tay của host.",
         "last_seen" => "Lần cuối thấy:",
 
         "icon" => "Biểu tượng",
@@ -757,6 +768,9 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         // Plugins panel
         "plugins" => "Plugin",
         "features" => "Tính năng",
+        "feature_ai_desc" => "Trò chuyện AI trong terminal có thể chạy lệnh trên máy chủ đã kết nối.",
+        "feature_sftp_desc" => "Duyệt và truyền tệp qua SSH bằng trình quản lý hai khung.",
+        "feature_sync_desc" => "Đồng bộ ngang hàng được mã hóa kho lưu trữ giữa các thiết bị của bạn.",
         "plugins_subtitle" => "Quản lý các plugin nhà cung cấp cloud đã tải.",
         "plugins_empty" => "Chưa có plugin nào.",
         "plugins_auto_update_global" => "Tự động cập nhật tất cả",
@@ -768,7 +782,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "plugin_status_checking" => "đang kiểm tra cập nhật…",
         "plugin_status_downloading" => "đang tải…",
         "plugin_status_error" => "lỗi",
-        "plugin_dev_build_hint" => "Đang chạy một binary biên dịch cục bộ. Cập nhật do bản build của bạn quản lý, không phải bảng này.",
+        "plugin_dev_build_hint" => "Bản dựng cục bộ, không quản lý ở đây.",
         "plugin_action_install" => "Cài đặt",
         "plugin_action_update" => "Cập nhật",
         "plugin_action_uninstall" => "Gỡ cài đặt",

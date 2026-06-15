@@ -231,6 +231,11 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
 
         // Settings
         "interface" => "인터페이스",
+        "interface_group_general" => "일반",
+        "interface_group_dashboard" => "대시보드",
+        "interface_group_tabs" => "탭 및 상단 바",
+        "interface_group_theme" => "앱 테마",
+        "interface_group_advanced" => "고급",
         "show_status_bar" => "상태 표시줄 표시",
         "system_tray" => "시스템 트레이",
         "close_to_tray" => "트레이로 닫기",
@@ -258,10 +263,14 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "terminal_font_size" => "터미널 글꼴 크기",
         "vault_stats" => "볼트 통계",
         "security" => "보안",
+        "connection" => "연결",
+        "security_privacy" => "보안 및 개인정보",
         "lock_vault" => "볼트 잠금",
         "lock_vault_requires_password" => "잠금을 사용하려면 위에서 마스터 비밀번호를 설정하세요.",
         "about" => "정보",
         "terminal_settings" => "터미널 설정",
+        "terminal_group_behavior" => "동작",
+        "terminal_group_appearance" => "모양",
         "shortcuts" => "단축키",
         "ai_assistant" => "AI 어시스턴트",
         "language" => "언어",
@@ -538,6 +547,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "flatten_hosts_label" => "루트에 모든 호스트 표시",
         "card_accent_glass_label" => "강조 글래스 카드",
         "card_accent_glass_desc" => "카드별 색상이 옅게 번지는 효과(호스트/그룹 색상).",
+        "show_host_address_label" => "호스트 주소 표시",
+        "show_host_address_desc" => "카드에 user@host:port를 표시합니다. 기본값은 꺼짐으로 주소가 스크린샷에 노출되지 않습니다. 포트 22는 항상 생략됩니다.",
         "flatten_hosts_desc" => "켜면 대시보드 루트가 모든 호스트의 평면 목록 위에 그룹 섹션을 표시합니다. 끄면 그룹을 열기 전까지 그룹 내부의 호스트가 숨겨집니다.",
 
         // Sync passwords toggle
@@ -568,8 +579,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "edit_snippet" => "스니펫 편집",
 
         "re_verify_all" => "모두 재확인",
-        "no_known_hosts_yet" => "아직 알려진 호스트가 없습니다. 연결하고 호스트의 지문을 승인하면 여기에 항목이 표시됩니다.",
-        "known_hosts_remove_hint" => "항목을 제거하면 다음 연결 시 확인 대화 상자가 다시 표시됩니다.",
+        "no_known_hosts_yet" => "알려진 호스트가 아직 없습니다",
+        "known_hosts_empty_desc" => "호스트에 연결하고 지문을 승인하면 항목이 여기에 표시됩니다.",
         "last_seen" => "마지막 확인:",
 
         "icon" => "아이콘",
@@ -758,6 +769,9 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         // Plugins panel
         "plugins" => "플러그인",
         "features" => "기능",
+        "feature_ai_desc" => "연결된 서버에서 명령을 실행할 수 있는 터미널 내 AI 채팅.",
+        "feature_sftp_desc" => "이중 창 관리자로 SSH를 통해 파일을 탐색하고 전송합니다.",
+        "feature_sync_desc" => "기기 간 볼트를 암호화된 P2P로 동기화합니다.",
         "plugins_subtitle" => "다운로드한 클라우드 공급자 플러그인을 관리합니다.",
         "plugins_empty" => "아직 사용 가능한 플러그인이 없습니다.",
         "plugins_auto_update_global" => "모두 자동 업데이트",
@@ -769,7 +783,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "plugin_status_checking" => "업데이트 확인 중…",
         "plugin_status_downloading" => "다운로드 중…",
         "plugin_status_error" => "오류",
-        "plugin_dev_build_hint" => "로컬에서 빌드한 바이너리를 실행 중입니다. 업데이트는 이 패널이 아니라 빌드에서 관리됩니다.",
+        "plugin_dev_build_hint" => "로컬 빌드, 여기서 관리하지 않음.",
         "plugin_action_install" => "설치",
         "plugin_action_update" => "업데이트",
         "plugin_action_uninstall" => "제거",

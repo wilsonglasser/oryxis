@@ -43,6 +43,32 @@ impl Oryxis {
     pub(crate) fn view_history(&self) -> Element<'_, Message> {
         use oryxis_core::models::log_entry::LogEvent;
 
+        // Fully empty: no recorded sessions and no failed-connect logs
+        // that would become timeline rows. (Plain Connected/Disconnected
+        // events live in `self.logs` but never render as rows, so checking
+        // `self.logs.is_empty()` would leave the toolbar up with "0
+        // entries".) Show just the empty state, no toolbar / pagination /
+        // Clear all, matching the other empty vault views.
+        let has_timeline = !self.session_logs.is_empty()
+            || self
+                .logs
+                .iter()
+                .any(|e| matches!(e.event, LogEvent::AuthFailed | LogEvent::Error));
+        if !has_timeline {
+            return column![crate::widgets::empty_state(
+                iced_fonts::lucide::history()
+                    .size(32)
+                    .color(OryxisColors::t().text_muted)
+                    .into(),
+                crate::i18n::t("no_activity").to_string(),
+                crate::i18n::t("no_activity_desc").to_string(),
+                None,
+            )]
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .into();
+        }
+
         // ── Toolbar ──
         let per_page: usize = 50;
         let needle = self.history_search.to_lowercase();

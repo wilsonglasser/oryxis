@@ -33,6 +33,22 @@ project uses [SemVer](https://semver.org/spec/v2.0.0.html).
   behind its own "Wash top bar" toggle, separate from the underline.
 - **Shared empty-state pattern** (icon + title + description + call to
   action) extended to Proxies, Known Hosts and History.
+- **Connection settings section.** Keepalive interval, auto-reconnect
+  and OS detection moved out of the Terminal section into their own
+  Connection section.
+- **Font + theme preview.** The Terminal font picker now renders a live
+  sample (sentence, a coloured prompt and a row of Nerd Font glyphs) in
+  the selected font, size and terminal palette, so you can confirm the
+  font exists and preview the theme at a glance.
+- **"Show host address" toggle** (Settings -> Interface -> Dashboard,
+  off by default). When off, host cards show only the auth method;
+  when on they show `user@host` (port 22 is always omitted).
+- **Settings group sub-headers.** The larger Interface and Terminal
+  sections are split into labelled groups (General / Dashboard / Tabs &
+  top bar / App theme / Advanced; Behavior / Appearance).
+- **Provider brand logos** on plugin cards (AWS, Kubernetes) instead of
+  a generic package icon; descriptions under each Plugins feature
+  toggle explaining what it does.
 
 ### Changed
 - **One layout, two nav orientations.** The Classic sidebar and the
@@ -50,15 +66,23 @@ project uses [SemVer](https://semver.org/spec/v2.0.0.html).
   state's button is the single create path.
 - The **vault switcher** chip / badge is hidden while there is only one
   vault.
-- **Features are managed from the Plugins screen.** AI Assistant, MCP
-  Server, SFTP and Sync are enabled / disabled from a "Features" section
-  on the Plugins screen (alongside the downloadable provider plugins),
-  not from their own Settings sections. Each feature's Settings section
-  appears in the sidebar only once it is enabled, and Cloud Sync appears
-  only once a cloud provider plugin is installed.
+- **Features are managed from the Plugins screen.** AI Assistant, SFTP
+  and Sync are enabled / disabled from a "Features" section on the
+  Plugins screen (alongside the downloadable provider plugins), not from
+  their own Settings sections. Each feature's Settings section appears in
+  the sidebar only once it is enabled, and Cloud Sync appears only once a
+  cloud provider plugin is installed.
+- **MCP is managed as a plugin, not a feature toggle.** It's a real
+  plugin binary, so it's activated / updated from the "Oryxis MCP Server"
+  plugin card; its server on/off lives in the MCP settings section, which
+  appears once the plugin is present (no longer a Features toggle).
+- **Security section renamed "Security & Privacy"**; session logging,
+  connection history and the retention window moved there from Terminal
+  (recordings are scrubbed + sealed, so they belong with the vault). The
+  Terminal section is now display-only.
 - **Settings sidebar reorder.** Interface is the default landing
-  section, followed by Terminal, Shortcuts, Security and Plugins, then
-  the enabled feature sections, then About.
+  section, followed by Terminal, Connection, Shortcuts, Security &
+  Privacy and Plugins, then the enabled feature sections, then About.
 - **Settings sections drop their redundant in-page title** (the sidebar
   already names the section) and use a consistent 24 px gutter on all
   four edges.
@@ -73,6 +97,23 @@ project uses [SemVer](https://semver.org/spec/v2.0.0.html).
 - The update dialog's download progress bar now fills proportionally
   instead of always showing full, and non-stable-channel users see a
   plain "Downloading ..." label instead of the installer-specific text.
+- The Known Hosts empty state had a sentence-long title and a wrong
+  "remove an entry" hint; it's now a short title with a description that
+  explains where entries come from.
+- The History view hides its toolbar (entry count, pagination, Clear
+  all) when there's no activity, matching the other empty views.
+- The empty-state icon box is now a fixed square (it tracked the glyph's
+  own width/height before, so it came out oblong).
+- Cloud Accounts search auto-focuses on entry, and cloud cards use the
+  shared host avatar (filled brand colour) instead of a one-off box.
+- The vault sub-nav "…" overflow no longer collapses a pill or two too
+  early, and its dropdown menu now lands under the "…" instead of
+  clipping off the right edge.
+- Dev-build plugin cards drop the no-op "Check for updates" button and
+  shorten the repeated "locally built" line.
+- Side-panel editor headers (Host, Group, Session Group) align the title
+  with the left gutter (the tall close button was pushing it down).
+- The About section shows the app logo beside the name and tagline.
 
 ## [0.8.2] - 2026-06-12
 

@@ -436,6 +436,53 @@ pub(crate) fn toggle_row<'a>(label: &'a str, value: bool, msg: Message) -> Eleme
     .into()
 }
 
+/// Like [`toggle_row`] but with a muted description line under the
+/// label. The toggle stays vertically centered against the whole
+/// label+description block on the trailing edge.
+pub(crate) fn toggle_row_desc<'a>(
+    label: &'a str,
+    desc: &'a str,
+    value: bool,
+    msg: Message,
+) -> Element<'a, Message> {
+    let toggle_bg = if value { OryxisColors::t().success } else { OryxisColors::t().bg_selected };
+    let toggle_text = if value { "  \u{25CF}" } else { "\u{25CF}  " };
+    dir_row(vec![
+        iced::widget::column![
+            text(label).size(13).color(OryxisColors::t().text_primary),
+            Space::new().height(2),
+            text(desc).size(11).color(OryxisColors::t().text_muted),
+        ]
+        .width(Length::Fill)
+        .align_x(dir_align_x())
+        .into(),
+        Space::new().width(12).into(),
+        button(text(toggle_text).size(12).color(Color::WHITE))
+            .on_press(msg)
+            .padding(Padding { top: 4.0, right: 8.0, bottom: 4.0, left: 8.0 })
+            .style(move |_, _| button::Style {
+                background: Some(Background::Color(toggle_bg)),
+                border: Border { radius: Radius::from(10.0), ..Default::default() },
+                ..Default::default()
+            }).into(),
+    ]).align_y(iced::Alignment::Center)
+    .into()
+}
+
+/// Small semibold "h2" header used to segregate a settings section
+/// into labelled groups (e.g. "General", "Dashboard", "Advanced") so
+/// related cards read as a cluster and are easier to locate.
+pub(crate) fn settings_group_header<'a>(label: &'a str) -> Element<'a, Message> {
+    text(label)
+        .size(12)
+        .font(iced::Font {
+            weight: iced::font::Weight::Semibold,
+            ..iced::Font::DEFAULT
+        })
+        .color(OryxisColors::t().text_secondary)
+        .into()
+}
+
 pub(crate) fn panel_divider<'a>() -> Element<'a, Message> {
     container(Space::new().height(1))
         .width(Length::Fill)
@@ -782,8 +829,13 @@ pub(crate) fn empty_state<'a>(
     cta: Option<(String, Message)>,
 ) -> Element<'a, Message> {
     let mut items: Vec<Element<'a, Message>> = vec![
+        // Fixed square box with the glyph centered. Padding-only sizing
+        // tracked the glyph's own width/height (rarely equal), so the box
+        // came out slightly oblong; a fixed 64x64 keeps it square on every
+        // empty state regardless of which icon it holds.
         container(icon)
-            .padding(16)
+            .center_x(Length::Fixed(64.0))
+            .center_y(Length::Fixed(64.0))
             .style(|_| container::Style {
                 background: Some(Background::Color(OryxisColors::t().bg_surface)),
                 border: Border {

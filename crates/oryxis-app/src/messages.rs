@@ -635,6 +635,8 @@ pub enum Message {
     ToggleHostListView,
     /// Flip the per-colour accent wash on dashboard cards (glass vs pure).
     ToggleCardAccentGlass,
+    /// Flip showing of the `user@host:port` address on host cards.
+    ToggleShowHostAddress,
     SettingToggleCloseToTray,
     SettingToggleMinimizeToTray,
     SettingToggleTabAccentLine,

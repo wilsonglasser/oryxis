@@ -70,7 +70,7 @@ impl Oryxis {
                     .color(OryxisColors::t().text_muted)
                     .into(),
                 t("no_known_hosts_yet").to_string(),
-                t("known_hosts_remove_hint").to_string(),
+                t("known_hosts_empty_desc").to_string(),
                 None,
             );
             return column![toolbar, empty]

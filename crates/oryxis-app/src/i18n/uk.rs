@@ -231,6 +231,11 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
 
         // Settings
         "interface" => "Інтерфейс",
+        "interface_group_general" => "Загальні",
+        "interface_group_dashboard" => "Панель",
+        "interface_group_tabs" => "Вкладки та верхня панель",
+        "interface_group_theme" => "Тема застосунку",
+        "interface_group_advanced" => "Додатково",
         "show_status_bar" => "Показувати рядок стану",
         "system_tray" => "Системний трей",
         "close_to_tray" => "Згортати у трей",
@@ -258,10 +263,14 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "terminal_font_size" => "Розмір шрифту термінала",
         "vault_stats" => "Статистика сховища",
         "security" => "Безпека",
+        "connection" => "З'єднання",
+        "security_privacy" => "Безпека та конфіденційність",
         "lock_vault" => "Заблокувати сховище",
         "lock_vault_requires_password" => "Встановіть майстер-пароль вище, щоб увімкнути блокування.",
         "about" => "Про програму",
         "terminal_settings" => "Налаштування термінала",
+        "terminal_group_behavior" => "Поведінка",
+        "terminal_group_appearance" => "Вигляд",
         "shortcuts" => "Скорочення",
         "ai_assistant" => "ШІ-асистент",
         "language" => "Мова",
@@ -538,6 +547,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "flatten_hosts_label" => "Показувати всі хости в корені",
         "card_accent_glass_label" => "Картки з акцентним склом",
         "card_accent_glass_desc" => "М'який градієнт кольору кожної картки (колір хоста/групи).",
+        "show_host_address_label" => "Показувати адресу хоста",
+        "show_host_address_desc" => "Показує user@host:порт на картках. Вимкнено за замовчуванням, щоб адреси не потрапляли на знімки екрана. Порт 22 завжди пропускається.",
         "flatten_hosts_desc" => "Якщо ввімкнено, корінь панелі показує розділ Групи над пласким списком усіх хостів. Якщо вимкнено, хости всередині груп приховані, доки ви не відкриєте групу.",
 
         // Sync passwords toggle
@@ -568,8 +579,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "edit_snippet" => "Редагувати сніпет",
 
         "re_verify_all" => "Перевірити все повторно",
-        "no_known_hosts_yet" => "Поки немає відомих хостів. Записи з'являються тут, коли ви підключаєтеся та схвалюєте відбиток хоста.",
-        "known_hosts_remove_hint" => "Прибрати запис, щоб діалог перевірки з'явився знову під час наступного підключення.",
+        "no_known_hosts_yet" => "Поки немає відомих хостів",
+        "known_hosts_empty_desc" => "Записи з'являються тут, коли ви підключаєтеся та підтверджуєте відбиток хоста.",
         "last_seen" => "Востаннє бачено:",
 
         "icon" => "Іконка",
@@ -757,6 +768,9 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         // Plugins panel
         "plugins" => "Плагіни",
         "features" => "Можливості",
+        "feature_ai_desc" => "ШІ-чат у терміналі, що може виконувати команди на підключеному сервері.",
+        "feature_sftp_desc" => "Перегляд і передавання файлів через SSH у двопанельному менеджері.",
+        "feature_sync_desc" => "Шифрована однорангова синхронізація сховища між вашими пристроями.",
         "plugins_subtitle" => "Керування завантаженими плагінами хмарних провайдерів.",
         "plugins_empty" => "Поки немає доступних плагінів.",
         "plugins_auto_update_global" => "Автооновлювати всі",
@@ -768,7 +782,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "plugin_status_checking" => "перевірка оновлень…",
         "plugin_status_downloading" => "завантаження…",
         "plugin_status_error" => "помилка",
-        "plugin_dev_build_hint" => "Запущено локально зібраний бінарник. Оновлення керуються вашою збіркою, а не цією панеллю.",
+        "plugin_dev_build_hint" => "Локальна збірка, не керується тут.",
         "plugin_action_install" => "Установити",
         "plugin_action_update" => "Оновити",
         "plugin_action_uninstall" => "Видалити",

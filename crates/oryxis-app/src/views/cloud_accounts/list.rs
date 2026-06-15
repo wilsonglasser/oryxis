@@ -179,17 +179,20 @@ impl Oryxis {
                 // with a saturated coloured square.
                 let (glyph, brand_color) =
                     crate::os_icon::provider_icon(&cp.provider, OryxisColors::t().accent);
-                let icon_box = container(glyph.view(20.0, brand_color))
-                    .center(Length::Fixed(32.0))
-                    .style(|_| container::Style {
-                        background: Some(Background::Color(OryxisColors::t().bg_surface)),
-                        border: Border {
-                            radius: Radius::from(8.0),
-                            color: OryxisColors::t().border,
-                            width: 1.0,
-                        },
-                        ..Default::default()
-                    });
+                // Match the host/group cards: a filled avatar in the
+                // user's chosen icon shape, brand colour fill, white logo,
+                // instead of a one-off bordered surface box.
+                let host_style = crate::widgets::resolve_host_icon_style(
+                    None,
+                    &self.setting_default_host_icon,
+                );
+                let icon_box = crate::widgets::host_icon(
+                    host_style,
+                    brand_color,
+                    &cp.label,
+                    Some(glyph.view(18.0, Color::WHITE)),
+                    32.0,
+                );
 
                 let provider_label = match cp.provider.as_str() {
                     "aws" => "AWS",
@@ -214,7 +217,7 @@ impl Oryxis {
 
                 let card_body = container(
                     dir_row(vec![
-                        icon_box.into(),
+                        icon_box,
                         Space::new().width(12).into(),
                         column![
                             text(&cp.label)

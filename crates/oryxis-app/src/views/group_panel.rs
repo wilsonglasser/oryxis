@@ -35,7 +35,7 @@ impl Oryxis {
             ])
             .align_y(iced::Alignment::Center),
         )
-        .padding(Padding { top: 16.0, right: 16.0, bottom: 12.0, left: 16.0 });
+        .padding(Padding { top: 12.0, right: 16.0, bottom: 12.0, left: 16.0 });
 
         // Icon + color badge. Clicking opens the shared icon/color picker,
         // seeded from the in-memory form (deferred save).
