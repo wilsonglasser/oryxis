@@ -230,6 +230,12 @@ impl TerminalState {
             } else {
                 (0, last_col)
             };
+            // Clamp to the last valid column: `pixel_to_cell` floors the
+            // column low but not high, so a drag into the right padding can
+            // push `end.0`/`start.0` to `cols`, which would panic on the
+            // `row[Column(..)]` index below (the block branch above already
+            // clamps with `c1.min(last_col)`).
+            let (start_col, end_col) = (start_col.min(last_col), end_col.min(last_col));
             let mut line_str = String::new();
             for c in start_col..=end_col {
                 let cell = &row[Column(c as usize)];
@@ -733,15 +739,17 @@ fn hovered_url_range(
 /// lands outside any URL.
 fn url_at_cell(
     term: &alacritty_terminal::Term<crate::backend::EventProxy>,
-    target_row: u16,
+    target_line: i32,
     target_col: u16,
 ) -> Option<String> {
     use alacritty_terminal::index::{Column, Line};
     // Index the one grid row directly (the way `smart_span_at` does)
     // instead of walking the whole viewport display iterator to pick
-    // a single row out of it.
+    // a single row out of it. `target_line` is a grid line (scroll
+    // adjusted, negative for scrollback), not an on-screen row, so
+    // Ctrl+click and hover stay correct when scrolled into history.
     let grid = term.grid();
-    let line = Line(target_row as i32);
+    let line = Line(target_line);
     if line < grid.topmost_line() || line > grid.bottommost_line() {
         return None;
     }
@@ -1646,7 +1654,7 @@ where
                     // would lose the selection start.
                     if widget_state.modifiers.control()
                         && let Ok(state) = self.state.lock()
-                        && let Some(url) = url_at_cell(&state.backend.term, vrow, col)
+                        && let Some(url) = url_at_cell(&state.backend.term, line, col)
                     {
                         drop(state);
                         open_url(&url);
@@ -1889,7 +1897,8 @@ where
                             .as_ref()
                             .map(|(u, _)| (u.clone(), pos))
                     } else if let Ok(state) = self.state.lock() {
-                        url_at_cell(&state.backend.term, vrow, col).map(|u| (u, pos))
+                        let line = Self::visible_row_to_line(vrow, widget_state.scroll_offset);
+                        url_at_cell(&state.backend.term, line, col).map(|u| (u, pos))
                     } else {
                         None
                     }
@@ -2039,7 +2048,7 @@ where
                             .mode()
                             .contains(alacritty_terminal::term::TermMode::ALT_SCREEN);
                         let grid = s.backend.term.grid();
-                        (in_alt, (grid.total_lines() - grid.screen_lines()) as i32)
+                        (in_alt, grid.total_lines().saturating_sub(grid.screen_lines()) as i32)
                     }
                     Err(_) => (false, i32::MAX),
                 };
@@ -2205,7 +2214,7 @@ where
                 0
             } else {
                 let grid = state.backend.term.grid();
-                let max_scroll = (grid.total_lines() - grid.screen_lines()) as i32;
+                let max_scroll = grid.total_lines().saturating_sub(grid.screen_lines()) as i32;
                 widget_state.scroll_offset.clamp(0, max_scroll)
             };
 

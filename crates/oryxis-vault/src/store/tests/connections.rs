@@ -149,6 +149,31 @@ fn proxy_password_encrypted_round_trip() {
 
 
 #[test]
+fn connection_password_clears_with_empty_string() {
+    let vault = unlocked_vault();
+    let conn = Connection::new("h", "host");
+    vault.save_connection(&conn, Some("first")).unwrap();
+    assert_eq!(
+        vault.get_connection_password(&conn.id).unwrap(),
+        Some("first".to_string())
+    );
+
+    // `Some("")` clears the column (NULL), not an encrypted empty blob.
+    vault.save_connection(&conn, Some("")).unwrap();
+    assert_eq!(vault.get_connection_password(&conn.id).unwrap(), None);
+    let raw: Option<Vec<u8>> = vault
+        .db
+        .query_row(
+            "SELECT password FROM connections WHERE id = ?1",
+            params![conn.id.to_string()],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert!(raw.is_none(), "cleared password left a non-NULL column");
+}
+
+
+#[test]
 fn proxy_password_clears_on_none_or_empty() {
     let vault = unlocked_vault();
     let conn = Connection::new("h", "host");

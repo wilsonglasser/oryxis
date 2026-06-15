@@ -436,6 +436,27 @@ impl Oryxis {
         Task::none()
     }
 
+    /// Close every SFTP tab except the one at `keep_idx`. Reuses
+    /// `close_sftp_tab` per dropped tab so `active_sftp`, buffer adoption and
+    /// `tab_order` stay consistent (instead of a hand-rolled `retain` that
+    /// hard-codes `active_sftp = Some(0)`).
+    pub(crate) fn close_other_sftp_tabs(&mut self, keep_idx: usize) -> Task<Message> {
+        let Some(keep_id) = self.sftp_tabs.get(keep_idx).map(|t| t.id) else {
+            return Task::none();
+        };
+        let mut task = Task::none();
+        while let Some(idx) = self.sftp_tabs.iter().position(|t| t.id != keep_id) {
+            task = self.close_sftp_tab(idx);
+        }
+        task
+    }
+
+    /// Whether closing every tab but `keep_idx` would drop unsaved work, i.e.
+    /// any other tab has an in-flight transfer or a dirty edit-session.
+    pub(crate) fn other_sftp_tabs_have_unsaved(&self, keep_idx: usize) -> bool {
+        (0..self.sftp_tabs.len()).any(|i| i != keep_idx && self.sftp_tab_has_unsaved(i))
+    }
+
     /// Owning tab id to stamp on an SFTP async-continuation message: the tab
     /// currently being routed (mid-`route_sftp_async`) if any, else the
     /// focused tab. User-initiated transfers (not mid-route) get the focused

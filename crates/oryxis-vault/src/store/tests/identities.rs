@@ -1,4 +1,43 @@
 use super::*;
+use oryxis_core::models::identity::Identity;
+
+#[test]
+fn identity_password_clears_with_empty_string() {
+    let vault = unlocked_vault();
+    let identity = Identity::new("db-admin");
+    vault.save_identity(&identity, Some("first")).unwrap();
+    assert_eq!(
+        vault.get_identity_password(&identity.id).unwrap(),
+        Some("first".to_string())
+    );
+
+    // `Some("")` clears the column (NULL), not an encrypted empty blob,
+    // so `list_identity_ids_with_password` no longer reports it.
+    vault.save_identity(&identity, Some("")).unwrap();
+    assert_eq!(vault.get_identity_password(&identity.id).unwrap(), None);
+    assert!(
+        !vault
+            .list_identity_ids_with_password()
+            .unwrap()
+            .contains(&identity.id)
+    );
+}
+
+
+#[test]
+fn proxy_identity_password_clears_with_empty_string() {
+    let vault = unlocked_vault();
+    let pi = ProxyIdentity::new("bastion");
+    vault.save_proxy_identity(&pi, Some("first")).unwrap();
+    assert_eq!(
+        vault.get_proxy_identity_password(&pi.id).unwrap(),
+        Some("first".to_string())
+    );
+
+    vault.save_proxy_identity(&pi, Some("")).unwrap();
+    assert_eq!(vault.get_proxy_identity_password(&pi.id).unwrap(), None);
+}
+
 
 #[test]
 fn proxy_identity_round_trip() {

@@ -12,6 +12,9 @@ impl VaultStore {
         private_key_pem: Option<&str>,
     ) -> Result<(), VaultError> {
         let encrypted_pk = match private_key_pem {
+            // Tri-state: empty string clears the private key (NULL column),
+            // never an encrypted empty blob (mirrors `save_cloud_profile`).
+            Some("") => None,
             Some(pem) => Some(self.encrypt_field(pem)?),
             None => {
                 // Keep existing

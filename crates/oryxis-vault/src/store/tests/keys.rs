@@ -1,6 +1,19 @@
 use super::*;
 
 #[test]
+fn key_private_clears_with_empty_string() {
+    let vault = unlocked_vault();
+    let key = SshKey::new("my-key", KeyAlgorithm::Ed25519);
+    vault.save_key(&key, Some("-----BEGIN PRIVATE KEY-----\nx\n-----END PRIVATE KEY-----")).unwrap();
+    assert!(vault.get_key_private(&key.id).unwrap().is_some());
+
+    // `Some("")` clears the private key (NULL), not an encrypted empty blob.
+    vault.save_key(&key, Some("")).unwrap();
+    assert_eq!(vault.get_key_private(&key.id).unwrap(), None);
+}
+
+
+#[test]
 fn save_and_list_keys() {
     let vault = unlocked_vault();
     let key = SshKey::new("my-key", KeyAlgorithm::Ed25519);

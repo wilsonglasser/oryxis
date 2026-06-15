@@ -98,6 +98,36 @@ pub(crate) fn build_manifest(
     Ok(entries)
 }
 
+/// Effective local LWW stamp per entity: the live `updated_at`, or a
+/// tombstone's `deleted_at` when the entity was deleted. A live entity
+/// wins over a stale tombstone for the same id (mirrors `build_manifest`).
+///
+/// Operates on an already-locked guard so callers that hold the vault
+/// lock (`collect_records`, `apply_records`) can build the index without
+/// re-locking (which would deadlock the `std::sync::Mutex`). Used to stamp
+/// outgoing records with their real timestamp and to reject incoming
+/// records that aren't strictly newer than what we already hold.
+fn local_stamps(
+    v: &VaultStore,
+) -> Result<HashMap<(EntityType, Uuid), chrono::DateTime<chrono::Utc>>, SyncError> {
+    let mut stamps: HashMap<(EntityType, Uuid), chrono::DateTime<chrono::Utc>> = HashMap::new();
+    for (entity_type, table) in STAMP_TABLES {
+        for (entity_id, updated_at) in v.list_entity_stamps(table)? {
+            stamps.insert((entity_type, entity_id), updated_at);
+        }
+    }
+    for tomb in v.list_tombstones()? {
+        let Some(entity_type) = EntityType::from_wire_str(&tomb.entity_type) else {
+            continue;
+        };
+        // `or_insert`: a live entry above wins over a stale tombstone.
+        stamps
+            .entry((entity_type, tomb.entity_id))
+            .or_insert(tomb.deleted_at);
+    }
+    Ok(stamps)
+}
+
 /// Collect serialized records requested by the peer. A requested ref
 /// that matches a tombstone is returned as a deletion marker (empty
 /// payload, `is_deleted = true`) instead of an entity payload.
@@ -123,11 +153,18 @@ pub(crate) fn collect_records(
                 .map(|et| ((et, t.entity_id), t.deleted_at))
         })
         .collect();
-    // Per-peer AEAD cipher, built once instead of once per record.
-    let cipher = match shared_secret {
-        Some(secret) => Some(crypto::PayloadCipher::new(secret)?),
-        None => None,
-    };
+    // Per-peer AEAD cipher, built once instead of once per record. A
+    // missing secret means E2E was never established; refuse to ship
+    // entity payloads in clear rather than silently downgrading. v5+
+    // peers always carry a secret (seeded at pairing), so this only
+    // fires on a corrupt/partial peer row, never in normal operation.
+    let secret = shared_secret.ok_or_else(|| {
+        SyncError::Crypto("peer has no shared secret; refusing to send plaintext".into())
+    })?;
+    let cipher = crypto::PayloadCipher::new(secret)?;
+    // Real per-entity LWW stamps, so the receiver can resolve conflicts
+    // against its own copy instead of trusting an apply-time clock.
+    let stamps = local_stamps(&v)?;
     // Off by default. When on, password fields are included in the
     // wrapper payloads, older peers ignore them automatically. The
     // setting lives in the SQLite `settings` table so it flips per
@@ -310,18 +347,19 @@ pub(crate) fn collect_records(
         };
 
         if let Some(data) = payload {
-            // Seal the payload with the per-peer shared secret. A
-            // missing secret means we're talking to a legacy peer that
-            // never did the X25519 exchange; ship the plaintext so
-            // they can still parse it.
-            let wire_payload = match &cipher {
-                Some(c) => c.encrypt(&data)?,
-                None => data,
-            };
+            // Seal the payload with the per-peer shared secret (always
+            // present, see the `secret` binding above).
+            let wire_payload = cipher.encrypt(&data)?;
             records.push(protocol::SyncRecord {
                 entity_type: delta.entity_type,
                 entity_id: delta.entity_id,
-                updated_at: chrono::Utc::now(),
+                // The entity's real `updated_at`, not an apply-time clock,
+                // so the receiver's LWW compares like-for-like. Falls back
+                // to now() only if the row vanished between caching and here.
+                updated_at: stamps
+                    .get(&(delta.entity_type, delta.entity_id))
+                    .copied()
+                    .unwrap_or_else(chrono::Utc::now),
                 is_deleted: false,
                 payload: wire_payload,
             });
@@ -347,11 +385,19 @@ pub(crate) fn apply_records(
 ) -> Result<(), SyncError> {
     let v = vault.lock().map_err(|_| SyncError::Vault("Lock".into()))?;
 
-    // Per-peer AEAD cipher, built once instead of once per record.
-    let cipher = match shared_secret {
-        Some(secret) => Some(crypto::PayloadCipher::new(secret)?),
-        None => None,
-    };
+    // Per-peer AEAD cipher, built once instead of once per record. A
+    // missing secret means E2E was never established; refuse the batch
+    // rather than accepting plaintext payloads (symmetric with the send
+    // side in `collect_records`). v5+ peers always carry a secret.
+    let secret = shared_secret.ok_or_else(|| {
+        SyncError::Crypto("peer has no shared secret; refusing to accept plaintext".into())
+    })?;
+    let cipher = crypto::PayloadCipher::new(secret)?;
+
+    // Effective local stamps for defensive last-writer-wins. The client
+    // pull path already filters via manifest comparison, but an
+    // unsolicited `DeltaPush` would otherwise overwrite newer local data.
+    let local = local_stamps(&v)?;
 
     // One explicit transaction for the whole batch. Each save_* /
     // delete_* below would otherwise run as its own implicit SQLite
@@ -363,6 +409,18 @@ pub(crate) fn apply_records(
     v.begin_batch()?;
 
     for record in records {
+        // Defensive LWW, before decrypt and before the delete branch:
+        // only apply a record strictly newer than what we already hold.
+        // Equal timestamps are a no-op (matches `conflict::resolve`'s
+        // `Skip`), and this gates deletes too so a stale tombstone can't
+        // clobber a newer local edit. Records for entities we've never
+        // seen (no local stamp) always pass.
+        if let Some(local_ts) = local.get(&(record.entity_type, record.entity_id)) {
+            if record.updated_at <= *local_ts {
+                continue;
+            }
+        }
+
         if record.is_deleted {
             // Handle deletion. A vault error here is non-fatal (the
             // peer is allowed to be ahead of us on its own deletes)
@@ -394,22 +452,18 @@ pub(crate) fn apply_records(
         }
 
         // Unseal the payload with the per-peer secret. A decrypt
-        // failure (tampering, key mismatch, legacy peer that didn't
-        // encrypt) returns owned bytes either way; the deserializer
-        // catches the garbage path with a parse error and we skip.
-        let payload: std::borrow::Cow<'_, [u8]> = match &cipher {
-            Some(c) => match c.decrypt(&record.payload) {
-                Ok(plain) => std::borrow::Cow::Owned(plain),
-                Err(e) => {
-                    tracing::warn!(
-                        "sync: failed to decrypt {} {}: {e}",
-                        record.entity_type,
-                        record.entity_id
-                    );
-                    continue;
-                }
-            },
-            None => std::borrow::Cow::Borrowed(&record.payload),
+        // failure (tampering, key mismatch) means the record is forged
+        // or corrupt; skip it and warn.
+        let payload: Vec<u8> = match cipher.decrypt(&record.payload) {
+            Ok(plain) => plain,
+            Err(e) => {
+                tracing::warn!(
+                    "sync: failed to decrypt {} {}: {e}",
+                    record.entity_type,
+                    record.entity_id
+                );
+                continue;
+            }
         };
 
         // Helper: every save_* below shares the same "warn on Err"
@@ -541,4 +595,135 @@ pub(crate) fn apply_records(
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod lww_tests {
+    use super::*;
+    use std::sync::Mutex;
+
+    use chrono::{Duration, Utc};
+    use oryxis_core::models::connection::Connection;
+    use tempfile::NamedTempFile;
+
+    const SECRET: [u8; 32] = [7u8; 32];
+
+    fn vault() -> Arc<Mutex<VaultStore>> {
+        let tmp = NamedTempFile::new().unwrap();
+        let path = tmp.path().to_path_buf();
+        std::mem::forget(tmp);
+        let mut v = VaultStore::open(&path).unwrap();
+        v.set_master_password("test").unwrap();
+        Arc::new(Mutex::new(v))
+    }
+
+    fn seed_conn(vault: &Arc<Mutex<VaultStore>>, id: Uuid, label: &str, ts: chrono::DateTime<Utc>) {
+        let mut c = Connection::new(label, "10.0.0.9");
+        c.id = id;
+        c.updated_at = ts;
+        vault.lock().unwrap().save_connection(&c, None).unwrap();
+    }
+
+    /// A sealed connection record stamped at `ts`, as a peer would push it.
+    fn conn_record(id: Uuid, label: &str, ts: chrono::DateTime<Utc>) -> protocol::SyncRecord {
+        let mut c = Connection::new(label, "10.0.0.9");
+        c.id = id;
+        c.updated_at = ts;
+        let wrapper = protocol::SyncConnection {
+            connection: c,
+            password: None,
+            proxy_password: None,
+        };
+        let cipher = crypto::PayloadCipher::new(&SECRET).unwrap();
+        let payload = cipher.encrypt(&serde_json::to_vec(&wrapper).unwrap()).unwrap();
+        protocol::SyncRecord {
+            entity_type: EntityType::Connection,
+            entity_id: id,
+            updated_at: ts,
+            is_deleted: false,
+            payload,
+        }
+    }
+
+    fn label_of(vault: &Arc<Mutex<VaultStore>>, id: Uuid) -> Option<String> {
+        vault
+            .lock()
+            .unwrap()
+            .list_connections()
+            .unwrap()
+            .into_iter()
+            .find(|c| c.id == id)
+            .map(|c| c.label)
+    }
+
+    #[test]
+    fn stale_push_is_rejected() {
+        let vault = vault();
+        let id = Uuid::new_v4();
+        let now = Utc::now();
+        seed_conn(&vault, id, "local-new", now);
+        // Peer pushes an older copy: defensive LWW must keep the local one.
+        let rec = conn_record(id, "remote-old", now - Duration::seconds(60));
+        apply_records(&vault, &[rec], Some(&SECRET)).unwrap();
+        assert_eq!(label_of(&vault, id).as_deref(), Some("local-new"));
+    }
+
+    #[test]
+    fn newer_push_is_applied() {
+        let vault = vault();
+        let id = Uuid::new_v4();
+        let now = Utc::now();
+        seed_conn(&vault, id, "local-old", now - Duration::seconds(60));
+        let rec = conn_record(id, "remote-new", now);
+        apply_records(&vault, &[rec], Some(&SECRET)).unwrap();
+        assert_eq!(label_of(&vault, id).as_deref(), Some("remote-new"));
+    }
+
+    #[test]
+    fn equal_timestamp_is_skipped() {
+        let vault = vault();
+        let id = Uuid::new_v4();
+        let ts = Utc::now();
+        seed_conn(&vault, id, "local", ts);
+        let rec = conn_record(id, "remote-same-ts", ts);
+        apply_records(&vault, &[rec], Some(&SECRET)).unwrap();
+        assert_eq!(label_of(&vault, id).as_deref(), Some("local"));
+    }
+
+    #[test]
+    fn new_entity_is_applied() {
+        // No local copy: a record with a real timestamp (the normal pull
+        // path after #9) always applies. Regression guard for #9.
+        let vault = vault();
+        let id = Uuid::new_v4();
+        let rec = conn_record(id, "fresh", Utc::now());
+        apply_records(&vault, &[rec], Some(&SECRET)).unwrap();
+        assert_eq!(label_of(&vault, id).as_deref(), Some("fresh"));
+    }
+
+    #[test]
+    fn missing_secret_is_rejected() {
+        // #5: a peer with no shared secret must be refused, not accepted
+        // in plaintext.
+        let vault = vault();
+        let rec = conn_record(Uuid::new_v4(), "x", Utc::now());
+        assert!(apply_records(&vault, &[rec], None).is_err());
+    }
+
+    #[test]
+    fn collect_stamps_real_updated_at() {
+        // #9: collect_records carries the entity's real updated_at, not an
+        // apply-time clock.
+        let vault = vault();
+        let id = Uuid::new_v4();
+        let ts = Utc::now() - Duration::seconds(3600);
+        seed_conn(&vault, id, "src", ts);
+        let needed = vec![protocol::DeltaRef {
+            entity_type: EntityType::Connection,
+            entity_id: id,
+        }];
+        let records = collect_records(&vault, &needed, Some(&SECRET)).unwrap();
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].updated_at, ts);
+    }
 }

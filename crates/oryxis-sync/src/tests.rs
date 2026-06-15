@@ -254,13 +254,15 @@ mod tests {
         vault.delete_connection(&doomed.id).unwrap();
 
         let vault_arc = Arc::new(Mutex::new(vault));
+        // A real session always carries a shared secret (v5+); deletion
+        // markers have empty payloads so the cipher is never exercised here.
         let records = collect_records(
             &vault_arc,
             &[DeltaRef {
                 entity_type: EntityType::Connection,
                 entity_id: doomed.id,
             }],
-            None,
+            Some(&[0u8; 32]),
         )
         .unwrap();
 
@@ -287,11 +289,13 @@ mod tests {
             &[SyncRecord {
                 entity_type: EntityType::Connection,
                 entity_id: victim.id,
-                updated_at: chrono::Utc::now(),
+                // Strictly newer than the victim's save stamp so defensive
+                // LWW lets the delete through.
+                updated_at: chrono::Utc::now() + chrono::Duration::seconds(1),
                 is_deleted: true,
                 payload: Vec::new(),
             }],
-            None,
+            Some(&[0u8; 32]),
         )
         .unwrap();
 

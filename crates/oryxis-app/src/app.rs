@@ -428,10 +428,11 @@ pub struct Oryxis {
     /// tab starts a reorder) and the unified live-slide. `None` when not over
     /// an SFTP tab.
     pub(crate) hovered_sftp_tab: Option<usize>,
-    /// SFTP tab index pending a close confirmation: set when the user tries to
-    /// close a tab that has an in-flight transfer or an unsaved edit-session.
-    /// Drives the close-guard modal; `None` when no confirmation is pending.
-    pub(crate) pending_sftp_close: Option<usize>,
+    /// SFTP close pending a confirmation: set when the user tries to close a
+    /// tab (or "close others") where some affected tab has an in-flight
+    /// transfer or an unsaved edit-session. Drives the close-guard modal;
+    /// `None` when no confirmation is pending.
+    pub(crate) pending_sftp_close: Option<crate::state::PendingSftpClose>,
     pub(crate) mouse_position: Point,
     pub(crate) window_size: iced::Size,
     /// Whether the OS window currently has focus. Driven by the

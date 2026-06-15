@@ -147,12 +147,11 @@ impl Oryxis {
                 .sum();
             if shrinkable > 0.0 {
                 let ratio = ((shrinkable - overflow) / shrinkable).clamp(0.0, 1.0);
-                for i in 0..n_tabs {
+                for (i, w) in session_widths.iter_mut().enumerate().take(n_tabs) {
                     if (self.tabs[i].pinned && compact_pins) || active_idx == Some(i) {
                         continue;
                     }
-                    session_widths[i] =
-                        TAB_MIN_WIDTH + (session_widths[i] - TAB_MIN_WIDTH) * ratio;
+                    *w = TAB_MIN_WIDTH + (*w - TAB_MIN_WIDTH) * ratio;
                 }
             }
         }

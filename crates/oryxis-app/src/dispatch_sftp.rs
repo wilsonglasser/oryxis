@@ -407,14 +407,20 @@ impl Oryxis {
                 // Guard: an in-flight transfer or unsaved edit-session opens a
                 // confirmation modal instead of closing outright.
                 if self.sftp_tab_has_unsaved(idx) {
-                    self.pending_sftp_close = Some(idx);
+                    self.pending_sftp_close = Some(crate::state::PendingSftpClose::One(idx));
                 } else {
                     return Ok(self.close_sftp_tab(idx));
                 }
             }
             Message::ConfirmCloseSftpTab => {
-                if let Some(idx) = self.pending_sftp_close.take() {
-                    return Ok(self.close_sftp_tab(idx));
+                match self.pending_sftp_close.take() {
+                    Some(crate::state::PendingSftpClose::One(idx)) => {
+                        return Ok(self.close_sftp_tab(idx));
+                    }
+                    Some(crate::state::PendingSftpClose::Others(idx)) => {
+                        return Ok(self.close_other_sftp_tabs(idx));
+                    }
+                    None => {}
                 }
             }
             Message::CancelCloseSftpTab => {
@@ -433,16 +439,14 @@ impl Oryxis {
                 if idx >= self.sftp_tabs.len() {
                     return Ok(Task::none());
                 }
-                let keep_id = self.sftp_tabs[idx].id;
-                // If the kept tab is parked (not the active buffer owner),
-                // hoist its state into the live buffer before dropping the rest.
-                if self.active_sftp != Some(idx) {
-                    self.sftp = std::mem::take(&mut self.sftp_tabs[idx].state);
+                // Guard: if any tab we'd drop has an in-flight transfer or an
+                // unsaved edit-session, confirm first (mirrors CloseSftpTab)
+                // instead of silently discarding it.
+                if self.other_sftp_tabs_have_unsaved(idx) {
+                    self.pending_sftp_close = Some(crate::state::PendingSftpClose::Others(idx));
+                } else {
+                    return Ok(self.close_other_sftp_tabs(idx));
                 }
-                self.sftp_tabs.retain(|t| t.id == keep_id);
-                self.tab_order
-                    .retain(|r| !matches!(r, crate::state::TabRef::Sftp(x) if *x != keep_id));
-                self.active_sftp = Some(0);
             }
             Message::ShowSftpTabMenu(idx) => {
                 self.overlay = Some(crate::state::OverlayState {

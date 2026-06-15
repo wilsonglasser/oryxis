@@ -503,6 +503,16 @@ pub(crate) struct SftpRename {
     pub input: String,
 }
 
+/// Target of the SFTP close-guard confirmation modal: either a single tab or
+/// "close every tab except this one". Drives `pending_sftp_close`.
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum PendingSftpClose {
+    /// Close just the tab at this index.
+    One(usize),
+    /// Close every tab except the one at this index.
+    Others(usize),
+}
+
 #[derive(Debug, Clone)]
 pub(crate) struct SftpDeleteTarget {
     pub side: SftpPaneSide,
