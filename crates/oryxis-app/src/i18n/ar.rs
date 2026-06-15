@@ -603,6 +603,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "update_subtitle" => "Oryxis {new} متاح. أنت تستخدم {current}.",
         "open_release_github" => "فتح صفحة الإصدار على GitHub",
         "downloading_installer" => "جارٍ تنزيل المثبّت…",
+        "downloading_update" => "جارٍ التنزيل…",
         "update_skip_version" => "تخطي هذا الإصدار",
         "update_later" => "لاحقًا",
         "update_now" => "تحديث الآن",
@@ -759,6 +760,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
 
         // لوحة الإضافات
         "plugins" => "الإضافات",
+        "features" => "الميزات",
         "plugins_subtitle" => "إدارة إضافات مزودي السحابة التي تم تنزيلها.",
         "plugins_empty" => "لا توجد إضافات متاحة بعد.",
         "plugins_auto_update_global" => "تحديث الكل تلقائيًا",

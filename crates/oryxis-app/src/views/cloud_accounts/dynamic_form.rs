@@ -31,7 +31,7 @@ impl Oryxis {
                 Space::new().width(Length::Fill).into(),
                 button(
                     text("\u{00D7}")
-                        .size(14)
+                        .size(20)
                         .color(OryxisColors::t().text_muted),
                 )
                 .on_press(Message::HideDynamicGroupForm)

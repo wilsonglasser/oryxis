@@ -601,6 +601,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "update_subtitle" => "Oryxis {new} tersedia. Anda memakai {current}.",
         "open_release_github" => "Buka halaman rilis di GitHub",
         "downloading_installer" => "Mengunduh installer…",
+        "downloading_update" => "Mengunduh…",
         "update_skip_version" => "Lewati versi ini",
         "update_later" => "Nanti",
         "update_now" => "Perbarui sekarang",
@@ -755,6 +756,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
 
         // Plugins panel
         "plugins" => "Plugin",
+        "features" => "Fitur",
         "plugins_subtitle" => "Kelola plugin penyedia cloud yang telah diunduh.",
         "plugins_empty" => "Belum ada plugin tersedia.",
         "plugins_auto_update_global" => "Perbarui otomatis semua",

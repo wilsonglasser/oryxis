@@ -552,6 +552,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "update_subtitle" => "Oryxis {new} が利用可能です。現在は {current} です。",
         "open_release_github" => "GitHub のリリースページを開く",
         "downloading_installer" => "インストーラーをダウンロード中…",
+        "downloading_update" => "ダウンロード中…",
         "update_skip_version" => "このバージョンをスキップ",
         "update_later" => "後で",
         "update_now" => "今すぐ更新",
@@ -706,6 +707,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
 
         // プラグインパネル
         "plugins" => "プラグイン",
+        "features" => "機能",
         "plugins_subtitle" => "ダウンロード済みのクラウドプロバイダープラグインを管理します。",
         "plugins_empty" => "プラグインはまだありません。",
         "plugins_auto_update_global" => "すべて自動更新",

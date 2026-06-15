@@ -601,6 +601,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "update_subtitle" => "Доступна версія Oryxis {new}. У вас {current}.",
         "open_release_github" => "Відкрити сторінку релізу на GitHub",
         "downloading_installer" => "Завантаження інсталятора…",
+        "downloading_update" => "Завантаження…",
         "update_skip_version" => "Пропустити цю версію",
         "update_later" => "Пізніше",
         "update_now" => "Оновити зараз",
@@ -755,6 +756,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
 
         // Plugins panel
         "plugins" => "Плагіни",
+        "features" => "Можливості",
         "plugins_subtitle" => "Керування завантаженими плагінами хмарних провайдерів.",
         "plugins_empty" => "Поки немає доступних плагінів.",
         "plugins_auto_update_global" => "Автооновлювати всі",

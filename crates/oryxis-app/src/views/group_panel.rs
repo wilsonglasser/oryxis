@@ -11,7 +11,7 @@ use iced::{Background, Border, Color, Element, Length, Padding};
 use crate::app::{Message, Oryxis, PANEL_WIDTH};
 use crate::os_icon::BrandIcon;
 use crate::theme::OryxisColors;
-use crate::widgets::{dir_align_x, dir_row, panel_field, panel_section, styled_button};
+use crate::widgets::{dir_align_x, dir_row, panel_field, panel_section};
 
 impl Oryxis {
     pub(crate) fn view_group_edit_panel(&self) -> Element<'_, Message> {
@@ -23,7 +23,7 @@ impl Oryxis {
                     .color(OryxisColors::t().text_primary)
                     .into(),
                 Space::new().width(Length::Fill).into(),
-                button(text("\u{00D7}").size(14).color(OryxisColors::t().text_muted))
+                button(text("\u{00D7}").size(20).color(OryxisColors::t().text_muted))
                     .on_press(Message::CancelGroupEdit)
                     .padding(Padding { top: 4.0, right: 8.0, bottom: 4.0, left: 8.0 })
                     .style(|_, _| button::Style {
@@ -86,23 +86,24 @@ impl Oryxis {
         )
         .height(Length::Fill);
 
-        let footer = container(
-            dir_row(vec![
-                styled_button(
-                    crate::i18n::t("cancel"),
-                    Message::CancelGroupEdit,
-                    OryxisColors::t().text_muted,
-                ),
-                Space::new().width(8).into(),
-                styled_button(
-                    crate::i18n::t("save"),
-                    Message::SaveGroupEdit,
-                    OryxisColors::t().accent,
-                ),
-            ])
-            .align_y(iced::Alignment::Center),
+        // Full-width Save, standardized with the host editor's footer
+        // (the header × acts as Cancel).
+        let save_btn = button(
+            container(text(crate::i18n::t("save")).size(14).color(OryxisColors::t().text_primary))
+                .padding(Padding { top: 12.0, right: 0.0, bottom: 12.0, left: 0.0 })
+                .width(Length::Fill)
+                .center_x(Length::Fill),
         )
-        .padding(Padding { top: 8.0, right: 16.0, bottom: 16.0, left: 16.0 });
+        .on_press(Message::SaveGroupEdit)
+        .width(Length::Fill)
+        .style(|_, _| button::Style {
+            background: Some(Background::Color(OryxisColors::t().accent)),
+            border: Border { radius: Radius::from(8.0), ..Default::default() },
+            ..Default::default()
+        });
+
+        let footer = container(save_btn)
+            .padding(Padding { top: 8.0, right: 16.0, bottom: 16.0, left: 16.0 });
 
         let panel_content = column![panel_header, form_scroll, footer].height(Length::Fill);
 

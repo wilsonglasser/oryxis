@@ -429,7 +429,7 @@ impl Oryxis {
                 terminal_theme_override: None,
                 terminal_font_size: 14.0,
                 terminal_font_name: "SauceCodePro Nerd Font".to_string(),
-                settings_section: SettingsSection::Terminal,
+                settings_section: SettingsSection::Interface,
                 setting_renderer_backend: "auto".to_string(),
                 setting_copy_on_select: true,
                 setting_right_click_copy: false,

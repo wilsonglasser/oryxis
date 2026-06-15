@@ -133,7 +133,9 @@ impl Oryxis {
         // fill, same look as the confirm modal's primary button) and
         // only *requests* the wipe; the actual ClearLogs runs from the
         // confirmation modal in layout.rs.
-        let clear_btn = button(
+        // Nothing to clear → the button is disabled (muted, no action).
+        let has_entries = !self.logs.is_empty() || !self.session_logs.is_empty();
+        let mut clear_btn = button(
             container(
                 text(crate::i18n::t("clear_all").to_uppercase())
                     .size(11)
@@ -151,12 +153,13 @@ impl Oryxis {
                 left: 14.0,
             }),
         )
-        .on_press(Message::RequestClearHistory)
         .style(|_, status| {
             let base = OryxisColors::t().error;
             let bg = match status {
                 BtnStatus::Hovered => Color { a: 0.85, ..base },
                 BtnStatus::Pressed => Color { a: 0.70, ..base },
+                // Disabled (no entries): muted so it reads as inactive.
+                BtnStatus::Disabled => Color { a: 0.30, ..base },
                 _ => base,
             };
             button::Style {
@@ -168,6 +171,9 @@ impl Oryxis {
                 ..Default::default()
             }
         });
+        if has_entries {
+            clear_btn = clear_btn.on_press(Message::RequestClearHistory);
+        }
 
         let toolbar = container(
             crate::widgets::dir_row(vec![

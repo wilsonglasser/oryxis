@@ -364,10 +364,7 @@ impl Oryxis {
         .style(rounded_input_style)
         .align_x(dir_align_x());
         let cloud_sync_settings = panel_section(column![
-            text(t("settings_cloud_section"))
-                .size(14)
-                .color(OryxisColors::t().text_primary),
-            Space::new().height(10),
+            // Title dropped (redundant with the settings nav label).
             toggle_row(
                 t("settings_cloud_auto_refresh"),
                 self.setting_cloud_auto_refresh_enabled,
@@ -403,7 +400,7 @@ impl Oryxis {
 
         scrollable(
             container(cloud_sync_settings)
-                .padding(Padding { top: 20.0, right: 24.0, bottom: 24.0, left: 24.0 })
+                .padding(Padding { top: 24.0, right: 24.0, bottom: 24.0, left: 24.0 })
                 .width(Length::Fill),
         )
         .height(Length::Fill)

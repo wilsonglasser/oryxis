@@ -601,6 +601,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "update_subtitle" => "Oryxis {new} đã có. Bạn đang ở {current}.",
         "open_release_github" => "Mở trang phát hành trên GitHub",
         "downloading_installer" => "Đang tải trình cài đặt…",
+        "downloading_update" => "Đang tải…",
         "update_skip_version" => "Bỏ qua phiên bản này",
         "update_later" => "Để sau",
         "update_now" => "Cập nhật ngay",
@@ -755,6 +756,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
 
         // Plugins panel
         "plugins" => "Plugin",
+        "features" => "Tính năng",
         "plugins_subtitle" => "Quản lý các plugin nhà cung cấp cloud đã tải.",
         "plugins_empty" => "Chưa có plugin nào.",
         "plugins_auto_update_global" => "Tự động cập nhật tất cả",

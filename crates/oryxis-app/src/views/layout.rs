@@ -1626,7 +1626,6 @@ impl Oryxis {
                 // sibling). Surface the standard actions instead.
                 column![
                     context_menu_item(iced_fonts::lucide::pencil(), crate::i18n::t("edit"), Message::EditGroup(gid), OryxisColors::t().accent),
-                    context_menu_item(iced_fonts::lucide::text_cursor_input(), crate::i18n::t("rename"), Message::StartRenameFolder(gid), OryxisColors::t().text_secondary),
                     context_menu_item(iced_fonts::lucide::trash(), crate::i18n::t("delete"), Message::StartDeleteFolder(gid), OryxisColors::t().error),
                 ].into()
             }

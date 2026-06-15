@@ -601,6 +601,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "update_subtitle" => "Oryxis {new} mevcut. Şu anda {current} sürümündesiniz.",
         "open_release_github" => "Sürüm sayfasını GitHub'da aç",
         "downloading_installer" => "Kurulum aracı indiriliyor…",
+        "downloading_update" => "İndiriliyor…",
         "update_skip_version" => "Bu sürümü atla",
         "update_later" => "Sonra",
         "update_now" => "Şimdi güncelle",
@@ -755,6 +756,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
 
         // Plugins panel
         "plugins" => "Eklentiler",
+        "features" => "Özellikler",
         "plugins_subtitle" => "İndirilen bulut sağlayıcı eklentilerini yönetin.",
         "plugins_empty" => "Henüz kullanılabilir eklenti yok.",
         "plugins_auto_update_global" => "Tümünü otomatik güncelle",

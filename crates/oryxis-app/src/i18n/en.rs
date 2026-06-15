@@ -607,6 +607,7 @@ pub(super) fn lookup(key: &str) -> &'static str {
         "update_subtitle" => "Oryxis {new} is available. You're on {current}.",
         "open_release_github" => "Open release page on GitHub",
         "downloading_installer" => "Downloading installer…",
+        "downloading_update" => "Downloading…",
         "update_skip_version" => "Skip this version",
         "update_later" => "Later",
         "update_now" => "Update now",
@@ -775,6 +776,7 @@ pub(super) fn lookup(key: &str) -> &'static str {
 
         // Plugins panel
         "plugins" => "Plugins",
+        "features" => "Features",
         "plugins_subtitle" => "Manage downloaded cloud-provider plugins.",
         "plugins_empty" => "No plugins available yet.",
         "plugins_auto_update_global" => "Auto-update all",

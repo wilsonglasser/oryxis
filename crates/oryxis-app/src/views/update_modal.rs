@@ -73,14 +73,22 @@ impl Oryxis {
         // Action row OR progress bar depending on state.
         let action_area: Element<'_, Message> = if self.update_downloading {
             let pct = (self.update_progress * 100.0).clamp(0.0, 100.0) as u32;
+            // The filled portion needs a sibling empty portion or, as the
+            // sole Fill child, it always spans the whole track (the bar
+            // looked stuck at 100%). Two FillPortion children split the
+            // width by pct / (100 - pct).
             let bar = container(
-                container(Space::new().height(6))
-                    .width(Length::FillPortion((pct.max(1)) as u16))
-                    .style(|_| container::Style {
-                        background: Some(Background::Color(OryxisColors::t().accent)),
-                        border: Border { radius: Radius::from(3.0), ..Default::default() },
-                        ..Default::default()
-                    }),
+                iced::widget::row![
+                    container(Space::new().height(6))
+                        .width(Length::FillPortion(pct as u16))
+                        .height(Length::Fixed(6.0))
+                        .style(|_| container::Style {
+                            background: Some(Background::Color(OryxisColors::t().accent)),
+                            border: Border { radius: Radius::from(3.0), ..Default::default() },
+                            ..Default::default()
+                        }),
+                    Space::new().width(Length::FillPortion((100 - pct) as u16)),
+                ],
             )
             .width(Length::Fill)
             .height(Length::Fixed(6.0))
@@ -89,8 +97,18 @@ impl Oryxis {
                 border: Border { radius: Radius::from(3.0), ..Default::default() },
                 ..Default::default()
             });
+            // Nightly / non-stable swaps the bare binary in place (no
+            // installer), so a generic "Downloading" reads right there.
+            let label = if matches!(
+                self.setting_update_channel,
+                crate::update::UpdateChannel::Stable
+            ) {
+                t("downloading_installer")
+            } else {
+                t("downloading_update")
+            };
             column![
-                text(format!("{} {}%", t("downloading_installer"), pct))
+                text(format!("{} {}%", label, pct))
                     .size(11).color(OryxisColors::t().text_muted),
                 Space::new().height(8),
                 bar,

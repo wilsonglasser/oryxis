@@ -913,6 +913,7 @@ impl Oryxis {
                     // Mutually exclusive with the other right-hand panels.
                     self.show_host_panel = false;
                     self.show_session_group_panel = false;
+                    self.cloud_form_visible = false;
                     self.cloud_dynamic_form_visible = false;
                     self.cloud_discover_visible = false;
                 }

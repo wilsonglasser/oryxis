@@ -15,39 +15,48 @@ use iced::{Background, Border, Color, Element, Length, Padding};
 use crate::app::{Message, Oryxis};
 use crate::state::{PluginUiEntry, PluginUiStatus};
 use crate::theme::OryxisColors;
-use crate::widgets::{dir_align_x, dir_row};
+use crate::widgets::{dir_align_x, dir_row, panel_section, toggle_row};
 
 impl Oryxis {
     pub(crate) fn view_plugins_panel(&self) -> Element<'_, Message> {
-        // Toolbar: title + the global auto-update toggle.
-        let toolbar = container(
+        // Built-in "feature plugins": SFTP / AI / Sync / MCP are enabled
+        // here (their Settings sections only appear once enabled), the
+        // same surface as the downloadable provider plugins below.
+        let mut rows: Vec<Element<'_, Message>> = vec![
+            text(crate::i18n::t("features"))
+                .size(13)
+                .color(OryxisColors::t().text_primary)
+                .into(),
+            Space::new().height(8).into(),
+            panel_section(column![
+                toggle_row(crate::i18n::t("ai_assistant"), self.ai_enabled, Message::ToggleAiEnabled),
+                Space::new().height(8),
+                toggle_row(crate::i18n::t("mcp_server"), self.mcp_server_enabled, Message::ToggleMcpServer),
+                Space::new().height(8),
+                toggle_row("SFTP", self.sftp_enabled, Message::SettingToggleSftpEnabled),
+                Space::new().height(8),
+                toggle_row(crate::i18n::t("sync"), self.sync_enabled, Message::SyncToggleEnabled),
+            ]),
+            Space::new().height(18).into(),
+            // Plugins list header: subtitle on the leading edge, the
+            // global auto-update toggle on the trailing edge, one line.
             dir_row(vec![
-                text(crate::i18n::t("plugins"))
-                    .size(18)
-                    .color(OryxisColors::t().text_primary)
+                text(crate::i18n::t("plugins_subtitle"))
+                    .size(12)
+                    .color(OryxisColors::t().text_muted)
                     .into(),
                 Space::new().width(Length::Fill).into(),
                 toggle_pill(
                     crate::i18n::t("plugins_auto_update_global"),
                     self.plugins_auto_update_global,
-                    Message::PluginToggleGlobalAutoUpdate(
-                        !self.plugins_auto_update_global,
-                    ),
+                    Message::PluginToggleGlobalAutoUpdate(!self.plugins_auto_update_global),
                 ),
             ])
-            .align_y(iced::Alignment::Center),
-        )
-        .padding(Padding { top: 20.0, right: 24.0, bottom: 8.0, left: 24.0 })
-        .width(Length::Fill);
-
-        let mut rows: Vec<Element<'_, Message>> = Vec::new();
-        rows.push(
-            text(crate::i18n::t("plugins_subtitle"))
-                .size(12)
-                .color(OryxisColors::t().text_muted)
-                .into(),
-        );
-        rows.push(Space::new().height(14).into());
+            .align_y(iced::Alignment::Center)
+            .width(Length::Fill)
+            .into(),
+            Space::new().height(14).into(),
+        ];
 
         if self.plugins.is_empty() {
             rows.push(
@@ -66,20 +75,17 @@ impl Oryxis {
             rows.push(Space::new().height(8).into());
         }
 
-        let list = scrollable(
+        scrollable(
             column(rows).padding(Padding {
-                top: 4.0,
+                top: 24.0,
                 right: 24.0,
                 bottom: 24.0,
                 left: 24.0,
             }),
         )
-        .height(Length::Fill);
-
-        column![toolbar, list]
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .into()
+        .height(Length::Fill)
+        .width(Length::Fill)
+        .into()
     }
 
     /// First-use install opt-in modal. Returns just the dialog;

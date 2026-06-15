@@ -41,7 +41,7 @@ impl Oryxis {
         let close_btn = press(
             container(
                 text("\u{00D7}")
-                    .size(14)
+                    .size(20)
                     .color(OryxisColors::t().text_muted),
             )
             .padding(Padding { top: 4.0, right: 8.0, bottom: 4.0, left: 8.0 }),

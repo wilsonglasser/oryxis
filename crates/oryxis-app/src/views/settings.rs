@@ -25,22 +25,36 @@ impl Oryxis {
             // order was historical (followed the implementation
             // sequence) and didn't reflect how users actually move
             // through the panel.
-            let items: Vec<(&str, SettingsSection)> = vec![
+            // Core sections, then the "feature plugin" sections (AI /
+            // MCP / SFTP / Sync / Cloud Sync) which only appear once the
+            // feature is enabled on the Plugins screen, then About. The
+            // enable/disable toggles live on the Plugins screen, not here.
+            let mut items: Vec<(&str, SettingsSection)> = vec![
                 (crate::i18n::t("interface"), SettingsSection::Interface),
                 (crate::i18n::t("terminal_settings"), SettingsSection::Terminal),
-                (crate::i18n::t("ai_assistant"), SettingsSection::AI),
-                ("SFTP", SettingsSection::Sftp),
-                (crate::i18n::t("sync"), SettingsSection::Sync),
-                // Cloud Accounts / Proxies / Known Hosts moved out to
-                // top-level vault surfaces (sub-nav pills + sidebar).
-                // Only the Cloud Sync settings block stays in Settings.
-                (crate::i18n::t("settings_cloud_section"), SettingsSection::Cloud),
-                (crate::i18n::t("mcp_server"), SettingsSection::Mcp),
-                (crate::i18n::t("plugins"), SettingsSection::Plugins),
                 (crate::i18n::t("shortcuts"), SettingsSection::Shortcuts),
                 (crate::i18n::t("security"), SettingsSection::Security),
-                (crate::i18n::t("about"), SettingsSection::About),
+                (crate::i18n::t("plugins"), SettingsSection::Plugins),
             ];
+            if self.ai_enabled {
+                items.push((crate::i18n::t("ai_assistant"), SettingsSection::AI));
+            }
+            if self.mcp_server_enabled {
+                items.push((crate::i18n::t("mcp_server"), SettingsSection::Mcp));
+            }
+            if self.sftp_enabled {
+                items.push(("SFTP", SettingsSection::Sftp));
+            }
+            if self.sync_enabled {
+                items.push((crate::i18n::t("sync"), SettingsSection::Sync));
+            }
+            // Cloud Sync knobs only matter once a cloud provider plugin
+            // is installed (the cloud accounts themselves live on the
+            // top-level Cloud surface).
+            if self.any_cloud_provider_installed() {
+                items.push((crate::i18n::t("settings_cloud_section"), SettingsSection::Cloud));
+            }
+            items.push((crate::i18n::t("about"), SettingsSection::About));
             let mut col = column![]
                 .padding(Padding { top: 12.0, right: 8.0, bottom: 8.0, left: 8.0 });
 
@@ -423,7 +437,7 @@ impl Oryxis {
                 scrollable(
                     container(
                         column![
-                            text(crate::i18n::t("terminal_settings")).size(18).color(OryxisColors::t().text_primary),
+                            Space::new().height(0),
                             Space::new().height(16),
                             toggles_section,
                             Space::new().height(12),
@@ -453,7 +467,7 @@ impl Oryxis {
                         .width(Length::Fill)
                         .align_x(dir_align_x()),
                     )
-                    .padding(Padding { top: 20.0, right: 24.0, bottom: 24.0, left: 24.0 }),
+                    .padding(Padding { top: 24.0, right: 24.0, bottom: 24.0, left: 24.0 }),
                 )
                 .height(Length::Fill)
                 .into()
@@ -519,24 +533,11 @@ impl Oryxis {
                     Message::SettingSftpOpTimeoutChanged,
                 );
 
-                let enable_section = panel_section(column![
-                    toggle_row(
-                        crate::i18n::t("enable_sftp"),
-                        self.sftp_enabled,
-                        Message::SettingToggleSftpEnabled,
-                    ),
-                ]);
-
-                // Tuning knobs (parallelism, timeouts) only render
-                // when SFTP is enabled, matching the AI / Sync
-                // sections' pattern: a single master toggle stays
-                // visible at the top, the rest collapses when off.
+                // Enable/disable lives on the Plugins screen now; this
+                // section only renders while SFTP is enabled, showing its
+                // tuning knobs (parallelism, timeouts).
                 let mut content_col: iced::widget::Column<'_, Message> = column![
-                    text(t("sftp"))
-                        .size(18)
-                        .color(OryxisColors::t().text_primary),
                     Space::new().height(16),
-                    enable_section,
                 ]
                 .width(Length::Fill)
                 .align_x(dir_align_x());
@@ -558,29 +559,19 @@ impl Oryxis {
 
                 scrollable(
                     container(content_col)
-                        .padding(Padding { top: 20.0, right: 24.0, bottom: 24.0, left: 24.0 }),
+                        .padding(Padding { top: 24.0, right: 24.0, bottom: 24.0, left: 24.0 }),
                 )
                 .height(Length::Fill)
                 .into()
             }
 
             SettingsSection::AI => {
-                let enable_section = panel_section(column![
-                    toggle_row(crate::i18n::t("enable_ai"), self.ai_enabled, Message::ToggleAiEnabled),
-                ]);
-
-                // Use explicit `Space::new()` between elements (no
-                // `.spacing()`) so the gap before the first panel
-                // matches the SFTP section's 16 px exactly; the
-                // previous `.spacing(12)` was stacking on top of the
-                // explicit 16 to give a ~40 px gap.
+                // Enable/disable lives on the Plugins screen now; this
+                // section only renders while AI is enabled.
                 let mut content_col = column![
-                    text(crate::i18n::t("ai_assistant")).size(18).color(OryxisColors::t().text_primary),
                     Space::new().height(16),
-                    enable_section,
-                    Space::new().height(8),
                     // The assistant runs commands on connected servers
-                    // (some auto-execute); warn before / while enabled.
+                    // (some auto-execute); keep the warning in view.
                     text(crate::i18n::t("ai_enable_warning")).size(12).color(OryxisColors::t().text_muted),
                 ]
                 .width(Length::Fill)
@@ -727,7 +718,7 @@ impl Oryxis {
 
                 scrollable(
                     container(content_col)
-                        .padding(Padding { top: 20.0, right: 24.0, bottom: 24.0, left: 24.0 }),
+                        .padding(Padding { top: 24.0, right: 24.0, bottom: 24.0, left: 24.0 }),
                 )
                 .height(Length::Fill)
                 .into()
@@ -1122,7 +1113,7 @@ impl Oryxis {
                 // previous `.spacing(12)` was stacking on top of the
                 // explicit gaps to roughly double them.
                 let mut content_col = column![
-                    text(crate::i18n::t("interface")).size(18).color(OryxisColors::t().text_primary),
+                    Space::new().height(0),
                     Space::new().height(16),
                     language_section,
                     Space::new().height(12),
@@ -1163,7 +1154,7 @@ impl Oryxis {
 
                 scrollable(
                     container(content_col)
-                        .padding(Padding { top: 20.0, right: 24.0, bottom: 24.0, left: 24.0 }),
+                        .padding(Padding { top: 24.0, right: 24.0, bottom: 24.0, left: 24.0 }),
                 )
                 .height(Length::Fill)
                 .into()
@@ -1175,11 +1166,7 @@ impl Oryxis {
 
                 // Header: title + hint + global reset button.
                 let header = column![
-                    text(crate::i18n::t("keyboard_shortcuts"))
-                        .size(18)
-                        .color(OryxisColors::t().text_primary),
-                    Space::new().height(6),
-                    text(crate::i18n::t("hotkey_edit_hint"))
+                                        text(crate::i18n::t("hotkey_edit_hint"))
                         .size(11)
                         .color(OryxisColors::t().text_muted),
                     Space::new().height(10),
@@ -1234,7 +1221,7 @@ impl Oryxis {
 
                 scrollable(
                     container(rows_col)
-                        .padding(Padding { top: 20.0, right: 24.0, bottom: 24.0, left: 24.0 }),
+                        .padding(Padding { top: 24.0, right: 24.0, bottom: 24.0, left: 24.0 }),
                 )
                 .height(Length::Fill)
                 .into()
@@ -1458,7 +1445,7 @@ impl Oryxis {
                 scrollable(
                     container(
                         column![
-                            text(crate::i18n::t("security")).size(18).color(OryxisColors::t().text_primary),
+                            Space::new().height(0),
                             Space::new().height(16),
                             panel_section(column![password_toggle]),
                             password_section,
@@ -1473,7 +1460,7 @@ impl Oryxis {
                         .width(Length::Fill)
                         .align_x(dir_align_x()),
                     )
-                    .padding(Padding { top: 20.0, right: 24.0, bottom: 24.0, left: 24.0 }),
+                    .padding(Padding { top: 24.0, right: 24.0, bottom: 24.0, left: 24.0 }),
                 )
                 .height(Length::Fill)
                 .into()
@@ -1498,13 +1485,7 @@ impl Oryxis {
                     device_name_input,
                 ]);
 
-                // Sync toggle
-                let sync_toggle = toggle_row(
-                    crate::i18n::t("sync_enable"),
-                    self.sync_enabled,
-                    Message::SyncToggleEnabled,
-                );
-
+                // Enable/disable lives on the Plugins screen now.
                 let mode_label = if self.sync_mode == "auto" { t("sync_mode_auto") } else { t("sync_mode_manual") };
                 let auto_label = t("sync_mode_auto").to_string();
                 let manual_label = t("sync_mode_manual").to_string();
@@ -1554,8 +1535,6 @@ impl Oryxis {
                 // is hidden below so the surface collapses to just
                 // the on/off knob.
                 let enable_section: iced::widget::Column<'_, Message> = column![
-                    sync_toggle,
-                    Space::new().height(4),
                     engine_state,
                 ];
 
@@ -1875,7 +1854,7 @@ impl Oryxis {
                 ]);
 
                 let mut content_col: iced::widget::Column<'_, Message> = column![
-                    text(crate::i18n::t("sync")).size(18).color(OryxisColors::t().text_primary),
+                    Space::new().height(0),
                     Space::new().height(16),
                     panel_section(enable_section),
                 ]
@@ -1897,7 +1876,7 @@ impl Oryxis {
 
                 scrollable(
                     container(content_col)
-                        .padding(Padding { top: 20.0, right: 24.0, bottom: 24.0, left: 24.0 }),
+                        .padding(Padding { top: 24.0, right: 24.0, bottom: 24.0, left: 24.0 }),
                 )
                 .height(Length::Fill)
                 .into()
@@ -2072,7 +2051,7 @@ impl Oryxis {
                 scrollable(
                     container(
                         column![
-                            text(crate::i18n::t("about")).size(18).color(OryxisColors::t().text_primary),
+                            Space::new().height(0),
                             Space::new().height(16),
                             about_section,
                             Space::new().height(12),
@@ -2084,7 +2063,7 @@ impl Oryxis {
                         .width(Length::Fill)
                         .align_x(dir_align_x()),
                     )
-                    .padding(Padding { top: 20.0, right: 24.0, bottom: 24.0, left: 24.0 }),
+                    .padding(Padding { top: 24.0, right: 24.0, bottom: 24.0, left: 24.0 }),
                 )
                 .height(Length::Fill)
                 .into()
@@ -2345,11 +2324,7 @@ impl Oryxis {
     /// plugin distribution + setup-guide affordances deserve room
     /// without competing with the Security toggles.
     fn view_settings_mcp(&self) -> Element<'_, Message> {
-        let mcp_toggle = toggle_row(
-            crate::i18n::t("enable_mcp_server"),
-            self.mcp_server_enabled,
-            Message::ToggleMcpServer,
-        );
+        // Enable/disable lives on the Plugins screen now.
         let mcp_guide_btn = button(
             container(text(crate::i18n::t("mcp_setup_guide")).size(12).color(OryxisColors::t().accent))
                 .padding(Padding { top: 6.0, right: 16.0, bottom: 6.0, left: 16.0 }),
@@ -2367,8 +2342,6 @@ impl Oryxis {
             }
         });
         let mut mcp_col = column![
-            mcp_toggle,
-            Space::new().height(4),
             dir_row(vec![
                 text(crate::i18n::t("mcp_server_desc")).size(11).color(OryxisColors::t().text_muted).into(),
                 Space::new().width(Length::Fill).into(),
@@ -2390,7 +2363,7 @@ impl Oryxis {
         scrollable(
             container(
                 column![
-                    text(crate::i18n::t("mcp_server")).size(18).color(OryxisColors::t().text_primary),
+                    Space::new().height(0),
                     Space::new().height(16),
                     panel_section(mcp_col),
                     Space::new().height(24),
@@ -2398,7 +2371,7 @@ impl Oryxis {
                 .width(Length::Fill)
                 .align_x(dir_align_x()),
             )
-            .padding(Padding { top: 20.0, right: 24.0, bottom: 24.0, left: 24.0 }),
+            .padding(Padding { top: 24.0, right: 24.0, bottom: 24.0, left: 24.0 }),
         )
         .height(Length::Fill)
         .into()

@@ -121,6 +121,7 @@ impl Oryxis {
                 self.show_host_panel = false;
                 self.cloud_form_visible = false;
                 self.cloud_discover_visible = false;
+                self.group_edit_visible = false;
                 self.cloud_dynamic_form_visible = true;
                 self.cloud_dynamic_form_group_id = Some(gid);
                 self.cloud_dynamic_form_username =

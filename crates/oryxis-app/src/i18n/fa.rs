@@ -593,6 +593,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "update_subtitle" => "Oryxis {new} موجود است. شما در حال استفاده از {current} هستید.",
         "open_release_github" => "باز کردن صفحه نسخه در GitHub",
         "downloading_installer" => "در حال دانلود نصب‌کننده…",
+        "downloading_update" => "در حال دانلود…",
         "update_skip_version" => "این نسخه را رد کنید",
         "update_later" => "بعداً",
         "update_now" => "اکنون به‌روزرسانی کنید",
@@ -745,6 +746,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
 
         // پنل افزونه‌ها
         "plugins" => "افزونه‌ها",
+        "features" => "ویژگی‌ها",
         "plugins_subtitle" => "افزونه‌های ارائه‌دهنده ابر دانلودشده را مدیریت کنید.",
         "plugins_empty" => "هنوز افزونه‌ای در دسترس نیست.",
         "plugins_auto_update_global" => "به‌روزرسانی خودکار همه",

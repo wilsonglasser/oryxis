@@ -29,7 +29,7 @@ impl Oryxis {
                     .color(OryxisColors::t().text_primary)
                     .into(),
                 Space::new().width(Length::Fill).into(),
-                button(text("\u{00D7}").size(14).color(OryxisColors::t().text_muted))
+                button(text("\u{00D7}").size(20).color(OryxisColors::t().text_muted))
                     .on_press(Message::HideCloudForm)
                     .padding(Padding {
                         top: 4.0,

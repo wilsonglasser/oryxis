@@ -552,6 +552,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "update_subtitle" => "Oryxis {new} 已可用。您当前为 {current}。",
         "open_release_github" => "在 GitHub 打开发布页面",
         "downloading_installer" => "下载安装程序中…",
+        "downloading_update" => "正在下载…",
         "update_skip_version" => "跳过此版本",
         "update_later" => "稍后",
         "update_now" => "立即更新",
@@ -704,6 +705,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
 
         // 插件面板
         "plugins" => "插件",
+        "features" => "功能",
         "plugins_subtitle" => "管理已下载的云提供商插件。",
         "plugins_empty" => "暂无可用插件。",
         "plugins_auto_update_global" => "全部自动更新",

@@ -50,10 +50,29 @@ project uses [SemVer](https://semver.org/spec/v2.0.0.html).
   state's button is the single create path.
 - The **vault switcher** chip / badge is hidden while there is only one
   vault.
+- **Features are managed from the Plugins screen.** AI Assistant, MCP
+  Server, SFTP and Sync are enabled / disabled from a "Features" section
+  on the Plugins screen (alongside the downloadable provider plugins),
+  not from their own Settings sections. Each feature's Settings section
+  appears in the sidebar only once it is enabled, and Cloud Sync appears
+  only once a cloud provider plugin is installed.
+- **Settings sidebar reorder.** Interface is the default landing
+  section, followed by Terminal, Shortcuts, Security and Plugins, then
+  the enabled feature sections, then About.
+- **Settings sections drop their redundant in-page title** (the sidebar
+  already names the section) and use a consistent 24 px gutter on all
+  four edges.
+- The Plugins "Auto-update all" toggle now sits on the same line as the
+  downloaded-plugins subtitle.
 
 ### Fixed
 - Cloud Accounts cards now show the accent border on hover, like the
   host and keychain cards.
+- The Logs "Clear all" button is disabled when there is nothing to
+  clear.
+- The update dialog's download progress bar now fills proportionally
+  instead of always showing full, and non-stable-channel users see a
+  plain "Downloading ..." label instead of the installer-specific text.
 
 ## [0.8.2] - 2026-06-12
 
