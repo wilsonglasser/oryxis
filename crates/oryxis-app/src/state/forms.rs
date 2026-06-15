@@ -1,0 +1,249 @@
+//! Connection / session-group editor forms (split out of `state.rs`).
+
+use super::*;
+
+/// One editable row in the session-group editor: a pane's display label
+/// (read-only) plus its per-pane initial script. Rows are ordered the same
+/// as the layout's leaf walk, so scripts merge back by index on save.
+#[derive(Debug, Clone, Default)]
+pub(crate) struct PaneScriptRow {
+    /// Read-only label for the pane ("user@host", "Local Shell", ...).
+    pub label: String,
+    /// Per-pane initial script (override-with-fallback).
+    pub script: String,
+}
+
+/// Session-group editor form state. The structural `layout` is snapshotted
+/// from the tab when the editor opens; `pane_rows` exposes each leaf's script
+/// for editing and merges back into the layout (by leaf order) on save.
+#[derive(Debug, Clone, Default)]
+pub(crate) struct SessionGroupForm {
+    pub label: String,
+    /// Folder (Group) label, same convention as `ConnectionForm.group_name`.
+    pub group_name: String,
+    pub color: Option<String>,
+    pub icon_style: Option<String>,
+    /// Some when editing an existing session group (update in place).
+    pub editing_id: Option<Uuid>,
+    /// Index of the tab this group was snapshotted from, so saving can stamp
+    /// its `session_group_id`.
+    pub source_tab: Option<usize>,
+    /// Structural snapshot of the split tree. Leaf scripts are placeholders
+    /// here; the live values live in `pane_rows` and merge back on save.
+    pub layout: Option<oryxis_core::models::PaneLayout>,
+    pub pane_rows: Vec<PaneScriptRow>,
+    /// Which pane's script is currently shown in the editor (the chevrons
+    /// step this). The live multi-line buffer for it lives in
+    /// `Oryxis::session_group_script_editor` (text_editor::Content isn't
+    /// Clone, so it can't sit in this form struct).
+    pub current_pane: usize,
+}
+
+/// Connection editor form state.
+#[derive(Debug, Clone)]
+pub(crate) struct ConnectionForm {
+    pub label: String,
+    pub hostname: String,
+    pub port: String,
+    pub username: String,
+    pub password: String,
+    pub auth_method: AuthMethod,
+    pub group_name: String,
+    pub selected_key: Option<String>,
+    /// Ordered jump-host chain (connection ids). The session tunnels
+    /// through each hop in order before reaching this host. Mirrors
+    /// `Connection.jump_chain` one-to-one; edited via the chain editor.
+    pub jump_chain: Vec<Uuid>,
+    /// Selected identity label (if any).
+    pub selected_identity: Option<String>,
+    /// If editing, the connection ID.
+    pub editing_id: Option<Uuid>,
+    /// Whether the connection already has a password stored in the vault.
+    pub has_existing_password: bool,
+    /// Whether the user has modified the password field.
+    pub password_touched: bool,
+    /// Whether to show the password in plain text.
+    pub password_visible: bool,
+    /// Whether the username field is focused (shows identity autocomplete).
+    pub username_focused: bool,
+    /// Port forwarding rules (local -L style).
+    pub port_forwards: Vec<PortForwardForm>,
+    pub env_vars: Vec<EnvVarForm>,
+    /// Whether this host is exposed via MCP.
+    pub mcp_enabled: bool,
+    /// Forward the local ssh-agent socket to the remote shell. See the
+    /// matching field on `Connection`.
+    pub agent_forwarding: bool,
+    /// Per-host session-recording override. `None` follows the global
+    /// setting; `Some(true)`/`Some(false)` force on/off. See the matching
+    /// field on `Connection`.
+    pub session_logging: Option<bool>,
+    /// Proxy kind selection (None = disabled). The picker stores the
+    /// typed enum so language switches don't break selection identity.
+    pub proxy_kind: ProxyKind,
+    pub proxy_host: String,
+    pub proxy_port: String,
+    pub proxy_username: String,
+    pub proxy_password: String,
+    pub proxy_command: String,
+    /// Mirrors `has_existing_password` / `password_touched`: avoids
+    /// pre-loading the encrypted proxy password into form state on edit
+    /// and lets save distinguish "preserve" from "explicitly cleared".
+    pub has_existing_proxy_password: bool,
+    pub proxy_password_touched: bool,
+    /// Per-host terminal palette override. `None` means "inherit the
+    /// global pick"; `Some(name)` pins this host to the named palette.
+    /// Mirrors `Connection.terminal_theme` while the editor is open.
+    pub terminal_theme: Option<String>,
+    /// Per-host SSH keepalive override (raw text). Empty string means
+    /// inherit the global setting; "0" disables keepalive on this host;
+    /// any positive integer overrides the global value. Stored as a
+    /// string while the editor is open so the input field can show
+    /// what the user typed; serialized to `Option<u32>` on save.
+    pub keepalive_interval: String,
+    /// Cloud-managed transport selection. Only meaningful when the
+    /// connection being edited has a `cloud_ref`, the editor renders
+    /// the picker conditionally. `None` here = "no cloud_ref to
+    /// edit". The actual `cloud_ref.transport_pref` field is
+    /// preserved when the user doesn't touch this picker.
+    pub cloud_transport:
+        Option<oryxis_core::models::cloud::TransportKind>,
+    /// Per-host icon shape override. `None` falls back to the global
+    /// `default_host_icon` setting. Mirrors `Connection.icon_style`.
+    pub icon_style: Option<String>,
+    pub encoding: Option<String>,
+}
+
+/// UI-side proxy kind. Includes a `None` (disabled) variant, the
+/// model's `ProxyType` doesn't have a "disabled" since that's
+/// represented by `Connection.proxy = None`. The `Identity(Uuid)`
+/// variant points at a saved `ProxyIdentity`; when present, the
+/// connection's `proxy_identity_id` is stored instead of an inline
+/// `ProxyConfig`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ProxyKind {
+    None,
+    Socks5,
+    Socks4,
+    Http,
+    Command,
+    Identity(Uuid),
+}
+
+impl ProxyKind {
+    /// The static (non-identity) variants, in picker display order.
+    /// Used as the base of the editor's proxy picker; the host panel
+    /// concatenates the user's saved proxy identities afterwards.
+    pub const STATIC: &[ProxyKind] = &[
+        ProxyKind::None,
+        ProxyKind::Socks5,
+        ProxyKind::Socks4,
+        ProxyKind::Http,
+        ProxyKind::Command,
+    ];
+
+    /// i18n key for the localized label rendered in the picker. `None`
+    /// is returned for `Identity(_)`, saved-identity rendering uses
+    /// the identity's `label`, not a static key.
+    pub fn label_key(&self) -> Option<&'static str> {
+        match self {
+            ProxyKind::None => Some("proxy_type_none"),
+            ProxyKind::Socks5 => Some("proxy_type_socks5"),
+            ProxyKind::Socks4 => Some("proxy_type_socks4"),
+            ProxyKind::Http => Some("proxy_type_http"),
+            ProxyKind::Command => Some("proxy_type_command"),
+            ProxyKind::Identity(_) => None,
+        }
+    }
+
+    /// Default port for the proxy type, pre-filled when the user
+    /// switches kind and the port field is still empty.
+    pub fn default_port(&self) -> Option<u16> {
+        match self {
+            ProxyKind::Socks5 | ProxyKind::Socks4 => Some(1080),
+            ProxyKind::Http => Some(8080),
+            ProxyKind::None | ProxyKind::Command | ProxyKind::Identity(_) => None,
+        }
+    }
+
+    /// Whether the host/port/username trio applies. `Command` runs a
+    /// process directly, `None` disables the proxy, and `Identity`
+    /// pulls those fields from the saved identity instead.
+    pub fn needs_endpoint(&self) -> bool {
+        matches!(self, ProxyKind::Socks5 | ProxyKind::Socks4 | ProxyKind::Http)
+    }
+
+    /// Whether a password field makes sense. SOCKS4 has no password
+    /// concept; Command, None and Identity don't either (Identity
+    /// edits its password in the saved-identity form).
+    pub fn supports_password(&self) -> bool {
+        matches!(self, ProxyKind::Socks5 | ProxyKind::Http)
+    }
+}
+
+impl std::fmt::Display for ProxyKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // Localized at render time. The picker compares variants via
+        // PartialEq, so language switches do not invalidate the
+        // selected value. `Identity(_)` falls back to a generic label
+        //, the host panel installs a custom mapper that swaps in the
+        // identity's user-chosen label at render time.
+        match self.label_key() {
+            Some(k) => write!(f, "{}", crate::i18n::t(k)),
+            None => write!(f, "{}", crate::i18n::t("proxy_type_identity_fallback")),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Default)]
+pub(crate) struct PortForwardForm {
+    pub local_port: String,
+    pub remote_host: String,
+    pub remote_port: String,
+}
+
+#[derive(Debug, Clone, Default)]
+pub(crate) struct EnvVarForm {
+    pub key: String,
+    pub value: String,
+}
+
+impl Default for ConnectionForm {
+    fn default() -> Self {
+        Self {
+            label: String::new(),
+            hostname: String::new(),
+            port: "22".into(),
+            username: String::new(),
+            password: String::new(),
+            auth_method: AuthMethod::Auto,
+            group_name: String::new(),
+            selected_key: None,
+            jump_chain: Vec::new(),
+            selected_identity: None,
+            editing_id: None,
+            has_existing_password: false,
+            password_touched: false,
+            password_visible: false,
+            username_focused: false,
+            port_forwards: Vec::new(),
+            env_vars: Vec::new(),
+            mcp_enabled: true,
+            agent_forwarding: false,
+            session_logging: None,
+            proxy_kind: ProxyKind::None,
+            proxy_host: String::new(),
+            proxy_port: String::new(),
+            proxy_username: String::new(),
+            proxy_password: String::new(),
+            proxy_command: String::new(),
+            has_existing_proxy_password: false,
+            proxy_password_touched: false,
+            terminal_theme: None,
+            keepalive_interval: String::new(),
+            cloud_transport: None,
+            icon_style: None,
+            encoding: None,
+        }
+    }
+}
