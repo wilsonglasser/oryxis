@@ -13,6 +13,42 @@ pub(crate) fn format_data_size(bytes: usize) -> String {
     }
 }
 
+/// Open the OS screen-capture tool. On Windows this launches the
+/// modern Snipping Tool region overlay via the `ms-screenclip:` URI,
+/// matching the default PrintScreen behavior. winit hands PrintScreen
+/// to the focused window without forwarding it to `DefWindowProc`, so
+/// Windows' own PrintScreen handler never fires while Oryxis has focus;
+/// we trigger the snip explicitly. No-op elsewhere (on Linux/macOS the
+/// desktop environment owns the key and it reaches the OS normally).
+#[cfg(target_os = "windows")]
+pub(crate) fn open_screenshot_tool() {
+    use std::os::windows::ffi::OsStrExt;
+    use windows_sys::Win32::UI::Shell::ShellExecuteW;
+    use windows_sys::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
+
+    // UTF-16, NUL-terminated. The "open" verb on the ms-screenclip:
+    // scheme launches the Snip & Sketch region picker (same as the
+    // Win+Shift+S shortcut and the Win11 default PrintScreen action).
+    let verb: Vec<u16> = std::ffi::OsStr::new("open")
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect();
+    let target: Vec<u16> = std::ffi::OsStr::new("ms-screenclip:")
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect();
+    unsafe {
+        ShellExecuteW(
+            std::ptr::null_mut(),
+            verb.as_ptr(),
+            target.as_ptr(),
+            std::ptr::null(),
+            std::ptr::null(),
+            SW_SHOWNORMAL,
+        );
+    }
+}
+
 /// Translate a named iced key (Enter, Tab, ArrowUp, …) into the PTY byte sequence.
 pub(crate) fn key_to_named_bytes(
     key: &keyboard::Key,

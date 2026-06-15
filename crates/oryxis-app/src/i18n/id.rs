@@ -3,6 +3,12 @@
 pub(super) fn lookup(key: &str) -> Option<&'static str> {
     Some(match key {
         // Navigation
+        "expand" => "Perluas",
+        "collapse" => "Ciutkan",
+        "nav_orientation" => "Navigasi",
+        "nav_orientation_desc" => "Horizontal menampilkan bagian sebagai strip pil di bawah bilah; Vertikal sebagai rel ikon di kiri.",
+        "nav_orientation_horizontal" => "Horizontal (pil)",
+        "nav_orientation_vertical" => "Vertikal (rel)",
         "hosts" => "Host",
         "keychain" => "Gantungan Kunci",
         "snippets" => "Snippet",
@@ -23,6 +29,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "cloud_discover_import_into_placeholder" => "Nama grup (yang ada atau baru)",
         "search_groups" => "Cari grup…",
         "tab_accent_line" => "Warnai garis bawah tab dengan aksen host",
+        "tab_accent_wash" => "Warnai bilah atas dengan aksen host",
         "host_filter_by_profile" => "Saring berdasarkan profil cloud",
         "host_filter_active" => "Saring",
         "cloud_profile_sync" => "Sinkronkan sekarang",
@@ -239,10 +246,6 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "close_position_left" => "Kiri",
         "close_position_right" => "Kanan",
         "show_tab_status_dot" => "Tampilkan titik status koneksi pada tab",
-        "layout_mode" => "Mode tata letak",
-        "layout_mode_desc" => "Workspace menyembunyikan sidebar saat tab koneksi terbuka sehingga terminal mengisi kanvas. Classic selalu menampilkan sidebar.",
-        "layout_mode_classic" => "Classic (sidebar)",
-        "layout_mode_workspace" => "Workspace (tab atas)",
         "default_host_icon" => "Ikon host default",
         "icon_circular" => "Bulat",
         "icon_square" => "Kotak",
@@ -349,7 +352,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "in_progress" => "Berlangsung",
         "entries" => "entri",
         "of" => "dari",
-        "no_activity" => "Belum ada aktivitas tercatat.",
+        "no_activity" => "Belum ada aktivitas",
+        "no_activity_desc" => "Sesi dan peristiwa koneksi akan muncul di sini.",
 
         // Identity
         "identity" => "Identitas",
@@ -518,8 +522,10 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         // Proxy Identities (Settings → Proxies)
         "proxies" => "Proxy",
         "new_proxy_identity" => "Proxy Baru",
+        "edit_proxy_identity" => "Edit proxy",
         "proxy_identity_label" => "Label",
-        "proxy_identities_empty" => "Belum ada proxy tersimpan.",
+        "proxy_identities_empty" => "Simpan proxy sekali dan gunakan kembali di semua host.",
+        "proxy_identities_empty_title" => "Belum ada proxy",
         "proxy_type_identity_fallback" => "Proxy tersimpan",
         "proxy_type_identity_deleted" => "(proxy terhapus)",
         "proxy_identity_err_label_required" => "Label wajib diisi",
@@ -530,6 +536,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "groups_section" => "Grup",
         "hosts_section" => "Host",
         "flatten_hosts_label" => "Tampilkan semua host di root",
+        "card_accent_glass_label" => "Kartu kaca aksen",
+        "card_accent_glass_desc" => "Gradasi lembut warna tiap kartu (warna host/grup memudar).",
         "flatten_hosts_desc" => "Saat aktif, root dashboard menampilkan bagian Grup di atas daftar datar semua host. Saat nonaktif, host di dalam grup disembunyikan hingga Anda membuka grup.",
 
         // Sync passwords toggle
@@ -600,6 +608,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "ip_or_hostname" => "IP atau Hostname",
         "my_server_placeholder" => "Server Saya",
         "group_placeholder" => "Produksi, Staging...",
+        "edit_group" => "Edit grup",
+        "group_icon_color" => "Ikon & warna",
         "add_key_btn" => "+ Kunci",
         "port_forwarding" => "Port Forwarding",
 
@@ -773,6 +783,10 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "log_retention_30d" => "1 bulan",
         "log_retention_90d" => "3 bulan",
         "log_delete_confirm_body" => "rekaman sesi ini akan dihapus secara permanen.",
+        "known_host_remove_confirm_title" => "Hapus kunci host?",
+        "known_host_remove_confirm_body" => "kunci host ini dihapus; Anda akan memverifikasinya lagi pada koneksi berikutnya.",
+        "known_hosts_clear_confirm_title" => "Verifikasi ulang semua host?",
+        "known_hosts_clear_confirm_body" => "Setiap kunci host yang tersimpan dihapus; Anda akan memverifikasi setiap host lagi pada koneksi berikutnya.",
         "plugin_uninstall_confirm_body" => "biner yang diunduh akan dihapus dari mesin ini. Anda dapat memasangnya kembali dari panel ini kapan saja.",
         "plugin_action_check_updates" => "Periksa pembaruan",
         "plugin_action_retry" => "Coba lagi",
@@ -809,7 +823,11 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
 
         // Cloud Accounts plugin gate
         "cloud_plugin_missing_title" => "Plugin AWS tidak terpasang",
-        "cloud_plugin_missing_body" => "Uji Kredensial dan Temukan Host membutuhkan plugin AWS. Pasang untuk memakai akun ini.",
+        "cloud_plugin_missing_title_suffix" => "plugin belum dipasang",
+        "cloud_plugin_missing_body" => "Uji Kredensial dan Temukan Host membutuhkan plugin penyedia ini. Pasang untuk memakai akun ini.",
+        "cloud_no_provider_title" => "Tidak ada penyedia cloud terpasang",
+        "cloud_no_provider_desc" => "Akun cloud menemukan dan mengimpor host dari penyedia seperti AWS dan Kubernetes. Pasang plugin penyedia untuk menambah akun.",
+        "cloud_no_provider_btn" => "Buka Plugin",
 
         // Sort dropdown (Hosts / Keychain / Snippets toolbars)
         "sort_label_asc" => "A-z",
@@ -825,6 +843,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "create_port_forward_title" => "Forward sebuah port",
         "create_port_forward_desc" => "Jaga tunel tetap terbuka tanpa terminal: basis data, dashboard, webhook.",
         "search_port_forwards" => "Cari port forward...",
+        "search_cloud_accounts" => "Cari akun...",
+        "search_proxies" => "Cari proxy...",
         "pf_kind" => "Tipe",
         "pf_host" => "Via host",
         "pf_listen_host" => "Alamat dengar",
@@ -846,7 +866,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "cjk_font_downloading" => "Mengunduh font bahasa...",
         "cjk_font_failed" => "Tidak dapat mengunduh font bahasa. Memakai font sistem.",
 
-        "logs" => "Log",
+        "logs" => "Riwayat",
         "vault" => "Vault",
         "search_logs" => "Cari log...",
         "clear_all" => "Hapus semua",

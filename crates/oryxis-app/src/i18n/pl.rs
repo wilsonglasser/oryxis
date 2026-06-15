@@ -3,6 +3,12 @@
 pub(super) fn lookup(key: &str) -> Option<&'static str> {
     Some(match key {
         // Navigation
+        "expand" => "Rozwiń",
+        "collapse" => "Zwiń",
+        "nav_orientation" => "Nawigacja",
+        "nav_orientation_desc" => "Poziomo pokazuje sekcje jako pasek pigułek pod paskiem; Pionowo jako szynę ikon po lewej.",
+        "nav_orientation_horizontal" => "Poziomo (pigułki)",
+        "nav_orientation_vertical" => "Pionowo (szyna)",
         "hosts" => "Hosty",
         "keychain" => "Pęk kluczy",
         "snippets" => "Fragmenty",
@@ -23,6 +29,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "cloud_discover_import_into_placeholder" => "Nazwa grupy (istniejąca lub nowa)",
         "search_groups" => "Szukaj grup…",
         "tab_accent_line" => "Podkreślenie karty w kolorze akcentu hosta",
+        "tab_accent_wash" => "Zabarw górny pasek akcentem hosta",
         "host_filter_by_profile" => "Filtruj wg profilu chmurowego",
         "host_filter_active" => "Filtr",
         "cloud_profile_sync" => "Synchronizuj teraz",
@@ -239,10 +246,6 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "close_position_left" => "Z lewej",
         "close_position_right" => "Z prawej",
         "show_tab_status_dot" => "Pokaż kropkę stanu połączenia na kartach",
-        "layout_mode" => "Tryb układu",
-        "layout_mode_desc" => "Tryb roboczy ukrywa pasek boczny, gdy otwarta jest karta połączenia, aby terminal wypełniał obszar roboczy. Tryb klasyczny zawsze pokazuje pasek boczny.",
-        "layout_mode_classic" => "Klasyczny (pasek boczny)",
-        "layout_mode_workspace" => "Roboczy (górne karty)",
         "default_host_icon" => "Domyślna ikona hosta",
         "icon_circular" => "Okrągła",
         "icon_square" => "Kwadratowa",
@@ -347,7 +350,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
 
         // Session logs
         "session_log" => "Dziennik sesji",
-        "logs" => "Dzienniki",
+        "logs" => "Historia",
         "search_logs" => "Szukaj w dziennikach...",
         "clear_all" => "Wyczyść wszystko",
         "clear_history_title" => "Wyczyścić wszystkie dzienniki?",
@@ -355,7 +358,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "in_progress" => "W toku",
         "entries" => "wpisów",
         "of" => "z",
-        "no_activity" => "Brak zarejestrowanej aktywności.",
+        "no_activity" => "Brak aktywności",
+        "no_activity_desc" => "Sesje i zdarzenia połączeń pojawią się tutaj.",
 
         // Identity
         "identity" => "Tożsamość",
@@ -524,8 +528,10 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         // Proxy Identities (Settings → Proxies)
         "proxies" => "Proxy",
         "new_proxy_identity" => "Nowe proxy",
+        "edit_proxy_identity" => "Edytuj proxy",
         "proxy_identity_label" => "Etykieta",
-        "proxy_identities_empty" => "Brak zapisanych proxy.",
+        "proxy_identities_empty" => "Zapisz proxy raz i używaj go na wszystkich hostach.",
+        "proxy_identities_empty_title" => "Brak proxy",
         "proxy_type_identity_fallback" => "Zapisane proxy",
         "proxy_type_identity_deleted" => "(usunięte proxy)",
         "proxy_identity_err_label_required" => "Etykieta jest wymagana",
@@ -536,6 +542,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "groups_section" => "Grupy",
         "hosts_section" => "Hosty",
         "flatten_hosts_label" => "Pokaż wszystkie hosty w katalogu głównym",
+        "card_accent_glass_label" => "Karty ze szklanym akcentem",
+        "card_accent_glass_desc" => "Delikatny gradient w kolorze każdej karty (kolor hosta/grupy).",
         "flatten_hosts_desc" => "Gdy włączone, katalog główny pulpitu pokazuje sekcję Grupy nad płaską listą wszystkich hostów. Gdy wyłączone, hosty w grupach są ukryte do czasu otwarcia grupy.",
 
         // Sync passwords toggle
@@ -606,6 +614,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "ip_or_hostname" => "IP lub nazwa hosta",
         "my_server_placeholder" => "Mój serwer",
         "group_placeholder" => "Produkcja, Staging...",
+        "edit_group" => "Edytuj grupę",
+        "group_icon_color" => "Ikona i kolor",
         "add_key_btn" => "+ Klucz",
         "port_forwarding" => "Przekierowanie portów",
 
@@ -780,6 +790,10 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "log_retention_30d" => "1 miesiąc",
         "log_retention_90d" => "3 miesiące",
         "log_delete_confirm_body" => "to nagranie sesji zostanie trwale usunięte.",
+        "known_host_remove_confirm_title" => "Usunąć klucz hosta?",
+        "known_host_remove_confirm_body" => "ten klucz hosta zostanie usunięty; zweryfikujesz go ponownie przy następnym połączeniu.",
+        "known_hosts_clear_confirm_title" => "Zweryfikować ponownie wszystkie hosty?",
+        "known_hosts_clear_confirm_body" => "Każdy zapisany klucz hosta zostanie usunięty; zweryfikujesz każdy host ponownie przy następnym połączeniu.",
         "plugin_uninstall_confirm_body" => "pobrane pliki binarne zostaną usunięte z tego komputera. Możesz ją w każdej chwili zainstalować ponownie z tego panelu.",
         "plugin_action_check_updates" => "Sprawdź aktualizacje",
         "plugin_action_retry" => "Ponów",
@@ -816,7 +830,11 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
 
         // Cloud Accounts plugin gate
         "cloud_plugin_missing_title" => "Wtyczka AWS niezainstalowana",
-        "cloud_plugin_missing_body" => "Testowanie poświadczeń i wykrywanie hostów wymaga wtyczki AWS. Zainstaluj ją, aby używać tego konta.",
+        "cloud_plugin_missing_title_suffix" => "wtyczka nie zainstalowana",
+        "cloud_plugin_missing_body" => "Testowanie poświadczeń i wykrywanie hostów wymaga wtyczki tego dostawcy. Zainstaluj ją, aby używać tego konta.",
+        "cloud_no_provider_title" => "Brak zainstalowanego dostawcy chmury",
+        "cloud_no_provider_desc" => "Konta chmurowe wykrywają i importują hosty od dostawców takich jak AWS i Kubernetes. Zainstaluj wtyczkę dostawcy, aby dodać konto.",
+        "cloud_no_provider_btn" => "Otwórz wtyczki",
 
         // Sort dropdown (Hosts / Keychain / Snippets toolbars)
         "sort_label_asc" => "A-z",
@@ -832,6 +850,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "create_port_forward_title" => "Przekieruj port",
         "create_port_forward_desc" => "Utrzymuj tunel otwarty bez terminala: bazy danych, pulpity, webhooki.",
         "search_port_forwards" => "Szukaj przekierowań portów...",
+        "search_cloud_accounts" => "Szukaj kont...",
+        "search_proxies" => "Szukaj proxy...",
         "pf_kind" => "Typ",
         "pf_host" => "Przez host",
         "pf_listen_host" => "Adres nasłuchu",

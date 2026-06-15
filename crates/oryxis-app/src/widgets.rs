@@ -10,7 +10,6 @@ use iced::widget::{button, container, pick_list, text, text_editor, text_input, 
 use iced::{Background, Border, Color, Element, Length, Padding, Theme};
 
 use crate::app::Message;
-use crate::state::View;
 use crate::theme::OryxisColors;
 
 /// Corner radius used for text inputs and pick lists across the UI.
@@ -390,56 +389,6 @@ pub fn rounded_pick_list_style(_theme: &Theme, status: pick_list::Status) -> pic
     }
 }
 
-pub(crate) fn sidebar_nav_btn<'a>(
-    icon_widget: iced::widget::Text<'a>,
-    label: &'a str,
-    view: View,
-    is_active: bool,
-) -> Element<'a, Message> {
-    let bg = if is_active {
-        Color { a: 0.15, ..OryxisColors::t().accent }
-    } else {
-        Color::TRANSPARENT
-    };
-    let fg = if is_active {
-        OryxisColors::t().accent
-    } else {
-        OryxisColors::t().text_secondary
-    };
-
-    container(
-        button(
-            container(
-                dir_row(vec![
-                    icon_widget.size(14).color(fg).into(),
-                    Space::new().width(10).into(),
-                    text(label).size(13).color(fg).into(),
-                ])
-                .align_y(iced::Alignment::Center),
-            )
-            .width(Length::Fill)
-            .align_x(dir_align_x())
-            .padding(Padding { top: 8.0, right: 16.0, bottom: 8.0, left: 16.0 }),
-        )
-        .on_press(Message::ChangeView(view))
-        .width(Length::Fill)
-        .style(move |_, status| {
-            let hover_bg = match status {
-                BtnStatus::Hovered if !is_active => Color::from_rgba(1.0, 1.0, 1.0, 0.08),
-                BtnStatus::Pressed => Color { a: 0.25, ..OryxisColors::t().accent },
-                _ => bg,
-            };
-            button::Style {
-                background: Some(Background::Color(hover_bg)),
-                border: Border { radius: Radius::from(10.0), ..Default::default() },
-                ..Default::default()
-            }
-        }),
-    )
-    .padding(Padding { top: 1.0, right: 8.0, bottom: 1.0, left: 8.0 })
-    .into()
-}
-
 /// A section card with slightly lighter background. Children are aligned to
 /// the leading edge so labels, descriptions, and inline widgets hug the
 /// right side under RTL instead of pinning to physical left.
@@ -523,6 +472,38 @@ pub(crate) fn sort_toolbar_button(
         .center_x(Length::Fixed(24.0)),
     )
     .on_press(Message::ToggleSortMenu(kind))
+    .style(|_, status| {
+        let bg = match status {
+            BtnStatus::Hovered => OryxisColors::t().button_bg_hover,
+            _ => OryxisColors::t().button_bg,
+        };
+        button::Style {
+            background: Some(Background::Color(bg)),
+            border: Border { radius: Radius::from(6.0), ..Default::default() },
+            ..Default::default()
+        }
+    })
+    .into()
+}
+
+/// Grid/List view toggle for the host dashboard toolbar. Shows the
+/// glyph for the CURRENT mode, styled like the sort button.
+pub(crate) fn host_view_toggle_button(list_view: bool) -> Element<'static, Message> {
+    let glyph: iced::widget::Text<'static, iced::Theme, iced::Renderer> = if list_view {
+        iced_fonts::lucide::list()
+    } else {
+        iced_fonts::lucide::layout_grid()
+    };
+    button(
+        container(
+            glyph
+                .size(15)
+                .color(OryxisColors::t().button_text),
+        )
+        .center_y(Length::Fixed(24.0))
+        .center_x(Length::Fixed(24.0)),
+    )
+    .on_press(Message::ToggleHostListView)
     .style(|_, status| {
         let bg = match status {
             BtnStatus::Hovered => OryxisColors::t().button_bg_hover,
@@ -755,6 +736,83 @@ pub(crate) fn cta_button<'a>(label: String, msg: Message) -> Element<'a, Message
             ..Default::default()
         }
     })
+    .into()
+}
+
+/// Soft left-to-right accent wash on a card: the card's own colour
+/// (host brand / group / key / snippet colour) at low alpha on the left
+/// edge fading to transparent across the card. The colour is first toned
+/// toward the surface (darkened on dark themes, lightened on light ones)
+/// so a vivid brand colour blends instead of glaring. No border of its
+/// own (the card keeps its own); just the gradient. Overlaid via a
+/// `Stack`, rounded to match so it doesn't square off the corners.
+/// Shared across the dashboard and every internal card list, gated by
+/// the `setting_card_accent_glass` toggle at the call sites.
+pub(crate) fn card_accent_wash<'a>(card: Element<'a, Message>, color: Color) -> Element<'a, Message> {
+    let bg = OryxisColors::t().bg_surface;
+    let tinted = crate::theme::tone_toward_surface(color, bg, 0.4);
+    let wash = container(Space::new().width(Length::Fill).height(Length::Fill))
+        .style(move |_| container::Style {
+            background: Some(Background::Gradient(iced::Gradient::Linear(
+                // Angle points toward stop 1 (right), so stop 0 is the
+                // left edge: colour → transparent, left to right.
+                iced::gradient::Linear::new(iced::Radians(std::f32::consts::FRAC_PI_2))
+                    .add_stop(0.0, Color { a: 0.20, ..tinted })
+                    .add_stop(0.6, Color { a: 0.0, ..tinted }),
+            ))),
+            border: Border {
+                radius: Radius::from(10.0),
+                ..Default::default()
+            },
+            ..Default::default()
+        });
+    Stack::new().push(card).push(wash).into()
+}
+
+/// Centered empty-state block: a rounded `bg_surface` icon tile, a
+/// 20px title, a 13px muted description, and an optional CTA button
+/// (`cta_button`). Centered in the available space. The shared template
+/// behind every "nothing here yet" screen (hosts, keychain, snippets,
+/// port forwards, cloud, proxies, known hosts, history). Pass the icon
+/// pre-sized/coloured (e.g. `lucide::route().size(32).color(...).into()`).
+pub(crate) fn empty_state<'a>(
+    icon: Element<'a, Message>,
+    title: String,
+    desc: String,
+    cta: Option<(String, Message)>,
+) -> Element<'a, Message> {
+    let mut items: Vec<Element<'a, Message>> = vec![
+        container(icon)
+            .padding(16)
+            .style(|_| container::Style {
+                background: Some(Background::Color(OryxisColors::t().bg_surface)),
+                border: Border {
+                    radius: Radius::from(12.0),
+                    ..Default::default()
+                },
+                ..Default::default()
+            })
+            .into(),
+        Space::new().height(20).into(),
+        text(title)
+            .size(20)
+            .color(OryxisColors::t().text_primary)
+            .into(),
+        Space::new().height(8).into(),
+        text(desc)
+            .size(13)
+            .color(OryxisColors::t().text_muted)
+            .align_x(iced::alignment::Horizontal::Center)
+            .into(),
+    ];
+    if let Some((label, msg)) = cta {
+        items.push(Space::new().height(24).into());
+        items.push(cta_button(label, msg));
+    }
+    container(
+        iced::widget::Column::with_children(items).align_x(iced::Alignment::Center),
+    )
+    .center(Length::Fill)
     .into()
 }
 

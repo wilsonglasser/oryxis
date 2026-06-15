@@ -47,9 +47,23 @@ pub use crate::messages::Message;
 pub(crate) const DEFAULT_TERM_COLS: u32 = 120;
 pub(crate) const DEFAULT_TERM_ROWS: u32 = 40;
 pub(crate) const PANEL_WIDTH: f32 = 420.0;
-pub(crate) const SIDEBAR_WIDTH: f32 = 180.0;
 pub(crate) const SIDEBAR_WIDTH_COLLAPSED: f32 = 56.0;
+/// Width of the vertical nav rail when expanded to show section labels.
+pub(crate) const NAV_RAIL_WIDTH_EXPANDED: f32 = 180.0;
 pub(crate) const CARD_WIDTH: f32 = 280.0;
+
+/// A keyboard-navigable item on the dashboard. Groups (host folders +
+/// session groups) come first, then hosts, mirroring the on-screen
+/// order. Enter opens a group / connects a host.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum DashNavItem {
+    /// Host folder; Enter → `OpenGroup`.
+    Group(uuid::Uuid),
+    /// Saved session group (index into `session_groups`); Enter → `OpenSessionGroup`.
+    SessionGroup(usize),
+    /// Host (index into `connections`); Enter → `ConnectSsh`.
+    Host(usize),
+}
 
 /// Tab-title prefix for SSM-into-EC2 sessions (`format!("{SSM_TAB_PREFIX}{host}")`).
 /// The middle dot is U+00B7 with a space on each side. Shared so the
@@ -165,7 +179,6 @@ pub struct Oryxis {
     // non-integer scale. The small/large split is kept for call-site
     // clarity even though both now point at the same asset.
     pub(crate) logo_handle: svg::Handle,
-    pub(crate) logo_small_handle: svg::Handle,
 
     // Data
     pub(crate) connections: Vec<Connection>,
@@ -185,7 +198,6 @@ pub struct Oryxis {
     /// cloud filter.
     pub(crate) host_filter_cloud_profile: Option<Uuid>,
     pub(crate) quick_host_input: String,
-    pub(crate) sidebar_collapsed: bool,
 
     // Tabs
     pub(crate) tabs: Vec<TerminalTab>,
@@ -223,6 +235,10 @@ pub struct Oryxis {
     /// again to dismiss.
     pub(crate) show_burger_menu: bool,
 
+    /// Vault sub-nav overflow ("…") menu: open when the pill strip
+    /// can't fit every destination and the user clicked the cue.
+    pub(crate) show_subnav_overflow: bool,
+
     // Icon/color picker (from the host editor's icon box).
     pub(crate) show_icon_picker: bool,
     pub(crate) icon_picker_for: Option<Uuid>,
@@ -237,6 +253,10 @@ pub struct Oryxis {
     /// the choice flows into `editor_session_group` and persists on the
     /// form's Save.
     pub(crate) icon_picker_for_session_group: bool,
+    /// Same idea, targeting the manual host-group editor side panel
+    /// (`group_edit_*`). Deferred save: the choice flows into the form
+    /// and persists on the panel's Save.
+    pub(crate) icon_picker_for_group_edit: bool,
     pub(crate) icon_picker_icon: Option<String>,
     pub(crate) icon_picker_color: Option<String>,
     pub(crate) icon_picker_hex_input: String,
@@ -332,6 +352,16 @@ pub struct Oryxis {
 
     // Card hover & context menu
     pub(crate) hovered_card: Option<usize>,
+    /// Keyboard-selected dashboard item (group or host), driven by Tab /
+    /// arrow keys. Renders the same accent highlight as hover; Enter
+    /// opens/connects. Cleared on search / view / filter change and on
+    /// any mouse click.
+    pub(crate) selected_nav: Option<DashNavItem>,
+    /// Snapshot of the dashboard's navigable items as visual rows
+    /// (groups rows then hosts rows, each chunked to the column count),
+    /// recorded during render so the keyboard handler can move the
+    /// selection in 2-D without re-deriving the complex group order.
+    pub(crate) dashboard_nav: std::cell::RefCell<Vec<Vec<DashNavItem>>>,
     /// Hovered folder card on the dashboard (root view), drives the
     /// `⋮` menu visibility, mirroring `hovered_card` for hosts.
     pub(crate) hovered_folder_card: Option<Uuid>,
@@ -351,6 +381,15 @@ pub struct Oryxis {
     /// Folder rename inline editor, `Some((group_id, current_input))`
     /// while the modal is open.
     pub(crate) folder_rename: Option<(Uuid, String)>,
+    /// Manual host-group editor side panel (label + icon + color). Open
+    /// when `group_edit_visible`; `group_edit_id` is the group being
+    /// edited. `group_edit_icon` / `group_edit_color` are empty strings
+    /// when unset (no override → folder default glyph / accent).
+    pub(crate) group_edit_visible: bool,
+    pub(crate) group_edit_id: Option<Uuid>,
+    pub(crate) group_edit_label: String,
+    pub(crate) group_edit_icon: String,
+    pub(crate) group_edit_color: String,
     /// Folder delete confirmation, group ID waiting for the user to
     /// pick "move hosts to root" / "delete with hosts" / cancel.
     pub(crate) folder_delete: Option<Uuid>,
@@ -383,6 +422,11 @@ pub struct Oryxis {
     /// keyboard events. Used by SFTP click logic for ctrl/shift-click
     /// selection, iced's MouseArea events don't include modifiers.
     pub(crate) modifiers: keyboard::Modifiers,
+    /// Debounce stamp for the PrintScreen -> Snipping Tool remap. winit
+    /// can deliver both a press and a release for VK_SNAPSHOT; we launch
+    /// on either and use this to avoid firing the snip overlay twice.
+    #[cfg(target_os = "windows")]
+    pub(crate) last_printscreen: Option<std::time::Instant>,
     /// Whether the OS window is currently maximized. Used by the custom
     /// chrome to swap the maximize glyph for a "restore" glyph. Toggled
     /// optimistically on `WindowMaximizeToggle` since our chrome is the only
@@ -723,6 +767,9 @@ pub struct Oryxis {
     pub(crate) pf_error: Option<String>,
     pub(crate) hovered_port_forward_card: Option<usize>,
     pub(crate) port_forward_search: String,
+    /// Toolbar search needles for the Cloud Accounts and Proxies views.
+    pub(crate) cloud_search: String,
+    pub(crate) proxy_search: String,
 
     // Known hosts & logs
     pub(crate) known_hosts: Vec<oryxis_core::models::known_host::KnownHost>,
@@ -784,6 +831,13 @@ pub struct Oryxis {
     /// Oryxis version. Off in `view_main` simply skips rendering it,
     /// reclaiming the row for the active content area.
     pub(crate) setting_show_status_bar: bool,
+    /// Host dashboard view mode: `true` forces a single-column list,
+    /// `false` (default) uses the responsive multi-column card grid.
+    pub(crate) setting_host_list_view: bool,
+    /// When on (default), dashboard cards get a soft per-colour accent
+    /// wash (the host brand / group colour fading left to right); when
+    /// off, cards stay pure (no overlay).
+    pub(crate) setting_card_accent_glass: bool,
     /// When on, clicking the window's close button hides to the
     /// system tray instead of quitting. Only honoured on Windows
     /// (the tray module is a no-op everywhere else). Default off
@@ -846,17 +900,28 @@ pub struct Oryxis {
     /// screens use, so the user always sees a flat chrome regardless
     /// of which host is open.
     pub(crate) setting_tab_accent_line: bool,
+    /// When true (default), the whole top bar carries a subtle accent
+    /// wash (tinted leading edge fading to the bar surface). Independent
+    /// of `setting_tab_accent_line` (the bottom hairline) so the user can
+    /// keep one without the other.
+    pub(crate) setting_tab_accent_wash: bool,
     /// Toggles the SFTP feature entirely. Off hides the SFTP sidebar
     /// entry (both expanded and collapsed) so users who never transfer
     /// files don't have it taking up nav space. The SFTP settings panel
     /// still renders so the user can re-enable + tweak in one place,
     /// mirroring how `ai_enabled` works.
     pub(crate) sftp_enabled: bool,
-    /// `"classic"` (current sidebar nav) or `"workspace"` (top tabs +
-    /// contextual sidebar + burger, PR 6). Persisted ahead of the
-    /// workspace mode landing so we can flip the default and migrate
-    /// settings in a single later PR without touching boot logic again.
-    pub(crate) setting_layout_mode: String,
+    /// Vault navigation orientation: `"horizontal"` (default) renders the
+    /// sub-sections as a pill strip beneath the top bar; `"vertical"`
+    /// renders them as an icon rail on the left of the vault content. The
+    /// top bar (session tabs + Home icon + Personal chip) is identical in
+    /// both. Replaces the old classic/workspace `layout_mode` duality
+    /// (classic users migrate to `"vertical"` on first load).
+    pub(crate) setting_nav_orientation: String,
+    /// When the vertical nav rail is showing, expand it to show section
+    /// labels (wide rail) instead of the icon-only rail. Persisted so the
+    /// choice sticks.
+    pub(crate) setting_nav_rail_expanded: bool,
     /// Default shape for host icons in the dashboard, sidebar tab
     /// badges and host cards: `"circular"` (default v0.7), `"square"`
     /// (legacy Termius-style), `"outline"`, or `"initials"`. Read by
@@ -1149,12 +1214,12 @@ impl Oryxis {
         // Toolbar geometry (top to bottom):
         //   tab_bar(40) + hairline(2) + toolbar_top_pad(20)
         //   + button(24) + gap(4) = 90
-        // Add sub-nav (~40) on top when Workspace+vault renders it.
-        // Classic was getting the Workspace value before, so the menu
-        // hung well below the trigger button.
+        // Add the horizontal sub-nav (~50) on top only when it actually
+        // renders (horizontal orientation + a vault view). The vertical
+        // rail sits to the LEFT, not above, so it adds no vertical offset.
         const BASE_Y: f32 = 95.0;
         const SUBNAV_HEIGHT: f32 = 50.0;
-        let in_workspace_vault = self.setting_layout_mode == "workspace"
+        let horizontal_subnav = self.setting_nav_orientation != "vertical"
             && self.active_tab.is_none()
             && matches!(
                 self.active_view,
@@ -1164,7 +1229,7 @@ impl Oryxis {
                     | View::PortForwarding
                     | View::History
             );
-        if in_workspace_vault { BASE_Y + SUBNAV_HEIGHT } else { BASE_Y }
+        if horizontal_subnav { BASE_Y + SUBNAV_HEIGHT } else { BASE_Y }
     }
 
     pub(crate) fn snippet_injection_tab(&self) -> Option<usize> {

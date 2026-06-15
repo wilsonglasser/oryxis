@@ -3,6 +3,12 @@
 pub(super) fn lookup(key: &str) -> Option<&'static str> {
     Some(match key {
         // Navigation
+        "expand" => "گسترش",
+        "collapse" => "جمع کردن",
+        "nav_orientation" => "ناوبری",
+        "nav_orientation_desc" => "افقی بخش‌ها را به‌صورت نوار قرصی زیر نوار بالا نشان می‌دهد؛ عمودی به‌صورت ریل آیکون در سمت چپ.",
+        "nav_orientation_horizontal" => "افقی (قرصی)",
+        "nav_orientation_vertical" => "عمودی (ریل)",
         "hosts" => "میزبان‌ها",
         "keychain" => "کلیدها",
         "snippets" => "قطعه‌کدها",
@@ -23,6 +29,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "cloud_discover_import_into_placeholder" => "نام گروه (موجود یا جدید)",
         "search_groups" => "جست‌وجوی گروه‌ها…",
         "tab_accent_line" => "خط زیر تب را با رنگ میزبان رنگ کن",
+        "tab_accent_wash" => "رنگ‌آمیزی نوار بالا با رنگ تأکیدی میزبان",
         "host_filter_by_profile" => "فیلتر بر اساس حساب ابری",
         "host_filter_active" => "فیلتر",
         "cloud_profile_sync" => "همگام‌سازی فوری",
@@ -239,10 +246,6 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "close_position_left" => "چپ",
         "close_position_right" => "راست",
         "show_tab_status_dot" => "نمایش نقطه وضعیت اتصال روی زبانه‌ها",
-        "layout_mode" => "حالت چیدمان",
-        "layout_mode_desc" => "Workspace هنگام باز بودن زبانه اتصال، نوار کناری را پنهان می‌کند تا ترمینال تمام فضا را پر کند. کلاسیک همیشه نوار کناری را نمایش می‌دهد.",
-        "layout_mode_classic" => "کلاسیک (نوار کناری)",
-        "layout_mode_workspace" => "Workspace (زبانه‌های بالا)",
         "default_host_icon" => "نماد پیش‌فرض میزبان",
         "icon_circular" => "دایره‌ای",
         "icon_square" => "مربعی",
@@ -351,7 +354,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "in_progress" => "در حال انجام",
         "entries" => "مورد",
         "of" => "از",
-        "no_activity" => "هنوز فعالیتی ثبت نشده است.",
+        "no_activity" => "هنوز فعالیتی نیست",
+        "no_activity_desc" => "نشست‌ها و رویدادهای اتصال اینجا نمایش داده می‌شوند.",
 
         // Identity
         "identity" => "هویت",
@@ -520,8 +524,10 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         // Proxy Identities
         "proxies" => "پروکسی‌ها",
         "new_proxy_identity" => "پروکسی جدید",
+        "edit_proxy_identity" => "ویرایش پراکسی",
         "proxy_identity_label" => "برچسب",
-        "proxy_identities_empty" => "هنوز پروکسی ذخیره‌شده‌ای وجود ندارد.",
+        "proxy_identities_empty" => "یک‌بار پراکسی را ذخیره کنید و در همه میزبان‌ها استفاده کنید.",
+        "proxy_identities_empty_title" => "هنوز پراکسی‌ای نیست",
         "proxy_type_identity_fallback" => "پروکسی ذخیره‌شده",
         "proxy_type_identity_deleted" => "(پروکسی حذف‌شده)",
         "proxy_identity_err_label_required" => "برچسب الزامی است",
@@ -532,6 +538,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "groups_section" => "گروه‌ها",
         "hosts_section" => "میزبان‌ها",
         "flatten_hosts_label" => "نمایش همه میزبان‌ها در ریشه",
+        "card_accent_glass_label" => "کارت‌های شیشه‌ای تأکیدی",
+        "card_accent_glass_desc" => "گرادیان ملایم رنگ هر کارت (رنگ میزبان/گروه محو می‌شود).",
         "flatten_hosts_desc" => "وقتی فعال است، ریشه داشبورد یک بخش گروه‌ها را بالای یک فهرست تخت از همه میزبان‌ها نشان می‌دهد. وقتی خاموش است، میزبان‌های گروه‌بندی‌شده فقط با باز کردن پوشه ظاهر می‌شوند.",
 
         "sync_passwords" => "همگام‌سازی گذرواژه‌ها بین دستگاه‌ها",
@@ -591,6 +599,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "ip_or_hostname" => "IP یا نام میزبان",
         "my_server_placeholder" => "سرور من",
         "group_placeholder" => "Production, Staging...",
+        "edit_group" => "ویرایش گروه",
+        "group_icon_color" => "نماد و رنگ",
         "add_key_btn" => "+ کلید",
         "port_forwarding" => "ارسال پورت",
         "add_btn" => "افزودن",
@@ -763,6 +773,10 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "log_retention_30d" => "۱ ماه",
         "log_retention_90d" => "۳ ماه",
         "log_delete_confirm_body" => "این ضبط نشست برای همیشه حذف می‌شود.",
+        "known_host_remove_confirm_title" => "کلید میزبان حذف شود؟",
+        "known_host_remove_confirm_body" => "این کلید میزبان حذف می‌شود؛ در اتصال بعدی دوباره آن را تأیید می‌کنید.",
+        "known_hosts_clear_confirm_title" => "همه میزبان‌ها دوباره تأیید شوند؟",
+        "known_hosts_clear_confirm_body" => "هر کلید میزبان ذخیره‌شده حذف می‌شود؛ در اتصال بعدی هر میزبان را دوباره تأیید می‌کنید.",
         "plugin_uninstall_confirm_body" => "فایل‌های دانلودشده از این دستگاه حذف می‌شوند. هر زمان می‌توانید از همین پنل دوباره نصب کنید.",
         "plugin_action_check_updates" => "بررسی به‌روزرسانی‌ها",
         "plugin_action_retry" => "تلاش دوباره",
@@ -799,7 +813,11 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
 
         // بنر افزونه نصب‌نشده در Cloud Accounts
         "cloud_plugin_missing_title" => "افزونه AWS نصب نشده",
-        "cloud_plugin_missing_body" => "تست اعتبارنامه و کشف میزبان به افزونه AWS نیاز دارند. برای استفاده از این حساب آن را نصب کنید.",
+        "cloud_plugin_missing_title_suffix" => "افزونه نصب نشده است",
+        "cloud_plugin_missing_body" => "تست اعتبارنامه و کشف میزبان به افزونه این ارائه‌دهنده نیاز دارند. برای استفاده از این حساب آن را نصب کنید.",
+        "cloud_no_provider_title" => "هیچ ارائه‌دهنده ابری نصب نشده است",
+        "cloud_no_provider_desc" => "حساب‌های ابری میزبان‌ها را از ارائه‌دهندگانی مانند AWS و Kubernetes کشف و وارد می‌کنند. برای افزودن یک حساب، افزونه یک ارائه‌دهنده را نصب کنید.",
+        "cloud_no_provider_btn" => "باز کردن افزونه‌ها",
 
         // منوی مرتب‌سازی
         "sort_label_asc" => "آ-ی",
@@ -815,6 +833,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "create_port_forward_title" => "یک پورت را فوروارد کنید",
         "create_port_forward_desc" => "یک تونل را بدون ترمینال باز نگه دارید: دیتابیس‌ها، داشبوردها، وب‌هوک‌ها.",
         "search_port_forwards" => "جستجوی فورواردهای پورت...",
+        "search_cloud_accounts" => "جستجوی حساب‌ها...",
+        "search_proxies" => "جستجوی پراکسی‌ها...",
         "pf_kind" => "نوع",
         "pf_host" => "از طریق هاست",
         "pf_listen_host" => "آدرس شنود",
@@ -836,7 +856,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "cjk_font_downloading" => "در حال دانلود فونت زبان...",
         "cjk_font_failed" => "دانلود فونت زبان ممکن نشد. از فونت سیستم استفاده می‌شود.",
 
-        "logs" => "گزارش‌ها",
+        "logs" => "تاریخچه",
         "vault" => "صندوقچه",
         "search_logs" => "جستجوی گزارش‌ها...",
         "clear_all" => "پاک کردن همه",

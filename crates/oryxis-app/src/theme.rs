@@ -774,6 +774,40 @@ pub fn contrast_text_for(bg: Color) -> Color {
     }
 }
 
+/// True when `bg` is a dark surface (so foreground accents should be
+/// darkened to blend in) and false when it's a light/paper surface
+/// (accents should be lightened instead). Uses the same WCAG
+/// luminance basis as `contrast_text_for`, with a neutral 0.5 split.
+pub fn is_dark_surface(bg: Color) -> bool {
+    relative_luminance(bg) < 0.5
+}
+
+/// Linear blend from `a` toward `b` by `t` in [0, 1], returning an
+/// opaque colour (alpha forced to 1.0). Used to wash a surface with a
+/// fraction of an accent colour (e.g. the top-bar accent wash).
+pub fn mix(a: Color, b: Color, t: f32) -> Color {
+    Color {
+        r: a.r + (b.r - a.r) * t,
+        g: a.g + (b.g - a.g) * t,
+        b: a.b + (b.b - a.b) * t,
+        a: 1.0,
+    }
+}
+
+/// Tone an accent colour toward the current surface: darken it on dark
+/// themes, lighten it on light themes, by `amount` in [0, 1]. Keeps the
+/// colour's alpha. Lets a vivid brand colour wash into a card without
+/// glaring against the surface.
+pub fn tone_toward_surface(color: Color, bg: Color, amount: f32) -> Color {
+    let target = if is_dark_surface(bg) { 0.0 } else { 1.0 };
+    Color {
+        r: color.r + (target - color.r) * amount,
+        g: color.g + (target - color.g) * amount,
+        b: color.b + (target - color.b) * amount,
+        a: color.a,
+    }
+}
+
 #[cfg(test)]
 #[path = "theme_tests.rs"]
 mod tests;

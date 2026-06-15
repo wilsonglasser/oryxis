@@ -144,7 +144,6 @@ impl Oryxis {
                 // handles share the one asset; the SVG scales to each call
                 // site's box.
                 logo_handle: svg::Handle::from_memory(include_bytes!("../../../resources/logo.svg").as_slice()),
-                logo_small_handle: svg::Handle::from_memory(include_bytes!("../../../resources/logo.svg").as_slice()),
                 connections: Vec::new(),
                 groups: Vec::new(),
                 session_groups: Vec::new(),
@@ -152,7 +151,6 @@ impl Oryxis {
                 active_group: None,
                 host_search: String::new(),
                 quick_host_input: String::new(),
-                sidebar_collapsed: false,
                 tabs: Vec::new(),
                 pending_pane_split: None,
                 split_menu_hovered: false,
@@ -165,10 +163,12 @@ impl Oryxis {
                 show_tab_jump: false,
                 tab_jump_search: String::new(),
                 show_burger_menu: false,
+                show_subnav_overflow: false,
                 show_icon_picker: false,
                 icon_picker_for: None,
                 icon_picker_for_group_form: false,
                 icon_picker_for_session_group: false,
+                icon_picker_for_group_edit: false,
                 icon_picker_icon: None,
                 icon_picker_color: None,
                 icon_picker_hex_input: String::new(),
@@ -198,6 +198,8 @@ impl Oryxis {
                 hovered_session_group_card: None,
                 pane_script_overrides: std::collections::HashMap::new(),
                 hovered_card: None,
+                selected_nav: None,
+                dashboard_nav: std::cell::RefCell::new(Vec::new()),
                 hovered_folder_card: None,
                 hovered_key_card: None,
                 hovered_identity_card: None,
@@ -206,6 +208,11 @@ impl Oryxis {
                 card_context_menu: None,
                 overlay: None,
                 folder_rename: None,
+                group_edit_visible: false,
+                group_edit_id: None,
+                group_edit_label: String::new(),
+                group_edit_icon: String::new(),
+                group_edit_color: String::new(),
                 folder_delete: None,
                 pending_auto_connect,
                 // Keep the inherited password in memory only when the
@@ -246,6 +253,8 @@ impl Oryxis {
                 hotkey_bindings: crate::hotkeys::default_bindings(),
                 editing_hotkey: None,
                 modifiers: keyboard::Modifiers::default(),
+                #[cfg(target_os = "windows")]
+                last_printscreen: None,
                 keys: Vec::new(),
                 show_key_panel: false,
                 key_import_label: String::new(),
@@ -414,6 +423,8 @@ impl Oryxis {
                 pf_error: None,
                 hovered_port_forward_card: None,
                 port_forward_search: String::new(),
+                cloud_search: String::new(),
+                proxy_search: String::new(),
                 terminal_palette: oryxis_terminal::TerminalPalette::default(),
                 terminal_theme_override: None,
                 terminal_font_size: 14.0,
@@ -426,6 +437,8 @@ impl Oryxis {
                 setting_keyword_highlight: true,
                 setting_smart_contrast: true,
                 setting_show_status_bar: true,
+                setting_host_list_view: false,
+                setting_card_accent_glass: true,
                 setting_close_to_tray: false,
                 setting_minimize_to_tray: false,
                 tray_menu_signature: 0,
@@ -438,13 +451,14 @@ impl Oryxis {
                 tab_drag: None,
                 setting_show_tab_status_dot: true,
                 setting_tab_accent_line: true,
+                setting_tab_accent_wash: true,
                 sftp_enabled: true,
                 // Workspace is the v0.7 default. Existing users who
                 // never persisted `layout_mode` also fall through to
                 // this default on next launch (no migration row
-                // needed), then can switch to Classic in one click via
-                // Settings -> Interface if they want the old behavior.
-                setting_layout_mode: "workspace".into(),
+                // Vault nav orientation: horizontal pill strip by default.
+                setting_nav_orientation: "horizontal".into(),
+                setting_nav_rail_expanded: false,
                 setting_default_host_icon: "circular".into(),
                 setting_keepalive_interval: "30".into(),
                 setting_cloud_auto_refresh_enabled: false,
@@ -832,6 +846,12 @@ impl Oryxis {
             if let Ok(Some(v)) = vault.get_setting("show_status_bar") {
                 self.setting_show_status_bar = v == "true";
             }
+            if let Ok(Some(v)) = vault.get_setting("host_list_view") {
+                self.setting_host_list_view = v == "true";
+            }
+            if let Ok(Some(v)) = vault.get_setting("card_accent_glass") {
+                self.setting_card_accent_glass = v == "true";
+            }
             if let Ok(Some(v)) = vault.get_setting("close_to_tray") {
                 self.setting_close_to_tray = v == "true";
             }
@@ -854,13 +874,29 @@ impl Oryxis {
             if let Ok(Some(v)) = vault.get_setting("tab_accent_line") {
                 self.setting_tab_accent_line = v == "true";
             }
+            if let Ok(Some(v)) = vault.get_setting("tab_accent_wash") {
+                self.setting_tab_accent_wash = v == "true";
+            }
             if let Ok(Some(v)) = vault.get_setting("sftp_enabled") {
                 self.sftp_enabled = v == "true";
             }
-            if let Ok(Some(v)) = vault.get_setting("layout_mode")
-                && (v == "classic" || v == "workspace")
+            // Vault nav orientation. Prefer the new `nav_orientation`
+            // setting; if it's absent, migrate from the legacy
+            // `layout_mode` (classic → vertical rail, workspace →
+            // horizontal pills) so existing users keep a familiar shape.
+            if let Ok(Some(v)) = vault.get_setting("nav_orientation")
+                && (v == "horizontal" || v == "vertical")
             {
-                self.setting_layout_mode = v;
+                self.setting_nav_orientation = v;
+            } else if let Ok(Some(v)) = vault.get_setting("layout_mode") {
+                self.setting_nav_orientation = if v == "classic" {
+                    "vertical".into()
+                } else {
+                    "horizontal".into()
+                };
+            }
+            if let Ok(Some(v)) = vault.get_setting("nav_rail_expanded") {
+                self.setting_nav_rail_expanded = v == "true";
             }
             // Hotkey overrides: each action persists under
             // `hotkey_<id>` with the canonical serialized form

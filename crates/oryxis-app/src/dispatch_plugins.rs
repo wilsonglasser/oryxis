@@ -29,6 +29,12 @@ const KNOWN_PLUGINS: &[(&str, &str)] = &[
     ("mcp", "Oryxis MCP Server"),
 ];
 
+/// Provider ids that back a cloud account (i.e. everything in
+/// `KNOWN_PLUGINS` except `mcp`, which external clients spawn). Drives
+/// the Cloud Accounts "no provider installed" explainer and the
+/// hide-on-uninstall display filters.
+pub(crate) const CLOUD_PROVIDER_IDS: &[&str] = &["aws", "k8s"];
+
 /// Build the initial `PluginUiEntry` rows from the on-disk cache plus
 /// the per-plugin settings. Called once from `boot::load_data_from_vault`.
 pub(crate) fn load_plugin_entries(
@@ -107,25 +113,15 @@ pub(crate) fn dev_binary_present(provider_id: &str) -> bool {
 }
 
 impl Oryxis {
-    /// True when the provider's plugin is in a state that can answer
+    /// True when `provider_id`'s plugin is in a state that can answer
     /// trait calls right now (`DevBuild` / `Installed` /
-    /// `UpdateAvailable`). Providers that don't need a subprocess
-    /// plugin (Kubernetes is in-process today) report `true`
-    /// unconditionally.
-    ///
-    /// Drives the "AWS plugin not installed" banner + the
-    /// Test-Credentials gate in the Cloud Accounts wizard.
-    pub(crate) fn is_plugin_ready(
-        &self,
-        choice: crate::state::CloudProviderChoice,
-    ) -> bool {
-        let id = match choice {
-            crate::state::CloudProviderChoice::Aws => "aws",
-            crate::state::CloudProviderChoice::K8s => return true,
-        };
+    /// `UpdateAvailable`). Every cloud provider (AWS *and* Kubernetes)
+    /// runs as a subprocess plugin today, so neither is ever "ready"
+    /// without its plugin installed.
+    pub(crate) fn cloud_provider_installed(&self, provider_id: &str) -> bool {
         self.plugins
             .iter()
-            .find(|p| p.provider_id == id)
+            .find(|p| p.provider_id == provider_id)
             .is_some_and(|e| {
                 matches!(
                     e.status,
@@ -134,6 +130,39 @@ impl Oryxis {
                         | PluginUiStatus::UpdateAvailable { .. }
                 )
             })
+    }
+
+    /// True when at least one cloud-provider plugin (aws / k8s) is
+    /// installed. When false the Cloud Accounts panel shows the static
+    /// "install a provider" explainer instead of the list/empty state.
+    pub(crate) fn any_cloud_provider_installed(&self) -> bool {
+        CLOUD_PROVIDER_IDS
+            .iter()
+            .any(|id| self.cloud_provider_installed(id))
+    }
+
+    /// Cloud profile ids whose provider plugin is *not* installed.
+    /// Display-only: the rows stay in the vault and reappear when the
+    /// plugin is reinstalled. Drives hiding of cloud accounts plus the
+    /// hosts / dynamic groups they imported across the UI.
+    pub(crate) fn hidden_cloud_profile_ids(
+        &self,
+    ) -> std::collections::HashSet<uuid::Uuid> {
+        self.cloud_profiles
+            .iter()
+            .filter(|p| !self.cloud_provider_installed(&p.provider))
+            .map(|p| p.id)
+            .collect()
+    }
+
+    /// True when the provider's plugin is ready. Drives the
+    /// plugin-missing banner + the Test-Credentials gate in the Cloud
+    /// Accounts wizard.
+    pub(crate) fn is_plugin_ready(
+        &self,
+        choice: crate::state::CloudProviderChoice,
+    ) -> bool {
+        self.cloud_provider_installed(choice.id())
     }
 
     pub(crate) fn handle_plugins(

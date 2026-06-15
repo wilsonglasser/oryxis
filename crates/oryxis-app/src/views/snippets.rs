@@ -20,8 +20,8 @@ impl Oryxis {
         );
         let toolbar = container(
             dir_row(vec![
-                text(t("snippets")).size(20).color(OryxisColors::t().text_primary).into(),
-                Space::new().width(Length::Fill).into(),
+                self.vault_search_field(),
+                Space::new().width(10).into(),
                 sort_btn,
                 Space::new().width(8).into(),
                 {
@@ -41,7 +41,7 @@ impl Oryxis {
                             ]).align_y(iced::Alignment::Center),
                         )
                         .center_y(Length::Fixed(24.0))
-                        .padding(Padding { top: 0.0, right: 14.0, bottom: 0.0, left: 14.0 }),
+                        .center_x(Length::Fixed(72.0)),
                     )
                     .on_press(Message::ShowSnippetPanel)
                     .style(|_, status| {
@@ -58,7 +58,7 @@ impl Oryxis {
                 },
             ]).align_y(iced::Alignment::Center),
         )
-        .padding(Padding { top: 20.0, right: 24.0, bottom: 16.0, left: 24.0 })
+        .padding(Padding { top: 16.0, right: 24.0, bottom: 16.0, left: 24.0 })
         .width(Length::Fill);
 
         let status: Element<'_, Message> = if let Some(err) = &self.snippet_error {
@@ -70,55 +70,28 @@ impl Oryxis {
 
         // Section title in a Fill container so it anchors to the
         // card grid's leading edge inside the surrounding column.
-        let section_title = container(
-            container(
-                text(t("commands")).size(14).color(OryxisColors::t().text_muted),
-            )
-            .width(Length::Fill)
-            .align_x(dir_align_x()),
-        )
-        .padding(Padding { top: 4.0, right: 24.0, bottom: 8.0, left: 24.0 });
-
         let mut cards: Vec<Element<'_, Message>> = Vec::new();
 
         if self.snippets.is_empty() {
-            let empty_state = container(
-                column![
-                    container(
-                        iced_fonts::lucide::code().size(32).color(OryxisColors::t().text_muted),
-                    )
-                    .padding(16)
-                    .style(|_| container::Style {
-                        background: Some(Background::Color(OryxisColors::t().bg_surface)),
-                        border: Border { radius: Radius::from(12.0), ..Default::default() },
-                        ..Default::default()
-                    }),
-                    Space::new().height(20),
-                    text(crate::i18n::t("create_snippet_title")).size(20).color(OryxisColors::t().text_primary),
-                    Space::new().height(8),
-                    text(crate::i18n::t("create_snippet_desc"))
-                        .size(13).color(OryxisColors::t().text_muted),
-                    Space::new().height(24),
-                    crate::widgets::cta_button(
-                        crate::i18n::t("new_snippet").to_string(),
-                        Message::ShowSnippetPanel,
-                    ),
-                ]
-                .align_x(iced::Alignment::Center),
-            )
-            .center(Length::Fill);
+            let empty_state = crate::widgets::empty_state(
+                iced_fonts::lucide::code()
+                    .size(32)
+                    .color(OryxisColors::t().text_muted)
+                    .into(),
+                crate::i18n::t("create_snippet_title").to_string(),
+                crate::i18n::t("create_snippet_desc").to_string(),
+                Some((
+                    crate::i18n::t("new_snippet").to_string(),
+                    Message::ShowSnippetPanel,
+                )),
+            );
 
-            let main_content = column![toolbar, status, empty_state]
+            // No toolbar when empty: search is hidden and the "+ New" lives
+            // in the empty-state CTA (avoids an orphaned action button).
+            // Side panel is hoisted to `view_main` (active_side_panel).
+            let main_content = column![status, empty_state]
                 .width(Length::Fill)
                 .height(Length::Fill);
-
-            if self.show_snippet_panel {
-                let panel = self.view_snippet_panel();
-                return dir_row(vec![main_content.into(), panel])
-                    .width(Length::Fill)
-                    .height(Length::Fill)
-                    .into();
-            }
             return main_content.into();
         }
 
@@ -249,14 +222,12 @@ impl Oryxis {
                 .on_enter(Message::SnippetCardHovered(idx))
                 .on_exit(Message::SnippetCardUnhovered)
                 .into();
-            cards.push(container(wrapped).width(Length::Fill).clip(true).into());
+            let card_el: Element<'_, Message> =
+                container(wrapped).width(Length::Fill).clip(true).into();
+            cards.push(self.card_wash(card_el, OryxisColors::t().accent));
         }
 
-        let nav_width = if self.sidebar_collapsed {
-            crate::app::SIDEBAR_WIDTH_COLLAPSED
-        } else {
-            crate::app::SIDEBAR_WIDTH
-        };
+        let nav_width = self.vault_rail_width();
         let panel_width = if self.show_snippet_panel { PANEL_WIDTH } else { 0.0 };
         let available = (self.window_size.width - nav_width - panel_width - 48.0).max(0.0);
         let cols = card_grid_columns(available, CARD_WIDTH, 12.0);
@@ -269,32 +240,15 @@ impl Oryxis {
         // Inline search bar in Classic mode (Workspace puts it on
         // the contextual sub-nav). Collapses to zero height in
         // Workspace so we don't render the input twice.
-        let workspace_mode = self.setting_layout_mode == "workspace";
-        let search_bar: Element<'_, Message> = if workspace_mode {
-            Space::new().height(0).into()
-        } else {
-            container(
-                text_input(t("search_snippets"), &self.snippet_search)
-                    .on_input(Message::SnippetSearchChanged)
-                    .padding(10)
-                    .size(13)
-                    .style(crate::widgets::rounded_input_style)
-                    .align_x(dir_align_x()),
-            )
-            .padding(Padding { top: 0.0, right: 24.0, bottom: 12.0, left: 24.0 })
+        // Search now lives in the toolbar (`vault_search_field`); the
+        // legacy below-toolbar search bar collapses to nothing.
+        let search_bar: Element<'_, Message> = Space::new().height(0).into();
+
+        // Side panel hoisted to `view_main` (active_side_panel).
+        column![toolbar, search_bar, status, grid]
             .width(Length::Fill)
+            .height(Length::Fill)
             .into()
-        };
-
-        let main_content = column![toolbar, search_bar, status, section_title, grid]
-            .width(Length::Fill).height(Length::Fill);
-
-        if self.show_snippet_panel {
-            let panel = self.view_snippet_panel();
-            dir_row(vec![main_content.into(), panel]).width(Length::Fill).height(Length::Fill).into()
-        } else {
-            main_content.into()
-        }
     }
 
     pub(crate) fn view_snippet_panel(&self) -> Element<'_, Message> {

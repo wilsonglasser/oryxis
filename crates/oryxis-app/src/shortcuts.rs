@@ -17,15 +17,12 @@ impl Oryxis {
     /// out of range so Ctrl+5 on a window with two tabs is a no-op
     /// instead of bouncing focus around.
     pub(crate) fn strip_slot_target(&self, slot: usize) -> Option<Message> {
-        // Workspace mode promotes Hosts (and SFTP when enabled) into
-        // the strip ahead of the terminal tabs; Classic mode skips
-        // straight to terminal tabs.
+        // Hosts (and SFTP when enabled) sit in the strip ahead of the
+        // terminal tabs, so Ctrl+1 / Ctrl+2 land on them.
         let mut slots: Vec<Message> = Vec::new();
-        if self.setting_layout_mode == "workspace" {
-            slots.push(Message::ChangeView(View::Dashboard));
-            if self.sftp_enabled {
-                slots.push(Message::ChangeView(View::Sftp));
-            }
+        slots.push(Message::ChangeView(View::Dashboard));
+        if self.sftp_enabled {
+            slots.push(Message::ChangeView(View::Sftp));
         }
         for idx in 0..self.tabs.len() {
             slots.push(Message::SelectTab(idx));
@@ -65,7 +62,11 @@ impl Oryxis {
                 // most.
                 Some(widget::Id::new("search-sftp-remote"))
             }
-            View::Settings | View::Terminal | View::KnownHosts => None,
+            View::Settings
+            | View::Terminal
+            | View::Cloud
+            | View::Proxies
+            | View::KnownHosts => None,
         }
     }
 

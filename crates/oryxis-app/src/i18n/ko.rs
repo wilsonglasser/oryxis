@@ -3,6 +3,12 @@
 pub(super) fn lookup(key: &str) -> Option<&'static str> {
     Some(match key {
         // Navigation
+        "expand" => "펼치기",
+        "collapse" => "접기",
+        "nav_orientation" => "탐색",
+        "nav_orientation_desc" => "가로: 섹션을 상단 바 아래 알약 모양 줄로 표시; 세로: 왼쪽 아이콘 레일로 표시.",
+        "nav_orientation_horizontal" => "가로(알약)",
+        "nav_orientation_vertical" => "세로(레일)",
         "hosts" => "호스트",
         "keychain" => "키체인",
         "snippets" => "스니펫",
@@ -23,6 +29,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "cloud_discover_import_into_placeholder" => "그룹 이름 (기존 또는 신규)",
         "search_groups" => "그룹 검색…",
         "tab_accent_line" => "탭 밑줄을 호스트 강조색으로 표시",
+        "tab_accent_wash" => "상단 바를 호스트 강조색으로 물들이기",
         "host_filter_by_profile" => "클라우드 프로필로 필터링",
         "host_filter_active" => "필터",
         "cloud_profile_sync" => "지금 동기화",
@@ -239,10 +246,6 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "close_position_left" => "왼쪽",
         "close_position_right" => "오른쪽",
         "show_tab_status_dot" => "탭에 연결 상태 점 표시",
-        "layout_mode" => "레이아웃 모드",
-        "layout_mode_desc" => "작업 공간 모드는 연결 탭이 열려 있는 동안 사이드바를 숨겨 터미널이 캔버스를 채웁니다. 클래식 모드는 항상 사이드바를 표시합니다.",
-        "layout_mode_classic" => "클래식 (사이드바)",
-        "layout_mode_workspace" => "작업 공간 (상단 탭)",
         "default_host_icon" => "기본 호스트 아이콘",
         "icon_circular" => "원형",
         "icon_square" => "사각형",
@@ -349,7 +352,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "in_progress" => "진행 중",
         "entries" => "항목",
         "of" => "/",
-        "no_activity" => "아직 기록된 활동이 없습니다.",
+        "no_activity" => "아직 활동이 없습니다",
+        "no_activity_desc" => "세션과 연결 이벤트가 여기에 표시됩니다.",
 
         // Identity
         "identity" => "ID",
@@ -518,8 +522,10 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         // Proxy Identities (Settings → Proxies)
         "proxies" => "프록시",
         "new_proxy_identity" => "새 프록시",
+        "edit_proxy_identity" => "프록시 편집",
         "proxy_identity_label" => "레이블",
-        "proxy_identities_empty" => "아직 저장된 프록시가 없습니다.",
+        "proxy_identities_empty" => "프록시를 한 번 저장하면 모든 호스트에서 재사용할 수 있습니다.",
+        "proxy_identities_empty_title" => "아직 프록시가 없습니다",
         "proxy_type_identity_fallback" => "저장된 프록시",
         "proxy_type_identity_deleted" => "(삭제된 프록시)",
         "proxy_identity_err_label_required" => "레이블은 필수입니다",
@@ -530,6 +536,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "groups_section" => "그룹",
         "hosts_section" => "호스트",
         "flatten_hosts_label" => "루트에 모든 호스트 표시",
+        "card_accent_glass_label" => "강조 글래스 카드",
+        "card_accent_glass_desc" => "카드별 색상이 옅게 번지는 효과(호스트/그룹 색상).",
         "flatten_hosts_desc" => "켜면 대시보드 루트가 모든 호스트의 평면 목록 위에 그룹 섹션을 표시합니다. 끄면 그룹을 열기 전까지 그룹 내부의 호스트가 숨겨집니다.",
 
         // Sync passwords toggle
@@ -600,6 +608,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "ip_or_hostname" => "IP 또는 호스트 이름",
         "my_server_placeholder" => "내 서버",
         "group_placeholder" => "프로덕션, 스테이징...",
+        "edit_group" => "그룹 편집",
+        "group_icon_color" => "아이콘 및 색상",
         "add_key_btn" => "+ 키",
         "port_forwarding" => "포트 포워딩",
 
@@ -774,6 +784,10 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "log_retention_30d" => "1개월",
         "log_retention_90d" => "3개월",
         "log_delete_confirm_body" => "이 세션 기록은 영구적으로 삭제됩니다.",
+        "known_host_remove_confirm_title" => "호스트 키를 삭제할까요?",
+        "known_host_remove_confirm_body" => "이 호스트 키가 삭제됩니다. 다음 연결 시 다시 확인하게 됩니다.",
+        "known_hosts_clear_confirm_title" => "모든 호스트를 다시 확인할까요?",
+        "known_hosts_clear_confirm_body" => "저장된 모든 호스트 키가 삭제됩니다. 다음 연결 시 각 호스트를 다시 확인하게 됩니다.",
         "plugin_uninstall_confirm_body" => "다운로드된 바이너리가 이 컴퓨터에서 삭제됩니다. 언제든지 이 패널에서 다시 설치할 수 있습니다.",
         "plugin_action_check_updates" => "업데이트 확인",
         "plugin_action_retry" => "재시도",
@@ -810,7 +824,11 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
 
         // Cloud Accounts plugin gate
         "cloud_plugin_missing_title" => "AWS 플러그인이 설치되지 않음",
-        "cloud_plugin_missing_body" => "자격 증명 테스트와 호스트 탐색에는 AWS 플러그인이 필요합니다. 이 계정을 사용하려면 설치하세요.",
+        "cloud_plugin_missing_title_suffix" => "플러그인이 설치되지 않음",
+        "cloud_plugin_missing_body" => "자격 증명 테스트와 호스트 탐색에는 이 제공자의 플러그인이 필요합니다. 이 계정을 사용하려면 설치하세요.",
+        "cloud_no_provider_title" => "설치된 클라우드 제공자가 없습니다",
+        "cloud_no_provider_desc" => "클라우드 계정은 AWS, Kubernetes 같은 제공자에서 호스트를 탐색하고 가져옵니다. 계정을 추가하려면 제공자 플러그인을 설치하세요.",
+        "cloud_no_provider_btn" => "플러그인 열기",
 
         // Sort dropdown (Hosts / Keychain / Snippets toolbars)
         "sort_label_asc" => "A-z",
@@ -826,6 +844,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "create_port_forward_title" => "포트 포워드",
         "create_port_forward_desc" => "터미널 없이 터널을 열어 두세요: 데이터베이스, 대시보드, 웹훅.",
         "search_port_forwards" => "포트 포워드 검색...",
+        "search_cloud_accounts" => "계정 검색...",
+        "search_proxies" => "프록시 검색...",
         "pf_kind" => "유형",
         "pf_host" => "경유 호스트",
         "pf_listen_host" => "수신 주소",
@@ -847,7 +867,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "cjk_font_downloading" => "언어 글꼴 다운로드 중...",
         "cjk_font_failed" => "언어 글꼴을 다운로드하지 못했습니다. 시스템 글꼴을 사용합니다.",
 
-        "logs" => "로그",
+        "logs" => "기록",
         "vault" => "볼트",
         "search_logs" => "로그 검색...",
         "clear_all" => "모두 지우기",

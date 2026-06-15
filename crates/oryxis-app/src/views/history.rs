@@ -171,11 +171,8 @@ impl Oryxis {
 
         let toolbar = container(
             crate::widgets::dir_row(vec![
-                text(crate::i18n::t("logs"))
-                    .size(20)
-                    .color(OryxisColors::t().text_primary)
-                    .into(),
-                Space::new().width(Length::Fill).into(),
+                self.vault_search_field(),
+                Space::new().width(10).into(),
                 text(range_label)
                     .size(11)
                     .color(OryxisColors::t().text_muted)
@@ -189,22 +186,22 @@ impl Oryxis {
             ])
             .align_y(iced::Alignment::Center),
         )
-        .padding(Padding { top: 20.0, right: 24.0, bottom: 16.0, left: 24.0 })
+        .padding(Padding { top: 16.0, right: 24.0, bottom: 16.0, left: 24.0 })
         .width(Length::Fill);
 
         // ── Rows ──
-        let mut row_elements: Vec<Element<'_, Message>> = Vec::new();
-        if rows.is_empty() {
-            row_elements.push(
-                container(
-                    text(crate::i18n::t("no_activity"))
-                        .size(13)
-                        .color(OryxisColors::t().text_muted),
-                )
-                .padding(16)
-                .into(),
-            );
+        let list: Element<'_, Message> = if rows.is_empty() {
+            crate::widgets::empty_state(
+                iced_fonts::lucide::history()
+                    .size(32)
+                    .color(OryxisColors::t().text_muted)
+                    .into(),
+                crate::i18n::t("no_activity").to_string(),
+                crate::i18n::t("no_activity_desc").to_string(),
+                None,
+            )
         } else {
+            let mut row_elements: Vec<Element<'_, Message>> = Vec::new();
             let start = page * per_page;
             let end = ((page + 1) * per_page).min(total);
             for row_data in &rows[start..end] {
@@ -212,17 +209,17 @@ impl Oryxis {
                 row_elements.push(self.render_timeline_row(row_data, conn));
                 row_elements.push(Space::new().height(4).into());
             }
-        }
-
-        let list = scrollable(
-            column(row_elements).padding(Padding {
-                top: 0.0,
-                right: 24.0,
-                bottom: 24.0,
-                left: 24.0,
-            }),
-        )
-        .height(Length::Fill);
+            scrollable(
+                column(row_elements).padding(Padding {
+                    top: 0.0,
+                    right: 24.0,
+                    bottom: 24.0,
+                    left: 24.0,
+                }),
+            )
+            .height(Length::Fill)
+            .into()
+        };
 
         // ── Session viewer overlay ──
         if let Some((_log_id, ref spans)) = self.viewing_session_log {
@@ -311,28 +308,9 @@ impl Oryxis {
             return viewer.into();
         }
 
-        // Inline search bar in Classic mode (Workspace puts it on
-        // the contextual sub-nav). Collapses to zero height in
-        // Workspace so the input doesn't render twice.
-        let workspace_mode = self.setting_layout_mode == "workspace";
-        let search_bar: Element<'_, Message> = if workspace_mode {
-            Space::new().height(0).into()
-        } else {
-            container(
-                iced::widget::text_input(
-                    crate::i18n::t("search_history"),
-                    &self.history_search,
-                )
-                .on_input(Message::HistorySearchChanged)
-                .padding(10)
-                .size(13)
-                .style(crate::widgets::rounded_input_style)
-                .align_x(crate::widgets::dir_align_x()),
-            )
-            .padding(Padding { top: 0.0, right: 24.0, bottom: 12.0, left: 24.0 })
-            .width(Length::Fill)
-            .into()
-        };
+        // Search now lives in the toolbar (`vault_search_field`); the
+        // legacy below-toolbar search bar collapses to nothing.
+        let search_bar: Element<'_, Message> = Space::new().height(0).into();
 
         column![toolbar, search_bar, list]
             .width(Length::Fill)

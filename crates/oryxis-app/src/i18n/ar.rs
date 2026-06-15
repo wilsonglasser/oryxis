@@ -3,6 +3,12 @@
 pub(super) fn lookup(key: &str) -> Option<&'static str> {
     Some(match key {
         // Navigation
+        "expand" => "توسيع",
+        "collapse" => "طي",
+        "nav_orientation" => "التنقل",
+        "nav_orientation_desc" => "الأفقي يعرض الأقسام كشريط حبوب أسفل الشريط؛ العمودي يعرضها كشريط أيقونات على اليسار.",
+        "nav_orientation_horizontal" => "أفقي (حبوب)",
+        "nav_orientation_vertical" => "عمودي (شريط)",
         "hosts" => "المضيفون",
         "keychain" => "حلقة المفاتيح",
         "snippets" => "المقتطفات",
@@ -23,6 +29,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "cloud_discover_import_into_placeholder" => "اسم المجموعة (موجود أو جديد)",
         "search_groups" => "ابحث عن مجموعات…",
         "tab_accent_line" => "تلوين خط أسفل التبويب بلون المضيف",
+        "tab_accent_wash" => "تلوين الشريط العلوي بلون المضيف المميز",
         "host_filter_by_profile" => "تصفية حسب حساب السحابة",
         "host_filter_active" => "تصفية",
         "cloud_profile_sync" => "المزامنة الآن",
@@ -239,10 +246,6 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "close_position_left" => "يسار",
         "close_position_right" => "يمين",
         "show_tab_status_dot" => "إظهار مؤشر حالة الاتصال على علامات التبويب",
-        "layout_mode" => "وضع التخطيط",
-        "layout_mode_desc" => "يخفي Workspace الشريط الجانبي عند فتح علامة تبويب اتصال ليملأ الطرفية اللوحة. الكلاسيكي يعرض الشريط الجانبي دائماً.",
-        "layout_mode_classic" => "كلاسيكي (شريط جانبي)",
-        "layout_mode_workspace" => "Workspace (علامات تبويب علوية)",
         "default_host_icon" => "أيقونة المضيف الافتراضية",
         "icon_circular" => "دائرية",
         "icon_square" => "مربعة",
@@ -354,14 +357,15 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         // Session logs
         "session_log" => "سجل الجلسة",
         "in_progress" => "قيد التنفيذ",
-        "logs" => "السجلات",
+        "logs" => "السجل",
         "search_logs" => "البحث في السجلات...",
         "clear_all" => "مسح الكل",
         "clear_history_title" => "مسح جميع السجلات؟",
         "clear_history_confirm" => "سيؤدي هذا إلى حذف جميع تسجيلات الجلسات وأحداث الاتصال نهائيًا.",
         "entries" => "إدخال",
         "of" => "من",
-        "no_activity" => "لم يتم تسجيل أي نشاط بعد.",
+        "no_activity" => "لا يوجد نشاط بعد",
+        "no_activity_desc" => "ستظهر الجلسات وأحداث الاتصال هنا.",
 
         // Identity
         "identity" => "الهوية",
@@ -530,8 +534,10 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         // Proxy Identities
         "proxies" => "الوكلاء",
         "new_proxy_identity" => "وكيل جديد",
+        "edit_proxy_identity" => "تعديل الوكيل",
         "proxy_identity_label" => "التسمية",
-        "proxy_identities_empty" => "لا توجد وكلاء محفوظون بعد.",
+        "proxy_identities_empty" => "احفظ وكيلاً مرة واحدة وأعد استخدامه عبر مضيفيك.",
+        "proxy_identities_empty_title" => "لا توجد وكلاء بعد",
         "proxy_type_identity_fallback" => "وكيل محفوظ",
         "proxy_type_identity_deleted" => "(وكيل محذوف)",
         "proxy_identity_err_label_required" => "التسمية مطلوبة",
@@ -542,6 +548,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "groups_section" => "المجموعات",
         "hosts_section" => "المضيفون",
         "flatten_hosts_label" => "إظهار جميع المضيفين في الجذر",
+        "card_accent_glass_label" => "بطاقات زجاجية بلون مميز",
+        "card_accent_glass_desc" => "تدرّج خفيف بلون كل بطاقة (لون المضيف/المجموعة يتلاشى).",
         "flatten_hosts_desc" => "عند التفعيل، يعرض جذر اللوحة قسم المجموعات فوق قائمة مسطحة لجميع المضيفين. عند الإيقاف، يظهر المضيفون المجمعون فقط عند فتح المجلد.",
 
         "sync_passwords" => "مزامنة كلمات المرور بين الأجهزة",
@@ -601,6 +609,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "ip_or_hostname" => "IP أو اسم المضيف",
         "my_server_placeholder" => "خادمي",
         "group_placeholder" => "Production, Staging...",
+        "edit_group" => "تعديل المجموعة",
+        "group_icon_color" => "الأيقونة واللون",
         "add_key_btn" => "+ مفتاح",
         "port_forwarding" => "إعادة توجيه المنافذ",
         "add_btn" => "إضافة",
@@ -777,6 +787,10 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "log_retention_30d" => "شهر واحد",
         "log_retention_90d" => "3 أشهر",
         "log_delete_confirm_body" => "سيتم حذف تسجيل الجلسة هذا نهائيًا.",
+        "known_host_remove_confirm_title" => "إزالة مفتاح المضيف؟",
+        "known_host_remove_confirm_body" => "تتم إزالة مفتاح المضيف هذا؛ ستتحقق منه مرة أخرى عند الاتصال التالي.",
+        "known_hosts_clear_confirm_title" => "إعادة التحقق من جميع المضيفين؟",
+        "known_hosts_clear_confirm_body" => "تتم إزالة كل مفتاح مضيف محفوظ؛ ستتحقق من كل مضيف مرة أخرى عند الاتصال التالي.",
         "plugin_uninstall_confirm_body" => "سيتم حذف الملفات الثنائية التي تم تنزيلها من هذا الجهاز. يمكنك إعادة التثبيت من هذه اللوحة في أي وقت.",
         "plugin_action_check_updates" => "تحقق من التحديثات",
         "plugin_action_retry" => "إعادة المحاولة",
@@ -813,7 +827,11 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
 
         // شعار الإضافة المفقودة في Cloud Accounts
         "cloud_plugin_missing_title" => "إضافة AWS غير مثبتة",
-        "cloud_plugin_missing_body" => "يتطلب اختبار بيانات الاعتماد واكتشاف المضيفين إضافة AWS. ثبّتها لاستخدام هذا الحساب.",
+        "cloud_plugin_missing_title_suffix" => "الإضافة غير مثبّتة",
+        "cloud_plugin_missing_body" => "يتطلب اختبار بيانات الاعتماد واكتشاف المضيفين إضافة هذا المزود. ثبّتها لاستخدام هذا الحساب.",
+        "cloud_no_provider_title" => "لا يوجد مزود سحابي مثبّت",
+        "cloud_no_provider_desc" => "تكتشف الحسابات السحابية المضيفين وتستوردهم من مزودين مثل AWS وKubernetes. ثبّت إضافة مزود لإضافة حساب.",
+        "cloud_no_provider_btn" => "فتح الإضافات",
 
         // قائمة الترتيب
         "sort_label_asc" => "أ-ي",
@@ -829,6 +847,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "create_port_forward_title" => "وجّه منفذًا",
         "create_port_forward_desc" => "أبقِ النفق مفتوحًا دون طرفية: قواعد البيانات، اللوحات، الـ webhooks.",
         "search_port_forwards" => "بحث في إعادة توجيه المنافذ...",
+        "search_cloud_accounts" => "بحث في الحسابات...",
+        "search_proxies" => "بحث في الوكلاء...",
         "pf_kind" => "النوع",
         "pf_host" => "عبر المضيف",
         "pf_listen_host" => "عنوان الاستماع",

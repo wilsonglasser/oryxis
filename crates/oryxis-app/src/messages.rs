@@ -31,9 +31,7 @@ pub enum Message {
     QuickHostInput(String),
     QuickHostContinue,
     OpenGroup(Uuid),
-    BackToRoot,
     HostSearchChanged(String),
-    ToggleSidebar,
 
     // Tabs
     SelectTab(usize),
@@ -250,6 +248,13 @@ pub enum Message {
     FolderRenameInput(String),
     ConfirmRenameFolder,
     CancelFolderModal,
+    /// Open the manual host-group editor side panel for this group.
+    EditGroup(Uuid),
+    GroupEditLabelChanged(String),
+    /// Open the icon/color picker routed to the group editor.
+    ShowGroupEditIconPicker,
+    SaveGroupEdit,
+    CancelGroupEdit,
     StartDeleteFolder(Uuid),
     DeleteFolderKeepHosts,
     DeleteFolderWithHosts,
@@ -538,6 +543,8 @@ pub enum Message {
     PortForwardCardHovered(usize),
     PortForwardCardUnhovered,
     PortForwardSearchChanged(String),
+    CloudSearchChanged(String),
+    ProxySearchChanged(String),
 
     // Terminal side panel (Chat / Snippets / History tabs)
     SelectTerminalSidebarTab(crate::state::TerminalSidebarTab),
@@ -549,7 +556,11 @@ pub enum Message {
     ToggleSidebarSearch,
 
     // Known hosts
+    /// Open the confirm dialog before deleting a single known host.
+    RequestDeleteKnownHost(usize),
     DeleteKnownHost(usize),
+    /// Open the confirm dialog before clearing every known host.
+    RequestClearAllKnownHosts,
     ClearAllKnownHosts,
 
     // History
@@ -619,17 +630,28 @@ pub enum Message {
     ToggleKeywordHighlight,
     ToggleSmartContrast,
     SettingToggleShowStatusBar,
+    /// Flip the host dashboard between the responsive card grid and a
+    /// single-column list.
+    ToggleHostListView,
+    /// Flip the per-colour accent wash on dashboard cards (glass vs pure).
+    ToggleCardAccentGlass,
     SettingToggleCloseToTray,
     SettingToggleMinimizeToTray,
     SettingToggleTabAccentLine,
+    SettingToggleTabAccentWash,
     SettingTabCloseButtonSideChanged(String),
     SettingPinnedTabStyleChanged(String),
     SettingToggleShowTabStatusDot,
     /// Show/hide the top-left burger menu (Settings / Updates / About /
     /// Exit). Mirrors Termius's `☰` strip at the start of the tab bar.
     ToggleBurgerMenu,
+    /// Show/hide the vault sub-nav overflow ("…") menu listing the
+    /// destinations that didn't fit in the pill strip.
+    ToggleSubnavOverflow,
     SettingToggleSftpEnabled,
-    SettingLayoutModeChanged(String),
+    SettingNavOrientationChanged(String),
+    /// Expand/collapse the vertical nav rail (labels vs icon-only).
+    ToggleNavRailExpanded,
     SettingDefaultHostIconChanged(String),
     SettingKeepaliveChanged(String),
     SettingScrollbackChanged(String),

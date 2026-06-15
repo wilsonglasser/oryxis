@@ -4,7 +4,7 @@
 
 use iced::Task;
 
-use crate::app::{Message, Oryxis, SIDEBAR_WIDTH, SIDEBAR_WIDTH_COLLAPSED};
+use crate::app::{Message, Oryxis};
 use crate::sftp_helpers::sort_local_entries;
 
 impl Oryxis {
@@ -148,11 +148,7 @@ impl Oryxis {
     /// check the right half, accounting for the left nav rail and the
     /// chat sidebar (when visible).
     pub(crate) fn is_cursor_over_remote_pane(&self) -> bool {
-        let sidebar = if self.sidebar_collapsed {
-            SIDEBAR_WIDTH_COLLAPSED
-        } else {
-            SIDEBAR_WIDTH
-        };
+        let sidebar = self.vault_rail_width();
         let chat_w = self
             .active_tab
             .and_then(|i| self.tabs.get(i))
@@ -167,11 +163,7 @@ impl Oryxis {
     /// Mirror helper for the left pane, checks the cursor sits in the
     /// half between the sidebar and the pane split.
     pub(crate) fn is_cursor_over_local_pane(&self) -> bool {
-        let sidebar = if self.sidebar_collapsed {
-            SIDEBAR_WIDTH_COLLAPSED
-        } else {
-            SIDEBAR_WIDTH
-        };
+        let sidebar = self.vault_rail_width();
         let chat_w = self
             .active_tab
             .and_then(|i| self.tabs.get(i))

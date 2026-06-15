@@ -1474,11 +1474,15 @@ pub enum View {
     Keys,
     Snippets,
     PortForwarding,
-    /// Known Hosts moved into Settings in v0.7 (see
-    /// `SettingsSection::KnownHosts`). The variant stays so the
-    /// `change view -> KnownHosts` aliases redirect to Settings with
-    /// the right section selected, instead of breaking persisted
-    /// links / tests.
+    /// Cloud-account CRUD. Promoted to a top-level vault surface
+    /// (sub-nav pill / sidebar entry); the Cloud Sync settings block
+    /// stays behind in Settings.
+    Cloud,
+    /// Proxy-identity CRUD. Promoted to a top-level vault surface.
+    Proxies,
+    /// Known-host management. Promoted back to a top-level vault
+    /// surface alongside Cloud / Proxies (was a SettingsSection in
+    /// v0.7).
     KnownHosts,
     History,
     Sftp,
@@ -1695,10 +1699,6 @@ pub(crate) enum SettingsSection {
     /// and adds toggles for status bar visibility and (in later PRs)
     /// layout mode, tab close button position, host icon style, etc.
     Interface,
-    /// SSH host key registry (was a top-level View in 0.6, lives under
-    /// Settings in 0.7+ since it's a security-knob screen, not a
-    /// browsing one).
-    KnownHosts,
     /// MCP server (Model Context Protocol). Was bundled into the
     /// installer in 0.6 and lived inside the Security section; in
     /// 0.7 it's distributed as a plugin and gets its own section
@@ -1708,13 +1708,9 @@ pub(crate) enum SettingsSection {
     Shortcuts,
     Security,
     Sync,
-    /// CRUD over reusable proxy configurations (SOCKS5 / HTTP / etc.)
-    /// referenced from connections via `Connection.proxy_identity_id`.
-    Proxies,
-    /// Cloud account profiles (AWS / K8s), same conceptual shape as
-    /// Proxies: reusable config that hosts reference. Imported hosts
-    /// live in the regular Hosts view; this section only manages the
-    /// account credentials and triggers discovery.
+    /// Cloud Sync preferences (auto-refresh interval, orphan
+    /// auto-archive). The cloud *account* CRUD moved to the top-level
+    /// `View::Cloud` surface; this section keeps only the sync knobs.
     Cloud,
     /// Cloud provider plugins management: install, update, uninstall
     /// the subprocess plugins each cloud provider runs as. Sits next

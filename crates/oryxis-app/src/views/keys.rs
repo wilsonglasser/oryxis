@@ -58,7 +58,7 @@ impl Oryxis {
                 .align_y(iced::Alignment::Center),
             )
             .center_y(Length::Fixed(24.0))
-            .padding(Padding { top: 0.0, right: 14.0, bottom: 0.0, left: 14.0 }),
+            .center_x(Length::Fixed(72.0)),
         )
         .on_press(Message::ToggleKeychainAddMenu)
         .style(move |_, status| {
@@ -124,38 +124,24 @@ impl Oryxis {
 
         let toolbar = container(
             dir_row(vec![
-                text(t("keychain")).size(20).color(OryxisColors::t().text_primary).into(),
-                Space::new().width(Length::Fill).into(),
+                self.vault_search_field(),
+                Space::new().width(10).into(),
                 sort_btn,
                 Space::new().width(8).into(),
                 add_btn,
             ])
             .align_y(iced::Alignment::Center),
         )
-        .padding(Padding { top: 20.0, right: 24.0, bottom: 16.0, left: 24.0 })
+        .padding(Padding { top: 16.0, right: 24.0, bottom: 16.0, left: 24.0 })
         .width(Length::Fill);
 
         // ── Search bar ──
         // Collapses to zero height in Workspace mode where the search
         // lives on the contextual sub-nav (`view_vault_sub_nav`),
         // matching the host-grid / snippets / history treatment.
-        let workspace_mode = self.setting_layout_mode == "workspace";
-        let search_bar: Element<'_, Message> = if workspace_mode {
-            Space::new().height(0).into()
-        } else {
-            container(
-                text_input(t("search_keys_identities"), &self.key_search)
-                    .id(iced::widget::Id::new("search-keys"))
-                    .on_input(Message::KeySearchChanged)
-                    .padding(10)
-                    .size(13)
-                    .width(Length::Fill)
-                    .style(crate::widgets::rounded_input_style).align_x(dir_align_x()),
-            )
-            .padding(Padding { top: 0.0, right: 24.0, bottom: 12.0, left: 24.0 })
-            .width(Length::Fill)
-            .into()
-        };
+        // Search now lives in the toolbar (`vault_search_field`); the
+        // legacy below-toolbar search bar collapses to nothing.
+        let search_bar: Element<'_, Message> = Space::new().height(0).into();
 
         // ── Status message ──
         // While the import / identity sidebars are open, the panel surfaces
@@ -211,49 +197,25 @@ impl Oryxis {
         let mut cards: Vec<Element<'_, Message>> = Vec::new();
 
         if filtered_keys.is_empty() && self.keys.is_empty() {
-            let empty_state = container(
-                column![
-                    container(
-                        iced_fonts::lucide::key_round().size(32).color(OryxisColors::t().text_muted),
-                    )
-                    .padding(16)
-                    .style(|_| container::Style {
-                        background: Some(Background::Color(OryxisColors::t().bg_surface)),
-                        border: Border { radius: Radius::from(12.0), ..Default::default() },
-                        ..Default::default()
-                    }),
-                    Space::new().height(20),
-                    text(crate::i18n::t("add_key_title")).size(20).color(OryxisColors::t().text_primary),
-                    Space::new().height(8),
-                    text(crate::i18n::t("add_key_desc"))
-                        .size(13).color(OryxisColors::t().text_muted),
-                    Space::new().height(24),
-                    crate::widgets::cta_button(
-                        crate::i18n::t("import_key").to_string(),
-                        Message::ShowKeyPanel,
-                    ),
-                ]
-                .align_x(iced::Alignment::Center),
-            )
-            .center(Length::Fill);
+            let empty_state = crate::widgets::empty_state(
+                iced_fonts::lucide::key_round()
+                    .size(32)
+                    .color(OryxisColors::t().text_muted)
+                    .into(),
+                crate::i18n::t("add_key_title").to_string(),
+                crate::i18n::t("add_key_desc").to_string(),
+                Some((
+                    crate::i18n::t("import_key").to_string(),
+                    Message::ShowKeyPanel,
+                )),
+            );
 
-            let main_content = column![toolbar, search_bar, status, empty_state]
+            // No toolbar when empty: search is hidden and the "+ Add" lives
+            // in the empty-state CTA (avoids an orphaned action button).
+            // Side panels are hoisted to `view_main` (active_side_panel).
+            let main_content = column![search_bar, status, empty_state]
                 .width(Length::Fill)
                 .height(Length::Fill);
-
-            if self.show_key_panel {
-                let panel = self.view_key_import_panel();
-                return dir_row(vec![main_content.into(), panel])
-                    .width(Length::Fill)
-                    .height(Length::Fill)
-                    .into();
-            } else if self.show_identity_panel {
-                let panel = self.view_identity_panel();
-                return dir_row(vec![main_content.into(), panel])
-                    .width(Length::Fill)
-                    .height(Length::Fill)
-                    .into();
-            }
             return main_content.into();
         } else if filtered_keys.is_empty() {
             let no_results = container(
@@ -392,12 +354,9 @@ impl Oryxis {
                 .on_exit(Message::KeyCardUnhovered)
                 .on_right_press(Message::ShowKeyMenu(idx));
 
-            cards.push(
-                container(wrapped)
-                    .width(Length::Fill)
-                    .clip(true)
-                    .into(),
-            );
+            let card_el: Element<'_, Message> =
+                container(wrapped).width(Length::Fill).clip(true).into();
+            cards.push(self.card_wash(card_el, OryxisColors::t().accent));
         }
 
         // Responsive grid: column count derived from the current window
@@ -406,11 +365,7 @@ impl Oryxis {
         // the window or opens/closes the side panel, the next view()
         // recomputes `cols` and the cards rewrap accordingly instead of
         // disappearing into clipped overflow.
-        let nav_width = if self.sidebar_collapsed {
-            crate::app::SIDEBAR_WIDTH_COLLAPSED
-        } else {
-            crate::app::SIDEBAR_WIDTH
-        };
+        let nav_width = self.vault_rail_width();
         let panel_width = if self.show_key_panel || self.show_identity_panel {
             crate::app::PANEL_WIDTH
         } else {
@@ -597,12 +552,9 @@ impl Oryxis {
                 .on_exit(Message::IdentityCardUnhovered)
                 .on_right_press(Message::ShowIdentityMenu(idx));
 
-            identity_cards.push(
-                container(wrapped)
-                    .width(Length::Fill)
-                    .clip(true)
-                    .into(),
-            );
+            let id_card_el: Element<'_, Message> =
+                container(wrapped).width(Length::Fill).clip(true).into();
+            identity_cards.push(self.card_wash(id_card_el, OryxisColors::t().accent));
         }
 
         let identity_grid_elem = distribute_card_grid(identity_cards, cols, 12.0, 12.0);
@@ -631,26 +583,12 @@ impl Oryxis {
         .height(Length::Fill);
 
         // ── Main content ──
-        let main_content = column![toolbar, search_bar, status, grid]
+        // Side panels (key import / identity editor) are hoisted to
+        // `view_main` (active_side_panel) so they cover the sub-nav band.
+        column![toolbar, search_bar, status, grid]
             .width(Length::Fill)
-            .height(Length::Fill);
-
-        // ── Side panel ──
-        if self.show_key_panel {
-            let panel = self.view_key_import_panel();
-            dir_row(vec![main_content.into(), panel])
-                .width(Length::Fill)
-                .height(Length::Fill)
-                .into()
-        } else if self.show_identity_panel {
-            let panel = self.view_identity_panel();
-            dir_row(vec![main_content.into(), panel])
-                .width(Length::Fill)
-                .height(Length::Fill)
-                .into()
-        } else {
-            main_content.into()
-        }
+            .height(Length::Fill)
+            .into()
     }
 
     pub(crate) fn view_key_import_panel(&self) -> Element<'_, Message> {

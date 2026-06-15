@@ -20,11 +20,10 @@ impl Oryxis {
     pub(crate) fn view_cloud_accounts(&self) -> Element<'_, Message> {
         let toolbar = container(
             dir_row(vec![
-                text(t("cloud_accounts"))
-                    .size(18)
-                    .color(OryxisColors::t().text_primary)
-                    .into(),
-                Space::new().width(Length::Fill).into(),
+                // Search fills the leading space (hidden + Fill spacer when
+                // there are no accounts, so the action stays trailing).
+                self.vault_search_field(),
+                Space::new().width(10).into(),
                 {
                     let fg = OryxisColors::t().button_text;
                     button(
@@ -79,15 +78,20 @@ impl Oryxis {
             .align_y(iced::Alignment::Center),
         )
         .padding(Padding {
-            top: 20.0,
+            top: 16.0,
             right: 24.0,
             bottom: 16.0,
             left: 24.0,
         })
         .width(Length::Fill);
 
-        let main_content = if self.cloud_profiles.is_empty() {
-            let empty_state = container(
+        let main_content = if !self.any_cloud_provider_installed() {
+            // No cloud-provider plugin installed: a static explainer
+            // (what Cloud Accounts are for + a route to the Plugins
+            // panel to install a provider). Accounts can't function
+            // without a provider plugin, so the list and +Account are
+            // intentionally replaced rather than shown empty.
+            let explainer = container(
                 column![
                     container(
                         iced_fonts::lucide::cloud()
@@ -104,29 +108,71 @@ impl Oryxis {
                         ..Default::default()
                     }),
                     Space::new().height(20),
-                    text(t("cloud_empty_title"))
+                    text(t("cloud_no_provider_title"))
                         .size(20)
                         .color(OryxisColors::t().text_primary),
                     Space::new().height(8),
-                    text(t("cloud_empty_desc"))
+                    text(t("cloud_no_provider_desc"))
                         .size(13)
                         .color(OryxisColors::t().text_muted),
                     Space::new().height(24),
                     crate::widgets::cta_button(
-                        t("cloud_new_account_btn").to_string(),
-                        Message::ShowCloudForm(None),
+                        t("cloud_no_provider_btn").to_string(),
+                        Message::ChangeSettingsSection(
+                            crate::state::SettingsSection::Plugins,
+                        ),
                     ),
                 ]
                 .align_x(iced::Alignment::Center),
             )
             .center(Length::Fill);
 
-            column![toolbar, empty_state]
+            column![explainer]
+                .width(Length::Fill)
+                .height(Length::Fill)
+        } else if self
+            .cloud_profiles
+            .iter()
+            .all(|p| !self.cloud_provider_installed(&p.provider))
+        {
+            // At least one provider plugin is installed, but no account
+            // belongs to an installed provider (none saved, or all
+            // saved accounts target a provider whose plugin was
+            // removed). Show the regular empty state + toolbar.
+            let empty_state = crate::widgets::empty_state(
+                iced_fonts::lucide::cloud()
+                    .size(32)
+                    .color(OryxisColors::t().text_muted)
+                    .into(),
+                t("cloud_empty_title").to_string(),
+                t("cloud_empty_desc").to_string(),
+                Some((
+                    t("cloud_new_account_btn").to_string(),
+                    Message::ShowCloudForm(None),
+                )),
+            );
+
+            // No toolbar when empty: search is hidden and the "+ Account"
+            // lives in the empty-state CTA (avoids an orphaned button).
+            column![empty_state]
                 .width(Length::Fill)
                 .height(Length::Fill)
         } else {
             let mut cards: Vec<Element<'_, Message>> = Vec::new();
-            for cp in &self.cloud_profiles {
+            let needle = self.cloud_search.trim().to_lowercase();
+            // Hide accounts whose provider plugin isn't installed; they
+            // stay in the vault and reappear when the plugin is back.
+            // Also apply the toolbar search needle (label / provider match).
+            for cp in self
+                .cloud_profiles
+                .iter()
+                .filter(|p| self.cloud_provider_installed(&p.provider))
+                .filter(|p| {
+                    needle.is_empty()
+                        || p.label.to_lowercase().contains(&needle)
+                        || p.provider.to_lowercase().contains(&needle)
+                })
+            {
                 // Brand glyph + brand colour from the bundled SVG set.
                 // The icon tile keeps a neutral surface bg so the brand
                 // colour reads on the glyph itself instead of fighting
@@ -190,11 +236,16 @@ impl Oryxis {
                 )
                 .padding(card_padding)
                 .width(Length::Fill)
-                .style(|_| container::Style {
+                .style(move |_| container::Style {
                     background: Some(Background::Color(OryxisColors::t().bg_surface)),
                     border: Border {
                         radius: Radius::from(10.0),
-                        color: OryxisColors::t().border,
+                        // Accent border on hover, matching host / key cards.
+                        color: if show_dots {
+                            OryxisColors::t().accent
+                        } else {
+                            OryxisColors::t().border
+                        },
                         width: 1.0,
                     },
                     ..Default::default()
@@ -253,93 +304,23 @@ impl Oryxis {
                     .on_exit(Message::CloudCardUnhovered)
                     .on_right_press(Message::ShowCloudCardMenu(cp_id));
 
-                cards.push(container(wrapped).width(Length::Fill).clip(true).into());
+                let card_el: Element<'_, Message> =
+                    container(wrapped).width(Length::Fill).clip(true).into();
+                cards.push(self.card_wash(card_el, brand_color));
             }
 
-            let nav_width = if self.sidebar_collapsed {
-                crate::app::SIDEBAR_WIDTH_COLLAPSED
-            } else {
-                crate::app::SIDEBAR_WIDTH
-            };
+            let nav_width = self.vault_rail_width();
             let panel_width = if self.cloud_form_visible { PANEL_WIDTH } else { 0.0 };
             let available =
                 (self.window_size.width - nav_width - panel_width - 48.0).max(0.0);
             let cols = card_grid_columns(available, CARD_WIDTH, 12.0);
             let cloud_grid = distribute_card_grid(cards, cols, 12.0, 12.0);
 
-            // Cloud Sync settings card. Sits between the toolbar and
-            // the cards so the user can flip auto-refresh / auto-
-            // archive from the same screen they manage their cloud
-            // profiles on. Interval / days inputs accept partial typed
-            // input and clamp on commit via the sanitize helper in the
-            // dispatcher.
-            let refresh_interval_input = text_input(
-                "30",
-                &self.setting_cloud_auto_refresh_interval_minutes,
-            )
-            .on_input(Message::SettingCloudAutoRefreshIntervalChanged)
-            .padding(8)
-            .width(120)
-            .style(rounded_input_style)
-            .align_x(dir_align_x());
-            let orphan_days_input = text_input(
-                "7",
-                &self.setting_cloud_orphan_archive_days,
-            )
-            .on_input(Message::SettingCloudOrphanArchiveDaysChanged)
-            .padding(8)
-            .width(120)
-            .style(rounded_input_style)
-            .align_x(dir_align_x());
-            let cloud_sync_settings = panel_section(column![
-                text(t("settings_cloud_section"))
-                    .size(14)
-                    .color(OryxisColors::t().text_primary),
-                Space::new().height(10),
-                toggle_row(
-                    t("settings_cloud_auto_refresh"),
-                    self.setting_cloud_auto_refresh_enabled,
-                    Message::SettingCloudAutoRefreshToggle,
-                ),
-                Space::new().height(8),
-                dir_row(vec![
-                    text(t("settings_cloud_auto_refresh_interval"))
-                        .size(12)
-                        .color(OryxisColors::t().text_muted)
-                        .into(),
-                    Space::new().width(Length::Fill).into(),
-                    refresh_interval_input.into(),
-                ])
-                .align_y(iced::Alignment::Center),
-                Space::new().height(14),
-                toggle_row(
-                    t("settings_cloud_auto_archive"),
-                    self.setting_cloud_auto_archive_orphans,
-                    Message::SettingCloudAutoArchiveToggle,
-                ),
-                Space::new().height(8),
-                dir_row(vec![
-                    text(t("settings_cloud_orphan_archive_days"))
-                        .size(12)
-                        .color(OryxisColors::t().text_muted)
-                        .into(),
-                    Space::new().width(Length::Fill).into(),
-                    orphan_days_input.into(),
-                ])
-                .align_y(iced::Alignment::Center),
-            ]);
-
+            // Cloud Sync settings (auto-refresh / orphan archive) moved
+            // to Settings -> Cloud (`view_cloud_sync_settings`); this
+            // surface is now just the account grid.
             let grid = scrollable(
-                column![
-                    container(cloud_sync_settings).padding(Padding {
-                        top: 0.0,
-                        right: 0.0,
-                        bottom: 16.0,
-                        left: 0.0,
-                    }),
-                    cloud_grid
-                ]
-                .padding(Padding {
+                column![cloud_grid].padding(Padding {
                     top: 0.0,
                     right: 24.0,
                     bottom: 24.0,
@@ -353,17 +334,79 @@ impl Oryxis {
                 .height(Length::Fill)
         };
 
-        // Settings → Cloud is CRUD-only (manage credentials). Discovery
-        // / import lives in the Hosts view and is triggered from the
-        // "+ Host [▾]" split button there, no overlay rendering here.
-        if self.cloud_form_visible {
-            let panel = self.view_cloud_form_panel();
-            dir_row(vec![main_content.into(), panel])
-                .width(Length::Fill)
-                .height(Length::Fill)
-                .into()
-        } else {
-            main_content.into()
-        }
+        // The account form panel is hoisted to `view_main`
+        // (active_side_panel) so it rises over the sub-nav band.
+        main_content.into()
+    }
+
+    /// Cloud Sync preferences (auto-refresh interval, orphan
+    /// auto-archive). Lives in Settings -> Cloud; the cloud *account*
+    /// CRUD moved to the top-level `View::Cloud` surface. Interval /
+    /// days inputs accept partial typed input and clamp on commit via
+    /// the sanitize helper in the dispatcher.
+    pub(crate) fn view_cloud_sync_settings(&self) -> Element<'_, Message> {
+        let refresh_interval_input = text_input(
+            "30",
+            &self.setting_cloud_auto_refresh_interval_minutes,
+        )
+        .on_input(Message::SettingCloudAutoRefreshIntervalChanged)
+        .padding(8)
+        .width(120)
+        .style(rounded_input_style)
+        .align_x(dir_align_x());
+        let orphan_days_input = text_input(
+            "7",
+            &self.setting_cloud_orphan_archive_days,
+        )
+        .on_input(Message::SettingCloudOrphanArchiveDaysChanged)
+        .padding(8)
+        .width(120)
+        .style(rounded_input_style)
+        .align_x(dir_align_x());
+        let cloud_sync_settings = panel_section(column![
+            text(t("settings_cloud_section"))
+                .size(14)
+                .color(OryxisColors::t().text_primary),
+            Space::new().height(10),
+            toggle_row(
+                t("settings_cloud_auto_refresh"),
+                self.setting_cloud_auto_refresh_enabled,
+                Message::SettingCloudAutoRefreshToggle,
+            ),
+            Space::new().height(8),
+            dir_row(vec![
+                text(t("settings_cloud_auto_refresh_interval"))
+                    .size(12)
+                    .color(OryxisColors::t().text_muted)
+                    .into(),
+                Space::new().width(Length::Fill).into(),
+                refresh_interval_input.into(),
+            ])
+            .align_y(iced::Alignment::Center),
+            Space::new().height(14),
+            toggle_row(
+                t("settings_cloud_auto_archive"),
+                self.setting_cloud_auto_archive_orphans,
+                Message::SettingCloudAutoArchiveToggle,
+            ),
+            Space::new().height(8),
+            dir_row(vec![
+                text(t("settings_cloud_orphan_archive_days"))
+                    .size(12)
+                    .color(OryxisColors::t().text_muted)
+                    .into(),
+                Space::new().width(Length::Fill).into(),
+                orphan_days_input.into(),
+            ])
+            .align_y(iced::Alignment::Center),
+        ]);
+
+        scrollable(
+            container(cloud_sync_settings)
+                .padding(Padding { top: 20.0, right: 24.0, bottom: 24.0, left: 24.0 })
+                .width(Length::Fill),
+        )
+        .height(Length::Fill)
+        .into()
     }
 }

@@ -3,6 +3,12 @@
 pub(super) fn lookup(key: &str) -> Option<&'static str> {
     Some(match key {
         // Navigation
+        "expand" => "Genişlet",
+        "collapse" => "Daralt",
+        "nav_orientation" => "Gezinme",
+        "nav_orientation_desc" => "Yatay bölümleri çubuk altında hap şeridi olarak gösterir; Dikey solda simge rayı olarak gösterir.",
+        "nav_orientation_horizontal" => "Yatay (haplar)",
+        "nav_orientation_vertical" => "Dikey (ray)",
         "hosts" => "Sunucular",
         "keychain" => "Anahtarlık",
         "snippets" => "Snippet'ler",
@@ -23,6 +29,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "cloud_discover_import_into_placeholder" => "Grup adı (mevcut veya yeni)",
         "search_groups" => "Grupları ara…",
         "tab_accent_line" => "Sekme alt çizgisini sunucu vurgusuyla renklendir",
+        "tab_accent_wash" => "Üst çubuğu sunucu vurgusuyla boya",
         "host_filter_by_profile" => "Bulut profiline göre filtrele",
         "host_filter_active" => "Filtre",
         "cloud_profile_sync" => "Şimdi senkronize et",
@@ -239,10 +246,6 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "close_position_left" => "Sol",
         "close_position_right" => "Sağ",
         "show_tab_status_dot" => "Sekmelerde bağlantı durumu noktasını göster",
-        "layout_mode" => "Düzen modu",
-        "layout_mode_desc" => "Workspace, bir bağlantı sekmesi açıkken kenar çubuğunu gizler, böylece terminal tüm alanı kaplar. Klasik kenar çubuğunu her zaman gösterir.",
-        "layout_mode_classic" => "Klasik (kenar çubuğu)",
-        "layout_mode_workspace" => "Workspace (üst sekmeler)",
         "default_host_icon" => "Varsayılan sunucu simgesi",
         "icon_circular" => "Yuvarlak",
         "icon_square" => "Kare",
@@ -349,7 +352,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "in_progress" => "Devam Ediyor",
         "entries" => "kayıt",
         "of" => "/",
-        "no_activity" => "Henüz kaydedilmiş etkinlik yok.",
+        "no_activity" => "Henüz etkinlik yok",
+        "no_activity_desc" => "Oturumlar ve bağlantı olayları burada görünecek.",
 
         // Identity
         "identity" => "Kimlik",
@@ -518,8 +522,10 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         // Proxy Identities (Settings → Proxies)
         "proxies" => "Proxy'ler",
         "new_proxy_identity" => "Yeni Proxy",
+        "edit_proxy_identity" => "Proxy'yi düzenle",
         "proxy_identity_label" => "Etiket",
-        "proxy_identities_empty" => "Henüz kayıtlı proxy yok.",
+        "proxy_identities_empty" => "Bir kez proxy kaydedin, tüm sunucularda yeniden kullanın.",
+        "proxy_identities_empty_title" => "Henüz proxy yok",
         "proxy_type_identity_fallback" => "Kayıtlı proxy",
         "proxy_type_identity_deleted" => "(silinmiş proxy)",
         "proxy_identity_err_label_required" => "Etiket gerekli",
@@ -530,6 +536,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "groups_section" => "Gruplar",
         "hosts_section" => "Sunucular",
         "flatten_hosts_label" => "Tüm sunucuları kökte göster",
+        "card_accent_glass_label" => "Vurgu camlı kartlar",
+        "card_accent_glass_desc" => "Her kartın renginde hafif geçiş (sunucu/grup rengi solarak).",
         "flatten_hosts_desc" => "Açıkken pano kökü, her sunucunun düz bir listesinin üstünde bir Gruplar bölümü gösterir. Kapalıyken gruplardaki sunucular siz grubu açana kadar gizli kalır.",
 
         // Sync passwords toggle
@@ -600,6 +608,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "ip_or_hostname" => "IP veya Sunucu Adı",
         "my_server_placeholder" => "Sunucum",
         "group_placeholder" => "Production, Staging...",
+        "edit_group" => "Grubu düzenle",
+        "group_icon_color" => "Simge ve renk",
         "add_key_btn" => "+ Anahtar",
         "port_forwarding" => "Port Yönlendirme",
 
@@ -773,6 +783,10 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "log_retention_30d" => "1 ay",
         "log_retention_90d" => "3 ay",
         "log_delete_confirm_body" => "bu oturum kaydı kalıcı olarak silinecek.",
+        "known_host_remove_confirm_title" => "Ana makine anahtarı kaldırılsın mı?",
+        "known_host_remove_confirm_body" => "bu ana makine anahtarı kaldırılır; bir sonraki bağlantıda yeniden doğrulayacaksınız.",
+        "known_hosts_clear_confirm_title" => "Tüm ana makineler yeniden doğrulansın mı?",
+        "known_hosts_clear_confirm_body" => "Kaydedilen her ana makine anahtarı kaldırılır; bir sonraki bağlantıda her ana makineyi yeniden doğrulayacaksınız.",
         "plugin_uninstall_confirm_body" => "indirilen ikili dosyalar bu makineden silinecek. İstediğiniz zaman bu panelden yeniden yükleyebilirsiniz.",
         "plugin_action_check_updates" => "Güncellemeleri denetle",
         "plugin_action_retry" => "Tekrar dene",
@@ -809,7 +823,11 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
 
         // Cloud Accounts plugin gate
         "cloud_plugin_missing_title" => "AWS eklentisi kurulu değil",
-        "cloud_plugin_missing_body" => "Kimlik Bilgilerini Test Et ve Sunucuları Keşfet, AWS eklentisini gerektirir. Bu hesabı kullanmak için kurun.",
+        "cloud_plugin_missing_title_suffix" => "eklenti kurulu değil",
+        "cloud_plugin_missing_body" => "Kimlik Bilgilerini Test Et ve Sunucuları Keşfet, bu sağlayıcının eklentisini gerektirir. Bu hesabı kullanmak için kurun.",
+        "cloud_no_provider_title" => "Kurulu bulut sağlayıcısı yok",
+        "cloud_no_provider_desc" => "Bulut hesapları AWS ve Kubernetes gibi sağlayıcılardan sunucuları keşfeder ve içe aktarır. Hesap eklemek için bir sağlayıcı eklentisi kurun.",
+        "cloud_no_provider_btn" => "Eklentileri Aç",
 
         // Sort dropdown (Hosts / Keychain / Snippets toolbars)
         "sort_label_asc" => "A-z",
@@ -825,6 +843,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "create_port_forward_title" => "Bir portu yönlendir",
         "create_port_forward_desc" => "Terminal olmadan bir tüneli açık tutun: veritabanları, panolar, webhook'lar.",
         "search_port_forwards" => "Port yönlendirmelerini ara...",
+        "search_cloud_accounts" => "Hesap ara...",
+        "search_proxies" => "Proxy ara...",
         "pf_kind" => "Tür",
         "pf_host" => "Sunucu üzerinden",
         "pf_listen_host" => "Dinleme adresi",
@@ -846,7 +866,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "cjk_font_downloading" => "Dil yazi tipi indiriliyor...",
         "cjk_font_failed" => "Dil yazi tipi indirilemedi. Sistem yazi tipi kullaniliyor.",
 
-        "logs" => "Kayıtlar",
+        "logs" => "Geçmiş",
         "vault" => "Kasa",
         "search_logs" => "Kayıtları ara...",
         "clear_all" => "Tümünü temizle",

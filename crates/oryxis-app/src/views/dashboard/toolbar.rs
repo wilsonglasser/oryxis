@@ -41,29 +41,22 @@ impl Oryxis {
             // unstyled-text current crumb. Gaps between crumbs come
             // from explicit `Space::new().width(...)` separators
             // below, not from button chrome.
-            let mut crumbs: Vec<Element<'_, Message>> = vec![
-                button(
-                    text(t("hosts"))
-                        .size(20)
-                        .color(OryxisColors::t().accent),
-                )
-                .on_press(Message::BackToRoot)
-                .padding(Padding::ZERO)
-                .style(|_, _| button::Style {
-                    background: Some(Background::Color(Color::TRANSPARENT)),
-                    border: Border::default(),
-                    ..Default::default()
-                }).into(),
-            ];
+            // No leading "Hosts"/home crumb: the top Home tab already
+            // returns to the root host list (it clears the active group),
+            // so a second home here was redundant. The breadcrumb starts
+            // straight at the folder path.
+            let mut crumbs: Vec<Element<'_, Message>> = Vec::new();
             for (idx, g) in chain.iter().enumerate() {
                 let is_last = idx == chain.len() - 1;
-                // Space on both sides of the separator so the "/" never
-                // glues to the preceding crumb under RTL (`dir_row`
-                // reverses the slice and a missing leading space here
-                // becomes a missing trailing space on screen).
-                crumbs.push(Space::new().width(4).into());
-                crumbs.push(text("/").size(20).color(OryxisColors::t().text_muted).into());
-                crumbs.push(Space::new().width(8).into());
+                // Separator only between crumbs, not before the first.
+                // Space on both sides so the "/" never glues to the
+                // preceding crumb under RTL (`dir_row` reverses the
+                // slice).
+                if idx > 0 {
+                    crumbs.push(Space::new().width(4).into());
+                    crumbs.push(text("/").size(20).color(OryxisColors::t().text_muted).into());
+                    crumbs.push(Space::new().width(8).into());
+                }
                 crumbs.push(
                     iced_fonts::lucide::folder().size(18).color(OryxisColors::t().accent).into(),
                 );
@@ -73,6 +66,7 @@ impl Oryxis {
                     crumbs.push(
                         text(g.label.clone())
                             .size(20)
+                            .wrapping(iced::widget::text::Wrapping::None)
                             .color(OryxisColors::t().text_primary)
                             .into(),
                     );
@@ -87,6 +81,7 @@ impl Oryxis {
                         button(
                             text(g.label.clone())
                                 .size(20)
+                                .wrapping(iced::widget::text::Wrapping::None)
                                 .color(OryxisColors::t().accent),
                         )
                         .on_press(Message::OpenGroup(parent_id))
@@ -102,7 +97,9 @@ impl Oryxis {
             }
             dir_row(crumbs).align_y(iced::Alignment::Center).into()
         } else {
-            text(t("hosts")).size(20).color(OryxisColors::t().text_primary).into()
+            // Title dropped (redundant with the section nav); the search
+            // field fills this slot in the toolbar instead.
+            Space::new().width(0).into()
         };
 
         // "+ Host [▾]" split button, primary half opens the manual
@@ -144,7 +141,7 @@ impl Oryxis {
                 ]).align_y(iced::Alignment::Center),
             )
             .center_y(Length::Fixed(24.0))
-            .padding(Padding { top: 0.0, right: 14.0, bottom: 0.0, left: 14.0 }),
+            .center_x(Length::Fixed(72.0)),
         )
         .on_press(Message::ShowNewConnection)
         .style(move |_, status| {
@@ -296,22 +293,70 @@ impl Oryxis {
             self.hosts_sort,
         );
 
+        // Grid/List toggle, hidden once the window is so narrow that the
+        // grid already renders as a single column (list == grid there).
+        let nav_width = self.vault_rail_width();
+        let panel_open = self.cloud_discover_visible || self.show_host_panel;
+        let panel_width = if panel_open { crate::app::PANEL_WIDTH } else { 0.0 };
+        let available = (self.window_size.width - nav_width - panel_width - 48.0).max(0.0);
+        let responsive_cols =
+            crate::widgets::card_grid_columns(available, crate::app::CARD_WIDTH, 12.0);
+        let view_toggle: Element<'_, Message> = if responsive_cols > 1 {
+            dir_row(vec![
+                crate::widgets::host_view_toggle_button(self.setting_host_list_view),
+                Space::new().width(6).into(),
+            ])
+            .align_y(iced::Alignment::Center)
+            .into()
+        } else {
+            Space::new().width(0).into()
+        };
+
         // Let the row size to its natural height (button chrome
         // included) so the action button keeps its true visual size.
         // Stability across views (dynamic group has no action) is
         // handled by sizing the empty action slot to the same height
         // in `resolved_action` above.
+        // Inside a group the breadcrumb fills the leading space (clipping
+        // when long), and the search sits to its right at a fixed width,
+        // just before the action cluster. At root there's no breadcrumb,
+        // so the search fills.
+        let in_group = self.active_group.is_some();
+        let (left_el, mid_gap, search_el): (
+            Element<'_, Message>,
+            Element<'_, Message>,
+            Element<'_, Message>,
+        ) = if in_group {
+            (
+                container(toolbar_left).width(Length::Fill).clip(true).into(),
+                Space::new().width(12).into(),
+                container(self.vault_search_field())
+                    .width(Length::Fixed(340.0))
+                    .into(),
+            )
+        } else {
+            (
+                toolbar_left,
+                Space::new().width(0).into(),
+                self.vault_search_field(),
+            )
+        };
         let toolbar = container(
             dir_row(vec![
-                toolbar_left,
-                Space::new().width(Length::Fill).into(),
+                left_el,
+                mid_gap,
+                search_el,
+                Space::new().width(10).into(),
+                view_toggle,
                 sort_btn,
                 Space::new().width(8).into(),
                 resolved_action,
             ])
             .align_y(iced::Alignment::Center),
         )
-        .padding(Padding { top: 20.0, right: 24.0, bottom: 16.0, left: 24.0 })
+        // Top padding matches the 24px side padding so the page's inner
+        // spacing is uniform on the X and Y axes.
+        .padding(Padding { top: 16.0, right: 24.0, bottom: 16.0, left: 24.0 })
         .width(Length::Fill);
         toolbar.into()
     }

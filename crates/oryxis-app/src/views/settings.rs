@@ -31,9 +31,10 @@ impl Oryxis {
                 (crate::i18n::t("ai_assistant"), SettingsSection::AI),
                 ("SFTP", SettingsSection::Sftp),
                 (crate::i18n::t("sync"), SettingsSection::Sync),
-                (crate::i18n::t("cloud_accounts"), SettingsSection::Cloud),
-                (crate::i18n::t("proxies"), SettingsSection::Proxies),
-                (crate::i18n::t("known_hosts"), SettingsSection::KnownHosts),
+                // Cloud Accounts / Proxies / Known Hosts moved out to
+                // top-level vault surfaces (sub-nav pills + sidebar).
+                // Only the Cloud Sync settings block stays in Settings.
+                (crate::i18n::t("settings_cloud_section"), SettingsSection::Cloud),
                 (crate::i18n::t("mcp_server"), SettingsSection::Mcp),
                 (crate::i18n::t("plugins"), SettingsSection::Plugins),
                 (crate::i18n::t("shortcuts"), SettingsSection::Shortcuts),
@@ -842,6 +843,16 @@ impl Oryxis {
                     text(crate::i18n::t("flatten_hosts_desc"))
                         .size(11)
                         .color(OryxisColors::t().text_muted),
+                    Space::new().height(12),
+                    toggle_row(
+                        crate::i18n::t("card_accent_glass_label"),
+                        self.setting_card_accent_glass,
+                        Message::ToggleCardAccentGlass,
+                    ),
+                    Space::new().height(4),
+                    text(crate::i18n::t("card_accent_glass_desc"))
+                        .size(11)
+                        .color(OryxisColors::t().text_muted),
                 ]);
 
                 let status_bar_section = panel_section(column![
@@ -855,6 +866,12 @@ impl Oryxis {
                         crate::i18n::t("tab_accent_line"),
                         self.setting_tab_accent_line,
                         Message::SettingToggleTabAccentLine,
+                    ),
+                    Space::new().height(8),
+                    toggle_row(
+                        crate::i18n::t("tab_accent_wash"),
+                        self.setting_tab_accent_wash,
+                        Message::SettingToggleTabAccentWash,
                     ),
                 ]);
 
@@ -961,36 +978,36 @@ impl Oryxis {
                 // the close-button picker. The display closure
                 // translates the token to the localized label.
                 let layout_options = vec![
-                    "classic".to_string(),
-                    "workspace".to_string(),
+                    "horizontal".to_string(),
+                    "vertical".to_string(),
                 ];
                 let layout_section = panel_section(column![
                     dir_row(vec![
-                        text(crate::i18n::t("layout_mode"))
+                        text(crate::i18n::t("nav_orientation"))
                             .size(13)
                             .color(OryxisColors::t().text_primary)
                             .into(),
                         Space::new().width(Length::Fill).into(),
                         pick_list(
-                            Some(self.setting_layout_mode.clone()),
+                            Some(self.setting_nav_orientation.clone()),
                             layout_options,
                             |s: &String| {
-                                crate::i18n::t(if s == "workspace" {
-                                    "layout_mode_workspace"
+                                crate::i18n::t(if s == "vertical" {
+                                    "nav_orientation_vertical"
                                 } else {
-                                    "layout_mode_classic"
+                                    "nav_orientation_horizontal"
                                 })
                                 .to_string()
                             },
                         )
-                        .on_select(Message::SettingLayoutModeChanged)
+                        .on_select(Message::SettingNavOrientationChanged)
                         .width(200)
                         .padding(10)
                         .style(crate::widgets::rounded_pick_list_style)
                         .into(),
                     ]).align_y(iced::Alignment::Center),
                     Space::new().height(4),
-                    text(crate::i18n::t("layout_mode_desc"))
+                    text(crate::i18n::t("nav_orientation_desc"))
                         .size(11)
                         .color(OryxisColors::t().text_muted),
                 ]);
@@ -2072,10 +2089,8 @@ impl Oryxis {
                 .height(Length::Fill)
                 .into()
             }
-            SettingsSection::Proxies => self.view_settings_proxies(),
-            SettingsSection::Cloud => self.view_cloud_accounts(),
+            SettingsSection::Cloud => self.view_cloud_sync_settings(),
             SettingsSection::Plugins => self.view_plugins_panel(),
-            SettingsSection::KnownHosts => self.view_known_hosts(),
             SettingsSection::Mcp => self.view_settings_mcp(),
         };
 
@@ -2094,22 +2109,20 @@ impl Oryxis {
     /// Settings → Proxies. List of saved `ProxyIdentity` rows + an
     /// inline create / edit form. Form is hidden by default; clicking
     /// "+ New" or a row's edit icon opens it pre-populated.
-    fn view_settings_proxies(&self) -> Element<'_, Message> {
+    pub(crate) fn view_settings_proxies(&self) -> Element<'_, Message> {
         // The standalone title binding became unused once the
         // toolbar block below inlines its own label; the previous
         // assignment leaked into the Text type-inference too. Drop
         // it explicitly so rustc doesn't try to pin down a generic
         // Theme parameter for an unread binding.
         // ── List rows ──
+        let needle = self.proxy_search.trim().to_lowercase();
         let mut list = column![].spacing(8);
-        if self.proxy_identities.is_empty() && !self.proxy_identity_form_visible {
-            list = list.push(
-                text(crate::i18n::t("proxy_identities_empty"))
-                    .size(13)
-                    .color(OryxisColors::t().text_muted),
-            );
-        }
-        for pi in &self.proxy_identities {
+        for pi in self.proxy_identities.iter().filter(|pi| {
+            needle.is_empty()
+                || pi.label.to_lowercase().contains(&needle)
+                || pi.host.to_lowercase().contains(&needle)
+        }) {
             let kind_label = match &pi.proxy_type {
                 oryxis_core::models::connection::ProxyType::Socks5 => "SOCKS5",
                 oryxis_core::models::connection::ProxyType::Socks4 => "SOCKS4",
@@ -2225,7 +2238,7 @@ impl Oryxis {
                 ..Default::default()
             })
             .width(Length::Fill);
-            list = list.push(row_el);
+            list = list.push(self.card_wash(row_el.into(), OryxisColors::t().accent));
         }
 
         // "+ Proxy" button, same Cloud-Accounts pattern: bold plus
@@ -2271,24 +2284,35 @@ impl Oryxis {
             .into()
         };
 
-        // ── Inline form (only when visible) ──
-        let form: Element<'_, Message> = if self.proxy_identity_form_visible {
-            self.view_proxy_identity_form()
-        } else {
-            Space::new().height(0).into()
-        };
+        // Empty + no form open → polished centered empty state (matches
+        // Hosts / Keychain / Snippets), no toolbar (search hidden + the
+        // "+ New" lives in the CTA).
+        if self.proxy_identities.is_empty() && !self.proxy_identity_form_visible {
+            let empty = crate::widgets::empty_state(
+                iced_fonts::lucide::router()
+                    .size(32)
+                    .color(OryxisColors::t().text_muted)
+                    .into(),
+                crate::i18n::t("proxy_identities_empty_title").to_string(),
+                crate::i18n::t("proxy_identities_empty").to_string(),
+                Some((
+                    crate::i18n::t("new_proxy_identity").to_string(),
+                    Message::ShowProxyIdentityForm(None),
+                )),
+            );
+            return column![empty]
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .into();
+        }
 
-        // Toolbar layout matches Hosts / Keychain / Cloud Accounts:
-        // bold title on the leading edge, action button trailing,
-        // no extra descriptive paragraph in between (let the empty
-        // state speak for itself).
+        // Toolbar: search on the leading edge (Fill), action button
+        // trailing. The button hides while the form panel is open (the
+        // panel carries its own Save/Cancel).
         let toolbar = container(
             dir_row(vec![
-                text(crate::i18n::t("proxies"))
-                    .size(18)
-                    .color(OryxisColors::t().text_primary)
-                    .into(),
-                Space::new().width(Length::Fill).into(),
+                self.vault_search_field(),
+                Space::new().width(10).into(),
                 if self.proxy_identity_form_visible {
                     Space::new().width(0).height(Length::Fixed(32.0)).into()
                 } else {
@@ -2296,29 +2320,19 @@ impl Oryxis {
                 },
             ]).align_y(iced::Alignment::Center),
         )
-        .padding(Padding { top: 20.0, right: 24.0, bottom: 16.0, left: 24.0 })
+        .padding(Padding { top: 16.0, right: 24.0, bottom: 16.0, left: 24.0 })
         .width(Length::Fill);
 
-        // Mirror the Hosts / Keychain layout: toolbar lives OUTSIDE
-        // the scrollable so its leading padding doesn't stack with
-        // the scrollable's, and the list + form inside use their
-        // own leading padding tuned to land flush with the toolbar
-        // title (Hosts achieves this by sharing the scrollable
-        // `left: 24` with the toolbar's `left: 24` for matching
-        // indents at the top of the panel).
         let scroll = scrollable(
-            column![
-                list,
-                Space::new().height(16),
-                form,
-                Space::new().height(24),
-            ]
-            .width(Length::Fill)
-            .padding(Padding { top: 0.0, right: 24.0, bottom: 0.0, left: 24.0 })
-            .align_x(dir_align_x()),
+            column![list, Space::new().height(24)]
+                .width(Length::Fill)
+                .padding(Padding { top: 0.0, right: 24.0, bottom: 0.0, left: 24.0 })
+                .align_x(dir_align_x()),
         )
         .height(Length::Fill);
 
+        // The editor is a right-hand side panel hoisted to `view_main`
+        // (active_side_panel) so it rises over the sub-nav band.
         column![toolbar, scroll]
             .width(Length::Fill)
             .height(Length::Fill)
@@ -2392,7 +2406,7 @@ impl Oryxis {
 
     /// The inline create / edit form for a proxy identity. Used inside
     /// `view_settings_proxies` when `proxy_identity_form_visible` is on.
-    fn view_proxy_identity_form(&self) -> Element<'_, Message> {
+    pub(crate) fn view_proxy_identity_form(&self) -> Element<'_, Message> {
         use crate::state::ProxyKind;
 
         // The picker only offers the four wire types, None / Identity
@@ -2449,7 +2463,7 @@ impl Oryxis {
         // gives the same 4-px gap between label and control as every
         // other form in the app, instead of glueing them together.
         use crate::widgets::panel_field;
-        let mut col = column![
+        let col = column![
             panel_field(
                 crate::i18n::t("proxy_identity_label"),
                 text_input("home-bastion", &self.proxy_identity_form_label)
@@ -2498,36 +2512,74 @@ impl Oryxis {
             panel_field(crate::i18n::t("proxy_password"), pw_input.into()),
         ];
 
-        if let Some(err) = &self.proxy_identity_form_error {
-            col = col.push(Space::new().height(8)).push(
-                text(err.as_str())
-                    .size(12)
-                    .color(OryxisColors::t().error),
-            );
-        }
+        // ── Header (title + close), matching the host / session-group
+        // side panels so every editor reads the same. ──
+        let title = if self.editing_proxy_identity_id.is_some() {
+            crate::i18n::t("edit_proxy_identity")
+        } else {
+            crate::i18n::t("new_proxy_identity")
+        };
+        let panel_header = container(
+            dir_row(vec![
+                text(title)
+                    .size(16)
+                    .color(OryxisColors::t().text_primary)
+                    .into(),
+                Space::new().width(Length::Fill).into(),
+                button(text("\u{00D7}").size(14).color(OryxisColors::t().text_muted))
+                    .on_press(Message::HideProxyIdentityForm)
+                    .padding(Padding { top: 4.0, right: 8.0, bottom: 4.0, left: 8.0 })
+                    .style(|_, _| button::Style {
+                        background: Some(Background::Color(Color::TRANSPARENT)),
+                        border: Border::default(),
+                        ..Default::default()
+                    })
+                    .into(),
+            ])
+            .align_y(iced::Alignment::Center),
+        )
+        .padding(Padding { top: 16.0, right: 16.0, bottom: 12.0, left: 16.0 });
 
-        col = col.push(Space::new().height(16)).push(
-            dir_row(vec![cancel_btn, Space::new().width(8).into(), save_btn])
-                .align_y(iced::Alignment::Center),
-        );
-
-        container(col)
-            .padding(Padding {
-                top: 16.0,
+        let form_scroll = scrollable(
+            container(col).padding(Padding {
+                top: 0.0,
                 right: 16.0,
                 bottom: 16.0,
                 left: 16.0,
-            })
+            }),
+        )
+        .height(Length::Fill);
+
+        // Inline error sits OUTSIDE the scrollable, just above the footer,
+        // so it stays visible regardless of scroll position.
+        let error_el: Element<'_, Message> = if let Some(err) = &self.proxy_identity_form_error {
+            container(text(err.as_str()).size(12).color(OryxisColors::t().error))
+                .padding(Padding { top: 0.0, right: 16.0, bottom: 8.0, left: 16.0 })
+                .into()
+        } else {
+            Space::new().height(0).into()
+        };
+
+        let footer = container(
+            dir_row(vec![cancel_btn, Space::new().width(8).into(), save_btn])
+                .align_y(iced::Alignment::Center),
+        )
+        .padding(Padding { top: 8.0, right: 16.0, bottom: 16.0, left: 16.0 });
+
+        let panel_content = column![panel_header, form_scroll, error_el, footer].height(Length::Fill);
+
+        container(panel_content)
+            .width(crate::app::PANEL_WIDTH)
+            .height(Length::Fill)
             .style(|_| container::Style {
-                background: Some(Background::Color(OryxisColors::t().bg_hover)),
+                background: Some(Background::Color(OryxisColors::t().bg_surface)),
                 border: Border {
-                    radius: Radius::from(8.0),
                     color: OryxisColors::t().border,
                     width: 1.0,
+                    radius: Radius::from(0.0),
                 },
                 ..Default::default()
             })
-            .width(Length::Fill)
             .into()
     }
 

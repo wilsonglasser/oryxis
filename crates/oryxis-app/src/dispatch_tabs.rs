@@ -507,6 +507,9 @@ impl Oryxis {
             Message::ToggleBurgerMenu => {
                 self.show_burger_menu = !self.show_burger_menu;
             }
+            Message::ToggleSubnavOverflow => {
+                self.show_subnav_overflow = !self.show_subnav_overflow;
+            }
             Message::HideTabJump => {
                 self.show_tab_jump = false;
             }
@@ -562,6 +565,7 @@ impl Oryxis {
                 self.icon_picker_for = None;
                 self.icon_picker_for_group_form = false;
                 self.icon_picker_for_session_group = false;
+                self.icon_picker_for_group_edit = false;
                 self.icon_picker_icon_search.clear();
                 self.icon_color_popover = None;
             }
@@ -604,6 +608,11 @@ impl Oryxis {
                         self.icon_picker_icon.clone().unwrap_or_default();
                     self.cloud_dynamic_form_color =
                         self.icon_picker_color.clone().unwrap_or_default();
+                } else if self.icon_picker_for_group_edit {
+                    // Deferred save: flow into the manual group editor; the
+                    // panel's own Save persists to the vault.
+                    self.group_edit_icon = self.icon_picker_icon.clone().unwrap_or_default();
+                    self.group_edit_color = self.icon_picker_color.clone().unwrap_or_default();
                 } else if let Some(conn_id) = self.icon_picker_for {
                     let icon = self.icon_picker_icon.clone();
                     let color = self.icon_picker_color.clone();
@@ -621,6 +630,7 @@ impl Oryxis {
                 self.icon_picker_for = None;
                 self.icon_picker_for_group_form = false;
                 self.icon_picker_for_session_group = false;
+                self.icon_picker_for_group_edit = false;
                 self.icon_picker_icon_search.clear();
                 self.icon_color_popover = None;
             }
@@ -635,6 +645,9 @@ impl Oryxis {
                 } else if self.icon_picker_for_group_form {
                     self.cloud_dynamic_form_icon = String::new();
                     self.cloud_dynamic_form_color = String::new();
+                } else if self.icon_picker_for_group_edit {
+                    self.group_edit_icon = String::new();
+                    self.group_edit_color = String::new();
                 } else if let Some(conn_id) = self.icon_picker_for
                     && let Some(conn) = self.connections.iter_mut().find(|c| c.id == conn_id) {
                     conn.custom_icon = None;
@@ -647,6 +660,7 @@ impl Oryxis {
                 self.icon_picker_for = None;
                 self.icon_picker_for_group_form = false;
                 self.icon_picker_for_session_group = false;
+                self.icon_picker_for_group_edit = false;
                 self.icon_color_popover = None;
             }
             Message::CloseTab(idx) => {
@@ -696,8 +710,18 @@ impl Oryxis {
                         self.active_view = View::Dashboard;
                     } else {
                         let i = idx.min(self.tabs.len() - 1);
-                        self.active_tab = Some(i);
-                        self.remember_terminal_tab_focus(i);
+                        // A dormant pinned tab (pinned, never opened, still
+                        // carries its reopen spec) is a placeholder, not a
+                        // real session to fall back onto: land on Home
+                        // instead of "focusing" an unopened pin.
+                        let fallback = &self.tabs[i];
+                        if fallback.pinned && fallback.pending_reopen.is_some() {
+                            self.active_tab = None;
+                            self.active_view = View::Dashboard;
+                        } else {
+                            self.active_tab = Some(i);
+                            self.remember_terminal_tab_focus(i);
+                        }
                     }
                 }
             }
@@ -877,6 +901,72 @@ impl Oryxis {
             Message::CancelFolderModal => {
                 self.folder_rename = None;
                 self.folder_delete = None;
+            }
+            Message::EditGroup(gid) => {
+                self.overlay = None;
+                if let Some(group) = self.groups.iter().find(|g| g.id == gid) {
+                    self.group_edit_id = Some(gid);
+                    self.group_edit_label = group.label.clone();
+                    self.group_edit_icon = group.icon.clone().unwrap_or_default();
+                    self.group_edit_color = group.color.clone().unwrap_or_default();
+                    self.group_edit_visible = true;
+                    // Mutually exclusive with the other right-hand panels.
+                    self.show_host_panel = false;
+                    self.show_session_group_panel = false;
+                    self.cloud_dynamic_form_visible = false;
+                    self.cloud_discover_visible = false;
+                }
+            }
+            Message::GroupEditLabelChanged(v) => {
+                self.group_edit_label = v;
+            }
+            Message::ShowGroupEditIconPicker => {
+                self.icon_picker_icon = if self.group_edit_icon.is_empty() {
+                    None
+                } else {
+                    Some(self.group_edit_icon.clone())
+                };
+                self.icon_picker_color = if self.group_edit_color.is_empty() {
+                    None
+                } else {
+                    Some(self.group_edit_color.clone())
+                };
+                self.icon_picker_hex_input = self.group_edit_color.clone();
+                self.icon_picker_for = None;
+                self.icon_picker_for_group_form = false;
+                self.icon_picker_for_session_group = false;
+                self.icon_picker_for_group_edit = true;
+                self.show_icon_picker = true;
+            }
+            Message::SaveGroupEdit => {
+                if let Some(gid) = self.group_edit_id {
+                    let trimmed = self.group_edit_label.trim().to_string();
+                    if !trimmed.is_empty()
+                        && let Some(group) = self.groups.iter_mut().find(|g| g.id == gid)
+                    {
+                        group.label = trimmed;
+                        group.icon = if self.group_edit_icon.is_empty() {
+                            None
+                        } else {
+                            Some(self.group_edit_icon.clone())
+                        };
+                        group.color = if self.group_edit_color.is_empty() {
+                            None
+                        } else {
+                            Some(self.group_edit_color.clone())
+                        };
+                        group.updated_at = chrono::Utc::now();
+                        if let Some(vault) = &self.vault {
+                            let _ = vault.save_group(group);
+                        }
+                    }
+                }
+                self.group_edit_visible = false;
+                self.group_edit_id = None;
+            }
+            Message::CancelGroupEdit => {
+                self.group_edit_visible = false;
+                self.group_edit_id = None;
             }
             Message::StartDeleteFolder(gid) => {
                 self.overlay = None;

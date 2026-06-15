@@ -35,8 +35,8 @@ impl Oryxis {
     pub(crate) fn view_port_forwards(&self) -> Element<'_, Message> {
         let toolbar = container(
             dir_row(vec![
-                text(t("port_forwards")).size(20).color(OryxisColors::t().text_primary).into(),
-                Space::new().width(Length::Fill).into(),
+                self.vault_search_field(),
+                Space::new().width(10).into(),
                 {
                     let fg = OryxisColors::t().button_text;
                     button(
@@ -54,7 +54,7 @@ impl Oryxis {
                             ]).align_y(iced::Alignment::Center),
                         )
                         .center_y(Length::Fixed(24.0))
-                        .padding(Padding { top: 0.0, right: 14.0, bottom: 0.0, left: 14.0 }),
+                        .center_x(Length::Fixed(72.0)),
                     )
                     .on_press(Message::ShowPortForwardPanel)
                     .style(|_, status| {
@@ -71,7 +71,7 @@ impl Oryxis {
                 },
             ]).align_y(iced::Alignment::Center),
         )
-        .padding(Padding { top: 20.0, right: 24.0, bottom: 16.0, left: 24.0 })
+        .padding(Padding { top: 16.0, right: 24.0, bottom: 16.0, left: 24.0 })
         .width(Length::Fill);
 
         let status: Element<'_, Message> = if let Some(err) = &self.pf_error {
@@ -82,41 +82,26 @@ impl Oryxis {
         };
 
         if self.port_forward_rules.is_empty() {
-            let empty_state = container(
-                column![
-                    container(
-                        iced_fonts::lucide::route().size(32).color(OryxisColors::t().text_muted),
-                    )
-                    .padding(16)
-                    .style(|_| container::Style {
-                        background: Some(Background::Color(OryxisColors::t().bg_surface)),
-                        border: Border { radius: Radius::from(12.0), ..Default::default() },
-                        ..Default::default()
-                    }),
-                    Space::new().height(20),
-                    text(t("create_port_forward_title")).size(20).color(OryxisColors::t().text_primary),
-                    Space::new().height(8),
-                    text(t("create_port_forward_desc")).size(13).color(OryxisColors::t().text_muted),
-                    Space::new().height(24),
-                    crate::widgets::cta_button(
-                        t("new_port_forward").to_string(),
-                        Message::ShowPortForwardPanel,
-                    ),
-                ]
-                .align_x(iced::Alignment::Center),
-            )
-            .center(Length::Fill);
+            let empty_state = crate::widgets::empty_state(
+                iced_fonts::lucide::route()
+                    .size(32)
+                    .color(OryxisColors::t().text_muted)
+                    .into(),
+                t("create_port_forward_title").to_string(),
+                t("create_port_forward_desc").to_string(),
+                Some((
+                    t("new_port_forward").to_string(),
+                    Message::ShowPortForwardPanel,
+                )),
+            );
 
-            let main_content = column![toolbar, status, empty_state]
+            // No toolbar in the empty state: the search is hidden (nothing
+            // to search) and the "+ New" lives in the empty-state CTA, so a
+            // toolbar would only show an orphaned action button.
+            // Side panel hoisted to `view_main` (active_side_panel).
+            let main_content = column![status, empty_state]
                 .width(Length::Fill)
                 .height(Length::Fill);
-            if self.show_port_forward_panel {
-                let panel = self.view_port_forward_panel();
-                return dir_row(vec![main_content.into(), panel])
-                    .width(Length::Fill)
-                    .height(Length::Fill)
-                    .into();
-            }
             return main_content.into();
         }
 
@@ -278,11 +263,7 @@ impl Oryxis {
             cards.push(container(wrapped).width(Length::Fill).clip(true).into());
         }
 
-        let nav_width = if self.sidebar_collapsed {
-            crate::app::SIDEBAR_WIDTH_COLLAPSED
-        } else {
-            crate::app::SIDEBAR_WIDTH
-        };
+        let nav_width = self.vault_rail_width();
         let panel_width = if self.show_port_forward_panel { PANEL_WIDTH } else { 0.0 };
         let available = (self.window_size.width - nav_width - panel_width - 48.0).max(0.0);
         let cols = card_grid_columns(available, CARD_WIDTH, 12.0);
@@ -292,33 +273,15 @@ impl Oryxis {
         ).height(Length::Fill);
 
         // Inline search in Classic mode (Workspace puts it on the sub-nav).
-        let workspace_mode = self.setting_layout_mode == "workspace";
-        let search_bar: Element<'_, Message> = if workspace_mode {
-            Space::new().height(0).into()
-        } else {
-            container(
-                text_input(t("search_port_forwards"), &self.port_forward_search)
-                    .id(iced::widget::Id::new("search-port-forwards"))
-                    .on_input(Message::PortForwardSearchChanged)
-                    .padding(10)
-                    .size(13)
-                    .style(crate::widgets::rounded_input_style)
-                    .align_x(dir_align_x()),
-            )
-            .padding(Padding { top: 0.0, right: 24.0, bottom: 12.0, left: 24.0 })
-            .width(Length::Fill)
-            .into()
-        };
+        // Search now lives in the toolbar (`vault_search_field`); the
+        // legacy below-toolbar search bar collapses to nothing.
+        let search_bar: Element<'_, Message> = Space::new().height(0).into();
 
-        let main_content = column![toolbar, search_bar, status, grid]
+        // Side panel hoisted to `view_main` (active_side_panel).
+        column![toolbar, search_bar, status, grid]
             .width(Length::Fill)
-            .height(Length::Fill);
-        if self.show_port_forward_panel {
-            let panel = self.view_port_forward_panel();
-            dir_row(vec![main_content.into(), panel]).width(Length::Fill).height(Length::Fill).into()
-        } else {
-            main_content.into()
-        }
+            .height(Length::Fill)
+            .into()
     }
 
     pub(crate) fn view_port_forward_panel(&self) -> Element<'_, Message> {

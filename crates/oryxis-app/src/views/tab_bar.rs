@@ -78,24 +78,16 @@ impl Oryxis {
         // a rough estimate so the connection-tab allocator and the
         // scroll_mode trigger see the actual budget. Each area tab is
         // roughly icon(16) + gap(6) + label(~50) + padding(20) ~= 90 px.
-        let area_tab_count = if self.setting_layout_mode == "workspace" {
-            1 + (self.sftp_enabled as u32)
-        } else {
-            0
-        };
+        let area_tab_count = 1 + (self.sftp_enabled as u32);
         const AREA_TAB_APPROX_WIDTH: f32 = 100.0;
         let area_tabs_total = area_tab_count as f32
             * (AREA_TAB_APPROX_WIDTH + TAB_SPACING);
         // Burger menu button (SIDEBAR_TOGGLE_WIDTH) lives on the
-        // leading edge in both modes. The sidebar collapse toggle
-        // only renders in Classic mode (Workspace has no sidebar to
-        // collapse). Logo only renders in Workspace.
+        // leading edge.
         let burger_width = SIDEBAR_TOGGLE_WIDTH;
-        let workspace_mode = self.setting_layout_mode == "workspace";
-        let toggle_width = if workspace_mode { 0.0 } else { SIDEBAR_TOGGLE_WIDTH };
-        let logo_width = if workspace_mode { SIDEBAR_TOGGLE_WIDTH } else { 0.0 };
+        // Logo removed from the top strip; no width reserved for it.
+        let logo_width = 0.0;
         let approx_strip_width = (self.window_size.width
-            - toggle_width
             - burger_width
             - logo_width
             - RIGHT_CLUSTER_WIDTH
@@ -137,12 +129,11 @@ impl Oryxis {
 
         let mut tab_items: Vec<Element<'_, Message>> = Vec::new();
 
-        // Workspace mode promotes the navigation areas (Hosts and SFTP)
-        // into top-level tabs that sit before the connection tabs. In
-        // Classic mode the sidebar still owns navigation, so we skip
-        // them. Settings stays out of the strip on purpose - it lives
-        // in the burger menu so it doesn't take a permanent slot.
-        if self.setting_layout_mode == "workspace" {
+        // The navigation areas (Hosts and SFTP) live as top-level tabs
+        // before the connection tabs. Settings stays out of the strip on
+        // purpose - it lives in the burger menu so it doesn't take a
+        // permanent slot.
+        {
             let nav_active = self.active_tab.is_none();
             // The "Hosts" area tab stays selected across every vault
             // sub-section (Hosts, Keychain, Snippets, Port Forwarding,
@@ -155,15 +146,17 @@ impl Oryxis {
                     | View::Keys
                     | View::Snippets
                     | View::PortForwarding
+                    | View::Cloud
+                    | View::Proxies
+                    | View::KnownHosts
                     | View::History
             );
-            // Labeled "Vault" (not "Hosts"): this area tab covers the
-            // whole vault surface (hosts, keychain, snippets, port
-            // forwarding, logs) and the name prepares multi-vault,
-            // where it becomes the active vault's name (issue #38).
+            // Icon-only Home tab: the vault identity / switcher now
+            // lives on the contextual sub-nav (the "Personal" chip),
+            // so this tab is just the route back to the vault surface.
             tab_items.push(area_tab(
-                crate::i18n::t("vault"),
-                iced_fonts::lucide::vault(),
+                "",
+                iced_fonts::lucide::house(),
                 View::Dashboard,
                 nav_active && in_vault_area,
             ));
@@ -437,30 +430,12 @@ impl Oryxis {
             .align_y(iced::Alignment::Center)
             .into();
 
-        let workspace_mode = self.setting_layout_mode == "workspace";
-
-        // Workspace mode also shows the Oryxis product logo on the
-        // far leading edge so the chrome carries product identity in
-        // the JetBrains style. Classic mode keeps the logo on the
-        // sidebar header where it always lived and skips both the
-        // burger (sidebar already lists every destination) and the
-        // logo (it would compete with the sidebar header).
+        // Burger menu on the far leading edge: its dropdown lists every
+        // vault destination + global actions. Leading breathing space is
+        // the burger button's own left padding (not a margin), so the gap
+        // is part of its clickable / hover area.
         let mut leading: Vec<Element<'_, Message>> = Vec::new();
-        if workspace_mode {
-            // Small breathing space on the very leading edge so the
-            // logo doesn't kiss the window border. Matches the gap
-            // JetBrains leaves on its product mark.
-            leading.push(Space::new().width(4).into());
-            leading.push(product_logo(self.logo_small_handle.clone()));
-            // Burger only in Workspace mode; Classic already has a
-            // full sidebar listing every destination so a dropdown
-            // mirroring it would be redundant noise.
-            leading.push(burger_menu_btn(self.show_burger_menu));
-        } else {
-            // Classic mode keeps the sidebar collapse toggle on the
-            // leading edge so the user can shrink the sidebar to icons.
-            leading.push(super::sidebar::sidebar_toggle_btn(!self.sidebar_collapsed));
-        }
+        leading.push(burger_menu_btn(self.show_burger_menu));
         leading.push(tab_strip);
         if let Some(plus) = docked_plus {
             leading.push(plus);
@@ -473,14 +448,31 @@ impl Oryxis {
         // Fill area in between. `dir_row` flips the row under RTL so the
         // leading-edge controls always sit next to the sidebar (which the
         // outer layout also flips to the trailing edge).
+        // Whole-top-bar accent wash: a tinted leading edge fading back to
+        // the bar surface, same direction as the card accent wash + the
+        // bottom hairline. Gated on the same `setting_tab_accent_line`
+        // toggle, and breathes the active tab's colour via
+        // `top_accent_tint`. Both gradient stops are opaque, so the tab
+        // buttons on top render normally.
+        let bar_base = OryxisColors::t().bg_sidebar;
+        let bar_bg = if self.setting_tab_accent_wash {
+            let washed = crate::theme::mix(bar_base, self.top_accent_tint(), 0.16);
+            Background::Gradient(iced::Gradient::Linear(
+                iced::gradient::Linear::new(iced::Radians(std::f32::consts::FRAC_PI_2))
+                    .add_stop(0.0, washed)
+                    .add_stop(0.9, bar_base),
+            ))
+        } else {
+            Background::Color(bar_base)
+        };
         let bar: Element<'_, Message> = container(
             crate::widgets::dir_row(leading)
                 .align_y(iced::Alignment::Center),
         )
         .width(Length::Fill)
         .height(Length::Fixed(BAR_HEIGHT))
-        .style(|_| container::Style {
-            background: Some(Background::Color(OryxisColors::t().bg_sidebar)),
+        .style(move |_| container::Style {
+            background: Some(bar_bg),
             ..Default::default()
         })
         .into();
@@ -577,20 +569,14 @@ impl Oryxis {
             + DOTS_BUTTON_WIDTH
             + 2.0
             + CHROME_TOTAL_WIDTH;
-        let area_tab_count = if self.setting_layout_mode == "workspace" {
-            1 + (self.sftp_enabled as u32)
-        } else {
-            0
-        };
+        let area_tab_count = 1 + (self.sftp_enabled as u32);
         const AREA_TAB_APPROX_WIDTH: f32 = 100.0;
         let area_tabs_total = area_tab_count as f32
             * (AREA_TAB_APPROX_WIDTH + TAB_SPACING);
         let burger_width = SIDEBAR_TOGGLE_WIDTH;
-        let workspace_mode = self.setting_layout_mode == "workspace";
-        let toggle_width = if workspace_mode { 0.0 } else { SIDEBAR_TOGGLE_WIDTH };
-        let logo_width = if workspace_mode { SIDEBAR_TOGGLE_WIDTH } else { 0.0 };
+        // Logo removed from the top strip; no width reserved for it.
+        let logo_width = 0.0;
         let approx_strip_width = (self.window_size.width
-            - toggle_width
             - burger_width
             - logo_width
             - RIGHT_CLUSTER_WIDTH
@@ -694,7 +680,10 @@ fn area_tab<'a>(
     let fg = if is_active {
         OryxisColors::t().accent
     } else {
-        OryxisColors::t().text_muted
+        // text_secondary (not text_muted) so the inactive area icon stays
+        // lively over the top-bar accent wash instead of reading as a dull
+        // grey glyph.
+        OryxisColors::t().text_secondary
     };
     // Same "lit from above" vertical gradient as the active session
     // tab, in the app accent, so the strip carries exactly one visual
@@ -712,29 +701,7 @@ fn area_tab<'a>(
     } else {
         Background::Color(Color::TRANSPARENT)
     };
-    button(
-        container(
-            crate::widgets::dir_row(vec![
-                container(glyph.size(14).color(fg))
-                    .center_x(Length::Fixed(TAB_ICON_SLOT))
-                    .center_y(Length::Fixed(TAB_ICON_SLOT))
-                    .into(),
-                Space::new().width(6).into(),
-                text(label)
-                    .size(12)
-                    .line_height(1.0)
-                    .wrapping(iced::widget::text::Wrapping::None)
-                    .font(SYSTEM_UI_SEMIBOLD)
-                    .color(fg)
-                    .into(),
-            ])
-            .align_y(iced::Alignment::Center),
-        )
-        .center_y(Length::Fixed(TAB_HEIGHT))
-        .padding(Padding { top: 0.0, right: 10.0, bottom: 0.0, left: 6.0 }),
-    )
-    .on_press(Message::ChangeView(view))
-    .style(move |_, status| {
+    let style = move |_: &iced::Theme, status: BtnStatus| {
         let hover_bg: Background = match status {
             BtnStatus::Hovered if !is_active => {
                 Background::Color(Color::from_rgba(1.0, 1.0, 1.0, 0.06))
@@ -746,8 +713,49 @@ fn area_tab<'a>(
             border: Border { radius: Radius::from(6.0), ..Default::default() },
             ..Default::default()
         }
-    })
-    .into()
+    };
+    // Icon-only (e.g. the Home tab): a square button (side == the
+    // labeled tabs' rendered height, TAB_HEIGHT + the button's default
+    // 5px top/bottom padding) so the frame echoes the square glyph
+    // instead of stretching wide. Zero padding so the square is exact.
+    let btn: Element<'a, Message> = if label.is_empty() {
+        const SQUARE: f32 = TAB_HEIGHT + 10.0;
+        button(
+            container(glyph.size(16).color(fg))
+                .center_x(Length::Fixed(SQUARE))
+                .center_y(Length::Fixed(SQUARE)),
+        )
+        .padding(0)
+        .on_press(Message::ChangeView(view))
+        .style(style)
+        .into()
+    } else {
+        button(
+            container(
+                crate::widgets::dir_row(vec![
+                    container(glyph.size(14).color(fg))
+                        .center_x(Length::Fixed(TAB_ICON_SLOT))
+                        .center_y(Length::Fixed(TAB_ICON_SLOT))
+                        .into(),
+                    Space::new().width(6).into(),
+                    text(label)
+                        .size(12)
+                        .line_height(1.0)
+                        .wrapping(iced::widget::text::Wrapping::None)
+                        .font(SYSTEM_UI_SEMIBOLD)
+                        .color(fg)
+                        .into(),
+                ])
+                .align_y(iced::Alignment::Center),
+            )
+            .center_y(Length::Fixed(TAB_HEIGHT))
+            .padding(Padding { top: 0.0, right: 10.0, bottom: 0.0, left: 6.0 }),
+        )
+        .on_press(Message::ChangeView(view))
+        .style(style)
+        .into()
+    };
+    btn
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1262,22 +1270,6 @@ fn sidebar_btn<'a>() -> Element<'a, Message> {
     .into()
 }
 
-/// Product logo on the leading edge of the tab bar (Workspace mode
-/// only). Same trick JetBrains uses: a small product mark anchored
-/// in the chrome carries identity even though the whole window is
-/// otherwise unbranded. Sized to match the burger / sidebar-toggle
-/// neighbours so the strip reads as one uniform row of controls.
-fn product_logo<'a>(handle: iced::widget::svg::Handle) -> Element<'a, Message> {
-    container(
-        iced::widget::svg(handle)
-            .width(Length::Fixed(22.0))
-            .height(Length::Fixed(22.0)),
-    )
-    .center_x(Length::Fixed(SIDEBAR_TOGGLE_WIDTH))
-    .center_y(Length::Fixed(BAR_HEIGHT))
-    .into()
-}
-
 /// Burger menu trigger at the leading edge of the tab bar. When the
 /// menu is open the button paints with the accent hover state so the
 /// click affordance reads as "active control" instead of a stray glyph.
@@ -1288,12 +1280,15 @@ fn burger_menu_btn<'a>(is_open: bool) -> Element<'a, Message> {
     } else {
         Color::TRANSPARENT
     };
+    // Symmetric padding around the glyph (no fixed-width `center`,
+    // which left an empty right gap that read as a margin), so the
+    // burger is all padding and no margin.
     button(
         container(
             iced_fonts::lucide::menu().size(15).color(hover_color),
         )
-        .center(Length::Fixed(SIDEBAR_TOGGLE_WIDTH))
-        .height(Length::Fixed(BAR_HEIGHT)),
+        .center_y(Length::Fixed(BAR_HEIGHT))
+        .padding(Padding { top: 0.0, right: 11.0, bottom: 0.0, left: 11.0 }),
     )
     .on_press(Message::ToggleBurgerMenu)
     .padding(0)

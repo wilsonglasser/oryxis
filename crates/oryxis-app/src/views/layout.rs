@@ -10,6 +10,9 @@ use crate::state::{OverlayContent, OverlayState, View};
 use crate::theme::OryxisColors;
 use crate::widgets::{context_menu_item, dir_align_x, dir_row, styled_button};
 
+/// One vault sub-nav destination: (i18n label key, target view).
+type SubnavPill = (&'static str, View);
+
 /// Thickness of the edge hit-zones used for dragging to resize. Corners are
 /// the same thickness but `EDGE × EDGE` squares, a bit generous so the user
 /// can actually grab them without millimetre precision.
@@ -155,23 +158,188 @@ pub(crate) fn resize_border<'a>() -> Element<'a, Message> {
 }
 
 impl Oryxis {
-    pub(crate) fn view_main(&self) -> Element<'_, Message> {
-        // Workspace mode replaces the sidebar with the top tab bar
-        // (areas + connections) and the burger menu, so the sidebar
-        // never renders in this mode. Classic mode keeps the sidebar
-        // visible at all times like before.
-        let workspace_mode = self.setting_layout_mode == "workspace";
-        // Browser-style fullscreen suppresses every piece of chrome
-        // (sidebar, tab bar, status bar) so the content fills the
-        // monitor edge-to-edge. The X-close affordance and the on-
-        // enter hint banner are drawn as Stack overlays below.
-        let immersive = self.window_fullscreen;
-        let hide_sidebar = workspace_mode || immersive;
-        let sidebar: Element<'_, Message> = if hide_sidebar {
-            Space::new().width(0).height(Length::Fill).into()
+    /// Wrap a card in the shared accent wash when the
+    /// `setting_card_accent_glass` toggle is on, else return it bare.
+    /// The single gate every card list (dashboard + internal screens)
+    /// routes through so the toggle governs them all uniformly.
+    pub(crate) fn card_wash<'a>(
+        &self,
+        card: Element<'a, Message>,
+        color: Color,
+    ) -> Element<'a, Message> {
+        if self.setting_card_accent_glass {
+            crate::widgets::card_accent_wash(card, color)
         } else {
-            self.view_sidebar()
-        };
+            card
+        }
+    }
+
+    /// Cheap check: is a vault-area side panel currently open? Mirrors
+    /// `active_side_panel` without building the element, so callers (e.g.
+    /// the sub-nav width budget) can branch without the render cost.
+    fn side_panel_open(&self) -> bool {
+        if self.active_tab.is_some() {
+            return false;
+        }
+        match self.active_view {
+            View::Dashboard => {
+                self.cloud_discover_visible
+                    || self.cloud_dynamic_form_visible
+                    || self.group_edit_visible
+                    || self.show_host_panel
+                    || self.show_session_group_panel
+            }
+            View::Keys => self.show_key_panel || self.show_identity_panel,
+            View::Snippets => self.show_snippet_panel,
+            View::PortForwarding => self.show_port_forward_panel,
+            View::Proxies => self.proxy_identity_form_visible,
+            View::Cloud => self.cloud_form_visible,
+            _ => false,
+        }
+    }
+
+    /// Number of vaults the user has. Multi-vault isn't built yet, so
+    /// this is always 1 today; the switcher chrome keys off it.
+    pub(crate) fn vault_count(&self) -> usize {
+        1
+    }
+
+    /// Whether to show the vault switcher (the "Personal" chip in the
+    /// sub-nav / badge in the rail). Hidden with a single vault, since
+    /// there's nothing to switch between.
+    pub(crate) fn show_vault_switcher(&self) -> bool {
+        self.vault_count() > 1
+    }
+
+    /// True when the Home area is active: no connection tab open and the
+    /// current view is one of the vault sub-sections. Gates the vault nav
+    /// (horizontal sub-nav strip or vertical rail).
+    pub(crate) fn in_vault_area(&self) -> bool {
+        self.active_tab.is_none()
+            && matches!(
+                self.active_view,
+                View::Dashboard
+                    | View::Keys
+                    | View::Snippets
+                    | View::PortForwarding
+                    | View::Cloud
+                    | View::Proxies
+                    | View::KnownHosts
+                    | View::History
+            )
+    }
+
+    /// Width currently occupied by the left vault nav rail (the vertical
+    /// icon rail). Zero in horizontal orientation or outside the vault
+    /// area. The single source the content-width / pane-split math reads
+    /// instead of the retired sidebar-collapse width.
+    pub(crate) fn vault_rail_width(&self) -> f32 {
+        if self.in_vault_area() && self.setting_nav_orientation == "vertical" {
+            if self.setting_nav_rail_expanded {
+                crate::app::NAV_RAIL_WIDTH_EXPANDED
+            } else {
+                crate::app::SIDEBAR_WIDTH_COLLAPSED
+            }
+        } else {
+            0.0
+        }
+    }
+
+    /// The side-panel editor currently open over the vault area, if any.
+    /// Hoisted out of the individual views so `view_main` can place it
+    /// beside the `column![sub_nav, content]` stack, letting the panel
+    /// rise to cover the sub-nav band on its side (a full-height
+    /// slide-over). Terminal tabs keep their own panel handling inside
+    /// `view_terminal`, so this returns `None` whenever a session tab is
+    /// active.
+    fn active_side_panel(&self) -> Option<Element<'_, Message>> {
+        if self.active_tab.is_some() {
+            return None;
+        }
+        match self.active_view {
+            View::Dashboard => {
+                if self.cloud_discover_visible {
+                    Some(self.view_cloud_discover_panel())
+                } else if self.cloud_dynamic_form_visible {
+                    Some(self.view_dynamic_group_form_panel())
+                } else if self.group_edit_visible {
+                    Some(self.view_group_edit_panel())
+                } else if self.show_host_panel {
+                    Some(self.view_host_panel())
+                } else if self.show_session_group_panel {
+                    Some(self.view_session_group_panel())
+                } else {
+                    None
+                }
+            }
+            View::Keys => {
+                if self.show_key_panel {
+                    Some(self.view_key_import_panel())
+                } else if self.show_identity_panel {
+                    Some(self.view_identity_panel())
+                } else {
+                    None
+                }
+            }
+            View::Snippets => self
+                .show_snippet_panel
+                .then(|| self.view_snippet_panel()),
+            View::PortForwarding => self
+                .show_port_forward_panel
+                .then(|| self.view_port_forward_panel()),
+            View::Proxies => self
+                .proxy_identity_form_visible
+                .then(|| self.view_proxy_identity_form()),
+            View::Cloud => self.cloud_form_visible.then(|| self.view_cloud_form_panel()),
+            _ => None,
+        }
+    }
+
+    /// The accent colour the top bar "breathes": the active tab's
+    /// per-host / per-session-group colour (or cloud brand) when a
+    /// connection tab is open, else the app accent for Home / vault /
+    /// settings. Independent of the on/off `setting_tab_accent_line`
+    /// toggle, so both the bottom hairline and the bar wash share one
+    /// source of truth.
+    pub(crate) fn top_accent_tint(&self) -> Color {
+        if let Some(idx) = self.active_tab
+            && let Some(tab) = self.tabs.get(idx)
+        {
+            let label = tab.label.trim_end_matches(" (disconnected)");
+            // 0) session-group tabs breathe the group's own colour.
+            if let Some(sg_id) = tab.session_group_id
+                && let Some(g) = self.session_groups.iter().find(|g| g.id == sg_id)
+                && let Some(col) = g.color.as_deref().and_then(crate::widgets::parse_hex_color)
+            {
+                return col;
+            }
+            // 1) per-host colour from a matching saved Connection.
+            if let Some(c) = self.connections.iter().find(|c| c.label == label)
+                && let Some(hex) = c.custom_color.as_deref().or(c.color.as_deref())
+                && let Some(col) = crate::widgets::parse_hex_color(hex)
+            {
+                return col;
+            }
+            // 2) cloud-transport tabs inherit the parent dynamic-group
+            //    brand colour (AWS orange, K8s blue, ...).
+            if let Some(brand) = crate::os_icon::tab_label_cloud_brand(label) {
+                return crate::os_icon::provider_icon(brand, OryxisColors::t().accent).1;
+            }
+        }
+        OryxisColors::t().accent
+    }
+
+    pub(crate) fn view_main(&self) -> Element<'_, Message> {
+        // Single top-bar layout: the tab bar (Home icon + session tabs +
+        // burger) spans the full width; there is no classic full-height
+        // sidebar. The vault sub-sections render either as a horizontal
+        // pill strip below the bar or as a vertical icon rail on the left
+        // of the content, per `setting_nav_orientation`.
+        // Browser-style fullscreen suppresses every piece of chrome (tab
+        // bar, status bar) so the content fills the monitor edge-to-edge.
+        // The X-close affordance and the on-enter hint banner are drawn as
+        // Stack overlays below.
+        let immersive = self.window_fullscreen;
         let tab_bar: Element<'_, Message> = if immersive {
             Space::new().height(0).into()
         } else {
@@ -193,40 +361,11 @@ impl Oryxis {
         // without a per-host color, and the neutral border for non-
         // connection screens so settings / dashboard don't look like
         // they belong to whichever host happened to be open last.
-        let accent_tint: Option<Color> = if !self.setting_tab_accent_line {
+        let accent_tint: Option<Color> = if self.setting_tab_accent_line {
+            Some(self.top_accent_tint())
+        } else {
             None
-        } else { self.active_tab.and_then(|idx| {
-            let tab = self.tabs.get(idx)?;
-            let label = tab.label.trim_end_matches(" (disconnected)");
-            // 0) session-group tabs breathe the group's own color, the same
-            //    way per-host tabs use their custom color.
-            if let Some(sg_id) = tab.session_group_id
-                && let Some(g) = self.session_groups.iter().find(|g| g.id == sg_id)
-                && let Some(col) = g.color.as_deref().and_then(crate::widgets::parse_hex_color)
-            {
-                return Some(col);
-            }
-            // 1) per-host color from a matching saved Connection.
-            // `custom_color` is what the icon picker writes; `color`
-            // is the legacy field that's never set today but kept as
-            // a fallback for any future code path that fills it.
-            if let Some(c) = self.connections.iter().find(|c| c.label == label)
-                && let Some(hex) = c.custom_color.as_deref().or(c.color.as_deref())
-                && let Some(col) = crate::widgets::parse_hex_color(hex)
-            {
-                return Some(col);
-            }
-            // 2) cloud-transport tabs (no Connection match) inherit
-            //    the parent dynamic-group brand color (AWS orange,
-            //    K8s blue, ...) so the hairline matches the per-host
-            //    treatment on regular SSH tabs.
-            if let Some(brand) = crate::os_icon::tab_label_cloud_brand(label) {
-                return Some(crate::os_icon::provider_icon(brand, OryxisColors::t().accent).1);
-            }
-            // 3) generic active-tab fallback (any tab without a more
-            //    specific color tints in the global accent).
-            Some(OryxisColors::t().accent)
-        })};
+        };
         let (hair_height, hair_color) = match accent_tint {
             Some(c) => (2.0_f32, c),
             None => (1.0_f32, OryxisColors::t().border),
@@ -236,55 +375,71 @@ impl Oryxis {
         } else {
             container(Space::new().height(hair_height))
                 .width(Length::Fill)
-                .style(move |_| container::Style {
-                    background: Some(Background::Color(hair_color)),
-                    ..Default::default()
+                .style(move |_| {
+                    // When the accent line is on, the border washes
+                    // left→right (bright accent on the leading edge fading
+                    // out), matching the card accent wash and ready to
+                    // double as an (infinite) progress bar later. Off →
+                    // the neutral 1px border.
+                    let bg = match accent_tint {
+                        Some(c) => Background::Gradient(iced::Gradient::Linear(
+                            iced::gradient::Linear::new(iced::Radians(
+                                std::f32::consts::FRAC_PI_2,
+                            ))
+                            .add_stop(0.0, c)
+                            .add_stop(0.85, Color { a: 0.0, ..c }),
+                        )),
+                        None => Background::Color(hair_color),
+                    };
+                    container::Style {
+                        background: Some(bg),
+                        ..Default::default()
+                    }
                 })
                 .into()
         };
-        let v_separator = container(Space::new().width(1))
-            .height(Length::Fill)
-            .style(|_| container::Style {
-                background: Some(Background::Color(OryxisColors::t().border)),
-                ..Default::default()
-            });
-
-        // Workspace contextual sub-nav: when the top tab "Hosts" is
-        // the active area (no connection tab open and one of the
-        // vault-family views is showing), surface the remaining vault
-        // sub-sections (Keychain, Snippets, Known Hosts, History) as
-        // pills beneath the tab strip. Mirrors the Termius "sidebar
-        // inside the Vault area" pattern. In Classic mode (sidebar
-        // already covers them) and on Sftp / Settings the row stays
-        // collapsed.
-        let in_vault_area = self.active_tab.is_none()
-            && matches!(
-                self.active_view,
-                View::Dashboard
-                    | View::Keys
-                    | View::Snippets
-                    | View::PortForwarding
-                    | View::History
-            );
-        let sub_nav: Element<'_, Message> = if workspace_mode && in_vault_area {
+        // Vault contextual nav: shown only when the Home area is active.
+        // On Sftp / Settings / a connection tab it's hidden.
+        let in_vault_area = self.in_vault_area();
+        let vertical_rail = self.setting_nav_orientation == "vertical";
+        // Horizontal pill strip pinned above the content.
+        let sub_nav: Element<'_, Message> = if in_vault_area && !vertical_rail {
             self.view_vault_sub_nav()
         } else {
             Space::new().height(0).into()
         };
-        let right_side: Element<'_, Message> =
-            column![tab_bar, h_separator, sub_nav, content].height(Length::Fill).into();
-        // Vertical separator goes away alongside the sidebar in
-        // Workspace mode so the right side truly fills edge-to-edge.
-        let v_sep: Element<'_, Message> = if hide_sidebar {
-            Space::new().width(0).height(Length::Fill).into()
+        // Vertical icon rail on the leading edge of the content.
+        let nav_rail: Option<Element<'_, Message>> = if in_vault_area && vertical_rail {
+            Some(self.view_vault_nav_rail())
         } else {
-            v_separator.into()
+            None
         };
-        // `dir_row` mirrors children when the user picked RTL layout (or
-        // Auto + RTL language), so the sidebar lands on the trailing edge
-        // without having to duplicate the layout site.
-        let main_row = dir_row(vec![sidebar, v_sep, right_side]).height(Length::Fill);
-        let layout = column![main_row, status_bar];
+
+        // Compose the content with its nav (rail on the leading edge OR
+        // sub-nav strip above) and the side panel (editor) on the trailing
+        // edge. The side panel rises full-height, covering the sub-nav band
+        // on its own side; the vertical rail stays on the leading edge.
+        let inner: Element<'_, Message> = match nav_rail {
+            Some(rail) => {
+                // With the rail on the side (no sub-nav strip on top), the
+                // view toolbars' 16px top padding reads as a tighter top
+                // gutter than the 24px left gutter. Add 8px so the content's
+                // top spacing matches its left and the corner looks square.
+                let content = container(content)
+                    .padding(Padding { top: 8.0, right: 0.0, bottom: 0.0, left: 0.0 })
+                    .width(Length::Fill)
+                    .height(Length::Fill);
+                dir_row(vec![rail, content.into()]).height(Length::Fill).into()
+            }
+            None => column![sub_nav, content].height(Length::Fill).into(),
+        };
+        let body: Element<'_, Message> = match self.active_side_panel() {
+            Some(panel) => dir_row(vec![inner, panel]).height(Length::Fill).into(),
+            None => inner,
+        };
+        let right_side: Element<'_, Message> =
+            column![tab_bar, h_separator, body].height(Length::Fill).into();
+        let layout = column![right_side, status_bar];
 
         let base: Element<'_, Message> = container(layout)
             .width(Length::Fill)
@@ -309,6 +464,21 @@ impl Oryxis {
         // never coexist on the user's screen at the same time.
         if self.show_burger_menu {
             let menu = self.view_burger_menu();
+            return wrap_with_resize(
+                Stack::new()
+                    .push(base)
+                    .push(menu)
+                    .width(Length::Fill)
+                    .height(Length::Fill)
+                    .into(),
+                resize_overlay,
+            );
+        }
+
+        // Vault sub-nav overflow ("…") dropdown, same overlay shape as
+        // the burger menu.
+        if self.show_subnav_overflow {
+            let menu = self.view_subnav_overflow_menu();
             return wrap_with_resize(
                 Stack::new()
                     .push(base)
@@ -1455,7 +1625,8 @@ impl Oryxis {
                 // anything (worst case the next Auto import creates a
                 // sibling). Surface the standard actions instead.
                 column![
-                    context_menu_item(iced_fonts::lucide::pencil(), crate::i18n::t("rename"), Message::StartRenameFolder(gid), OryxisColors::t().text_secondary),
+                    context_menu_item(iced_fonts::lucide::pencil(), crate::i18n::t("edit"), Message::EditGroup(gid), OryxisColors::t().accent),
+                    context_menu_item(iced_fonts::lucide::text_cursor_input(), crate::i18n::t("rename"), Message::StartRenameFolder(gid), OryxisColors::t().text_secondary),
                     context_menu_item(iced_fonts::lucide::trash(), crate::i18n::t("delete"), Message::StartDeleteFolder(gid), OryxisColors::t().error),
                 ].into()
             }
@@ -1493,7 +1664,14 @@ impl Oryxis {
                     Message::ImportVault,
                     OryxisColors::t().text_secondary,
                 )];
-                for cp in &self.cloud_profiles {
+                // Only profiles whose provider plugin is installed can
+                // run discovery; hide the rest (they'd fail with a
+                // "binary not found" wall) until the plugin is back.
+                for cp in self
+                    .cloud_profiles
+                    .iter()
+                    .filter(|p| self.cloud_provider_installed(&p.provider))
+                {
                     let (glyph, brand) = crate::os_icon::provider_icon(
                         &cp.provider,
                         OryxisColors::t().accent,
@@ -1942,11 +2120,9 @@ impl Oryxis {
                 View::Keys => self.view_keys(),
                 View::Snippets => self.view_snippets(),
                 View::PortForwarding => self.view_port_forwards(),
-                // Known Hosts is now a SettingsSection in v0.7; the
-                // View variant only survives so ChangeView aliases can
-                // redirect. If somebody still lands here, fall through
-                // to Settings with the right section active.
-                View::KnownHosts => self.view_settings(),
+                View::Cloud => self.view_cloud_accounts(),
+                View::Proxies => self.view_settings_proxies(),
+                View::KnownHosts => self.view_known_hosts(),
                 View::History => self.view_history(),
                 View::Sftp => self.view_sftp(),
                 View::Settings => self.view_settings(),
@@ -1964,12 +2140,110 @@ impl Oryxis {
             .into()
     }
 
+    /// Search field for the active vault sub-view, filling its toolbar
+    /// slot. Returns an empty widget for views without a search backing
+    /// (Cloud / Proxies / Known Hosts). The id matches
+    /// `active_view_search_id` so the global Ctrl+F handler can focus it.
+    /// True when the active view has no records at all (so there's
+    /// nothing to search). Distinct from "search matched nothing": this
+    /// is about the underlying data set being empty, which is when we
+    /// hide the search box entirely and let the empty state speak.
+    fn active_view_search_empty(&self) -> bool {
+        match self.active_view {
+            View::Dashboard => {
+                self.connections.is_empty()
+                    && self.groups.is_empty()
+                    && self.session_groups.is_empty()
+            }
+            View::Keys => self.keys.is_empty() && self.identities.is_empty(),
+            View::Snippets => self.snippets.is_empty(),
+            View::PortForwarding => self.port_forward_rules.is_empty(),
+            View::History => self.logs.is_empty() && self.session_logs.is_empty(),
+            View::Cloud => self.cloud_profiles.is_empty(),
+            View::Proxies => self.proxy_identities.is_empty(),
+            _ => true,
+        }
+    }
+
+    pub(crate) fn vault_search_field(&self) -> Element<'_, Message> {
+        // Nothing to search → no search box (the empty state covers it).
+        // Return a Fill spacer (not zero-width) so the toolbar slot keeps
+        // stretching and the action cluster stays pinned to the trailing
+        // edge, exactly as it does when the field is present.
+        if self.active_view_search_empty() {
+            return Space::new().width(Length::Fill).height(0).into();
+        }
+        // `ph_key` / `id` are static; only `value` borrows from `self`,
+        // so they're kept in separate bindings (a shared tuple lifetime
+        // would force the static `id` down to `self`'s lifetime, and
+        // `Id::new` needs `'static`).
+        let (ph_key, value, on_input): (&'static str, &str, fn(String) -> Message) =
+            match self.active_view {
+                View::Dashboard => (
+                    "search_hosts",
+                    self.host_search.as_str(),
+                    Message::HostSearchChanged,
+                ),
+                View::Keys => (
+                    "search_keys_identities",
+                    self.key_search.as_str(),
+                    Message::KeySearchChanged,
+                ),
+                View::Snippets => (
+                    "search_snippets",
+                    self.snippet_search.as_str(),
+                    Message::SnippetSearchChanged,
+                ),
+                View::PortForwarding => (
+                    "search_port_forwards",
+                    self.port_forward_search.as_str(),
+                    Message::PortForwardSearchChanged,
+                ),
+                View::History => (
+                    "search_logs",
+                    self.history_search.as_str(),
+                    Message::HistorySearchChanged,
+                ),
+                View::Cloud => (
+                    "search_cloud_accounts",
+                    self.cloud_search.as_str(),
+                    Message::CloudSearchChanged,
+                ),
+                View::Proxies => (
+                    "search_proxies",
+                    self.proxy_search.as_str(),
+                    Message::ProxySearchChanged,
+                ),
+                _ => return Space::new().width(0).height(0).into(),
+            };
+        let id: &'static str = match self.active_view {
+            View::Dashboard => "search-dashboard",
+            View::Keys => "search-keys",
+            View::Snippets => "search-snippets",
+            View::PortForwarding => "search-port-forwards",
+            View::History => "search-history",
+            View::Cloud => "search-cloud",
+            View::Proxies => "search-proxies",
+            _ => "search-vault-subnav",
+        };
+        // Vertical padding tuned so the field's height matches the
+        // toolbar action buttons beside it (24px content + 5px default
+        // button padding top/bottom = 34px).
+        iced::widget::text_input(crate::i18n::t(ph_key), value)
+            .id(iced::widget::Id::new(id))
+            .on_input(on_input)
+            .padding(Padding { top: 9.0, right: 12.0, bottom: 9.0, left: 12.0 })
+            .size(13)
+            .width(Length::Fill)
+            .style(crate::widgets::rounded_input_style)
+            .align_x(dir_align_x())
+            .into()
+    }
+
     /// Workspace mode contextual sub-nav: horizontal pill row with
-    /// the vault sub-sections (Hosts, Keychain, Snippets, Known
-    /// Hosts, History). Rendered under the top tab bar when the
-    /// active area is `Hosts`. Pills dispatch `ChangeView` exactly
-    /// like the sidebar buttons used to, so the rest of the app
-    /// doesn't notice the difference.
+    /// the vault sub-sections. Search now lives in each view's own
+    /// toolbar (see `vault_search_field`); this row is just the vault
+    /// chip, the section pills, the "…" overflow and the settings gear.
     pub(crate) fn view_vault_sub_nav(&self) -> Element<'_, Message> {
         let pill = |label_key: &'static str, view: View| -> Element<'_, Message> {
             let is_active = self.active_view == view;
@@ -1983,14 +2257,19 @@ impl Oryxis {
             } else {
                 Color::TRANSPARENT
             };
+            // Fixed-height inner container (28px) so every sub-nav
+            // control lines up; button padding zeroed so its default
+            // doesn't stack on top.
             button(
                 container(
                     text(crate::i18n::t(label_key))
                         .size(12)
                         .color(fg),
                 )
-                .padding(Padding { top: 6.0, right: 12.0, bottom: 6.0, left: 12.0 }),
+                .center_y(Length::Fixed(28.0))
+                .padding(Padding { top: 0.0, right: 8.0, bottom: 0.0, left: 8.0 }),
             )
+            .padding(0)
             .on_press(Message::ChangeView(view))
             .style(move |_, status| {
                 let hover_bg = match status {
@@ -2007,98 +2286,312 @@ impl Oryxis {
             })
             .into()
         };
-        // The Logs pill auto-hides until the feature is real for this
-        // user: either recording toggle on, or recorded data already in
-        // the vault (issue #38, instead of a visibility setting).
-        let mut pill_items = vec![
-            pill("hosts", View::Dashboard),
-            pill("keychain", View::Keys),
-            pill("snippets", View::Snippets),
-            pill("port_forwards", View::PortForwarding),
-        ];
-        if self.logs_surface_visible() {
-            pill_items.push(pill("logs", View::History));
-        }
+        // Priority+ overflow: the pills that fit render inline; the rest
+        // live behind the "…" menu (see `subnav_pill_split`). No
+        // horizontal scroll, the menu is the overflow affordance.
+        let (inline_defs, overflow_defs) = self.subnav_pill_split();
+        let pill_items: Vec<Element<'_, Message>> =
+            inline_defs.iter().map(|(k, v)| pill(k, *v)).collect();
         let pills = dir_row(pill_items)
-            .spacing(4)
+            .spacing(3)
             .align_y(iced::Alignment::Center);
-        // Compact search input on the trailing edge of the sub-nav.
-        // Each vault sub-section has its own backing string + message
-        // so the same row serves every view; the placeholder text
-        // changes accordingly. Width capped so the pills keep their
-        // natural width.
-        type SearchBinding<'a> = (&'a str, &'a str, fn(String) -> Message);
-        let search_binding: Option<SearchBinding<'_>> = match self.active_view {
-            View::Dashboard => Some((
-                "search_hosts",
-                self.host_search.as_str(),
-                Message::HostSearchChanged,
-            )),
-            View::Keys => Some((
-                "search_keys_identities",
-                self.key_search.as_str(),
-                Message::KeySearchChanged,
-            )),
-            View::Snippets => Some((
-                "search_snippets",
-                self.snippet_search.as_str(),
-                Message::SnippetSearchChanged,
-            )),
-            View::PortForwarding => Some((
-                "search_port_forwards",
-                self.port_forward_search.as_str(),
-                Message::PortForwardSearchChanged,
-            )),
-            View::History => Some((
-                "search_logs",
-                self.history_search.as_str(),
-                Message::HistorySearchChanged,
-            )),
-            _ => None,
-        };
-        let search_input: Element<'_, Message> = if let Some((ph_key, value, on_input)) = search_binding {
-            // ID matches `Oryxis::active_view_search_id`, the global
-            // Ctrl+F handler resolves the active view to one of these
-            // strings and focuses the matching input.
-            let search_id = match self.active_view {
-                View::Dashboard => "search-dashboard",
-                View::Keys => "search-keys",
-                View::Snippets => "search-snippets",
-                View::PortForwarding => "search-port-forwards",
-                View::History => "search-history",
-                _ => "search-vault-subnav",
+        // Search moved out of this row into each view's toolbar
+        // (see `vault_search_field`).
+        // Static "Personal" vault chip on the leading edge: the active
+        // vault's identity. Multi-vault switching isn't wired yet, so
+        // this is a non-interactive placeholder (no dropdown). "Personal"
+        // is the default vault's name (data, not a translated string).
+        let vault_chip: Element<'_, Message> = container(
+            dir_row(vec![
+                iced_fonts::lucide::lock()
+                    .size(13)
+                    .color(OryxisColors::t().accent)
+                    .into(),
+                Space::new().width(6).into(),
+                text("Personal")
+                    .size(12)
+                    .color(OryxisColors::t().text_primary)
+                    .into(),
+                Space::new().width(6).into(),
+                iced_fonts::lucide::chevron_down()
+                    .size(12)
+                    .color(OryxisColors::t().text_muted)
+                    .into(),
+            ])
+            .align_y(iced::Alignment::Center),
+        )
+        .center_y(Length::Fixed(28.0))
+        .padding(Padding { top: 0.0, right: 9.0, bottom: 0.0, left: 9.0 })
+        .style(|_| container::Style {
+            background: Some(Background::Color(OryxisColors::t().bg_surface)),
+            border: Border {
+                radius: Radius::from(6.0),
+                color: OryxisColors::t().border,
+                width: 1.0,
+            },
+            ..Default::default()
+        })
+        .into();
+
+        // Settings gear pinned at the trailing edge, outside the
+        // scrollable, so it never scrolls out of reach (mirrors how the
+        // top strip docks the "+").
+        let settings_active = self.active_view == View::Settings;
+        let settings_gear: Element<'_, Message> = button(
+            container(
+                iced_fonts::lucide::settings()
+                    .size(15)
+                    .color(if settings_active {
+                        OryxisColors::t().accent
+                    } else {
+                        OryxisColors::t().text_muted
+                    }),
+            )
+            .center_y(Length::Fixed(28.0))
+            .padding(Padding { top: 0.0, right: 8.0, bottom: 0.0, left: 8.0 }),
+        )
+        .padding(0)
+        .on_press(Message::ChangeView(View::Settings))
+        .style(move |_, status| {
+            let bg = if settings_active {
+                Color { a: 0.15, ..OryxisColors::t().accent }
+            } else if matches!(status, iced::widget::button::Status::Hovered) {
+                Color { a: 0.08, ..OryxisColors::t().text_secondary }
+            } else {
+                Color::TRANSPARENT
             };
-            iced::widget::text_input(crate::i18n::t(ph_key), value)
-                .id(iced::widget::Id::new(search_id))
-                .on_input(on_input)
-                // Generous vertical padding so the input feels like a
-                // real field, not a 1-line label.
-                .padding(Padding { top: 7.0, right: 10.0, bottom: 7.0, left: 10.0 })
-                .size(12)
-                .width(220)
-                .style(crate::widgets::rounded_input_style)
-                .align_x(dir_align_x())
-                .into()
+            button::Style {
+                background: Some(Background::Color(bg)),
+                border: Border { radius: Radius::from(6.0), ..Default::default() },
+                ..Default::default()
+            }
+        })
+        .into();
+
+        // "…" overflow button (priority+): opens the menu with the
+        // destinations that didn't fit. Sits right after the visible
+        // pills. U+22EF is the midline ellipsis (vertically centered,
+        // unlike the baseline-sitting U+2026).
+        let overflow_btn: Element<'_, Message> = if overflow_defs.is_empty() {
+            Space::new().width(0).into()
         } else {
-            Space::new().width(0).height(0).into()
+            let open = self.show_subnav_overflow;
+            button(
+                container(
+                    text("\u{22EF}")
+                        .size(16)
+                        .color(if open {
+                            OryxisColors::t().accent
+                        } else {
+                            OryxisColors::t().text_muted
+                        }),
+                )
+                .center_y(Length::Fixed(28.0))
+                .padding(Padding { top: 0.0, right: 7.0, bottom: 0.0, left: 7.0 }),
+            )
+            .padding(0)
+            .on_press(Message::ToggleSubnavOverflow)
+            .style(move |_, status| {
+                let bg = if open {
+                    Color { a: 0.15, ..OryxisColors::t().accent }
+                } else if matches!(status, iced::widget::button::Status::Hovered) {
+                    Color { a: 0.08, ..OryxisColors::t().text_secondary }
+                } else {
+                    Color::TRANSPARENT
+                };
+                button::Style {
+                    background: Some(Background::Color(bg)),
+                    border: Border { radius: Radius::from(6.0), ..Default::default() },
+                    ..Default::default()
+                }
+            })
+            .into()
         };
-        let row_inner = dir_row(vec![
-            pills.into(),
-            Space::new().width(Length::Fill).into(),
-            search_input,
-        ])
-        .align_y(iced::Alignment::Center);
+
+        let mut row_items: Vec<Element<'_, Message>> = Vec::new();
+        // Vault switcher chip only when there's more than one vault.
+        if self.show_vault_switcher() {
+            row_items.push(vault_chip);
+            row_items.push(Space::new().width(8).into());
+        }
+        row_items.push(pills.into());
+        row_items.push(overflow_btn);
+        row_items.push(Space::new().width(Length::Fill).into());
+        row_items.push(settings_gear);
+        let row_inner = dir_row(row_items).align_y(iced::Alignment::Center);
+        // Vertical padding equals the left padding so the chip sits with
+        // equal breathing room on all sides. Background is a vertical
+        // gradient from the top-bar color down into the content color,
+        // so the row melts into the content below with no hard seam (no
+        // bottom separator line).
         let row_content = container(row_inner)
-            .padding(Padding { top: 6.0, right: 10.0, bottom: 6.0, left: 10.0 })
-            .width(Length::Fill);
-        let separator = container(Space::new().height(1))
+            .padding(Padding { top: 8.0, right: 8.0, bottom: 8.0, left: 8.0 })
             .width(Length::Fill)
             .style(|_| container::Style {
-                background: Some(Background::Color(OryxisColors::t().border)),
+                // Flat, same as the content below: the sub-nav reads as
+                // a toolbar sitting on the content surface. The accent
+                // hairline above it is the only chrome boundary (the
+                // distinct-bg / gradient experiments all read worse).
+                background: Some(Background::Color(OryxisColors::t().bg_primary)),
                 ..Default::default()
             });
-        iced::widget::column![row_content, separator]
+        // No bottom separator: the gradient already blends into content.
+        row_content.into()
+    }
+
+    /// Estimated rendered width of one sub-nav pill, by label key.
+    /// iced exposes no pre-render measurement, so this is a heuristic:
+    /// ~7.5px per glyph + 21px padding + 2px inter-pill spacing.
+    fn subnav_pill_width(key: &str) -> f32 {
+        crate::i18n::t(key).chars().count() as f32 * 7.5 + 21.0 + 2.0
+    }
+
+    /// Full ordered list of vault sub-nav destinations (Logs auto-hides
+    /// until the feature is real for this user).
+    fn subnav_pill_defs(&self) -> Vec<SubnavPill> {
+        let mut defs: Vec<SubnavPill> = vec![
+            ("hosts", View::Dashboard),
+            ("keychain", View::Keys),
+            ("snippets", View::Snippets),
+            ("port_forwards", View::PortForwarding),
+        ];
+        if self.logs_surface_visible() {
+            defs.push(("logs", View::History));
+        }
+        // Cloud Accounts / Proxies / Known Hosts were Settings sections
+        // in v0.7; they're now first-class vault surfaces.
+        defs.push(("cloud_accounts", View::Cloud));
+        defs.push(("proxies", View::Proxies));
+        defs.push(("known_hosts", View::KnownHosts));
+        defs
+    }
+
+    /// Split the destinations into the pills that fit inline and the
+    /// ones that overflow into the "…" menu (priority+ navigation). The
+    /// active destination is always kept inline so its highlight stays
+    /// visible in the row.
+    fn subnav_pill_split(&self) -> (Vec<SubnavPill>, Vec<SubnavPill>) {
+        // Reserve only the pinned flanks of THIS row: chip (~115, only
+        // when the vault switcher shows), gear (~31), the "…" button
+        // (~28), plus row padding and gaps. Search no longer lives here
+        // (it moved to each view's toolbar), so nothing is reserved for
+        // it, otherwise the "…" triggered way too early.
+        let chip = if self.show_vault_switcher() { 115.0 } else { 0.0 };
+        let flank = chip + 31.0 + 28.0 + 24.0;
+        // An open side panel sits over the sub-nav's trailing edge now,
+        // so subtract its width from the budget or pills would render
+        // under the panel before the "…" kicks in.
+        let panel_reserve = if self.side_panel_open() {
+            crate::app::PANEL_WIDTH
+        } else {
+            0.0
+        };
+        let avail = (self.window_size.width - flank - panel_reserve).max(0.0);
+
+        let mut inline: Vec<SubnavPill> = Vec::new();
+        let mut overflow: Vec<SubnavPill> = Vec::new();
+        let mut used = 0.0;
+        for (k, v) in self.subnav_pill_defs() {
+            let w = Self::subnav_pill_width(k);
+            if overflow.is_empty() && used + w <= avail {
+                used += w;
+                inline.push((k, v));
+            } else {
+                overflow.push((k, v));
+            }
+        }
+        // If the active view spilled into the overflow, swap it back in
+        // (demoting the last inline pill) so the current location stays
+        // highlighted in the strip.
+        if let Some(pos) = overflow.iter().position(|(_, v)| *v == self.active_view) {
+            let active = overflow.remove(pos);
+            if let Some(last) = inline.pop() {
+                overflow.insert(0, last);
+            }
+            inline.push(active);
+        }
+        (inline, overflow)
+    }
+
+    /// Overflow ("…") dropdown for the vault sub-nav: the destinations
+    /// that didn't fit inline. Backdrop + pinned panel, like the burger
+    /// menu; anchored under the "…" trigger via an estimated x offset.
+    pub(crate) fn view_subnav_overflow_menu(&self) -> Element<'_, Message> {
+        let (inline, overflow) = self.subnav_pill_split();
+        let mut col = iced::widget::Column::new().width(Length::Fill).spacing(1);
+        for (k, v) in overflow {
+            let active = self.active_view == v;
+            let fg = if active {
+                OryxisColors::t().accent
+            } else {
+                OryxisColors::t().text_primary
+            };
+            let item = button(
+                container(text(crate::i18n::t(k)).size(13).color(fg))
+                    .width(Length::Fill)
+                    .align_x(dir_align_x())
+                    .padding(Padding { top: 7.0, right: 12.0, bottom: 7.0, left: 12.0 }),
+            )
             .width(Length::Fill)
+            .on_press(Message::ChangeView(v))
+            .style(move |_, status| {
+                let bg = if matches!(status, iced::widget::button::Status::Hovered) {
+                    OryxisColors::t().bg_hover
+                } else if active {
+                    Color { a: 0.12, ..OryxisColors::t().accent }
+                } else {
+                    Color::TRANSPARENT
+                };
+                button::Style {
+                    background: Some(Background::Color(bg)),
+                    border: Border { radius: Radius::from(6.0), ..Default::default() },
+                    ..Default::default()
+                }
+            });
+            col = col.push(item);
+        }
+        let panel = container(col)
+            .width(Length::Fixed(200.0))
+            .padding(Padding { top: 6.0, right: 6.0, bottom: 6.0, left: 6.0 })
+            .style(|_| container::Style {
+                background: Some(Background::Color(OryxisColors::t().bg_sidebar)),
+                border: Border {
+                    radius: Radius::from(8.0),
+                    color: OryxisColors::t().border,
+                    width: 1.0,
+                },
+                ..Default::default()
+            });
+        // Estimated x of the "…" trigger: row left padding + chip + gap
+        // + the inline pills. Lands the dropdown just under the cue.
+        let inline_w: f32 = inline
+            .iter()
+            .map(|(k, _)| Self::subnav_pill_width(k))
+            .sum();
+        let dots_x = 8.0 + 115.0 + 8.0 + inline_w;
+        let pinned = container(panel)
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .align_x(iced::alignment::Horizontal::Left)
+            .align_y(iced::alignment::Vertical::Top)
+            .padding(Padding {
+                top: 78.0,
+                right: 0.0,
+                bottom: 0.0,
+                left: dots_x,
+            });
+        let backdrop: Element<'_, Message> = MouseArea::new(
+            container(Space::new().width(Length::Fill).height(Length::Fill))
+                .width(Length::Fill)
+                .height(Length::Fill),
+        )
+        .on_press(Message::ToggleSubnavOverflow)
+        .into();
+        Stack::new()
+            .push(backdrop)
+            .push(pinned)
+            .width(Length::Fill)
+            .height(Length::Fill)
             .into()
     }
 
@@ -2164,17 +2657,10 @@ impl Oryxis {
         let hk_settings = self.hotkey_label_for_action(crate::hotkeys::HotkeyAction::OpenSettings);
         let hk_local_shell = self.hotkey_label_for_action(crate::hotkeys::HotkeyAction::OpenLocalShell);
         let hk_new_window = self.hotkey_label_for_action(crate::hotkeys::HotkeyAction::NewWindow);
-        // Hosts / SFTP get the Ctrl+1 / Ctrl+2 hints only in
-        // Workspace mode, the same layouts where the strip carries
-        // them as area tabs (Classic mode keeps them in the
-        // sidebar so the hint would be misleading).
-        let workspace_mode = self.setting_layout_mode == "workspace";
-        let hk_hosts = if workspace_mode {
-            self.hotkey_label_for_strip_slot(0)
-        } else {
-            None
-        };
-        let hk_sftp = if workspace_mode && self.sftp_enabled {
+        // Hosts / SFTP carry the Ctrl+1 / Ctrl+2 hints since the strip
+        // always renders them as area tabs.
+        let hk_hosts = self.hotkey_label_for_strip_slot(0);
+        let hk_sftp = if self.sftp_enabled {
             self.hotkey_label_for_strip_slot(1)
         } else {
             None
@@ -2252,6 +2738,9 @@ impl Oryxis {
             } else {
                 Space::new().height(0).into()
             },
+            indent(item("cloud_accounts", Message::ChangeView(View::Cloud), None)),
+            indent(item("proxies", Message::ChangeView(View::Proxies), None)),
+            indent(item("known_hosts", Message::ChangeView(View::KnownHosts), None)),
             Space::new().height(4),
             sftp_item,
             item("settings", Message::ChangeView(View::Settings), hk_settings),

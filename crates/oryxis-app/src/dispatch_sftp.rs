@@ -717,6 +717,8 @@ impl Oryxis {
                 self.sftp.hovered_row = None;
             }
             Message::SftpMouseLeftPressed => {
+                // Any physical click leaves dashboard card-selection mode.
+                self.selected_nav = None;
                 // A physical left press over a tab arms a potential reorder
                 // drag. Armed here (on the real button press) rather than in
                 // SelectTab, so programmatic SelectTab dispatches (the

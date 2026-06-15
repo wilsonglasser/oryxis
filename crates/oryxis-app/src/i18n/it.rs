@@ -2,6 +2,12 @@
 
 pub(super) fn lookup(key: &str) -> Option<&'static str> {
     Some(match key {
+        "expand" => "Espandi",
+        "collapse" => "Comprimi",
+        "nav_orientation" => "Navigazione",
+        "nav_orientation_desc" => "Orizzontale mostra le sezioni come striscia di pillole sotto la barra; Verticale come barra di icone a sinistra.",
+        "nav_orientation_horizontal" => "Orizzontale (pillole)",
+        "nav_orientation_vertical" => "Verticale (barra)",
         "hosts" => "Host",
         "keychain" => "Portachiavi",
         "snippets" => "Frammenti",
@@ -22,6 +28,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "cloud_discover_import_into_placeholder" => "Nome del gruppo (esistente o nuovo)",
         "search_groups" => "Cerca gruppi…",
         "tab_accent_line" => "Colora la linea della scheda con l'accento dell'host",
+        "tab_accent_wash" => "Colora la barra superiore con l'accento dell'host",
         "host_filter_by_profile" => "Filtra per account cloud",
         "host_filter_active" => "Filtro",
         "cloud_profile_sync" => "Sincronizza ora",
@@ -234,10 +241,6 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "close_position_left" => "Sinistra",
         "close_position_right" => "Destra",
         "show_tab_status_dot" => "Mostra indicatore di connessione sulle schede",
-        "layout_mode" => "Modalità layout",
-        "layout_mode_desc" => "Workspace nasconde la barra laterale quando una scheda di connessione è aperta, lasciando il terminale a tutto schermo. Classica mostra sempre la barra laterale.",
-        "layout_mode_classic" => "Classica (barra laterale)",
-        "layout_mode_workspace" => "Workspace (schede in alto)",
         "default_host_icon" => "Icona host predefinita",
         "icon_circular" => "Circolare",
         "icon_square" => "Quadrato",
@@ -310,7 +313,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "session_log" => "Registro di Sessione",
         "entries" => "voci",
         "of" => "di",
-        "no_activity" => "Nessuna attività registrata.",
+        "no_activity" => "Nessuna attività",
+        "no_activity_desc" => "Sessioni ed eventi di connessione appariranno qui.",
         "in_progress" => "In Corso",
 
         "identity" => "Identità",
@@ -416,8 +420,10 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         // Proxy Identities
         "proxies" => "Proxies",
         "new_proxy_identity" => "Nuovo Proxy",
+        "edit_proxy_identity" => "Modifica proxy",
         "proxy_identity_label" => "Etichetta",
-        "proxy_identities_empty" => "Nessun proxy salvato finora.",
+        "proxy_identities_empty" => "Salva un proxy una volta e riusalo su tutti gli host.",
+        "proxy_identities_empty_title" => "Nessun proxy",
         "proxy_type_identity_fallback" => "Proxy salvato",
         "proxy_type_identity_deleted" => "(proxy eliminato)",
         "proxy_identity_err_label_required" => "L'etichetta è obbligatoria",
@@ -428,6 +434,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "groups_section" => "Gruppi",
         "hosts_section" => "Host",
         "flatten_hosts_label" => "Mostra tutti gli host nella radice",
+        "card_accent_glass_label" => "Schede con vetro accento",
+        "card_accent_glass_desc" => "Leggera sfumatura del colore di ogni scheda (colore host/gruppo).",
         "flatten_hosts_desc" => "Quando attivo, la radice della dashboard mostra una sezione Gruppi sopra un elenco piatto di tutti gli host. Disattivato, gli host raggruppati appaiono solo aprendo la cartella.",
 
         "sync_passwords" => "Sincronizza le password tra dispositivi",
@@ -541,6 +549,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "ip_or_hostname" => "IP o Hostname",
         "my_server_placeholder" => "Il mio server",
         "group_placeholder" => "Produzione, Staging...",
+        "edit_group" => "Modifica gruppo",
+        "group_icon_color" => "Icona e colore",
         "add_key_btn" => "+ Chiave",
         "port_forwarding" => "Inoltro Porte",
         "add_btn" => "AGGIUNGI",
@@ -712,6 +722,10 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "log_retention_30d" => "1 mese",
         "log_retention_90d" => "3 mesi",
         "log_delete_confirm_body" => "questa registrazione di sessione verrà eliminata definitivamente.",
+        "known_host_remove_confirm_title" => "Rimuovere la chiave dell'host?",
+        "known_host_remove_confirm_body" => "questa chiave host viene rimossa; la verificherai di nuovo alla prossima connessione.",
+        "known_hosts_clear_confirm_title" => "Riverificare tutti gli host?",
+        "known_hosts_clear_confirm_body" => "Ogni chiave host salvata viene rimossa; verificherai di nuovo ogni host alla prossima connessione.",
         "plugin_uninstall_confirm_body" => "i binari scaricati verranno eliminati da questa macchina. Puoi reinstallarlo da questo pannello in qualsiasi momento.",
         "plugin_action_check_updates" => "Cerca aggiornamenti",
         "plugin_action_retry" => "Riprova",
@@ -748,7 +762,11 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
 
         // Banner plugin mancante in Cloud Accounts
         "cloud_plugin_missing_title" => "Plugin AWS non installato",
-        "cloud_plugin_missing_body" => "Test Credentials e Scopri host richiedono il plugin AWS. Installalo per usare questo account.",
+        "cloud_plugin_missing_title_suffix" => "plugin non installato",
+        "cloud_plugin_missing_body" => "Test Credentials e Scopri host richiedono il plugin di questo provider. Installalo per usare questo account.",
+        "cloud_no_provider_title" => "Nessun provider cloud installato",
+        "cloud_no_provider_desc" => "Gli account cloud scoprono e importano host da provider come AWS e Kubernetes. Installa il plugin di un provider per aggiungere un account.",
+        "cloud_no_provider_btn" => "Apri plugin",
 
         // Menu di ordinamento
         "sort_label_asc" => "A-z",
@@ -764,6 +782,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "create_port_forward_title" => "Inoltra una porta",
         "create_port_forward_desc" => "Mantieni un tunnel aperto senza terminale: database, dashboard, webhook.",
         "search_port_forwards" => "Cerca inoltri porte...",
+        "search_cloud_accounts" => "Cerca account...",
+        "search_proxies" => "Cerca proxy...",
         "pf_kind" => "Tipo",
         "pf_host" => "Tramite host",
         "pf_listen_host" => "Indirizzo di ascolto",
@@ -815,7 +835,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "cjk_font_downloading" => "Download del font della lingua...",
         "cjk_font_failed" => "Impossibile scaricare il font della lingua. Verrà usato il font di sistema.",
 
-        "logs" => "Log",
+        "logs" => "Cronologia",
         "vault" => "Vault",
         "search_logs" => "Cerca nei log...",
         "clear_all" => "Cancella tutto",

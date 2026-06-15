@@ -2,6 +2,12 @@
 
 pub(super) fn lookup(key: &str) -> Option<&'static str> {
     Some(match key {
+        "expand" => "Развернуть",
+        "collapse" => "Свернуть",
+        "nav_orientation" => "Навигация",
+        "nav_orientation_desc" => "Горизонтально: разделы в виде полосы пилюль под панелью; Вертикально: в виде рейки значков слева.",
+        "nav_orientation_horizontal" => "Горизонтально (пилюли)",
+        "nav_orientation_vertical" => "Вертикально (рейка)",
         "hosts" => "Хосты",
         "keychain" => "Связка ключей",
         "snippets" => "Сниппеты",
@@ -22,6 +28,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "cloud_discover_import_into_placeholder" => "Имя группы (существующее или новое)",
         "search_groups" => "Поиск групп…",
         "tab_accent_line" => "Подсвечивать линию вкладки цветом хоста",
+        "tab_accent_wash" => "Тонировать верхнюю панель акцентом хоста",
         "host_filter_by_profile" => "Фильтр по облачному аккаунту",
         "host_filter_active" => "Фильтр",
         "cloud_profile_sync" => "Синхронизировать сейчас",
@@ -234,10 +241,6 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "close_position_left" => "Слева",
         "close_position_right" => "Справа",
         "show_tab_status_dot" => "Показывать индикатор соединения на вкладках",
-        "layout_mode" => "Режим компоновки",
-        "layout_mode_desc" => "Workspace скрывает боковую панель при открытой вкладке соединения, чтобы терминал занимал всё пространство. Классический всегда показывает боковую панель.",
-        "layout_mode_classic" => "Классический (боковая панель)",
-        "layout_mode_workspace" => "Workspace (вкладки сверху)",
         "default_host_icon" => "Значок хоста по умолчанию",
         "icon_circular" => "Круглый",
         "icon_square" => "Квадратный",
@@ -310,7 +313,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "session_log" => "Журнал сеанса",
         "entries" => "записей",
         "of" => "из",
-        "no_activity" => "Активность пока не записана.",
+        "no_activity" => "Пока нет активности",
+        "no_activity_desc" => "Сеансы и события подключения появятся здесь.",
         "in_progress" => "В процессе",
 
         "identity" => "Личность",
@@ -416,8 +420,10 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         // Proxy Identities
         "proxies" => "Прокси",
         "new_proxy_identity" => "Новый прокси",
+        "edit_proxy_identity" => "Изменить прокси",
         "proxy_identity_label" => "Метка",
-        "proxy_identities_empty" => "Нет сохранённых прокси.",
+        "proxy_identities_empty" => "Сохраните прокси один раз и используйте на всех хостах.",
+        "proxy_identities_empty_title" => "Пока нет прокси",
         "proxy_type_identity_fallback" => "Сохранённый прокси",
         "proxy_type_identity_deleted" => "(удалённый прокси)",
         "proxy_identity_err_label_required" => "Метка обязательна",
@@ -428,6 +434,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "groups_section" => "Группы",
         "hosts_section" => "Хосты",
         "flatten_hosts_label" => "Показывать все хосты в корне",
+        "card_accent_glass_label" => "Карточки с акцентным стеклом",
+        "card_accent_glass_desc" => "Мягкий градиент цвета каждой карточки (цвет хоста/группы).",
         "flatten_hosts_desc" => "Когда включено, в корне панели показывается раздел «Группы» над плоским списком всех хостов. Когда выключено, сгруппированные хосты отображаются только при открытии папки.",
 
         "sync_passwords" => "Синхронизировать пароли между устройствами",
@@ -541,6 +549,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "ip_or_hostname" => "IP или имя хоста",
         "my_server_placeholder" => "Мой сервер",
         "group_placeholder" => "Production, Staging...",
+        "edit_group" => "Изменить группу",
+        "group_icon_color" => "Значок и цвет",
         "add_key_btn" => "+ Ключ",
         "port_forwarding" => "Перенаправление портов",
         "add_btn" => "ДОБАВИТЬ",
@@ -712,6 +722,10 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "log_retention_30d" => "1 месяц",
         "log_retention_90d" => "3 месяца",
         "log_delete_confirm_body" => "эта запись сессии будет удалена безвозвратно.",
+        "known_host_remove_confirm_title" => "Удалить ключ хоста?",
+        "known_host_remove_confirm_body" => "этот ключ хоста будет удалён; вы снова проверите его при следующем подключении.",
+        "known_hosts_clear_confirm_title" => "Повторно проверить все хосты?",
+        "known_hosts_clear_confirm_body" => "Каждый сохранённый ключ хоста будет удалён; вы снова проверите каждый хост при следующем подключении.",
         "plugin_uninstall_confirm_body" => "загруженные двоичные файлы будут удалены с этого компьютера. Вы можете переустановить его из этой панели в любой момент.",
         "plugin_action_check_updates" => "Проверить обновления",
         "plugin_action_retry" => "Повторить",
@@ -748,7 +762,11 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
 
         // Баннер отсутствующего плагина в Cloud Accounts
         "cloud_plugin_missing_title" => "Плагин AWS не установлен",
-        "cloud_plugin_missing_body" => "Проверка учётных данных и Поиск хостов требуют плагин AWS. Установите его, чтобы использовать этот аккаунт.",
+        "cloud_plugin_missing_title_suffix" => "плагин не установлен",
+        "cloud_plugin_missing_body" => "Проверка учётных данных и Поиск хостов требуют плагин этого провайдера. Установите его, чтобы использовать этот аккаунт.",
+        "cloud_no_provider_title" => "Не установлен ни один облачный провайдер",
+        "cloud_no_provider_desc" => "Облачные аккаунты находят и импортируют хосты от провайдеров, таких как AWS и Kubernetes. Установите плагин провайдера, чтобы добавить аккаунт.",
+        "cloud_no_provider_btn" => "Открыть плагины",
 
         // Меню сортировки
         "sort_label_asc" => "А-я",
@@ -764,6 +782,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "create_port_forward_title" => "Пробросить порт",
         "create_port_forward_desc" => "Держите туннель открытым без терминала: базы данных, панели, вебхуки.",
         "search_port_forwards" => "Поиск пробросов портов...",
+        "search_cloud_accounts" => "Поиск аккаунтов...",
+        "search_proxies" => "Поиск прокси...",
         "pf_kind" => "Тип",
         "pf_host" => "Через хост",
         "pf_listen_host" => "Адрес прослушивания",
@@ -815,7 +835,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "cjk_font_downloading" => "Загрузка шрифта языка...",
         "cjk_font_failed" => "Не удалось загрузить шрифт языка. Используется системный шрифт.",
 
-        "logs" => "Журналы",
+        "logs" => "История",
         "vault" => "Хранилище",
         "search_logs" => "Поиск в журналах...",
         "clear_all" => "Очистить всё",

@@ -14,7 +14,7 @@ use crate::theme::OryxisColors;
 use crate::widgets::{dir_align_x, dir_row};
 
 impl Oryxis {
-    pub(super) fn view_cloud_form_panel(&self) -> Element<'_, Message> {
+    pub(crate) fn view_cloud_form_panel(&self) -> Element<'_, Message> {
         let is_editing = self.editing_cloud_profile_id.is_some();
         let title = if is_editing {
             t("cloud_edit_account")
@@ -326,18 +326,26 @@ impl Oryxis {
             btn
         };
 
-        // Plugin-missing banner: surfaces *above* every form field
+        // Plugin-missing banner: pinned *above* the scrollable form
         // when the provider chosen above has no installed plugin, so
         // the user can't fill out the form and then hit a cryptic
-        // "binary not found" wall on Test Credentials. K8s is
-        // in-process and never triggers this.
-        let plugin_banner: Element<'_, Message> = if plugin_missing
-            && !matches!(self.cloud_form_provider, CloudProviderChoice::K8s)
-        {
-            let provider_id_str = match self.cloud_form_provider {
-                CloudProviderChoice::Aws => "aws",
-                CloudProviderChoice::K8s => "k8s",
+        // "binary not found" wall on Test Credentials. Every cloud
+        // provider (AWS and Kubernetes alike) runs as a subprocess
+        // plugin, so both surface this when their plugin is missing.
+        let plugin_banner: Element<'_, Message> = if plugin_missing {
+            let provider_id_str = self.cloud_form_provider.id();
+            // Brand name (not translated) for the title prefix, so the
+            // banner reads "AWS plugin not installed" / "Kubernetes
+            // plugin not installed" per the selected provider.
+            let provider_display = match self.cloud_form_provider {
+                CloudProviderChoice::Aws => "AWS",
+                CloudProviderChoice::K8s => "Kubernetes",
             };
+            let banner_title = format!(
+                "{} {}",
+                provider_display,
+                t("cloud_plugin_missing_title_suffix")
+            );
             let install_btn = button(
                 container(
                     text(t("plugin_action_install"))
@@ -369,7 +377,7 @@ impl Oryxis {
                             .color(OryxisColors::t().warning)
                             .into(),
                         Space::new().width(8).into(),
-                        text(t("cloud_plugin_missing_title"))
+                        text(banner_title)
                             .size(13)
                             .color(OryxisColors::t().text_primary)
                             .into(),
@@ -407,7 +415,6 @@ impl Oryxis {
         };
 
         let form = column![
-            plugin_banner,
             text(t("name"))
                 .size(12)
                 .color(OryxisColors::t().text_secondary),
@@ -509,6 +516,9 @@ impl Oryxis {
             panel_header,
             container(
                 column![
+                    // Pinned above the scroll so the install affordance
+                    // stays visible while the user scrolls the fields.
+                    plugin_banner,
                     scrollable(form).height(Length::Fill),
                     Space::new().height(12),
                     panel_error,

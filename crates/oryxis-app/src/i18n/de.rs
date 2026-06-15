@@ -2,6 +2,12 @@
 
 pub(super) fn lookup(key: &str) -> Option<&'static str> {
     Some(match key {
+        "expand" => "Ausklappen",
+        "collapse" => "Einklappen",
+        "nav_orientation" => "Navigation",
+        "nav_orientation_desc" => "Horizontal zeigt die Bereiche als Pillenleiste unter der Leiste; Vertikal als Symbolleiste links.",
+        "nav_orientation_horizontal" => "Horizontal (Pillen)",
+        "nav_orientation_vertical" => "Vertikal (Leiste)",
         "hosts" => "Hosts",
         "keychain" => "Schlüsselbund",
         "snippets" => "Snippets",
@@ -22,6 +28,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "cloud_discover_import_into_placeholder" => "Gruppenname (vorhanden oder neu)",
         "search_groups" => "Gruppen suchen…",
         "tab_accent_line" => "Tab-Linie mit Host-Akzent einfärben",
+        "tab_accent_wash" => "Obere Leiste mit Host-Akzent einfärben",
         "host_filter_by_profile" => "Nach Cloud-Konto filtern",
         "host_filter_active" => "Filter",
         "cloud_profile_sync" => "Jetzt synchronisieren",
@@ -234,10 +241,6 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "close_position_left" => "Links",
         "close_position_right" => "Rechts",
         "show_tab_status_dot" => "Verbindungsstatus-Punkt auf Tabs anzeigen",
-        "layout_mode" => "Layout-Modus",
-        "layout_mode_desc" => "Workspace blendet die Seitenleiste aus, wenn ein Verbindungstab geöffnet ist, damit das Terminal die volle Fläche füllt. Klassisch zeigt die Seitenleiste immer an.",
-        "layout_mode_classic" => "Klassisch (Seitenleiste)",
-        "layout_mode_workspace" => "Workspace (Tabs oben)",
         "default_host_icon" => "Standard-Host-Symbol",
         "icon_circular" => "Rund",
         "icon_square" => "Quadrat",
@@ -310,7 +313,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "session_log" => "Sitzungsprotokoll",
         "entries" => "Einträge",
         "of" => "von",
-        "no_activity" => "Noch keine Aktivität protokolliert.",
+        "no_activity" => "Noch keine Aktivität",
+        "no_activity_desc" => "Sitzungen und Verbindungsereignisse erscheinen hier.",
         "in_progress" => "In Bearbeitung",
 
         "identity" => "Identität",
@@ -416,8 +420,10 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         // Proxy Identities
         "proxies" => "Proxies",
         "new_proxy_identity" => "Neuer Proxy",
+        "edit_proxy_identity" => "Proxy bearbeiten",
         "proxy_identity_label" => "Bezeichnung",
-        "proxy_identities_empty" => "Noch keine gespeicherten Proxies.",
+        "proxy_identities_empty" => "Proxy einmal speichern und für alle Hosts wiederverwenden.",
+        "proxy_identities_empty_title" => "Noch keine Proxys",
         "proxy_type_identity_fallback" => "Gespeicherter Proxy",
         "proxy_type_identity_deleted" => "(gelöschter Proxy)",
         "proxy_identity_err_label_required" => "Bezeichnung ist erforderlich",
@@ -428,6 +434,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "groups_section" => "Gruppen",
         "hosts_section" => "Hosts",
         "flatten_hosts_label" => "Alle Hosts an der Wurzel anzeigen",
+        "card_accent_glass_label" => "Karten mit Akzentglas",
+        "card_accent_glass_desc" => "Sanfter Farbverlauf je Karte (Host-/Gruppenfarbe blendet aus).",
         "flatten_hosts_desc" => "Wenn aktiviert, zeigt die Wurzel des Dashboards einen Gruppen-Abschnitt über einer flachen Liste aller Hosts. Wenn deaktiviert, erscheinen gruppierte Hosts erst beim Öffnen des Ordners.",
 
         "sync_passwords" => "Passwörter zwischen Geräten synchronisieren",
@@ -541,6 +549,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "ip_or_hostname" => "IP oder Hostname",
         "my_server_placeholder" => "Mein Server",
         "group_placeholder" => "Produktion, Staging...",
+        "edit_group" => "Gruppe bearbeiten",
+        "group_icon_color" => "Symbol & Farbe",
         "add_key_btn" => "+ Schlüssel",
         "port_forwarding" => "Portweiterleitung",
         "add_btn" => "HINZUFÜGEN",
@@ -713,6 +723,10 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "log_retention_30d" => "1 Monat",
         "log_retention_90d" => "3 Monate",
         "log_delete_confirm_body" => "diese Sitzungsaufzeichnung wird dauerhaft gelöscht.",
+        "known_host_remove_confirm_title" => "Hostschlüssel entfernen?",
+        "known_host_remove_confirm_body" => "dieser Hostschlüssel wird entfernt; du verifizierst ihn bei der nächsten Verbindung erneut.",
+        "known_hosts_clear_confirm_title" => "Alle Hosts neu verifizieren?",
+        "known_hosts_clear_confirm_body" => "Jeder gespeicherte Hostschlüssel wird entfernt; du verifizierst jeden Host bei der nächsten Verbindung erneut.",
         "plugin_uninstall_confirm_body" => "die heruntergeladenen Binärdateien werden von diesem Rechner gelöscht. Sie können es jederzeit über dieses Panel neu installieren.",
         "plugin_action_check_updates" => "Auf Updates prüfen",
         "plugin_action_retry" => "Erneut versuchen",
@@ -749,7 +763,11 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
 
         // Plugin-fehlt-Banner in Cloud Accounts
         "cloud_plugin_missing_title" => "AWS-Plugin nicht installiert",
-        "cloud_plugin_missing_body" => "Test Credentials und Hosts entdecken benötigen das AWS-Plugin. Installiere es, um dieses Konto zu nutzen.",
+        "cloud_plugin_missing_title_suffix" => "Plugin nicht installiert",
+        "cloud_plugin_missing_body" => "Test Credentials und Hosts entdecken benötigen das Plugin dieses Anbieters. Installiere es, um dieses Konto zu nutzen.",
+        "cloud_no_provider_title" => "Kein Cloud-Anbieter installiert",
+        "cloud_no_provider_desc" => "Cloud-Konten entdecken und importieren Hosts von Anbietern wie AWS und Kubernetes. Installiere das Plugin eines Anbieters, um ein Konto hinzuzufügen.",
+        "cloud_no_provider_btn" => "Plugins öffnen",
 
         // Sortier-Menü
         "sort_label_asc" => "A-z",
@@ -765,6 +783,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "create_port_forward_title" => "Einen Port weiterleiten",
         "create_port_forward_desc" => "Halten Sie einen Tunnel ohne Terminal offen: Datenbanken, Dashboards, Webhooks.",
         "search_port_forwards" => "Portweiterleitungen suchen...",
+        "search_cloud_accounts" => "Konten suchen...",
+        "search_proxies" => "Proxys suchen...",
         "pf_kind" => "Typ",
         "pf_host" => "Über Host",
         "pf_listen_host" => "Lauschadresse",
@@ -816,7 +836,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "cjk_font_downloading" => "Sprachschriftart wird heruntergeladen...",
         "cjk_font_failed" => "Schriftart der Sprache konnte nicht heruntergeladen werden. Systemschriftart wird verwendet.",
 
-        "logs" => "Logs",
+        "logs" => "Verlauf",
         "vault" => "Tresor",
         "search_logs" => "Logs durchsuchen...",
         "clear_all" => "Alle löschen",

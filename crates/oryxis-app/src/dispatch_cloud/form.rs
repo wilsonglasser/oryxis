@@ -389,6 +389,7 @@ impl Oryxis {
             Message::CloudCardUnhovered => {
                 self.hovered_cloud_card = None;
             }
+            Message::CloudSearchChanged(v) => self.cloud_search = v,
             Message::ShowCloudProviderPicker => {
                 // Anchor below the "+ Host [▾]" split button. Same
                 // computation as the keychain "+ ADD ▼" handler so both

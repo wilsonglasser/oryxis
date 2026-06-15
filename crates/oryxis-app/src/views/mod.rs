@@ -10,6 +10,7 @@ pub(crate) mod chrome;
 pub(crate) mod cloud_accounts;
 pub(crate) mod connection_progress;
 pub(crate) mod dashboard;
+pub(crate) mod group_panel;
 pub(crate) mod history;
 pub(crate) mod host_panel;
 pub(crate) mod icon_picker;

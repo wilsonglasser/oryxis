@@ -793,6 +793,20 @@ impl Oryxis {
                     if self.setting_show_status_bar { "true" } else { "false" },
                 );
             }
+            Message::ToggleHostListView => {
+                self.setting_host_list_view = !self.setting_host_list_view;
+                self.persist_setting(
+                    "host_list_view",
+                    if self.setting_host_list_view { "true" } else { "false" },
+                );
+            }
+            Message::ToggleCardAccentGlass => {
+                self.setting_card_accent_glass = !self.setting_card_accent_glass;
+                self.persist_setting(
+                    "card_accent_glass",
+                    if self.setting_card_accent_glass { "true" } else { "false" },
+                );
+            }
             Message::SettingToggleCloseToTray => {
                 self.setting_close_to_tray = !self.setting_close_to_tray;
                 self.persist_setting(
@@ -821,6 +835,13 @@ impl Oryxis {
                     if self.setting_tab_accent_line { "true" } else { "false" },
                 );
             }
+            Message::SettingToggleTabAccentWash => {
+                self.setting_tab_accent_wash = !self.setting_tab_accent_wash;
+                self.persist_setting(
+                    "tab_accent_wash",
+                    if self.setting_tab_accent_wash { "true" } else { "false" },
+                );
+            }
             Message::SettingToggleSftpEnabled => {
                 self.sftp_enabled = !self.sftp_enabled;
                 self.persist_setting(
@@ -828,13 +849,20 @@ impl Oryxis {
                     if self.sftp_enabled { "true" } else { "false" },
                 );
             }
-            Message::SettingLayoutModeChanged(val) => {
+            Message::SettingNavOrientationChanged(val) => {
                 let normalized = match val.as_str() {
-                    "workspace" => "workspace",
-                    _ => "classic",
+                    "vertical" => "vertical",
+                    _ => "horizontal",
                 };
-                self.setting_layout_mode = normalized.into();
-                self.persist_setting("layout_mode", normalized);
+                self.setting_nav_orientation = normalized.into();
+                self.persist_setting("nav_orientation", normalized);
+            }
+            Message::ToggleNavRailExpanded => {
+                self.setting_nav_rail_expanded = !self.setting_nav_rail_expanded;
+                self.persist_setting(
+                    "nav_rail_expanded",
+                    if self.setting_nav_rail_expanded { "true" } else { "false" },
+                );
             }
             Message::SettingDefaultHostIconChanged(val) => {
                 let normalized = match val.as_str() {

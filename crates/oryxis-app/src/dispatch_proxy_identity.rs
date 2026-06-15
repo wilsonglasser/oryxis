@@ -200,6 +200,7 @@ impl Oryxis {
                     self.load_data_from_vault();
                 }
             }
+            Message::ProxySearchChanged(v) => self.proxy_search = v,
             m => return Err(m),
         }
         Ok(Task::none())

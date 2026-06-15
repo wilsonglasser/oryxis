@@ -3,11 +3,17 @@
 pub(super) fn lookup(key: &str) -> &'static str {
     match key {
         // Navigation
+        "expand" => "Expand",
+        "collapse" => "Collapse",
+        "nav_orientation" => "Navigation",
+        "nav_orientation_desc" => "Horizontal shows the vault sections as a pill strip below the top bar; Vertical shows them as an icon rail on the left.",
+        "nav_orientation_horizontal" => "Horizontal (pills)",
+        "nav_orientation_vertical" => "Vertical (rail)",
         "hosts" => "Hosts",
         "keychain" => "Keychain",
         "snippets" => "Snippets",
         "known_hosts" => "Known Hosts",
-        "logs" => "Logs",
+        "logs" => "History",
         "vault" => "Vault",
         "search_logs" => "Search logs...",
         "settings" => "Settings",
@@ -26,6 +32,7 @@ pub(super) fn lookup(key: &str) -> &'static str {
         "cloud_discover_import_into_placeholder" => "Group name (existing or new)",
         "search_groups" => "Search groups…",
         "tab_accent_line" => "Tint tab underline with host accent",
+        "tab_accent_wash" => "Wash top bar with host accent",
         "host_filter_by_profile" => "Filter by cloud profile",
         "host_filter_active" => "Filter",
         "cloud_profile_sync" => "Sync now",
@@ -242,10 +249,6 @@ pub(super) fn lookup(key: &str) -> &'static str {
         "close_position_left" => "Left",
         "close_position_right" => "Right",
         "show_tab_status_dot" => "Show connection status dot on tabs",
-        "layout_mode" => "Layout mode",
-        "layout_mode_desc" => "Workspace hides the sidebar while a connection tab is open so the terminal fills the canvas. Classic always shows the sidebar.",
-        "layout_mode_classic" => "Classic (sidebar)",
-        "layout_mode_workspace" => "Workspace (top tabs)",
         "default_host_icon" => "Default host icon",
         "icon_circular" => "Circular",
         "icon_square" => "Square",
@@ -355,7 +358,8 @@ pub(super) fn lookup(key: &str) -> &'static str {
         "clear_history_confirm" => "This permanently deletes every session recording and connection event.",
         "entries" => "entries",
         "of" => "of",
-        "no_activity" => "No activity logged yet.",
+        "no_activity" => "No activity yet",
+        "no_activity_desc" => "Sessions and connection events will show up here.",
 
         // Identity
         "identity" => "Identity",
@@ -524,8 +528,10 @@ pub(super) fn lookup(key: &str) -> &'static str {
         // Proxy Identities (Settings → Proxies)
         "proxies" => "Proxies",
         "new_proxy_identity" => "New Proxy",
+        "edit_proxy_identity" => "Edit Proxy",
         "proxy_identity_label" => "Label",
-        "proxy_identities_empty" => "No saved proxies yet.",
+        "proxy_identities_empty" => "Save a proxy once and reuse it across your hosts.",
+        "proxy_identities_empty_title" => "No proxies yet",
         "proxy_type_identity_fallback" => "Saved proxy",
         "proxy_type_identity_deleted" => "(deleted proxy)",
         "proxy_identity_err_label_required" => "Label is required",
@@ -536,6 +542,8 @@ pub(super) fn lookup(key: &str) -> &'static str {
         "groups_section" => "Groups",
         "hosts_section" => "Hosts",
         "flatten_hosts_label" => "Show all hosts at root",
+        "card_accent_glass_label" => "Accent glass cards",
+        "card_accent_glass_desc" => "Soft per-colour wash on dashboard cards (host/group colour fading across).",
         "flatten_hosts_desc" => "When on, the dashboard root shows a Groups section above a flat list of every host. When off, hosts inside groups are hidden until you open the group.",
 
         // Sync passwords toggle
@@ -606,6 +614,8 @@ pub(super) fn lookup(key: &str) -> &'static str {
         "ip_or_hostname" => "IP or Hostname",
         "my_server_placeholder" => "My Server",
         "group_placeholder" => "Production, Staging...",
+        "edit_group" => "Edit Group",
+        "group_icon_color" => "Icon & color",
         "add_key_btn" => "+ Key",
         "port_forwarding" => "Port Forwarding",
 
@@ -793,6 +803,10 @@ pub(super) fn lookup(key: &str) -> &'static str {
         "log_retention_30d" => "1 month",
         "log_retention_90d" => "3 months",
         "log_delete_confirm_body" => "this session recording is permanently deleted.",
+        "known_host_remove_confirm_title" => "Remove host key?",
+        "known_host_remove_confirm_body" => "this host key is removed; you'll verify it again on the next connection.",
+        "known_hosts_clear_confirm_title" => "Re-verify all hosts?",
+        "known_hosts_clear_confirm_body" => "Every saved host key is removed; you'll verify each host again on the next connection.",
         "plugin_uninstall_confirm_body" => "the downloaded binaries are deleted from this machine. You can reinstall from this panel at any time.",
         "plugin_action_check_updates" => "Check for updates",
         "plugin_action_retry" => "Retry",
@@ -829,7 +843,14 @@ pub(super) fn lookup(key: &str) -> &'static str {
 
         // Cloud Accounts plugin gate
         "cloud_plugin_missing_title" => "AWS plugin not installed",
-        "cloud_plugin_missing_body" => "Test Credentials and Discover Hosts need the AWS plugin. Install it to use this account.",
+        // Suffix appended after the provider name ("AWS", "Kubernetes")
+        // to form the banner title, so it reads per the selected provider.
+        "cloud_plugin_missing_title_suffix" => "plugin not installed",
+        "cloud_plugin_missing_body" => "Test Credentials and Discover Hosts need this provider's plugin. Install it to use this account.",
+        // Cloud Accounts: no provider plugin installed at all
+        "cloud_no_provider_title" => "No cloud provider installed",
+        "cloud_no_provider_desc" => "Cloud accounts discover and import hosts from providers like AWS and Kubernetes. Install a provider plugin to add an account.",
+        "cloud_no_provider_btn" => "Open Plugins",
 
         // Sort dropdown (Hosts / Keychain / Snippets toolbars)
         "sort_label_asc" => "A-z",
@@ -845,6 +866,8 @@ pub(super) fn lookup(key: &str) -> &'static str {
         "create_port_forward_title" => "Forward a port",
         "create_port_forward_desc" => "Keep a tunnel open without a terminal: databases, dashboards, webhooks.",
         "search_port_forwards" => "Search port forwards...",
+        "search_cloud_accounts" => "Search accounts...",
+        "search_proxies" => "Search proxies...",
         "pf_kind" => "Type",
         "pf_host" => "Via host",
         "pf_listen_host" => "Listen address",

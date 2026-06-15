@@ -85,6 +85,9 @@ impl Oryxis {
                             self.vault_password_input.clear();
                             self.vault_password_visible = false;
                             self.load_data_from_vault();
+                            return iced::widget::operation::focus(iced::widget::Id::new(
+                                "search-dashboard",
+                            ));
                         }
                         Err(e) => {
                             self.vault_error = Some(e.to_string());
@@ -99,6 +102,9 @@ impl Oryxis {
                             self.vault_state = VaultState::Unlocked;
                             self.vault_error = None;
                             self.load_data_from_vault();
+                            return iced::widget::operation::focus(iced::widget::Id::new(
+                                "search-dashboard",
+                            ));
                         }
                         Err(VaultError::InvalidPassword) => {
                             self.vault_error = Some(
@@ -162,6 +168,13 @@ impl Oryxis {
                                     .position(|c| c.id == connect_id)
                             {
                                 unlock_tasks.push(Task::done(Message::ConnectSsh(idx)));
+                            } else {
+                                // Land on Home with the host search focused
+                                // so the user can type / keyboard-navigate
+                                // immediately (matches ChangeView behavior).
+                                unlock_tasks.push(iced::widget::operation::focus(
+                                    iced::widget::Id::new("search-dashboard"),
+                                ));
                             }
                             return Task::batch(unlock_tasks);
                         }
@@ -181,21 +194,21 @@ impl Oryxis {
                 // any pending capture so the next keystroke doesn't
                 // silently rebind an action from another screen.
                 self.editing_hotkey = None;
-                // Known Hosts moved into Settings in v0.7; rewrite the
-                // request so older callers (and any persisted state)
-                // land on the right place instead of an unreachable
-                // top-level view.
-                if view == View::KnownHosts {
-                    self.active_view = View::Settings;
-                    self.settings_section = crate::state::SettingsSection::KnownHosts;
-                } else {
-                    self.active_view = view;
-                }
+                self.active_view = view;
                 self.active_tab = None;
+                // Drop any keyboard host selection when leaving / changing
+                // the surface so a stale highlight doesn't linger.
+                self.selected_nav = None;
+                // Navigating to the host list (Home tab / Hosts pill)
+                // returns to the root, not whichever group was last open.
+                if view == View::Dashboard {
+                    self.active_group = None;
+                }
                 // Burger menu auto-dismisses on navigation: the user
                 // picked a destination, leaving the overlay open is
                 // visual noise.
                 self.show_burger_menu = false;
+                self.show_subnav_overflow = false;
                 // Lazy-load the local SFTP pane when the user first lands
                 // on the view (or returns to it after the underlying dir
                 // changed). Cheap enough to redo unconditionally.
@@ -221,6 +234,11 @@ impl Oryxis {
                         .list_session_logs_page(self.session_logs_page * 50, 50)
                         .unwrap_or_default();
                 }
+                // Land on the view with its search field focused so the
+                // user can start typing immediately (same ids as Ctrl+F).
+                if let Some(id) = self.active_view_search_id() {
+                    return iced::widget::operation::focus(id);
+                }
             }
             Message::QuickHostInput(v) => {
                 self.quick_host_input = v;
@@ -242,15 +260,18 @@ impl Oryxis {
                         .unwrap_or_else(|_| Task::none());
                 }
             }
-            Message::BackToRoot => {
-                self.active_group = None;
-                self.host_search.clear();
-            }
             Message::HostSearchChanged(v) => {
                 self.host_search = v;
+                // The filtered set just changed; drop the keyboard
+                // selection so it can't point at a now-hidden host. Enter
+                // still connects the top result while a search is active.
+                self.selected_nav = None;
             }
             Message::HostFilterByCloudProfile(maybe_pid) => {
                 self.host_filter_cloud_profile = maybe_pid;
+                // Filter changed the visible set; drop the keyboard
+                // selection so Enter can't connect a now-hidden host.
+                self.selected_nav = None;
             }
             Message::ToggleGroupPicker(target) => {
                 use crate::state::{GroupPickerTarget, OverlayContent, OverlayState};
@@ -390,9 +411,6 @@ impl Oryxis {
                     }
                 }
                 self.overlay = None;
-            }
-            Message::ToggleSidebar => {
-                self.sidebar_collapsed = !self.sidebar_collapsed;
             }
             Message::QuickHostContinue => {
                 if !self.quick_host_input.is_empty() {
@@ -583,6 +601,26 @@ impl Oryxis {
             }
 
             // -- Known hosts --
+            Message::RequestDeleteKnownHost(idx) => {
+                let label = self
+                    .known_hosts
+                    .get(idx)
+                    .map(|kh| format!("{}:{}", kh.hostname, kh.port))
+                    .unwrap_or_default();
+                self.error_dialog = Some(crate::state::ErrorDialog {
+                    title: crate::i18n::t("known_host_remove_confirm_title").to_string(),
+                    body: format!(
+                        "{label}: {}",
+                        crate::i18n::t("known_host_remove_confirm_body")
+                    ),
+                    link: None,
+                    action: Some(crate::state::ErrorDialogAction {
+                        label: crate::i18n::t("remove").to_string(),
+                        message: Box::new(Message::DeleteKnownHost(idx)),
+                        danger: true,
+                    }),
+                });
+            }
             Message::DeleteKnownHost(idx) => {
                 if let Some(kh) = self.known_hosts.get(idx) {
                     let id = kh.id;
@@ -591,6 +629,18 @@ impl Oryxis {
                         self.load_data_from_vault();
                     }
                 }
+            }
+            Message::RequestClearAllKnownHosts => {
+                self.error_dialog = Some(crate::state::ErrorDialog {
+                    title: crate::i18n::t("known_hosts_clear_confirm_title").to_string(),
+                    body: crate::i18n::t("known_hosts_clear_confirm_body").to_string(),
+                    link: None,
+                    action: Some(crate::state::ErrorDialogAction {
+                        label: crate::i18n::t("re_verify_all").to_string(),
+                        message: Box::new(Message::ClearAllKnownHosts),
+                        danger: true,
+                    }),
+                });
             }
             Message::ClearAllKnownHosts => {
                 if let Some(vault) = &self.vault {

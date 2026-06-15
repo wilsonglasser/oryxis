@@ -3,6 +3,12 @@
 pub(super) fn lookup(key: &str) -> Option<&'static str> {
     Some(match key {
         // Navigation
+        "expand" => "Розгорнути",
+        "collapse" => "Згорнути",
+        "nav_orientation" => "Навігація",
+        "nav_orientation_desc" => "Горизонтально показує розділи смугою пігулок під панеллю; Вертикально як рейку значків ліворуч.",
+        "nav_orientation_horizontal" => "Горизонтально (пігулки)",
+        "nav_orientation_vertical" => "Вертикально (рейка)",
         "hosts" => "Хости",
         "keychain" => "Сховище ключів",
         "snippets" => "Сніпети",
@@ -23,6 +29,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "cloud_discover_import_into_placeholder" => "Назва групи (наявна або нова)",
         "search_groups" => "Пошук груп…",
         "tab_accent_line" => "Підкреслення вкладки в акцентному кольорі хоста",
+        "tab_accent_wash" => "Тонувати верхню панель акцентом хоста",
         "host_filter_by_profile" => "Фільтрувати за хмарним профілем",
         "host_filter_active" => "Фільтр",
         "cloud_profile_sync" => "Синхронізувати зараз",
@@ -239,10 +246,6 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "close_position_left" => "Ліворуч",
         "close_position_right" => "Праворуч",
         "show_tab_status_dot" => "Показувати індикатор стану підключення на вкладках",
-        "layout_mode" => "Режим компонування",
-        "layout_mode_desc" => "Робочий простір ховає бічну панель, поки відкрита вкладка підключення, щоб термінал заповнював полотно. Класичний завжди показує бічну панель.",
-        "layout_mode_classic" => "Класичний (бічна панель)",
-        "layout_mode_workspace" => "Робочий простір (верхні вкладки)",
         "default_host_icon" => "Типова іконка хоста",
         "icon_circular" => "Кругла",
         "icon_square" => "Квадратна",
@@ -349,7 +352,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "in_progress" => "У процесі",
         "entries" => "записів",
         "of" => "з",
-        "no_activity" => "Поки немає зафіксованої активності.",
+        "no_activity" => "Поки немає активності",
+        "no_activity_desc" => "Сеанси та події підключення з'являться тут.",
 
         // Identity
         "identity" => "Ідентичність",
@@ -518,8 +522,10 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         // Proxy Identities (Settings → Proxies)
         "proxies" => "Проксі",
         "new_proxy_identity" => "Новий проксі",
+        "edit_proxy_identity" => "Редагувати проксі",
         "proxy_identity_label" => "Мітка",
-        "proxy_identities_empty" => "Поки немає збережених проксі.",
+        "proxy_identities_empty" => "Збережіть проксі один раз і використовуйте на всіх хостах.",
+        "proxy_identities_empty_title" => "Поки немає проксі",
         "proxy_type_identity_fallback" => "Збережений проксі",
         "proxy_type_identity_deleted" => "(видалений проксі)",
         "proxy_identity_err_label_required" => "Мітка є обов'язковою",
@@ -530,6 +536,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "groups_section" => "Групи",
         "hosts_section" => "Хости",
         "flatten_hosts_label" => "Показувати всі хости в корені",
+        "card_accent_glass_label" => "Картки з акцентним склом",
+        "card_accent_glass_desc" => "М'який градієнт кольору кожної картки (колір хоста/групи).",
         "flatten_hosts_desc" => "Якщо ввімкнено, корінь панелі показує розділ Групи над пласким списком усіх хостів. Якщо вимкнено, хости всередині груп приховані, доки ви не відкриєте групу.",
 
         // Sync passwords toggle
@@ -600,6 +608,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "ip_or_hostname" => "IP або ім'я хоста",
         "my_server_placeholder" => "Мій сервер",
         "group_placeholder" => "Production, Staging...",
+        "edit_group" => "Редагувати групу",
+        "group_icon_color" => "Значок і колір",
         "add_key_btn" => "+ Ключ",
         "port_forwarding" => "Прокидання портів",
 
@@ -773,6 +783,10 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "log_retention_30d" => "1 місяць",
         "log_retention_90d" => "3 місяці",
         "log_delete_confirm_body" => "цей запис сесії буде видалено назавжди.",
+        "known_host_remove_confirm_title" => "Видалити ключ хоста?",
+        "known_host_remove_confirm_body" => "цей ключ хоста буде видалено; ви знову перевірите його під час наступного підключення.",
+        "known_hosts_clear_confirm_title" => "Повторно перевірити всі хости?",
+        "known_hosts_clear_confirm_body" => "Кожен збережений ключ хоста буде видалено; ви знову перевірите кожен хост під час наступного підключення.",
         "plugin_uninstall_confirm_body" => "завантажені двійкові файли буде видалено з цього комп'ютера. Ви можете перевстановити його з цієї панелі будь-коли.",
         "plugin_action_check_updates" => "Перевірити оновлення",
         "plugin_action_retry" => "Повторити",
@@ -809,7 +823,11 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
 
         // Cloud Accounts plugin gate
         "cloud_plugin_missing_title" => "Плагін AWS не встановлено",
-        "cloud_plugin_missing_body" => "Перевірка облікових даних і Пошук хостів потребують плагіна AWS. Установіть його, щоб використовувати цей акаунт.",
+        "cloud_plugin_missing_title_suffix" => "плагін не встановлено",
+        "cloud_plugin_missing_body" => "Перевірка облікових даних і Пошук хостів потребують плагіна цього провайдера. Установіть його, щоб використовувати цей акаунт.",
+        "cloud_no_provider_title" => "Не встановлено жодного хмарного провайдера",
+        "cloud_no_provider_desc" => "Хмарні акаунти знаходять та імпортують хости від провайдерів, як-от AWS і Kubernetes. Установіть плагін провайдера, щоб додати акаунт.",
+        "cloud_no_provider_btn" => "Відкрити плагіни",
 
         // Sort dropdown (Hosts / Keychain / Snippets toolbars)
         "sort_label_asc" => "А-я",
@@ -825,6 +843,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "create_port_forward_title" => "Прокинути порт",
         "create_port_forward_desc" => "Тримайте тунель відкритим без термінала: бази даних, панелі, вебхуки.",
         "search_port_forwards" => "Пошук прокидань портів...",
+        "search_cloud_accounts" => "Пошук акаунтів...",
+        "search_proxies" => "Пошук проксі...",
         "pf_kind" => "Тип",
         "pf_host" => "Через хост",
         "pf_listen_host" => "Адреса прослуховування",
@@ -846,7 +866,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "cjk_font_downloading" => "Завантаження шрифту мови...",
         "cjk_font_failed" => "Не вдалося завантажити шрифт мови. Використовується системний шрифт.",
 
-        "logs" => "Журнали",
+        "logs" => "Історія",
         "vault" => "Сховище",
         "search_logs" => "Пошук журналів...",
         "clear_all" => "Очистити все",

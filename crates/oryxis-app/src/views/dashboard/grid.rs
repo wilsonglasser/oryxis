@@ -15,7 +15,7 @@ use iced::{Background, Border, Color, Element, Length, Padding};
 
 use oryxis_core::models::connection::AuthMethod;
 
-use crate::app::{Message, Oryxis, CARD_WIDTH};
+use crate::app::{DashNavItem, Message, Oryxis, CARD_WIDTH};
 use crate::i18n::t;
 use crate::os_icon::BrandIcon;
 use crate::theme::OryxisColors;
@@ -30,6 +30,93 @@ fn count_leaves(layout: &oryxis_core::models::PaneLayout) -> usize {
         }
         oryxis_core::models::PaneLayout::Leaf(_) => 1,
     }
+}
+
+/// True when group `gid` has any *visible* content once the hosts /
+/// dynamic groups of uninstalled cloud providers are filtered out.
+/// Visible content = a direct connection that isn't from a hidden
+/// provider, or a child group that is itself visible (a non-hidden
+/// dynamic group, or a folder that recurses to visible content). Used
+/// to drop provider folders that go empty after a plugin is removed
+/// while keeping folders that still hold manual or installed-provider
+/// hosts. Memoised; the pre-seeded `false` doubles as cycle guard.
+fn group_has_visible_content(
+    gid: Uuid,
+    groups: &[oryxis_core::models::Group],
+    has_visible_conn: &std::collections::HashSet<Uuid>,
+    hidden_profiles: &std::collections::HashSet<Uuid>,
+    memo: &mut std::collections::HashMap<Uuid, bool>,
+) -> bool {
+    if let Some(&v) = memo.get(&gid) {
+        return v;
+    }
+    memo.insert(gid, false);
+    let mut visible = has_visible_conn.contains(&gid);
+    if !visible {
+        for child in groups.iter().filter(|g| g.parent_id == Some(gid)) {
+            let child_visible = if let Some(q) = child.cloud_query.as_ref() {
+                !hidden_profiles.contains(&q.profile_id)
+            } else {
+                group_has_visible_content(
+                    child.id,
+                    groups,
+                    has_visible_conn,
+                    hidden_profiles,
+                    memo,
+                )
+            };
+            if child_visible {
+                visible = true;
+                break;
+            }
+        }
+    }
+    memo.insert(gid, visible);
+    visible
+}
+
+
+/// Map (card, accent-colour, nav-item) tuples to renderable cards: apply
+/// the shared `widgets::card_accent_wash` when `glass` is on, then draw
+/// the keyboard-selection ring on the item matching `selected`. A free fn
+/// (not a closure) so the input/output lifetimes stay tied.
+fn apply_card_wash<'a>(
+    cards: Vec<(Element<'a, Message>, Color, DashNavItem)>,
+    glass: bool,
+    selected: Option<DashNavItem>,
+) -> Vec<Element<'a, Message>> {
+    cards
+        .into_iter()
+        .map(|(el, c, nav)| {
+            let el = if glass {
+                crate::widgets::card_accent_wash(el, c)
+            } else {
+                el
+            };
+            if selected == Some(nav) {
+                select_ring(el)
+            } else {
+                el
+            }
+        })
+        .collect()
+}
+
+/// Overlay a 2px accent focus ring on a keyboard-selected card. Drawn as
+/// a `Stack` overlay so it doesn't change the card's footprint, with the
+/// same 10px radius as the cards.
+fn select_ring<'a>(card: Element<'a, Message>) -> Element<'a, Message> {
+    let ring = container(Space::new().width(Length::Fill).height(Length::Fill)).style(|_| {
+        container::Style {
+            border: Border {
+                radius: Radius::from(10.0),
+                color: OryxisColors::t().accent,
+                width: 2.0,
+            },
+            ..Default::default()
+        }
+    });
+    iced::widget::Stack::new().push(card).push(ring).into()
 }
 
 impl Oryxis {
@@ -84,7 +171,7 @@ impl Oryxis {
         &'a self,
         idx: usize,
         group: &'a oryxis_core::models::SessionGroup,
-    ) -> Element<'a, Message> {
+    ) -> (Element<'a, Message>, Color) {
         let rtl = crate::i18n::is_rtl_layout();
         let hovered = self.hovered_session_group_card == Some(idx);
         let bg_color = group
@@ -100,16 +187,17 @@ impl Oryxis {
             .filter(|s| !s.is_empty())
             .map(crate::os_icon::custom_icon_glyph)
             .unwrap_or(BrandIcon::Glyph(iced_fonts::lucide::boxes()));
-        let icon_box = container(glyph.view(16.0, Color::WHITE))
-            .width(Length::Fixed(32.0))
-            .height(Length::Fixed(32.0))
-            .center_x(Length::Fixed(32.0))
-            .center_y(Length::Fixed(32.0))
-            .style(move |_| container::Style {
-                background: Some(Background::Color(bg_color)),
-                border: Border { radius: Radius::from(8.0), ..Default::default() },
-                ..Default::default()
-            });
+        let host_style = crate::widgets::resolve_host_icon_style(
+            None,
+            &self.setting_default_host_icon,
+        );
+        let icon_box = crate::widgets::host_icon(
+            host_style,
+            bg_color,
+            &group.label,
+            Some(glyph.view(18.0, Color::WHITE)),
+            32.0,
+        );
 
         let panes = count_leaves(&group.layout);
         let subtitle = format!("{} {}", panes, t("session_group_panes"));
@@ -125,7 +213,7 @@ impl Oryxis {
         let card_btn = button(
             container(
                 dir_row(vec![
-                    icon_box.into(),
+                    icon_box,
                     Space::new().width(8).into(),
                     iced::widget::Column::with_children(vec![
                         label_el.into(),
@@ -139,7 +227,7 @@ impl Oryxis {
                 ])
                 .align_y(iced::Alignment::Center),
             )
-            .padding(Padding { top: 10.0, right: 10.0, bottom: 10.0, left: 10.0 }),
+            .padding(Padding { top: 8.0, right: 10.0, bottom: 8.0, left: 10.0 }),
         )
         .on_press(Message::OpenSessionGroup(idx))
         .width(Length::Fill)
@@ -192,7 +280,22 @@ impl Oryxis {
         } else {
             Padding { top: 0.0, right: 4.0, bottom: 0.0, left: 0.0 }
         };
-        let dots_overlay = container(dots_btn)
+        // Idle shows a muted chevron (this card opens into a restored
+        // session, the same "opens a container" affordance the host-group
+        // folders use); hover / menu-open swaps it for the ⋮ kebab.
+        let trailing: Element<'a, Message> = if show_dots {
+            dots_btn.into()
+        } else {
+            let chevron = if rtl {
+                iced_fonts::lucide::chevron_left()
+            } else {
+                iced_fonts::lucide::chevron_right()
+            };
+            container(chevron.size(14).color(OryxisColors::t().text_muted))
+                .padding(Padding { top: 1.0, right: 6.0, bottom: 1.0, left: 6.0 })
+                .into()
+        };
+        let dots_overlay = container(trailing)
             .width(Length::Fill)
             .height(Length::Fill)
             .align_x(dots_align)
@@ -209,32 +312,69 @@ impl Oryxis {
             .on_exit(Message::SessionGroupCardUnhovered)
             .on_right_press(Message::ShowSessionGroupMenu(idx));
 
-        container(wrapped).width(Length::Fill).clip(true).into()
+        (
+            Element::from(container(wrapped).width(Length::Fill).clip(true)),
+            bg_color,
+        )
+    }
+
+    /// The host cards currently shown on the dashboard, as absolute
+    /// indices into `self.connections`, in display order (group + search +
+    /// cloud-profile filters applied, then the user's sort). Shared by the
+    /// grid renderer and the keyboard-selection navigation so Tab / arrows
+    /// move through exactly what's on screen.
+    pub(crate) fn dashboard_host_order(&self) -> Vec<usize> {
+        let at_root = self.active_group.is_none();
+        let flatten = self.flatten_hosts && at_root;
+        let search_lower = self.host_search.to_lowercase();
+        let hidden_profiles = self.hidden_cloud_profile_ids();
+        let mut host_order: Vec<usize> = (0..self.connections.len())
+            .filter(|&i| {
+                let conn = &self.connections[i];
+                if conn
+                    .cloud_ref
+                    .as_ref()
+                    .is_some_and(|r| hidden_profiles.contains(&r.profile_id))
+                {
+                    return false;
+                }
+                if let Some(gid) = self.active_group {
+                    if conn.group_id != Some(gid) {
+                        return false;
+                    }
+                } else if conn.group_id.is_some() && !flatten {
+                    return false;
+                }
+                if !search_lower.is_empty()
+                    && !conn.label.to_lowercase().contains(&search_lower)
+                    && !conn.hostname.to_lowercase().contains(&search_lower)
+                {
+                    return false;
+                }
+                if let Some(filter_pid) = self.host_filter_cloud_profile
+                    && conn.cloud_ref.as_ref().map(|r| r.profile_id) != Some(filter_pid)
+                {
+                    return false;
+                }
+                true
+            })
+            .collect();
+        self.hosts_sort.sort_items(
+            &mut host_order,
+            |&i| self.connections[i].label.clone(),
+            |&i| self.connections[i].created_at,
+        );
+        host_order
     }
 
     pub(super) fn dashboard_main_content(&self) -> Element<'_, Message> {
         let toolbar = self.dashboard_toolbar();
 
         // ── Search bar ──
-        // In Workspace mode the search lives on the contextual sub-nav
-        // (`view_vault_sub_nav`) instead of taking a full content row,
-        // so the wide bar collapses to a zero-height spacer here.
-        let workspace_mode = self.setting_layout_mode == "workspace";
-        let search_bar: Element<'_, Message> = if workspace_mode {
-            Space::new().height(0).into()
-        } else {
-            container(
-                text_input(t("search_hosts"), &self.host_search)
-                    .id(iced::widget::Id::new("search-dashboard"))
-                    .on_input(Message::HostSearchChanged)
-                    .padding(10)
-                    .size(13)
-                    .style(crate::widgets::rounded_input_style).align_x(dir_align_x()),
-            )
-            .padding(Padding { top: 0.0, right: 24.0, bottom: 12.0, left: 24.0 })
-            .width(Length::Fill)
-            .into()
-        };
+        // The host search lives in the dashboard toolbar
+        // (`vault_search_field`) now, so the legacy full-width bar here
+        // collapses to a zero-height spacer.
+        let search_bar: Element<'_, Message> = Space::new().height(0).into();
 
         // The host editor's validation error renders inside the
         // editor panel itself (`host_panel::view_host_panel`) right
@@ -246,8 +386,10 @@ impl Oryxis {
         // can choose between a flat single grid (legacy mode) or two
         // labelled sections (Termius-style "Groups" + "Hosts" headers
         // when `flatten_hosts` is on at root).
-        let mut group_cards: Vec<Element<'_, Message>> = Vec::new();
-        let mut host_cards: Vec<Element<'_, Message>> = Vec::new();
+        // Each card carries its accent colour (host brand / group colour)
+        // for the wash and its `DashNavItem` for keyboard selection.
+        let mut group_cards: Vec<(Element<'_, Message>, Color, DashNavItem)> = Vec::new();
+        let mut host_cards: Vec<(Element<'_, Message>, Color, DashNavItem)> = Vec::new();
         let at_root = self.active_group.is_none();
         let flatten = self.flatten_hosts && at_root;
 
@@ -770,6 +912,50 @@ impl Oryxis {
         // once here so every loop below can short-circuit on it.
         let search_lower = self.host_search.to_lowercase();
 
+        // Cloud records (hosts + dynamic groups) imported from a
+        // provider whose plugin isn't installed are hidden from the
+        // dashboard, display-only: they stay in the vault and reappear
+        // when the plugin is reinstalled. `hidden_profiles` keys the
+        // per-record check; `hidden_groups` additionally drops provider
+        // folders that go empty once their cloud children are hidden.
+        let hidden_profiles = self.hidden_cloud_profile_ids();
+        let hidden_groups: std::collections::HashSet<Uuid> = if hidden_profiles.is_empty() {
+            std::collections::HashSet::new()
+        } else {
+            let mut has_visible_conn: std::collections::HashSet<Uuid> =
+                std::collections::HashSet::new();
+            for c in &self.connections {
+                if let Some(gid) = c.group_id
+                    && !c
+                        .cloud_ref
+                        .as_ref()
+                        .is_some_and(|r| hidden_profiles.contains(&r.profile_id))
+                {
+                    has_visible_conn.insert(gid);
+                }
+            }
+            let mut memo: std::collections::HashMap<Uuid, bool> =
+                std::collections::HashMap::new();
+            let mut set: std::collections::HashSet<Uuid> = std::collections::HashSet::new();
+            for g in &self.groups {
+                let hide = if let Some(q) = g.cloud_query.as_ref() {
+                    hidden_profiles.contains(&q.profile_id)
+                } else {
+                    !group_has_visible_content(
+                        g.id,
+                        &self.groups,
+                        &has_visible_conn,
+                        &hidden_profiles,
+                        &mut memo,
+                    )
+                };
+                if hide {
+                    set.insert(g.id);
+                }
+            }
+            set
+        };
+
         if self.active_group.is_none() {
             // Root view: show folder cards for manual groups that have
             // either direct connections or nested children (e.g. an
@@ -807,6 +993,15 @@ impl Oryxis {
                 std::collections::HashMap::new();
             for conn in &self.connections {
                 if let Some(cgid) = conn.group_id {
+                    // Hidden cloud hosts don't count toward the folder's
+                    // host total or its brand inference.
+                    if conn
+                        .cloud_ref
+                        .as_ref()
+                        .is_some_and(|r| hidden_profiles.contains(&r.profile_id))
+                    {
+                        continue;
+                    }
                     *direct_host_count.entry(cgid).or_insert(0) += 1;
                     if let Some(cref) = conn.cloud_ref.as_ref() {
                         first_cloud_profile.entry(cgid).or_insert(cref.profile_id);
@@ -821,6 +1016,11 @@ impl Oryxis {
                 std::collections::HashMap::new();
             for g in &self.groups {
                 if let Some(pgid) = g.parent_id {
+                    // Hidden cloud sub-groups don't count toward the
+                    // parent folder's nested-group total.
+                    if hidden_groups.contains(&g.id) {
+                        continue;
+                    }
                     *nested_group_count.entry(pgid).or_insert(0) += 1;
                     if let Some(q) = g.cloud_query.as_ref() {
                         child_query_brand.entry(pgid).or_insert(match q.kind {
@@ -854,6 +1054,13 @@ impl Oryxis {
                 },
             );
             for gid in roots_to_render {
+                // Provider folder that went empty after its plugin was
+                // removed (every host / dynamic group inside it is from
+                // an uninstalled provider). Hidden until the plugin is
+                // reinstalled.
+                if hidden_groups.contains(&gid) {
+                    continue;
+                }
                 // Cloud-profile filter, hide folders whose subtree has
                 // no host or dynamic group matching the active profile.
                 // Active filter intentionally hides every manual,
@@ -966,49 +1173,21 @@ impl Oryxis {
                                 32.0,
                             );
 
-                            // ⋮ button, only rendered while the folder
-                            // row is hovered, mirroring the host-card UX.
-                            // A fixed-width placeholder reserves the slot
-                            // so the label width budget never changes.
-                            const FOLDER_DOTS_SLOT_W: f32 = 22.0;
+                            // Trailing affordance lives in a Stack overlay on
+                            // the trailing corner, exactly like the host card's
+                            // kebab, so a group's ⋮ lines up pixel-for-pixel
+                            // with a host's. The card reserves the same fixed
+                            // trailing pad; the overlay shows the ⋮ on hover and
+                            // a muted chevron otherwise (the chevron is the
+                            // group affordance that distinguishes folder cards
+                            // from host cards at a glance, issue #38 polish).
+                            let folder_rtl = crate::i18n::is_rtl_layout();
                             let folder_show_dots = self.hovered_folder_card == Some(gid);
-                            let actions_btn: Element<'_, Message> = if folder_show_dots {
-                                button(
-                                    text("\u{22EE}").size(14).color(OryxisColors::t().text_muted),
-                                )
-                                .on_press(Message::ShowFolderActions(gid))
-                                .padding(Padding { top: 1.0, right: 6.0, bottom: 1.0, left: 6.0 })
-                                .style(|_, status| {
-                                    let bg = match status {
-                                        BtnStatus::Hovered => OryxisColors::t().bg_hover,
-                                        _ => Color::TRANSPARENT,
-                                    };
-                                    button::Style {
-                                        background: Some(Background::Color(bg)),
-                                        border: Border { radius: Radius::from(6.0), ..Default::default() },
-                                        ..Default::default()
-                                    }
-                                })
-                                .into()
+                            let folder_pad_trailing = 24.0_f32;
+                            let folder_padding = if folder_rtl {
+                                Padding { top: 8.0, right: 2.0, bottom: 8.0, left: folder_pad_trailing }
                             } else {
-                                // Folder affordance: a muted chevron on
-                                // the trailing edge distinguishes group
-                                // cards from host cards at a glance
-                                // (they were visually identical, issue
-                                // #38 polish). Same slot width as the
-                                // hover ⋮ so the label budget is stable.
-                                let chevron = if crate::i18n::is_rtl_layout() {
-                                    iced_fonts::lucide::chevron_left()
-                                } else {
-                                    iced_fonts::lucide::chevron_right()
-                                };
-                                container(
-                                    chevron
-                                        .size(14)
-                                        .color(OryxisColors::t().text_muted),
-                                )
-                                .center_x(Length::Fixed(FOLDER_DOTS_SLOT_W))
-                                .into()
+                                Padding { top: 8.0, right: folder_pad_trailing, bottom: 8.0, left: 2.0 }
                             };
 
                             let folder_card = button(
@@ -1031,10 +1210,9 @@ impl Oryxis {
                                         .align_x(crate::widgets::dir_align_x())
                                         .clip(true)
                                         .into(),
-                                        actions_btn,
                                     ]).align_y(iced::Alignment::Center),
                                 )
-                                .padding(Padding { top: 8.0, right: 6.0, bottom: 8.0, left: 2.0 }),
+                                .padding(folder_padding),
                             )
                             .on_press(Message::OpenGroup(gid))
                             .width(Length::Fill)
@@ -1051,12 +1229,70 @@ impl Oryxis {
                                 }
                             });
 
+                            // ⋮ on hover, chevron otherwise. Both sit in the
+                            // same right-aligned overlay slot as the host kebab.
+                            let folder_trailing: Element<'_, Message> = if folder_show_dots {
+                                button(
+                                    text("\u{22EE}").size(14).color(OryxisColors::t().text_muted),
+                                )
+                                .on_press(Message::ShowFolderActions(gid))
+                                .padding(Padding { top: 1.0, right: 6.0, bottom: 1.0, left: 6.0 })
+                                .style(|_, status| {
+                                    let bg = match status {
+                                        BtnStatus::Hovered => OryxisColors::t().bg_hover,
+                                        _ => Color::TRANSPARENT,
+                                    };
+                                    button::Style {
+                                        background: Some(Background::Color(bg)),
+                                        border: Border { radius: Radius::from(6.0), ..Default::default() },
+                                        ..Default::default()
+                                    }
+                                })
+                                .into()
+                            } else {
+                                let chevron = if folder_rtl {
+                                    iced_fonts::lucide::chevron_left()
+                                } else {
+                                    iced_fonts::lucide::chevron_right()
+                                };
+                                // Match the ⋮ button's internal horizontal
+                                // padding so the idle chevron and the hover ⋮
+                                // share the exact same x.
+                                container(
+                                    chevron
+                                        .size(14)
+                                        .color(OryxisColors::t().text_muted),
+                                )
+                                .padding(Padding { top: 0.0, right: 6.0, bottom: 0.0, left: 6.0 })
+                                .into()
+                            };
+                            let folder_dots_align = if folder_rtl {
+                                iced::alignment::Horizontal::Left
+                            } else {
+                                iced::alignment::Horizontal::Right
+                            };
+                            let folder_dots_pad = if folder_rtl {
+                                Padding { top: 0.0, right: 0.0, bottom: 0.0, left: 4.0 }
+                            } else {
+                                Padding { top: 0.0, right: 4.0, bottom: 0.0, left: 0.0 }
+                            };
+                            let folder_trailing_overlay = container(folder_trailing)
+                                .width(Length::Fill)
+                                .height(Length::Fill)
+                                .align_x(folder_dots_align)
+                                .align_y(iced::alignment::Vertical::Center)
+                                .padding(folder_dots_pad);
+                            let folder_element: Element<'_, Message> = iced::widget::Stack::new()
+                                .push(folder_card)
+                                .push(folder_trailing_overlay)
+                                .into();
+
                             // Wrap in MouseArea so hover events drive the
                             // dots-button visibility (same UX as host cards).
-                            let wrapped = MouseArea::new(folder_card)
+                            let wrapped = MouseArea::new(folder_element)
                                 .on_enter(Message::FolderCardHovered(gid))
                                 .on_exit(Message::FolderCardUnhovered);
-                            group_cards.push(container(wrapped).width(Length::Fill).clip(true).into());
+                            group_cards.push((Element::from(container(wrapped).width(Length::Fill).clip(true)), folder_bg, DashNavItem::Group(gid)));
                         }
             }
 
@@ -1080,6 +1316,8 @@ impl Oryxis {
                         return false;
                     };
                     g.parent_id.is_none()
+                        // Hidden when the provider plugin isn't installed.
+                        && !hidden_profiles.contains(&query.profile_id)
                         && (search_lower.is_empty()
                             || g.label.to_lowercase().contains(&search_lower))
                         && self
@@ -1242,7 +1480,7 @@ impl Oryxis {
                     .on_enter(Message::DynamicGroupCardHovered(gid))
                     .on_exit(Message::DynamicGroupCardUnhovered)
                     .on_right_press(Message::ShowDynamicGroupCardMenu(gid));
-                group_cards.push(container(wrapped).width(Length::Fill).clip(true).into());
+                group_cards.push((Element::from(container(wrapped).width(Length::Fill).clip(true)), folder_bg, DashNavItem::Group(gid)));
             }
         } else if let Some(active_gid) = self.active_group {
             // Inside a folder: render its nested dynamic groups (e.g.
@@ -1259,6 +1497,8 @@ impl Oryxis {
                         return false;
                     };
                     g.parent_id == Some(active_gid)
+                        // Hidden when the provider plugin isn't installed.
+                        && !hidden_profiles.contains(&query.profile_id)
                         && (search_lower.is_empty()
                             || g.label.to_lowercase().contains(&search_lower))
                         && self
@@ -1404,7 +1644,7 @@ impl Oryxis {
                     .on_enter(Message::DynamicGroupCardHovered(gid))
                     .on_exit(Message::DynamicGroupCardUnhovered)
                     .on_right_press(Message::ShowDynamicGroupCardMenu(gid));
-                group_cards.push(container(wrapped).width(Length::Fill).clip(true).into());
+                group_cards.push((Element::from(container(wrapped).width(Length::Fill).clip(true)), folder_bg, DashNavItem::Group(gid)));
             }
         }
 
@@ -1413,47 +1653,8 @@ impl Oryxis {
         // rows; `idx` still references the vault position so
         // downstream messages (EditConnection, ConnectSsh, …) keep
         // targeting the right row.
-        let mut host_order: Vec<usize> = (0..self.connections.len())
-            .filter(|&i| {
-                let conn = &self.connections[i];
-                // Filter: inside a folder always restrict to that
-                // group; at root, hide grouped hosts only when not
-                // flattening (flatten = on means show every host,
-                // including grouped ones, in the Hosts section).
-                if let Some(gid) = self.active_group {
-                    if conn.group_id != Some(gid) {
-                        return false;
-                    }
-                } else if conn.group_id.is_some() && !flatten {
-                    return false;
-                }
-
-                // Filter by search query
-                if !search_lower.is_empty()
-                    && !conn.label.to_lowercase().contains(&search_lower)
-                    && !conn.hostname.to_lowercase().contains(&search_lower)
-                {
-                    return false;
-                }
-
-                // Cloud-profile filter, only hosts imported from the
-                // active filter profile survive. Hosts without a cloud
-                // origin are hidden too so the lens stays consistent.
-                if let Some(filter_pid) = self.host_filter_cloud_profile
-                    && conn.cloud_ref.as_ref().map(|r| r.profile_id)
-                        != Some(filter_pid)
-                {
-                    return false;
-                }
-                true
-            })
-            .collect();
-        self.hosts_sort.sort_items(
-            &mut host_order,
-            |&i| self.connections[i].label.clone(),
-            |&i| self.connections[i].created_at,
-        );
-        for idx in host_order {
+        let host_order = self.dashboard_host_order();
+        for idx in host_order.into_iter() {
             let conn = &self.connections[idx];
             let is_connected = self.tabs.iter().any(|t| t.label == conn.label);
             let auth_label = match conn.auth_method {
@@ -1645,10 +1846,21 @@ impl Oryxis {
             .on_press(Message::ConnectSsh(idx))
             .width(Length::Fill)
             .style(move |_, status| {
-                let (bg, bc, bw) = match status {
-                    BtnStatus::Hovered => (OryxisColors::t().bg_hover, OryxisColors::t().accent, 1.5),
-                    BtnStatus::Pressed => (OryxisColors::t().bg_selected, OryxisColors::t().accent, 2.0),
-                    _ => (OryxisColors::t().bg_surface, OryxisColors::t().border, 1.0),
+                let bg = match status {
+                    BtnStatus::Hovered => OryxisColors::t().bg_hover,
+                    BtnStatus::Pressed => OryxisColors::t().bg_selected,
+                    _ => OryxisColors::t().bg_surface,
+                };
+                // Same rounded card in grid and list mode: list mode is just
+                // a single column with a small gap (History-style rows), so
+                // each card stays independently rounded (radius matches the
+                // accent wash) instead of a connected divider list. The
+                // keyboard-selection highlight is drawn as an outer ring in
+                // the assembly, not here.
+                let (bc, bw) = match status {
+                    BtnStatus::Hovered => (OryxisColors::t().accent, 1.5),
+                    BtnStatus::Pressed => (OryxisColors::t().accent, 2.0),
+                    _ => (OryxisColors::t().border, 1.0),
                 };
                 button::Style {
                     background: Some(Background::Color(bg)),
@@ -1705,22 +1917,24 @@ impl Oryxis {
                 .on_exit(Message::CardUnhovered)
                 .on_right_press(Message::ShowCardMenu(idx));
 
-            host_cards.push(container(wrapped).width(Length::Fill).clip(true).into());
+            host_cards.push((Element::from(container(wrapped).width(Length::Fill).clip(true)), badge_color, DashNavItem::Host(idx)));
         }
 
         // Column count adapts to current window width minus the visible
         // chrome (left nav + optional right panel + horizontal padding).
         // Re-derived on every view() so resizing the window or toggling
         // the side panel reflows the cards into the new column count.
-        let nav_width = if self.sidebar_collapsed {
-            crate::app::SIDEBAR_WIDTH_COLLAPSED
-        } else {
-            crate::app::SIDEBAR_WIDTH
-        };
+        let nav_width = self.vault_rail_width();
         let panel_open = self.cloud_discover_visible || self.show_host_panel;
         let panel_width = if panel_open { crate::app::PANEL_WIDTH } else { 0.0 };
         let available = (self.window_size.width - nav_width - panel_width - 48.0).max(0.0);
-        let cols = card_grid_columns(available, CARD_WIDTH, 12.0);
+        // List mode forces a single column; otherwise the grid reflows
+        // responsively to the available width.
+        let cols = if self.setting_host_list_view {
+            1
+        } else {
+            card_grid_columns(available, CARD_WIDTH, 12.0)
+        };
 
         // Section header (Termius-style "Groups" / "Hosts" labels).
         // Only rendered in flatten mode at root, where the user can
@@ -1751,38 +1965,71 @@ impl Oryxis {
         // Saved session groups that live in the current folder. The
         // enumerate index is absolute (into `self.session_groups`), which is
         // what Open/Edit/Delete expect.
-        let session_group_cards: Vec<Element<'_, Message>> = self
+        let session_group_cards: Vec<(Element<'_, Message>, Color, DashNavItem)> = self
             .session_groups
             .iter()
             .enumerate()
             .filter(|(_, g)| g.group_id == self.active_group)
-            .map(|(i, g)| self.session_group_card(i, g))
+            .map(|(i, g)| {
+                let (el, color) = self.session_group_card(i, g);
+                (el, color, DashNavItem::SessionGroup(i))
+            })
             .collect();
+
+        // Per the `card_accent_glass` setting: glass on → each card gets
+        // the soft per-colour wash; off → cards stay pure (just the
+        // element, no overlay).
+        let glass = self.setting_card_accent_glass;
+        let selected = self.selected_nav;
+
+        // List mode (cols == 1) renders History-style rows: full-width
+        // rounded cards with a small gap, applied uniformly to groups and
+        // hosts. Grid mode keeps the roomier 12px gutters.
+        let gap = if self.setting_host_list_view { 8.0 } else { 12.0 };
+
+        // Record the keyboard-navigation order as visual rows (groups rows
+        // then hosts rows, each chunked to the column count) so the key
+        // handler can move the selection in 2-D without re-deriving the
+        // group order. Groups + session groups share the groups section.
+        let cw = cols.max(1);
+        let group_nav: Vec<DashNavItem> = group_cards
+            .iter()
+            .chain(session_group_cards.iter())
+            .map(|(_, _, n)| *n)
+            .collect();
+        let host_nav: Vec<DashNavItem> = host_cards.iter().map(|(_, _, n)| *n).collect();
+        let mut nav_rows: Vec<Vec<DashNavItem>> = Vec::new();
+        nav_rows.extend(group_nav.chunks(cw).map(|c| c.to_vec()));
+        nav_rows.extend(host_nav.chunks(cw).map(|c| c.to_vec()));
+        *self.dashboard_nav.borrow_mut() = nav_rows;
 
         let mut content_rows: Vec<Element<'_, Message>> = Vec::new();
         if flatten {
-            if !group_cards.is_empty() {
+            // Session groups live under the same "Groups" section as host
+            // groups (they're both group-shaped entries), instead of a
+            // separate "Session Groups" section. Host groups come first.
+            if !group_cards.is_empty() || !session_group_cards.is_empty() {
                 // `section_header` already carries its own 4/8 vertical
                 // padding (mirroring Keychain), so no extra Space below.
                 content_rows.push(section_header("groups_section"));
-                content_rows.push(distribute_card_grid(group_cards, cols, 12.0, 12.0));
-                content_rows.push(Space::new().height(20).into());
-            }
-            if !session_group_cards.is_empty() {
-                content_rows.push(section_header("session_groups"));
-                content_rows.push(distribute_card_grid(session_group_cards, cols, 12.0, 12.0));
+                let mut grouped = group_cards;
+                grouped.extend(session_group_cards);
+                let grouped = apply_card_wash(grouped, glass, selected);
+                content_rows.push(distribute_card_grid(grouped, cols, gap, gap));
                 content_rows.push(Space::new().height(20).into());
             }
             if !host_cards.is_empty() {
                 content_rows.push(section_header("hosts_section"));
-                content_rows.push(distribute_card_grid(host_cards, cols, 12.0, 12.0));
+                let host_cards = apply_card_wash(host_cards, glass, selected);
+                content_rows.push(distribute_card_grid(host_cards, cols, gap, gap));
             }
         } else {
             // Legacy: groups, then session groups, then hosts, in one grid.
             let mut combined = group_cards;
             combined.extend(session_group_cards);
             combined.extend(host_cards);
-            content_rows.push(distribute_card_grid(combined, cols, 12.0, 12.0));
+            let combined = apply_card_wash(combined, glass, selected);
+            content_rows.push(distribute_card_grid(combined, cols, gap, gap));
         }
 
         // Each grid row holds up to 3 fixed-width cards; once the row
@@ -1800,7 +2047,9 @@ impl Oryxis {
                 .width(Length::Fill)
                 .padding(Padding { top: 0.0, right: 24.0, bottom: 24.0, left: 24.0 })
                 .align_x(crate::widgets::dir_align_x()),
-        ).height(Length::Fill);
+        )
+        .id(iced::widget::Id::new("dashboard-grid-scroll"))
+        .height(Length::Fill);
 
         // Cloud-profile filter chip, only rendered while a filter is
         // active. Sits between search and the grid so the user always
@@ -1942,4 +2191,93 @@ fn relative_time_ago(t: chrono::DateTime<chrono::Utc>) -> String {
     // Absolute fallback for old timestamps: show the date in the user's
     // local timezone, not UTC.
     t.with_timezone(&chrono::Local).format("%Y-%m-%d").to_string()
+}
+
+#[cfg(test)]
+mod hidden_cloud_tests {
+    //! Folder visibility recursion that drives hiding provider folders
+    //! once their plugin is removed. A folder stays visible while it
+    //! holds any non-hidden content (a manual host or a host/group from
+    //! an installed provider), and goes hidden once every descendant is
+    //! from an uninstalled provider.
+    use super::group_has_visible_content;
+    use oryxis_core::models::cloud::{
+        CloudQuery, CloudQueryKind, ConnectionTemplate, TransportKind,
+    };
+    use oryxis_core::models::Group;
+    use std::collections::{HashMap, HashSet};
+    use uuid::Uuid;
+
+    fn folder(parent: Option<Uuid>) -> Group {
+        let mut g = Group::new("folder");
+        g.parent_id = parent;
+        g
+    }
+
+    fn dyn_group(parent: Option<Uuid>, profile: Uuid) -> Group {
+        let mut g = Group::new("dyn");
+        g.parent_id = parent;
+        g.cloud_query = Some(CloudQuery {
+            profile_id: profile,
+            kind: CloudQueryKind::EcsTasks {
+                cluster: "c".into(),
+                service: "s".into(),
+                container: String::new(),
+            },
+            template: ConnectionTemplate::new(TransportKind::EcsExec),
+        });
+        g
+    }
+
+    fn visible(gid: Uuid, groups: &[Group], visible_conn: &[Uuid], hidden: &[Uuid]) -> bool {
+        let has_visible_conn: HashSet<Uuid> = visible_conn.iter().copied().collect();
+        let hidden_profiles: HashSet<Uuid> = hidden.iter().copied().collect();
+        let mut memo = HashMap::new();
+        group_has_visible_content(gid, groups, &has_visible_conn, &hidden_profiles, &mut memo)
+    }
+
+    #[test]
+    fn folder_with_only_hidden_dynamic_child_is_hidden() {
+        let p = Uuid::new_v4();
+        let f = folder(None);
+        let groups = vec![f.clone(), dyn_group(Some(f.id), p)];
+        assert!(!visible(f.id, &groups, &[], &[p]));
+    }
+
+    #[test]
+    fn folder_with_installed_dynamic_child_is_visible() {
+        let p = Uuid::new_v4();
+        let f = folder(None);
+        let groups = vec![f.clone(), dyn_group(Some(f.id), p)];
+        // p not in the hidden set => its provider is installed.
+        assert!(visible(f.id, &groups, &[], &[]));
+    }
+
+    #[test]
+    fn folder_with_manual_host_survives_a_hidden_child() {
+        let p = Uuid::new_v4();
+        let f = folder(None);
+        let groups = vec![f.clone(), dyn_group(Some(f.id), p)];
+        // f holds a visible (non-cloud) connection.
+        assert!(visible(f.id, &groups, &[f.id], &[p]));
+    }
+
+    #[test]
+    fn two_level_nest_resolves_through_the_recursion() {
+        let p = Uuid::new_v4();
+        let f = folder(None);
+        let s = folder(Some(f.id));
+        let groups = vec![f.clone(), s.clone(), dyn_group(Some(s.id), p)];
+        assert!(!visible(f.id, &groups, &[], &[p]));
+        assert!(visible(f.id, &groups, &[], &[]));
+    }
+
+    #[test]
+    fn folder_with_no_visible_content_is_hidden() {
+        // Hidden hosts are excluded from `has_visible_conn` upstream, so
+        // a folder whose only host is hidden reaches here with nothing.
+        let f = folder(None);
+        let groups = vec![f.clone()];
+        assert!(!visible(f.id, &groups, &[], &[]));
+    }
 }

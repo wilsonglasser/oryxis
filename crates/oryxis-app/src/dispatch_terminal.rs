@@ -286,6 +286,42 @@ impl Oryxis {
                 if let keyboard::Event::ModifiersChanged(m) = &event {
                     self.modifiers = *m;
                 }
+                // PrintScreen -> open the Windows snip overlay (region
+                // capture), matching the OS default. winit delivers the
+                // key to the focused window without forwarding it to
+                // DefWindowProc, so Windows' own PrintScreen handler never
+                // fires while Oryxis is focused; we remap it explicitly.
+                // VK_SNAPSHOT classically emits only WM_KEYUP, so accept a
+                // press or a release, debounced so a paired press+release
+                // doesn't launch the overlay twice. Handled before the
+                // modal / chat / PTY gates so a screenshot always works.
+                #[cfg(target_os = "windows")]
+                {
+                    let is_printscreen = matches!(
+                        &event,
+                        keyboard::Event::KeyPressed {
+                            key: keyboard::Key::Named(keyboard::key::Named::PrintScreen),
+                            ..
+                        } | keyboard::Event::KeyReleased {
+                            key: keyboard::Key::Named(keyboard::key::Named::PrintScreen),
+                            ..
+                        }
+                    );
+                    if is_printscreen {
+                        let now = std::time::Instant::now();
+                        let recent = self
+                            .last_printscreen
+                            .map(|t| {
+                                now.duration_since(t) < std::time::Duration::from_millis(400)
+                            })
+                            .unwrap_or(false);
+                        if !recent {
+                            self.last_printscreen = Some(now);
+                            crate::util::open_screenshot_tool();
+                        }
+                        return Ok(Task::none());
+                    }
+                }
                 // Host editor panel open -> Tab / Shift+Tab move focus
                 // between form fields like a browser, instead of falling
                 // through to the PTY (which would emit a literal \t) or a
@@ -300,6 +336,159 @@ impl Oryxis {
                     } else {
                         iced::widget::operation::focus_next()
                     });
+                }
+                // Dashboard keyboard navigation: from the search field,
+                // Tab / arrows move a selection across the visible host
+                // cards and Enter connects (or connects the top result
+                // while searching). Plain keys only, so Ctrl/Alt combos
+                // still reach the hotkey table below. Gated to the Home /
+                // Hosts surface with no editor panel or modal open.
+                if self.active_view == crate::state::View::Dashboard
+                    && self.active_tab.is_none()
+                    && !self.show_host_panel
+                    && !self.show_session_group_panel
+                    && !self.cloud_dynamic_form_visible
+                    && !self.cloud_discover_visible
+                    && !self.any_modal_blocks_input()
+                    && let keyboard::Event::KeyPressed { key, modifiers, .. } = &event
+                    && !modifiers.control()
+                    && !modifiers.alt()
+                    && !modifiers.logo()
+                {
+                    use crate::app::DashNavItem;
+                    use keyboard::key::Named;
+                    let keyboard::Key::Named(named) = key else {
+                        // Non-named keys (typing) fall through to the search.
+                        if let keyboard::Event::KeyPressed { key, modifiers, .. } = &event
+                            && let Some(task) = self.handle_hotkey_keypress(key, modifiers)
+                        {
+                            return Ok(task);
+                        }
+                        return Ok(Task::none());
+                    };
+                    // Snapshot of the navigable items as visual rows
+                    // (recorded during the last render).
+                    let rows = self.dashboard_nav.borrow().clone();
+                    let flat: Vec<DashNavItem> = rows.iter().flatten().copied().collect();
+                    let list_mode = self.setting_host_list_view;
+                    // Current (row, col) of the selection within `rows`.
+                    let cur = self.selected_nav.and_then(|sel| {
+                        rows.iter().enumerate().find_map(|(r, row)| {
+                            row.iter().position(|&n| n == sel).map(|c| (r, c))
+                        })
+                    });
+                    let flat_pos = self
+                        .selected_nav
+                        .and_then(|sel| flat.iter().position(|&n| n == sel));
+
+                    // Enter / Escape act on the current selection.
+                    if matches!(named, Named::Enter) {
+                        let target = self.selected_nav.or_else(|| {
+                            if self.host_search.is_empty() {
+                                None
+                            } else {
+                                flat.first().copied()
+                            }
+                        });
+                        if let Some(item) = target {
+                            self.selected_nav = None;
+                            let msg = match item {
+                                DashNavItem::Group(gid) => Message::OpenGroup(gid),
+                                DashNavItem::SessionGroup(i) => Message::OpenSessionGroup(i),
+                                DashNavItem::Host(i) => Message::ConnectSsh(i),
+                            };
+                            return Ok(self.update(msg));
+                        }
+                        return Ok(Task::none());
+                    }
+                    if matches!(named, Named::Escape) {
+                        if self.selected_nav.is_some() {
+                            self.selected_nav = None;
+                            return Ok(Task::none());
+                        }
+                        // No selection: let Esc fall through (close modals etc).
+                        if let keyboard::Event::KeyPressed { key, modifiers, .. } = &event
+                            && let Some(task) = self.handle_hotkey_keypress(key, modifiers)
+                        {
+                            return Ok(task);
+                        }
+                        return Ok(Task::none());
+                    }
+
+                    if flat.is_empty() {
+                        // Nothing to navigate; ignore the movement keys.
+                        return Ok(Task::none());
+                    }
+
+                    // Movement is cyclic (wraps last↔first). ←/→ (and Tab)
+                    // move linearly; ↓/↑ move by a grid row (or linearly in
+                    // single-column list mode).
+                    let n = flat.len();
+                    // Linear forward / backward with wrap-around.
+                    let fwd = flat[flat_pos.map_or(0, |p| (p + 1) % n)];
+                    let back = flat[flat_pos.map_or(n - 1, |p| (p + n - 1) % n)];
+                    let nrows = rows.len();
+                    let new_sel: Option<DashNavItem> = match named {
+                        Named::Tab if modifiers.shift() => Some(back),
+                        Named::Tab => Some(fwd),
+                        Named::ArrowRight => Some(fwd),
+                        Named::ArrowLeft => Some(back),
+                        Named::ArrowDown if list_mode => Some(fwd),
+                        Named::ArrowUp if list_mode => Some(back),
+                        Named::ArrowDown => Some(match cur {
+                            Some((r, c)) => {
+                                let nr = (r + 1) % nrows;
+                                rows[nr][c.min(rows[nr].len() - 1)]
+                            }
+                            None => flat[0],
+                        }),
+                        Named::ArrowUp => Some(match cur {
+                            Some((r, c)) => {
+                                let nr = (r + nrows - 1) % nrows;
+                                rows[nr][c.min(rows[nr].len() - 1)]
+                            }
+                            None => *flat.last().unwrap(),
+                        }),
+                        _ => None,
+                    };
+
+                    if let Some(sel) = new_sel {
+                        let entering = self.selected_nav.is_none();
+                        self.selected_nav = Some(sel);
+                        // Scroll only enough to keep the selected row in
+                        // view: rows that already fit on the first screen
+                        // don't scroll; later rows scroll so the selected
+                        // one sits at the bottom edge. Row/viewport heights
+                        // are estimates (iced doesn't expose item bounds
+                        // here), tuned to the card metrics.
+                        let sel_row = rows
+                            .iter()
+                            .position(|row| row.contains(&sel))
+                            .unwrap_or(0) as f32;
+                        let row_h = if self.setting_host_list_view { 56.0 } else { 60.0 };
+                        let viewport = (self.window_size.height - 115.0).max(row_h);
+                        let visible_rows = (viewport / row_h).floor().max(1.0);
+                        let max_scroll_rows = (rows.len() as f32 - visible_rows).max(1.0);
+                        let offset_rows = (sel_row - visible_rows + 1.0).max(0.0);
+                        let y = (offset_rows / max_scroll_rows).clamp(0.0, 1.0);
+                        let scroll = iced::widget::operation::snap_to(
+                            iced::widget::Id::new("dashboard-grid-scroll"),
+                            iced::widget::operation::RelativeOffset { x: None, y: Some(y) },
+                        );
+                        // First move drops focus from the search input so
+                        // we're clearly in "card selection" mode. Focusing a
+                        // non-existent id unfocuses every focusable (the
+                        // `focus` operation blurs all non-matching widgets).
+                        if entering {
+                            return Ok(Task::batch([
+                                iced::widget::operation::focus(iced::widget::Id::new(
+                                    "__dashboard_nav_blur__",
+                                )),
+                                scroll,
+                            ]));
+                        }
+                        return Ok(scroll);
+                    }
                 }
                 // Hotkey dispatch + capture mode live in `shortcuts.rs`
                 // (`handle_hotkey_keypress`). Returns a Task when the

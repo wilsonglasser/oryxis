@@ -2,6 +2,12 @@
 
 pub(super) fn lookup(key: &str) -> Option<&'static str> {
     Some(match key {
+        "expand" => "Expandir",
+        "collapse" => "Recolher",
+        "nav_orientation" => "Navegação",
+        "nav_orientation_desc" => "Horizontal mostra as seções como uma faixa de pílulas abaixo da barra; Vertical mostra como um rail de ícones à esquerda.",
+        "nav_orientation_horizontal" => "Horizontal (pílulas)",
+        "nav_orientation_vertical" => "Vertical (rail)",
         "hosts" => "Hosts",
         "keychain" => "Chaveiro",
         "snippets" => "Snippets",
@@ -22,6 +28,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "cloud_discover_import_into_placeholder" => "Nome do grupo (existente ou novo)",
         "search_groups" => "Buscar grupos…",
         "tab_accent_line" => "Tingir linha da tab com a cor do host",
+        "tab_accent_wash" => "Banhar a barra superior com o accent do host",
         "host_filter_by_profile" => "Filtrar por conta cloud",
         "host_filter_active" => "Filtro",
         "cloud_profile_sync" => "Sincronizar agora",
@@ -234,10 +241,6 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "close_position_left" => "Esquerda",
         "close_position_right" => "Direita",
         "show_tab_status_dot" => "Mostrar indicador de conexão nas abas",
-        "layout_mode" => "Modo de layout",
-        "layout_mode_desc" => "O Workspace esconde a sidebar quando uma aba de conexão está aberta, deixando o terminal em tela cheia. O Clássico sempre mostra a sidebar.",
-        "layout_mode_classic" => "Clássico (sidebar)",
-        "layout_mode_workspace" => "Workspace (abas no topo)",
         "default_host_icon" => "Ícone padrão de host",
         "icon_circular" => "Circular",
         "icon_square" => "Quadrado",
@@ -327,7 +330,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "font_zoom_wheel" => "Ajustar Fonte",
         "keyboard_shortcuts" => "Atalhos de Teclado",
 
-        "logs" => "Logs",
+        "logs" => "Histórico",
         "vault" => "Cofre",
         "search_logs" => "Buscar logs...",
         "clear_all" => "Limpar tudo",
@@ -336,7 +339,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "session_log" => "Log de Sessão",
         "entries" => "entradas",
         "of" => "de",
-        "no_activity" => "Nenhuma atividade registrada ainda.",
+        "no_activity" => "Nenhuma atividade ainda",
+        "no_activity_desc" => "Sessões e eventos de conexão aparecerão aqui.",
         "in_progress" => "Em Andamento",
 
         "identity" => "Identidade",
@@ -499,8 +503,10 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         // Proxy Identities
         "proxies" => "Proxies",
         "new_proxy_identity" => "Novo Proxy",
+        "edit_proxy_identity" => "Editar Proxy",
         "proxy_identity_label" => "Rótulo",
-        "proxy_identities_empty" => "Nenhum proxy salvo ainda.",
+        "proxy_identities_empty" => "Salve um proxy uma vez e reutilize em seus hosts.",
+        "proxy_identities_empty_title" => "Nenhum proxy ainda",
         "proxy_type_identity_fallback" => "Proxy salvo",
         "proxy_type_identity_deleted" => "(proxy excluído)",
         "proxy_identity_err_label_required" => "O rótulo é obrigatório",
@@ -511,6 +517,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "groups_section" => "Grupos",
         "hosts_section" => "Hosts",
         "flatten_hosts_label" => "Mostrar todos os hosts na raiz",
+        "card_accent_glass_label" => "Cards com vidro de destaque",
+        "card_accent_glass_desc" => "Leve degradê na cor de cada card do painel (cor do host/grupo esmaecendo).",
         "flatten_hosts_desc" => "Quando ativo, a raiz do painel mostra uma seção de Grupos acima de uma lista plana com todos os hosts. Quando desligado, hosts em grupos só aparecem ao abrir a pasta.",
 
         "sync_passwords" => "Sincronizar senhas entre dispositivos",
@@ -570,6 +578,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "ip_or_hostname" => "IP ou Hostname",
         "my_server_placeholder" => "Meu Servidor",
         "group_placeholder" => "Produção, Staging...",
+        "edit_group" => "Editar Grupo",
+        "group_icon_color" => "Ícone e cor",
         "add_key_btn" => "+ Chave",
         "port_forwarding" => "Encaminhamento de Porta",
         "add_btn" => "ADICIONAR",
@@ -748,6 +758,10 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "log_retention_30d" => "1 mês",
         "log_retention_90d" => "3 meses",
         "log_delete_confirm_body" => "esta gravação de sessão será excluída permanentemente.",
+        "known_host_remove_confirm_title" => "Remover chave do host?",
+        "known_host_remove_confirm_body" => "esta chave de host é removida; você vai verificá-la de novo na próxima conexão.",
+        "known_hosts_clear_confirm_title" => "Re-verificar todos os hosts?",
+        "known_hosts_clear_confirm_body" => "Toda chave de host salva é removida; você vai verificar cada host de novo na próxima conexão.",
         "plugin_uninstall_confirm_body" => "os binários baixados serão apagados desta máquina. Você pode reinstalar por este painel a qualquer momento.",
         "plugin_action_check_updates" => "Verificar atualizações",
         "plugin_action_retry" => "Tentar novamente",
@@ -784,7 +798,11 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
 
         // Banner de plugin ausente em Cloud Accounts
         "cloud_plugin_missing_title" => "Plugin AWS não instalado",
-        "cloud_plugin_missing_body" => "Test Credentials e Descobrir Hosts precisam do plugin AWS. Instale-o pra usar esta conta.",
+        "cloud_plugin_missing_title_suffix" => "plugin não instalado",
+        "cloud_plugin_missing_body" => "Test Credentials e Descobrir Hosts precisam do plugin deste provedor. Instale-o pra usar esta conta.",
+        "cloud_no_provider_title" => "Nenhum provedor de cloud instalado",
+        "cloud_no_provider_desc" => "Contas de cloud descobrem e importam hosts de provedores como AWS e Kubernetes. Instale o plugin de um provedor pra adicionar uma conta.",
+        "cloud_no_provider_btn" => "Abrir Plugins",
 
         // Menu de ordenação (toolbars de Hosts / Chaveiro / Snippets)
         "sort_label_asc" => "A-z",
@@ -800,6 +818,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "create_port_forward_title" => "Encaminhe uma porta",
         "create_port_forward_desc" => "Mantenha um túnel aberto sem terminal: bancos de dados, painéis, webhooks.",
         "search_port_forwards" => "Buscar encaminhamentos...",
+        "search_cloud_accounts" => "Buscar contas...",
+        "search_proxies" => "Buscar proxies...",
         "pf_kind" => "Tipo",
         "pf_host" => "Via host",
         "pf_listen_host" => "Endereço de escuta",

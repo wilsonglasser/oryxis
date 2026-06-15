@@ -3,6 +3,12 @@
 pub(super) fn lookup(key: &str) -> Option<&'static str> {
     Some(match key {
         // Navigation
+        "expand" => "Mở rộng",
+        "collapse" => "Thu gọn",
+        "nav_orientation" => "Điều hướng",
+        "nav_orientation_desc" => "Ngang hiển thị các mục dạng dải viên dưới thanh trên; Dọc hiển thị dạng thanh biểu tượng bên trái.",
+        "nav_orientation_horizontal" => "Ngang (viên)",
+        "nav_orientation_vertical" => "Dọc (thanh)",
         "hosts" => "Máy chủ",
         "keychain" => "Chuỗi khóa",
         "snippets" => "Đoạn lệnh",
@@ -23,6 +29,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "cloud_discover_import_into_placeholder" => "Tên nhóm (có sẵn hoặc mới)",
         "search_groups" => "Tìm nhóm…",
         "tab_accent_line" => "Tô màu gạch chân tab theo màu máy chủ",
+        "tab_accent_wash" => "Phủ màu nhấn của máy chủ lên thanh trên",
         "host_filter_by_profile" => "Lọc theo hồ sơ cloud",
         "host_filter_active" => "Bộ lọc",
         "cloud_profile_sync" => "Đồng bộ ngay",
@@ -239,10 +246,6 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "close_position_left" => "Trái",
         "close_position_right" => "Phải",
         "show_tab_status_dot" => "Hiện chấm trạng thái kết nối trên tab",
-        "layout_mode" => "Chế độ bố cục",
-        "layout_mode_desc" => "Workspace ẩn thanh bên khi một tab kết nối đang mở để terminal lấp đầy khung. Cổ điển luôn hiện thanh bên.",
-        "layout_mode_classic" => "Cổ điển (thanh bên)",
-        "layout_mode_workspace" => "Workspace (tab trên cùng)",
         "default_host_icon" => "Biểu tượng máy chủ mặc định",
         "icon_circular" => "Tròn",
         "icon_square" => "Vuông",
@@ -349,7 +352,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "in_progress" => "Đang diễn ra",
         "entries" => "mục",
         "of" => "trên",
-        "no_activity" => "Chưa có hoạt động nào được ghi lại.",
+        "no_activity" => "Chưa có hoạt động",
+        "no_activity_desc" => "Phiên và sự kiện kết nối sẽ hiển thị ở đây.",
 
         // Identity
         "identity" => "Danh tính",
@@ -518,8 +522,10 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         // Proxy Identities (Settings → Proxies)
         "proxies" => "Proxy",
         "new_proxy_identity" => "Proxy mới",
+        "edit_proxy_identity" => "Sửa proxy",
         "proxy_identity_label" => "Nhãn",
-        "proxy_identities_empty" => "Chưa có proxy nào được lưu.",
+        "proxy_identities_empty" => "Lưu một proxy và dùng lại trên mọi máy chủ.",
+        "proxy_identities_empty_title" => "Chưa có proxy",
         "proxy_type_identity_fallback" => "Proxy đã lưu",
         "proxy_type_identity_deleted" => "(proxy đã xóa)",
         "proxy_identity_err_label_required" => "Cần có nhãn",
@@ -530,6 +536,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "groups_section" => "Nhóm",
         "hosts_section" => "Máy chủ",
         "flatten_hosts_label" => "Hiện tất cả máy chủ ở gốc",
+        "card_accent_glass_label" => "Thẻ kính nhấn màu",
+        "card_accent_glass_desc" => "Lớp phủ nhẹ theo màu từng thẻ (màu host/nhóm mờ dần).",
         "flatten_hosts_desc" => "Khi bật, gốc bảng điều khiển hiện một mục Nhóm phía trên danh sách phẳng gồm mọi máy chủ. Khi tắt, máy chủ bên trong nhóm bị ẩn cho tới khi bạn mở nhóm.",
 
         // Sync passwords toggle
@@ -600,6 +608,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "ip_or_hostname" => "IP hoặc tên máy chủ",
         "my_server_placeholder" => "Máy chủ của tôi",
         "group_placeholder" => "Production, Staging...",
+        "edit_group" => "Sửa nhóm",
+        "group_icon_color" => "Biểu tượng & màu",
         "add_key_btn" => "+ Khóa",
         "port_forwarding" => "Chuyển tiếp cổng",
 
@@ -773,6 +783,10 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "log_retention_30d" => "1 tháng",
         "log_retention_90d" => "3 tháng",
         "log_delete_confirm_body" => "bản ghi phiên này sẽ bị xóa vĩnh viễn.",
+        "known_host_remove_confirm_title" => "Xóa khóa máy chủ?",
+        "known_host_remove_confirm_body" => "khóa máy chủ này sẽ bị xóa; bạn sẽ xác minh lại ở lần kết nối tiếp theo.",
+        "known_hosts_clear_confirm_title" => "Xác minh lại tất cả máy chủ?",
+        "known_hosts_clear_confirm_body" => "Mọi khóa máy chủ đã lưu sẽ bị xóa; bạn sẽ xác minh lại từng máy chủ ở lần kết nối tiếp theo.",
         "plugin_uninstall_confirm_body" => "các tệp nhị phân đã tải xuống sẽ bị xóa khỏi máy này. Bạn có thể cài lại từ bảng này bất cứ lúc nào.",
         "plugin_action_check_updates" => "Kiểm tra cập nhật",
         "plugin_action_retry" => "Thử lại",
@@ -809,7 +823,11 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
 
         // Cloud Accounts plugin gate
         "cloud_plugin_missing_title" => "Plugin AWS chưa được cài",
-        "cloud_plugin_missing_body" => "Kiểm tra thông tin đăng nhập và Khám phá máy chủ cần plugin AWS. Cài nó để dùng tài khoản này.",
+        "cloud_plugin_missing_title_suffix" => "chưa cài plugin",
+        "cloud_plugin_missing_body" => "Kiểm tra thông tin đăng nhập và Khám phá máy chủ cần plugin của nhà cung cấp này. Cài nó để dùng tài khoản này.",
+        "cloud_no_provider_title" => "Chưa cài nhà cung cấp cloud nào",
+        "cloud_no_provider_desc" => "Tài khoản cloud khám phá và nhập máy chủ từ các nhà cung cấp như AWS và Kubernetes. Cài plugin nhà cung cấp để thêm tài khoản.",
+        "cloud_no_provider_btn" => "Mở Plugin",
 
         // Sort dropdown (Hosts / Keychain / Snippets toolbars)
         "sort_label_asc" => "A-z",
@@ -825,6 +843,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "create_port_forward_title" => "Chuyển tiếp một cổng",
         "create_port_forward_desc" => "Giữ một đường hầm mở mà không cần terminal: cơ sở dữ liệu, bảng điều khiển, webhook.",
         "search_port_forwards" => "Tìm chuyển tiếp cổng...",
+        "search_cloud_accounts" => "Tìm tài khoản...",
+        "search_proxies" => "Tìm proxy...",
         "pf_kind" => "Loại",
         "pf_host" => "Qua máy chủ",
         "pf_listen_host" => "Địa chỉ lắng nghe",
@@ -846,7 +866,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "cjk_font_downloading" => "Đang tải phông chữ ngôn ngữ...",
         "cjk_font_failed" => "Không tải được phông chữ ngôn ngữ. Đang dùng phông hệ thống.",
 
-        "logs" => "Nhật ký",
+        "logs" => "Lịch sử",
         "vault" => "Kho",
         "search_logs" => "Tìm trong nhật ký...",
         "clear_all" => "Xóa tất cả",
