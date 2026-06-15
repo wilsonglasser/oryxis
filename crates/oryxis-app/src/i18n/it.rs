@@ -856,6 +856,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "connection_history" => "Cronologia connessioni",
         "setting_connection_history_desc" => "Registra gli eventi di connessione (connessioni, disconnessioni, errori di autenticazione, errori) nel vault.",
         "session_log_default" => "Predefinito",
+        "shell_default" => "predefinito",
         "session_log_on" => "Attivo",
         "session_log_off" => "Disattivo",
         "share" => "Condividi",

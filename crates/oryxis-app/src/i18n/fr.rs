@@ -870,6 +870,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "connection_history" => "Historique des connexions",
         "setting_connection_history_desc" => "Enregistre les événements de connexion (connexions, déconnexions, échecs d'authentification, erreurs) dans le coffre.",
         "session_log_default" => "Par défaut",
+        "shell_default" => "par défaut",
         "session_log_on" => "Activé",
         "session_log_off" => "Désactivé",
         "share" => "Partager",

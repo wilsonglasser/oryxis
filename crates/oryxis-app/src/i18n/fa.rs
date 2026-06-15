@@ -358,6 +358,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "connection_history" => "تاریخچه اتصال",
         "setting_connection_history_desc" => "رویدادهای اتصال (اتصال‌ها، قطع اتصال‌ها، خطاهای احراز هویت، خطاها) را در گاوصندوق ضبط می‌کند.",
         "session_log_default" => "پیش‌فرض",
+        "shell_default" => "پیش‌فرض",
         "session_log_on" => "روشن",
         "session_log_off" => "خاموش",
         "auto_check_updates" => "بررسی به‌روزرسانی هنگام راه‌اندازی",

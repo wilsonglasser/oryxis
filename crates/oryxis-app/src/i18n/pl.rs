@@ -357,6 +357,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "connection_history" => "Historia połączeń",
         "setting_connection_history_desc" => "Zapisuje zdarzenia połączeń (połączenia, rozłączenia, błędy uwierzytelniania, błędy) w sejfie.",
         "session_log_default" => "Domyślnie",
+        "shell_default" => "domyślnie",
         "session_log_on" => "Wł.",
         "session_log_off" => "Wył.",
         "auto_check_updates" => "Sprawdzaj aktualizacje przy uruchomieniu",

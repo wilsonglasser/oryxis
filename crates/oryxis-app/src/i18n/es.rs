@@ -863,6 +863,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "connection_history" => "Historial de conexiones",
         "setting_connection_history_desc" => "Graba eventos de conexión (conexiones, desconexiones, fallos de autenticación, errores) en la bóveda.",
         "session_log_default" => "Predeterminado",
+        "shell_default" => "predeterminado",
         "session_log_on" => "Activado",
         "session_log_off" => "Desactivado",
         "share" => "Compartir",

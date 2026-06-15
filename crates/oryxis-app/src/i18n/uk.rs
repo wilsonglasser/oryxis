@@ -356,6 +356,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "connection_history" => "Історія підключень",
         "setting_connection_history_desc" => "Записувати події підключення (підключення, відключення, помилки автентифікації, помилки) у сховище.",
         "session_log_default" => "За замовчуванням",
+        "shell_default" => "за замовчуванням",
         "session_log_on" => "Увімк.",
         "session_log_off" => "Вимк.",
         "auto_check_updates" => "Перевіряти оновлення під час запуску",

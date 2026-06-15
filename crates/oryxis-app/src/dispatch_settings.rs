@@ -1115,11 +1115,19 @@ impl Oryxis {
                 // this action; dismiss it so the spawned shell
                 // doesn't appear behind the still-open dropdown.
                 self.show_burger_menu = false;
-                // On Windows, surface the picker so the user can pick
-                // between cmd / PowerShell / their WSL distros. Other
-                // platforms get the default shell, there's nothing
-                // useful to choose.
+                // Windows always has at least cmd + PowerShell (plus
+                // possibly Git Bash / Nushell / Cygwin / MSYS2 / WSL),
+                // so the picker is always worth showing; detection there
+                // touches subprocesses and runs async via the picker.
                 if cfg!(target_os = "windows") {
+                    return Ok(Task::done(Message::ShowLocalShellPicker));
+                }
+                // On Unix detection is just a few file reads, so decide
+                // inline: only interrupt with a picker when the user
+                // actually has more than one shell to choose from.
+                let shells = detect_local_shells();
+                if shells.len() > 1 {
+                    self.local_shells = Some(shells);
                     return Ok(Task::done(Message::ShowLocalShellPicker));
                 }
                 return Ok(spawn_local_shell(self, None));
@@ -1222,14 +1230,18 @@ fn spawn_local_shell(
     }
 }
 
-/// Build the menu of available local shells. Only meaningful on
-/// Windows; other platforms just get the default.
-#[allow(unused_mut)]
+/// Build the menu of available local shells: cmd / PowerShell /
+/// Git Bash / Nushell / Cygwin / MSYS2 / WSL on Windows, or the
+/// login shell plus any other common shells on `PATH` on Unix.
 fn detect_local_shells() -> Vec<crate::state::LocalShellSpec> {
-    use crate::state::LocalShellSpec;
-    let mut out: Vec<LocalShellSpec> = Vec::new();
+    #[cfg(unix)]
+    {
+        detect_unix_shells()
+    }
     #[cfg(target_os = "windows")]
     {
+        use crate::state::LocalShellSpec;
+        let mut out: Vec<LocalShellSpec> = Vec::new();
         // PowerShell, prefer pwsh.exe (PS7+) over the bundled
         // powershell.exe; both detect via `where.exe` to cope with
         // the fact that PS7 isn't on every machine.
@@ -1251,6 +1263,40 @@ fn detect_local_shells() -> Vec<crate::state::LocalShellSpec> {
             program: "cmd.exe".into(),
             args: vec![],
         });
+        // Git Bash, the MSYS2 bash that ships with Git for Windows.
+        // `where bash.exe` is unreliable (it usually resolves to the
+        // WSL bash shim), so probe the canonical install locations.
+        // `--login` sources `/etc/profile` so the MSYS `/usr/bin` PATH
+        // is set up and `git`/`ls`/... resolve.
+        if let Some(path) = find_git_bash() {
+            out.push(LocalShellSpec {
+                label: "Git Bash".into(),
+                program: path,
+                args: vec!["--login".into(), "-i".into()],
+            });
+        }
+        // Nushell, cross-platform and normally on PATH.
+        if which("nu.exe").is_some() {
+            out.push(LocalShellSpec {
+                label: "Nushell".into(),
+                program: "nu.exe".into(),
+                args: vec![],
+            });
+        }
+        // Cygwin / MSYS2 bash, niche but still alive on dev boxes.
+        // Same `where` ambiguity as Git Bash, so fixed roots only.
+        for (label, path) in [
+            ("MSYS2", r"C:\msys64\usr\bin\bash.exe"),
+            ("Cygwin", r"C:\cygwin64\bin\bash.exe"),
+        ] {
+            if std::path::Path::new(path).is_file() {
+                out.push(LocalShellSpec {
+                    label: label.into(),
+                    program: path.into(),
+                    args: vec!["--login".into(), "-i".into()],
+                });
+            }
+        }
         // WSL distros, `wsl --list --quiet` outputs UTF-16 LE BOM
         // by default. Decode and split on lines to get distro names.
         for distro in list_wsl_distros() {
@@ -1260,8 +1306,82 @@ fn detect_local_shells() -> Vec<crate::state::LocalShellSpec> {
                 args: vec!["-d".into(), distro],
             });
         }
+        out
+    }
+    #[cfg(not(any(unix, target_os = "windows")))]
+    {
+        Vec::new()
+    }
+}
+
+/// Resolve the bash that ships with Git for Windows by probing the
+/// canonical install roots (system 64/32-bit and per-user). Returns
+/// the first `bin\bash.exe` that exists.
+#[cfg(target_os = "windows")]
+fn find_git_bash() -> Option<String> {
+    let mut candidates: Vec<std::path::PathBuf> = Vec::new();
+    for var in ["ProgramW6432", "ProgramFiles", "ProgramFiles(x86)"] {
+        if let Ok(base) = std::env::var(var) {
+            candidates.push(std::path::PathBuf::from(base).join(r"Git\bin\bash.exe"));
+        }
+    }
+    if let Ok(base) = std::env::var("LOCALAPPDATA") {
+        candidates.push(std::path::PathBuf::from(base).join(r"Programs\Git\bin\bash.exe"));
+    }
+    candidates
+        .into_iter()
+        .find(|p| p.is_file())
+        .map(|p| p.to_string_lossy().into_owned())
+}
+
+/// Build the Unix local-shell menu: the user's login `$SHELL` first
+/// (marked as the default), then any other common interactive shells
+/// found on `PATH`. Deduplicated by resolved path.
+#[cfg(unix)]
+fn detect_unix_shells() -> Vec<crate::state::LocalShellSpec> {
+    use crate::state::LocalShellSpec;
+    let mut out: Vec<LocalShellSpec> = Vec::new();
+    let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let basename = |path: &str| -> String {
+        std::path::Path::new(path)
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_else(|| path.to_string())
+    };
+    // Login shell goes first, flagged so the user knows which is theirs.
+    if let Ok(shell) = std::env::var("SHELL")
+        && !shell.is_empty()
+        && std::path::Path::new(&shell).is_file()
+        && seen.insert(shell.clone())
+    {
+        out.push(LocalShellSpec {
+            label: format!("{} ({})", basename(&shell), crate::i18n::t("shell_default")),
+            program: shell,
+            args: vec![],
+        });
+    }
+    for name in ["bash", "zsh", "fish", "nu"] {
+        if let Some(path) = unix_which(name) {
+            let p = path.to_string_lossy().into_owned();
+            if seen.insert(p.clone()) {
+                out.push(LocalShellSpec {
+                    label: name.into(),
+                    program: p,
+                    args: vec![],
+                });
+            }
+        }
     }
     out
+}
+
+/// Minimal `which`: first `PATH` entry containing an `program` file.
+#[cfg(unix)]
+fn unix_which(program: &str) -> Option<std::path::PathBuf> {
+    let path = std::env::var_os("PATH")?;
+    std::env::split_paths(&path)
+        .map(|dir| dir.join(program))
+        .find(|cand| cand.is_file())
 }
 
 #[cfg(target_os = "windows")]

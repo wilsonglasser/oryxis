@@ -868,6 +868,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "connection_history" => "接続履歴",
         "setting_connection_history_desc" => "接続イベント（接続、切断、認証失敗、エラー）をボールトに記録します。",
         "session_log_default" => "デフォルト",
+        "shell_default" => "デフォルト",
         "session_log_on" => "オン",
         "session_log_off" => "オフ",
         "share" => "共有",

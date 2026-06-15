@@ -177,6 +177,7 @@ pub(super) fn lookup(key: &str) -> &'static str {
         "hotkey_font_zoom_out" => "Zoom font out",
         "hotkey_font_zoom_reset" => "Reset font zoom",
         "detecting_shells" => "Detecting shells…",
+        "shell_default" => "default",
 
         // Actions
         "create_host" => "Create host",

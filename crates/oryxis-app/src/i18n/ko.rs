@@ -356,6 +356,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "connection_history" => "연결 기록",
         "setting_connection_history_desc" => "연결 이벤트(연결, 연결 해제, 인증 실패, 오류)를 보관소에 기록합니다.",
         "session_log_default" => "기본값",
+        "shell_default" => "기본값",
         "session_log_on" => "켜짐",
         "session_log_off" => "꺼짐",
         "auto_check_updates" => "시작 시 업데이트 확인",

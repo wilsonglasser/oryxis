@@ -356,6 +356,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "connection_history" => "Bağlantı geçmişi",
         "setting_connection_history_desc" => "Bağlantı olaylarını (bağlantılar, kesilmeler, kimlik doğrulama hataları, hatalar) kasaya kaydeder.",
         "session_log_default" => "Varsayılan",
+        "shell_default" => "varsayılan",
         "session_log_on" => "Açık",
         "session_log_off" => "Kapalı",
         "auto_check_updates" => "Başlangıçta güncellemeleri denetle",

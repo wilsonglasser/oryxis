@@ -857,6 +857,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "connection_history" => "Verbindungsverlauf",
         "setting_connection_history_desc" => "Zeichnet Verbindungsereignisse (Verbindungen, Trennungen, Authentifizierungsfehler, Fehler) im Tresor auf.",
         "session_log_default" => "Standard",
+        "shell_default" => "Standard",
         "session_log_on" => "Ein",
         "session_log_off" => "Aus",
         "share" => "Teilen",

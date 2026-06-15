@@ -356,6 +356,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "connection_history" => "Riwayat koneksi",
         "setting_connection_history_desc" => "Rekam peristiwa koneksi (koneksi, pemutusan, kegagalan autentikasi, kesalahan) ke vault.",
         "session_log_default" => "Bawaan",
+        "shell_default" => "bawaan",
         "session_log_on" => "Nyala",
         "session_log_off" => "Mati",
         "auto_check_updates" => "Periksa pembaruan saat memulai",

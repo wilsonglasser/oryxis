@@ -866,6 +866,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "connection_history" => "连接历史",
         "setting_connection_history_desc" => "将连接事件（连接、断开、认证失败、错误）记录到保险库。",
         "session_log_default" => "默认",
+        "shell_default" => "默认",
         "session_log_on" => "开启",
         "session_log_off" => "关闭",
         "share" => "分享",

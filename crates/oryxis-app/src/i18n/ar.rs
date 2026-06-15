@@ -362,6 +362,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "connection_history" => "سجل الاتصالات",
         "setting_connection_history_desc" => "تسجيل أحداث الاتصال (الاتصالات، قطع الاتصال، فشل المصادقة، الأخطاء) في الخزنة.",
         "session_log_default" => "افتراضي",
+        "shell_default" => "افتراضي",
         "session_log_on" => "تشغيل",
         "session_log_off" => "إيقاف",
         "auto_check_updates" => "التحقق من التحديثات عند بدء التشغيل",

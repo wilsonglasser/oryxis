@@ -356,6 +356,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "connection_history" => "Lịch sử kết nối",
         "setting_connection_history_desc" => "Ghi các sự kiện kết nối (kết nối, ngắt kết nối, lỗi xác thực, lỗi) vào kho.",
         "session_log_default" => "Mặc định",
+        "shell_default" => "mặc định",
         "session_log_on" => "Bật",
         "session_log_off" => "Tắt",
         "auto_check_updates" => "Kiểm tra cập nhật khi khởi động",

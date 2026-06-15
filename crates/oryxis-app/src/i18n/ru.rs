@@ -856,6 +856,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "connection_history" => "История подключений",
         "setting_connection_history_desc" => "Записывать события подключения (подключения, отключения, ошибки аутентификации, ошибки) в хранилище.",
         "session_log_default" => "По умолчанию",
+        "shell_default" => "по умолчанию",
         "session_log_on" => "Вкл",
         "session_log_off" => "Выкл",
         "share" => "Поделиться",

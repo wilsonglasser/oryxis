@@ -336,6 +336,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "connection_history" => "Histórico de conexões",
         "setting_connection_history_desc" => "Grava eventos de conexão (conexões, desconexões, falhas de autenticação, erros) no cofre.",
         "session_log_default" => "Padrão",
+        "shell_default" => "padrão",
         "session_log_on" => "Ligado",
         "session_log_off" => "Desligado",
         "auto_check_updates" => "Verificar atualizações na inicialização",
