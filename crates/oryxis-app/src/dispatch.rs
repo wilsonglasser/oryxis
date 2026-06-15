@@ -39,6 +39,23 @@ macro_rules! try_handler {
 
 impl Oryxis {
     pub fn update(&mut self, message: Message) -> Task<Message> {
+        // SFTP async-continuation messages target a specific tab that may no
+        // longer be focused. Swap the owning tab's state into `self.sftp` for
+        // the duration so the (unchanged) handlers route to the right tab,
+        // then swap back. See `route_sftp_async`.
+        let task = if let Some(id) = message.sftp_async_owner() {
+            self.route_sftp_async(id, message)
+        } else {
+            self.dispatch_message(message)
+        };
+        // Keep the unified strip order (terminal + SFTP) in sync with the live
+        // tabs after every message: new tabs appended, closed ones dropped,
+        // drag-reordered order preserved.
+        self.reconcile_tab_order();
+        task
+    }
+
+    pub(crate) fn dispatch_message(&mut self, message: Message) -> Task<Message> {
         // Domain-specific handlers each claim a slice of `Message`
         // variants and return `Err(message)` for everything else, so
         // the chain naturally falls through to the inline match below.
@@ -219,6 +236,10 @@ impl Oryxis {
                 // on the view (or returns to it after the underlying dir
                 // changed). Cheap enough to redo unconditionally.
                 if view == View::Sftp {
+                    // Back the SFTP surface with a tab entry (adopts the
+                    // existing top-level `self.sftp` as the first tab). The
+                    // single-tab case behaves exactly as before.
+                    self.ensure_sftp_tab();
                     // Refresh whichever pane(s) are Local; remote panes
                     // ignore this (refresh_sftp_local early-returns).
                     self.refresh_sftp_local(crate::state::SftpPaneSide::Left);
@@ -289,9 +310,6 @@ impl Oryxis {
                     self.overlay = None;
                 } else {
                     let bounds = match target {
-                        GroupPickerTarget::EditorParent => {
-                            self.editor_parent_combo_bounds.get()
-                        }
                         GroupPickerTarget::DynamicFormParent => {
                             self.dynamic_form_parent_combo_bounds.get()
                         }
@@ -300,14 +318,6 @@ impl Oryxis {
                         }
                     };
                     self.group_picker_search.clear();
-                    // The combo bounds are cached in content space; inside
-                    // the host editor's scrollable, scroll is a renderer
-                    // translation, so subtract the form's scroll offset to
-                    // land the popover under the chevron when scrolled.
-                    let scroll_adjust = match target {
-                        GroupPickerTarget::EditorParent => self.editor_form_scroll_y,
-                        _ => 0.0,
-                    };
                     // 6 px gap below the combo. Falls back to mouse
                     // coords if the cell hasn't been populated yet
                     // (first ever open before any draw pass).
@@ -319,15 +329,12 @@ impl Oryxis {
                             self.mouse_position.x
                         },
                         y: if bounds.height > 0.0 {
-                            bounds.y + bounds.height + 6.0 - scroll_adjust
+                            bounds.y + bounds.height + 6.0
                         } else {
                             self.mouse_position.y + 26.0
                         },
                     });
                 }
-            }
-            Message::EditorFormScrolled(viewport) => {
-                self.editor_form_scroll_y = viewport.absolute_offset().y;
             }
             Message::GroupPickerSearchChanged(v) => {
                 self.group_picker_search = v;
@@ -335,9 +342,6 @@ impl Oryxis {
             Message::GroupPickerPick(target, label) => {
                 use crate::state::{GroupPickerTarget, OverlayContent};
                 match target {
-                    GroupPickerTarget::EditorParent => {
-                        self.editor_form.group_name = label;
-                    }
                     GroupPickerTarget::DynamicFormParent => {
                         self.cloud_dynamic_form_parent_label = label;
                     }

@@ -13,6 +13,99 @@ use crate::app::{Message, Oryxis};
 use crate::state::{ConnectionForm, PortForwardForm, ProxyKind};
 
 impl Oryxis {
+    /// Rebuild the native combo_box states backing the host editor's
+    /// Parent Group and Initial Command / Snippet fields. Called on
+    /// editor-open.
+    ///
+    /// Parent Group: options are the visible (non-phantom) groups and
+    /// the current `group_name` seeds the selection so an existing host
+    /// pre-fills its folder. Typing / picking drives
+    /// `editor_form.group_name`, so the save path (find-or-create by
+    /// label) is untouched.
+    ///
+    /// Initial Command / Snippet: a forced-selection searchable combo.
+    /// Options are the `None` / `Custom` sentinels first, then every
+    /// snippet label. Picking commits via `EditorStartupChoiceChanged`;
+    /// there is no free-text path (no `on_input`), so typing only
+    /// filters. The current choice seeds the selection for prefill.
+    pub(crate) fn rebuild_editor_combos(&mut self) {
+        let visible = self.visible_group_ids();
+        let mut labels: Vec<String> = self
+            .groups
+            .iter()
+            .filter(|g| visible.contains(&g.id))
+            .map(|g| g.label.clone())
+            .collect();
+        labels.sort_by_key(|s| s.to_lowercase());
+        labels.dedup();
+        let selection = self.editor_form.group_name.clone();
+        let selection = (!selection.is_empty()).then_some(selection);
+        self.editor_parent_combo =
+            iced::widget::combo_box::State::with_selection(labels, selection.as_ref());
+
+        self.reset_editor_startup_combo();
+        self.reset_editor_key_combo();
+    }
+
+    /// Option list for the Initial Command / Snippet combo: the
+    /// `None` / `Custom` sentinels first, then every snippet label.
+    fn editor_startup_options(&self) -> Vec<String> {
+        let mut opts: Vec<String> = vec![
+            crate::i18n::t("startup_none").to_string(),
+            crate::i18n::t("startup_custom").to_string(),
+        ];
+        for s in &self.snippets {
+            opts.push(s.label.clone());
+        }
+        opts
+    }
+
+    /// (Re)build the startup combo with an *empty* typed value. The
+    /// committed choice is shown via the widget's `selection` prop, not
+    /// the internal value, so the field still displays the current pick
+    /// while focusing clears the input for a fresh search over the full
+    /// list. Called on editor-open and again on every focus (`on_open`)
+    /// so a previous abandoned search doesn't pre-filter the list.
+    pub(crate) fn reset_editor_startup_combo(&mut self) {
+        self.editor_startup_combo =
+            iced::widget::combo_box::State::new(self.editor_startup_options());
+    }
+
+    /// Option list for the SSH Key combo: the `(none)` sentinel first,
+    /// then every saved key's label.
+    fn editor_key_options(&self) -> Vec<String> {
+        let mut opts = vec!["(none)".to_string()];
+        opts.extend(self.keys.iter().map(|k| k.label.clone()));
+        opts
+    }
+
+    /// (Re)build the SSH Key combo with an empty typed value. Same
+    /// forced-selection pattern as `reset_editor_startup_combo`: the
+    /// committed key (`editor_form.selected_key`) drives the display via
+    /// the widget's `selection` prop, so focusing clears the input for a
+    /// fresh search while the current pick is preserved.
+    pub(crate) fn reset_editor_key_combo(&mut self) {
+        self.editor_key_combo =
+            iced::widget::combo_box::State::new(self.editor_key_options());
+    }
+
+    /// Display label for the current startup-command choice (the
+    /// `None` / `Custom` sentinels or the referenced snippet's label).
+    /// Shared by the combo's selection prop and its rebuild seed; a
+    /// dangling snippet id falls back to `Custom`.
+    pub(crate) fn editor_startup_label(&self) -> String {
+        match &self.editor_startup_choice {
+            crate::state::StartupChoice::None => crate::i18n::t("startup_none").to_string(),
+            crate::state::StartupChoice::Custom => crate::i18n::t("startup_custom").to_string(),
+            crate::state::StartupChoice::Snippet(id) => self
+                .snippets
+                .iter()
+                .find(|s| s.id == *id)
+                .map(|s| s.label.clone())
+                .unwrap_or_else(|| crate::i18n::t("startup_custom").to_string()),
+        }
+    }
+
     pub(crate) fn handle_editor(
         &mut self,
         message: Message,
@@ -37,6 +130,7 @@ impl Oryxis {
                     self.editor_form.group_name = g.label.clone();
                 }
                 self.host_panel_error = None;
+                self.rebuild_editor_combos();
                 // Land the cursor in the first field so the very first
                 // Tab keypress walks the form (focus_next with nothing
                 // focused would otherwise grab the grid search input).
@@ -142,18 +236,18 @@ impl Oryxis {
                     let cmd = conn.initial_command.as_deref().unwrap_or_default();
                     self.editor_initial_command =
                         iced::widget::text_editor::Content::with_text(cmd);
-                    // Recover the startup source: empty -> None; an exact
-                    // match against a snippet body -> that snippet; else
-                    // free-text -> Custom.
-                    self.editor_startup_choice = if cmd.trim().is_empty() {
-                        crate::state::StartupChoice::None
-                    } else if let Some(s) =
-                        self.snippets.iter().find(|s| s.command == cmd)
-                    {
-                        crate::state::StartupChoice::Snippet(s.id)
-                    } else {
-                        crate::state::StartupChoice::Custom
+                    // Recover the startup source: a live snippet reference
+                    // (whose snippet still exists) wins; else a non-empty
+                    // literal command is Custom; else None. A dangling
+                    // snippet id falls back to None.
+                    self.editor_startup_choice = match conn.startup_snippet_id {
+                        Some(id) if self.snippets.iter().any(|s| s.id == id) => {
+                            crate::state::StartupChoice::Snippet(id)
+                        }
+                        _ if !cmd.trim().is_empty() => crate::state::StartupChoice::Custom,
+                        _ => crate::state::StartupChoice::None,
                     };
+                    self.rebuild_editor_combos();
                     return Ok(iced::widget::operation::focus(iced::widget::Id::new(
                         "editor-hostname",
                     )));
@@ -195,6 +289,11 @@ impl Oryxis {
             Message::EditorGroupChanged(v) => self.editor_form.group_name = v,
             Message::EditorKeyChanged(v) => {
                 self.editor_form.selected_key = if v == "(none)" { None } else { Some(v) };
+            }
+            Message::EditorKeyComboOpened => {
+                // Focus clears the typed value so the dropdown opens on
+                // the full key list, not pre-filtered by the current pick.
+                self.reset_editor_key_combo();
             }
             Message::OpenChainEditor => {
                 self.show_chain_editor = true;
@@ -306,12 +405,19 @@ impl Oryxis {
             Message::EditorInitialCommandChanged(action) => {
                 self.editor_initial_command.perform(action);
             }
+            Message::EditorStartupComboOpened => {
+                // Focus clears the typed value so the dropdown opens on
+                // the full snippet list, not pre-filtered by the current
+                // selection (the committed choice is preserved untouched).
+                self.reset_editor_startup_combo();
+            }
             Message::EditorStartupChoiceChanged(label) => {
                 use crate::state::StartupChoice;
                 // Map the picker label back to a source. The None / Custom
                 // sentinels come from i18n; anything else is a snippet
-                // label. Picking a snippet seeds the command text with its
-                // body; None clears it; Custom keeps whatever's there.
+                // label. A snippet is stored as a live reference (its id),
+                // resolved to the snippet body at connect time, so we
+                // don't copy the body into the custom text editor here.
                 if label == crate::i18n::t("startup_none") {
                     self.editor_startup_choice = StartupChoice::None;
                     self.editor_initial_command =
@@ -322,8 +428,6 @@ impl Oryxis {
                     self.snippets.iter().find(|s| s.label == label)
                 {
                     self.editor_startup_choice = StartupChoice::Snippet(s.id);
-                    self.editor_initial_command =
-                        iced::widget::text_editor::Content::with_text(&s.command);
                 }
             }
             Message::EditorIconStyleChanged(v) => {
@@ -451,14 +555,29 @@ impl Oryxis {
                 conn.terminal_theme = self.editor_form.terminal_theme.clone();
                 conn.icon_style = self.editor_form.icon_style.clone();
                 conn.encoding = self.editor_form.encoding.clone();
-                // Initial command, empty == None (no command sent).
-                // `.text()` appends a trailing newline, so trim before checking.
-                let initial_command = self.editor_initial_command.text();
-                conn.initial_command = if initial_command.trim().is_empty() {
-                    None
-                } else {
-                    Some(initial_command.trim_end().to_string())
-                };
+                // Startup command source. Snippet -> store the live id and
+                // clear the literal; Custom -> store the trimmed text (empty
+                // == None); None -> clear both. `.text()` appends a trailing
+                // newline, so trim before checking.
+                match &self.editor_startup_choice {
+                    crate::state::StartupChoice::Snippet(id) => {
+                        conn.startup_snippet_id = Some(*id);
+                        conn.initial_command = None;
+                    }
+                    crate::state::StartupChoice::Custom => {
+                        conn.startup_snippet_id = None;
+                        let initial_command = self.editor_initial_command.text();
+                        conn.initial_command = if initial_command.trim().is_empty() {
+                            None
+                        } else {
+                            Some(initial_command.trim_end().to_string())
+                        };
+                    }
+                    crate::state::StartupChoice::None => {
+                        conn.startup_snippet_id = None;
+                        conn.initial_command = None;
+                    }
+                }
                 // If the host is cloud-imported (carries a cloud_ref)
                 // and the user picked a transport in the editor,
                 // persist it onto the existing CloudRef. Don't touch

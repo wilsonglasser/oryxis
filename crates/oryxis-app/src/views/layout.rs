@@ -326,6 +326,26 @@ impl Oryxis {
                 return crate::os_icon::provider_icon(brand, OryxisColors::t().accent).1;
             }
         }
+        // SFTP surface focused: breathe the active SFTP tab's host colour so the
+        // bar wash glows the same as a terminal tab on that host.
+        if self.active_tab.is_none()
+            && self.active_view == View::Sftp
+            && let Some(i) = self.active_sftp
+            && let Some(tab) = self.sftp_tabs.get(i)
+        {
+            if let Some(col) = self
+                .connections
+                .iter()
+                .find(|c| c.label == tab.label)
+                .and_then(|c| c.custom_color.as_deref().or(c.color.as_deref()))
+                .and_then(crate::widgets::parse_hex_color)
+            {
+                return col;
+            }
+            if let Some(os) = self.tab_detected_os(&tab.label) {
+                return crate::os_icon::resolve_icon(Some(&os), OryxisColors::t().accent).1;
+            }
+        }
         OryxisColors::t().accent
     }
 
@@ -457,6 +477,22 @@ impl Oryxis {
         // middle is pass-through.
         let resize_overlay: Option<Element<'_, Message>> =
             if self.window_maximized || immersive { None } else { Some(resize_border()) };
+
+        // SFTP close-guard: the close button lives in the always-visible tab
+        // strip, so this modal must render globally (not just on the SFTP
+        // surface) or a close click from a terminal would set the pending
+        // state with no modal to resolve it.
+        if self.pending_sftp_close.is_some() {
+            return wrap_with_resize(
+                Stack::new()
+                    .push(base)
+                    .push(iced::widget::opaque(crate::views::sftp::close_guard_modal()))
+                    .width(Length::Fill)
+                    .height(Length::Fill)
+                    .into(),
+                resize_overlay,
+            );
+        }
 
         // Burger menu overlay (top-left dropdown). Renders first so any
         // other modal stacked below still wins, but in practice the
@@ -1517,9 +1553,6 @@ impl Oryxis {
             }
             OverlayContent::GroupPicker(target) => {
                 let b = match target {
-                    crate::state::GroupPickerTarget::EditorParent => {
-                        self.editor_parent_combo_bounds.get()
-                    }
                     crate::state::GroupPickerTarget::DynamicFormParent => {
                         self.dynamic_form_parent_combo_bounds.get()
                     }
@@ -1740,6 +1773,24 @@ impl Oryxis {
                 items = items.push(context_menu_item(iced_fonts::lucide::x(), crate::i18n::t("close_tab"), Message::CloseTab(idx), OryxisColors::t().text_secondary));
                 items = items.push(context_menu_item(iced_fonts::lucide::x(), crate::i18n::t("close_other_tabs"), Message::CloseOtherTabs(idx), OryxisColors::t().text_secondary));
                 items = items.push(context_menu_item(iced_fonts::lucide::x(), crate::i18n::t("close_all_tabs"), Message::CloseAllTabs, OryxisColors::t().error));
+                items.into()
+            }
+            OverlayContent::SftpTabActions(idx) => {
+                let idx = *idx;
+                let is_pinned = self.sftp_tabs.get(idx).map(|t| t.pinned).unwrap_or(false);
+                let (pin_icon, pin_label) = if is_pinned {
+                    (iced_fonts::lucide::pin_off(), crate::i18n::t("unpin_tab"))
+                } else {
+                    (iced_fonts::lucide::pin(), crate::i18n::t("pin_tab"))
+                };
+                let mut items = column![
+                    context_menu_item(iced_fonts::lucide::plus(), crate::i18n::t("new_tab"), Message::NewSftpTab, OryxisColors::t().text_secondary),
+                    context_menu_item(pin_icon, pin_label, Message::ToggleSftpTabPin(idx), OryxisColors::t().text_secondary),
+                    context_menu_item(iced_fonts::lucide::x(), crate::i18n::t("close_tab"), Message::CloseSftpTab(idx), OryxisColors::t().text_secondary),
+                ];
+                if self.sftp_tabs.len() > 1 {
+                    items = items.push(context_menu_item(iced_fonts::lucide::x(), crate::i18n::t("close_other_tabs"), Message::CloseOtherSftpTabs(idx), OryxisColors::t().text_secondary));
+                }
                 items.into()
             }
             OverlayContent::SplitMenu => {
@@ -2695,7 +2746,8 @@ impl Oryxis {
         // vault surfaces. The SFTP entry is gated on `sftp_enabled`,
         // same rule the sidebar applies.
         let sftp_item: Element<'_, Message> = if self.sftp_enabled {
-            item("sftp", Message::ChangeView(View::Sftp), hk_sftp)
+            // SFTP is a tab now: the menu opens a fresh SFTP browser tab.
+            item("sftp", Message::NewSftpTab, hk_sftp)
         } else {
             Space::new().height(0).into()
         };

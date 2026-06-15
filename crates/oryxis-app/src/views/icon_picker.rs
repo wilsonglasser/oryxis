@@ -18,13 +18,25 @@ use crate::theme::OryxisColors;
 use crate::widgets::{dir_align_x, dir_row, styled_button};
 
 impl Oryxis {
+    /// Color shown when the picker has no explicit override (Auto mode).
+    /// For a connection target this is the detected-OS brand color, so the
+    /// preview / swatch / popover match what the tab and dashboard card
+    /// render. Group targets and unknown OS fall back to the global accent.
+    fn icon_picker_auto_color(&self) -> Color {
+        self.icon_picker_for
+            .and_then(|id| self.connections.iter().find(|c| c.id == id))
+            .and_then(|c| c.detected_os.as_deref())
+            .map(|os| os_icon::resolve_icon(Some(os), OryxisColors::t().accent).1)
+            .unwrap_or(OryxisColors::t().accent)
+    }
+
     pub(crate) fn view_icon_picker(&self) -> Element<'_, Message> {
         // ── Preview: current selection in a bigger box at the top ──
         let preview_color = self
             .icon_picker_color
             .as_deref()
             .and_then(parse_hex_color)
-            .unwrap_or(OryxisColors::t().accent);
+            .unwrap_or_else(|| self.icon_picker_auto_color());
         let preview_icon_id = self
             .icon_picker_icon
             .as_deref()
@@ -106,7 +118,7 @@ impl Oryxis {
             .icon_picker_color
             .as_deref()
             .and_then(parse_hex_color)
-            .unwrap_or(OryxisColors::t().accent);
+            .unwrap_or_else(|| self.icon_picker_auto_color());
 
         let hex_input = text_input("#RRGGBB", &self.icon_picker_hex_input)
             .on_input(Message::IconPickerHexInputChanged)
@@ -268,7 +280,7 @@ impl Oryxis {
             .icon_picker_color
             .as_deref()
             .and_then(parse_hex_color)
-            .unwrap_or(OryxisColors::t().accent);
+            .unwrap_or_else(|| self.icon_picker_auto_color());
 
         // Same layout as the custom-theme color popover: HSV picker, a
         // hex field, then the preset palette below it.

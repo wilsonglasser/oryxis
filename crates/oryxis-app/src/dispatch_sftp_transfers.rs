@@ -29,6 +29,11 @@ impl Oryxis {
         // remote pane exists (the early returns below short-circuit).
         let remote_side = self.sftp.remote_side().unwrap_or(SftpPaneSide::Right);
         let local_side = self.sftp.local_side().unwrap_or(SftpPaneSide::Left);
+        // Owning SFTP tab for any continuation message this handler emits. For
+        // a user-initiated transfer this is the focused tab; for a routed
+        // continuation (`route_sftp_async`) it is the originating tab. Captured
+        // by the async result closures so the chain stays pinned to one tab.
+        let owner = self.current_sftp_owner();
         match message {
             Message::SftpUpload(local_path) => {
                 self.sftp.row_menu = None;
@@ -142,9 +147,9 @@ impl Oryxis {
                         // Also kick a Next per other slot so the rest
                         // of the workers resume from pause.
                         let mut tasks =
-                            vec![Task::done(Message::SftpTransferItemDone(slot))];
+                            vec![Task::done(Message::SftpTransferItemDone(owner, slot))];
                         for _ in 1..slot_count {
-                            tasks.push(Task::done(Message::SftpTransferNext));
+                            tasks.push(Task::done(Message::SftpTransferNext(owner)));
                         }
                         return Ok(Task::batch(tasks));
                     }
@@ -166,13 +171,13 @@ impl Oryxis {
                     let mut tasks = vec![Task::perform(
                         apply_overwrite_for_item(client, item, action),
                         move |r| match r {
-                            Ok(()) => Message::SftpTransferItemDone(slot),
-                            Err(e) => Message::SftpTransferError(e, slot),
+                            Ok(()) => Message::SftpTransferItemDone(owner, slot),
+                            Err(e) => Message::SftpTransferError(owner, e, slot),
                         },
                     )];
                     // Resume the other slots that exited on pause.
                     for _ in 1..slot_count {
-                        tasks.push(Task::done(Message::SftpTransferNext));
+                        tasks.push(Task::done(Message::SftpTransferNext(owner)));
                     }
                     return Ok(Task::batch(tasks));
                 }
@@ -462,7 +467,7 @@ impl Oryxis {
                         })
                     },
                     move |result| match result {
-                        Ok(state) => Message::SftpTransferQueueReady(state),
+                        Ok(state) => Message::SftpTransferQueueReady(owner, state),
                         Err(e) => Message::SftpOpResult(remote_side, e, true),
                     },
                 ));
@@ -526,7 +531,7 @@ impl Oryxis {
                         })
                     },
                     move |result| match result {
-                        Ok(state) => Message::SftpTransferQueueReady(state),
+                        Ok(state) => Message::SftpTransferQueueReady(owner, state),
                         Err(e) => Message::SftpOpResult(remote_side, e, true),
                     },
                 ));
@@ -594,7 +599,7 @@ impl Oryxis {
                             busy_slots: vec![false; 1],
                             paused: false,
                         };
-                        return Ok(Task::done(Message::SftpTransferQueueReady(state)));
+                        return Ok(Task::done(Message::SftpTransferQueueReady(owner, state)));
                 } else {
                         let Some(client) = self.sftp.pane(side).client.clone() else {
                             return Ok(Task::none());
@@ -651,7 +656,7 @@ impl Oryxis {
                         ));
                 }
             }
-            Message::SftpTransferQueueReady(state) => {
+            Message::SftpTransferQueueReady(_, state) => {
                 let slot_count = state.busy_slots.len().max(1);
                 // Fresh transfer: reset the per-file panel log + collapse it.
                 self.sftp.transfer_done_log.clear();
@@ -671,11 +676,11 @@ impl Oryxis {
                 // up immediately. Each completion will dispatch its
                 // own Next to keep the chain going.
                 let initial: Vec<Task<Message>> = (0..slot_count)
-                    .map(|_| Task::done(Message::SftpTransferNext))
+                    .map(|_| Task::done(Message::SftpTransferNext(owner)))
                     .collect();
                 return Ok(Task::batch(initial));
             }
-            Message::SftpTransferNext => {
+            Message::SftpTransferNext(_) => {
                 let Some(transfer) = self.sftp.transfer.as_mut() else {
                     return Ok(Task::none());
                 };
@@ -745,12 +750,12 @@ impl Oryxis {
                             do_upload_item(client, item, overwrite_default, multi, Some(bytes_done)),
                             move |r| match r {
                                 Ok(UploadStepOutcome::Done) => {
-                                    Message::SftpTransferItemDone(slot)
+                                    Message::SftpTransferItemDone(owner, slot)
                                 }
                                 Ok(UploadStepOutcome::Conflict { prompt, item }) => {
-                                    Message::SftpTransferConflict(prompt, item, slot)
+                                    Message::SftpTransferConflict(owner, prompt, item, slot)
                                 }
-                                Err(e) => Message::SftpTransferError(e, slot),
+                                Err(e) => Message::SftpTransferError(owner, e, slot),
                             },
                         ));
                     }
@@ -759,8 +764,8 @@ impl Oryxis {
                         return Ok(Task::perform(
                             do_download_item(client, item, Some(bytes_done)),
                             move |r| match r {
-                                Ok(()) => Message::SftpTransferItemDone(slot),
-                                Err(e) => Message::SftpTransferError(e, slot),
+                                Ok(()) => Message::SftpTransferItemDone(owner, slot),
+                                Err(e) => Message::SftpTransferError(owner, e, slot),
                             },
                         ));
                     }
@@ -770,6 +775,7 @@ impl Oryxis {
                         let src_client = transfer.clients[slot as usize].clone();
                         let Some(dst_client) = transfer.dest_client.clone() else {
                             return Ok(Task::done(Message::SftpTransferError(
+                                owner,
                                 "relay: missing destination client".into(),
                                 slot,
                             )));
@@ -777,21 +783,21 @@ impl Oryxis {
                         return Ok(Task::perform(
                             do_relay_item(src_client, dst_client, item, Some(bytes_done)),
                             move |r| match r {
-                                Ok(()) => Message::SftpTransferItemDone(slot),
-                                Err(e) => Message::SftpTransferError(e, slot),
+                                Ok(()) => Message::SftpTransferItemDone(owner, slot),
+                                Err(e) => Message::SftpTransferError(owner, e, slot),
                             },
                         ));
                     }
                     crate::state::TransferKind::DuplicateLocal => {
                         // Sync, no need for an async task.
                         return Ok(match do_local_duplicate_item(&item) {
-                            Ok(()) => Task::done(Message::SftpTransferItemDone(slot)),
-                            Err(e) => Task::done(Message::SftpTransferError(e, slot)),
+                            Ok(()) => Task::done(Message::SftpTransferItemDone(owner, slot)),
+                            Err(e) => Task::done(Message::SftpTransferError(owner, e, slot)),
                         });
                     }
                 }
             }
-            Message::SftpTransferItemDone(slot) => {
+            Message::SftpTransferItemDone(_, slot) => {
                 // Record the finished item's label for the per-file panel.
                 // `current` is the label set when this item was dispatched
                 // (exact at the relay's concurrency of 1; an approximation
@@ -807,7 +813,7 @@ impl Oryxis {
                 if let Some(label) = finished {
                     self.sftp.transfer_done_log.push(label);
                 }
-                return Ok(Task::done(Message::SftpTransferNext));
+                return Ok(Task::done(Message::SftpTransferNext(owner)));
             }
             Message::SftpToggleTransferPanel => {
                 self.sftp.transfer_panel_open = !self.sftp.transfer_panel_open;
@@ -815,7 +821,7 @@ impl Oryxis {
             // No-op: the redraw it triggers is the point (the bar reads the
             // shared byte counter during view()).
             Message::SftpTransferTick => {}
-            Message::SftpTransferConflict(prompt, item, slot) => {
+            Message::SftpTransferConflict(_, prompt, item, slot) => {
                 // Park the popped item alongside the prompt so the
                 // resolve handler knows which destination the user is
                 // about to act on. The queue stays stalled here until
@@ -916,7 +922,7 @@ impl Oryxis {
                         })
                     },
                     move |result| match result {
-                        Ok(state) => Message::SftpTransferQueueReady(state),
+                        Ok(state) => Message::SftpTransferQueueReady(owner, state),
                         Err(e) => Message::SftpOpResult(remote_side, e, true),
                     },
                 ));
@@ -1020,7 +1026,7 @@ impl Oryxis {
                         })
                     },
                     move |result| match result {
-                        Ok(state) => Message::SftpTransferQueueReady(state),
+                        Ok(state) => Message::SftpTransferQueueReady(owner, state),
                         Err(e) => Message::SftpOpResult(remote_side, e, true),
                     },
                 ));
@@ -1050,7 +1056,7 @@ impl Oryxis {
                 self.sftp.selected_rows.clear();
                 return Ok(Task::batch(tasks));
             }
-            Message::SftpTransferError(e, _slot) => {
+            Message::SftpTransferError(_, e, _slot) => {
                 // Errors abort the whole transfer, the in-flight item
                 // failed and we don't try to be clever about retrying
                 // siblings (a network blip is likely to nuke them all).
@@ -1165,7 +1171,7 @@ impl Oryxis {
                         })
                     },
                     move |result| match result {
-                        Ok(state) => Message::SftpTransferQueueReady(state),
+                        Ok(state) => Message::SftpTransferQueueReady(owner, state),
                         Err(e) => Message::SftpOpResult(from, e, true),
                     },
                 ));
@@ -1234,7 +1240,7 @@ impl Oryxis {
                         })
                     },
                     move |result| match result {
-                        Ok(state) => Message::SftpTransferQueueReady(state),
+                        Ok(state) => Message::SftpTransferQueueReady(owner, state),
                         Err(e) => Message::SftpOpResult(from, e, true),
                     },
                 ));

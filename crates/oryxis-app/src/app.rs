@@ -401,9 +401,37 @@ pub struct Oryxis {
     /// (Duplicate in New Window). Populated after a successful
     /// unlock / setup, cleared if the user explicitly re-locks.
     pub(crate) master_password: Option<String>,
-    /// SFTP browser state. Lives at the top level so the user can pick
-    /// a different host without losing their local-pane navigation.
+    /// SFTP browser state of the **active** SFTP tab. A working buffer:
+    /// the focused SFTP tab's live state lives here, the others park their
+    /// state in `SftpTab::state` (swap-on-focus). With no SFTP tab focused
+    /// this still holds the last-focused tab's state until it is parked.
     pub(crate) sftp: crate::state::SftpState,
+    /// Open SFTP browser tabs. Share the unified strip with terminal tabs.
+    /// The active tab's live state is hoisted to `self.sftp`; inactive tabs
+    /// hold their state in `SftpTab::state`. See `sftp_buf_mut`.
+    pub(crate) sftp_tabs: Vec<crate::state::SftpTab>,
+    /// Index into `sftp_tabs` of the focused SFTP tab, or `None` when no
+    /// SFTP tab is focused. Invariant: at most one of `active_tab` /
+    /// `active_sftp` is `Some`.
+    pub(crate) active_sftp: Option<usize>,
+    /// Unified left-to-right order of the tab strip (terminal + SFTP). Both
+    /// vecs (`tabs`, `sftp_tabs`) are id-addressed storage; this list drives
+    /// display order and drag-reorder across the terminal/SFTP boundary.
+    pub(crate) tab_order: Vec<crate::state::TabRef>,
+    /// Set for the duration of an SFTP async-continuation dispatch to the id
+    /// of the owning tab (whose state is temporarily swapped into `self.sftp`).
+    /// Lets handlers stamp re-emitted continuation messages with the right
+    /// owner instead of the focused tab. `None` outside such a dispatch.
+    pub(crate) routing_sftp: Option<Uuid>,
+    /// SFTP tab index the cursor is currently over, mirroring `hovered_tab`
+    /// for the SFTP side. Drives drag-arming (left-press over a hovered SFTP
+    /// tab starts a reorder) and the unified live-slide. `None` when not over
+    /// an SFTP tab.
+    pub(crate) hovered_sftp_tab: Option<usize>,
+    /// SFTP tab index pending a close confirmation: set when the user tries to
+    /// close a tab that has an in-flight transfer or an unsaved edit-session.
+    /// Drives the close-guard modal; `None` when no confirmation is pending.
+    pub(crate) pending_sftp_close: Option<usize>,
     pub(crate) mouse_position: Point,
     pub(crate) window_size: iced::Size,
     /// Whether the OS window currently has focus. Driven by the
@@ -622,6 +650,25 @@ pub struct Oryxis {
     /// Decoupled from the pick_list-based approach so typing a brand
     /// new folder name doesn't require a pre-existing entry.
     pub(crate) cloud_discover_default_group_name: String,
+    /// Native combo_box state for the host editor's Parent Group field.
+    /// Holds the (visible) group labels + the filtered subset and the
+    /// live typed value. Rebuilt on editor-open via
+    /// `rebuild_editor_combos`; the typed/selected value still
+    /// flows through `editor_form.group_name` (the save path's single
+    /// source of truth), so free-text "create on save" is unchanged.
+    pub(crate) editor_parent_combo: iced::widget::combo_box::State<String>,
+    /// Native combo_box state for the host editor's Initial Command /
+    /// Snippet field. A forced-selection searchable combo: options are
+    /// the None / Custom sentinels plus the snippet labels; the picked
+    /// label commits through `EditorStartupChoiceChanged` (no free-text
+    /// path). Rebuilt on editor-open via `rebuild_editor_combos`.
+    pub(crate) editor_startup_combo: iced::widget::combo_box::State<String>,
+    /// Native combo_box state for the host editor's SSH Key field. Same
+    /// forced-selection searchable pattern as the startup combo: options
+    /// are the `(none)` sentinel plus the key labels; picking commits
+    /// through `EditorKeyChanged`. Rebuilt on editor-open and cleared on
+    /// focus (`EditorKeyComboOpened`) so search starts fresh.
+    pub(crate) editor_key_combo: iced::widget::combo_box::State<String>,
     /// Whether the floating group picker overlay (inside the import
     /// confirmation modal) is open. Chevron toggles it; picking an
     /// entry or clicking the scrim closes it.
@@ -634,13 +681,6 @@ pub struct Oryxis {
     /// Shared search input for the group picker (used by both side
     /// panels' Parent Group fields). Reset on every open.
     pub(crate) group_picker_search: String,
-    /// Bounds of the host editor's Parent Group combo row.
-    pub(crate) editor_parent_combo_bounds: crate::widgets::BoundsCell,
-    /// Vertical scroll offset of the host editor's form scrollable. The
-    /// combo bounds above are cached in content space (scroll is a
-    /// renderer translation, not a layout shift), so the group-picker
-    /// anchor subtracts this to land under the chevron when scrolled.
-    pub(crate) editor_form_scroll_y: f32,
     /// Host editor's startup-command source (None / a snippet / custom).
     pub(crate) editor_startup_choice: crate::state::StartupChoice,
     /// Bounds of the dynamic group editor's Parent Group combo row.

@@ -126,6 +126,32 @@ pub enum Message {
     /// Pick "Local" for the left pane (only offered there).
     SftpPickLocal,
     SftpClosePicker,
+    /// Focus the SFTP tab at this `sftp_tabs` index (swap its state into the
+    /// active buffer and switch the surface to it).
+    SelectSftpTab(usize),
+    /// Close the SFTP tab at this index. Guards against an in-flight transfer
+    /// / unsaved edit-session via a confirmation modal.
+    CloseSftpTab(usize),
+    /// Open a fresh, empty SFTP tab (host picker) and focus it.
+    NewSftpTab,
+    /// Proceed with closing the SFTP tab pending confirmation (after the
+    /// in-flight-transfer / unsaved-edit warning).
+    ConfirmCloseSftpTab,
+    /// Dismiss the SFTP close-guard modal without closing.
+    CancelCloseSftpTab,
+    /// Toggle the pinned state of the SFTP tab at this index.
+    ToggleSftpTabPin(usize),
+    /// Open the right-click context menu for the SFTP tab at this index.
+    ShowSftpTabMenu(usize),
+    /// Close every SFTP tab except the one at this index.
+    CloseOtherSftpTabs(usize),
+    /// Mount connection `usize` into a specific pane side (regardless of the
+    /// picker target). Used to re-mount a restored pinned SFTP tab's pane(s).
+    SftpRemountPane(crate::state::SftpPaneSide, usize),
+    /// Cursor entered the SFTP tab at this index (hover + live-slide target).
+    SftpTabHovered(usize),
+    /// Cursor left the SFTP tab strip.
+    SftpTabUnhovered,
     SftpPickerSearch(String),
     SftpToggleHidden(crate::state::SftpPaneSide),
     SftpFilter(crate::state::SftpPaneSide, String),
@@ -221,16 +247,22 @@ pub enum Message {
     SftpUploadSelection,
     SftpDownloadSelection,
     SftpDuplicateSelection,
-    SftpTransferConflict(crate::state::OverwritePrompt, crate::state::TransferItem, u8),
-    SftpTransferQueueReady(crate::state::TransferState),
+    // The leading `Uuid` on the transfer-queue continuation messages is the
+    // owning SFTP tab. These arrive after async work, by which point the user
+    // may have focused another SFTP tab; the dispatcher swaps the owning tab's
+    // state into `self.sftp` for the duration so the handler routes to the
+    // right tab. See `Message::sftp_async_owner` + `route_sftp_async`.
+    SftpTransferConflict(Uuid, crate::state::OverwritePrompt, crate::state::TransferItem, u8),
+    SftpTransferQueueReady(Uuid, crate::state::TransferState),
     /// Pop one item and dispatch to whichever slot is free. The Next
     /// handler picks the slot itself instead of carrying it in the
     /// message, that way pause/resume can spawn fresh chains without
-    /// having to remember which slot was on which client.
-    SftpTransferNext,
+    /// having to remember which slot was on which client. The `Uuid` is the
+    /// owning SFTP tab.
+    SftpTransferNext(Uuid),
     /// Slot freed up after a queue item completed successfully.
-    SftpTransferItemDone(u8),
-    SftpTransferError(String, u8),
+    SftpTransferItemDone(Uuid, u8),
+    SftpTransferError(Uuid, String, u8),
     SftpCancelTransfer,
     /// Operation result for a remote pane. `SftpPaneSide` names the pane
     /// whose error banner should show the message on failure.
@@ -637,12 +669,15 @@ pub enum Message {
     ToggleCardAccentGlass,
     /// Flip showing of the `user@host:port` address on host cards.
     ToggleShowHostAddress,
-    /// Host editor form scrolled; carries the viewport so the group
-    /// picker popover anchors under the chevron when scrolled.
-    EditorFormScrolled(iced::widget::scrollable::Viewport),
     /// Host editor startup-command source changed (the picker label:
     /// the None sentinel, the Custom sentinel, or a snippet label).
     EditorStartupChoiceChanged(String),
+    /// The Initial Command / Snippet combo gained focus; clears its
+    /// typed value so the dropdown opens on the full list.
+    EditorStartupComboOpened,
+    /// The SSH Key combo gained focus; clears its typed value so the
+    /// dropdown opens on the full list.
+    EditorKeyComboOpened,
     SettingToggleCloseToTray,
     SettingToggleMinimizeToTray,
     SettingToggleTabAccentLine,
@@ -849,8 +884,8 @@ pub enum Message {
     CloudDiscoverDefaultGroupPick(String),
     /// Open / close the shared group picker for a side-panel parent
     /// group input. Anchors the popover at the matching combo's
-    /// measured bounds (`editor_parent_combo_bounds` or
-    /// `dynamic_form_parent_combo_bounds`).
+    /// measured bounds (`dynamic_form_parent_combo_bounds` or
+    /// `session_group_folder_combo_bounds`).
     ToggleGroupPicker(crate::state::GroupPickerTarget),
     /// Live filter for the shared group-picker popover.
     GroupPickerSearchChanged(String),
@@ -1228,4 +1263,21 @@ pub enum Message {
     ShareToggleKeys,
     ShareConfirm,
     ShareDismiss,
+}
+
+impl Message {
+    /// For an SFTP async-continuation message that targets a specific tab,
+    /// returns that tab's id. The dispatcher uses this to swap the owning
+    /// tab's state into `self.sftp` for the duration so the handler routes
+    /// to the right tab even after the user focused a different SFTP tab.
+    pub(crate) fn sftp_async_owner(&self) -> Option<Uuid> {
+        match self {
+            Message::SftpTransferQueueReady(id, _)
+            | Message::SftpTransferNext(id)
+            | Message::SftpTransferItemDone(id, _)
+            | Message::SftpTransferError(id, _, _)
+            | Message::SftpTransferConflict(id, _, _, _) => Some(*id),
+            _ => None,
+        }
+    }
 }

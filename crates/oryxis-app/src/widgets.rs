@@ -262,6 +262,25 @@ pub fn rounded_input_style(_theme: &Theme, status: text_input::Status) -> text_i
     }
 }
 
+/// Shared menu style for `combo_box` dropdowns. Matches the app's
+/// surface + border palette so the native overlay reads like the rest
+/// of the popovers. Apply via `.menu_style(combo_menu_style)`.
+pub fn combo_menu_style(_theme: &Theme) -> iced::widget::overlay::menu::Style {
+    let c = OryxisColors::t();
+    iced::widget::overlay::menu::Style {
+        background: Background::Color(c.bg_surface),
+        border: Border {
+            radius: Radius::from(8.0),
+            color: c.border,
+            width: 1.0,
+        },
+        text_color: c.text_primary,
+        selected_text_color: c.text_primary,
+        selected_background: Background::Color(c.bg_hover),
+        shadow: iced::Shadow::default(),
+    }
+}
+
 /// Shared style closure for `text_editor` (multi-line). Mirrors
 /// `rounded_input_style` so single-line and multi-line fields look identical:
 /// same surface, border, radius, and accent-on-focus.
@@ -563,6 +582,39 @@ pub(crate) fn host_view_toggle_button(list_view: bool) -> Element<'static, Messa
         }
     })
     .into()
+}
+
+/// Floating `⋮` kebab action button shown on hover over cards (and the
+/// SFTP pane toolbar). Fixed 22×22 with the glyph centered, so the hover
+/// highlight is a square with a soft radius instead of the wider-than-tall
+/// rectangle a horizontally padded glyph produces. 22 matches the reserved
+/// slot widths (`SNIP_DOTS_SLOT_W`, `DG_DOTS_SLOT_W`) so the kebab never
+/// shifts layout when it replaces an idle placeholder. `show_hover` gates
+/// the highlight: pass `false` while the glyph is transparent (card not
+/// hovered) so the square doesn't flash as the pointer crosses the slot.
+pub(crate) fn card_kebab_button<'a>(
+    glyph_color: Color,
+    show_hover: bool,
+    on_press: Message,
+) -> button::Button<'a, Message> {
+    button(
+        container(text("\u{22EE}").size(14).color(glyph_color))
+            .center_x(Length::Fixed(22.0))
+            .center_y(Length::Fixed(22.0)),
+    )
+    .on_press(on_press)
+    .padding(0)
+    .style(move |_, status| {
+        let bg = match status {
+            BtnStatus::Hovered if show_hover => OryxisColors::t().bg_hover,
+            _ => Color::TRANSPARENT,
+        };
+        button::Style {
+            background: Some(Background::Color(bg)),
+            border: Border { radius: Radius::from(6.0), ..Default::default() },
+            ..Default::default()
+        }
+    })
 }
 
 /// One row of the toolbar Sort dropdown (Hosts / Keychain / Snippets).

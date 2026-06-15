@@ -165,10 +165,24 @@ impl Oryxis {
                 // `active`) clears with no persist.
                 if let Some(drag) = self.tab_drag.take()
                     && drag.active
-                    && let Some(from) = self.tabs.iter().position(|t| t._id == drag.from_id)
-                    && self.tabs[from].pinned
                 {
-                    self.persist_pinned_tabs();
+                    // Persist when the dragged tab (terminal or SFTP) is pinned,
+                    // so the rearranged pinned order survives a relaunch.
+                    let pinned = self
+                        .tabs
+                        .iter()
+                        .find(|t| t._id == drag.from_id)
+                        .map(|t| t.pinned)
+                        .or_else(|| {
+                            self.sftp_tabs
+                                .iter()
+                                .find(|t| t.id == drag.from_id)
+                                .map(|t| t.pinned)
+                        })
+                        .unwrap_or(false);
+                    if pinned {
+                        self.persist_pinned_tabs();
+                    }
                 }
             }
             Message::SendChat => {

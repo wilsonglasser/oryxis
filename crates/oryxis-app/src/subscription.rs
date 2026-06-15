@@ -103,8 +103,12 @@ impl Oryxis {
             );
         }
         // 2s mtime poll on the edit-in-place temp file, only ticks
-        // while a session is actually active, otherwise idle.
-        if self.sftp.edit_session.is_some() {
+        // while a session is actually active, otherwise idle. Scans every
+        // SFTP tab (active buffer + parked) so a backgrounded edit-session
+        // keeps watching for external saves.
+        if self.sftp.edit_session.is_some()
+            || self.sftp_tabs.iter().any(|t| t.state.edit_session.is_some())
+        {
             subs.push(
                 iced::time::every(std::time::Duration::from_secs(2))
                     .map(|_| Message::SftpEditWatchTick),
@@ -112,8 +116,11 @@ impl Oryxis {
         }
         // Live transfer bar: poll the shared byte counter a few times a
         // second while a transfer runs, so the progress bar advances
-        // smoothly. Idle otherwise.
-        if self.sftp.transfer.is_some() {
+        // smoothly. Idle otherwise. Scans every SFTP tab so a backgrounded
+        // transfer keeps the bar live when refocused.
+        if self.sftp.transfer.is_some()
+            || self.sftp_tabs.iter().any(|t| t.state.transfer.is_some())
+        {
             subs.push(
                 iced::time::every(std::time::Duration::from_millis(120))
                     .map(|_| Message::SftpTransferTick),

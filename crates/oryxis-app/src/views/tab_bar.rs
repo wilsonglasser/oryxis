@@ -38,7 +38,10 @@ const TAB_CHAR_WIDTH: f32 = 7.0;
 
 /// Spacing between tabs, extracted into a constant so the width math
 /// can subtract it without drifting from the actual `row.spacing()`.
-const TAB_SPACING: f32 = 6.0;
+// Tabs separate by their own internal padding; the strip adds only a hairline
+// gap so adjacent hover/active fills don't visually merge. (padding + 6px gap +
+// padding read as too much space, especially between compact pinned chips.)
+const TAB_SPACING: f32 = 1.0;
 
 /// Total height of the tab bar. Sized to comfortably fit a session tab
 /// (whose inner row already includes the OS-icon badge at 18 px plus
@@ -95,19 +98,69 @@ impl Oryxis {
             - 12.0)
             .max(120.0);
 
-        // Per-tab width allocation. The active tab always wants its natural
-        // width so its label stays readable; the inactives split whatever's
-        // left. With many tabs they shrink uniformly down to TAB_MIN_WIDTH.
-        let (active_width, inactive_width) =
-            allocate_tab_widths(n_tabs, approx_strip_width);
-
-        // Scroll-mode trigger: tabs at their natural width plus
-        // inter-tab spacing wouldn't fit in the strip. Same shape as
-        // `container - (tabs_total + margin*(n-1)) < 0`.
+        // Per-tab width allocation. Inactive tabs hug their own label
+        // (clamped to [MIN, NATURAL]); the active tab claims the full
+        // NATURAL width so focusing it visibly "fattens" the chip
+        // (JetBrains-style). When the combined widths overflow the strip
+        // the inactive tabs shrink proportionally toward MIN (the
+        // scrollable is the final safety net). Compact pinned chips are
+        // fixed at CHIP_W and don't participate in the flexible sizing.
+        let close_on_right = self.setting_tab_close_button_side == "right";
+        let compact_pins = self.setting_pinned_tab_style == "compact";
+        let mut session_widths = vec![TAB_MIN_WIDTH; n_tabs];
+        let mut max_inactive_content = TAB_MIN_WIDTH;
+        for (i, tab) in self.tabs.iter().enumerate() {
+            if tab.pinned && compact_pins {
+                session_widths[i] = CHIP_W;
+            } else if active_idx == Some(i) {
+                session_widths[i] = TAB_NATURAL_WIDTH;
+            } else {
+                let cw = tab_content_width(
+                    tab.display_label(),
+                    close_on_right,
+                    tab.pane_count() > 1,
+                );
+                session_widths[i] = cw;
+                max_inactive_content = max_inactive_content.max(cw);
+            }
+        }
         let n_f = n_tabs as f32;
-        let natural_total =
-            n_f * TAB_NATURAL_WIDTH + (n_f - 1.0).max(0.0) * TAB_SPACING;
-        let scroll_mode = natural_total > approx_strip_width;
+        let total_spacing = TAB_SPACING * (n_f - 1.0).max(0.0);
+        let desired_total: f32 = session_widths.iter().sum::<f32>() + total_spacing;
+        // Scroll-mode trigger (brings in the `⋯` jump button): the tabs
+        // at their desired widths plus spacing wouldn't fit the strip.
+        // Computed from the same per-tab widths the strip actually
+        // renders, so the button doesn't pop in while everything still
+        // fits.
+        let scroll_mode = desired_total > approx_strip_width;
+        // Overflow shrink: pull the inactive tabs proportionally toward
+        // MIN so the strip stays packed before the scrollable has to
+        // scroll. The active tab keeps its NATURAL width; compact pins
+        // keep CHIP_W.
+        if desired_total > approx_strip_width {
+            let overflow = desired_total - approx_strip_width;
+            let shrinkable: f32 = (0..n_tabs)
+                .filter(|&i| {
+                    !(self.tabs[i].pinned && compact_pins) && active_idx != Some(i)
+                })
+                .map(|i| (session_widths[i] - TAB_MIN_WIDTH).max(0.0))
+                .sum();
+            if shrinkable > 0.0 {
+                let ratio = ((shrinkable - overflow) / shrinkable).clamp(0.0, 1.0);
+                for i in 0..n_tabs {
+                    if (self.tabs[i].pinned && compact_pins) || active_idx == Some(i) {
+                        continue;
+                    }
+                    session_widths[i] =
+                        TAB_MIN_WIDTH + (session_widths[i] - TAB_MIN_WIDTH) * ratio;
+                }
+            }
+        }
+        // Uniform width used while a tab is mid-drag, so the strip
+        // geometry stays stable as the dragged slot slides (the
+        // active/inactive width difference otherwise bounces the seam).
+        // Sized to the widest inactive content so no label clips.
+        let drag_uniform_w = max_inactive_content.clamp(TAB_MIN_WIDTH, TAB_NATURAL_WIDTH);
         // True overflow: even at TAB_MIN_WIDTH (compact pins at CHIP_W)
         // the tabs don't fit, so the scrollable actually scrolls. This
         // is the trigger that docks the "+" at the strip edge; the
@@ -115,8 +168,7 @@ impl Oryxis {
         // natural) only brings in the `⋯` jump button. Without the
         // distinction the "+" jumped to the right cluster as soon as
         // three tabs compressed, long before anything scrolled.
-        let compact_pin_style = self.setting_pinned_tab_style == "compact";
-        let pin_n = if compact_pin_style {
+        let pin_n = if compact_pins {
             self.tabs.iter().filter(|t| t.pinned).count()
         } else {
             0
@@ -160,29 +212,96 @@ impl Oryxis {
                 View::Dashboard,
                 nav_active && in_vault_area,
             ));
-            if self.sftp_enabled {
-                tab_items.push(area_tab(
-                    crate::i18n::t("sftp"),
-                    iced_fonts::lucide::folder_tree(),
-                    View::Sftp,
-                    nav_active && self.active_view == View::Sftp,
-                ));
-            }
         }
 
-        // Pinned tabs render first. This is a visual reorder only: the
-        // underlying `self.tabs` Vec and every tab's index are unchanged, so
-        // SelectTab / CloseTab and the routing stay valid.
-        let compact_pins = self.setting_pinned_tab_style == "compact";
+        // Terminal and SFTP tabs share one strip, pinned-first across BOTH
+        // kinds (so an unpinned SFTP tab never jumps ahead of a pinned
+        // terminal). `false` = terminal index into `self.tabs`, `true` = SFTP
+        // index into `self.sftp_tabs`. Within a pin partition, terminals come
+        // before SFTP tabs (cross-type drag-interleave is a later refinement).
+        let sftp_surface = self.active_tab.is_none() && self.active_view == View::Sftp;
         // While a drag is active every tab renders at the inactive width so
         // the strip geometry is uniform. The active-vs-inactive width
         // difference otherwise shifts positions on each live-slide swap and
         // bounces the dragged tab back and forth over a seam.
         let dragging_any = self.tab_drag.map(|d| d.active).unwrap_or(false);
-        let mut tab_order: Vec<usize> =
-            (0..self.tabs.len()).filter(|&i| self.tabs[i].pinned).collect();
-        tab_order.extend((0..self.tabs.len()).filter(|&i| !self.tabs[i].pinned));
-        for idx in tab_order {
+        // Display order follows `tab_order` (the authoritative, drag-reorderable
+        // unified order), partitioned pinned-first across both kinds. Each
+        // `TabRef` maps to its current storage index. SFTP refs are skipped
+        // when the SFTP feature is off.
+        let pinned_of = |r: &crate::state::TabRef| -> bool {
+            match r {
+                crate::state::TabRef::Terminal(id) => {
+                    self.tabs.iter().find(|t| t._id == *id).map(|t| t.pinned).unwrap_or(false)
+                }
+                crate::state::TabRef::Sftp(id) => {
+                    self.sftp_tabs.iter().find(|t| t.id == *id).map(|t| t.pinned).unwrap_or(false)
+                }
+            }
+        };
+        let to_entry = |r: &crate::state::TabRef| -> Option<(bool, usize)> {
+            match r {
+                crate::state::TabRef::Terminal(id) => {
+                    self.tabs.iter().position(|t| t._id == *id).map(|i| (false, i))
+                }
+                crate::state::TabRef::Sftp(id) => {
+                    if !self.sftp_enabled {
+                        return None;
+                    }
+                    self.sftp_tabs.iter().position(|t| t.id == *id).map(|i| (true, i))
+                }
+            }
+        };
+        let mut strip_order: Vec<(bool, usize)> = Vec::new();
+        strip_order.extend(self.tab_order.iter().filter(|r| pinned_of(r)).filter_map(to_entry));
+        strip_order.extend(self.tab_order.iter().filter(|r| !pinned_of(r)).filter_map(to_entry));
+        for (is_sftp, idx) in strip_order {
+            if is_sftp {
+                let tab = &self.sftp_tabs[idx];
+                let is_active = sftp_surface && self.active_sftp == Some(idx);
+                // The mounted host (matched by the tab label = host name) drives
+                // the badge icon + color, same as the terminal tabs.
+                let detected_os = self.tab_detected_os(&tab.label);
+                // Active-tab accent: the host's custom color if set, else the
+                // OS brand color (so an Ubuntu tab "breathes" orange), else the
+                // global accent for an empty (no-host) tab.
+                let host_accent = self
+                    .connections
+                    .iter()
+                    .find(|c| c.label == tab.label)
+                    .and_then(|c| c.custom_color.as_deref().or(c.color.as_deref()))
+                    .and_then(crate::widgets::parse_hex_color)
+                    .or_else(|| {
+                        detected_os.as_deref().map(|os| {
+                            crate::os_icon::resolve_icon(Some(os), OryxisColors::t().accent).1
+                        })
+                    });
+                // Width mirrors the terminal model: NATURAL when active,
+                // content-hugged otherwise, uniform during a drag.
+                let width = if dragging_any {
+                    drag_uniform_w
+                } else if is_active {
+                    TAB_NATURAL_WIDTH
+                } else {
+                    tab_content_width(&tab.label, close_on_right, false)
+                };
+                // The dragged tab floats as a ghost (below); leave a same-width
+                // gap here that the other tabs slide around, like terminal tabs.
+                let is_dragging = self
+                    .tab_drag
+                    .filter(|d| d.active)
+                    .map(|d| d.from_id == tab.id)
+                    .unwrap_or(false);
+                if is_dragging {
+                    let gap_w = if compact_pins && tab.pinned { CHIP_W } else { width };
+                    tab_items.push(Space::new().width(gap_w).height(TAB_HEIGHT).into());
+                } else if compact_pins && tab.pinned {
+                    tab_items.push(sftp_pinned_chip(idx, is_active, host_accent));
+                } else {
+                    tab_items.push(sftp_session_tab(idx, &tab.label, is_active, width, host_accent, tab.pinned));
+                }
+                continue;
+            }
             let tab = &self.tabs[idx];
             let is_active = active_idx == Some(idx);
             let is_hovered = self.hovered_tab == Some(idx);
@@ -198,12 +317,13 @@ impl Oryxis {
             let display_label = tab.display_label();
             let base_label = display_label.trim_end_matches(" (disconnected)");
             let detected_os = self.tab_detected_os(base_label);
-            // During a drag every tab is uniform (inactive width); otherwise
-            // the active tab claims its wider width as usual.
-            let width = if is_active && !dragging_any {
-                active_width
+            // During a drag every tab is uniform (drag width); otherwise
+            // each tab uses its own allocated width (active = NATURAL,
+            // inactive = content-hugged, possibly shrunk under overflow).
+            let width = if dragging_any {
+                drag_uniform_w
             } else {
-                inactive_width
+                session_widths[idx]
             };
             // Per-host accent override: when this tab points at a
             // saved connection that has a custom `color`, tint the
@@ -218,6 +338,15 @@ impl Oryxis {
                 // future code path that fills it still works.
                 .and_then(|c| c.custom_color.as_deref().or(c.color.as_deref()))
                 .and_then(crate::widgets::parse_hex_color)
+                // Auto mode (no custom color): fall back to the detected
+                // OS brand color so an Ubuntu tab "breathes" orange,
+                // matching the OS badge glyph and the dashboard card.
+                // Mirrors the SFTP tab above.
+                .or_else(|| {
+                    detected_os.as_deref().map(|os| {
+                        crate::os_icon::resolve_icon(Some(os), OryxisColors::t().accent).1
+                    })
+                })
                 // Cloud-transport tabs (`ECS · ...`, `SSM · ...`,
                 // `K8s · ...`) don't match any saved Connection by
                 // label, so the per-host color lookup above returns
@@ -355,7 +484,10 @@ impl Oryxis {
         let tab_strip: Element<'_, Message> = MouseArea::new(
             container(tab_strip_inner)
                 .width(Length::Fill)
-                .padding(Padding { top: 4.0, right: 0.0, bottom: 4.0, left: 6.0 }),
+                // No left padding: the burger already carries its own right
+                // padding, so an extra strip margin just read as a gap before
+                // the first tab.
+                .padding(Padding { top: 4.0, right: 0.0, bottom: 4.0, left: 0.0 }),
         )
         .on_press(Message::WindowDrag)
         // Native title-bar convention: double-click the drag area to
@@ -481,37 +613,56 @@ impl Oryxis {
         // top-left, so window-space cursor x maps directly to bar-local x. The
         // ghost is a plain (non-interactive) container, so the tab MouseAreas
         // underneath still receive the hover events that drive the live-slide.
-        if dragging_any
+        let drag_ghost_el: Option<(Element<'_, Message>, f32)> = if dragging_any
             && let Some(drag) = self.tab_drag
-            && let Some(tab) = self.tabs.iter().find(|t| t._id == drag.from_id)
         {
-            let base_label = tab
-                .display_label()
-                .trim_end_matches(" (disconnected)")
-                .to_string();
-            let detected_os = self.tab_detected_os(&base_label);
-            let compact = tab.pinned && compact_pins;
-            let session_group = tab
-                .session_group_id
-                .and_then(|id| self.session_groups.iter().find(|g| g.id == id));
-            let sg_color = session_group
-                .and_then(|g| g.color.as_deref())
-                .and_then(crate::widgets::parse_hex_color);
-            let sg_icon = session_group
-                .and_then(|g| g.icon_style.as_deref())
-                .filter(|s| !s.is_empty())
-                .map(|s| s.to_string());
-            let accent = sg_color.unwrap_or_else(|| OryxisColors::t().accent);
-            let ghost_w = if compact { CHIP_W } else { inactive_width };
-            let ghost = drag_ghost(
-                base_label,
-                detected_os,
-                compact,
-                ghost_w,
-                accent,
-                sg_icon,
-                sg_color,
-            );
+            if let Some(tab) = self.tabs.iter().find(|t| t._id == drag.from_id) {
+                let base_label = tab
+                    .display_label()
+                    .trim_end_matches(" (disconnected)")
+                    .to_string();
+                let detected_os = self.tab_detected_os(&base_label);
+                let compact = tab.pinned && compact_pins;
+                let session_group = tab
+                    .session_group_id
+                    .and_then(|id| self.session_groups.iter().find(|g| g.id == id));
+                let sg_color = session_group
+                    .and_then(|g| g.color.as_deref())
+                    .and_then(crate::widgets::parse_hex_color);
+                let sg_icon = session_group
+                    .and_then(|g| g.icon_style.as_deref())
+                    .filter(|s| !s.is_empty())
+                    .map(|s| s.to_string());
+                let accent = sg_color.unwrap_or_else(|| OryxisColors::t().accent);
+                let ghost_w = if compact { CHIP_W } else { drag_uniform_w };
+                Some((
+                    drag_ghost(base_label, detected_os, compact, ghost_w, accent, sg_icon, sg_color),
+                    ghost_w,
+                ))
+            } else if let Some(sftp_tab) = self.sftp_tabs.iter().find(|t| t.id == drag.from_id) {
+                let detected_os = self.tab_detected_os(&sftp_tab.label);
+                let accent = self
+                    .connections
+                    .iter()
+                    .find(|c| c.label == sftp_tab.label)
+                    .and_then(|c| c.custom_color.as_deref().or(c.color.as_deref()))
+                    .and_then(crate::widgets::parse_hex_color)
+                    .or_else(|| {
+                        detected_os.as_deref().map(|os| {
+                            crate::os_icon::resolve_icon(Some(os), OryxisColors::t().accent).1
+                        })
+                    })
+                    .unwrap_or_else(|| OryxisColors::t().accent);
+                let compact = sftp_tab.pinned && compact_pins;
+                let ghost_w = if compact { CHIP_W } else { drag_uniform_w };
+                Some((sftp_drag_ghost(sftp_tab.label.clone(), compact, ghost_w, accent), ghost_w))
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+        if let Some((ghost, ghost_w)) = drag_ghost_el {
             let gx = (self.mouse_position.x - ghost_w / 2.0).max(0.0);
             let positioned: Element<'_, Message> = iced::widget::Column::new()
                 .push(Space::new().height(7.0))
@@ -622,6 +773,29 @@ fn allocate_tab_widths(n: usize, available: f32) -> (f32, f32) {
     // generously), level them up so everything reads at the same width.
     let active = active_target.max(inactive);
     (active, inactive)
+}
+
+/// Width an inactive tab needs to show its full label without
+/// truncation, clamped to `[TAB_MIN_WIDTH, TAB_NATURAL_WIDTH]`. The
+/// reserved portion mirrors `truncate_label`'s (icon slot + gaps +
+/// button padding) plus a couple px of slack so a content-sized tab
+/// never ellipsizes its own label, with the trailing close slot and
+/// the split-count chip added when those variants are present.
+fn tab_content_width(label: &str, close_on_right: bool, has_count_chip: bool) -> f32 {
+    let base = label.trim_end_matches(" (disconnected)");
+    let chars = base.chars().count() as f32;
+    // 29 = TAB_ICON_SLOT + 5 (gap) + 4 + 4 (truncate_label's reserve);
+    // +6 slack so the last glyph isn't flush against the edge.
+    let mut reserved = TAB_ICON_SLOT + 5.0 + 4.0 + 4.0 + 6.0;
+    if close_on_right {
+        // Trailing close slot reserves its own width (see session_tab).
+        reserved += TAB_ICON_SLOT + 4.0;
+    }
+    if has_count_chip {
+        // Split pane-count pill (COUNT_DISC) + its leading gap.
+        reserved += 15.0 + 4.0;
+    }
+    (reserved + chars * TAB_CHAR_WIDTH).clamp(TAB_MIN_WIDTH, TAB_NATURAL_WIDTH)
 }
 
 /// Truncate a label to fit visually within `width` px at the tab font
@@ -756,6 +930,177 @@ fn area_tab<'a>(
         .into()
     };
     btn
+}
+
+/// A SFTP browser tab chip in the strip, styled to match the terminal session
+/// tabs: a rounded folder badge (tinted with the mounted host's accent) + the
+/// label, with the close X *inside* the tab fill as a trailing slot (shown on
+/// active / hover). Active claims `width`; inactive shrinks. Right-click opens
+/// the tab context menu; pinned tabs get an accent outline.
+#[allow(clippy::too_many_arguments)]
+fn sftp_session_tab<'a>(
+    idx: usize,
+    label: &'a str,
+    is_active: bool,
+    width: f32,
+    host_accent: Option<Color>,
+    pinned: bool,
+) -> Element<'a, Message> {
+    let effective_accent = host_accent.unwrap_or_else(|| OryxisColors::t().accent);
+    let fg = if is_active {
+        effective_accent
+    } else {
+        OryxisColors::t().text_muted
+    };
+    let bg: Background = if is_active {
+        let top = Color { a: 0.28, ..effective_accent };
+        let bot = Color { a: 0.04, ..effective_accent };
+        Background::Gradient(iced::Gradient::Linear(
+            iced::gradient::Linear::new(iced::Radians(std::f32::consts::PI))
+                .add_stop(0.0, top)
+                .add_stop(1.0, bot),
+        ))
+    } else {
+        Background::Color(Color::TRANSPARENT)
+    };
+    // Badge: always the folder glyph (so an SFTP tab stays recognizable as
+    // SFTP, not mistaken for a terminal), tinted with the mounted host's color
+    // (custom or OS-brand) so it still "inherits" the host's hue.
+    let badge = container(iced_fonts::lucide::folder_tree().size(12).color(Color::WHITE))
+        .center_x(Length::Fixed(TAB_ICON_SLOT))
+        .center_y(Length::Fixed(TAB_ICON_SLOT))
+        .style(move |_| container::Style {
+            background: Some(Background::Color(effective_accent)),
+            border: Border { radius: Radius::from(4.0), ..Default::default() },
+            ..Default::default()
+        });
+    // Always render the X inside the tab fill (no separate hover state).
+    let show_close = true;
+    let label_width = (width - TAB_ICON_SLOT - TAB_ICON_SLOT - 12.0).max(0.0);
+    let label_text = text(truncate_label(label, label_width))
+        .size(12)
+        .line_height(1.0)
+        .wrapping(iced::widget::text::Wrapping::None)
+        .font(SYSTEM_UI_SEMIBOLD)
+        .color(fg)
+        .width(Length::Fill);
+    // Close X as a MouseArea (so it nests inside the select button), inside the
+    // tab fill. Reserves its slot even when hidden so the label doesn't jump.
+    let trailing: Element<'_, Message> = if show_close {
+        MouseArea::new(
+            container(
+                iced_fonts::lucide::x().size(11).color(if is_active {
+                    effective_accent
+                } else {
+                    OryxisColors::t().text_secondary
+                }),
+            )
+            .center_x(Length::Fixed(TAB_ICON_SLOT))
+            .center_y(Length::Fixed(TAB_ICON_SLOT))
+            .style(move |_| container::Style {
+                background: Some(Background::Color(if is_active {
+                    Color::TRANSPARENT
+                } else {
+                    OryxisColors::t().bg_hover
+                })),
+                border: Border { radius: Radius::from(4.0), ..Default::default() },
+                ..Default::default()
+            }),
+        )
+        .on_press(Message::CloseSftpTab(idx))
+        .into()
+    } else {
+        Space::new().width(TAB_ICON_SLOT).height(TAB_ICON_SLOT).into()
+    };
+    let inner_row = crate::widgets::dir_row(vec![
+        badge.into(),
+        Space::new().width(5).into(),
+        label_text.into(),
+        Space::new().width(4).into(),
+        trailing,
+    ])
+    .align_y(iced::Alignment::Center);
+    let tab_btn = button(
+        container(inner_row)
+            .center_y(Length::Fixed(TAB_HEIGHT))
+            .padding(Padding { top: 0.0, right: 4.0, bottom: 0.0, left: 6.0 }),
+    )
+    .width(Length::Fixed(width))
+    .on_press(Message::SelectSftpTab(idx))
+    .style(move |_, status| {
+        let hover_bg: Background = match status {
+            BtnStatus::Hovered if !is_active => {
+                Background::Color(Color::from_rgba(1.0, 1.0, 1.0, 0.06))
+            }
+            _ => bg,
+        };
+        let border = if pinned {
+            Border { radius: Radius::from(6.0), color: effective_accent, width: 1.5 }
+        } else {
+            Border { radius: Radius::from(6.0), ..Default::default() }
+        };
+        button::Style { background: Some(hover_bg), border, ..Default::default() }
+    });
+    MouseArea::new(tab_btn)
+        .on_enter(Message::SftpTabHovered(idx))
+        .on_exit(Message::SftpTabUnhovered)
+        .on_right_press(Message::ShowSftpTabMenu(idx))
+        .into()
+}
+
+/// Compact (Chrome-style) pinned SFTP tab: icon-only folder chip at a fixed
+/// width. Select on click, right-click opens the context menu. Mirrors
+/// `pinned_tab_chip` for the SFTP side.
+fn sftp_pinned_chip<'a>(idx: usize, is_active: bool, host_accent: Option<Color>) -> Element<'a, Message> {
+    let accent = host_accent.unwrap_or_else(|| OryxisColors::t().accent);
+    // Folder glyph (SFTP identity) tinted with the host color.
+    let badge = container(iced_fonts::lucide::folder_tree().size(12).color(Color::WHITE))
+        .center_x(Length::Fixed(TAB_ICON_SLOT))
+        .center_y(Length::Fixed(TAB_ICON_SLOT))
+        .style(move |_| container::Style {
+            background: Some(Background::Color(accent)),
+            border: Border { radius: Radius::from(4.0), ..Default::default() },
+            ..Default::default()
+        });
+    let bg: Background = if is_active {
+        let top = Color { a: 0.28, ..accent };
+        let bot = Color { a: 0.04, ..accent };
+        Background::Gradient(iced::Gradient::Linear(
+            iced::gradient::Linear::new(iced::Radians(std::f32::consts::PI))
+                .add_stop(0.0, top)
+                .add_stop(1.0, bot),
+        ))
+    } else {
+        Background::Color(Color::TRANSPARENT)
+    };
+    // Match `pinned_tab_chip` exactly: same CHIP_W box, default button padding
+    // (so the height lines up with the Home icon), the active "lit from above"
+    // gradient as the only selected cue, and NO accent outline (the icon-only
+    // shape is itself the pin affordance).
+    let tab_btn = button(
+        container(badge)
+            .center_x(Length::Fixed(CHIP_W))
+            .center_y(Length::Fixed(TAB_HEIGHT)),
+    )
+    .width(Length::Fixed(CHIP_W))
+    .on_press(Message::SelectSftpTab(idx))
+    .style(move |_, status| {
+        let hover_bg: Background = match status {
+            _ if is_active => bg,
+            BtnStatus::Hovered => Background::Color(Color::from_rgba(1.0, 1.0, 1.0, 0.06)),
+            _ => Background::Color(Color::TRANSPARENT),
+        };
+        button::Style {
+            background: Some(hover_bg),
+            border: Border { radius: Radius::from(6.0), ..Default::default() },
+            ..Default::default()
+        }
+    });
+    MouseArea::new(tab_btn)
+        .on_enter(Message::SftpTabHovered(idx))
+        .on_exit(Message::SftpTabUnhovered)
+        .on_right_press(Message::ShowSftpTabMenu(idx))
+        .into()
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1135,6 +1480,54 @@ fn drag_ghost<'a>(
                 .center_x(Length::Fixed(TAB_ICON_SLOT))
                 .center_y(Length::Fixed(TAB_ICON_SLOT))
                 .into(),
+            Space::new().width(5).into(),
+            text(truncate_label(&label, width))
+                .size(12)
+                .line_height(1.0)
+                .wrapping(iced::widget::text::Wrapping::None)
+                .font(SYSTEM_UI_SEMIBOLD)
+                .color(accent)
+                .into(),
+        ])
+        .align_y(iced::Alignment::Center)
+        .into()
+    };
+    container(content)
+        .center_y(Length::Fixed(TAB_HEIGHT))
+        .padding(Padding { top: 0.0, right: 6.0, bottom: 0.0, left: 4.0 })
+        .width(Length::Fixed(width))
+        .style(move |_| container::Style {
+            background: Some(Background::Color(Color { a: 0.96, ..OryxisColors::t().bg_hover })),
+            border: Border { radius: Radius::from(6.0), color: accent, width: 1.5 },
+            shadow: iced::Shadow {
+                color: Color::from_rgba(0.0, 0.0, 0.0, 0.35),
+                offset: iced::Vector::new(0.0, 2.0),
+                blur_radius: 6.0,
+            },
+            ..Default::default()
+        })
+        .into()
+}
+
+/// Floating drag ghost for an SFTP tab: the folder badge (tinted with the host
+/// color) plus the label, mirroring `drag_ghost` but keeping the SFTP identity.
+fn sftp_drag_ghost<'a>(label: String, compact: bool, width: f32, accent: Color) -> Element<'a, Message> {
+    let badge = container(iced_fonts::lucide::folder_tree().size(12).color(Color::WHITE))
+        .center_x(Length::Fixed(TAB_ICON_SLOT))
+        .center_y(Length::Fixed(TAB_ICON_SLOT))
+        .style(move |_| container::Style {
+            background: Some(Background::Color(accent)),
+            border: Border { radius: Radius::from(4.0), ..Default::default() },
+            ..Default::default()
+        });
+    let content: Element<'a, Message> = if compact {
+        container(badge)
+            .center_x(Length::Fixed(CHIP_W))
+            .center_y(Length::Fixed(TAB_HEIGHT))
+            .into()
+    } else {
+        crate::widgets::dir_row(vec![
+            badge.into(),
             Space::new().width(5).into(),
             text(truncate_label(&label, width))
                 .size(12)

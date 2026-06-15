@@ -87,6 +87,14 @@ pub struct Connection {
     /// to drop into a specific working directory. `None` skips the step.
     #[serde(default)]
     pub initial_command: Option<String>,
+    /// When set, the startup command is resolved live from this snippet's
+    /// body at connect time (so editing the snippet updates every host
+    /// that references it). Takes precedence over `initial_command`; a
+    /// dangling id (snippet deleted) resolves to no command, never an
+    /// error. `None` means the startup command is the literal
+    /// `initial_command` (custom) or nothing.
+    #[serde(default)]
+    pub startup_snippet_id: Option<Uuid>,
     /// Per-host SSH keepalive override (seconds). `None` inherits the
     /// global `keepalive_interval` setting. `Some(0)` explicitly disables
     /// keepalive on this host even when the global default is non-zero.
@@ -153,6 +161,7 @@ impl Connection {
             terminal_theme: None,
             cloud_ref: None,
             initial_command: None,
+            startup_snippet_id: None,
             keepalive_interval: None,
             icon_style: None,
             customized_fields: Vec::new(),

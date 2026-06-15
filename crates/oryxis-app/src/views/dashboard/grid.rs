@@ -163,6 +163,48 @@ impl Oryxis {
         set
     }
 
+    /// Group ids whose subtree holds at least one visible host or
+    /// dynamic child, the same predicate the dashboard uses to decide
+    /// which folder cards to draw (`group_has_visible_content` +
+    /// `hidden_cloud_profile_ids`). Empty groups and cloud folders whose
+    /// plugin is uninstalled fall out, so a parent-group picker built
+    /// from this set stays in sync with what the user actually sees on
+    /// the dashboard (no phantom rows). Dynamic `cloud_query` groups are
+    /// excluded outright: they're auto-managed, never valid parents.
+    pub(crate) fn visible_group_ids(&self) -> std::collections::HashSet<Uuid> {
+        let hidden_profiles = self.hidden_cloud_profile_ids();
+        let mut has_visible_conn: std::collections::HashSet<Uuid> =
+            std::collections::HashSet::new();
+        for c in &self.connections {
+            if let Some(gid) = c.group_id
+                && !c
+                    .cloud_ref
+                    .as_ref()
+                    .is_some_and(|r| hidden_profiles.contains(&r.profile_id))
+            {
+                has_visible_conn.insert(gid);
+            }
+        }
+        let mut memo: std::collections::HashMap<Uuid, bool> =
+            std::collections::HashMap::new();
+        let mut set: std::collections::HashSet<Uuid> = std::collections::HashSet::new();
+        for g in &self.groups {
+            if g.cloud_query.is_some() {
+                continue;
+            }
+            if group_has_visible_content(
+                g.id,
+                &self.groups,
+                &has_visible_conn,
+                &hidden_profiles,
+                &mut memo,
+            ) {
+                set.insert(g.id);
+            }
+        }
+        set
+    }
+
     /// One session-group card: primary click opens the saved arrangement;
     /// hovering reveals floating edit / delete icons (the per-card action
     /// convention). Distinct `boxes` glyph + the group's own color set it
@@ -256,20 +298,11 @@ impl Oryxis {
         } else {
             Color::TRANSPARENT
         };
-        let dots_btn = button(text("\u{22EE}").size(14).color(dots_glyph_color))
-            .on_press(Message::ShowSessionGroupMenu(idx))
-            .padding(Padding { top: 1.0, right: 6.0, bottom: 1.0, left: 6.0 })
-            .style(move |_, status| {
-                let bg = match status {
-                    BtnStatus::Hovered if show_dots => OryxisColors::t().bg_hover,
-                    _ => Color::TRANSPARENT,
-                };
-                button::Style {
-                    background: Some(Background::Color(bg)),
-                    border: Border { radius: Radius::from(6.0), ..Default::default() },
-                    ..Default::default()
-                }
-            });
+        let dots_btn = crate::widgets::card_kebab_button(
+            dots_glyph_color,
+            show_dots,
+            Message::ShowSessionGroupMenu(idx),
+        );
         let dots_align = if rtl {
             iced::alignment::Horizontal::Left
         } else {
@@ -1232,22 +1265,11 @@ impl Oryxis {
                             // ⋮ on hover, chevron otherwise. Both sit in the
                             // same right-aligned overlay slot as the host kebab.
                             let folder_trailing: Element<'_, Message> = if folder_show_dots {
-                                button(
-                                    text("\u{22EE}").size(14).color(OryxisColors::t().text_muted),
+                                crate::widgets::card_kebab_button(
+                                    OryxisColors::t().text_muted,
+                                    true,
+                                    Message::ShowFolderActions(gid),
                                 )
-                                .on_press(Message::ShowFolderActions(gid))
-                                .padding(Padding { top: 1.0, right: 6.0, bottom: 1.0, left: 6.0 })
-                                .style(|_, status| {
-                                    let bg = match status {
-                                        BtnStatus::Hovered => OryxisColors::t().bg_hover,
-                                        _ => Color::TRANSPARENT,
-                                    };
-                                    button::Style {
-                                        background: Some(Background::Color(bg)),
-                                        border: Border { radius: Radius::from(6.0), ..Default::default() },
-                                        ..Default::default()
-                                    }
-                                })
                                 .into()
                             } else {
                                 let chevron = if folder_rtl {
@@ -1255,15 +1277,16 @@ impl Oryxis {
                                 } else {
                                     iced_fonts::lucide::chevron_right()
                                 };
-                                // Match the ⋮ button's internal horizontal
-                                // padding so the idle chevron and the hover ⋮
-                                // share the exact same x.
+                                // Center the idle chevron in the same 22×22 box
+                                // the hover ⋮ uses, so idle and hover share a
+                                // center (no x/y jitter on hover).
                                 container(
                                     chevron
                                         .size(14)
                                         .color(OryxisColors::t().text_muted),
                                 )
-                                .padding(Padding { top: 0.0, right: 6.0, bottom: 0.0, left: 6.0 })
+                                .center_x(Length::Fixed(22.0))
+                                .center_y(Length::Fixed(22.0))
                                 .into()
                             };
                             let folder_dots_align = if folder_rtl {
@@ -1398,21 +1421,12 @@ impl Oryxis {
                 const DG_DOTS_SLOT_W: f32 = 22.0;
                 let show_dots = self.hovered_dynamic_group_card == Some(gid);
                 let dyn_actions_btn: Element<'_, Message> = if show_dots {
-                    button(text("\u{22EE}").size(14).color(OryxisColors::t().text_muted))
-                        .on_press(Message::ShowDynamicGroupCardMenu(gid))
-                        .padding(Padding { top: 1.0, right: 6.0, bottom: 1.0, left: 6.0 })
-                        .style(|_, status| {
-                            let bg = match status {
-                                BtnStatus::Hovered => OryxisColors::t().bg_hover,
-                                _ => Color::TRANSPARENT,
-                            };
-                            button::Style {
-                                background: Some(Background::Color(bg)),
-                                border: Border { radius: Radius::from(6.0), ..Default::default() },
-                                ..Default::default()
-                            }
-                        })
-                        .into()
+                    crate::widgets::card_kebab_button(
+                        OryxisColors::t().text_muted,
+                        true,
+                        Message::ShowDynamicGroupCardMenu(gid),
+                    )
+                    .into()
                 } else {
                     // Same trailing chevron affordance as manual folder
                     // cards (group cards read as "openable" at a glance).
@@ -1423,6 +1437,7 @@ impl Oryxis {
                     };
                     container(chevron.size(14).color(OryxisColors::t().text_muted))
                         .center_x(Length::Fixed(DG_DOTS_SLOT_W))
+                        .center_y(Length::Fixed(DG_DOTS_SLOT_W))
                         .into()
                 };
 
@@ -1569,21 +1584,12 @@ impl Oryxis {
                 const DG_DOTS_SLOT_W: f32 = 22.0;
                 let show_dots = self.hovered_dynamic_group_card == Some(gid);
                 let dyn_actions_btn: Element<'_, Message> = if show_dots {
-                    button(text("\u{22EE}").size(14).color(OryxisColors::t().text_muted))
-                        .on_press(Message::ShowDynamicGroupCardMenu(gid))
-                        .padding(Padding { top: 1.0, right: 6.0, bottom: 1.0, left: 6.0 })
-                        .style(|_, status| {
-                            let bg = match status {
-                                BtnStatus::Hovered => OryxisColors::t().bg_hover,
-                                _ => Color::TRANSPARENT,
-                            };
-                            button::Style {
-                                background: Some(Background::Color(bg)),
-                                border: Border { radius: Radius::from(6.0), ..Default::default() },
-                                ..Default::default()
-                            }
-                        })
-                        .into()
+                    crate::widgets::card_kebab_button(
+                        OryxisColors::t().text_muted,
+                        true,
+                        Message::ShowDynamicGroupCardMenu(gid),
+                    )
+                    .into()
                 } else {
                     // Same trailing chevron affordance as manual folder
                     // cards (group cards read as "openable" at a glance).
@@ -1594,6 +1600,7 @@ impl Oryxis {
                     };
                     container(chevron.size(14).color(OryxisColors::t().text_muted))
                         .center_x(Length::Fixed(DG_DOTS_SLOT_W))
+                        .center_y(Length::Fixed(DG_DOTS_SLOT_W))
                         .into()
                 };
 
@@ -1892,22 +1899,11 @@ impl Oryxis {
             } else {
                 Color::TRANSPARENT
             };
-            let dots_btn = button(
-                text("\u{22EE}").size(14).color(dots_glyph_color),
-            )
-            .on_press(Message::ShowCardMenu(idx))
-            .padding(Padding { top: 1.0, right: 6.0, bottom: 1.0, left: 6.0 })
-            .style(move |_, status| {
-                let bg = match status {
-                    BtnStatus::Hovered if show_dots => OryxisColors::t().bg_hover,
-                    _ => Color::TRANSPARENT,
-                };
-                button::Style {
-                    background: Some(Background::Color(bg)),
-                    border: Border { radius: Radius::from(6.0), ..Default::default() },
-                    ..Default::default()
-                }
-            });
+            let dots_btn = crate::widgets::card_kebab_button(
+                dots_glyph_color,
+                show_dots,
+                Message::ShowCardMenu(idx),
+            );
             let dots_align = if rtl {
                 iced::alignment::Horizontal::Left
             } else {

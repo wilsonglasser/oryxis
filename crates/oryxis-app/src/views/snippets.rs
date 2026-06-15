@@ -147,25 +147,16 @@ impl Oryxis {
             let show_dots = self.hovered_snippet_card == Some(idx)
                 || self.snippet_context_menu == Some(idx);
             let edit_btn: Element<'_, Message> = if show_dots {
-                button(text("\u{22EE}").size(14).color(OryxisColors::t().text_muted))
-                    .on_press(Message::ShowSnippetMenu(idx))
-                    .padding(Padding { top: 1.0, right: 6.0, bottom: 1.0, left: 6.0 })
-                    .style(|_, status| {
-                        let bg = match status {
-                            BtnStatus::Hovered => OryxisColors::t().bg_hover,
-                            _ => Color::TRANSPARENT,
-                        };
-                        button::Style {
-                            background: Some(Background::Color(bg)),
-                            border: Border { radius: Radius::from(6.0), ..Default::default() },
-                            ..Default::default()
-                        }
-                    })
-                    .into()
+                crate::widgets::card_kebab_button(
+                    OryxisColors::t().text_muted,
+                    true,
+                    Message::ShowSnippetMenu(idx),
+                )
+                .into()
             } else {
                 Space::new()
                     .width(Length::Fixed(SNIP_DOTS_SLOT_W))
-                    .height(Length::Fixed(20.0))
+                    .height(Length::Fixed(22.0))
                     .into()
             };
 

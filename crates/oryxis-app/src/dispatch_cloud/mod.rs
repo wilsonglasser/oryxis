@@ -182,6 +182,10 @@ impl Oryxis {
                         self.tabs.remove(dpos);
                         let at = dpos.min(self.tabs.len());
                         self.tabs.insert(at, live);
+                        // Keep the reopened tab at the dormant's spot in the
+                        // unified strip order (else reconcile appends the new id
+                        // at the end).
+                        self.replace_tab_order_id(dormant_id, self.tabs[at]._id);
                         at
                     } else {
                         // Dormant gone (e.g. closed mid-connect): leave the

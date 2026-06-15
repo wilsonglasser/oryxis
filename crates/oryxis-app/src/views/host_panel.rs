@@ -97,104 +97,63 @@ impl Oryxis {
                 .into()
         };
 
-        let address_section = panel_section(column![
-            dir_row(vec![
-                icon_element,
-                Space::new().width(10).into(),
-                text_input(t("ip_or_hostname"), &self.editor_form.hostname)
-                    .id(iced::widget::Id::new("editor-hostname"))
-                    .on_input(Message::EditorHostnameChanged)
-                    .on_submit(Message::EditorSave)
-                    .padding(10)
-                    .style(crate::widgets::rounded_input_style).align_x(dir_align_x()).into(),
-            ]).align_y(iced::Alignment::Center),
-        ]);
+        // Hostname row (Connection).
+        let hostname_row: Element<'_, Message> = dir_row(vec![
+            icon_element,
+            Space::new().width(10).into(),
+            text_input(t("ip_or_hostname"), &self.editor_form.hostname)
+                .id(iced::widget::Id::new("editor-hostname"))
+                .on_input(Message::EditorHostnameChanged)
+                .on_submit(Message::EditorSave)
+                .padding(10)
+                .style(crate::widgets::rounded_input_style).align_x(dir_align_x()).into(),
+        ]).align_y(iced::Alignment::Center).into();
 
         // ── Section: General ──
-        // Parent Group field now mirrors the Discover modal's
-        // combo: text input + chevron that opens a floating
-        // group-picker popover with its own search. Typing a brand
-        // new name still creates the group on Save (existing
-        // EditorGroupChanged → SaveConnection path is unchanged).
-        const PARENT_COMBO_HEIGHT: f32 = 36.0;
-        let parent_input = text_input(
+        // Parent Group is a native iced combo_box: a single field that
+        // filters the existing (visible) groups as you type and lets you
+        // pick one, while still accepting a brand new name. The typed /
+        // picked value flows through `EditorGroupChanged` into
+        // `editor_form.group_name`, so the save path (find-or-create by
+        // label) is unchanged. The `selection` prop drives the unfocused
+        // display (the combo clears its internal value after a pick).
+        let parent_selection = (!self.editor_form.group_name.is_empty())
+            .then_some(&self.editor_form.group_name);
+        let parent_combo: Element<'_, Message> = iced::widget::combo_box(
+            &self.editor_parent_combo,
             t("group_placeholder"),
-            &self.editor_form.group_name,
+            parent_selection,
+            Message::EditorGroupChanged,
         )
         .on_input(Message::EditorGroupChanged)
-        .on_submit(Message::EditorSave)
         .padding(10)
+        .input_style(crate::widgets::rounded_input_style)
+        .menu_style(crate::widgets::combo_menu_style)
         .width(Length::Fill)
-        .style(crate::widgets::rounded_input_style)
-        .align_x(dir_align_x());
-        let parent_chevron = button(
-            container(
-                iced_fonts::lucide::chevron_down::<iced::Theme, iced::Renderer>()
-                    .size(12)
-                    .color(OryxisColors::t().text_muted),
-            )
-            .center_x(Length::Fixed(32.0))
-            .center_y(Length::Fixed(PARENT_COMBO_HEIGHT)),
-        )
-        .on_press(Message::ToggleGroupPicker(
-            crate::state::GroupPickerTarget::EditorParent,
-        ))
-        .padding(0)
-        .style(|_, status| {
-            let bg = match status {
-                BtnStatus::Hovered => OryxisColors::t().bg_hover,
-                _ => OryxisColors::t().bg_surface,
-            };
-            button::Style {
-                background: Some(Background::Color(bg)),
-                border: Border {
-                    radius: Radius::from(6.0),
-                    color: OryxisColors::t().border,
-                    width: 1.0,
-                },
-                ..Default::default()
-            }
-        });
-        let parent_combo: Element<'_, Message> = crate::widgets::bounds_reporter(
-            dir_row(vec![
-                container(parent_input)
-                    .width(Length::Fill)
-                    .height(Length::Fixed(PARENT_COMBO_HEIGHT))
-                    .into(),
-                Space::new().width(6).into(),
-                container(parent_chevron)
-                    .height(Length::Fixed(PARENT_COMBO_HEIGHT))
-                    .into(),
-            ])
-            .align_y(iced::Alignment::Center),
-            self.editor_parent_combo_bounds.clone(),
-        );
-        let general_section = panel_section(column![
-            panel_field(t("label"), text_input(t("my_server_placeholder"), &self.editor_form.label)
-                .on_input(Message::EditorLabelChanged).on_submit(Message::EditorSave).padding(10).style(crate::widgets::rounded_input_style).align_x(dir_align_x()).into()),
-            Space::new().height(8),
-            panel_field(t("parent_group"), parent_combo),
-        ]);
+        .into();
 
-        // ── Section: SSH & Credentials ──
-        let port_text = t("ssh_on_port").to_string();
-        let mut ssh_items = column![
-            // SSH on [port] port
-            dir_row(vec![
-                text(port_text).size(13).color(OryxisColors::t().text_secondary).into(),
-                Space::new().width(8).into(),
-                text_input("22", &self.editor_form.port)
-                    .on_input(Message::EditorPortChanged)
-                    .on_submit(Message::EditorSave)
-                    .padding(6)
-                    .width(60)
-                    .style(crate::widgets::rounded_input_style).align_x(dir_align_x()).into(),
-            ]).align_y(iced::Alignment::Center),
-        ]
-        .push(Space::new().height(12))
-        .push(text(t("credentials")).size(12).color(OryxisColors::t().text_muted))
-        .push(Space::new().height(8))
-        .push(
+        // ── Connection / Credentials / SSH fields ──
+        // The host editor is being reorganised into a universal region
+        // (General, Connection, Credentials, Terminal) and an SSH-only
+        // region (Authentication, Network, Integration) so a future
+        // protocol switch can hide the SSH block wholesale. Each widget
+        // is extracted into a local here, then composed into sections in
+        // the assembly at the bottom; nothing about the form state, save
+        // path, or messages changes.
+
+        // Port input, dropped inline into the SSH card header
+        // ("SSH ........ [22] port").
+        let port_input: Element<'_, Message> = text_input("22", &self.editor_form.port)
+            .on_input(Message::EditorPortChanged)
+            .on_submit(Message::EditorSave)
+            .padding(6)
+            .width(56)
+            .style(crate::widgets::rounded_input_style).align_x(dir_align_x()).into();
+
+        // Credentials column: username, then identity suggestions, then
+        // either the "managed by identity" banner is hoisted to the SSH
+        // Authentication group, or the password row is appended below.
+        let mut cred_items = column![
             dir_row(vec![
                 iced_fonts::lucide::user().size(13).color(OryxisColors::t().text_muted).into(),
                 Space::new().width(10).into(),
@@ -204,7 +163,7 @@ impl Oryxis {
                     .padding(10)
                     .style(crate::widgets::rounded_input_style).align_x(dir_align_x()).into(),
             ]).align_y(iced::Alignment::Center)
-        );
+        ];
 
         // Identity suggestion dropdown (only when username field is focused)
         if self.editor_form.username_focused && self.editor_form.selected_identity.is_none() && !self.identities.is_empty() {
@@ -231,7 +190,7 @@ impl Oryxis {
                         } else { String::new() },
                     );
                     let ident_label = identity.label.clone();
-                    ssh_items = ssh_items.push(
+                    cred_items = cred_items.push(
                         button(
                             container(
                                 dir_row(vec![
@@ -264,15 +223,17 @@ impl Oryxis {
                             }
                         }),
                     );
-                    ssh_items = ssh_items.push(Space::new().height(2));
+                    cred_items = cred_items.push(Space::new().height(2));
                 }
             }
         }
 
-        // If identity selected, show banner instead of password/key fields
-        if let Some(ref ident_label) = self.editor_form.selected_identity {
-            ssh_items = ssh_items.push(Space::new().height(8));
-            ssh_items = ssh_items.push(
+        // Identity selected -> the "managed by identity" banner replaces
+        // both the password (Credentials) and the key (SSH Authentication).
+        // We compute the banner / key / password as separate optionals so
+        // each lands in its own section below.
+        let ssh_identity_banner: Option<Element<'_, Message>> =
+            self.editor_form.selected_identity.as_ref().map(|ident_label| {
                 container(
                     dir_row(vec![
                         iced_fonts::lucide::user().size(14).color(OryxisColors::t().accent).into(),
@@ -294,34 +255,16 @@ impl Oryxis {
                     background: Some(Background::Color(Color { a: 0.15, ..OryxisColors::t().accent })),
                     border: Border { radius: Radius::from(8.0), color: OryxisColors::t().accent, width: 1.0 },
                     ..Default::default()
-                }),
-            );
-        } else {
-            // Show password + key fields normally
-            ssh_items = ssh_items.push(Space::new().height(8));
-            let pw_placeholder: &'static str = if self.editor_form.has_existing_password
-                && !self.editor_form.password_touched
-            {
-                "••••••••"
-            } else {
-                t("password")
-            };
-            ssh_items = ssh_items.push(
-                dir_row(vec![
-                    iced_fonts::lucide::keyboard().size(13).color(OryxisColors::t().text_muted).into(),
-                    Space::new().width(10).into(),
-                    password_input_with_eye(
-                        pw_placeholder,
-                        &self.editor_form.password,
-                        Message::EditorPasswordChanged,
-                        Some(Message::EditorSave),
-                        self.editor_form.password_visible,
-                        Message::EditorTogglePasswordVisibility,
-                        10.0,
-                    ),
-                ]).align_y(iced::Alignment::Center)
-            );
-            ssh_items = ssh_items.push(Space::new().height(8));
+                })
+                .into()
+            });
+
+        // Key row (SSH > Authentication): only when Auth Method is `Key`
+        // (the chosen-method's field) and no identity is set (an identity
+        // provides its own key). Layout is [key icon] [combo] [+ Key].
+        let ssh_key_row: Option<Element<'_, Message>> = if self.editor_form.selected_identity.is_none()
+            && self.editor_form.auth_method == AuthMethod::Key
+        {
             // "+ Key" is clickable, opens the existing key import panel.
             let add_key_btn = button(
                 text(t("add_key_btn")).size(12).color(OryxisColors::t().accent),
@@ -339,41 +282,87 @@ impl Oryxis {
                     ..Default::default()
                 }
             });
-            ssh_items = ssh_items.push(
+            // Forced-selection searchable key combo (same pattern as the
+            // startup combo): options + clear-on-focus built in
+            // `rebuild_editor_combos` / `EditorKeyComboOpened`.
+            let key_selected = self
+                .editor_form
+                .selected_key
+                .clone()
+                .unwrap_or_else(|| "(none)".into());
+            let key_combo: Element<'_, Message> = iced::widget::combo_box(
+                &self.editor_key_combo,
+                &key_selected,
+                Some(&key_selected),
+                Message::EditorKeyChanged,
+            )
+            .on_open(Message::EditorKeyComboOpened)
+            .padding(10)
+            .input_style(crate::widgets::rounded_input_style)
+            .menu_style(crate::widgets::combo_menu_style)
+            .width(Length::Fill)
+            .into();
+            Some(
                 dir_row(vec![
+                    iced_fonts::lucide::key_round()
+                        .size(13)
+                        .color(OryxisColors::t().text_muted)
+                        .into(),
+                    Space::new().width(10).into(),
+                    key_combo,
+                    Space::new().width(8).into(),
                     add_key_btn.into(),
-                    Space::new().width(16).into(),
-                    pick_list(
-                        Some(self.editor_form.selected_key.clone().unwrap_or_else(|| "(none)".into())),
-                        {
-                            let mut opts = vec!["(none)".to_string()];
-                            opts.extend(self.keys.iter().map(|k| k.label.clone()));
-                            opts
-                        },
-                        |s: &String| s.clone(),
-                    )
-                    .on_select(Message::EditorKeyChanged)
-                    .padding(10).style(crate::widgets::rounded_pick_list_style).into(),
+                ]).align_y(iced::Alignment::Center).into(),
+            )
+        } else {
+            None
+        };
+
+        // Credentials body: password row when no identity, else the
+        // "managed by identity" banner (both belong with the login).
+        cred_items = cred_items.push(Space::new().height(8));
+        if let Some(banner) = ssh_identity_banner {
+            cred_items = cred_items.push(banner);
+        } else {
+            let pw_placeholder: &'static str = if self.editor_form.has_existing_password
+                && !self.editor_form.password_touched
+            {
+                "••••••••"
+            } else {
+                t("password")
+            };
+            cred_items = cred_items.push(
+                dir_row(vec![
+                    iced_fonts::lucide::keyboard().size(13).color(OryxisColors::t().text_muted).into(),
+                    Space::new().width(10).into(),
+                    password_input_with_eye(
+                        pw_placeholder,
+                        &self.editor_form.password,
+                        Message::EditorPasswordChanged,
+                        Some(Message::EditorSave),
+                        self.editor_form.password_visible,
+                        Message::EditorTogglePasswordVisibility,
+                        10.0,
+                    ),
                 ]).align_y(iced::Alignment::Center)
             );
         }
 
-        // Cloud-managed transport picker, only rendered when the
+        // Cloud-managed transport picker (Connection), only when the
         // connection being edited carries a `cloud_ref` (i.e. it was
         // imported from a cloud provider). Lets the user flip between
         // SSH (default) and AWS Instance Connect / SSM transports.
-        if let Some(current) = self.editor_form.cloud_transport {
-            use oryxis_core::models::cloud::TransportKind;
-            let options = vec![
-                TransportKind::Ssh,
-                TransportKind::InstanceConnect,
-                TransportKind::Ssm,
-            ];
-            ssh_items = ssh_items
-                .push(Space::new().height(12))
-                .push(text(t("cloud_dynamic_form_transport")).size(12).color(OryxisColors::t().text_muted))
-                .push(Space::new().height(8))
-                .push(
+        let cloud_transport_row: Option<Element<'_, Message>> =
+            self.editor_form.cloud_transport.map(|current| {
+                use oryxis_core::models::cloud::TransportKind;
+                let options = vec![
+                    TransportKind::Ssh,
+                    TransportKind::InstanceConnect,
+                    TransportKind::Ssm,
+                ];
+                column![
+                    text(t("cloud_dynamic_form_transport")).size(12).color(OryxisColors::t().text_muted),
+                    Space::new().height(8),
                     pick_list(Some(current), options, |t| match t {
                         TransportKind::Ssh => "SSH".to_string(),
                         TransportKind::InstanceConnect => "EC2 Instance Connect".to_string(),
@@ -384,55 +373,41 @@ impl Oryxis {
                     .on_select(Message::EditorCloudTransportChanged)
                     .padding(10)
                     .style(crate::widgets::rounded_pick_list_style),
-                );
-        }
+                ].into()
+            });
 
-        // Initial command, sent to the shell right after the
-        // session opens. Useful for hosts that drop into `/bin/sh`
-        // when the user wanted `bash`, or to `cd` somewhere by
-        // default. Lives at the end of the SSH section because it's
-        // a per-shell concern, not auth.
-        // Startup command source: None / a saved snippet / Custom. The
-        // free-text editor only shows for Custom; picking a snippet seeds
-        // the command from its body (see EditorStartupChoiceChanged).
-        let startup_none = t("startup_none").to_string();
-        let startup_custom = t("startup_custom").to_string();
-        let mut startup_options: Vec<String> = vec![startup_none.clone()];
-        for s in &self.snippets {
-            startup_options.push(s.label.clone());
-        }
-        startup_options.push(startup_custom.clone());
-        let startup_selected: String = match &self.editor_startup_choice {
-            crate::state::StartupChoice::None => startup_none.clone(),
-            crate::state::StartupChoice::Custom => startup_custom.clone(),
-            crate::state::StartupChoice::Snippet(id) => self
-                .snippets
-                .iter()
-                .find(|s| s.id == *id)
-                .map(|s| s.label.clone())
-                .unwrap_or_else(|| startup_custom.clone()),
-        };
-        let startup_picker = pick_list(
-            Some(startup_selected),
-            startup_options,
-            |s: &String| s.clone(),
+        // Initial command / snippet (Terminal), sent to the shell right
+        // after the session opens. Universal (keystrokes), so it lives in
+        // the universal Terminal section, not the SSH block.
+        // Forced-selection searchable combo: the None / Custom sentinels
+        // and snippet labels (options built once in
+        // `rebuild_editor_combos`). Picking commits via
+        // EditorStartupChoiceChanged; typing only filters (no on_input,
+        // so there is no free-text path). The current choice's label
+        // seeds the selection (and doubles as the focused placeholder).
+        let startup_selected = self.editor_startup_label();
+        let startup_picker: Element<'_, Message> = iced::widget::combo_box(
+            &self.editor_startup_combo,
+            &startup_selected,
+            Some(&startup_selected),
+            Message::EditorStartupChoiceChanged,
         )
-        .on_select(Message::EditorStartupChoiceChanged)
-        .width(Length::Fill)
+        .on_open(Message::EditorStartupComboOpened)
         .padding(10)
-        .style(crate::widgets::rounded_pick_list_style);
+        .input_style(crate::widgets::rounded_input_style)
+        .menu_style(crate::widgets::combo_menu_style)
+        .width(Length::Fill)
+        .into();
 
-        ssh_items = ssh_items
-            .push(Space::new().height(12))
-            .push(
-                text(t("initial_command_label"))
-                    .size(12)
-                    .color(OryxisColors::t().text_muted),
-            )
-            .push(Space::new().height(8))
-            .push(startup_picker);
+        let mut startup_block = column![
+            text(t("initial_command_label"))
+                .size(12)
+                .color(OryxisColors::t().text_muted),
+            Space::new().height(8),
+            startup_picker,
+        ];
         if matches!(self.editor_startup_choice, crate::state::StartupChoice::Custom) {
-            ssh_items = ssh_items.push(Space::new().height(8)).push(
+            startup_block = startup_block.push(Space::new().height(8)).push(
                 // Multi-line, auto-grows with content; container caps the
                 // height (~8 lines) and then it scrolls internally. Supports
                 // multi-command scripts (one command per line).
@@ -447,8 +422,7 @@ impl Oryxis {
                 .max_height(200.0),
             );
         }
-
-        let ssh_section = panel_section(ssh_items);
+        let startup_block: Element<'_, Message> = startup_block.into();
 
         // ── Section: Advanced Options ──
         // Chain summary for the "Host Chaining" row: the hop labels
@@ -480,164 +454,164 @@ impl Oryxis {
             AuthMethod::Interactive => t("auth_interactive"),
         };
 
-        let advanced_section = panel_section(column![
-            // Single "Host Chaining" entry point. Clicking opens the
-            // chain editor (Termius-style multi-hop). Replaces the old
-            // read-only row + separate single-host "Jump Host" picker,
-            // which both edited the same `jump_chain` and were
-            // redundant.
-            container(
-                button(
-                    dir_row(vec![
-                        iced_fonts::lucide::link().size(14).color(OryxisColors::t().text_muted).into(),
-                        Space::new().width(10).into(),
-                        text(t("host_chaining")).size(13).color(OryxisColors::t().text_secondary).into(),
-                        Space::new().width(Length::Fill).into(),
-                        text(chain_summary)
-                            .size(13)
-                            .color(OryxisColors::t().text_primary)
-                            .into(),
-                        Space::new().width(8).into(),
-                        iced_fonts::lucide::chevron_right().size(12).color(OryxisColors::t().text_muted).into(),
-                    ])
-                    .align_y(iced::Alignment::Center),
-                )
-                .on_press(Message::OpenChainEditor)
-                .padding(Padding { top: 6.0, right: 8.0, bottom: 6.0, left: 0.0 })
-                .style(|_, status| {
-                    let bg = match status {
-                        BtnStatus::Hovered => OryxisColors::t().bg_hover,
-                        _ => Color::TRANSPARENT,
-                    };
-                    button::Style {
-                        background: Some(Background::Color(bg)),
-                        border: Border { radius: Radius::from(6.0), ..Default::default() },
-                        ..Default::default()
-                    }
-                })
-            ),
-            panel_divider(),
-            panel_option_pick(
-                iced_fonts::lucide::shield(),
-                t("auth_method"),
-                vec![
-                    t("auth_auto").to_string(),
-                    t("auth_password").to_string(),
-                    t("auth_key").to_string(),
-                    t("auth_agent").to_string(),
-                    t("auth_interactive").to_string(),
-                ],
-                auth_value.to_string(),
-                Message::EditorAuthMethodChanged,
-            ),
-            panel_divider(),
-            container(
+        // Single "Host Chaining" entry point (SSH > Network). Clicking
+        // opens the chain editor (Termius-style multi-hop). Replaces the
+        // old read-only row + separate single-host "Jump Host" picker.
+        let row_chaining: Element<'_, Message> = container(
+            button(
                 dir_row(vec![
-                    iced_fonts::lucide::plug().size(14).color(OryxisColors::t().text_muted).into(),
+                    iced_fonts::lucide::link().size(14).color(OryxisColors::t().text_muted).into(),
                     Space::new().width(10).into(),
-                    text(t("expose_to_mcp")).size(13).color(OryxisColors::t().text_secondary).into(),
+                    text(t("host_chaining")).size(13).color(OryxisColors::t().text_secondary).into(),
                     Space::new().width(Length::Fill).into(),
-                    {
-                        let on = self.editor_form.mcp_enabled;
-                        let bg = if on { OryxisColors::t().success } else { OryxisColors::t().bg_hover };
-                        let fg = crate::theme::contrast_text_for(bg);
-                        button(text(if on { "ON" } else { "OFF" }).size(12).color(fg))
-                            .on_press(Message::EditorToggleMcpEnabled)
-                            .style(move |_theme, _status| button::Style {
-                                background: Some(Background::Color(bg)),
-                                border: Border { radius: Radius::from(4.0), ..Default::default() },
-                                text_color: fg,
-                                ..Default::default()
-                            })
-                            .into()
-                    },
-                ]).align_y(iced::Alignment::Center)
-            )
-            .padding(Padding { top: 8.0, right: 0.0, bottom: 8.0, left: 0.0 }),
-            panel_divider(),
-            container(
-                dir_row(vec![
-                    iced_fonts::lucide::file_text().size(14).color(OryxisColors::t().text_muted).into(),
-                    Space::new().width(10).into(),
-                    text(t("session_logging")).size(13).color(OryxisColors::t().text_secondary).into(),
-                    Space::new().width(Length::Fill).into(),
-                    {
-                        // Tri-state: Default (inherit global) / On / Off.
-                        let (label_key, bg) = match self.editor_form.session_logging {
-                            None => ("session_log_default", OryxisColors::t().bg_hover),
-                            Some(true) => ("session_log_on", OryxisColors::t().success),
-                            Some(false) => ("session_log_off", OryxisColors::t().error),
-                        };
-                        let fg = crate::theme::contrast_text_for(bg);
-                        button(text(t(label_key)).size(12).color(fg))
-                            .on_press(Message::EditorCycleSessionLogging)
-                            .style(move |_theme, _status| button::Style {
-                                background: Some(Background::Color(bg)),
-                                border: Border { radius: Radius::from(4.0), ..Default::default() },
-                                text_color: fg,
-                                ..Default::default()
-                            })
-                            .into()
-                    },
-                ]).align_y(iced::Alignment::Center)
-            )
-            .padding(Padding { top: 8.0, right: 0.0, bottom: 8.0, left: 0.0 }),
-            panel_divider(),
-            container(
-                dir_row(vec![
-                    iced_fonts::lucide::key_round().size(14).color(OryxisColors::t().text_muted).into(),
-                    Space::new().width(10).into(),
-                    text(t("forward_ssh_agent")).size(13).color(OryxisColors::t().text_secondary).into(),
-                    Space::new().width(Length::Fill).into(),
-                    {
-                        let on = self.editor_form.agent_forwarding;
-                        let bg = if on { OryxisColors::t().success } else { OryxisColors::t().bg_hover };
-                        let fg = crate::theme::contrast_text_for(bg);
-                        button(text(if on { "ON" } else { "OFF" }).size(12).color(fg))
-                            .on_press(Message::EditorToggleAgentForwarding)
-                            .style(move |_theme, _status| button::Style {
-                                background: Some(Background::Color(bg)),
-                                border: Border { radius: Radius::from(4.0), ..Default::default() },
-                                text_color: fg,
-                                ..Default::default()
-                            })
-                            .into()
-                    },
-                ]).align_y(iced::Alignment::Center)
-            )
-            .padding(Padding { top: 8.0, right: 0.0, bottom: 8.0, left: 0.0 }),
-            panel_divider(),
-            // Per-host keepalive override. Empty placeholder reflects the
-            // global default so the user sees what "inherit" means without
-            // opening Settings. "0" in the field disables keepalive on this
-            // host even when the global default is non-zero.
-            container(
-                dir_row(vec![
-                    iced_fonts::lucide::activity().size(14).color(OryxisColors::t().text_muted).into(),
-                    Space::new().width(10).into(),
-                    column![
-                        text(t("host_keepalive")).size(13).color(OryxisColors::t().text_secondary),
-                        Space::new().height(2),
-                        text(t("host_keepalive_desc")).size(11).color(OryxisColors::t().text_muted),
-                    ].width(Length::Fill).into(),
-                    Space::new().width(12).into(),
-                    text_input(
-                        &self.setting_keepalive_interval,
-                        &self.editor_form.keepalive_interval,
-                    )
-                        .on_input(Message::EditorKeepaliveChanged)
-                        .on_submit(Message::EditorSave)
-                        .padding(6)
-                        .width(100)
-                        .style(crate::widgets::rounded_input_style).align_x(dir_align_x())
+                    text(chain_summary)
+                        .size(13)
+                        .color(OryxisColors::t().text_primary)
                         .into(),
-                ]).align_y(iced::Alignment::Center)
+                    Space::new().width(8).into(),
+                    iced_fonts::lucide::chevron_right().size(12).color(OryxisColors::t().text_muted).into(),
+                ])
+                .align_y(iced::Alignment::Center),
             )
-            .padding(Padding { top: 8.0, right: 0.0, bottom: 8.0, left: 0.0 }),
-        ]);
+            .on_press(Message::OpenChainEditor)
+            .padding(Padding { top: 6.0, right: 8.0, bottom: 6.0, left: 0.0 })
+            .style(|_, status| {
+                let bg = match status {
+                    BtnStatus::Hovered => OryxisColors::t().bg_hover,
+                    _ => Color::TRANSPARENT,
+                };
+                button::Style {
+                    background: Some(Background::Color(bg)),
+                    border: Border { radius: Radius::from(6.0), ..Default::default() },
+                    ..Default::default()
+                }
+            })
+        ).into();
 
-        // ── Section: Proxy ──
-        let proxy_section = self.build_proxy_section();
+        // Auth method (SSH > Authentication).
+        let row_auth_method: Element<'_, Message> = panel_option_pick(
+            iced_fonts::lucide::shield(),
+            t("auth_method"),
+            vec![
+                t("auth_auto").to_string(),
+                t("auth_password").to_string(),
+                t("auth_key").to_string(),
+                t("auth_agent").to_string(),
+                t("auth_interactive").to_string(),
+            ],
+            auth_value.to_string(),
+            Message::EditorAuthMethodChanged,
+        );
+
+        // Expose to MCP / AI (SSH > Integration).
+        let row_mcp: Element<'_, Message> = container(
+            dir_row(vec![
+                iced_fonts::lucide::plug().size(14).color(OryxisColors::t().text_muted).into(),
+                Space::new().width(10).into(),
+                text(t("expose_to_mcp")).size(13).color(OryxisColors::t().text_secondary).into(),
+                Space::new().width(Length::Fill).into(),
+                {
+                    let on = self.editor_form.mcp_enabled;
+                    let bg = if on { OryxisColors::t().success } else { OryxisColors::t().bg_hover };
+                    let fg = crate::theme::contrast_text_for(bg);
+                    button(text(if on { "ON" } else { "OFF" }).size(12).color(fg))
+                        .on_press(Message::EditorToggleMcpEnabled)
+                        .style(move |_theme, _status| button::Style {
+                            background: Some(Background::Color(bg)),
+                            border: Border { radius: Radius::from(4.0), ..Default::default() },
+                            text_color: fg,
+                            ..Default::default()
+                        })
+                        .into()
+                },
+            ]).align_y(iced::Alignment::Center)
+        )
+        .padding(Padding { top: 8.0, right: 0.0, bottom: 8.0, left: 0.0 }).into();
+
+        // Session logging (universal -> Terminal). Tri-state: Default
+        // (inherit global) / On / Off.
+        let row_session_logging: Element<'_, Message> = container(
+            dir_row(vec![
+                iced_fonts::lucide::file_text().size(14).color(OryxisColors::t().text_muted).into(),
+                Space::new().width(10).into(),
+                text(t("session_logging")).size(13).color(OryxisColors::t().text_secondary).into(),
+                Space::new().width(Length::Fill).into(),
+                {
+                    let (label_key, bg) = match self.editor_form.session_logging {
+                        None => ("session_log_default", OryxisColors::t().bg_hover),
+                        Some(true) => ("session_log_on", OryxisColors::t().success),
+                        Some(false) => ("session_log_off", OryxisColors::t().error),
+                    };
+                    let fg = crate::theme::contrast_text_for(bg);
+                    button(text(t(label_key)).size(12).color(fg))
+                        .on_press(Message::EditorCycleSessionLogging)
+                        .style(move |_theme, _status| button::Style {
+                            background: Some(Background::Color(bg)),
+                            border: Border { radius: Radius::from(4.0), ..Default::default() },
+                            text_color: fg,
+                            ..Default::default()
+                        })
+                        .into()
+                },
+            ]).align_y(iced::Alignment::Center)
+        )
+        .padding(Padding { top: 8.0, right: 0.0, bottom: 8.0, left: 0.0 }).into();
+
+        // Agent forwarding (SSH > Authentication). `share` (not the key
+        // glyph) so it doesn't read as a duplicate of the Key row above.
+        let row_agent_fwd: Element<'_, Message> = container(
+            dir_row(vec![
+                iced_fonts::lucide::share().size(14).color(OryxisColors::t().text_muted).into(),
+                Space::new().width(10).into(),
+                text(t("forward_ssh_agent")).size(13).color(OryxisColors::t().text_secondary).into(),
+                Space::new().width(Length::Fill).into(),
+                {
+                    let on = self.editor_form.agent_forwarding;
+                    let bg = if on { OryxisColors::t().success } else { OryxisColors::t().bg_hover };
+                    let fg = crate::theme::contrast_text_for(bg);
+                    button(text(if on { "ON" } else { "OFF" }).size(12).color(fg))
+                        .on_press(Message::EditorToggleAgentForwarding)
+                        .style(move |_theme, _status| button::Style {
+                            background: Some(Background::Color(bg)),
+                            border: Border { radius: Radius::from(4.0), ..Default::default() },
+                            text_color: fg,
+                            ..Default::default()
+                        })
+                        .into()
+                },
+            ]).align_y(iced::Alignment::Center)
+        )
+        .padding(Padding { top: 8.0, right: 0.0, bottom: 8.0, left: 0.0 }).into();
+
+        // Per-host keepalive override (SSH > Network). Empty placeholder
+        // reflects the global default so the user sees what "inherit"
+        // means; "0" disables keepalive on this host.
+        let row_keepalive: Element<'_, Message> = container(
+            dir_row(vec![
+                iced_fonts::lucide::activity().size(14).color(OryxisColors::t().text_muted).into(),
+                Space::new().width(10).into(),
+                column![
+                    text(t("host_keepalive")).size(13).color(OryxisColors::t().text_secondary),
+                    Space::new().height(2),
+                    text(t("host_keepalive_desc")).size(11).color(OryxisColors::t().text_muted),
+                ].width(Length::Fill).into(),
+                Space::new().width(12).into(),
+                text_input(
+                    &self.setting_keepalive_interval,
+                    &self.editor_form.keepalive_interval,
+                )
+                    .on_input(Message::EditorKeepaliveChanged)
+                    .on_submit(Message::EditorSave)
+                    .padding(6)
+                    .width(100)
+                    .style(crate::widgets::rounded_input_style).align_x(dir_align_x())
+                    .into(),
+            ]).align_y(iced::Alignment::Center)
+        )
+        .padding(Padding { top: 8.0, right: 0.0, bottom: 8.0, left: 0.0 }).into();
+
+        // Proxy rows (SSH > Network), nested inline (no card wrapper).
+        let proxy_rows = self.build_proxy_rows();
 
         // ── Section: Port Forwarding ──
         let mut pf_items = column![
@@ -698,7 +672,8 @@ impl Oryxis {
             );
         }
 
-        let port_forward_section = panel_section(pf_items);
+        // pf_items (the port-forwarding column) is nested into SSH >
+        // Network in the assembly below.
 
         // ── Section: Environment Variables ──
         let mut env_items = column![
@@ -756,7 +731,8 @@ impl Oryxis {
             );
         }
 
-        let env_var_section = panel_section(env_items);
+        // env_items (the environment-variables column) is nested into
+        // SSH > Integration in the assembly below.
 
         // ── Section: Terminal appearance ──
         // A single "click to open picker" tile that mirrors the
@@ -822,7 +798,7 @@ impl Oryxis {
             },
         )
         .on_select(Message::EditorIconStyleChanged)
-        .width(220)
+        .width(170)
         .padding(10)
         .style(crate::widgets::rounded_pick_list_style);
 
@@ -843,41 +819,34 @@ impl Oryxis {
             .unwrap_or_else(|| "UTF-8".to_string());
         let encoding_picker = pick_list(Some(encoding_selected), encoding_options, |s: &String| s.clone())
             .on_select(Message::EditorEncodingChanged)
-            .width(220)
+            .width(170)
             .padding(10)
             .style(crate::widgets::rounded_pick_list_style);
 
-        let appearance_section = panel_section(column![
+        // Terminal card body: the theme keeps its full-width preview tile
+        // (it's a live swatch, not a plain dropdown); icon and encoding
+        // are compact inline rows (label left, picker right) like Auth
+        // Method, so the section reads tight instead of three stacked
+        // label+description blocks.
+        let appearance_items = column![
             text(crate::i18n::t("terminal_theme"))
                 .size(13)
-                .color(OryxisColors::t().text_primary),
-            Space::new().height(4),
-            text(crate::i18n::t("host_terminal_theme_desc"))
-                .size(11)
-                .color(OryxisColors::t().text_muted),
+                .color(OryxisColors::t().text_secondary),
             Space::new().height(8),
             theme_trigger,
+            Space::new().height(14),
+            dir_row(vec![
+                text(crate::i18n::t("host_icon_style")).size(13).color(OryxisColors::t().text_secondary).into(),
+                Space::new().width(Length::Fill).into(),
+                icon_picker.into(),
+            ]).align_y(iced::Alignment::Center),
             Space::new().height(12),
-            text(crate::i18n::t("host_icon_style"))
-                .size(13)
-                .color(OryxisColors::t().text_primary),
-            Space::new().height(4),
-            text(crate::i18n::t("host_icon_style_desc"))
-                .size(11)
-                .color(OryxisColors::t().text_muted),
-            Space::new().height(8),
-            icon_picker,
-            Space::new().height(12),
-            text(crate::i18n::t("host_encoding"))
-                .size(13)
-                .color(OryxisColors::t().text_primary),
-            Space::new().height(4),
-            text(crate::i18n::t("host_encoding_desc"))
-                .size(11)
-                .color(OryxisColors::t().text_muted),
-            Space::new().height(8),
-            encoding_picker,
-        ]);
+            dir_row(vec![
+                text(crate::i18n::t("host_encoding")).size(13).color(OryxisColors::t().text_secondary).into(),
+                Space::new().width(Length::Fill).into(),
+                encoding_picker.into(),
+            ]).align_y(iced::Alignment::Center),
+        ];
 
         // ── Error ──
         let panel_error: Element<'_, Message> = if let Some(err) = &self.host_panel_error {
@@ -909,31 +878,118 @@ impl Oryxis {
         // forms hide it below the fold and the user clicks Save again
         // wondering why nothing happens.
         let bottom = column![panel_error, save_btn].spacing(8);
+
+        // ── Compose one card per semantic group ──
+        // Host (label / parent / connection target), SSH (everything
+        // protocol-specific, including the port in its header and the
+        // login/password right below it), and Terminal (appearance +
+        // session logging). The SSH card is the whole protocol block, so
+        // a future Telnet switch hides it in one move while keeping the
+        // universal-for-Telnet bits (port, login, password) at its top.
+        //
+        // Spacing: GROUP_GAP (Space + divider + Space) between subgroups,
+        // ROW_GAP between rows. No per-row dividers, so nothing hugs a
+        // field.
+        const GROUP_GAP: f32 = 16.0;
+        const ROW_GAP: f32 = 10.0;
+        let group_sep = || -> Element<'_, Message> {
+            column![
+                Space::new().height(GROUP_GAP),
+                panel_divider(),
+                Space::new().height(GROUP_GAP),
+            ].into()
+        };
+
+        // Host card: label, parent group, then the connection target.
+        let mut host_col = column![
+            section_header(t("host")),
+            Space::new().height(ROW_GAP),
+            panel_field(t("label"), text_input(t("my_server_placeholder"), &self.editor_form.label)
+                .on_input(Message::EditorLabelChanged).on_submit(Message::EditorSave).padding(10)
+                .style(crate::widgets::rounded_input_style).align_x(dir_align_x()).into()),
+            Space::new().height(ROW_GAP),
+            panel_field(t("parent_group"), parent_combo),
+        ];
+        host_col = host_col
+            .push(group_sep())
+            .push(section_header(t("connection")))
+            .push(Space::new().height(ROW_GAP))
+            .push(hostname_row);
+        if let Some(ct) = cloud_transport_row {
+            host_col = host_col.push(Space::new().height(ROW_GAP)).push(ct);
+        }
+        let host_section = panel_section(host_col);
+
+        // SSH card header: "SSH .......... [22] port".
+        let ssh_header = dir_row(vec![
+            text(t("ssh")).size(14).color(OryxisColors::t().accent).into(),
+            Space::new().width(Length::Fill).into(),
+            port_input,
+            Space::new().width(8).into(),
+            text(t("port")).size(12).color(OryxisColors::t().text_muted).into(),
+        ]).align_y(iced::Alignment::Center);
+
+        // SSH card: port (header), then Credentials, Authentication,
+        // Network, Integration, and the initial command, all in one card.
+        let mut ssh_col = column![ssh_header]
+            .push(group_sep())
+            .push(section_header(t("credentials")))
+            .push(Space::new().height(ROW_GAP))
+            .push(cred_items)
+            .push(group_sep())
+            .push(section_header(t("authentication")))
+            .push(Space::new().height(ROW_GAP))
+            .push(row_auth_method);
+        // The chosen method's field: Key shows a key picker; the other
+        // methods need no extra input here (password lives in Credentials).
+        if let Some(k) = ssh_key_row {
+            ssh_col = ssh_col.push(Space::new().height(ROW_GAP)).push(k);
+        }
+        ssh_col = ssh_col.push(Space::new().height(ROW_GAP)).push(row_agent_fwd);
+        // Network subgroup.
+        ssh_col = ssh_col
+            .push(group_sep())
+            .push(section_header(t("network")))
+            .push(Space::new().height(ROW_GAP))
+            .push(row_chaining)
+            .push(Space::new().height(ROW_GAP))
+            .push(proxy_rows)
+            .push(Space::new().height(ROW_GAP))
+            .push(pf_items)
+            .push(Space::new().height(ROW_GAP))
+            .push(row_keepalive);
+        // Integration subgroup + initial command.
+        ssh_col = ssh_col
+            .push(group_sep())
+            .push(section_header(t("integration")))
+            .push(Space::new().height(ROW_GAP))
+            .push(row_mcp)
+            .push(Space::new().height(ROW_GAP))
+            .push(env_items)
+            .push(group_sep())
+            .push(startup_block);
+        let ssh_section = panel_section(ssh_col);
+
+        // Terminal card: appearance + session logging.
+        let terminal_section = panel_section(
+            column![section_header(t("terminal_settings")), Space::new().height(ROW_GAP)]
+                .push(appearance_items)
+                .push(Space::new().height(GROUP_GAP))
+                .push(row_session_logging),
+        );
+
         // ── Layout ──
         let form_scroll = scrollable(
             column![
-                address_section,
-                Space::new().height(8),
-                general_section,
-                Space::new().height(8),
+                host_section,
+                Space::new().height(10),
                 ssh_section,
-                Space::new().height(8),
-                advanced_section,
-                Space::new().height(8),
-                proxy_section,
-                Space::new().height(8),
-                port_forward_section,
-                Space::new().height(8),
-                env_var_section,
-                Space::new().height(8),
-                appearance_section,
+                Space::new().height(10),
+                terminal_section,
             ]
             .padding(Padding { top: 0.0, right: 16.0, bottom: 16.0, left: 16.0 }),
         )
-        .height(Length::Fill)
-        // Track the scroll offset so the group-picker popover anchors
-        // under the chevron even when the form is scrolled.
-        .on_scroll(Message::EditorFormScrolled);
+        .height(Length::Fill);
 
         let panel_content = column![
             panel_header,
@@ -954,11 +1010,12 @@ impl Oryxis {
             .into()
     }
 
-    /// Build the Proxy section. The picker mixes the static proxy types
-    /// (None / SOCKS5 / SOCKS4 / HTTP / Command) with the user's saved
-    /// `ProxyIdentity` entries, selecting an identity hides the inline
-    /// fields and shows a readonly summary instead.
-    fn build_proxy_section(&self) -> Element<'_, Message> {
+    /// Build the Proxy rows (no card wrapper, the caller nests them in
+    /// the SSH > Network subgroup). The picker mixes the static proxy
+    /// types (None / SOCKS5 / SOCKS4 / HTTP / Command) with the user's
+    /// saved `ProxyIdentity` entries, selecting an identity hides the
+    /// inline fields and shows a readonly summary instead.
+    fn build_proxy_rows(&self) -> iced::widget::Column<'_, Message> {
         let kind = self.editor_form.proxy_kind;
 
         // Compose the picker option list. Identity entries come from
@@ -975,21 +1032,33 @@ impl Oryxis {
         // `self`, which covers the returned Element, so no clone of
         // the Vec is needed per render.
         let identities = &self.proxy_identities;
-        let picker = panel_field(
-            crate::i18n::t("proxy_type"),
-            pick_list(Some(kind), options, move |k: &ProxyKind| match k {
-                ProxyKind::Identity(id) => identities
-                    .iter()
-                    .find(|pi| pi.id == *id)
-                    .map(|pi| format!("📌 {}", pi.label))
-                    .unwrap_or_else(|| crate::i18n::t("proxy_type_identity_deleted").into()),
-                other => other.to_string(),
-            })
-            .on_select(Message::EditorProxyKindChanged)
-            .padding(10)
-            .style(crate::widgets::rounded_pick_list_style)
-            .into(),
-        );
+        // Inline row (label left, picker right) mirroring the Auth Method
+        // row, so the two pickers read as the same control family. The
+        // type-dependent fields still stack below.
+        let picker: Element<'_, Message> = container(
+            dir_row(vec![
+                iced_fonts::lucide::route().size(13).color(OryxisColors::t().text_muted).into(),
+                Space::new().width(10).into(),
+                text(crate::i18n::t("proxy_type")).size(13).color(OryxisColors::t().text_secondary).into(),
+                Space::new().width(Length::Fill).into(),
+                pick_list(Some(kind), options, move |k: &ProxyKind| match k {
+                    ProxyKind::Identity(id) => identities
+                        .iter()
+                        .find(|pi| pi.id == *id)
+                        .map(|pi| format!("📌 {}", pi.label))
+                        .unwrap_or_else(|| crate::i18n::t("proxy_type_identity_deleted").into()),
+                    other => other.to_string(),
+                })
+                .on_select(Message::EditorProxyKindChanged)
+                .width(140)
+                .padding(10)
+                .style(crate::widgets::rounded_pick_list_style)
+                .into(),
+            ])
+            .align_y(iced::Alignment::Center),
+        )
+        .padding(Padding { top: 4.0, right: 0.0, bottom: 4.0, left: 0.0 })
+        .into();
 
         let mut col = column![picker];
 
@@ -1018,11 +1087,11 @@ impl Oryxis {
             col = col.push(Space::new().height(8)).push(
                 text(summary).size(12).color(OryxisColors::t().text_muted),
             );
-            return panel_section(col);
+            return col;
         }
 
         if kind == ProxyKind::None {
-            return panel_section(col);
+            return col;
         }
 
         if kind == ProxyKind::Command {
@@ -1040,7 +1109,7 @@ impl Oryxis {
                     .style(crate::widgets::rounded_input_style).align_x(dir_align_x())
                     .into(),
                 ));
-            return panel_section(col);
+            return col;
         }
 
         if kind.needs_endpoint() {
@@ -1114,8 +1183,15 @@ impl Oryxis {
                 ));
         }
 
-        panel_section(col)
+        col
     }
+}
+
+/// Muted section title used to head each card in the host editor
+/// (General / Connection / Credentials / Authentication / ...). Keeps
+/// the cards visually labeled so the form reads as semantic groups.
+fn section_header<'a>(label: &'a str) -> Element<'a, Message> {
+    text(label).size(12).color(OryxisColors::t().text_muted).into()
 }
 
 /// Full-width "click to open the theme picker" tile, painted in a

@@ -700,9 +700,22 @@ impl Oryxis {
                     // resolved via the pane's origin rather than the tab label
                     // so it stays correct for group tabs (whose label is the
                     // group name) and for two panes sharing one host.
-                    let fallback_cmd = self
+                    // A live snippet reference (its body, looked up now so
+                    // snippet edits propagate) wins over the literal
+                    // `initial_command`; a dangling snippet id resolves to
+                    // nothing, never an error.
+                    let (startup_snip, startup_lit) = self
                         .pane_origin_connection(pane_id)
-                        .and_then(|c| c.initial_command.clone());
+                        .map(|c| (c.startup_snippet_id, c.initial_command.clone()))
+                        .unwrap_or((None, None));
+                    let fallback_cmd = match startup_snip {
+                        Some(id) => self
+                            .snippets
+                            .iter()
+                            .find(|s| s.id == id)
+                            .map(|s| s.command.clone()),
+                        None => startup_lit,
+                    };
                     let initial = self
                         .pane_script_overrides
                         .remove(&pane_id)

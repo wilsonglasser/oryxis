@@ -189,6 +189,13 @@ impl Oryxis {
                     SftpConnectMsg::Done(Err(e)) => Message::SftpRemoteError(target, e),
                 }));
             }
+            Message::SftpRemountPane(side, idx) => {
+                // Point the picker at this side, then reuse the full mount
+                // pipeline. Dispatched once per side, so each runs in its own
+                // update cycle with the correct target (no shared-field race).
+                self.sftp.picker_target = side;
+                return self.handle_sftp(Message::SftpPickHost(idx));
+            }
             Message::SftpPickLocal => {
                 // "Local" is only offered for the left pane. Switch the
                 // target pane back to local browsing and refresh.
@@ -218,6 +225,7 @@ impl Oryxis {
                 let sort = self.sftp.pane(side).sort;
                 let mut entries = entries;
                 sort_remote_entries(&mut entries, sort);
+                let tab_label = label.clone();
                 let pane = self.sftp.pane_mut(side);
                 pane.is_remote = true;
                 pane.host_label = Some(label);
@@ -227,6 +235,13 @@ impl Oryxis {
                 pane.remote_entries = entries;
                 pane.remote_loading = false;
                 pane.error = None;
+                // Inherit the mounted host's name as the tab label (last mount
+                // wins when both panes are remote).
+                if let Some(i) = self.active_sftp
+                    && let Some(t) = self.sftp_tabs.get_mut(i)
+                {
+                    t.label = tab_label;
+                }
             }
             Message::SftpRemoteError(side, msg) => {
                 let pane = self.sftp.pane_mut(side);
@@ -350,6 +365,115 @@ impl Oryxis {
             }
             Message::SftpClosePicker => {
                 self.sftp.picker_open = false;
+            }
+            Message::SelectSftpTab(idx) => {
+                if idx < self.sftp_tabs.len() {
+                    self.focus_sftp_tab(idx);
+                    self.active_tab = None;
+                    self.active_view = crate::state::View::Sftp;
+                    self.show_burger_menu = false;
+                    // Dormant pinned tab (restored at boot): re-mount its remote
+                    // pane on first focus. Single-remote case (the common
+                    // left=Local / right=Remote); a dual-remote tab re-mounts
+                    // only its right pane here.
+                    let reopen = self.sftp_tabs[idx].pending_reopen.take();
+                    if let Some(crate::state::PinnedTabSpec::Sftp { left, right, .. }) = reopen {
+                        use crate::state::{SftpPaneSide, SftpPaneSpec};
+                        self.refresh_sftp_local(SftpPaneSide::Left);
+                        // Re-mount every remote pane the tab had (both, for a
+                        // server-to-server tab). Each side is dispatched
+                        // separately so the mount pipeline targets it correctly.
+                        let mut tasks = Vec::new();
+                        for (side, spec) in
+                            [(SftpPaneSide::Right, &right), (SftpPaneSide::Left, &left)]
+                        {
+                            if let SftpPaneSpec::Remote(id) = spec
+                                && let Some(ci) = self.connections.iter().position(|c| c.id == *id)
+                            {
+                                tasks.push(Task::done(Message::SftpRemountPane(side, ci)));
+                            }
+                        }
+                        if !tasks.is_empty() {
+                            return Ok(Task::batch(tasks));
+                        }
+                        return Ok(Task::none());
+                    }
+                    self.refresh_sftp_local(crate::state::SftpPaneSide::Left);
+                    self.refresh_sftp_local(crate::state::SftpPaneSide::Right);
+                }
+            }
+            Message::CloseSftpTab(idx) => {
+                self.overlay = None;
+                // Guard: an in-flight transfer or unsaved edit-session opens a
+                // confirmation modal instead of closing outright.
+                if self.sftp_tab_has_unsaved(idx) {
+                    self.pending_sftp_close = Some(idx);
+                } else {
+                    return Ok(self.close_sftp_tab(idx));
+                }
+            }
+            Message::ConfirmCloseSftpTab => {
+                if let Some(idx) = self.pending_sftp_close.take() {
+                    return Ok(self.close_sftp_tab(idx));
+                }
+            }
+            Message::CancelCloseSftpTab => {
+                self.pending_sftp_close = None;
+            }
+            Message::ToggleSftpTabPin(idx) => {
+                if let Some(t) = self.sftp_tabs.get_mut(idx) {
+                    t.pinned = !t.pinned;
+                }
+                self.overlay = None;
+                // Persist so the pin (and its arranged order) survives a relaunch.
+                self.persist_pinned_tabs();
+            }
+            Message::CloseOtherSftpTabs(idx) => {
+                self.overlay = None;
+                if idx >= self.sftp_tabs.len() {
+                    return Ok(Task::none());
+                }
+                let keep_id = self.sftp_tabs[idx].id;
+                // If the kept tab is parked (not the active buffer owner),
+                // hoist its state into the live buffer before dropping the rest.
+                if self.active_sftp != Some(idx) {
+                    self.sftp = std::mem::take(&mut self.sftp_tabs[idx].state);
+                }
+                self.sftp_tabs.retain(|t| t.id == keep_id);
+                self.tab_order
+                    .retain(|r| !matches!(r, crate::state::TabRef::Sftp(x) if *x != keep_id));
+                self.active_sftp = Some(0);
+            }
+            Message::ShowSftpTabMenu(idx) => {
+                self.overlay = Some(crate::state::OverlayState {
+                    content: crate::state::OverlayContent::SftpTabActions(idx),
+                    x: self.mouse_position.x,
+                    y: self.mouse_position.y,
+                });
+            }
+            Message::SftpTabHovered(idx) => {
+                self.hovered_sftp_tab = Some(idx);
+                // Terminal / SFTP hover are mutually exclusive (one cursor).
+                self.hovered_tab = None;
+                // Live-slide: while a drag is active, entering this SFTP tab
+                // slides the dragged tab (terminal or SFTP) into its slot in
+                // the unified `tab_order`.
+                if let Some(drag) = self.tab_drag.filter(|d| d.active)
+                    && let Some(target) = self.sftp_tabs.get(idx).map(|t| t.id)
+                    && drag.from_id != target
+                {
+                    self.slide_tab_in_order(drag.from_id, target);
+                }
+            }
+            Message::SftpTabUnhovered => {
+                self.hovered_sftp_tab = None;
+            }
+            Message::NewSftpTab => {
+                self.overlay = None;
+                self.open_new_sftp_tab();
+                // Empty tab: open the host picker for the remote pane.
+                self.sftp.picker_open = true;
+                self.sftp.picker_target = crate::state::SftpPaneSide::Right;
             }
             Message::SftpPickerSearch(s) => {
                 self.sftp.picker_search = s;
@@ -728,6 +852,15 @@ impl Oryxis {
                 {
                     self.tab_drag = Some(crate::state::TabDrag {
                         from_id: tab._id,
+                        start: self.mouse_position,
+                        active: false,
+                    });
+                } else if let Some(idx) = self.hovered_sftp_tab
+                    && let Some(tab) = self.sftp_tabs.get(idx)
+                {
+                    // SFTP tabs arm the same unified reorder drag.
+                    self.tab_drag = Some(crate::state::TabDrag {
+                        from_id: tab.id,
                         start: self.mouse_position,
                         active: false,
                     });

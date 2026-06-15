@@ -442,18 +442,21 @@ impl Oryxis {
             }
             Message::TabHovered(idx) => {
                 self.hovered_tab = Some(idx);
+                // Terminal / SFTP hover are mutually exclusive (one cursor).
+                self.hovered_sftp_tab = None;
                 // Live-slide: while a drag is active, entering another tab in
                 // the same group slides the dragged tab into that slot right
                 // away. Stable because after the move the dragged tab sits
                 // under the cursor, so it won't re-trigger until the cursor
                 // crosses into a genuinely different tab.
                 if let Some(drag) = self.tab_drag.filter(|d| d.active)
-                    && let Some(from) = self.tabs.iter().position(|t| t._id == drag.from_id)
-                    && from != idx
-                    && idx < self.tabs.len()
-                    && self.tabs[from].pinned == self.tabs[idx].pinned
+                    && let Some(target) = self.tabs.get(idx).map(|t| t._id)
+                    && drag.from_id != target
                 {
-                    self.move_tab(from, idx);
+                    // Reorders `tab_order` (display) only; storage vecs and the
+                    // active pointers are untouched. Same-partition guard is in
+                    // `slide_tab_in_order`.
+                    self.slide_tab_in_order(drag.from_id, target);
                 }
             }
             Message::TabUnhovered => {
@@ -1128,6 +1131,10 @@ impl Oryxis {
                     container: container.clone(),
                 })
             }
+            // SFTP dormant tabs live in `sftp_tabs`, not `self.tabs`, and reopen
+            // via `SelectSftpTab` (which re-mounts their panes), so this
+            // terminal-tab reopen path never produces an open message for them.
+            PinnedTabSpec::Sftp { .. } => None,
         };
         if cloud {
             // Cloud sessions spawn asynchronously. Keep the dormant
@@ -1155,6 +1162,7 @@ impl Oryxis {
 
         // Host / local: the connect appends a live tab synchronously, so
         // remove the placeholder and slot the live tab into its place.
+        let dormant_id = self.tabs[idx]._id;
         self.tabs.remove(idx);
         self.adjust_last_terminal_tab_after_remove(idx);
 
@@ -1167,6 +1175,10 @@ impl Oryxis {
             let at = idx.min(self.tabs.len());
             self.tabs.insert(at, live);
             self.tabs[at].pinned = true;
+            // Keep the reopened tab at the dormant's spot in the unified strip
+            // order (else reconcile would append the new id at the end).
+            let live_id = self.tabs[at]._id;
+            self.replace_tab_order_id(dormant_id, live_id);
             self.active_tab = Some(at);
             self.remember_terminal_tab_focus(at);
             self.active_view = View::Terminal;
@@ -1192,45 +1204,77 @@ impl Oryxis {
         Task::batch([task, self.tab_scroll_to_active()])
     }
 
-    /// Reorder a tab by dropping `from` onto `to` (a drag commit). Restricted
-    /// to within the same group: a pinned tab can only move among pinned
-    /// tabs, a normal tab among normal tabs, so the pinned-first strip layout
-    /// stays consistent and the visual index maps to the real index. The
-    /// active tab and any in-flight connection follow their tab (by id).
-    pub(crate) fn move_tab(&mut self, from: usize, to: usize) {
-        if from == to || from >= self.tabs.len() || to >= self.tabs.len() {
+    /// Sync `tab_order` (the authoritative strip display order across terminal
+    /// and SFTP tabs) with the live tabs: append refs for newly-created tabs,
+    /// drop refs for closed ones, preserve the existing (drag-reordered) order.
+    /// Cheap; called at the end of every `update`.
+    pub(crate) fn reconcile_tab_order(&mut self) {
+        use crate::state::TabRef;
+        self.tab_order.retain(|r| match r {
+            TabRef::Terminal(id) => self.tabs.iter().any(|t| t._id == *id),
+            TabRef::Sftp(id) => self.sftp_tabs.iter().any(|t| t.id == *id),
+        });
+        for id in self.tabs.iter().map(|t| t._id).collect::<Vec<_>>() {
+            if !self.tab_order.iter().any(|r| matches!(r, TabRef::Terminal(x) if *x == id)) {
+                self.tab_order.push(TabRef::Terminal(id));
+            }
+        }
+        for id in self.sftp_tabs.iter().map(|t| t.id).collect::<Vec<_>>() {
+            if !self.tab_order.iter().any(|r| matches!(r, TabRef::Sftp(x) if *x == id)) {
+                self.tab_order.push(TabRef::Sftp(id));
+            }
+        }
+    }
+
+    /// Replace a terminal tab's id in `tab_order` in place (same position).
+    /// Used when a dormant placeholder is swapped for its freshly-connected
+    /// live tab (new id) so the reopened tab keeps its strip position instead
+    /// of being appended at the end by `reconcile_tab_order`.
+    pub(crate) fn replace_tab_order_id(&mut self, old: uuid::Uuid, new: uuid::Uuid) {
+        for r in self.tab_order.iter_mut() {
+            if let crate::state::TabRef::Terminal(id) = r
+                && *id == old
+            {
+                *id = new;
+                return;
+            }
+        }
+    }
+
+    /// Move the tab identified by `from_id` to just before `target_id` in
+    /// `tab_order`, but only within the same pin partition (can't drag an
+    /// unpinned tab above a pinned one, matching the terminal behaviour). Used
+    /// by the unified live-slide drag. Re-anchors nothing (the storage vecs and
+    /// `active_tab` / `active_sftp` indices are untouched; only display order
+    /// changes).
+    pub(crate) fn slide_tab_in_order(&mut self, from_id: uuid::Uuid, target_id: uuid::Uuid) {
+        let pinned_of = |r: &crate::state::TabRef| -> bool {
+            match r {
+                crate::state::TabRef::Terminal(id) => {
+                    self.tabs.iter().find(|t| t._id == *id).map(|t| t.pinned).unwrap_or(false)
+                }
+                crate::state::TabRef::Sftp(id) => {
+                    self.sftp_tabs.iter().find(|t| t.id == *id).map(|t| t.pinned).unwrap_or(false)
+                }
+            }
+        };
+        let id_of = |r: &crate::state::TabRef| -> uuid::Uuid {
+            match r {
+                crate::state::TabRef::Terminal(id) | crate::state::TabRef::Sftp(id) => *id,
+            }
+        };
+        let Some(from_pos) = self.tab_order.iter().position(|r| id_of(r) == from_id) else { return };
+        let Some(to_pos) = self.tab_order.iter().position(|r| id_of(r) == target_id) else { return };
+        if from_pos == to_pos {
             return;
         }
-        if self.tabs[from].pinned != self.tabs[to].pinned {
+        // Same partition only.
+        if pinned_of(&self.tab_order[from_pos]) != pinned_of(&self.tab_order[to_pos]) {
             return;
         }
-        let active_id = self
-            .active_tab
-            .and_then(|i| self.tabs.get(i))
-            .map(|t| t._id);
-        let connecting_id = self
-            .connecting
-            .as_ref()
-            .and_then(|p| self.tabs.get(p.tab_idx))
-            .map(|t| t._id);
-        let tab = self.tabs.remove(from);
-        let dest = to.min(self.tabs.len());
-        self.tabs.insert(dest, tab);
-        // Re-anchor active / connecting to their tabs by id.
-        if let Some(aid) = active_id
-            && let Some(i) = self.tabs.iter().position(|t| t._id == aid)
-        {
-            self.active_tab = Some(i);
-            self.remember_terminal_tab_focus(i);
-        }
-        if let Some(cid) = connecting_id
-            && let Some(i) = self.tabs.iter().position(|t| t._id == cid)
-            && let Some(p) = self.connecting.as_mut()
-        {
-            p.tab_idx = i;
-        }
-        // Note: no persist here. Live-slide calls this on every crossed tab
-        // during a drag; the pinned order is persisted once on drop.
+        let moved = self.tab_order.remove(from_pos);
+        let dest = if from_pos < to_pos { to_pos - 1 } else { to_pos };
+        self.tab_order.insert(dest, moved);
     }
 
     /// Re-anchor (or clear) the in-flight connect progress after the tab

@@ -259,28 +259,11 @@ impl Oryxis {
                 } else {
                     Color::TRANSPARENT
                 };
-                let dots_btn = button(text("\u{22EE}").size(14).color(dots_glyph_color))
-                    .on_press(Message::ShowCloudCardMenu(cp_id))
-                    .padding(Padding {
-                        top: 1.0,
-                        right: 6.0,
-                        bottom: 1.0,
-                        left: 6.0,
-                    })
-                    .style(move |_, status| {
-                        let bg = match status {
-                            BtnStatus::Hovered if show_dots => OryxisColors::t().bg_hover,
-                            _ => Color::TRANSPARENT,
-                        };
-                        button::Style {
-                            background: Some(Background::Color(bg)),
-                            border: Border {
-                                radius: Radius::from(6.0),
-                                ..Default::default()
-                            },
-                            ..Default::default()
-                        }
-                    });
+                let dots_btn = crate::widgets::card_kebab_button(
+                    dots_glyph_color,
+                    show_dots,
+                    Message::ShowCloudCardMenu(cp_id),
+                );
                 let dots_align = if rtl {
                     iced::alignment::Horizontal::Left
                 } else {

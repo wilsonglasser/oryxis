@@ -299,6 +299,194 @@ impl Oryxis {
             (false, false) => Task::none(),
         }
     }
+
+    // --- SFTP tab buffer (swap-on-focus) -----------------------------------
+    //
+    // The active SFTP tab's live state lives in `self.sftp`; inactive tabs
+    // park their state in `SftpTab::state`. `active_sftp` is the index of the
+    // tab currently loaded in `self.sftp` (the buffer owner). See the
+    // invariant in `SFTP_TABS_PLAN.md`.
+
+    /// Id of the SFTP tab currently loaded in `self.sftp`, if any.
+    pub(crate) fn active_sftp_id(&self) -> Option<uuid::Uuid> {
+        self.active_sftp
+            .and_then(|i| self.sftp_tabs.get(i))
+            .map(|t| t.id)
+    }
+
+    /// Ensure at least one SFTP tab exists, adopting the existing top-level
+    /// `self.sftp` as the first tab's live buffer (no swap). Called when the
+    /// SFTP surface is first reached so the single-tab case behaves exactly
+    /// as before.
+    pub(crate) fn ensure_sftp_tab(&mut self) {
+        if self.sftp_tabs.is_empty() {
+            let tab = crate::state::SftpTab::new(crate::i18n::t("sftp").to_string());
+            let id = tab.id;
+            self.sftp_tabs.push(tab);
+            self.active_sftp = Some(0);
+            self.tab_order.push(crate::state::TabRef::Sftp(id));
+        }
+    }
+
+    /// Create a fresh SFTP tab (Local-left / remote-right, HOME on the left),
+    /// append it to the strip, focus it and switch the surface to SFTP. The
+    /// caller opens the host picker.
+    pub(crate) fn open_new_sftp_tab(&mut self) {
+        let mut tab = crate::state::SftpTab::new(crate::i18n::t("sftp").to_string());
+        tab.state.left.local_path = std::env::var_os("HOME")
+            .or_else(|| std::env::var_os("USERPROFILE"))
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|| std::path::PathBuf::from("/"));
+        let id = tab.id;
+        self.sftp_tabs.push(tab);
+        let idx = self.sftp_tabs.len() - 1;
+        self.tab_order.push(crate::state::TabRef::Sftp(id));
+        self.focus_sftp_tab(idx);
+        self.active_tab = None;
+        self.active_view = crate::state::View::Sftp;
+        self.refresh_sftp_local(crate::state::SftpPaneSide::Left);
+    }
+
+    /// Build the persisted pin spec for the SFTP tab at `idx`, capturing both
+    /// panes (Local vs which saved connection). Reads the live buffer for the
+    /// active tab, the parked slot otherwise; a still-dormant tab returns its
+    /// existing spec unchanged. `None` for an out-of-range index.
+    pub(crate) fn sftp_pin_spec(&self, idx: usize) -> Option<crate::state::PinnedTabSpec> {
+        let tab = self.sftp_tabs.get(idx)?;
+        if let Some(spec) = &tab.pending_reopen {
+            return Some(spec.clone());
+        }
+        let st = if self.active_sftp == Some(idx) {
+            &self.sftp
+        } else {
+            &tab.state
+        };
+        let pane_spec = |p: &crate::state::PaneState| -> crate::state::SftpPaneSpec {
+            if p.is_remote {
+                p.host_label
+                    .as_ref()
+                    .and_then(|l| self.connections.iter().find(|c| &c.label == l))
+                    .map(|c| crate::state::SftpPaneSpec::Remote(c.id))
+                    .unwrap_or(crate::state::SftpPaneSpec::Local)
+            } else {
+                crate::state::SftpPaneSpec::Local
+            }
+        };
+        Some(crate::state::PinnedTabSpec::Sftp {
+            left: pane_spec(&st.left),
+            right: pane_spec(&st.right),
+            label: tab.label.clone(),
+        })
+    }
+
+    /// Whether the SFTP tab at `idx` has unsaved work worth a close-guard:
+    /// an in-flight transfer or a dirty edit-session. Reads the live buffer
+    /// for the active tab, the parked slot otherwise.
+    pub(crate) fn sftp_tab_has_unsaved(&self, idx: usize) -> bool {
+        let st = if self.active_sftp == Some(idx) {
+            &self.sftp
+        } else {
+            match self.sftp_tabs.get(idx) {
+                Some(t) => &t.state,
+                None => return false,
+            }
+        };
+        st.transfer.is_some() || st.edit_session.as_ref().is_some_and(|e| e.dirty)
+    }
+
+    /// Close the SFTP tab at `idx`. Removes it from the strip, reindexes
+    /// `active_sftp`, adopts the next remaining tab into the live buffer if the
+    /// closed one owned it, and navigates away when the SFTP surface is left
+    /// empty. Returns any follow-up navigation task.
+    pub(crate) fn close_sftp_tab(&mut self, idx: usize) -> Task<Message> {
+        if idx >= self.sftp_tabs.len() {
+            return Task::none();
+        }
+        let id = self.sftp_tabs[idx].id;
+        let was_owner = self.active_sftp == Some(idx);
+        let was_focused_surface =
+            was_owner && self.active_tab.is_none() && self.active_view == crate::state::View::Sftp;
+        self.sftp_tabs.remove(idx);
+        self.tab_order
+            .retain(|r| !matches!(r, crate::state::TabRef::Sftp(x) if *x == id));
+        // Reindex the buffer-owner pointer around the removed slot.
+        self.active_sftp = match self.active_sftp {
+            Some(a) if a == idx => None,
+            Some(a) if a > idx => Some(a - 1),
+            other => other,
+        };
+        // The closed tab owned the live buffer: `self.sftp` now holds its
+        // (discarded) state. Adopt the nearest remaining tab, else reset.
+        if was_owner {
+            if !self.sftp_tabs.is_empty() {
+                let next = idx.min(self.sftp_tabs.len() - 1);
+                self.sftp = std::mem::take(&mut self.sftp_tabs[next].state);
+                self.active_sftp = Some(next);
+            } else {
+                self.sftp = crate::state::SftpState::default();
+            }
+        }
+        if was_focused_surface {
+            if self.sftp_tabs.is_empty() {
+                return Task::done(Message::ChangeView(crate::state::View::Dashboard));
+            }
+            self.refresh_sftp_local(crate::state::SftpPaneSide::Left);
+            self.refresh_sftp_local(crate::state::SftpPaneSide::Right);
+        }
+        Task::none()
+    }
+
+    /// Owning tab id to stamp on an SFTP async-continuation message: the tab
+    /// currently being routed (mid-`route_sftp_async`) if any, else the
+    /// focused tab. User-initiated transfers (not mid-route) get the focused
+    /// tab; chained continuations get the originating tab.
+    pub(crate) fn current_sftp_owner(&self) -> uuid::Uuid {
+        self.routing_sftp
+            .or_else(|| self.active_sftp_id())
+            .unwrap_or_default()
+    }
+
+    /// Dispatch an SFTP async-continuation message against its owning tab.
+    /// Temporarily swaps that tab's parked state into `self.sftp` (no-op if it
+    /// is already the focused tab), runs the normal handler chain, then swaps
+    /// back. Drops the message if the owning tab was closed meanwhile.
+    pub(crate) fn route_sftp_async(&mut self, id: uuid::Uuid, message: Message) -> Task<Message> {
+        let Some(idx) = self.sftp_tabs.iter().position(|t| t.id == id) else {
+            return Task::none();
+        };
+        let is_active = self.active_sftp == Some(idx);
+        if !is_active {
+            std::mem::swap(&mut self.sftp, &mut self.sftp_tabs[idx].state);
+        }
+        let prev = self.routing_sftp.replace(id);
+        let task = self.dispatch_message(message);
+        self.routing_sftp = prev;
+        if !is_active {
+            std::mem::swap(&mut self.sftp, &mut self.sftp_tabs[idx].state);
+        }
+        task
+    }
+
+    /// Make `idx` the focused SFTP tab: park the currently-loaded tab's state
+    /// into its slot and hoist `idx`'s state into `self.sftp`. No-op if `idx`
+    /// is already loaded or out of range. Does not touch `active_view` /
+    /// `active_tab`; the caller drives the surface switch.
+    pub(crate) fn focus_sftp_tab(&mut self, idx: usize) {
+        if idx >= self.sftp_tabs.len() || self.active_sftp == Some(idx) {
+            return;
+        }
+        if let Some(old) = self.active_sftp
+            && let Some(tab) = self.sftp_tabs.get_mut(old)
+        {
+            // Park outgoing: live buffer -> its slot.
+            std::mem::swap(&mut self.sftp, &mut tab.state);
+        }
+        if let Some(tab) = self.sftp_tabs.get_mut(idx) {
+            // Load incoming: its slot -> live buffer.
+            std::mem::swap(&mut self.sftp, &mut tab.state);
+        }
+        self.active_sftp = Some(idx);
+    }
 }
 
 /// Detects the synthetic WSL roots (`\\wsl$` / `\\wsl.localhost`).

@@ -826,6 +826,51 @@ pub(crate) struct TerminalTab {
     pub pending_reopen: Option<PinnedTabSpec>,
 }
 
+/// Reference to an open tab in the unified strip. Terminal and SFTP tabs
+/// share one reorderable, pinnable row; identity is by `Uuid` (stable
+/// across reorder / close) rather than a vec index. Reserved for the full
+/// cross-type interleave / drag-reorder (deferred): SFTP tabs render grouped
+/// after terminal tabs today, so `Terminal` is not yet constructed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[allow(dead_code)]
+pub(crate) enum TabRef {
+    Terminal(Uuid),
+    Sftp(Uuid),
+}
+
+/// An SFTP browser tab. Unlike terminal tabs, the **active** SFTP tab's
+/// live state lives in `Oryxis::sftp` (a working buffer); this struct's
+/// `state` field is a default placeholder while this tab is focused, and
+/// holds the parked state while it is not. See the swap-on-focus invariant
+/// in `SFTP_TABS_PLAN.md`: never read the active tab's state from the vec,
+/// route by id through `Oryxis::route_sftp_async`.
+pub(crate) struct SftpTab {
+    pub id: Uuid,
+    pub label: String,
+    /// Pinned SFTP tabs render first in the strip.
+    pub pinned: bool,
+    /// Set on a dormant pinned SFTP tab recreated at boot: reopens (re-mounts
+    /// its panes) the first time it's selected, then clears. Reserved for
+    /// pin-restore-on-boot (deferred); not read yet.
+    #[allow(dead_code)]
+    pub pending_reopen: Option<PinnedTabSpec>,
+    /// Parked state while this tab is not focused; a default placeholder while
+    /// it IS the active tab (live state hoisted to `Oryxis::sftp`).
+    pub state: SftpState,
+}
+
+impl SftpTab {
+    pub(crate) fn new(label: String) -> Self {
+        Self {
+            id: Uuid::new_v4(),
+            label,
+            pinned: false,
+            pending_reopen: None,
+            state: SftpState::default(),
+        }
+    }
+}
+
 /// Persisted restore spec for a pinned tab. Stored as JSON in the
 /// `pinned_tabs` setting; on boot each becomes a dormant pinned tab that
 /// reopens lazily on first select. Cloud / ephemeral tabs have no spec and
@@ -855,6 +900,22 @@ pub(crate) enum PinnedTabSpec {
         container: String,
         label: String,
     },
+    /// A pinned SFTP browser tab. Captures both panes (Local vs which
+    /// connection); reopened dormant and re-mounts its remote pane(s) on first
+    /// focus.
+    Sftp {
+        left: SftpPaneSpec,
+        right: SftpPaneSpec,
+        label: String,
+    },
+}
+
+/// Restore spec for one SFTP pane: Local browsing, or a remote host by saved
+/// connection id (resolved fresh at reopen so it survives reordering).
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub(crate) enum SftpPaneSpec {
+    Local,
+    Remote(Uuid),
 }
 
 /// In-progress drag of a tab in the strip, for reordering. Started on press
@@ -880,6 +941,7 @@ impl PinnedTabSpec {
             PinnedTabSpec::LocalShell { label, .. } => label,
             PinnedTabSpec::EcsExec { label, .. } => label,
             PinnedTabSpec::KubectlExec { label, .. } => label,
+            PinnedTabSpec::Sftp { label, .. } => label,
         }
     }
 
@@ -898,6 +960,13 @@ impl PinnedTabSpec {
             }
             PinnedTabSpec::KubectlExec { group_id, namespace, container, .. } => {
                 format!("k8s:{group_id}:{namespace}:{container}")
+            }
+            PinnedTabSpec::Sftp { left, right, .. } => {
+                let key = |p: &SftpPaneSpec| match p {
+                    SftpPaneSpec::Local => "local".to_string(),
+                    SftpPaneSpec::Remote(id) => format!("remote:{id}"),
+                };
+                format!("sftp:{}:{}", key(left), key(right))
             }
         }
     }
@@ -1369,6 +1438,9 @@ pub(crate) enum OverlayContent {
     SnippetActions(usize),
     KeychainAdd,
     TabActions(usize),
+    /// Right-click menu on an SFTP browser tab. Items: New SFTP tab,
+    /// Pin/Unpin, Close. `usize` is the `sftp_tabs` index.
+    SftpTabActions(usize),
     /// Hover popover under the `+` tab button: New Tab + Split actions for
     /// the active terminal tab.
     SplitMenu,
@@ -1404,7 +1476,6 @@ pub(crate) enum OverlayContent {
 /// popover anchors precisely under the right chevron.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum GroupPickerTarget {
-    EditorParent,
     DynamicFormParent,
     SessionGroupFolder,
 }

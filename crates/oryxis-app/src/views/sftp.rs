@@ -78,6 +78,10 @@ impl Oryxis {
         // others), so pick the topmost rather than stacking. Each builder
         // returns its own scrim + centered card wrapped so its `opaque`
         // scrim still swallows scroll/motion over the panes behind it.
+        // Note: the SFTP close-guard modal is rendered at the global layer in
+        // `view_main` (keyed on `pending_sftp_close`), not here, since the
+        // close button lives in the always-visible tab strip and can be
+        // clicked from any surface, not just while viewing SFTP.
         let modal: Option<Element<'a, Message>> = if !self.sftp.delete_confirm.is_empty() {
             Some(delete_confirm_modal(&self.sftp.delete_confirm))
         } else if let Some(entry) = &self.sftp.new_entry {
@@ -760,22 +764,11 @@ impl Oryxis {
 // ---------------------------------------------------------------------------
 
 fn pane_actions_btn<'a>(toggle_msg: Message) -> Element<'a, Message> {
-    button(
-        text("\u{22EE}").size(14).color(OryxisColors::t().text_secondary),
+    crate::widgets::card_kebab_button(
+        OryxisColors::t().text_secondary,
+        true,
+        toggle_msg,
     )
-    .on_press(toggle_msg)
-    .padding(Padding { top: 2.0, right: 8.0, bottom: 2.0, left: 8.0 })
-    .style(|_, status| {
-        let bg = match status {
-            BtnStatus::Hovered => OryxisColors::t().bg_hover,
-            _ => Color::TRANSPARENT,
-        };
-        button::Style {
-            background: Some(Background::Color(bg)),
-            border: Border { radius: Radius::from(6.0), ..Default::default() },
-            ..Default::default()
-        }
-    })
     .into()
 }
 
@@ -1927,6 +1920,66 @@ fn delete_confirm_modal<'a>(
         .center_x(Length::Fill)
         .center_y(Length::Fill);
 
+    iced::widget::Stack::new()
+        .push(scrim)
+        .push(centered)
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .into()
+}
+
+/// Close-guard modal: shown when the user tries to close an SFTP tab that has
+/// an in-flight transfer or an unsaved edit-session. Rendered at the global
+/// layer (`view_main`) so it shows regardless of the current surface.
+pub(crate) fn close_guard_modal<'a>() -> Element<'a, Message> {
+    let dialog = container(
+        column![
+            text(t("sftp_close_guard_title")).size(16).color(OryxisColors::t().text_primary),
+            Space::new().height(6),
+            text(t("sftp_close_guard_detail")).size(13).color(OryxisColors::t().text_muted),
+            Space::new().height(16),
+            row![
+                crate::widgets::styled_button(
+                    t("close_anyway"),
+                    Message::ConfirmCloseSftpTab,
+                    OryxisColors::t().error,
+                ),
+                Space::new().width(8),
+                crate::widgets::styled_button(
+                    t("cancel"),
+                    Message::CancelCloseSftpTab,
+                    OryxisColors::t().text_muted,
+                ),
+            ],
+        ]
+        .padding(24)
+        .width(420),
+    )
+    .style(|_| container::Style {
+        background: Some(Background::Color(OryxisColors::t().bg_surface)),
+        border: Border {
+            radius: Radius::from(12.0),
+            color: OryxisColors::t().border,
+            width: 1.0,
+        },
+        ..Default::default()
+    });
+    let scrim: Element<'_, Message> = MouseArea::new(
+        container(Space::new())
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .style(|_| container::Style {
+                background: Some(Background::Color(Color::from_rgba(0.0, 0.0, 0.0, 0.5))),
+                ..Default::default()
+            }),
+    )
+    .on_press(Message::CancelCloseSftpTab)
+    .into();
+    let centered = container(MouseArea::new(dialog).on_press(Message::NoOp))
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .center_x(Length::Fill)
+        .center_y(Length::Fill);
     iced::widget::Stack::new()
         .push(scrim)
         .push(centered)

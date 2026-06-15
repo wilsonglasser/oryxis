@@ -243,6 +243,12 @@ impl Oryxis {
                     // until the picker is opened and closed once.
                     ..Default::default()
                 },
+                sftp_tabs: Vec::new(),
+                active_sftp: None,
+                tab_order: Vec::new(),
+                routing_sftp: None,
+                hovered_sftp_tab: None,
+                pending_sftp_close: None,
                 mouse_position: Point::ORIGIN,
                 window_size: iced::Size::new(1200.0, 750.0),
                 window_focused: true,
@@ -333,12 +339,13 @@ impl Oryxis {
                 cloud_discover_default_transport:
                     oryxis_core::models::cloud::TransportKind::Ssh,
                 cloud_discover_default_group_name: String::new(),
+                editor_parent_combo: iced::widget::combo_box::State::new(Vec::new()),
+                editor_startup_combo: iced::widget::combo_box::State::new(Vec::new()),
+                editor_key_combo: iced::widget::combo_box::State::new(Vec::new()),
                 cloud_discover_default_group_picker_open: false,
                 cloud_discover_default_group_picker_search: String::new(),
                 cloud_discover_default_group_combo_bounds: crate::widgets::new_bounds_cell(),
                 group_picker_search: String::new(),
-                editor_parent_combo_bounds: crate::widgets::new_bounds_cell(),
-                editor_form_scroll_y: 0.0,
                 editor_startup_choice: crate::state::StartupChoice::None,
                 dynamic_form_parent_combo_bounds: crate::widgets::new_bounds_cell(),
                 session_group_folder_combo_bounds: crate::widgets::new_bounds_cell(),
@@ -645,6 +652,10 @@ impl Oryxis {
             }
         }
 
+        // Populate the unified strip order from the restored (dormant pinned)
+        // tabs before the first render; subsequent messages keep it in sync via
+        // `reconcile_tab_order` at the end of `update`.
+        app.reconcile_tab_order();
         let boot_task = Task::batch(tasks);
         (app, boot_task)
     }
@@ -1093,13 +1104,31 @@ impl Oryxis {
         // replacement can leave both around), and persisting both
         // turns into duplicate chips on the next boot.
         let mut seen = std::collections::HashSet::new();
-        let specs: Vec<crate::state::PinnedTabSpec> = self
-            .tabs
-            .iter()
-            .filter(|t| t.pinned)
-            .filter_map(|t| t.pin_spec())
-            .filter(|s| seen.insert(s.dedupe_key()))
-            .collect();
+        // Persist in `tab_order` (the drag-reorderable display order) so the
+        // restored pinned sequence matches what the user arranged, across both
+        // terminal and SFTP tabs.
+        let mut specs: Vec<crate::state::PinnedTabSpec> = Vec::new();
+        for r in &self.tab_order {
+            let spec = match r {
+                crate::state::TabRef::Terminal(id) => self
+                    .tabs
+                    .iter()
+                    .find(|t| t._id == *id)
+                    .filter(|t| t.pinned)
+                    .and_then(|t| t.pin_spec()),
+                crate::state::TabRef::Sftp(id) => self
+                    .sftp_tabs
+                    .iter()
+                    .position(|t| t.id == *id)
+                    .filter(|&i| self.sftp_tabs[i].pinned)
+                    .and_then(|i| self.sftp_pin_spec(i)),
+            };
+            if let Some(spec) = spec
+                && seen.insert(spec.dedupe_key())
+            {
+                specs.push(spec);
+            }
+        }
         let json = serde_json::to_string(&specs).unwrap_or_else(|_| "[]".into());
         self.persist_setting("pinned_tabs", &json);
     }
@@ -1122,13 +1151,45 @@ impl Oryxis {
         // Heal any duplicates an older version persisted: one chip
         // per pin identity.
         let mut seen = std::collections::HashSet::new();
+        // Pre-seed with pinned tabs already in the strip so a *re-run* of
+        // `load_data_from_vault` (it fires on connection save, vault reload,
+        // sync, ...) doesn't recreate dormant duplicates of live/dormant tabs
+        // that already exist.
+        for t in self.tabs.iter().filter(|t| t.pinned) {
+            if let Some(s) = t.pin_spec() {
+                seen.insert(s.dedupe_key());
+            }
+        }
+        let existing_sftp_keys: Vec<String> = (0..self.sftp_tabs.len())
+            .filter(|&i| self.sftp_tabs[i].pinned)
+            .filter_map(|i| self.sftp_pin_spec(i).map(|s| s.dedupe_key()))
+            .collect();
+        seen.extend(existing_sftp_keys);
         for spec in specs {
             if !seen.insert(spec.dedupe_key()) {
                 continue;
             }
             let label = spec.label().to_string();
-            self.tabs
-                .push(crate::state::TerminalTab::new_dormant_pinned(label, spec));
+            if matches!(spec, crate::state::PinnedTabSpec::Sftp { .. }) {
+                // SFTP pinned tabs restore into `sftp_tabs` as dormant chips;
+                // they re-mount their panes on first focus (see SelectSftpTab).
+                let mut tab = crate::state::SftpTab::new(label);
+                tab.pinned = true;
+                tab.state.left.local_path = std::env::var_os("HOME")
+                    .or_else(|| std::env::var_os("USERPROFILE"))
+                    .map(std::path::PathBuf::from)
+                    .unwrap_or_else(|| std::path::PathBuf::from("/"));
+                tab.pending_reopen = Some(spec);
+                // Seed `tab_order` in the persisted (interleaved terminal+SFTP)
+                // order so the restored strip matches what was saved, instead of
+                // reconcile grouping all terminals before all SFTP tabs.
+                self.tab_order.push(crate::state::TabRef::Sftp(tab.id));
+                self.sftp_tabs.push(tab);
+            } else {
+                let tab = crate::state::TerminalTab::new_dormant_pinned(label, spec);
+                self.tab_order.push(crate::state::TabRef::Terminal(tab._id));
+                self.tabs.push(tab);
+            }
         }
         // The tabs sit dormant in the strip; the app still boots to its
         // default view (Hosts). We deliberately do not focus a pinned tab or

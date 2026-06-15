@@ -222,6 +222,9 @@ impl VaultStore {
         // Independent of cloud, used by ECS / K8s entries that drop into
         // `/bin/sh` and want `exec bash`.
         let _ = self.db.execute_batch("ALTER TABLE connections ADD COLUMN initial_command TEXT;");
+        // Optional reference to a snippet whose body is the startup command
+        // (resolved live at connect). Stored as the UUID text.
+        let _ = self.db.execute_batch("ALTER TABLE connections ADD COLUMN startup_snippet_id TEXT;");
         let _ = self.db.execute_batch("ALTER TABLE connections ADD COLUMN keepalive_interval INTEGER;");
         let _ = self.db.execute_batch("ALTER TABLE connections ADD COLUMN icon_style TEXT;");
         // JSON array of field names the user has explicitly overridden

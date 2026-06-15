@@ -310,22 +310,11 @@ impl Oryxis {
             } else {
                 Color::TRANSPARENT
             };
-            let dots_btn = button(
-                text("\u{22EE}").size(14).color(key_dots_glyph_color),
-            )
-            .on_press(Message::ShowKeyMenu(idx))
-            .padding(Padding { top: 1.0, right: 6.0, bottom: 1.0, left: 6.0 })
-            .style(move |_, status| {
-                let bg = match status {
-                    BtnStatus::Hovered if key_show_dots => OryxisColors::t().bg_hover,
-                    _ => Color::TRANSPARENT,
-                };
-                button::Style {
-                    background: Some(Background::Color(bg)),
-                    border: Border { radius: Radius::from(6.0), ..Default::default() },
-                    ..Default::default()
-                }
-            });
+            let dots_btn = crate::widgets::card_kebab_button(
+                key_dots_glyph_color,
+                key_show_dots,
+                Message::ShowKeyMenu(idx),
+            );
             let key_dots_align = if key_rtl {
                 iced::alignment::Horizontal::Left
             } else {
@@ -510,22 +499,11 @@ impl Oryxis {
             } else {
                 Color::TRANSPARENT
             };
-            let dots_btn = button(
-                text("\u{22EE}").size(14).color(id_dots_glyph_color),
-            )
-            .on_press(Message::ShowIdentityMenu(idx))
-            .padding(Padding { top: 1.0, right: 6.0, bottom: 1.0, left: 6.0 })
-            .style(move |_, status| {
-                let bg = match status {
-                    BtnStatus::Hovered if id_show_dots => OryxisColors::t().bg_hover,
-                    _ => Color::TRANSPARENT,
-                };
-                button::Style {
-                    background: Some(Background::Color(bg)),
-                    border: Border { radius: Radius::from(6.0), ..Default::default() },
-                    ..Default::default()
-                }
-            });
+            let dots_btn = crate::widgets::card_kebab_button(
+                id_dots_glyph_color,
+                id_show_dots,
+                Message::ShowIdentityMenu(idx),
+            );
             let id_dots_align = if id_rtl {
                 iced::alignment::Horizontal::Left
             } else {
