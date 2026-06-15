@@ -4,6 +4,57 @@ All notable changes to Oryxis are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the
 project uses [SemVer](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.3] - Unreleased
+
+### Added
+- **Vertical navigation rail.** Settings -> Interface now has a
+  **Navigation** orientation (Horizontal pills, the default, or
+  Vertical rail). The vertical rail is an icon column on the leading
+  edge of the vault content with the section icons + a pinned Settings
+  gear; it scrolls (thin, hover-revealed scrollbar) and toggles between
+  icon-only (with hover tooltips) and a wider labelled form.
+- **Keyboard navigation on the dashboard.** From the host search, Tab /
+  arrow keys move a selection across the cards: groups first, then
+  hosts. In grid mode the up/down arrows move by row and left/right by
+  column; in list mode every direction moves by record. Movement is
+  cyclic (last wraps to first). Enter opens the selected group or
+  connects the selected host (or the top result while searching), and
+  Escape clears. The search auto-focuses when Home opens, the selection
+  blurs the input and clears on any click, and the selected card
+  scrolls into view.
+- **Host-group icon / colour editor.** Folders are now editable from a
+  sidebar panel (name + icon/colour via the shared picker), not just a
+  rename dialog; group cards reflect the chosen colour.
+- **Search on Cloud Accounts and Proxies**, matching the other vault
+  screens (hidden when the list is empty).
+- **Per-card accent wash.** Each dashboard card carries a soft wash in
+  its own colour (toned toward the surface), behind a new "Accent glass
+  cards" toggle. The top bar carries a matching gradient accent wash
+  behind its own "Wash top bar" toggle, separate from the underline.
+- **Shared empty-state pattern** (icon + title + description + call to
+  action) extended to Proxies, Known Hosts and History.
+
+### Changed
+- **One layout, two nav orientations.** The Classic sidebar and the
+  `Layout mode` (Classic / Workspace) setting are retired in favour of a
+  single top-bar layout plus the Navigation orientation above; existing
+  Classic users migrate to the vertical rail automatically.
+- **Dashboard list mode** renders History-style rows: full-width
+  independently-rounded cards with a small gap, applied uniformly to
+  groups and hosts (replacing the connected divider list).
+- **Side editor panels** (host, proxy, group, ...) rise full-height and
+  cover the contextual sub-nav on their side instead of starting below
+  it. The Proxies editor moved from an inline block to a right-hand
+  sidebar panel.
+- **Empty views** drop their toolbar search and "New" action; the empty
+  state's button is the single create path.
+- The **vault switcher** chip / badge is hidden while there is only one
+  vault.
+
+### Fixed
+- Cloud Accounts cards now show the accent border on hover, like the
+  host and keychain cards.
+
 ## [0.8.2] - 2026-06-12
 
 ### Performance
