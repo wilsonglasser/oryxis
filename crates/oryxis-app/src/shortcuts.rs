@@ -17,16 +17,37 @@ impl Oryxis {
     /// out of range so Ctrl+5 on a window with two tabs is a no-op
     /// instead of bouncing focus around.
     pub(crate) fn strip_slot_target(&self, slot: usize) -> Option<Message> {
-        // Hosts (and SFTP when enabled) sit in the strip ahead of the
-        // terminal tabs, so Ctrl+1 / Ctrl+2 land on them.
-        let mut slots: Vec<Message> = Vec::new();
-        slots.push(Message::ChangeView(View::Dashboard));
-        if self.sftp_enabled {
-            slots.push(Message::ChangeView(View::Sftp));
-        }
-        for idx in 0..self.tabs.len() {
-            slots.push(Message::SelectTab(idx));
-        }
+        use crate::state::TabRef;
+        // Slot 0 is the Home (Hosts) area tab; the rest follow the unified
+        // strip order (terminal + SFTP tabs, pinned-first), exactly as
+        // `views/tab_bar.rs` renders it, so Ctrl+N lands on the Nth visible
+        // chip. SFTP is a tab now, not a fixed Ctrl+2 area tab.
+        let mut slots: Vec<Message> = vec![Message::ChangeView(View::Dashboard)];
+        let pinned_of = |r: &TabRef| -> bool {
+            match r {
+                TabRef::Terminal(id) => {
+                    self.tabs.iter().find(|t| t._id == *id).map(|t| t.pinned).unwrap_or(false)
+                }
+                TabRef::Sftp(id) => {
+                    self.sftp_tabs.iter().find(|t| t.id == *id).map(|t| t.pinned).unwrap_or(false)
+                }
+            }
+        };
+        let to_msg = |r: &TabRef| -> Option<Message> {
+            match r {
+                TabRef::Terminal(id) => {
+                    self.tabs.iter().position(|t| t._id == *id).map(Message::SelectTab)
+                }
+                TabRef::Sftp(id) => {
+                    if !self.sftp_enabled {
+                        return None;
+                    }
+                    self.sftp_tabs.iter().position(|t| t.id == *id).map(Message::SelectSftpTab)
+                }
+            }
+        };
+        slots.extend(self.tab_order.iter().filter(|r| pinned_of(r)).filter_map(to_msg));
+        slots.extend(self.tab_order.iter().filter(|r| !pinned_of(r)).filter_map(to_msg));
         slots.into_iter().nth(slot)
     }
 
@@ -535,6 +556,13 @@ impl Oryxis {
             }
             OpenSettings => Task::done(Message::ChangeView(View::Settings)),
             FocusViewSearch => Task::done(Message::FocusViewSearch),
+            OpenSftp => {
+                if self.sftp_enabled {
+                    Task::done(Message::NewSftpTab)
+                } else {
+                    Task::none()
+                }
+            }
             SwitchToTabSlot => match family {
                 FamilyMatch::Digit(d) => {
                     Task::done(Message::ActivateStripSlot(d as usize - 1))

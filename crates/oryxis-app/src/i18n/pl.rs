@@ -165,6 +165,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "hotkey_close_active_tab" => "Zamknij aktywną kartę",
         "hotkey_open_port_forwards" => "Otwórz przekierowania portów",
         "hotkey_open_settings" => "Otwórz ustawienia",
+        "hotkey_open_sftp" => "Otwórz SFTP",
         "hotkey_focus_view_search" => "Ustaw fokus na polu wyszukiwania",
         "hotkey_switch_to_tab_slot" => "Przełącz na konkretną kartę",
         "hotkey_cycle_tabs" => "Przełączaj między kartami",

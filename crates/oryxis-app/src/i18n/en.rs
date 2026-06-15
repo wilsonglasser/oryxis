@@ -168,6 +168,7 @@ pub(super) fn lookup(key: &str) -> &'static str {
         "hotkey_close_active_tab" => "Close active tab",
         "hotkey_open_port_forwards" => "Open port forwards",
         "hotkey_open_settings" => "Open settings",
+        "hotkey_open_sftp" => "Open SFTP",
         "hotkey_focus_view_search" => "Focus search field",
         "hotkey_switch_to_tab_slot" => "Switch to specific tab",
         "hotkey_cycle_tabs" => "Cycle through tabs",

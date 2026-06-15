@@ -165,6 +165,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "hotkey_close_active_tab" => "بستن تب فعال",
         "hotkey_open_port_forwards" => "باز کردن انتقال‌های پورت",
         "hotkey_open_settings" => "باز کردن تنظیمات",
+        "hotkey_open_sftp" => "باز کردن SFTP",
         "hotkey_focus_view_search" => "تمرکز روی فیلد جستجو",
         "hotkey_switch_to_tab_slot" => "رفتن به تب مشخص",
         "hotkey_cycle_tabs" => "گردش بین تب‌ها",

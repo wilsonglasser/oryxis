@@ -165,6 +165,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "hotkey_close_active_tab" => "Đóng tab đang mở",
         "hotkey_open_port_forwards" => "Mở chuyển tiếp cổng",
         "hotkey_open_settings" => "Mở cài đặt",
+        "hotkey_open_sftp" => "Mở SFTP",
         "hotkey_focus_view_search" => "Tập trung vào ô tìm kiếm",
         "hotkey_switch_to_tab_slot" => "Chuyển tới tab cụ thể",
         "hotkey_cycle_tabs" => "Lần lượt qua các tab",

@@ -165,6 +165,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "hotkey_close_active_tab" => "Tutup tab aktif",
         "hotkey_open_port_forwards" => "Buka port forward",
         "hotkey_open_settings" => "Buka pengaturan",
+        "hotkey_open_sftp" => "Buka SFTP",
         "hotkey_focus_view_search" => "Fokus ke kolom pencarian",
         "hotkey_switch_to_tab_slot" => "Beralih ke tab tertentu",
         "hotkey_cycle_tabs" => "Putar antar tab",

@@ -2718,8 +2718,10 @@ impl Oryxis {
         // Hosts / SFTP carry the Ctrl+1 / Ctrl+2 hints since the strip
         // always renders them as area tabs.
         let hk_hosts = self.hotkey_label_for_strip_slot(0);
+        // SFTP is no longer a fixed strip slot; the menu item opens a new SFTP
+        // tab, so show the dedicated OpenSftp shortcut instead.
         let hk_sftp = if self.sftp_enabled {
-            self.hotkey_label_for_strip_slot(1)
+            self.hotkey_label_for_action(crate::hotkeys::HotkeyAction::OpenSftp)
         } else {
             None
         };

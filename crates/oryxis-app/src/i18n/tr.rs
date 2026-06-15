@@ -165,6 +165,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "hotkey_close_active_tab" => "Etkin sekmeyi kapat",
         "hotkey_open_port_forwards" => "Port yönlendirmelerini aç",
         "hotkey_open_settings" => "Ayarları aç",
+        "hotkey_open_sftp" => "SFTP'yi aç",
         "hotkey_focus_view_search" => "Arama alanına odaklan",
         "hotkey_switch_to_tab_slot" => "Belirli bir sekmeye geç",
         "hotkey_cycle_tabs" => "Sekmeler arasında geçiş yap",

@@ -164,6 +164,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "hotkey_close_active_tab" => "Chiudi scheda attiva",
         "hotkey_open_port_forwards" => "Apri port forwards",
         "hotkey_open_settings" => "Apri impostazioni",
+        "hotkey_open_sftp" => "Apri SFTP",
         "hotkey_focus_view_search" => "Metti a fuoco il campo di ricerca",
         "hotkey_switch_to_tab_slot" => "Vai a scheda specifica",
         "hotkey_cycle_tabs" => "Scorri le schede",

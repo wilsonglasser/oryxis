@@ -30,6 +30,8 @@ pub enum HotkeyAction {
     OpenPortForwards,
     OpenSettings,
     FocusViewSearch,
+    /// Open a new SFTP browser tab.
+    OpenSftp,
     // Tab strip
     SwitchToTabSlot,   // family: Ctrl + digit 1..9
     CycleTabs,         // family: Alt + ArrowLeft/Right
@@ -55,6 +57,7 @@ impl HotkeyAction {
             OpenPortForwards,
             OpenSettings,
             FocusViewSearch,
+            OpenSftp,
             SwitchToTabSlot,
             CycleTabs,
             ToggleFullscreen,
@@ -78,6 +81,7 @@ impl HotkeyAction {
             OpenPortForwards => "open_port_forwards",
             OpenSettings => "open_settings",
             FocusViewSearch => "focus_view_search",
+            OpenSftp => "open_sftp",
             SwitchToTabSlot => "switch_to_tab_slot",
             CycleTabs => "cycle_tabs",
             ToggleFullscreen => "toggle_fullscreen",
@@ -99,6 +103,7 @@ impl HotkeyAction {
             OpenPortForwards => "hotkey_open_port_forwards",
             OpenSettings => "hotkey_open_settings",
             FocusViewSearch => "hotkey_focus_view_search",
+            OpenSftp => "hotkey_open_sftp",
             SwitchToTabSlot => "hotkey_switch_to_tab_slot",
             CycleTabs => "hotkey_cycle_tabs",
             ToggleFullscreen => "hotkey_toggle_fullscreen",
@@ -612,6 +617,9 @@ pub fn default_bindings() -> HotkeyMap {
     put(&mut m, OpenPortForwards, primary_ctrl, false, false, primary_logo, Char('p'));
     put(&mut m, OpenSettings, primary_ctrl, false, false, primary_logo, Punct(","));
     put(&mut m, FocusViewSearch, primary_ctrl, false, false, primary_logo, Char('f'));
+    // Ctrl+Shift+E (Cmd+Shift+E on macOS): Shift lifts it out of the terminal
+    // control-sequence gate, same rationale as OpenLocalShell. Configurable.
+    put(&mut m, OpenSftp, primary_ctrl, true, false, primary_logo, Char('e'));
     put(&mut m, SwitchToTabSlot, primary_ctrl, false, false, primary_logo, Digit1to9);
     put(&mut m, CycleTabs, false, false, true, false, ArrowLeftRight);
     put(&mut m, ToggleFullscreen, false, false, false, false, Named(keyboard::key::Named::F11));

@@ -164,6 +164,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "hotkey_close_active_tab" => "关闭当前标签页",
         "hotkey_open_port_forwards" => "打开端口转发",
         "hotkey_open_settings" => "打开设置",
+        "hotkey_open_sftp" => "打开 SFTP",
         "hotkey_focus_view_search" => "聚焦搜索框",
         "hotkey_switch_to_tab_slot" => "切换到指定标签页",
         "hotkey_cycle_tabs" => "循环切换标签页",

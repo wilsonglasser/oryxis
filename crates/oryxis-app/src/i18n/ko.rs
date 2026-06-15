@@ -165,6 +165,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "hotkey_close_active_tab" => "활성 탭 닫기",
         "hotkey_open_port_forwards" => "포트 포워딩 열기",
         "hotkey_open_settings" => "설정 열기",
+        "hotkey_open_sftp" => "SFTP 열기",
         "hotkey_focus_view_search" => "검색 필드에 포커스",
         "hotkey_switch_to_tab_slot" => "특정 탭으로 전환",
         "hotkey_cycle_tabs" => "탭 순환",

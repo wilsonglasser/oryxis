@@ -164,6 +164,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "hotkey_close_active_tab" => "Закрыть активную вкладку",
         "hotkey_open_port_forwards" => "Открыть проброс портов",
         "hotkey_open_settings" => "Открыть настройки",
+        "hotkey_open_sftp" => "Открыть SFTP",
         "hotkey_focus_view_search" => "Фокус на поле поиска",
         "hotkey_switch_to_tab_slot" => "Перейти к конкретной вкладке",
         "hotkey_cycle_tabs" => "Циклически переключать вкладки",

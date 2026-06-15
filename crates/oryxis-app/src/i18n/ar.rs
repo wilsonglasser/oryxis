@@ -165,6 +165,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "hotkey_close_active_tab" => "إغلاق علامة التبويب النشطة",
         "hotkey_open_port_forwards" => "فتح إعادة توجيه المنافذ",
         "hotkey_open_settings" => "فتح الإعدادات",
+        "hotkey_open_sftp" => "فتح SFTP",
         "hotkey_focus_view_search" => "التركيز على حقل البحث",
         "hotkey_switch_to_tab_slot" => "التبديل إلى علامة تبويب محددة",
         "hotkey_cycle_tabs" => "التنقل بين علامات التبويب",
