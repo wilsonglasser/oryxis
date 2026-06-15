@@ -395,13 +395,7 @@ pub(crate) async fn apply_overwrite_for_item(
                 .find(|s| !s.is_empty())
                 .unwrap_or(&item.dst)
                 .to_string();
-            let entries = client
-                .list_dir(&parent)
-                .await
-                .map_err(|e| e.to_string())?;
-            let names: std::collections::HashSet<String> =
-                entries.into_iter().map(|e| e.name).collect();
-            let unique = unique_entry_name(&basename, |n| !names.contains(n));
+            let unique = unique_name_in_remote_dir(&client, &parent, &basename).await?;
             let target = remote_join(&parent, &unique);
             client
                 .upload_from(std::path::Path::new(&item.src), &target)
@@ -437,6 +431,70 @@ pub(crate) fn do_local_duplicate_item(
         std::fs::copy(&item.src, &item.dst)
             .map(|_| ())
             .map_err(|e| format!("copy {} → {}: {e}", item.src, item.dst))
+    }
+}
+
+/// List a LOCAL directory and pick a non-colliding name for `basename`
+/// via `unique_entry_name`. A read error is treated as an empty
+/// directory (no collisions). Non-UTF8 entry names are skipped, matching
+/// the historical inline behavior. The caller does its own `dir.join(..)`
+/// afterward; this only returns the chosen name.
+pub(crate) fn unique_name_in_local_dir(dir: &std::path::Path, basename: &str) -> String {
+    let mut names: std::collections::HashSet<String> = std::collections::HashSet::new();
+    if let Ok(rd) = std::fs::read_dir(dir) {
+        for entry in rd.flatten() {
+            if let Some(n) = entry.file_name().to_str() {
+                names.insert(n.to_string());
+            }
+        }
+    }
+    unique_entry_name(basename, |n| !names.contains(n))
+}
+
+/// List a REMOTE directory over SFTP and pick a non-colliding name for
+/// `basename` via `unique_entry_name`. The caller does its own
+/// `remote_join(dir, ..)` afterward; this only returns the chosen name.
+pub(crate) async fn unique_name_in_remote_dir(
+    client: &oryxis_ssh::SftpClient,
+    dir: &str,
+    basename: &str,
+) -> Result<String, String> {
+    let entries = client.list_dir(dir).await.map_err(|e| e.to_string())?;
+    let names: std::collections::HashSet<String> = entries.into_iter().map(|e| e.name).collect();
+    Ok(unique_entry_name(basename, |n| !names.contains(n)))
+}
+
+/// Run a remote `cp`/`cp -r` over the exec channel with single-quote
+/// escaping, mapping the exit code to `Ok(())` / `Err(message)`. `--`
+/// prevents dashes in names from being parsed as flags. `recursive`
+/// selects `cp -r --` vs `cp --` and the matching exit-code label.
+pub(crate) async fn remote_cp(
+    client: &oryxis_ssh::SftpClient,
+    src: &str,
+    dst: &str,
+    recursive: bool,
+) -> Result<(), String> {
+    let escaped_src = src.replace('\'', "'\\''");
+    let escaped_dst = dst.replace('\'', "'\\''");
+    let cmd = if recursive {
+        format!("cp -r -- '{}' '{}'", escaped_src, escaped_dst)
+    } else {
+        format!("cp -- '{}' '{}'", escaped_src, escaped_dst)
+    };
+    let (code, _out, err) = client.exec(&cmd).await.map_err(|e| e.to_string())?;
+    if code == 0 {
+        Ok(())
+    } else {
+        let msg = err.trim();
+        if msg.is_empty() {
+            Err(if recursive {
+                format!("cp -r exited {code}")
+            } else {
+                format!("cp exited {code}")
+            })
+        } else {
+            Err(msg.to_string())
+        }
     }
 }
 

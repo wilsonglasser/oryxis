@@ -12,9 +12,10 @@ use iced::Task;
 use crate::app::{Message, Oryxis};
 use crate::sftp_helpers::{
     apply_overwrite_for_item, build_client_pool, do_download_item, do_local_duplicate_item,
-    do_relay_item, do_upload_item, parent_path, remote_join, transfer_item_label,
-    unique_entry_name, walk_local_for_duplicate, walk_local_for_upload, walk_remote_for_download,
-    walk_remote_for_relay, UploadOutcome, UploadStepOutcome,
+    do_relay_item, do_upload_item, parent_path, remote_cp, remote_join, transfer_item_label,
+    unique_name_in_local_dir, unique_name_in_remote_dir, walk_local_for_duplicate,
+    walk_local_for_upload, walk_remote_for_download, walk_remote_for_relay, UploadOutcome,
+    UploadStepOutcome,
 };
 use crate::state::SftpPaneSide;
 
@@ -211,14 +212,12 @@ impl Oryxis {
                     }
                     crate::state::OverwriteAction::Duplicate => Task::perform(
                         async move {
-                            let entries = client
-                                .list_dir(&prompt.dst_dir)
-                                .await
-                                .map_err(|e| e.to_string())?;
-                            let names: std::collections::HashSet<String> =
-                                entries.into_iter().map(|e| e.name).collect();
-                            let unique =
-                                unique_entry_name(&prompt.basename, |n| !names.contains(n));
+                            let unique = unique_name_in_remote_dir(
+                                &client,
+                                &prompt.dst_dir,
+                                &prompt.basename,
+                            )
+                            .await?;
                             let target = remote_join(&prompt.dst_dir, &unique);
                             client
                                 .upload_from(&prompt.src, &target)
@@ -251,17 +250,7 @@ impl Oryxis {
                             .find(|s| !s.is_empty())
                             .unwrap_or(&remote_path)
                             .to_string();
-                        let mut listing = Vec::new();
-                        if let Ok(rd) = std::fs::read_dir(&local_dir) {
-                            for entry in rd.flatten() {
-                                if let Some(n) = entry.file_name().to_str() {
-                                    listing.push(n.to_string());
-                                }
-                            }
-                        }
-                        let names: std::collections::HashSet<String> =
-                            listing.into_iter().collect();
-                        let unique = unique_entry_name(&basename, |n| !names.contains(n));
+                        let unique = unique_name_in_local_dir(&local_dir, &basename);
                         let target = local_dir.join(&unique);
                         client
                             // Single file: one extra stat is negligible.
@@ -292,15 +281,7 @@ impl Oryxis {
                             .and_then(|s| s.to_str())
                             .unwrap_or("untitled")
                             .to_string();
-                        let mut listing = std::collections::HashSet::new();
-                        if let Ok(rd) = std::fs::read_dir(&parent) {
-                            for entry in rd.flatten() {
-                                if let Some(n) = entry.file_name().to_str() {
-                                    listing.insert(n.to_string());
-                                }
-                            }
-                        }
-                        let unique = unique_entry_name(&basename, |n| !listing.contains(n));
+                        let unique = unique_name_in_local_dir(&parent, &basename);
                         let dest = parent.join(&unique);
                         // The copy can be multi-GB; run it off the event
                         // loop instead of freezing update() for the
@@ -327,38 +308,15 @@ impl Oryxis {
                         let src = path.clone();
                         return Ok(Task::perform(
                             async move {
-                                let entries = client
-                                    .list_dir(&parent)
-                                    .await
-                                    .map_err(|e| e.to_string())?;
-                                let names: std::collections::HashSet<String> =
-                                    entries.into_iter().map(|e| e.name).collect();
                                 let unique =
-                                    unique_entry_name(&basename, |n| !names.contains(n));
-                                let dest = if parent == "/" {
-                                    format!("/{}", unique)
-                                } else {
-                                    format!("{}/{}", parent.trim_end_matches('/'), unique)
-                                };
+                                    unique_name_in_remote_dir(&client, &parent, &basename)
+                                        .await?;
+                                let dest = remote_join(&parent, &unique);
                                 // `cp -- src dst`, same exec channel trick
                                 // we used for `rm -rf`. Using -- prevents
                                 // dashes in names from being parsed as flags.
-                                let escaped_src = src.replace('\'', "'\\''");
-                                let escaped_dst = dest.replace('\'', "'\\''");
-                                let cmd =
-                                    format!("cp -- '{}' '{}'", escaped_src, escaped_dst);
-                                let (code, _out, err) =
-                                    client.exec(&cmd).await.map_err(|e| e.to_string())?;
-                                if code == 0 {
-                                    Ok::<String, String>(reload)
-                                } else {
-                                    let msg = err.trim();
-                                    Err(if msg.is_empty() {
-                                        format!("cp exited {code}")
-                                    } else {
-                                        msg.to_string()
-                                    })
-                                }
+                                remote_cp(&client, &src, &dest, false).await?;
+                                Ok::<String, String>(reload)
                             },
                             move |result| match result {
                                 Ok(reload) => Message::SftpNavigateRemote(side, reload),
@@ -426,18 +384,9 @@ impl Oryxis {
                             .and_then(|s| s.to_str())
                             .ok_or_else(|| "invalid folder name".to_string())?
                             .to_string();
-                        let entries = client
-                            .list_dir(&remote_dir)
-                            .await
-                            .map_err(|e| e.to_string())?;
-                        let names: std::collections::HashSet<String> =
-                            entries.into_iter().map(|e| e.name).collect();
-                        let unique = unique_entry_name(&basename, |n| !names.contains(n));
-                        let target_root = if remote_dir == "/" {
-                            format!("/{}", unique)
-                        } else {
-                            format!("{}/{}", remote_dir.trim_end_matches('/'), unique)
-                        };
+                        let unique =
+                            unique_name_in_remote_dir(&client, &remote_dir, &basename).await?;
+                        let target_root = remote_join(&remote_dir, &unique);
                         let mut queue = std::collections::VecDeque::new();
                         queue.push_back(crate::state::TransferItem {
                             src: local_root.to_string_lossy().into_owned(),
@@ -484,15 +433,7 @@ impl Oryxis {
                             .unwrap_or(&remote_root)
                             .to_string();
                         // Pick a non-colliding local name.
-                        let mut existing = std::collections::HashSet::new();
-                        if let Ok(rd) = std::fs::read_dir(&local_dir) {
-                            for entry in rd.flatten() {
-                                if let Some(n) = entry.file_name().to_str() {
-                                    existing.insert(n.to_string());
-                                }
-                            }
-                        }
-                        let unique = unique_entry_name(&basename, |n| !existing.contains(n));
+                        let unique = unique_name_in_local_dir(&local_dir, &basename);
                         let target_root = local_dir.join(&unique);
                         let mut queue = std::collections::VecDeque::new();
                         queue.push_back(crate::state::TransferItem {
@@ -536,15 +477,7 @@ impl Oryxis {
                             .and_then(|s| s.to_str())
                             .unwrap_or("untitled")
                             .to_string();
-                        let mut existing = std::collections::HashSet::new();
-                        if let Ok(rd) = std::fs::read_dir(&parent) {
-                            for entry in rd.flatten() {
-                                if let Some(n) = entry.file_name().to_str() {
-                                    existing.insert(n.to_string());
-                                }
-                            }
-                        }
-                        let unique = unique_entry_name(&basename, |n| !existing.contains(n));
+                        let unique = unique_name_in_local_dir(&parent, &basename);
                         let target_root = parent.join(&unique);
                         // Build the queue synchronously, no client needed
                         // for a local-only walk + copy.
@@ -593,37 +526,12 @@ impl Oryxis {
                         // partial recursive copy progress over SSH anyway.
                         return Ok(Task::perform(
                             async move {
-                                let entries = client
-                                    .list_dir(&parent)
-                                    .await
-                                    .map_err(|e| e.to_string())?;
-                                let names: std::collections::HashSet<String> =
-                                    entries.into_iter().map(|e| e.name).collect();
                                 let unique =
-                                    unique_entry_name(&basename, |n| !names.contains(n));
-                                let dest = if parent == "/" {
-                                    format!("/{}", unique)
-                                } else {
-                                    format!("{}/{}", parent.trim_end_matches('/'), unique)
-                                };
-                                let escaped_src = src.replace('\'', "'\\''");
-                                let escaped_dst = dest.replace('\'', "'\\''");
-                                let cmd = format!(
-                                    "cp -r -- '{}' '{}'",
-                                    escaped_src, escaped_dst
-                                );
-                                let (code, _out, err) =
-                                    client.exec(&cmd).await.map_err(|e| e.to_string())?;
-                                if code == 0 {
-                                    Ok::<String, String>(reload)
-                                } else {
-                                    let msg = err.trim();
-                                    Err(if msg.is_empty() {
-                                        format!("cp -r exited {code}")
-                                    } else {
-                                        msg.to_string()
-                                    })
-                                }
+                                    unique_name_in_remote_dir(&client, &parent, &basename)
+                                        .await?;
+                                let dest = remote_join(&parent, &unique);
+                                remote_cp(&client, &src, &dest, true).await?;
+                                Ok::<String, String>(reload)
                             },
                             move |result| match result {
                                 Ok(reload) => Message::SftpNavigateRemote(side, reload),
@@ -1096,13 +1004,8 @@ impl Oryxis {
                         // Pick a non-colliding name on the destination so
                         // a relay never silently clobbers an existing
                         // file with the same name.
-                        let entries = dst_client
-                            .list_dir(&dest_dir)
-                            .await
-                            .map_err(|e| e.to_string())?;
-                        let names: std::collections::HashSet<String> =
-                            entries.into_iter().map(|e| e.name).collect();
-                        let unique = unique_entry_name(&basename, |n| !names.contains(n));
+                        let unique =
+                            unique_name_in_remote_dir(&dst_client, &dest_dir, &basename).await?;
                         let target = remote_join(&dest_dir, &unique);
                         let mut queue = std::collections::VecDeque::new();
                         queue.push_back(crate::state::TransferItem {
@@ -1155,13 +1058,8 @@ impl Oryxis {
                             .find(|s| !s.is_empty())
                             .unwrap_or(&src_root)
                             .to_string();
-                        let entries = dst_client
-                            .list_dir(&dest_dir)
-                            .await
-                            .map_err(|e| e.to_string())?;
-                        let names: std::collections::HashSet<String> =
-                            entries.into_iter().map(|e| e.name).collect();
-                        let unique = unique_entry_name(&basename, |n| !names.contains(n));
+                        let unique =
+                            unique_name_in_remote_dir(&dst_client, &dest_dir, &basename).await?;
                         let target_root = remote_join(&dest_dir, &unique);
                         let mut queue = std::collections::VecDeque::new();
                         queue.push_back(crate::state::TransferItem {
