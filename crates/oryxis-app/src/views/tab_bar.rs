@@ -228,33 +228,7 @@ impl Oryxis {
         // unified order), partitioned pinned-first across both kinds. Each
         // `TabRef` maps to its current storage index. SFTP refs are skipped
         // when the SFTP feature is off.
-        let pinned_of = |r: &crate::state::TabRef| -> bool {
-            match r {
-                crate::state::TabRef::Terminal(id) => {
-                    self.tabs.iter().find(|t| t._id == *id).map(|t| t.pinned).unwrap_or(false)
-                }
-                crate::state::TabRef::Sftp(id) => {
-                    self.sftp_tabs.iter().find(|t| t.id == *id).map(|t| t.pinned).unwrap_or(false)
-                }
-            }
-        };
-        let to_entry = |r: &crate::state::TabRef| -> Option<(bool, usize)> {
-            match r {
-                crate::state::TabRef::Terminal(id) => {
-                    self.tabs.iter().position(|t| t._id == *id).map(|i| (false, i))
-                }
-                crate::state::TabRef::Sftp(id) => {
-                    if !self.sftp_enabled {
-                        return None;
-                    }
-                    self.sftp_tabs.iter().position(|t| t.id == *id).map(|i| (true, i))
-                }
-            }
-        };
-        let mut strip_order: Vec<(bool, usize)> = Vec::new();
-        strip_order.extend(self.tab_order.iter().filter(|r| pinned_of(r)).filter_map(to_entry));
-        strip_order.extend(self.tab_order.iter().filter(|r| !pinned_of(r)).filter_map(to_entry));
-        for (is_sftp, idx) in strip_order {
+        for (is_sftp, idx) in self.strip_order() {
             if is_sftp {
                 let tab = &self.sftp_tabs[idx];
                 let is_active = sftp_surface && self.active_sftp == Some(idx);
@@ -702,6 +676,41 @@ impl Oryxis {
             })
     }
 
+    /// Display order of the unified tab strip: pinned-first over the
+    /// drag-reorderable `tab_order`, across both terminal and SFTP kinds.
+    /// Each entry is `(is_sftp, storage_index)`. SFTP refs are dropped when
+    /// the SFTP feature is off. Shared by `view_tab_bar` (rendering) and
+    /// `tab_scroll_to_active` (offset math) so the two can't drift.
+    pub(crate) fn strip_order(&self) -> Vec<(bool, usize)> {
+        let pinned_of = |r: &crate::state::TabRef| -> bool {
+            match r {
+                crate::state::TabRef::Terminal(id) => {
+                    self.tabs.iter().find(|t| t._id == *id).map(|t| t.pinned).unwrap_or(false)
+                }
+                crate::state::TabRef::Sftp(id) => {
+                    self.sftp_tabs.iter().find(|t| t.id == *id).map(|t| t.pinned).unwrap_or(false)
+                }
+            }
+        };
+        let to_entry = |r: &crate::state::TabRef| -> Option<(bool, usize)> {
+            match r {
+                crate::state::TabRef::Terminal(id) => {
+                    self.tabs.iter().position(|t| t._id == *id).map(|i| (false, i))
+                }
+                crate::state::TabRef::Sftp(id) => {
+                    if !self.sftp_enabled {
+                        return None;
+                    }
+                    self.sftp_tabs.iter().position(|t| t.id == *id).map(|i| (true, i))
+                }
+            }
+        };
+        let mut order: Vec<(bool, usize)> = Vec::new();
+        order.extend(self.tab_order.iter().filter(|r| pinned_of(r)).filter_map(to_entry));
+        order.extend(self.tab_order.iter().filter(|r| !pinned_of(r)).filter_map(to_entry));
+        order
+    }
+
     pub(crate) fn tab_scroll_to_active(&self) -> iced::Task<Message> {
         let Some(active_idx) = self.active_tab else {
             return iced::Task::none();
@@ -736,8 +745,16 @@ impl Oryxis {
         let (active_w, inactive_w) =
             allocate_tab_widths(self.tabs.len(), approx_strip_width);
         // Sum widths of all tabs that come before the active one, plus
-        // the spacing between them. Active is reached at this offset.
-        let preceding = active_idx as f32;
+        // the spacing between them. The strip renders pinned-first over
+        // the drag-reorderable tab_order, not in storage order, so use
+        // the active tab's actual display position (else a reorder or pin
+        // would center the wrong tab). Width is still approximated
+        // uniformly here, as before; only the ordering is corrected.
+        let preceding = self
+            .strip_order()
+            .iter()
+            .position(|&(is_sftp, i)| !is_sftp && i == active_idx)
+            .unwrap_or(active_idx) as f32;
         let mut x = preceding * (inactive_w + TAB_SPACING);
         // Center active in viewport instead of left-aligning so the
         // user has context (the previous + next tabs visible too).

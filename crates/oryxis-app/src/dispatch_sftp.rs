@@ -21,6 +21,19 @@ use crate::app::{Message, Oryxis};
 use crate::sftp_helpers::{file_basename, parent_path, sort_local_entries, sort_remote_entries};
 use crate::state::SftpPaneSide;
 
+use std::time::Duration;
+
+/// How long a transient error toast stays on screen before auto-clearing.
+const TOAST_DURATION: Duration = Duration::from_millis(2600);
+/// Max gap between two clicks on the same folder to count as a double-click.
+const DOUBLE_CLICK_WINDOW: Duration = Duration::from_millis(400);
+/// Idle gap after which type-ahead starts a fresh search instead of
+/// appending to the previous one.
+const TYPE_AHEAD_RESET: Duration = Duration::from_millis(900);
+/// Debounce before type-ahead actually searches, so fast typing resolves
+/// once with the full buffer instead of on every keystroke.
+const TYPE_AHEAD_DEBOUNCE: Duration = Duration::from_millis(150);
+
 /// Stream events from a fresh SFTP connect. `HostKey` surfaces an
 /// unknown/changed server key to the shared verification modal mid-connect
 /// (the connect blocks until the user answers); `Done` carries the final
@@ -258,7 +271,7 @@ impl Oryxis {
                     self.toast = Some(msg);
                     return Ok(Task::perform(
                         async {
-                            tokio::time::sleep(std::time::Duration::from_millis(2600)).await
+                            tokio::time::sleep(TOAST_DURATION).await
                         },
                         |_| Message::ToastClear,
                     ));
@@ -962,7 +975,7 @@ impl Oryxis {
                     let is_double = self.sftp.last_click.as_ref().is_some_and(|(s, p, t)| {
                         *s == side
                             && p == &path
-                            && now.duration_since(*t) < std::time::Duration::from_millis(400)
+                            && now.duration_since(*t) < DOUBLE_CLICK_WINDOW
                     });
                     if is_double {
                         self.sftp.last_click = None;
@@ -1039,7 +1052,7 @@ impl Oryxis {
                 let elapsed = self
                     .sftp
                     .type_ahead_at
-                    .map(|t| now.duration_since(t) > std::time::Duration::from_millis(900))
+                    .map(|t| now.duration_since(t) > TYPE_AHEAD_RESET)
                     .unwrap_or(true);
                 if elapsed {
                     // A pause completes the previous sequence: remember it so
@@ -1057,7 +1070,7 @@ impl Oryxis {
                 let generation = self.sftp.type_ahead_gen;
                 return Ok(Task::perform(
                     async move {
-                        tokio::time::sleep(std::time::Duration::from_millis(150)).await;
+                        tokio::time::sleep(TYPE_AHEAD_DEBOUNCE).await;
                     },
                     move |_| Message::SftpTypeAheadFire(generation),
                 ));
