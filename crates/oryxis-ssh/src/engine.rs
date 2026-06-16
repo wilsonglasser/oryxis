@@ -1171,15 +1171,15 @@ impl SshEngine {
     /// transport setup in `connect_timeout` so the SFTP picker (which
     /// goes through here) doesn't fall through to the kernel's ~127s
     /// SYN-retransmit ceiling on unreachable hosts.
-    pub async fn connect_with_resolver(
+    /// Establish the raw TCP+SSH transport handle: jump chain first, then
+    /// a proxy, else a direct dial, all under the connect timeout so an
+    /// unreachable host fails fast instead of hanging on SYN retransmits.
+    /// Shared by `connect_with_resolver` and `establish_transport`.
+    async fn dial(
         &self,
         connection: &Connection,
-        password: Option<&str>,
-        private_key_pem: Option<&str>,
-        cols: u32,
-        rows: u32,
         resolver: Option<&ConnectionResolver>,
-    ) -> Result<(SshSession, mpsc::UnboundedReceiver<Vec<u8>>), SshError> {
+    ) -> Result<client::Handle<ClientHandler>, SshError> {
         let target_host = &connection.hostname;
         let target_port = connection.port;
         let addr = format!("{}:{}", target_host, target_port);
@@ -1204,7 +1204,7 @@ impl SshEngine {
                     .map_err(|e| SshError::ConnectionFailed(format!("{}: {}", addr, e)))
             }
         };
-        let handle = tokio::time::timeout(connect_timeout, connect_fut)
+        tokio::time::timeout(connect_timeout, connect_fut)
             .await
             .map_err(|_| {
                 SshError::ConnectionFailed(format!(
@@ -1212,7 +1212,19 @@ impl SshEngine {
                     addr,
                     connect_timeout.as_secs()
                 ))
-            })??;
+            })?
+    }
+
+    pub async fn connect_with_resolver(
+        &self,
+        connection: &Connection,
+        password: Option<&str>,
+        private_key_pem: Option<&str>,
+        cols: u32,
+        rows: u32,
+        resolver: Option<&ConnectionResolver>,
+    ) -> Result<(SshSession, mpsc::UnboundedReceiver<Vec<u8>>), SshError> {
+        let handle = self.dial(connection, resolver).await?;
 
         self.authenticate_and_open(handle, connection, password, private_key_pem, cols, rows)
             .await
@@ -1228,33 +1240,7 @@ impl SshEngine {
         connection: &Connection,
         resolver: Option<&ConnectionResolver>,
     ) -> Result<SshHandle, SshError> {
-        let connect_timeout = self.connect_timeout;
-
-        let target_host = &connection.hostname;
-        let target_port = connection.port;
-        let addr = format!("{}:{}", target_host, target_port);
-
-        tracing::info!("SSH connecting to {} (timeout: {}s)", addr, connect_timeout.as_secs());
-
-        let connect_fut = async {
-            if !connection.jump_chain.is_empty() {
-                self.connect_via_jump_hosts(connection, resolver, &addr).await
-            } else if let Some(proxy) = &connection.proxy {
-                self.connect_via_proxy(proxy, target_host, target_port).await
-            } else {
-                let config = self.make_config();
-                let handler = self.make_handler(target_host, target_port);
-                client::connect(config, &addr, handler)
-                    .await
-                    .map_err(|e| SshError::ConnectionFailed(format!("{}: {}", addr, e)))
-            }
-        };
-
-        let handle = tokio::time::timeout(connect_timeout, connect_fut)
-            .await
-            .map_err(|_| SshError::ConnectionFailed(format!(
-                "{}: timed out after {}s", addr, connect_timeout.as_secs()
-            )))??;
+        let handle = self.dial(connection, resolver).await?;
         Ok(SshHandle(handle))
     }
 
