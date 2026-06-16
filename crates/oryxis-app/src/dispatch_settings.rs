@@ -1341,7 +1341,12 @@ fn find_git_bash() -> Option<String> {
 fn detect_unix_shells() -> Vec<crate::state::LocalShellSpec> {
     use crate::state::LocalShellSpec;
     let mut out: Vec<LocalShellSpec> = Vec::new();
-    let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+    // Dedup by canonical path so `/bin/bash` and `/usr/bin/bash` (same
+    // binary via a symlinked `/bin`) don't show up as two entries.
+    let mut seen: std::collections::HashSet<std::path::PathBuf> = std::collections::HashSet::new();
+    let canonical = |path: &std::path::Path| -> std::path::PathBuf {
+        std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf())
+    };
     let basename = |path: &str| -> String {
         std::path::Path::new(path)
             .file_name()
@@ -1352,7 +1357,7 @@ fn detect_unix_shells() -> Vec<crate::state::LocalShellSpec> {
     if let Ok(shell) = std::env::var("SHELL")
         && !shell.is_empty()
         && std::path::Path::new(&shell).is_file()
-        && seen.insert(shell.clone())
+        && seen.insert(canonical(std::path::Path::new(&shell)))
     {
         out.push(LocalShellSpec {
             label: format!("{} ({})", basename(&shell), crate::i18n::t("shell_default")),
@@ -1361,21 +1366,20 @@ fn detect_unix_shells() -> Vec<crate::state::LocalShellSpec> {
         });
     }
     for name in ["bash", "zsh", "fish", "nu"] {
-        if let Some(path) = unix_which(name) {
-            let p = path.to_string_lossy().into_owned();
-            if seen.insert(p.clone()) {
-                out.push(LocalShellSpec {
-                    label: name.into(),
-                    program: p,
-                    args: vec![],
-                });
-            }
+        if let Some(path) = unix_which(name)
+            && seen.insert(canonical(&path))
+        {
+            out.push(LocalShellSpec {
+                label: name.into(),
+                program: path.to_string_lossy().into_owned(),
+                args: vec![],
+            });
         }
     }
     out
 }
 
-/// Minimal `which`: first `PATH` entry containing an `program` file.
+/// Minimal `which`: first `PATH` entry that holds the named program.
 #[cfg(unix)]
 fn unix_which(program: &str) -> Option<std::path::PathBuf> {
     let path = std::env::var_os("PATH")?;
