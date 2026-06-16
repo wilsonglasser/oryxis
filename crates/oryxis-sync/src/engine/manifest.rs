@@ -268,20 +268,29 @@ pub(crate) fn collect_records(
             EntityType::Connection => {
                 let conns = cached!(conn_cache, list_connections);
                 conns.get(&delta.entity_id).and_then(|c| {
-                    let password = if sync_passwords {
-                        v.get_connection_password(&c.id).ok().flatten()
+                    // When syncing passwords, send the authoritative state: a
+                    // value sets it, an absent value flagged cleared removes
+                    // it on the peer. Off = omit so the peer preserves.
+                    let (password, password_cleared) = if sync_passwords {
+                        let pw = v.get_connection_password(&c.id).ok().flatten();
+                        let cleared = pw.is_none();
+                        (pw, cleared)
                     } else {
-                        None
+                        (None, false)
                     };
-                    let proxy_password = if sync_passwords {
-                        v.get_proxy_password(&c.id).ok().flatten()
+                    let (proxy_password, proxy_password_cleared) = if sync_passwords {
+                        let pw = v.get_proxy_password(&c.id).ok().flatten();
+                        let cleared = pw.is_none();
+                        (pw, cleared)
                     } else {
-                        None
+                        (None, false)
                     };
                     let wrapper = protocol::SyncConnection {
                         connection: c.clone(),
                         password,
+                        password_cleared,
                         proxy_password,
+                        proxy_password_cleared,
                     };
                     encode!(wrapper, "Connection")
                 })
@@ -294,14 +303,17 @@ pub(crate) fn collect_records(
             EntityType::Identity => {
                 let idents = cached!(ident_cache, list_identities);
                 idents.get(&delta.entity_id).and_then(|i| {
-                    let password = if sync_passwords {
-                        v.get_identity_password(&i.id).ok().flatten()
+                    let (password, password_cleared) = if sync_passwords {
+                        let pw = v.get_identity_password(&i.id).ok().flatten();
+                        let cleared = pw.is_none();
+                        (pw, cleared)
                     } else {
-                        None
+                        (None, false)
                     };
                     let wrapper = protocol::SyncIdentity {
                         identity: i.clone(),
                         password,
+                        password_cleared,
                     };
                     encode!(wrapper, "Identity")
                 })
@@ -309,14 +321,17 @@ pub(crate) fn collect_records(
             EntityType::ProxyIdentity => {
                 let items = cached!(proxy_ident_cache, list_proxy_identities);
                 items.get(&delta.entity_id).and_then(|pi| {
-                    let password = if sync_passwords {
-                        v.get_proxy_identity_password(&pi.id).ok().flatten()
+                    let (password, password_cleared) = if sync_passwords {
+                        let pw = v.get_proxy_identity_password(&pi.id).ok().flatten();
+                        let cleared = pw.is_none();
+                        (pw, cleared)
                     } else {
-                        None
+                        (None, false)
                     };
                     let wrapper = protocol::SyncProxyIdentity {
                         proxy_identity: pi.clone(),
                         password,
+                        password_cleared,
                     };
                     encode!(wrapper, "ProxyIdentity")
                 })
@@ -349,14 +364,17 @@ pub(crate) fn collect_records(
             EntityType::CloudProfile => {
                 let items = cached!(cloud_profile_cache, list_cloud_profiles);
                 items.get(&delta.entity_id).and_then(|cp| {
-                    let secret = if sync_passwords {
-                        v.get_cloud_profile_secret(&cp.id).ok().flatten()
+                    let (secret, secret_cleared) = if sync_passwords {
+                        let s = v.get_cloud_profile_secret(&cp.id).ok().flatten();
+                        let cleared = s.is_none();
+                        (s, cleared)
                     } else {
-                        None
+                        (None, false)
                     };
                     let wrapper = protocol::SyncCloudProfile {
                         profile: cp.clone(),
                         secret,
+                        secret_cleared,
                     };
                     encode!(wrapper, "CloudProfile")
                 })
@@ -395,6 +413,18 @@ pub(crate) fn collect_records(
 /// `Some`, every non-tombstone payload is unsealed with
 /// ChaCha20-Poly1305 before deserialization. A decrypt failure means
 /// the record was forged or tampered with; we skip it and warn.
+/// Map a wire secret (value + `*_cleared` sentinel) to the vault `save_*`
+/// password argument: a value sets it, an absent-but-cleared field clears
+/// it (relying on the vault's `Some("")` = clear contract), and an
+/// absent-not-cleared field preserves the receiver's existing value.
+fn secret_arg(value: &Option<String>, cleared: bool) -> Option<&str> {
+    match value {
+        Some(s) => Some(s.as_str()),
+        None if cleared => Some(""),
+        None => None,
+    }
+}
+
 pub(crate) fn apply_records(
     vault: &Arc<std::sync::Mutex<VaultStore>>,
     records: &[protocol::SyncRecord],
@@ -507,9 +537,14 @@ pub(crate) fn apply_records(
                 match serde_json::from_slice::<protocol::SyncConnection>(&payload) {
                     Ok(sc) => {
                         let id = sc.connection.id;
-                        log_save!(v.save_connection(&sc.connection, sc.password.as_deref()));
-                        if let Some(pp) = &sc.proxy_password {
-                            log_save!(v.set_proxy_password(&id, Some(pp)));
+                        log_save!(v.save_connection(
+                            &sc.connection,
+                            secret_arg(&sc.password, sc.password_cleared)
+                        ));
+                        // Some(arg) = set/clear on the wire; None = preserve.
+                        if let Some(arg) = secret_arg(&sc.proxy_password, sc.proxy_password_cleared)
+                        {
+                            log_save!(v.set_proxy_password(&id, Some(arg)));
                         }
                     }
                     Err(e) => tracing::warn!(
@@ -529,7 +564,10 @@ pub(crate) fn apply_records(
             }
             EntityType::Identity => {
                 match serde_json::from_slice::<protocol::SyncIdentity>(&payload) {
-                    Ok(si) => log_save!(v.save_identity(&si.identity, si.password.as_deref())),
+                    Ok(si) => log_save!(v.save_identity(
+                        &si.identity,
+                        secret_arg(&si.password, si.password_cleared)
+                    )),
                     Err(e) => tracing::warn!(
                         "sync: bad Identity payload for {}: {e}",
                         record.entity_id
@@ -538,9 +576,10 @@ pub(crate) fn apply_records(
             }
             EntityType::ProxyIdentity => {
                 match serde_json::from_slice::<protocol::SyncProxyIdentity>(&payload) {
-                    Ok(spi) => log_save!(
-                        v.save_proxy_identity(&spi.proxy_identity, spi.password.as_deref())
-                    ),
+                    Ok(spi) => log_save!(v.save_proxy_identity(
+                        &spi.proxy_identity,
+                        secret_arg(&spi.password, spi.password_cleared)
+                    )),
                     Err(e) => tracing::warn!(
                         "sync: bad ProxyIdentity payload for {}: {e}",
                         record.entity_id
@@ -585,7 +624,10 @@ pub(crate) fn apply_records(
             }
             EntityType::CloudProfile => {
                 match serde_json::from_slice::<protocol::SyncCloudProfile>(&payload) {
-                    Ok(scp) => log_save!(v.save_cloud_profile(&scp.profile, scp.secret.as_deref())),
+                    Ok(scp) => log_save!(v.save_cloud_profile(
+                        &scp.profile,
+                        secret_arg(&scp.secret, scp.secret_cleared)
+                    )),
                     Err(e) => tracing::warn!(
                         "sync: bad CloudProfile payload for {}: {e}",
                         record.entity_id
@@ -649,7 +691,9 @@ mod lww_tests {
         let wrapper = protocol::SyncConnection {
             connection: c,
             password: None,
+            password_cleared: false,
             proxy_password: None,
+            proxy_password_cleared: false,
         };
         let cipher = crypto::PayloadCipher::new(&SECRET).unwrap();
         let payload = cipher.encrypt(&serde_json::to_vec(&wrapper).unwrap()).unwrap();
@@ -683,6 +727,48 @@ mod lww_tests {
         let rec = conn_record(id, "remote-old", now - Duration::seconds(60));
         apply_records(&vault, &[rec], Some(&SECRET)).unwrap();
         assert_eq!(label_of(&vault, id).as_deref(), Some("local-new"));
+    }
+
+    #[test]
+    fn cleared_password_propagates_end_to_end() {
+        // #19 end-to-end: device A clears a connection's password; device B
+        // (older copy that still has one) must reflect the removal after a
+        // collect -> apply round-trip. Exercises the *_cleared sentinel and
+        // confirms the clear isn't dropped by the defensive LWW guard.
+        let id = Uuid::new_v4();
+        let now = Utc::now();
+
+        // A: newer connection with NO password, sync_passwords on.
+        let a = vault();
+        {
+            let v = a.lock().unwrap();
+            v.set_setting("sync_passwords", "true").unwrap();
+            let mut c = Connection::new("h", "10.0.0.9");
+            c.id = id;
+            c.updated_at = now;
+            v.save_connection(&c, None).unwrap();
+        }
+        let needed = vec![protocol::DeltaRef {
+            entity_type: EntityType::Connection,
+            entity_id: id,
+        }];
+        let records = collect_records(&a, &needed, Some(&SECRET)).unwrap();
+
+        // B: older copy that still holds a password.
+        let b = vault();
+        {
+            let v = b.lock().unwrap();
+            let mut c = Connection::new("h", "10.0.0.9");
+            c.id = id;
+            c.updated_at = now - Duration::seconds(60);
+            v.save_connection(&c, Some("old-secret")).unwrap();
+            assert_eq!(
+                v.get_connection_password(&id).unwrap().as_deref(),
+                Some("old-secret")
+            );
+        }
+        apply_records(&b, &records, Some(&SECRET)).unwrap();
+        assert_eq!(b.lock().unwrap().get_connection_password(&id).unwrap(), None);
     }
 
     #[test]

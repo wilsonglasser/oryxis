@@ -259,6 +259,25 @@ pub struct SyncRecord {
 // `sync_passwords` setting is on.
 // ---------------------------------------------------------------------------
 
+/// `skip_serializing_if` predicate for the `*_cleared` sentinels below so
+/// the common "not cleared" case stays off the wire (older peers keep
+/// seeing the legacy payload shape). Correctness never depends on it: a
+/// missing sentinel deserializes to `false` = preserve.
+fn is_false(b: &bool) -> bool {
+    !*b
+}
+
+// Secret fields are a two-part wire encoding rather than a single
+// `Option<Option<String>>`: serde's `flatten` (used for the inner model in
+// every wrapper below) collapses the JSON null-vs-absent distinction a
+// double-option would rely on, so a `*_cleared: bool` sentinel carries the
+// "explicitly removed" signal instead. Semantics per secret:
+//   value present            -> set it
+//   value absent + cleared   -> clear it (apply passes Some("") -> NULL)
+//   value absent + !cleared  -> preserve the receiver's existing value
+// Backward compatible: old peers omit the sentinel (defaults false =
+// preserve) and ignore the unknown field when they receive it.
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SyncConnection {
     #[serde(flatten)]
@@ -266,9 +285,15 @@ pub struct SyncConnection {
     /// Main connection password, sent when `sync_passwords` is on.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub password: Option<String>,
+    /// Password was explicitly removed (propagate the clear).
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub password_cleared: bool,
     /// Inline-proxy password (separate encrypted column on disk).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub proxy_password: Option<String>,
+    /// Inline-proxy password was explicitly removed.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub proxy_password_cleared: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -277,6 +302,9 @@ pub struct SyncIdentity {
     pub identity: oryxis_core::models::Identity,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub password: Option<String>,
+    /// Password was explicitly removed (propagate the clear).
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub password_cleared: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -285,6 +313,9 @@ pub struct SyncProxyIdentity {
     pub proxy_identity: oryxis_core::models::ProxyIdentity,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub password: Option<String>,
+    /// Password was explicitly removed (propagate the clear).
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub password_cleared: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -297,6 +328,9 @@ pub struct SyncCloudProfile {
     /// JSON to the legacy bare-`CloudProfile` payload.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub secret: Option<String>,
+    /// Secret was explicitly removed (propagate the clear).
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub secret_cleared: bool,
 }
 
 /// Frame header for length-prefixed messages over QUIC streams.
@@ -317,6 +351,62 @@ pub fn decode_message(data: &[u8]) -> Result<SyncMessage, bincode::Error> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // #19: the password-removal signal must survive the wrapper's
+    // `#[serde(flatten)]` (a double-option `null`-vs-absent encoding does
+    // NOT, hence the explicit `*_cleared: bool` sentinel). Covers the three
+    // states plus legacy backward compat.
+    #[test]
+    fn password_clear_sentinel_survives_flatten() {
+        use oryxis_core::models::connection::Connection;
+
+        // A bare legacy Connection (no password / sentinel keys) = preserve.
+        let bare = serde_json::to_value(Connection::new("h", "x")).unwrap();
+        let absent: SyncConnection = serde_json::from_value(bare.clone()).unwrap();
+        assert_eq!(absent.password, None);
+        assert!(!absent.password_cleared);
+
+        // Cleared: value absent, sentinel true. Must round-trip through the
+        // flattened wrapper, and the sentinel must actually be on the wire.
+        let cleared = SyncConnection {
+            connection: Connection::new("h", "x"),
+            password: None,
+            password_cleared: true,
+            proxy_password: None,
+            proxy_password_cleared: false,
+        };
+        let v = serde_json::to_value(&cleared).unwrap();
+        assert_eq!(v["password_cleared"], serde_json::json!(true));
+        assert!(v.get("password").is_none(), "no value when cleared");
+        assert!(
+            v.get("proxy_password_cleared").is_none(),
+            "the not-cleared sentinel stays off the wire"
+        );
+        let back: SyncConnection = serde_json::from_value(v).unwrap();
+        assert_eq!(back.password, None);
+        assert!(back.password_cleared);
+
+        // Set: value present.
+        let set = SyncConnection {
+            connection: Connection::new("h", "x"),
+            password: Some("hunter2".into()),
+            password_cleared: false,
+            proxy_password: None,
+            proxy_password_cleared: false,
+        };
+        let back: SyncConnection =
+            serde_json::from_value(serde_json::to_value(&set).unwrap()).unwrap();
+        assert_eq!(back.password.as_deref(), Some("hunter2"));
+        assert!(!back.password_cleared);
+
+        // Legacy peer: bare Connection + a bare `password` string, no
+        // sentinel -> set, not cleared.
+        let mut legacy_json = bare;
+        legacy_json["password"] = serde_json::json!("old");
+        let legacy: SyncConnection = serde_json::from_value(legacy_json).unwrap();
+        assert_eq!(legacy.password.as_deref(), Some("old"));
+        assert!(!legacy.password_cleared);
+    }
 
     #[test]
     fn encode_decode_roundtrip() {
@@ -460,7 +550,9 @@ mod tests {
         let wrapper = SyncConnection {
             connection: conn,
             password: Some("conn-pw".into()),
+            password_cleared: false,
             proxy_password: Some("proxy-pw".into()),
+            proxy_password_cleared: false,
         };
         let bytes = serde_json::to_vec(&wrapper).unwrap();
         let back: SyncConnection = serde_json::from_slice(&bytes).unwrap();
@@ -477,7 +569,9 @@ mod tests {
         let wrapper = SyncConnection {
             connection: conn,
             password: None,
+            password_cleared: false,
             proxy_password: None,
+            proxy_password_cleared: false,
         };
         let json = serde_json::to_string(&wrapper).unwrap();
         assert!(
@@ -496,6 +590,7 @@ mod tests {
         let wrapper = SyncIdentity {
             identity: ident,
             password: Some("ident-pw".into()),
+            password_cleared: false,
         };
         let bytes = serde_json::to_vec(&wrapper).unwrap();
         let back: SyncIdentity = serde_json::from_slice(&bytes).unwrap();
@@ -508,6 +603,7 @@ mod tests {
         let wrapper = SyncProxyIdentity {
             proxy_identity: pi,
             password: Some("pi-pw".into()),
+            password_cleared: false,
         };
         let bytes = serde_json::to_vec(&wrapper).unwrap();
         let back: SyncProxyIdentity = serde_json::from_slice(&bytes).unwrap();
@@ -520,6 +616,7 @@ mod tests {
         let wrapper = SyncCloudProfile {
             profile: cp,
             secret: Some("opaque-secret".into()),
+            secret_cleared: false,
         };
         let bytes = serde_json::to_vec(&wrapper).unwrap();
         let back: SyncCloudProfile = serde_json::from_slice(&bytes).unwrap();
@@ -545,7 +642,7 @@ mod tests {
     #[test]
     fn sync_cloud_profile_omits_secret_when_none() {
         let cp = oryxis_core::models::CloudProfile::new("no-secret", "aws");
-        let wrapper = SyncCloudProfile { profile: cp, secret: None };
+        let wrapper = SyncCloudProfile { profile: cp, secret: None, secret_cleared: false };
         let json = serde_json::to_string(&wrapper).unwrap();
         assert!(
             !json.contains("\"secret\""),
