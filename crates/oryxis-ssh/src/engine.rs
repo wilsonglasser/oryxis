@@ -123,6 +123,64 @@ pub(crate) struct ClientHandler {
         Option<tokio::sync::mpsc::UnboundedSender<russh::Channel<russh::client::Msg>>>,
 }
 
+/// Extract the `IdentityAgent` value from an ssh_config-style fragment.
+///
+/// Pageant (PuTTY 0.81+) and KeePassXC create a per-launch agent pipe
+/// whose name changes every run and publish it as an `IdentityAgent`
+/// line in `%USERPROFILE%\.ssh\pageant.conf`. The value may use forward
+/// slashes (`//./pipe/pageant.<user>.<guid>`); normalize them to the
+/// backslash form the named-pipe client expects. Accepts both the
+/// `Keyword Value` and `Keyword=Value` ssh_config spellings.
+#[cfg(any(windows, test))]
+fn parse_identity_agent(contents: &str) -> Option<String> {
+    for raw in contents.lines() {
+        let line = raw.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        let Some(split_at) = line.find(|c: char| c.is_whitespace() || c == '=') else {
+            continue;
+        };
+        if !line[..split_at].eq_ignore_ascii_case("IdentityAgent") {
+            continue;
+        }
+        let val = line[split_at..]
+            .trim_start_matches(|c: char| c.is_whitespace() || c == '=')
+            .trim()
+            .trim_matches('"');
+        if val.is_empty() {
+            // Empty IdentityAgent value: keep scanning for a later valid
+            // line rather than giving up on the whole file.
+            continue;
+        }
+        return Some(val.replace('/', "\\"));
+    }
+    None
+}
+
+/// Resolve the Windows ssh-agent named pipe to dial.
+///
+/// Honors a Pageant/KeePassXC `pageant.conf` (see `parse_identity_agent`)
+/// when present so we pick up keys loaded into Pageant, whose pipe name
+/// is randomized per launch. Falls back to the fixed Windows OpenSSH
+/// agent pipe otherwise.
+#[cfg(windows)]
+fn windows_agent_pipe() -> String {
+    const OPENSSH_PIPE: &str = r"\\.\pipe\openssh-ssh-agent";
+    if let Some(profile) = std::env::var_os("USERPROFILE") {
+        let conf = std::path::Path::new(&profile)
+            .join(".ssh")
+            .join("pageant.conf");
+        if let Ok(contents) = std::fs::read_to_string(&conf)
+            && let Some(pipe) = parse_identity_agent(&contents)
+        {
+            tracing::info!("Using IdentityAgent pipe from {}", conf.display());
+            return pipe;
+        }
+    }
+    OPENSSH_PIPE.to_string()
+}
+
 /// Bridge an inbound agent-forward channel to the local ssh-agent so
 /// the remote side can use the keys held by our local agent. The remote
 /// app speaks ssh-agent protocol over the channel; we just shovel raw
@@ -144,8 +202,8 @@ async fn bridge_agent_channel(
 async fn bridge_agent_channel(
     channel: russh::Channel<russh::client::Msg>,
 ) -> std::io::Result<()> {
-    let pipe_path = r"\\.\pipe\openssh-ssh-agent";
-    let mut agent = tokio::net::windows::named_pipe::ClientOptions::new().open(pipe_path)?;
+    let pipe_path = windows_agent_pipe();
+    let mut agent = tokio::net::windows::named_pipe::ClientOptions::new().open(&pipe_path)?;
     let mut stream = channel.into_stream();
     let _ = tokio::io::copy_bidirectional(&mut agent, &mut stream).await?;
     Ok(())
@@ -2020,8 +2078,8 @@ impl SshEngine {
         handle: &mut client::Handle<ClientHandler>,
         username: &str,
     ) -> Result<bool, SshError> {
-        let pipe_path = r"\\.\pipe\openssh-ssh-agent";
-        match russh::keys::agent::client::AgentClient::connect_named_pipe(pipe_path).await {
+        let pipe_path = windows_agent_pipe();
+        match russh::keys::agent::client::AgentClient::connect_named_pipe(&pipe_path).await {
             Ok(mut agent) => {
                 let identities = agent
                     .request_identities()
@@ -2045,7 +2103,7 @@ impl SshEngine {
                 Ok(false)
             }
             Err(e) => Err(SshError::Key(format!(
-                "Windows OpenSSH Agent not available ({}): {}",
+                "Windows ssh-agent not available ({}): {}",
                 pipe_path, e
             ))),
         }
@@ -2408,6 +2466,49 @@ mod tests {
     #[test]
     fn parse_addr_bad_port_fails() {
         assert!(parse_addr("host:abc").is_err());
+    }
+
+    #[test]
+    fn identity_agent_forward_slashes_normalized() {
+        let conf = "IdentityAgent //./pipe/pageant.user.0123abcd\n";
+        assert_eq!(
+            parse_identity_agent(conf).as_deref(),
+            Some(r"\\.\pipe\pageant.user.0123abcd")
+        );
+    }
+
+    #[test]
+    fn identity_agent_skips_comments_and_other_keys() {
+        let conf = "# pageant\nForwardAgent yes\n  IdentityAgent  \"//./pipe/pageant.abc\"  \n";
+        assert_eq!(
+            parse_identity_agent(conf).as_deref(),
+            Some(r"\\.\pipe\pageant.abc")
+        );
+    }
+
+    #[test]
+    fn identity_agent_equals_spelling() {
+        let conf = "IdentityAgent=//./pipe/pageant.eq\n";
+        assert_eq!(
+            parse_identity_agent(conf).as_deref(),
+            Some(r"\\.\pipe\pageant.eq")
+        );
+    }
+
+    #[test]
+    fn identity_agent_absent_returns_none() {
+        assert_eq!(parse_identity_agent("ForwardAgent yes\n"), None);
+    }
+
+    #[test]
+    fn identity_agent_empty_value_keeps_scanning() {
+        // A first IdentityAgent line with an empty value must not abort
+        // the scan; a later valid line still wins.
+        let conf = "IdentityAgent \nIdentityAgent //./pipe/pageant.late\n";
+        assert_eq!(
+            parse_identity_agent(conf).as_deref(),
+            Some(r"\\.\pipe\pageant.late")
+        );
     }
 
     #[test]
