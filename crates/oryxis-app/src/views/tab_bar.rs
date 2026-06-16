@@ -541,6 +541,8 @@ impl Oryxis {
         // is part of its clickable / hover area.
         let mut leading: Vec<Element<'_, Message>> = Vec::new();
         leading.push(burger_menu_btn(self.show_burger_menu));
+        // 1 px breather between the burger and the first area tab (home).
+        leading.push(Space::new().width(1).height(TAB_HEIGHT).into());
         leading.push(tab_strip);
         if let Some(plus) = docked_plus {
             leading.push(plus);
