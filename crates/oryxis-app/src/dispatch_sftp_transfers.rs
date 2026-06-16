@@ -34,9 +34,12 @@ impl Oryxis {
         // a user-initiated transfer this is the focused tab; for a routed
         // continuation (`route_sftp_async`) it is the originating tab. Captured
         // by the async result closures so the chain stays pinned to one tab.
-        // No active tab means there is nothing to route to, so bail.
+        // No active SFTP tab means none of this handler's messages apply, so
+        // DECLINE (Err) to pass the message down the dispatch chain. Returning
+        // Ok here would swallow every message (this is the first handler in the
+        // chain), freezing the whole app whenever no SFTP tab is open.
         let Some(owner) = self.current_sftp_owner() else {
-            return Ok(Task::none());
+            return Err(message);
         };
         match message {
             Message::SftpUpload(local_path) => {
