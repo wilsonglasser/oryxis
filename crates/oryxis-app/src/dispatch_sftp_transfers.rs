@@ -34,7 +34,10 @@ impl Oryxis {
         // a user-initiated transfer this is the focused tab; for a routed
         // continuation (`route_sftp_async`) it is the originating tab. Captured
         // by the async result closures so the chain stays pinned to one tab.
-        let owner = self.current_sftp_owner();
+        // No active tab means there is nothing to route to, so bail.
+        let Some(owner) = self.current_sftp_owner() else {
+            return Ok(Task::none());
+        };
         match message {
             Message::SftpUpload(local_path) => {
                 self.sftp.row_menu = None;
@@ -629,7 +632,13 @@ impl Oryxis {
                 let bytes_done = self.sftp.transfer_bytes_done.clone();
                 match kind {
                     crate::state::TransferKind::Upload => {
-                        let client = transfer.clients[slot as usize].clone();
+                        let Some(client) = transfer.clients.get(slot as usize).cloned() else {
+                            return Ok(Task::done(Message::SftpTransferError(
+                                owner,
+                                "transfer: slot has no client".into(),
+                                slot,
+                            )));
+                        };
                         return Ok(Task::perform(
                             do_upload_item(client, item, overwrite_default, multi, Some(bytes_done)),
                             move |r| match r {
@@ -644,7 +653,13 @@ impl Oryxis {
                         ));
                     }
                     crate::state::TransferKind::Download => {
-                        let client = transfer.clients[slot as usize].clone();
+                        let Some(client) = transfer.clients.get(slot as usize).cloned() else {
+                            return Ok(Task::done(Message::SftpTransferError(
+                                owner,
+                                "transfer: slot has no client".into(),
+                                slot,
+                            )));
+                        };
                         return Ok(Task::perform(
                             do_download_item(client, item, Some(bytes_done)),
                             move |r| match r {
@@ -656,7 +671,13 @@ impl Oryxis {
                     crate::state::TransferKind::Relay => {
                         // Source client for the slot, plus the single
                         // dest-host client (relay runs at concurrency 1).
-                        let src_client = transfer.clients[slot as usize].clone();
+                        let Some(src_client) = transfer.clients.get(slot as usize).cloned() else {
+                            return Ok(Task::done(Message::SftpTransferError(
+                                owner,
+                                "transfer: slot has no client".into(),
+                                slot,
+                            )));
+                        };
                         let Some(dst_client) = transfer.dest_client.clone() else {
                             return Ok(Task::done(Message::SftpTransferError(
                                 owner,

@@ -460,11 +460,11 @@ impl Oryxis {
     /// Owning tab id to stamp on an SFTP async-continuation message: the tab
     /// currently being routed (mid-`route_sftp_async`) if any, else the
     /// focused tab. User-initiated transfers (not mid-route) get the focused
-    /// tab; chained continuations get the originating tab.
-    pub(crate) fn current_sftp_owner(&self) -> uuid::Uuid {
-        self.routing_sftp
-            .or_else(|| self.active_sftp_id())
-            .unwrap_or_default()
+    /// tab; chained continuations get the originating tab. `None` when no
+    /// SFTP tab is active, in which case there is nothing to route to (a
+    /// nil-UUID stamp would just be dropped by `route_sftp_async`).
+    pub(crate) fn current_sftp_owner(&self) -> Option<uuid::Uuid> {
+        self.routing_sftp.or_else(|| self.active_sftp_id())
     }
 
     /// Dispatch an SFTP async-continuation message against its owning tab.

@@ -250,6 +250,7 @@ mod forwarding;
 mod groups;
 mod identities;
 mod keys;
+mod known_hosts;
 mod logs;
 mod schema;
 mod settings;
