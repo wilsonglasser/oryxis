@@ -282,6 +282,7 @@ jobs:
         with:
           name: signpath-unsigned-exe-x86_64
           path: signpath\exe-in\oryxis.exe
+          retention-days: 1
       - name: SignPath sign exe
         if: env.SIGNPATH_API_TOKEN != ''
         uses: signpath/github-action-submit-signing-request@v2
@@ -381,6 +382,7 @@ jobs:
         with:
           name: signpath-unsigned-sys-x86_64
           path: signpath\sys-in\oryxis-setup-x86_64.exe
+          retention-days: 1
       - name: SignPath sign system installer
         if: env.SIGNPATH_API_TOKEN != ''
         uses: signpath/github-action-submit-signing-request@v2
@@ -400,6 +402,7 @@ jobs:
         with:
           name: signpath-unsigned-usr-x86_64
           path: signpath\usr-in\oryxis-user-setup-x86_64.exe
+          retention-days: 1
       - name: SignPath sign user installer
         if: env.SIGNPATH_API_TOKEN != ''
         uses: signpath/github-action-submit-signing-request@v2
@@ -466,6 +469,7 @@ jobs:
         with:
           name: signpath-unsigned-exe-aarch64
           path: signpath\exe-in\oryxis.exe
+          retention-days: 1
       - name: SignPath sign exe
         if: env.SIGNPATH_API_TOKEN != ''
         uses: signpath/github-action-submit-signing-request@v2
@@ -553,6 +557,7 @@ jobs:
         with:
           name: signpath-unsigned-sys-aarch64
           path: signpath\sys-in\oryxis-setup-aarch64.exe
+          retention-days: 1
       - name: SignPath sign system installer
         if: env.SIGNPATH_API_TOKEN != ''
         uses: signpath/github-action-submit-signing-request@v2
@@ -572,6 +577,7 @@ jobs:
         with:
           name: signpath-unsigned-usr-aarch64
           path: signpath\usr-in\oryxis-user-setup-aarch64.exe
+          retention-days: 1
       - name: SignPath sign user installer
         if: env.SIGNPATH_API_TOKEN != ''
         uses: signpath/github-action-submit-signing-request@v2
