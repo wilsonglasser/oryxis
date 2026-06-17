@@ -347,9 +347,15 @@ jobs:
       - name: Build installers
         shell: pwsh
         run: |
-          # Strip the leading "v" from the tag so DisplayVersion is a
-          # plain SemVer (winget compares these against its manifest).
-          $version = "${{ github.ref_name }}".TrimStart('v')
+          # On a tag (v0.8.3) DisplayVersion is the plain SemVer winget
+          # compares against its manifest. A manual workflow_dispatch run has
+          # no tag, so fall back to 0.0.0 (NSIS VIProductVersion must be
+          # X.X.X.X) to exercise the build/sign path.
+          if ("${{ github.ref }}" -like "refs/tags/v*") {
+            $version = "${{ github.ref_name }}".TrimStart('v')
+          } else {
+            $version = "0.0.0"
+          }
           cd resources
           # System installer (UAC, %ProgramFiles%) — winget targets this one.
           makensis "/DVERSION=$version" "/DARCH=x86_64" "/DBINPATH=..\target\release" installer.nsi
@@ -519,7 +525,14 @@ jobs:
           # cross-compile host — the produced .exe runs under x86
           # emulation on Windows on ARM and lays down native ARM64
           # binaries.
-          $version = "${{ github.ref_name }}".TrimStart('v')
+          # On a tag, DisplayVersion is the plain SemVer; a manual
+          # workflow_dispatch run has no tag, so fall back to 0.0.0 (NSIS
+          # VIProductVersion must be X.X.X.X).
+          if ("${{ github.ref }}" -like "refs/tags/v*") {
+            $version = "${{ github.ref_name }}".TrimStart('v')
+          } else {
+            $version = "0.0.0"
+          }
           cd resources
           makensis "/DVERSION=$version" "/DARCH=aarch64" "/DBINPATH=..\target\aarch64-pc-windows-msvc\release" installer.nsi
           makensis "/DVERSION=$version" "/DARCH=aarch64" "/DBINPATH=..\target\aarch64-pc-windows-msvc\release" installer-user.nsi
