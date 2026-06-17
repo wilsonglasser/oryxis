@@ -11,6 +11,10 @@ on:
 
 permissions:
   contents: write
+  # The SignPath action reads workflow run/job details and the uploaded
+  # artifact via the Actions REST API. Listing `permissions` explicitly zeroes
+  # every unlisted scope, so `actions: read` must be granted or signing 403s.
+  actions: read
 
 env:
   CARGO_TERM_COLOR: always
@@ -236,6 +240,18 @@ jobs:
   build-windows:
     name: Windows x86_64
     runs-on: windows-latest
+    # SignPath Authenticode signing config. The token lives in a secret; the
+    # rest are repo Variables so forks / manual runs without the secret just
+    # skip signing (see the `if: env.SIGNPATH_API_TOKEN != ''` guards below).
+    # While validating, point SIGNPATH_SIGNING_POLICY_SLUG at `test-signing`
+    # (self-signed test cert); flip it to `release-signing` once SignPath
+    # imports the production certificate.
+    env:
+      SIGNPATH_API_TOKEN: ${{ secrets.SIGNPATH_API_TOKEN }}
+      SIGNPATH_ORGANIZATION_ID: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+      SIGNPATH_PROJECT_SLUG: ${{ vars.SIGNPATH_PROJECT_SLUG || 'oryxis' }}
+      SIGNPATH_POLICY_SLUG: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG || 'release-signing' }}
+      SIGNPATH_ARTIFACT_CONFIG_SLUG: ${{ vars.SIGNPATH_ARTIFACT_CONFIG_SLUG || 'exe' }}
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
@@ -247,6 +263,42 @@ jobs:
             target/
           key: windows-release-${{ hashFiles('**/Cargo.lock') }}
       - run: cargo build --release
+
+      # --- Authenticode-sign oryxis.exe via SignPath, BEFORE it is packaged
+      # into the zip or wrapped by the NSIS installers, so the signature rides
+      # into every downstream artifact. Skipped when SIGNPATH_API_TOKEN is
+      # absent (forks / manual dispatch); when present, a SignPath error fails
+      # the build rather than shipping unsigned.
+      - name: Stage unsigned exe for SignPath
+        if: env.SIGNPATH_API_TOKEN != ''
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path signpath\exe-in | Out-Null
+          Copy-Item target\release\oryxis.exe signpath\exe-in\oryxis.exe -Force
+      - name: Upload unsigned exe
+        if: env.SIGNPATH_API_TOKEN != ''
+        id: upload-unsigned-exe
+        uses: actions/upload-artifact@v7
+        with:
+          name: signpath-unsigned-exe-x86_64
+          path: signpath\exe-in\oryxis.exe
+      - name: SignPath sign exe
+        if: env.SIGNPATH_API_TOKEN != ''
+        uses: signpath/github-action-submit-signing-request@v2
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ env.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ env.SIGNPATH_PROJECT_SLUG }}
+          signing-policy-slug: ${{ env.SIGNPATH_POLICY_SLUG }}
+          artifact-configuration-slug: ${{ env.SIGNPATH_ARTIFACT_CONFIG_SLUG }}
+          github-artifact-id: ${{ steps.upload-unsigned-exe.outputs.artifact-id }}
+          wait-for-completion: true
+          output-artifact-directory: signpath\exe-out
+      - name: Replace exe with signed copy
+        if: env.SIGNPATH_API_TOKEN != ''
+        shell: pwsh
+        run: Copy-Item signpath\exe-out\oryxis.exe target\release\oryxis.exe -Force
+
       - name: Package zip
         shell: pwsh
         run: |
@@ -304,6 +356,63 @@ jobs:
           # Per-user installer (no UAC, %LOCALAPPDATA%) — auto-updater
           # picks this when the running exe lives under LOCALAPPDATA.
           makensis "/DVERSION=$version" "/DARCH=x86_64" "/DBINPATH=..\target\release" installer-user.nsi
+
+      # --- Authenticode-sign the two NSIS installers via SignPath. Each is a
+      # PE file; signed as its own request so the downloaded artifact maps
+      # back unambiguously. NSIS writes both to the repo root (OutFile
+      # "..\oryxis-*-setup-${ARCH}.exe").
+      - name: Stage unsigned installers for SignPath
+        if: env.SIGNPATH_API_TOKEN != ''
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path signpath\sys-in,signpath\usr-in | Out-Null
+          Copy-Item oryxis-setup-x86_64.exe signpath\sys-in\ -Force
+          Copy-Item oryxis-user-setup-x86_64.exe signpath\usr-in\ -Force
+      - name: Upload unsigned system installer
+        if: env.SIGNPATH_API_TOKEN != ''
+        id: upload-unsigned-sys
+        uses: actions/upload-artifact@v7
+        with:
+          name: signpath-unsigned-sys-x86_64
+          path: signpath\sys-in\oryxis-setup-x86_64.exe
+      - name: SignPath sign system installer
+        if: env.SIGNPATH_API_TOKEN != ''
+        uses: signpath/github-action-submit-signing-request@v2
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ env.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ env.SIGNPATH_PROJECT_SLUG }}
+          signing-policy-slug: ${{ env.SIGNPATH_POLICY_SLUG }}
+          artifact-configuration-slug: ${{ env.SIGNPATH_ARTIFACT_CONFIG_SLUG }}
+          github-artifact-id: ${{ steps.upload-unsigned-sys.outputs.artifact-id }}
+          wait-for-completion: true
+          output-artifact-directory: signpath\sys-out
+      - name: Upload unsigned user installer
+        if: env.SIGNPATH_API_TOKEN != ''
+        id: upload-unsigned-usr
+        uses: actions/upload-artifact@v7
+        with:
+          name: signpath-unsigned-usr-x86_64
+          path: signpath\usr-in\oryxis-user-setup-x86_64.exe
+      - name: SignPath sign user installer
+        if: env.SIGNPATH_API_TOKEN != ''
+        uses: signpath/github-action-submit-signing-request@v2
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ env.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ env.SIGNPATH_PROJECT_SLUG }}
+          signing-policy-slug: ${{ env.SIGNPATH_POLICY_SLUG }}
+          artifact-configuration-slug: ${{ env.SIGNPATH_ARTIFACT_CONFIG_SLUG }}
+          github-artifact-id: ${{ steps.upload-unsigned-usr.outputs.artifact-id }}
+          wait-for-completion: true
+          output-artifact-directory: signpath\usr-out
+      - name: Replace installers with signed copies
+        if: env.SIGNPATH_API_TOKEN != ''
+        shell: pwsh
+        run: |
+          Copy-Item signpath\sys-out\oryxis-setup-x86_64.exe oryxis-setup-x86_64.exe -Force
+          Copy-Item signpath\usr-out\oryxis-user-setup-x86_64.exe oryxis-user-setup-x86_64.exe -Force
+
       - uses: actions/upload-artifact@v7
         with:
           name: oryxis-windows-x86_64
@@ -315,6 +424,13 @@ jobs:
   build-windows-arm:
     name: Windows ARM64
     runs-on: windows-latest
+    # See build-windows for how these map to repo secrets/variables.
+    env:
+      SIGNPATH_API_TOKEN: ${{ secrets.SIGNPATH_API_TOKEN }}
+      SIGNPATH_ORGANIZATION_ID: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+      SIGNPATH_PROJECT_SLUG: ${{ vars.SIGNPATH_PROJECT_SLUG || 'oryxis' }}
+      SIGNPATH_POLICY_SLUG: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG || 'release-signing' }}
+      SIGNPATH_ARTIFACT_CONFIG_SLUG: ${{ vars.SIGNPATH_ARTIFACT_CONFIG_SLUG || 'exe' }}
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
@@ -328,6 +444,39 @@ jobs:
             target/
           key: windows-arm-release-${{ hashFiles('**/Cargo.lock') }}
       - run: cargo build --release --target aarch64-pc-windows-msvc
+
+      # --- Authenticode-sign oryxis.exe via SignPath before packaging (see
+      # build-windows for the rationale and skip behavior).
+      - name: Stage unsigned exe for SignPath
+        if: env.SIGNPATH_API_TOKEN != ''
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path signpath\exe-in | Out-Null
+          Copy-Item target\aarch64-pc-windows-msvc\release\oryxis.exe signpath\exe-in\oryxis.exe -Force
+      - name: Upload unsigned exe
+        if: env.SIGNPATH_API_TOKEN != ''
+        id: upload-unsigned-exe
+        uses: actions/upload-artifact@v7
+        with:
+          name: signpath-unsigned-exe-aarch64
+          path: signpath\exe-in\oryxis.exe
+      - name: SignPath sign exe
+        if: env.SIGNPATH_API_TOKEN != ''
+        uses: signpath/github-action-submit-signing-request@v2
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ env.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ env.SIGNPATH_PROJECT_SLUG }}
+          signing-policy-slug: ${{ env.SIGNPATH_POLICY_SLUG }}
+          artifact-configuration-slug: ${{ env.SIGNPATH_ARTIFACT_CONFIG_SLUG }}
+          github-artifact-id: ${{ steps.upload-unsigned-exe.outputs.artifact-id }}
+          wait-for-completion: true
+          output-artifact-directory: signpath\exe-out
+      - name: Replace exe with signed copy
+        if: env.SIGNPATH_API_TOKEN != ''
+        shell: pwsh
+        run: Copy-Item signpath\exe-out\oryxis.exe target\aarch64-pc-windows-msvc\release\oryxis.exe -Force
+
       - name: Package portable zip
         shell: pwsh
         run: |
@@ -374,6 +523,61 @@ jobs:
           cd resources
           makensis "/DVERSION=$version" "/DARCH=aarch64" "/DBINPATH=..\target\aarch64-pc-windows-msvc\release" installer.nsi
           makensis "/DVERSION=$version" "/DARCH=aarch64" "/DBINPATH=..\target\aarch64-pc-windows-msvc\release" installer-user.nsi
+
+      # --- Authenticode-sign the two NSIS installers via SignPath (see
+      # build-windows for the rationale).
+      - name: Stage unsigned installers for SignPath
+        if: env.SIGNPATH_API_TOKEN != ''
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path signpath\sys-in,signpath\usr-in | Out-Null
+          Copy-Item oryxis-setup-aarch64.exe signpath\sys-in\ -Force
+          Copy-Item oryxis-user-setup-aarch64.exe signpath\usr-in\ -Force
+      - name: Upload unsigned system installer
+        if: env.SIGNPATH_API_TOKEN != ''
+        id: upload-unsigned-sys
+        uses: actions/upload-artifact@v7
+        with:
+          name: signpath-unsigned-sys-aarch64
+          path: signpath\sys-in\oryxis-setup-aarch64.exe
+      - name: SignPath sign system installer
+        if: env.SIGNPATH_API_TOKEN != ''
+        uses: signpath/github-action-submit-signing-request@v2
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ env.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ env.SIGNPATH_PROJECT_SLUG }}
+          signing-policy-slug: ${{ env.SIGNPATH_POLICY_SLUG }}
+          artifact-configuration-slug: ${{ env.SIGNPATH_ARTIFACT_CONFIG_SLUG }}
+          github-artifact-id: ${{ steps.upload-unsigned-sys.outputs.artifact-id }}
+          wait-for-completion: true
+          output-artifact-directory: signpath\sys-out
+      - name: Upload unsigned user installer
+        if: env.SIGNPATH_API_TOKEN != ''
+        id: upload-unsigned-usr
+        uses: actions/upload-artifact@v7
+        with:
+          name: signpath-unsigned-usr-aarch64
+          path: signpath\usr-in\oryxis-user-setup-aarch64.exe
+      - name: SignPath sign user installer
+        if: env.SIGNPATH_API_TOKEN != ''
+        uses: signpath/github-action-submit-signing-request@v2
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ env.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ env.SIGNPATH_PROJECT_SLUG }}
+          signing-policy-slug: ${{ env.SIGNPATH_POLICY_SLUG }}
+          artifact-configuration-slug: ${{ env.SIGNPATH_ARTIFACT_CONFIG_SLUG }}
+          github-artifact-id: ${{ steps.upload-unsigned-usr.outputs.artifact-id }}
+          wait-for-completion: true
+          output-artifact-directory: signpath\usr-out
+      - name: Replace installers with signed copies
+        if: env.SIGNPATH_API_TOKEN != ''
+        shell: pwsh
+        run: |
+          Copy-Item signpath\sys-out\oryxis-setup-aarch64.exe oryxis-setup-aarch64.exe -Force
+          Copy-Item signpath\usr-out\oryxis-user-setup-aarch64.exe oryxis-user-setup-aarch64.exe -Force
+
       - uses: actions/upload-artifact@v7
         with:
           name: oryxis-windows-aarch64

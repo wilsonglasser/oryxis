@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  SignPath artifact configuration for the Oryxis Windows binaries.
+
+  Paste this into the SignPath web console under the `oryxis` project as an
+  artifact configuration (default slug `exe`, matching SIGNPATH_ARTIFACT_CONFIG_SLUG
+  in .github/workflows/release.yml). It is kept here only for version control;
+  SignPath reads the copy stored in its console, not this file.
+
+  GitHub's actions/upload-artifact always wraps the uploaded file(s) in a zip,
+  so the artifact root must be <zip-file> (per the SignPath onboarding email).
+  Each release signing request uploads exactly one .exe -- the inner
+  oryxis.exe, the system installer (oryxis-setup-<arch>.exe), or the per-user
+  installer (oryxis-user-setup-<arch>.exe) -- so a single wildcard pe-file
+  entry covers all three.
+-->
+<artifact-configuration xmlns="http://signpath.io/artifact-configuration/v1">
+  <zip-file>
+    <pe-file path="*.exe">
+      <authenticode-sign/>
+    </pe-file>
+  </zip-file>
+</artifact-configuration>

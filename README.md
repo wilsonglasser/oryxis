@@ -417,6 +417,16 @@ Full step-by-step in [SELF_HOSTING.md](SELF_HOSTING.md).
 - **No telemetry.** No data leaves your machine.
 - **AI keys encrypted.** API keys stored encrypted in the vault.
 
+## Code signing policy
+
+Free code signing provided by [SignPath.io](https://about.signpath.io),
+certificate by [SignPath Foundation](https://signpath.org).
+
+The Windows binaries and installers (`oryxis.exe`, `oryxis-setup-*.exe`,
+`oryxis-user-setup-*.exe`) are Authenticode-signed in CI by SignPath. The
+private key never leaves SignPath's hardware security module. No private
+information is collected or shared as part of this process.
+
 ## Roadmap
 
 | Version | Status | Scope |
