@@ -1308,8 +1308,18 @@ impl Oryxis {
                 true
             };
             let other_is_remote = other.is_remote;
-            let source_is_remote = self.sftp.pane(row_menu.side).is_remote;
+            let src_pane = self.sftp.pane(row_menu.side);
+            let source_is_remote = src_pane.is_remote;
             let other_label = other.host_label.clone();
+            // Current directory of the source pane + its local path, fed to
+            // the directory-level actions (Refresh / New / Open in FM).
+            let pane_dir = if source_is_remote {
+                src_pane.remote_path.clone()
+            } else {
+                src_pane.local_path.to_string_lossy().into_owned()
+            };
+            let local_dir = src_pane.local_path.clone();
+            let show_hidden = src_pane.show_hidden;
             // Count of selected rows in the same pane as the right-
             // clicked row, drives the bulk vs single menu mode.
             let selection_count_same_pane = self
@@ -1325,6 +1335,11 @@ impl Oryxis {
                 other_is_remote,
                 other_label,
                 selection_count_same_pane,
+                crate::views::sftp::DirActionCtx {
+                    pane_dir: &pane_dir,
+                    local_dir: &local_dir,
+                    show_hidden,
+                },
             );
             let backdrop: Element<'_, Message> = MouseArea::new(
                 container(Space::new())

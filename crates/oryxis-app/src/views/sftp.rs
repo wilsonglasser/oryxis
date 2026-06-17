@@ -495,6 +495,19 @@ impl Oryxis {
                 .into()
         };
 
+        // Right-click on the empty area opens the directory-level context
+        // menu. Rows carry their own `on_right_press`, which captures the
+        // event first, so this only fires on the blank space below them.
+        // Gated to browsable panes (local always; remote once mounted).
+        let browsable = !is_remote || pane.host_label.is_some();
+        let body: Element<'_, Message> = if browsable {
+            MouseArea::new(body)
+                .on_right_press(Message::SftpBackgroundRightClick(side))
+                .into()
+        } else {
+            body
+        };
+
         let mut stack = iced::widget::Stack::new()
             .push(
                 column![header_band, body]
@@ -509,6 +522,7 @@ impl Oryxis {
                 side,
                 is_remote,
                 &pane.remote_path,
+                &pane.local_path,
                 pane.show_hidden,
             ));
         }
@@ -778,36 +792,17 @@ fn actions_menu_overlay<'a>(
     side: SftpPaneSide,
     is_remote: bool,
     remote_path: &str,
+    local_path: &std::path::Path,
     show_hidden: bool,
 ) -> Element<'a, Message> {
-    // Refresh re-reads the local listing, or re-lists the current remote
-    // directory for a remote pane.
-    let refresh_msg = if is_remote {
-        Message::SftpNavigateRemote(side, remote_path.to_string())
-    } else {
-        Message::SftpRefreshLocal(side)
-    };
-    let hidden_msg = Message::SftpToggleHidden(side);
-    let hidden_label = if show_hidden { t("hide_hidden_files") } else { t("show_hidden_files") };
-    let menu = container(
-        column![
-            menu_item(
-                iced_fonts::lucide::folder_plus(),
-                t("new_folder"),
-                Message::SftpStartNewEntry(side, SftpEntryKind::Folder),
-            ),
-            menu_item(
-                iced_fonts::lucide::file_plus(),
-                t("new_file"),
-                Message::SftpStartNewEntry(side, SftpEntryKind::File),
-            ),
-            menu_separator(),
-            menu_item(iced_fonts::lucide::rotate_cw(), t("refresh"), refresh_msg),
-            menu_item(iced_fonts::lucide::eye(), hidden_label, hidden_msg),
-        ]
-        .spacing(2)
-        .padding(4),
-    )
+    // Same directory-level actions as the cursor-anchored background menu,
+    // shared via `dir_action_items` so the two never drift apart.
+    let mut menu_col = column![].spacing(2).padding(4);
+    let dir_ctx = DirActionCtx { pane_dir: remote_path, local_dir: local_path, show_hidden };
+    for it in dir_action_items(side, is_remote, dir_ctx, true) {
+        menu_col = menu_col.push(it);
+    }
+    let menu = container(menu_col)
     // Pin the menu to the same width as the rows inside it. Without
     // this, `menu_separator`'s `Length::Fill` propagates up through
     // `column![]` and the outer container, stretching the dropdown
@@ -858,6 +853,16 @@ fn menu_separator<'a>() -> Element<'a, Message> {
 /// type. When the clicked row is part of a multi-selection (same pane),
 /// the menu switches to bulk variants: count-aware Delete; single-only
 /// ops (Rename, Edit) hide.
+/// Pane context the directory-level actions need: the current directory
+/// (target of New folder / New file / Refresh), the local path for
+/// "Open in File Manager", and the hidden-files toggle state.
+#[derive(Clone, Copy)]
+pub(crate) struct DirActionCtx<'a> {
+    pub pane_dir: &'a str,
+    pub local_dir: &'a std::path::Path,
+    pub show_hidden: bool,
+}
+
 pub(crate) fn row_context_menu_box<'a>(
     menu: &crate::state::SftpRowMenu,
     cross_pane_ready: bool,
@@ -865,12 +870,21 @@ pub(crate) fn row_context_menu_box<'a>(
     other_is_remote: bool,
     other_label: Option<String>,
     selection_count_same_pane: usize,
+    dir_ctx: DirActionCtx<'_>,
 ) -> Element<'a, Message> {
     let multi = selection_count_same_pane > 1;
     let mut items = column![].spacing(2).padding(4);
     let accent = OryxisColors::t().accent;
     let secondary = OryxisColors::t().text_secondary;
     let danger = OryxisColors::t().error;
+    // Background right-click (empty area): only directory-level actions,
+    // no per-entry target exists. Same items as the pane's `⋮` menu.
+    if menu.is_background {
+        for it in dir_action_items(menu.side, source_is_remote, dir_ctx, true) {
+            items = items.push(it);
+        }
+        return context_menu_shell(items);
+    }
     // Cross-pane action, picked by the source and the opposite pane's
     // natures: Local -> remote uploads, remote -> Local downloads,
     // remote -> remote relays. Only offered when the other pane is a
@@ -979,6 +993,17 @@ pub(crate) fn row_context_menu_box<'a>(
             ));
         }
     }
+    // Reveal in the OS file manager, local pane only (no notion of an
+    // "explorer" for a remote host). Single selection: a folder opens in
+    // place, a file opens its folder with the file selected.
+    if !source_is_remote && !multi {
+        items = items.push(menu_item_tinted(
+            iced_fonts::lucide::folder_open(),
+            t("open_in_file_manager"),
+            Message::SftpRevealInExplorer(std::path::PathBuf::from(&menu.path), menu.is_dir),
+            secondary,
+        ));
+    }
     if multi {
         items = items.push(menu_item_owned_tinted(
             iced_fonts::lucide::copy(),
@@ -1028,7 +1053,78 @@ pub(crate) fn row_context_menu_box<'a>(
         danger,
     ));
 
+    // Directory-level actions appended below the per-entry block, like
+    // FileZilla's row menu (create folder/file + refresh act on the
+    // pane's current directory, not the clicked entry).
+    items = items.push(menu_separator());
+    for it in dir_action_items(menu.side, source_is_remote, dir_ctx, false) {
+        items = items.push(it);
+    }
+
+    context_menu_shell(items)
+}
+
+/// Directory-level actions for the current pane: New folder, New file,
+/// Refresh, and (when `full`) Show hidden + Open in File Manager. `full`
+/// is set for the background / `⋮` menus where these are the whole menu;
+/// the row menu appends only the create + refresh trio. Open in File
+/// Manager stays local-only (no OS explorer for a remote host); the
+/// create/refresh/hidden actions apply to both panes.
+fn dir_action_items<'a>(
+    side: SftpPaneSide,
+    is_remote: bool,
+    ctx: DirActionCtx<'_>,
+    full: bool,
+) -> Vec<Element<'a, Message>> {
+    let refresh_msg = if is_remote {
+        Message::SftpNavigateRemote(side, ctx.pane_dir.to_string())
+    } else {
+        Message::SftpRefreshLocal(side)
+    };
+    let mut items: Vec<Element<'a, Message>> = vec![
+        menu_item(
+            iced_fonts::lucide::folder_plus(),
+            t("new_folder"),
+            Message::SftpStartNewEntry(side, SftpEntryKind::Folder),
+        ),
+        menu_item(
+            iced_fonts::lucide::file_plus(),
+            t("new_file"),
+            Message::SftpStartNewEntry(side, SftpEntryKind::File),
+        ),
+    ];
+    if full {
+        items.push(menu_separator());
+    }
+    items.push(menu_item(iced_fonts::lucide::rotate_cw(), t("refresh"), refresh_msg));
+    if full {
+        let hidden_label =
+            if ctx.show_hidden { t("hide_hidden_files") } else { t("show_hidden_files") };
+        items.push(menu_item(
+            iced_fonts::lucide::eye(),
+            hidden_label,
+            Message::SftpToggleHidden(side),
+        ));
+        if !is_remote {
+            items.push(menu_separator());
+            items.push(menu_item(
+                iced_fonts::lucide::folder_open(),
+                t("open_in_file_manager"),
+                Message::SftpRevealInExplorer(ctx.local_dir.to_path_buf(), true),
+            ));
+        }
+    }
+    items
+}
+
+/// Shared shell for the cursor-anchored SFTP context menus (row +
+/// background): fixed width so the `Length::Fill` separators don't
+/// stretch the popover, plus the surface/border/shadow styling.
+fn context_menu_shell<'a>(
+    items: iced::widget::Column<'a, Message>,
+) -> Element<'a, Message> {
     container(items)
+        .width(Length::Fixed(ROW_CONTEXT_MENU_WIDTH))
         .style(|_| container::Style {
             background: Some(Background::Color(OryxisColors::t().bg_surface)),
             border: Border {
@@ -1056,6 +1152,14 @@ pub(crate) fn row_context_menu_height(
     other_is_remote: bool,
     selection_count_same_pane: usize,
 ) -> f32 {
+    // Background menu: directory actions only. New folder + New file +
+    // Refresh + Show hidden (4), plus Open in File Manager on a local
+    // pane (5), plus ~2 thin separators.
+    if menu.is_background {
+        let items = if source_is_remote { 4.0 } else { 5.0 };
+        let separators = if source_is_remote { 1.0 } else { 2.0 };
+        return items * 30.0 + separators * 4.0 + 8.0;
+    }
     let multi = selection_count_same_pane > 1;
     // Always present: Duplicate + Rename + Properties + Delete (single),
     // or Duplicate + Delete (multi).
@@ -1073,8 +1177,16 @@ pub(crate) fn row_context_menu_height(
             count += 1.0;
         }
     }
-    // Each item ~30px (padding 6+6 + ~12px text + 2px gap) plus 8px container padding.
-    count * 30.0 + 8.0
+    // "Open in File Manager" for a single local-pane entry.
+    if !source_is_remote && !multi {
+        count += 1.0;
+    }
+    // Appended directory actions (New folder + New file + Refresh) plus
+    // their leading separator.
+    count += 3.0;
+    // Each item ~30px (padding 6+6 + ~12px text + 2px gap) plus 8px
+    // container padding, plus one thin separator above the dir actions.
+    count * 30.0 + 4.0 + 8.0
 }
 
 /// Width is fixed because every item uses the same `menu_item` width.

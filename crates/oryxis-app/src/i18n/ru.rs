@@ -632,6 +632,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "transfer_relaying" => "Передача",
         "sftp_local_machine" => "Этот компьютер",
         "download_to_local" => "Скачать на локальный",
+        "open_in_file_manager" => "Открыть в файловом менеджере",
         "duplicate_n_items" => "Дублировать {n} элементов",
         "delete_n_items" => "Удалить {n} элементов",
         "col_name" => "Имя",

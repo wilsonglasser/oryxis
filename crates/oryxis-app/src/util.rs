@@ -136,6 +136,73 @@ pub(crate) fn open_in_browser(url: &str) -> Result<(), std::io::Error> {
     Ok(())
 }
 
+/// Reveal a local path in the OS file manager. A directory opens in
+/// place; a file opens its containing folder with the file selected
+/// where the platform supports it (Windows `explorer /select`, macOS
+/// `open -R`, Linux freedesktop `FileManager1.ShowItems` with a
+/// fall back to opening the parent folder). Best-effort: the io::Error
+/// is surfaced so the caller can show it.
+pub(crate) fn reveal_in_file_manager(
+    path: &std::path::Path,
+    is_dir: bool,
+) -> Result<(), std::io::Error> {
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        // CREATE_NO_WINDOW so the launch doesn't flash a console window.
+        let mut cmd = std::process::Command::new("explorer");
+        if is_dir {
+            cmd.arg(path);
+        } else {
+            // "/select," must be glued to the path in a single argument;
+            // explorer parses the comma-separated form itself.
+            cmd.arg(format!("/select,{}", path.display()));
+        }
+        cmd.creation_flags(0x0800_0000).spawn()?;
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let mut cmd = std::process::Command::new("open");
+        if is_dir {
+            cmd.arg(path);
+        } else {
+            // -R reveals (selects) the item in Finder.
+            cmd.arg("-R").arg(path);
+        }
+        cmd.spawn()?;
+    }
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        if is_dir {
+            std::process::Command::new("xdg-open").arg(path).spawn()?;
+        } else {
+            // Ask the freedesktop file manager to show + select the item.
+            // Most managers (Nautilus, Dolphin, Nemo, ...) implement this;
+            // if D-Bus or the service is missing, fall back to opening the
+            // containing directory so the action never silently no-ops.
+            let uri = format!("file://{}", path.display());
+            let shown = std::process::Command::new("dbus-send")
+                .args([
+                    "--session",
+                    "--dest=org.freedesktop.FileManager1",
+                    "--type=method_call",
+                    "/org/freedesktop/FileManager1",
+                    "org.freedesktop.FileManager1.ShowItems",
+                    &format!("array:string:{uri}"),
+                    "string:",
+                ])
+                .status()
+                .map(|s| s.success())
+                .unwrap_or(false);
+            if !shown {
+                let parent = path.parent().unwrap_or(path);
+                std::process::Command::new("xdg-open").arg(parent).spawn()?;
+            }
+        }
+    }
+    Ok(())
+}
+
 /// Resolve the effective SSH keepalive duration for a connection.
 /// `per_host` mirrors `Connection.keepalive_interval`: `None` falls
 /// back to the parsed `global` string; `Some(0)` explicitly disables

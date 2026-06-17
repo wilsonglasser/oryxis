@@ -167,6 +167,9 @@ pub enum Message {
 
     // Row interactions
     SftpRowRightClick(crate::state::SftpPaneSide, String, bool),
+    /// Right-click on the empty area of a pane (not a row). Opens the
+    /// directory-level context menu anchored at the cursor.
+    SftpBackgroundRightClick(crate::state::SftpPaneSide),
     SftpRowMenuClose,
     SftpStartRename(crate::state::SftpPaneSide, String),
     SftpRenameInput(String),
@@ -209,6 +212,10 @@ pub enum Message {
     /// Open a local file in the OS default app, no temp copy, no
     /// mtime watch. Edits land on the file directly.
     SftpOpenLocal(std::path::PathBuf),
+    /// Reveal a local file/folder in the OS file manager (local pane
+    /// only). Folders open in place; files open their folder selected.
+    /// Carries the absolute path and whether it's a directory.
+    SftpRevealInExplorer(std::path::PathBuf, bool),
     /// Open an arbitrary URL in the user's default browser.
     /// Used by clickable links in the About panel.
     OpenUrl(String),

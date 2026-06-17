@@ -314,6 +314,8 @@ impl Oryxis {
                 self.sftp.picker_open = true;
             }
             Message::SftpNavigateRemote(side, path) => {
+                // Also dismiss any open menu (Refresh routes here).
+                self.sftp.close_menus();
                 let client = match self.sftp.pane(side).client.clone() {
                     Some(c) => c,
                     None => return Ok(Task::none()),
@@ -369,6 +371,7 @@ impl Oryxis {
                 self.refresh_sftp_local(side);
             }
             Message::SftpRefreshLocal(side) => {
+                self.sftp.close_menus();
                 self.refresh_sftp_local(side);
             }
             Message::SftpOpenPicker(side) => {
@@ -487,6 +490,8 @@ impl Oryxis {
             }
             Message::NewSftpTab => {
                 self.overlay = None;
+                // Dismiss the new-tab picker too: SFTP is selectable from it.
+                self.show_new_tab_picker = false;
                 self.open_new_sftp_tab();
                 // Empty tab: open the host picker for the remote pane.
                 self.sftp.picker_open = true;
@@ -496,6 +501,7 @@ impl Oryxis {
                 self.sftp.picker_search = s;
             }
             Message::SftpToggleHidden(side) => {
+                self.sftp.close_menus();
                 let pane = self.sftp.pane_mut(side);
                 pane.show_hidden = !pane.show_hidden;
             }
@@ -518,10 +524,7 @@ impl Oryxis {
                 self.sftp.pane_mut(side).drives_open = now;
             }
             Message::SftpCloseMenus => {
-                self.sftp.left.actions_open = false;
-                self.sftp.right.actions_open = false;
-                self.sftp.left.drives_open = false;
-                self.sftp.right.drives_open = false;
+                self.sftp.close_menus();
             }
             Message::SftpStartEditPath(side) => {
                 let value = if self.sftp.pane(side).is_remote {
@@ -589,6 +592,25 @@ impl Oryxis {
                     side,
                     path,
                     is_dir,
+                    is_background: false,
+                    x: self.mouse_position.x,
+                    y: self.mouse_position.y,
+                });
+            }
+            Message::SftpBackgroundRightClick(side) => {
+                // Empty-area right-click: `path` carries the pane's current
+                // directory so the directory-level actions act on it.
+                let pane = self.sftp.pane(side);
+                let dir = if pane.is_remote {
+                    pane.remote_path.clone()
+                } else {
+                    pane.local_path.to_string_lossy().into_owned()
+                };
+                self.sftp.row_menu = Some(crate::state::SftpRowMenu {
+                    side,
+                    path: dir,
+                    is_dir: true,
+                    is_background: true,
                     x: self.mouse_position.x,
                     y: self.mouse_position.y,
                 });
@@ -770,8 +792,7 @@ impl Oryxis {
                 });
             }
             Message::SftpStartNewEntry(side, kind) => {
-                self.sftp.left.actions_open = false;
-                self.sftp.right.actions_open = false;
+                self.sftp.close_menus();
                 self.sftp.new_entry = Some(crate::state::SftpNewEntry {
                     side,
                     kind,

@@ -692,6 +692,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "upload_n_items" => "Вивантажити {n} елементів",
         "download_n_items" => "Завантажити {n} елементів",
         "download_to_local" => "Завантажити на локальний",
+        "open_in_file_manager" => "Відкрити у файловому менеджері",
         "relay_to_remote" => "Ретранслювати до {host}",
         "upload_to_host" => "Вивантажити до {host}",
         "the_other_host" => "інший хост",

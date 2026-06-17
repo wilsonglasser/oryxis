@@ -147,9 +147,22 @@ impl Oryxis {
         let mut rows: Vec<Element<'_, Message>> = Vec::new();
 
         // Local shell, always first. Routes into the pending pane (split)
-        // or a fresh tab, handled by `Message::PickLocalShell`.
-        if needle.is_empty() || t("local_shell").to_lowercase().contains(needle) {
+        // or a fresh tab, handled by `Message::PickLocalShell`. SFTP follows
+        // when enabled, but never while filling a pane (split panes are
+        // SSH-only; SFTP is its own tab, not a pane), routed through
+        // `Message::NewSftpTab`.
+        let want_local =
+            needle.is_empty() || t("local_shell").to_lowercase().contains(needle);
+        let want_sftp = self.sftp_enabled
+            && !filling_pane
+            && (needle.is_empty() || t("sftp").to_lowercase().contains(needle));
+        if want_local {
             rows.push(local_shell_row());
+        }
+        if want_sftp {
+            rows.push(sftp_row());
+        }
+        if want_local || want_sftp {
             rows.push(Space::new().height(14).into());
         }
 
@@ -518,6 +531,36 @@ fn local_shell_row<'a>() -> Element<'a, Message> {
             .width(Length::Fill),
     )
     .on_press(Message::PickLocalShell)
+    .width(Length::Fill)
+    .style(hover_row_style)
+    .into()
+}
+
+/// "SFTP" entry, emitting `NewSftpTab` (opens a fresh SFTP browser tab).
+/// Shown right under Local Shell when SFTP is enabled.
+fn sftp_row<'a>() -> Element<'a, Message> {
+    let inner = dir_row(vec![
+        iced_fonts::lucide::folder_tree()
+            .size(15)
+            .color(OryxisColors::t().accent)
+            .into(),
+        Space::new().width(12).into(),
+        text(t("sftp"))
+            .size(13)
+            .font(iced::Font {
+                weight: iced::font::Weight::Semibold,
+                ..iced::Font::new(crate::theme::SYSTEM_UI_FAMILY)
+            })
+            .color(OryxisColors::t().text_primary)
+            .into(),
+    ])
+    .align_y(iced::Alignment::Center);
+    button(
+        container(inner)
+            .padding(Padding { top: 8.0, right: 12.0, bottom: 8.0, left: 12.0 })
+            .width(Length::Fill),
+    )
+    .on_press(Message::NewSftpTab)
     .width(Length::Fill)
     .style(hover_row_style)
     .into()

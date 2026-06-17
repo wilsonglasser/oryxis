@@ -692,6 +692,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "upload_n_items" => "{n}개 항목 업로드",
         "download_n_items" => "{n}개 항목 다운로드",
         "download_to_local" => "로컬로 다운로드",
+        "open_in_file_manager" => "파일 관리자에서 열기",
         "relay_to_remote" => "{host}(으)로 릴레이",
         "upload_to_host" => "{host}(으)로 업로드",
         "the_other_host" => "다른 호스트",

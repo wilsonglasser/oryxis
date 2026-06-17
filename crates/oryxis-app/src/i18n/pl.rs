@@ -698,6 +698,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "upload_n_items" => "Wyślij {n} elementów",
         "download_n_items" => "Pobierz {n} elementów",
         "download_to_local" => "Pobierz na lokalny",
+        "open_in_file_manager" => "Otwórz w menedżerze plików",
         "relay_to_remote" => "Przekaż do {host}",
         "upload_to_host" => "Wyślij do {host}",
         "the_other_host" => "drugi host",

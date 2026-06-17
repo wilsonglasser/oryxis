@@ -686,6 +686,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "transfer_relaying" => "در حال انتقال",
         "sftp_local_machine" => "این رایانه",
         "download_to_local" => "دانلود به محلی",
+        "open_in_file_manager" => "باز کردن در مدیر فایل",
         "duplicate_n_items" => "تکرار {n} مورد",
         "delete_n_items" => "حذف {n} مورد",
         "col_name" => "نام",

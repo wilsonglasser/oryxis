@@ -216,6 +216,17 @@ impl SftpState {
         }
     }
 
+    /// Dismiss every transient overlay menu: the row/background context
+    /// menu and both panes' `⋮` actions + drive-picker dropdowns. Called
+    /// by any menu action so the menu always closes on click.
+    pub(crate) fn close_menus(&mut self) {
+        self.row_menu = None;
+        self.left.actions_open = false;
+        self.right.actions_open = false;
+        self.left.drives_open = false;
+        self.right.drives_open = false;
+    }
+
     /// The side of the remote pane used as an upload destination /
     /// download source. With the current model the right pane is always
     /// remote, and the left pane can also be remote; the upload/download
@@ -512,6 +523,10 @@ pub(crate) struct SftpRowMenu {
     /// follow-up actions accept a path verbatim.
     pub path: String,
     pub is_dir: bool,
+    /// Set when the menu was opened by right-clicking the empty area of
+    /// the pane (not a row). The view then shows only directory-level
+    /// actions and `path` holds the pane's current directory.
+    pub is_background: bool,
     pub x: f32,
     pub y: f32,
 }

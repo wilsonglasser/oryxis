@@ -215,6 +215,16 @@ impl Oryxis {
                     ));
                 }
             }
+            Message::SftpRevealInExplorer(path, is_dir) => {
+                // Reachable from both the row menu and the `⋮` menu.
+                self.sftp.close_menus();
+                if let Err(e) = crate::util::reveal_in_file_manager(&path, is_dir) {
+                    self.sftp.pane_mut(local_side).error = Some(format!(
+                        "Failed to open {}: {e}",
+                        path.display()
+                    ));
+                }
+            }
             Message::SftpStartEdit(remote_path) => {
                 self.sftp.row_menu = None;
                 let Some(client) = self.sftp.pane(remote_side).client.clone() else {

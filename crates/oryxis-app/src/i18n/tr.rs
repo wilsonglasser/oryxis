@@ -692,6 +692,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "upload_n_items" => "{n} öğe yükle",
         "download_n_items" => "{n} öğe indir",
         "download_to_local" => "Yerele indir",
+        "open_in_file_manager" => "Dosya yöneticisinde aç",
         "relay_to_remote" => "{host} sunucusuna aktar",
         "upload_to_host" => "{host} sunucusuna yükle",
         "the_other_host" => "diğer sunucu",

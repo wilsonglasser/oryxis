@@ -641,6 +641,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "transfer_relaying" => "正在转发",
         "sftp_local_machine" => "本机",
         "download_to_local" => "下载到本地",
+        "open_in_file_manager" => "在文件管理器中打开",
         "duplicate_n_items" => "复制 {n} 项",
         "delete_n_items" => "删除 {n} 项",
         "col_name" => "名称",
