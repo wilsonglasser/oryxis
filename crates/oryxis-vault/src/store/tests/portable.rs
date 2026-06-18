@@ -31,14 +31,14 @@ fn export_import_roundtrip() {
 
     // Export
     let export_pw = "export-password";
-    let data = export_vault(&vault, export_pw, ExportOptions { include_private_keys: false, filter: ExportFilter::All }).unwrap();
+    let data = export_vault(&vault, export_pw, ExportOptions { include_private_keys: false, filter: ExportFilter::All, selection: crate::portable::ExportSelection::all() }).unwrap();
 
     // Verify header
     assert_eq!(&data[..6], b"ORYXIS");
 
     // Import into fresh vault
     let vault2 = unlocked_vault();
-    let result = import_vault(&vault2, &data, export_pw).unwrap();
+    let result = import_vault(&vault2, &data, export_pw, &crate::portable::ExportSelection::all()).unwrap();
 
     assert_eq!(result.connections_added, 1);
     assert_eq!(result.groups_added, 1);
@@ -109,13 +109,14 @@ fn export_import_proxy_round_trip() {
         ExportOptions {
             include_private_keys: false,
             filter: ExportFilter::All,
+            selection: crate::portable::ExportSelection::all(),
         },
     )
     .unwrap();
 
     // Import into a fresh vault
     let vault2 = unlocked_vault();
-    let result = import_vault(&vault2, &data, "export-pw").unwrap();
+    let result = import_vault(&vault2, &data, "export-pw", &crate::portable::ExportSelection::all()).unwrap();
     assert_eq!(result.connections_added, 2);
     assert_eq!(result.proxy_identities_added, 1);
 
@@ -162,8 +163,8 @@ fn export_wrong_password_fails() {
     let conn = Connection::new("test", "10.0.0.1");
     vault.save_connection(&conn, None).unwrap();
 
-    let data = export_vault(&vault, "correct", ExportOptions { include_private_keys: false, filter: ExportFilter::All }).unwrap();
-    let result = import_vault(&vault, &data, "wrong");
+    let data = export_vault(&vault, "correct", ExportOptions { include_private_keys: false, filter: ExportFilter::All, selection: crate::portable::ExportSelection::all() }).unwrap();
+    let result = import_vault(&vault, &data, "wrong", &crate::portable::ExportSelection::all());
     assert!(result.is_err());
 }
 
@@ -174,7 +175,7 @@ fn export_invalid_file_rejected() {
 
     let vault = unlocked_vault();
     assert!(!is_valid_export(b"not an oryxis file"));
-    assert!(import_vault(&vault, b"not an oryxis file", "pw").is_err());
+    assert!(import_vault(&vault, b"not an oryxis file", "pw", &crate::portable::ExportSelection::all()).is_err());
 }
 
 
@@ -186,10 +187,10 @@ fn import_skip_existing() {
     let conn = Connection::new("server", "10.0.0.1");
     vault.save_connection(&conn, Some("pw1")).unwrap();
 
-    let data = export_vault(&vault, "pass", ExportOptions { include_private_keys: false, filter: ExportFilter::All }).unwrap();
+    let data = export_vault(&vault, "pass", ExportOptions { include_private_keys: false, filter: ExportFilter::All, selection: crate::portable::ExportSelection::all() }).unwrap();
 
     // Import again into same vault, should skip
-    let result = import_vault(&vault, &data, "pass").unwrap();
+    let result = import_vault(&vault, &data, "pass", &crate::portable::ExportSelection::all()).unwrap();
     assert_eq!(result.connections_skipped, 1);
     assert_eq!(result.connections_added, 0);
 
@@ -208,7 +209,7 @@ fn import_updates_newer() {
     vault1.save_connection(&conn, Some("old_pw")).unwrap();
 
     // Export
-    let data = export_vault(&vault1, "pass", ExportOptions { include_private_keys: false, filter: ExportFilter::All }).unwrap();
+    let data = export_vault(&vault1, "pass", ExportOptions { include_private_keys: false, filter: ExportFilter::All, selection: crate::portable::ExportSelection::all() }).unwrap();
 
     // Create vault2 with same connection but older timestamp
     let vault2 = unlocked_vault();
@@ -217,7 +218,7 @@ fn import_updates_newer() {
     vault2.save_connection(&old_conn, Some("old_pw")).unwrap();
 
     // Import, should update because export is newer
-    let result = import_vault(&vault2, &data, "pass").unwrap();
+    let result = import_vault(&vault2, &data, "pass", &crate::portable::ExportSelection::all()).unwrap();
     assert_eq!(result.connections_updated, 1);
     assert_eq!(result.connections_added, 0);
 }
@@ -234,16 +235,16 @@ fn export_with_keys() {
     vault.save_key(&generated.key, Some(&generated.private_pem)).unwrap();
 
     // Export WITH keys
-    let data_with = export_vault(&vault, "pass", ExportOptions { include_private_keys: true, filter: ExportFilter::All }).unwrap();
+    let data_with = export_vault(&vault, "pass", ExportOptions { include_private_keys: true, filter: ExportFilter::All, selection: crate::portable::ExportSelection::all() }).unwrap();
     assert!(export_includes_keys(&data_with));
 
     // Export WITHOUT keys
-    let data_without = export_vault(&vault, "pass", ExportOptions { include_private_keys: false, filter: ExportFilter::All }).unwrap();
+    let data_without = export_vault(&vault, "pass", ExportOptions { include_private_keys: false, filter: ExportFilter::All, selection: crate::portable::ExportSelection::all() }).unwrap();
     assert!(!export_includes_keys(&data_without));
 
     // Import with keys into fresh vault
     let vault2 = unlocked_vault();
-    let result = import_vault(&vault2, &data_with, "pass").unwrap();
+    let result = import_vault(&vault2, &data_with, "pass", &crate::portable::ExportSelection::all()).unwrap();
     assert_eq!(result.keys_added, 1);
 
     let pk = vault2.get_key_private(&generated.key.id).unwrap();
@@ -251,7 +252,7 @@ fn export_with_keys() {
 
     // Import without keys, key added but no private key
     let vault3 = unlocked_vault();
-    let result = import_vault(&vault3, &data_without, "pass").unwrap();
+    let result = import_vault(&vault3, &data_without, "pass", &crate::portable::ExportSelection::all()).unwrap();
     assert_eq!(result.keys_added, 1);
 
     let pk = vault3.get_key_private(&generated.key.id).unwrap();
@@ -276,10 +277,11 @@ fn share_single_host() {
     let data = export_vault(&vault, "share-pass", ExportOptions {
         include_private_keys: false,
         filter: ExportFilter::Hosts(vec![c1.id]),
+        selection: crate::portable::ExportSelection::all(),
     }).unwrap();
 
     let vault2 = unlocked_vault();
-    let result = import_vault(&vault2, &data, "share-pass").unwrap();
+    let result = import_vault(&vault2, &data, "share-pass", &crate::portable::ExportSelection::all()).unwrap();
 
     assert_eq!(result.connections_added, 1);
     let conns = vault2.list_connections().unwrap();
@@ -312,10 +314,11 @@ fn share_group() {
     let data = export_vault(&vault, "pass", ExportOptions {
         include_private_keys: false,
         filter: ExportFilter::Group(g.id),
+        selection: crate::portable::ExportSelection::all(),
     }).unwrap();
 
     let vault2 = unlocked_vault();
-    let result = import_vault(&vault2, &data, "pass").unwrap();
+    let result = import_vault(&vault2, &data, "pass", &crate::portable::ExportSelection::all()).unwrap();
 
     assert_eq!(result.connections_added, 2);
     assert_eq!(result.groups_added, 1);
@@ -361,10 +364,11 @@ fn share_includes_dependencies() {
     let data = export_vault(&vault, "pass", ExportOptions {
         include_private_keys: true,
         filter: ExportFilter::Hosts(vec![conn.id]),
+        selection: crate::portable::ExportSelection::all(),
     }).unwrap();
 
     let vault2 = unlocked_vault();
-    let result = import_vault(&vault2, &data, "pass").unwrap();
+    let result = import_vault(&vault2, &data, "pass", &crate::portable::ExportSelection::all()).unwrap();
 
     // Should have 1 connection, 1 key, 1 identity, 1 group
     assert_eq!(result.connections_added, 1);
@@ -401,10 +405,11 @@ fn share_no_snippets_or_known_hosts() {
     let data = export_vault(&vault, "pass", ExportOptions {
         include_private_keys: false,
         filter: ExportFilter::Hosts(vec![conn.id]),
+        selection: crate::portable::ExportSelection::all(),
     }).unwrap();
 
     let vault2 = unlocked_vault();
-    let result = import_vault(&vault2, &data, "pass").unwrap();
+    let result = import_vault(&vault2, &data, "pass", &crate::portable::ExportSelection::all()).unwrap();
 
     assert_eq!(result.connections_added, 1);
     assert_eq!(result.snippets_added, 0);
@@ -416,4 +421,215 @@ fn share_no_snippets_or_known_hosts() {
 // explicitly since the UI relies on round-trip identity for
 // anything stored as a string (timeouts, keepalive, parallelism,
 // booleans-as-strings, etc.).
+
+/// The denylist is the only thing standing between a portable export
+/// and leaking device identity / lock state / plaintext tokens. Pin it
+/// so a future setting can't silently start riding along.
+#[test]
+fn settings_denylist_blocks_device_local_keys() {
+    use crate::portable::is_portable_setting;
+
+    // Device identity, per-vault lock flag, device name + port,
+    // plaintext bearer tokens, service-activation toggles, per-install
+    // state, one-time hints, one-shot migration / boot markers.
+    for denied in [
+        "sync_device_identity",
+        "has_user_password",
+        "sync_device_name",
+        "sync_listen_port",
+        "sync_signaling_token",
+        "mcp_server_token",
+        "sync_enabled",
+        "sync_mode",
+        "mcp_server_enabled",
+        "skipped_update_version",
+        "pinned_tabs",
+        "hint_link_click_used",
+        "port_forwards_migrated",
+        "keepalive_default_v2_applied",
+    ] {
+        assert!(!is_portable_setting(denied), "{denied} must not be portable");
+    }
+
+    // Genuine preferences ride along.
+    for ok in [
+        "language",
+        "app_theme",
+        "terminal_font_size",
+        "scrollback_rows",
+        "ai_provider",
+        "ai_model",
+        "ai_api_key",
+        "sync_passwords",
+        "sync_signaling_url",
+    ] {
+        assert!(is_portable_setting(ok), "{ok} should be portable");
+    }
+}
+
+/// Full export → import round-trips portable preferences (including the
+/// AI key, re-encrypted under the target's master key) and drops every
+/// device-local / security key, even when one is present on the source.
+#[test]
+fn settings_export_import_roundtrip() {
+    use crate::portable::{export_vault, import_vault, ExportFilter, ExportOptions, ExportSelection};
+
+    let vault = unlocked_vault();
+
+    // Portable preferences.
+    vault.set_setting("language", "pt-BR").unwrap();
+    vault.set_setting("app_theme", "Nord").unwrap();
+    vault.set_setting("terminal_font_size", "15").unwrap();
+    // AI key, stored encrypted under the source master key.
+    vault.set_ai_api_key("sk-secret-123").unwrap();
+    // Device-local / security keys that must never leave.
+    vault.set_setting("has_user_password", "true").unwrap();
+    vault.set_setting("sync_device_name", "source-laptop").unwrap();
+    vault.set_setting("mcp_server_token", "tok-abc").unwrap();
+    vault.set_setting("hint_link_click_used", "true").unwrap();
+
+    let data = export_vault(
+        &vault,
+        "pass",
+        ExportOptions {
+            include_private_keys: false,
+            filter: ExportFilter::All,
+            selection: ExportSelection::all(),
+        },
+    )
+    .unwrap();
+
+    let vault2 = unlocked_vault();
+    // vault2's own lock flag, set by `set_master_password`. Importing
+    // the source's `has_user_password` must not touch it.
+    let lock_flag_before = vault2.get_setting("has_user_password").unwrap();
+    let result = import_vault(&vault2, &data, "pass", &ExportSelection::all()).unwrap();
+
+    // language, app_theme, terminal_font_size, ai_api_key = 4 portable
+    // keys written; the 4 device-local ones were filtered on the way out.
+    assert_eq!(result.settings_imported, 4);
+
+    assert_eq!(vault2.get_setting("language").unwrap().as_deref(), Some("pt-BR"));
+    assert_eq!(vault2.get_setting("app_theme").unwrap().as_deref(), Some("Nord"));
+    assert_eq!(vault2.get_setting("terminal_font_size").unwrap().as_deref(), Some("15"));
+
+    // AI key decrypts to the original plaintext under vault2's own key.
+    assert_eq!(vault2.get_ai_api_key().unwrap().as_deref(), Some("sk-secret-123"));
+    // ...and is NOT stored verbatim, the column holds base64 ciphertext.
+    assert_ne!(vault2.get_setting("ai_api_key").unwrap().as_deref(), Some("sk-secret-123"));
+
+    // Device-local / security keys never crossed. The lock flag keeps
+    // vault2's own value (the import didn't clobber it with the source's).
+    assert_eq!(vault2.get_setting("has_user_password").unwrap(), lock_flag_before);
+    assert_eq!(vault2.get_setting("sync_device_name").unwrap(), None);
+    assert_eq!(vault2.get_setting("mcp_server_token").unwrap(), None);
+    assert_eq!(vault2.get_setting("hint_link_click_used").unwrap(), None);
+}
+
+/// Unchecking the Settings category leaves an export with no settings,
+/// and inspection reports the per-category counts the import dialog
+/// needs.
+#[test]
+fn settings_excluded_when_category_off_and_inspect_counts() {
+    use crate::portable::{export_vault, inspect_export, ExportFilter, ExportOptions, ExportSelection};
+
+    let vault = unlocked_vault();
+    vault.save_connection(&Connection::new("h", "10.0.0.1"), None).unwrap();
+    vault.set_setting("language", "fr").unwrap();
+
+    // Settings unchecked.
+    let mut sel = ExportSelection::all();
+    sel.settings = false;
+    let data = export_vault(
+        &vault,
+        "pass",
+        ExportOptions { include_private_keys: false, filter: ExportFilter::All, selection: sel },
+    )
+    .unwrap();
+
+    let summary = inspect_export(&data, "pass").unwrap();
+    assert_eq!(summary.connections, 1);
+    assert_eq!(summary.settings, 0);
+    assert!(summary.present(crate::portable::ExportCategory::Connections));
+    assert!(!summary.present(crate::portable::ExportCategory::Settings));
+}
+
+/// Importing connections while deselecting their dependency categories
+/// must NULL the now-dangling references, the app's invariant (deleted
+/// parents cascade-NULL) means a `Some(missing)` group/key/identity
+/// would make the host vanish from the dashboard.
+#[test]
+fn partial_import_nulls_dangling_refs() {
+    use crate::portable::{export_vault, import_vault, ExportFilter, ExportOptions, ExportSelection};
+    use oryxis_core::models::identity::Identity;
+
+    let vault = unlocked_vault();
+    let key = crate::keygen::generate_ed25519("k").unwrap();
+    vault.save_key(&key.key, Some(&key.private_pem)).unwrap();
+    let mut ident = Identity::new("id");
+    ident.key_id = Some(key.key.id);
+    vault.save_identity(&ident, None).unwrap();
+    let g = Group::new("G");
+    vault.save_group(&g).unwrap();
+    let mut conn = Connection::new("h", "10.0.0.1");
+    conn.group_id = Some(g.id);
+    conn.key_id = Some(key.key.id);
+    conn.identity_id = Some(ident.id);
+    vault.save_connection(&conn, None).unwrap();
+
+    let data = export_vault(
+        &vault,
+        "pw",
+        ExportOptions { include_private_keys: true, filter: ExportFilter::All, selection: ExportSelection::all() },
+    )
+    .unwrap();
+
+    // Import connections only, into a vault with none of the deps.
+    let mut sel = ExportSelection::none();
+    sel.connections = true;
+    let vault2 = unlocked_vault();
+    let result = import_vault(&vault2, &data, "pw", &sel).unwrap();
+    assert_eq!(result.connections_added, 1);
+    assert_eq!(result.groups_added, 0);
+    assert_eq!(result.keys_added, 0);
+    assert_eq!(result.identities_added, 0);
+
+    let conns = vault2.list_connections().unwrap();
+    assert_eq!(conns.len(), 1);
+    assert_eq!(conns[0].group_id, None);
+    assert_eq!(conns[0].key_id, None);
+    assert_eq!(conns[0].identity_id, None);
+}
+
+/// The mirror case: when the parent already lives in the target vault,
+/// a connections-only import must KEEP the link, not blindly NULL it.
+#[test]
+fn partial_import_preserves_existing_parent_link() {
+    use crate::portable::{export_vault, import_vault, ExportFilter, ExportOptions, ExportSelection};
+
+    let vault = unlocked_vault();
+    let g = Group::new("G");
+    vault.save_group(&g).unwrap();
+    let mut conn = Connection::new("h", "10.0.0.1");
+    conn.group_id = Some(g.id);
+    vault.save_connection(&conn, None).unwrap();
+
+    let data = export_vault(
+        &vault,
+        "pw",
+        ExportOptions { include_private_keys: false, filter: ExportFilter::All, selection: ExportSelection::all() },
+    )
+    .unwrap();
+
+    // Target already has the group; import connections only.
+    let vault2 = unlocked_vault();
+    vault2.save_group(&g).unwrap();
+    let mut sel = ExportSelection::none();
+    sel.connections = true;
+    import_vault(&vault2, &data, "pw", &sel).unwrap();
+
+    let conns = vault2.list_connections().unwrap();
+    assert_eq!(conns.len(), 1);
+    assert_eq!(conns[0].group_id, Some(g.id));
+}
 

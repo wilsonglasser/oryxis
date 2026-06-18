@@ -1197,10 +1197,20 @@ pub struct Oryxis {
     pub(crate) show_export_dialog: bool,
     pub(crate) export_password: String,
     pub(crate) export_include_keys: bool,
+    /// Which entity families to write into the export, one checkbox per
+    /// category in the dialog. Reset to `all()` each time the dialog opens.
+    pub(crate) export_selection: oryxis_vault::ExportSelection,
     pub(crate) export_status: Option<Result<String, String>>,
     pub(crate) show_import_dialog: bool,
     pub(crate) import_password: String,
     pub(crate) import_file_data: Option<Vec<u8>>,
+    /// Per-category record counts of the picked file, populated by the
+    /// "Inspect" step (decrypt + count). `None` until inspected; the
+    /// import checkboxes + confirm button only render once it's `Some`.
+    pub(crate) import_summary: Option<oryxis_vault::ExportSummary>,
+    /// Which of the inspected categories to apply on import. Defaults to
+    /// every category the file actually contains.
+    pub(crate) import_selection: oryxis_vault::ExportSelection,
     pub(crate) import_status: Option<Result<String, String>>,
     /// Latest result of an `~/.ssh/config` import, `Ok(message)` is
     /// rendered as a green banner, `Err` as red, in the Security

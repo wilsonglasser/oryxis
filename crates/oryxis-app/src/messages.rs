@@ -1208,6 +1208,8 @@ pub enum Message {
     ExportVault,
     ExportPasswordChanged(String),
     ExportToggleKeys,
+    /// Toggle one category checkbox in the export dialog.
+    ExportToggleCategory(oryxis_vault::ExportCategory),
     ExportConfirm,
     ExportCompleted(Result<String, String>),
     ImportVault,
@@ -1221,6 +1223,12 @@ pub enum Message {
     SshConfigFileLoaded(Result<String, String>),
     ImportFileLoaded(Vec<u8>),
     ImportPasswordChanged(String),
+    /// Decrypt the picked file with the entered password and reveal its
+    /// per-category contents, the first step of the two-phase import.
+    ImportInspect,
+    /// Toggle one category checkbox in the import dialog (only the
+    /// categories the file actually contains are interactive).
+    ImportToggleCategory(oryxis_vault::ExportCategory),
     ImportConfirm,
     ImportCompleted(Result<String, String>),
     /// Destination chosen in the async Share save dialog; the handler

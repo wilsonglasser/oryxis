@@ -19,6 +19,7 @@ impl Oryxis {
                 self.show_export_dialog = true;
                 self.export_password = String::new();
                 self.export_include_keys = true;
+                self.export_selection = oryxis_vault::ExportSelection::all();
                 self.export_status = None;
             }
             Message::ExportPasswordChanged(v) => {
@@ -26,6 +27,9 @@ impl Oryxis {
             }
             Message::ExportToggleKeys => {
                 self.export_include_keys = !self.export_include_keys;
+            }
+            Message::ExportToggleCategory(cat) => {
+                self.export_selection.toggle(cat);
             }
             Message::ExportConfirm => {
                 if self.export_password.is_empty() {
@@ -36,6 +40,7 @@ impl Oryxis {
                     let options = oryxis_vault::ExportOptions {
                         include_private_keys: self.export_include_keys,
                         filter: oryxis_vault::ExportFilter::All,
+                        selection: self.export_selection,
                     };
                     match oryxis_vault::export_vault(vault, &self.export_password, options) {
                         Ok(data) => {
@@ -183,6 +188,8 @@ impl Oryxis {
                 self.import_status = None;
                 self.import_password = String::new();
                 self.import_file_data = None;
+                self.import_summary = None;
+                self.import_selection = oryxis_vault::ExportSelection::all();
                 // Picker + read off the event loop; the follow-up
                 // messages route back into the dialog state.
                 return Ok(Task::perform(
@@ -211,30 +218,79 @@ impl Oryxis {
             Message::ImportPasswordChanged(v) => {
                 self.import_password = v;
             }
+            Message::ImportInspect => {
+                if self.import_password.is_empty() {
+                    self.import_status = Some(Err(crate::i18n::t("password_required").to_string()));
+                    return Ok(Task::none());
+                }
+                if let Some(data) = &self.import_file_data {
+                    match oryxis_vault::inspect_export(data, &self.import_password) {
+                        Ok(summary) => {
+                            // Pre-check every category the file carries;
+                            // the user unchecks to narrow.
+                            self.import_selection = summary.default_selection();
+                            self.import_summary = Some(summary);
+                            self.import_status = None;
+                        }
+                        Err(oryxis_vault::VaultError::InvalidPassword) => {
+                            self.import_status = Some(Err(crate::i18n::t("import_wrong_password").to_string()));
+                        }
+                        Err(e) => {
+                            self.import_status = Some(Err(e.to_string()));
+                        }
+                    }
+                }
+            }
+            Message::ImportToggleCategory(cat) => {
+                // Only categories present in the file are interactive in
+                // the UI, but guard anyway, toggling an absent one is a
+                // no-op since it stays empty in the payload.
+                self.import_selection.toggle(cat);
+            }
             Message::ImportConfirm => {
                 if self.import_password.is_empty() {
-                    self.import_status = Some(Err("Password is required".into()));
+                    self.import_status = Some(Err(crate::i18n::t("password_required").to_string()));
+                    return Ok(Task::none());
+                }
+                // Confirm only acts after a successful inspection, the UI
+                // hides the button until then, this guards the message path.
+                if self.import_summary.is_none() {
                     return Ok(Task::none());
                 }
                 if let (Some(vault), Some(data)) = (&self.vault, &self.import_file_data) {
-                    match oryxis_vault::import_vault(vault, data, &self.import_password) {
+                    match oryxis_vault::import_vault(vault, data, &self.import_password, &self.import_selection) {
                         Ok(result) => {
-                            let msg = format!(
-                                "Imported: {} connections, {} keys, {} groups, {} identities, {} snippets, {} known hosts",
-                                result.connections_added + result.connections_updated,
-                                result.keys_added,
-                                result.groups_added,
-                                result.identities_added + result.identities_updated,
-                                result.snippets_added,
-                                result.known_hosts_added,
-                            );
+                            // Fully translated summary, built from the
+                            // same category labels the dialog uses. Only
+                            // non-zero families are listed to keep it short.
+                            let parts: Vec<(usize, &str)> = vec![
+                                (result.connections_added + result.connections_updated, "cat_connections"),
+                                (result.keys_added, "cat_keys"),
+                                (result.groups_added, "cat_groups"),
+                                (result.identities_added + result.identities_updated, "cat_identities"),
+                                (result.proxy_identities_added + result.proxy_identities_updated, "cat_proxies"),
+                                (result.cloud_profiles_added + result.cloud_profiles_updated, "cat_cloud_profiles"),
+                                (result.snippets_added, "cat_snippets"),
+                                (result.known_hosts_added, "cat_known_hosts"),
+                                (result.port_forward_rules_added, "cat_port_forwards"),
+                                (result.session_groups_added, "cat_session_layouts"),
+                                (result.settings_imported, "cat_settings"),
+                            ];
+                            let body = parts
+                                .iter()
+                                .filter(|(n, _)| *n > 0)
+                                .map(|(n, key)| format!("{n} {}", crate::i18n::t(key)))
+                                .collect::<Vec<_>>()
+                                .join(", ");
+                            let msg = format!("{} {}", crate::i18n::t("import_done"), body);
                             self.import_status = Some(Ok(msg));
                             self.show_import_dialog = false;
                             self.import_file_data = None;
+                            self.import_summary = None;
                             self.load_data_from_vault();
                         }
                         Err(oryxis_vault::VaultError::InvalidPassword) => {
-                            self.import_status = Some(Err("Wrong password".into()));
+                            self.import_status = Some(Err(crate::i18n::t("import_wrong_password").to_string()));
                         }
                         Err(e) => {
                             self.import_status = Some(Err(e.to_string()));
@@ -256,6 +312,7 @@ impl Oryxis {
                 self.export_status = None;
                 self.import_status = None;
                 self.import_file_data = None;
+                self.import_summary = None;
             }
 
             // ── Share ──
@@ -324,6 +381,10 @@ impl Oryxis {
                     let options = oryxis_vault::ExportOptions {
                         include_private_keys: self.share_include_keys,
                         filter: filter.clone(),
+                        // A host/group share carries everything in scope,
+                        // settings + cross-cutting families are withheld
+                        // anyway because the filter is not `All`.
+                        selection: oryxis_vault::ExportSelection::all(),
                     };
                     match oryxis_vault::export_vault(vault, &self.share_password, options) {
                         Ok(data) => {

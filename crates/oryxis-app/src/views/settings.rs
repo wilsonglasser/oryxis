@@ -1,7 +1,7 @@
 //! Settings screen, terminal, AI, theme, shortcuts, security, sync, about.
 
 use iced::border::Radius;
-use iced::widget::{button, column, container, pick_list, scrollable, text, text_input, Space};
+use iced::widget::{button, checkbox, column, container, pick_list, scrollable, text, text_input, Space};
 use iced::widget::button::Status as BtnStatus;
 use iced::{Background, Border, Color, Element, Length, Padding};
 
@@ -1397,25 +1397,48 @@ impl Oryxis {
                         10.0,
                     ))
                     .width(300);
-                    let keys_toggle = dir_row(vec![
-                        text(crate::i18n::t("include_private_keys")).size(13).color(OryxisColors::t().text_secondary).into(),
-                        Space::new().width(Length::Fill).into(),
-                        button(
-                            text(if self.export_include_keys { "ON" } else { "OFF" }).size(12)
-                        ).on_press(Message::ExportToggleKeys).style(move |_theme, _status| {
-                            button::Style {
-                                background: Some(Background::Color(if self.export_include_keys { OryxisColors::t().success } else { OryxisColors::t().bg_hover })),
-                                border: Border { radius: Radius::from(4.0), ..Default::default() },
-                                text_color: OryxisColors::t().text_primary,
-                                ..Default::default()
-                            }
-                        }).into(),
-                    ]).align_y(iced::Alignment::Center);
+                    // One checkbox per category, all checked by default.
+                    let mut categories: iced::widget::Column<'_, Message> =
+                        column![text(crate::i18n::t("export_select_what"))
+                            .size(12)
+                            .color(OryxisColors::t().text_muted)]
+                        .spacing(6);
+                    for cat in oryxis_vault::ExportCategory::ALL {
+                        categories = categories.push(
+                            checkbox(self.export_selection.get(cat))
+                                .label(crate::i18n::t(category_label_key(cat)))
+                                .on_toggle(move |_| Message::ExportToggleCategory(cat))
+                                .size(16)
+                                .text_size(13),
+                        );
+                    }
+                    // Private-key material is a sub-option of the Keys
+                    // category, only meaningful when Keys is being exported.
+                    let keys_toggle: Element<'_, Message> = if self.export_selection.keys {
+                        dir_row(vec![
+                            text(crate::i18n::t("include_private_keys")).size(13).color(OryxisColors::t().text_secondary).into(),
+                            Space::new().width(Length::Fill).into(),
+                            button(
+                                text(if self.export_include_keys { "ON" } else { "OFF" }).size(12)
+                            ).on_press(Message::ExportToggleKeys).style(move |_theme, _status| {
+                                button::Style {
+                                    background: Some(Background::Color(if self.export_include_keys { OryxisColors::t().success } else { OryxisColors::t().bg_hover })),
+                                    border: Border { radius: Radius::from(4.0), ..Default::default() },
+                                    text_color: OryxisColors::t().text_primary,
+                                    ..Default::default()
+                                }
+                            }).into(),
+                        ]).align_y(iced::Alignment::Center).into()
+                    } else {
+                        Space::new().height(0).into()
+                    };
                     let confirm_btn = styled_button(crate::i18n::t("export_confirm"), Message::ExportConfirm, OryxisColors::t().success);
                     let cancel_btn = styled_button(crate::i18n::t("cancel"), Message::ExportImportDismiss, OryxisColors::t().text_muted);
                     export_import_section = export_import_section
                         .push(Space::new().height(12))
                         .push(pw_input)
+                        .push(Space::new().height(10))
+                        .push(categories)
                         .push(Space::new().height(8))
                         .push(keys_toggle)
                         .push(Space::new().height(8))
@@ -1428,7 +1451,12 @@ impl Oryxis {
                         crate::i18n::t("import_password"),
                         &self.import_password,
                         Message::ImportPasswordChanged,
-                        Some(Message::ImportConfirm),
+                        // Enter inspects in phase 1, imports in phase 2.
+                        Some(if self.import_summary.is_some() {
+                            Message::ImportConfirm
+                        } else {
+                            Message::ImportInspect
+                        }),
                         self.revealed_secrets
                             .contains(&crate::state::SecretField::ImportPassword),
                         Message::ToggleSecretVisibility(
@@ -1437,15 +1465,54 @@ impl Oryxis {
                         10.0,
                     ))
                     .width(300);
-                    let confirm_btn = styled_button(crate::i18n::t("import_confirm"), Message::ImportConfirm, OryxisColors::t().success);
                     let cancel_btn = styled_button(crate::i18n::t("cancel"), Message::ExportImportDismiss, OryxisColors::t().text_muted);
                     export_import_section = export_import_section
                         .push(Space::new().height(12))
                         .push(text(crate::i18n::t("import_password_hint")).size(12).color(OryxisColors::t().text_muted))
                         .push(Space::new().height(4))
-                        .push(pw_input)
-                        .push(Space::new().height(8))
-                        .push(dir_row(vec![confirm_btn, Space::new().width(8).into(), cancel_btn]));
+                        .push(pw_input);
+                    if let Some(summary) = &self.import_summary {
+                        // Phase 2: the file is decrypted, show what it
+                        // holds. Present categories are interactive
+                        // checkboxes (with counts); absent ones are
+                        // greyed so the user sees the full shape.
+                        let mut categories: iced::widget::Column<'_, Message> =
+                            column![text(crate::i18n::t("import_select_what"))
+                                .size(12)
+                                .color(OryxisColors::t().text_muted)]
+                            .spacing(6);
+                        for cat in oryxis_vault::ExportCategory::ALL {
+                            let count = summary.count(cat);
+                            let label = crate::i18n::t(category_label_key(cat));
+                            if count > 0 {
+                                categories = categories.push(
+                                    checkbox(self.import_selection.get(cat))
+                                        .label(format!("{label} ({count})"))
+                                        .on_toggle(move |_| Message::ImportToggleCategory(cat))
+                                        .size(16)
+                                        .text_size(13),
+                                );
+                            } else {
+                                categories = categories.push(
+                                    text(format!("{label} ({})", crate::i18n::t("import_not_in_file")))
+                                        .size(13)
+                                        .color(OryxisColors::t().text_muted),
+                                );
+                            }
+                        }
+                        let confirm_btn = styled_button(crate::i18n::t("import_confirm"), Message::ImportConfirm, OryxisColors::t().success);
+                        export_import_section = export_import_section
+                            .push(Space::new().height(10))
+                            .push(categories)
+                            .push(Space::new().height(8))
+                            .push(dir_row(vec![confirm_btn, Space::new().width(8).into(), cancel_btn]));
+                    } else {
+                        // Phase 1: enter the password, then inspect.
+                        let inspect_btn = styled_button(crate::i18n::t("import_inspect"), Message::ImportInspect, OryxisColors::t().accent);
+                        export_import_section = export_import_section
+                            .push(Space::new().height(8))
+                            .push(dir_row(vec![inspect_btn, Space::new().width(8).into(), cancel_btn]));
+                    }
                 }
 
                 // Status messages
@@ -2868,4 +2935,22 @@ fn key_badge_owned(label: String) -> Element<'static, Message> {
             ..Default::default()
         })
         .into()
+}
+
+/// i18n key for an export/import category's checkbox label.
+fn category_label_key(c: oryxis_vault::ExportCategory) -> &'static str {
+    use oryxis_vault::ExportCategory as C;
+    match c {
+        C::Connections => "cat_connections",
+        C::Groups => "cat_groups",
+        C::Keys => "cat_keys",
+        C::Identities => "cat_identities",
+        C::ProxyIdentities => "cat_proxies",
+        C::CloudProfiles => "cat_cloud_profiles",
+        C::Snippets => "cat_snippets",
+        C::KnownHosts => "cat_known_hosts",
+        C::PortForwardRules => "cat_port_forwards",
+        C::SessionGroups => "cat_session_layouts",
+        C::Settings => "cat_settings",
+    }
 }

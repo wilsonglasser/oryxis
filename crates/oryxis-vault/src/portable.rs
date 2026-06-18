@@ -51,6 +51,23 @@ struct ExportPayload {
     /// with export files written before this field existed.
     #[serde(default)]
     session_groups: Vec<SessionGroup>,
+    /// Portable application preferences (theme, language, terminal +
+    /// SFTP + cloud prefs, AI provider/model/key, …). Device-local and
+    /// security-sensitive keys are filtered out on the way in and out
+    /// (see `is_portable_setting`). The `ai_api_key` value is shipped
+    /// **decrypted** here so it round-trips onto the target vault's own
+    /// master key, the whole payload is encrypted with the export
+    /// password, so it never lands in plaintext on disk. Defaults to
+    /// empty for backwards compat with export files written before this
+    /// field existed.
+    #[serde(default)]
+    settings: Vec<ExportSetting>,
+}
+
+#[derive(Serialize, Deserialize)]
+struct ExportSetting {
+    key: String,
+    value: String,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -103,6 +120,183 @@ struct ExportCloudProfile {
 pub struct ExportOptions {
     pub include_private_keys: bool,
     pub filter: ExportFilter,
+    /// Which entity families to include. Each category is an
+    /// independent toggle, dropping a dependency (e.g. exporting
+    /// connections without their keys) leaves a dangling reference that
+    /// the app tolerates exactly like a deleted key, FK enforcement is
+    /// off on the vault so an import never errors on a missing parent.
+    pub selection: ExportSelection,
+}
+
+/// The selectable entity families for a vault export / import. Mirrors
+/// the sections of `ExportPayload`; `settings` rides only on a full
+/// (unfiltered) export.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum ExportCategory {
+    Connections,
+    Groups,
+    Keys,
+    Identities,
+    ProxyIdentities,
+    CloudProfiles,
+    Snippets,
+    KnownHosts,
+    PortForwardRules,
+    SessionGroups,
+    Settings,
+}
+
+impl ExportCategory {
+    /// Every category, in display order. Drives the checkbox lists in
+    /// the export / import dialogs and the `all()` / `none()` helpers.
+    pub const ALL: [ExportCategory; 11] = [
+        ExportCategory::Connections,
+        ExportCategory::Groups,
+        ExportCategory::Keys,
+        ExportCategory::Identities,
+        ExportCategory::ProxyIdentities,
+        ExportCategory::CloudProfiles,
+        ExportCategory::Snippets,
+        ExportCategory::KnownHosts,
+        ExportCategory::PortForwardRules,
+        ExportCategory::SessionGroups,
+        ExportCategory::Settings,
+    ];
+}
+
+/// Per-category include flags for an export / import. Built `all()` by
+/// default (the UI checks every box); the user unchecks to narrow.
+#[derive(Clone, Copy, Debug)]
+pub struct ExportSelection {
+    pub connections: bool,
+    pub groups: bool,
+    pub keys: bool,
+    pub identities: bool,
+    pub proxy_identities: bool,
+    pub cloud_profiles: bool,
+    pub snippets: bool,
+    pub known_hosts: bool,
+    pub port_forward_rules: bool,
+    pub session_groups: bool,
+    pub settings: bool,
+}
+
+impl ExportSelection {
+    /// Everything selected, the default for the full-export dialog and
+    /// the host/group share path.
+    pub fn all() -> Self {
+        Self {
+            connections: true,
+            groups: true,
+            keys: true,
+            identities: true,
+            proxy_identities: true,
+            cloud_profiles: true,
+            snippets: true,
+            known_hosts: true,
+            port_forward_rules: true,
+            session_groups: true,
+            settings: true,
+        }
+    }
+
+    /// Nothing selected, the starting point when an import inspection
+    /// turns categories on only for the families actually present.
+    pub fn none() -> Self {
+        Self {
+            connections: false,
+            groups: false,
+            keys: false,
+            identities: false,
+            proxy_identities: false,
+            cloud_profiles: false,
+            snippets: false,
+            known_hosts: false,
+            port_forward_rules: false,
+            session_groups: false,
+            settings: false,
+        }
+    }
+
+    pub fn get(&self, c: ExportCategory) -> bool {
+        match c {
+            ExportCategory::Connections => self.connections,
+            ExportCategory::Groups => self.groups,
+            ExportCategory::Keys => self.keys,
+            ExportCategory::Identities => self.identities,
+            ExportCategory::ProxyIdentities => self.proxy_identities,
+            ExportCategory::CloudProfiles => self.cloud_profiles,
+            ExportCategory::Snippets => self.snippets,
+            ExportCategory::KnownHosts => self.known_hosts,
+            ExportCategory::PortForwardRules => self.port_forward_rules,
+            ExportCategory::SessionGroups => self.session_groups,
+            ExportCategory::Settings => self.settings,
+        }
+    }
+
+    pub fn set(&mut self, c: ExportCategory, v: bool) {
+        match c {
+            ExportCategory::Connections => self.connections = v,
+            ExportCategory::Groups => self.groups = v,
+            ExportCategory::Keys => self.keys = v,
+            ExportCategory::Identities => self.identities = v,
+            ExportCategory::ProxyIdentities => self.proxy_identities = v,
+            ExportCategory::CloudProfiles => self.cloud_profiles = v,
+            ExportCategory::Snippets => self.snippets = v,
+            ExportCategory::KnownHosts => self.known_hosts = v,
+            ExportCategory::PortForwardRules => self.port_forward_rules = v,
+            ExportCategory::SessionGroups => self.session_groups = v,
+            ExportCategory::Settings => self.settings = v,
+        }
+    }
+
+    pub fn toggle(&mut self, c: ExportCategory) {
+        self.set(c, !self.get(c));
+    }
+}
+
+/// Settings keys that must never leave (or enter) a vault through a
+/// portable export. They split three ways:
+///
+/// - **Device identity / per-vault state** that would corrupt the
+///   target if cloned: the sync device identity blob, the
+///   `has_user_password` lock flag, device name + listen port.
+/// - **Per-device secrets stored in plaintext** in the settings table
+///   (so the denylist is their only protection): the MCP and signaling
+///   bearer tokens.
+/// - **Service-activation toggles** that would silently flip on a
+///   network listener on the importing machine (sync engine, MCP
+///   server), surprising for an "import my preferences" action and
+///   inconsistent with the device identity being withheld.
+/// - **Per-install / transient state**: skipped update version, pinned
+///   tab ids (reference local sessions), one-time hint flags and any
+///   one-shot migration / `*_applied` marker.
+///
+/// `ai_api_key` is deliberately **not** here, it's a portable secret
+/// handled specially (decrypted on export, re-encrypted on import).
+pub(crate) fn is_portable_setting(key: &str) -> bool {
+    const DENY_EXACT: &[&str] = &[
+        "sync_device_identity",
+        "has_user_password",
+        "sync_device_name",
+        "sync_listen_port",
+        "sync_signaling_token",
+        "mcp_server_token",
+        "sync_enabled",
+        "sync_mode",
+        "mcp_server_enabled",
+        "skipped_update_version",
+        "pinned_tabs",
+    ];
+    if DENY_EXACT.contains(&key) {
+        return false;
+    }
+    // One-time UI hints and one-shot migration / boot markers are
+    // per-install bookkeeping, never a user preference worth carrying.
+    if key.starts_with("hint_") || key.ends_with("_migrated") || key.ends_with("_applied") {
+        return false;
+    }
+    true
 }
 
 #[derive(Clone)]
@@ -140,6 +334,66 @@ pub struct ImportResult {
     pub known_hosts_skipped: usize,
     pub session_groups_added: usize,
     pub session_groups_skipped: usize,
+    /// Portable preferences written (or overwritten) on import. Settings
+    /// have no `updated_at`, so an imported value always wins, hence a
+    /// single counter rather than added/updated/skipped.
+    pub settings_imported: usize,
+}
+
+/// Per-category contents of an export file, produced by
+/// [`inspect_export`] so the import dialog can show the user exactly
+/// which families are present (and how many of each) before they pick
+/// what to apply. Counting requires decryption, so this carries the
+/// export password just like [`import_vault`].
+pub struct ExportSummary {
+    pub connections: usize,
+    pub groups: usize,
+    pub keys: usize,
+    pub identities: usize,
+    pub proxy_identities: usize,
+    pub cloud_profiles: usize,
+    pub snippets: usize,
+    pub known_hosts: usize,
+    pub port_forward_rules: usize,
+    pub session_groups: usize,
+    pub settings: usize,
+    /// Whether the file ships private key material (header flag).
+    pub includes_private_keys: bool,
+}
+
+impl ExportSummary {
+    /// How many records of `category` the file holds.
+    pub fn count(&self, c: ExportCategory) -> usize {
+        match c {
+            ExportCategory::Connections => self.connections,
+            ExportCategory::Groups => self.groups,
+            ExportCategory::Keys => self.keys,
+            ExportCategory::Identities => self.identities,
+            ExportCategory::ProxyIdentities => self.proxy_identities,
+            ExportCategory::CloudProfiles => self.cloud_profiles,
+            ExportCategory::Snippets => self.snippets,
+            ExportCategory::KnownHosts => self.known_hosts,
+            ExportCategory::PortForwardRules => self.port_forward_rules,
+            ExportCategory::SessionGroups => self.session_groups,
+            ExportCategory::Settings => self.settings,
+        }
+    }
+
+    /// Whether the file carries at least one record of `category`.
+    pub fn present(&self, c: ExportCategory) -> bool {
+        self.count(c) > 0
+    }
+
+    /// A selection that turns on exactly the categories present in the
+    /// file, the default state when the import dialog opens its
+    /// checkbox list.
+    pub fn default_selection(&self) -> ExportSelection {
+        let mut sel = ExportSelection::none();
+        for c in ExportCategory::ALL {
+            sel.set(c, self.present(c));
+        }
+        sel
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -280,7 +534,9 @@ pub fn export_vault(
     };
 
     // Filter groups
-    let groups: Vec<Group> = if is_filtered {
+    let groups: Vec<Group> = if !options.selection.groups {
+        Vec::new()
+    } else if is_filtered {
         all_groups.into_iter()
             .filter(|g| dep_group_ids.contains(&g.id))
             .collect()
@@ -291,22 +547,26 @@ pub fn export_vault(
     // Wrap connections with decrypted passwords. Proxy password is
     // shipped alongside so an inline-proxy host round-trips with auth
     // (it lives in its own encrypted column and isn't part of the
-    // serialized `Connection.proxy` JSON).
+    // serialized `Connection.proxy` JSON). Skipped entirely when the
+    // Connections category is unchecked, no point decrypting passwords
+    // we won't ship.
     let mut connections = Vec::with_capacity(filtered_connections.len());
-    for conn in &filtered_connections {
-        let pw = store.get_connection_password(&conn.id).unwrap_or(None);
-        let proxy_pw = store.get_proxy_password(&conn.id).unwrap_or(None);
-        connections.push(ExportConnection {
-            connection: (*conn).clone(),
-            password: pw,
-            proxy_password: proxy_pw,
-        });
+    if options.selection.connections {
+        for conn in &filtered_connections {
+            let pw = store.get_connection_password(&conn.id).unwrap_or(None);
+            let proxy_pw = store.get_proxy_password(&conn.id).unwrap_or(None);
+            connections.push(ExportConnection {
+                connection: (*conn).clone(),
+                password: pw,
+                proxy_password: proxy_pw,
+            });
+        }
     }
 
     // Wrap keys with optional private key (filtered by deps)
     let mut keys = Vec::new();
     for key in &all_keys {
-        if !is_filtered || dep_key_ids.contains(&key.id) {
+        if options.selection.keys && (!is_filtered || dep_key_ids.contains(&key.id)) {
             let pk = if options.include_private_keys {
                 store.get_key_private(&key.id).unwrap_or(None)
             } else {
@@ -322,7 +582,7 @@ pub fn export_vault(
     // Wrap identities with decrypted passwords (filtered by deps)
     let mut identities = Vec::new();
     for ident in &all_identities {
-        if !is_filtered || dep_identity_ids.contains(&ident.id) {
+        if options.selection.identities && (!is_filtered || dep_identity_ids.contains(&ident.id)) {
             let pw = store.get_identity_password(&ident.id).unwrap_or(None);
             identities.push(ExportIdentity {
                 identity: ident.clone(),
@@ -335,7 +595,7 @@ pub fn export_vault(
     // filtered by `proxy_identity_id` references when host-scoped.
     let mut proxy_identities = Vec::new();
     for pi in &all_proxy_identities {
-        if !is_filtered || dep_proxy_identity_ids.contains(&pi.id) {
+        if options.selection.proxy_identities && (!is_filtered || dep_proxy_identity_ids.contains(&pi.id)) {
             let pw = store.get_proxy_identity_password(&pi.id).unwrap_or(None);
             proxy_identities.push(ExportProxyIdentity {
                 proxy_identity: pi.clone(),
@@ -358,7 +618,7 @@ pub fn export_vault(
     };
     let mut cloud_profiles = Vec::new();
     for cp in &all_cloud_profiles {
-        if !is_filtered || dep_cloud_profile_ids.contains(&cp.id) {
+        if options.selection.cloud_profiles && (!is_filtered || dep_cloud_profile_ids.contains(&cp.id)) {
             let secret = store.get_cloud_profile_secret(&cp.id).unwrap_or(None);
             cloud_profiles.push(ExportCloudProfile {
                 profile: cp.clone(),
@@ -368,13 +628,46 @@ pub fn export_vault(
     }
 
     // Cross-cutting entities (snippets, port forward rules, known_hosts,
-    // session groups) only ship in a full export. Session groups reference
-    // hosts across arbitrary folders, so a filtered subset can't carry them
-    // without dangling references, same reasoning as snippets.
-    let snippets = if is_filtered { Vec::new() } else { all_snippets };
-    let port_forward_rules = if is_filtered { Vec::new() } else { all_port_forward_rules };
-    let known_hosts = if is_filtered { Vec::new() } else { all_known_hosts };
-    let session_groups = if is_filtered { Vec::new() } else { all_session_groups };
+    // session groups, settings) only ship in a full export, and only
+    // when their category is checked. Session groups reference hosts
+    // across arbitrary folders, so a filtered subset can't carry them
+    // without dangling references, same reasoning as snippets. Settings
+    // are inherently vault-wide and have nothing to do with a host/group
+    // share.
+    let full_export = !is_filtered;
+    let snippets = if full_export && options.selection.snippets { all_snippets } else { Vec::new() };
+    let port_forward_rules = if full_export && options.selection.port_forward_rules { all_port_forward_rules } else { Vec::new() };
+    let known_hosts = if full_export && options.selection.known_hosts { all_known_hosts } else { Vec::new() };
+    let session_groups = if full_export && options.selection.session_groups { all_session_groups } else { Vec::new() };
+
+    // Portable preferences. `ai_api_key` is stored as base64 of
+    // master-key-encrypted bytes, useless to a target vault with a
+    // different master key, so we substitute its decrypted value and
+    // let the import path re-encrypt it. Every other portable setting
+    // ships its column value verbatim. Device-local / security keys are
+    // filtered by `is_portable_setting`.
+    let settings: Vec<ExportSetting> = if full_export && options.selection.settings {
+        let mut out = Vec::new();
+        for (key, value) in store.list_settings()? {
+            if !is_portable_setting(&key) {
+                continue;
+            }
+            if key == "ai_api_key" {
+                // Ship the decrypted key; skip if it can't be read
+                // (corrupt / key rotated) rather than exporting an
+                // undecryptable blob.
+                match store.get_ai_api_key() {
+                    Ok(Some(plain)) => out.push(ExportSetting { key, value: plain }),
+                    _ => continue,
+                }
+            } else {
+                out.push(ExportSetting { key, value });
+            }
+        }
+        out
+    } else {
+        Vec::new()
+    };
 
     let payload = ExportPayload {
         version: FORMAT_VERSION,
@@ -390,6 +683,7 @@ pub fn export_vault(
         port_forward_rules,
         known_hosts,
         session_groups,
+        settings,
     };
 
     let json = serde_json::to_vec(&payload)
@@ -407,17 +701,65 @@ pub fn export_vault(
 // Import
 // ---------------------------------------------------------------------------
 
+/// Validate the header, decrypt the body with `password` and parse the
+/// payload. Shared by [`inspect_export`] (counts only) and
+/// [`import_vault`] (applies records). A wrong password surfaces as
+/// [`VaultError::InvalidPassword`] from `decrypt`.
+fn decrypt_payload(data: &[u8], password: &str) -> Result<ExportPayload, VaultError> {
+    validate_header(data)?;
+    let encrypted = &data[HEADER_LEN..];
+    let json_bytes = decrypt(encrypted, password.as_bytes())?;
+    serde_json::from_slice(&json_bytes)
+        .map_err(|e| VaultError::Crypto(format!("Invalid export data: {}", e)))
+}
+
+/// Decrypt an export and report how many records of each category it
+/// holds, without writing anything. Drives the import dialog's
+/// content-aware checkbox list (a category absent from the file is shown
+/// disabled). The caller re-decrypts on confirm, so this never leaks the
+/// parsed payload back to the UI layer.
+pub fn inspect_export(data: &[u8], password: &str) -> Result<ExportSummary, VaultError> {
+    let payload = decrypt_payload(data, password)?;
+    Ok(ExportSummary {
+        connections: payload.connections.len(),
+        groups: payload.groups.len(),
+        keys: payload.keys.len(),
+        identities: payload.identities.len(),
+        proxy_identities: payload.proxy_identities.len(),
+        cloud_profiles: payload.cloud_profiles.len(),
+        snippets: payload.snippets.len(),
+        known_hosts: payload.known_hosts.len(),
+        port_forward_rules: payload.port_forward_rules.len(),
+        session_groups: payload.session_groups.len(),
+        settings: payload.settings.len(),
+        includes_private_keys: export_includes_keys(data),
+    })
+}
+
 pub fn import_vault(
     store: &VaultStore,
     data: &[u8],
     password: &str,
+    selection: &ExportSelection,
 ) -> Result<ImportResult, VaultError> {
-    let (_version, _flags) = validate_header(data)?;
-    let encrypted = &data[HEADER_LEN..];
-    let json_bytes = decrypt(encrypted, password.as_bytes())?;
+    let mut payload = decrypt_payload(data, password)?;
 
-    let payload: ExportPayload = serde_json::from_slice(&json_bytes)
-        .map_err(|e| VaultError::Crypto(format!("Invalid export data: {}", e)))?;
+    // Drop unchecked categories up front so the existing per-entity
+    // loops below don't each need a guard. Dropping a category that a
+    // surviving one references (e.g. keys when connections stay) just
+    // leaves a dangling id, which the app tolerates like a deleted key
+    // (FK enforcement is off on the vault).
+    if !selection.connections { payload.connections.clear(); }
+    if !selection.groups { payload.groups.clear(); }
+    if !selection.keys { payload.keys.clear(); }
+    if !selection.identities { payload.identities.clear(); }
+    if !selection.proxy_identities { payload.proxy_identities.clear(); }
+    if !selection.cloud_profiles { payload.cloud_profiles.clear(); }
+    if !selection.snippets { payload.snippets.clear(); }
+    if !selection.known_hosts { payload.known_hosts.clear(); }
+    if !selection.port_forward_rules { payload.port_forward_rules.clear(); }
+    if !selection.session_groups { payload.session_groups.clear(); }
+    if !selection.settings { payload.settings.clear(); }
 
     let mut result = ImportResult {
         connections_added: 0,
@@ -444,6 +786,7 @@ pub fn import_vault(
         known_hosts_skipped: 0,
         session_groups_added: 0,
         session_groups_skipped: 0,
+        settings_imported: 0,
     };
 
     // Existing data for merge checks
@@ -457,6 +800,73 @@ pub fn import_vault(
     let existing_port_forward_rules = store.list_port_forward_rules()?;
     let existing_snippets = store.list_snippets()?;
     let existing_known_hosts = store.list_known_hosts()?;
+
+    // Reconcile dangling references before writing anything. A partial
+    // selection (or a hand-crafted file) can leave a connection pointing
+    // at a group/key/identity/cloud profile that is being imported by
+    // neither this file nor already present in the target. The app's own
+    // invariant is that such a reference is NULL, not a dangling id (a
+    // deleted parent cascade-NULLs its referrers), and the host list
+    // relies on it: a connection with `group_id = Some(missing)` matches
+    // no folder and silently vanishes from the dashboard. So we NULL any
+    // reference whose target will exist in neither the payload nor the
+    // vault. A reference to a parent that already lives in the target
+    // (re-import of connections only) is preserved.
+    let will_have = |payload_ids: &[uuid::Uuid], existing_ids: &[uuid::Uuid], id: &uuid::Uuid| {
+        payload_ids.contains(id) || existing_ids.contains(id)
+    };
+    let payload_group_ids: Vec<uuid::Uuid> = payload.groups.iter().map(|g| g.id).collect();
+    let existing_group_ids: Vec<uuid::Uuid> = existing_groups.iter().map(|g| g.id).collect();
+    let payload_key_ids: Vec<uuid::Uuid> = payload.keys.iter().map(|k| k.key.id).collect();
+    let existing_key_ids: Vec<uuid::Uuid> = existing_keys.iter().map(|k| k.id).collect();
+    let payload_identity_ids: Vec<uuid::Uuid> = payload.identities.iter().map(|i| i.identity.id).collect();
+    let existing_identity_ids: Vec<uuid::Uuid> = existing_identities.iter().map(|i| i.id).collect();
+    let payload_pi_ids: Vec<uuid::Uuid> = payload.proxy_identities.iter().map(|p| p.proxy_identity.id).collect();
+    let existing_pi_ids: Vec<uuid::Uuid> = existing_proxy_identities.iter().map(|p| p.id).collect();
+    let payload_cp_ids: Vec<uuid::Uuid> = payload.cloud_profiles.iter().map(|c| c.profile.id).collect();
+    let existing_cp_ids: Vec<uuid::Uuid> = existing_cloud_profiles.iter().map(|c| c.id).collect();
+
+    for ec in &mut payload.connections {
+        let c = &mut ec.connection;
+        if c.group_id.is_some_and(|id| !will_have(&payload_group_ids, &existing_group_ids, &id)) {
+            c.group_id = None;
+        }
+        if c.key_id.is_some_and(|id| !will_have(&payload_key_ids, &existing_key_ids, &id)) {
+            c.key_id = None;
+        }
+        if c.identity_id.is_some_and(|id| !will_have(&payload_identity_ids, &existing_identity_ids, &id)) {
+            c.identity_id = None;
+        }
+        if c.proxy_identity_id.is_some_and(|id| !will_have(&payload_pi_ids, &existing_pi_ids, &id)) {
+            c.proxy_identity_id = None;
+        }
+        if c.cloud_ref.as_ref().is_some_and(|r| !will_have(&payload_cp_ids, &existing_cp_ids, &r.profile_id)) {
+            c.cloud_ref = None;
+        }
+    }
+    // Identities can reference a key; same NULL-if-absent rule.
+    for ei in &mut payload.identities {
+        if ei.identity.key_id.is_some_and(|id| !will_have(&payload_key_ids, &existing_key_ids, &id)) {
+            ei.identity.key_id = None;
+        }
+    }
+    // Groups carry a parent (folder tree) and an optional dynamic cloud
+    // query. A dangling parent hides the group the same way; a dangling
+    // query profile breaks discovery.
+    for g in &mut payload.groups {
+        if g.parent_id.is_some_and(|id| !will_have(&payload_group_ids, &existing_group_ids, &id)) {
+            g.parent_id = None;
+        }
+        if g.cloud_query.as_ref().is_some_and(|q| !will_have(&payload_cp_ids, &existing_cp_ids, &q.profile_id)) {
+            g.cloud_query = None;
+        }
+    }
+    // Session groups live inside a folder by `group_id`.
+    for sg in &mut payload.session_groups {
+        if sg.group_id.is_some_and(|id| !will_have(&payload_group_ids, &existing_group_ids, &id)) {
+            sg.group_id = None;
+        }
+    }
 
     // Import order: groups → keys → identities → connections → snippets → known_hosts
 
@@ -612,6 +1022,24 @@ pub fn import_vault(
             store.save_session_group(sg)?;
             result.session_groups_added += 1;
         }
+    }
+
+    // Settings (overwrite, no `updated_at` to compare). The denylist is
+    // re-applied here, an export file is untrusted input and a
+    // hand-crafted or older one could carry a device-identity / lock
+    // flag that must never land in this vault. `ai_api_key` arrives
+    // decrypted and is routed back through `set_ai_api_key` so it's
+    // re-encrypted under this vault's master key.
+    for setting in &payload.settings {
+        if !is_portable_setting(&setting.key) {
+            continue;
+        }
+        if setting.key == "ai_api_key" {
+            store.set_ai_api_key(&setting.value)?;
+        } else {
+            store.set_setting(&setting.key, &setting.value)?;
+        }
+        result.settings_imported += 1;
     }
 
     Ok(result)

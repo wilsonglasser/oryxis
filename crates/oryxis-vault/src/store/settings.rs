@@ -27,6 +27,23 @@ impl VaultStore {
         Ok(())
     }
 
+    /// Return every `(key, value)` pair in the settings table, sorted by
+    /// key for a stable export order. Values are returned verbatim, so
+    /// encrypted settings (`ai_api_key`, `sync_device_identity`) come
+    /// back as their base64-encoded ciphertext, the caller is
+    /// responsible for substituting decrypted material when needed.
+    pub fn list_settings(&self) -> Result<Vec<(String, String)>, VaultError> {
+        let mut stmt = self
+            .db
+            .prepare("SELECT key, value FROM settings ORDER BY key")?;
+        let rows = stmt.query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?;
+        let mut out = Vec::new();
+        for r in rows {
+            out.push(r?);
+        }
+        Ok(out)
+    }
+
     /// Delete every setting whose key starts with `prefix`. Backs the
     /// "Reset hints" action, which clears all `hint_*` one-time flags
     /// in one sweep so future hints don't each need their own reset.
