@@ -1553,3 +1553,47 @@ record:
 
 ## [0.3.0] - 2026-04-20
 - Initial 0.3 baseline (pre-SFTP).
+
+## [0.2.1] - 2026-04-10
+
+### Fixed
+- Keep the PTY slave alive on Windows to stop ConPTY from terminating the
+  local shell session.
+
+## [0.2.0] - 2026-04-10
+
+### Added
+- **Vault export / import** (portable, encrypted).
+- **MCP server** to expose SSH hosts to external clients (initial version).
+- **P2P sync** and host sharing between devices (initial version).
+- **Local port forwarding** (`-L` style).
+- Traditional private-key PEM formats on import: PKCS#1, PKCS#8, SEC1.
+- Ko-fi / Buy Me a Coffee funding links.
+
+### Fixed
+- UI icon rendering and dropdown clipping.
+
+## [0.1.1] - 2026-04-08
+
+### Fixed
+- Normalize CRLF line endings on SSH key import.
+
+## [0.1.0] - 2026-04-07
+
+First public release. MVP SSH client.
+
+### Added
+- **SSH client** with an embedded alacritty-based terminal, local shell, and
+  snippets.
+- **Encrypted vault** (Argon2id + ChaCha20Poly1305) with boot flow, existing
+  password detection, and a guarded vault reset.
+- **Keys & identities**: private-key import with username autocomplete and a
+  reusable identity system.
+- **AI chat** sidebar with stabilization-based command-output polling.
+- **Session recording**.
+- **i18n**: 9 languages (en, pt-BR, es, fr, de, it, zh, ja, ru) with an
+  in-settings language picker.
+- **Themes** and floating overlay menus (context menus / dropdowns float over
+  content with backdrop dismiss).
+- Windows packaging: NSIS installer, multi-size `.ico`, and App Paths
+  registration for Windows Search.
