@@ -901,6 +901,14 @@ impl Oryxis {
                 self.setting_pinned_tab_style = normalized.into();
                 self.persist_setting("pinned_tab_style", normalized);
             }
+            Message::SettingTabFillStyleChanged(val) => {
+                let normalized = match val.as_str() {
+                    "solid" => "solid",
+                    _ => "gradient",
+                };
+                self.setting_tab_fill_style = normalized.into();
+                self.persist_setting("tab_fill_style", normalized);
+            }
             Message::SettingKeepaliveChanged(val) => {
                 // Accept only digits; cap at 86_400 (1 day) so users can't
                 // accidentally type a runaway value.

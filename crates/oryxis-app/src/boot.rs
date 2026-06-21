@@ -462,6 +462,7 @@ impl Oryxis {
                 setting_show_tab_status_dot: true,
                 setting_tab_accent_line: true,
                 setting_tab_accent_wash: true,
+                setting_tab_fill_style: "gradient".into(),
                 sftp_enabled: true,
                 // Workspace is the v0.7 default. Existing users who
                 // never persisted `layout_mode` also fall through to
@@ -896,6 +897,11 @@ impl Oryxis {
             }
             if let Ok(Some(v)) = vault.get_setting("tab_accent_wash") {
                 self.setting_tab_accent_wash = v == "true";
+            }
+            if let Ok(Some(v)) = vault.get_setting("tab_fill_style")
+                && (v == "gradient" || v == "solid")
+            {
+                self.setting_tab_fill_style = v;
             }
             if let Ok(Some(v)) = vault.get_setting("sftp_enabled") {
                 self.sftp_enabled = v == "true";

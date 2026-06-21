@@ -179,6 +179,10 @@ impl Oryxis {
         let strip_overflow = min_total > approx_strip_width;
 
         let mut tab_items: Vec<Element<'_, Message>> = Vec::new();
+        // Active-tab fill style: gradient (default) or a flat accent tint.
+        // Computed once and threaded into every tab/chip renderer so the
+        // choice applies uniformly across session, SFTP and area tabs.
+        let solid_fill = self.setting_tab_fill_style == "solid";
 
         // The navigation areas (Hosts and SFTP) live as top-level tabs
         // before the connection tabs. Settings stays out of the strip on
@@ -210,6 +214,7 @@ impl Oryxis {
                 iced_fonts::lucide::house(),
                 View::Dashboard,
                 nav_active && in_vault_area,
+                solid_fill,
             ));
         }
 
@@ -269,9 +274,9 @@ impl Oryxis {
                     let gap_w = if compact_pins && tab.pinned { CHIP_W } else { width };
                     tab_items.push(Space::new().width(gap_w).height(TAB_HEIGHT).into());
                 } else if compact_pins && tab.pinned {
-                    tab_items.push(sftp_pinned_chip(idx, is_active, host_accent));
+                    tab_items.push(sftp_pinned_chip(idx, is_active, host_accent, solid_fill));
                 } else {
-                    tab_items.push(sftp_session_tab(idx, &tab.label, is_active, width, host_accent, tab.pinned));
+                    tab_items.push(sftp_session_tab(idx, &tab.label, is_active, width, host_accent, tab.pinned, solid_fill));
                 }
                 continue;
             }
@@ -394,6 +399,7 @@ impl Oryxis {
                     sg_custom_icon,
                     sg_custom_color,
                     status_dot,
+                    solid_fill,
                 ));
             } else {
                 tab_items.push(session_tab(
@@ -411,6 +417,7 @@ impl Oryxis {
                     sg_custom_icon,
                     sg_custom_color,
                     tab.pinned,
+                    solid_fill,
                 ));
             }
         }
@@ -863,11 +870,32 @@ fn truncate_label(label: &str, width: f32) -> String {
 /// glyph instead of a host badge and no close affordance (areas
 /// can't be closed). Dispatches `ChangeView` so the existing
 /// navigation handler picks it up.
+/// Background for an active tab or area chip. By default it paints the
+/// "lit from above" vertical accent gradient (a saturated tint at the top
+/// fading to near-transparent at the bottom). When `solid_fill` is set
+/// (Settings -> Interface -> Tab fill style = Solid color), it paints a
+/// single flat accent tint instead, so the active tab reads as a uniform
+/// chip. Shared by every tab/chip renderer (and the Settings preview) so
+/// the choice stays consistent and the preview can't drift from the strip.
+pub(crate) fn active_tab_bg(accent: Color, solid_fill: bool) -> Background {
+    if solid_fill {
+        return Background::Color(Color { a: 0.16, ..accent });
+    }
+    let top = Color { a: 0.28, ..accent };
+    let bot = Color { a: 0.04, ..accent };
+    Background::Gradient(iced::Gradient::Linear(
+        iced::gradient::Linear::new(iced::Radians(std::f32::consts::PI))
+            .add_stop(0.0, top)
+            .add_stop(1.0, bot),
+    ))
+}
+
 fn area_tab<'a>(
     label: &'a str,
     glyph: iced::widget::Text<'a>,
     view: View,
     is_active: bool,
+    solid_fill: bool,
 ) -> Element<'a, Message> {
     let fg = if is_active {
         OryxisColors::t().accent
@@ -882,14 +910,7 @@ fn area_tab<'a>(
     // language for "active" (issue #38: the old flat teal pill read as
     // a different kind of element next to gradient session tabs).
     let bg: Background = if is_active {
-        let accent = OryxisColors::t().accent;
-        let top = Color { a: 0.28, ..accent };
-        let bot = Color { a: 0.04, ..accent };
-        Background::Gradient(iced::Gradient::Linear(
-            iced::gradient::Linear::new(iced::Radians(std::f32::consts::PI))
-                .add_stop(0.0, top)
-                .add_stop(1.0, bot),
-        ))
+        active_tab_bg(OryxisColors::t().accent, solid_fill)
     } else {
         Background::Color(Color::TRANSPARENT)
     };
@@ -963,6 +984,7 @@ fn sftp_session_tab<'a>(
     width: f32,
     host_accent: Option<Color>,
     pinned: bool,
+    solid_fill: bool,
 ) -> Element<'a, Message> {
     let effective_accent = host_accent.unwrap_or_else(|| OryxisColors::t().accent);
     let fg = if is_active {
@@ -971,13 +993,7 @@ fn sftp_session_tab<'a>(
         OryxisColors::t().text_muted
     };
     let bg: Background = if is_active {
-        let top = Color { a: 0.28, ..effective_accent };
-        let bot = Color { a: 0.04, ..effective_accent };
-        Background::Gradient(iced::Gradient::Linear(
-            iced::gradient::Linear::new(iced::Radians(std::f32::consts::PI))
-                .add_stop(0.0, top)
-                .add_stop(1.0, bot),
-        ))
+        active_tab_bg(effective_accent, solid_fill)
     } else {
         Background::Color(Color::TRANSPARENT)
     };
@@ -1069,7 +1085,7 @@ fn sftp_session_tab<'a>(
 /// Compact (Chrome-style) pinned SFTP tab: icon-only folder chip at a fixed
 /// width. Select on click, right-click opens the context menu. Mirrors
 /// `pinned_tab_chip` for the SFTP side.
-fn sftp_pinned_chip<'a>(idx: usize, is_active: bool, host_accent: Option<Color>) -> Element<'a, Message> {
+fn sftp_pinned_chip<'a>(idx: usize, is_active: bool, host_accent: Option<Color>, solid_fill: bool) -> Element<'a, Message> {
     let accent = host_accent.unwrap_or_else(|| OryxisColors::t().accent);
     // Folder glyph (SFTP identity) tinted with the host color.
     let badge = container(iced_fonts::lucide::folder_tree().size(12).color(Color::WHITE))
@@ -1081,13 +1097,7 @@ fn sftp_pinned_chip<'a>(idx: usize, is_active: bool, host_accent: Option<Color>)
             ..Default::default()
         });
     let bg: Background = if is_active {
-        let top = Color { a: 0.28, ..accent };
-        let bot = Color { a: 0.04, ..accent };
-        Background::Gradient(iced::Gradient::Linear(
-            iced::gradient::Linear::new(iced::Radians(std::f32::consts::PI))
-                .add_stop(0.0, top)
-                .add_stop(1.0, bot),
-        ))
+        active_tab_bg(accent, solid_fill)
     } else {
         Background::Color(Color::TRANSPARENT)
     };
@@ -1140,6 +1150,7 @@ fn session_tab<'a>(
     custom_color: Option<Color>,
     // Full-style pinned tab: draws a distinct left-edge accent border.
     pinned: bool,
+    solid_fill: bool,
 ) -> Element<'a, Message> {
     let effective_accent = host_accent.unwrap_or_else(|| OryxisColors::t().accent);
     let fg = if is_active {
@@ -1152,15 +1163,10 @@ fn session_tab<'a>(
     // almost transparent at the bottom (~0.04 alpha). Pairs with the
     // border-bottom hairline in `view_main` so the active tab reads
     // as "lit from above" instead of a flat chip. Inactive tabs stay
-    // transparent so hover gets the only visible cue.
+    // transparent so hover gets the only visible cue. The active fill
+    // honours the user's gradient/solid choice via `active_tab_bg`.
     let bg: Background = if is_active {
-        let top = Color { a: 0.28, ..effective_accent };
-        let bot = Color { a: 0.04, ..effective_accent };
-        Background::Gradient(iced::Gradient::Linear(
-            iced::gradient::Linear::new(iced::Radians(std::f32::consts::PI))
-                .add_stop(0.0, top)
-                .add_stop(1.0, bot),
-        ))
+        active_tab_bg(effective_accent, solid_fill)
     } else {
         Background::Color(Color::TRANSPARENT)
     };
@@ -1389,6 +1395,7 @@ fn pinned_tab_chip<'a>(
     custom_icon: Option<&'a str>,
     custom_color: Option<Color>,
     status_dot: Option<Color>,
+    solid_fill: bool,
 ) -> Element<'a, Message> {
     let accent = host_accent.unwrap_or_else(|| OryxisColors::t().accent);
     let fallback = OryxisColors::t().accent;
@@ -1437,15 +1444,7 @@ fn pinned_tab_chip<'a>(
         // the old 1.5 px accent outline just read as a different kind
         // of element.
         let bg = match status {
-            _ if is_active => {
-                let top = Color { a: 0.28, ..accent };
-                let bot = Color { a: 0.04, ..accent };
-                Background::Gradient(iced::Gradient::Linear(
-                    iced::gradient::Linear::new(iced::Radians(std::f32::consts::PI))
-                        .add_stop(0.0, top)
-                        .add_stop(1.0, bot),
-                ))
-            }
+            _ if is_active => active_tab_bg(accent, solid_fill),
             BtnStatus::Hovered => Background::Color(Color::from_rgba(1.0, 1.0, 1.0, 0.06)),
             _ => Background::Color(Color::TRANSPARENT),
         };

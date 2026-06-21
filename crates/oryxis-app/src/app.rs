@@ -958,6 +958,10 @@ pub struct Oryxis {
     /// of `setting_tab_accent_line` (the bottom hairline) so the user can
     /// keep one without the other.
     pub(crate) setting_tab_accent_wash: bool,
+    /// Active-tab fill: `"gradient"` (default, the "lit from above"
+    /// vertical accent fade) or `"solid"` (a single flat accent tint).
+    /// Read by every tab/chip renderer via `active_tab_bg`.
+    pub(crate) setting_tab_fill_style: String,
     /// Toggles the SFTP feature entirely. Off hides the SFTP sidebar
     /// entry (both expanded and collapsed) so users who never transfer
     /// files don't have it taking up nav space. The SFTP settings panel
