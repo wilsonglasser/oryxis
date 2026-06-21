@@ -266,6 +266,12 @@ impl Oryxis {
                 if let Some(id) = self.active_view_search_id() {
                     return iced::widget::operation::focus(id);
                 }
+                // Opening Settings directly on the (default) Interface
+                // section never goes through ChangeSettingsSection, so
+                // fetch the renderer readout here too.
+                if view == View::Settings {
+                    return self.renderer_info_task();
+                }
             }
             Message::QuickHostInput(v) => {
                 self.quick_host_input = v;
@@ -861,6 +867,7 @@ impl Oryxis {
                                 self.vault_has_user_password = false;
                                 self.vault_password_error = None;
                                 self.vault_new_password.clear();
+                                self.vault_confirm_password.clear();
                             }
                             Err(e) => {
                                 self.vault_password_error = Some(e.to_string());
@@ -870,16 +877,27 @@ impl Oryxis {
                 } else {
                     // Show password input (don't do anything yet, user needs to type and confirm)
                     self.vault_new_password.clear();
+                    self.vault_confirm_password.clear();
                     self.vault_password_error = None;
                 }
             }
             Message::VaultNewPasswordChanged(pw) => {
                 self.vault_new_password = pw;
             }
+            Message::VaultConfirmPasswordChanged(pw) => {
+                self.vault_confirm_password = pw;
+            }
             Message::SetVaultPassword => {
                 if self.vault_new_password.len() < 4 {
                     self.vault_password_error =
                         Some(crate::i18n::t("password_too_short").to_string());
+                    return Task::none();
+                }
+                // Both fields are hidden, so a typo would otherwise be
+                // invisible until the next unlock (when it's too late).
+                if self.vault_new_password != self.vault_confirm_password {
+                    self.vault_password_error =
+                        Some(crate::i18n::t("passwords_do_not_match").to_string());
                     return Task::none();
                 }
                 if let Some(vault) = &mut self.vault {
@@ -888,6 +906,7 @@ impl Oryxis {
                             self.vault_has_user_password = true;
                             self.vault_password_error = None;
                             self.vault_new_password.clear();
+                            self.vault_confirm_password.clear();
                         }
                         Err(e) => {
                             self.vault_password_error = Some(e.to_string());

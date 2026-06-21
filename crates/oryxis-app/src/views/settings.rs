@@ -12,7 +12,7 @@ use crate::state::SettingsSection;
 use crate::theme::OryxisColors;
 use crate::widgets::{
     dir_align_x, dir_row, key_badge, panel_field, panel_section, settings_row, shortcut_row,
-    styled_button, toggle_row,
+    styled_button, styled_button_opt, toggle_row,
 };
 
 impl Oryxis {
@@ -171,7 +171,7 @@ impl Oryxis {
                 (crate::i18n::t("connection"), SettingsSection::Connection),
                 (crate::i18n::t("shortcuts"), SettingsSection::Shortcuts),
                 (crate::i18n::t("security_privacy"), SettingsSection::Security),
-                (crate::i18n::t("plugins"), SettingsSection::Plugins),
+                (crate::i18n::t("features_and_plugins"), SettingsSection::Plugins),
             ];
             if self.ai_enabled {
                 items.push((crate::i18n::t("ai_assistant"), SettingsSection::AI));
@@ -1254,6 +1254,23 @@ impl Oryxis {
                     "opengl".to_string(),
                     "software".to_string(),
                 ];
+                let renderer_active_line: Element<'_, Message> =
+                    if let Some((backend, adapter)) = &self.renderer_active {
+                        column![
+                            Space::new().height(4),
+                            text(format!(
+                                "{}: {} ({})",
+                                crate::i18n::t("renderer_active"),
+                                backend,
+                                adapter
+                            ))
+                            .size(11)
+                            .color(OryxisColors::t().text_secondary),
+                        ]
+                        .into()
+                    } else {
+                        Space::new().height(0).into()
+                    };
                 let rendering_section = panel_section(column![
                     dir_row(vec![
                         text(crate::i18n::t("renderer_backend"))
@@ -1283,11 +1300,23 @@ impl Oryxis {
                     text(crate::i18n::t("renderer_backend_desc"))
                         .size(11)
                         .color(OryxisColors::t().text_muted),
+                    // What the compositor actually selected. Resolves the
+                    // ambiguity of "Automatic" (which GPU backend won?)
+                    // and confirms an opengl/software override or a
+                    // runtime fallback actually took effect.
+                    renderer_active_line,
                 ]);
 
                 // One-time tips (e.g. the terminal's "Ctrl + Click to
                 // open the link") retire themselves after first use;
                 // this brings them all back in one action.
+                // Disable the button when there's nothing to reset: hints
+                // persist as `hint_*` settings; today the only one is the
+                // terminal link tip (`hint_link_click_used`). Gate on that
+                // so the action reflects whether any hint is actually
+                // dismissed rather than always looking available.
+                let reset_hints_msg =
+                    self.hint_link_click_used.then_some(Message::ResetHints);
                 let hints_section = panel_section(column![
                     dir_row(vec![
                         text(crate::i18n::t("reset_hints"))
@@ -1295,9 +1324,9 @@ impl Oryxis {
                             .color(OryxisColors::t().text_primary)
                             .into(),
                         Space::new().width(Length::Fill).into(),
-                        styled_button(
+                        styled_button_opt(
                             crate::i18n::t("reset_hints"),
-                            Message::ResetHints,
+                            reset_hints_msg,
                             OryxisColors::t().text_muted,
                         ),
                     ])
@@ -1468,6 +1497,23 @@ impl Oryxis {
                         10.0,
                     ))
                     .width(300);
+                    // Second hidden entry: both are masked, so a typo in
+                    // the first would otherwise only surface at the next
+                    // unlock, when the only recovery is to destroy the
+                    // vault. Require them to match before accepting.
+                    let confirm = container(crate::widgets::password_input_with_eye(
+                        t("confirm_master_password_placeholder"),
+                        &self.vault_confirm_password,
+                        Message::VaultConfirmPasswordChanged,
+                        Some(Message::SetVaultPassword),
+                        self.revealed_secrets
+                            .contains(&crate::state::SecretField::VaultConfirmPassword),
+                        Message::ToggleSecretVisibility(
+                            crate::state::SecretField::VaultConfirmPassword,
+                        ),
+                        10.0,
+                    ))
+                    .width(300);
                     let btn = styled_button(crate::i18n::t("set_password"), Message::SetVaultPassword, OryxisColors::t().accent);
                     let error: Element<'_, Message> = if let Some(err) = &self.vault_password_error {
                         text(err.clone()).size(12).color(OryxisColors::t().error).into()
@@ -1481,6 +1527,8 @@ impl Oryxis {
                         Space::new().height(8),
                         input,
                         Space::new().height(8),
+                        confirm,
+                        Space::new().height(8),
                         btn,
                         error,
                     ].into()
@@ -1492,7 +1540,16 @@ impl Oryxis {
                     } else {
                         Space::new().height(0).into()
                     };
-                    column![Space::new().height(4), note, error].into()
+                    // Explicit Remove button: toggling the header switch off
+                    // also removes the password, but that's not discoverable;
+                    // an outright button makes the destructive-but-reversible
+                    // action obvious. Reuses the same handler as the toggle.
+                    let remove_btn = styled_button(
+                        crate::i18n::t("remove_password"),
+                        Message::ToggleVaultPassword,
+                        OryxisColors::t().warning,
+                    );
+                    column![Space::new().height(4), note, Space::new().height(8), remove_btn, error].into()
                 };
 
                 // Lock Vault only makes sense once a master password is

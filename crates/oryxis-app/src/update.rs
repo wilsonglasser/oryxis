@@ -580,32 +580,194 @@ pub fn apply_binary_update(downloaded: &std::path::Path) -> Result<(), String> {
 
     #[cfg(windows)]
     {
-        // A running .exe can't be overwritten, but it can be renamed.
-        // Move ourselves aside, drop the new binary in place, relaunch.
-        // `sweep_stale_binary` clears the `.old.exe` on the next boot.
-        let old = current.with_extension("old.exe");
-        let _ = std::fs::remove_file(&old);
-        std::fs::rename(&current, &old).map_err(|e| format!("rename running exe: {e}"))?;
-        if let Err(e) = std::fs::copy(downloaded, &current) {
-            // Roll back so the user isn't left without a binary.
-            let _ = std::fs::rename(&old, &current);
-            return Err(format!("install new exe: {e}"));
-        }
-        std::process::Command::new(&current)
-            .spawn()
-            .map_err(|e| format!("relaunch: {e}"))?;
+        // A running .exe can't be overwritten in place, and on a
+        // protected install dir (Program Files) it can't even be renamed
+        // aside (the old code's `rename` failed with ERROR_ACCESS_DENIED
+        // / os error 5). Hand the swap to a detached helper script that
+        // waits for us to exit, then moves the new binary in and
+        // relaunches. The helper only runs elevated when the install dir
+        // isn't writable, so the common user-writable case never prompts.
+        windows_self_replace(&current, downloaded)?;
     }
 
     Ok(())
 }
 
-/// Delete the `.old.exe` left behind by a Windows nightly self-update.
-/// Best-effort and a no-op everywhere else, called once on boot.
+/// Windows nightly self-replace via a detached helper script. The
+/// running process can't replace its own `.exe`, so we stage the new
+/// binary, write a `.cmd` that waits for our PID to exit, moves the
+/// staged file over the (now-unlocked) target with a short retry for
+/// antivirus holds, relaunches, and deletes itself. The leftovers are
+/// swept on the next boot by [`sweep_stale_binary`].
+#[cfg(windows)]
+fn windows_self_replace(
+    current: &std::path::Path,
+    downloaded: &std::path::Path,
+) -> Result<(), String> {
+    use std::io::Write;
+    use std::os::windows::process::CommandExt;
+
+    // CREATE_NO_WINDOW: run the helper console silently. The child
+    // outlives us on its own; DETACHED_PROCESS is mutually exclusive
+    // with CREATE_NO_WINDOW, so we don't combine them.
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+
+    // A function item (not a closure) so it stays Copy and can be both
+    // passed to `ok_or_else` and called directly afterwards.
+    fn fail() -> String {
+        crate::i18n::t("update_replace_failed").to_string()
+    }
+    let pid = std::process::id();
+    let dir = current.parent().ok_or_else(fail)?;
+
+    // Stage beside the target with a unique name so a leftover from a
+    // previous attempt can't block us and a half-copy can't shadow the
+    // live exe. If the install dir isn't writable, ERROR_ACCESS_DENIED
+    // tells us elevation is needed: stage in TEMP and run the helper
+    // elevated to move it into the protected dir.
+    let staged_in_dir = dir.join(format!("oryxis-update-{pid}.tmp.exe"));
+    let (staged, elevated) = match std::fs::copy(downloaded, &staged_in_dir) {
+        Ok(_) => (staged_in_dir, false),
+        Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied => {
+            tracing::info!(target = "oryxis::update", "install dir not writable, elevating self-replace");
+            let temp = std::env::temp_dir().join(format!("oryxis-update-{pid}.tmp.exe"));
+            std::fs::copy(downloaded, &temp).map_err(|e| {
+                tracing::warn!(target = "oryxis::update", error = %e, "stage to temp failed");
+                fail()
+            })?;
+            (temp, true)
+        }
+        Err(e) => {
+            tracing::warn!(target = "oryxis::update", error = %e, "stage binary failed");
+            return Err(fail());
+        }
+    };
+
+    // `enabledelayedexpansion` + `!tries!` so the retry counter updates
+    // across loop iterations (plain `%tries%` is frozen at parse time).
+    let script = format!(
+        "@echo off\r\n\
+         setlocal enabledelayedexpansion\r\n\
+         :wait\r\n\
+         tasklist /FI \"PID eq {pid}\" 2>nul | find \"{pid}\" >nul\r\n\
+         if not errorlevel 1 (\r\n\
+         timeout /t 1 /nobreak >nul\r\n\
+         goto wait\r\n\
+         )\r\n\
+         set tries=0\r\n\
+         :move\r\n\
+         move /Y \"{src}\" \"{dst}\" >nul 2>&1\r\n\
+         if not errorlevel 1 goto done\r\n\
+         set /a tries+=1\r\n\
+         if !tries! lss 15 (\r\n\
+         timeout /t 1 /nobreak >nul\r\n\
+         goto move\r\n\
+         )\r\n\
+         :done\r\n\
+         start \"\" \"{dst}\"\r\n\
+         del \"%~f0\" >nul 2>&1\r\n",
+        pid = pid,
+        src = staged.display(),
+        dst = current.display(),
+    );
+
+    let script_path = std::env::temp_dir().join(format!("oryxis-update-{pid}.cmd"));
+    {
+        let mut f = std::fs::File::create(&script_path).map_err(|e| {
+            tracing::warn!(target = "oryxis::update", error = %e, "write helper script failed");
+            fail()
+        })?;
+        f.write_all(script.as_bytes()).map_err(|e| {
+            tracing::warn!(target = "oryxis::update", error = %e, "write helper script failed");
+            fail()
+        })?;
+    }
+
+    if elevated {
+        // Protected dir: run the helper via ShellExecuteW "runas" so the
+        // OS shows one UAC prompt (mirroring the system installer). The
+        // relaunched app inherits the elevated token in this rare path;
+        // the next manual launch returns to normal privileges.
+        run_elevated_cmd(&script_path)?;
+    } else {
+        std::process::Command::new("cmd.exe")
+            .arg("/c")
+            .arg(&script_path)
+            .creation_flags(CREATE_NO_WINDOW)
+            .spawn()
+            .map_err(|e| {
+                tracing::warn!(target = "oryxis::update", error = %e, "spawn helper failed");
+                fail()
+            })?;
+    }
+    Ok(())
+}
+
+/// Run `cmd.exe /c <script>` elevated through `ShellExecuteW`'s "runas"
+/// verb. Used only when the install dir needs admin rights to write.
+#[cfg(windows)]
+fn run_elevated_cmd(script: &std::path::Path) -> Result<(), String> {
+    use std::os::windows::ffi::OsStrExt;
+    use windows_sys::Win32::UI::Shell::ShellExecuteW;
+    use windows_sys::Win32::UI::WindowsAndMessaging::SW_HIDE;
+
+    let verb: Vec<u16> = "runas\0".encode_utf16().collect();
+    let file: Vec<u16> = "cmd.exe\0".encode_utf16().collect();
+    let mut params: Vec<u16> = "/c \"".encode_utf16().collect();
+    params.extend(script.as_os_str().encode_wide());
+    params.extend("\"".encode_utf16());
+    params.push(0);
+
+    let hinst = unsafe {
+        ShellExecuteW(
+            std::ptr::null_mut(),
+            verb.as_ptr(),
+            file.as_ptr(),
+            params.as_ptr(),
+            std::ptr::null(),
+            SW_HIDE,
+        )
+    };
+    // > 32 means success; SE_ERR_ACCESSDENIED (5) lands here when the
+    // user declines the UAC prompt.
+    if (hinst as isize) <= 32 {
+        tracing::warn!(target = "oryxis::update", code = hinst as isize, "elevated self-replace declined or failed");
+        return Err(crate::i18n::t("update_replace_failed").to_string());
+    }
+    Ok(())
+}
+
+/// Clean up the leftovers a Windows nightly self-update can leave
+/// behind: the legacy `.old.exe` (older renaming scheme) plus the
+/// `oryxis-update-*` staged binary and helper script the current
+/// scheme stages beside the exe and in TEMP. All are consumed on a
+/// successful update; this sweeps the remains of a failed or declined
+/// one. Best-effort and a no-op everywhere else, called once on boot.
 pub fn sweep_stale_binary() {
     #[cfg(windows)]
     {
         if let Ok(current) = std::env::current_exe() {
             let _ = std::fs::remove_file(current.with_extension("old.exe"));
+            if let Some(dir) = current.parent() {
+                sweep_update_leftovers(dir);
+            }
+        }
+        sweep_update_leftovers(&std::env::temp_dir());
+    }
+}
+
+/// Remove `oryxis-update-*.tmp.exe` / `oryxis-update-*.cmd` files a
+/// stalled self-replace left in `dir`.
+#[cfg(windows)]
+fn sweep_update_leftovers(dir: &std::path::Path) {
+    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    for entry in entries.flatten() {
+        let name = entry.file_name();
+        let name = name.to_string_lossy();
+        if name.starts_with("oryxis-update-")
+            && (name.ends_with(".tmp.exe") || name.ends_with(".cmd"))
+        {
+            let _ = std::fs::remove_file(entry.path());
         }
     }
 }

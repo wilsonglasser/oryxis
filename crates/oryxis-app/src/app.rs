@@ -861,6 +861,12 @@ pub struct Oryxis {
     /// wgpu surface. Read at boot only (the env vars are resolved before
     /// the runtime starts), so changing it asks the user to restart.
     pub(crate) setting_renderer_backend: String,
+    /// The graphics backend + adapter actually selected by the
+    /// compositor, queried from iced once the Interface settings
+    /// section is opened (the compositor exists by then). `(backend,
+    /// adapter)`, e.g. `("Vulkan", "NVIDIA GeForce RTX 3080")`. Shows
+    /// what "Automatic" resolved to so a backend fallback is diagnosable.
+    pub(crate) renderer_active: Option<(String, String)>,
     pub(crate) setting_copy_on_select: bool,
     /// Sub-option of `setting_copy_on_select`: when both are on, a selection
     /// copies on right-click instead of on release. Ignored when
@@ -1067,6 +1073,10 @@ pub struct Oryxis {
     // Vault password settings
     pub(crate) vault_has_user_password: bool,
     pub(crate) vault_new_password: String,
+    /// Re-typed copy of the new master password. Must match
+    /// `vault_new_password` before [`Message::SetVaultPassword`] is
+    /// accepted, so a typo in a hidden field can't lock the user out.
+    pub(crate) vault_confirm_password: String,
     pub(crate) vault_password_error: Option<String>,
     pub(crate) vault_destroy_confirm: bool,
 

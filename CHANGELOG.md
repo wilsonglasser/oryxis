@@ -53,6 +53,18 @@ project uses [SemVer](https://semver.org/spec/v2.0.0.html).
   is now a picker: None, any saved snippet (seeds the command from its
   body), or Custom command (the free-text editor). The choice is
   recovered on reopen by matching the stored command against snippets.
+- **Master-password confirmation field.** Setting a vault master
+  password now asks for it twice and rejects a mismatch, so a typo in a
+  hidden field can't silently lock you out (recoverable only by
+  destroying the vault).
+- **Remove-password button.** The Security section gained an explicit
+  "Remove password" button instead of relying only on the non-obvious
+  toggle-off gesture.
+- **Active renderer readout.** Settings -> Interface shows the graphics
+  backend and adapter the compositor actually selected (e.g. "Vulkan
+  (NVIDIA GeForce RTX 3080)"), so "Automatic" is no longer opaque and a
+  backend fallback is diagnosable. Backed by a new
+  `system::graphics_information()` exposed in the iced fork.
 
 ### Changed
 - **One layout, two nav orientations.** The Classic sidebar and the
@@ -92,6 +104,11 @@ project uses [SemVer](https://semver.org/spec/v2.0.0.html).
   four edges.
 - The Plugins "Auto-update all" toggle now sits on the same line as the
   downloaded-plugins subtitle.
+- **Plugins settings section renamed "Features & Plugins"** to reflect
+  that it hosts both the feature toggles and the downloadable plugins.
+- **Unified on/off toggle.** Every toggle (settings rows and the plugin
+  auto-update controls) now renders the same switch; the plugin toggles
+  dropped their one-off ON/OFF pill style.
 
 ### Fixed
 - Cloud Accounts cards now show the accent border on hover, like the
@@ -121,6 +138,14 @@ project uses [SemVer](https://semver.org/spec/v2.0.0.html).
 - The host editor's group-picker dropdown now anchors under the chevron
   when the form is scrolled (its anchor ignored the scroll offset before,
   so the popover opened too low).
+- **Nightly self-update on Windows** no longer dies with "rename running
+  exe: Access is denied (os error 5)". It hands off to a detached helper
+  that waits for the app to exit, swaps the binary, and relaunches;
+  staging uses a unique name (so a stale leftover can't block it) and
+  elevates only when the install directory needs it, surfacing a clear
+  message with the release link if it still can't replace the binary.
+- The "Reset hints" button is disabled when no one-time hints have been
+  dismissed (nothing to reset).
 
 ## [0.8.2] - 2026-06-12
 

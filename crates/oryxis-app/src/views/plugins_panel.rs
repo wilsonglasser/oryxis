@@ -63,7 +63,7 @@ impl Oryxis {
                     .color(OryxisColors::t().text_muted)
                     .into(),
                 Space::new().width(Length::Fill).into(),
-                toggle_pill(
+                crate::widgets::toggle_switch_labeled(
                     crate::i18n::t("plugins_auto_update_global"),
                     self.plugins_auto_update_global,
                     Message::PluginToggleGlobalAutoUpdate(!self.plugins_auto_update_global),
@@ -450,7 +450,7 @@ fn plugin_card(entry: &PluginUiEntry) -> Element<'_, Message> {
     ) {
         card = card.push(Space::new().height(2));
         card = card.push(
-            container(toggle_pill(
+            container(crate::widgets::toggle_switch_labeled(
                 crate::i18n::t("plugins_auto_update"),
                 entry.auto_update,
                 Message::PluginToggleAutoUpdate(id.clone(), !entry.auto_update),
@@ -538,66 +538,3 @@ fn pill_button<'a>(
     b.into()
 }
 
-/// Hand-styled ON/OFF toggle pill (the codebase rolls its own toggles
-/// rather than using `iced::widget::toggler`). The whole pill is the
-/// hit target; `msg` is the *next* state to flip to.
-fn toggle_pill<'a>(
-    label: &'a str,
-    on: bool,
-    msg: Message,
-) -> Element<'a, Message> {
-    let accent = OryxisColors::t().accent;
-    let track = if on {
-        Color { a: 0.30, ..accent }
-    } else {
-        OryxisColors::t().bg_hover
-    };
-    let knob = if on { accent } else { OryxisColors::t().text_muted };
-    let state_label = if on {
-        crate::i18n::t("toggle_on")
-    } else {
-        crate::i18n::t("toggle_off")
-    };
-
-    button(
-        container(
-            dir_row(vec![
-                text(label)
-                    .size(11)
-                    .color(OryxisColors::t().text_secondary)
-                    .into(),
-                Space::new().width(8).into(),
-                // The "track" with a state word inside, a compact
-                // stand-in for a sliding knob.
-                container(
-                    text(state_label).size(9).color(knob),
-                )
-                .padding(Padding { top: 2.0, right: 8.0, bottom: 2.0, left: 8.0 })
-                .style(move |_| container::Style {
-                    background: Some(Background::Color(track)),
-                    border: Border {
-                        radius: Radius::from(8.0),
-                        ..Default::default()
-                    },
-                    ..Default::default()
-                })
-                .into(),
-            ])
-            .align_y(iced::Alignment::Center),
-        )
-        .padding(Padding { top: 3.0, right: 4.0, bottom: 3.0, left: 4.0 }),
-    )
-    .on_press(msg)
-    .style(|_, status| {
-        let bg = match status {
-            BtnStatus::Hovered => OryxisColors::t().bg_hover,
-            _ => Color::TRANSPARENT,
-        };
-        button::Style {
-            background: Some(Background::Color(bg)),
-            border: Border { radius: Radius::from(8.0), ..Default::default() },
-            ..Default::default()
-        }
-    })
-    .into()
-}

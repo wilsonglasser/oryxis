@@ -436,21 +436,50 @@ pub(crate) fn panel_field<'a>(label: &'a str, input: Element<'a, Message>) -> El
     .into()
 }
 
-/// A divider line inside a section.
-pub(crate) fn toggle_row<'a>(label: &'a str, value: bool, msg: Message) -> Element<'a, Message> {
+/// The canonical on/off control: a small pill that fills with the
+/// success color and the dot trailing when on, muted with the dot
+/// leading when off. Every toggle in the app (settings rows, plugin
+/// auto-update) renders this same switch so the affordance is
+/// consistent. `msg` is dispatched on click; callers that track the
+/// next state explicitly pass it pre-flipped.
+pub(crate) fn toggle_switch<'a>(value: bool, msg: Message) -> Element<'a, Message> {
     let toggle_bg = if value { OryxisColors::t().success } else { OryxisColors::t().bg_selected };
     let toggle_text = if value { "  \u{25CF}" } else { "\u{25CF}  " };
+    button(text(toggle_text).size(12).color(Color::WHITE))
+        .on_press(msg)
+        .padding(Padding { top: 4.0, right: 8.0, bottom: 4.0, left: 8.0 })
+        .style(move |_, _| button::Style {
+            background: Some(Background::Color(toggle_bg)),
+            border: Border { radius: Radius::from(10.0), ..Default::default() },
+            ..Default::default()
+        })
+        .into()
+}
+
+/// Inline label + [`toggle_switch`], for compact placements (e.g.
+/// plugin auto-update) where the control sits next to its label rather
+/// than across a full-width row like [`toggle_row`].
+pub(crate) fn toggle_switch_labeled<'a>(
+    label: &'a str,
+    value: bool,
+    msg: Message,
+) -> Element<'a, Message> {
+    dir_row(vec![
+        text(label).size(11).color(OryxisColors::t().text_secondary).into(),
+        Space::new().width(8).into(),
+        toggle_switch(value, msg),
+    ])
+    .align_y(iced::Alignment::Center)
+    .into()
+}
+
+/// A full-width settings row: label on the leading edge, [`toggle_switch`]
+/// on the trailing edge.
+pub(crate) fn toggle_row<'a>(label: &'a str, value: bool, msg: Message) -> Element<'a, Message> {
     dir_row(vec![
         text(label).size(13).color(OryxisColors::t().text_primary).into(),
         Space::new().width(Length::Fill).into(),
-        button(text(toggle_text).size(12).color(Color::WHITE))
-            .on_press(msg)
-            .padding(Padding { top: 4.0, right: 8.0, bottom: 4.0, left: 8.0 })
-            .style(move |_, _| button::Style {
-                background: Some(Background::Color(toggle_bg)),
-                border: Border { radius: Radius::from(10.0), ..Default::default() },
-                ..Default::default()
-            }).into(),
+        toggle_switch(value, msg),
     ]).align_y(iced::Alignment::Center)
     .into()
 }
@@ -464,8 +493,6 @@ pub(crate) fn toggle_row_desc<'a>(
     value: bool,
     msg: Message,
 ) -> Element<'a, Message> {
-    let toggle_bg = if value { OryxisColors::t().success } else { OryxisColors::t().bg_selected };
-    let toggle_text = if value { "  \u{25CF}" } else { "\u{25CF}  " };
     dir_row(vec![
         iced::widget::column![
             text(label).size(13).color(OryxisColors::t().text_primary),
@@ -476,14 +503,7 @@ pub(crate) fn toggle_row_desc<'a>(
         .align_x(dir_align_x())
         .into(),
         Space::new().width(12).into(),
-        button(text(toggle_text).size(12).color(Color::WHITE))
-            .on_press(msg)
-            .padding(Padding { top: 4.0, right: 8.0, bottom: 4.0, left: 8.0 })
-            .style(move |_, _| button::Style {
-                background: Some(Background::Color(toggle_bg)),
-                border: Border { radius: Radius::from(10.0), ..Default::default() },
-                ..Default::default()
-            }).into(),
+        toggle_switch(value, msg),
     ]).align_y(iced::Alignment::Center)
     .into()
 }
@@ -925,17 +945,33 @@ pub(crate) fn empty_state<'a>(
 /// On hover the background lightens; keeps consistent language with split
 /// buttons elsewhere (+ HOST, + ADD).
 pub(crate) fn styled_button(label: &str, msg: Message, color: Color) -> Element<'_, Message> {
+    styled_button_opt(label, Some(msg), color)
+}
+
+/// Like [`styled_button`] but the action is optional. `None` renders a
+/// muted, non-interactive button (no `on_press`), so actions that only
+/// apply when some state exists (e.g. "Reset hints" with no dismissed
+/// hints) can communicate "nothing to do" instead of silently no-oping.
+pub(crate) fn styled_button_opt(
+    label: &str,
+    msg: Option<Message>,
+    color: Color,
+) -> Element<'_, Message> {
+    let enabled = msg.is_some();
     // Accent-colored CTAs share the per-theme `button_text` pairing so
     // every primary button (here, `+ HOST`, `+ ADD`, `New Snippet`,
     // etc.) renders in the same text color across the app. Non-accent
     // call sites (Cancel on bg_hover, Destroy on error, …) still
     // auto-pick via the luminance heuristic.
-    let fg = if color == OryxisColors::t().accent {
+    let fg = if !enabled {
+        OryxisColors::t().text_muted
+    } else if color == OryxisColors::t().accent {
         OryxisColors::t().button_text
     } else {
         crate::theme::contrast_text_for(color)
     };
-    button(
+    let disabled_bg = OryxisColors::t().bg_selected;
+    let mut b = button(
         container(
             text(label.to_owned()).size(12).font(iced::Font {
                 weight: iced::font::Weight::Bold,
@@ -944,24 +980,30 @@ pub(crate) fn styled_button(label: &str, msg: Message, color: Color) -> Element<
         )
         .padding(Padding { top: 5.0, right: 18.0, bottom: 5.0, left: 18.0 }),
     )
-    .on_press(msg)
     .style(move |_, status| {
-        let bg = match status {
-            iced::widget::button::Status::Hovered => Color {
-                a: 1.0,
-                r: (color.r + 0.05).min(1.0),
-                g: (color.g + 0.05).min(1.0),
-                b: (color.b + 0.05).min(1.0),
-            },
-            _ => color,
+        let bg = if !enabled {
+            disabled_bg
+        } else {
+            match status {
+                iced::widget::button::Status::Hovered => Color {
+                    a: 1.0,
+                    r: (color.r + 0.05).min(1.0),
+                    g: (color.g + 0.05).min(1.0),
+                    b: (color.b + 0.05).min(1.0),
+                },
+                _ => color,
+            }
         };
         button::Style {
             background: Some(Background::Color(bg)),
             border: Border { radius: Radius::from(6.0), ..Default::default() },
             ..Default::default()
         }
-    })
-    .into()
+    });
+    if let Some(msg) = msg {
+        b = b.on_press(msg);
+    }
+    b.into()
 }
 
 pub(crate) fn key_badge<'a>(label: &'a str) -> Element<'a, Message> {

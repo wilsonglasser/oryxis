@@ -663,6 +663,9 @@ pub enum Message {
     /// Persisted to the vault; takes effect on the next launch (the
     /// backend is fixed at startup via WGPU_BACKEND / ICED_BACKEND).
     SettingRendererBackendChanged(String),
+    /// Resolved graphics backend + adapter from the compositor, queried
+    /// when the Interface settings section opens. `(backend, adapter)`.
+    RendererInfoLoaded(String, String),
     ToggleCopyOnSelect,
     ToggleRightClickCopy,
     ToggleBoldIsBright,
@@ -1072,6 +1075,7 @@ pub enum Message {
     // Vault password management
     ToggleVaultPassword,
     VaultNewPasswordChanged(String),
+    VaultConfirmPasswordChanged(String),
     SetVaultPassword,
 
     // AI chat sidebar

@@ -32,6 +32,8 @@ pub enum SecretField {
     AiApiKey,
     /// New master password (Settings > Security).
     VaultNewPassword,
+    /// Confirm new master password (Settings > Security).
+    VaultConfirmPassword,
     /// Portable export password (Settings > Security).
     ExportPassword,
     /// Portable import password (Settings > Security).

@@ -371,6 +371,23 @@ fn custom_theme_palette(
 }
 
 impl Oryxis {
+    /// Task that asks iced for the graphics backend the compositor
+    /// actually selected, but only when the Interface settings section
+    /// (which displays it) is showing and it hasn't loaded yet. By then
+    /// the compositor exists, so the oneshot resolves instead of being
+    /// dropped. Returns [`Task::none`] otherwise. Fired both when
+    /// switching into the section and when opening Settings on it.
+    pub(crate) fn renderer_info_task(&self) -> Task<Message> {
+        if self.settings_section == crate::state::SettingsSection::Interface
+            && self.renderer_active.is_none()
+        {
+            iced::system::graphics_information()
+                .map(|info| Message::RendererInfoLoaded(info.backend, info.adapter))
+        } else {
+            Task::none()
+        }
+    }
+
     pub(crate) fn handle_settings(
         &mut self,
         message: Message,
@@ -706,6 +723,10 @@ impl Oryxis {
                     self.editing_hotkey = None;
                 }
                 self.settings_section = section;
+                return Ok(self.renderer_info_task());
+            }
+            Message::RendererInfoLoaded(backend, adapter) => {
+                self.renderer_active = Some((backend, adapter));
             }
             Message::StartEditingHotkey(action) => {
                 self.editing_hotkey = Some(action);
