@@ -716,6 +716,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "download_n_items" => "{n} öğe indir",
         "download_to_local" => "Yerele indir",
         "open_in_file_manager" => "Dosya yöneticisinde aç",
+        "open_in_explorer" => "Dosya Gezgini'nde aç",
+        "open_in_finder" => "Finder'da aç",
         "relay_to_remote" => "{host} sunucusuna aktar",
         "upload_to_host" => "{host} sunucusuna yükle",
         "the_other_host" => "diğer sunucu",

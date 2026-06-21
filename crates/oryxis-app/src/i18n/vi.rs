@@ -716,6 +716,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "download_n_items" => "Tải về {n} mục",
         "download_to_local" => "Tải về máy cục bộ",
         "open_in_file_manager" => "Mở trong trình quản lý tệp",
+        "open_in_explorer" => "Mở trong File Explorer",
+        "open_in_finder" => "Mở trong Finder",
         "relay_to_remote" => "Chuyển tiếp tới {host}",
         "upload_to_host" => "Tải lên {host}",
         "the_other_host" => "máy chủ kia",

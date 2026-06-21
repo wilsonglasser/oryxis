@@ -665,6 +665,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "sftp_local_machine" => "このコンピューター",
         "download_to_local" => "ローカルにダウンロード",
         "open_in_file_manager" => "ファイルマネージャーで開く",
+        "open_in_explorer" => "エクスプローラーで開く",
+        "open_in_finder" => "Finderで開く",
         "duplicate_n_items" => "{n} 項目を複製",
         "delete_n_items" => "{n} 項目を削除",
         "col_name" => "名前",

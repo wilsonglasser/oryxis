@@ -492,6 +492,11 @@ impl Oryxis {
                 self.overlay = None;
                 // Dismiss the new-tab picker too: SFTP is selectable from it.
                 self.show_new_tab_picker = false;
+                // ...and the burger menu, the other entry point (its own
+                // flag, so clearing `overlay` above isn't enough); without
+                // this it lingers over the freshly-opened SFTP tab and the
+                // host picker until an extra click.
+                self.show_burger_menu = false;
                 self.open_new_sftp_tab();
                 // Empty tab: open the host picker for the remote pane.
                 self.sftp.picker_open = true;

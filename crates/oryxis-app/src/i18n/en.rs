@@ -722,6 +722,8 @@ pub(super) fn lookup(key: &str) -> &'static str {
         "download_n_items" => "Download {n} items",
         "download_to_local" => "Download to local",
         "open_in_file_manager" => "Open in File Manager",
+        "open_in_explorer" => "Open in File Explorer",
+        "open_in_finder" => "Open in Finder",
         "relay_to_remote" => "Relay to {host}",
         "upload_to_host" => "Upload to {host}",
         "the_other_host" => "the other host",

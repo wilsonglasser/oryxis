@@ -146,6 +146,11 @@ project uses [SemVer](https://semver.org/spec/v2.0.0.html).
   message with the release link if it still can't replace the binary.
 - The "Reset hints" button is disabled when no one-time hints have been
   dismissed (nothing to reset).
+- The main menu (burger) now closes when opening SFTP from it; it used
+  to linger over the new SFTP tab and host picker until an extra click.
+- "Open in File Manager" now uses the OS-native name: **File Explorer**
+  on Windows and **Finder** on macOS (other platforms keep the generic
+  label).
 
 ## [0.8.2] - 2026-06-12
 

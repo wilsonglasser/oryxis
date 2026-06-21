@@ -716,6 +716,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "download_n_items" => "Unduh {n} item",
         "download_to_local" => "Unduh ke lokal",
         "open_in_file_manager" => "Buka di pengelola file",
+        "open_in_explorer" => "Buka di File Explorer",
+        "open_in_finder" => "Buka di Finder",
         "relay_to_remote" => "Relai ke {host}",
         "upload_to_host" => "Unggah ke {host}",
         "the_other_host" => "host lainnya",

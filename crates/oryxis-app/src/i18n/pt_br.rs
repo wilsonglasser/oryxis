@@ -686,6 +686,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "sftp_local_machine" => "Este computador",
         "download_to_local" => "Baixar localmente",
         "open_in_file_manager" => "Abrir no gerenciador de arquivos",
+        "open_in_explorer" => "Abrir no Explorador de Arquivos",
+        "open_in_finder" => "Abrir no Finder",
         "duplicate_n_items" => "Duplicar {n} itens",
         "delete_n_items" => "Excluir {n} itens",
         "col_name" => "Nome",

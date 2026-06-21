@@ -720,6 +720,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "sftp_local_machine" => "هذا الجهاز",
         "download_to_local" => "تنزيل إلى المحلي",
         "open_in_file_manager" => "فتح في مدير الملفات",
+        "open_in_explorer" => "فتح في مستكشف الملفات",
+        "open_in_finder" => "فتح في Finder",
         "duplicate_n_items" => "تكرار {n} عنصر",
         "delete_n_items" => "حذف {n} عنصر",
         "col_name" => "الاسم",

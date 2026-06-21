@@ -999,7 +999,7 @@ pub(crate) fn row_context_menu_box<'a>(
     if !source_is_remote && !multi {
         items = items.push(menu_item_tinted(
             iced_fonts::lucide::folder_open(),
-            t("open_in_file_manager"),
+            crate::i18n::open_in_file_manager_label(),
             Message::SftpRevealInExplorer(std::path::PathBuf::from(&menu.path), menu.is_dir),
             secondary,
         ));
@@ -1109,7 +1109,7 @@ fn dir_action_items<'a>(
             items.push(menu_separator());
             items.push(menu_item(
                 iced_fonts::lucide::folder_open(),
-                t("open_in_file_manager"),
+                crate::i18n::open_in_file_manager_label(),
                 Message::SftpRevealInExplorer(ctx.local_dir.to_path_buf(), true),
             ));
         }

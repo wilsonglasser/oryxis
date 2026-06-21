@@ -656,6 +656,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "sftp_local_machine" => "Этот компьютер",
         "download_to_local" => "Скачать на локальный",
         "open_in_file_manager" => "Открыть в файловом менеджере",
+        "open_in_explorer" => "Открыть в Проводнике",
+        "open_in_finder" => "Открыть в Finder",
         "duplicate_n_items" => "Дублировать {n} элементов",
         "delete_n_items" => "Удалить {n} элементов",
         "col_name" => "Имя",

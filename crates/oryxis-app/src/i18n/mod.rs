@@ -236,6 +236,25 @@ pub fn t(key: &str) -> &'static str {
     translate(key, lang)
 }
 
+/// Localized "Open in <file manager>" label using the OS-native name:
+/// File Explorer on Windows, Finder on macOS, the generic file manager
+/// elsewhere. The generic "File Manager" wording is wrong on Windows /
+/// macOS, where users expect the platform app name.
+pub fn open_in_file_manager_label() -> &'static str {
+    #[cfg(target_os = "windows")]
+    {
+        t("open_in_explorer")
+    }
+    #[cfg(target_os = "macos")]
+    {
+        t("open_in_finder")
+    }
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+    {
+        t("open_in_file_manager")
+    }
+}
+
 /// "1 host" / "N hosts" with the count inlined. One/other is an
 /// approximation (Slavic languages have richer plural classes), good
 /// enough for a count label, and it fixes the "1 hosts" card subtitle.

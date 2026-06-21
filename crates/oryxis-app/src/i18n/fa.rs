@@ -710,6 +710,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "sftp_local_machine" => "این رایانه",
         "download_to_local" => "دانلود به محلی",
         "open_in_file_manager" => "باز کردن در مدیر فایل",
+        "open_in_explorer" => "باز کردن در Explorer",
+        "open_in_finder" => "باز کردن در Finder",
         "duplicate_n_items" => "تکرار {n} مورد",
         "delete_n_items" => "حذف {n} مورد",
         "col_name" => "نام",
