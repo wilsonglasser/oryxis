@@ -5,7 +5,7 @@ use iced::widget::{button, checkbox, column, container, pick_list, scrollable, t
 use iced::widget::button::Status as BtnStatus;
 use iced::{Background, Border, Color, Element, Length, Padding};
 
-use crate::app::{Message, Oryxis};
+use crate::app::{Message, Oryxis, NAV_RAIL_WIDTH_EXPANDED};
 use crate::i18n::t;
 use crate::mcp::mcp_info_panel;
 use crate::state::SettingsSection;
@@ -197,7 +197,8 @@ impl Oryxis {
             }
             items.push((crate::i18n::t("about"), SettingsSection::About));
             let mut col = column![]
-                .padding(Padding { top: 12.0, right: 8.0, bottom: 8.0, left: 8.0 });
+                .spacing(4)
+                .padding(Padding { top: 8.0, right: 8.0, bottom: 8.0, left: 8.0 });
 
             for (label, section) in items {
                 let is_active = self.settings_section == section;
@@ -215,9 +216,12 @@ impl Oryxis {
                     container(text(label).size(13).color(fg))
                         .width(Length::Fill)
                         .align_x(crate::widgets::dir_align_x())
-                        .padding(Padding { top: 8.0, right: 16.0, bottom: 8.0, left: 16.0 }),
+                        .padding(Padding { top: 12.0, right: 16.0, bottom: 12.0, left: 16.0 }),
                 )
                 .on_press(Message::ChangeSettingsSection(section))
+                // Zero the button's default padding so the container's
+                // 16/12 is the exact content inset.
+                .padding(0)
                 .width(Length::Fill)
                 .style(move |_, status| {
                     let hover_bg = match status {
@@ -235,30 +239,18 @@ impl Oryxis {
                 col = col.push(btn);
             }
 
-            // Wrap the panel in a row so we can stick a 1 px hairline on the
-            // right edge only, iced's Border applies to all four sides at
-            // once, so we compose the single-edge separator instead.
-            let right_hairline = container(Space::new().width(1))
-                .height(Length::Fill)
-                .style(|_| container::Style {
-                    background: Some(Background::Color(OryxisColors::t().border)),
-                    ..Default::default()
-                });
             // Wrap the section list in a scrollable so a short window
             // doesn't clip the bottom entries (About / Plugins were
             // disappearing when the height dropped below ~520 px).
-            let panel = container(scrollable(col).height(Length::Fill))
-                .width(200)
+            // Width matches the main vertical nav rail; no side hairline
+            // so it reads as the same sidebar surface.
+            container(scrollable(col).height(Length::Fill))
+                .width(NAV_RAIL_WIDTH_EXPANDED)
                 .height(Length::Fill)
                 .style(|_| container::Style {
                     background: Some(Background::Color(OryxisColors::t().bg_sidebar)),
                     ..Default::default()
-                });
-            // `dir_row` flips the panel + hairline pair under RTL so the
-            // hairline always sits on the inner edge (between sidebar and
-            // content), regardless of which side the sidebar lands on.
-            crate::widgets::dir_row(vec![panel.into(), right_hairline.into()])
-                .height(Length::Fill)
+                })
         };
 
         // ── Settings content ──

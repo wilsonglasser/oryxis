@@ -38,8 +38,12 @@ impl Oryxis {
         items.push(rail_item(iced_fonts::lucide::router(), crate::i18n::t("proxies"), View::Proxies, act(View::Proxies), expanded));
         items.push(rail_item(iced_fonts::lucide::shield_check(), crate::i18n::t("known_hosts"), View::KnownHosts, act(View::KnownHosts), expanded));
 
-        let nav = scrollable(column(items).spacing(2))
-            .height(Length::Fill)
+        let nav = scrollable(
+            column(items)
+                .spacing(4)
+                .padding(Padding { top: 8.0, right: 0.0, bottom: 0.0, left: 0.0 }),
+        )
+        .height(Length::Fill)
             .direction(scrollable::Direction::Vertical(
                 scrollable::Scrollbar::new().width(6.0).scroller_width(4.0),
             ))
@@ -54,8 +58,8 @@ impl Oryxis {
             active && self.active_view == View::Settings,
             expanded,
         );
-        let footer = container(column![settings_item, rail_toggle_item(expanded)].spacing(2))
-            .padding(Padding { top: 4.0, right: 0.0, bottom: 12.0, left: 0.0 });
+        let footer = container(column![settings_item, rail_toggle_item(expanded)].spacing(4))
+            .padding(Padding { top: 8.0, right: 0.0, bottom: 12.0, left: 0.0 });
 
         // Static "Personal" vault switcher placeholder (non-interactive
         // until multi-vault lands): glyph only when collapsed, glyph +
@@ -202,14 +206,16 @@ fn rail_toggle_item<'a>(expanded: bool) -> Element<'a, Message> {
                     .align_y(iced::Alignment::Center),
                 )
                 .width(Length::Fill)
+                .center_y(Length::Fixed(40.0))
                 .align_x(dir_align_x())
-                .padding(Padding { top: 8.0, right: 12.0, bottom: 8.0, left: 12.0 }),
+                .padding(Padding { top: 0.0, right: 16.0, bottom: 0.0, left: 16.0 }),
             )
             .on_press(Message::ToggleNavRailExpanded)
+            .padding(0)
             .width(Length::Fill)
             .style(rail_btn_style(false)),
         )
-        .padding(Padding { top: 1.0, right: 8.0, bottom: 1.0, left: 8.0 })
+        .padding(Padding { top: 0.0, right: 8.0, bottom: 0.0, left: 8.0 })
         .into()
     } else {
         tooltip(
@@ -222,7 +228,7 @@ fn rail_toggle_item<'a>(expanded: bool) -> Element<'a, Message> {
             )
             .width(Length::Fill)
             .center_x(Length::Fill)
-            .padding(Padding { top: 1.0, right: 8.0, bottom: 1.0, left: 8.0 }),
+            .padding(Padding { top: 0.0, right: 8.0, bottom: 0.0, left: 8.0 }),
             container(text(crate::i18n::t("expand")).size(11).color(OryxisColors::t().text_primary))
                 .padding(Padding { top: 4.0, right: 8.0, bottom: 4.0, left: 8.0 })
                 .style(|_| container::Style {
@@ -283,7 +289,7 @@ fn collapsed_nav_btn<'a>(
     )
     .width(Length::Fill)
     .center_x(Length::Fill)
-    .padding(Padding { top: 1.0, right: 8.0, bottom: 1.0, left: 8.0 })
+    .padding(Padding { top: 0.0, right: 8.0, bottom: 0.0, left: 8.0 })
     .into()
 }
 
@@ -310,14 +316,23 @@ fn expanded_nav_btn<'a>(
                 .align_y(iced::Alignment::Center),
             )
             .width(Length::Fill)
+            // Fixed 40px height (same as collapsed_nav_btn's
+            // `.center(Length::Fixed(40.0))`) so the pill height is
+            // identical in both modes: toggling collapse/expand must not
+            // shift row heights. With a 16px icon centered in 40px the
+            // vertical inset lands at a clean 12px.
+            .center_y(Length::Fixed(40.0))
             .align_x(dir_align_x())
-            .padding(Padding { top: 8.0, right: 12.0, bottom: 8.0, left: 12.0 }),
+            .padding(Padding { top: 0.0, right: 16.0, bottom: 0.0, left: 16.0 }),
         )
         .on_press(Message::ChangeView(view))
+        // Zero the button's default padding so the inner container's
+        // inset is exact (matches collapsed_nav_btn, which also zeroes it).
+        .padding(0)
         .width(Length::Fill)
         .style(rail_btn_style(is_active)),
     )
-    .padding(Padding { top: 1.0, right: 8.0, bottom: 1.0, left: 8.0 })
+    .padding(Padding { top: 0.0, right: 8.0, bottom: 0.0, left: 8.0 })
     .into()
 }
 

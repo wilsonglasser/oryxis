@@ -49,7 +49,7 @@ pub(crate) const DEFAULT_TERM_ROWS: u32 = 40;
 pub(crate) const PANEL_WIDTH: f32 = 420.0;
 pub(crate) const SIDEBAR_WIDTH_COLLAPSED: f32 = 56.0;
 /// Width of the vertical nav rail when expanded to show section labels.
-pub(crate) const NAV_RAIL_WIDTH_EXPANDED: f32 = 180.0;
+pub(crate) const NAV_RAIL_WIDTH_EXPANDED: f32 = 190.0;
 pub(crate) const CARD_WIDTH: f32 = 280.0;
 
 /// A keyboard-navigable item on the dashboard. Groups (host folders +
