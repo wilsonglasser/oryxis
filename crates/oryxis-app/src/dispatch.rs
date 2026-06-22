@@ -182,6 +182,11 @@ impl Oryxis {
                             // vault (and its credentials) is open.
                             let mut unlock_tasks = vec![sync_task];
                             unlock_tasks.extend(self.auto_start_port_forwards());
+                            // Plugin migrate-install + auto-update: for a
+                            // password vault these are deferred from boot
+                            // to here, now that the plugin rows are loaded
+                            // (boot saw a locked vault with no rows).
+                            unlock_tasks.extend(self.spawn_plugin_unlock_tasks());
                             // After a manual unlock, fire any deferred
                             // `--connect <uuid>` from the launch CLI args.
                             if let Some(connect_id) = self.pending_auto_connect.take()

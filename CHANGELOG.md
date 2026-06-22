@@ -82,6 +82,13 @@ project uses [SemVer](https://semver.org/spec/v2.0.0.html).
   state's button is the single create path.
 - The **vault switcher** chip / badge is hidden while there is only one
   vault.
+- **Plugin auto-update now actually runs.** The "Auto-update" toggles
+  (global and per-plugin) were stored but never acted on. On launch the
+  app now checks each installed, unpinned plugin whose auto-update is on
+  and silently installs a newer compatible version (`min_app` /
+  protocol gated), refreshing the MCP launcher copy and rebinding cloud
+  providers like a manual update would. Pinned or auto-update-off
+  plugins are left alone, and a failed check keeps the current version.
 - **Features are managed from the Plugins screen.** AI Assistant, SFTP
   and Sync are enabled / disabled from a "Features" section on the
   Plugins screen (alongside the downloadable provider plugins), not from
@@ -151,6 +158,17 @@ project uses [SemVer](https://semver.org/spec/v2.0.0.html).
 - "Open in File Manager" now uses the OS-native name: **File Explorer**
   on Windows and **Finder** on macOS (other platforms keep the generic
   label).
+- **MCP plugin unlocks v0.8.2-migrated vaults again.** The published
+  `oryxis-mcp` binary (`mcp-v0.1.0`) predated the v0.8.2 vault sealing
+  change and rejected the new field format with "Crypto error: Data too
+  short" on unlock, leaving the standalone MCP server unusable on any
+  password-protected vault opened by v0.8.2+. Rebuilt and republished as
+  `mcp-v0.1.1` against the current vault crate (which reads both the
+  legacy per-field and the new derived-key formats); the manifest's
+  `min_app` is raised to 0.8.2 so only matching apps pick it up. With
+  auto-update on (the default) the fixed binary installs on the next
+  launch; otherwise pull it from Settings -> Plugins -> "Oryxis MCP
+  Server" -> "Check for updates".
 
 ## [0.8.2] - 2026-06-12
 

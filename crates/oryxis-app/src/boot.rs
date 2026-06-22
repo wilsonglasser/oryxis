@@ -618,31 +618,19 @@ impl Oryxis {
             tasks.extend(app.auto_start_port_forwards());
         }
 
-        // MCP migration: v0.6 shipped `oryxis-mcp` inside the OS
-        // package; v0.7+ downloads it as a plugin into
-        // `~/.oryxis/bin/`. Sweep any leftover `.old.exe` from a
-        // previous Windows update, then silently fetch + install the
-        // plugin when the user already had MCP enabled but no plugin
-        // binary is present.
+        // Sweep any leftover `.old.exe` from a previous Windows MCP
+        // update (no-op on Unix), before the plugin tasks below may lay
+        // down a fresh launcher copy.
         crate::mcp_install::sweep_stale_launcher();
-        if app.vault_state == VaultState::Unlocked
-            && app.mcp_server_enabled
-            && !crate::mcp_install::is_installed()
-            && !crate::dispatch_plugins::dev_binary_present("mcp")
-        {
-            // Surface the in-flight state on the Plugins panel so a
-            // user opening it mid-migration sees something happening.
-            if let Some(entry) =
-                app.plugins.iter_mut().find(|p| p.provider_id == "mcp")
-            {
-                entry.status = crate::state::PluginUiStatus::Downloading;
-            }
-            tasks.push(Task::perform(
-                crate::mcp_install::migrate_install(),
-                |result| {
-                    Message::PluginInstallDone("mcp".to_string(), result)
-                },
-            ));
+        // MCP migrate-install + plugin auto-update both need the vault
+        // unlocked (they read `mcp_server_enabled` / the plugin rows
+        // `load_data_from_vault` populates). When the vault is
+        // password-protected it's still locked here, so these defer to
+        // the `VaultUnlock` handler, which calls the same method once
+        // the user's password opens it (the boot constructor can't
+        // re-run). See `spawn_plugin_unlock_tasks`.
+        if app.vault_state == VaultState::Unlocked {
+            tasks.extend(app.spawn_plugin_unlock_tasks());
         }
 
         // If the saved language uses a CJK script (Korean / Chinese /

@@ -165,6 +165,71 @@ impl Oryxis {
         self.cloud_provider_installed(choice.id())
     }
 
+    /// Plugin tasks that need an unlocked vault: the one-time MCP
+    /// migrate-install (v0.6 upgraders whose plugin binary isn't present
+    /// yet) plus boot-time auto-update of installed plugins. Spawned
+    /// from the boot path when the vault is already open and from the
+    /// `VaultUnlock` handler for password-protected vaults (locked at
+    /// boot, so the boot constructor sees no plugin rows and can't
+    /// re-run once the password lands).
+    ///
+    /// Auto-update is how a republished plugin (e.g. an MCP rebuild
+    /// after a vault-format change) reaches existing installs without
+    /// the user hunting for the "Check for updates" button. A no-op or
+    /// a transient fetch failure leaves the card on its current version
+    /// (the error only hits the log), so it never turns a working
+    /// install into a broken-looking one. Dev builds, pinned plugins,
+    /// auto-update-off plugins and not-installed providers are skipped;
+    /// the not-installed MCP migration is mutually exclusive with the
+    /// auto-update of an already-installed MCP.
+    pub(crate) fn spawn_plugin_unlock_tasks(&mut self) -> Vec<Task<Message>> {
+        let mut tasks = Vec::new();
+
+        // MCP migration: v0.6 shipped `oryxis-mcp` inside the OS
+        // package; v0.7+ downloads it as a plugin. Install it now when
+        // the user already had MCP enabled but no plugin binary exists.
+        if self.mcp_server_enabled
+            && !crate::mcp_install::is_installed()
+            && !dev_binary_present("mcp")
+        {
+            // Surface the in-flight state on the Plugins panel so a user
+            // opening it mid-migration sees something happening.
+            if let Some(entry) =
+                self.plugins.iter_mut().find(|p| p.provider_id == "mcp")
+            {
+                entry.status = PluginUiStatus::Downloading;
+            }
+            tasks.push(Task::perform(
+                crate::mcp_install::migrate_install(),
+                |result| Message::PluginInstallDone("mcp".to_string(), result),
+            ));
+        }
+
+        // Auto-update every installed, unpinned plugin whose auto-update
+        // is on (global default or per-provider override).
+        for entry in &self.plugins {
+            if !entry.auto_update || entry.pinned_version.is_some() {
+                continue;
+            }
+            let PluginUiStatus::Installed(current) = &entry.status else {
+                continue;
+            };
+            let id = entry.provider_id.clone();
+            let current = current.clone();
+            tasks.push(Task::perform(
+                auto_update(id.clone(), current),
+                move |result| match result {
+                    Ok(Some(version)) => {
+                        Message::PluginInstallDone(id.clone(), Ok(version))
+                    }
+                    _ => Message::NoOp,
+                },
+            ));
+        }
+
+        tasks
+    }
+
     pub(crate) fn handle_plugins(
         &mut self,
         message: Message,
@@ -492,4 +557,36 @@ impl Oryxis {
 fn cache_version_newer(candidate: &str, current: &str) -> bool {
     crate::plugins::manifest::version_key(candidate)
         > crate::plugins::manifest::version_key(current)
+}
+
+/// Boot-time auto-update for a single installed plugin. Fetches the
+/// manifest and, when it offers a version newer than `current` that
+/// this app build can run (`min_app` / protocol gated by `best`),
+/// downloads + installs it. Returns the installed version on success,
+/// `None` when already current (or no compatible newer version is
+/// published), and an error string only on a genuine fetch / download
+/// failure. The caller turns `Some(version)` into the same
+/// `PluginInstallDone` finalization the manual path uses (flip
+/// `current`, refresh the MCP launcher, rebind the provider) and keeps
+/// the card untouched otherwise, so a republished plugin (e.g. an MCP
+/// rebuild after a vault-format change) reaches existing installs
+/// without the user hunting for the "Check for updates" button.
+pub(crate) async fn auto_update(
+    provider_id: String,
+    current: String,
+) -> Result<Option<String>, String> {
+    let manifest = crate::plugins::download::fetch_manifest(&provider_id)
+        .await
+        .map_err(|e| e.to_string())?;
+    let best = match manifest.best(
+        env!("CARGO_PKG_VERSION"),
+        oryxis_plugin_protocol::SUPPORTED_PROTOCOL_VERSIONS,
+    ) {
+        Some(b) if cache_version_newer(&b.version, &current) => b.clone(),
+        _ => return Ok(None),
+    };
+    crate::plugins::download::download_and_install(&provider_id, &best, |_, _| {})
+        .await
+        .map_err(|e| e.i18n_key().to_string())?;
+    Ok(Some(best.version))
 }
