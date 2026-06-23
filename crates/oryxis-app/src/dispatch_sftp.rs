@@ -239,6 +239,9 @@ impl Oryxis {
                 let mut entries = entries;
                 sort_remote_entries(&mut entries, sort);
                 let tab_label = label.clone();
+                let host_for_log = label.clone();
+                let entry_count = entries.len();
+                let path_for_log = path.clone();
                 let pane = self.sftp.pane_mut(side);
                 pane.is_remote = true;
                 pane.host_label = Some(label);
@@ -255,8 +258,33 @@ impl Oryxis {
                 {
                     t.label = tab_label;
                 }
+                self.push_sftp_log(
+                    crate::state::SftpLogLevel::Ok,
+                    format!("{} {}", crate::i18n::t("sftp_log_connected"), host_for_log),
+                );
+                self.push_sftp_log(
+                    crate::state::SftpLogLevel::Info,
+                    format!(
+                        "{} {} ({} {})",
+                        crate::i18n::t("sftp_log_listed"),
+                        path_for_log,
+                        entry_count,
+                        crate::i18n::t("sftp_log_items"),
+                    ),
+                );
             }
             Message::SftpRemoteError(side, msg) => {
+                let had_listing = !self.sftp.pane(side).remote_entries.is_empty();
+                // Hard failure (nothing to fall back on) logs as an error;
+                // a soft failure that keeps the previous listing is a warning.
+                self.push_sftp_log(
+                    if had_listing {
+                        crate::state::SftpLogLevel::Warn
+                    } else {
+                        crate::state::SftpLogLevel::Error
+                    },
+                    format!("{} {}", crate::i18n::t("sftp_log_error"), msg),
+                );
                 let pane = self.sftp.pane_mut(side);
                 pane.remote_loading = false;
                 if pane.remote_entries.is_empty() {
@@ -338,6 +366,8 @@ impl Oryxis {
                 let sort = self.sftp.pane(side).sort;
                 let mut entries = entries;
                 sort_remote_entries(&mut entries, sort);
+                let entry_count = entries.len();
+                let path_for_log = path.clone();
                 let pane = self.sftp.pane_mut(side);
                 pane.remote_path = path;
                 pane.remote_entries = entries;
@@ -345,6 +375,16 @@ impl Oryxis {
                 // Selection is path-keyed; navigation invalidates it.
                 self.sftp.selected_rows.clear();
                 self.sftp.selection_anchor = None;
+                self.push_sftp_log(
+                    crate::state::SftpLogLevel::Info,
+                    format!(
+                        "{} {} ({} {})",
+                        crate::i18n::t("sftp_log_listed"),
+                        path_for_log,
+                        entry_count,
+                        crate::i18n::t("sftp_log_items"),
+                    ),
+                );
             }
             Message::SftpUp(side) => {
                 if self.sftp.pane(side).is_remote {
@@ -518,6 +558,8 @@ impl Oryxis {
                 self.sftp.left.actions_open = false;
                 self.sftp.right.actions_open = false;
                 self.sftp.left.drives_open = false;
+                self.sftp.left.filter_open = false;
+                self.sftp.right.filter_open = false;
                 self.sftp.pane_mut(side).actions_open = now;
             }
             Message::SftpToggleDrives(side) => {
@@ -530,6 +572,120 @@ impl Oryxis {
             }
             Message::SftpCloseMenus => {
                 self.sftp.close_menus();
+            }
+            Message::SftpToggleColumn(side, col) => {
+                // Per-pane toggle; the actions menu stays open so the user can
+                // flip several columns in one pass. The edited pane becomes the
+                // new persisted template seed.
+                self.sftp.pane_mut(side).columns.toggle(col);
+                self.sftp_columns_template = self.sftp.pane(side).columns.clone();
+                self.persist_sftp_columns();
+            }
+            Message::SftpColResizeStart(side, col) => {
+                let start_w = self.sftp.pane(side).columns.width.get(col);
+                self.sftp_col_resize = Some((side, col, self.mouse_position.x, start_w));
+                self.sftp.close_menus();
+            }
+            Message::SftpColDragStart(side, col) => {
+                self.sftp_col_drag = Some(crate::state::SftpColDrag {
+                    side,
+                    col,
+                    press_x: self.mouse_position.x,
+                    active: false,
+                });
+            }
+            Message::SftpColHovered(side, col) => {
+                self.sftp_hovered_col = Some((side, col));
+            }
+            Message::SftpColUnhovered => {
+                self.sftp_hovered_col = None;
+            }
+            Message::SftpToggleFilterSearch(side) => {
+                let now = !self.sftp.pane(side).filter_open;
+                self.sftp.close_menus();
+                self.sftp.pane_mut(side).filter_open = now;
+                if now {
+                    // Focus the popover input so the user can type immediately.
+                    let id = match side {
+                        SftpPaneSide::Left => "sftp-filter-pop-left",
+                        SftpPaneSide::Right => "sftp-filter-pop-right",
+                    };
+                    return Ok(iced::widget::operation::focus(iced::widget::Id::new(id)));
+                }
+            }
+            Message::SftpToggleLog => {
+                self.sftp.log_open = !self.sftp.log_open;
+            }
+            Message::SftpSplitResizeStart => {
+                // Capture the cursor x and current ratio; the MouseMoved
+                // handler computes the delta against these.
+                self.sftp_split_drag = Some((self.mouse_position.x, self.sftp_split_ratio));
+            }
+            Message::OpenSftpForConnection(idx) => {
+                // Dismiss the host-card context menu this was launched from so
+                // it doesn't linger over the SFTP surface (mirrors ConnectSsh).
+                self.card_context_menu = None;
+                self.overlay = None;
+                if self.connections.get(idx).is_none() {
+                    return Ok(Task::none());
+                }
+                // Fresh SFTP tab, then mount the host into its remote (right)
+                // pane via the shared mount pipeline (reuse-or-connect).
+                self.open_new_sftp_tab();
+                return self.handle_sftp(Message::SftpRemountPane(SftpPaneSide::Right, idx));
+            }
+            Message::OpenSftpForTab(tab_idx) => {
+                self.overlay = None;
+                let Some(tab) = self.tabs.get(tab_idx) else {
+                    return Ok(Task::none());
+                };
+                let base = tab.label.trim_end_matches(" (disconnected)").to_string();
+                // Prefer a saved connection by label so the SFTP tab can
+                // reconnect on its own.
+                if let Some(conn_idx) = self.connections.iter().position(|c| c.label == base) {
+                    return self.handle_sftp(Message::OpenSftpForConnection(conn_idx));
+                }
+                // No saved host (ad-hoc / cloud tab): mount the tab's live
+                // SSH session directly. Nothing to do if it has no session.
+                let Some(session) = tab.active().ssh_session.clone() else {
+                    return Ok(Task::none());
+                };
+                let label = base;
+                self.open_new_sftp_tab();
+                {
+                    let pane = self.sftp.pane_mut(SftpPaneSide::Right);
+                    pane.is_remote = true;
+                    pane.host_label = Some(label.clone());
+                    pane.remote_loading = true;
+                    pane.error = None;
+                    pane.remote_entries.clear();
+                }
+                let target = SftpPaneSide::Right;
+                let session_for_task = session.clone();
+                return Ok(Task::perform(
+                    async move {
+                        let client =
+                            session_for_task.open_sftp().await.map_err(|e| e.to_string())?;
+                        let initial = client
+                            .canonicalize(".")
+                            .await
+                            .unwrap_or_else(|_| "/".to_string());
+                        let entries =
+                            client.list_dir(&initial).await.map_err(|e| e.to_string())?;
+                        Ok::<_, String>((client, initial, entries))
+                    },
+                    move |result| match result {
+                        Ok((client, path, entries)) => Message::SftpHostMounted(
+                            target,
+                            label.clone(),
+                            session.clone(),
+                            client,
+                            path,
+                            entries,
+                        ),
+                        Err(e) => Message::SftpRemoteError(target, e),
+                    },
+                ));
             }
             Message::SftpStartEditPath(side) => {
                 let value = if self.sftp.pane(side).is_remote {
@@ -1027,8 +1183,13 @@ impl Oryxis {
             }
             Message::SftpOpResult(side, msg, is_error) => {
                 if is_error {
+                    self.push_sftp_log(
+                        crate::state::SftpLogLevel::Error,
+                        format!("{} {}", crate::i18n::t("sftp_log_error"), msg),
+                    );
                     self.sftp.pane_mut(side).error = Some(msg);
                 } else {
+                    self.push_sftp_log(crate::state::SftpLogLevel::Ok, msg.clone());
                     tracing::info!("sftp op: {}", msg);
                 }
             }

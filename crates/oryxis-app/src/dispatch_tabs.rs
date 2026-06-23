@@ -87,6 +87,9 @@ impl Oryxis {
                     y: (pos.y / SNAP).round() * SNAP,
                 };
                 let needs_drag_update = self.chat_sidebar_drag.is_some()
+                    || self.sftp_split_drag.is_some()
+                    || self.sftp_col_resize.is_some()
+                    || self.sftp_col_drag.is_some()
                     || self.sftp.drag.is_some()
                     || self.tab_drag.is_some();
                 // Promote an armed tab drag to active once the cursor moves
@@ -114,6 +117,30 @@ impl Oryxis {
                 if let Some((start_x, start_width)) = self.chat_sidebar_drag {
                     let new_width = (start_width - (pos.x - start_x)).clamp(260.0, 700.0);
                     self.chat_sidebar_width = new_width;
+                }
+                // SFTP center divider: the ratio tracks the cursor across the
+                // content area (window minus the nav rail; the chat sidebar is
+                // terminal-only so it isn't subtracted here). Clamp so neither
+                // pane can collapse.
+                if let Some((start_x, start_ratio)) = self.sftp_split_drag {
+                    let content_w = (self.window_size.width - self.vault_rail_width()).max(1.0);
+                    let new_ratio =
+                        (start_ratio + (pos.x - start_x) / content_w).clamp(0.15, 0.85);
+                    self.sftp_split_ratio = new_ratio;
+                }
+                // SFTP column resize: the dragged column's width tracks the
+                // cursor (clamped inside `width.set`).
+                if let Some((side, col, start_x, start_w)) = self.sftp_col_resize {
+                    let new_w = start_w + (pos.x - start_x);
+                    self.sftp.pane_mut(side).columns.width.set(col, new_w);
+                }
+                // Promote a column reorder drag to active past a small
+                // threshold so a plain header click still sorts.
+                if let Some(drag) = self.sftp_col_drag.as_mut()
+                    && !drag.active
+                    && (pos.x - drag.press_x).abs() > 5.0
+                {
+                    drag.active = true;
                 }
                 // Promote a pending press to an active drag once the
                 // cursor moves past the threshold. Below the threshold

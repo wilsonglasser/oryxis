@@ -158,6 +158,32 @@ pub enum Message {
     SftpToggleActions(crate::state::SftpPaneSide),
     SftpToggleDrives(crate::state::SftpPaneSide),
     SftpCloseMenus,
+    /// Toggle visibility of an optional file-list column (Size / Modified /
+    /// Type / Permissions / Owner) for one pane. Per-pane; also updates the
+    /// persisted template.
+    SftpToggleColumn(crate::state::SftpPaneSide, crate::state::SftpColumn),
+    /// Begin dragging a column's right-edge resize handle.
+    SftpColResizeStart(crate::state::SftpPaneSide, crate::state::SftpColumn),
+    /// Press on a column header: arms a reorder drag (promoted to active on
+    /// move; a release without movement falls through to the sort click).
+    SftpColDragStart(crate::state::SftpPaneSide, crate::state::SftpColumn),
+    /// Cursor entered / left a column header (reorder drop target).
+    SftpColHovered(crate::state::SftpPaneSide, crate::state::SftpColumn),
+    SftpColUnhovered,
+    /// Toggle this pane's collapsed filter popover (narrow layout).
+    SftpToggleFilterSearch(crate::state::SftpPaneSide),
+    /// Toggle the FileZilla-style message-log panel at the bottom of the view.
+    SftpToggleLog,
+    /// Begin dragging the center divider between the two SFTP panes.
+    SftpSplitResizeStart,
+    /// Open a new SFTP tab mounted on the saved connection at this index
+    /// (host-card context menu). Reuses a live SSH session if one is open,
+    /// otherwise connects.
+    OpenSftpForConnection(usize),
+    /// Open a new SFTP tab for the terminal tab at this index (terminal-tab
+    /// context menu). Resolves the tab to a saved connection, falling back to
+    /// reusing the tab's live SSH session directly.
+    OpenSftpForTab(usize),
     SftpStartEditPath(crate::state::SftpPaneSide),
     SftpEditPath(crate::state::SftpPaneSide, String),
     SftpCommitPath(crate::state::SftpPaneSide),

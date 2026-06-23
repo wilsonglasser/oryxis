@@ -13,17 +13,42 @@ use crate::widgets::dir_align_x;
 
 const ROW_HEIGHT: f32 = 28.0;
 
+/// Which pane-anchored popover is open (layered at the view level so its
+/// dismiss scrim covers the whole view).
+#[derive(Clone, Copy)]
+enum PanePopover {
+    Actions,
+    Filter,
+}
+
 impl Oryxis {
     pub(crate) fn view_sftp(&self) -> Element<'_, Message> {
-        let panes = row![
-            self.view_sftp_pane(SftpPaneSide::Left),
-            container(Space::new().width(1))
+        // Draggable center divider: clicking starts a resize, the global
+        // mouse-move handler follows the cursor and the global mouse-up stops
+        // it (shared with the chat-sidebar resize plumbing). The two panes
+        // split the width by `sftp_split_ratio`.
+        let divider: Element<'_, Message> = MouseArea::new(
+            container(Space::new().width(Length::Fixed(5.0)).height(Length::Fill))
+                .width(Length::Fixed(5.0))
                 .height(Length::Fill)
                 .style(|_| container::Style {
                     background: Some(Background::Color(OryxisColors::t().border)),
                     ..Default::default()
                 }),
-            self.view_sftp_pane(SftpPaneSide::Right),
+        )
+        .on_press(Message::SftpSplitResizeStart)
+        .interaction(iced::mouse::Interaction::ResizingHorizontally)
+        .into();
+        let left_portion = (self.sftp_split_ratio * 1000.0).round().clamp(1.0, 999.0) as u16;
+        let right_portion = 1000u16.saturating_sub(left_portion).max(1);
+        let panes = row![
+            container(self.view_sftp_pane(SftpPaneSide::Left))
+                .width(Length::FillPortion(left_portion))
+                .height(Length::Fill),
+            divider,
+            container(self.view_sftp_pane(SftpPaneSide::Right))
+                .width(Length::FillPortion(right_portion))
+                .height(Length::Fill),
         ]
         .width(Length::Fill)
         .height(Length::Fill);
@@ -31,7 +56,7 @@ impl Oryxis {
         // Stack the panes with the optional progress strip below, when a
         // folder transfer is running we surface a thin status bar with
         // counts + a cancel button, otherwise the panes own all the space.
-        let body: Element<'_, Message> = if let Some(transfer) = &self.sftp.transfer {
+        let panes_area: Element<'_, Message> = if let Some(transfer) = &self.sftp.transfer {
             // Clicking the strip toggles a per-file panel that rises above
             // it. (Clicking the inner Cancel button also cancels, which
             // clears the transfer and hides both, so the extra toggle is
@@ -53,6 +78,28 @@ impl Oryxis {
             panes.into()
         };
 
+        // Footer: the optional message-log panel (FileZilla-style) above a
+        // always-visible thin bar carrying the log toggle. The panes own the
+        // remaining vertical space.
+        let mut body_col = column![container(panes_area).width(Length::Fill).height(Length::Fill)]
+            .width(Length::Fill)
+            .height(Length::Fill);
+        if self.sftp.log_open {
+            body_col = body_col.push(sftp_log_panel(&self.sftp.log));
+        }
+        body_col = body_col.push(sftp_log_bar(self.sftp.log_open, self.sftp.log.len()));
+        let body: Element<'_, Message> = body_col.into();
+
+        // Pane-anchored popovers (the `⋮` actions menu and the collapsed
+        // filter input) are layered here, at the whole-view level, rather than
+        // inside a single pane. That way their dismiss scrim covers the entire
+        // view, so clicking the *other* pane (or anywhere) closes them, and the
+        // menu can overhang the pane divider without being clipped.
+        let body = self.layer_sftp_pane_popover(body);
+        // Floating ghost of the column header being reordered, following the
+        // cursor (mirrors the host-tab drag ghost up top).
+        let body = self.layer_sftp_col_drag_ghost(body);
+
         // The SFTP modals (picker, rename, new entry, properties,
         // overwrite, delete) are NOT composed here. They're layered at the
         // app root via `layer_sftp_modals` so they behave like every other
@@ -62,6 +109,117 @@ impl Oryxis {
         // silently swallowed every keystroke. Layering at the root keeps the
         // invariant "flag set <=> modal visible on screen".
         body
+    }
+
+    /// Layer the open pane popover (actions `⋮` menu or collapsed-filter
+    /// input) over `base` with a full-view scrim, positioned at the top-right
+    /// of its pane. At most one is open at a time (opening one closes the
+    /// others). Returns `base` untouched when none is open.
+    fn layer_sftp_pane_popover<'a>(
+        &'a self,
+        base: Element<'a, Message>,
+    ) -> Element<'a, Message> {
+        // Resolve which popover is open and the pane it belongs to.
+        let open: Option<(SftpPaneSide, PanePopover)> = if self.sftp.left.actions_open {
+            Some((SftpPaneSide::Left, PanePopover::Actions))
+        } else if self.sftp.right.actions_open {
+            Some((SftpPaneSide::Right, PanePopover::Actions))
+        } else if self.sftp.left.filter_open {
+            Some((SftpPaneSide::Left, PanePopover::Filter))
+        } else if self.sftp.right.filter_open {
+            Some((SftpPaneSide::Right, PanePopover::Filter))
+        } else {
+            None
+        };
+        let Some((side, kind)) = open else { return base };
+        let pane = self.sftp.pane(side);
+
+        // Pane geometry in view-local coordinates (x = 0 at the view's left
+        // edge, i.e. right of the nav rail).
+        let content_w = (self.window_size.width - self.vault_rail_width()).max(1.0);
+        let left_w = content_w * self.sftp_split_ratio;
+        let pane_right = match side {
+            SftpPaneSide::Left => left_w,
+            SftpPaneSide::Right => content_w,
+        };
+        // The collapsed-filter popover only applies to a narrow (compact)
+        // pane; if the pane is wide the inline input is shown instead, so
+        // suppress a stale popover (e.g. left open then the pane widened).
+        if matches!(kind, PanePopover::Filter) {
+            let pane_w = match side {
+                SftpPaneSide::Left => left_w,
+                SftpPaneSide::Right => content_w - left_w,
+            };
+            if (pane_w - 6.0).max(1.0) >= 430.0 {
+                return base;
+            }
+        }
+
+        let (card, card_w, y): (Element<'a, Message>, f32, f32) = match kind {
+            PanePopover::Actions => (
+                actions_menu_card(
+                    side,
+                    pane.is_remote,
+                    &pane.remote_path,
+                    &pane.local_path,
+                    pane.show_hidden,
+                    pane.columns.visible,
+                ),
+                228.0,
+                48.0,
+            ),
+            PanePopover::Filter => (filter_card(side, &pane.filter), 232.0, 46.0),
+        };
+        let x = (pane_right - card_w - 14.0).max(0.0);
+
+        let scrim: Element<'a, Message> = MouseArea::new(
+            container(Space::new()).width(Length::Fill).height(Length::Fill),
+        )
+        .on_press(Message::SftpCloseMenus)
+        .into();
+        let positioned: Element<'a, Message> = column![
+            Space::new().height(Length::Fixed(y)),
+            row![Space::new().width(Length::Fixed(x)), card],
+        ]
+        .into();
+        iced::widget::Stack::new()
+            .push(base)
+            .push(scrim)
+            .push(positioned)
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .into()
+    }
+
+    /// Layer a floating ghost of the column header being reordered over
+    /// `base`, following the cursor. Non-interactive (a plain container), so
+    /// the header MouseAreas underneath still receive the hover events that
+    /// pick the drop target. Returns `base` untouched when no reorder is live.
+    fn layer_sftp_col_drag_ghost<'a>(
+        &'a self,
+        base: Element<'a, Message>,
+    ) -> Element<'a, Message> {
+        let Some(drag) = self.sftp_col_drag.filter(|d| d.active) else {
+            return base;
+        };
+        let ghost = col_drag_ghost(data_col_label(drag.col));
+        // Cursor → view-local coordinates: x is offset by the nav rail (0 on
+        // the SFTP surface), y by the tab bar + hairline above the content.
+        let rail = self.vault_rail_width();
+        let view_top = if self.window_fullscreen { 0.0 } else { 41.0 };
+        let gx = (self.mouse_position.x - rail + 12.0).max(0.0);
+        let gy = (self.mouse_position.y - view_top - 4.0).max(0.0);
+        let positioned: Element<'a, Message> = column![
+            Space::new().height(Length::Fixed(gy)),
+            row![Space::new().width(Length::Fixed(gx)), ghost],
+        ]
+        .into();
+        iced::widget::Stack::new()
+            .push(base)
+            .push(positioned)
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .into()
     }
 
     /// Layer the active SFTP modal over `base` (the whole composed app), so
@@ -123,6 +281,35 @@ impl Oryxis {
     fn view_sftp_pane(&self, side: SftpPaneSide) -> Element<'_, Message> {
         let pane = self.sftp.pane(side);
         let is_remote = pane.is_remote;
+        // Resolve the column layout from this pane's on-screen width (the
+        // content area split by the divider ratio). When the visible columns
+        // overflow, the layout switches the rows to a fixed width and the list
+        // gets a horizontal scrollbar.
+        let pane_avail = {
+            let content_w = (self.window_size.width - self.vault_rail_width()).max(1.0);
+            let w = match side {
+                SftpPaneSide::Left => content_w * self.sftp_split_ratio,
+                SftpPaneSide::Right => content_w * (1.0 - self.sftp_split_ratio),
+            };
+            (w - 6.0).max(1.0)
+        };
+        // Narrow panes collapse the inline filter to an icon and let the host
+        // chip shrink so the kebab is never pushed off the toolbar.
+        let compact = pane_avail < 430.0;
+        // Per-pane columns: ordered visible set + widths, plus the active
+        // reorder drag / hover for header feedback.
+        let ordered_cols = pane.columns.ordered_visible();
+        let col_widths = pane.columns.width;
+        let trailing = trailing_cols_width(&ordered_cols, col_widths);
+        let layout = ColLayout::resolve(trailing, pane_avail);
+        let col_drag = self
+            .sftp_col_drag
+            .filter(|d| d.side == side && d.active)
+            .map(|d| d.col);
+        let col_hovered = self
+            .sftp_hovered_col
+            .filter(|(s, _)| *s == side)
+            .map(|(_, c)| c);
         // Per-pane scroll id keyed by the current directory. Within one
         // directory the id is stable, so the list keeps its scroll offset
         // across re-renders (dragging a row, an in-place reload). Changing
@@ -190,10 +377,18 @@ impl Oryxis {
                 .clone()
                 .unwrap_or_else(|| t("pick_a_host").to_string())
         };
+        // In a narrow pane the chip flexes (Fill + clip) so a long host label
+        // shrinks instead of pushing the filter / kebab off the toolbar; in a
+        // wide pane it keeps its natural width with a Fill spacer after it.
+        let chip_len = if compact { Length::Fill } else { Length::Shrink };
         let mut chip_row = row![
             chip_icon,
             Space::new().width(8),
-            text(chip_label).size(14).color(OryxisColors::t().text_primary),
+            text(chip_label)
+                .size(14)
+                .color(OryxisColors::t().text_primary)
+                .width(chip_len)
+                .wrapping(iced::widget::text::Wrapping::None),
         ]
         .align_y(iced::Alignment::Center);
         chip_row = chip_row.push(Space::new().width(8));
@@ -204,6 +399,7 @@ impl Oryxis {
         );
         let header_title: Element<'_, Message> = button(chip_row)
             .padding(Padding { top: 4.0, right: 8.0, bottom: 4.0, left: 4.0 })
+            .width(chip_len)
             .on_press(Message::SftpOpenPicker(side))
             .style(|_, status| {
                 let bg = match status {
@@ -220,22 +416,61 @@ impl Oryxis {
 
         let actions_btn: Element<'_, Message> = pane_actions_btn(Message::SftpToggleActions(side));
 
-        let filter_placeholder = if is_remote { "Filter…" } else { t("filter_placeholder") };
-        let mut filter_input = text_input(filter_placeholder, &pane.filter)
-            .on_input(move |s| Message::SftpFilter(side, s))
-            .padding(Padding { top: 4.0, right: 8.0, bottom: 4.0, left: 8.0 })
-            .size(11)
-            .width(140)
-            .style(crate::widgets::rounded_input_style)
-            .align_x(dir_align_x());
-        if is_remote {
-            filter_input = filter_input.id(iced::widget::Id::new("search-sftp-remote"));
-        }
+        // Narrow panes collapse the inline filter to a search icon (the
+        // floating input opens on click), so the kebab is never pushed off
+        // the toolbar. The chip (Fill) shrinks to make room.
+        let filter_widget: Element<'_, Message> = if compact {
+            let has_filter = !pane.filter.is_empty();
+            button(
+                iced_fonts::lucide::search().size(14).color(if has_filter {
+                    OryxisColors::t().accent
+                } else {
+                    OryxisColors::t().text_muted
+                }),
+            )
+            .on_press(Message::SftpToggleFilterSearch(side))
+            .padding(Padding { top: 7.0, right: 8.0, bottom: 7.0, left: 8.0 })
+            .style(|_, status| {
+                let bg = match status {
+                    BtnStatus::Hovered => OryxisColors::t().bg_hover,
+                    _ => Color::TRANSPARENT,
+                };
+                button::Style {
+                    background: Some(Background::Color(bg)),
+                    border: Border { radius: Radius::from(6.0), ..Default::default() },
+                    ..Default::default()
+                }
+            })
+            .into()
+        } else {
+            // Sized to match the system-standard search field (size 13 +
+            // 9/12 padding, see `layout.rs` sub-nav search).
+            let mut filter_input = text_input(t("filter_placeholder"), &pane.filter)
+                .on_input(move |s| Message::SftpFilter(side, s))
+                .padding(Padding { top: 9.0, right: 12.0, bottom: 9.0, left: 12.0 })
+                .size(13)
+                .width(200)
+                .style(crate::widgets::rounded_input_style)
+                .align_x(dir_align_x());
+            if is_remote {
+                filter_input = filter_input.id(iced::widget::Id::new("search-sftp-remote"));
+            }
+            filter_input.into()
+        };
 
+        // Wide pane: natural-width chip + a Fill spacer pushes filter/kebab to
+        // the trailing edge. Narrow pane: the chip itself is Fill and shrinks,
+        // so a fixed gap is enough. Either way filter + kebab stay fixed and
+        // never get clipped.
+        let lead_spacer: Element<'_, Message> = if compact {
+            Space::new().width(8).into()
+        } else {
+            Space::new().width(Length::Fill).into()
+        };
         let toolbar = row![
             header_title,
-            Space::new().width(Length::Fill),
-            filter_input,
+            lead_spacer,
+            filter_widget,
             Space::new().width(8),
             actions_btn,
         ]
@@ -270,16 +505,28 @@ impl Oryxis {
         };
 
         let needle = pane.filter.to_lowercase();
-        let header_band = pane_header_band(
-            column![
-                toolbar,
-                container(path_bar)
-                    .padding(Padding { top: 0.0, right: 14.0, bottom: 8.0, left: 14.0 })
-                    .width(Length::Fill),
-                column_headers(side, pane.sort),
-            ]
-            .width(Length::Fill),
-        );
+        // When the columns overflow, the header strip moves into the
+        // horizontally-scrollable list (so it pans in sync with the rows);
+        // otherwise it stays sticky in the header band as before.
+        let mut band_content = column![
+            toolbar,
+            container(path_bar)
+                .padding(Padding { top: 0.0, right: 14.0, bottom: 8.0, left: 14.0 })
+                .width(Length::Fill),
+        ]
+        .width(Length::Fill);
+        if !layout.overflow {
+            band_content = band_content.push(column_headers(
+                side,
+                pane.sort,
+                &ordered_cols,
+                col_widths,
+                layout,
+                col_drag,
+                col_hovered,
+            ));
+        }
+        let header_band = pane_header_band(band_content);
 
         let body: Element<'_, Message> = if !is_remote {
             if let Some(err) = &pane.error {
@@ -289,7 +536,7 @@ impl Oryxis {
             } else {
                 let mut col = column![].spacing(0);
                 if pane.local_path.parent().is_some() {
-                    col = col.push(parent_row(side));
+                    col = col.push(parent_row(side, &ordered_cols, col_widths, layout));
                 }
                 // Per-pane invariants hoisted out of the entry loop:
                 // rename state for this side, the selected-row paths as
@@ -336,17 +583,29 @@ impl Oryxis {
                         entry.is_dir,
                         if entry.is_dir { String::new() } else { format_size(entry.size) },
                         entry.modified,
+                        entry.mode,
+                        entry.uid,
+                        entry.gid,
                         path,
                         rename_input,
                         is_selected,
                         is_drop_target,
+                        &ordered_cols,
+                        col_widths,
+                        layout,
                     ));
                 }
-                scrollable(col)
-                .id(iced::widget::Id::from(list_scroll_id.clone()))
-                .width(Length::Fill)
-                .height(Length::Fill)
-                .into()
+                sftp_list_scrollable(
+                    col,
+                    &list_scroll_id,
+                    side,
+                    pane.sort,
+                    &ordered_cols,
+                    col_widths,
+                    layout,
+                    col_drag,
+                    col_hovered,
+                )
             }
         } else if let Some(err) = &pane.error {
             // Retry routes through SftpRetryRemote which knows whether
@@ -432,7 +691,7 @@ impl Oryxis {
         } else {
             let mut col = column![].spacing(0);
             if pane.remote_path != "/" && !pane.remote_path.is_empty() {
-                col = col.push(parent_row(side));
+                col = col.push(parent_row(side, &ordered_cols, col_widths, layout));
             }
             // Same per-pane invariants as the local branch, hoisted out
             // of the entry loop: rename state, the selected paths as a
@@ -482,17 +741,29 @@ impl Oryxis {
                     entry.is_symlink,
                     if entry.is_dir { String::new() } else { format_size(entry.size) },
                     entry.mtime,
+                    entry.permissions,
+                    entry.uid,
+                    entry.gid,
                     full,
                     rename_input,
                     is_drop_target,
                     is_selected,
+                    &ordered_cols,
+                    col_widths,
+                    layout,
                 ));
             }
-            scrollable(col)
-                .id(iced::widget::Id::from(list_scroll_id.clone()))
-                .width(Length::Fill)
-                .height(Length::Fill)
-                .into()
+            sftp_list_scrollable(
+                col,
+                &list_scroll_id,
+                side,
+                pane.sort,
+                &ordered_cols,
+                col_widths,
+                layout,
+                col_drag,
+                col_hovered,
+            )
         };
 
         // Right-click on the empty area opens the directory-level context
@@ -508,24 +779,27 @@ impl Oryxis {
             body
         };
 
+        // With no host mounted yet, drop the top bar entirely (host chip,
+        // filter, breadcrumb, column headers) and let the centered
+        // "Pick a host" empty state own the whole pane.
+        let show_header = !(is_remote && pane.host_label.is_none());
+        let pane_body: Element<'_, Message> = if show_header {
+            column![header_band, body]
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .into()
+        } else {
+            body
+        };
+        // The actions (`⋮`) menu and the collapsed-filter popover are NOT
+        // pushed here: they're layered at the `view_sftp` level with a
+        // full-window scrim so a click anywhere (including the other pane)
+        // dismisses them. The drives picker (Windows-only) stays pane-local.
         let mut stack = iced::widget::Stack::new()
-            .push(
-                column![header_band, body]
-                    .width(Length::Fill)
-                    .height(Length::Fill),
-            )
+            .push(pane_body)
             .width(Length::Fill)
             .height(Length::Fill);
 
-        if pane.actions_open {
-            stack = stack.push(actions_menu_overlay(
-                side,
-                is_remote,
-                &pane.remote_path,
-                &pane.local_path,
-                pane.show_hidden,
-            ));
-        }
         if !is_remote && pane.drives_open {
             stack = stack.push(drives_menu_overlay(side));
         }
@@ -786,21 +1060,81 @@ fn pane_actions_btn<'a>(toggle_msg: Message) -> Element<'a, Message> {
     .into()
 }
 
+/// The collapsed-filter input card. Positioned + scrimmed by the caller at
+/// the `view_sftp` level.
+fn filter_card<'a>(side: SftpPaneSide, filter: &str) -> Element<'a, Message> {
+    let id = match side {
+        SftpPaneSide::Left => "sftp-filter-pop-left",
+        SftpPaneSide::Right => "sftp-filter-pop-right",
+    };
+    let input = text_input(t("filter_placeholder"), filter)
+        .id(iced::widget::Id::new(id))
+        .on_input(move |s| Message::SftpFilter(side, s))
+        .on_submit(Message::SftpToggleFilterSearch(side))
+        .padding(Padding { top: 9.0, right: 12.0, bottom: 9.0, left: 12.0 })
+        .size(13)
+        .width(Length::Fixed(220.0))
+        .style(crate::widgets::rounded_input_style)
+        .align_x(dir_align_x());
+    let card = container(input)
+        .padding(6)
+        .width(Length::Fixed(232.0))
+        .style(|_| container::Style {
+            background: Some(Background::Color(OryxisColors::t().bg_surface)),
+            border: Border {
+                radius: Radius::from(8.0),
+                color: OryxisColors::t().border,
+                width: 1.0,
+            },
+            shadow: iced::Shadow {
+                color: Color::from_rgba(0.0, 0.0, 0.0, 0.25),
+                offset: iced::Vector::new(0.0, 4.0),
+                blur_radius: 12.0,
+            },
+            ..Default::default()
+        });
+    card.into()
+}
+
 /// Floating Actions menu for a pane, anchored to the top-right via a
 /// container that pushes it to the corner.
-fn actions_menu_overlay<'a>(
+/// The actions (`⋮`) menu card. Positioned + scrimmed by the caller at the
+/// `view_sftp` level so a click anywhere (including the other pane) closes it.
+fn actions_menu_card<'a>(
     side: SftpPaneSide,
     is_remote: bool,
     remote_path: &str,
     local_path: &std::path::Path,
     show_hidden: bool,
+    cols: crate::state::SftpColumns,
 ) -> Element<'a, Message> {
+    use crate::state::SftpColumn;
     // Same directory-level actions as the cursor-anchored background menu,
     // shared via `dir_action_items` so the two never drift apart.
     let mut menu_col = column![].spacing(2).padding(4);
     let dir_ctx = DirActionCtx { pane_dir: remote_path, local_dir: local_path, show_hidden };
     for it in dir_action_items(side, is_remote, dir_ctx, true) {
         menu_col = menu_col.push(it);
+    }
+    // Columns section: toggle each optional column. The menu stays open on
+    // click so several can be flipped in one pass.
+    menu_col = menu_col.push(menu_separator());
+    menu_col = menu_col.push(
+        container(
+            text(t("columns"))
+                .size(10)
+                .color(OryxisColors::t().text_muted),
+        )
+        .padding(Padding { top: 4.0, right: 10.0, bottom: 2.0, left: 10.0 }),
+    );
+    for (label, col, on) in [
+        (t("col_modified"), SftpColumn::Modified, cols.modified),
+        (t("col_size"), SftpColumn::Size, cols.size),
+        (t("col_type"), SftpColumn::Kind, cols.kind),
+        (t("col_permissions"), SftpColumn::Permissions, cols.permissions),
+        (t("col_owner"), SftpColumn::Owner, cols.owner),
+    ] {
+        menu_col = menu_col.push(column_toggle_item(side, label, col, on));
     }
     let menu = container(menu_col)
     // Pin the menu to the same width as the rows inside it. Without
@@ -822,21 +1156,7 @@ fn actions_menu_overlay<'a>(
         },
         ..Default::default()
     });
-    let scrim: Element<'_, Message> = MouseArea::new(
-        container(Space::new()).width(Length::Fill).height(Length::Fill),
-    )
-    .on_press(Message::SftpCloseMenus)
-    .into();
-    let positioned = container(menu)
-        .width(Length::Fill)
-        .height(Length::Fill)
-        .align_x(iced::alignment::Horizontal::Right)
-        .align_y(iced::alignment::Vertical::Top)
-        .padding(Padding { top: 48.0, right: 14.0, bottom: 0.0, left: 0.0 });
-    iced::widget::Stack::new()
-        .push(scrim)
-        .push(positioned)
-        .into()
+    menu.into()
 }
 
 fn menu_separator<'a>() -> Element<'a, Message> {
@@ -847,6 +1167,45 @@ fn menu_separator<'a>() -> Element<'a, Message> {
             ..Default::default()
         })
         .into()
+}
+
+/// One row of the Columns section in the actions menu: a check glyph
+/// (shown only when the column is visible) plus the column label. Firing
+/// `SftpToggleColumn` flips the column without closing the menu.
+fn column_toggle_item<'a>(
+    side: SftpPaneSide,
+    label: &'a str,
+    col: crate::state::SftpColumn,
+    visible: bool,
+) -> Element<'a, Message> {
+    let check = iced_fonts::lucide::check().size(12).color(if visible {
+        OryxisColors::t().accent
+    } else {
+        Color::TRANSPARENT
+    });
+    button(
+        row![
+            check,
+            Space::new().width(10),
+            text(label).size(12).color(OryxisColors::t().text_primary),
+        ]
+        .align_y(iced::Alignment::Center),
+    )
+    .on_press(Message::SftpToggleColumn(side, col))
+    .padding(Padding { top: 6.0, right: 14.0, bottom: 6.0, left: 10.0 })
+    .width(Length::Fixed(220.0))
+    .style(|_, status| {
+        let bg = match status {
+            BtnStatus::Hovered => OryxisColors::t().bg_hover,
+            _ => Color::TRANSPARENT,
+        };
+        button::Style {
+            background: Some(Background::Color(bg)),
+            border: Border { radius: Radius::from(4.0), ..Default::default() },
+            ..Default::default()
+        }
+    })
+    .into()
 }
 
 /// Right-click row context menu, items vary by pane side and entry
@@ -1553,21 +1912,31 @@ fn local_crumb<'a>(side: SftpPaneSide, label: String, full: std::path::PathBuf) 
         .into()
 }
 
-fn parent_row<'a>(side: SftpPaneSide) -> Element<'a, Message> {
+fn parent_row<'a>(
+    side: SftpPaneSide,
+    visible: &[crate::state::SftpColumn],
+    widths: crate::state::SftpColWidths,
+    layout: ColLayout,
+) -> Element<'a, Message> {
     let msg = Message::SftpUp(side);
-    let inner = row![
+    let mut children: Vec<Element<'a, Message>> = vec![
         iced_fonts::lucide::folder()
             .size(13)
-            .color(OryxisColors::t().text_muted),
-        Space::new().width(8),
-        text("..").size(12).color(OryxisColors::t().text_muted).width(Length::Fill),
-        text(String::new()).size(11).color(OryxisColors::t().text_muted).width(Length::Fixed(MOD_COL_W)),
-        text(String::new()).size(11).color(OryxisColors::t().text_muted).width(Length::Fixed(SIZE_COL_W)),
-    ]
-    .align_y(iced::Alignment::Center);
+            .color(OryxisColors::t().text_muted)
+            .into(),
+        Space::new().width(8).into(),
+        text("..")
+            .size(12)
+            .color(OryxisColors::t().text_muted)
+            .width(layout.name_len)
+            .into(),
+    ];
+    // Blank trailing cells keep the ".." row aligned with the columns.
+    children.extend(trailing_cells(visible, widths, |_| String::new()));
+    let inner = iced::widget::Row::with_children(children).align_y(iced::Alignment::Center);
     button(inner)
         .padding(Padding { top: 4.0, right: 12.0, bottom: 4.0, left: 12.0 })
-        .width(Length::Fill)
+        .width(layout.row_len)
         .height(Length::Fixed(ROW_HEIGHT))
         .on_press(msg)
         .style(|_, status| {
@@ -1584,8 +1953,140 @@ fn parent_row<'a>(side: SftpPaneSide) -> Element<'a, Message> {
         .into()
 }
 
-const MOD_COL_W: f32 = 140.0;
-const SIZE_COL_W: f32 = 80.0;
+/// Width of the leading icon + gap column, used both as the header's
+/// alignment pad and to size the fixed-width row when columns overflow.
+const ICON_COL_W: f32 = 21.0;
+/// Left + right padding applied to every header / row container.
+const ROW_PAD_X: f32 = 24.0;
+/// Width of the resize handle on the right edge of each data-column header.
+const COL_RESIZE_HANDLE_W: f32 = 6.0;
+/// Minimum the Name column shrinks to before horizontal scroll kicks in.
+/// Kept fairly low so a narrow split or the default 3 columns just let the
+/// Name column shrink (as before); the horizontal scrollbar only appears
+/// once even a small Name can't fit alongside the visible columns.
+const NAME_MIN_W: f32 = 100.0;
+
+/// Sum of the visible data columns at their current widths, in order.
+fn trailing_cols_width(
+    visible: &[crate::state::SftpColumn],
+    widths: crate::state::SftpColWidths,
+) -> f32 {
+    visible.iter().map(|c| widths.get(*c)).sum()
+}
+
+/// Resolved horizontal layout for the file list of one pane: the
+/// Name-column / whole-row lengths. When the data columns don't fit the
+/// pane the Name column is pinned to `NAME_MIN_W` and the row gets a fixed
+/// width so a horizontal scrollable can pan across it.
+#[derive(Clone, Copy)]
+struct ColLayout {
+    name_len: Length,
+    row_len: Length,
+    /// True when the row width is fixed (columns overflow the pane).
+    overflow: bool,
+}
+
+impl ColLayout {
+    /// Build the layout for a pane `avail` pixels wide given the visible
+    /// data columns' total width.
+    fn resolve(trailing: f32, avail: f32) -> Self {
+        // Space left for the Name column once the icon pad, row padding and
+        // data columns are accounted for.
+        let name_slack = avail - ROW_PAD_X - ICON_COL_W - trailing;
+        if name_slack >= NAME_MIN_W {
+            // Comfortable fit: Name takes the slack, no horizontal scroll.
+            ColLayout {
+                name_len: Length::Fill,
+                row_len: Length::Fill,
+                overflow: false,
+            }
+        } else {
+            let row_w = ROW_PAD_X + ICON_COL_W + NAME_MIN_W + trailing;
+            ColLayout {
+                name_len: Length::Fixed(NAME_MIN_W),
+                row_len: Length::Fixed(row_w),
+                overflow: true,
+            }
+        }
+    }
+}
+
+/// POSIX rwx string for a permission/mode value, e.g. "drwxr-xr-x".
+/// The leading type char comes from the row's dir/symlink flags; only
+/// the low 12 bits of `mode` carry the rwx + setuid/setgid/sticky bits.
+fn format_perms(mode: Option<u32>, is_dir: bool, is_symlink: bool) -> String {
+    let Some(m) = mode else {
+        return "-".to_string();
+    };
+    let type_char = if is_symlink {
+        'l'
+    } else if is_dir {
+        'd'
+    } else {
+        '-'
+    };
+    let rwx = |bits: u32| {
+        format!(
+            "{}{}{}",
+            if bits & 0o4 != 0 { 'r' } else { '-' },
+            if bits & 0o2 != 0 { 'w' } else { '-' },
+            if bits & 0o1 != 0 { 'x' } else { '-' },
+        )
+    };
+    format!(
+        "{}{}{}{}",
+        type_char,
+        rwx((m >> 6) & 0o7),
+        rwx((m >> 3) & 0o7),
+        rwx(m & 0o7),
+    )
+}
+
+/// "uid:gid" owner string, with a dash when neither side is known
+/// (Windows local entries, or a server that omits owner attributes).
+fn format_owner(uid: Option<u32>, gid: Option<u32>) -> String {
+    match (uid, gid) {
+        (Some(u), Some(g)) => format!("{u}:{g}"),
+        (Some(u), None) => u.to_string(),
+        (None, Some(g)) => format!(":{g}"),
+        (None, None) => "-".to_string(),
+    }
+}
+
+/// Short type label for the Type column: "Folder" / "Link" / the
+/// uppercased extension / "File".
+fn format_kind(name: &str, is_dir: bool, is_symlink: bool) -> String {
+    if is_symlink {
+        return t("sftp_type_symlink").to_string();
+    }
+    if is_dir {
+        return t("sftp_type_folder").to_string();
+    }
+    match name.rsplit_once('.') {
+        Some((stem, ext)) if !ext.is_empty() && !stem.is_empty() => ext.to_ascii_uppercase(),
+        _ => t("sftp_type_file").to_string(),
+    }
+}
+
+/// Build the data cells of a file row in the pane's column order, at the
+/// pane's column widths. `value` formats one column's text. Returns the
+/// cells to append after the Name label.
+fn trailing_cells<'a>(
+    visible: &[crate::state::SftpColumn],
+    widths: crate::state::SftpColWidths,
+    value: impl Fn(crate::state::SftpColumn) -> String,
+) -> Vec<Element<'a, Message>> {
+    visible
+        .iter()
+        .map(|c| {
+            text(value(*c))
+                .size(11)
+                .color(OryxisColors::t().text_muted)
+                .width(Length::Fixed(widths.get(*c)))
+                .into()
+        })
+        .collect()
+}
 
 /// Visually distinct band that wraps the toolbar / breadcrumb / column
 /// headers, gives the file list a clean separation from the chrome,
@@ -1605,60 +2106,214 @@ fn pane_header_band<'a>(content: iced::widget::Column<'a, Message>) -> Element<'
         .into()
 }
 
-/// Sortable column header strip. Click on a column to set / flip the
-/// active sort. The active column shows an arrow indicator.
+/// Wrap a built file-list column in the right scrollable. With columns
+/// that fit, this is the plain vertical scroll used before. When the
+/// columns overflow, the header strip is prepended (so it pans with the
+/// rows) and the scrollable gains a horizontal scrollbar.
+#[allow(clippy::too_many_arguments)]
+fn sftp_list_scrollable<'a>(
+    col: iced::widget::Column<'a, Message>,
+    scroll_id: &str,
+    side: SftpPaneSide,
+    sort: crate::state::SftpSort,
+    visible: &[crate::state::SftpColumn],
+    widths: crate::state::SftpColWidths,
+    layout: ColLayout,
+    drag_col: Option<crate::state::SftpColumn>,
+    hovered: Option<crate::state::SftpColumn>,
+) -> Element<'a, Message> {
+    if layout.overflow {
+        // Sticky header + horizontal scroll (FileZilla-style): the rows get
+        // their own vertical scrollable, and that plus the header sit inside
+        // an outer horizontal scrollable. Panning sideways moves header and
+        // rows together (kept aligned), while the header never scrolls away
+        // vertically because the vertical scroll lives on the inner list only.
+        let inner_list = scrollable(col)
+            .id(iced::widget::Id::from(scroll_id.to_string()))
+            .width(layout.row_len)
+            .height(Length::Fill);
+        let header = column_headers(side, sort, visible, widths, layout, drag_col, hovered);
+        let stacked = column![header, inner_list]
+            .width(layout.row_len)
+            .height(Length::Fill);
+        scrollable(stacked)
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .direction(scrollable::Direction::Horizontal(scrollable::Scrollbar::new()))
+            .into()
+    } else {
+        scrollable(col)
+            .id(iced::widget::Id::from(scroll_id.to_string()))
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .into()
+    }
+}
+
+/// Label for a data column header.
+fn data_col_label(col: crate::state::SftpColumn) -> &'static str {
+    use crate::state::SftpColumn;
+    match col {
+        SftpColumn::Modified => t("col_modified"),
+        SftpColumn::Size => t("col_size"),
+        SftpColumn::Kind => t("col_type"),
+        SftpColumn::Permissions => t("col_permissions"),
+        SftpColumn::Owner => t("col_owner"),
+    }
+}
+
+/// Floating ghost shown while a column header is dragged for reorder:
+/// the column label in an accent-bordered, shadowed chip (mirrors the
+/// host-tab drag ghost).
+fn col_drag_ghost<'a>(label: &str) -> Element<'a, Message> {
+    let accent = OryxisColors::t().accent;
+    container(
+        text(label.to_string())
+            .size(11)
+            .color(accent)
+            .wrapping(iced::widget::text::Wrapping::None),
+    )
+    .padding(Padding { top: 5.0, right: 12.0, bottom: 5.0, left: 12.0 })
+    .style(move |_| container::Style {
+        background: Some(Background::Color(Color { a: 0.96, ..OryxisColors::t().bg_hover })),
+        border: Border { radius: Radius::from(6.0), color: accent, width: 1.5 },
+        shadow: iced::Shadow {
+            color: Color::from_rgba(0.0, 0.0, 0.0, 0.35),
+            offset: iced::Vector::new(0.0, 2.0),
+            blur_radius: 6.0,
+        },
+        ..Default::default()
+    })
+    .into()
+}
+
+/// Column header strip. Name is a fixed sortable button; the data columns
+/// (in `visible` order) are draggable to reorder (header body) and have a
+/// right-edge resize handle. Sortable data columns flip the sort on a plain
+/// click (release without a drag, handled in the mouse-up dispatcher).
 fn column_headers<'a>(
     side: SftpPaneSide,
     sort: crate::state::SftpSort,
+    visible: &[crate::state::SftpColumn],
+    widths: crate::state::SftpColWidths,
+    layout: ColLayout,
+    drag_col: Option<crate::state::SftpColumn>,
+    hovered: Option<crate::state::SftpColumn>,
 ) -> Element<'a, Message> {
     use crate::state::SftpSortColumn;
-    let header = |label: &str, col: SftpSortColumn, width: Option<f32>| -> Element<'a, Message> {
-        let arrow = if sort.column == col {
-            if sort.ascending { " \u{2191}" } else { " \u{2193}" }
-        } else {
-            ""
-        };
-        let txt = text(format!("{}{}", label, arrow))
+    // The fixed, sortable Name header.
+    let name_arrow = if sort.column == SftpSortColumn::Name {
+        if sort.ascending { " \u{2191}" } else { " \u{2193}" }
+    } else {
+        ""
+    };
+    let name_header: Element<'a, Message> = button(
+        text(format!("{}{}", t("col_name"), name_arrow))
             .size(11)
-            .color(if sort.column == col {
+            .color(if sort.column == SftpSortColumn::Name {
                 OryxisColors::t().text_primary
             } else {
                 OryxisColors::t().text_muted
-            });
-        let msg = Message::SftpSort(side, col);
-        let mut btn = button(txt)
-            .on_press(msg)
-            .padding(Padding { top: 4.0, right: 6.0, bottom: 4.0, left: 6.0 })
-            .style(|_, status| {
-                let bg = match status {
-                    BtnStatus::Hovered => OryxisColors::t().bg_hover,
-                    _ => Color::TRANSPARENT,
-                };
-                button::Style {
-                    background: Some(Background::Color(bg)),
-                    border: Border { radius: Radius::from(4.0), ..Default::default() },
-                    ..Default::default()
-                }
-            });
-        if let Some(w) = width {
-            btn = btn.width(Length::Fixed(w));
-        } else {
-            btn = btn.width(Length::Fill);
-        }
-        btn.into()
-    };
-    container(
-        row![
-            // Pad-icon column to align with file rows below.
-            Space::new().width(Length::Fixed(21.0)),
-            header(t("col_name"), SftpSortColumn::Name, None),
-            header(t("col_modified"), SftpSortColumn::Modified, Some(MOD_COL_W)),
-            header(t("col_size"), SftpSortColumn::Size, Some(SIZE_COL_W)),
-        ]
-        .align_y(iced::Alignment::Center),
+            }),
     )
+    .on_press(Message::SftpSort(side, SftpSortColumn::Name))
+    .width(layout.name_len)
+    .padding(Padding { top: 4.0, right: 6.0, bottom: 4.0, left: 6.0 })
+    .style(|_, status| {
+        let bg = match status {
+            BtnStatus::Hovered => OryxisColors::t().bg_hover,
+            _ => Color::TRANSPARENT,
+        };
+        button::Style {
+            background: Some(Background::Color(bg)),
+            border: Border { radius: Radius::from(4.0), ..Default::default() },
+            ..Default::default()
+        }
+    })
+    .into();
+
+    let mut children: Vec<Element<'a, Message>> = vec![
+        // Pad-icon column to align with file rows below.
+        Space::new().width(Length::Fixed(ICON_COL_W)).into(),
+        name_header,
+    ];
+
+    let dragging = drag_col.is_some();
+    for &col in visible {
+        let w = widths.get(col);
+        let sortable = col.sort_column();
+        let active_sort = sortable.is_some_and(|sc| sort.column == sc);
+        let arrow = match sortable {
+            Some(sc) if sort.column == sc => {
+                if sort.ascending { " \u{2191}" } else { " \u{2193}" }
+            }
+            _ => "",
+        };
+        // Highlight a header as the drop target while another column is
+        // dragged over it.
+        let is_target = dragging && hovered == Some(col) && drag_col != Some(col);
+        let is_dragged = drag_col == Some(col);
+        let label_w = (w - COL_RESIZE_HANDLE_W).max(8.0);
+        let label_color = if active_sort {
+            OryxisColors::t().text_primary
+        } else {
+            OryxisColors::t().text_muted
+        };
+        let label_area = MouseArea::new(
+            container(text(format!("{}{}", data_col_label(col), arrow)).size(11).color(label_color))
+                .width(Length::Fixed(label_w))
+                .padding(Padding { top: 4.0, right: 6.0, bottom: 4.0, left: 6.0 })
+                .style(move |_| {
+                    let bg = if is_target {
+                        Some(Background::Color(Color { a: 0.20, ..OryxisColors::t().accent }))
+                    } else if is_dragged {
+                        Some(Background::Color(OryxisColors::t().bg_hover))
+                    } else {
+                        None
+                    };
+                    container::Style {
+                        background: bg,
+                        border: Border { radius: Radius::from(4.0), ..Default::default() },
+                        ..Default::default()
+                    }
+                }),
+        )
+        .on_press(Message::SftpColDragStart(side, col))
+        .on_enter(Message::SftpColHovered(side, col))
+        .on_exit(Message::SftpColUnhovered)
+        // Grab hint normally; grabbing while a reorder drag is active so the
+        // user gets cursor feedback that the drag took.
+        .interaction(if dragging {
+            iced::mouse::Interaction::Grabbing
+        } else {
+            iced::mouse::Interaction::Grab
+        });
+        // Right-edge resize handle.
+        let handle = MouseArea::new(
+            container(Space::new().width(Length::Fixed(COL_RESIZE_HANDLE_W)).height(Length::Fill))
+                .width(Length::Fixed(COL_RESIZE_HANDLE_W))
+                .height(Length::Fill),
+        )
+        .on_press(Message::SftpColResizeStart(side, col))
+        .interaction(iced::mouse::Interaction::ResizingHorizontally);
+        children.push(
+            row![label_area, handle]
+                .width(Length::Fixed(w))
+                .align_y(iced::Alignment::Center)
+                .into(),
+        );
+    }
+
+    container(
+        iced::widget::Row::with_children(children)
+            .height(Length::Fill)
+            .align_y(iced::Alignment::Center),
+    )
+    // Fixed height so the Fill-height resize handles don't balloon the strip
+    // (and thus the whole header band) to fill the pane vertically.
+    .height(Length::Fixed(28.0))
     .padding(Padding { top: 4.0, right: 12.0, bottom: 4.0, left: 12.0 })
-    .width(Length::Fill)
+    .width(layout.row_len)
     .style(|_| container::Style {
         background: Some(Background::Color(OryxisColors::t().bg_surface)),
         border: Border {
@@ -1695,12 +2350,23 @@ fn file_row_local<'a>(
     is_dir: bool,
     size_str: String,
     modified: Option<std::time::SystemTime>,
+    mode: Option<u32>,
+    uid: Option<u32>,
+    gid: Option<u32>,
     path: std::path::PathBuf,
     rename_input: Option<&str>,
     is_selected: bool,
     is_drop_target: bool,
+    visible: &[crate::state::SftpColumn],
+    widths: crate::state::SftpColWidths,
+    layout: ColLayout,
 ) -> Element<'a, Message> {
+    use crate::state::SftpColumn;
     let icon = file_icon(&name, is_dir, false);
+    let kind = format_kind(&name, is_dir, false);
+    let modified_s = format_modified_local(modified);
+    let perms_s = format_perms(mode, is_dir, false);
+    let owner_s = format_owner(uid, gid);
 
     // Inline rename mode swaps the row's label for a text input; the
     // icon + columns stay put so the row geometry doesn't jump.
@@ -1711,27 +2377,25 @@ fn file_row_local<'a>(
             .padding(Padding { top: 2.0, right: 6.0, bottom: 2.0, left: 6.0 })
             .size(11)
             .style(crate::widgets::rounded_input_style).align_x(dir_align_x())
+            .width(layout.name_len)
             .into()
     } else {
-        text(name).size(12).color(OryxisColors::t().text_primary).width(Length::Fill).into()
+        text(name).size(12).color(OryxisColors::t().text_primary).width(layout.name_len).into()
     };
 
-    let inner = row![
-        icon,
-        Space::new().width(8),
-        label_widget,
-        text(format_modified_local(modified))
-            .size(11)
-            .color(OryxisColors::t().text_muted)
-            .width(Length::Fixed(MOD_COL_W)),
-        text(size_str)
-            .size(11)
-            .color(OryxisColors::t().text_muted)
-            .width(Length::Fixed(SIZE_COL_W)),
-    ]
-    // Fill the button's fixed height so the content centers vertically.
-    .height(Length::Fill)
-    .align_y(iced::Alignment::Center);
+    let mut children: Vec<Element<'a, Message>> =
+        vec![icon.into(), Space::new().width(8).into(), label_widget];
+    children.extend(trailing_cells(visible, widths, |c| match c {
+        SftpColumn::Modified => modified_s.clone(),
+        SftpColumn::Size => size_str.clone(),
+        SftpColumn::Kind => kind.clone(),
+        SftpColumn::Permissions => perms_s.clone(),
+        SftpColumn::Owner => owner_s.clone(),
+    }));
+    let inner = iced::widget::Row::with_children(children)
+        // Fill the button's fixed height so the content centers vertically.
+        .height(Length::Fill)
+        .align_y(iced::Alignment::Center);
 
     // Click action priority: while renaming, swallow clicks; folders
     // navigate; files mark themselves selected so the user has visible
@@ -1750,7 +2414,7 @@ fn file_row_local<'a>(
     let path_for_enter = path_str.clone();
     let mut btn = button(inner)
         .padding(Padding { top: 4.0, right: 12.0, bottom: 4.0, left: 12.0 })
-        .width(Length::Fill)
+        .width(layout.row_len)
         .height(Length::Fixed(ROW_HEIGHT))
         .style(move |_, status| {
             // Drop highlight beats selection while a drag is in flight,
@@ -1790,12 +2454,23 @@ fn file_row_remote<'a>(
     is_symlink: bool,
     size_str: String,
     mtime: Option<u32>,
+    permissions: Option<u32>,
+    uid: Option<u32>,
+    gid: Option<u32>,
     full_path: String,
     rename_input: Option<&str>,
     is_drop_target: bool,
     is_selected: bool,
+    visible: &[crate::state::SftpColumn],
+    widths: crate::state::SftpColWidths,
+    layout: ColLayout,
 ) -> Element<'a, Message> {
+    use crate::state::SftpColumn;
     let icon = file_icon(&name, is_dir, is_symlink);
+    let kind = format_kind(&name, is_dir, is_symlink);
+    let modified_s = format_modified_remote(mtime);
+    let perms_s = format_perms(permissions, is_dir, is_symlink);
+    let owner_s = format_owner(uid, gid);
 
     let label_widget: Element<'_, Message> = if let Some(input) = rename_input {
         text_input(&name, input)
@@ -1804,9 +2479,10 @@ fn file_row_remote<'a>(
             .padding(Padding { top: 2.0, right: 6.0, bottom: 2.0, left: 6.0 })
             .size(11)
             .style(crate::widgets::rounded_input_style).align_x(dir_align_x())
+            .width(layout.name_len)
             .into()
     } else {
-        text(name).size(12).color(OryxisColors::t().text_primary).width(Length::Fill).into()
+        text(name).size(12).color(OryxisColors::t().text_primary).width(layout.name_len).into()
     };
 
     // Single message routes folder navigation, file single-select, and
@@ -1822,27 +2498,24 @@ fn file_row_remote<'a>(
             is_dir || is_symlink,
         ))
     };
-    let inner = row![
-        icon,
-        Space::new().width(8),
-        label_widget,
-        text(format_modified_remote(mtime))
-            .size(11)
-            .color(OryxisColors::t().text_muted)
-            .width(Length::Fixed(MOD_COL_W)),
-        text(size_str)
-            .size(11)
-            .color(OryxisColors::t().text_muted)
-            .width(Length::Fixed(SIZE_COL_W)),
-    ]
-    // Fill the button's fixed height so `align_y(Center)` actually centers
-    // the content vertically inside the row (otherwise a shrink-height row
-    // sits at the top of the slot and reads as misaligned).
-    .height(Length::Fill)
-    .align_y(iced::Alignment::Center);
+    let mut children: Vec<Element<'a, Message>> =
+        vec![icon.into(), Space::new().width(8).into(), label_widget];
+    children.extend(trailing_cells(visible, widths, |c| match c {
+        SftpColumn::Modified => modified_s.clone(),
+        SftpColumn::Size => size_str.clone(),
+        SftpColumn::Kind => kind.clone(),
+        SftpColumn::Permissions => perms_s.clone(),
+        SftpColumn::Owner => owner_s.clone(),
+    }));
+    let inner = iced::widget::Row::with_children(children)
+        // Fill the button's fixed height so `align_y(Center)` actually centers
+        // the content vertically inside the row (otherwise a shrink-height row
+        // sits at the top of the slot and reads as misaligned).
+        .height(Length::Fill)
+        .align_y(iced::Alignment::Center);
     let mut btn = button(inner)
         .padding(Padding { top: 4.0, right: 12.0, bottom: 4.0, left: 12.0 })
-        .width(Length::Fill)
+        .width(layout.row_len)
         .height(Length::Fixed(ROW_HEIGHT))
         .style(move |_, status| {
             // Drop highlight beats selection (transient, communicates
@@ -2948,6 +3621,116 @@ fn transfer_progress_strip<'a>(
         ..Default::default()
     })
     .into()
+}
+
+/// The always-visible footer bar carrying the message-log toggle. Shows
+/// the log entry count and highlights when the panel is open.
+fn sftp_log_bar<'a>(open: bool, count: usize) -> Element<'a, Message> {
+    let tint = if open {
+        OryxisColors::t().accent
+    } else {
+        OryxisColors::t().text_muted
+    };
+    let label_color = if open {
+        OryxisColors::t().text_primary
+    } else {
+        OryxisColors::t().text_muted
+    };
+    let chevron = if open {
+        iced_fonts::lucide::chevron_down()
+    } else {
+        iced_fonts::lucide::chevron_up()
+    };
+    let toggle = button(
+        row![
+            iced_fonts::lucide::list().size(13).color(tint),
+            Space::new().width(6),
+            text(format!("{} ({})", t("sftp_log"), count))
+                .size(11)
+                .color(label_color),
+            Space::new().width(6),
+            chevron.size(10).color(tint),
+        ]
+        .align_y(iced::Alignment::Center),
+    )
+    .on_press(Message::SftpToggleLog)
+    .padding(Padding { top: 3.0, right: 10.0, bottom: 3.0, left: 10.0 })
+    .style(|_, status| {
+        let bg = match status {
+            BtnStatus::Hovered => OryxisColors::t().bg_hover,
+            _ => Color::TRANSPARENT,
+        };
+        button::Style {
+            background: Some(Background::Color(bg)),
+            border: Border { radius: Radius::from(4.0), ..Default::default() },
+            ..Default::default()
+        }
+    });
+    container(
+        row![toggle, Space::new().width(Length::Fill)].align_y(iced::Alignment::Center),
+    )
+    .width(Length::Fill)
+    .padding(Padding { top: 2.0, right: 8.0, bottom: 2.0, left: 8.0 })
+    .style(|_| container::Style {
+        background: Some(Background::Color(OryxisColors::t().bg_sidebar)),
+        border: Border {
+            width: 1.0,
+            color: OryxisColors::t().border,
+            radius: Radius::from(0.0),
+        },
+        ..Default::default()
+    })
+    .into()
+}
+
+/// FileZilla-style message-log panel: a fixed-height scrollable list of
+/// timestamped events, colour-coded by level. Newest entries sit at the
+/// bottom. Strings are cloned so the element doesn't borrow the log.
+fn sftp_log_panel<'a>(log: &[crate::state::SftpLogEntry]) -> Element<'a, Message> {
+    use crate::state::SftpLogLevel;
+    let mut col = column![]
+        .spacing(1)
+        .padding(Padding { top: 6.0, right: 10.0, bottom: 6.0, left: 10.0 })
+        .width(Length::Fill);
+    if log.is_empty() {
+        col = col.push(
+            text(t("sftp_log_empty"))
+                .size(11)
+                .color(OryxisColors::t().text_muted),
+        );
+    } else {
+        for e in log {
+            let color = match e.level {
+                SftpLogLevel::Info => OryxisColors::t().text_secondary,
+                SftpLogLevel::Ok => OryxisColors::t().success,
+                SftpLogLevel::Warn => OryxisColors::t().warning,
+                SftpLogLevel::Error => OryxisColors::t().error,
+            };
+            col = col.push(
+                row![
+                    text(e.time.clone())
+                        .size(11)
+                        .color(OryxisColors::t().text_muted)
+                        .width(Length::Fixed(64.0)),
+                    text(e.text.clone()).size(11).color(color).width(Length::Fill),
+                ]
+                .spacing(8),
+            );
+        }
+    }
+    container(scrollable(col).width(Length::Fill).height(Length::Fill))
+        .width(Length::Fill)
+        .height(Length::Fixed(160.0))
+        .style(|_| container::Style {
+            background: Some(Background::Color(OryxisColors::t().bg_surface)),
+            border: Border {
+                width: 1.0,
+                color: OryxisColors::t().border,
+                radius: Radius::from(0.0),
+            },
+            ..Default::default()
+        })
+        .into()
 }
 
 fn format_size(bytes: u64) -> String {

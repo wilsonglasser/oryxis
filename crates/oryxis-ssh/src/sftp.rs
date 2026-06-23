@@ -24,6 +24,11 @@ pub struct SftpEntry {
     pub size: u64,
     pub mtime: Option<u32>,
     pub permissions: Option<u32>,
+    /// Owning uid/gid as reported by the directory listing. Populated
+    /// from the SFTP attributes when the server includes them; `None`
+    /// otherwise. Drives the optional Owner column in the UI.
+    pub uid: Option<u32>,
+    pub gid: Option<u32>,
 }
 
 /// Per-path stat snapshot used by the Properties dialog.
@@ -139,6 +144,8 @@ impl SftpClient {
                     size: metadata.size.unwrap_or(0),
                     mtime: metadata.mtime,
                     permissions: metadata.permissions,
+                    uid: metadata.uid,
+                    gid: metadata.gid,
                 });
             }
             Ok(out)

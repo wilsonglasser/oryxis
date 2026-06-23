@@ -36,6 +36,9 @@ impl Oryxis {
                     is_dir: true,
                     size: 0,
                     modified: None,
+                    mode: None,
+                    uid: None,
+                    gid: None,
                 });
             }
             sort_local_entries(&mut pane.local_entries, sort);
@@ -56,14 +59,49 @@ impl Oryxis {
                 Err(_) => continue,
             };
             let name = entry.file_name().to_string_lossy().into_owned();
+            // POSIX mode / owner are Unix-only; on Windows these stay
+            // `None` and the Permissions / Owner columns render a dash.
+            #[cfg(unix)]
+            let (mode, uid, gid) = {
+                use std::os::unix::fs::MetadataExt;
+                (Some(metadata.mode()), Some(metadata.uid()), Some(metadata.gid()))
+            };
+            #[cfg(not(unix))]
+            let (mode, uid, gid) = (None, None, None);
             pane.local_entries.push(crate::state::LocalEntry {
                 name,
                 is_dir: metadata.is_dir(),
                 size: metadata.len(),
                 modified: metadata.modified().ok(),
+                mode,
+                uid,
+                gid,
             });
         }
         sort_local_entries(&mut pane.local_entries, sort);
+    }
+
+    /// Append one line to the active SFTP tab's message log, stamping it
+    /// with the current local time and capping the buffer to the most
+    /// recent [`crate::state::SFTP_LOG_CAP`] entries. The log is in-memory
+    /// only (per tab) and surfaced by the toggleable log panel.
+    pub(crate) fn push_sftp_log(
+        &mut self,
+        level: crate::state::SftpLogLevel,
+        text: impl Into<String>,
+    ) {
+        let time = chrono::Local::now().format("%H:%M:%S").to_string();
+        let log = &mut self.sftp.log;
+        log.push(crate::state::SftpLogEntry {
+            time,
+            level,
+            text: text.into(),
+        });
+        let cap = crate::state::SFTP_LOG_CAP;
+        if log.len() > cap {
+            let drop = log.len() - cap;
+            log.drain(0..drop);
+        }
     }
 
     /// Parsed and clamped concurrency setting, picks how many parallel
@@ -337,6 +375,9 @@ impl Oryxis {
             .or_else(|| std::env::var_os("USERPROFILE"))
             .map(std::path::PathBuf::from)
             .unwrap_or_else(|| std::path::PathBuf::from("/"));
+        // Seed both panes' columns from the persisted template.
+        tab.state.left.columns = self.sftp_columns_template.clone();
+        tab.state.right.columns = self.sftp_columns_template.clone();
         let id = tab.id;
         self.sftp_tabs.push(tab);
         let idx = self.sftp_tabs.len() - 1;

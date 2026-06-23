@@ -526,6 +526,12 @@ impl Oryxis {
                 sidebar_search_open: false,
                 chat_sidebar_width: 350.0,
                 chat_sidebar_drag: None,
+                sftp_split_ratio: 0.5,
+                sftp_split_drag: None,
+                sftp_columns_template: crate::state::SftpColumnState::default(),
+                sftp_col_resize: None,
+                sftp_col_drag: None,
+                sftp_hovered_col: None,
                 mcp_server_enabled: false,
                 show_mcp_info: false,
                 mcp_config_copied: false,
@@ -896,6 +902,24 @@ impl Oryxis {
             if let Ok(Some(v)) = vault.get_setting("sftp_enabled") {
                 self.sftp_enabled = v == "true";
             }
+            if let Ok(Some(v)) = vault.get_setting("sftp_split_ratio")
+                && let Ok(r) = v.parse::<f32>()
+            {
+                self.sftp_split_ratio = r.clamp(0.15, 0.85);
+            }
+            if let Ok(Some(v)) = vault.get_setting("sftp_columns") {
+                self.sftp_columns_template.apply_visibility_storage(&v);
+            }
+            if let Ok(Some(v)) = vault.get_setting("sftp_col_order") {
+                self.sftp_columns_template.apply_order_storage(&v);
+            }
+            if let Ok(Some(v)) = vault.get_setting("sftp_col_widths") {
+                self.sftp_columns_template.apply_width_storage(&v);
+            }
+            // Seed the initial panes from the loaded template; later tabs are
+            // seeded at creation (see `seed_sftp_columns`).
+            self.sftp.left.columns = self.sftp_columns_template.clone();
+            self.sftp.right.columns = self.sftp_columns_template.clone();
             // Vault nav orientation. Prefer the new `nav_orientation`
             // setting; if it's absent, migrate from the legacy
             // `layout_mode` (classic → vertical rail, workspace →
@@ -1092,6 +1116,14 @@ impl Oryxis {
         {
             tracing::warn!("failed to persist setting {key}: {e}");
         }
+    }
+
+    /// Persist the current column template (visibility + order + widths) so
+    /// new panes/tabs inherit it across restarts.
+    pub(crate) fn persist_sftp_columns(&self) {
+        self.persist_setting("sftp_columns", &self.sftp_columns_template.visibility_storage());
+        self.persist_setting("sftp_col_order", &self.sftp_columns_template.order_storage());
+        self.persist_setting("sftp_col_widths", &self.sftp_columns_template.width_storage());
     }
 
     /// Snapshot the currently-pinned tabs (those with a reopenable spec) to

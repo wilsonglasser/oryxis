@@ -150,6 +150,40 @@ impl Oryxis {
             }
             Message::ChatSidebarResizeStop => {
                 self.chat_sidebar_drag = None;
+                // The same global Left-release ends an SFTP divider drag;
+                // persist the final ratio so it survives a relaunch.
+                if self.sftp_split_drag.take().is_some() {
+                    self.persist_setting(
+                        "sftp_split_ratio",
+                        &format!("{:.4}", self.sftp_split_ratio),
+                    );
+                }
+                // End a column resize: the width was updated live, so just
+                // re-seed the template and persist.
+                if let Some((side, _, _, _)) = self.sftp_col_resize.take() {
+                    self.sftp_columns_template = self.sftp.pane(side).columns.clone();
+                    self.persist_sftp_columns();
+                }
+                // End a column reorder. If the drag went active, move the
+                // dragged column before whichever header the cursor is over;
+                // a release without movement is a plain click that sorts.
+                if let Some(drag) = self.sftp_col_drag.take() {
+                    let hovered = self.sftp_hovered_col;
+                    self.sftp_hovered_col = None;
+                    if drag.active {
+                        if let Some((hside, hcol)) = hovered
+                            && hside == drag.side
+                            && hcol != drag.col
+                        {
+                            self.sftp.pane_mut(drag.side).columns.reorder(drag.col, hcol);
+                            self.sftp_columns_template =
+                                self.sftp.pane(drag.side).columns.clone();
+                            self.persist_sftp_columns();
+                        }
+                    } else if let Some(sort_col) = drag.col.sort_column() {
+                        return Ok(Task::done(Message::SftpSort(drag.side, sort_col)));
+                    }
+                }
                 // Same global Left-release event also ends an internal
                 // SFTP drag, if the drag was active, dispatch the
                 // transfer; if not, just clear (it was a plain click).

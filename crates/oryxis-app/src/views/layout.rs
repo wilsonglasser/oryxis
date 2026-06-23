@@ -1604,6 +1604,7 @@ impl Oryxis {
                     context_menu_item(iced_fonts::lucide::pencil(), crate::i18n::t("edit"), Message::EditConnection(idx), OryxisColors::t().text_secondary),
                     context_menu_item(iced_fonts::lucide::copy(), crate::i18n::t("duplicate"), Message::DuplicateConnection(idx), OryxisColors::t().text_secondary),
                     context_menu_item(iced_fonts::lucide::share(), crate::i18n::t("share"), Message::ShareConnection(idx), OryxisColors::t().text_secondary),
+                    context_menu_item(iced_fonts::lucide::folder_tree(), crate::i18n::t("open_sftp_tab"), Message::OpenSftpForConnection(idx), OryxisColors::t().text_secondary),
                 ];
                 if let Some(pid) = cloud_profile_id {
                     items = items.push(context_menu_item(
@@ -1739,6 +1740,21 @@ impl Oryxis {
                     context_menu_item(iced_fonts::lucide::rows_two(), crate::i18n::t("split_stacked"), Message::SplitTabPane(idx, iced::widget::pane_grid::Axis::Horizontal), OryxisColors::t().text_secondary),
                     context_menu_item(iced_fonts::lucide::copy(), crate::i18n::t("duplicate_tab"), Message::DuplicateTab(idx), OryxisColors::t().text_secondary),
                 ];
+                // Open an SFTP tab for this host: offered when the tab has a
+                // live SSH session to reuse or matches a saved connection (so
+                // it isn't shown on local-shell tabs where it would no-op).
+                let can_sftp = self
+                    .tabs
+                    .get(idx)
+                    .map(|t| {
+                        let base = t.label.trim_end_matches(" (disconnected)");
+                        t.active().ssh_session.is_some()
+                            || self.connections.iter().any(|c| c.label == base)
+                    })
+                    .unwrap_or(false);
+                if can_sftp {
+                    items = items.push(context_menu_item(iced_fonts::lucide::folder_tree(), crate::i18n::t("open_sftp_tab"), Message::OpenSftpForTab(idx), OryxisColors::t().text_secondary));
+                }
                 // Save the whole arrangement (panes + splits + per-pane
                 // scripts) as a reusable session group, or edit it if this
                 // tab already came from one. Only meaningful for a split tab

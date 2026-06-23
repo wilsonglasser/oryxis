@@ -551,6 +551,22 @@ impl Oryxis {
                 // Fresh transfer: reset the per-file panel log + collapse it.
                 self.sftp.transfer_done_log.clear();
                 self.sftp.transfer_panel_open = false;
+                let verb_key = match state.kind {
+                    crate::state::TransferKind::Upload => "sftp_log_uploading",
+                    crate::state::TransferKind::Download => "sftp_log_downloading",
+                    crate::state::TransferKind::DuplicateLocal => "sftp_log_duplicating",
+                    crate::state::TransferKind::Relay => "sftp_log_relaying",
+                };
+                self.push_sftp_log(
+                    crate::state::SftpLogLevel::Info,
+                    format!(
+                        "{} {} ({} {})",
+                        crate::i18n::t(verb_key),
+                        state.root_label,
+                        state.total,
+                        crate::i18n::t("sftp_log_items"),
+                    ),
+                );
                 // Live byte progress: total = sum of known item sizes (0 if
                 // unknown, bar falls back to item counts). Use a *fresh*
                 // counter rather than resetting the old one, so a lingering
@@ -601,7 +617,12 @@ impl Oryxis {
                         // which may be the left pane (right-to-left relay),
                         // not the canonical remote (`remote_side`).
                         let relay_dest = transfer.dest_side;
+                        let root_label = transfer.root_label.clone();
                         self.sftp.transfer = None;
+                        self.push_sftp_log(
+                            crate::state::SftpLogLevel::Ok,
+                            format!("{} {}", crate::i18n::t("sftp_log_transfer_done"), root_label),
+                        );
                         return Ok(match kind {
                             crate::state::TransferKind::Relay => {
                                 let dst = relay_dest.unwrap_or(remote_side);

@@ -44,6 +44,14 @@ pub(crate) struct PaneState {
     pub path_editing: Option<String>,
     /// Actions popover anchored to this pane's header.
     pub actions_open: bool,
+    /// Per-pane column configuration (visibility + order + widths). Seeded
+    /// from the persisted global template when the tab is created, then
+    /// edited independently so the Local and remote panes (and each tab)
+    /// can show different columns.
+    pub columns: SftpColumnState,
+    /// True while this pane's collapsed filter input (narrow layout) is
+    /// expanded into its floating popover.
+    pub filter_open: bool,
 }
 
 /// State for the SFTP browser. Two panes, side-by-side: the left pane is
@@ -152,7 +160,16 @@ pub(crate) struct SftpState {
     /// Total bytes the active transfer will move (sum of file sizes), for
     /// the bar's denominator. 0 when unknown (falls back to item counts).
     pub transfer_bytes_total: u64,
+    /// FileZilla-style message log for this SFTP tab: connect / list /
+    /// transfer / error events. In-memory only, capped to the most recent
+    /// `SFTP_LOG_CAP` entries. Shown when `log_open`.
+    pub log: Vec<SftpLogEntry>,
+    /// Whether the message-log panel at the bottom of the view is open.
+    pub log_open: bool,
 }
+
+/// Cap on retained SFTP log lines per tab; older lines are dropped.
+pub(crate) const SFTP_LOG_CAP: usize = 500;
 
 impl Default for SftpState {
     fn default() -> Self {
@@ -197,6 +214,8 @@ impl Default for SftpState {
             type_ahead_gen: 0,
             transfer_bytes_done: Arc::new(std::sync::atomic::AtomicU64::new(0)),
             transfer_bytes_total: 0,
+            log: Vec::new(),
+            log_open: false,
         }
     }
 }
@@ -225,6 +244,8 @@ impl SftpState {
         self.right.actions_open = false;
         self.left.drives_open = false;
         self.right.drives_open = false;
+        self.left.filter_open = false;
+        self.right.filter_open = false;
     }
 
     /// The side of the remote pane used as an upload destination /
@@ -516,6 +537,18 @@ pub(crate) struct SftpInternalDrag {
     pub active: bool,
 }
 
+/// In-progress reorder drag of a column header. Armed on header press,
+/// promoted to `active` once the cursor moves past a threshold (so a plain
+/// click still sorts). On release the dragged column moves to whichever
+/// header the cursor is hovering (`hovered_col`).
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct SftpColDrag {
+    pub side: SftpPaneSide,
+    pub col: SftpColumn,
+    pub press_x: f32,
+    pub active: bool,
+}
+
 #[derive(Debug, Clone)]
 pub(crate) struct SftpRowMenu {
     pub side: SftpPaneSide,
@@ -660,4 +693,327 @@ pub(crate) struct LocalEntry {
     pub is_dir: bool,
     pub size: u64,
     pub modified: Option<std::time::SystemTime>,
+    /// Unix mode bits (`st_mode`), populated only on Unix; `None` on
+    /// Windows where there is no POSIX mode. Drives the Permissions column.
+    pub mode: Option<u32>,
+    /// Owning uid / gid, Unix-only. Drive the Owner column.
+    pub uid: Option<u32>,
+    pub gid: Option<u32>,
+}
+
+/// Toggleable / reorderable SFTP data columns. `Name` is always shown
+/// first (it carries the icon + filename) and is not part of this enum.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum SftpColumn {
+    Modified,
+    Size,
+    Kind,
+    Permissions,
+    Owner,
+}
+
+impl SftpColumn {
+    /// Canonical order of every data column (also the default ordering).
+    pub const ALL: [SftpColumn; 5] = [
+        SftpColumn::Modified,
+        SftpColumn::Size,
+        SftpColumn::Kind,
+        SftpColumn::Permissions,
+        SftpColumn::Owner,
+    ];
+
+    pub fn key(self) -> &'static str {
+        match self {
+            SftpColumn::Modified => "modified",
+            SftpColumn::Size => "size",
+            SftpColumn::Kind => "kind",
+            SftpColumn::Permissions => "permissions",
+            SftpColumn::Owner => "owner",
+        }
+    }
+
+    pub fn from_key(s: &str) -> Option<Self> {
+        match s.trim() {
+            "modified" => Some(SftpColumn::Modified),
+            "size" => Some(SftpColumn::Size),
+            "kind" => Some(SftpColumn::Kind),
+            "permissions" => Some(SftpColumn::Permissions),
+            "owner" => Some(SftpColumn::Owner),
+            _ => None,
+        }
+    }
+
+    pub fn default_width(self) -> f32 {
+        match self {
+            SftpColumn::Modified => 140.0,
+            SftpColumn::Size => 80.0,
+            SftpColumn::Kind => 90.0,
+            SftpColumn::Permissions => 116.0,
+            SftpColumn::Owner => 120.0,
+        }
+    }
+
+    /// The sort column this header maps to, or `None` for display-only
+    /// columns (Type / Permissions / Owner aren't sortable).
+    pub fn sort_column(self) -> Option<SftpSortColumn> {
+        match self {
+            SftpColumn::Modified => Some(SftpSortColumn::Modified),
+            SftpColumn::Size => Some(SftpSortColumn::Size),
+            _ => None,
+        }
+    }
+}
+
+/// Minimum / maximum width a data column can be dragged to.
+pub(crate) const SFTP_COL_MIN_W: f32 = 56.0;
+pub(crate) const SFTP_COL_MAX_W: f32 = 420.0;
+
+/// Which optional columns the SFTP file lists render. Held per pane.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct SftpColumns {
+    pub size: bool,
+    pub modified: bool,
+    pub kind: bool,
+    pub permissions: bool,
+    pub owner: bool,
+}
+
+impl Default for SftpColumns {
+    fn default() -> Self {
+        // Name / Modified / Size on (today's layout); Type / Permissions /
+        // Owner off so the default view is unchanged.
+        Self {
+            size: true,
+            modified: true,
+            kind: false,
+            permissions: false,
+            owner: false,
+        }
+    }
+}
+
+impl SftpColumns {
+    pub fn is_visible(self, col: SftpColumn) -> bool {
+        match col {
+            SftpColumn::Size => self.size,
+            SftpColumn::Modified => self.modified,
+            SftpColumn::Kind => self.kind,
+            SftpColumn::Permissions => self.permissions,
+            SftpColumn::Owner => self.owner,
+        }
+    }
+
+    pub fn toggle(&mut self, col: SftpColumn) {
+        match col {
+            SftpColumn::Size => self.size = !self.size,
+            SftpColumn::Modified => self.modified = !self.modified,
+            SftpColumn::Kind => self.kind = !self.kind,
+            SftpColumn::Permissions => self.permissions = !self.permissions,
+            SftpColumn::Owner => self.owner = !self.owner,
+        }
+    }
+
+    pub fn as_storage_str(self) -> String {
+        SftpColumn::ALL
+            .iter()
+            .filter(|c| self.is_visible(**c))
+            .map(|c| c.key())
+            .collect::<Vec<_>>()
+            .join(",")
+    }
+
+    pub fn from_storage_str(s: &str) -> Self {
+        let has = |k: &str| s.split(',').any(|p| p.trim() == k);
+        Self {
+            size: has("size"),
+            modified: has("modified"),
+            kind: has("kind"),
+            permissions: has("permissions"),
+            owner: has("owner"),
+        }
+    }
+}
+
+/// Per-column widths for the data columns, in pixels.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct SftpColWidths {
+    pub modified: f32,
+    pub size: f32,
+    pub kind: f32,
+    pub permissions: f32,
+    pub owner: f32,
+}
+
+impl Default for SftpColWidths {
+    fn default() -> Self {
+        Self {
+            modified: SftpColumn::Modified.default_width(),
+            size: SftpColumn::Size.default_width(),
+            kind: SftpColumn::Kind.default_width(),
+            permissions: SftpColumn::Permissions.default_width(),
+            owner: SftpColumn::Owner.default_width(),
+        }
+    }
+}
+
+impl SftpColWidths {
+    pub fn get(self, col: SftpColumn) -> f32 {
+        match col {
+            SftpColumn::Modified => self.modified,
+            SftpColumn::Size => self.size,
+            SftpColumn::Kind => self.kind,
+            SftpColumn::Permissions => self.permissions,
+            SftpColumn::Owner => self.owner,
+        }
+    }
+
+    pub fn set(&mut self, col: SftpColumn, w: f32) {
+        let w = w.clamp(SFTP_COL_MIN_W, SFTP_COL_MAX_W);
+        match col {
+            SftpColumn::Modified => self.modified = w,
+            SftpColumn::Size => self.size = w,
+            SftpColumn::Kind => self.kind = w,
+            SftpColumn::Permissions => self.permissions = w,
+            SftpColumn::Owner => self.owner = w,
+        }
+    }
+}
+
+/// Full column configuration for one pane: which data columns are visible,
+/// their left-to-right order, and their widths. Held per pane (so the Local
+/// and remote panes of each SFTP tab are independent) and seeded from the
+/// persisted global template on tab creation.
+#[derive(Debug, Clone)]
+pub(crate) struct SftpColumnState {
+    pub visible: SftpColumns,
+    pub order: Vec<SftpColumn>,
+    pub width: SftpColWidths,
+}
+
+impl Default for SftpColumnState {
+    fn default() -> Self {
+        Self {
+            visible: SftpColumns::default(),
+            order: SftpColumn::ALL.to_vec(),
+            width: SftpColWidths::default(),
+        }
+    }
+}
+
+impl SftpColumnState {
+    /// The visible data columns in their current order.
+    pub fn ordered_visible(&self) -> Vec<SftpColumn> {
+        self.order
+            .iter()
+            .copied()
+            .filter(|c| self.visible.is_visible(*c))
+            .collect()
+    }
+
+    pub fn toggle(&mut self, col: SftpColumn) {
+        self.visible.toggle(col);
+    }
+
+    /// Move `dragged` to the `target` header's slot (no-op if they're the
+    /// same). Direction-aware so it feels natural both ways: dragging a
+    /// column rightward drops it *after* the target, leftward drops it
+    /// *before*. Operates on the full order vector so hidden columns keep
+    /// their relative slots.
+    pub fn reorder(&mut self, dragged: SftpColumn, target: SftpColumn) {
+        if dragged == target {
+            return;
+        }
+        let Some(from) = self.order.iter().position(|c| *c == dragged) else {
+            return;
+        };
+        let Some(target_idx) = self.order.iter().position(|c| *c == target) else {
+            return;
+        };
+        let moving_right = from < target_idx;
+        self.order.remove(from);
+        // Recompute the target slot after removal, then offset by one when
+        // dropping to the right of the target.
+        let mut to = self
+            .order
+            .iter()
+            .position(|c| *c == target)
+            .unwrap_or(self.order.len());
+        if moving_right {
+            to += 1;
+        }
+        self.order.insert(to, dragged);
+    }
+
+    pub fn order_storage(&self) -> String {
+        self.order
+            .iter()
+            .map(|c| c.key())
+            .collect::<Vec<_>>()
+            .join(",")
+    }
+
+    pub fn width_storage(&self) -> String {
+        self.order
+            .iter()
+            .map(|c| format!("{}:{}", c.key(), self.width.get(*c).round() as i32))
+            .collect::<Vec<_>>()
+            .join(",")
+    }
+
+    /// Rebuild the order from a stored CSV of keys, appending any column the
+    /// stored string omits (forward-compatible if a new column is added).
+    pub fn apply_order_storage(&mut self, s: &str) {
+        let mut order: Vec<SftpColumn> = Vec::new();
+        for part in s.split(',') {
+            if let Some(c) = SftpColumn::from_key(part)
+                && !order.contains(&c)
+            {
+                order.push(c);
+            }
+        }
+        for c in SftpColumn::ALL {
+            if !order.contains(&c) {
+                order.push(c);
+            }
+        }
+        self.order = order;
+    }
+
+    pub fn apply_width_storage(&mut self, s: &str) {
+        for part in s.split(',') {
+            if let Some((k, v)) = part.split_once(':')
+                && let Some(c) = SftpColumn::from_key(k)
+                && let Ok(w) = v.trim().parse::<f32>()
+            {
+                self.width.set(c, w);
+            }
+        }
+    }
+
+    pub fn visibility_storage(&self) -> String {
+        self.visible.as_storage_str()
+    }
+
+    pub fn apply_visibility_storage(&mut self, s: &str) {
+        self.visible = SftpColumns::from_storage_str(s);
+    }
+}
+
+/// Severity of a [`SftpLogEntry`], drives its colour in the log panel.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum SftpLogLevel {
+    Info,
+    Ok,
+    Warn,
+    Error,
+}
+
+/// One line in the FileZilla-style SFTP message log.
+#[derive(Debug, Clone)]
+pub(crate) struct SftpLogEntry {
+    /// Wall-clock time the entry was recorded, formatted "HH:MM:SS" at
+    /// push time so the view does not re-derive it every redraw.
+    pub time: String,
+    pub level: SftpLogLevel,
+    pub text: String,
 }
