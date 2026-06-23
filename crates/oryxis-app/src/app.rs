@@ -1146,10 +1146,11 @@ pub struct Oryxis {
     /// settings) so the preferred shape carries across restarts.
     pub(crate) sftp_columns_template: crate::state::SftpColumnState,
     /// Active column-resize drag: `(side, column, cursor_x_at_start,
-    /// width_at_start)`. Updated by the global mouse-move handler.
+    /// width_at_start)`. `column == None` resizes the Name column. Updated by
+    /// the global mouse-move handler.
     pub(crate) sftp_col_resize: Option<(
         crate::state::SftpPaneSide,
-        crate::state::SftpColumn,
+        Option<crate::state::SftpColumn>,
         f32,
         f32,
     )>,

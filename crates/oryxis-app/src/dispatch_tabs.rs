@@ -129,10 +129,15 @@ impl Oryxis {
                     self.sftp_split_ratio = new_ratio;
                 }
                 // SFTP column resize: the dragged column's width tracks the
-                // cursor (clamped inside `width.set`).
+                // cursor (clamped inside the setters). The total row width
+                // grows; the other columns keep their size.
                 if let Some((side, col, start_x, start_w)) = self.sftp_col_resize {
                     let new_w = start_w + (pos.x - start_x);
-                    self.sftp.pane_mut(side).columns.width.set(col, new_w);
+                    let cols = &mut self.sftp.pane_mut(side).columns;
+                    match col {
+                        None => cols.set_name_width(new_w),
+                        Some(c) => cols.width.set(c, new_w),
+                    }
                 }
                 // Promote a column reorder drag to active past a small
                 // threshold so a plain header click still sorts.

@@ -582,7 +582,11 @@ impl Oryxis {
                 self.persist_sftp_columns();
             }
             Message::SftpColResizeStart(side, col) => {
-                let start_w = self.sftp.pane(side).columns.width.get(col);
+                let cols = &self.sftp.pane(side).columns;
+                let start_w = match col {
+                    None => cols.name_width,
+                    Some(c) => cols.width.get(c),
+                };
                 self.sftp_col_resize = Some((side, col, self.mouse_position.x, start_w));
                 self.sftp.close_menus();
             }

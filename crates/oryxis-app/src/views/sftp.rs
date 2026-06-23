@@ -300,8 +300,9 @@ impl Oryxis {
         // reorder drag / hover for header feedback.
         let ordered_cols = pane.columns.ordered_visible();
         let col_widths = pane.columns.width;
+        let name_width = pane.columns.name_width;
         let trailing = trailing_cols_width(&ordered_cols, col_widths);
-        let layout = ColLayout::resolve(trailing, pane_avail);
+        let layout = ColLayout::resolve(name_width, trailing, pane_avail);
         let col_drag = self
             .sftp_col_drag
             .filter(|d| d.side == side && d.active)
@@ -1958,13 +1959,9 @@ fn parent_row<'a>(
 const ICON_COL_W: f32 = 21.0;
 /// Left + right padding applied to every header / row container.
 const ROW_PAD_X: f32 = 24.0;
-/// Width of the resize handle on the right edge of each data-column header.
-const COL_RESIZE_HANDLE_W: f32 = 6.0;
-/// Minimum the Name column shrinks to before horizontal scroll kicks in.
-/// Kept fairly low so a narrow split or the default 3 columns just let the
-/// Name column shrink (as before); the horizontal scrollbar only appears
-/// once even a small Name can't fit alongside the visible columns.
-const NAME_MIN_W: f32 = 100.0;
+/// Width of the resize handle (and its visible divider) on the right edge of
+/// each column header.
+const COL_RESIZE_HANDLE_W: f32 = 7.0;
 
 /// Sum of the visible data columns at their current widths, in order.
 fn trailing_cols_width(
@@ -1974,39 +1971,38 @@ fn trailing_cols_width(
     visible.iter().map(|c| widths.get(*c)).sum()
 }
 
-/// Resolved horizontal layout for the file list of one pane: the
-/// Name-column / whole-row lengths. When the data columns don't fit the
-/// pane the Name column is pinned to `NAME_MIN_W` and the row gets a fixed
-/// width so a horizontal scrollable can pan across it.
+/// Resolved horizontal layout for the file list of one pane. Every column
+/// (Name included) has an explicit width, so resizing one grows the total
+/// instead of squeezing a neighbour. When the total exceeds the pane the row
+/// gets a fixed width and a horizontal scrollbar; otherwise it fills the pane
+/// (columns left-packed, the trailing slack left empty).
 #[derive(Clone, Copy)]
 struct ColLayout {
+    /// Name-column width in pixels.
+    name_w: f32,
+    /// Fixed Name-column length (`Fixed(name_w)`).
     name_len: Length,
+    /// Whole-row width: `Fill` when everything fits, `Fixed(total)` when it
+    /// overflows (so the horizontal scrollable has something to pan).
     row_len: Length,
     /// True when the row width is fixed (columns overflow the pane).
     overflow: bool,
 }
 
 impl ColLayout {
-    /// Build the layout for a pane `avail` pixels wide given the visible
-    /// data columns' total width.
-    fn resolve(trailing: f32, avail: f32) -> Self {
-        // Space left for the Name column once the icon pad, row padding and
-        // data columns are accounted for.
-        let name_slack = avail - ROW_PAD_X - ICON_COL_W - trailing;
-        if name_slack >= NAME_MIN_W {
-            // Comfortable fit: Name takes the slack, no horizontal scroll.
-            ColLayout {
-                name_len: Length::Fill,
-                row_len: Length::Fill,
-                overflow: false,
-            }
-        } else {
-            let row_w = ROW_PAD_X + ICON_COL_W + NAME_MIN_W + trailing;
-            ColLayout {
-                name_len: Length::Fixed(NAME_MIN_W),
-                row_len: Length::Fixed(row_w),
-                overflow: true,
-            }
+    /// Build the layout for a pane `avail` px wide, given the Name width and
+    /// the visible data columns' total width.
+    fn resolve(name_width: f32, trailing: f32, avail: f32) -> Self {
+        let total = ROW_PAD_X + ICON_COL_W + name_width + trailing;
+        ColLayout {
+            name_w: name_width,
+            name_len: Length::Fixed(name_width),
+            row_len: if total <= avail {
+                Length::Fill
+            } else {
+                Length::Fixed(total)
+            },
+            overflow: total > avail,
         }
     }
 }
@@ -2053,8 +2049,9 @@ fn format_owner(uid: Option<u32>, gid: Option<u32>) -> String {
     }
 }
 
-/// Short type label for the Type column: "Folder" / "Link" / the
-/// uppercased extension / "File".
+/// Value for the Type column: folders / symlinks keep their friendly label;
+/// files show the MIME type guessed from the extension (`application/
+/// octet-stream` when unknown or extensionless).
 fn format_kind(name: &str, is_dir: bool, is_symlink: bool) -> String {
     if is_symlink {
         return t("sftp_type_symlink").to_string();
@@ -2063,9 +2060,59 @@ fn format_kind(name: &str, is_dir: bool, is_symlink: bool) -> String {
         return t("sftp_type_folder").to_string();
     }
     match name.rsplit_once('.') {
-        Some((stem, ext)) if !ext.is_empty() && !stem.is_empty() => ext.to_ascii_uppercase(),
-        _ => t("sftp_type_file").to_string(),
+        Some((stem, ext)) if !ext.is_empty() && !stem.is_empty() => {
+            mime_for_ext(&ext.to_ascii_lowercase()).to_string()
+        }
+        _ => "application/octet-stream".to_string(),
     }
+}
+
+/// MIME type for a (lowercased) file extension. The comprehensive
+/// [`crate::mime_types`] table (embedded from mime-db) covers the long tail;
+/// `dev_mime_override` wins first for source-code / dev extensions that
+/// mime-db gets wrong (e.g. `.rs`, `.ts`) or doesn't list (`.go`, `.vue`).
+/// Anything unknown falls back to `application/octet-stream`.
+fn mime_for_ext(ext: &str) -> &'static str {
+    dev_mime_override(ext)
+        .or_else(|| crate::mime_types::lookup(ext))
+        .unwrap_or("application/octet-stream")
+}
+
+/// Source-code / dev extensions where mime-db is wrong or missing. Returns
+/// `None` for everything else so the embedded mime-db table answers.
+fn dev_mime_override(ext: &str) -> Option<&'static str> {
+    Some(match ext {
+        "rs" => "text/x-rust",
+        "go" => "text/x-go",
+        "py" | "pyw" | "pyi" => "text/x-python",
+        "rb" => "text/x-ruby",
+        // mime-db maps .ts to MPEG transport stream; in a code tree it's
+        // overwhelmingly TypeScript.
+        "ts" | "tsx" | "mts" | "cts" => "application/typescript",
+        "jsx" => "text/jsx",
+        "mjs" | "cjs" => "text/javascript",
+        "kt" | "kts" => "text/x-kotlin",
+        "swift" => "text/x-swift",
+        "cs" => "text/x-csharp",
+        "cpp" | "cc" | "cxx" | "hpp" | "hxx" => "text/x-c++",
+        "vue" => "text/x-vue",
+        "svelte" => "text/x-svelte",
+        "astro" => "text/x-astro",
+        "dockerfile" => "text/x-dockerfile",
+        "env" => "text/plain",
+        "ex" | "exs" => "text/x-elixir",
+        "erl" => "text/x-erlang",
+        "hs" => "text/x-haskell",
+        "clj" | "cljs" | "cljc" => "text/x-clojure",
+        "scala" | "sc" => "text/x-scala",
+        "dart" => "application/dart",
+        "zig" => "text/x-zig",
+        "nim" => "text/x-nim",
+        "proto" => "text/x-protobuf",
+        "tf" | "tfvars" => "text/x-terraform",
+        "gradle" => "text/x-gradle",
+        _ => return None,
+    })
 }
 
 /// Build the data cells of a file row in the pane's column order, at the
@@ -2187,10 +2234,36 @@ fn col_drag_ghost<'a>(label: &str) -> Element<'a, Message> {
     .into()
 }
 
-/// Column header strip. Name is a fixed sortable button; the data columns
-/// (in `visible` order) are draggable to reorder (header body) and have a
-/// right-edge resize handle. Sortable data columns flip the sort on a plain
-/// click (release without a drag, handled in the mouse-up dispatcher).
+/// A resize handle: a centered 1px divider line inside a wider grab zone,
+/// living on the right edge of a header. `target == None` resizes Name.
+fn col_resize_handle<'a>(
+    side: SftpPaneSide,
+    target: Option<crate::state::SftpColumn>,
+) -> Element<'a, Message> {
+    MouseArea::new(
+        container(
+            container(Space::new().width(Length::Fixed(1.0)).height(Length::Fill))
+                .width(Length::Fixed(1.0))
+                .height(Length::Fill)
+                .style(|_| container::Style {
+                    background: Some(Background::Color(OryxisColors::t().border)),
+                    ..Default::default()
+                }),
+        )
+        .width(Length::Fixed(COL_RESIZE_HANDLE_W))
+        .height(Length::Fill)
+        .center_x(Length::Fixed(COL_RESIZE_HANDLE_W)),
+    )
+    .on_press(Message::SftpColResizeStart(side, target))
+    .interaction(iced::mouse::Interaction::ResizingHorizontally)
+    .into()
+}
+
+/// Column header strip. Every column has an explicit width and a right-edge
+/// resize handle (a visible divider). Name is sortable + resizable but fixed
+/// first; the data columns are also draggable to reorder. Sortable headers
+/// flip the sort on a plain click (release without a drag, handled in the
+/// mouse-up dispatcher).
 fn column_headers<'a>(
     side: SftpPaneSide,
     sort: crate::state::SftpSort,
@@ -2201,13 +2274,14 @@ fn column_headers<'a>(
     hovered: Option<crate::state::SftpColumn>,
 ) -> Element<'a, Message> {
     use crate::state::SftpSortColumn;
-    // The fixed, sortable Name header.
+    // The fixed, sortable + resizable Name header.
     let name_arrow = if sort.column == SftpSortColumn::Name {
         if sort.ascending { " \u{2191}" } else { " \u{2193}" }
     } else {
         ""
     };
-    let name_header: Element<'a, Message> = button(
+    let name_btn_w = (layout.name_w - COL_RESIZE_HANDLE_W).max(8.0);
+    let name_btn: Element<'a, Message> = button(
         text(format!("{}{}", t("col_name"), name_arrow))
             .size(11)
             .color(if sort.column == SftpSortColumn::Name {
@@ -2217,7 +2291,7 @@ fn column_headers<'a>(
             }),
     )
     .on_press(Message::SftpSort(side, SftpSortColumn::Name))
-    .width(layout.name_len)
+    .width(Length::Fixed(name_btn_w))
     .padding(Padding { top: 4.0, right: 6.0, bottom: 4.0, left: 6.0 })
     .style(|_, status| {
         let bg = match status {
@@ -2231,6 +2305,10 @@ fn column_headers<'a>(
         }
     })
     .into();
+    let name_header: Element<'a, Message> = row![name_btn, col_resize_handle(side, None)]
+        .width(layout.name_len)
+        .align_y(iced::Alignment::Center)
+        .into();
 
     let mut children: Vec<Element<'a, Message>> = vec![
         // Pad-icon column to align with file rows below.
@@ -2288,16 +2366,8 @@ fn column_headers<'a>(
         } else {
             iced::mouse::Interaction::Grab
         });
-        // Right-edge resize handle.
-        let handle = MouseArea::new(
-            container(Space::new().width(Length::Fixed(COL_RESIZE_HANDLE_W)).height(Length::Fill))
-                .width(Length::Fixed(COL_RESIZE_HANDLE_W))
-                .height(Length::Fill),
-        )
-        .on_press(Message::SftpColResizeStart(side, col))
-        .interaction(iced::mouse::Interaction::ResizingHorizontally);
         children.push(
-            row![label_area, handle]
+            row![label_area, col_resize_handle(side, Some(col))]
                 .width(Length::Fixed(w))
                 .align_y(iced::Alignment::Center)
                 .into(),

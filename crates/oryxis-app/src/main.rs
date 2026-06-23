@@ -36,6 +36,7 @@ mod i18n;
 mod mcp;
 mod mcp_install;
 mod messages;
+mod mime_types;
 mod os_icon;
 // Cloud-provider plugin subsystem. Inert until the cloud dispatch
 // path is rewired onto it in a later PR, the `allow` keeps the

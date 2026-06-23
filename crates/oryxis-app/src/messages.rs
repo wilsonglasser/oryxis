@@ -162,8 +162,9 @@ pub enum Message {
     /// Type / Permissions / Owner) for one pane. Per-pane; also updates the
     /// persisted template.
     SftpToggleColumn(crate::state::SftpPaneSide, crate::state::SftpColumn),
-    /// Begin dragging a column's right-edge resize handle.
-    SftpColResizeStart(crate::state::SftpPaneSide, crate::state::SftpColumn),
+    /// Begin dragging a column's right-edge resize handle. `None` targets the
+    /// Name column (which isn't a `SftpColumn` variant).
+    SftpColResizeStart(crate::state::SftpPaneSide, Option<crate::state::SftpColumn>),
     /// Press on a column header: arms a reorder drag (promoted to active on
     /// move; a release without movement falls through to the sort click).
     SftpColDragStart(crate::state::SftpPaneSide, crate::state::SftpColumn),

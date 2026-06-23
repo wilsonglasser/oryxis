@@ -747,7 +747,7 @@ impl SftpColumn {
         match self {
             SftpColumn::Modified => 140.0,
             SftpColumn::Size => 80.0,
-            SftpColumn::Kind => 90.0,
+            SftpColumn::Kind => 160.0,
             SftpColumn::Permissions => 116.0,
             SftpColumn::Owner => 120.0,
         }
@@ -888,7 +888,15 @@ pub(crate) struct SftpColumnState {
     pub visible: SftpColumns,
     pub order: Vec<SftpColumn>,
     pub width: SftpColWidths,
+    /// Width of the (always-first) Name column, which carries the filename.
+    /// Resizable like the data columns.
+    pub name_width: f32,
 }
+
+/// Default / min / max width for the Name column.
+pub(crate) const SFTP_NAME_DEFAULT_W: f32 = 240.0;
+pub(crate) const SFTP_NAME_MIN_W: f32 = 96.0;
+pub(crate) const SFTP_NAME_MAX_W: f32 = 600.0;
 
 impl Default for SftpColumnState {
     fn default() -> Self {
@@ -896,6 +904,7 @@ impl Default for SftpColumnState {
             visible: SftpColumns::default(),
             order: SftpColumn::ALL.to_vec(),
             width: SftpColWidths::default(),
+            name_width: SFTP_NAME_DEFAULT_W,
         }
     }
 }
@@ -952,12 +961,17 @@ impl SftpColumnState {
             .join(",")
     }
 
+    /// Clamp + store the Name column width.
+    pub fn set_name_width(&mut self, w: f32) {
+        self.name_width = w.clamp(SFTP_NAME_MIN_W, SFTP_NAME_MAX_W);
+    }
+
     pub fn width_storage(&self) -> String {
-        self.order
-            .iter()
-            .map(|c| format!("{}:{}", c.key(), self.width.get(*c).round() as i32))
-            .collect::<Vec<_>>()
-            .join(",")
+        let mut parts = vec![format!("name:{}", self.name_width.round() as i32)];
+        for c in &self.order {
+            parts.push(format!("{}:{}", c.key(), self.width.get(*c).round() as i32));
+        }
+        parts.join(",")
     }
 
     /// Rebuild the order from a stored CSV of keys, appending any column the
@@ -981,10 +995,15 @@ impl SftpColumnState {
 
     pub fn apply_width_storage(&mut self, s: &str) {
         for part in s.split(',') {
-            if let Some((k, v)) = part.split_once(':')
-                && let Some(c) = SftpColumn::from_key(k)
-                && let Ok(w) = v.trim().parse::<f32>()
-            {
+            let Some((k, v)) = part.split_once(':') else {
+                continue;
+            };
+            let Ok(w) = v.trim().parse::<f32>() else {
+                continue;
+            };
+            if k.trim() == "name" {
+                self.set_name_width(w);
+            } else if let Some(c) = SftpColumn::from_key(k) {
                 self.width.set(c, w);
             }
         }
