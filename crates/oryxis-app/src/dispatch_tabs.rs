@@ -110,6 +110,11 @@ impl Oryxis {
                     return Ok(Task::none());
                 }
                 self.mouse_position = if needs_drag_update { pos } else { snapped };
+                // A real mouse move restores the hover highlight that keyboard
+                // navigation muted (no-op when it wasn't suppressed).
+                if changed {
+                    self.sftp.suppress_hover = false;
+                }
                 // While the chat-sidebar resize handle is held down, the
                 // sidebar width tracks the cursor, dragging left grows
                 // the panel, dragging right shrinks it. Clamp to a sane

@@ -218,6 +218,10 @@ pub enum Message {
     /// scheduled for; runs only if no newer keystroke superseded it
     /// (debounce, so fast typing searches once with the full buffer).
     SftpTypeAheadFire(u64),
+    /// A pane's file list scrolled: carries the side, the new absolute
+    /// vertical offset (px) and the visible viewport height (px). Stored so
+    /// keyboard navigation only scrolls when the cursor reaches an edge.
+    SftpListScrolled(crate::state::SftpPaneSide, f32, f32),
     SftpStartNewEntry(crate::state::SftpPaneSide, crate::state::SftpEntryKind),
     SftpNewEntryInput(String),
     SftpNewEntryCommit,

@@ -180,6 +180,314 @@ impl Oryxis {
         }
     }
 
+    /// Whether the given pane shows a `..` (parent) row, matching the view's
+    /// own condition: any local path with a parent, or any remote path that
+    /// isn't the root. The `..` row is a virtual first entry the keyboard
+    /// cursor can land on (Enter / Right / Left there navigate up).
+    pub(crate) fn sftp_pane_has_parent(&self, side: crate::state::SftpPaneSide) -> bool {
+        let pane = self.sftp.pane(side);
+        if pane.is_remote {
+            pane.remote_path != "/" && !pane.remote_path.is_empty()
+        } else {
+            pane.local_path.parent().is_some()
+        }
+    }
+
+    /// The per-directory scrollable id for a pane's file list. Must match
+    /// the id the view builds so scroll operations target the right widget.
+    fn sftp_list_scroll_id(&self, side: crate::state::SftpPaneSide) -> String {
+        let pane = self.sftp.pane(side);
+        let cur_path = if pane.is_remote {
+            pane.remote_path.clone()
+        } else {
+            pane.local_path.to_string_lossy().into_owned()
+        };
+        let side_key = match side {
+            crate::state::SftpPaneSide::Left => "left",
+            crate::state::SftpPaneSide::Right => "right",
+        };
+        format!("sftp-list-{side_key}-{cur_path}")
+    }
+
+    /// Snap a pane's list to a relative vertical position (0.0 top .. 1.0
+    /// bottom). Fallback used when the viewport height isn't known yet.
+    fn sftp_snap_ratio(
+        &self,
+        side: crate::state::SftpPaneSide,
+        idx: usize,
+        total: usize,
+    ) -> Task<Message> {
+        let ratio = if total > 1 {
+            idx as f32 / (total - 1) as f32
+        } else {
+            0.0
+        };
+        iced::widget::operation::snap_to(
+            iced::widget::Id::from(self.sftp_list_scroll_id(side)),
+            iced::widget::scrollable::RelativeOffset {
+                x: None,
+                y: Some(ratio),
+            },
+        )
+    }
+
+    /// Bring the row at `idx` (of `total`, `..` included) into view, but
+    /// only scroll when it would otherwise sit outside the viewport: above
+    /// the top edge (scroll up so it's the first visible row) or below the
+    /// bottom edge (scroll down so it's the last). A row already fully
+    /// visible doesn't move the list. Falls back to proportional snapping
+    /// until the first `on_scroll` reports the viewport height.
+    fn sftp_scroll_row_into_view(
+        &mut self,
+        side: crate::state::SftpPaneSide,
+        idx: usize,
+        total: usize,
+    ) -> Task<Message> {
+        use crate::views::sftp::ROW_HEIGHT;
+        let viewport_h = self.sftp.pane(side).list_viewport_h;
+        if viewport_h <= 0.0 {
+            return self.sftp_snap_ratio(side, idx, total);
+        }
+        let content_h = total as f32 * ROW_HEIGHT;
+        let max_scroll = (content_h - viewport_h).max(0.0);
+        if max_scroll <= 0.0 {
+            // Whole list fits; nothing to scroll.
+            return Task::none();
+        }
+        let offset = self.sftp.pane(side).list_scroll_y.clamp(0.0, max_scroll);
+        let row_top = idx as f32 * ROW_HEIGHT;
+        let row_bottom = row_top + ROW_HEIGHT;
+        let new_offset = if row_top < offset {
+            row_top
+        } else if row_bottom > offset + viewport_h {
+            row_bottom - viewport_h
+        } else {
+            // Already fully visible: leave the scroll position untouched.
+            return Task::none();
+        };
+        let new_offset = new_offset.clamp(0.0, max_scroll);
+        // Optimistically record the offset so a burst of key presses before
+        // the next `on_scroll` arrives still computes against fresh state.
+        self.sftp.pane_mut(side).list_scroll_y = new_offset;
+        iced::widget::operation::snap_to(
+            iced::widget::Id::from(self.sftp_list_scroll_id(side)),
+            iced::widget::scrollable::RelativeOffset {
+                x: None,
+                y: Some(new_offset / max_scroll),
+            },
+        )
+    }
+
+    /// Park the keyboard cursor on the focused pane's `..` row: clear the
+    /// real-row selection and flag `parent_cursor`. Pins the list to the
+    /// top unconditionally (not the edge-based "only if off-screen" path)
+    /// so `..` is always visible even when iced restored a previous scroll
+    /// position for this directory's scrollable id.
+    fn sftp_focus_parent_row(
+        &mut self,
+        side: crate::state::SftpPaneSide,
+        total: usize,
+    ) -> Task<Message> {
+        self.sftp.parent_cursor = true;
+        self.sftp.selected_rows.clear();
+        self.sftp.selection_anchor = None;
+        self.sftp.pane_mut(side).list_scroll_y = 0.0;
+        self.sftp_snap_ratio(side, 0, total)
+    }
+
+    /// Move the keyboard cursor one row up (`down == false`) or down within
+    /// the focused pane, replacing any multi-row selection with the single
+    /// new row and scrolling it into view. The `..` parent row, when shown,
+    /// is the virtual first entry, so moving up from the first real row
+    /// lands on it. With no current cursor, the first (down) or last (up)
+    /// row is selected.
+    pub(crate) fn sftp_move_focus(&mut self, down: bool) -> Task<Message> {
+        let side = self.sftp.focused_side;
+        let entries = self.visible_entry_paths_in_pane(side);
+        let has_parent = self.sftp_pane_has_parent(side);
+        let offset = usize::from(has_parent);
+        let total = entries.len() + offset;
+        if total == 0 {
+            return Task::none();
+        }
+        // Virtual index over [".." , entries...]; ".." is index 0 when shown.
+        let cur_virtual = if self.sftp.parent_cursor && has_parent {
+            Some(0)
+        } else {
+            self.sftp
+                .selected_rows
+                .last()
+                .filter(|(s, _)| *s == side)
+                .and_then(|(_, p)| entries.iter().position(|e| e == p))
+                .map(|i| i + offset)
+        };
+        let new_v = match cur_virtual {
+            Some(i) if down => (i + 1).min(total - 1),
+            Some(i) => i.saturating_sub(1),
+            None if down => 0,
+            None => total - 1,
+        };
+        if has_parent && new_v == 0 {
+            return self.sftp_focus_parent_row(side, total);
+        }
+        self.sftp.parent_cursor = false;
+        let full = entries[new_v - offset].clone();
+        self.sftp.selected_rows = vec![(side, full.clone())];
+        self.sftp.selection_anchor = Some((side, full));
+        self.sftp_scroll_row_into_view(side, new_v, total)
+    }
+
+    /// If a pending cursor target is queued for `side`, consume it and
+    /// return the task that lands the cursor. Called from the directory-load
+    /// handlers once the new listing is in.
+    pub(crate) fn sftp_take_pending_focus(
+        &mut self,
+        side: crate::state::SftpPaneSide,
+    ) -> Option<Task<Message>> {
+        match self.sftp.pending_focus.clone() {
+            Some((s, target)) if s == side => {
+                self.sftp.pending_focus = None;
+                Some(self.sftp_apply_pending_focus(side, target))
+            }
+            _ => None,
+        }
+    }
+
+    /// Land the keyboard cursor on a freshly loaded directory according to
+    /// `target`: the first entry, the `..` row, or a specific path (with
+    /// graceful fallback to the first entry / `..` when it isn't shown).
+    pub(crate) fn sftp_apply_pending_focus(
+        &mut self,
+        side: crate::state::SftpPaneSide,
+        target: crate::state::SftpPendingFocus,
+    ) -> Task<Message> {
+        use crate::state::SftpPendingFocus;
+        self.sftp.focused_side = side;
+        let entries = self.visible_entry_paths_in_pane(side);
+        let has_parent = self.sftp_pane_has_parent(side);
+        let offset = usize::from(has_parent);
+        let total = entries.len() + offset;
+        // Resolve the index into `entries`, or None to fall back to "..".
+        let entry_idx: Option<usize> = match target {
+            SftpPendingFocus::Parent => None,
+            SftpPendingFocus::Path(p) => entries
+                .iter()
+                .position(|e| *e == p)
+                .or_else(|| (!entries.is_empty()).then_some(0)),
+        };
+        if let Some(i) = entry_idx {
+            self.sftp.parent_cursor = false;
+            let full = entries[i].clone();
+            self.sftp.selected_rows = vec![(side, full.clone())];
+            self.sftp.selection_anchor = Some((side, full));
+            self.sftp_scroll_row_into_view(side, i + offset, total)
+        } else if has_parent {
+            self.sftp_focus_parent_row(side, total)
+        } else {
+            self.sftp.selected_rows.clear();
+            self.sftp.selection_anchor = None;
+            self.sftp.parent_cursor = false;
+            Task::none()
+        }
+    }
+
+    /// Activate the focused row. Both Enter (`open_files == true`) and Right
+    /// (`false`) descend into a folder and land the keyboard cursor on the
+    /// opened folder's `..` row. Enter additionally opens a *file* (local via
+    /// the OS handler, remote via edit-in-place); Right does nothing on a
+    /// file. The `..` cursor navigates to the parent either way. No-op when
+    /// nothing is focused.
+    pub(crate) fn sftp_activate_focused(&mut self, open_files: bool) -> Task<Message> {
+        use crate::state::SftpPendingFocus;
+        let side = self.sftp.focused_side;
+        if self.sftp.parent_cursor {
+            return Task::done(Message::SftpUp(side));
+        }
+        let Some((side, path)) = self
+            .sftp
+            .selected_rows
+            .last()
+            .filter(|(s, _)| *s == side)
+            .cloned()
+        else {
+            return Task::none();
+        };
+        let is_dir = self.row_is_dir_in_pane(side, &path);
+        let is_remote = self.sftp.pane(side).is_remote;
+        if is_dir {
+            self.sftp.selected_rows.clear();
+            self.sftp.selection_anchor = None;
+            self.sftp.parent_cursor = false;
+            // Descend and keep the cursor on the new folder's ".." row once
+            // its listing loads (same for Enter and Right).
+            self.sftp.pending_focus = Some((side, SftpPendingFocus::Parent));
+            if is_remote {
+                Task::done(Message::SftpNavigateRemote(side, path))
+            } else {
+                Task::done(Message::SftpNavigateLocal(
+                    side,
+                    std::path::PathBuf::from(path),
+                ))
+            }
+        } else if !open_files {
+            // Right arrow on a file: nothing to descend into.
+            Task::none()
+        } else if is_remote {
+            Task::done(Message::SftpStartEdit(path))
+        } else {
+            Task::done(Message::SftpOpenLocal(std::path::PathBuf::from(path)))
+        }
+    }
+
+    /// Move keyboard focus to the parent directory of the focused pane
+    /// (Left arrow). Just dispatches the existing up-navigation.
+    pub(crate) fn sftp_focus_parent(&mut self) -> Task<Message> {
+        Task::done(Message::SftpUp(self.sftp.focused_side))
+    }
+
+    /// Toggle keyboard focus between the two panes (Tab). Lands the cursor
+    /// on a row in the newly focused pane: a prior selection there if it's
+    /// still visible, else its first row, else the `..` row.
+    pub(crate) fn sftp_toggle_pane_focus(&mut self) -> Task<Message> {
+        use crate::state::SftpPaneSide::{Left, Right};
+        let new_side = match self.sftp.focused_side {
+            Left => Right,
+            Right => Left,
+        };
+        self.sftp.focused_side = new_side;
+        self.sftp.parent_cursor = false;
+        self.sftp.selection_anchor = None;
+        let entries = self.visible_entry_paths_in_pane(new_side);
+        let has_parent = self.sftp_pane_has_parent(new_side);
+        let offset = usize::from(has_parent);
+        let total = entries.len() + offset;
+        // Preserve a prior selection in the target pane if it's still shown.
+        let prior = self
+            .sftp
+            .selected_rows
+            .iter()
+            .find(|(s, _)| *s == new_side)
+            .map(|(_, p)| p.clone())
+            .filter(|p| entries.iter().any(|e| e == p));
+        if let Some(p) = prior {
+            let idx = entries.iter().position(|e| e == &p).unwrap_or(0);
+            self.sftp.selected_rows = vec![(new_side, p.clone())];
+            self.sftp.selection_anchor = Some((new_side, p));
+            return self.sftp_scroll_row_into_view(new_side, idx + offset, total);
+        }
+        if let Some(first) = entries.first().cloned() {
+            self.sftp.selected_rows = vec![(new_side, first.clone())];
+            self.sftp.selection_anchor = Some((new_side, first));
+            return self.sftp_scroll_row_into_view(new_side, offset, total);
+        }
+        // Empty pane: park on ".." when present, otherwise just clear.
+        self.sftp.selected_rows.clear();
+        if has_parent {
+            return self.sftp_focus_parent_row(new_side, total);
+        }
+        Task::none()
+    }
+
     /// Rough hit-test for "is the cursor inside the remote pane?". Used
     /// at file-drop time to decide whether the OS drop targets the remote
     /// upload path. The panes split the content area 50/50 so we just
