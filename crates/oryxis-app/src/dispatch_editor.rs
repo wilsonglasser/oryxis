@@ -685,6 +685,12 @@ impl Oryxis {
                 self.show_host_panel = false;
                 self.host_panel_error = None;
             }
+            Message::RequestDeleteConnection(idx) => {
+                if let Some(conn) = self.connections.get(idx) {
+                    let name = conn.label.clone();
+                    self.confirm_remove(name, Message::DeleteConnection(idx));
+                }
+            }
             Message::DeleteConnection(idx) => {
                 self.card_context_menu = None;
                 self.overlay = None;

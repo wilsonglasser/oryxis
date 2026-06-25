@@ -193,6 +193,12 @@ impl Oryxis {
                     Err(e) => self.key_error = Some(format!("Import failed: {}", e)),
                 }
             }
+            Message::RequestDeleteKey(idx) => {
+                if let Some(key) = self.keys.get(idx) {
+                    let name = key.label.clone();
+                    self.confirm_remove(name, Message::DeleteKey(idx));
+                }
+            }
             Message::DeleteKey(idx) => {
                 if let Some(key) = self.keys.get(idx) {
                     let id = key.id;
@@ -341,6 +347,12 @@ impl Oryxis {
                     self.show_identity_panel = true;
                     self.identity_context_menu = None;
                     self.overlay = None;
+                }
+            }
+            Message::RequestDeleteIdentity(idx) => {
+                if let Some(identity) = self.identities.get(idx) {
+                    let name = identity.label.clone();
+                    self.confirm_remove(name, Message::DeleteIdentity(idx));
                 }
             }
             Message::DeleteIdentity(idx) => {

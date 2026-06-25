@@ -55,6 +55,30 @@ impl Oryxis {
         task
     }
 
+    /// Show a generic "remove this?" confirmation. Confirming dispatches
+    /// `action` (the real `Delete*` message). Routes destructive removals
+    /// (host, key, identity, snippet, session group) through an explicit
+    /// confirm, mirroring the known-hosts / SFTP delete guards so a stray
+    /// click can't silently drop an entry. Closes any open card menu first
+    /// so it doesn't linger behind the dialog scrim.
+    pub(crate) fn confirm_remove(&mut self, name: String, action: Message) {
+        self.card_context_menu = None;
+        self.snippet_context_menu = None;
+        self.key_context_menu = None;
+        self.identity_context_menu = None;
+        self.overlay = None;
+        self.error_dialog = Some(crate::state::ErrorDialog {
+            title: crate::i18n::t("remove_confirm_title").to_string(),
+            body: format!("\"{name}\""),
+            link: None,
+            action: Some(crate::state::ErrorDialogAction {
+                label: crate::i18n::t("remove").to_string(),
+                message: Box::new(action),
+                danger: true,
+            }),
+        });
+    }
+
     pub(crate) fn dispatch_message(&mut self, message: Message) -> Task<Message> {
         // Domain-specific handlers each claim a slice of `Message`
         // variants and return `Err(message)` for everything else, so
@@ -525,6 +549,12 @@ impl Oryxis {
                         }
                         Err(e) => self.snippet_error = Some(e.to_string()),
                     }
+                }
+            }
+            Message::RequestDeleteSnippet(idx) => {
+                if let Some(snip) = self.snippets.get(idx) {
+                    let name = snip.label.clone();
+                    self.confirm_remove(name, Message::DeleteSnippet(idx));
                 }
             }
             Message::DeleteSnippet(idx) => {

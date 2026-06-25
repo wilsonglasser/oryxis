@@ -1067,7 +1067,7 @@ impl Oryxis {
                     .center_x(Length::Fill)
                     .padding(Padding { top: 9.0, right: 0.0, bottom: 9.0, left: 0.0 }),
             )
-            .on_press(Message::DeleteSnippet(idx))
+            .on_press(Message::RequestDeleteSnippet(idx))
             .width(Length::Fill)
             .style(|_, _| button::Style {
                 background: Some(Background::Color(Color::TRANSPARENT)),

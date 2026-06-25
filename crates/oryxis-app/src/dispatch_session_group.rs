@@ -212,6 +212,13 @@ impl Oryxis {
                 Ok(Task::none())
             }
 
+            Message::RequestDeleteSessionGroup(idx) => {
+                if let Some(group) = self.session_groups.get(idx) {
+                    let name = group.label.clone();
+                    self.confirm_remove(name, Message::DeleteSessionGroup(idx));
+                }
+                Ok(Task::none())
+            }
             Message::DeleteSessionGroup(idx) => {
                 self.overlay = None;
                 if let Some(group) = self.session_groups.get(idx)

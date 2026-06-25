@@ -452,6 +452,10 @@ pub enum Message {
     EditorTogglePasswordVisibility,
     EditorSave,
     EditorCancel,
+    /// Ask for confirmation before removing a host. Confirming dispatches
+    /// `DeleteConnection`. Destructive removals are routed through a confirm
+    /// dialog so a stray click can't silently drop a host.
+    RequestDeleteConnection(usize),
     DeleteConnection(usize),
     DuplicateConnection(usize),
 
@@ -464,6 +468,8 @@ pub enum Message {
     OpenSessionGroup(usize),
     /// Save a copy of the group (new id, "… copy" label).
     DuplicateSessionGroup(usize),
+    /// Ask for confirmation before removing a session group.
+    RequestDeleteSessionGroup(usize),
     DeleteSessionGroup(usize),
     /// Open the card context menu (dots / right-click) for a session group.
     ShowSessionGroupMenu(usize),
@@ -511,6 +517,8 @@ pub enum Message {
     /// Open the kebab (⋮) context menu on a snippet card (Edit / Delete).
     ShowSnippetMenu(usize),
     EditSnippet(usize),
+    /// Ask for confirmation before removing a snippet.
+    RequestDeleteSnippet(usize),
     DeleteSnippet(usize),
     RunSnippet(usize),
     /// Inject a snippet's command into the active terminal WITHOUT a
@@ -822,6 +830,8 @@ pub enum Message {
     KeyImportPassphraseChanged(String),
     KeyImportPassphraseToggleVisibility,
     ImportKey,
+    /// Ask for confirmation before removing a key.
+    RequestDeleteKey(usize),
     DeleteKey(usize),
     ShowKeyMenu(usize),
     #[allow(dead_code)]
@@ -843,6 +853,8 @@ pub enum Message {
     IdentityTogglePasswordVisibility,
     SaveIdentity,
     EditIdentity(usize),
+    /// Ask for confirmation before removing an identity.
+    RequestDeleteIdentity(usize),
     DeleteIdentity(usize),
     ShowIdentityMenu(usize),
     ToggleKeychainAddMenu,
