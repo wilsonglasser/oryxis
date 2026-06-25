@@ -70,6 +70,7 @@ impl Oryxis {
                             owner_gid: gid,
                             original_mode: mode,
                             bits: crate::state::PermBits::from_mode(mode),
+                            mode_input: format!("{:03o}", mode & 0o777),
                             applying: false,
                             error: None,
                         };
@@ -97,6 +98,7 @@ impl Oryxis {
                                         owner_gid: stat.gid,
                                         original_mode: mode,
                                         bits: crate::state::PermBits::from_mode(mode),
+                                        mode_input: format!("{:03o}", mode & 0o777),
                                         applying: false,
                                         error: None,
                                     })
@@ -124,6 +126,23 @@ impl Oryxis {
                         crate::state::PermBit::OtherX => &mut b.other_x,
                     };
                     *f = !*f;
+                    // Keep the numeric field in lockstep with the checkboxes.
+                    p.mode_input = format!("{:03o}", p.bits.to_mode());
+                }
+            }
+            Message::SftpPropertiesModeInput(s) => {
+                if let Some(p) = self.sftp.properties.as_mut() {
+                    // Accept only octal digits, at most 4 (a leading special-bit
+                    // digit is tolerated but ignored: the dialog edits rwx only
+                    // and Apply preserves setuid/setgid/sticky from the original).
+                    let cleaned: String =
+                        s.chars().filter(|c| ('0'..='7').contains(c)).take(4).collect();
+                    p.mode_input = cleaned.clone();
+                    // Rewrite the checkboxes from a parseable value; leave them
+                    // untouched while the field is empty or mid-edit.
+                    if let Ok(v) = u32::from_str_radix(&cleaned, 8) {
+                        p.bits = crate::state::PermBits::from_mode(v & 0o777);
+                    }
                 }
             }
             Message::SftpPropertiesApply => {

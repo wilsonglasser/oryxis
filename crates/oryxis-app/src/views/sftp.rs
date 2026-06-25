@@ -1990,6 +1990,12 @@ const ROW_PAD_X: f32 = 24.0;
 /// Width of the resize handle (and its visible divider) on the right edge of
 /// each column header.
 const COL_RESIZE_HANDLE_W: f32 = 7.0;
+/// Right inset on each cell's text so an ellipsised value (`abc…`) breathes
+/// instead of touching the column divider. Kept below the 18px auto-fit
+/// breathing room so an auto-fit column still fully fits its content.
+const CELL_PAD_RIGHT: f32 = 8.0;
+/// Widget id of the inline rename input, focused when a rename starts.
+pub(crate) const RENAME_INPUT_ID: &str = "sftp-rename-input";
 
 /// Sum of the visible columns (Name included) at their current widths.
 fn cols_total_width(
@@ -2221,13 +2227,19 @@ fn dev_mime_override(ext: &str) -> Option<&'static str> {
 /// ellipsis at the column edge instead of wrapping or bleeding into the next
 /// column (issue #45).
 fn data_cell<'a>(value: String, width: f32, color: Color) -> Element<'a, Message> {
-    text(value)
-        .size(11)
-        .color(color)
-        .width(Length::Fixed(width))
-        .wrapping(iced::widget::text::Wrapping::None)
-        .ellipsis(iced::widget::text::Ellipsis::End)
-        .into()
+    // The cell box stays `Fixed(width)` so columns line up with the headers;
+    // a right inset on the inner text keeps an ellipsis off the divider.
+    container(
+        text(value)
+            .size(11)
+            .color(color)
+            .width(Length::Fill)
+            .wrapping(iced::widget::text::Wrapping::None)
+            .ellipsis(iced::widget::text::Ellipsis::End),
+    )
+    .width(Length::Fixed(width))
+    .padding(Padding { top: 0.0, right: CELL_PAD_RIGHT, bottom: 0.0, left: 0.0 })
+    .into()
 }
 
 /// Rough px width of `s` at the given font size, used only to decide whether
@@ -2253,6 +2265,9 @@ fn name_cell<'a>(
         .align_y(iced::Alignment::Center);
     let cell = container(inner)
         .width(Length::Fixed(width))
+        // Right inset so a truncated filename's ellipsis breathes off the
+        // divider, matching the data cells.
+        .padding(Padding { top: 0.0, right: CELL_PAD_RIGHT, bottom: 0.0, left: 0.0 })
         // Clip so an un-ellipsised child (e.g. the rename input) can't bleed
         // past the cell into the next column.
         .clip(true);
@@ -2293,6 +2308,7 @@ fn name_label_widget<'a>(
     use crate::state::SftpColumn;
     if let Some(input) = rename_input {
         let w = text_input(name, input)
+            .id(iced::widget::Id::new(RENAME_INPUT_ID))
             .on_input(Message::SftpRenameInput)
             .on_submit(Message::SftpRenameCommit)
             .padding(Padding { top: 2.0, right: 6.0, bottom: 2.0, left: 6.0 })
@@ -2311,9 +2327,19 @@ fn name_label_widget<'a>(
         .ellipsis(iced::widget::text::Ellipsis::End)
         .into();
     // Space available to the filename inside the Name cell: cell width minus
-    // the leading icon area and the inter-column gap.
-    let avail = widths.get(SftpColumn::Name) - ICON_COL_W - 8.0;
-    let tooltip = (approx_text_width(name, 12.0) > avail).then(|| name.to_string());
+    // the leading icon area, the inter-column gap, and the right inset (the
+    // same assumptions auto-fit's `extra` uses, so an auto-fit column
+    // resolves to "fits" here too).
+    let avail = widths.get(SftpColumn::Name) - ICON_COL_W - 8.0 - CELL_PAD_RIGHT;
+    // Two-tier: the cheap proportional estimate gates the expensive accurate
+    // measure, so only borderline rows pay for shaping (the list isn't
+    // virtualized, so every row runs this). The estimate is biased high, so
+    // it never misses a truncation; the accurate measure then rejects the
+    // false positives (e.g. a column just auto-fit to the value's real
+    // width, which previously kept showing a tooltip).
+    let tooltip = (approx_text_width(name, 12.0) > avail
+        && measure_text_width(name, 12.0) > avail)
+        .then(|| name.to_string());
     (label, tooltip)
 }
 
@@ -2985,19 +3011,13 @@ fn delete_confirm_modal<'a>(
             Space::new().height(6),
             text(detail).size(13).color(OryxisColors::t().text_muted),
             Space::new().height(16),
-            row![
-                crate::widgets::styled_button(
-                    t("delete"),
-                    Message::SftpConfirmDelete,
-                    OryxisColors::t().error,
-                ),
-                Space::new().width(8),
-                crate::widgets::styled_button(
-                    t("cancel"),
-                    Message::SftpCancelDelete,
-                    OryxisColors::t().text_muted,
-                ),
-            ],
+            modal_footer(
+                t("cancel"),
+                Message::SftpCancelDelete,
+                t("delete"),
+                Some(Message::SftpConfirmDelete),
+                OryxisColors::t().error,
+            ),
         ]
         .padding(24)
         .width(420),
@@ -3340,8 +3360,6 @@ fn properties_modal<'a>(
         (Some(u), None) => format!("uid {u}"),
         _ => "-".to_string(),
     };
-    let mode_octal = format!("{:o}", (props.original_mode & !0o777) | props.bits.to_mode());
-
     let info_row = |label: &str, value: String| -> Element<'a, Message> {
         row![
             text(label.to_string())
@@ -3404,20 +3422,31 @@ fn properties_modal<'a>(
         .into()
     };
 
+    // Column header for the R / W / X permission grid. Rendered in the
+    // secondary (not muted) color and semibold so the labels read clearly
+    // above the checkboxes instead of nearly disappearing.
+    let perm_header = |glyph: &'a str| -> Element<'a, Message> {
+        container(
+            text(glyph)
+                .size(11)
+                .font(iced::Font {
+                    weight: iced::font::Weight::Semibold,
+                    ..iced::Font::new(crate::theme::SYSTEM_UI_FAMILY)
+                })
+                .color(OryxisColors::t().text_secondary),
+        )
+        .width(Length::Fixed(26.0))
+        .center_x(Length::Fixed(26.0))
+        .into()
+    };
     let perm_grid = column![
         row![
             Space::new().width(Length::Fixed(80.0)),
-            container(text("R").size(11).color(OryxisColors::t().text_muted))
-                .width(Length::Fixed(26.0))
-                .center_x(Length::Fixed(26.0)),
+            perm_header("R"),
             Space::new().width(8),
-            container(text("W").size(11).color(OryxisColors::t().text_muted))
-                .width(Length::Fixed(26.0))
-                .center_x(Length::Fixed(26.0)),
+            perm_header("W"),
             Space::new().width(8),
-            container(text("X").size(11).color(OryxisColors::t().text_muted))
-                .width(Length::Fixed(26.0))
-                .center_x(Length::Fixed(26.0)),
+            perm_header("X"),
         ],
         Space::new().height(4),
         perm_row(
@@ -3463,7 +3492,22 @@ fn properties_modal<'a>(
         Space::new().height(4),
         info_row(t("perm_owner"), owner_str),
         Space::new().height(4),
-        info_row(t("info_mode"), format!("0{}", mode_octal)),
+        // Editable numeric (octal) mode, WinSCP-style: type e.g. 777 and the
+        // checkboxes follow. Two-way bound with the grid below.
+        row![
+            text(t("info_mode"))
+                .size(11)
+                .color(OryxisColors::t().text_muted)
+                .width(Length::Fixed(80.0)),
+            text_input("644", &props.mode_input)
+                .on_input(Message::SftpPropertiesModeInput)
+                .on_submit(Message::SftpPropertiesApply)
+                .size(12)
+                .padding(Padding { top: 3.0, right: 8.0, bottom: 3.0, left: 8.0 })
+                .width(Length::Fixed(90.0))
+                .style(crate::widgets::rounded_input_style),
+        ]
+        .align_y(iced::Alignment::Center),
         Space::new().height(16),
         header_row(t("permissions")),
         Space::new().height(8),
@@ -3477,14 +3521,16 @@ fn properties_modal<'a>(
     }
     content = content.push(Space::new().height(18));
     let apply_label = if props.applying { t("applying") } else { t("apply") };
-    content = content.push(
-        row![
-            ghost_button(t("close"), Message::SftpPropertiesClose),
-            Space::new().width(Length::Fill),
-            primary_button(apply_label, Message::SftpPropertiesApply, OryxisColors::t().accent),
-        ]
-        .align_y(iced::Alignment::Center),
-    );
+    // While the chmod is in flight the action is disabled (None) so the user
+    // can't double-fire; the handler also guards on `applying`.
+    let apply_msg = (!props.applying).then_some(Message::SftpPropertiesApply);
+    content = content.push(modal_footer(
+        t("close"),
+        Message::SftpPropertiesClose,
+        apply_label,
+        apply_msg,
+        OryxisColors::t().accent,
+    ));
 
     let dialog = container(content.padding(22).width(440))
         .style(|_| container::Style {
@@ -3684,6 +3730,92 @@ fn primary_button<'a>(label: &'a str, msg: Message, color: Color) -> Element<'a,
         }
     })
     .into()
+}
+
+/// Standard modal footer: a neutral cancel/close action on the leading edge
+/// and the primary action on the trailing edge, both equal width. RTL-aware
+/// (leading/trailing mirror) via `dir_row`. `action_msg` is `None` to render
+/// the primary action disabled (e.g. while an apply is in flight). Use this
+/// for every confirm/cancel modal so their footers stay consistent.
+fn modal_footer<'a>(
+    cancel_label: &'a str,
+    cancel_msg: Message,
+    action_label: &'a str,
+    action_msg: Option<Message>,
+    action_color: Color,
+) -> Element<'a, Message> {
+    const FOOTER_BTN_W: f32 = 132.0;
+    let action_fg = if action_color == OryxisColors::t().accent {
+        OryxisColors::t().button_text
+    } else {
+        crate::theme::contrast_text_for(action_color)
+    };
+    let cancel = footer_button(
+        cancel_label,
+        Some(cancel_msg),
+        OryxisColors::t().bg_selected,
+        OryxisColors::t().text_primary,
+        FOOTER_BTN_W,
+    );
+    let action = footer_button(action_label, action_msg, action_color, action_fg, FOOTER_BTN_W);
+    crate::widgets::dir_row(vec![
+        cancel,
+        Space::new().width(Length::Fill).into(),
+        action,
+    ])
+    .align_y(iced::Alignment::Center)
+    .into()
+}
+
+/// Equal-width footer button with centered label. `msg = None` renders it
+/// disabled (muted fill, no `on_press`).
+fn footer_button<'a>(
+    label: &'a str,
+    msg: Option<Message>,
+    color: Color,
+    fg: Color,
+    width: f32,
+) -> Element<'a, Message> {
+    let enabled = msg.is_some();
+    let fg = if enabled { fg } else { OryxisColors::t().text_muted };
+    let disabled_bg = OryxisColors::t().bg_selected;
+    let mut b = button(
+        text(label.to_owned())
+            .size(12)
+            .font(iced::Font {
+                weight: iced::font::Weight::Semibold,
+                ..iced::Font::new(crate::theme::SYSTEM_UI_FAMILY)
+            })
+            .color(fg)
+            .width(Length::Fill)
+            .align_x(iced::alignment::Horizontal::Center),
+    )
+    .width(Length::Fixed(width))
+    .padding(Padding { top: 7.0, right: 12.0, bottom: 7.0, left: 12.0 })
+    .style(move |_, status| {
+        let bg = if !enabled {
+            disabled_bg
+        } else {
+            match status {
+                BtnStatus::Hovered => Color {
+                    a: 1.0,
+                    r: (color.r + 0.06).min(1.0),
+                    g: (color.g + 0.06).min(1.0),
+                    b: (color.b + 0.06).min(1.0),
+                },
+                _ => color,
+            }
+        };
+        button::Style {
+            background: Some(Background::Color(bg)),
+            border: Border { radius: Radius::from(6.0), ..Default::default() },
+            ..Default::default()
+        }
+    });
+    if let Some(msg) = msg {
+        b = b.on_press(msg);
+    }
+    b.into()
 }
 
 /// Outlined secondary button, transparent fill with a subtle border.

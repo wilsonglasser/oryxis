@@ -160,6 +160,12 @@ pub(crate) struct SftpState {
     /// set on the press, committed to an actual rename on release iff no drag
     /// activated, so dragging an already-selected row still works.
     pub pending_rename: Option<(SftpPaneSide, String)>,
+    /// Swallow the next row-activation keypress. Set when an inline input
+    /// (rename / new-entry) commits on Enter: the same physical Enter also
+    /// reaches the global keyboard subscription, which would otherwise
+    /// activate the still-selected row (re-opening the just-renamed file).
+    /// Consumed by the first keyboard event that follows the commit.
+    pub swallow_next_activate: bool,
     /// Generation counter for the debounced type-ahead search. Each
     /// keystroke bumps it and schedules a deferred fire; only the fire
     /// whose generation still matches runs, so fast typing searches once
@@ -261,6 +267,7 @@ impl Default for SftpState {
             type_ahead_committed: String::new(),
             last_click: None,
             pending_rename: None,
+            swallow_next_activate: false,
             type_ahead_gen: 0,
             transfer_bytes_done: Arc::new(std::sync::atomic::AtomicU64::new(0)),
             transfer_bytes_total: 0,
@@ -397,6 +404,10 @@ pub(crate) struct PropertiesView {
     /// edit.
     pub original_mode: u32,
     pub bits: PermBits,
+    /// Editable octal mode string (the numeric value the user can type
+    /// directly, WinSCP-style). Two-way bound with `bits`: typing a valid
+    /// octal value rewrites `bits`, and toggling a checkbox rewrites this.
+    pub mode_input: String,
     /// True while the chmod task is in flight, disables the Apply
     /// button so the user can't double-fire.
     pub applying: bool,
@@ -843,6 +854,11 @@ impl SftpColumn {
 pub(crate) const SFTP_COL_MIN_W: f32 = 56.0;
 pub(crate) const SFTP_COL_MAX_W: f32 = 420.0;
 
+/// Ceiling for a double-click auto-fit (issue #45), wider than the manual
+/// drag max so a long value fully fits; the list scrolls horizontally past
+/// the pane. Bounded so a pathological filename can't blow the column up.
+pub(crate) const SFTP_AUTOFIT_MAX_W: f32 = 1200.0;
+
 /// Which optional columns the SFTP file lists render. Held per pane.
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct SftpColumns {
@@ -958,6 +974,21 @@ impl SftpColWidths {
         } else {
             w.clamp(SFTP_COL_MIN_W, SFTP_COL_MAX_W)
         };
+        self.put(col, w);
+    }
+
+    /// Like [`set`], but for double-click auto-fit (issue #45). Auto-fit is an
+    /// explicit "show me the whole value" gesture, so it uses a much wider
+    /// ceiling than the manual-drag clamp: a long filename should fully fit
+    /// (the file list scrolls horizontally past the pane anyway) instead of
+    /// being capped mid-name. Still bounded so a pathological value can't
+    /// produce an unusable multi-thousand-pixel column.
+    pub fn set_autofit(&mut self, col: SftpColumn, w: f32) {
+        let min = if col == SftpColumn::Name { SFTP_NAME_MIN_W } else { SFTP_COL_MIN_W };
+        self.put(col, w.clamp(min, SFTP_AUTOFIT_MAX_W));
+    }
+
+    fn put(&mut self, col: SftpColumn, w: f32) {
         match col {
             SftpColumn::Name => self.name = w,
             SftpColumn::Modified => self.modified = w,

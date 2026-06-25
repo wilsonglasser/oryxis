@@ -501,7 +501,9 @@ impl Oryxis {
             .map(|t| if t.chat_visible { self.chat_sidebar_width } else { 0.0 })
             .unwrap_or(0.0);
         let content_w = (self.window_size.width - sidebar - chat_w).max(0.0);
-        let split = sidebar + content_w / 2.0;
+        // Honor the user's resizable split, not a fixed 50/50, so the
+        // boundary matches the actual divider position.
+        let split = sidebar + content_w * self.sftp_split_ratio;
         self.mouse_position.x > split
             && self.mouse_position.x < self.window_size.width - chat_w
     }
@@ -516,7 +518,7 @@ impl Oryxis {
             .map(|t| if t.chat_visible { self.chat_sidebar_width } else { 0.0 })
             .unwrap_or(0.0);
         let content_w = (self.window_size.width - sidebar - chat_w).max(0.0);
-        let split = sidebar + content_w / 2.0;
+        let split = sidebar + content_w * self.sftp_split_ratio;
         self.mouse_position.x > sidebar && self.mouse_position.x < split
     }
 
@@ -570,12 +572,12 @@ impl Oryxis {
             .as_ref()
             .filter(|(s, _, is_dir)| *s == dest_side && *is_dir)
             .map(|(_, p, _)| p.clone());
-        // The drop lands on the destination pane if the cursor is hovering
-        // one of its rows. `hovered_row` is updated by row-hover events,
-        // which fire even while a button is held (unlike cursor-move on
-        // WSLg), so this is the reliable cross-platform signal. The
-        // cursor-over-pane geometry check is kept as a fallback for empty
-        // areas on platforms that do deliver moves during the hold.
+        // The drop lands on the destination pane if either the cursor sits
+        // over that pane (geometry, the reliable signal during a button-hold)
+        // or it's hovering one of its rows. `hovered_row` is what also feeds
+        // `target_folder` above (drop *into* a hovered subfolder); that part
+        // still depends on row-hover firing, so subfolder targeting can be
+        // less reliable than the pane-level drop.
         let hovered_dest = self
             .sftp
             .hovered_row

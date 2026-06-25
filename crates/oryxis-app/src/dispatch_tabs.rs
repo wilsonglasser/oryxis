@@ -117,6 +117,30 @@ impl Oryxis {
                 if changed {
                     self.sftp.suppress_hover = false;
                 }
+                // Promote an armed SFTP internal drag once the cursor crosses
+                // into the *opposite* pane, driven by cursor geometry (which
+                // IS delivered during a button-hold here, the same signal the
+                // divider / column-resize drags rely on). Runs after
+                // `mouse_position` is updated so the hit-test sees the fresh
+                // coord. This is the primary activation; row-hover
+                // (SftpRowEnter) is only a fallback, since it can be disrupted
+                // by tooltips / row gaps and is why cross-pane drag used to
+                // fail intermittently.
+                if let Some(drag) = self.sftp.drag.as_ref()
+                    && !drag.active
+                {
+                    use crate::state::SftpPaneSide::{Left, Right};
+                    let dx = pos.x - drag.press_pos.x;
+                    let dy = pos.y - drag.press_pos.y;
+                    let moved = (dx * dx + dy * dy).sqrt() > 6.0;
+                    let over_opposite = match drag.origin_side {
+                        Left => self.is_cursor_over_remote_pane(),
+                        Right => self.is_cursor_over_local_pane(),
+                    };
+                    if moved && over_opposite && let Some(d) = self.sftp.drag.as_mut() {
+                        d.active = true;
+                    }
+                }
                 // While the chat-sidebar resize handle is held down, the
                 // sidebar width tracks the cursor, dragging left grows
                 // the panel, dragging right shrinks it. Clamp to a sane

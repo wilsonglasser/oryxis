@@ -71,9 +71,107 @@ impl Oryxis {
                 col,
             )
         };
-        self.sftp.pane_mut(side).columns.width.set(col, target);
+        self.sftp.pane_mut(side).columns.width.set_autofit(col, target);
         self.sftp_columns_template = self.sftp.pane(side).columns.clone();
         self.persist_sftp_columns();
+    }
+
+    /// Arm a pending internal drag for a pressed SFTP row. Stays
+    /// `active = false` until the cursor reaches the other pane, so a plain
+    /// click still flows through. Called both from the global left-press
+    /// (via `hovered_row`) and from the row button's own `on_press`: the
+    /// latter is the reliable path for a truncated row, whose hover tooltip
+    /// can drop `hovered_row` before the press lands (issue: truncated names
+    /// wouldn't drag). No-op if a drag is already armed for this press.
+    fn arm_sftp_row_drag(&mut self, side: SftpPaneSide, path: String, is_dir: bool) {
+        if self.sftp.drag.is_some() {
+            return;
+        }
+        // Drag the entire same-pane selection if the pressed row is part of
+        // it; otherwise drag just this row.
+        let same_side: Vec<(String, bool)> = self
+            .sftp
+            .selected_rows
+            .iter()
+            .filter(|(s, _)| *s == side)
+            .map(|(_, p)| {
+                let is_dir = self.row_is_dir_in_pane(side, p);
+                (p.clone(), is_dir)
+            })
+            .collect();
+        let pressed_in_selection = same_side.iter().any(|(p, _)| p == &path);
+        let items: Vec<(String, bool)> = if pressed_in_selection {
+            same_side
+        } else {
+            vec![(path.clone(), is_dir)]
+        };
+        let label = if items.len() > 1 {
+            format!("{} items", items.len())
+        } else {
+            path.rsplit(['/', '\\'])
+                .find(|s| !s.is_empty())
+                .unwrap_or(&path)
+                .to_string()
+        };
+        self.sftp.drag = Some(crate::state::SftpInternalDrag {
+            origin_side: side,
+            items,
+            label,
+            press_pos: self.mouse_position,
+            active: false,
+        });
+    }
+
+    /// Apply the in-progress inline rename (Enter, or a click outside the
+    /// input). Logs on success; a remote rename runs async and re-lists the
+    /// directory via `SftpRenamed`. No-op when nothing is being renamed or
+    /// the new name is blank. Does not touch `swallow_next_activate` (the
+    /// keyboard-commit path sets that itself).
+    fn commit_rename(&mut self) -> Task<Message> {
+        let Some(rn) = self.sftp.rename.take() else {
+            return Task::none();
+        };
+        let new_name = rn.input.trim().to_string();
+        if new_name.is_empty() {
+            return Task::none();
+        }
+        if !self.sftp.pane(rn.side).is_remote {
+            let original = std::path::PathBuf::from(&rn.original_path);
+            let Some(parent) = original.parent().map(|p| p.to_path_buf()) else {
+                self.sftp.pane_mut(rn.side).error = Some("Cannot rename root".into());
+                return Task::none();
+            };
+            let dest = parent.join(&new_name);
+            match std::fs::rename(&original, &dest) {
+                Ok(()) => self.push_sftp_log(
+                    crate::state::SftpLogLevel::Ok,
+                    format!("{} {}", crate::i18n::t("sftp_log_renamed"), new_name),
+                ),
+                Err(e) => self.sftp.pane_mut(rn.side).error = Some(e.to_string()),
+            }
+            self.refresh_sftp_local(rn.side);
+            Task::none()
+        } else {
+            let Some(client) = self.sftp.pane(rn.side).client.clone() else {
+                return Task::none();
+            };
+            let parent = parent_path(&rn.original_path);
+            let dest = if parent == "/" {
+                format!("/{}", new_name)
+            } else {
+                format!("{}/{}", parent.trim_end_matches('/'), new_name)
+            };
+            let from = rn.original_path;
+            let side = rn.side;
+            let reload_path = self.sftp.pane(side).remote_path.clone();
+            Task::perform(
+                async move { client.rename(&from, &dest).await.map_err(|e| e.to_string()) },
+                move |result| match result {
+                    Ok(()) => Message::SftpRenamed(side, reload_path.clone(), new_name.clone()),
+                    Err(e) => Message::SftpOpResult(side, e, true),
+                },
+            )
+        }
     }
 
     pub(crate) fn handle_sftp(
@@ -518,6 +616,8 @@ impl Oryxis {
                     self.active_tab = None;
                     self.active_view = crate::state::View::Sftp;
                     self.show_burger_menu = false;
+                    // Record the focus for the Ctrl+Tab MRU walk (no-op mid-walk).
+                    self.touch_tab_mru(crate::state::TabRef::Sftp(self.sftp_tabs[idx].id));
                     // Dormant pinned tab (restored at boot): re-mount its remote
                     // pane on first focus. Single-remote case (the common
                     // left=Local / right=Remote); a dual-remote tab re-mounts
@@ -886,6 +986,11 @@ impl Oryxis {
                     original_path,
                     input: basename,
                 });
+                // Drop the keyboard straight into the inline input so the user
+                // can type the new name without an extra click.
+                return Ok(iced::widget::operation::focus(iced::widget::Id::new(
+                    crate::views::sftp::RENAME_INPUT_ID,
+                )));
             }
             Message::SftpRenameInput(s) => {
                 if let Some(ref mut r) = self.sftp.rename {
@@ -893,48 +998,19 @@ impl Oryxis {
                 }
             }
             Message::SftpRenameCommit => {
-                let Some(rn) = self.sftp.rename.take() else {
-                    return Ok(Task::none());
-                };
-                let new_name = rn.input.trim().to_string();
-                if new_name.is_empty() {
-                    return Ok(Task::none());
-                }
-                if !self.sftp.pane(rn.side).is_remote {
-                    let original = std::path::PathBuf::from(&rn.original_path);
-                    let parent = original.parent().map(|p| p.to_path_buf());
-                    let Some(parent) = parent else {
-                        self.sftp.pane_mut(rn.side).error = Some("Cannot rename root".into());
-                        return Ok(Task::none());
-                    };
-                    let dest = parent.join(&new_name);
-                    if let Err(e) = std::fs::rename(&original, &dest) {
-                        self.sftp.pane_mut(rn.side).error = Some(e.to_string());
-                    }
-                    self.refresh_sftp_local(rn.side);
-                } else {
-                    let Some(client) = self.sftp.pane(rn.side).client.clone() else {
-                        return Ok(Task::none());
-                    };
-                    let parent = parent_path(&rn.original_path);
-                    let dest = if parent == "/" {
-                        format!("/{}", new_name)
-                    } else {
-                        format!("{}/{}", parent.trim_end_matches('/'), new_name)
-                    };
-                    let from = rn.original_path;
-                    let side = rn.side;
-                    let reload_path = self.sftp.pane(side).remote_path.clone();
-                    return Ok(Task::perform(
-                        async move {
-                            client.rename(&from, &dest).await.map_err(|e| e.to_string())
-                        },
-                        move |result| match result {
-                            Ok(()) => Message::SftpNavigateRemote(side, reload_path.clone()),
-                            Err(e) => Message::SftpOpResult(side, e, true),
-                        },
-                    ));
-                }
+                // The Enter that submits this rename also reaches the global
+                // keyboard subscription; swallow the row-activation it would
+                // otherwise trigger (which re-opens the just-renamed file).
+                // Not set on the click-to-commit path (no trailing Enter there).
+                self.sftp.swallow_next_activate = true;
+                return Ok(self.commit_rename());
+            }
+            Message::SftpRenamed(side, reload_path, new_name) => {
+                self.push_sftp_log(
+                    crate::state::SftpLogLevel::Ok,
+                    format!("{} {}", crate::i18n::t("sftp_log_renamed"), new_name),
+                );
+                return Ok(Task::done(Message::SftpNavigateRemote(side, reload_path)));
             }
             Message::SftpAskDelete(side, path, is_dir) => {
                 self.sftp.row_menu = None;
@@ -971,6 +1047,7 @@ impl Oryxis {
                 // N parallel navigates racing after a bulk delete.
                 let mut local_sides: Vec<SftpPaneSide> = Vec::new();
                 let mut remote_targets: Vec<crate::state::SftpDeleteTarget> = Vec::new();
+                let mut local_deleted = 0usize;
                 for t in targets {
                     if self.sftp.pane(t.side).is_remote {
                         remote_targets.push(t);
@@ -981,13 +1058,25 @@ impl Oryxis {
                         } else {
                             std::fs::remove_file(&path)
                         };
-                        if let Err(e) = result {
-                            self.sftp.pane_mut(t.side).error = Some(e.to_string());
+                        match result {
+                            Ok(()) => local_deleted += 1,
+                            Err(e) => self.sftp.pane_mut(t.side).error = Some(e.to_string()),
                         }
                         if !local_sides.contains(&t.side) {
                             local_sides.push(t.side);
                         }
                     }
+                }
+                if local_deleted > 0 {
+                    self.push_sftp_log(
+                        crate::state::SftpLogLevel::Ok,
+                        format!(
+                            "{} {} {}",
+                            crate::i18n::t("sftp_log_deleted"),
+                            local_deleted,
+                            crate::i18n::t("sftp_log_items"),
+                        ),
+                    );
                 }
                 for side in local_sides {
                     self.refresh_sftp_local(side);
@@ -1038,6 +1127,17 @@ impl Oryxis {
             Message::SftpEntriesRemoved(side, paths) => {
                 // Drop the just-deleted entries from the listing in place,
                 // keeping scroll position and skipping a re-list round trip.
+                if !paths.is_empty() {
+                    self.push_sftp_log(
+                        crate::state::SftpLogLevel::Ok,
+                        format!(
+                            "{} {} {}",
+                            crate::i18n::t("sftp_log_deleted"),
+                            paths.len(),
+                            crate::i18n::t("sftp_log_items"),
+                        ),
+                    );
+                }
                 let removed: std::collections::HashSet<String> = paths.into_iter().collect();
                 let pane = self.sftp.pane_mut(side);
                 let base = pane.remote_path.trim_end_matches('/').to_string();
@@ -1067,6 +1167,8 @@ impl Oryxis {
                 let Some(ne) = self.sftp.new_entry.take() else {
                     return Ok(Task::none());
                 };
+                // See SftpRenameCommit: swallow the trailing Enter's activation.
+                self.sftp.swallow_next_activate = true;
                 let name = ne.input.trim().to_string();
                 if name.is_empty() {
                     return Ok(Task::none());
@@ -1121,12 +1223,12 @@ impl Oryxis {
             Message::SftpRowEnter(side, path, is_dir) => {
                 self.sftp.hovered_row = Some((side, path, is_dir));
                 // Promote a pending drag to active once the cursor reaches a
-                // row in the *other* pane. This platform doesn't deliver
-                // cursor-move events while a mouse button is held, so the
-                // distance-threshold promotion in the MouseMoved handler
-                // never fires; the row-hover event (which does fire during
-                // the hold) is what drives activation here. Activating lights
-                // up the destination pane outline as drag feedback.
+                // row in the *other* pane. This is a secondary trigger: the
+                // primary one is the cursor-geometry crossing in the
+                // MouseMoved handler (reliable during a button-hold, same as
+                // the divider drags). Row-hover can be disrupted by tooltips
+                // / row gaps, so it can't be the sole signal. Activating
+                // lights up the destination pane outline as drag feedback.
                 if let Some(drag) = self.sftp.drag.as_mut()
                     && !drag.active
                     && drag.origin_side != side
@@ -1170,45 +1272,30 @@ impl Oryxis {
                 if self.active_view != crate::state::View::Sftp {
                     return Ok(Task::none());
                 }
-                let Some((side, path, is_dir)) = self.sftp.hovered_row.clone() else {
-                    return Ok(Task::none());
-                };
-                // Drag the entire same-pane selection if the pressed row
-                // is part of it; otherwise drag just this row.
-                let same_side: Vec<(String, bool)> = self
-                    .sftp
-                    .selected_rows
-                    .iter()
-                    .filter(|(s, _)| *s == side)
-                    .map(|(_, p)| {
-                        let is_dir = self.row_is_dir_in_pane(side, p);
-                        (p.clone(), is_dir)
-                    })
-                    .collect();
-                let pressed_in_selection =
-                    same_side.iter().any(|(p, _)| p == &path);
-                let items: Vec<(String, bool)> = if pressed_in_selection {
-                    same_side
-                } else {
-                    vec![(path.clone(), is_dir)]
-                };
-                let label = if items.len() > 1 {
-                    format!("{} items", items.len())
-                } else {
-                    path.rsplit(['/', '\\'])
-                        .find(|s| !s.is_empty())
-                        .unwrap_or(&path)
-                        .to_string()
-                };
-                self.sftp.drag = Some(crate::state::SftpInternalDrag {
-                    origin_side: side,
-                    items,
-                    label,
-                    press_pos: self.mouse_position,
-                    active: false,
-                });
+                // A press outside the inline-rename input commits the rename
+                // (click any other row, empty area, or the other pane). A
+                // press *inside* the input doesn't fire SftpSelectRow and
+                // keeps `hovered_row` on the rename's own row, so we leave it
+                // be and let the user keep editing.
+                if let Some(rn) = self.sftp.rename.as_ref() {
+                    let on_rename_row = self.sftp.hovered_row.as_ref().is_some_and(
+                        |(s, p, _)| *s == rn.side && *p == rn.original_path,
+                    );
+                    if !on_rename_row {
+                        return Ok(self.commit_rename());
+                    }
+                }
+                if let Some((side, path, is_dir)) = self.sftp.hovered_row.clone() {
+                    self.arm_sftp_row_drag(side, path, is_dir);
+                }
             }
             Message::SftpSelectRow(side, path, is_dir) => {
+                // Arm a potential drag from the button's own press, before the
+                // selection below collapses, using the exact pressed row. A
+                // second arm path alongside the global left-press; no-op if
+                // that already armed it. (Cross-pane activation itself happens
+                // later via cursor geometry in MouseMoved.)
+                self.arm_sftp_row_drag(side, path.clone(), is_dir);
                 // Keyboard focus follows the mouse: a clicked row's pane
                 // becomes the focused pane and the cursor leaves the ".." row.
                 self.sftp.focused_side = side;
@@ -1327,6 +1414,27 @@ impl Oryxis {
                 // handler (which owns that logic) via `Err`.
                 if self.active_view != crate::state::View::Sftp {
                     return Err(Message::KeyboardEvent(ke));
+                }
+                // Consume the activation-swallow flag on the first keyboard
+                // event after an inline-input commit: the trailing Enter from
+                // that submit must not activate the still-selected row.
+                let swallow = std::mem::take(&mut self.sftp.swallow_next_activate);
+                if let iced::keyboard::Event::KeyPressed { key, .. } = &ke {
+                    // Escape cancels an in-progress inline rename / new-entry
+                    // instead of falling through to the terminal handler.
+                    if matches!(key, iced::keyboard::Key::Named(iced::keyboard::key::Named::Escape)) {
+                        if self.sftp.rename.take().is_some() {
+                            return Ok(Task::none());
+                        }
+                        if self.sftp.new_entry.take().is_some() {
+                            return Ok(Task::none());
+                        }
+                    }
+                    if swallow
+                        && matches!(key, iced::keyboard::Key::Named(iced::keyboard::key::Named::Enter))
+                    {
+                        return Ok(Task::none());
+                    }
                 }
                 let editing = self.sftp.rename.is_some()
                     || self.sftp.new_entry.is_some()

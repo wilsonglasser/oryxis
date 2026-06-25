@@ -210,6 +210,9 @@ pub enum Message {
     SftpStartRename(crate::state::SftpPaneSide, String),
     SftpRenameInput(String),
     SftpRenameCommit,
+    /// A remote rename succeeded: `(side, dir to reload, new basename)`.
+    /// Logs the rename, then re-lists the directory.
+    SftpRenamed(crate::state::SftpPaneSide, String, String),
     SftpAskDelete(crate::state::SftpPaneSide, String, bool),
     SftpAskDeleteSelection,
     SftpConfirmDelete,
@@ -284,6 +287,7 @@ pub enum Message {
     SftpShowProperties(crate::state::SftpPaneSide, String, bool),
     SftpPropertiesLoaded(crate::state::PropertiesView),
     SftpPropertiesToggleBit(crate::state::PermBit),
+    SftpPropertiesModeInput(String),
     SftpPropertiesApply,
     SftpPropertiesDone(Result<(), String>),
     SftpPropertiesClose,
