@@ -98,6 +98,9 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
+          # Plugin releases must never claim GitHub's "Latest" flag — the
+          # website's /releases/latest/ download links target the app release.
+          make_latest: false
           files: |
             dist/oryxis-cloud-k8s-plugin-${{ matrix.label }}${{ matrix.ext }}
             dist/oryxis-cloud-k8s-plugin-${{ matrix.label }}${{ matrix.ext }}.sig
@@ -192,4 +195,5 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
+          make_latest: false
           files: k8s.json
