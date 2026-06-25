@@ -310,6 +310,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         // AI Chat
         "ask_ai" => "Zapytaj AI...",
         "thinking" => "Myślę...",
+        "chat_stop" => "Zatrzymaj",
         "enable_ai" => "Włącz czat AI",
         "ai_enable_warning" => "Asystent AI może uruchamiać polecenia na połączonych serwerach, a niektóre może wykonywać automatycznie. Zawsze przeglądaj jego działania. Używasz na własne ryzyko; oprogramowanie jest dostarczane bez gwarancji.",
         "ai_chat_disclaimer" => "AI może uruchamiać polecenia na tym serwerze. Przejrzyj przed zatwierdzeniem.",

@@ -308,6 +308,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
 
         "ask_ai" => "Demander à l'IA...",
         "thinking" => "Réflexion...",
+        "chat_stop" => "Arrêter",
         "enable_ai" => "Activer le Chat IA",
         "ai_enable_warning" => "L'assistant IA peut exécuter des commandes sur vos serveurs connectés, et certaines peuvent s'exécuter automatiquement. Vérifiez toujours ses actions. Utilisation à vos propres risques ; le logiciel est fourni sans aucune garantie.",
         "ai_chat_disclaimer" => "L'IA peut exécuter des commandes sur ce serveur. Vérifiez avant d'approuver.",

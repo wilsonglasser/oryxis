@@ -318,6 +318,8 @@ mod tests {
             chat_history: Vec::new(),
             chat_visible: false,
             chat_always_run_commands: Vec::new(),
+            chat_auto_run_history: Vec::new(),
+            chat_auto_run_streak: 0,
             ssm_keepalive: false,
             relaunch: None,
             session_group_id: None,

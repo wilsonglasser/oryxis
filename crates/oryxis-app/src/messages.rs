@@ -334,6 +334,11 @@ pub enum Message {
 
     // Terminal I/O
     PtyOutput(Uuid, Vec<u8>),  // (pane_id, bytes)
+    /// One-shot wake-up that force-flushes a stalled DEC `?2026`
+    /// synchronized update on the given pane (`pane_id`). Armed by the
+    /// `PtyOutput` handler when output stops mid-update; without it an app
+    /// that opens a sync update and blocks on input freezes the screen.
+    TerminalSyncFlush(Uuid),
     /// A cloud plugin PTY stream ended (session-manager-plugin /
     /// kubectl exited). Marks the tab disconnected, prints an in-pane
     /// notice and re-arms `pending_reopen` so selecting the tab again
@@ -1126,6 +1131,11 @@ pub enum Message {
     /// state and finalises the message (markdown re-parse, scroll snap).
     ChatStreamDone,
     ChatError(String),
+    /// User clicked Stop while the assistant was streaming or
+    /// auto-running tools. Aborts the in-flight chat task (and the
+    /// detached tool-followup pipeline it feeds) so a runaway
+    /// tool loop can be interrupted by hand.
+    ChatStop,
     /// Re-send the last user message, used by the Retry button on an
     /// error bubble. Pops the most recent error and replays.
     ChatRetry,

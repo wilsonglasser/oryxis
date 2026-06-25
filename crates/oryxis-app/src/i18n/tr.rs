@@ -310,6 +310,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         // AI Chat
         "ask_ai" => "Yapay zekaya sor...",
         "thinking" => "Düşünüyor...",
+        "chat_stop" => "Durdur",
         "enable_ai" => "Yapay Zeka Sohbetini Etkinleştir",
         "ai_enable_warning" => "Yapay zeka asistanı bağlı sunucularınızda komutlar çalıştırabilir ve bazılarını otomatik olarak çalıştırabilir. Eylemlerini her zaman gözden geçirin. Riski size aittir; yazılım garantisiz olarak sağlanmaktadır.",
         "ai_chat_disclaimer" => "Yapay zeka bu sunucuda komut çalıştırabilir. Onaylamadan önce gözden geçirin.",

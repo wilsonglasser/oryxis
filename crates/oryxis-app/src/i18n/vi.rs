@@ -310,6 +310,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         // AI Chat
         "ask_ai" => "Hỏi AI...",
         "thinking" => "Đang suy nghĩ...",
+        "chat_stop" => "Dừng",
         "enable_ai" => "Bật trò chuyện AI",
         "ai_enable_warning" => "Trợ lý AI có thể chạy lệnh trên các máy chủ đang kết nối của bạn, và có thể chạy một số lệnh tự động. Luôn xem lại các hành động của nó. Sử dụng với rủi ro của riêng bạn; phần mềm được cung cấp mà không có bảo hành.",
         "ai_chat_disclaimer" => "AI có thể chạy lệnh trên máy chủ này. Hãy xem lại trước khi duyệt.",

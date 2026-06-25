@@ -341,11 +341,57 @@ impl Oryxis {
         .width(Length::Fill)
         .align_x(crate::widgets::dir_align_x());
 
+        // While a chat task is in flight (streaming a reply or auto-running
+        // a tool chain) offer an explicit Stop. It aborts the live task so a
+        // runaway tool loop can be halted by hand, without closing the panel.
+        let stop_control: Element<'_, Message> = if self.chat_task.is_some() {
+            container(
+                button(
+                    dir_row(vec![
+                        iced_fonts::lucide::circle_stop()
+                            .size(12)
+                            .color(OryxisColors::t().text_primary)
+                            .into(),
+                        text(t("chat_stop"))
+                            .size(11)
+                            .color(OryxisColors::t().text_primary)
+                            .into(),
+                    ])
+                    .spacing(6)
+                    .align_y(iced::Alignment::Center),
+                )
+                .padding(Padding { top: 4.0, right: 12.0, bottom: 4.0, left: 12.0 })
+                .on_press(Message::ChatStop)
+                .style(|_, status| {
+                    let c = OryxisColors::t();
+                    let bg = match status {
+                        BtnStatus::Hovered => c.button_bg_hover,
+                        _ => c.button_bg,
+                    };
+                    button::Style {
+                        background: Some(Background::Color(bg)),
+                        text_color: c.text_primary,
+                        border: Border {
+                            radius: Radius::from(8.0),
+                            width: 1.0,
+                            color: c.border,
+                        },
+                        ..Default::default()
+                    }
+                }),
+            )
+            .center_x(Length::Fill)
+            .padding(Padding { top: 6.0, right: 12.0, bottom: 0.0, left: 12.0 })
+            .into()
+        } else {
+            Space::new().into()
+        };
+
         // ── Assemble sidebar ──
         // Chat body (messages + input) is the content for the Chat tab;
         // the other tabs swap their own content in below the strip.
         let chat_body: Element<'_, Message> =
-            column![messages_scroll, input_separator, chat_disclaimer, input_row]
+            column![messages_scroll, input_separator, stop_control, chat_disclaimer, input_row]
                 .width(Length::Fill)
                 .height(Length::Fill)
                 .into();

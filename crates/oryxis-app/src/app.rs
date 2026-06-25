@@ -1111,6 +1111,18 @@ pub struct Oryxis {
     // AI chat sidebar
     pub(crate) chat_input: text_editor::Content,
     pub(crate) chat_loading: bool,
+    /// Abort handle for the in-flight chat stream (the assistant reply and
+    /// any tool-followup pipeline it spawns). Stored so the user can Stop a
+    /// runaway tool loop, and so closing the sidebar / resetting / starting
+    /// a new conversation actually cancels the detached task instead of
+    /// leaving it to keep calling the model. `None` when nothing is in
+    /// flight. Only one chat stream runs at a time (mirrors `chat_loading`),
+    /// so a single global handle is enough. It is intentionally global, not
+    /// per-tab: chat activity on one tab (a new message / reset / closing the
+    /// sidebar) will abort a stream still running on another tab. That's
+    /// consistent with the global `chat_loading` and errs toward containing
+    /// runaways; making it per-tab (like `chat_history`) is a larger change.
+    pub(crate) chat_task: Option<iced::task::Handle>,
     /// True when the user's scroll is anchored at (or very near) the bottom
     /// of the chat history, used to decide whether new assistant messages
     /// should auto-scroll. If the user has scrolled up to read older

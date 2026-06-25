@@ -44,6 +44,14 @@ pub(crate) struct Pane {
     /// Defaults to `Ephemeral`; the creating site overrides it to `Host` or
     /// `Local` when the pane is referenceable.
     pub origin: PaneOrigin,
+    /// True while a one-shot `TerminalSyncFlush` timer is armed for this
+    /// pane. A DEC `?2026` synchronized update buffers output in vte until
+    /// the matching ESU, a 2 MiB overflow, or a host-driven flush; an app
+    /// that opens one and then blocks on input (docker compose's `(y/N)`
+    /// prompt) would otherwise freeze the screen on the pre-update frame.
+    /// The flag is the rising-edge guard so a long sync burst (one
+    /// `PtyOutput` per coalesced batch) arms a single timer, not one each.
+    pub sync_flush_scheduled: bool,
 }
 
 impl Pane {
@@ -56,6 +64,7 @@ impl Pane {
             session_log_id: None,
             session_log_buf: Vec::new(),
             origin: PaneOrigin::Ephemeral,
+            sync_flush_scheduled: false,
         }
     }
 }
@@ -83,6 +92,20 @@ pub(crate) struct TerminalTab {
     /// here skip the prompt and run immediately. Per-tab so an
     /// "always run rm" decision on one host doesn't leak to others.
     pub chat_always_run_commands: Vec<String>,
+    /// Commands auto-executed by the AI (judge-approved or allow-listed)
+    /// since the last user message. A proposed command already in this
+    /// list is refused auto-execution and surfaced for explicit approval
+    /// instead, the guard that stops the model re-running the same
+    /// command (e.g. `docker --version`) forever. Cleared whenever the
+    /// user retakes control (new message, reset, or an explicit approval).
+    pub chat_auto_run_history: Vec<String>,
+    /// Count of consecutive AI-auto-executed commands since the last user
+    /// message. A backstop for the "many different commands" runaway that
+    /// exact-repeat detection can't catch: once it passes
+    /// `CHAT_AUTO_RUN_STREAK_MAX` further auto-exec is refused and the
+    /// command is surfaced for explicit approval. Reset alongside
+    /// `chat_auto_run_history`.
+    pub chat_auto_run_streak: usize,
     /// True for cloud SSM / ECS-Exec tabs (a `session-manager-plugin`
     /// PTY). These talk SSM over a websocket whose idle timer kills the
     /// session after ~20 min of inactivity, so they get the
@@ -269,6 +292,8 @@ impl TerminalTab {
             chat_history: Vec::new(),
             chat_visible: false,
             chat_always_run_commands: Vec::new(),
+            chat_auto_run_history: Vec::new(),
+            chat_auto_run_streak: 0,
             ssm_keepalive: false,
             relaunch: None,
             session_group_id: None,

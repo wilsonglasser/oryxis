@@ -308,6 +308,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
 
         "ask_ai" => "KI fragen...",
         "thinking" => "Denke nach...",
+        "chat_stop" => "Stoppen",
         "enable_ai" => "KI-Chat Aktivieren",
         "ai_enable_warning" => "Der KI-Assistent kann Befehle auf Ihren verbundenen Servern ausführen, einige davon automatisch. Überprüfen Sie seine Aktionen stets. Nutzung auf eigenes Risiko; die Software wird ohne Gewährleistung bereitgestellt.",
         "ai_chat_disclaimer" => "Die KI kann Befehle auf diesem Server ausführen. Vor dem Bestätigen prüfen.",

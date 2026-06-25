@@ -310,6 +310,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         // AI Chat
         "ask_ai" => "AI에게 질문...",
         "thinking" => "생각 중...",
+        "chat_stop" => "중지",
         "enable_ai" => "AI 채팅 사용",
         "ai_enable_warning" => "AI 어시스턴트는 연결된 서버에서 명령을 실행할 수 있으며 일부는 자동으로 실행할 수 있습니다. 항상 작업을 검토하세요. 사용에 따른 책임은 본인에게 있으며, 소프트웨어는 보증 없이 제공됩니다.",
         "ai_chat_disclaimer" => "AI가 이 서버에서 명령을 실행할 수 있습니다. 승인하기 전에 검토하세요.",

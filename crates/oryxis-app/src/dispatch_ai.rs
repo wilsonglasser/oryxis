@@ -13,7 +13,111 @@ use crate::app::{Message, Oryxis};
 use crate::state::{ChatMessage, ChatRole};
 use crate::util::chat_scroll_to_end;
 
+/// Cap on consecutive AI-auto-executed commands per user turn. Past this,
+/// further auto-exec is refused and the command is surfaced for explicit
+/// approval. A backstop for runaway loops of *different* commands;
+/// exact-repeat loops are caught earlier by `chat_auto_run_history`.
+const CHAT_AUTO_RUN_STREAK_MAX: usize = 12;
+
+/// Flags that decide how a proposed AI tool call is gated. Pulled out of
+/// `Oryxis` state so the decision is a pure function (see
+/// [`classify_tool_gate`]) and can be unit-tested.
+struct ToolGateInput {
+    /// First token is on the tab's "always run" allow-list.
+    allowed: bool,
+    /// Command chains / pipes / redirects / substitutes (e.g. `ls; rm`).
+    has_chaining: bool,
+    /// The model self-classified the command as `safe`.
+    risk_safe: bool,
+    /// Command matches the deterministic catastrophic-command floor.
+    obviously_destructive: bool,
+    /// The per-turn auto-run streak has reached `CHAT_AUTO_RUN_STREAK_MAX`.
+    streak_exceeded: bool,
+    /// This exact command was already auto-run earlier in the turn.
+    already_auto_ran: bool,
+}
+
+/// What to do with a proposed tool call.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ToolGate {
+    /// Run it immediately, no prompt.
+    AutoExec,
+    /// Surface it for explicit user approval (loop guard or destructive floor).
+    Confirm,
+    /// Hand to the independent auto-exec judge.
+    Judge,
+    /// Queue a pending-tool bubble (risky / unclassified).
+    Prompt,
+}
+
+/// Decide how a proposed tool call is gated. Order matters only between
+/// `AutoExec` and the guards, every guard collapses to `Confirm`, so the
+/// relative order of the destructive floor and the loop guards is
+/// irrelevant to the outcome.
+fn classify_tool_gate(i: ToolGateInput) -> ToolGate {
+    // Allow-listed simple command: runs unattended, but even a trusted
+    // command can't loop forever, so the streak backstop still applies.
+    // Exact-repeat is deliberately NOT applied to allow-listed commands
+    // (the user may legitimately want `ls` run more than once).
+    if i.allowed && !i.has_chaining {
+        return if i.streak_exceeded {
+            ToolGate::Confirm
+        } else {
+            ToolGate::AutoExec
+        };
+    }
+    // Deterministic catastrophic-command floor: always prompt, never judged.
+    if i.risk_safe && i.obviously_destructive {
+        return ToolGate::Confirm;
+    }
+    // Loop guards on the judge path: a repeated command or an over-long
+    // streak is refused auto-exec and surfaced instead. This is what breaks
+    // the runaway loop with no user action.
+    if i.risk_safe && (i.streak_exceeded || i.already_auto_ran) {
+        return ToolGate::Confirm;
+    }
+    // Model-claimed safe and nothing objected: let the judge decide.
+    if i.risk_safe {
+        return ToolGate::Judge;
+    }
+    // Risky or unclassified: explicit prompt.
+    ToolGate::Prompt
+}
+
 impl Oryxis {
+    /// Abort the in-flight chat stream (if any) and forget its handle.
+    /// Aborting the iced stream drops the receiver feeding it, which makes
+    /// the detached tool-followup task's `tx.send` fail so it stops too.
+    pub(crate) fn abort_chat_task(&mut self) {
+        if let Some(handle) = self.chat_task.take() {
+            handle.abort();
+        }
+    }
+
+    /// Replace the tracked chat task: abort whatever was running, make the
+    /// new task abortable, store its handle, and return the wrapped task to
+    /// hand back to iced. Funnel every chat-stream / judge task through
+    /// this so a single Stop / close / reset can cancel the live work.
+    fn track_chat_task(&mut self, task: Task<Message>) -> Task<Message> {
+        self.abort_chat_task();
+        let (task, handle) = task.abortable();
+        self.chat_task = Some(handle);
+        task
+    }
+
+    /// Clear the per-turn auto-exec guard state on the active tab. Called
+    /// whenever the user retakes control (sends a message, resets, or
+    /// explicitly approves a command) so a fresh turn starts with a clean
+    /// streak and repeat history.
+    fn reset_chat_auto_run_guard(&mut self) {
+        if let Some(idx) = self.active_tab
+            && let Some(tab) = self.tabs.get_mut(idx)
+        {
+            tab.chat_auto_run_history.clear();
+            tab.chat_auto_run_streak = 0;
+        }
+    }
+
     pub(crate) fn handle_ai(
         &mut self,
         message: Message,
@@ -89,9 +193,11 @@ impl Oryxis {
             // ── AI chat sidebar ──
             Message::ToggleChatSidebar => {
                 let ai_enabled = self.ai_enabled;
+                let mut closing = false;
                 if let Some(idx) = self.active_tab
                     && let Some(tab) = self.tabs.get_mut(idx) {
                         tab.chat_visible = !tab.chat_visible;
+                        closing = !tab.chat_visible;
                         // When opening with AI off, the Chat tab is hidden, so
                         // land on Snippets instead of an empty panel.
                         if tab.chat_visible
@@ -100,6 +206,14 @@ impl Oryxis {
                         {
                             self.terminal_sidebar_tab = crate::state::TerminalSidebarTab::Snippets;
                         }
+                }
+                // Closing the panel is the user's "stop it" gesture (the
+                // reported bug: a runaway tool loop kept running after the
+                // sidebar was closed). Cancel any live chat work so it
+                // doesn't keep executing commands in the background.
+                if closing {
+                    self.abort_chat_task();
+                    self.chat_loading = false;
                 }
             }
             Message::SelectTerminalSidebarTab(tab) => {
@@ -135,6 +249,11 @@ impl Oryxis {
                 self.chat_scroll_at_bottom = relative_y >= 0.999;
             }
             Message::ChatResetConversation => {
+                // Cancel any in-flight stream first, otherwise the detached
+                // tool-followup task would keep running and re-populate the
+                // history we're about to clear.
+                self.abort_chat_task();
+                self.reset_chat_auto_run_guard();
                 if let Some(idx) = self.active_tab
                     && let Some(tab) = self.tabs.get_mut(idx)
                 {
@@ -248,6 +367,11 @@ impl Oryxis {
                             content: input,
                             parsed_md: Vec::new(),
                         });
+                        // A fresh user turn clears the auto-exec guard so the
+                        // streak / repeat history from the previous turn
+                        // doesn't bleed into this one.
+                        tab.chat_auto_run_history.clear();
+                        tab.chat_auto_run_streak = 0;
                         self.chat_input = text_editor::Content::new();
                         self.chat_loading = true;
                         // Sending a message snaps focus back to the latest
@@ -367,6 +491,8 @@ impl Oryxis {
                             crate::ai::StreamChunk::Done => Message::ChatStreamDone,
                             crate::ai::StreamChunk::Error(e) => Message::ChatError(e),
                         });
+                        // Track the stream so Stop / close / reset can abort it.
+                        let stream_task = self.track_chat_task(stream_task);
                         return Ok(Task::batch(vec![chat_scroll_to_end(), stream_task]));
                 }
             }
@@ -417,10 +543,21 @@ impl Oryxis {
                 // here. (Popping was racy when a tool followup pushed
                 // its own placeholder before the original stream's Done
                 // arrived.)
+                // The stream finished on its own; drop the now-spent abort
+                // handle so a later Stop doesn't try to cancel nothing.
+                self.chat_task = None;
                 self.chat_loading = false;
                 if self.chat_scroll_at_bottom {
                     return Ok(chat_scroll_to_end());
                 }
+            }
+            Message::ChatStop => {
+                // User asked to stop. Abort the live stream (and the
+                // detached tool-followup pipeline it feeds) and freeze the
+                // auto-exec guard where it is, so nothing else runs until
+                // the user sends the next message.
+                self.abort_chat_task();
+                self.chat_loading = false;
             }
             Message::ChatError(e) => {
                 // Provider/network failures get their own role so the
@@ -444,6 +581,7 @@ impl Oryxis {
                         parsed_md: Vec::new(),
                     });
                 }
+                self.chat_task = None;
                 self.chat_loading = false;
                 if self.chat_scroll_at_bottom {
                     return Ok(chat_scroll_to_end());
@@ -508,57 +646,87 @@ impl Oryxis {
                             .any(|c| c == &first_token)
                     })
                     .unwrap_or(false);
-                // User-trusted commands ("always run X") bypass every gate,
-                // but only as a single simple command. A chained / piped /
-                // redirected / substituted command (e.g. `ls; rm -rf ~`)
-                // reuses a trusted first token to smuggle past the gates, so
-                // it never takes the shortcut and falls through to the floor
-                // and judge below. This guardrail is always on.
-                if allowed && !crate::ai::has_shell_chaining(&command) {
-                    return Ok(Task::done(Message::ChatToolExec(command)));
-                }
-                // A model-claimed `safe` command auto-runs only after it
-                // clears two gates. First a deterministic floor: commands
-                // we already know are catastrophic always force the
-                // prompt, no judge call, uncheatable. Then an independent
-                // judge for the nuanced rest. Both can only escalate to a
-                // confirmation prompt, never approve a `risky` one, and
-                // both fail safe (a judge error blocks, see
-                // ai::judge_auto_exec).
-                if risk == "safe" && crate::ai::is_obviously_destructive(&command) {
-                    return Ok(Task::done(Message::ChatToolGuardBlocked { command }));
-                }
-                if risk == "safe" {
-                    let api_key = self
-                        .vault
-                        .as_ref()
-                        .and_then(|v| v.get_ai_api_key().ok().flatten())
-                        .unwrap_or_default();
-                    let config = crate::ai::AiConfig {
-                        provider: self.ai_provider.clone(),
-                        model: self.ai_model.clone(),
-                        api_key,
-                        api_url: if self.ai_api_url.is_empty() {
-                            None
-                        } else {
-                            Some(self.ai_api_url.clone())
-                        },
-                        system_prompt: None,
-                    };
-                    self.chat_loading = true;
-                    let cmd_for_judge = command.clone();
-                    return Ok(Task::perform(
-                        crate::ai::judge_auto_exec(config, cmd_for_judge),
-                        move |allow| {
-                            if allow {
-                                Message::ChatToolExec(command.clone())
+                // Loop guards, read from the active tab's per-turn auto-exec
+                // state. `streak_exceeded` catches a long run of *different*
+                // auto-executed commands; `already_auto_ran` catches the
+                // model re-proposing the exact same command (the reported
+                // `docker --version` loop). Both convert an auto-exec into a
+                // confirmation prompt so the loop can't run unattended.
+                let (streak_exceeded, already_auto_ran) = self
+                    .active_tab
+                    .and_then(|i| self.tabs.get(i))
+                    .map(|tab| {
+                        (
+                            tab.chat_auto_run_streak >= CHAT_AUTO_RUN_STREAK_MAX,
+                            tab.chat_auto_run_history.iter().any(|c| c == &command),
+                        )
+                    })
+                    .unwrap_or((false, false));
+                // Decide how this tool call is gated. The branching (allow-list
+                // bypass, destructive floor, loop guards, judge, prompt) is a
+                // pure function of these flags so it can be unit-tested without
+                // a live `Oryxis`, see `classify_tool_gate`.
+                let gate = classify_tool_gate(ToolGateInput {
+                    allowed,
+                    has_chaining: crate::ai::has_shell_chaining(&command),
+                    risk_safe: risk == "safe",
+                    obviously_destructive: crate::ai::is_obviously_destructive(&command),
+                    streak_exceeded,
+                    already_auto_ran,
+                });
+                match gate {
+                    // Allow-listed simple command under the streak cap: run now.
+                    ToolGate::AutoExec => {
+                        return Ok(Task::done(Message::ChatToolExec(command)));
+                    }
+                    // Loop guard tripped, or the deterministic destructive
+                    // floor fired: surface it for explicit approval instead of
+                    // running it unattended. This is what stops the reported
+                    // runaway loop on its own.
+                    ToolGate::Confirm => {
+                        return Ok(Task::done(Message::ChatToolGuardBlocked { command }));
+                    }
+                    // Model-claimed `safe` and nothing above objected: hand to
+                    // the independent auto-exec judge, which can only escalate
+                    // to a prompt, never approve, and fails safe on error.
+                    ToolGate::Judge => {
+                        let api_key = self
+                            .vault
+                            .as_ref()
+                            .and_then(|v| v.get_ai_api_key().ok().flatten())
+                            .unwrap_or_default();
+                        let config = crate::ai::AiConfig {
+                            provider: self.ai_provider.clone(),
+                            model: self.ai_model.clone(),
+                            api_key,
+                            api_url: if self.ai_api_url.is_empty() {
+                                None
                             } else {
-                                Message::ChatToolGuardBlocked {
-                                    command: command.clone(),
+                                Some(self.ai_api_url.clone())
+                            },
+                            system_prompt: None,
+                        };
+                        self.chat_loading = true;
+                        let cmd_for_judge = command.clone();
+                        let judge = Task::perform(
+                            crate::ai::judge_auto_exec(config, cmd_for_judge),
+                            move |allow| {
+                                if allow {
+                                    Message::ChatToolExec(command.clone())
+                                } else {
+                                    Message::ChatToolGuardBlocked {
+                                        command: command.clone(),
+                                    }
                                 }
-                            }
-                        },
-                    ));
+                            },
+                        );
+                        // Track the judge call so Stop cancels a pending
+                        // auto-exec decision before it can fire ChatToolExec
+                        // and run a command behind the user's back.
+                        return Ok(self.track_chat_task(judge));
+                    }
+                    // Risky / unclassified: fall through to the pending bubble.
+                    ToolGate::Prompt => {}
                 }
                 if let Some(idx) = self.active_tab
                     && let Some(tab) = self.tabs.get_mut(idx)
@@ -615,6 +783,10 @@ impl Oryxis {
                 {
                     tab.chat_history.pop();
                 }
+                // The user just retook control, so a command they approve
+                // starts a fresh auto-exec chain (clears the streak / repeat
+                // history the loop guard accumulated).
+                self.reset_chat_auto_run_guard();
                 return Ok(Task::done(Message::ChatToolExec(command)));
             }
             Message::ChatToolApproveAlways(command) => {
@@ -639,6 +811,9 @@ impl Oryxis {
                     {
                         tab.chat_history.pop();
                     }
+                    // User retook control: start a fresh auto-exec chain.
+                    tab.chat_auto_run_history.clear();
+                    tab.chat_auto_run_streak = 0;
                 }
                 return Ok(Task::done(Message::ChatToolExec(command)));
             }
@@ -664,6 +839,20 @@ impl Oryxis {
                             content: format!("$ {}", command),
                             parsed_md: Vec::new(),
                         });
+
+                        // Record this execution against the per-turn loop
+                        // guard. A later proposal of the same command (or one
+                        // past the streak cap) is then refused auto-exec by
+                        // `ChatToolProposed`. User-approval paths reset this
+                        // first, so the count only ever reflects commands run
+                        // since the user last took control. Cap the history
+                        // length so a long agentic turn can't grow it without
+                        // bound; the repeated command stays within the window.
+                        tab.chat_auto_run_history.push(command.clone());
+                        if tab.chat_auto_run_history.len() > 50 {
+                            tab.chat_auto_run_history.remove(0);
+                        }
+                        tab.chat_auto_run_streak += 1;
 
                         // Write the command to the terminal
                         let cmd_bytes = format!("{}\n", command);
@@ -792,14 +981,19 @@ impl Oryxis {
                         });
 
                         let stream = tokio_stream::wrappers::UnboundedReceiverStream::new(rx);
-                        return Ok(Task::stream(stream).map(|chunk| match chunk {
+                        let followup = Task::stream(stream).map(|chunk| match chunk {
                             crate::ai::StreamChunk::Text(t) => Message::ChatStreamChunk(t),
                             crate::ai::StreamChunk::ToolUse { command, risk } => {
                                 Message::ChatToolProposed { command, risk }
                             }
                             crate::ai::StreamChunk::Done => Message::ChatStreamDone,
                             crate::ai::StreamChunk::Error(e) => Message::ChatError(e),
-                        }));
+                        });
+                        // Track the followup stream too: it's the part that
+                        // keeps the tool loop going, so Stop / close / reset
+                        // must be able to abort it. This supersedes the
+                        // original send stream's handle (already spent).
+                        return Ok(self.track_chat_task(followup));
                 }
             }
             Message::ChatToolResult(output) => {
@@ -816,5 +1010,114 @@ impl Oryxis {
             m => return Err(m),
         }
         Ok(Task::none())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{classify_tool_gate, ToolGate, ToolGateInput};
+
+    /// Convenience builder: everything off (a plain risky/unclassified call).
+    fn input() -> ToolGateInput {
+        ToolGateInput {
+            allowed: false,
+            has_chaining: false,
+            risk_safe: false,
+            obviously_destructive: false,
+            streak_exceeded: false,
+            already_auto_ran: false,
+        }
+    }
+
+    #[test]
+    fn unclassified_command_prompts() {
+        assert_eq!(classify_tool_gate(input()), ToolGate::Prompt);
+    }
+
+    #[test]
+    fn safe_command_goes_to_judge() {
+        let gate = classify_tool_gate(ToolGateInput {
+            risk_safe: true,
+            ..input()
+        });
+        assert_eq!(gate, ToolGate::Judge);
+    }
+
+    #[test]
+    fn allow_listed_simple_command_auto_execs() {
+        let gate = classify_tool_gate(ToolGateInput {
+            allowed: true,
+            ..input()
+        });
+        assert_eq!(gate, ToolGate::AutoExec);
+    }
+
+    #[test]
+    fn allow_listed_chained_command_falls_through_to_prompt() {
+        // A trusted first token can't smuggle a chained command past the gate.
+        let gate = classify_tool_gate(ToolGateInput {
+            allowed: true,
+            has_chaining: true,
+            ..input()
+        });
+        assert_eq!(gate, ToolGate::Prompt);
+    }
+
+    #[test]
+    fn repeated_safe_command_is_refused_auto_exec() {
+        // The reported bug: the model re-proposing `docker --version`. A
+        // safe command already auto-run this turn must be surfaced, not
+        // auto-run again, so the loop can't continue unattended.
+        let gate = classify_tool_gate(ToolGateInput {
+            risk_safe: true,
+            already_auto_ran: true,
+            ..input()
+        });
+        assert_eq!(gate, ToolGate::Confirm);
+    }
+
+    #[test]
+    fn over_long_streak_is_refused_even_when_safe() {
+        // Backstop for a run of *different* safe commands.
+        let gate = classify_tool_gate(ToolGateInput {
+            risk_safe: true,
+            streak_exceeded: true,
+            ..input()
+        });
+        assert_eq!(gate, ToolGate::Confirm);
+    }
+
+    #[test]
+    fn streak_cap_also_blocks_allow_listed_commands() {
+        // A loop of an always-run command is still a loop.
+        let gate = classify_tool_gate(ToolGateInput {
+            allowed: true,
+            streak_exceeded: true,
+            ..input()
+        });
+        assert_eq!(gate, ToolGate::Confirm);
+    }
+
+    #[test]
+    fn allow_listed_repeat_without_streak_still_auto_execs() {
+        // Exact-repeat is NOT applied to allow-listed commands: the user
+        // may legitimately want `ls` run more than once in a turn.
+        let gate = classify_tool_gate(ToolGateInput {
+            allowed: true,
+            already_auto_ran: true,
+            ..input()
+        });
+        assert_eq!(gate, ToolGate::AutoExec);
+    }
+
+    #[test]
+    fn destructive_safe_command_is_refused_before_judge() {
+        // The deterministic floor fires regardless of the judge.
+        let gate = classify_tool_gate(ToolGateInput {
+            risk_safe: true,
+            obviously_destructive: true,
+            ..input()
+        });
+        assert_eq!(gate, ToolGate::Confirm);
     }
 }

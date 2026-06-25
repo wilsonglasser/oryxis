@@ -715,6 +715,14 @@ impl Oryxis {
                     // connect streams hold their own Arcs, so dropping
                     // the panes alone would leak the live sessions.
                     Self::close_tab_ssh_sessions(&self.tabs[idx]);
+                    // Closing the tab that owns the live AI chat stream
+                    // must cancel it, otherwise the detached tool-followup
+                    // pipeline keeps polling a terminal that's being torn
+                    // down and keeps calling the model.
+                    if self.active_tab == Some(idx) {
+                        self.abort_chat_task();
+                        self.chat_loading = false;
+                    }
                     // A pending placeholder replacement aimed at this tab
                     // would otherwise go stale and hijack the next
                     // unrelated cloud spawn.

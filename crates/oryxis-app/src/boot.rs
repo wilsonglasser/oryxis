@@ -519,6 +519,7 @@ impl Oryxis {
                 local_shell_picker_open: false,
                 chat_input: text_editor::Content::new(),
                 chat_loading: false,
+                chat_task: None,
                 chat_scroll_at_bottom: true,
                 terminal_sidebar_tab: crate::state::TerminalSidebarTab::default(),
                 sidebar_snippet_search: String::new(),

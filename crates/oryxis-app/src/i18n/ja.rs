@@ -308,6 +308,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
 
         "ask_ai" => "AIに質問...",
         "thinking" => "考え中...",
+        "chat_stop" => "停止",
         "enable_ai" => "AIチャットを有効化",
         "ai_enable_warning" => "AIアシスタントは接続中のサーバーでコマンドを実行でき、一部は自動的に実行される場合があります。常に操作内容を確認してください。自己責任でご利用ください。本ソフトウェアは無保証で提供されます。",
         "ai_chat_disclaimer" => "AIはこのサーバーでコマンドを実行できます。承認する前に確認してください。",

@@ -310,6 +310,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         // AI Chat
         "ask_ai" => "Tanya AI...",
         "thinking" => "Berpikir...",
+        "chat_stop" => "Hentikan",
         "enable_ai" => "Aktifkan Obrolan AI",
         "ai_enable_warning" => "Asisten AI dapat menjalankan perintah di server yang terhubung, dan mungkin menjalankan beberapa secara otomatis. Selalu tinjau tindakannya. Gunakan dengan risiko Anda sendiri; perangkat lunak disediakan tanpa garansi.",
         "ai_chat_disclaimer" => "AI dapat menjalankan perintah di server ini. Tinjau sebelum menyetujui.",

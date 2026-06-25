@@ -314,6 +314,7 @@ pub(super) fn lookup(key: &str) -> &'static str {
         // AI Chat
         "ask_ai" => "Ask AI...",
         "thinking" => "Thinking...",
+        "chat_stop" => "Stop",
         "enable_ai" => "Enable AI Chat",
         "ai_enable_warning" => "The AI assistant can run commands on your connected servers, and may run some automatically. Always review its actions. Use at your own risk; the software is provided without warranty.",
         "ai_chat_disclaimer" => "AI can run commands on this server. Review before approving.",
