@@ -11,7 +11,7 @@ use crate::state::{SftpEntryKind, SftpPaneSide};
 use crate::theme::OryxisColors;
 use crate::widgets::dir_align_x;
 
-const ROW_HEIGHT: f32 = 28.0;
+pub(crate) const ROW_HEIGHT: f32 = 28.0;
 
 /// Which pane-anchored popover is open (layered at the view level so its
 /// dismiss scrim covers the whole view).
@@ -532,7 +532,16 @@ impl Oryxis {
         let body: Element<'_, Message> = if !is_remote {
             let mut col = column![].spacing(0);
             if pane.local_path.parent().is_some() {
-                col = col.push(parent_row(side, &ordered_cols, col_widths, layout));
+                let parent_selected =
+                    self.sftp.parent_cursor && self.sftp.focused_side == side;
+                col = col.push(parent_row(
+                    side,
+                    parent_selected,
+                    self.sftp.suppress_hover,
+                    &ordered_cols,
+                    col_widths,
+                    layout,
+                ));
             }
             if let Some(err) = &pane.error {
                 // Keep the ".." row above so a permission-denied (or any
@@ -595,6 +604,7 @@ impl Oryxis {
                         rename_input,
                         is_selected,
                         is_drop_target,
+                        self.sftp.suppress_hover,
                         &ordered_cols,
                         col_widths,
                         layout,
@@ -696,7 +706,16 @@ impl Oryxis {
         } else {
             let mut col = column![].spacing(0);
             if pane.remote_path != "/" && !pane.remote_path.is_empty() {
-                col = col.push(parent_row(side, &ordered_cols, col_widths, layout));
+                let parent_selected =
+                    self.sftp.parent_cursor && self.sftp.focused_side == side;
+                col = col.push(parent_row(
+                    side,
+                    parent_selected,
+                    self.sftp.suppress_hover,
+                    &ordered_cols,
+                    col_widths,
+                    layout,
+                ));
             }
             // Same per-pane invariants as the local branch, hoisted out
             // of the entry loop: rename state, the selected paths as a
@@ -753,6 +772,7 @@ impl Oryxis {
                     rename_input,
                     is_drop_target,
                     is_selected,
+                    self.sftp.suppress_hover,
                     &ordered_cols,
                     col_widths,
                     layout,
@@ -1919,6 +1939,8 @@ fn local_crumb<'a>(side: SftpPaneSide, label: String, full: std::path::PathBuf) 
 
 fn parent_row<'a>(
     side: SftpPaneSide,
+    selected: bool,
+    suppress_hover: bool,
     visible: &[crate::state::SftpColumn],
     widths: crate::state::SftpColWidths,
     layout: ColLayout,
@@ -1941,10 +1963,15 @@ fn parent_row<'a>(
         .width(layout.row_len)
         .height(Length::Fixed(ROW_HEIGHT))
         .on_press(msg)
-        .style(|_, status| {
-            let bg = match status {
-                BtnStatus::Hovered => OryxisColors::t().bg_hover,
-                _ => Color::TRANSPARENT,
+        .style(move |_, status| {
+            // Keyboard cursor highlight mirrors a selected file row.
+            let bg = if selected {
+                Color { a: 0.20, ..OryxisColors::t().accent }
+            } else {
+                match status {
+                    BtnStatus::Hovered if !suppress_hover => OryxisColors::t().bg_hover,
+                    _ => Color::TRANSPARENT,
+                }
             };
             button::Style {
                 background: Some(Background::Color(bg)),
@@ -2355,6 +2382,11 @@ fn sftp_list_scrollable<'a>(
     drag_col: Option<crate::state::SftpColumn>,
     hovered: Option<crate::state::SftpColumn>,
 ) -> Element<'a, Message> {
+    // Report scroll position + viewport height so keyboard navigation can
+    // scroll only when the cursor reaches a viewport edge (not on every step).
+    let on_scroll = move |vp: scrollable::Viewport| {
+        Message::SftpListScrolled(side, vp.absolute_offset().y, vp.bounds().height)
+    };
     if layout.overflow {
         // Sticky header + horizontal scroll (FileZilla-style): the rows get
         // their own vertical scrollable, and that plus the header sit inside
@@ -2364,7 +2396,8 @@ fn sftp_list_scrollable<'a>(
         let inner_list = scrollable(col)
             .id(iced::widget::Id::from(scroll_id.to_string()))
             .width(layout.row_len)
-            .height(Length::Fill);
+            .height(Length::Fill)
+            .on_scroll(on_scroll);
         let header = column_headers(side, sort, visible, widths, layout, drag_col, hovered);
         let stacked = column![header, inner_list]
             .width(layout.row_len)
@@ -2379,6 +2412,7 @@ fn sftp_list_scrollable<'a>(
             .id(iced::widget::Id::from(scroll_id.to_string()))
             .width(Length::Fill)
             .height(Length::Fill)
+            .on_scroll(on_scroll)
             .into()
     }
 }
@@ -2664,6 +2698,7 @@ fn file_row_local<'a>(
     rename_input: Option<&str>,
     is_selected: bool,
     is_drop_target: bool,
+    suppress_hover: bool,
     visible: &[crate::state::SftpColumn],
     widths: crate::state::SftpColWidths,
     layout: ColLayout,
@@ -2720,7 +2755,10 @@ fn file_row_local<'a>(
                 Color { a: 0.20, ..OryxisColors::t().accent }
             } else {
                 match status {
-                    BtnStatus::Hovered => OryxisColors::t().bg_hover,
+                    // Keyboard nav suppresses the mouse-hover tint until the
+                    // cursor moves again, so it doesn't compete with the
+                    // keyboard cursor on a stationary mouse.
+                    BtnStatus::Hovered if !suppress_hover => OryxisColors::t().bg_hover,
                     _ => Color::TRANSPARENT,
                 }
             };
@@ -2758,6 +2796,7 @@ fn file_row_remote<'a>(
     rename_input: Option<&str>,
     is_drop_target: bool,
     is_selected: bool,
+    suppress_hover: bool,
     visible: &[crate::state::SftpColumn],
     widths: crate::state::SftpColWidths,
     layout: ColLayout,
@@ -2811,7 +2850,9 @@ fn file_row_remote<'a>(
                 Color { a: 0.20, ..OryxisColors::t().accent }
             } else {
                 match status {
-                    BtnStatus::Hovered => OryxisColors::t().bg_hover,
+                    // See file_row_local: keyboard nav mutes hover until the
+                    // mouse moves.
+                    BtnStatus::Hovered if !suppress_hover => OryxisColors::t().bg_hover,
                     _ => Color::TRANSPARENT,
                 }
             };

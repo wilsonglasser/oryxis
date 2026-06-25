@@ -296,6 +296,10 @@ impl Oryxis {
                 );
             }
             Message::SftpRemoteError(side, msg) => {
+                // A failed navigation has no new listing to land the cursor on.
+                if matches!(&self.sftp.pending_focus, Some((s, _)) if *s == side) {
+                    self.sftp.pending_focus = None;
+                }
                 let had_listing = !self.sftp.pane(side).remote_entries.is_empty();
                 // Hard failure (nothing to fall back on) logs as an error;
                 // a soft failure that keeps the previous listing is a warning.
@@ -368,7 +372,15 @@ impl Oryxis {
                 self.sftp.close_menus();
                 let client = match self.sftp.pane(side).client.clone() {
                     Some(c) => c,
-                    None => return Ok(Task::none()),
+                    None => {
+                        // No client to load from: drop any cursor target
+                        // queued for this side so a later successful load
+                        // doesn't consume a stale one.
+                        if matches!(&self.sftp.pending_focus, Some((s, _)) if *s == side) {
+                            self.sftp.pending_focus = None;
+                        }
+                        return Ok(Task::none());
+                    }
                 };
                 {
                     let pane = self.sftp.pane_mut(side);
@@ -391,12 +403,22 @@ impl Oryxis {
                 let entry_count = entries.len();
                 let path_for_log = path.clone();
                 let pane = self.sftp.pane_mut(side);
+                // Only a genuine directory change resets the scroll. A
+                // same-path reload (Refresh, post-op reload) keeps the
+                // scrollable's id, so iced preserves the visual scroll;
+                // zeroing list_scroll_y there would desync our tracked
+                // offset from the widget and break edge-based scrolling.
+                let changed_dir = pane.remote_path != path;
                 pane.remote_path = path;
                 pane.remote_entries = entries;
                 pane.remote_loading = false;
+                if changed_dir {
+                    pane.list_scroll_y = 0.0;
+                }
                 // Selection is path-keyed; navigation invalidates it.
                 self.sftp.selected_rows.clear();
                 self.sftp.selection_anchor = None;
+                self.sftp.parent_cursor = false;
                 self.push_sftp_log(
                     crate::state::SftpLogLevel::Info,
                     format!(
@@ -407,30 +429,76 @@ impl Oryxis {
                         crate::i18n::t("sftp_log_items"),
                     ),
                 );
+                // Folder descent / back-navigation: now the listing is in,
+                // drop the keyboard cursor where the move queued it.
+                if let Some(task) = self.sftp_take_pending_focus(side) {
+                    return Ok(task);
+                }
             }
             Message::SftpUp(side) => {
                 if self.sftp.pane(side).is_remote {
-                    let parent = parent_path(&self.sftp.pane(side).remote_path);
+                    let cur = self.sftp.pane(side).remote_path.clone();
+                    // Land the cursor on the folder we're leaving once the
+                    // parent loads (its full path in the parent listing).
+                    let child = cur.trim_end_matches('/').to_string();
+                    if !child.is_empty() {
+                        self.sftp.pending_focus =
+                            Some((side, crate::state::SftpPendingFocus::Path(child)));
+                    }
+                    let parent = parent_path(&cur);
                     return Ok(Task::done(Message::SftpNavigateRemote(side, parent)));
                 }
                 if let Some(p) = self.sftp.pane(side).local_path.parent() {
                     let p = p.to_path_buf();
-                    self.sftp.pane_mut(side).local_path = p;
+                    // The folder we're leaving, as it'll appear in the parent.
+                    let child = self
+                        .sftp
+                        .pane(side)
+                        .local_path
+                        .to_string_lossy()
+                        .into_owned();
+                    {
+                        let pane = self.sftp.pane_mut(side);
+                        pane.local_path = p;
+                        // New directory -> fresh scrollable starts at the top.
+                        pane.list_scroll_y = 0.0;
+                    }
+                    self.sftp.selected_rows.clear();
+                    self.sftp.selection_anchor = None;
+                    self.sftp.parent_cursor = false;
                     self.refresh_sftp_local(side);
+                    // Local listing is synchronous: focus the folder we left.
+                    return Ok(self.sftp_apply_pending_focus(
+                        side,
+                        crate::state::SftpPendingFocus::Path(child),
+                    ));
                 }
             }
             Message::SftpNavigateLocal(side, path) => {
                 {
                     let pane = self.sftp.pane_mut(side);
+                    // Only a real directory change resets the scroll (see
+                    // SftpRemoteLoaded): a same-path navigate keeps the
+                    // scrollable id and its preserved scroll position.
+                    let changed_dir = pane.local_path != path;
                     pane.local_path = path;
                     pane.drives_open = false;
                     pane.actions_open = false;
+                    if changed_dir {
+                        pane.list_scroll_y = 0.0;
+                    }
                 }
                 self.sftp.left.actions_open = false;
                 self.sftp.right.actions_open = false;
                 self.sftp.selected_rows.clear();
                 self.sftp.selection_anchor = None;
+                self.sftp.parent_cursor = false;
                 self.refresh_sftp_local(side);
+                // Folder descent into a local folder: the (synchronous)
+                // listing is populated, so land the queued cursor now.
+                if let Some(task) = self.sftp_take_pending_focus(side) {
+                    return Ok(task);
+                }
             }
             Message::SftpRefreshLocal(side) => {
                 self.sftp.close_menus();
@@ -1141,6 +1209,10 @@ impl Oryxis {
                 });
             }
             Message::SftpSelectRow(side, path, is_dir) => {
+                // Keyboard focus follows the mouse: a clicked row's pane
+                // becomes the focused pane and the cursor leaves the ".." row.
+                self.sftp.focused_side = side;
+                self.sftp.parent_cursor = false;
                 let target = (side, path.clone());
                 let ctrl = self.modifiers.control() || self.modifiers.command();
                 let shift = self.modifiers.shift();
@@ -1241,6 +1313,11 @@ impl Oryxis {
                     tracing::info!("sftp op: {}", msg);
                 }
             }
+            Message::SftpListScrolled(side, offset_y, viewport_h) => {
+                let pane = self.sftp.pane_mut(side);
+                pane.list_scroll_y = offset_y;
+                pane.list_viewport_h = viewport_h;
+            }
             Message::KeyboardEvent(ke) => {
                 // Type-ahead: while a row is selected in the SFTP view,
                 // typing letters jumps the selection to the first entry whose
@@ -1259,6 +1336,51 @@ impl Oryxis {
                     || self.sftp.picker_open
                     || self.sftp.left.path_editing.is_some()
                     || self.sftp.right.path_editing.is_some();
+                // Arrow / Enter navigation: move the focused row or open
+                // it (folder -> navigate, file -> open). These are Named
+                // keys, so they never reach the type-ahead char extraction
+                // below; handle them here before that returns `Err` and
+                // forwards the keypress to the terminal/PTY. Suppressed
+                // while a modal/input owns the keyboard, and when a
+                // modifier is held (those belong to hotkeys / the PTY).
+                if !editing
+                    && let iced::keyboard::Event::KeyPressed {
+                        key: iced::keyboard::Key::Named(named),
+                        modifiers,
+                        ..
+                    } = &ke
+                    && !modifiers.control()
+                    && !modifiers.command()
+                    && !modifiers.alt()
+                {
+                    use iced::keyboard::key::Named;
+                    // Any of these takes the keyboard cursor over, so mute the
+                    // mouse-hover highlight until the mouse moves again.
+                    if matches!(
+                        named,
+                        Named::ArrowDown
+                            | Named::ArrowUp
+                            | Named::ArrowLeft
+                            | Named::ArrowRight
+                            | Named::Enter
+                            | Named::Tab
+                    ) {
+                        self.sftp.suppress_hover = true;
+                    }
+                    match named {
+                        Named::ArrowDown => return Ok(self.sftp_move_focus(true)),
+                        Named::ArrowUp => return Ok(self.sftp_move_focus(false)),
+                        // Right descends into a folder (or up via ".."); on a
+                        // file it does nothing. Enter additionally opens files.
+                        Named::ArrowRight => return Ok(self.sftp_activate_focused(false)),
+                        Named::Enter => return Ok(self.sftp_activate_focused(true)),
+                        // Left goes to the parent directory.
+                        Named::ArrowLeft => return Ok(self.sftp_focus_parent()),
+                        // Tab switches the focused pane.
+                        Named::Tab => return Ok(self.sftp_toggle_pane_focus()),
+                        _ => {}
+                    }
+                }
                 let ch = if editing {
                     None
                 } else if let iced::keyboard::Event::KeyPressed {
@@ -1278,9 +1400,11 @@ impl Oryxis {
                 let Some(ch) = ch else {
                     return Err(Message::KeyboardEvent(ke));
                 };
-                // Type-ahead only kicks in once a row is selected (the
-                // selection's pane is the focus).
-                if self.sftp.selected_rows.last().is_none() {
+                // Type-ahead works from any keyboard cursor: a selected row
+                // (the selection's pane is the focus) or the ".." parent row
+                // (which clears selected_rows but sets parent_cursor on the
+                // focused pane).
+                if self.sftp.selected_rows.last().is_none() && !self.sftp.parent_cursor {
                     return Ok(Task::none());
                 }
                 let now = std::time::Instant::now();
@@ -1298,6 +1422,8 @@ impl Oryxis {
                     self.sftp.type_ahead.push(lc);
                 }
                 self.sftp.type_ahead_at = Some(now);
+                // Type-ahead moves the keyboard cursor too; mute mouse hover.
+                self.sftp.suppress_hover = true;
                 // Debounce: bump the generation and search only after a short
                 // pause, so fast typing ("cla") resolves once with the full
                 // buffer instead of jumping on every key (c -> cl -> cla).
@@ -1315,9 +1441,14 @@ impl Oryxis {
                 if generation != self.sftp.type_ahead_gen {
                     return Ok(Task::none());
                 }
-                let Some(side) = self.sftp.selected_rows.last().map(|(s, _)| *s) else {
-                    return Ok(Task::none());
-                };
+                // On the ".." row there's no selected row, so fall back to
+                // the focused pane (type-ahead works from the parent cursor).
+                let side = self
+                    .sftp
+                    .selected_rows
+                    .last()
+                    .map(|(s, _)| *s)
+                    .unwrap_or(self.sftp.focused_side);
                 let prefix = self.sftp.type_ahead.clone();
                 if prefix.is_empty() {
                     return Ok(Task::none());
@@ -1392,6 +1523,8 @@ impl Oryxis {
                 let full = visible[idx].1.clone();
                 self.sftp.selected_rows = vec![(side, full.clone())];
                 self.sftp.selection_anchor = Some((side, full));
+                self.sftp.focused_side = side;
+                self.sftp.parent_cursor = false;
                 // Scroll the match into view via the pane's per-directory
                 // scroll id (must match the one the view builds).
                 let side_key = match side {

@@ -52,6 +52,14 @@ pub(crate) struct PaneState {
     /// True while this pane's collapsed filter input (narrow layout) is
     /// expanded into its floating popover.
     pub filter_open: bool,
+    /// Last known absolute vertical scroll offset (px) of this pane's file
+    /// list, fed from the scrollable's `on_scroll`. Used by keyboard
+    /// navigation to scroll only when the cursor reaches a viewport edge.
+    pub list_scroll_y: f32,
+    /// Last known visible height (px) of this pane's file list viewport,
+    /// also from `on_scroll`. `0.0` until the first scroll event (then the
+    /// nav falls back to proportional snapping).
+    pub list_viewport_h: f32,
 }
 
 /// State for the SFTP browser. Two panes, side-by-side: the left pane is
@@ -173,6 +181,35 @@ pub(crate) struct SftpState {
     /// Height of the message-log panel in pixels, resizable via the divider
     /// above it (issue #45). Clamped to [`SFTP_LOG_MIN_H`, `SFTP_LOG_MAX_H`].
     pub log_height: f32,
+    /// Which pane currently holds keyboard focus for arrow / Enter / Tab
+    /// navigation. Tab toggles it; a mouse click on a row follows it.
+    /// Distinct from `selected_rows` so focus survives an empty pane (Tab
+    /// can land on a pane with nothing selected yet).
+    pub focused_side: SftpPaneSide,
+    /// True when the keyboard cursor sits on the `..` (parent) row of the
+    /// focused pane rather than on a real entry. Mutually exclusive with a
+    /// selected row in that pane: setting it clears `selected_rows`.
+    pub parent_cursor: bool,
+    /// Suppress the mouse-hover row highlight after a keyboard navigation
+    /// key, so the hover under a stationary cursor doesn't fight the
+    /// keyboard cursor. Cleared on the next real mouse move.
+    pub suppress_hover: bool,
+    /// Where to drop the keyboard cursor once a pane's *next* directory
+    /// listing loads. Set by folder descent (Right / Enter) and back-
+    /// navigation so the cursor follows the move; consumed by the load
+    /// handler (remote loads are async, so it can't be applied inline).
+    pub pending_focus: Option<(SftpPaneSide, SftpPendingFocus)>,
+}
+
+/// The keyboard cursor target to apply after a directory listing loads.
+#[derive(Debug, Clone)]
+pub(crate) enum SftpPendingFocus {
+    /// The `..` parent row (Enter / Right descent into a folder).
+    Parent,
+    /// The entry with this full path, if still present, used by back-
+    /// navigation to land on the folder we just came out of. Falls back to
+    /// the first entry, then `..`, when the path isn't in the new listing.
+    Path(String),
 }
 
 /// Cap on retained SFTP log lines per tab; older lines are dropped.
@@ -230,6 +267,10 @@ impl Default for SftpState {
             log: Vec::new(),
             log_open: false,
             log_height: SFTP_LOG_DEFAULT_H,
+            focused_side: SftpPaneSide::Left,
+            parent_cursor: false,
+            suppress_hover: false,
+            pending_focus: None,
         }
     }
 }
