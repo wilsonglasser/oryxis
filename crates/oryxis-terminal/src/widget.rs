@@ -1059,9 +1059,11 @@ where
             // `on_paste_request` callback we delegate the actual paste to
             // the app dispatcher so it can target the SSH session (the
             // local-PTY write below only reaches local-shell tabs). The
-            // fallback covers callers that don't set the hook.
+            // fallback covers callers that don't set the hook. Gated on
+            // `copy_on_select`: that setting bundles "select to copy & right
+            // click to paste", so right-click does nothing when it's off.
             iced::Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Right))
-                if cursor.position_in(bounds).is_some() =>
+                if cursor.position_in(bounds).is_some() && self.copy_on_select =>
             {
                 // State 3 (copy_on_select + right_click_copy): a right-click
                 // over a live selection copies it instead of pasting, then
