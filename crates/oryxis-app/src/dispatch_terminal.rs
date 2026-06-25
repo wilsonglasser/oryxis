@@ -115,6 +115,17 @@ impl Oryxis {
         }
     }
 
+    /// Read the system clipboard and paste it into the active session.
+    /// Shared by the Ctrl+V, Ctrl+Shift+V and Cmd+V (macOS) key paths so
+    /// the bracketed-paste handling lives in exactly one place.
+    fn paste_clipboard_into_active(&mut self) {
+        if let Ok(mut clip) = arboard::Clipboard::new()
+            && let Ok(text) = clip.get_text()
+        {
+            self.paste_text_into_active(&text);
+        }
+    }
+
     pub(crate) fn handle_terminal(
         &mut self,
         message: Message,
@@ -536,27 +547,35 @@ impl Oryxis {
                         ..
                     } = event
                     {
+                        // macOS: Command (Cmd) is the clipboard modifier, not
+                        // Ctrl. Cmd+V pastes; Cmd+C / Cmd+A are copy /
+                        // select-all owned by the terminal widget (it holds the
+                        // selection state). The Canvas widget and this global
+                        // key subscription are independent paths, so the widget
+                        // copying does NOT stop the bare character from echoing
+                        // here. Swallow every unregistered Cmd combo so it never
+                        // leaks into the PTY as text. Registered Cmd shortcuts
+                        // (Cmd+K, Cmd+T, ...) were already consumed upstream by
+                        // `handle_hotkey_keypress`. Ctrl keeps its Unix meaning
+                        // (Ctrl+C = SIGINT) on every platform, including macOS.
+                        if cfg!(target_os = "macos")
+                            && modifiers.logo()
+                            && !modifiers.control()
+                            && !modifiers.alt()
+                        {
+                            if let keyboard::Key::Character(ref c) = key
+                                && c.as_str().eq_ignore_ascii_case("v")
+                            {
+                                self.paste_clipboard_into_active();
+                            }
+                            // Cmd+C / Cmd+A and any other Cmd combo fall out
+                            // here without writing, so nothing echoes.
+                        }
                         // Ctrl+V → paste from clipboard (not raw Ctrl+V byte)
-                        if modifiers.control() && !modifiers.shift() {
+                        else if modifiers.control() && !modifiers.shift() {
                             if let keyboard::Key::Character(ref c) = key {
                                 if c.as_str().eq_ignore_ascii_case("v") {
-                                    if let Ok(mut clip) = arboard::Clipboard::new()
-                                        && let Ok(text) = clip.get_text()
-                                        && let Some(tab) = self.tabs.get(tab_idx)
-                                    {
-                                        let bracketed = tab
-                                            .active()
-                                            .terminal
-                                            .lock()
-                                            .map(|s| s.bracketed_paste_enabled())
-                                            .unwrap_or(false);
-                                        let payload = oryxis_terminal::wrap_paste(&text, bracketed);
-                                        if let Some(ref ssh) = tab.active().ssh_session {
-                                            let _ = ssh.write(&payload);
-                                        } else if let Ok(mut state) = tab.active().terminal.lock() {
-                                            state.write(&payload);
-                                        }
-                                    }
+                                    self.paste_clipboard_into_active();
                                     // Don't fall through to the normal key handler
                                 } else if c.as_str().eq_ignore_ascii_case("c") {
                                     // Ctrl+C → send interrupt (byte 3)
@@ -593,22 +612,8 @@ impl Oryxis {
                             // owns the selection state.
                             if let keyboard::Key::Character(ref c) = key
                                 && c.as_str().eq_ignore_ascii_case("v")
-                                && let Ok(mut clip) = arboard::Clipboard::new()
-                                && let Ok(text) = clip.get_text()
-                                && let Some(tab) = self.tabs.get(tab_idx)
                             {
-                                let bracketed = tab
-                                    .active()
-                                    .terminal
-                                    .lock()
-                                    .map(|s| s.bracketed_paste_enabled())
-                                    .unwrap_or(false);
-                                let payload = oryxis_terminal::wrap_paste(&text, bracketed);
-                                if let Some(ref ssh) = tab.active().ssh_session {
-                                    let _ = ssh.write(&payload);
-                                } else if let Ok(mut state) = tab.active().terminal.lock() {
-                                    state.write(&payload);
-                                }
+                                self.paste_clipboard_into_active();
                             }
                         } else {
                             // Normal keys (no Ctrl).

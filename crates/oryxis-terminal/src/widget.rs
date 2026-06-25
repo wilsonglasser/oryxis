@@ -242,6 +242,15 @@ fn scrollbar_geom(
 /// and the cached reference is handed back on every later call. The
 /// previous approach leaked a fresh copy per view pass per pane, which
 /// added up over a long session.
+/// True for the platform's terminal clipboard chord (copy / select-all):
+/// Ctrl+Shift everywhere, plus Cmd (logo) alone on macOS. Paste lives in
+/// the app dispatcher (it must reach the SSH session), but copy and
+/// select-all stay in the widget because it owns the selection state.
+fn is_clipboard_chord(m: &keyboard::Modifiers) -> bool {
+    (m.control() && m.shift())
+        || (cfg!(target_os = "macos") && m.logo() && !m.control() && !m.alt())
+}
+
 fn intern_font_name(name: &str) -> &'static str {
     use std::collections::HashMap;
     use std::sync::OnceLock;
@@ -1179,13 +1188,15 @@ where
                     return Some(CanvasAction::request_redraw());
                 }
             }
-            // Keyboard, Ctrl+Shift+C copy (paste is handled in app.rs so it can
-            // reach the SSH session; widget.state.write only targets a local PTY).
+            // Keyboard, copy (paste is handled in app.rs so it can reach the
+            // SSH session; widget.state.write only targets a local PTY). The
+            // chord is Ctrl+Shift+C everywhere, plus Cmd+C on macOS, matching
+            // the platform's native terminal convention.
             iced::Event::Keyboard(keyboard::Event::KeyPressed {
                 key: keyboard::Key::Character(c),
                 modifiers,
                 ..
-            }) if modifiers.control() && modifiers.shift() && matches!(c.as_str(), "C" | "c") => {
+            }) if is_clipboard_chord(modifiers) && matches!(c.as_str(), "C" | "c") => {
                 if let Some(ref sel) = widget_state.selection
                     && !sel.is_empty()
                     && let Ok(state) = self.state.lock()
@@ -1197,14 +1208,15 @@ where
                 }
                 return Some(CanvasAction::capture());
             }
-            // Keyboard, Ctrl+Shift+A select-all. Selects the entire buffer
-            // (scrollback + screen); copy stays a separate gesture
-            // (Ctrl+Shift+C or copy-on-select on the next release).
+            // Keyboard, select-all (Ctrl+Shift+A, plus Cmd+A on macOS).
+            // Selects the entire buffer (scrollback + screen); copy stays a
+            // separate gesture (the copy chord or copy-on-select on the next
+            // release).
             iced::Event::Keyboard(keyboard::Event::KeyPressed {
                 key: keyboard::Key::Character(c),
                 modifiers,
                 ..
-            }) if modifiers.control() && modifiers.shift() && matches!(c.as_str(), "A" | "a") => {
+            }) if is_clipboard_chord(modifiers) && matches!(c.as_str(), "A" | "a") => {
                 if let Ok(state) = self.state.lock() {
                     use alacritty_terminal::grid::Dimensions;
                     let grid = state.backend.term.grid();
