@@ -1072,6 +1072,30 @@ impl Oryxis {
                 self.connect_anim_tick = self.connect_anim_tick.wrapping_add(1);
             }
             Message::AutoReconnectTick => {
+                // Liveness sweep, independent of the auto-reconnect setting.
+                // A pane whose SSH writer task has died reports
+                // `is_alive() == false` while its reader may still be
+                // draining output: the tab looks "connected" but silently
+                // swallows every keystroke (the writer's `send` errors and
+                // the input sites discard it). Nothing else checks
+                // `is_alive`, so without this such a pane stays a dead
+                // input sink forever. Surface it as a real disconnect so the
+                // UI updates and, when enabled, reconnect kicks in. Panes
+                // already torn down have `ssh_session == None` and are
+                // skipped, so this can't loop.
+                let dead: Vec<_> = self
+                    .tabs
+                    .iter()
+                    .flat_map(|t| t.pane_grid.panes.values())
+                    .filter(|p| p.ssh_session.as_ref().is_some_and(|s| !s.is_alive()))
+                    .map(|p| p.id)
+                    .collect();
+                if !dead.is_empty() {
+                    return Ok(Task::batch(
+                        dead.into_iter()
+                            .map(|id| Task::done(Message::SshDisconnected(id))),
+                    ));
+                }
                 if !self.setting_auto_reconnect {
                     // fall through, nothing to do
                 } else {

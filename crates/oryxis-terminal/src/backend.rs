@@ -146,6 +146,29 @@ impl TerminalBackend {
         }
     }
 
+    /// Deadline at which an open synchronized update (DEC `?2026`) must be
+    /// force-flushed, or `None` when nothing is buffering. vte buffers every
+    /// byte after a BSU (`ESC[?2026h`) and only applies it on the matching
+    /// ESU (`ESC[?2026l`), a 2 MiB overflow, or an explicit `stop_sync`, it
+    /// never expires the 150 ms timeout from inside `advance`. Driving that
+    /// timeout is the host's job: without it an app that opens a sync update
+    /// and then blocks on input (docker compose's `(y/N)` prompt) leaves the
+    /// screen frozen on the frame before the update began. The caller
+    /// schedules a wake-up at this instant and calls `flush_sync`.
+    pub fn sync_timeout(&self) -> Option<std::time::Instant> {
+        self.processor.sync_timeout().sync_timeout()
+    }
+
+    /// Force-end a buffered synchronized update, applying the buffered bytes
+    /// to the grid. No-op when none is pending. Mirrors the 150 ms abort
+    /// alacritty's own event loop performs so a never-closed update can't
+    /// freeze the terminal indefinitely.
+    pub fn flush_sync(&mut self) {
+        if self.processor.sync_timeout().sync_timeout().is_some() {
+            self.processor.stop_sync(&mut self.term);
+        }
+    }
+
     /// Resize the terminal grid.
     pub fn resize(&mut self, cols: u16, rows: u16) {
         if cols == self.cols && rows == self.rows {
@@ -208,5 +231,46 @@ mod tests {
         backend.set_word_delimiters("-");
         let right_dash = backend.term.semantic_search_right(origin).column.0;
         assert_eq!(right_dash, 2, "`-` delimiter should split foo|bar");
+    }
+
+    fn cell0(backend: &TerminalBackend) -> char {
+        backend.term.grid()[Line(0)][Column(0)].c
+    }
+
+    /// An open DEC `?2026` synchronized update buffers output in vte: the
+    /// glyph must not reach the grid, and a flush deadline must be armed.
+    /// `flush_sync` (the host-driven 150 ms abort) then applies it. This is
+    /// the freeze the host MUST break, vte never expires the timeout itself.
+    #[test]
+    fn synchronized_update_buffers_until_flush() {
+        let mut backend = TerminalBackend::new(40, 5);
+        backend.process(b"\x1b[?2026hX");
+        assert_eq!(cell0(&backend), ' ', "buffered glyph must not reach the grid");
+        assert!(backend.sync_timeout().is_some(), "an open update arms a deadline");
+
+        backend.flush_sync();
+        assert_eq!(cell0(&backend), 'X', "flush_sync must apply the buffered glyph");
+        assert!(backend.sync_timeout().is_none(), "deadline clears after flush");
+    }
+
+    /// A complete BSU...ESU pair in one feed applies immediately and leaves
+    /// no pending deadline, so the host arms no needless timer.
+    #[test]
+    fn closed_synchronized_update_needs_no_flush() {
+        let mut backend = TerminalBackend::new(40, 5);
+        backend.process(b"\x1b[?2026hY\x1b[?2026l");
+        assert_eq!(cell0(&backend), 'Y', "closed update applies on its own");
+        assert!(backend.sync_timeout().is_none(), "closed update leaves no deadline");
+    }
+
+    /// `flush_sync` with no update pending is a no-op (must not corrupt the
+    /// grid or panic), since the timer can fire after a normal close.
+    #[test]
+    fn flush_sync_without_pending_update_is_noop() {
+        let mut backend = TerminalBackend::new(40, 5);
+        backend.process(b"Z");
+        backend.flush_sync();
+        assert_eq!(cell0(&backend), 'Z');
+        assert!(backend.sync_timeout().is_none());
     }
 }

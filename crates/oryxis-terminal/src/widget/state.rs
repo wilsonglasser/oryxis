@@ -63,6 +63,18 @@ impl TerminalState {
         self.backend.process(bytes);
     }
 
+    /// Deadline of a buffering DEC `?2026` synchronized update, if any.
+    /// See `TerminalBackend::sync_timeout`.
+    pub fn sync_timeout(&self) -> Option<std::time::Instant> {
+        self.backend.sync_timeout()
+    }
+
+    /// Force-apply a stalled synchronized update to the grid.
+    /// See `TerminalBackend::flush_sync`.
+    pub fn flush_sync(&mut self) {
+        self.backend.flush_sync();
+    }
+
     pub fn write(&mut self, data: &[u8]) {
         if let Some(ref pty) = self.pty
             && let Err(e) = pty.write(data) {

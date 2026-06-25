@@ -211,14 +211,33 @@ impl Oryxis {
                 // Route to the specific pane (a tab may have several, each
                 // with its own PTY). Scan is trivial at these counts.
                 let mut over_threshold = false;
+                let mut schedule_flush: Option<std::time::Duration> = None;
                 if let Some(pane) = self
                     .tabs
                     .iter_mut()
                     .flat_map(|t| t.pane_grid.panes.values_mut())
                     .find(|p| p.id == pane_id)
                 {
+                    let mut sync_deadline = None;
                     if let Ok(mut state) = pane.terminal.lock() {
                         state.process(&bytes);
+                        // A buffering DEC ?2026 update reports its abort
+                        // deadline here; read it while still locked.
+                        sync_deadline = state.sync_timeout();
+                    }
+                    // Rising edge only: arm one flush timer per update, not
+                    // one per coalesced output batch. The flag clears when the
+                    // update closes normally (deadline gone) or when the
+                    // `TerminalSyncFlush` handler fires.
+                    match sync_deadline {
+                        Some(deadline) if !pane.sync_flush_scheduled => {
+                            pane.sync_flush_scheduled = true;
+                            schedule_flush = Some(deadline.saturating_duration_since(
+                                std::time::Instant::now(),
+                            ));
+                        }
+                        None => pane.sync_flush_scheduled = false,
+                        _ => {}
                     }
                     // Buffer the bytes; the vault write is batched (see
                     // `flush_session_logs`). Flush early once the buffer
@@ -254,6 +273,56 @@ impl Oryxis {
                         && let Ok(mut state) = pane.terminal.lock()
                     {
                         state.write(format!("{script}\n").as_bytes());
+                    }
+                }
+                // Arm the one-shot flush for a synchronized update that
+                // stalled with output buffered. Fires `flush_sync` at the
+                // 150 ms deadline so a never-closed `?2026` can't leave the
+                // screen frozen (see `TerminalSyncFlush`).
+                if let Some(remaining) = schedule_flush {
+                    return Ok(Task::perform(
+                        async move {
+                            tokio::time::sleep(remaining).await;
+                        },
+                        move |_| Message::TerminalSyncFlush(pane_id),
+                    ));
+                }
+            }
+            Message::TerminalSyncFlush(pane_id) => {
+                if let Some(pane) = self
+                    .tabs
+                    .iter_mut()
+                    .flat_map(|t| t.pane_grid.panes.values_mut())
+                    .find(|p| p.id == pane_id)
+                {
+                    pane.sync_flush_scheduled = false;
+                    let mut reschedule: Option<std::time::Duration> = None;
+                    if let Ok(mut state) = pane.terminal.lock() {
+                        match state.sync_timeout() {
+                            // The app extended the update past our deadline
+                            // (a fresh BSU reset vte's 150 ms timer): re-arm
+                            // for the new deadline instead of flushing
+                            // mid-update, matching alacritty's behavior.
+                            Some(deadline) if deadline > std::time::Instant::now() => {
+                                reschedule = Some(deadline.saturating_duration_since(
+                                    std::time::Instant::now(),
+                                ));
+                            }
+                            // Deadline reached, update still open: force the
+                            // buffered frame onto the grid.
+                            Some(_) => state.flush_sync(),
+                            // Closed normally in the meantime; nothing to do.
+                            None => {}
+                        }
+                    }
+                    if let Some(remaining) = reschedule {
+                        pane.sync_flush_scheduled = true;
+                        return Ok(Task::perform(
+                            async move {
+                                tokio::time::sleep(remaining).await;
+                            },
+                            move |_| Message::TerminalSyncFlush(pane_id),
+                        ));
                     }
                 }
             }
