@@ -350,7 +350,15 @@ impl Oryxis {
                 self.sftp.close_menus();
                 let client = match self.sftp.pane(side).client.clone() {
                     Some(c) => c,
-                    None => return Ok(Task::none()),
+                    None => {
+                        // No client to load from: drop any cursor target
+                        // queued for this side so a later successful load
+                        // doesn't consume a stale one.
+                        if matches!(&self.sftp.pending_focus, Some((s, _)) if *s == side) {
+                            self.sftp.pending_focus = None;
+                        }
+                        return Ok(Task::none());
+                    }
                 };
                 {
                     let pane = self.sftp.pane_mut(side);
@@ -373,11 +381,18 @@ impl Oryxis {
                 let entry_count = entries.len();
                 let path_for_log = path.clone();
                 let pane = self.sftp.pane_mut(side);
+                // Only a genuine directory change resets the scroll. A
+                // same-path reload (Refresh, post-op reload) keeps the
+                // scrollable's id, so iced preserves the visual scroll;
+                // zeroing list_scroll_y there would desync our tracked
+                // offset from the widget and break edge-based scrolling.
+                let changed_dir = pane.remote_path != path;
                 pane.remote_path = path;
                 pane.remote_entries = entries;
                 pane.remote_loading = false;
-                // New directory -> fresh scrollable starts at the top.
-                pane.list_scroll_y = 0.0;
+                if changed_dir {
+                    pane.list_scroll_y = 0.0;
+                }
                 // Selection is path-keyed; navigation invalidates it.
                 self.sftp.selected_rows.clear();
                 self.sftp.selection_anchor = None;
@@ -440,11 +455,16 @@ impl Oryxis {
             Message::SftpNavigateLocal(side, path) => {
                 {
                     let pane = self.sftp.pane_mut(side);
+                    // Only a real directory change resets the scroll (see
+                    // SftpRemoteLoaded): a same-path navigate keeps the
+                    // scrollable id and its preserved scroll position.
+                    let changed_dir = pane.local_path != path;
                     pane.local_path = path;
                     pane.drives_open = false;
                     pane.actions_open = false;
-                    // New directory -> fresh scrollable starts at the top.
-                    pane.list_scroll_y = 0.0;
+                    if changed_dir {
+                        pane.list_scroll_y = 0.0;
+                    }
                 }
                 self.sftp.left.actions_open = false;
                 self.sftp.right.actions_open = false;
@@ -1336,9 +1356,11 @@ impl Oryxis {
                 let Some(ch) = ch else {
                     return Err(Message::KeyboardEvent(ke));
                 };
-                // Type-ahead only kicks in once a row is selected (the
-                // selection's pane is the focus).
-                if self.sftp.selected_rows.last().is_none() {
+                // Type-ahead works from any keyboard cursor: a selected row
+                // (the selection's pane is the focus) or the ".." parent row
+                // (which clears selected_rows but sets parent_cursor on the
+                // focused pane).
+                if self.sftp.selected_rows.last().is_none() && !self.sftp.parent_cursor {
                     return Ok(Task::none());
                 }
                 let now = std::time::Instant::now();
@@ -1375,9 +1397,14 @@ impl Oryxis {
                 if generation != self.sftp.type_ahead_gen {
                     return Ok(Task::none());
                 }
-                let Some(side) = self.sftp.selected_rows.last().map(|(s, _)| *s) else {
-                    return Ok(Task::none());
-                };
+                // On the ".." row there's no selected row, so fall back to
+                // the focused pane (type-ahead works from the parent cursor).
+                let side = self
+                    .sftp
+                    .selected_rows
+                    .last()
+                    .map(|(s, _)| *s)
+                    .unwrap_or(self.sftp.focused_side);
                 let prefix = self.sftp.type_ahead.clone();
                 if prefix.is_empty() {
                     return Ok(Task::none());

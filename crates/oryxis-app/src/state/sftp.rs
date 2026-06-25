@@ -199,7 +199,7 @@ pub(crate) struct SftpState {
 pub(crate) enum SftpPendingFocus {
     /// The `..` parent row (Enter / Right descent into a folder).
     Parent,
-    /// The entry with this full path, if still present — used by back-
+    /// The entry with this full path, if still present, used by back-
     /// navigation to land on the folder we just came out of. Falls back to
     /// the first entry, then `..`, when the path isn't in the new listing.
     Path(String),
