@@ -530,15 +530,19 @@ impl Oryxis {
         let header_band = pane_header_band(band_content);
 
         let body: Element<'_, Message> = if !is_remote {
+            let mut col = column![].spacing(0);
+            if pane.local_path.parent().is_some() {
+                col = col.push(parent_row(side, &ordered_cols, col_widths, layout));
+            }
             if let Some(err) = &pane.error {
-                container(text(err.clone()).size(12).color(OryxisColors::t().error))
-                    .padding(12)
-                    .into()
+                // Keep the ".." row above so a permission-denied (or any
+                // other read) failure can't trap the user in the folder;
+                // the error stands in for the entries we couldn't list.
+                col = col.push(
+                    container(text(err.clone()).size(12).color(OryxisColors::t().error))
+                        .padding(12),
+                );
             } else {
-                let mut col = column![].spacing(0);
-                if pane.local_path.parent().is_some() {
-                    col = col.push(parent_row(side, &ordered_cols, col_widths, layout));
-                }
                 // Per-pane invariants hoisted out of the entry loop:
                 // rename state for this side, the selected-row paths as
                 // a set for O(1) membership, and the cross-pane drag
@@ -596,18 +600,18 @@ impl Oryxis {
                         layout,
                     ));
                 }
-                sftp_list_scrollable(
-                    col,
-                    &list_scroll_id,
-                    side,
-                    pane.sort,
-                    &ordered_cols,
-                    col_widths,
-                    layout,
-                    col_drag,
-                    col_hovered,
-                )
             }
+            sftp_list_scrollable(
+                col,
+                &list_scroll_id,
+                side,
+                pane.sort,
+                &ordered_cols,
+                col_widths,
+                layout,
+                col_drag,
+                col_hovered,
+            )
         } else if let Some(err) = &pane.error {
             // Retry routes through SftpRetryRemote which knows whether
             // the session is still up (re-list) or whether the connect
