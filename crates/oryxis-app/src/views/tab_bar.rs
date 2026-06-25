@@ -427,10 +427,16 @@ impl Oryxis {
         // so the scrollable scrolls) it docks at the strip's trailing
         // edge instead, just before the right cluster, so it can never
         // scroll out of reach with the tabs.
-        let plus_btn = crate::widgets::bounds_reporter(
+        // Wrapped in a MouseArea so entering the `+` during an active tab
+        // drag drops the dragged tab at the end of its partition (the trailing
+        // slot the live-slide can't reach). The handler no-ops when no drag is
+        // in flight, so normal `+` clicks are unaffected.
+        let plus_btn: Element<'_, Message> = MouseArea::new(crate::widgets::bounds_reporter(
             new_tab_btn(!strip_overflow),
             self.plus_btn_bounds.clone(),
-        );
+        ))
+        .on_enter(Message::TabDragToEnd)
+        .into();
         let mut docked_plus: Option<Element<'_, Message>> = None;
         if strip_overflow {
             docked_plus = Some(plus_btn);
@@ -1280,28 +1286,40 @@ fn session_tab<'a>(
         .into()
     });
     let close_btn = || -> Element<'_, Message> {
-        MouseArea::new(
-            container(
-                iced_fonts::lucide::x()
-                    .size(11)
-                    .color(if is_active {
-                        effective_accent
-                    } else {
-                        OryxisColors::t().text_secondary
-                    }),
-            )
-            .center_x(Length::Fixed(TAB_ICON_SLOT))
-            .center_y(Length::Fixed(TAB_ICON_SLOT))
-            .style(move |_| container::Style {
-                background: Some(Background::Color(if is_active {
-                    Color::TRANSPARENT
-                } else {
-                    OryxisColors::t().bg_hover
-                })),
+        let icon_color = if is_active {
+            effective_accent
+        } else {
+            OryxisColors::t().text_secondary
+        };
+        // A real `button` (not a bare `MouseArea`) so the tab only closes on
+        // release-over-the-button: pressing then dragging off cancels the
+        // close, and `Status::Hovered`/`Pressed` give the highlight for free.
+        button(
+            container(iced_fonts::lucide::x().size(11).color(icon_color))
+                .center_x(Length::Fixed(TAB_ICON_SLOT))
+                .center_y(Length::Fixed(TAB_ICON_SLOT)),
+        )
+        .padding(0)
+        .style(move |_, status| {
+            // At rest the inactive tab carries a subtle fill so the X reads
+            // as a button; the active tab stays transparent. Hover/press tint
+            // toward the error colour to signal the destructive action.
+            let rest = if is_active {
+                Color::TRANSPARENT
+            } else {
+                OryxisColors::t().bg_hover
+            };
+            let bg = match status {
+                BtnStatus::Hovered => Color { a: 0.18, ..OryxisColors::t().error },
+                BtnStatus::Pressed => Color { a: 0.34, ..OryxisColors::t().error },
+                _ => rest,
+            };
+            button::Style {
+                background: Some(Background::Color(bg)),
                 border: Border { radius: Radius::from(4.0), ..Default::default() },
                 ..Default::default()
-            }),
-        )
+            }
+        })
         .on_press(Message::CloseTab(idx))
         .into()
     };

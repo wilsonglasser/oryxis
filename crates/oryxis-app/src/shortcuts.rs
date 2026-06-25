@@ -17,12 +17,22 @@ impl Oryxis {
     /// out of range so Ctrl+5 on a window with two tabs is a no-op
     /// instead of bouncing focus around.
     pub(crate) fn strip_slot_target(&self, slot: usize) -> Option<Message> {
-        use crate::state::TabRef;
         // Slot 0 is the Home (Hosts) area tab; the rest follow the unified
         // strip order (terminal + SFTP tabs, pinned-first), exactly as
         // `views/tab_bar.rs` renders it, so Ctrl+N lands on the Nth visible
         // chip. SFTP is a tab now, not a fixed Ctrl+2 area tab.
         let mut slots: Vec<Message> = vec![Message::ChangeView(View::Dashboard)];
+        slots.extend(self.ordered_tab_refs().iter().filter_map(|r| self.tab_ref_select_msg(r)));
+        slots.into_iter().nth(slot)
+    }
+
+    /// The unified left-to-right strip order (pinned tabs first), terminal
+    /// and SFTP tabs interleaved exactly as `views/tab_bar.rs` renders them.
+    /// Shared by Ctrl+N slot resolution and Alt+arrow cycling so both honour
+    /// the visible order instead of a storage-vec index (which skips SFTP
+    /// tabs and ignores pinning).
+    pub(crate) fn ordered_tab_refs(&self) -> Vec<crate::state::TabRef> {
+        use crate::state::TabRef;
         let pinned_of = |r: &TabRef| -> bool {
             match r {
                 TabRef::Terminal(id) => {
@@ -33,22 +43,47 @@ impl Oryxis {
                 }
             }
         };
-        let to_msg = |r: &TabRef| -> Option<Message> {
-            match r {
-                TabRef::Terminal(id) => {
-                    self.tabs.iter().position(|t| t._id == *id).map(Message::SelectTab)
-                }
-                TabRef::Sftp(id) => {
-                    if !self.sftp_enabled {
-                        return None;
-                    }
-                    self.sftp_tabs.iter().position(|t| t.id == *id).map(Message::SelectSftpTab)
-                }
+        let mut refs: Vec<TabRef> =
+            self.tab_order.iter().copied().filter(|r| pinned_of(r)).collect();
+        refs.extend(self.tab_order.iter().copied().filter(|r| !pinned_of(r)));
+        refs
+    }
+
+    /// The `Message` that activates a given strip tab, or `None` when it can't
+    /// be activated (an SFTP tab while SFTP is disabled, or a dangling id).
+    pub(crate) fn tab_ref_select_msg(&self, r: &crate::state::TabRef) -> Option<Message> {
+        use crate::state::TabRef;
+        match r {
+            TabRef::Terminal(id) => {
+                self.tabs.iter().position(|t| t._id == *id).map(Message::SelectTab)
             }
-        };
-        slots.extend(self.tab_order.iter().filter(|r| pinned_of(r)).filter_map(to_msg));
-        slots.extend(self.tab_order.iter().filter(|r| !pinned_of(r)).filter_map(to_msg));
-        slots.into_iter().nth(slot)
+            TabRef::Sftp(id) => {
+                if !self.sftp_enabled {
+                    return None;
+                }
+                self.sftp_tabs.iter().position(|t| t.id == *id).map(Message::SelectSftpTab)
+            }
+        }
+    }
+
+    /// The currently focused tab as a `TabRef`. Mirrors the strip's own
+    /// active model (`views/tab_bar.rs`): `active_sftp` is NOT cleared when a
+    /// terminal tab is selected, so an SFTP tab counts as active only on the
+    /// SFTP surface (`active_tab` empty and the SFTP view showing). Otherwise
+    /// the selected terminal tab wins. Checking `active_sftp` first here was
+    /// the bug that made Alt+arrow / Ctrl+Tab jump from a stale SFTP slot.
+    pub(crate) fn active_tab_ref(&self) -> Option<crate::state::TabRef> {
+        use crate::state::TabRef;
+        if self.active_tab.is_none()
+            && self.active_view == View::Sftp
+            && let Some(i) = self.active_sftp
+        {
+            return self.sftp_tabs.get(i).map(|t| TabRef::Sftp(t.id));
+        }
+        if let Some(i) = self.active_tab {
+            return self.tabs.get(i).map(|t| TabRef::Terminal(t._id));
+        }
+        None
     }
 
     /// Resolves the active tab to its position in `self.connections`,
@@ -570,17 +605,32 @@ impl Oryxis {
                 _ => Task::none(),
             },
             CycleTabs => {
-                if self.tabs.is_empty() {
+                // Walk the unified visual strip (terminal + SFTP, pinned-first)
+                // so Alt+arrows step through every chip the user sees, in the
+                // order they see it, instead of a raw `self.tabs` index that
+                // skipped SFTP tabs and ignored pinning.
+                let refs: Vec<crate::state::TabRef> = self
+                    .ordered_tab_refs()
+                    .into_iter()
+                    .filter(|r| self.tab_ref_select_msg(r).is_some())
+                    .collect();
+                let n = refs.len();
+                if n == 0 {
                     return Task::none();
                 }
-                let n = self.tabs.len();
-                let current = self.active_tab.unwrap_or(0);
-                let next = match family {
-                    FamilyMatch::ArrowRight => (current + 1) % n,
-                    FamilyMatch::ArrowLeft => (current + n - 1) % n,
+                let cur_pos = self
+                    .active_tab_ref()
+                    .and_then(|cr| refs.iter().position(|r| *r == cr))
+                    .unwrap_or(0);
+                let next_pos = match family {
+                    FamilyMatch::ArrowRight => (cur_pos + 1) % n,
+                    FamilyMatch::ArrowLeft => (cur_pos + n - 1) % n,
                     _ => return Task::none(),
                 };
-                Task::done(Message::SelectTab(next))
+                match self.tab_ref_select_msg(&refs[next_pos]) {
+                    Some(msg) => Task::done(msg),
+                    None => Task::none(),
+                }
             }
             ToggleFullscreen => Task::done(Message::WindowFullscreenToggle),
             FontZoomIn => {

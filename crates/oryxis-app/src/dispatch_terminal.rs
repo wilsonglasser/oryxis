@@ -365,6 +365,12 @@ impl Oryxis {
                 // every later branch in this handler sees fresh state.
                 if let keyboard::Event::ModifiersChanged(m) = &event {
                     self.modifiers = *m;
+                    // Releasing Ctrl ends a Ctrl+Tab walk: commit the landing
+                    // tab to the front of the MRU list so the next walk starts
+                    // from here (VS Code semantics).
+                    if !m.control() {
+                        self.commit_tab_cycle();
+                    }
                 }
                 // PrintScreen -> open the Windows snip overlay (region
                 // capture), matching the OS default. winit delivers the
@@ -416,6 +422,31 @@ impl Oryxis {
                     } else {
                         iced::widget::operation::focus_next()
                     });
+                }
+                // Ctrl+Tab / Ctrl+Shift+Tab: walk the terminal tabs in
+                // most-recently-used order (hold Ctrl, tap Tab; release Ctrl
+                // commits). Handled here rather than via the configurable
+                // hotkey table because that table is one-shot and can't model
+                // the hold/release commit. Consumed unconditionally in the
+                // terminal view so the combo never leaks a literal \t into the
+                // PTY; the actual switch only happens with more than one tab.
+                if let keyboard::Event::KeyPressed { key, modifiers, .. } = &event
+                    && matches!(key, keyboard::Key::Named(keyboard::key::Named::Tab))
+                    && modifiers.control()
+                    && matches!(
+                        self.active_view,
+                        crate::state::View::Terminal | crate::state::View::Sftp
+                    )
+                    && !self.show_host_panel
+                    && !self.any_modal_blocks_input()
+                {
+                    // Cycle when the strip holds more than one switchable chip
+                    // (terminal + SFTP). Consume regardless so Ctrl+Tab never
+                    // leaks a literal \t into the PTY.
+                    if self.tabs.len() + self.sftp_tabs.len() > 1 {
+                        return Ok(self.cycle_tabs_mru(modifiers.shift()));
+                    }
+                    return Ok(Task::none());
                 }
                 // Dashboard keyboard navigation: from the search field,
                 // Tab / arrows move a selection across the visible host
@@ -655,6 +686,19 @@ impl Oryxis {
                                             state.write(&[3]);
                                         }
                                     }
+                                } else if c.as_str().eq_ignore_ascii_case("d")
+                                    && self
+                                        .tabs
+                                        .get(tab_idx)
+                                        .is_some_and(|t| t.label.ends_with(" (disconnected)"))
+                                {
+                                    // A logged-out session (SSH / exec tab relabelled
+                                    // "(disconnected)") has no shell left to receive EOF,
+                                    // so Ctrl+D would be swallowed. Treat it as "close this
+                                    // dead tab" instead, matching the muscle memory of
+                                    // dismissing an exited shell. Only single-pane tabs
+                                    // carry the suffix, so siblings are never nuked.
+                                    return Ok(self.update(Message::CloseTab(tab_idx)));
                                 } else if let Some(bytes) = ctrl_key_bytes(&key) {
                                     // Other Ctrl+key combinations
                                     if let Some(tab) = self.tabs.get(tab_idx) {

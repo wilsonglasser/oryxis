@@ -138,7 +138,7 @@ pub(crate) struct TerminalTab {
 /// across reorder / close) rather than a vec index. Reserved for the full
 /// cross-type interleave / drag-reorder (deferred): SFTP tabs render grouped
 /// after terminal tabs today, so `Terminal` is not yet constructed.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[allow(dead_code)]
 pub(crate) enum TabRef {
     Terminal(Uuid),
@@ -239,6 +239,20 @@ pub(crate) struct TabDrag {
     pub start: iced::Point,
     /// Promoted past the threshold (a real drag, not a click).
     pub active: bool,
+}
+
+/// An in-progress most-recently-used tab walk (Ctrl+Tab held, Tab tapped).
+/// `order` is a snapshot of the MRU list taken when the hold begins, so the
+/// list isn't reshuffled mid-walk (that would just bounce between the two
+/// newest tabs). `pos` is the cursor into `order`; the landing tab is only
+/// promoted to the front of the real MRU list when Ctrl is released.
+#[derive(Debug, Clone)]
+pub(crate) struct TabCycle {
+    /// Snapshot of tabs in MRU order (current tab first), terminal and SFTP
+    /// interleaved so the walk spans the whole strip.
+    pub order: Vec<TabRef>,
+    /// Index into `order` of the currently highlighted tab.
+    pub pos: usize,
 }
 
 impl PinnedTabSpec {

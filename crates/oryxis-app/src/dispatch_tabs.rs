@@ -503,6 +503,15 @@ impl Oryxis {
             Message::TabUnhovered => {
                 self.hovered_tab = None;
             }
+            Message::TabDragToEnd => {
+                // Trailing drop zone: the live-slide only ever moves the
+                // dragged tab to *before* a hovered tab, so the slot after the
+                // last tab is unreachable by hovering. Entering the `+` area
+                // during an active drag fills that gap.
+                if let Some(drag) = self.tab_drag.filter(|d| d.active) {
+                    self.slide_tab_to_partition_end(drag.from_id);
+                }
+            }
             Message::ShowNewTabPicker => {
                 // Opening the picker from the `+` button always targets a new
                 // tab, never a split (only SplitPane sets that).
@@ -1394,6 +1403,47 @@ impl Oryxis {
         let moved = self.tab_order.remove(from_pos);
         let dest = if from_pos < to_pos { to_pos - 1 } else { to_pos };
         self.tab_order.insert(dest, moved);
+    }
+
+    /// Move the tab identified by `from_id` to the very end of its own pin
+    /// partition in `tab_order` (last among normal tabs, or last among pinned).
+    /// Powers the trailing drop zone so a tab can reach the rightmost slot,
+    /// which the before-the-target live-slide can never express. Idempotent:
+    /// a no-op when the tab already sits at its partition's end, so repeated
+    /// `CursorMoved`-driven calls don't thrash.
+    pub(crate) fn slide_tab_to_partition_end(&mut self, from_id: uuid::Uuid) {
+        let pinned_of = |r: &crate::state::TabRef| -> bool {
+            match r {
+                crate::state::TabRef::Terminal(id) => {
+                    self.tabs.iter().find(|t| t._id == *id).map(|t| t.pinned).unwrap_or(false)
+                }
+                crate::state::TabRef::Sftp(id) => {
+                    self.sftp_tabs.iter().find(|t| t.id == *id).map(|t| t.pinned).unwrap_or(false)
+                }
+            }
+        };
+        let id_of = |r: &crate::state::TabRef| -> uuid::Uuid {
+            match r {
+                crate::state::TabRef::Terminal(id) | crate::state::TabRef::Sftp(id) => *id,
+            }
+        };
+        let Some(from_pos) = self.tab_order.iter().position(|r| id_of(r) == from_id) else {
+            return;
+        };
+        let from_pinned = pinned_of(&self.tab_order[from_pos]);
+        // Last slot that belongs to the dragged tab's partition.
+        let Some(last_same) = self.tab_order.iter().rposition(|r| pinned_of(r) == from_pinned)
+        else {
+            return;
+        };
+        if from_pos >= last_same {
+            return;
+        }
+        // Removing `from_pos` shifts everything after it down one, so the old
+        // `last_same` now sits at `last_same - 1`; inserting at `last_same`
+        // drops the tab immediately after it (the new partition end).
+        let moved = self.tab_order.remove(from_pos);
+        self.tab_order.insert(last_same, moved);
     }
 
     /// Re-anchor (or clear) the in-flight connect progress after the tab

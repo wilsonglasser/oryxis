@@ -38,6 +38,10 @@ pub enum Message {
     CloseTab(usize),
     TabHovered(usize),
     TabUnhovered,
+    /// Cursor entered the trailing drop zone (the `+` button area) during an
+    /// active tab-reorder drag: slide the dragged tab to the end of its
+    /// partition, the one slot the live-slide can't otherwise reach.
+    TabDragToEnd,
     ShowNewTabPicker,
     HideNewTabPicker,
     NewTabPickerSearchChanged(String),

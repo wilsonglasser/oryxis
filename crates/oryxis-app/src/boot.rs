@@ -460,6 +460,8 @@ impl Oryxis {
                 pin_next_plugin_tab: None,
                 pending_ecs_autoconnect: None,
                 tab_drag: None,
+                tab_mru: Vec::new(),
+                tab_cycle: None,
                 setting_show_tab_status_dot: true,
                 setting_tab_accent_line: true,
                 setting_tab_accent_wash: true,

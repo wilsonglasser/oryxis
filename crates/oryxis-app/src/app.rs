@@ -947,6 +947,12 @@ pub struct Oryxis {
     pub(crate) pending_ecs_autoconnect: Option<crate::state::PendingEcsAutoConnect>,
     /// In-progress tab reorder drag (see `TabDrag`). `None` when not dragging.
     pub(crate) tab_drag: Option<crate::state::TabDrag>,
+    /// Strip tabs (terminal + SFTP) in most-recently-used order (front =
+    /// current). Drives Ctrl+Tab switching. Maintained by `touch_tab_mru`.
+    pub(crate) tab_mru: Vec<crate::state::TabRef>,
+    /// Active Ctrl+Tab walk, set while Ctrl is held and Tab is being tapped;
+    /// committed and cleared when Ctrl is released. See `TabCycle`.
+    pub(crate) tab_cycle: Option<crate::state::TabCycle>,
     /// When on, each tab paints a small colored dot over its OS badge:
     /// green for an active SSH session, orange while connecting, red
     /// for a tab that lost its session. Defaults on; the user can hide
@@ -1354,8 +1360,101 @@ impl Oryxis {
     }
 
     pub(crate) fn remember_terminal_tab_focus(&mut self, idx: usize) {
-        if idx < self.tabs.len() {
-            self.last_terminal_tab = Some(idx);
+        let Some(id) = self.tabs.get(idx).map(|t| t._id) else {
+            return;
+        };
+        self.last_terminal_tab = Some(idx);
+        self.touch_tab_mru(crate::state::TabRef::Terminal(id));
+    }
+
+    /// Promote a tab to the front of the MRU list (and drop refs whose tab has
+    /// since closed, so it can't grow without bound). Suppressed while a
+    /// Ctrl+Tab walk is in flight: the landing tab is committed only when Ctrl
+    /// is released, so stepping through the list mustn't reshuffle it.
+    pub(crate) fn touch_tab_mru(&mut self, r: crate::state::TabRef) {
+        if self.tab_cycle.is_some() {
+            return;
+        }
+        let live: std::collections::HashSet<crate::state::TabRef> =
+            self.ordered_tab_refs().into_iter().collect();
+        self.tab_mru.retain(|x| *x != r && live.contains(x));
+        self.tab_mru.insert(0, r);
+    }
+
+    /// Snapshot of strip tabs (terminal + SFTP) in most-recently-used order
+    /// with the current tab first, used to seed a Ctrl+Tab walk. Only
+    /// activatable tabs are kept; tabs never focused (absent from `tab_mru`)
+    /// are appended in visual strip order.
+    pub(crate) fn mru_cycle_order(&self) -> Vec<crate::state::TabRef> {
+        let activatable: Vec<crate::state::TabRef> = self
+            .ordered_tab_refs()
+            .into_iter()
+            .filter(|r| self.tab_ref_select_msg(r).is_some())
+            .collect();
+        let mut order: Vec<crate::state::TabRef> = self
+            .tab_mru
+            .iter()
+            .copied()
+            .filter(|r| activatable.contains(r))
+            .collect();
+        for r in &activatable {
+            if !order.contains(r) {
+                order.push(*r);
+            }
+        }
+        // Guarantee the active tab is the walk's origin (pos 0).
+        if let Some(active) = self.active_tab_ref()
+            && let Some(p) = order.iter().position(|r| *r == active)
+        {
+            order.remove(p);
+            order.insert(0, active);
+        }
+        order
+    }
+
+    /// Advance the Ctrl+Tab most-recently-used walk by one step. Starts a new
+    /// walk (snapshotting the MRU order) on the first Tab of a hold; subsequent
+    /// taps step `pos` without reshuffling. `backward` (Shift held) steps the
+    /// other way. Activation routes through the normal select message so a
+    /// dormant pinned tab reopens and an SFTP tab switches surfaces; the MRU
+    /// isn't promoted until Ctrl is released (`commit_tab_cycle`), because
+    /// `touch_tab_mru` no-ops while `tab_cycle` is set.
+    pub(crate) fn cycle_tabs_mru(&mut self, backward: bool) -> iced::Task<Message> {
+        if self.tab_cycle.is_none() {
+            let order = self.mru_cycle_order();
+            if order.len() < 2 {
+                return iced::Task::none();
+            }
+            self.tab_cycle = Some(crate::state::TabCycle { order, pos: 0 });
+        }
+        let Some(cycle) = self.tab_cycle.as_mut() else {
+            return iced::Task::none();
+        };
+        let n = cycle.order.len();
+        cycle.pos = if backward {
+            (cycle.pos + n - 1) % n
+        } else {
+            (cycle.pos + 1) % n
+        };
+        let target = cycle.order[cycle.pos];
+        self.show_session_group_panel = false;
+        match self.tab_ref_select_msg(&target) {
+            Some(msg) => iced::Task::done(msg),
+            None => iced::Task::none(),
+        }
+    }
+
+    /// Finish a Ctrl+Tab walk (Ctrl released): promote the landing tab to the
+    /// front of the real MRU list so the next walk starts from here. No-op when
+    /// no walk is in flight.
+    pub(crate) fn commit_tab_cycle(&mut self) {
+        // Promote the cycle's landing tab from the snapshot itself, not
+        // `active_tab_ref()`: a fast Ctrl-release can arrive before the final
+        // select Task applies, which would otherwise commit the wrong tab.
+        if let Some(cycle) = self.tab_cycle.take()
+            && let Some(&r) = cycle.order.get(cycle.pos)
+        {
+            self.touch_tab_mru(r);
         }
     }
 
