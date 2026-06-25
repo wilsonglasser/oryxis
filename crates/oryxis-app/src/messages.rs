@@ -162,9 +162,11 @@ pub enum Message {
     /// Type / Permissions / Owner) for one pane. Per-pane; also updates the
     /// persisted template.
     SftpToggleColumn(crate::state::SftpPaneSide, crate::state::SftpColumn),
-    /// Begin dragging a column's right-edge resize handle. `None` targets the
-    /// Name column (which isn't a `SftpColumn` variant).
-    SftpColResizeStart(crate::state::SftpPaneSide, Option<crate::state::SftpColumn>),
+    /// Begin dragging a column's right-edge resize handle.
+    SftpColResizeStart(crate::state::SftpPaneSide, crate::state::SftpColumn),
+    /// Double-click a column's resize handle: auto-fit the column to the
+    /// widest value across every row (visible or not).
+    SftpColAutoFit(crate::state::SftpPaneSide, crate::state::SftpColumn),
     /// Press on a column header: arms a reorder drag (promoted to active on
     /// move; a release without movement falls through to the sort click).
     SftpColDragStart(crate::state::SftpPaneSide, crate::state::SftpColumn),
@@ -175,6 +177,9 @@ pub enum Message {
     SftpToggleFilterSearch(crate::state::SftpPaneSide),
     /// Toggle the FileZilla-style message-log panel at the bottom of the view.
     SftpToggleLog,
+    /// Begin dragging the horizontal divider above the message-log panel to
+    /// resize its height.
+    SftpLogResizeStart,
     /// Begin dragging the center divider between the two SFTP panes.
     SftpSplitResizeStart,
     /// Open a new SFTP tab mounted on the saved connection at this index

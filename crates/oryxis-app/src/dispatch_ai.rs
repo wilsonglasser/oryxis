@@ -158,6 +158,14 @@ impl Oryxis {
                         &format!("{:.4}", self.sftp_split_ratio),
                     );
                 }
+                // Same Left-release ends a log-panel resize; persist the
+                // final height so it survives a relaunch.
+                if self.sftp_log_drag.take().is_some() {
+                    self.persist_setting(
+                        "sftp_log_height",
+                        &format!("{:.0}", self.sftp.log_height),
+                    );
+                }
                 // End a column resize: the width was updated live, so just
                 // re-seed the template and persist.
                 if let Some((side, _, _, _)) = self.sftp_col_resize.take() {
@@ -171,9 +179,13 @@ impl Oryxis {
                     let hovered = self.sftp_hovered_col;
                     self.sftp_hovered_col = None;
                     if drag.active {
+                        // Name is never a drop target: nothing can be dropped
+                        // onto/before it (so it shows no drop effect and keeps
+                        // its slot). It can still be dragged elsewhere itself.
                         if let Some((hside, hcol)) = hovered
                             && hside == drag.side
                             && hcol != drag.col
+                            && hcol != crate::state::SftpColumn::Name
                         {
                             self.sftp.pane_mut(drag.side).columns.reorder(drag.col, hcol);
                             self.sftp_columns_template =
@@ -185,12 +197,17 @@ impl Oryxis {
                     }
                 }
                 // Same global Left-release event also ends an internal
-                // SFTP drag, if the drag was active, dispatch the
-                // transfer; if not, just clear (it was a plain click).
+                // SFTP drag. If the drag was active, dispatch the transfer;
+                // otherwise it was a plain click, which may have armed a
+                // slow-click rename (set on the press in SftpSelectRow).
                 if let Some(drag) = self.sftp.drag.take()
                     && drag.active
                 {
+                    self.sftp.pending_rename = None;
                     return Ok(self.handle_internal_drag_drop(drag));
+                }
+                if let Some((side, path)) = self.sftp.pending_rename.take() {
+                    return Ok(Task::done(Message::SftpStartRename(side, path)));
                 }
                 // And ends a tab reorder drag. The live-slide already moved
                 // the tab into place during the drag (see TabHovered); on

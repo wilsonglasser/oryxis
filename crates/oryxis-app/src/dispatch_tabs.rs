@@ -88,6 +88,7 @@ impl Oryxis {
                 };
                 let needs_drag_update = self.chat_sidebar_drag.is_some()
                     || self.sftp_split_drag.is_some()
+                    || self.sftp_log_drag.is_some()
                     || self.sftp_col_resize.is_some()
                     || self.sftp_col_drag.is_some()
                     || self.sftp.drag.is_some()
@@ -128,16 +129,18 @@ impl Oryxis {
                         (start_ratio + (pos.x - start_x) / content_w).clamp(0.15, 0.85);
                     self.sftp_split_ratio = new_ratio;
                 }
+                // SFTP message-log panel height: the divider sits above the
+                // panel, so dragging up (smaller y) grows it.
+                if let Some((start_y, start_h)) = self.sftp_log_drag {
+                    self.sftp.log_height = (start_h - (pos.y - start_y))
+                        .clamp(crate::state::SFTP_LOG_MIN_H, crate::state::SFTP_LOG_MAX_H);
+                }
                 // SFTP column resize: the dragged column's width tracks the
                 // cursor (clamped inside the setters). The total row width
                 // grows; the other columns keep their size.
                 if let Some((side, col, start_x, start_w)) = self.sftp_col_resize {
                     let new_w = start_w + (pos.x - start_x);
-                    let cols = &mut self.sftp.pane_mut(side).columns;
-                    match col {
-                        None => cols.set_name_width(new_w),
-                        Some(c) => cols.width.set(c, new_w),
-                    }
+                    self.sftp.pane_mut(side).columns.width.set(col, new_w);
                 }
                 // Promote a column reorder drag to active past a small
                 // threshold so a plain header click still sorts.

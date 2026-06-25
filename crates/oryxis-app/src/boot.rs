@@ -528,6 +528,7 @@ impl Oryxis {
                 chat_sidebar_drag: None,
                 sftp_split_ratio: 0.5,
                 sftp_split_drag: None,
+                sftp_log_drag: None,
                 sftp_columns_template: crate::state::SftpColumnState::default(),
                 sftp_col_resize: None,
                 sftp_col_drag: None,
@@ -906,6 +907,12 @@ impl Oryxis {
                 && let Ok(r) = v.parse::<f32>()
             {
                 self.sftp_split_ratio = r.clamp(0.15, 0.85);
+            }
+            if let Ok(Some(v)) = vault.get_setting("sftp_log_height")
+                && let Ok(h) = v.parse::<f32>()
+            {
+                self.sftp.log_height =
+                    h.clamp(crate::state::SFTP_LOG_MIN_H, crate::state::SFTP_LOG_MAX_H);
             }
             if let Ok(Some(v)) = vault.get_setting("sftp_columns") {
                 self.sftp_columns_template.apply_visibility_storage(&v);

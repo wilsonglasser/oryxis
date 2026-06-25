@@ -738,6 +738,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "sftp_type_symlink" => "Посилання",
         "sftp_type_file" => "Файл",
         "sftp_log" => "Журнал",
+        "sftp_sort_asc" => "За зростанням",
+        "sftp_sort_desc" => "За спаданням",
         "sftp_log_empty" => "Поки немає активності.",
         "sftp_log_connected" => "Підключено до",
         "sftp_log_listed" => "Перелічено",

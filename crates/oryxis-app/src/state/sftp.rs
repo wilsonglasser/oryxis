@@ -148,6 +148,10 @@ pub(crate) struct SftpState {
     /// Last plain row click `(side, path, when)`, used to detect a
     /// double-click (single click selects a folder, double click opens it).
     pub last_click: Option<(SftpPaneSide, String, std::time::Instant)>,
+    /// Row armed for inline rename by a slow second click (`(side, path)`):
+    /// set on the press, committed to an actual rename on release iff no drag
+    /// activated, so dragging an already-selected row still works.
+    pub pending_rename: Option<(SftpPaneSide, String)>,
     /// Generation counter for the debounced type-ahead search. Each
     /// keystroke bumps it and schedules a deferred fire; only the fire
     /// whose generation still matches runs, so fast typing searches once
@@ -166,10 +170,18 @@ pub(crate) struct SftpState {
     pub log: Vec<SftpLogEntry>,
     /// Whether the message-log panel at the bottom of the view is open.
     pub log_open: bool,
+    /// Height of the message-log panel in pixels, resizable via the divider
+    /// above it (issue #45). Clamped to [`SFTP_LOG_MIN_H`, `SFTP_LOG_MAX_H`].
+    pub log_height: f32,
 }
 
 /// Cap on retained SFTP log lines per tab; older lines are dropped.
 pub(crate) const SFTP_LOG_CAP: usize = 500;
+
+/// Default / min / max height for the resizable message-log panel.
+pub(crate) const SFTP_LOG_DEFAULT_H: f32 = 160.0;
+pub(crate) const SFTP_LOG_MIN_H: f32 = 80.0;
+pub(crate) const SFTP_LOG_MAX_H: f32 = 600.0;
 
 impl Default for SftpState {
     fn default() -> Self {
@@ -211,11 +223,13 @@ impl Default for SftpState {
             type_ahead_at: None,
             type_ahead_committed: String::new(),
             last_click: None,
+            pending_rename: None,
             type_ahead_gen: 0,
             transfer_bytes_done: Arc::new(std::sync::atomic::AtomicU64::new(0)),
             transfer_bytes_total: 0,
             log: Vec::new(),
             log_open: false,
+            log_height: SFTP_LOG_DEFAULT_H,
         }
     }
 }
@@ -701,10 +715,13 @@ pub(crate) struct LocalEntry {
     pub gid: Option<u32>,
 }
 
-/// Toggleable / reorderable SFTP data columns. `Name` is always shown
-/// first (it carries the icon + filename) and is not part of this enum.
+/// Reorderable SFTP file-list columns. `Name` is a first-class member so it
+/// can be dragged to any position like the rest; it carries the file icon +
+/// filename, is always visible (never toggled off), and keeps a wider size
+/// clamp than the data columns (see [`SftpColWidths::set`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum SftpColumn {
+    Name,
     Modified,
     Size,
     Kind,
@@ -713,8 +730,20 @@ pub(crate) enum SftpColumn {
 }
 
 impl SftpColumn {
-    /// Canonical order of every data column (also the default ordering).
-    pub const ALL: [SftpColumn; 5] = [
+    /// Canonical order of every column (also the default ordering). Name
+    /// leads, mirroring the historical fixed-first layout.
+    pub const ALL: [SftpColumn; 6] = [
+        SftpColumn::Name,
+        SftpColumn::Modified,
+        SftpColumn::Size,
+        SftpColumn::Kind,
+        SftpColumn::Permissions,
+        SftpColumn::Owner,
+    ];
+
+    /// The optional data columns (everything except the always-visible
+    /// Name), used to build the column-toggle menu.
+    pub const DATA: [SftpColumn; 5] = [
         SftpColumn::Modified,
         SftpColumn::Size,
         SftpColumn::Kind,
@@ -724,6 +753,7 @@ impl SftpColumn {
 
     pub fn key(self) -> &'static str {
         match self {
+            SftpColumn::Name => "name",
             SftpColumn::Modified => "modified",
             SftpColumn::Size => "size",
             SftpColumn::Kind => "kind",
@@ -734,6 +764,7 @@ impl SftpColumn {
 
     pub fn from_key(s: &str) -> Option<Self> {
         match s.trim() {
+            "name" => Some(SftpColumn::Name),
             "modified" => Some(SftpColumn::Modified),
             "size" => Some(SftpColumn::Size),
             "kind" => Some(SftpColumn::Kind),
@@ -745,6 +776,8 @@ impl SftpColumn {
 
     pub fn default_width(self) -> f32 {
         match self {
+            // The Name cell holds the icon + filename, so it defaults wider.
+            SftpColumn::Name => SFTP_NAME_DEFAULT_W,
             SftpColumn::Modified => 140.0,
             SftpColumn::Size => 80.0,
             SftpColumn::Kind => 160.0,
@@ -757,6 +790,7 @@ impl SftpColumn {
     /// columns (Type / Permissions / Owner aren't sortable).
     pub fn sort_column(self) -> Option<SftpSortColumn> {
         match self {
+            SftpColumn::Name => Some(SftpSortColumn::Name),
             SftpColumn::Modified => Some(SftpSortColumn::Modified),
             SftpColumn::Size => Some(SftpSortColumn::Size),
             _ => None,
@@ -795,6 +829,8 @@ impl Default for SftpColumns {
 impl SftpColumns {
     pub fn is_visible(self, col: SftpColumn) -> bool {
         match col {
+            // Name is always shown: a file list with no filename is useless.
+            SftpColumn::Name => true,
             SftpColumn::Size => self.size,
             SftpColumn::Modified => self.modified,
             SftpColumn::Kind => self.kind,
@@ -805,6 +841,8 @@ impl SftpColumns {
 
     pub fn toggle(&mut self, col: SftpColumn) {
         match col {
+            // Name can't be hidden, so toggling it is a no-op.
+            SftpColumn::Name => {}
             SftpColumn::Size => self.size = !self.size,
             SftpColumn::Modified => self.modified = !self.modified,
             SftpColumn::Kind => self.kind = !self.kind,
@@ -814,7 +852,8 @@ impl SftpColumns {
     }
 
     pub fn as_storage_str(self) -> String {
-        SftpColumn::ALL
+        // Name is implicitly always-on, so its visibility isn't persisted.
+        SftpColumn::DATA
             .iter()
             .filter(|c| self.is_visible(**c))
             .map(|c| c.key())
@@ -834,9 +873,11 @@ impl SftpColumns {
     }
 }
 
-/// Per-column widths for the data columns, in pixels.
+/// Per-column widths, in pixels. The Name width spans the whole leading cell
+/// (file icon + filename), so it keeps a wider clamp than the data columns.
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct SftpColWidths {
+    pub name: f32,
     pub modified: f32,
     pub size: f32,
     pub kind: f32,
@@ -847,6 +888,7 @@ pub(crate) struct SftpColWidths {
 impl Default for SftpColWidths {
     fn default() -> Self {
         Self {
+            name: SftpColumn::Name.default_width(),
             modified: SftpColumn::Modified.default_width(),
             size: SftpColumn::Size.default_width(),
             kind: SftpColumn::Kind.default_width(),
@@ -859,6 +901,7 @@ impl Default for SftpColWidths {
 impl SftpColWidths {
     pub fn get(self, col: SftpColumn) -> f32 {
         match col {
+            SftpColumn::Name => self.name,
             SftpColumn::Modified => self.modified,
             SftpColumn::Size => self.size,
             SftpColumn::Kind => self.kind,
@@ -868,8 +911,14 @@ impl SftpColWidths {
     }
 
     pub fn set(&mut self, col: SftpColumn, w: f32) {
-        let w = w.clamp(SFTP_COL_MIN_W, SFTP_COL_MAX_W);
+        // Name spans the icon + filename and so has its own (wider) clamp.
+        let w = if col == SftpColumn::Name {
+            w.clamp(SFTP_NAME_MIN_W, SFTP_NAME_MAX_W)
+        } else {
+            w.clamp(SFTP_COL_MIN_W, SFTP_COL_MAX_W)
+        };
         match col {
+            SftpColumn::Name => self.name = w,
             SftpColumn::Modified => self.modified = w,
             SftpColumn::Size => self.size = w,
             SftpColumn::Kind => self.kind = w,
@@ -888,13 +937,11 @@ pub(crate) struct SftpColumnState {
     pub visible: SftpColumns,
     pub order: Vec<SftpColumn>,
     pub width: SftpColWidths,
-    /// Width of the (always-first) Name column, which carries the filename.
-    /// Resizable like the data columns.
-    pub name_width: f32,
 }
 
-/// Default / min / max width for the Name column.
-pub(crate) const SFTP_NAME_DEFAULT_W: f32 = 240.0;
+/// Default / min / max width for the Name column (the leading icon + filename
+/// cell). Wider than a data column because it holds the file icon too.
+pub(crate) const SFTP_NAME_DEFAULT_W: f32 = 260.0;
 pub(crate) const SFTP_NAME_MIN_W: f32 = 96.0;
 pub(crate) const SFTP_NAME_MAX_W: f32 = 600.0;
 
@@ -904,7 +951,6 @@ impl Default for SftpColumnState {
             visible: SftpColumns::default(),
             order: SftpColumn::ALL.to_vec(),
             width: SftpColWidths::default(),
-            name_width: SFTP_NAME_DEFAULT_W,
         }
     }
 }
@@ -961,17 +1007,12 @@ impl SftpColumnState {
             .join(",")
     }
 
-    /// Clamp + store the Name column width.
-    pub fn set_name_width(&mut self, w: f32) {
-        self.name_width = w.clamp(SFTP_NAME_MIN_W, SFTP_NAME_MAX_W);
-    }
-
     pub fn width_storage(&self) -> String {
-        let mut parts = vec![format!("name:{}", self.name_width.round() as i32)];
-        for c in &self.order {
-            parts.push(format!("{}:{}", c.key(), self.width.get(*c).round() as i32));
-        }
-        parts.join(",")
+        self.order
+            .iter()
+            .map(|c| format!("{}:{}", c.key(), self.width.get(*c).round() as i32))
+            .collect::<Vec<_>>()
+            .join(",")
     }
 
     /// Rebuild the order from a stored CSV of keys, appending any column the
@@ -984,6 +1025,13 @@ impl SftpColumnState {
             {
                 order.push(c);
             }
+        }
+        // Migration: orders persisted before Name became a reorderable
+        // column omit the "name" key. Prepend it so those users keep the
+        // historical Name-first layout instead of Name jumping to the end
+        // (which the generic append-missing pass below would otherwise do).
+        if !order.contains(&SftpColumn::Name) {
+            order.insert(0, SftpColumn::Name);
         }
         for c in SftpColumn::ALL {
             if !order.contains(&c) {
@@ -1001,9 +1049,9 @@ impl SftpColumnState {
             let Ok(w) = v.trim().parse::<f32>() else {
                 continue;
             };
-            if k.trim() == "name" {
-                self.set_name_width(w);
-            } else if let Some(c) = SftpColumn::from_key(k) {
+            // "name" round-trips through `from_key` like every other column
+            // now; `set` applies the Name-specific clamp.
+            if let Some(c) = SftpColumn::from_key(k) {
                 self.width.set(c, w);
             }
         }
@@ -1015,6 +1063,65 @@ impl SftpColumnState {
 
     pub fn apply_visibility_storage(&mut self, s: &str) {
         self.visible = SftpColumns::from_storage_str(s);
+    }
+}
+
+#[cfg(test)]
+mod column_tests {
+    use super::*;
+
+    #[test]
+    fn legacy_order_without_name_keeps_name_first() {
+        // Orders persisted before Name became reorderable omit "name".
+        // The migration must prepend it, not let the append-missing pass
+        // push Name to the rightmost slot.
+        let mut cols = SftpColumnState::default();
+        cols.apply_order_storage("modified,size,kind");
+        assert_eq!(cols.order.first(), Some(&SftpColumn::Name));
+        // Every column is still present exactly once.
+        for c in SftpColumn::ALL {
+            assert_eq!(cols.order.iter().filter(|x| **x == c).count(), 1);
+        }
+    }
+
+    #[test]
+    fn explicit_name_position_is_preserved() {
+        // A stored order that already places Name (e.g. user dragged it to
+        // the middle) round-trips without being moved back to the front.
+        let mut cols = SftpColumnState::default();
+        cols.apply_order_storage("modified,name,size");
+        assert_eq!(
+            cols.order,
+            vec![
+                SftpColumn::Modified,
+                SftpColumn::Name,
+                SftpColumn::Size,
+                SftpColumn::Kind,
+                SftpColumn::Permissions,
+                SftpColumn::Owner,
+            ]
+        );
+    }
+
+    #[test]
+    fn name_width_uses_its_own_clamp() {
+        // The Name clamp is wider than the data clamp, so a 520px Name
+        // survives where a data column would be capped at SFTP_COL_MAX_W.
+        let mut w = SftpColWidths::default();
+        w.set(SftpColumn::Name, 520.0);
+        assert_eq!(w.get(SftpColumn::Name), 520.0);
+        w.set(SftpColumn::Size, 520.0);
+        assert_eq!(w.get(SftpColumn::Size), SFTP_COL_MAX_W);
+    }
+
+    #[test]
+    fn name_is_always_visible_and_never_toggles() {
+        let mut vis = SftpColumns::default();
+        assert!(vis.is_visible(SftpColumn::Name));
+        vis.toggle(SftpColumn::Name);
+        assert!(vis.is_visible(SftpColumn::Name));
+        // Name visibility is not written to the persisted string.
+        assert!(!vis.as_storage_str().split(',').any(|p| p == "name"));
     }
 }
 

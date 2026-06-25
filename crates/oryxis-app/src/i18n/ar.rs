@@ -737,6 +737,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "sftp_type_symlink" => "رابط",
         "sftp_type_file" => "ملف",
         "sftp_log" => "السجل",
+        "sftp_sort_asc" => "ترتيب تصاعدي",
+        "sftp_sort_desc" => "ترتيب تنازلي",
         "sftp_log_empty" => "لا يوجد نشاط بعد.",
         "sftp_log_connected" => "متصل بـ",
         "sftp_log_listed" => "تم السرد",

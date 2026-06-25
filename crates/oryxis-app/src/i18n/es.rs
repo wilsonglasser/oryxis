@@ -679,6 +679,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "sftp_type_symlink" => "Enlace",
         "sftp_type_file" => "Archivo",
         "sftp_log" => "Registro",
+        "sftp_sort_asc" => "Orden ascendente",
+        "sftp_sort_desc" => "Orden descendente",
         "sftp_log_empty" => "Sin actividad todavía.",
         "sftp_log_connected" => "Conectado a",
         "sftp_log_listed" => "Listado",

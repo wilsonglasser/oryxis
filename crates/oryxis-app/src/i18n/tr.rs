@@ -738,6 +738,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "sftp_type_symlink" => "Bağlantı",
         "sftp_type_file" => "Dosya",
         "sftp_log" => "Günlük",
+        "sftp_sort_asc" => "Artan sıralama",
+        "sftp_sort_desc" => "Azalan sıralama",
         "sftp_log_empty" => "Henüz etkinlik yok.",
         "sftp_log_connected" => "Bağlanıldı:",
         "sftp_log_listed" => "Listelendi:",

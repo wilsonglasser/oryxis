@@ -27,6 +27,10 @@ use std::time::Duration;
 const TOAST_DURATION: Duration = Duration::from_millis(2600);
 /// Max gap between two clicks on the same folder to count as a double-click.
 const DOUBLE_CLICK_WINDOW: Duration = Duration::from_millis(400);
+/// A second click on an already-selected row this long after the first (i.e.
+/// slower than a double-click, but still a deliberate gesture) arms an inline
+/// rename, mirroring Explorer / Finder slow-click-to-rename.
+const SLOW_RENAME_WINDOW: Duration = Duration::from_millis(1500);
 /// Idle gap after which type-ahead starts a fresh search instead of
 /// appending to the previous one.
 const TYPE_AHEAD_RESET: Duration = Duration::from_millis(900);
@@ -54,6 +58,24 @@ enum SftpConnectMsg {
 }
 
 impl Oryxis {
+    /// Auto-fit `col` in `side`'s pane to the widest value across every row
+    /// (issue #45). Measures through the renderer's font system, sets the new
+    /// width (clamped), then re-seeds + persists the column template.
+    fn autofit_sftp_column(&mut self, side: SftpPaneSide, col: crate::state::SftpColumn) {
+        let target = {
+            let pane = self.sftp.pane(side);
+            crate::views::sftp::autofit_column_width(
+                pane.is_remote,
+                &pane.remote_entries,
+                &pane.local_entries,
+                col,
+            )
+        };
+        self.sftp.pane_mut(side).columns.width.set(col, target);
+        self.sftp_columns_template = self.sftp.pane(side).columns.clone();
+        self.persist_sftp_columns();
+    }
+
     pub(crate) fn handle_sftp(
         &mut self,
         message: Message,
@@ -582,13 +604,12 @@ impl Oryxis {
                 self.persist_sftp_columns();
             }
             Message::SftpColResizeStart(side, col) => {
-                let cols = &self.sftp.pane(side).columns;
-                let start_w = match col {
-                    None => cols.name_width,
-                    Some(c) => cols.width.get(c),
-                };
+                let start_w = self.sftp.pane(side).columns.width.get(col);
                 self.sftp_col_resize = Some((side, col, self.mouse_position.x, start_w));
                 self.sftp.close_menus();
+            }
+            Message::SftpColAutoFit(side, col) => {
+                self.autofit_sftp_column(side, col);
             }
             Message::SftpColDragStart(side, col) => {
                 self.sftp_col_drag = Some(crate::state::SftpColDrag {
@@ -624,6 +645,11 @@ impl Oryxis {
                 // Capture the cursor x and current ratio; the MouseMoved
                 // handler computes the delta against these.
                 self.sftp_split_drag = Some((self.mouse_position.x, self.sftp_split_ratio));
+            }
+            Message::SftpLogResizeStart => {
+                // Capture the cursor y and current log height; the MouseMoved
+                // handler computes the delta against these.
+                self.sftp_log_drag = Some((self.mouse_position.y, self.sftp.log_height));
             }
             Message::OpenSftpForConnection(idx) => {
                 // Dismiss the host-card context menu this was launched from so
@@ -1118,6 +1144,24 @@ impl Oryxis {
                 let target = (side, path.clone());
                 let ctrl = self.modifiers.control() || self.modifiers.command();
                 let shift = self.modifiers.shift();
+                // Slow-click-to-rename: a second plain click on the row that is
+                // already the sole selection, slower than a double-click but
+                // within a deliberate window, arms an inline rename. It's only
+                // committed on release (see the Left-up handler) so dragging an
+                // already-selected row still works.
+                let now = std::time::Instant::now();
+                let already_sole = self.sftp.selected_rows.as_slice() == [target.clone()];
+                let slow_second = !ctrl
+                    && !shift
+                    && already_sole
+                    && self.sftp.last_click.as_ref().is_some_and(|(s, p, t)| {
+                        *s == side
+                            && p == &path
+                            && now.duration_since(*t) >= DOUBLE_CLICK_WINDOW
+                            && now.duration_since(*t) < SLOW_RENAME_WINDOW
+                    });
+                self.sftp.pending_rename =
+                    slow_second.then(|| (side, path.clone()));
                 if shift {
                     // Range select within same pane. If the anchor lives
                     // in the other pane (or doesn't exist), fall through

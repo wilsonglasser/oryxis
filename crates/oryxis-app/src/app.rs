@@ -1140,17 +1140,19 @@ pub struct Oryxis {
     /// Some((cursor_x_at_drag_start, ratio_at_drag_start)) while the user
     /// is dragging the SFTP center divider.
     pub(crate) sftp_split_drag: Option<(f32, f32)>,
+    /// Some((cursor_y_at_drag_start, height_at_drag_start)) while the user is
+    /// dragging the divider above the SFTP message-log panel.
+    pub(crate) sftp_log_drag: Option<(f32, f32)>,
     /// Persisted template for the per-pane column configuration. New SFTP
     /// panes/tabs are seeded from this; editing any pane's columns updates
     /// it (and the `sftp_columns` / `sftp_col_order` / `sftp_col_widths`
     /// settings) so the preferred shape carries across restarts.
     pub(crate) sftp_columns_template: crate::state::SftpColumnState,
     /// Active column-resize drag: `(side, column, cursor_x_at_start,
-    /// width_at_start)`. `column == None` resizes the Name column. Updated by
-    /// the global mouse-move handler.
+    /// width_at_start)`. Updated by the global mouse-move handler.
     pub(crate) sftp_col_resize: Option<(
         crate::state::SftpPaneSide,
-        Option<crate::state::SftpColumn>,
+        crate::state::SftpColumn,
         f32,
         f32,
     )>,

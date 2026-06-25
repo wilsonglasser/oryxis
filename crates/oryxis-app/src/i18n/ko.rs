@@ -738,6 +738,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "sftp_type_symlink" => "링크",
         "sftp_type_file" => "파일",
         "sftp_log" => "로그",
+        "sftp_sort_asc" => "오름차순 정렬",
+        "sftp_sort_desc" => "내림차순 정렬",
         "sftp_log_empty" => "아직 활동이 없습니다.",
         "sftp_log_connected" => "연결됨:",
         "sftp_log_listed" => "목록:",

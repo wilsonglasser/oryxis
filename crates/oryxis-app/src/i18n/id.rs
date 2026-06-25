@@ -738,6 +738,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "sftp_type_symlink" => "Tautan",
         "sftp_type_file" => "Berkas",
         "sftp_log" => "Log",
+        "sftp_sort_asc" => "Urut menaik",
+        "sftp_sort_desc" => "Urut menurun",
         "sftp_log_empty" => "Belum ada aktivitas.",
         "sftp_log_connected" => "Terhubung ke",
         "sftp_log_listed" => "Terdaftar",

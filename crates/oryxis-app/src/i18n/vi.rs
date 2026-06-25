@@ -738,6 +738,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "sftp_type_symlink" => "Liên kết",
         "sftp_type_file" => "Tệp",
         "sftp_log" => "Nhật ký",
+        "sftp_sort_asc" => "Sắp xếp tăng dần",
+        "sftp_sort_desc" => "Sắp xếp giảm dần",
         "sftp_log_empty" => "Chưa có hoạt động.",
         "sftp_log_connected" => "Đã kết nối tới",
         "sftp_log_listed" => "Đã liệt kê",

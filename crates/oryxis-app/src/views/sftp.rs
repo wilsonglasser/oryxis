@@ -85,7 +85,8 @@ impl Oryxis {
             .width(Length::Fill)
             .height(Length::Fill);
         if self.sftp.log_open {
-            body_col = body_col.push(sftp_log_panel(&self.sftp.log));
+            body_col = body_col.push(sftp_log_divider());
+            body_col = body_col.push(sftp_log_panel(&self.sftp.log, self.sftp.log_height));
         }
         body_col = body_col.push(sftp_log_bar(self.sftp.log_open, self.sftp.log.len()));
         let body: Element<'_, Message> = body_col.into();
@@ -300,9 +301,8 @@ impl Oryxis {
         // reorder drag / hover for header feedback.
         let ordered_cols = pane.columns.ordered_visible();
         let col_widths = pane.columns.width;
-        let name_width = pane.columns.name_width;
-        let trailing = trailing_cols_width(&ordered_cols, col_widths);
-        let layout = ColLayout::resolve(name_width, trailing, pane_avail);
+        let cols_total = cols_total_width(&ordered_cols, col_widths);
+        let layout = ColLayout::resolve(cols_total, pane_avail);
         let col_drag = self
             .sftp_col_drag
             .filter(|d| d.side == side && d.active)
@@ -1920,20 +1920,17 @@ fn parent_row<'a>(
     layout: ColLayout,
 ) -> Element<'a, Message> {
     let msg = Message::SftpUp(side);
-    let mut children: Vec<Element<'a, Message>> = vec![
-        iced_fonts::lucide::folder()
-            .size(13)
-            .color(OryxisColors::t().text_muted)
-            .into(),
-        Space::new().width(8).into(),
-        text("..")
-            .size(12)
-            .color(OryxisColors::t().text_muted)
-            .width(layout.name_len)
-            .into(),
-    ];
+    let icon = iced_fonts::lucide::folder()
+        .size(13)
+        .color(OryxisColors::t().text_muted)
+        .into();
+    let label = text("..")
+        .size(12)
+        .color(OryxisColors::t().text_muted)
+        .width(Length::Fill)
+        .into();
     // Blank trailing cells keep the ".." row aligned with the columns.
-    children.extend(trailing_cells(visible, widths, |_| String::new()));
+    let children = row_cells(visible, widths, icon, label, None, |_| String::new());
     let inner = iced::widget::Row::with_children(children).align_y(iced::Alignment::Center);
     button(inner)
         .padding(Padding { top: 4.0, right: 12.0, bottom: 4.0, left: 12.0 })
@@ -1963,12 +1960,92 @@ const ROW_PAD_X: f32 = 24.0;
 /// each column header.
 const COL_RESIZE_HANDLE_W: f32 = 7.0;
 
-/// Sum of the visible data columns at their current widths, in order.
-fn trailing_cols_width(
+/// Sum of the visible columns (Name included) at their current widths.
+fn cols_total_width(
     visible: &[crate::state::SftpColumn],
     widths: crate::state::SftpColWidths,
 ) -> f32 {
     visible.iter().map(|c| widths.get(*c)).sum()
+}
+
+/// Rendered width of `s` at `size` px in the UI font, measured through the
+/// same global font system the renderer uses, so column auto-fit (issue #45)
+/// matches the text actually drawn on screen. Allocates a throwaway
+/// paragraph; only called on a divider double-click, never per frame.
+pub(crate) fn measure_text_width(s: &str, size: f32) -> f32 {
+    use iced::advanced::text::Paragraph as _;
+    if s.is_empty() {
+        return 0.0;
+    }
+    let text = iced::advanced::text::Text {
+        content: s,
+        bounds: iced::Size::INFINITE,
+        size: iced::Pixels(size),
+        line_height: iced::advanced::text::LineHeight::default(),
+        // The app's configured default UI font (Noto Sans); see main.rs.
+        font: crate::theme::SYSTEM_UI,
+        align_x: iced::advanced::text::Alignment::Default,
+        align_y: iced::alignment::Vertical::Top,
+        // Matches the `text()` widget default so the measurement lines up
+        // with what the rows render.
+        shaping: iced::advanced::text::Shaping::Auto,
+        wrapping: iced::advanced::text::Wrapping::None,
+        ellipsis: iced::advanced::text::Ellipsis::None,
+        hint_factor: None,
+    };
+    iced::advanced::graphics::text::Paragraph::with_text(text)
+        .min_bounds()
+        .width
+}
+
+/// Auto-fit width for `col`: the widest rendered value across every row in the
+/// pane (visible or not), with the header label as a floor, plus cell padding,
+/// the resize-handle grab zone, and - for Name - the leading icon area.
+/// Returned unclamped; the caller's `SftpColWidths::set` applies the column's
+/// min/max.
+pub(crate) fn autofit_column_width(
+    is_remote: bool,
+    remote: &[crate::state::SftpEntry],
+    local: &[crate::state::LocalEntry],
+    col: crate::state::SftpColumn,
+) -> f32 {
+    use crate::state::SftpColumn;
+    // Name renders its filename at size 12; every data cell at size 11.
+    let text_size = if col == SftpColumn::Name { 12.0 } else { 11.0 };
+    // Floor: the header label (size 11) must never clip either.
+    let mut max_w = measure_text_width(data_col_label(col), 11.0);
+    if is_remote {
+        for e in remote {
+            let s = match col {
+                SftpColumn::Name => e.name.clone(),
+                SftpColumn::Modified => format_modified_remote(e.mtime),
+                SftpColumn::Size => format_size(e.size),
+                SftpColumn::Kind => format_kind(&e.name, e.is_dir, e.is_symlink),
+                SftpColumn::Permissions => format_perms(e.permissions, e.is_dir, e.is_symlink),
+                SftpColumn::Owner => format_owner(e.uid, e.gid),
+            };
+            max_w = max_w.max(measure_text_width(&s, text_size));
+        }
+    } else {
+        for e in local {
+            let s = match col {
+                SftpColumn::Name => e.name.clone(),
+                SftpColumn::Modified => format_modified_local(e.modified),
+                SftpColumn::Size => format_size(e.size),
+                SftpColumn::Kind => format_kind(&e.name, e.is_dir, false),
+                SftpColumn::Permissions => format_perms(e.mode, e.is_dir, false),
+                SftpColumn::Owner => format_owner(e.uid, e.gid),
+            };
+            max_w = max_w.max(measure_text_width(&s, text_size));
+        }
+    }
+    // Cell text breathing room (both sides) + the divider grab zone; Name also
+    // holds the leading file icon + gap.
+    let mut extra = 18.0 + COL_RESIZE_HANDLE_W;
+    if col == SftpColumn::Name {
+        extra += ICON_COL_W + 8.0;
+    }
+    max_w + extra
 }
 
 /// Resolved horizontal layout for the file list of one pane. Every column
@@ -1978,10 +2055,6 @@ fn trailing_cols_width(
 /// (columns left-packed, the trailing slack left empty).
 #[derive(Clone, Copy)]
 struct ColLayout {
-    /// Name-column width in pixels.
-    name_w: f32,
-    /// Fixed Name-column length (`Fixed(name_w)`).
-    name_len: Length,
     /// Whole-row width: `Fill` when everything fits, `Fixed(total)` when it
     /// overflows (so the horizontal scrollable has something to pan).
     row_len: Length,
@@ -1990,13 +2063,11 @@ struct ColLayout {
 }
 
 impl ColLayout {
-    /// Build the layout for a pane `avail` px wide, given the Name width and
-    /// the visible data columns' total width.
-    fn resolve(name_width: f32, trailing: f32, avail: f32) -> Self {
-        let total = ROW_PAD_X + ICON_COL_W + name_width + trailing;
+    /// Build the layout for a pane `avail` px wide given the visible columns'
+    /// total width (Name included).
+    fn resolve(cols_total: f32, avail: f32) -> Self {
+        let total = ROW_PAD_X + cols_total;
         ColLayout {
-            name_w: name_width,
-            name_len: Length::Fixed(name_width),
             row_len: if total <= avail {
                 Length::Fill
             } else {
@@ -2115,24 +2186,135 @@ fn dev_mime_override(ext: &str) -> Option<&'static str> {
     })
 }
 
-/// Build the data cells of a file row in the pane's column order, at the
-/// pane's column widths. `value` formats one column's text. Returns the
-/// cells to append after the Name label.
-fn trailing_cells<'a>(
+/// One data cell: a single, fixed-width line of text that truncates with an
+/// ellipsis at the column edge instead of wrapping or bleeding into the next
+/// column (issue #45).
+fn data_cell<'a>(value: String, width: f32, color: Color) -> Element<'a, Message> {
+    text(value)
+        .size(11)
+        .color(color)
+        .width(Length::Fixed(width))
+        .wrapping(iced::widget::text::Wrapping::None)
+        .ellipsis(iced::widget::text::Ellipsis::End)
+        .into()
+}
+
+/// Rough px width of `s` at the given font size, used only to decide whether
+/// a Name cell is truncated (and so warrants a hover tooltip). The UI font is
+/// proportional, so this is an estimate biased slightly high (~0.55em average
+/// advance) to avoid attaching tooltips to names that actually fit.
+fn approx_text_width(s: &str, size: f32) -> f32 {
+    s.chars().count() as f32 * size * 0.55
+}
+
+/// The Name cell: the file icon, then the filename (or, while renaming, the
+/// rename input). The label fills the remaining cell width and ellipsises on
+/// overflow. When the (non-editing) name is wide enough to be clipped, it's
+/// wrapped in a tooltip that reveals the full name on hover, FileZilla-style.
+fn name_cell<'a>(
+    icon: Element<'a, Message>,
+    label: Element<'a, Message>,
+    full_name: Option<String>,
+    width: f32,
+) -> Element<'a, Message> {
+    let inner = row![icon, Space::new().width(8), label]
+        .width(Length::Fill)
+        .align_y(iced::Alignment::Center);
+    let cell = container(inner)
+        .width(Length::Fixed(width))
+        // Clip so an un-ellipsised child (e.g. the rename input) can't bleed
+        // past the cell into the next column.
+        .clip(true);
+    match full_name {
+        Some(name) => iced::widget::tooltip(
+            cell,
+            container(
+                text(name)
+                    .size(11)
+                    .color(OryxisColors::t().text_primary)
+                    .wrapping(iced::widget::text::Wrapping::None),
+            )
+            .padding(Padding { top: 4.0, right: 8.0, bottom: 4.0, left: 8.0 })
+            .style(|_| container::Style {
+                background: Some(Background::Color(OryxisColors::t().bg_surface)),
+                border: Border {
+                    radius: Radius::from(6.0),
+                    color: OryxisColors::t().border,
+                    width: 1.0,
+                },
+                ..Default::default()
+            }),
+            iced::widget::tooltip::Position::Bottom,
+        )
+        .into(),
+        None => cell.into(),
+    }
+}
+
+/// Build the Name cell's inner widget: the rename input while editing,
+/// otherwise an ellipsised filename. Also returns the full name to use as a
+/// hover tooltip when (and only when) the label is wide enough to be clipped.
+fn name_label_widget<'a>(
+    name: &str,
+    rename_input: Option<&str>,
+    widths: crate::state::SftpColWidths,
+) -> (Element<'a, Message>, Option<String>) {
+    use crate::state::SftpColumn;
+    if let Some(input) = rename_input {
+        let w = text_input(name, input)
+            .on_input(Message::SftpRenameInput)
+            .on_submit(Message::SftpRenameCommit)
+            .padding(Padding { top: 2.0, right: 6.0, bottom: 2.0, left: 6.0 })
+            .size(11)
+            .style(crate::widgets::rounded_input_style)
+            .align_x(dir_align_x())
+            .width(Length::Fill)
+            .into();
+        return (w, None);
+    }
+    let label = text(name.to_string())
+        .size(12)
+        .color(OryxisColors::t().text_primary)
+        .width(Length::Fill)
+        .wrapping(iced::widget::text::Wrapping::None)
+        .ellipsis(iced::widget::text::Ellipsis::End)
+        .into();
+    // Space available to the filename inside the Name cell: cell width minus
+    // the leading icon area and the inter-column gap.
+    let avail = widths.get(SftpColumn::Name) - ICON_COL_W - 8.0;
+    let tooltip = (approx_text_width(name, 12.0) > avail).then(|| name.to_string());
+    (label, tooltip)
+}
+
+/// Build the ordered cells of one file row. The Name column (wherever it sits
+/// in the order) renders the leading icon + `name_label`; every other column
+/// renders an ellipsised value from `value`. `tooltip_name` is `Some` when the
+/// filename overflows and should get a hover tooltip.
+fn row_cells<'a>(
     visible: &[crate::state::SftpColumn],
     widths: crate::state::SftpColWidths,
+    icon: Element<'a, Message>,
+    name_label: Element<'a, Message>,
+    tooltip_name: Option<String>,
     value: impl Fn(crate::state::SftpColumn) -> String,
 ) -> Vec<Element<'a, Message>> {
-    visible
-        .iter()
-        .map(|c| {
-            text(value(*c))
-                .size(11)
-                .color(OryxisColors::t().text_muted)
-                .width(Length::Fixed(widths.get(*c)))
-                .into()
-        })
-        .collect()
+    use crate::state::SftpColumn;
+    let mut icon = Some(icon);
+    let mut name_label = Some(name_label);
+    let mut tooltip_name = tooltip_name;
+    let mut cells: Vec<Element<'a, Message>> = Vec::with_capacity(visible.len());
+    for &c in visible {
+        if c == SftpColumn::Name {
+            // `ordered_visible()` always yields Name exactly once, so these
+            // takes are safe; fall back to an empty cell if that ever changes.
+            let icon = icon.take().unwrap_or_else(|| Space::new().into());
+            let label = name_label.take().unwrap_or_else(|| Space::new().into());
+            cells.push(name_cell(icon, label, tooltip_name.take(), widths.get(c)));
+        } else {
+            cells.push(data_cell(value(c), widths.get(c), OryxisColors::t().text_muted));
+        }
+    }
+    cells
 }
 
 /// Visually distinct band that wraps the toolbar / breadcrumb / column
@@ -2197,10 +2379,11 @@ fn sftp_list_scrollable<'a>(
     }
 }
 
-/// Label for a data column header.
+/// Label for a column header.
 fn data_col_label(col: crate::state::SftpColumn) -> &'static str {
     use crate::state::SftpColumn;
     match col {
+        SftpColumn::Name => t("col_name"),
         SftpColumn::Modified => t("col_modified"),
         SftpColumn::Size => t("col_size"),
         SftpColumn::Kind => t("col_type"),
@@ -2235,10 +2418,11 @@ fn col_drag_ghost<'a>(label: &str) -> Element<'a, Message> {
 }
 
 /// A resize handle: a centered 1px divider line inside a wider grab zone,
-/// living on the right edge of a header. `target == None` resizes Name.
+/// living on the right edge of a header. Dragging resizes `target`; double-
+/// clicking auto-fits it to the widest value in the column (issue #45).
 fn col_resize_handle<'a>(
     side: SftpPaneSide,
-    target: Option<crate::state::SftpColumn>,
+    target: crate::state::SftpColumn,
 ) -> Element<'a, Message> {
     MouseArea::new(
         container(
@@ -2255,15 +2439,152 @@ fn col_resize_handle<'a>(
         .center_x(Length::Fixed(COL_RESIZE_HANDLE_W)),
     )
     .on_press(Message::SftpColResizeStart(side, target))
+    .on_double_click(Message::SftpColAutoFit(side, target))
     .interaction(iced::mouse::Interaction::ResizingHorizontally)
     .into()
 }
 
-/// Column header strip. Every column has an explicit width and a right-edge
-/// resize handle (a visible divider). Name is sortable + resizable but fixed
-/// first; the data columns are also draggable to reorder. Sortable headers
-/// flip the sort on a plain click (release without a drag, handled in the
-/// mouse-up dispatcher).
+/// A small bordered tooltip chip carrying `tip`, matching the snippet-action
+/// tooltips elsewhere in the app.
+fn tooltip_chip<'a>(tip: &'a str) -> Element<'a, Message> {
+    container(text(tip).size(11).color(OryxisColors::t().text_primary))
+        .padding(Padding { top: 4.0, right: 8.0, bottom: 4.0, left: 8.0 })
+        .style(|_| container::Style {
+            background: Some(Background::Color(OryxisColors::t().bg_surface)),
+            border: Border {
+                radius: Radius::from(6.0),
+                color: OryxisColors::t().border,
+                width: 1.0,
+            },
+            ..Default::default()
+        })
+        .into()
+}
+
+/// One column header: an ellipsised, draggable label with a trailing (right-
+/// aligned, RTL-aware) sort arrow, plus a right-edge resize handle. The arrow
+/// carries its own pointer cursor + tooltip; pressing anywhere on the header
+/// arms a reorder drag that falls back to a sort toggle on a click without
+/// movement (issue #45).
+#[allow(clippy::too_many_arguments)]
+fn header_cell<'a>(
+    side: SftpPaneSide,
+    col: crate::state::SftpColumn,
+    sort: crate::state::SftpSort,
+    w: f32,
+    is_target: bool,
+    dragging: bool,
+) -> Element<'a, Message> {
+    use crate::state::SftpColumn;
+    let sortable = col.sort_column();
+    let active_sort = sortable.is_some_and(|sc| sort.column == sc);
+    let label_color = if active_sort {
+        OryxisColors::t().text_primary
+    } else {
+        OryxisColors::t().text_muted
+    };
+    let label_w = (w - COL_RESIZE_HANDLE_W).max(8.0);
+
+    let label = text(data_col_label(col).to_string())
+        .size(11)
+        .color(label_color)
+        .width(Length::Fill)
+        .wrapping(iced::widget::text::Wrapping::None)
+        .ellipsis(iced::widget::text::Ellipsis::End);
+
+    // Right-aligned sort arrow, shown only on the active sort column so the
+    // header stays uncluttered. It gets a pointer cursor + tooltip; with no
+    // press handler of its own, the drag/sort press falls through to the
+    // header MouseArea below.
+    let mut label_children: Vec<Element<'a, Message>> = vec![label.into()];
+    if active_sort {
+        let glyph = if sort.ascending {
+            iced_fonts::lucide::chevron_up()
+        } else {
+            iced_fonts::lucide::chevron_down()
+        };
+        let tip = if sort.ascending {
+            t("sftp_sort_asc")
+        } else {
+            t("sftp_sort_desc")
+        };
+        // Center the glyph in the full header height so it lines up with the
+        // label baseline (the chevron's mark otherwise sits high in its box).
+        let arrow = container(
+            MouseArea::new(iced::widget::tooltip(
+                glyph.size(12).color(OryxisColors::t().accent),
+                tooltip_chip(tip),
+                iced::widget::tooltip::Position::Top,
+            ))
+            .interaction(iced::mouse::Interaction::Pointer),
+        )
+        .height(Length::Fill)
+        // A hair of bottom padding nudges the glyph ~1px up off the centre so
+        // it sits exactly on the label's optical line.
+        .padding(Padding { bottom: 2.0, ..Padding::ZERO })
+        .center_y(Length::Fill);
+        label_children.push(Space::new().width(4).into());
+        label_children.push(arrow.into());
+    }
+    let label_row = crate::widgets::dir_row(label_children)
+        .height(Length::Fill)
+        .align_y(iced::Alignment::Center);
+
+    // Name keeps a leading icon-width pad so the "Name" header aligns with the
+    // filenames below, even after Name is dragged out of first position.
+    let inner_content: Element<'a, Message> = if col == SftpColumn::Name {
+        row![Space::new().width(Length::Fixed(ICON_COL_W)), label_row]
+            .height(Length::Fill)
+            .align_y(iced::Alignment::Center)
+            .into()
+    } else {
+        label_row.into()
+    };
+
+    let label_area = MouseArea::new(
+        container(inner_content)
+            .width(Length::Fixed(label_w))
+            .height(Length::Fill)
+            .padding(Padding { top: 4.0, right: 6.0, bottom: 4.0, left: 6.0 })
+            .align_y(iced::alignment::Vertical::Center),
+    )
+    .on_press(Message::SftpColDragStart(side, col))
+    .on_enter(Message::SftpColHovered(side, col))
+    .on_exit(Message::SftpColUnhovered)
+    // Grab hint normally; grabbing while a reorder drag is active so the
+    // user gets cursor feedback that the drag took.
+    .interaction(if dragging {
+        iced::mouse::Interaction::Grabbing
+    } else {
+        iced::mouse::Interaction::Grab
+    });
+
+    let cell = row![label_area, col_resize_handle(side, col)]
+        .width(Length::Fixed(w))
+        .align_y(iced::Alignment::Center);
+
+    // Hard rule: the Name column never shows a drop effect, even when it's the
+    // hovered target. Other columns get an accent insertion bar at their
+    // leading edge (overlaid, so no layout shift) marking where the dragged
+    // column lands.
+    if is_target && col != SftpColumn::Name {
+        let bar = container(Space::new().width(Length::Fixed(2.0)).height(Length::Fill))
+            .height(Length::Fill)
+            .style(|_| container::Style {
+                background: Some(Background::Color(OryxisColors::t().accent)),
+                ..Default::default()
+            });
+        iced::widget::stack![cell, bar].into()
+    } else {
+        cell.into()
+    }
+}
+
+/// Column header strip. Every column (Name included) has an explicit width, a
+/// right-edge resize handle (a visible divider, double-click to auto-fit), and
+/// is draggable to reorder. Sortable headers flip the sort on a plain click
+/// (release without a drag, handled in the mouse-up dispatcher) and show a
+/// right-aligned sort arrow.
 fn column_headers<'a>(
     side: SftpPaneSide,
     sort: crate::state::SftpSort,
@@ -2273,105 +2594,17 @@ fn column_headers<'a>(
     drag_col: Option<crate::state::SftpColumn>,
     hovered: Option<crate::state::SftpColumn>,
 ) -> Element<'a, Message> {
-    use crate::state::SftpSortColumn;
-    // The fixed, sortable + resizable Name header.
-    let name_arrow = if sort.column == SftpSortColumn::Name {
-        if sort.ascending { " \u{2191}" } else { " \u{2193}" }
-    } else {
-        ""
-    };
-    let name_btn_w = (layout.name_w - COL_RESIZE_HANDLE_W).max(8.0);
-    let name_btn: Element<'a, Message> = button(
-        text(format!("{}{}", t("col_name"), name_arrow))
-            .size(11)
-            .color(if sort.column == SftpSortColumn::Name {
-                OryxisColors::t().text_primary
-            } else {
-                OryxisColors::t().text_muted
-            }),
-    )
-    .on_press(Message::SftpSort(side, SftpSortColumn::Name))
-    .width(Length::Fixed(name_btn_w))
-    .padding(Padding { top: 4.0, right: 6.0, bottom: 4.0, left: 6.0 })
-    .style(|_, status| {
-        let bg = match status {
-            BtnStatus::Hovered => OryxisColors::t().bg_hover,
-            _ => Color::TRANSPARENT,
-        };
-        button::Style {
-            background: Some(Background::Color(bg)),
-            border: Border { radius: Radius::from(4.0), ..Default::default() },
-            ..Default::default()
-        }
-    })
-    .into();
-    let name_header: Element<'a, Message> = row![name_btn, col_resize_handle(side, None)]
-        .width(layout.name_len)
-        .align_y(iced::Alignment::Center)
-        .into();
-
-    let mut children: Vec<Element<'a, Message>> = vec![
-        // Pad-icon column to align with file rows below.
-        Space::new().width(Length::Fixed(ICON_COL_W)).into(),
-        name_header,
-    ];
-
     let dragging = drag_col.is_some();
+    let mut children: Vec<Element<'a, Message>> = Vec::with_capacity(visible.len());
     for &col in visible {
-        let w = widths.get(col);
-        let sortable = col.sort_column();
-        let active_sort = sortable.is_some_and(|sc| sort.column == sc);
-        let arrow = match sortable {
-            Some(sc) if sort.column == sc => {
-                if sort.ascending { " \u{2191}" } else { " \u{2193}" }
-            }
-            _ => "",
-        };
-        // Highlight a header as the drop target while another column is
-        // dragged over it.
-        let is_target = dragging && hovered == Some(col) && drag_col != Some(col);
-        let is_dragged = drag_col == Some(col);
-        let label_w = (w - COL_RESIZE_HANDLE_W).max(8.0);
-        let label_color = if active_sort {
-            OryxisColors::t().text_primary
-        } else {
-            OryxisColors::t().text_muted
-        };
-        let label_area = MouseArea::new(
-            container(text(format!("{}{}", data_col_label(col), arrow)).size(11).color(label_color))
-                .width(Length::Fixed(label_w))
-                .padding(Padding { top: 4.0, right: 6.0, bottom: 4.0, left: 6.0 })
-                .style(move |_| {
-                    let bg = if is_target {
-                        Some(Background::Color(Color { a: 0.20, ..OryxisColors::t().accent }))
-                    } else if is_dragged {
-                        Some(Background::Color(OryxisColors::t().bg_hover))
-                    } else {
-                        None
-                    };
-                    container::Style {
-                        background: bg,
-                        border: Border { radius: Radius::from(4.0), ..Default::default() },
-                        ..Default::default()
-                    }
-                }),
-        )
-        .on_press(Message::SftpColDragStart(side, col))
-        .on_enter(Message::SftpColHovered(side, col))
-        .on_exit(Message::SftpColUnhovered)
-        // Grab hint normally; grabbing while a reorder drag is active so the
-        // user gets cursor feedback that the drag took.
-        .interaction(if dragging {
-            iced::mouse::Interaction::Grabbing
-        } else {
-            iced::mouse::Interaction::Grab
-        });
-        children.push(
-            row![label_area, col_resize_handle(side, Some(col))]
-                .width(Length::Fixed(w))
-                .align_y(iced::Alignment::Center)
-                .into(),
-        );
+        children.push(header_cell(
+            side,
+            col,
+            sort,
+            widths.get(col),
+            dragging && hovered == Some(col) && drag_col != Some(col),
+            dragging,
+        ));
     }
 
     container(
@@ -2440,28 +2673,18 @@ fn file_row_local<'a>(
 
     // Inline rename mode swaps the row's label for a text input; the
     // icon + columns stay put so the row geometry doesn't jump.
-    let label_widget: Element<'_, Message> = if let Some(input) = rename_input {
-        text_input(&name, input)
-            .on_input(Message::SftpRenameInput)
-            .on_submit(Message::SftpRenameCommit)
-            .padding(Padding { top: 2.0, right: 6.0, bottom: 2.0, left: 6.0 })
-            .size(11)
-            .style(crate::widgets::rounded_input_style).align_x(dir_align_x())
-            .width(layout.name_len)
-            .into()
-    } else {
-        text(name).size(12).color(OryxisColors::t().text_primary).width(layout.name_len).into()
-    };
+    let (label_widget, tooltip_name) = name_label_widget(&name, rename_input, widths);
 
-    let mut children: Vec<Element<'a, Message>> =
-        vec![icon.into(), Space::new().width(8).into(), label_widget];
-    children.extend(trailing_cells(visible, widths, |c| match c {
-        SftpColumn::Modified => modified_s.clone(),
-        SftpColumn::Size => size_str.clone(),
-        SftpColumn::Kind => kind.clone(),
-        SftpColumn::Permissions => perms_s.clone(),
-        SftpColumn::Owner => owner_s.clone(),
-    }));
+    let children = row_cells(visible, widths, icon.into(), label_widget, tooltip_name, |c| {
+        match c {
+            SftpColumn::Modified => modified_s.clone(),
+            SftpColumn::Size => size_str.clone(),
+            SftpColumn::Kind => kind.clone(),
+            SftpColumn::Permissions => perms_s.clone(),
+            SftpColumn::Owner => owner_s.clone(),
+            SftpColumn::Name => String::new(),
+        }
+    });
     let inner = iced::widget::Row::with_children(children)
         // Fill the button's fixed height so the content centers vertically.
         .height(Length::Fill)
@@ -2542,18 +2765,7 @@ fn file_row_remote<'a>(
     let perms_s = format_perms(permissions, is_dir, is_symlink);
     let owner_s = format_owner(uid, gid);
 
-    let label_widget: Element<'_, Message> = if let Some(input) = rename_input {
-        text_input(&name, input)
-            .on_input(Message::SftpRenameInput)
-            .on_submit(Message::SftpRenameCommit)
-            .padding(Padding { top: 2.0, right: 6.0, bottom: 2.0, left: 6.0 })
-            .size(11)
-            .style(crate::widgets::rounded_input_style).align_x(dir_align_x())
-            .width(layout.name_len)
-            .into()
-    } else {
-        text(name).size(12).color(OryxisColors::t().text_primary).width(layout.name_len).into()
-    };
+    let (label_widget, tooltip_name) = name_label_widget(&name, rename_input, widths);
 
     // Single message routes folder navigation, file single-select, and
     // ctrl/shift modifier selection, see the local row counterpart.
@@ -2568,15 +2780,16 @@ fn file_row_remote<'a>(
             is_dir || is_symlink,
         ))
     };
-    let mut children: Vec<Element<'a, Message>> =
-        vec![icon.into(), Space::new().width(8).into(), label_widget];
-    children.extend(trailing_cells(visible, widths, |c| match c {
+    let children = row_cells(visible, widths, icon.into(), label_widget, tooltip_name, |c| {
+        match c {
         SftpColumn::Modified => modified_s.clone(),
         SftpColumn::Size => size_str.clone(),
         SftpColumn::Kind => kind.clone(),
         SftpColumn::Permissions => perms_s.clone(),
         SftpColumn::Owner => owner_s.clone(),
-    }));
+        SftpColumn::Name => String::new(),
+        }
+    });
     let inner = iced::widget::Row::with_children(children)
         // Fill the button's fixed height so `align_y(Center)` actually centers
         // the content vertically inside the row (otherwise a shrink-height row
@@ -3753,10 +3966,28 @@ fn sftp_log_bar<'a>(open: bool, count: usize) -> Element<'a, Message> {
     .into()
 }
 
-/// FileZilla-style message-log panel: a fixed-height scrollable list of
-/// timestamped events, colour-coded by level. Newest entries sit at the
-/// bottom. Strings are cloned so the element doesn't borrow the log.
-fn sftp_log_panel<'a>(log: &[crate::state::SftpLogEntry]) -> Element<'a, Message> {
+/// Draggable horizontal divider sitting above the message-log panel. Pressing
+/// it arms a vertical resize (handled by the global mouse plumbing, shared
+/// with the other SFTP drag handlers).
+fn sftp_log_divider<'a>() -> Element<'a, Message> {
+    MouseArea::new(
+        container(Space::new().width(Length::Fill).height(Length::Fixed(5.0)))
+            .width(Length::Fill)
+            .height(Length::Fixed(5.0))
+            .style(|_| container::Style {
+                background: Some(Background::Color(OryxisColors::t().border)),
+                ..Default::default()
+            }),
+    )
+    .on_press(Message::SftpLogResizeStart)
+    .interaction(iced::mouse::Interaction::ResizingVertically)
+    .into()
+}
+
+/// FileZilla-style message-log panel: a scrollable list of timestamped events,
+/// colour-coded by level, at the user-resizable `height`. Newest entries sit
+/// at the bottom. Strings are cloned so the element doesn't borrow the log.
+fn sftp_log_panel<'a>(log: &[crate::state::SftpLogEntry], height: f32) -> Element<'a, Message> {
     use crate::state::SftpLogLevel;
     let mut col = column![]
         .spacing(1)
@@ -3790,7 +4021,7 @@ fn sftp_log_panel<'a>(log: &[crate::state::SftpLogEntry]) -> Element<'a, Message
     }
     container(scrollable(col).width(Length::Fill).height(Length::Fill))
         .width(Length::Fill)
-        .height(Length::Fixed(160.0))
+        .height(Length::Fixed(height))
         .style(|_| container::Style {
             background: Some(Background::Color(OryxisColors::t().bg_surface)),
             border: Border {
