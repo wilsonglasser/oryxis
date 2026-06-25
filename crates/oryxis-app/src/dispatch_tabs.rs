@@ -5,6 +5,7 @@
 #![allow(clippy::result_large_err)]
 
 use iced::{Point, Task};
+use oryxis_core::models::cloud::TransportKind;
 
 use crate::app::{Message, Oryxis};
 use crate::state::{OverlayContent, OverlayState, View};
@@ -839,9 +840,79 @@ impl Oryxis {
             }
             Message::ReconnectTab(idx) => {
                 self.overlay = None;
-                // Find the connection matching this tab's label; close the tab and
-                // dispatch ConnectSsh for that connection index. Dead tabs (no matching
-                // connection) are just closed.
+                // Prefer an in-place reconnect that REUSES the pane's existing
+                // terminal, so the scrollback the user was looking at survives
+                // the round-trip instead of being wiped by a fresh tab. Only a
+                // single-pane tab backed by a saved plain-SSH connection
+                // qualifies: cloud transports (SSM / ECS / kubectl) need their
+                // own PTY path, and a split tab's live sibling panes must not be
+                // torn down. Everything else falls back to the legacy
+                // remove-and-rebuild below.
+                let reuse = self.tabs.get(idx).and_then(|tab| {
+                    if tab.pane_grid.panes.len() != 1 {
+                        return None;
+                    }
+                    // Only reuse a pane whose session is already torn down. A
+                    // live pane's stream task still owns the old session and
+                    // keeps emitting `PtyOutput` for this same pane id; reusing
+                    // the id would stack two sessions onto one terminal. A
+                    // "restart this live host" goes through the legacy rebuild.
+                    if tab.active().ssh_session.is_some() {
+                        return None;
+                    }
+                    let base_label =
+                        tab.label.trim_end_matches(" (disconnected)").to_string();
+                    let pane_id = tab.active().id;
+                    let conn_idx =
+                        self.connections.iter().position(|c| c.label == base_label)?;
+                    let plain_ssh = self.connections[conn_idx]
+                        .cloud_ref
+                        .as_ref()
+                        .is_none_or(|c| c.transport_pref == TransportKind::Ssh);
+                    plain_ssh.then_some((conn_idx, pane_id, base_label))
+                });
+                if let Some((conn_idx, pane_id, base_label)) = reuse {
+                    // Drop the dead session and restore the live label (strip the
+                    // "(disconnected)" suffix). Keeping the tab in place means we
+                    // never set `self.connecting`, so the terminal (with its
+                    // scrollback) stays on screen through the reconnect instead
+                    // of being replaced by the full-screen progress view.
+                    self.tabs[idx].label = base_label.clone();
+                    if let Some(pane) = self.tabs[idx].pane_by_id_mut(pane_id) {
+                        pane.ssh_session = None;
+                        if let Ok(mut state) = pane.terminal.lock() {
+                            // Dim marker so the reconnect reads as a continuation
+                            // of the same pane, not a wipe. The scrollback above
+                            // it is left untouched.
+                            state.process(
+                                format!(
+                                    "\r\n\x1b[2m[reconnecting to {base_label}...]\x1b[0m\r\n"
+                                )
+                                .as_bytes(),
+                            );
+                        }
+                    }
+                    // Toast "Reconnecting..." so the user sees feedback the
+                    // moment the attempt starts (a silent auto-reconnect can fire
+                    // up to 30s after the disconnect was first detected). Focus is
+                    // left alone: a manual reconnect is already on the active tab,
+                    // and a background auto-reconnect shouldn't yank the user away.
+                    self.toast =
+                        Some(crate::i18n::t("disconnected_reconnecting").to_string());
+                    return Ok(Task::batch(vec![
+                        self.spawn_ssh_for_pane(conn_idx, idx, pane_id),
+                        Task::perform(
+                            async {
+                                tokio::time::sleep(std::time::Duration::from_millis(2500))
+                                    .await;
+                            },
+                            |_| Message::ToastClear,
+                        ),
+                    ]));
+                }
+                // Legacy fallback (multi-pane, cloud transport, or a dead tab
+                // with no matching connection): remove the tab and rebuild via
+                // ConnectSsh. Dead tabs (no matching connection) are just closed.
                 if let Some(tab) = self.tabs.get(idx) {
                     let base_label = tab.label.trim_end_matches(" (disconnected)").to_string();
                     let conn_idx = self.connections.iter().position(|c| c.label == base_label);

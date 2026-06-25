@@ -1175,6 +1175,22 @@ impl Oryxis {
                 {
                     state.process(format!("\r\nConnection failed: {msg}\r\n").as_bytes());
                 }
+                // A failed *in-place reconnect* (single-pane tab whose label
+                // matches a saved host) must fall back to the "(disconnected)"
+                // state so `AutoReconnectTick` keeps retrying up to
+                // `max_reconnect_attempts`. Split tabs (>1 pane) share this
+                // message but stay connected via their live sibling panes;
+                // session-group tabs carry the group name (no matching host),
+                // so neither gets relabeled.
+                if let Some(tab_idx) = self.pane_tab_index(pane_id)
+                    && self.tabs[tab_idx].pane_grid.panes.len() == 1
+                    && !self.tabs[tab_idx].label.ends_with(" (disconnected)")
+                {
+                    let label = self.tabs[tab_idx].label.clone();
+                    if self.connections.iter().any(|c| c.label == label) {
+                        self.tabs[tab_idx].label = format!("{label} (disconnected)");
+                    }
+                }
                 tracing::error!("pane SSH connect failed: {msg}");
             }
             Message::SshError(err) => {
@@ -1345,6 +1361,17 @@ impl Oryxis {
         let resolver = self.build_jump_resolver(&conn);
         let host_key_check = self.build_host_key_check();
         let keepalive = self.effective_keepalive(&conn);
+        // Parity with the full-tab `ConnectSsh` path: agent forwarding, env
+        // vars and a custom encoding must ride the session too, otherwise a
+        // split pane (or an in-place reconnect) silently drops them.
+        let agent_forwarding = conn.agent_forwarding;
+        let env_vars: Vec<(String, String)> = conn
+            .env_vars
+            .iter()
+            .filter(|e| !e.key.trim().is_empty())
+            .map(|e| (e.key.clone(), e.value.clone()))
+            .collect();
+        let encoding = conn.encoding.clone();
 
         let session_log_id = if self.should_record_session(Some(&conn)) {
             self.vault.as_ref().map(|v| {
@@ -1402,7 +1429,10 @@ impl Oryxis {
                 .with_host_key_check(host_key_check)
                 .with_host_key_ask(hk_ask_tx)
                 .with_kbi_ask(kbi_ask_tx)
-                .with_keepalive(keepalive);
+                .with_keepalive(keepalive)
+                .with_agent_forwarding(agent_forwarding)
+                .with_env_vars(env_vars)
+                .with_encoding(encoding);
 
             let mut sender_clone = sender.clone();
             let _bridge = tokio::spawn(async move {
