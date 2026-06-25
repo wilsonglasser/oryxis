@@ -325,6 +325,12 @@ impl Oryxis {
             if let Some(brand) = crate::os_icon::tab_label_cloud_brand(label) {
                 return crate::os_icon::provider_icon(brand, OryxisColors::t().accent).1;
             }
+            // 3) OS brand colour from a detected OS or a local-shell hint
+            //    (PowerShell/cmd -> Windows blue, "Ubuntu (WSL)" -> Ubuntu
+            //    orange), matching the per-tab icon tint.
+            if let Some(os) = self.tab_detected_os(label) {
+                return crate::os_icon::resolve_icon(Some(&os), OryxisColors::t().accent).1;
+            }
         }
         // SFTP surface focused: breathe the active SFTP tab's host colour so the
         // bar wash glows the same as a terminal tab on that host.
@@ -1624,7 +1630,7 @@ impl Oryxis {
                     (crate::i18n::t("remove"), iced_fonts::lucide::trash())
                 };
                 items
-                    .push(context_menu_item(remove_icon, remove_label, Message::DeleteConnection(idx), OryxisColors::t().error))
+                    .push(context_menu_item(remove_icon, remove_label, Message::RequestDeleteConnection(idx), OryxisColors::t().error))
                     .into()
             }
             OverlayContent::SessionGroupActions(idx) => {
@@ -1633,7 +1639,7 @@ impl Oryxis {
                     context_menu_item(iced_fonts::lucide::play(), crate::i18n::t("open_session_group"), Message::OpenSessionGroup(idx), OryxisColors::t().success),
                     context_menu_item(iced_fonts::lucide::pencil(), crate::i18n::t("edit"), Message::EditSessionGroup(idx), OryxisColors::t().text_secondary),
                     context_menu_item(iced_fonts::lucide::copy(), crate::i18n::t("duplicate"), Message::DuplicateSessionGroup(idx), OryxisColors::t().text_secondary),
-                    context_menu_item(iced_fonts::lucide::trash(), crate::i18n::t("remove"), Message::DeleteSessionGroup(idx), OryxisColors::t().error),
+                    context_menu_item(iced_fonts::lucide::trash(), crate::i18n::t("remove"), Message::RequestDeleteSessionGroup(idx), OryxisColors::t().error),
                 ]
                 .into()
             }
@@ -1641,21 +1647,21 @@ impl Oryxis {
                 let idx = *idx;
                 column![
                     context_menu_item(iced_fonts::lucide::pencil(), crate::i18n::t("edit"), Message::EditKey(idx), OryxisColors::t().text_secondary),
-                    context_menu_item(iced_fonts::lucide::trash(), crate::i18n::t("remove"), Message::DeleteKey(idx), OryxisColors::t().error),
+                    context_menu_item(iced_fonts::lucide::trash(), crate::i18n::t("remove"), Message::RequestDeleteKey(idx), OryxisColors::t().error),
                 ].into()
             }
             OverlayContent::IdentityActions(idx) => {
                 let idx = *idx;
                 column![
                     context_menu_item(iced_fonts::lucide::pencil(), crate::i18n::t("edit"), Message::EditIdentity(idx), OryxisColors::t().text_secondary),
-                    context_menu_item(iced_fonts::lucide::trash(), crate::i18n::t("remove"), Message::DeleteIdentity(idx), OryxisColors::t().error),
+                    context_menu_item(iced_fonts::lucide::trash(), crate::i18n::t("remove"), Message::RequestDeleteIdentity(idx), OryxisColors::t().error),
                 ].into()
             }
             OverlayContent::SnippetActions(idx) => {
                 let idx = *idx;
                 column![
                     context_menu_item(iced_fonts::lucide::pencil(), crate::i18n::t("edit"), Message::EditSnippet(idx), OryxisColors::t().text_secondary),
-                    context_menu_item(iced_fonts::lucide::trash(), crate::i18n::t("delete"), Message::DeleteSnippet(idx), OryxisColors::t().error),
+                    context_menu_item(iced_fonts::lucide::trash(), crate::i18n::t("delete"), Message::RequestDeleteSnippet(idx), OryxisColors::t().error),
                 ].into()
             }
             OverlayContent::KeychainAdd => {
