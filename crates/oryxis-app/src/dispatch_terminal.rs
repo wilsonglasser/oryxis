@@ -365,12 +365,6 @@ impl Oryxis {
                 // every later branch in this handler sees fresh state.
                 if let keyboard::Event::ModifiersChanged(m) = &event {
                     self.modifiers = *m;
-                    // Releasing Ctrl ends a Ctrl+Tab walk: commit the landing
-                    // tab to the front of the MRU list so the next walk starts
-                    // from here (VS Code semantics).
-                    if !m.control() {
-                        self.commit_tab_cycle();
-                    }
                 }
                 // PrintScreen -> open the Windows snip overlay (region
                 // capture), matching the OS default. winit delivers the
@@ -423,30 +417,20 @@ impl Oryxis {
                         iced::widget::operation::focus_next()
                     });
                 }
-                // Ctrl+Tab / Ctrl+Shift+Tab: walk the terminal tabs in
-                // most-recently-used order (hold Ctrl, tap Tab; release Ctrl
-                // commits). Handled here rather than via the configurable
-                // hotkey table because that table is one-shot and can't model
-                // the hold/release commit. Consumed unconditionally in the
-                // terminal view so the combo never leaks a literal \t into the
-                // PTY; the actual switch only happens with more than one tab.
+                // Ctrl+Tab / Ctrl+Shift+Tab: move the strip focus one slot
+                // forward / backward through [Home, pinned, tabs], wrapping
+                // around (Home is part of the cycle). Positional, not MRU, so
+                // it's fully deterministic. Handled here rather than via the
+                // configurable hotkey table so it works from any surface (the
+                // Home/vault views included). Consumed unconditionally so the
+                // combo never leaks a literal \t into the PTY.
                 if let keyboard::Event::KeyPressed { key, modifiers, .. } = &event
                     && matches!(key, keyboard::Key::Named(keyboard::key::Named::Tab))
                     && modifiers.control()
-                    && matches!(
-                        self.active_view,
-                        crate::state::View::Terminal | crate::state::View::Sftp
-                    )
                     && !self.show_host_panel
                     && !self.any_modal_blocks_input()
                 {
-                    // Cycle when the strip holds more than one switchable chip
-                    // (terminal + SFTP). Consume regardless so Ctrl+Tab never
-                    // leaks a literal \t into the PTY.
-                    if self.tabs.len() + self.sftp_tabs.len() > 1 {
-                        return Ok(self.cycle_tabs_mru(modifiers.shift()));
-                    }
-                    return Ok(Task::none());
+                    return Ok(self.cycle_strip_focus(!modifiers.shift()));
                 }
                 // Dashboard keyboard navigation: from the search field,
                 // Tab / arrows move a selection across the visible host

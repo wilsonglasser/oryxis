@@ -616,8 +616,6 @@ impl Oryxis {
                     self.active_tab = None;
                     self.active_view = crate::state::View::Sftp;
                     self.show_burger_menu = false;
-                    // Record the focus for the Ctrl+Tab MRU walk (no-op mid-walk).
-                    self.touch_tab_mru(crate::state::TabRef::Sftp(self.sftp_tabs[idx].id));
                     // Dormant pinned tab (restored at boot): re-mount its remote
                     // pane on first focus. Single-remote case (the common
                     // left=Local / right=Remote); a dual-remote tab re-mounts

@@ -66,6 +66,38 @@ impl Oryxis {
         }
     }
 
+    /// Positional Ctrl+Tab (`forward`) / Ctrl+Shift+Tab (`!forward`): move the
+    /// strip focus one slot, wrapping around the unified order
+    /// `[Home, pinned..., tabs...]`. Home is slot 0 and part of the cycle, so
+    /// from the last tab a forward step lands on Home and from Home a backward
+    /// step lands on the last tab. Deterministic (no MRU), mirrors exactly what
+    /// the strip renders.
+    pub(crate) fn cycle_strip_focus(&self, forward: bool) -> Task<Message> {
+        let tabs: Vec<crate::state::TabRef> = self
+            .ordered_tab_refs()
+            .into_iter()
+            .filter(|r| self.tab_ref_select_msg(r).is_some())
+            .collect();
+        // Slot 0 is Home; the activatable tabs follow in visual order.
+        let n = tabs.len() + 1;
+        if n <= 1 {
+            return Task::none();
+        }
+        let cur = match self.active_tab_ref() {
+            Some(r) => tabs.iter().position(|x| *x == r).map(|p| p + 1).unwrap_or(0),
+            None => 0,
+        };
+        let next = if forward { (cur + 1) % n } else { (cur + n - 1) % n };
+        if next == 0 {
+            Task::done(Message::ChangeView(View::Dashboard))
+        } else {
+            match self.tab_ref_select_msg(&tabs[next - 1]) {
+                Some(msg) => Task::done(msg),
+                None => Task::none(),
+            }
+        }
+    }
+
     /// The currently focused tab as a `TabRef`. Mirrors the strip's own
     /// active model (`views/tab_bar.rs`): `active_sftp` is NOT cleared when a
     /// terminal tab is selected, so an SFTP tab counts as active only on the
