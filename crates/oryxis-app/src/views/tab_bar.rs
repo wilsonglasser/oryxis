@@ -418,6 +418,7 @@ impl Oryxis {
                     sg_custom_color,
                     tab.pinned,
                     solid_fill,
+                    tab.active().progress,
                 ));
             }
         }
@@ -1172,6 +1173,8 @@ fn session_tab<'a>(
     // Full-style pinned tab: draws a distinct left-edge accent border.
     pinned: bool,
     solid_fill: bool,
+    // OSC 9;4 progress from the focused pane; drawn as a growing border.
+    progress: Option<oryxis_terminal::Progress>,
 ) -> Element<'a, Message> {
     let effective_accent = host_accent.unwrap_or_else(|| OryxisColors::t().accent);
     let fg = if is_active {
@@ -1408,11 +1411,134 @@ fn session_tab<'a>(
         }
     });
 
-    MouseArea::new(tab_btn)
+    // OSC 9;4 progress: a border that grows clockwise around the tab,
+    // proportional to 0..100%. Layered over the button via a Stack; the canvas
+    // doesn't handle input, so clicks still reach the button underneath.
+    let tab_el: Element<'_, Message> = match progress {
+        Some(p) if p.value > 0 => {
+            let color = match p.state {
+                2 => OryxisColors::t().error,         // error
+                4 => Color::from_rgb(0.95, 0.66, 0.13), // warning (amber)
+                _ => effective_accent,                // normal / indeterminate
+            };
+            let bar = iced::widget::canvas(TabProgressBorder {
+                fraction: p.value as f32 / 100.0,
+                color,
+            })
+            .width(Length::Fixed(width))
+            .height(Length::Fixed(TAB_HEIGHT));
+            iced::widget::Stack::new()
+                .width(Length::Fixed(width))
+                .height(Length::Fixed(TAB_HEIGHT))
+                .push(tab_btn)
+                .push(bar)
+                .into()
+        }
+        _ => tab_btn.into(),
+    };
+
+    MouseArea::new(tab_el)
         .on_enter(Message::TabHovered(idx))
         .on_exit(Message::TabUnhovered)
         .on_right_press(Message::ShowTabMenu(idx))
         .into()
+}
+
+/// Canvas that draws a tab's OSC 9;4 progress as a border filling clockwise
+/// from the top-left, `fraction` of the perimeter (0..1).
+struct TabProgressBorder {
+    fraction: f32,
+    color: Color,
+}
+
+impl iced::widget::canvas::Program<Message, iced::Theme> for TabProgressBorder {
+    type State = ();
+
+    fn draw(
+        &self,
+        _state: &(),
+        renderer: &iced::Renderer,
+        _theme: &iced::Theme,
+        bounds: iced::Rectangle,
+        _cursor: iced::mouse::Cursor,
+    ) -> Vec<iced::widget::canvas::Geometry> {
+        use iced::widget::canvas::{stroke, Frame, Path, Stroke};
+        use iced::Point;
+        use std::f32::consts::FRAC_PI_2;
+
+        let mut frame = Frame::new(renderer, bounds.size());
+        let t = 2.0_f32; // stroke thickness
+        // Inset by half the stroke so the line sits fully inside the bounds,
+        // and round the corners to the same 6 px radius as the tab button.
+        let inset = t / 2.0;
+        let (ox, oy) = (inset, inset);
+        let w = (bounds.width - 2.0 * inset).max(0.0);
+        let h = (bounds.height - 2.0 * inset).max(0.0);
+        let r = 6.0_f32.min(w / 2.0).min(h / 2.0).max(0.0);
+
+        let arc = FRAC_PI_2 * r; // length of one rounded corner
+        let edge_top = (w - 2.0 * r).max(0.0);
+        let edge_side = (h - 2.0 * r).max(0.0);
+        let perim = 2.0 * edge_top + 2.0 * edge_side + 4.0 * arc;
+        if perim <= 0.0 {
+            return vec![frame.into_geometry()];
+        }
+        let filled = (self.fraction.clamp(0.0, 1.0) * perim).min(perim);
+
+        // Cumulative segment thresholds, clockwise from the top edge start.
+        let (t1, t2) = (edge_top, edge_top + arc);
+        let (t3, t4) = (t2 + edge_side, t2 + edge_side + arc);
+        let (t5, t6) = (t4 + edge_top, t4 + edge_top + arc);
+        let t7 = t6 + edge_side;
+        // Point at perimeter distance `d` (handles edges + corner arcs).
+        let point_at = |d: f32| -> Point {
+            let on_arc = |cx: f32, cy: f32, base: f32, d0: f32| {
+                let th = base + (d - d0) / r;
+                Point::new(ox + cx + r * th.cos(), oy + cy + r * th.sin())
+            };
+            if d <= t1 {
+                Point::new(ox + r + d, oy)
+            } else if d <= t2 {
+                on_arc(w - r, r, -FRAC_PI_2, t1)
+            } else if d <= t3 {
+                Point::new(ox + w, oy + r + (d - t2))
+            } else if d <= t4 {
+                on_arc(w - r, h - r, 0.0, t3)
+            } else if d <= t5 {
+                Point::new(ox + w - r - (d - t4), oy + h)
+            } else if d <= t6 {
+                on_arc(r, h - r, FRAC_PI_2, t5)
+            } else if d <= t7 {
+                Point::new(ox, oy + h - r - (d - t6))
+            } else {
+                on_arc(r, r, FRAC_PI_2 * 2.0, t7)
+            }
+        };
+
+        // Trace the contour as a short-segment polyline (arcs approximated;
+        // the corners are tiny so it reads as a smooth rounded border).
+        let path = Path::new(|b| {
+            b.move_to(point_at(0.0));
+            let step = 1.5_f32;
+            let mut d = step;
+            while d < filled {
+                b.line_to(point_at(d));
+                d += step;
+            }
+            b.line_to(point_at(filled));
+        });
+        frame.stroke(
+            &path,
+            Stroke {
+                style: stroke::Style::Solid(self.color),
+                width: t,
+                line_cap: stroke::LineCap::Round,
+                line_join: stroke::LineJoin::Round,
+                ..Stroke::default()
+            },
+        );
+        vec![frame.into_geometry()]
+    }
 }
 
 /// Compact (Chrome-style) pinned tab: an icon-only chip at a fixed width,
