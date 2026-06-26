@@ -49,46 +49,187 @@ pub(crate) fn open_screenshot_tool() {
     }
 }
 
-/// Translate a named iced key (Enter, Tab, ArrowUp, …) into the PTY byte sequence.
+/// How the terminal reacts to the bell (BEL / `\a`). Persisted as its `code()`
+/// string in the `terminal_bell_mode` setting. Default `Beep`.
+#[derive(Clone, Copy, PartialEq, Eq, Default, Debug)]
+pub(crate) enum BellMode {
+    /// Ignore the bell entirely.
+    Off,
+    /// Briefly flash the terminal pane (visual bell).
+    Flash,
+    /// Audible system beep (best-effort native).
+    #[default]
+    Beep,
+}
+
+impl BellMode {
+    pub(crate) const ALL: [BellMode; 3] = [BellMode::Off, BellMode::Flash, BellMode::Beep];
+
+    pub(crate) fn code(self) -> &'static str {
+        match self {
+            BellMode::Off => "off",
+            BellMode::Flash => "flash",
+            BellMode::Beep => "beep",
+        }
+    }
+
+    pub(crate) fn from_code(code: &str) -> Self {
+        match code {
+            "off" => BellMode::Off,
+            "flash" => BellMode::Flash,
+            _ => BellMode::Beep,
+        }
+    }
+
+    /// i18n key for the localized label shown in the settings pick-list.
+    pub(crate) fn label_key(self) -> &'static str {
+        match self {
+            BellMode::Off => "bell_off",
+            BellMode::Flash => "bell_flash",
+            BellMode::Beep => "bell_beep",
+        }
+    }
+}
+
+/// Best-effort native system beep, no audio dependency. Windows uses
+/// `MessageBeep`; macOS shells out to `osascript -e beep`; Linux tries the
+/// freedesktop bell through whichever player is present. Silent if none is
+/// available, which is exactly why the visual `Flash` mode exists as the
+/// reliable alternative. Never blocks the UI thread.
+pub(crate) fn play_system_beep() {
+    #[cfg(target_os = "windows")]
+    {
+        // 0xFFFFFFFF = a simple speaker beep, independent of the sound scheme.
+        unsafe {
+            windows_sys::Win32::UI::WindowsAndMessaging::MessageBeep(0xFFFF_FFFF);
+        }
+    }
+    #[cfg(target_os = "macos")]
+    {
+        spawn_and_reap(std::process::Command::new("osascript").args(["-e", "beep"]));
+    }
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        // First player that launches wins; each is a no-op if not installed.
+        const BELL_OGA: &str = "/usr/share/sounds/freedesktop/stereo/bell.oga";
+        let mut canberra = std::process::Command::new("canberra-gtk-play");
+        canberra.args(["-i", "bell"]);
+        let mut paplay = std::process::Command::new("paplay");
+        paplay.arg(BELL_OGA);
+        let mut pw_play = std::process::Command::new("pw-play");
+        pw_play.arg(BELL_OGA);
+        for cmd in [&mut canberra, &mut paplay, &mut pw_play] {
+            if spawn_and_reap(cmd) {
+                break;
+            }
+        }
+    }
+}
+
+/// Spawn a fire-and-forget child and reap it on a detached thread so it never
+/// becomes a zombie. Returns whether the spawn itself succeeded.
+#[cfg(unix)]
+fn spawn_and_reap(cmd: &mut std::process::Command) -> bool {
+    use std::process::Stdio;
+    match cmd.stdout(Stdio::null()).stderr(Stdio::null()).spawn() {
+        Ok(mut child) => {
+            std::thread::spawn(move || {
+                let _ = child.wait();
+            });
+            true
+        }
+        Err(_) => false,
+    }
+}
+
+/// xterm modifier parameter: `1 + Shift(1) + Alt(2) + Ctrl(4)`. Returns 1 when
+/// no modifier is held (the "unmodified" sentinel xterm uses in `CSI 1 ; N …`).
+fn xterm_modifier_param(m: &keyboard::Modifiers) -> u8 {
+    1 + (m.shift() as u8) + 2 * (m.alt() as u8) + 4 * (m.control() as u8)
+}
+
+/// Translate a named iced key (Enter, Tab, ArrowUp, …) into the PTY byte
+/// sequence, honoring modifiers in the xterm scheme.
+///
+/// Cursor / Home / End keys take the SS3 form (`ESC O A`) under application-
+/// cursor-keys mode (DECCKM) and the CSI form (`ESC [ A`) otherwise, but a
+/// *modified* press is always CSI with a parameter (`ESC [ 1 ; 5 A` for
+/// Ctrl+Up), the form vim / readline / editors bind word-jump and selection
+/// to. The `~`-terminated keys (PageUp/Down, Insert, Delete, F5-F12) carry the
+/// modifier as `ESC [ N ; M ~`. F1-F4 go from `ESC O P` to `ESC [ 1 ; M P`
+/// when modified. Shift+Tab is the back-tab `ESC [ Z`.
 pub(crate) fn key_to_named_bytes(
     key: &keyboard::Key,
-    _modifiers: &keyboard::Modifiers,
+    modifiers: &keyboard::Modifiers,
+    app_cursor: bool,
 ) -> Option<Vec<u8>> {
-    if let keyboard::Key::Named(named) = key {
-        let bytes: &[u8] = match named {
-            keyboard::key::Named::Enter => b"\r",
-            keyboard::key::Named::Backspace => b"\x7f",
-            keyboard::key::Named::Tab => b"\t",
-            keyboard::key::Named::Escape => b"\x1b",
-            keyboard::key::Named::ArrowUp => b"\x1b[A",
-            keyboard::key::Named::ArrowDown => b"\x1b[B",
-            keyboard::key::Named::ArrowRight => b"\x1b[C",
-            keyboard::key::Named::ArrowLeft => b"\x1b[D",
-            keyboard::key::Named::Home => b"\x1b[H",
-            keyboard::key::Named::End => b"\x1b[F",
-            keyboard::key::Named::PageUp => b"\x1b[5~",
-            keyboard::key::Named::PageDown => b"\x1b[6~",
-            keyboard::key::Named::Insert => b"\x1b[2~",
-            keyboard::key::Named::Delete => b"\x1b[3~",
-            keyboard::key::Named::F1 => b"\x1bOP",
-            keyboard::key::Named::F2 => b"\x1bOQ",
-            keyboard::key::Named::F3 => b"\x1bOR",
-            keyboard::key::Named::F4 => b"\x1bOS",
-            keyboard::key::Named::F5 => b"\x1b[15~",
-            keyboard::key::Named::F6 => b"\x1b[17~",
-            keyboard::key::Named::F7 => b"\x1b[18~",
-            keyboard::key::Named::F8 => b"\x1b[19~",
-            keyboard::key::Named::F9 => b"\x1b[20~",
-            keyboard::key::Named::F10 => b"\x1b[21~",
-            keyboard::key::Named::F11 => b"\x1b[23~",
-            keyboard::key::Named::F12 => b"\x1b[24~",
-            keyboard::key::Named::Space => b" ",
-            _ => return None,
-        };
-        Some(bytes.to_vec())
-    } else {
-        None
-    }
+    let keyboard::Key::Named(named) = key else {
+        return None;
+    };
+    let param = xterm_modifier_param(modifiers);
+    let modified = param > 1;
+
+    // Arrows + Home/End: `letter` is the CSI/SS3 final byte.
+    let csi_letter = |letter: u8| -> Vec<u8> {
+        if modified {
+            format!("\x1b[1;{}{}", param, letter as char).into_bytes()
+        } else if app_cursor {
+            vec![0x1b, b'O', letter]
+        } else {
+            vec![0x1b, b'[', letter]
+        }
+    };
+    // `~`-terminated keys (PageUp/Down, Insert, Delete, F5-F12).
+    let tilde = |num: u8| -> Vec<u8> {
+        if modified {
+            format!("\x1b[{num};{param}~").into_bytes()
+        } else {
+            format!("\x1b[{num}~").into_bytes()
+        }
+    };
+    // F1-F4: SS3 final byte unmodified, CSI with parameter when modified.
+    let ss3_fn = |letter: u8| -> Vec<u8> {
+        if modified {
+            format!("\x1b[1;{}{}", param, letter as char).into_bytes()
+        } else {
+            vec![0x1b, b'O', letter]
+        }
+    };
+
+    use keyboard::key::Named;
+    let bytes: Vec<u8> = match named {
+        Named::Enter => b"\r".to_vec(),
+        Named::Backspace => b"\x7f".to_vec(),
+        // Shift+Tab is back-tab (CBT); plain Tab stays HT.
+        Named::Tab if modifiers.shift() => b"\x1b[Z".to_vec(),
+        Named::Tab => b"\t".to_vec(),
+        Named::Escape => b"\x1b".to_vec(),
+        Named::Space => b" ".to_vec(),
+        Named::ArrowUp => csi_letter(b'A'),
+        Named::ArrowDown => csi_letter(b'B'),
+        Named::ArrowRight => csi_letter(b'C'),
+        Named::ArrowLeft => csi_letter(b'D'),
+        Named::Home => csi_letter(b'H'),
+        Named::End => csi_letter(b'F'),
+        Named::PageUp => tilde(5),
+        Named::PageDown => tilde(6),
+        Named::Insert => tilde(2),
+        Named::Delete => tilde(3),
+        Named::F1 => ss3_fn(b'P'),
+        Named::F2 => ss3_fn(b'Q'),
+        Named::F3 => ss3_fn(b'R'),
+        Named::F4 => ss3_fn(b'S'),
+        Named::F5 => tilde(15),
+        Named::F6 => tilde(17),
+        Named::F7 => tilde(18),
+        Named::F8 => tilde(19),
+        Named::F9 => tilde(20),
+        Named::F10 => tilde(21),
+        Named::F11 => tilde(23),
+        Named::F12 => tilde(24),
+        _ => return None,
+    };
+    Some(bytes)
 }
 
 /// Snap the chat sidebar's scrollable to its bottom, used after the
@@ -244,7 +385,68 @@ pub(crate) fn ctrl_key_bytes(key: &keyboard::Key) -> Option<Vec<u8>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use iced::keyboard::key::Named;
+    use iced::keyboard::{Key, Modifiers};
     use std::time::Duration;
+
+    fn nb(named: Named, mods: Modifiers, app_cursor: bool) -> Vec<u8> {
+        key_to_named_bytes(&Key::Named(named), &mods, app_cursor).unwrap()
+    }
+
+    #[test]
+    fn arrows_plain_are_csi_and_app_cursor_is_ss3() {
+        // Default (normal) cursor mode: CSI form.
+        assert_eq!(nb(Named::ArrowUp, Modifiers::empty(), false), b"\x1b[A");
+        assert_eq!(nb(Named::ArrowLeft, Modifiers::empty(), false), b"\x1b[D");
+        // Application-cursor-keys mode (DECCKM): SS3 form, what mc/vim bind to.
+        assert_eq!(nb(Named::ArrowUp, Modifiers::empty(), true), b"\x1bOA");
+        assert_eq!(nb(Named::End, Modifiers::empty(), true), b"\x1bOF");
+    }
+
+    #[test]
+    fn modified_arrows_use_xterm_parameter_and_stay_csi() {
+        // Ctrl = param 5, Shift = 2, Alt = 3.
+        assert_eq!(nb(Named::ArrowRight, Modifiers::CTRL, false), b"\x1b[1;5C");
+        assert_eq!(nb(Named::ArrowUp, Modifiers::SHIFT, false), b"\x1b[1;2A");
+        assert_eq!(nb(Named::ArrowDown, Modifiers::ALT, false), b"\x1b[1;3B");
+        assert_eq!(
+            nb(Named::ArrowLeft, Modifiers::CTRL | Modifiers::SHIFT, false),
+            b"\x1b[1;6D"
+        );
+        // A modified press is CSI even under application-cursor-keys mode.
+        assert_eq!(nb(Named::ArrowUp, Modifiers::CTRL, true), b"\x1b[1;5A");
+    }
+
+    #[test]
+    fn tilde_keys_carry_modifier() {
+        assert_eq!(nb(Named::PageUp, Modifiers::empty(), false), b"\x1b[5~");
+        assert_eq!(nb(Named::PageUp, Modifiers::CTRL, false), b"\x1b[5;5~");
+        assert_eq!(nb(Named::Delete, Modifiers::SHIFT, false), b"\x1b[3;2~");
+    }
+
+    #[test]
+    fn function_keys_promote_to_csi_when_modified() {
+        assert_eq!(nb(Named::F1, Modifiers::empty(), false), b"\x1bOP");
+        assert_eq!(nb(Named::F1, Modifiers::CTRL, false), b"\x1b[1;5P");
+        assert_eq!(nb(Named::F5, Modifiers::empty(), false), b"\x1b[15~");
+        assert_eq!(nb(Named::F5, Modifiers::CTRL, false), b"\x1b[15;5~");
+    }
+
+    #[test]
+    fn shift_tab_is_back_tab() {
+        assert_eq!(nb(Named::Tab, Modifiers::empty(), false), b"\t");
+        assert_eq!(nb(Named::Tab, Modifiers::SHIFT, false), b"\x1b[Z");
+    }
+
+    #[test]
+    fn bell_mode_code_round_trips_and_defaults_to_beep() {
+        for m in BellMode::ALL {
+            assert_eq!(BellMode::from_code(m.code()), m);
+        }
+        // Unknown / legacy values fall back to the default (beep).
+        assert_eq!(BellMode::from_code("garbage"), BellMode::Beep);
+        assert_eq!(BellMode::default(), BellMode::Beep);
+    }
 
     #[test]
     fn keepalive_inherits_global_when_per_host_is_none() {

@@ -226,6 +226,8 @@ impl VaultStore {
         // (resolved live at connect). Stored as the UUID text.
         let _ = self.db.execute_batch("ALTER TABLE connections ADD COLUMN startup_snippet_id TEXT;");
         let _ = self.db.execute_batch("ALTER TABLE connections ADD COLUMN keepalive_interval INTEGER;");
+        // Per-host auto-title (OSC 0/2) override: NULL inherits global, 0/1 force.
+        let _ = self.db.execute_batch("ALTER TABLE connections ADD COLUMN auto_title INTEGER;");
         let _ = self.db.execute_batch("ALTER TABLE connections ADD COLUMN icon_style TEXT;");
         // JSON array of field names the user has explicitly overridden
         // on a cloud-imported host. Reimport leaves listed fields

@@ -289,6 +289,26 @@ impl Oryxis {
                     toggle_row(crate::i18n::t("keyword_highlight"), self.setting_keyword_highlight, Message::ToggleKeywordHighlight),
                     Space::new().height(10),
                     toggle_row(crate::i18n::t("smart_contrast"), self.setting_smart_contrast, Message::ToggleSmartContrast),
+                    Space::new().height(10),
+                    toggle_row(crate::i18n::t("terminal_auto_title"), crate::state::auto_title_enabled(), Message::ToggleTerminalAutoTitle),
+                    Space::new().height(10),
+                    dir_row(vec![
+                        text(crate::i18n::t("terminal_bell")).size(13).color(OryxisColors::t().text_secondary).into(),
+                        Space::new().width(Length::Fill).into(),
+                        pick_list(
+                            Some(crate::i18n::t(self.setting_bell_mode.label_key()).to_string()),
+                            crate::util::BellMode::ALL
+                                .iter()
+                                .map(|m| crate::i18n::t(m.label_key()).to_string())
+                                .collect::<Vec<_>>(),
+                            |s: &String| s.clone(),
+                        )
+                        .on_select(Message::BellModeChanged)
+                        .width(160)
+                        .padding(10)
+                        .style(crate::widgets::rounded_pick_list_style)
+                        .into(),
+                    ]).align_y(iced::Alignment::Center),
                 ]);
 
                 let font_size_section = panel_section(column![

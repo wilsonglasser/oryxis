@@ -101,6 +101,10 @@ pub(crate) struct ConnectionForm {
     /// string while the editor is open so the input field can show
     /// what the user typed; serialized to `Option<u32>` on save.
     pub keepalive_interval: String,
+    /// Per-host auto-title (OSC 0/2) override. Mirrors `Connection.auto_title`:
+    /// `None` inherits the global setting, `Some(true/false)` forces it on/off
+    /// for this host.
+    pub auto_title: Option<bool>,
     /// Cloud-managed transport selection. Only meaningful when the
     /// connection being edited has a `cloud_ref`, the editor renders
     /// the picker conditionally. `None` here = "no cloud_ref to
@@ -241,6 +245,7 @@ impl Default for ConnectionForm {
             proxy_password_touched: false,
             terminal_theme: None,
             keepalive_interval: String::new(),
+            auto_title: None,
             cloud_transport: None,
             icon_style: None,
             encoding: None,

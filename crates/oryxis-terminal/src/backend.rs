@@ -36,6 +36,10 @@ pub const DEFAULT_WORD_DELIMITERS: &str = ",│`|:\"' ()[]{}<>";
 pub struct EventProxy {
     /// Pending title from the shell.
     pub title: Arc<Mutex<Option<String>>>,
+    /// Set when the shell rings the bell (BEL / `\a`). The app drains it each
+    /// output batch and turns it into the user's chosen bell action
+    /// (audible beep / visual flash / nothing).
+    pub bell: Arc<std::sync::atomic::AtomicBool>,
     /// Sender wired to the PTY writer thread. The terminal emulator
     /// uses this to write replies back into the PTY for queries that
     /// the host (e.g. ConPTY's `\x1b[6n` cursor-position request)
@@ -54,6 +58,7 @@ impl EventProxy {
     pub fn new() -> Self {
         Self {
             title: Arc::new(Mutex::new(None)),
+            bell: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             pty_write_tx: Arc::new(Mutex::new(None)),
         }
     }
@@ -76,6 +81,13 @@ impl EventListener for EventProxy {
                     *t = Some(title);
                 }
             }
+            // OSC ResetTitle: surface as an empty string so the app drops the
+            // custom title and falls back to its connection label.
+            Event::ResetTitle => {
+                if let Ok(mut t) = self.title.lock() {
+                    *t = Some(String::new());
+                }
+            }
             Event::PtyWrite(s) => {
                 if let Ok(slot) = self.pty_write_tx.lock()
                     && let Some(tx) = slot.as_ref()
@@ -84,7 +96,9 @@ impl EventListener for EventProxy {
                 }
             }
             Event::Wakeup => {}
-            Event::Bell => {}
+            Event::Bell => {
+                self.bell.store(true, Ordering::Relaxed);
+            }
             _ => {}
         }
     }

@@ -116,7 +116,7 @@ impl Oryxis {
                 session_widths[i] = TAB_NATURAL_WIDTH;
             } else {
                 let cw = tab_content_width(
-                    tab.display_label(),
+                    tab.display_label(self.tab_auto_title(tab)),
                     close_on_right,
                     tab.pane_count() > 1,
                 );
@@ -292,7 +292,7 @@ impl Oryxis {
                 .unwrap_or(false);
             // A split tab shows the focused pane's label + icon; a single
             // pane shows the tab's own label.
-            let display_label = tab.display_label();
+            let display_label = tab.display_label(self.tab_auto_title(tab));
             let base_label = display_label.trim_end_matches(" (disconnected)");
             let detected_os = self.tab_detected_os(base_label);
             // During a drag every tab is uniform (drag width); otherwise
@@ -606,7 +606,7 @@ impl Oryxis {
         {
             if let Some(tab) = self.tabs.iter().find(|t| t._id == drag.from_id) {
                 let base_label = tab
-                    .display_label()
+                    .display_label(self.tab_auto_title(tab))
                     .trim_end_matches(" (disconnected)")
                     .to_string();
                 let detected_os = self.tab_detected_os(&base_label);
@@ -680,6 +680,21 @@ impl Oryxis {
     /// Resolve the OS / brand icon hint for a tab from its (de-suffixed)
     /// label: a saved connection's detected OS, else a local-shell hint, else
     /// the cloud brand parsed from an `ECS · ...` / `K8s · ...` prefix.
+    /// Effective auto-title (OSC 0/2) decision for a tab: the focused host's
+    /// per-host `Connection.auto_title` override wins over the global
+    /// `terminal_auto_title` setting; local shells and hosts with no override
+    /// fall back to the global. Resolved live so editing a host updates its
+    /// open tabs without a reconnect.
+    pub(crate) fn tab_auto_title(&self, tab: &crate::state::TerminalTab) -> bool {
+        if let crate::state::PaneOrigin::Host(id) = &tab.active().origin
+            && let Some(conn) = self.connections.iter().find(|c| c.id == *id)
+            && let Some(over) = conn.auto_title
+        {
+            return over;
+        }
+        crate::state::auto_title_enabled()
+    }
+
     pub(crate) fn tab_detected_os(&self, base_label: &str) -> Option<String> {
         self.connections
             .iter()
@@ -1609,7 +1624,7 @@ fn new_tab_btn<'a>(inline: bool) -> Element<'a, Message> {
     let radius = if inline { 6.0 } else { 0.0 };
     let btn = button(
         container(iced_fonts::lucide::plus().size(15).color(hover_color))
-            .center(Length::Fixed(PLUS_BUTTON_WIDTH))
+            .center(Length::Fixed(height))
             .height(Length::Fixed(height)),
     )
     .on_press(Message::ShowNewTabPicker)

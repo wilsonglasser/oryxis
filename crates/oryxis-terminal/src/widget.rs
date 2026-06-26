@@ -166,6 +166,10 @@ pub struct TerminalView<Message = ()> {
     /// doesn't inject a stray report into that shell. Defaults to `true`
     /// so the single-pane path is unchanged.
     focused: bool,
+    /// When true, paint a brief translucent overlay over the whole pane this
+    /// frame, the visual bell (bell mode = Flash). Driven by `Pane.bell_flash`,
+    /// which a short timer clears.
+    bell_flash: bool,
 }
 
 /// Horizontal padding around the terminal content (left/right).
@@ -185,8 +189,17 @@ const TERM_PAD_TOP: f32 = 8.0;
 /// configured terminal font size, `cell` the cursor cell from
 /// [`TerminalState::cursor_cell`]. Mirrors the cursor-rendering math in
 /// `draw` so the candidate window lines up with the block cursor.
-pub fn ime_caret_rect(bounds: Rectangle, font_size: f32, cell: (u16, u16)) -> Rectangle {
-    let cell_w = font_size * 0.6;
+pub fn ime_caret_rect(
+    bounds: Rectangle,
+    font_size: f32,
+    font_name: Option<&str>,
+    cell: (u16, u16),
+) -> Rectangle {
+    let font = match font_name {
+        Some(name) => Font::new(intern_font_name(name)),
+        None => Font::MONOSPACE,
+    };
+    let cell_w = cell_advance(font, font_size);
     let cell_h = font_size * 1.15;
     let (col, row) = cell;
     let x = bounds.x + col as f32 * cell_w + TERM_PAD;
@@ -267,13 +280,110 @@ fn intern_font_name(name: &str) -> &'static str {
     leaked
 }
 
+/// Stable cache key for a font family: the family name, or a sentinel for
+/// the generic families (the `\0` prefix can't collide with a real name).
+fn font_family_key(font: Font) -> String {
+    match font.family {
+        iced::font::Family::Name(n) => n.to_string(),
+        iced::font::Family::SansSerif => "\0sans-serif".to_string(),
+        iced::font::Family::Serif => "\0serif".to_string(),
+        iced::font::Family::Cursive => "\0cursive".to_string(),
+        iced::font::Family::Fantasy => "\0fantasy".to_string(),
+        iced::font::Family::Monospace => "\0monospace".to_string(),
+    }
+}
+
+/// Measured per-glyph advance (cell width in px) for `font` at `font_size`,
+/// cached per `(family, size)`.
+///
+/// The terminal positions every glyph at `col * cell_width`, so this value
+/// must equal the font's real monospace advance, the old hard-coded
+/// `font_size * 0.6` was a guess that only happened to fit the bundled
+/// default; fonts with a different advance (Fira Code and friends) drew each
+/// run a hair too narrow, so glyphs crept left and overlapped and the cursor
+/// no longer sat behind the last character. We measure through the same
+/// global cosmic-text font system the canvas renders with, so the advance we
+/// cache is exactly what `fill_text` lays down. A long run of one ligature-
+/// free glyph is measured and divided so `min_bounds` rounding washes out and
+/// no ligature substitution can apply. Falls back to the old ratio if the
+/// font can't be measured yet (font system not populated on the very first
+/// frame); the next frame replaces it with the real value.
+fn cell_advance(font: Font, font_size: f32) -> f32 {
+    use iced::advanced::text::Paragraph as _;
+    use std::collections::HashMap;
+    use std::sync::OnceLock;
+    static CACHE: OnceLock<Mutex<HashMap<(String, u32), f32>>> = OnceLock::new();
+    let key = (font_family_key(font), font_size.to_bits());
+    let mut map = CACHE
+        .get_or_init(|| Mutex::new(HashMap::new()))
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    if let Some(advance) = map.get(&key) {
+        return *advance;
+    }
+    const SAMPLES: usize = 40;
+    let sample = "0".repeat(SAMPLES);
+    let text = iced::advanced::text::Text {
+        content: sample.as_str(),
+        bounds: iced::Size::INFINITE,
+        size: Pixels(font_size),
+        line_height: iced::advanced::text::LineHeight::default(),
+        font,
+        align_x: iced::advanced::text::Alignment::Default,
+        align_y: alignment::Vertical::Top,
+        // Match the canvas `Text` default (Basic) so the measured advance
+        // equals what `flush_run`'s `fill_text` renders.
+        shaping: iced::advanced::text::Shaping::Basic,
+        wrapping: iced::advanced::text::Wrapping::None,
+        ellipsis: iced::advanced::text::Ellipsis::None,
+        hint_factor: None,
+    };
+    let total = iced::advanced::graphics::text::Paragraph::with_text(text)
+        .min_bounds()
+        .width;
+    let advance = if total > 0.0 {
+        total / SAMPLES as f32
+    } else {
+        font_size * 0.6
+    };
+    map.insert(key, advance);
+    advance
+}
+
+/// Measured rendered width (px) of `content` in `font` at `size`, through the
+/// same global cosmic-text font system the canvas draws with, so a label box
+/// sized from this fits the text exactly. Matches `CanvasText`'s default
+/// `Basic` shaping so the measurement equals what `fill_text` lays down.
+fn measure_text_width(content: &str, font: Font, size: f32) -> f32 {
+    use iced::advanced::text::Paragraph as _;
+    if content.is_empty() {
+        return 0.0;
+    }
+    let text = iced::advanced::text::Text {
+        content,
+        bounds: iced::Size::INFINITE,
+        size: Pixels(size),
+        line_height: iced::advanced::text::LineHeight::default(),
+        font,
+        align_x: iced::advanced::text::Alignment::Default,
+        align_y: alignment::Vertical::Top,
+        shaping: iced::advanced::text::Shaping::Basic,
+        wrapping: iced::advanced::text::Wrapping::None,
+        ellipsis: iced::advanced::text::Ellipsis::None,
+        hint_factor: None,
+    };
+    iced::advanced::graphics::text::Paragraph::with_text(text)
+        .min_bounds()
+        .width
+}
+
 impl<Message> TerminalView<Message> {
     pub fn new(state: Arc<Mutex<TerminalState>>) -> Self {
         let font_size = 14.0;
         Self {
             state,
             font_size,
-            cell_width: font_size * 0.6,
+            cell_width: cell_advance(Font::MONOSPACE, font_size),
             cell_height: font_size * 1.15,
             font: Font::MONOSPACE,
             copy_on_select: true,
@@ -289,6 +399,7 @@ impl<Message> TerminalView<Message> {
             link_hint_text: None,
             on_link_opened: None,
             focused: true,
+            bell_flash: false,
         }
     }
 
@@ -299,9 +410,17 @@ impl<Message> TerminalView<Message> {
         self
     }
 
+    /// Show the visual-bell flash overlay this frame.
+    pub fn with_bell_flash(mut self, on: bool) -> Self {
+        self.bell_flash = on;
+        self
+    }
+
     pub fn with_font_size(mut self, size: f32) -> Self {
         self.font_size = size;
-        self.cell_width = size * 0.6;
+        // Recompute from the current font so the result is correct regardless
+        // of whether `with_font_name` ran before or after this setter.
+        self.cell_width = cell_advance(self.font, size);
         self.cell_height = size * 1.15;
         self
     }
@@ -398,12 +517,21 @@ impl<Message> TerminalView<Message> {
     /// by cosmic-text, it falls back to the system default monospace.
     pub fn with_font_name(mut self, name: &str) -> Self {
         self.font = Font::new(intern_font_name(name));
+        // The cell width depends on the font's advance; recompute it now that
+        // the family changed (the width comes from the real metric, not a
+        // fixed ratio, so a different font means a different cell width).
+        self.cell_width = cell_advance(self.font, self.font_size);
         self
     }
 
-    pub fn grid_size_for(width: f32, height: f32, font_size: f32) -> (u16, u16) {
-        let cell_width = font_size * 0.6;
-        let cell_height = font_size * 1.15;
+    /// Grid dimensions (cols, rows) that fit the given canvas size at this
+    /// view's measured cell metrics. Uses the real per-font cell width so the
+    /// column count matches the glyphs actually drawn (a font wider than the
+    /// old `0.6` ratio would otherwise be told it has more columns than fit,
+    /// and wrap early).
+    fn grid_size(&self, width: f32, height: f32) -> (u16, u16) {
+        let cell_width = self.cell_width.max(1.0);
+        let cell_height = self.cell_height.max(1.0);
         let usable_w = (width - TERM_PAD * 2.0).max(cell_width);
         let usable_h = (height - TERM_PAD_TOP - TERM_PAD).max(cell_height);
         let cols = (usable_w / cell_width).floor().max(1.0) as u16;
@@ -1234,6 +1362,25 @@ where
                 }
                 return Some(CanvasAction::request_redraw().and_capture());
             }
+            // Any other key press dismisses a live selection, matching
+            // xterm / iTerm where typing or navigating clears the highlight
+            // (otherwise a stale selection lingers as a tinted band, e.g.
+            // over a full-screen TUI like mc that took over the screen after
+            // the selection was made). The keystroke is NOT captured: it must
+            // still reach the PTY through the global key subscription (an
+            // independent path), so we only drop the selection and redraw.
+            // Bare modifier presses arrive as `ModifiersChanged`, not
+            // `KeyPressed`, so holding Ctrl/Shift before a copy chord never
+            // trips this.
+            iced::Event::Keyboard(keyboard::Event::KeyPressed { .. })
+                if widget_state.selection.is_some()
+                    || widget_state.select_anchor.is_some() =>
+            {
+                widget_state.selection = None;
+                widget_state.select_anchor = None;
+                widget_state.selecting = false;
+                return Some(CanvasAction::request_redraw());
+            }
             _ => {}
         }
         None
@@ -1302,8 +1449,7 @@ where
             let lock_dur = lock_start.map(|t| t.elapsed()).unwrap_or_default();
 
             // Auto-resize
-            let (new_cols, new_rows) =
-                Self::grid_size_for(bounds.width, bounds.height, self.font_size);
+            let (new_cols, new_rows) = self.grid_size(bounds.width, bounds.height);
             state.resize(new_cols, new_rows);
 
             // Alt-screen apps (top, vim, less, htop, …) own the entire
@@ -1481,6 +1627,38 @@ where
             None
         };
 
+        // Link-hint ("Ctrl + Click to open") tooltip rect, computed up front
+        // so the glyphs it covers can be skipped in the cell loop, the same
+        // trick the perf panel uses. iced's wgpu canvas batches *all* meshes
+        // below *all* text across the whole frame (and across geometries), so
+        // a tooltip background can never paint over the cell glyphs, no matter
+        // the alpha or a separate layer; the only way to keep the label
+        // readable is to not draw the glyphs underneath. The width is measured
+        // from the real text so the box never clips the label (the old
+        // per-char estimate undersized it).
+        let tooltip: Option<(Rectangle, String)> = if let (Some(hint), Some((_url, hover_pos))) = (
+            self.link_hint_text.as_ref(),
+            widget_state.hovered_url.as_ref(),
+        ) {
+            const TIP_PAD_X: f32 = 10.0;
+            let text_w = measure_text_width(hint, self.font, 11.0);
+            let tip_w = text_w + TIP_PAD_X * 2.0;
+            // Snap the box to exactly one cell row. Cells are skipped per whole
+            // row, so a box taller than a row would blank an extra row the
+            // border doesn't reach (the "opaque overflows the border" bug); a
+            // row-aligned box makes the skipped region and the drawn box match.
+            let row = ((hover_pos.y - 28.0 - TERM_PAD_TOP) / cell_h).floor().max(0.0);
+            let tip_y = TERM_PAD_TOP + row * cell_h;
+            let tip_h = cell_h;
+            let tip_x = (hover_pos.x + 6.0).min(bounds.width - tip_w - 4.0).max(4.0);
+            Some((
+                Rectangle::new(Point::new(tip_x, tip_y), Size::new(tip_w, tip_h)),
+                hint.clone(),
+            ))
+        } else {
+            None
+        };
+
         // --- Pass 2: draw cells with highlight overrides ---
         // Consecutive plain ASCII glyphs in a row that share the same
         // foreground (and the base font) are merged into one fill_text
@@ -1531,6 +1709,15 @@ where
                 && x < panel.x + panel.width
                 && y + cell_h > panel.y
                 && y < panel.y + panel.height
+            {
+                continue;
+            }
+            // Skip glyphs under the link tooltip so its (opaque) box reads.
+            if let Some((rect, _)) = &tooltip
+                && x + cell_w > rect.x
+                && x < rect.x + rect.width
+                && y + cell_h > rect.y
+                && y < rect.y + rect.height
             {
                 continue;
             }
@@ -1781,47 +1968,30 @@ where
         // we don't follow per-pixel mouse moves to avoid jitter.
         // The text comes localized from the app; `None` means the user
         // already knows the gesture and the hint stays hidden.
-        if let (Some(hint), Some((_url, hover_pos))) = (
-            self.link_hint_text.as_ref(),
-            widget_state.hovered_url.as_ref(),
-        ) {
-            // Width estimate at ~11 px: ASCII glyphs ~6.2 px, anything
-            // else (CJK and friends) ~11 px, plus 8 px padding per side.
-            let text_w: f32 = hint
-                .chars()
-                .map(|c| if c.is_ascii() { 6.2 } else { 11.0 })
-                .sum();
-            let tip_w = text_w + 16.0;
-            let tip_h = 22.0;
-            let tip_y_offset = -28.0; // above the cursor
-            let tip_x = (hover_pos.x + 6.0).min(bounds.width - tip_w - 4.0).max(4.0);
-            let tip_y = (hover_pos.y + tip_y_offset).max(4.0);
-            // Solid terminal background under the tooltip, anything
-            // less than fully opaque lets the underlying URL text bleed
-            // through and makes the label illegible.
-            let bg = palette.background;
+        //
+        // Drawn into the main `frame` over the cells that were skipped above,
+        // with an opaque background. Width comes from the measured text so the
+        // label is never clipped (see the `tooltip` computation).
+        if let Some((rect, hint)) = &tooltip {
+            let bg = Color { a: 1.0, ..palette.background };
             let border = Color { a: 0.6, ..palette.foreground };
+            frame.fill_rectangle(rect.position(), rect.size(), bg);
+            // Lightweight 1px border (4 edges).
+            frame.fill_rectangle(rect.position(), Size::new(rect.width, 1.0), border);
             frame.fill_rectangle(
-                Point::new(tip_x, tip_y),
-                Size::new(tip_w, tip_h),
-                bg,
-            );
-            // Lightweight border via a 1px outline (4 strokes).
-            frame.fill_rectangle(Point::new(tip_x, tip_y), Size::new(tip_w, 1.0), border);
-            frame.fill_rectangle(
-                Point::new(tip_x, tip_y + tip_h - 1.0),
-                Size::new(tip_w, 1.0),
+                Point::new(rect.x, rect.y + rect.height - 1.0),
+                Size::new(rect.width, 1.0),
                 border,
             );
-            frame.fill_rectangle(Point::new(tip_x, tip_y), Size::new(1.0, tip_h), border);
+            frame.fill_rectangle(rect.position(), Size::new(1.0, rect.height), border);
             frame.fill_rectangle(
-                Point::new(tip_x + tip_w - 1.0, tip_y),
-                Size::new(1.0, tip_h),
+                Point::new(rect.x + rect.width - 1.0, rect.y),
+                Size::new(1.0, rect.height),
                 border,
             );
             frame.fill_text(CanvasText {
                 content: hint.clone(),
-                position: Point::new(tip_x + 8.0, tip_y + tip_h / 2.0),
+                position: Point::new(rect.x + 10.0, rect.y + rect.height / 2.0),
                 color: palette.foreground,
                 size: Pixels(11.0),
                 font: self.font,
@@ -1931,7 +2101,22 @@ where
             }
         }
 
-        vec![frame.into_geometry()]
+        // The link tooltip (when present) is a second layer composited above
+        // the cell geometry so its background covers the glyphs underneath.
+        let mut geometries = vec![frame.into_geometry()];
+        // Visual bell: a brief translucent wash over the whole pane, its own
+        // top layer so it sits above every glyph. A short timer in the app
+        // clears `bell_flash`, ending the flash on the next frame.
+        if self.bell_flash {
+            let mut flash = Frame::new(renderer, bounds.size());
+            flash.fill_rectangle(
+                Point::new(0.0, 0.0),
+                bounds.size(),
+                Color { a: 0.18, ..palette.foreground },
+            );
+            geometries.push(flash.into_geometry());
+        }
+        geometries
     }
 }
 

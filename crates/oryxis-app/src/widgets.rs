@@ -1323,6 +1323,7 @@ pub(crate) fn ime_host<'a, Message: 'a>(
     enabled: bool,
     terminal: std::sync::Arc<std::sync::Mutex<oryxis_terminal::TerminalState>>,
     font_size: f32,
+    font_name: String,
 ) -> Element<'a, Message> {
     use iced::advanced::widget::{tree, Operation, Tree, Widget};
     use iced::advanced::{input_method, layout, mouse, overlay, renderer, Layout, Shell};
@@ -1333,6 +1334,7 @@ pub(crate) fn ime_host<'a, Message: 'a>(
         enabled: bool,
         terminal: std::sync::Arc<std::sync::Mutex<oryxis_terminal::TerminalState>>,
         font_size: f32,
+        font_name: String,
     }
 
     impl<Message> Widget<Message, Theme, iced::Renderer> for ImeHost<'_, Message> {
@@ -1417,6 +1419,7 @@ pub(crate) fn ime_host<'a, Message: 'a>(
                     Ok(state) => oryxis_terminal::ime_caret_rect(
                         b,
                         self.font_size,
+                        Some(self.font_name.as_str()),
                         state.cursor_cell(),
                     ),
                     Err(_) => {
@@ -1466,6 +1469,7 @@ pub(crate) fn ime_host<'a, Message: 'a>(
         enabled,
         terminal,
         font_size,
+        font_name,
     })
 }
 

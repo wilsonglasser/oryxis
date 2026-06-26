@@ -881,6 +881,9 @@ pub struct Oryxis {
     /// Off makes the renderer paint the cell exactly as the app
     /// asked, which some color-precise tools rely on.
     pub(crate) setting_smart_contrast: bool,
+    /// How the terminal bell (BEL / `\a`) is surfaced: off / visual flash /
+    /// audible beep. Persisted as `terminal_bell_mode`; default beep.
+    pub(crate) setting_bell_mode: crate::util::BellMode,
     /// Toggles the bottom status bar that shows current connection IP +
     /// Oryxis version. Off in `view_main` simply skips rendering it,
     /// reclaiming the row for the active content area.

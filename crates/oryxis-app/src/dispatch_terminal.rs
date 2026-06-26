@@ -212,6 +212,10 @@ impl Oryxis {
                 // with its own PTY). Scan is trivial at these counts.
                 let mut over_threshold = false;
                 let mut schedule_flush: Option<std::time::Duration> = None;
+                // Snapshot the (Copy) bell mode before borrowing self.tabs; the
+                // bell action runs while the pane is borrowed.
+                let bell_mode = self.setting_bell_mode;
+                let mut flash_pane: Option<uuid::Uuid> = None;
                 if let Some(pane) = self
                     .tabs
                     .iter_mut()
@@ -219,11 +223,36 @@ impl Oryxis {
                     .find(|p| p.id == pane_id)
                 {
                     let mut sync_deadline = None;
+                    let mut new_title = None;
+                    let mut bell_rang = false;
                     if let Ok(mut state) = pane.terminal.lock() {
                         state.process(&bytes);
                         // A buffering DEC ?2026 update reports its abort
                         // deadline here; read it while still locked.
                         sync_deadline = state.sync_timeout();
+                        // OSC 0/2 title set by the shell this batch (or an
+                        // empty string for ResetTitle). Captured unconditionally;
+                        // the auto-title setting only gates display.
+                        new_title = state.take_title();
+                        bell_rang = state.take_bell();
+                    }
+                    if let Some(title) = new_title {
+                        // Stored raw: when auto-title is on it's opt-in emulator
+                        // behavior, so the tab shows exactly what the shell set
+                        // (`user@host: ~`, `vim file`, …), like gnome-terminal /
+                        // iTerm / Windows Terminal do.
+                        let trimmed = title.trim();
+                        pane.osc_title = (!trimmed.is_empty()).then(|| trimmed.to_string());
+                    }
+                    if bell_rang {
+                        match bell_mode {
+                            crate::util::BellMode::Off => {}
+                            crate::util::BellMode::Beep => crate::util::play_system_beep(),
+                            crate::util::BellMode::Flash => {
+                                pane.bell_flash = true;
+                                flash_pane = Some(pane_id);
+                            }
+                        }
                     }
                     // Rising edge only: arm one flush timer per update, not
                     // one per coalesced output batch. The flag clears when the
@@ -279,13 +308,36 @@ impl Oryxis {
                 // stalled with output buffered. Fires `flush_sync` at the
                 // 150 ms deadline so a never-closed `?2026` can't leave the
                 // screen frozen (see `TerminalSyncFlush`).
+                let mut tasks: Vec<iced::Task<Message>> = Vec::new();
                 if let Some(remaining) = schedule_flush {
-                    return Ok(Task::perform(
+                    tasks.push(Task::perform(
                         async move {
                             tokio::time::sleep(remaining).await;
                         },
                         move |_| Message::TerminalSyncFlush(pane_id),
                     ));
+                }
+                if let Some(fp) = flash_pane {
+                    // Clear the visual-bell flash after a brief window.
+                    tasks.push(Task::perform(
+                        async move {
+                            tokio::time::sleep(std::time::Duration::from_millis(120)).await;
+                        },
+                        move |_| Message::TerminalBellFlashEnd(fp),
+                    ));
+                }
+                if !tasks.is_empty() {
+                    return Ok(Task::batch(tasks));
+                }
+            }
+            Message::TerminalBellFlashEnd(pane_id) => {
+                if let Some(pane) = self
+                    .tabs
+                    .iter_mut()
+                    .flat_map(|t| t.pane_grid.panes.values_mut())
+                    .find(|p| p.id == pane_id)
+                {
+                    pane.bell_flash = false;
                 }
             }
             Message::TerminalSyncFlush(pane_id) => {
@@ -631,6 +683,18 @@ impl Oryxis {
                         ..
                     } = event
                     {
+                        // Application-cursor-keys mode (DECCKM) of the active
+                        // pane decides whether arrows / Home / End go out in
+                        // SS3 (`ESC O A`) or CSI (`ESC [ A`) form. Read once
+                        // here; the same flag is tracked for local PTY and SSH
+                        // panes alike.
+                        let app_cursor = self
+                            .tabs
+                            .get(tab_idx)
+                            .and_then(|t| {
+                                t.active().terminal.lock().ok().map(|s| s.application_cursor_keys())
+                            })
+                            .unwrap_or(false);
                         // macOS: Command (Cmd) is the clipboard modifier, not
                         // Ctrl. Cmd+V pastes; Cmd+C / Cmd+A are copy /
                         // select-all owned by the terminal widget (it holds the
@@ -693,7 +757,7 @@ impl Oryxis {
                                         }
                                     }
                                 }
-                            } else if let Some(bytes) = key_to_named_bytes(&key, &modifiers) {
+                            } else if let Some(bytes) = key_to_named_bytes(&key, &modifiers, app_cursor) {
                                 // Ctrl + named key (e.g. Ctrl+Home)
                                 if let Some(tab) = self.tabs.get(tab_idx) {
                                     if let Some(ref ssh) = tab.active().ssh_session {
@@ -724,9 +788,34 @@ impl Oryxis {
                             } else {
                                 None
                             };
-                            let bytes = numpad_text
-                                .or_else(|| key_to_named_bytes(&key, &modifiers))
-                                .or_else(|| text_opt.map(|t| t.as_bytes().to_vec()));
+                            let mut bytes = numpad_text
+                                .or_else(|| key_to_named_bytes(&key, &modifiers, app_cursor))
+                                .or_else(|| text_opt.as_ref().map(|t| t.as_bytes().to_vec()));
+
+                            // Meta-sends-escape: Alt+<char> (without Ctrl, so
+                            // AltGr, reported as Ctrl+Alt on Windows and not as
+                            // Alt on Linux, still composes text) is the
+                            // ESC-prefixed character, the form readline / bash /
+                            // zsh / vim / emacs / tmux bind their Meta keymaps to
+                            // (Alt+b = back one word, Alt+f = forward, Alt+. =
+                            // last arg, …). Named keys already fold their
+                            // modifier in via key_to_named_bytes, so this only
+                            // touches literal characters.
+                            if modifiers.alt()
+                                && !modifiers.control()
+                                && let keyboard::Key::Character(c) = &key
+                            {
+                                // Some platforms drop `text` while Alt is held;
+                                // fall back to the key's base character so
+                                // Alt+b still emits `ESC b`.
+                                let ch = bytes
+                                    .filter(|b| !b.is_empty())
+                                    .unwrap_or_else(|| c.as_str().as_bytes().to_vec());
+                                let mut esc = Vec::with_capacity(ch.len() + 1);
+                                esc.push(0x1b);
+                                esc.extend_from_slice(&ch);
+                                bytes = Some(esc);
+                            }
 
                             if let Some(bytes) = bytes
                                 && !bytes.is_empty()

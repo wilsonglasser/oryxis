@@ -52,6 +52,36 @@ pub(crate) struct Pane {
     /// The flag is the rising-edge guard so a long sync burst (one
     /// `PtyOutput` per coalesced batch) arms a single timer, not one each.
     pub sync_flush_scheduled: bool,
+    /// Latest window title the shell set via OSC 0/2 (`None` once an OSC
+    /// ResetTitle, or never set). When auto-title is on, the tab strip shows
+    /// this instead of the connection label so a tab reads as the running
+    /// program / remote prompt, like every other terminal.
+    pub osc_title: Option<String>,
+    /// True while the visual bell flash is showing on this pane (bell mode =
+    /// Flash). Set when the shell rings, cleared by a short
+    /// `TerminalBellFlashEnd` timer; drives a brief overlay in the widget.
+    pub bell_flash: bool,
+}
+
+/// Process-wide auto-title gate (OSC 0/2). Mirrors the `LayoutDirection`
+/// global: set once at boot and whenever the user toggles it, read at
+/// display time by `display_label` so the per-pane `osc_title` capture stays
+/// unconditional (toggling never loses the captured title, it just hides it).
+///
+/// Default OFF: Oryxis is connection-oriented (like PuTTY / Termius), so the
+/// curated tab label ("Local Shell", the host name) is the better default than
+/// the shell's `\u@\h: \w` title. Users who want emulator-style titles (the
+/// running program in the tab) opt in via the Terminal setting.
+static AUTO_TITLE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Enable/disable showing the shell-set OSC title in the tab strip.
+pub(crate) fn set_auto_title(on: bool) {
+    AUTO_TITLE.store(on, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// Whether the tab strip shows the shell-set OSC title (the user setting).
+pub(crate) fn auto_title_enabled() -> bool {
+    AUTO_TITLE.load(std::sync::atomic::Ordering::Relaxed)
 }
 
 impl Pane {
@@ -65,6 +95,8 @@ impl Pane {
             session_log_buf: Vec::new(),
             origin: PaneOrigin::Ephemeral,
             sync_flush_scheduled: false,
+            osc_title: None,
+            bell_flash: false,
         }
     }
 }
@@ -408,10 +440,24 @@ impl TerminalTab {
     /// the *focused* pane (so a tab split across two hosts reads as whichever
     /// pane you're in); a single-pane tab uses the tab's own label, which
     /// carries the "(disconnected)" suffix the focused-pane label doesn't.
-    pub fn display_label(&self) -> &str {
+    /// Label to show in the tab strip. `auto_title` is the effective per-tab
+    /// auto-title decision (resolved by the caller from the focused host's
+    /// override and the global default), kept as a parameter because a
+    /// `TerminalTab` can't reach the connection list to resolve it itself.
+    pub fn display_label(&self, auto_title: bool) -> &str {
+        // A session group keeps its own name; OSC titles never override it.
         if self.session_group_id.is_some() {
-            &self.label
-        } else if self.pane_count() > 1 {
+            return &self.label;
+        }
+        // The focused pane's shell-set title wins when auto-title is on, so
+        // the tab reads as the running program / remote prompt.
+        if auto_title
+            && let Some(t) = self.active().osc_title.as_deref()
+            && !t.is_empty()
+        {
+            return t;
+        }
+        if self.pane_count() > 1 {
             &self.active().label
         } else {
             &self.label

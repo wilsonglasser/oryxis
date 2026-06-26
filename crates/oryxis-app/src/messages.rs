@@ -101,6 +101,9 @@ pub enum Message {
     /// "0" == explicitly disabled on this host; any positive integer
     /// is the per-host override in seconds. Sanitized to digits-only.
     EditorKeepaliveChanged(String),
+    /// Per-host auto-title (OSC 0/2) selection from the host editor pick:
+    /// the localized "Default / Show / Hide" label.
+    EditorAutoTitleChanged(String),
     ShowTabMenu(usize),
     ReconnectTab(usize),
     DuplicateTab(usize),
@@ -726,6 +729,13 @@ pub enum Message {
     ToggleCopyOnSelect,
     ToggleRightClickCopy,
     ToggleBoldIsBright,
+    /// Toggle showing the shell-set window title (OSC 0/2) in the tab strip.
+    ToggleTerminalAutoTitle,
+    /// Terminal bell behavior changed from the settings pick (localized
+    /// "Off / Flash / Beep" label).
+    BellModeChanged(String),
+    /// Clear a pane's visual-bell flash after its short display window.
+    TerminalBellFlashEnd(Uuid),
     ToggleKeywordHighlight,
     ToggleSmartContrast,
     SettingToggleShowStatusBar,

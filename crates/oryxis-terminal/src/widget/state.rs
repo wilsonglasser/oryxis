@@ -92,6 +92,41 @@ impl TerminalState {
         self.backend.term.mode().contains(TermMode::BRACKETED_PASTE)
     }
 
+    /// Take the pending window title set by the shell via OSC 0/2, draining
+    /// the slot so each change is reported exactly once. An OSC ResetTitle
+    /// surfaces as `Some("")` so the caller can fall back to its default
+    /// label; `None` means nothing changed since the last call.
+    pub fn take_title(&self) -> Option<String> {
+        self.backend
+            .event_proxy
+            .title
+            .lock()
+            .ok()
+            .and_then(|mut t| t.take())
+    }
+
+    /// Drain the pending bell flag, returning true at most once per ring.
+    /// The app maps a true to the user's chosen bell action.
+    pub fn take_bell(&self) -> bool {
+        self.backend
+            .event_proxy
+            .bell
+            .swap(false, std::sync::atomic::Ordering::Relaxed)
+    }
+
+    /// True when the focused application has enabled application cursor keys
+    /// mode (DECCKM, `ESC [ ? 1 h`, emitted by the terminfo `smkx`
+    /// capability). In this mode the arrow and Home/End keys must be sent in
+    /// their SS3 form (`ESC O A` …) instead of the default CSI form
+    /// (`ESC [ A` …), which is what every full-screen TUI binds its
+    /// navigation to (mc, vim, less, …). Tracked by the backend over both
+    /// local PTY and SSH because remote output flows through the same
+    /// `process()` into the term.
+    pub fn application_cursor_keys(&self) -> bool {
+        use alacritty_terminal::term::TermMode;
+        self.backend.term.mode().contains(TermMode::APP_CURSOR)
+    }
+
     pub fn resize(&mut self, cols: u16, rows: u16) -> bool {
         if cols == self.backend.cols() && rows == self.backend.rows() {
             return false;

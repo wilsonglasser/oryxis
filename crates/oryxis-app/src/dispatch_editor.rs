@@ -226,6 +226,7 @@ impl Oryxis {
                             .keepalive_interval
                             .map(|n| n.to_string())
                             .unwrap_or_default(),
+                        auto_title: conn.auto_title,
                         cloud_transport: conn
                             .cloud_ref
                             .as_ref()
@@ -456,6 +457,17 @@ impl Oryxis {
                     n.min(86_400).to_string()
                 };
             }
+            Message::EditorAutoTitleChanged(v) => {
+                use crate::i18n::t;
+                // Map the localized pick label back to the tri-state override.
+                self.editor_form.auto_title = if v == t("host_auto_title_show") {
+                    Some(true)
+                } else if v == t("host_auto_title_hide") {
+                    Some(false)
+                } else {
+                    None
+                };
+            }
             Message::EditorSave => {
                 if self.editor_form.label.is_empty() || self.editor_form.hostname.is_empty() {
                     self.host_panel_error = Some("Label and hostname are required".into());
@@ -594,6 +606,7 @@ impl Oryxis {
                 } else {
                     self.editor_form.keepalive_interval.parse::<u32>().ok()
                 };
+                conn.auto_title = self.editor_form.auto_title;
                 // Map the editor form into either an inline ProxyConfig
                 // or a `proxy_identity_id` reference. Validates host /
                 // port / command up-front so the user gets an error

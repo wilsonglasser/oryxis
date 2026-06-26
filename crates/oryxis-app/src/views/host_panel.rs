@@ -610,6 +610,27 @@ impl Oryxis {
         )
         .padding(Padding { top: 8.0, right: 0.0, bottom: 8.0, left: 0.0 }).into();
 
+        // Per-host auto-title (OSC 0/2) override: Default (inherit global) /
+        // Show (always use the shell title) / Hide (always keep this host's
+        // curated label).
+        let auto_title_selected = match self.editor_form.auto_title {
+            Some(true) => t("host_auto_title_show"),
+            Some(false) => t("host_auto_title_hide"),
+            None => t("host_auto_title_default"),
+        }
+        .to_string();
+        let row_auto_title: Element<'_, Message> = panel_option_pick(
+            iced_fonts::lucide::file_text(),
+            t("host_auto_title"),
+            vec![
+                t("host_auto_title_default").to_string(),
+                t("host_auto_title_show").to_string(),
+                t("host_auto_title_hide").to_string(),
+            ],
+            auto_title_selected,
+            Message::EditorAutoTitleChanged,
+        );
+
         // Proxy rows (SSH > Network), nested inline (no card wrapper).
         let proxy_rows = self.build_proxy_rows();
 
@@ -957,7 +978,9 @@ impl Oryxis {
             .push(Space::new().height(ROW_GAP))
             .push(pf_items)
             .push(Space::new().height(ROW_GAP))
-            .push(row_keepalive);
+            .push(row_keepalive)
+            .push(Space::new().height(ROW_GAP))
+            .push(row_auto_title);
         // Integration subgroup + initial command.
         ssh_col = ssh_col
             .push(group_sep())

@@ -682,6 +682,16 @@ impl Oryxis {
                     self.persist_setting("layout_direction", dir.code());
                 }
             }
+            Message::BellModeChanged(name) => {
+                use crate::util::BellMode;
+                if let Some(mode) = BellMode::ALL
+                    .iter()
+                    .find(|m| crate::i18n::t(m.label_key()) == name)
+                {
+                    self.setting_bell_mode = *mode;
+                    self.persist_setting("terminal_bell_mode", mode.code());
+                }
+            }
             Message::AppThemeChanged(name) => {
                 if self.apply_app_theme_name(&name) {
                     self.active_app_theme_name = name.clone();
@@ -764,6 +774,11 @@ impl Oryxis {
                     "right_click_copy",
                     if self.setting_right_click_copy { "true" } else { "false" },
                 );
+            }
+            Message::ToggleTerminalAutoTitle => {
+                let on = !crate::state::auto_title_enabled();
+                crate::state::set_auto_title(on);
+                self.persist_setting("terminal_auto_title", if on { "true" } else { "false" });
             }
             Message::ToggleBoldIsBright => {
                 self.setting_bold_is_bright = !self.setting_bold_is_bright;

@@ -446,6 +446,7 @@ impl Oryxis {
                 setting_bold_is_bright: true,
                 setting_keyword_highlight: true,
                 setting_smart_contrast: true,
+                setting_bell_mode: crate::util::BellMode::default(),
                 setting_show_status_bar: true,
                 setting_host_list_view: false,
                 setting_card_accent_glass: true,
@@ -847,6 +848,11 @@ impl Oryxis {
             if let Ok(Some(v)) = vault.get_setting("copy_on_select") {
                 self.setting_copy_on_select = v == "true";
             }
+            // Auto-title (OSC 0/2) lives in a process-wide gate (read at tab
+            // render time); default-on, only override when explicitly stored.
+            if let Ok(Some(v)) = vault.get_setting("terminal_auto_title") {
+                crate::state::set_auto_title(v == "true");
+            }
             if let Ok(Some(v)) = vault.get_setting("right_click_copy") {
                 self.setting_right_click_copy = v == "true";
             }
@@ -858,6 +864,9 @@ impl Oryxis {
             }
             if let Ok(Some(v)) = vault.get_setting("smart_contrast") {
                 self.setting_smart_contrast = v == "true";
+            }
+            if let Ok(Some(v)) = vault.get_setting("terminal_bell_mode") {
+                self.setting_bell_mode = crate::util::BellMode::from_code(&v);
             }
             if let Ok(Some(v)) = vault.get_setting("show_status_bar") {
                 self.setting_show_status_bar = v == "true";

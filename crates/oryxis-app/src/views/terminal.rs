@@ -118,6 +118,7 @@ impl Oryxis {
     ) -> Element<'a, Message> {
         let term_view = TerminalView::new(Arc::clone(&pane.terminal))
             .focused(is_focused)
+            .with_bell_flash(pane.bell_flash)
             .with_font_size(self.terminal_font_size)
             .with_font_name(&self.terminal_font_name)
             .with_copy_on_select(self.setting_copy_on_select)
@@ -146,6 +147,7 @@ impl Oryxis {
             is_focused,
             Arc::clone(&pane.terminal),
             self.terminal_font_size,
+            self.terminal_font_name.clone(),
         )
     }
 

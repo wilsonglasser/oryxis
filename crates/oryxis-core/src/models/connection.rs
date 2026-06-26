@@ -101,6 +101,12 @@ pub struct Connection {
     /// `Some(n)` overrides the global with `n` seconds.
     #[serde(default)]
     pub keepalive_interval: Option<u32>,
+    /// Per-host override for showing the shell-set window title (OSC 0/2) in
+    /// the tab strip. `None` inherits the global `terminal_auto_title`
+    /// setting; `Some(true)` always shows the shell title for this host,
+    /// `Some(false)` always keeps this host's curated label.
+    #[serde(default)]
+    pub auto_title: Option<bool>,
     /// Shape to use when rendering this host's icon in cards / tabs /
     /// sidebar. Valid values: `"circular"`, `"square"`, `"outline"`,
     /// `"initials"`. `None` falls back to the global
@@ -163,6 +169,7 @@ impl Connection {
             initial_command: None,
             startup_snippet_id: None,
             keepalive_interval: None,
+            auto_title: None,
             icon_style: None,
             customized_fields: Vec::new(),
             session_logging: None,
@@ -336,6 +343,28 @@ mod tests {
         let json = serde_json::to_string(&conn).unwrap();
         let de: Connection = serde_json::from_str(&json).unwrap();
         assert_eq!(de.keepalive_interval, Some(0));
+    }
+
+    #[test]
+    fn auto_title_legacy_payload_defaults_to_none() {
+        let conn = Connection::new("legacy", "10.0.0.1");
+        let mut value = serde_json::to_value(&conn).unwrap();
+        value.as_object_mut().unwrap().remove("auto_title");
+        let de: Connection = serde_json::from_value(value).unwrap();
+        assert_eq!(de.auto_title, None);
+    }
+
+    #[test]
+    fn auto_title_round_trip() {
+        let mut conn = Connection::new("h", "1.2.3.4");
+        // None (inherit), Some(true) (force on), Some(false) (force off) must
+        // each round-trip distinctly, they have different semantics.
+        for v in [None, Some(true), Some(false)] {
+            conn.auto_title = v;
+            let json = serde_json::to_string(&conn).unwrap();
+            let de: Connection = serde_json::from_str(&json).unwrap();
+            assert_eq!(de.auto_title, v);
+        }
     }
 
     #[test]
