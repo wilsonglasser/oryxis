@@ -22,6 +22,21 @@ fn default_scrollback() -> usize {
     DEFAULT_SCROLLBACK.load(Ordering::Relaxed)
 }
 
+/// OSC 52 clipboard access gates, process-wide so the per-terminal
+/// `EventProxy` can read them without threading the setting through every
+/// constructor (mirrors `DEFAULT_SCROLLBACK`). Write defaults on (the common,
+/// low-risk direction, tmux/vim yank-to-clipboard); read defaults off (a
+/// remote app reading the local clipboard is a privacy risk).
+static OSC52_WRITE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
+static OSC52_READ: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Set the OSC 52 clipboard access policy (write = apps may set the system
+/// clipboard; read = apps may query it). Called by the app from its setting.
+pub fn set_clipboard_access(write: bool, read: bool) {
+    OSC52_WRITE.store(write, Ordering::Relaxed);
+    OSC52_READ.store(read, Ordering::Relaxed);
+}
+
 /// Default set of characters that terminate a word for double-click
 /// selection (the "word delimiters" / semantic-escape set). Matches
 /// alacritty's own default minus the literal tab: terminal cells never
@@ -98,6 +113,27 @@ impl EventListener for EventProxy {
             Event::Wakeup => {}
             Event::Bell => {
                 self.bell.store(true, Ordering::Relaxed);
+            }
+            // OSC 52: an app sets the system clipboard. Gated, so a remote
+            // session can't silently overwrite the clipboard when disabled.
+            Event::ClipboardStore(_ty, text) if OSC52_WRITE.load(Ordering::Relaxed) => {
+                crate::widget::set_clipboard_text(&text);
+            }
+            // OSC 52: an app reads the system clipboard. Off by default (a
+            // remote reading your clipboard is a privacy risk). When enabled,
+            // the formatter builds the reply, sent back through the PTY
+            // back-channel (the same one cursor-position replies use).
+            Event::ClipboardLoad(_ty, formatter) if OSC52_READ.load(Ordering::Relaxed) => {
+                let current = arboard::Clipboard::new()
+                    .ok()
+                    .and_then(|mut c| c.get_text().ok())
+                    .unwrap_or_default();
+                let reply = formatter(&current);
+                if let Ok(slot) = self.pty_write_tx.lock()
+                    && let Some(tx) = slot.as_ref()
+                {
+                    let _ = tx.send(reply.into_bytes());
+                }
             }
             _ => {}
         }

@@ -692,6 +692,18 @@ impl Oryxis {
                     self.persist_setting("terminal_bell_mode", mode.code());
                 }
             }
+            Message::ClipboardAccessChanged(name) => {
+                use crate::util::ClipboardAccess;
+                if let Some(mode) = ClipboardAccess::ALL
+                    .iter()
+                    .find(|m| crate::i18n::t(m.label_key()) == name)
+                {
+                    self.setting_clipboard_access = *mode;
+                    self.persist_setting("terminal_clipboard_access", mode.code());
+                    let (cw, cr) = mode.flags();
+                    oryxis_terminal::set_clipboard_access(cw, cr);
+                }
+            }
             Message::AppThemeChanged(name) => {
                 if self.apply_app_theme_name(&name) {
                     self.active_app_theme_name = name.clone();

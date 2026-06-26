@@ -884,6 +884,9 @@ pub struct Oryxis {
     /// How the terminal bell (BEL / `\a`) is surfaced: off / visual flash /
     /// audible beep. Persisted as `terminal_bell_mode`; default beep.
     pub(crate) setting_bell_mode: crate::util::BellMode,
+    /// OSC 52 clipboard access policy: off / write-only / read-write.
+    /// Persisted as `terminal_clipboard_access`; default write-only.
+    pub(crate) setting_clipboard_access: crate::util::ClipboardAccess,
     /// Toggles the bottom status bar that shows current connection IP +
     /// Oryxis version. Off in `view_main` simply skips rendering it,
     /// reclaiming the row for the active content area.

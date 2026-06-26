@@ -67,6 +67,12 @@ pub struct TerminalWidgetState {
     /// canvas to underline only the hovered URL (not all of them) and
     /// by the parent to render the "Ctrl+Click to open" tooltip.
     hovered_url: Option<(String, iced::Point)>,
+    /// Cell extent `(visible_row, start_col, end_col)` of the OSC 8 hyperlink
+    /// currently hovered, used to underline it. Regex URLs derive their extent
+    /// from the per-frame highlight scan, but an explicit OSC 8 link isn't in
+    /// that scan (its label need not look like a URL), so its run is captured
+    /// here at hover time while the grid lock is held.
+    hovered_osc8: Option<(u16, u16, u16)>,
     /// Last `(col, row)` the URL hover detection ran for. Used to skip
     /// the lock + per-cell scan on sub-cell mouse moves, at typical
     /// font sizes the cursor crosses many pixels per cell, and running
@@ -784,6 +790,9 @@ struct CellData {
     fg: Color,
     bg: Color,
     flags: CellFlags,
+    /// Cell carries an explicit OSC 8 hyperlink. Tinted like a detected URL so
+    /// the link reads as clickable even when its label isn't URL-shaped.
+    link: bool,
 }
 
 thread_local! {
@@ -886,7 +895,11 @@ where
                     // would lose the selection start.
                     if widget_state.modifiers.control()
                         && let Ok(state) = self.state.lock()
-                        && let Some(url) = url_at_cell(&state.backend.term, line, col)
+                        // An explicit OSC 8 hyperlink wins over a scraped URL,
+                        // its target URI can differ from the visible label.
+                        && let Some(url) = osc8_link_at_cell(&state.backend.term, line, col)
+                            .map(|(uri, _, _)| uri)
+                            .or_else(|| url_at_cell(&state.backend.term, line, col))
                     {
                         drop(state);
                         open_url(&url);
@@ -1130,12 +1143,24 @@ where
                             .map(|(u, _)| (u.clone(), pos))
                     } else if let Ok(state) = self.state.lock() {
                         let line = Self::visible_row_to_line(vrow, widget_state.scroll_offset);
-                        url_at_cell(&state.backend.term, line, col).map(|u| (u, pos))
+                        // Explicit OSC 8 link first (label may not look like a
+                        // URL); capture its run for the underline. Else fall
+                        // back to a scraped URL.
+                        if let Some((uri, sc, ec)) =
+                            osc8_link_at_cell(&state.backend.term, line, col)
+                        {
+                            widget_state.hovered_osc8 = Some((vrow, sc, ec));
+                            Some((uri, pos))
+                        } else {
+                            widget_state.hovered_osc8 = None;
+                            url_at_cell(&state.backend.term, line, col).map(|u| (u, pos))
+                        }
                     } else {
                         None
                     }
                 } else {
                     widget_state.hovered_cell = None;
+                    widget_state.hovered_osc8 = None;
                     None
                 };
                 let url_changed = match (&widget_state.hovered_url, &new_hover_url) {
@@ -1558,6 +1583,7 @@ where
                         fg,
                         bg,
                         flags: cell.flags,
+                        link: cell.hyperlink().is_some(),
                     });
                 }
                 if !chars.is_empty() {
@@ -1607,6 +1633,9 @@ where
         } else {
             None
         };
+        // An OSC 8 link's run was captured at hover time (it isn't in the
+        // regex highlight scan); underline it the same way.
+        let hovered_osc8 = widget_state.hovered_osc8;
 
         // Reserve the area where the perf HUD will be drawn so cell
         // glyphs underneath don't bleed through. iced wgpu batches
@@ -1744,6 +1773,19 @@ where
                 }
             }
 
+            // Explicit OSC 8 hyperlink: tint with the URL color (ansi blue),
+            // same as a detected URL, but only when the app left the text at
+            // the default foreground (don't fight an app that colored its own
+            // link). Persistent, the hover underline is added separately.
+            if cd.link {
+                let fg_is_default = (fg.r - palette.foreground.r).abs() < 0.02
+                    && (fg.g - palette.foreground.g).abs() < 0.02
+                    && (fg.b - palette.foreground.b).abs() < 0.02;
+                if fg_is_default {
+                    fg = palette.ansi[4];
+                }
+            }
+
             // Selection highlight, convert visible row to grid-line so
             // the selection follows scrolled content instead of staying
             // glued to viewport coordinates.
@@ -1871,6 +1913,8 @@ where
             // Other URLs in the viewport stay un-underlined to avoid
             // looking like every link is independently clickable.
             let is_hovered_url = hovered_url_extent.is_some_and(|(r, sc, ec)| {
+                cd.row == r && cd.col >= sc && cd.col <= ec
+            }) || hovered_osc8.is_some_and(|(r, sc, ec)| {
                 cd.row == r && cd.col >= sc && cd.col <= ec
             });
             if cd.flags.intersects(CellFlags::ALL_UNDERLINES) || is_hovered_url {

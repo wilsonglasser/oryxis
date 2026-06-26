@@ -309,6 +309,24 @@ impl Oryxis {
                         .style(crate::widgets::rounded_pick_list_style)
                         .into(),
                     ]).align_y(iced::Alignment::Center),
+                    Space::new().height(10),
+                    dir_row(vec![
+                        text(crate::i18n::t("terminal_clipboard")).size(13).color(OryxisColors::t().text_secondary).into(),
+                        Space::new().width(Length::Fill).into(),
+                        pick_list(
+                            Some(crate::i18n::t(self.setting_clipboard_access.label_key()).to_string()),
+                            crate::util::ClipboardAccess::ALL
+                                .iter()
+                                .map(|m| crate::i18n::t(m.label_key()).to_string())
+                                .collect::<Vec<_>>(),
+                            |s: &String| s.clone(),
+                        )
+                        .on_select(Message::ClipboardAccessChanged)
+                        .width(160)
+                        .padding(10)
+                        .style(crate::widgets::rounded_pick_list_style)
+                        .into(),
+                    ]).align_y(iced::Alignment::Center),
                 ]);
 
                 let font_size_section = panel_section(column![

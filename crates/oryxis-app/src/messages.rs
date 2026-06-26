@@ -734,6 +734,9 @@ pub enum Message {
     /// Terminal bell behavior changed from the settings pick (localized
     /// "Off / Flash / Beep" label).
     BellModeChanged(String),
+    /// OSC 52 clipboard access policy changed from the settings pick
+    /// (localized "Off / Write only / Read & write" label).
+    ClipboardAccessChanged(String),
     /// Clear a pane's visual-bell flash after its short display window.
     TerminalBellFlashEnd(Uuid),
     ToggleKeywordHighlight,

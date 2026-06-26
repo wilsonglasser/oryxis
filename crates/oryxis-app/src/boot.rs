@@ -447,6 +447,7 @@ impl Oryxis {
                 setting_keyword_highlight: true,
                 setting_smart_contrast: true,
                 setting_bell_mode: crate::util::BellMode::default(),
+                setting_clipboard_access: crate::util::ClipboardAccess::default(),
                 setting_show_status_bar: true,
                 setting_host_list_view: false,
                 setting_card_accent_glass: true,
@@ -868,6 +869,12 @@ impl Oryxis {
             if let Ok(Some(v)) = vault.get_setting("terminal_bell_mode") {
                 self.setting_bell_mode = crate::util::BellMode::from_code(&v);
             }
+            if let Ok(Some(v)) = vault.get_setting("terminal_clipboard_access") {
+                self.setting_clipboard_access = crate::util::ClipboardAccess::from_code(&v);
+            }
+            // Apply the OSC 52 gate to the terminal backend (process-wide).
+            let (cw, cr) = self.setting_clipboard_access.flags();
+            oryxis_terminal::set_clipboard_access(cw, cr);
             if let Ok(Some(v)) = vault.get_setting("show_status_bar") {
                 self.setting_show_status_bar = v == "true";
             }

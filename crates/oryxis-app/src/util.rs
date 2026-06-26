@@ -91,6 +91,61 @@ impl BellMode {
     }
 }
 
+/// OSC 52 clipboard access policy. Persisted as `code()` in the
+/// `terminal_clipboard_access` setting. Default `WriteOnly`: apps may set the
+/// system clipboard (tmux/vim yank) but not read it (read is a privacy risk).
+#[derive(Clone, Copy, PartialEq, Eq, Default, Debug)]
+pub(crate) enum ClipboardAccess {
+    /// Ignore OSC 52 entirely.
+    Off,
+    /// Apps may set the clipboard, not read it.
+    #[default]
+    WriteOnly,
+    /// Apps may both set and read the clipboard.
+    ReadWrite,
+}
+
+impl ClipboardAccess {
+    pub(crate) const ALL: [ClipboardAccess; 3] = [
+        ClipboardAccess::Off,
+        ClipboardAccess::WriteOnly,
+        ClipboardAccess::ReadWrite,
+    ];
+
+    pub(crate) fn code(self) -> &'static str {
+        match self {
+            ClipboardAccess::Off => "off",
+            ClipboardAccess::WriteOnly => "write",
+            ClipboardAccess::ReadWrite => "readwrite",
+        }
+    }
+
+    pub(crate) fn from_code(code: &str) -> Self {
+        match code {
+            "off" => ClipboardAccess::Off,
+            "readwrite" => ClipboardAccess::ReadWrite,
+            _ => ClipboardAccess::WriteOnly,
+        }
+    }
+
+    pub(crate) fn label_key(self) -> &'static str {
+        match self {
+            ClipboardAccess::Off => "clipboard_off",
+            ClipboardAccess::WriteOnly => "clipboard_write",
+            ClipboardAccess::ReadWrite => "clipboard_readwrite",
+        }
+    }
+
+    /// `(write, read)` flags for `oryxis_terminal::set_clipboard_access`.
+    pub(crate) fn flags(self) -> (bool, bool) {
+        match self {
+            ClipboardAccess::Off => (false, false),
+            ClipboardAccess::WriteOnly => (true, false),
+            ClipboardAccess::ReadWrite => (true, true),
+        }
+    }
+}
+
 /// Best-effort native system beep, no audio dependency. Windows uses
 /// `MessageBeep`; macOS shells out to `osascript -e beep`; Linux tries the
 /// freedesktop bell through whichever player is present. Silent if none is
@@ -446,6 +501,19 @@ mod tests {
         // Unknown / legacy values fall back to the default (beep).
         assert_eq!(BellMode::from_code("garbage"), BellMode::Beep);
         assert_eq!(BellMode::default(), BellMode::Beep);
+    }
+
+    #[test]
+    fn clipboard_access_round_trips_and_defaults_to_write_only() {
+        for m in ClipboardAccess::ALL {
+            assert_eq!(ClipboardAccess::from_code(m.code()), m);
+        }
+        assert_eq!(ClipboardAccess::from_code("garbage"), ClipboardAccess::WriteOnly);
+        assert_eq!(ClipboardAccess::default(), ClipboardAccess::WriteOnly);
+        // Flag mapping: write-only allows write, blocks read; off blocks both.
+        assert_eq!(ClipboardAccess::Off.flags(), (false, false));
+        assert_eq!(ClipboardAccess::WriteOnly.flags(), (true, false));
+        assert_eq!(ClipboardAccess::ReadWrite.flags(), (true, true));
     }
 
     #[test]

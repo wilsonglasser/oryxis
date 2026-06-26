@@ -415,6 +415,51 @@ pub(crate) fn url_at_cell(
     None
 }
 
+/// Explicit OSC 8 hyperlink at a cell, with the column run on this row that
+/// shares the same link. Returns `(uri, start_col, end_col)` (inclusive cols).
+///
+/// Unlike [`url_at_cell`], which scrapes a literal `http(s)://` token out of
+/// the rendered text, the URI here is an attribute alacritty parsed from the
+/// OSC 8 escape, so it works when the displayed label differs from the target
+/// (e.g. `\e]8;;https://example.com\e\\click here\e]8;;\e\\`). The run is
+/// grouped by alacritty's hyperlink id (which ties the cells of one logical
+/// link together) plus the uri.
+pub(crate) fn osc8_link_at_cell(
+    term: &alacritty_terminal::Term<crate::backend::EventProxy>,
+    target_line: i32,
+    target_col: u16,
+) -> Option<(String, u16, u16)> {
+    use alacritty_terminal::index::{Column, Line};
+    let grid = term.grid();
+    let line = Line(target_line);
+    if line < grid.topmost_line() || line > grid.bottommost_line() {
+        return None;
+    }
+    let row = &grid[line];
+    let ncols = grid.columns();
+    let col = target_col as usize;
+    if col >= ncols {
+        return None;
+    }
+    let link = row[Column(col)].hyperlink()?;
+    let uri = link.uri().to_string();
+    let id = link.id().to_string();
+    let same = |c: usize| -> bool {
+        row[Column(c)]
+            .hyperlink()
+            .is_some_and(|h| h.id() == id && h.uri() == uri)
+    };
+    let mut start = col;
+    while start > 0 && same(start - 1) {
+        start -= 1;
+    }
+    let mut end = col;
+    while end + 1 < ncols && same(end + 1) {
+        end += 1;
+    }
+    Some((uri, start as u16, end as u16))
+}
+
 /// Smart-select span for double-click: if the cell at grid-line `line`,
 /// column `col` falls inside a detected URL / IP / path token, return its
 /// `(start_col, end_col)` (inclusive). Returns `None` otherwise (caller
