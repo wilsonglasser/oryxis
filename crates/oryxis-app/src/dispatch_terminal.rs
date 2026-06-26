@@ -225,6 +225,8 @@ impl Oryxis {
                     let mut sync_deadline = None;
                     let mut new_title = None;
                     let mut bell_rang = false;
+                    let mut new_cwd = None;
+                    let mut new_marks = Vec::new();
                     if let Ok(mut state) = pane.terminal.lock() {
                         state.process(&bytes);
                         // A buffering DEC ?2026 update reports its abort
@@ -235,6 +237,20 @@ impl Oryxis {
                         // the auto-title setting only gates display.
                         new_title = state.take_title();
                         bell_rang = state.take_bell();
+                        // OSC 7 working directory + OSC 133 shell-integration
+                        // marks (the latter stored as command-history groundwork).
+                        new_cwd = state.take_cwd();
+                        new_marks = state.take_shell_marks();
+                    }
+                    if let Some(cwd) = new_cwd {
+                        pane.cwd = Some(cwd);
+                    }
+                    if !new_marks.is_empty() {
+                        pane.shell_marks.extend(new_marks);
+                        let len = pane.shell_marks.len();
+                        if len > 256 {
+                            pane.shell_marks.drain(0..len - 256);
+                        }
                     }
                     if let Some(title) = new_title {
                         // Stored raw: when auto-title is on it's opt-in emulator

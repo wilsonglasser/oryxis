@@ -14,10 +14,12 @@ impl TerminalState {
     pub fn new(
         cols: u16,
         rows: u16,
+        cwd: Option<&str>,
     ) -> TerminalResult<(Self, mpsc::UnboundedReceiver<Vec<u8>>)>
     {
         let backend = TerminalBackend::new(cols, rows);
-        let (pty, rx) = PtyHandle::spawn(cols, rows, &backend.event_proxy)?;
+        let (pty, rx) =
+            PtyHandle::spawn_command(cols, rows, None, &[], cwd, &backend.event_proxy)?;
         let palette = TerminalPalette::default();
         Ok((Self { backend, pty: Some(pty), palette, remote_resize_tx: None }, rx))
     }
@@ -30,11 +32,12 @@ impl TerminalState {
         rows: u16,
         program: &str,
         args: &[String],
+        cwd: Option<&str>,
     ) -> TerminalResult<(Self, mpsc::UnboundedReceiver<Vec<u8>>)>
     {
         let backend = TerminalBackend::new(cols, rows);
         let (pty, rx) = PtyHandle::spawn_command(
-            cols, rows, Some(program), args, &backend.event_proxy,
+            cols, rows, Some(program), args, cwd, &backend.event_proxy,
         )?;
         let palette = TerminalPalette::default();
         Ok((Self { backend, pty: Some(pty), palette, remote_resize_tx: None }, rx))
@@ -112,6 +115,26 @@ impl TerminalState {
             .event_proxy
             .bell
             .swap(false, std::sync::atomic::Ordering::Relaxed)
+    }
+
+    /// Drain the latest working directory the shell reported via OSC 7.
+    pub fn take_cwd(&mut self) -> Option<String> {
+        self.backend.osc.take_cwd()
+    }
+
+    /// Drain the latest OSC 9 notification text, if any.
+    pub fn take_notification(&mut self) -> Option<String> {
+        self.backend.osc.take_notification()
+    }
+
+    /// Current OSC 9;4 progress report, if the app set one.
+    pub fn progress(&self) -> Option<crate::osc::Progress> {
+        self.backend.osc.progress()
+    }
+
+    /// Drain the OSC 133 shell-integration marks captured since the last call.
+    pub fn take_shell_marks(&mut self) -> Vec<crate::osc::ShellMark> {
+        self.backend.osc.take_marks()
     }
 
     /// True when the focused application has enabled application cursor keys

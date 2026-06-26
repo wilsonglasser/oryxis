@@ -48,7 +48,7 @@ impl PtyHandle {
         event_proxy: &EventProxy,
     ) -> crate::widget::TerminalResult<(Self, mpsc::UnboundedReceiver<Vec<u8>>)>
     {
-        Self::spawn_command(cols, rows, None, &[], event_proxy)
+        Self::spawn_command(cols, rows, None, &[], None, event_proxy)
     }
 
     /// Spawn an explicit program in a PTY (e.g. PowerShell or
@@ -64,6 +64,7 @@ impl PtyHandle {
         rows: u16,
         program: Option<&str>,
         args: &[String],
+        cwd: Option<&str>,
         event_proxy: &EventProxy,
     ) -> crate::widget::TerminalResult<(Self, mpsc::UnboundedReceiver<Vec<u8>>)>
     {
@@ -85,6 +86,14 @@ impl PtyHandle {
         }
         cmd.env("TERM", "xterm-256color");
         cmd.env("COLORTERM", "truecolor");
+        // Start in the inherited working directory (OSC 7) when it still
+        // exists; a stale dir would make the shell fail to launch, so fall
+        // back to the default by ignoring a missing path.
+        if let Some(dir) = cwd
+            && std::path::Path::new(dir).is_dir()
+        {
+            cmd.cwd(dir);
+        }
 
         let child = pair.slave.spawn_command(cmd)?;
 

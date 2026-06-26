@@ -1257,14 +1257,27 @@ fn spawn_local_shell(
         Some((p, a, _)) => (p.clone(), a.clone()),
         None => ("<default-shell>".into(), Vec::new()),
     };
+    // Open in the focused pane's directory when it's a local shell that
+    // reported one via OSC 7 (a remote SSH cwd wouldn't exist locally).
+    let inherit_cwd = app
+        .active_tab
+        .and_then(|i| app.tabs.get(i))
+        .map(|t| t.active())
+        .filter(|p| matches!(p.origin, crate::state::PaneOrigin::Local(_)))
+        .and_then(|p| p.cwd.clone());
     let result = match &pick {
         Some((program, args, _)) => TerminalState::new_with_command(
             DEFAULT_TERM_COLS as u16,
             DEFAULT_TERM_ROWS as u16,
             program,
             args,
+            inherit_cwd.as_deref(),
         ),
-        None => TerminalState::new(DEFAULT_TERM_COLS as u16, DEFAULT_TERM_ROWS as u16),
+        None => TerminalState::new(
+            DEFAULT_TERM_COLS as u16,
+            DEFAULT_TERM_ROWS as u16,
+            inherit_cwd.as_deref(),
+        ),
     };
     match result {
         Ok((mut state, rx)) => {

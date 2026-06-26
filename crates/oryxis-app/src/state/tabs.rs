@@ -61,6 +61,15 @@ pub(crate) struct Pane {
     /// Flash). Set when the shell rings, cleared by a short
     /// `TerminalBellFlashEnd` timer; drives a brief overlay in the widget.
     pub bell_flash: bool,
+    /// Working directory the shell last reported via OSC 7. Used so a new
+    /// local shell can open in the focused pane's directory.
+    pub cwd: Option<String>,
+    /// OSC 133 shell-integration marks captured for this pane (bounded ring).
+    /// Groundwork for the planned command-history feature; nothing reads it
+    /// yet, hence the allow, the value is the captured command boundaries
+    /// waiting for a consumer.
+    #[allow(dead_code)]
+    pub shell_marks: Vec<oryxis_terminal::ShellMark>,
 }
 
 /// Process-wide auto-title gate (OSC 0/2). Mirrors the `LayoutDirection`
@@ -97,6 +106,8 @@ impl Pane {
             sync_flush_scheduled: false,
             osc_title: None,
             bell_flash: false,
+            cwd: None,
+            shell_marks: Vec::new(),
         }
     }
 }

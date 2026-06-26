@@ -135,6 +135,7 @@ impl Oryxis {
             DEFAULT_TERM_ROWS as u16,
             &plugin_path,
             &args,
+            None,
         ) {
             Ok((mut state, rx)) => {
                 state.palette = self.terminal_palette.clone();

@@ -500,9 +500,9 @@ impl Oryxis {
                         label,
                     } => {
                         let spawned = if program.is_empty() {
-                            TerminalState::new(cols, rows)
+                            TerminalState::new(cols, rows, None)
                         } else {
-                            TerminalState::new_with_command(cols, rows, program, args)
+                            TerminalState::new_with_command(cols, rows, program, args, None)
                         };
                         match spawned {
                             Ok((mut state, rx)) => {

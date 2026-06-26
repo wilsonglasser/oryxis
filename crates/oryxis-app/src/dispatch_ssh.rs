@@ -1245,7 +1245,7 @@ impl Oryxis {
         axis: iced::widget::pane_grid::Axis,
     ) -> Task<Message> {
         let Ok((mut state, rx)) =
-            TerminalState::new(DEFAULT_TERM_COLS as u16, DEFAULT_TERM_ROWS as u16)
+            TerminalState::new(DEFAULT_TERM_COLS as u16, DEFAULT_TERM_ROWS as u16, None)
         else {
             return Task::none();
         };

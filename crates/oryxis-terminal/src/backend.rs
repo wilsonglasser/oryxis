@@ -150,6 +150,9 @@ pub struct TerminalBackend {
     /// Kept so `set_word_delimiters` can hand a full `Config` back to
     /// `Term::set_options` (alacritty has no narrower setter exposed).
     config: TermConfig,
+    /// Sniffs OSC 7/133/9 out of the byte stream (alacritty doesn't surface
+    /// those as events).
+    pub osc: crate::osc::OscSniffer,
 }
 
 impl TerminalBackend {
@@ -171,6 +174,7 @@ impl TerminalBackend {
             cols,
             rows,
             config,
+            osc: crate::osc::OscSniffer::default(),
         }
     }
 
@@ -188,6 +192,9 @@ impl TerminalBackend {
 
     /// Feed raw bytes from PTY into the terminal emulator.
     pub fn process(&mut self, bytes: &[u8]) {
+        // Sniff OSC 7/133/9 before handing the bytes to the emulator (which
+        // ignores those OSC numbers); a no-op for the common no-OSC chunk.
+        self.osc.feed(bytes);
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             self.processor.advance(&mut self.term, bytes);
         }));
