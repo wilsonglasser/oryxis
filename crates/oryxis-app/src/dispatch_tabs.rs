@@ -230,6 +230,17 @@ impl Oryxis {
                             }
                         }
                     }
+                    // A notification toast raised while the window was unfocused
+                    // is left up (no auto-dismiss timer) so it isn't gone before
+                    // you look; clear it a few seconds after you return.
+                    if self.toast.is_some() {
+                        return Ok(iced::Task::perform(
+                            async {
+                                tokio::time::sleep(std::time::Duration::from_secs(4)).await;
+                            },
+                            |_| Message::ToastClear,
+                        ));
+                    }
                 } else {
                     // Anchor the keepalive toggle to the size the window
                     // had when it lost focus. All plugin tabs share the

@@ -308,23 +308,32 @@ impl Oryxis {
                 if over_threshold {
                     self.flush_session_logs();
                 }
-                // OSC 9 notification: only fire when the window isn't focused,
-                // a notification's job is to reach you when you aren't looking;
-                // if the app is on screen you already saw the output. OS mode
-                // falls back to an in-app toast when the native call fails (no
+                // OSC 9 notification. The in-app toast is a gentle cue and
+                // fires regardless of focus (also useful for a background tab);
+                // the OS notification only fires while the window is unfocused
+                // (a native popup for the thing you're already watching is just
+                // noise) and falls back to a toast if the native call fails (no
                 // daemon / no AppUserModelID on a non-installed Windows build).
                 let mut toast_shown = false;
-                if let Some(text) = pending_notification
-                    && !win_focused
-                    && notif_mode != crate::util::NotificationMode::Off
-                {
+                if let Some(text) = pending_notification {
                     let body = text.trim();
                     if !body.is_empty() {
-                        let delivered = notif_mode == crate::util::NotificationMode::Os
-                            && crate::util::show_os_notification("Oryxis", body);
-                        if !delivered {
+                        let show_toast = match notif_mode {
+                            crate::util::NotificationMode::Off => false,
+                            crate::util::NotificationMode::Toast => true,
+                            crate::util::NotificationMode::Os => {
+                                !win_focused
+                                    && !crate::util::show_os_notification("Oryxis", body)
+                            }
+                        };
+                        if show_toast {
                             self.toast = Some(body.to_string());
-                            toast_shown = true;
+                            // Auto-dismiss on a timer only when the window is
+                            // focused (you see it now). A toast raised while
+                            // unfocused is left up and cleared shortly after you
+                            // return (WindowFocusChanged), so it isn't gone
+                            // before you look.
+                            toast_shown = win_focused;
                         }
                     }
                 }

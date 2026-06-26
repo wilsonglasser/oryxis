@@ -97,14 +97,64 @@ impl Oryxis {
                 .center(Length::Fill).into()
         };
 
-        container(terminal_area)
+        let base = container(terminal_area)
             .width(Length::Fill)
             .height(Length::Fill)
             .style(|_| container::Style {
                 background: Some(Background::Color(OryxisColors::t().terminal_bg)),
                 ..Default::default()
-            })
-            .into()
+            });
+        // Toast (copy feedback, OSC 9 notifications, …) floats over the whole
+        // terminal area so it shows whether or not the chat sidebar is open.
+        match self.toast_overlay() {
+            Some(overlay) => iced::widget::Stack::new().push(base).push(overlay).into(),
+            None => base.into(),
+        }
+    }
+
+    /// Bottom-center toast chip over the terminal, or `None` when no toast is
+    /// pending. Shared by the main view; the chat sidebar no longer renders its
+    /// own copy (that only showed while the sidebar was open).
+    fn toast_overlay(&self) -> Option<Element<'_, Message>> {
+        let text_ = self.toast.as_ref()?;
+        let chip = container(
+            text(text_.clone()).size(11).color(OryxisColors::t().text_primary),
+        )
+        .padding(Padding { top: 5.0, right: 12.0, bottom: 5.0, left: 12.0 })
+        .style(|_| container::Style {
+            background: Some(Background::Color(Color {
+                a: 0.95,
+                ..OryxisColors::t().bg_selected
+            })),
+            border: Border {
+                radius: Radius::from(8.0),
+                color: OryxisColors::t().border,
+                width: 1.0,
+            },
+            ..Default::default()
+        });
+        // Clicking the chip dismisses it immediately. Only the chip is
+        // interactive; the surrounding Fill stays transparent to clicks so it
+        // never steals input from the terminal underneath.
+        let chip = MouseArea::new(chip)
+            .on_press(Message::ToastClear)
+            .interaction(iced::mouse::Interaction::Pointer);
+        Some(
+            container(
+                column![
+                    Space::new().height(Length::Fill),
+                    container(chip)
+                        .width(Length::Fill)
+                        .align_x(iced::alignment::Horizontal::Center),
+                    Space::new().height(Length::Fixed(48.0)),
+                ]
+                .width(Length::Fill)
+                .height(Length::Fill),
+            )
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .into(),
+        )
     }
 
     /// Build the terminal canvas for one pane, applying the global font /
@@ -405,59 +455,10 @@ impl Oryxis {
             .width(Length::Fill)
             .height(Length::Fill);
 
-        // Optional toast, floats above the input area without taking
-        // a row in the column layout. Cleared after ~1.8 s by a
-        // `ToastClear` round-trip (see dispatch.rs::CopyToClipboard).
-        let panel_inner: Element<'_, Message> = if let Some(text_) = self.toast.as_ref() {
-            let chip = container(
-                text(text_.clone())
-                    .size(11)
-                    .color(OryxisColors::t().text_primary),
-            )
-            .padding(Padding {
-                top: 5.0,
-                right: 12.0,
-                bottom: 5.0,
-                left: 12.0,
-            })
-            .style(|_| container::Style {
-                background: Some(Background::Color(Color {
-                    a: 0.95,
-                    ..OryxisColors::t().bg_selected
-                })),
-                border: Border {
-                    radius: Radius::from(8.0),
-                    color: OryxisColors::t().border,
-                    width: 1.0,
-                },
-                ..Default::default()
-            });
-            // Anchor the chip horizontally centered, vertically near
-            // the bottom of the sidebar (just above the input row).
-            // Using a column with fillers so we don't depend on iced
-            // alignment quirks.
-            let toast_overlay = container(
-                column![
-                    Space::new().height(Length::Fill),
-                    container(chip)
-                        .width(Length::Fill)
-                        .align_x(iced::alignment::Horizontal::Center),
-                    Space::new().height(Length::Fixed(70.0)),
-                ]
-                .width(Length::Fill)
-                .height(Length::Fill),
-            )
-            .width(Length::Fill)
-            .height(Length::Fill);
-            iced::widget::Stack::new()
-                .push(panel_column)
-                .push(toast_overlay)
-                .into()
-        } else {
-            panel_column.into()
-        };
-
-        let panel = container(panel_inner)
+        // The toast now floats over the whole terminal view (see
+        // `view_terminal` / `toast_overlay`), not just this sidebar, so it
+        // shows even when the chat panel is closed.
+        let panel = container(panel_column)
         .width(Length::Fill)
         .height(Length::Fill)
         .style(|_| container::Style {

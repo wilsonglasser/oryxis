@@ -304,7 +304,7 @@ impl Oryxis {
                             |s: &String| s.clone(),
                         )
                         .on_select(Message::BellModeChanged)
-                        .width(160)
+                        .width(200)
                         .padding(10)
                         .style(crate::widgets::rounded_pick_list_style)
                         .into(),
@@ -322,7 +322,7 @@ impl Oryxis {
                             |s: &String| s.clone(),
                         )
                         .on_select(Message::ClipboardAccessChanged)
-                        .width(160)
+                        .width(200)
                         .padding(10)
                         .style(crate::widgets::rounded_pick_list_style)
                         .into(),
@@ -340,7 +340,7 @@ impl Oryxis {
                             |s: &String| s.clone(),
                         )
                         .on_select(Message::NotificationModeChanged)
-                        .width(160)
+                        .width(200)
                         .padding(10)
                         .style(crate::widgets::rounded_pick_list_style)
                         .into(),
