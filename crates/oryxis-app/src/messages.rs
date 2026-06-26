@@ -737,6 +737,9 @@ pub enum Message {
     /// OSC 52 clipboard access policy changed from the settings pick
     /// (localized "Off / Write only / Read & write" label).
     ClipboardAccessChanged(String),
+    /// OSC 9 notification surfacing changed from the settings pick
+    /// (localized "Off / Toast / OS" label).
+    NotificationModeChanged(String),
     /// Clear a pane's visual-bell flash after its short display window.
     TerminalBellFlashEnd(Uuid),
     ToggleKeywordHighlight,

@@ -70,6 +70,9 @@ pub(crate) struct Pane {
     /// waiting for a consumer.
     #[allow(dead_code)]
     pub shell_marks: Vec<oryxis_terminal::ShellMark>,
+    /// Latest OSC 9;4 progress the shell reported, drawn as a growing border
+    /// around the tab. `None` (or state 0) means no active progress.
+    pub progress: Option<oryxis_terminal::Progress>,
 }
 
 /// Process-wide auto-title gate (OSC 0/2). Mirrors the `LayoutDirection`
@@ -108,6 +111,7 @@ impl Pane {
             bell_flash: false,
             cwd: None,
             shell_marks: Vec::new(),
+            progress: None,
         }
     }
 }

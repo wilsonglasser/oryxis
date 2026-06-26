@@ -37,6 +37,8 @@ assets = [
 ]
 
 [dependencies]
+# Native OS notifications (OSC 9): Windows toast, macOS, Linux libnotify/D-Bus.
+notify-rust = "4"
 oryxis-core = { workspace = true }
 oryxis-ssh = { workspace = true }
 oryxis-terminal = { workspace = true }

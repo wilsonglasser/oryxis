@@ -887,6 +887,9 @@ pub struct Oryxis {
     /// OSC 52 clipboard access policy: off / write-only / read-write.
     /// Persisted as `terminal_clipboard_access`; default write-only.
     pub(crate) setting_clipboard_access: crate::util::ClipboardAccess,
+    /// How an OSC 9 shell notification is surfaced: off / in-app toast / OS.
+    /// Persisted as `terminal_notification`; default OS.
+    pub(crate) setting_notification_mode: crate::util::NotificationMode,
     /// Toggles the bottom status bar that shows current connection IP +
     /// Oryxis version. Off in `view_main` simply skips rendering it,
     /// reclaiming the row for the active content area.

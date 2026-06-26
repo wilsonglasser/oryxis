@@ -146,6 +146,66 @@ impl ClipboardAccess {
     }
 }
 
+/// How an OSC 9 notification from the shell is surfaced. Persisted as `code()`
+/// in `terminal_notification`. Default `Os`: a notification's whole point is to
+/// reach you when the window isn't visible, so the native OS notification is
+/// the useful one; the in-app toast only helps when the app is already on
+/// screen (where you'd have seen the output anyway).
+#[derive(Clone, Copy, PartialEq, Eq, Default, Debug)]
+pub(crate) enum NotificationMode {
+    /// Ignore OSC 9 notifications.
+    Off,
+    /// Show an in-app toast.
+    Toast,
+    /// Show a native OS notification (falls back to a toast if it fails).
+    #[default]
+    Os,
+}
+
+impl NotificationMode {
+    pub(crate) const ALL: [NotificationMode; 3] = [
+        NotificationMode::Off,
+        NotificationMode::Toast,
+        NotificationMode::Os,
+    ];
+
+    pub(crate) fn code(self) -> &'static str {
+        match self {
+            NotificationMode::Off => "off",
+            NotificationMode::Toast => "toast",
+            NotificationMode::Os => "os",
+        }
+    }
+
+    pub(crate) fn from_code(code: &str) -> Self {
+        match code {
+            "off" => NotificationMode::Off,
+            "toast" => NotificationMode::Toast,
+            _ => NotificationMode::Os,
+        }
+    }
+
+    pub(crate) fn label_key(self) -> &'static str {
+        match self {
+            NotificationMode::Off => "notify_off",
+            NotificationMode::Toast => "notify_toast",
+            NotificationMode::Os => "notify_os",
+        }
+    }
+}
+
+/// Show a native OS notification (OSC 9). Returns whether it was dispatched;
+/// the caller falls back to an in-app toast on `false` (no notification daemon
+/// on Linux, or no registered AppUserModelID on a non-installed Windows build).
+pub(crate) fn show_os_notification(summary: &str, body: &str) -> bool {
+    notify_rust::Notification::new()
+        .summary(summary)
+        .body(body)
+        .appname("Oryxis")
+        .show()
+        .is_ok()
+}
+
 /// Best-effort native system beep, no audio dependency. Windows uses
 /// `MessageBeep`; macOS shells out to `osascript -e beep`; Linux tries the
 /// freedesktop bell through whichever player is present. Silent if none is
@@ -501,6 +561,15 @@ mod tests {
         // Unknown / legacy values fall back to the default (beep).
         assert_eq!(BellMode::from_code("garbage"), BellMode::Beep);
         assert_eq!(BellMode::default(), BellMode::Beep);
+    }
+
+    #[test]
+    fn notification_mode_round_trips_and_defaults_to_os() {
+        for m in NotificationMode::ALL {
+            assert_eq!(NotificationMode::from_code(m.code()), m);
+        }
+        assert_eq!(NotificationMode::from_code("garbage"), NotificationMode::Os);
+        assert_eq!(NotificationMode::default(), NotificationMode::Os);
     }
 
     #[test]

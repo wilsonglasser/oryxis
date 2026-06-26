@@ -215,7 +215,11 @@ impl Oryxis {
                 // Snapshot the (Copy) bell mode before borrowing self.tabs; the
                 // bell action runs while the pane is borrowed.
                 let bell_mode = self.setting_bell_mode;
+                // Notification policy + focus snapshot before the tabs borrow.
+                let notif_mode = self.setting_notification_mode;
+                let win_focused = self.window_focused;
                 let mut flash_pane: Option<uuid::Uuid> = None;
+                let mut pending_notification: Option<String> = None;
                 if let Some(pane) = self
                     .tabs
                     .iter_mut()
@@ -227,6 +231,8 @@ impl Oryxis {
                     let mut bell_rang = false;
                     let mut new_cwd = None;
                     let mut new_marks = Vec::new();
+                    let mut new_notification = None;
+                    let mut new_progress = None;
                     if let Ok(mut state) = pane.terminal.lock() {
                         state.process(&bytes);
                         // A buffering DEC ?2026 update reports its abort
@@ -241,7 +247,13 @@ impl Oryxis {
                         // marks (the latter stored as command-history groundwork).
                         new_cwd = state.take_cwd();
                         new_marks = state.take_shell_marks();
+                        // OSC 9 notification text + OSC 9;4 progress.
+                        new_notification = state.take_notification();
+                        new_progress = state.progress();
                     }
+                    // OSC 9;4 progress (state 0 = clear) drives the tab border.
+                    pane.progress = new_progress.filter(|p| p.state != 0 && p.value > 0);
+                    pending_notification = new_notification;
                     if let Some(cwd) = new_cwd {
                         pane.cwd = Some(cwd);
                     }
@@ -296,6 +308,26 @@ impl Oryxis {
                 if over_threshold {
                     self.flush_session_logs();
                 }
+                // OSC 9 notification: only fire when the window isn't focused,
+                // a notification's job is to reach you when you aren't looking;
+                // if the app is on screen you already saw the output. OS mode
+                // falls back to an in-app toast when the native call fails (no
+                // daemon / no AppUserModelID on a non-installed Windows build).
+                let mut toast_shown = false;
+                if let Some(text) = pending_notification
+                    && !win_focused
+                    && notif_mode != crate::util::NotificationMode::Off
+                {
+                    let body = text.trim();
+                    if !body.is_empty() {
+                        let delivered = notif_mode == crate::util::NotificationMode::Os
+                            && crate::util::show_os_notification("Oryxis", body);
+                        if !delivered {
+                            self.toast = Some(body.to_string());
+                            toast_shown = true;
+                        }
+                    }
+                }
                 // Session-group per-pane startup script for LOCAL panes. SSH
                 // panes inject on `SshConnected`, but a local shell has no
                 // such ready event, so we gate on its first output (the
@@ -340,6 +372,15 @@ impl Oryxis {
                             tokio::time::sleep(std::time::Duration::from_millis(120)).await;
                         },
                         move |_| Message::TerminalBellFlashEnd(fp),
+                    ));
+                }
+                if toast_shown {
+                    // Auto-dismiss the fallback notification toast.
+                    tasks.push(Task::perform(
+                        async {
+                            tokio::time::sleep(std::time::Duration::from_millis(3000)).await;
+                        },
+                        |_| Message::ToastClear,
                     ));
                 }
                 if !tasks.is_empty() {

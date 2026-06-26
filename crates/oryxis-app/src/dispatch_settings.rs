@@ -704,6 +704,16 @@ impl Oryxis {
                     oryxis_terminal::set_clipboard_access(cw, cr);
                 }
             }
+            Message::NotificationModeChanged(name) => {
+                use crate::util::NotificationMode;
+                if let Some(mode) = NotificationMode::ALL
+                    .iter()
+                    .find(|m| crate::i18n::t(m.label_key()) == name)
+                {
+                    self.setting_notification_mode = *mode;
+                    self.persist_setting("terminal_notification", mode.code());
+                }
+            }
             Message::AppThemeChanged(name) => {
                 if self.apply_app_theme_name(&name) {
                     self.active_app_theme_name = name.clone();
