@@ -505,6 +505,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "cat_settings" => "설정",
         "import_from_file" => "가져오기",
         "export_import" => "내보내기 / 가져오기",
+        "algo_auto" => "자동",
+        "algo_custom" => "사용자 지정",
         "legacy_algo_unsupported" => "서버가 Oryxis에서 지원하지 않는 알고리즘을 요구합니다.",
         "legacy_algo_title" => "서버에 레거시 알고리즘 필요",
         "legacy_algo_desc" => "{host}은(는) 레거시 {category} 알고리즘만 제공하며 Oryxis는 기본적으로 비활성화합니다. 연결하면 이 호스트에 대해 활성화되어 보안이 약해집니다.",

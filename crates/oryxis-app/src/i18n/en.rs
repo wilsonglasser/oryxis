@@ -511,6 +511,8 @@ pub(super) fn lookup(key: &str) -> &'static str {
         "cat_settings" => "Settings",
         "import_from_file" => "Import",
         "export_import" => "Export / Import",
+        "algo_auto" => "Auto",
+        "algo_custom" => "Custom",
         "legacy_algo_unsupported" => "Server requires an algorithm Oryxis does not support.",
         "legacy_algo_title" => "Server requires legacy algorithms",
         "legacy_algo_desc" => "{host} only offers legacy {category} algorithms, which Oryxis disables by default. Connecting enables them for this host and weakens its security.",

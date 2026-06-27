@@ -419,6 +419,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "cat_settings" => "Ajustes",
         "import_from_file" => "Importar",
         "export_import" => "Exportar / Importar",
+        "algo_auto" => "Auto",
+        "algo_custom" => "Personalizado",
         "legacy_algo_unsupported" => "El servidor requiere un algoritmo que Oryxis no admite.",
         "legacy_algo_title" => "El servidor requiere algoritmos heredados",
         "legacy_algo_desc" => "{host} solo ofrece algoritmos {category} heredados, que Oryxis desactiva por defecto. Conectar los habilita para este host y debilita su seguridad.",

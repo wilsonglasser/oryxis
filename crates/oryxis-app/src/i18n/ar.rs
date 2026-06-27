@@ -517,6 +517,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "cat_settings" => "الإعدادات",
         "import_from_file" => "استيراد",
         "export_import" => "تصدير / استيراد",
+        "algo_auto" => "تلقائي",
+        "algo_custom" => "مخصص",
         "legacy_algo_unsupported" => "يتطلب الخادم خوارزمية لا يدعمها Oryxis.",
         "legacy_algo_title" => "يتطلب الخادم خوارزميات قديمة",
         "legacy_algo_desc" => "{host} يقدّم فقط خوارزميات {category} قديمة يعطّلها Oryxis افتراضيًا. الاتصال يفعّلها لهذا المضيف ويضعف أمانه.",

@@ -505,6 +505,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "cat_settings" => "Ayarlar",
         "import_from_file" => "İçe aktar",
         "export_import" => "Dışa / İçe Aktar",
+        "algo_auto" => "Otomatik",
+        "algo_custom" => "Ozel",
         "legacy_algo_unsupported" => "Sunucu, Oryxis'in desteklemedigi bir algoritma gerektiriyor.",
         "legacy_algo_title" => "Sunucu eski algoritmalar gerektiriyor",
         "legacy_algo_desc" => "{host} yalnizca eski {category} algoritmalari sunuyor; Oryxis bunlari varsayilan olarak devre disi birakir. Baglanmak bunlari bu ana bilgisayar icin etkinlestirir ve guvenligini zayiflatir.",

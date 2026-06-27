@@ -505,6 +505,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "cat_settings" => "Pengaturan",
         "import_from_file" => "Impor",
         "export_import" => "Ekspor / Impor",
+        "algo_auto" => "Otomatis",
+        "algo_custom" => "Kustom",
         "legacy_algo_unsupported" => "Server memerlukan algoritma yang tidak didukung Oryxis.",
         "legacy_algo_title" => "Server memerlukan algoritma lawas",
         "legacy_algo_desc" => "{host} hanya menawarkan algoritma {category} lawas, yang dinonaktifkan Oryxis secara default. Menghubungkan mengaktifkannya untuk host ini dan melemahkan keamanannya.",

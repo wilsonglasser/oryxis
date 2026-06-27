@@ -507,6 +507,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "cat_settings" => "تنظیمات",
         "import_from_file" => "وارد کردن",
         "export_import" => "خروجی / ورودی",
+        "algo_auto" => "خودکار",
+        "algo_custom" => "سفارشی",
         "legacy_algo_unsupported" => "سرور به الگوریتمی نیاز دارد که Oryxis از آن پشتیبانی نمی‌کند.",
         "legacy_algo_title" => "سرور به الگوریتم‌های قدیمی نیاز دارد",
         "legacy_algo_desc" => "{host} فقط الگوریتم‌های {category} قدیمی ارائه می‌دهد که Oryxis به‌طور پیش‌فرض غیرفعال می‌کند. اتصال آن‌ها را برای این میزبان فعال و امنیت را تضعیف می‌کند.",

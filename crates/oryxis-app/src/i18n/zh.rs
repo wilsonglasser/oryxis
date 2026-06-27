@@ -422,6 +422,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "cat_settings" => "设置",
         "import_from_file" => "导入",
         "export_import" => "导出 / 导入",
+        "algo_auto" => "自动",
+        "algo_custom" => "自定义",
         "legacy_algo_unsupported" => "服务器需要 Oryxis 不支持的算法。",
         "legacy_algo_title" => "服务器需要旧版算法",
         "legacy_algo_desc" => "{host} 仅提供旧版 {category} 算法，Oryxis 默认禁用这些算法。连接将为该主机启用它们并削弱其安全性。",

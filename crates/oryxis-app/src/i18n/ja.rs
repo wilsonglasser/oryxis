@@ -422,6 +422,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "cat_settings" => "設定",
         "import_from_file" => "インポート",
         "export_import" => "エクスポート / インポート",
+        "algo_auto" => "自動",
+        "algo_custom" => "カスタム",
         "legacy_algo_unsupported" => "サーバーは Oryxis が対応していないアルゴリズムを要求しています。",
         "legacy_algo_title" => "サーバーがレガシーアルゴリズムを要求",
         "legacy_algo_desc" => "{host} はレガシーな {category} アルゴリズムしか提供しません。Oryxis は既定で無効にしています。接続するとこのホストで有効になり、安全性が低下します。",

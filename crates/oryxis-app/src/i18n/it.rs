@@ -413,6 +413,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "cat_settings" => "Impostazioni",
         "import_from_file" => "Importa",
         "export_import" => "Esporta / Importa",
+        "algo_auto" => "Auto",
+        "algo_custom" => "Personalizzato",
         "legacy_algo_unsupported" => "Il server richiede un algoritmo non supportato da Oryxis.",
         "legacy_algo_title" => "Il server richiede algoritmi legacy",
         "legacy_algo_desc" => "{host} offre solo algoritmi {category} legacy, che Oryxis disabilita per impostazione predefinita. Connettersi li abilita per questo host e ne indebolisce la sicurezza.",

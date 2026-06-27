@@ -1078,11 +1078,16 @@ impl Oryxis {
         for cat in AlgoCategory::ALL {
             let is_auto = self.editor_form.algo_list(cat).is_none();
             col = col.push(Space::new().height(10));
-            // Toggle ON = Auto (safe default); OFF = pin a custom list.
-            col = col.push(crate::widgets::toggle_row(
+            // Explicit "Auto / Custom" picker per category; choosing Custom
+            // reveals the algorithm checklist below.
+            let auto_label = t("algo_auto");
+            let selected = if is_auto { auto_label } else { t("algo_custom") }.to_string();
+            col = col.push(panel_option_pick(
+                iced_fonts::lucide::shield(),
                 t(cat.label_key()),
-                is_auto,
-                Message::EditorAlgoSetAuto(cat, !is_auto),
+                vec![auto_label.to_string(), t("algo_custom").to_string()],
+                selected,
+                move |s| Message::EditorAlgoSetAuto(cat, s == auto_label),
             ));
             if !is_auto {
                 let selected: Vec<String> =

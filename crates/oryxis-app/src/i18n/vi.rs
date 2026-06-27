@@ -505,6 +505,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "cat_settings" => "Cài đặt",
         "import_from_file" => "Nhập",
         "export_import" => "Xuất / Nhập",
+        "algo_auto" => "Tự động",
+        "algo_custom" => "Tùy chỉnh",
         "legacy_algo_unsupported" => "Máy chủ yêu cầu một thuật toán mà Oryxis không hỗ trợ.",
         "legacy_algo_title" => "Máy chủ yêu cầu thuật toán cũ",
         "legacy_algo_desc" => "{host} chỉ cung cấp thuật toán {category} cũ mà Oryxis tắt theo mặc định. Kết nối sẽ bật chúng cho máy chủ này và làm giảm bảo mật.",
