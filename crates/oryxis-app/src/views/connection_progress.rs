@@ -97,7 +97,65 @@ impl Oryxis {
             Element<'_, Message>,
             Element<'_, Message>,
             Element<'_, Message>,
-        ) = if let Some(ref kbi) = self.pending_kbi_prompt {
+        ) = if let Some(ref legacy) = self.pending_legacy_algo {
+            // Server speaks only legacy algorithms in some category. Offer
+            // to enable them (weaker) or cancel.
+            let host_label = self
+                .connections
+                .iter()
+                .find(|c| c.id == legacy.conn_id)
+                .map(|c| c.label.clone())
+                .unwrap_or_default();
+            let cat_key = match legacy.category {
+                oryxis_ssh::NegCategory::Cipher => "algo_ciphers",
+                oryxis_ssh::NegCategory::Kex => "algo_kex",
+                oryxis_ssh::NegCategory::Mac => "algo_macs",
+                oryxis_ssh::NegCategory::HostKey => "algo_host_keys",
+            };
+            let status: Element<'_, Message> = text(crate::i18n::t("legacy_algo_title"))
+                .size(14)
+                .color(OryxisColors::t().warning)
+                .into();
+            let desc = crate::i18n::t("legacy_algo_desc")
+                .replace("{host}", &host_label)
+                .replace("{category}", crate::i18n::t(cat_key));
+            let mut body_col = column![
+                text(desc).size(13).color(OryxisColors::t().text_secondary),
+                Space::new().height(10),
+                text(crate::i18n::t("legacy_algo_offers"))
+                    .size(12)
+                    .color(OryxisColors::t().text_muted),
+                Space::new().height(4),
+            ];
+            for off in &legacy.server_offers {
+                body_col = body_col.push(
+                    text(format!("  {off}")).size(12).color(OryxisColors::t().text_primary),
+                );
+            }
+            let body: Element<'_, Message> = body_col.into();
+            let btm: Element<'_, Message> = row![
+                crate::widgets::styled_button(
+                    crate::i18n::t("cancel"),
+                    Message::LegacyAlgoCancel,
+                    OryxisColors::t().text_muted,
+                ),
+                Space::new().width(Length::Fill),
+                crate::widgets::styled_button(
+                    crate::i18n::t("legacy_algo_connect_once"),
+                    Message::LegacyAlgoAccept { remember: false },
+                    OryxisColors::t().bg_hover,
+                ),
+                Space::new().width(8),
+                crate::widgets::styled_button(
+                    crate::i18n::t("legacy_algo_always"),
+                    Message::LegacyAlgoAccept { remember: true },
+                    OryxisColors::t().accent,
+                ),
+            ]
+            .align_y(iced::Alignment::Center)
+            .into();
+            (status, body, btm)
+        } else if let Some(ref kbi) = self.pending_kbi_prompt {
             // Keyboard-interactive (2FA / OTP). `name` and the prompt labels
             // are server strings, rendered verbatim, never translated. Only
             // the chrome (title fallback, buttons) goes through i18n.

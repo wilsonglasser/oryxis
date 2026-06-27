@@ -384,6 +384,9 @@ impl Oryxis {
                                 }))
                             })();
 
+                            // Captured (Copy) for the map closure below, since
+                            // `conn` itself is moved into the stream producer.
+                            let map_conn_id = conn.id;
                             let stream = iced::stream::channel::<SshStreamMsg>(128, move |mut sender: iced::futures::channel::mpsc::Sender<SshStreamMsg>| {
                                 async move {
                                     let engine = SshEngine::new()
@@ -524,9 +527,18 @@ impl Oryxis {
                                             h
                                         }
                                         Err(e) => {
-                                            let _ = sender.send(SshStreamMsg::Error(
-                                                format!("Connection to {}:{} failed: {}", conn_host, conn_port, e),
-                                            )).await;
+                                            // A "no common algorithm" failure becomes a
+                                            // legacy-fallback offer instead of a dead end.
+                                            if let Some(nf) = e.negotiation_failure() {
+                                                let _ = sender.send(SshStreamMsg::NoCommonAlgo {
+                                                    category: nf.category,
+                                                    server_offers: nf.server_offers,
+                                                }).await;
+                                            } else {
+                                                let _ = sender.send(SshStreamMsg::Error(
+                                                    format!("Connection to {}:{} failed: {}", conn_host, conn_port, e),
+                                                )).await;
+                                            }
                                             return;
                                         }
                                     };
@@ -598,6 +610,13 @@ impl Oryxis {
                                         Message::PtyOutput(pane_id, data)
                                     }
                                     SshStreamMsg::Error(err) => Message::SshError(err),
+                                    SshStreamMsg::NoCommonAlgo { category, server_offers } => {
+                                        Message::SshNoCommonAlgo {
+                                            conn_id: map_conn_id,
+                                            category,
+                                            server_offers,
+                                        }
+                                    }
                                     SshStreamMsg::Disconnected => {
                                         Message::SshDisconnected(pane_id)
                                     }
@@ -1217,6 +1236,80 @@ impl Oryxis {
                 } else {
                     self.host_panel_error = Some(format!("SSH: {}", err));
                 }
+            }
+            Message::SshNoCommonAlgo { conn_id, category, server_offers } => {
+                // Only offer the fallback when the failed category is still
+                // Auto. If it's already pinned (manually, or by a prior
+                // accept that expanded everything) and STILL has no match,
+                // the server wants an algorithm russh can't provide, so show
+                // a plain error instead of looping the dialog.
+                let already_pinned = self
+                    .connections
+                    .iter()
+                    .find(|c| c.id == conn_id)
+                    .map(|c| match category {
+                        oryxis_ssh::NegCategory::Cipher => c.ciphers.is_some(),
+                        oryxis_ssh::NegCategory::Kex => c.kex.is_some(),
+                        oryxis_ssh::NegCategory::Mac => c.macs.is_some(),
+                        oryxis_ssh::NegCategory::HostKey => c.host_key_algorithms.is_some(),
+                    })
+                    .unwrap_or(false);
+                if already_pinned {
+                    if let Some(ref mut progress) = self.connecting {
+                        progress.failed = true;
+                        progress.logs.push((
+                            progress.step,
+                            crate::i18n::t("legacy_algo_unsupported").into(),
+                        ));
+                    }
+                } else {
+                    self.pending_legacy_algo = Some(crate::state::PendingLegacyAlgo {
+                        conn_id,
+                        category,
+                        server_offers,
+                    });
+                }
+            }
+            Message::LegacyAlgoCancel => {
+                self.pending_legacy_algo = None;
+                if let Some(ref mut progress) = self.connecting {
+                    progress.failed = true;
+                    progress
+                        .logs
+                        .push((progress.step, crate::i18n::t("legacy_algo_cancelled").into()));
+                }
+            }
+            Message::LegacyAlgoAccept { remember } => {
+                let Some(pending) = self.pending_legacy_algo.take() else {
+                    return Ok(Task::none());
+                };
+                let Some(idx) = self.connections.iter().position(|c| c.id == pending.conn_id)
+                else {
+                    return Ok(Task::none());
+                };
+                // Expand every category to the full supported set (secure
+                // names stay first, so a modern server still negotiates
+                // securely). One retry then covers all legacy categories.
+                let to_full = |names: Vec<&'static str>| -> Option<Vec<String>> {
+                    Some(names.into_iter().map(|s| s.to_string()).collect())
+                };
+                {
+                    let conn = &mut self.connections[idx];
+                    // Secure-first order: the default safe set, then the
+                    // legacy entries appended. Pinning raw `supported_*`
+                    // here would demote chacha/gcm below 3des/cbc.
+                    conn.ciphers = to_full(oryxis_ssh::algorithms::expanded_ciphers());
+                    conn.kex = to_full(oryxis_ssh::algorithms::expanded_kex());
+                    conn.macs = to_full(oryxis_ssh::algorithms::expanded_macs());
+                    conn.host_key_algorithms =
+                        to_full(oryxis_ssh::algorithms::expanded_host_keys());
+                }
+                if remember && let Some(vault) = &self.vault {
+                    let _ = vault.save_connection(&self.connections[idx], None);
+                }
+                // Reconnect with the expanded set (reads the now-updated
+                // in-memory connection).
+                return Ok(self.update(Message::ConnectSsh(idx)));
             }
 
             m => return Err(m),

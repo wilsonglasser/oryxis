@@ -42,6 +42,49 @@ pub enum SshError {
     JumpHost(String),
 }
 
+/// Which SSH negotiation category had no common algorithm. Mirrors the
+/// per-host override categories so the UI can expand exactly the right
+/// one (or all) on a legacy-fallback retry.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NegCategory {
+    Kex,
+    HostKey,
+    Cipher,
+    Mac,
+}
+
+/// A "no common algorithm" handshake failure, surfaced structurally so
+/// the app can offer "this server only speaks legacy X, connect anyway?"
+/// rather than parsing an error string.
+#[derive(Debug, Clone)]
+pub struct NegotiationFailure {
+    pub category: NegCategory,
+    /// The algorithms the server offered for the failed category.
+    pub server_offers: Vec<String>,
+}
+
+impl SshError {
+    /// If this is a russh "no common algorithm" failure, return the
+    /// failed category and what the server offered. Compression failures
+    /// are not user-actionable here, so they map to `None`.
+    pub fn negotiation_failure(&self) -> Option<NegotiationFailure> {
+        let SshError::Russh(russh::Error::NoCommonAlgo { kind, theirs, .. }) = self else {
+            return None;
+        };
+        let category = match kind {
+            russh::AlgorithmKind::Kex => NegCategory::Kex,
+            russh::AlgorithmKind::Key => NegCategory::HostKey,
+            russh::AlgorithmKind::Cipher => NegCategory::Cipher,
+            russh::AlgorithmKind::Mac => NegCategory::Mac,
+            russh::AlgorithmKind::Compression => return None,
+        };
+        Some(NegotiationFailure {
+            category,
+            server_offers: theirs.clone(),
+        })
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Client handler
 // ---------------------------------------------------------------------------
@@ -1289,7 +1332,17 @@ impl SshEngine {
                 let handler = self.make_handler(target_host, target_port);
                 client::connect(config, &addr, handler)
                     .await
-                    .map_err(|e| SshError::ConnectionFailed(format!("{}: {}", addr, e)))
+                    .map_err(|e| {
+                        // Keep the structured negotiation failure (already an
+                        // `SshError::Russh(NoCommonAlgo)` via the handler's
+                        // `From`) so the UI can offer the legacy-algorithm
+                        // fallback instead of a dead-end error string.
+                        if e.negotiation_failure().is_some() {
+                            e
+                        } else {
+                            SshError::ConnectionFailed(format!("{}: {}", addr, e))
+                        }
+                    })
             }
         };
         tokio::time::timeout(connect_timeout, connect_fut)

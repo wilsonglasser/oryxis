@@ -305,6 +305,8 @@ pub struct Oryxis {
     // Render every blocking modal through `widgets::modal_overlay` so the
     // scrim can't reintroduce mouse bleed-through.
 
+    // Legacy-algorithm fallback dialog (server offers only cbc/sha1/...).
+    pub(crate) pending_legacy_algo: Option<crate::state::PendingLegacyAlgo>,
     // Host key verification dialog.
     pub(crate) pending_host_key: Option<oryxis_ssh::HostKeyQuery>,
     // Staging slot: each connect writes its host-key responder here at

@@ -173,7 +173,24 @@ pub(crate) enum SshStreamMsg {
     KbiPrompt(oryxis_ssh::KbiQuery),
     Data(Vec<u8>),
     Error(String),
+    /// Handshake failed because the server and client share no algorithm
+    /// in some category. Carries the failed category + what the server
+    /// offered, so the UI can offer the legacy-algorithm fallback.
+    NoCommonAlgo {
+        category: oryxis_ssh::NegCategory,
+        server_offers: Vec<String>,
+    },
     Disconnected,
+}
+
+/// A pending "this server only speaks legacy algorithms" prompt: which
+/// host failed, in which category, and what it offered. Drives the
+/// legacy-fallback modal.
+#[derive(Debug, Clone)]
+pub(crate) struct PendingLegacyAlgo {
+    pub conn_id: uuid::Uuid,
+    pub category: oryxis_ssh::NegCategory,
+    pub server_offers: Vec<String>,
 }
 
 #[cfg(test)]

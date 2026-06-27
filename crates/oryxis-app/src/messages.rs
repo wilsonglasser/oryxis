@@ -510,6 +510,17 @@ pub enum Message {
     SshConnected(Uuid, Arc<SshSession>),  // (pane_id, session)
     SshDisconnected(Uuid),  // (pane_id)
     SshError(String),
+    /// Handshake hit "no common algorithm". Prompts the legacy-fallback
+    /// dialog for `conn_id` (the failed category + what the server offered).
+    SshNoCommonAlgo {
+        conn_id: uuid::Uuid,
+        category: oryxis_ssh::NegCategory,
+        server_offers: Vec<String>,
+    },
+    /// Accept the legacy fallback: enable the legacy algorithms on the
+    /// pending host and reconnect. `remember` persists the change.
+    LegacyAlgoAccept { remember: bool },
+    LegacyAlgoCancel,
     SshHostKeyVerify(oryxis_ssh::HostKeyQuery),
     SshHostKeyReject,
     SshHostKeyContinue,
