@@ -275,6 +275,12 @@ impl Oryxis {
                             .with_host_key_check(host_key_check)
                             .with_host_key_ask(hk_ask_tx)
                             .with_keepalive(keepalive)
+                            .with_algorithm_overrides(
+                                conn.ciphers.clone(),
+                                conn.kex.clone(),
+                                conn.macs.clone(),
+                                conn.host_key_algorithms.clone(),
+                            )
                             .with_connect_timeout(connect_to)
                             .with_auth_timeout(auth_to)
                             .with_session_timeout(session_to);

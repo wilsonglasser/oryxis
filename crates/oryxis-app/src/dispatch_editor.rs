@@ -256,6 +256,10 @@ impl Oryxis {
                         icon_style: conn.icon_style.clone(),
                         encoding: conn.encoding.clone(),
                         terminal_type: conn.terminal_type.clone(),
+                        ciphers: conn.ciphers.clone(),
+                        kex: conn.kex.clone(),
+                        macs: conn.macs.clone(),
+                        host_key_algorithms: conn.host_key_algorithms.clone(),
                     };
                     let cmd = conn.initial_command.as_deref().unwrap_or_default();
                     self.editor_initial_command =
@@ -496,6 +500,24 @@ impl Oryxis {
                     None
                 };
             }
+            Message::EditorAlgoSetAuto(cat, auto) => {
+                // Auto = None (russh defaults). Switching to custom seeds the
+                // list with the safe defaults so the user adds legacy entries
+                // (or trims) from a working set rather than from nothing.
+                *self.editor_form.algo_list_mut(cat) = if auto {
+                    None
+                } else {
+                    Some(cat.defaults())
+                };
+            }
+            Message::EditorAlgoToggle(cat, name) => {
+                let list = self.editor_form.algo_list_mut(cat).get_or_insert_with(Vec::new);
+                if let Some(pos) = list.iter().position(|n| n == &name) {
+                    list.remove(pos);
+                } else {
+                    list.push(name);
+                }
+            }
             Message::EditorSave => {
                 if self.editor_form.label.is_empty() || self.editor_form.hostname.is_empty() {
                     self.host_panel_error = Some("Label and hostname are required".into());
@@ -596,6 +618,10 @@ impl Oryxis {
                 conn.icon_style = self.editor_form.icon_style.clone();
                 conn.encoding = self.editor_form.encoding.clone();
                 conn.terminal_type = self.editor_form.terminal_type.clone();
+                conn.ciphers = self.editor_form.ciphers.clone();
+                conn.kex = self.editor_form.kex.clone();
+                conn.macs = self.editor_form.macs.clone();
+                conn.host_key_algorithms = self.editor_form.host_key_algorithms.clone();
                 // Startup command source. Snippet -> store the live id and
                 // clear the literal; Custom -> store the trimmed text (empty
                 // == None); None -> clear both. `.text()` appends a trailing

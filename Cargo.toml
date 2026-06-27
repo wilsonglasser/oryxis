@@ -33,7 +33,10 @@ repository = "https://github.com/wilsonglasser/oryxis"
 iced = { git = "https://github.com/wilsonglasser/iced", branch = "oryxis", features = ["canvas", "tokio", "advanced", "image", "svg", "markdown", "highlighter"] }
 
 # SSH
-russh = "0.61"
+# `des` enables 3des-cbc, needed for the per-host legacy-cipher override
+# (the rest of the legacy algorithms ship in russh's default set, just
+# off by default in `Preferred`).
+russh = { version = "0.61", features = ["des"] }
 
 # Terminal parsing
 alacritty_terminal = "0.26"

@@ -106,6 +106,11 @@ pub enum Message {
     /// Per-host auto-title (OSC 0/2) selection from the host editor pick:
     /// the localized "Default / Show / Hide" label.
     EditorAutoTitleChanged(String),
+    /// Toggle a per-host SSH algorithm category between Auto (None) and a
+    /// custom pinned list (seeded from the safe defaults).
+    EditorAlgoSetAuto(crate::state::AlgoCategory, bool),
+    /// Add/remove one algorithm name in a category's pinned list.
+    EditorAlgoToggle(crate::state::AlgoCategory, String),
     ShowTabMenu(usize),
     ReconnectTab(usize),
     DuplicateTab(usize),

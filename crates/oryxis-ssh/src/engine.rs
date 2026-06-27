@@ -1020,6 +1020,14 @@ pub struct SshEngine {
     /// Per-host `TERM` name sent when requesting the PTY. `None` =
     /// `xterm-256color`. See `Connection.terminal_type`.
     terminal_type: Option<String>,
+    /// Per-host SSH algorithm overrides (legacy-cipher support). Each
+    /// `None` keeps russh's safe `Preferred` default for that category;
+    /// `Some(list)` pins exactly those wire names (unknown names dropped).
+    /// See `Connection.{ciphers,kex,macs,host_key_algorithms}`.
+    algo_ciphers: Option<Vec<String>>,
+    algo_kex: Option<Vec<String>>,
+    algo_macs: Option<Vec<String>>,
+    algo_host_keys: Option<Vec<String>>,
     /// Reject unknown/changed host keys when no UI ask channel is set
     /// (used by boot auto-started port forwards). See
     /// `ClientHandler::strict_host_key`.
@@ -1051,9 +1059,77 @@ impl SshEngine {
             env_vars: Vec::new(),
             encoding: None,
             terminal_type: None,
+            algo_ciphers: None,
+            algo_kex: None,
+            algo_macs: None,
+            algo_host_keys: None,
             strict_host_key: false,
             forwarded_channel_sink: None,
         }
+    }
+
+    /// Pin per-host SSH algorithm overrides. Each `None` keeps russh's
+    /// safe default for that category; `Some(list)` forces exactly those
+    /// wire names (in order). Used to reach legacy servers that only offer
+    /// cbc / sha1 / dh-group1.
+    pub fn with_algorithm_overrides(
+        mut self,
+        ciphers: Option<Vec<String>>,
+        kex: Option<Vec<String>>,
+        macs: Option<Vec<String>>,
+        host_keys: Option<Vec<String>>,
+    ) -> Self {
+        self.algo_ciphers = ciphers.filter(|v| !v.is_empty());
+        self.algo_kex = kex.filter(|v| !v.is_empty());
+        self.algo_macs = macs.filter(|v| !v.is_empty());
+        self.algo_host_keys = host_keys.filter(|v| !v.is_empty());
+        self
+    }
+
+    /// Build the russh `Preferred` algorithm set, starting from the safe
+    /// default and overriding only the pinned categories. When every
+    /// override is `None` the result is byte-identical to the default, so
+    /// the secure negotiation is untouched unless the user opts in.
+    fn build_preferred(&self) -> russh::Preferred {
+        use std::borrow::Cow;
+        let mut p = russh::Preferred::DEFAULT;
+        if let Some(list) = &self.algo_ciphers {
+            let names: Vec<russh::cipher::Name> = list
+                .iter()
+                .filter_map(|s| russh::cipher::Name::try_from(s.as_str()).ok())
+                .collect();
+            if !names.is_empty() {
+                p.cipher = Cow::Owned(names);
+            }
+        }
+        if let Some(list) = &self.algo_kex {
+            let names: Vec<russh::kex::Name> = list
+                .iter()
+                .filter_map(|s| russh::kex::Name::try_from(s.as_str()).ok())
+                .collect();
+            if !names.is_empty() {
+                p.kex = Cow::Owned(names);
+            }
+        }
+        if let Some(list) = &self.algo_macs {
+            let names: Vec<russh::mac::Name> = list
+                .iter()
+                .filter_map(|s| russh::mac::Name::try_from(s.as_str()).ok())
+                .collect();
+            if !names.is_empty() {
+                p.mac = Cow::Owned(names);
+            }
+        }
+        if let Some(list) = &self.algo_host_keys {
+            let algos: Vec<russh::keys::ssh_key::Algorithm> = list
+                .iter()
+                .filter_map(|s| s.parse().ok())
+                .collect();
+            if !algos.is_empty() {
+                p.key = Cow::Owned(algos);
+            }
+        }
+        p
     }
 
     /// Reject unknown/changed host keys instead of TOFU-accepting when no
@@ -1144,6 +1220,7 @@ impl SshEngine {
     fn make_config(&self) -> Arc<client::Config> {
         Arc::new(client::Config {
             keepalive_interval: self.keepalive_interval,
+            preferred: self.build_preferred(),
             ..client::Config::default()
         })
     }

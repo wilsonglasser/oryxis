@@ -230,6 +230,12 @@ impl VaultStore {
         let _ = self.db.execute_batch("ALTER TABLE connections ADD COLUMN auto_title INTEGER;");
         // Per-host TERM name (NULL = xterm-256color).
         let _ = self.db.execute_batch("ALTER TABLE connections ADD COLUMN terminal_type TEXT;");
+        // Per-host SSH algorithm overrides (legacy-cipher support). JSON
+        // arrays of wire names; NULL = Auto (russh safe defaults).
+        let _ = self.db.execute_batch("ALTER TABLE connections ADD COLUMN ciphers TEXT;");
+        let _ = self.db.execute_batch("ALTER TABLE connections ADD COLUMN kex TEXT;");
+        let _ = self.db.execute_batch("ALTER TABLE connections ADD COLUMN macs TEXT;");
+        let _ = self.db.execute_batch("ALTER TABLE connections ADD COLUMN host_key_algorithms TEXT;");
         let _ = self.db.execute_batch("ALTER TABLE connections ADD COLUMN icon_style TEXT;");
         // JSON array of field names the user has explicitly overridden
         // on a cloud-imported host. Reimport leaves listed fields

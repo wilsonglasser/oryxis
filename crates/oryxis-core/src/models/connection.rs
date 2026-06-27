@@ -138,6 +138,23 @@ pub struct Connection {
     /// never records it (even when the global toggle is on).
     #[serde(default)]
     pub session_logging: Option<bool>,
+    /// Per-host SSH algorithm overrides, one list per negotiation
+    /// category. `None` = `Auto` (russh's safe defaults, untouched);
+    /// `Some(list)` pins exactly those algorithm names (in order) for the
+    /// category, which is how a user reaches legacy servers that only
+    /// offer cbc / sha1 / dh-group1. Names are the on-the-wire strings
+    /// (e.g. `"aes256-cbc"`, `"diffie-hellman-group14-sha1"`,
+    /// `"hmac-sha1"`, `"ssh-rsa"`); unknown names are ignored by the
+    /// engine. Stored as plain strings so the sync / export payload stays
+    /// identical for older peers that never saw the fields.
+    #[serde(default)]
+    pub ciphers: Option<Vec<String>>,
+    #[serde(default)]
+    pub kex: Option<Vec<String>>,
+    #[serde(default)]
+    pub macs: Option<Vec<String>>,
+    #[serde(default)]
+    pub host_key_algorithms: Option<Vec<String>>,
 }
 
 impl Connection {
@@ -180,6 +197,10 @@ impl Connection {
             icon_style: None,
             customized_fields: Vec::new(),
             session_logging: None,
+            ciphers: None,
+            kex: None,
+            macs: None,
+            host_key_algorithms: None,
         }
     }
 }
@@ -350,6 +371,35 @@ mod tests {
         let json = serde_json::to_string(&conn).unwrap();
         let de: Connection = serde_json::from_str(&json).unwrap();
         assert_eq!(de.keepalive_interval, Some(0));
+    }
+
+    /// The legacy-cipher override fields are newest of all; a peer / export
+    /// without them must default every category to `None` (= Auto).
+    #[test]
+    fn algorithm_overrides_legacy_payload_defaults_to_none() {
+        let conn = Connection::new("legacy", "10.0.0.1");
+        let mut value = serde_json::to_value(&conn).unwrap();
+        let obj = value.as_object_mut().unwrap();
+        for f in ["ciphers", "kex", "macs", "host_key_algorithms"] {
+            obj.remove(f);
+        }
+        let de: Connection = serde_json::from_value(value).unwrap();
+        assert_eq!(de.ciphers, None);
+        assert_eq!(de.kex, None);
+        assert_eq!(de.macs, None);
+        assert_eq!(de.host_key_algorithms, None);
+    }
+
+    #[test]
+    fn algorithm_overrides_round_trip() {
+        let mut conn = Connection::new("h", "1.2.3.4");
+        conn.ciphers = Some(vec!["aes256-cbc".into(), "3des-cbc".into()]);
+        conn.kex = Some(vec!["diffie-hellman-group14-sha1".into()]);
+        let json = serde_json::to_string(&conn).unwrap();
+        let de: Connection = serde_json::from_str(&json).unwrap();
+        assert_eq!(de.ciphers.as_deref(), Some(&["aes256-cbc".to_string(), "3des-cbc".to_string()][..]));
+        assert_eq!(de.kex.as_deref(), Some(&["diffie-hellman-group14-sha1".to_string()][..]));
+        assert_eq!(de.macs, None);
     }
 
     #[test]

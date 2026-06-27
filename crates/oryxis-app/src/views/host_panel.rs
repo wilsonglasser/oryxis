@@ -1006,7 +1006,9 @@ impl Oryxis {
             .push(Space::new().height(ROW_GAP))
             .push(row_keepalive)
             .push(Space::new().height(ROW_GAP))
-            .push(row_auto_title);
+            .push(row_auto_title)
+            .push(Space::new().height(ROW_GAP))
+            .push(self.algo_overrides_section());
         // Integration subgroup + initial command.
         ssh_col = ssh_col
             .push(group_sep())
@@ -1057,6 +1059,55 @@ impl Oryxis {
                 ..Default::default()
             })
             .into()
+    }
+
+    /// Per-host legacy-algorithm overrides: one block per negotiation
+    /// category (ciphers / kex / MACs / host keys). Each is `Auto` (the
+    /// safe russh default, untouched) until toggled off, which reveals a
+    /// checklist seeded from the defaults so the user can add the cbc /
+    /// 3des / sha1 / dh-group1 entries a legacy server needs.
+    fn algo_overrides_section(&self) -> Element<'_, Message> {
+        use crate::state::AlgoCategory;
+        use iced::widget::checkbox;
+        let c = OryxisColors::t();
+        let mut col = column![
+            text(t("algo_overrides")).size(13).color(c.text_secondary),
+            Space::new().height(2),
+            text(t("algo_overrides_desc")).size(11).color(c.text_muted),
+        ];
+        for cat in AlgoCategory::ALL {
+            let is_auto = self.editor_form.algo_list(cat).is_none();
+            col = col.push(Space::new().height(10));
+            // Toggle ON = Auto (safe default); OFF = pin a custom list.
+            col = col.push(crate::widgets::toggle_row(
+                t(cat.label_key()),
+                is_auto,
+                Message::EditorAlgoSetAuto(cat, !is_auto),
+            ));
+            if !is_auto {
+                let selected: Vec<String> =
+                    self.editor_form.algo_list(cat).clone().unwrap_or_default();
+                let mut checks = column![].spacing(4);
+                for algo in cat.supported() {
+                    let name = algo.to_string();
+                    let checked = selected.iter().any(|n| n == algo);
+                    checks = checks.push(
+                        checkbox(checked)
+                            .label(algo)
+                            .on_toggle(move |_| Message::EditorAlgoToggle(cat, name.clone()))
+                            .size(15)
+                            .text_size(12),
+                    );
+                }
+                col = col.push(container(checks).padding(Padding {
+                    top: 4.0,
+                    right: 0.0,
+                    bottom: 4.0,
+                    left: 16.0,
+                }));
+            }
+        }
+        col.into()
     }
 
     /// Build the Proxy rows (no card wrapper, the caller nests them in

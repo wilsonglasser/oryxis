@@ -293,6 +293,10 @@ impl Oryxis {
                                 .collect();
                             let encoding = conn.encoding.clone();
                             let terminal_type = conn.terminal_type.clone();
+                            let algo_ciphers = conn.ciphers.clone();
+                            let algo_kex = conn.kex.clone();
+                            let algo_macs = conn.macs.clone();
+                            let algo_host_keys = conn.host_key_algorithms.clone();
 
                             // Resolve EC2 Instance Connect pre-step
                             // when the connection's `cloud_ref` asks
@@ -390,7 +394,8 @@ impl Oryxis {
                                         .with_agent_forwarding(agent_forwarding)
                                         .with_env_vars(env_vars)
                                         .with_encoding(encoding)
-                                        .with_terminal_type(terminal_type);
+                                        .with_terminal_type(terminal_type)
+                                        .with_algorithm_overrides(algo_ciphers, algo_kex, algo_macs, algo_host_keys);
 
                                     // Spawn a bridge task: receives host key queries from the SSH engine,
                                     // forwards to iced stream, and waits for UI response
@@ -1375,6 +1380,10 @@ impl Oryxis {
             .collect();
         let encoding = conn.encoding.clone();
         let terminal_type = conn.terminal_type.clone();
+        let algo_ciphers = conn.ciphers.clone();
+        let algo_kex = conn.kex.clone();
+        let algo_macs = conn.macs.clone();
+        let algo_host_keys = conn.host_key_algorithms.clone();
 
         let session_log_id = if self.should_record_session(Some(&conn)) {
             self.vault.as_ref().map(|v| {
@@ -1436,7 +1445,8 @@ impl Oryxis {
                 .with_agent_forwarding(agent_forwarding)
                 .with_env_vars(env_vars)
                 .with_encoding(encoding)
-                .with_terminal_type(terminal_type);
+                .with_terminal_type(terminal_type)
+                .with_algorithm_overrides(algo_ciphers, algo_kex, algo_macs, algo_host_keys);
 
             let mut sender_clone = sender.clone();
             let _bridge = tokio::spawn(async move {

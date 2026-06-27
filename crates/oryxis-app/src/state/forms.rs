@@ -118,6 +118,79 @@ pub(crate) struct ConnectionForm {
     pub encoding: Option<String>,
     /// Mirrors `Connection.terminal_type`; `None` = default `xterm-256color`.
     pub terminal_type: Option<String>,
+    /// Per-host SSH algorithm overrides (legacy ciphers). `None` = Auto
+    /// (russh defaults); `Some(list)` pins exactly those wire names.
+    /// Mirror `Connection.{ciphers,kex,macs,host_key_algorithms}`.
+    pub ciphers: Option<Vec<String>>,
+    pub kex: Option<Vec<String>>,
+    pub macs: Option<Vec<String>>,
+    pub host_key_algorithms: Option<Vec<String>>,
+}
+
+/// One SSH algorithm negotiation category, used to drive the per-host
+/// override UI generically (one block per category).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum AlgoCategory {
+    Cipher,
+    Kex,
+    Mac,
+    HostKey,
+}
+
+impl AlgoCategory {
+    pub(crate) const ALL: [AlgoCategory; 4] =
+        [Self::Cipher, Self::Kex, Self::Mac, Self::HostKey];
+
+    /// All algorithm names selectable for this category (incl. legacy).
+    pub(crate) fn supported(self) -> Vec<&'static str> {
+        match self {
+            Self::Cipher => oryxis_ssh::algorithms::supported_ciphers(),
+            Self::Kex => oryxis_ssh::algorithms::supported_kex(),
+            Self::Mac => oryxis_ssh::algorithms::supported_macs(),
+            Self::HostKey => oryxis_ssh::algorithms::supported_host_keys(),
+        }
+    }
+
+    /// The safe default subset (used to seed a fresh custom pin).
+    pub(crate) fn defaults(self) -> Vec<String> {
+        let v = match self {
+            Self::Cipher => oryxis_ssh::algorithms::default_ciphers(),
+            Self::Kex => oryxis_ssh::algorithms::default_kex(),
+            Self::Mac => oryxis_ssh::algorithms::default_macs(),
+            Self::HostKey => oryxis_ssh::algorithms::default_host_keys(),
+        };
+        v.into_iter().map(|s| s.to_string()).collect()
+    }
+
+    /// i18n key for the category's section label.
+    pub(crate) fn label_key(self) -> &'static str {
+        match self {
+            Self::Cipher => "algo_ciphers",
+            Self::Kex => "algo_kex",
+            Self::Mac => "algo_macs",
+            Self::HostKey => "algo_host_keys",
+        }
+    }
+}
+
+impl ConnectionForm {
+    pub(crate) fn algo_list(&self, cat: AlgoCategory) -> &Option<Vec<String>> {
+        match cat {
+            AlgoCategory::Cipher => &self.ciphers,
+            AlgoCategory::Kex => &self.kex,
+            AlgoCategory::Mac => &self.macs,
+            AlgoCategory::HostKey => &self.host_key_algorithms,
+        }
+    }
+
+    pub(crate) fn algo_list_mut(&mut self, cat: AlgoCategory) -> &mut Option<Vec<String>> {
+        match cat {
+            AlgoCategory::Cipher => &mut self.ciphers,
+            AlgoCategory::Kex => &mut self.kex,
+            AlgoCategory::Mac => &mut self.macs,
+            AlgoCategory::HostKey => &mut self.host_key_algorithms,
+        }
+    }
 }
 
 /// UI-side proxy kind. Includes a `None` (disabled) variant, the
@@ -252,6 +325,10 @@ impl Default for ConnectionForm {
             icon_style: None,
             encoding: None,
             terminal_type: None,
+            ciphers: None,
+            kex: None,
+            macs: None,
+            host_key_algorithms: None,
         }
     }
 }

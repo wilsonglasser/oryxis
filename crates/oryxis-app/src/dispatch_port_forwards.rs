@@ -274,7 +274,13 @@ impl Oryxis {
                     let engine = SshEngine::new()
                         .with_host_key_check(host_key_check)
                         .with_strict_host_key(true)
-                        .with_keepalive(keepalive);
+                        .with_keepalive(keepalive)
+                        .with_algorithm_overrides(
+                            conn.ciphers.clone(),
+                            conn.kex.clone(),
+                            conn.macs.clone(),
+                            conn.host_key_algorithms.clone(),
+                        );
                     engine
                         .connect_forward(
                             &conn,
@@ -306,7 +312,13 @@ impl Oryxis {
             let engine = SshEngine::new()
                 .with_host_key_check(host_key_check)
                 .with_host_key_ask(hk_ask_tx)
-                .with_keepalive(keepalive);
+                .with_keepalive(keepalive)
+                .with_algorithm_overrides(
+                    conn.ciphers.clone(),
+                    conn.kex.clone(),
+                    conn.macs.clone(),
+                    conn.host_key_algorithms.clone(),
+                );
 
             let mut sender_clone = sender.clone();
             let _bridge = tokio::spawn(async move {
