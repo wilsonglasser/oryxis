@@ -1329,6 +1329,26 @@ pub enum Message {
     /// encrypts the filtered export and writes it there.
     SharePathChosen(std::path::PathBuf),
     ExportImportDismiss,
+    /// Open the SFTP backup-target picker from the export dialog. Routes
+    /// the same encrypted blob to a remote host + path instead of a
+    /// local file (validates the export password first).
+    ExportToSftp,
+    /// Open the SFTP picker to read an export blob back from a remote
+    /// host + path, feeding the regular inspect/confirm import flow.
+    ImportFromSftp,
+    /// A host was selected in the SFTP backup picker (index into
+    /// `connections`).
+    SftpBackupHostSelected(usize),
+    SftpBackupPathChanged(String),
+    /// Connect to the chosen host and write (export) or read (import)
+    /// the encrypted blob at the chosen remote path.
+    SftpBackupConfirm,
+    SftpBackupCancel,
+    /// Result of an SFTP export: the human-readable status line.
+    SftpBackupExportDone(Result<String, String>),
+    /// Result of an SFTP import: the raw encrypted bytes, validated as an
+    /// Oryxis export, ready to hand to the inspect/confirm flow.
+    SftpBackupImportDone(Result<Vec<u8>, String>),
 
     // System tray (Windows only at runtime; messages compile on
     // every platform so dispatch.rs and subscription.rs stay cfg-

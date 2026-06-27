@@ -1694,11 +1694,14 @@ impl Oryxis {
                 // Export/Import section
                 let export_btn = styled_button(crate::i18n::t("export_vault"), Message::ExportVault, OryxisColors::t().accent);
                 let import_btn = styled_button(crate::i18n::t("import_vault"), Message::ImportVault, OryxisColors::t().text_muted);
+                // Restore from a remote host. Export-to-SFTP is reached from
+                // inside the export dialog (it needs the password first).
+                let import_sftp_btn = styled_button(crate::i18n::t("import_from_sftp"), Message::ImportFromSftp, OryxisColors::t().text_muted);
 
                 let mut export_import_section: iced::widget::Column<'_, Message> = column![
                     text(crate::i18n::t("export_import")).size(14).color(OryxisColors::t().text_muted),
                     Space::new().height(8),
-                    dir_row(vec![export_btn, Space::new().width(8).into(), import_btn]),
+                    dir_row(vec![export_btn, Space::new().width(8).into(), import_btn, Space::new().width(8).into(), import_sftp_btn]),
                 ];
 
                 // Show export dialog inline
@@ -1752,6 +1755,7 @@ impl Oryxis {
                         Space::new().height(0).into()
                     };
                     let confirm_btn = styled_button(crate::i18n::t("export_confirm"), Message::ExportConfirm, OryxisColors::t().success);
+                    let sftp_btn = styled_button(crate::i18n::t("export_to_sftp"), Message::ExportToSftp, OryxisColors::t().accent);
                     let cancel_btn = styled_button(crate::i18n::t("cancel"), Message::ExportImportDismiss, OryxisColors::t().text_muted);
                     export_import_section = export_import_section
                         .push(Space::new().height(12))
@@ -1761,7 +1765,7 @@ impl Oryxis {
                         .push(Space::new().height(8))
                         .push(keys_toggle)
                         .push(Space::new().height(8))
-                        .push(dir_row(vec![confirm_btn, Space::new().width(8).into(), cancel_btn]));
+                        .push(dir_row(vec![confirm_btn, Space::new().width(8).into(), sftp_btn, Space::new().width(8).into(), cancel_btn]));
                 }
 
                 // Show import dialog inline
@@ -1832,6 +1836,116 @@ impl Oryxis {
                             .push(Space::new().height(8))
                             .push(dir_row(vec![inspect_btn, Space::new().width(8).into(), cancel_btn]));
                     }
+                }
+
+                // SFTP backup-target picker (export to / import from a
+                // saved host). Reuses the export/import password + selection
+                // state above; here the user only picks the host and path.
+                if self.sftp_backup_open {
+                    let is_import = self.sftp_backup_is_import;
+                    let host_options: Vec<String> =
+                        self.connections.iter().map(|c| c.label.clone()).collect();
+                    let selected_host = self
+                        .sftp_backup_host
+                        .and_then(|i| self.connections.get(i))
+                        .map(|c| c.label.clone());
+                    let host_lookup: std::collections::HashMap<String, usize> = self
+                        .connections
+                        .iter()
+                        .enumerate()
+                        .map(|(i, c)| (c.label.clone(), i))
+                        .collect();
+                    let host_picker = pick_list(selected_host, host_options, |s: &String| s.clone())
+                        .on_select(move |label: String| {
+                            Message::SftpBackupHostSelected(
+                                host_lookup.get(&label).copied().unwrap_or(0),
+                            )
+                        })
+                        .width(300)
+                        .padding(10)
+                        .style(crate::widgets::rounded_pick_list_style);
+                    let path_field = text_input("vault.oryxis", &self.sftp_backup_path)
+                        .on_input(Message::SftpBackupPathChanged)
+                        .on_submit(Message::SftpBackupConfirm)
+                        .width(300)
+                        .padding(10)
+                        .style(crate::widgets::rounded_input_style);
+                    // Restore collects the decrypt password here (export
+                    // already has it in the dialog above), so both flows ask
+                    // for the password before the confirm button.
+                    let import_pw: Option<Element<'_, Message>> = if is_import {
+                        Some(
+                            container(crate::widgets::password_input_with_eye(
+                                crate::i18n::t("import_password"),
+                                &self.import_password,
+                                Message::ImportPasswordChanged,
+                                Some(Message::SftpBackupConfirm),
+                                self.revealed_secrets
+                                    .contains(&crate::state::SecretField::ImportPassword),
+                                Message::ToggleSecretVisibility(
+                                    crate::state::SecretField::ImportPassword,
+                                ),
+                                10.0,
+                            ))
+                            .width(300)
+                            .into(),
+                        )
+                    } else {
+                        None
+                    };
+                    let title_key = if is_import { "restore_from_sftp" } else { "backup_to_sftp" };
+                    let confirm_msg = if self.sftp_backup_busy {
+                        None
+                    } else {
+                        Some(Message::SftpBackupConfirm)
+                    };
+                    let confirm_label = if self.sftp_backup_busy {
+                        crate::i18n::t("sftp_backup_working")
+                    } else if is_import {
+                        crate::i18n::t("sftp_backup_restore_confirm")
+                    } else {
+                        crate::i18n::t("sftp_backup_confirm")
+                    };
+                    let confirm_btn =
+                        styled_button_opt(confirm_label, confirm_msg, OryxisColors::t().success);
+                    let cancel_btn = styled_button(
+                        crate::i18n::t("cancel"),
+                        Message::SftpBackupCancel,
+                        OryxisColors::t().text_muted,
+                    );
+                    let mut sftp_section: iced::widget::Column<'_, Message> = column![
+                        text(crate::i18n::t(title_key)).size(13).color(OryxisColors::t().text_primary),
+                        Space::new().height(2),
+                        text(crate::i18n::t("sftp_backup_hint")).size(12).color(OryxisColors::t().text_muted),
+                        Space::new().height(8),
+                        text(crate::i18n::t("sftp_backup_host")).size(12).color(OryxisColors::t().text_secondary),
+                        Space::new().height(4),
+                        host_picker,
+                        Space::new().height(8),
+                        text(crate::i18n::t("sftp_backup_remote_path")).size(12).color(OryxisColors::t().text_secondary),
+                        Space::new().height(4),
+                        path_field,
+                    ];
+                    if let Some(pw) = import_pw {
+                        sftp_section = sftp_section
+                            .push(Space::new().height(10))
+                            .push(pw);
+                    }
+                    sftp_section = sftp_section
+                        .push(Space::new().height(10))
+                        .push(dir_row(vec![confirm_btn, Space::new().width(8).into(), cancel_btn]));
+                    if let Some(status) = &self.sftp_backup_status {
+                        let (msg, color) = match status {
+                            Ok(m) => (m.clone(), OryxisColors::t().success),
+                            Err(e) => (e.clone(), OryxisColors::t().error),
+                        };
+                        sftp_section = sftp_section
+                            .push(Space::new().height(8))
+                            .push(text(msg).size(12).color(color));
+                    }
+                    export_import_section = export_import_section
+                        .push(Space::new().height(14))
+                        .push(sftp_section);
                 }
 
                 // Status messages
@@ -2364,11 +2478,27 @@ impl Oryxis {
                     port_input,
                 ]);
 
+                // Plain-language primer: what sync is, that it's optional and
+                // LAN-only by default (no Oryxis server), and what the user
+                // must set up to sync across networks. Answers the recurring
+                // "is sync required / where does my data go?" question.
+                let how_section = panel_section(column![
+                    text(crate::i18n::t("sync_how_title")).size(14).color(OryxisColors::t().text_muted),
+                    Space::new().height(8),
+                    text(crate::i18n::t("sync_how_body"))
+                        .size(12)
+                        .color(OryxisColors::t().text_secondary),
+                ]);
+
                 let mut content_col: iced::widget::Column<'_, Message> = column![
                     panel_section(enable_section),
                 ]
                 .width(Length::Fill)
                 .align_x(dir_align_x());
+
+                content_col = content_col
+                    .push(Space::new().height(12))
+                    .push(how_section);
 
                 if self.sync_enabled {
                     content_col = content_col

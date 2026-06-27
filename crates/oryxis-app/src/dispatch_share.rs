@@ -4,9 +4,28 @@
 
 #![allow(clippy::result_large_err)]
 
+use std::sync::Arc;
+
+use iced::futures::SinkExt;
 use iced::Task;
+use oryxis_ssh::SshEngine;
 
 use crate::app::{Message, Oryxis};
+
+/// Result of an SFTP backup transfer once the session is up: either the
+/// byte count written (export) or the validated blob read back (import).
+enum BackupOutcome {
+    Export(usize),
+    Import(Vec<u8>),
+}
+
+/// Stream messages for a fresh-connect SFTP backup: host-key prompts are
+/// forwarded to the shared verification modal, then the terminal `Done`
+/// carries the transfer outcome.
+enum BackupConnectMsg {
+    HostKey(oryxis_ssh::HostKeyQuery),
+    Done(Result<BackupOutcome, String>),
+}
 
 impl Oryxis {
     pub(crate) fn handle_share(
@@ -313,6 +332,68 @@ impl Oryxis {
                 self.import_status = None;
                 self.import_file_data = None;
                 self.import_summary = None;
+                self.sftp_backup_open = false;
+            }
+
+            // ── Backup / Restore over SFTP ──
+            Message::ExportToSftp => {
+                if self.export_password.is_empty() {
+                    self.export_status =
+                        Some(Err(crate::i18n::t("password_required").to_string()));
+                    return Ok(Task::none());
+                }
+                self.open_sftp_backup_picker(false);
+            }
+            Message::ImportFromSftp => {
+                // Close the "+ Host ▾" add menu when reached from there,
+                // and reset the import dialog state the loaded blob feeds.
+                self.overlay = None;
+                self.import_status = None;
+                self.import_password = String::new();
+                self.import_file_data = None;
+                self.import_summary = None;
+                self.import_selection = oryxis_vault::ExportSelection::all();
+                self.open_sftp_backup_picker(true);
+            }
+            Message::SftpBackupHostSelected(idx) => {
+                self.sftp_backup_host = Some(idx);
+            }
+            Message::SftpBackupPathChanged(v) => {
+                self.sftp_backup_path = v;
+            }
+            Message::SftpBackupCancel => {
+                self.sftp_backup_open = false;
+                self.sftp_backup_busy = false;
+                self.sftp_backup_status = None;
+            }
+            Message::SftpBackupConfirm => {
+                return self.run_sftp_backup();
+            }
+            Message::SftpBackupExportDone(res) => {
+                self.sftp_backup_busy = false;
+                self.host_key_response_tx = None;
+                match res {
+                    Ok(msg) => self.sftp_backup_status = Some(Ok(msg)),
+                    Err(e) => self.sftp_backup_status = Some(Err(e)),
+                }
+            }
+            Message::SftpBackupImportDone(res) => {
+                self.sftp_backup_busy = false;
+                self.host_key_response_tx = None;
+                match res {
+                    Ok(data) => {
+                        // The decrypt password was already entered in the
+                        // picker, so open the import dialog and inspect the
+                        // blob straight away (jumps to category selection;
+                        // a wrong password surfaces its error there).
+                        self.sftp_backup_open = false;
+                        self.sftp_backup_status = None;
+                        self.import_file_data = Some(data);
+                        self.show_import_dialog = true;
+                        return Ok(Task::done(Message::ImportInspect));
+                    }
+                    Err(e) => self.sftp_backup_status = Some(Err(e)),
+                }
             }
 
             // ── Share ──
@@ -426,6 +507,218 @@ impl Oryxis {
             m => return Err(m),
         }
         Ok(Task::none())
+    }
+}
+
+impl Oryxis {
+    /// Reset and open the SFTP backup-target picker. `is_import` flips it
+    /// between writing the blob (export) and reading it back (import).
+    /// The host defaults to the first connection and the path to a plain
+    /// `vault.oryxis` so a one-host user can confirm immediately.
+    fn open_sftp_backup_picker(&mut self, is_import: bool) {
+        self.sftp_backup_is_import = is_import;
+        self.sftp_backup_open = true;
+        self.sftp_backup_busy = false;
+        self.sftp_backup_status = None;
+        if self.sftp_backup_path.trim().is_empty() {
+            self.sftp_backup_path = "vault.oryxis".to_string();
+        }
+        if self.sftp_backup_host.is_none() && !self.connections.is_empty() {
+            self.sftp_backup_host = Some(0);
+        }
+    }
+
+    /// Validate the picker, then connect to the chosen host (reusing an
+    /// open tab session when one exists, else a fresh SFTP-only connect
+    /// with the shared host-key modal) and transfer the encrypted blob.
+    fn run_sftp_backup(&mut self) -> Result<Task<Message>, Message> {
+        // Guard against a second confirm while a transfer is in flight.
+        if self.sftp_backup_busy {
+            return Ok(Task::none());
+        }
+        let Some(conn) = self
+            .sftp_backup_host
+            .and_then(|i| self.connections.get(i))
+            .cloned()
+        else {
+            self.sftp_backup_status =
+                Some(Err(crate::i18n::t("sftp_backup_pick_host").to_string()));
+            return Ok(Task::none());
+        };
+        let path = self.sftp_backup_path.trim().to_string();
+        if path.is_empty() {
+            self.sftp_backup_status =
+                Some(Err(crate::i18n::t("sftp_backup_path_required").to_string()));
+            return Ok(Task::none());
+        }
+        let is_import = self.sftp_backup_is_import;
+        // Restore needs the decrypt password up front (mirrors export, which
+        // collects the encrypt password before the picker opens). The fetched
+        // blob is inspected with it as soon as it lands.
+        if is_import && self.import_password.is_empty() {
+            self.sftp_backup_status =
+                Some(Err(crate::i18n::t("password_required").to_string()));
+            return Ok(Task::none());
+        }
+        let label = conn.label.clone();
+
+        // For export, encrypt the blob now from the open dialog's state so
+        // the async task only has to write bytes.
+        let export_data: Option<Vec<u8>> = if is_import {
+            None
+        } else {
+            let Some(vault) = &self.vault else {
+                return Ok(Task::none());
+            };
+            let options = oryxis_vault::ExportOptions {
+                include_private_keys: self.export_include_keys,
+                filter: oryxis_vault::ExportFilter::All,
+                selection: self.export_selection,
+            };
+            match oryxis_vault::export_vault(vault, &self.export_password, options) {
+                Ok(d) => Some(d),
+                Err(e) => {
+                    self.sftp_backup_status = Some(Err(e.to_string()));
+                    return Ok(Task::none());
+                }
+            }
+        };
+
+        self.sftp_backup_busy = true;
+        self.sftp_backup_status = None;
+
+        // Status formatter shared by both connect paths. Captures clones so
+        // `path` stays owned for the remote-path bindings below.
+        let path_msg = path.clone();
+        let done_ok = move |outcome: BackupOutcome| match outcome {
+            BackupOutcome::Export(n) => Message::SftpBackupExportDone(Ok(crate::i18n::t(
+                "sftp_backup_export_ok",
+            )
+            .replace("{host}", &label)
+            .replace("{path}", &path_msg)
+            .replace("{n}", &n.to_string()))),
+            BackupOutcome::Import(data) => Message::SftpBackupImportDone(Ok(data)),
+        };
+
+        // Reuse a live session when a terminal tab already points at this
+        // host, saves a second auth dance (mirrors the SFTP mount path).
+        let existing = self.tabs.iter().find_map(|t| {
+            let base = t.label.trim_end_matches(" (disconnected)");
+            if base == conn.label {
+                t.active().ssh_session.clone()
+            } else {
+                None
+            }
+        });
+
+        if let Some(session) = existing {
+            let remote = self.sftp_backup_path.trim().to_string();
+            let data = export_data;
+            return Ok(Task::perform(
+                async move {
+                    let client = session.open_sftp().await.map_err(|e| e.to_string())?;
+                    if is_import {
+                        let bytes = client.read_file(&remote).await.map_err(|e| e.to_string())?;
+                        if !oryxis_vault::is_valid_export(&bytes) {
+                            return Err(crate::i18n::t("sftp_backup_not_export").to_string());
+                        }
+                        Ok(BackupOutcome::Import(bytes))
+                    } else {
+                        let blob = data.expect("export bytes prepared above");
+                        client
+                            .write_file(&remote, &blob)
+                            .await
+                            .map_err(|e| e.to_string())?;
+                        Ok(BackupOutcome::Export(blob.len()))
+                    }
+                },
+                move |res: Result<BackupOutcome, String>| match res {
+                    Ok(outcome) => done_ok(outcome),
+                    Err(e) if is_import => Message::SftpBackupImportDone(Err(e)),
+                    Err(e) => Message::SftpBackupExportDone(Err(e)),
+                },
+            ));
+        }
+
+        // No open tab: connect a fresh SFTP-only session. Same credential
+        // /resolver pipeline as the terminal connect, with the host-key
+        // ask channel wired to the shared verification modal.
+        let (password, private_key) = self.resolve_credentials(&conn);
+        let resolver = self.make_jump_resolver(&conn);
+        let host_key_check = self.make_host_key_check();
+        let keepalive = self.effective_keepalive(&conn);
+        let connect_to = self.sftp_connect_timeout();
+        let auth_to = self.sftp_auth_timeout();
+        let session_to = self.sftp_session_timeout();
+
+        let (hk_ask_tx, mut hk_ask_rx) = tokio::sync::mpsc::channel::<(
+            oryxis_ssh::HostKeyQuery,
+            tokio::sync::oneshot::Sender<bool>,
+        )>(1);
+        let (hk_resp_tx, mut hk_resp_rx) = tokio::sync::mpsc::channel::<bool>(1);
+        self.host_key_response_tx = Some(hk_resp_tx);
+
+        let remote = path;
+        let stream = iced::stream::channel::<BackupConnectMsg>(
+            8,
+            move |mut sender: iced::futures::channel::mpsc::Sender<BackupConnectMsg>| async move {
+                let engine = SshEngine::new()
+                    .with_host_key_check(host_key_check)
+                    .with_host_key_ask(hk_ask_tx)
+                    .with_keepalive(keepalive)
+                    .with_connect_timeout(connect_to)
+                    .with_auth_timeout(auth_to)
+                    .with_session_timeout(session_to);
+
+                let mut sender_clone = sender.clone();
+                let _bridge = tokio::spawn(async move {
+                    while let Some((query, resp_tx)) = hk_ask_rx.recv().await {
+                        let _ = sender_clone.send(BackupConnectMsg::HostKey(query)).await;
+                        let accepted = hk_resp_rx.recv().await.unwrap_or(false);
+                        let _ = resp_tx.send(accepted);
+                    }
+                });
+
+                let result = async {
+                    let (session, _rx) = engine
+                        .connect_with_resolver(
+                            &conn,
+                            password.as_deref(),
+                            private_key.as_deref(),
+                            80,
+                            24,
+                            resolver.as_ref(),
+                        )
+                        .await
+                        .map_err(|e| e.to_string())?;
+                    let session = Arc::new(session);
+                    let client = session.open_sftp().await.map_err(|e| e.to_string())?;
+                    if is_import {
+                        let bytes =
+                            client.read_file(&remote).await.map_err(|e| e.to_string())?;
+                        if !oryxis_vault::is_valid_export(&bytes) {
+                            return Err(crate::i18n::t("sftp_backup_not_export").to_string());
+                        }
+                        Ok(BackupOutcome::Import(bytes))
+                    } else {
+                        let blob = export_data.expect("export bytes prepared above");
+                        client
+                            .write_file(&remote, &blob)
+                            .await
+                            .map_err(|e| e.to_string())?;
+                        Ok(BackupOutcome::Export(blob.len()))
+                    }
+                }
+                .await;
+                let _ = sender.send(BackupConnectMsg::Done(result)).await;
+            },
+        );
+        Ok(Task::stream(stream).map(move |m| match m {
+            BackupConnectMsg::HostKey(q) => Message::SshHostKeyVerify(q),
+            BackupConnectMsg::Done(Ok(outcome)) => done_ok(outcome),
+            BackupConnectMsg::Done(Err(e)) if is_import => Message::SftpBackupImportDone(Err(e)),
+            BackupConnectMsg::Done(Err(e)) => Message::SftpBackupExportDone(Err(e)),
+        }))
     }
 }
 
