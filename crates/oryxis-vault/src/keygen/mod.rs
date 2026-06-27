@@ -188,6 +188,36 @@ mod tests {
     }
 
     #[test]
+    fn import_encrypted_openssh_round_trips_with_passphrase() {
+        // Build an encrypted OpenSSH key in-process (no embedded secret, no
+        // external `ssh-keygen`): generate one, then encrypt it. Guards the
+        // passphrase path the host-key import UI depends on.
+        let src = generate_ed25519("enc-src").unwrap();
+        let key = PrivateKey::from_openssh(&src.private_pem).unwrap();
+        let mut rng = rand::thread_rng();
+        let enc_pem = key
+            .encrypt(&mut rng, "pw123")
+            .unwrap()
+            .to_openssh(ssh_key::LineEnding::LF)
+            .unwrap()
+            .to_string();
+
+        // No passphrase: the UI is told to prompt for one.
+        assert!(matches!(
+            import_key("k", &enc_pem, None),
+            Err(VaultError::KeyNeedsPassphrase)
+        ));
+        // Wrong passphrase: a distinct, surfaceable error.
+        assert!(matches!(
+            import_key("k", &enc_pem, Some("nope")),
+            Err(VaultError::WrongKeyPassphrase)
+        ));
+        // Correct passphrase: imported, same key.
+        let imported = import_key("k", &enc_pem, Some("pw123")).unwrap();
+        assert_eq!(imported.key.fingerprint, src.key.fingerprint);
+    }
+
+    #[test]
     fn import_strips_utf8_bom() {
         let generated = generate_ed25519("bom-test").unwrap();
         let with_bom = format!("\u{FEFF}{}", generated.private_pem);
