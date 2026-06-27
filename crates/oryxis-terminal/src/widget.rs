@@ -1403,12 +1403,24 @@ where
             // the selection was made). The keystroke is NOT captured: it must
             // still reach the PTY through the global key subscription (an
             // independent path), so we only drop the selection and redraw.
-            // Bare modifier presses arrive as `ModifiersChanged`, not
-            // `KeyPressed`, so holding Ctrl/Shift before a copy chord never
-            // trips this.
-            iced::Event::Keyboard(keyboard::Event::KeyPressed { .. })
-                if widget_state.selection.is_some()
-                    || widget_state.select_anchor.is_some() =>
+            // Bare modifier presses (Ctrl / Shift / Alt / Super) must NOT
+            // clear, otherwise the first key of a copy chord (Ctrl, then
+            // Shift+C) wipes the selection before the copy fires, breaking
+            // select-then-copy when copy-on-select is off.
+            iced::Event::Keyboard(keyboard::Event::KeyPressed { key, .. })
+                if (widget_state.selection.is_some()
+                    || widget_state.select_anchor.is_some())
+                    && !matches!(
+                        key,
+                        keyboard::Key::Named(
+                            keyboard::key::Named::Control
+                                | keyboard::key::Named::Shift
+                                | keyboard::key::Named::Alt
+                                | keyboard::key::Named::Super
+                                | keyboard::key::Named::Hyper
+                                | keyboard::key::Named::Meta
+                        )
+                    ) =>
             {
                 widget_state.selection = None;
                 widget_state.select_anchor = None;

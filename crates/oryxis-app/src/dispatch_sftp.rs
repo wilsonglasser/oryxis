@@ -55,6 +55,10 @@ enum SftpConnectMsg {
             String,
         >,
     ),
+    NoCommonAlgo {
+        category: oryxis_ssh::NegCategory,
+        server_offers: Vec<String>,
+    },
 }
 
 impl Oryxis {
@@ -268,6 +272,9 @@ impl Oryxis {
                 let (hk_resp_tx, mut hk_resp_rx) = tokio::sync::mpsc::channel::<bool>(1);
                 self.host_key_response_tx = Some(hk_resp_tx);
 
+                // Captured for the map closure (conn is moved into the
+                // producer). The retry re-runs this same SFTP mount.
+                let sftp_conn_id = conn.id;
                 let stream = iced::stream::channel::<SftpConnectMsg>(
                     8,
                     move |mut sender: iced::futures::channel::mpsc::Sender<SftpConnectMsg>| async move {
@@ -294,19 +301,38 @@ impl Oryxis {
                             }
                         });
 
+                        // First, the transport handshake on its own so a
+                        // "no common algorithm" failure routes to the legacy
+                        // fallback dialog instead of a generic error string.
+                        let session = match engine
+                            .connect_with_resolver(
+                                &conn,
+                                password.as_deref(),
+                                private_key.as_deref(),
+                                80,
+                                24,
+                                resolver.as_ref(),
+                            )
+                            .await
+                        {
+                            Ok((s, _rx)) => Arc::new(s),
+                            Err(e) => {
+                                if let Some(nf) = e.negotiation_failure() {
+                                    let _ = sender
+                                        .send(SftpConnectMsg::NoCommonAlgo {
+                                            category: nf.category,
+                                            server_offers: nf.server_offers,
+                                        })
+                                        .await;
+                                } else {
+                                    let _ = sender
+                                        .send(SftpConnectMsg::Done(Err(e.to_string())))
+                                        .await;
+                                }
+                                return;
+                            }
+                        };
                         let result = async {
-                            let (session, _rx) = engine
-                                .connect_with_resolver(
-                                    &conn,
-                                    password.as_deref(),
-                                    private_key.as_deref(),
-                                    80,
-                                    24,
-                                    resolver.as_ref(),
-                                )
-                                .await
-                                .map_err(|e| e.to_string())?;
-                            let session = Arc::new(session);
                             let client = session.open_sftp().await.map_err(|e| e.to_string())?;
                             let initial = client
                                 .canonicalize(".")
@@ -326,6 +352,14 @@ impl Oryxis {
                         Message::SftpHostMounted(target, label.clone(), session, client, path, entries)
                     }
                     SftpConnectMsg::Done(Err(e)) => Message::SftpRemoteError(target, e),
+                    SftpConnectMsg::NoCommonAlgo { category, server_offers } => {
+                        Message::SshNoCommonAlgo {
+                            conn_id: sftp_conn_id,
+                            category,
+                            server_offers,
+                            retry: Box::new(Message::SftpPickHost(idx)),
+                        }
+                    }
                 }));
             }
             Message::SftpRemountPane(side, idx) => {

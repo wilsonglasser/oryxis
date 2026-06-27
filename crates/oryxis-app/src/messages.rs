@@ -516,6 +516,9 @@ pub enum Message {
         conn_id: uuid::Uuid,
         category: oryxis_ssh::NegCategory,
         server_offers: Vec<String>,
+        /// Action to re-run after the user enables legacy algorithms (the
+        /// originating connect: terminal / SFTP / port-forward / backup).
+        retry: Box<Message>,
     },
     /// Accept the legacy fallback: enable the legacy algorithms on the
     /// pending host and reconnect. `remember` persists the change.

@@ -387,6 +387,7 @@ impl Oryxis {
                             // Captured (Copy) for the map closure below, since
                             // `conn` itself is moved into the stream producer.
                             let map_conn_id = conn.id;
+                            let map_idx = idx;
                             let stream = iced::stream::channel::<SshStreamMsg>(128, move |mut sender: iced::futures::channel::mpsc::Sender<SshStreamMsg>| {
                                 async move {
                                     let engine = SshEngine::new()
@@ -615,6 +616,7 @@ impl Oryxis {
                                             conn_id: map_conn_id,
                                             category,
                                             server_offers,
+                                            retry: Box::new(Message::ConnectSsh(map_idx)),
                                         }
                                     }
                                     SshStreamMsg::Disconnected => {
@@ -1237,7 +1239,7 @@ impl Oryxis {
                     self.host_panel_error = Some(format!("SSH: {}", err));
                 }
             }
-            Message::SshNoCommonAlgo { conn_id, category, server_offers } => {
+            Message::SshNoCommonAlgo { conn_id, category, server_offers, retry } => {
                 // Only offer the fallback when the failed category is still
                 // Auto. If it's already pinned (manually, or by a prior
                 // accept that expanded everything) and STILL has no match,
@@ -1267,6 +1269,7 @@ impl Oryxis {
                         conn_id,
                         category,
                         server_offers,
+                        retry,
                     });
                 }
             }
@@ -1307,9 +1310,11 @@ impl Oryxis {
                 if remember && let Some(vault) = &self.vault {
                     let _ = vault.save_connection(&self.connections[idx], None);
                 }
-                // Reconnect with the expanded set (reads the now-updated
-                // in-memory connection).
-                return Ok(self.update(Message::ConnectSsh(idx)));
+                // Re-run the originating connect (terminal / SFTP / forward /
+                // backup) now that the in-memory connection carries the
+                // expanded algorithm set.
+                self.pending_legacy_algo = None;
+                return Ok(self.update(*pending.retry));
             }
 
             m => return Err(m),

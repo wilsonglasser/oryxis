@@ -191,6 +191,10 @@ pub(crate) struct PendingLegacyAlgo {
     pub conn_id: uuid::Uuid,
     pub category: oryxis_ssh::NegCategory,
     pub server_offers: Vec<String>,
+    /// The action to re-dispatch after expanding the host's overrides, so
+    /// the dialog works the same for terminal / SFTP / port-forward /
+    /// backup connects (each passes its own entry message).
+    pub retry: Box<crate::app::Message>,
 }
 
 #[cfg(test)]

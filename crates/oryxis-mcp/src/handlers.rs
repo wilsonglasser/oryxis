@@ -174,8 +174,15 @@ pub async fn handle_ssh_execute(
     // `auth_conn.proxy`, the engine only reads that field.
     auth_conn.proxy = vault.resolve_proxy(&auth_conn).ok().flatten();
 
-    // Build engine and connect
-    let engine = SshEngine::new();
+    // Build engine and connect. Honor any per-host legacy-algorithm
+    // overrides the user pinned in the app (MCP is headless, so there is
+    // no interactive fallback dialog, only the pinned settings apply).
+    let engine = SshEngine::new().with_algorithm_overrides(
+        auth_conn.ciphers.clone(),
+        auth_conn.kex.clone(),
+        auth_conn.macs.clone(),
+        auth_conn.host_key_algorithms.clone(),
+    );
 
     let mut handle = engine
         .establish_transport(&auth_conn, None)
