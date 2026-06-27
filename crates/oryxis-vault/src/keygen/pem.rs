@@ -615,4 +615,57 @@ mod tests {
             want_fp
         );
     }
+
+    /// The real-world case from a user: an OpenSSL-legacy PEM encrypted with
+    /// DES-EDE3-CBC (3des). Exercises the 24-byte key derivation (two MD5
+    /// blocks, vs one for AES-128) and the 8-byte IV/block path.
+    #[test]
+    fn parse_legacy_encrypted_3des_pem_round_trips() {
+        use base64::Engine;
+        use cbc::cipher::block_padding::Pkcs7;
+        use cbc::cipher::{BlockEncryptMut, KeyIvInit};
+        use rsa::pkcs1::{EncodeRsaPrivateKey, LineEnding};
+
+        let rsa_key = rsa::RsaPrivateKey::new(&mut rand::rng(), 1024).unwrap();
+        let want_fp = parse(&rsa_key.to_pkcs1_pem(LineEnding::LF).unwrap(), None)
+            .unwrap()
+            .fingerprint(ssh_key::HashAlg::Sha256)
+            .to_string();
+
+        // DES-EDE3-CBC: 24-byte key, 8-byte IV (and 8-byte salt = the IV).
+        let der = rsa_key.to_pkcs1_der().unwrap();
+        let iv: [u8; 8] = [0x01, 0x23, 0x45, 0x67, 0x89, 0xAB, 0xCD, 0xEF];
+        let pass = b"hunter2 hunter2";
+        let key = evp_bytes_to_key(pass, &iv, 24);
+        let plain = der.as_bytes();
+        let mut buf = plain.to_vec();
+        let n = buf.len();
+        buf.resize(n + 8, 0);
+        let ct = cbc::Encryptor::<des::TdesEde3>::new_from_slices(&key, &iv)
+            .unwrap()
+            .encrypt_padded_mut::<Pkcs7>(&mut buf, n)
+            .unwrap()
+            .to_vec();
+
+        let b64 = base64::engine::general_purpose::STANDARD.encode(&ct);
+        let mut body = String::new();
+        for chunk in b64.as_bytes().chunks(64) {
+            body.push_str(std::str::from_utf8(chunk).unwrap());
+            body.push('\n');
+        }
+        let iv_hex: String = iv.iter().map(|b| format!("{:02X}", b)).collect();
+        let pem = format!(
+            "-----BEGIN RSA PRIVATE KEY-----\n\
+             Proc-Type: 4,ENCRYPTED\n\
+             DEK-Info: DES-EDE3-CBC,{iv_hex}\n\n\
+             {body}-----END RSA PRIVATE KEY-----\n"
+        );
+
+        assert!(parse(&pem, Some("wrong")).is_err());
+        let got = parse(&pem, Some("hunter2 hunter2")).unwrap();
+        assert_eq!(
+            got.fingerprint(ssh_key::HashAlg::Sha256).to_string(),
+            want_fp
+        );
+    }
 }
