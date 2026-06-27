@@ -456,6 +456,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "sudo_password_sent" => "密码已发送",
         "no_stored_password" => "此主机没有保存的密码",
         "host_encoding" => "编码",
+        "host_terminal_type" => "终端类型 (TERM)",
         "host_encoding_desc" => "此主机终端的字符集。默认 UTF-8。",
         "connection_failed_log" => "连接失败，连接日志：",
         "connecting_status" => "正在连接...",

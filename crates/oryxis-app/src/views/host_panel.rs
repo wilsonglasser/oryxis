@@ -844,6 +844,26 @@ impl Oryxis {
             .padding(10)
             .style(crate::widgets::rounded_pick_list_style);
 
+        // Per-host TERM. "xterm-256color" is the default (stored as None);
+        // the rest are fallbacks for hosts whose terminfo trips on it.
+        let term_options: Vec<String> = [
+            "xterm-256color", "xterm", "screen-256color", "tmux-256color",
+            "screen", "linux", "vt220", "vt100", "ansi",
+        ]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+        let term_selected = self
+            .editor_form
+            .terminal_type
+            .clone()
+            .unwrap_or_else(|| "xterm-256color".to_string());
+        let term_picker = pick_list(Some(term_selected), term_options, |s: &String| s.clone())
+            .on_select(Message::EditorTerminalTypeChanged)
+            .width(170)
+            .padding(10)
+            .style(crate::widgets::rounded_pick_list_style);
+
         // Terminal card body: the theme keeps its full-width preview tile
         // (it's a live swatch, not a plain dropdown); icon and encoding
         // are compact inline rows (label left, picker right) like Auth
@@ -866,6 +886,12 @@ impl Oryxis {
                 text(crate::i18n::t("host_encoding")).size(13).color(OryxisColors::t().text_secondary).into(),
                 Space::new().width(Length::Fill).into(),
                 encoding_picker.into(),
+            ]).align_y(iced::Alignment::Center),
+            Space::new().height(12),
+            dir_row(vec![
+                text(crate::i18n::t("host_terminal_type")).size(13).color(OryxisColors::t().text_secondary).into(),
+                Space::new().width(Length::Fill).into(),
+                term_picker.into(),
             ]).align_y(iced::Alignment::Center),
         ];
 

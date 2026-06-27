@@ -531,6 +531,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "sudo_password_sent" => "Senha enviada",
         "no_stored_password" => "Nenhuma senha salva para este host",
         "host_encoding" => "Codificação",
+        "host_terminal_type" => "Tipo de terminal (TERM)",
         "host_encoding_desc" => "Conjunto de caracteres do terminal deste host. Padrão UTF-8.",
         "connection_failed_log" => "Falha na conexão com o log de conexão:",
         "connecting_status" => "Conectando...",

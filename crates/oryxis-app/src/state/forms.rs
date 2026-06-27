@@ -116,6 +116,8 @@ pub(crate) struct ConnectionForm {
     /// `default_host_icon` setting. Mirrors `Connection.icon_style`.
     pub icon_style: Option<String>,
     pub encoding: Option<String>,
+    /// Mirrors `Connection.terminal_type`; `None` = default `xterm-256color`.
+    pub terminal_type: Option<String>,
 }
 
 /// UI-side proxy kind. Includes a `None` (disabled) variant, the
@@ -249,6 +251,7 @@ impl Default for ConnectionForm {
             cloud_transport: None,
             icon_style: None,
             encoding: None,
+            terminal_type: None,
         }
     }
 }

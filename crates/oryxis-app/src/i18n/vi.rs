@@ -553,6 +553,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "sudo_password_sent" => "Đã gửi mật khẩu",
         "no_stored_password" => "Không có mật khẩu lưu cho máy chủ này",
         "host_encoding" => "Mã hóa ký tự",
+        "host_terminal_type" => "Loại terminal (TERM)",
         "host_encoding_desc" => "Bộ ký tự cho terminal của máy chủ này. Mặc định UTF-8.",
         "connection_failed_log" => "Kết nối thất bại với nhật ký kết nối:",
         "connecting_status" => "Đang kết nối...",

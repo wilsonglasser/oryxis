@@ -1017,6 +1017,9 @@ pub struct SshEngine {
     /// other charset is decoded to UTF-8 on the way in and encoded back on
     /// the way out.
     encoding: Option<String>,
+    /// Per-host `TERM` name sent when requesting the PTY. `None` =
+    /// `xterm-256color`. See `Connection.terminal_type`.
+    terminal_type: Option<String>,
     /// Reject unknown/changed host keys when no UI ask channel is set
     /// (used by boot auto-started port forwards). See
     /// `ClientHandler::strict_host_key`.
@@ -1047,6 +1050,7 @@ impl SshEngine {
             agent_forwarding: false,
             env_vars: Vec::new(),
             encoding: None,
+            terminal_type: None,
             strict_host_key: false,
             forwarded_channel_sink: None,
         }
@@ -1072,6 +1076,13 @@ impl SshEngine {
     /// from UTF-8 for the terminal.
     pub fn with_encoding(mut self, encoding: Option<String>) -> Self {
         self.encoding = encoding;
+        self
+    }
+
+    /// Override the `TERM` name requested for the PTY. `None` keeps the
+    /// default `xterm-256color`.
+    pub fn with_terminal_type(mut self, terminal_type: Option<String>) -> Self {
+        self.terminal_type = terminal_type;
         self
     }
 
@@ -2191,8 +2202,9 @@ impl SshEngine {
             .map_err(|e| SshError::Channel(format!("Failed to open session channel: {}", e)))?;
 
         // Request PTY
+        let term = self.terminal_type.as_deref().unwrap_or("xterm-256color");
         channel
-            .request_pty(false, "xterm-256color", cols, rows, 0, 0, &[])
+            .request_pty(false, term, cols, rows, 0, 0, &[])
             .await
             .map_err(|e| SshError::Channel(format!("PTY request failed: {}", e)))?;
 

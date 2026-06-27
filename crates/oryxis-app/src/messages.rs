@@ -97,6 +97,8 @@ pub enum Message {
     /// override (falls back to the global `default_host_icon`).
     EditorIconStyleChanged(String),
     EditorEncodingChanged(String),
+    /// Per-host TERM name picked in the host editor.
+    EditorTerminalTypeChanged(String),
     /// Empty string == "inherit the global keepalive setting".
     /// "0" == explicitly disabled on this host; any positive integer
     /// is the per-host override in seconds. Sanitized to digits-only.

@@ -553,6 +553,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "sudo_password_sent" => "Parola gönderildi",
         "no_stored_password" => "Bu sunucu için kayıtlı parola yok",
         "host_encoding" => "Kodlama",
+        "host_terminal_type" => "Terminal türü (TERM)",
         "host_encoding_desc" => "Bu sunucunun terminali için karakter kümesi. Varsayılan UTF-8.",
         "connection_failed_log" => "Bağlantı şu bağlantı kaydıyla başarısız oldu:",
         "connecting_status" => "Bağlanılıyor...",

@@ -553,6 +553,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "sudo_password_sent" => "Пароль надіслано",
         "no_stored_password" => "Немає збереженого пароля для цього хоста",
         "host_encoding" => "Кодування",
+        "host_terminal_type" => "Тип термінала (TERM)",
         "host_encoding_desc" => "Набір символів для термінала цього хоста. Типово UTF-8.",
         "connection_failed_log" => "Підключення не вдалося, журнал підключення:",
         "connecting_status" => "Підключення...",

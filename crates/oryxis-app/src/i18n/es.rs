@@ -453,6 +453,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "sudo_password_sent" => "Contraseña enviada",
         "no_stored_password" => "No hay contraseña guardada para este host",
         "host_encoding" => "Codificación",
+        "host_terminal_type" => "Tipo de terminal (TERM)",
         "host_encoding_desc" => "Conjunto de caracteres del terminal de este host. Predeterminado UTF-8.",
         "connection_failed_log" => "Error de conexión con el registro de conexión:",
         "connecting_status" => "Conectando...",

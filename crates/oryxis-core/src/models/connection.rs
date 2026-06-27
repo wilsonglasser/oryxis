@@ -40,6 +40,12 @@ pub struct Connection {
     /// Drives PTY transcoding in the SSH engine for legacy charsets.
     #[serde(default)]
     pub encoding: Option<String>,
+    /// Per-host terminal type sent to the server as `TERM` when requesting the
+    /// PTY (e.g. `"xterm"`, `"linux"`, `"vt100"`). `None` = `xterm-256color`.
+    /// Lets the user pick a fallback for hosts whose terminfo trips on the
+    /// default (older boxes, some `mc` / curses setups).
+    #[serde(default)]
+    pub terminal_type: Option<String>,
     pub mcp_enabled: bool,
     pub last_used: Option<chrono::DateTime<chrono::Utc>>,
     pub created_at: chrono::DateTime<chrono::Utc>,
@@ -151,6 +157,7 @@ impl Connection {
             port_forwards: Vec::new(),
             env_vars: Vec::new(),
             encoding: None,
+            terminal_type: None,
             proxy: None,
             proxy_identity_id: None,
             tags: Vec::new(),
@@ -352,6 +359,15 @@ mod tests {
         value.as_object_mut().unwrap().remove("auto_title");
         let de: Connection = serde_json::from_value(value).unwrap();
         assert_eq!(de.auto_title, None);
+    }
+
+    #[test]
+    fn terminal_type_legacy_payload_defaults_to_none() {
+        let conn = Connection::new("legacy", "10.0.0.1");
+        let mut value = serde_json::to_value(&conn).unwrap();
+        value.as_object_mut().unwrap().remove("terminal_type");
+        let de: Connection = serde_json::from_value(value).unwrap();
+        assert_eq!(de.terminal_type, None);
     }
 
     #[test]

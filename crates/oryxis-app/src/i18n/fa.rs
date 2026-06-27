@@ -555,6 +555,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "sudo_password_sent" => "رمز عبور ارسال شد",
         "no_stored_password" => "رمز عبوری برای این میزبان ذخیره نشده است",
         "host_encoding" => "کدگذاری",
+        "host_terminal_type" => "نوع ترمینال (TERM)",
         "host_encoding_desc" => "مجموعه نویسه‌های ترمینال این میزبان. پیش‌فرض UTF-8.",
         "connection_failed_log" => "اتصال ناموفق بود؛ گزارش اتصال:",
         "connecting_status" => "در حال اتصال...",

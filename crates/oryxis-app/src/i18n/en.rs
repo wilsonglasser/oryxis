@@ -559,6 +559,7 @@ pub(super) fn lookup(key: &str) -> &'static str {
         "sudo_password_sent" => "Password sent",
         "no_stored_password" => "No stored password for this host",
         "host_encoding" => "Encoding",
+        "host_terminal_type" => "Terminal type (TERM)",
         "host_encoding_desc" => "Character set for this host's terminal. Default UTF-8.",
         "connection_failed_log" => "Connection failed with connection log:",
         "connecting_status" => "Connecting...",

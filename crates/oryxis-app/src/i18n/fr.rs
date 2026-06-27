@@ -456,6 +456,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "sudo_password_sent" => "Mot de passe envoyé",
         "no_stored_password" => "Aucun mot de passe enregistré pour cet hôte",
         "host_encoding" => "Encodage",
+        "host_terminal_type" => "Type de terminal (TERM)",
         "host_encoding_desc" => "Jeu de caractères du terminal de cet hôte. Par défaut UTF-8.",
         "connection_failed_log" => "Échec de la connexion avec le journal de connexion :",
         "connecting_status" => "Connexion...",

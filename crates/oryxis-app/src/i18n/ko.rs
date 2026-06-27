@@ -553,6 +553,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "sudo_password_sent" => "비밀번호 전송됨",
         "no_stored_password" => "이 호스트에 저장된 비밀번호가 없습니다",
         "host_encoding" => "인코딩",
+        "host_terminal_type" => "터미널 종류 (TERM)",
         "host_encoding_desc" => "이 호스트의 터미널에 사용할 문자 집합. 기본값 UTF-8.",
         "connection_failed_log" => "연결 로그와 함께 연결 실패:",
         "connecting_status" => "연결 중...",

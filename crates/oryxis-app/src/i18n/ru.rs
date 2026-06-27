@@ -447,6 +447,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "sudo_password_sent" => "Пароль отправлен",
         "no_stored_password" => "Нет сохранённого пароля для этого хоста",
         "host_encoding" => "Кодировка",
+        "host_terminal_type" => "Тип терминала (TERM)",
         "host_encoding_desc" => "Кодировка терминала для этого хоста. По умолчанию UTF-8.",
         "connection_failed_log" => "Сбой подключения, журнал подключения:",
         "connecting_status" => "Подключение...",

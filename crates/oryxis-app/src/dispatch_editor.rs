@@ -233,6 +233,7 @@ impl Oryxis {
                             .map(|r| r.transport_pref),
                         icon_style: conn.icon_style.clone(),
                         encoding: conn.encoding.clone(),
+                        terminal_type: conn.terminal_type.clone(),
                     };
                     let cmd = conn.initial_command.as_deref().unwrap_or_default();
                     self.editor_initial_command =
@@ -445,6 +446,11 @@ impl Oryxis {
                 // SSH engine skips transcoding entirely.
                 self.editor_form.encoding = if v == "UTF-8" { None } else { Some(v) };
             }
+            Message::EditorTerminalTypeChanged(v) => {
+                // "xterm-256color" is the implicit default, stored as None.
+                self.editor_form.terminal_type =
+                    if v == "xterm-256color" { None } else { Some(v) };
+            }
             Message::EditorKeepaliveChanged(v) => {
                 // Digits only; preserve empty (= inherit global). Cap at
                 // 86_400s (1 day) like the global setting field, so users
@@ -567,6 +573,7 @@ impl Oryxis {
                 conn.terminal_theme = self.editor_form.terminal_theme.clone();
                 conn.icon_style = self.editor_form.icon_style.clone();
                 conn.encoding = self.editor_form.encoding.clone();
+                conn.terminal_type = self.editor_form.terminal_type.clone();
                 // Startup command source. Snippet -> store the live id and
                 // clear the literal; Custom -> store the trimmed text (empty
                 // == None); None -> clear both. `.text()` appends a trailing

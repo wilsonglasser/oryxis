@@ -456,6 +456,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "sudo_password_sent" => "パスワードを送信しました",
         "no_stored_password" => "このホストに保存されたパスワードがありません",
         "host_encoding" => "エンコーディング",
+        "host_terminal_type" => "端末タイプ (TERM)",
         "host_encoding_desc" => "このホストのターミナルの文字セット。既定は UTF-8。",
         "connection_failed_log" => "接続に失敗しました。接続ログ：",
         "connecting_status" => "接続中...",

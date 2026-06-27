@@ -565,6 +565,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "sudo_password_sent" => "تم إرسال كلمة المرور",
         "no_stored_password" => "لا توجد كلمة مرور محفوظة لهذا المضيف",
         "host_encoding" => "الترميز",
+        "host_terminal_type" => "نوع الطرفية (TERM)",
         "host_encoding_desc" => "مجموعة أحرف طرفية هذا المضيف. الافتراضي UTF-8.",
         "connection_failed_log" => "فشل الاتصال مع سجل الاتصال:",
         "connecting_status" => "جارٍ الاتصال...",

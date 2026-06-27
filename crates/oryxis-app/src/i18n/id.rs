@@ -553,6 +553,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "sudo_password_sent" => "Kata sandi terkirim",
         "no_stored_password" => "Tidak ada kata sandi tersimpan untuk host ini",
         "host_encoding" => "Pengkodean",
+        "host_terminal_type" => "Tipe terminal (TERM)",
         "host_encoding_desc" => "Set karakter untuk terminal host ini. Default UTF-8.",
         "connection_failed_log" => "Koneksi gagal dengan log koneksi:",
         "connecting_status" => "Menghubungkan...",
