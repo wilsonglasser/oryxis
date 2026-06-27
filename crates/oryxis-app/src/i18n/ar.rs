@@ -699,7 +699,6 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "key_passphrase_hint" => "هذا المفتاح مشفر. أدخل عبارة المرور مرة واحدة: ستُستخدم لفك تشفير المفتاح ثم يتم تجاهلها. يتم تخزين المفتاح المفكوك التشفير داخل الخزنة، المحمية بالفعل بكلمة المرور الرئيسية.",
         "key_passphrase_wrong" => "عبارة المرور غير صحيحة. يرجى المحاولة مرة أخرى.",
         "key_passphrase_required_msg" => "أدخل عبارة مرور المفتاح للمتابعة.",
-        "key_encrypted_legacy_pem" => "هذا مفتاح PEM مشفّر بواسطة OpenSSL (Proc-Type:4,ENCRYPTED)، وهو تنسيق لا يمكننا فكّ تشفيره مباشرة. أعد تصدير المفتاح من PuTTYgen بصيغة .ppk (Conversions \u{2192} Export as PPK)؛ نحن ندعمها الآن. أو أزل عبارة المرور بالأمر: ssh-keygen -p -f <ملف> -N ''.",
         "key_unsupported_kind" => "نوع المفتاح غير مدعوم: {kind}. استخدم Ed25519 أو RSA أو ECDSA (P-256 أو P-384).",
         "update_key" => "تحديث المفتاح",
         "save_key" => "حفظ المفتاح",

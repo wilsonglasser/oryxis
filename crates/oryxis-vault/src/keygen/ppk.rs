@@ -443,10 +443,11 @@ fn build_rsa(public_blob: &[u8], private_plain: &[u8]) -> Result<PrivateKey, Vau
     let q = read_mpint(private_plain, &mut cur)?;
     let iqmp = read_mpint(private_plain, &mut cur)?;
 
-    let keypair = RsaKeypair {
-        public: RsaPublicKey { e, n },
-        private: RsaPrivateKey { d, iqmp, p, q },
-    };
+    let public = RsaPublicKey::new(e, n).map_err(|e| crypto(format!("invalid RSA public: {}", e)))?;
+    let private =
+        RsaPrivateKey::new(d, iqmp, p, q).map_err(|e| crypto(format!("invalid RSA private: {}", e)))?;
+    let keypair =
+        RsaKeypair::new(public, private).map_err(|e| crypto(format!("invalid RSA keypair: {}", e)))?;
     Ok(PrivateKey::from(keypair))
 }
 
@@ -592,8 +593,8 @@ mod tests {
             ssh_key::private::KeypairData::Rsa(kp) => {
                 let mut out = Vec::new();
                 append_string(&mut out, b"ssh-rsa");
-                append_string(&mut out, kp.public.e.as_bytes());
-                append_string(&mut out, kp.public.n.as_bytes());
+                append_string(&mut out, kp.public().e().as_bytes());
+                append_string(&mut out, kp.public().n().as_bytes());
                 out
             }
             _ => panic!("synthesizer only handles RSA / Ed25519 today"),
@@ -607,10 +608,10 @@ mod tests {
             }
             ssh_key::private::KeypairData::Rsa(kp) => {
                 let mut out = Vec::new();
-                append_string(&mut out, kp.private.d.as_bytes());
-                append_string(&mut out, kp.private.p.as_bytes());
-                append_string(&mut out, kp.private.q.as_bytes());
-                append_string(&mut out, kp.private.iqmp.as_bytes());
+                append_string(&mut out, kp.private().d().as_bytes());
+                append_string(&mut out, kp.private().p().as_bytes());
+                append_string(&mut out, kp.private().q().as_bytes());
+                append_string(&mut out, kp.private().iqmp().as_bytes());
                 out
             }
             _ => panic!("synthesizer only handles RSA / Ed25519 today"),
@@ -731,7 +732,7 @@ mod tests {
 
     #[test]
     fn ppk_v2_ed25519_unencrypted_roundtrip() {
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
         let key = PrivateKey::random(&mut rng, Algorithm::Ed25519).unwrap();
         let ppk = synthesize_ppk(&key, None, 2, "rt-v2");
         let parsed = parse(&ppk, None).unwrap();
@@ -740,7 +741,7 @@ mod tests {
 
     #[test]
     fn ppk_v2_ed25519_encrypted_roundtrip() {
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
         let key = PrivateKey::random(&mut rng, Algorithm::Ed25519).unwrap();
         let ppk = synthesize_ppk(&key, Some("hunter2"), 2, "rt-v2-enc");
         let parsed = parse(&ppk, Some("hunter2")).unwrap();
@@ -749,7 +750,7 @@ mod tests {
 
     #[test]
     fn ppk_v2_encrypted_wrong_passphrase() {
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
         let key = PrivateKey::random(&mut rng, Algorithm::Ed25519).unwrap();
         let ppk = synthesize_ppk(&key, Some("hunter2"), 2, "rt-v2-wrong");
         let err = parse(&ppk, Some("nope")).unwrap_err();
@@ -758,7 +759,7 @@ mod tests {
 
     #[test]
     fn ppk_v2_encrypted_missing_passphrase() {
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
         let key = PrivateKey::random(&mut rng, Algorithm::Ed25519).unwrap();
         let ppk = synthesize_ppk(&key, Some("hunter2"), 2, "rt-v2-needs");
         let err = parse(&ppk, None).unwrap_err();
@@ -767,7 +768,7 @@ mod tests {
 
     #[test]
     fn ppk_v3_ed25519_unencrypted_roundtrip() {
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
         let key = PrivateKey::random(&mut rng, Algorithm::Ed25519).unwrap();
         let ppk = synthesize_ppk(&key, None, 3, "rt-v3");
         let parsed = parse(&ppk, None).unwrap();
@@ -776,7 +777,7 @@ mod tests {
 
     #[test]
     fn ppk_v3_ed25519_encrypted_roundtrip() {
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
         let key = PrivateKey::random(&mut rng, Algorithm::Ed25519).unwrap();
         let ppk = synthesize_ppk(&key, Some("s3cret"), 3, "rt-v3-enc");
         let parsed = parse(&ppk, Some("s3cret")).unwrap();

@@ -34,6 +34,7 @@ impl VaultStore {
             KeyAlgorithm::Rsa4096 => "rsa4096",
             KeyAlgorithm::EcdsaP256 => "ecdsa-p256",
             KeyAlgorithm::EcdsaP384 => "ecdsa-p384",
+            KeyAlgorithm::EcdsaP521 => "ecdsa-p521",
         };
 
         self.db.execute(
@@ -68,6 +69,7 @@ impl VaultStore {
                     "rsa4096" => KeyAlgorithm::Rsa4096,
                     "ecdsa-p256" => KeyAlgorithm::EcdsaP256,
                     "ecdsa-p384" => KeyAlgorithm::EcdsaP384,
+                    "ecdsa-p521" => KeyAlgorithm::EcdsaP521,
                     _ => KeyAlgorithm::Ed25519,
                 };
 

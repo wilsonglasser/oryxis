@@ -705,7 +705,6 @@ pub(super) fn lookup(key: &str) -> &'static str {
         "key_passphrase_hint" => "This key is encrypted. Enter the passphrase once: it will be used to decrypt the key, then discarded. The decrypted key is stored inside the vault, which is already encrypted with your master password.",
         "key_passphrase_wrong" => "Wrong passphrase. Please try again.",
         "key_passphrase_required_msg" => "Enter the key passphrase to continue.",
-        "key_encrypted_legacy_pem" => "This is an OpenSSL-encrypted PEM (Proc-Type:4,ENCRYPTED), a format we can't decrypt directly. Re-export the key from PuTTYgen as a .ppk file (Conversions \u{2192} Export as PPK), which we now support. Or strip the passphrase first: ssh-keygen -p -f <file> -N ''.",
         "key_unsupported_kind" => "Unsupported key type: {kind}. Use Ed25519, RSA, or ECDSA (P-256 or P-384).",
         "update_key" => "Update Key",
         "save_key" => "Save Key",

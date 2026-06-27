@@ -705,7 +705,6 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "key_passphrase_hint" => "Ten klucz jest zaszyfrowany. Wprowadź hasło raz: zostanie użyte do odszyfrowania klucza, a następnie odrzucone. Odszyfrowany klucz jest przechowywany w sejfie, który jest już zaszyfrowany hasłem głównym.",
         "key_passphrase_wrong" => "Nieprawidłowe hasło. Spróbuj ponownie.",
         "key_passphrase_required_msg" => "Wprowadź hasło klucza, aby kontynuować.",
-        "key_encrypted_legacy_pem" => "To jest klucz PEM zaszyfrowany przez OpenSSL (Proc-Type:4,ENCRYPTED), formatu którego nie możemy odszyfrować bezpośrednio. Wyeksportuj klucz ponownie z PuTTYgen jako plik .ppk (Conversions \u{2192} Export as PPK), który teraz obsługujemy. Albo najpierw usuń hasło: ssh-keygen -p -f <plik> -N ''.",
         "key_unsupported_kind" => "Nieobsługiwany typ klucza: {kind}. Użyj Ed25519, RSA lub ECDSA (P-256 lub P-384).",
         "update_key" => "Aktualizuj klucz",
         "save_key" => "Zapisz klucz",

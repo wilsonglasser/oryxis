@@ -37,6 +37,7 @@ pub enum KeyAlgorithm {
     Rsa4096,
     EcdsaP256,
     EcdsaP384,
+    EcdsaP521,
 }
 
 impl std::fmt::Display for KeyAlgorithm {
@@ -46,6 +47,7 @@ impl std::fmt::Display for KeyAlgorithm {
             Self::Rsa4096 => write!(f, "RSA 4096"),
             Self::EcdsaP256 => write!(f, "ECDSA P-256"),
             Self::EcdsaP384 => write!(f, "ECDSA P-384"),
+            Self::EcdsaP521 => write!(f, "ECDSA P-521"),
         }
     }
 }

@@ -181,10 +181,6 @@ impl Oryxis {
                         self.key_import_passphrase_required = true;
                         self.key_error = Some(crate::i18n::t("key_passphrase_wrong").to_string());
                     }
-                    Err(VaultError::EncryptedLegacyPem) => {
-                        self.key_error =
-                            Some(crate::i18n::t("key_encrypted_legacy_pem").to_string());
-                    }
                     Err(VaultError::UnsupportedKeyKind(kind)) => {
                         self.key_error = Some(
                             crate::i18n::t("key_unsupported_kind").replace("{kind}", &kind),

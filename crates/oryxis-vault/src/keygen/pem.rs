@@ -45,11 +45,9 @@ pub(super) fn rewrap_pem_body_at(pem: &str, width: usize) -> String {
 }
 
 /// Returns true if the PEM carries an OpenSSL-legacy DEK-Info header
-/// (`Proc-Type: 4,ENCRYPTED`) inside a PKCS#1 or SEC1 envelope. We
-/// surface this as a clear error rather than attempting to decrypt:
-/// the format uses PBKDF1-MD5 + DES-EDE3-CBC which we don't carry,
-/// and PuTTYgen (the most common source of such files) can export
-/// PPK directly which we now support.
+/// (`Proc-Type: 4,ENCRYPTED`) inside a PKCS#1 or SEC1 envelope, or is a
+/// PKCS#8 `ENCRYPTED PRIVATE KEY`. The UI uses this to reveal the
+/// passphrase field early; [`parse`] decrypts both on Save.
 pub fn is_traditional_encrypted(pem: &str) -> bool {
     if pem.contains("BEGIN ENCRYPTED PRIVATE KEY") {
         return true;
@@ -83,7 +81,7 @@ fn decrypt_pkcs8(pem: &str, passphrase: &[u8]) -> Result<PrivateKey, VaultError>
         .decode(b64)
         .map_err(|e| VaultError::Crypto(format!("PEM base64: {}", e)))?;
 
-    let info = pkcs8::EncryptedPrivateKeyInfo::try_from(der.as_slice())
+    let info = pkcs8::EncryptedPrivateKeyInfoRef::try_from(der.as_slice())
         .map_err(|e| VaultError::Crypto(format!("encrypted PKCS#8 parse: {}", e)))?;
     let plaintext = info
         .decrypt(passphrase)
@@ -109,16 +107,168 @@ fn der_to_pkcs8_pem(der: &[u8]) -> String {
     out
 }
 
+/// OpenSSL's `EVP_BytesToKey` with MD5 and a single iteration, the KDF
+/// used by traditional (DEK-Info) PEM encryption. Concatenates
+/// `MD5(prev || password || salt)` digests until `key_len` bytes are
+/// available. `salt` is the first 8 bytes of the DEK-Info IV.
+fn evp_bytes_to_key(password: &[u8], salt: &[u8], key_len: usize) -> Vec<u8> {
+    use md5::{Digest, Md5};
+    let mut out = Vec::with_capacity(key_len + 16);
+    let mut prev: Vec<u8> = Vec::new();
+    while out.len() < key_len {
+        let mut h = Md5::new();
+        h.update(&prev);
+        h.update(password);
+        h.update(salt);
+        prev = h.finalize().to_vec();
+        out.extend_from_slice(&prev);
+    }
+    out.truncate(key_len);
+    out
+}
+
+/// Decode an even-length ASCII hex string to bytes. Returns `None` on
+/// odd length or any non-hex digit.
+fn hex_decode(s: &str) -> Option<Vec<u8>> {
+    let s = s.trim();
+    if !s.len().is_multiple_of(2) {
+        return None;
+    }
+    (0..s.len())
+        .step_by(2)
+        .map(|i| u8::from_str_radix(s.get(i..i + 2)?, 16).ok())
+        .collect()
+}
+
+/// Wrap raw DER under a traditional PEM label at the 64-char convention.
+fn der_to_labeled_pem(label: &str, der: &[u8]) -> String {
+    use base64::Engine;
+    let body = base64::engine::general_purpose::STANDARD.encode(der);
+    let mut out = String::with_capacity(body.len() + 64);
+    out.push_str("-----BEGIN ");
+    out.push_str(label);
+    out.push_str("-----\n");
+    for chunk in body.as_bytes().chunks(64) {
+        out.push_str(std::str::from_utf8(chunk).unwrap_or(""));
+        out.push('\n');
+    }
+    out.push_str("-----END ");
+    out.push_str(label);
+    out.push_str("-----\n");
+    out
+}
+
+/// Decrypt an OpenSSL-legacy traditional PEM carrying a `Proc-Type:
+/// 4,ENCRYPTED` plus `DEK-Info: <cipher>,<hex-iv>` header pair. Derives
+/// the key via `EVP_BytesToKey`/MD5, decrypts the named CBC cipher, and
+/// re-dispatches the recovered PKCS#1 (RSA) or SEC1 (EC) plaintext
+/// through [`parse`]. A wrong passphrase surfaces as a PKCS#7 unpad
+/// failure mapped to [`VaultError::WrongKeyPassphrase`].
+fn decrypt_legacy_pem(pem: &str, passphrase: &[u8]) -> Result<PrivateKey, VaultError> {
+    use base64::Engine;
+    use cbc::cipher::block_padding::Pkcs7;
+    use cbc::cipher::{BlockDecryptMut, KeyIvInit};
+
+    let label = if pem.contains("BEGIN RSA PRIVATE KEY") {
+        "RSA PRIVATE KEY"
+    } else {
+        "EC PRIVATE KEY"
+    };
+
+    let dek_line = pem
+        .lines()
+        .find(|l| l.trim_start().starts_with("DEK-Info:"))
+        .ok_or_else(|| VaultError::Crypto("missing DEK-Info header".into()))?;
+    let dek = dek_line.trim_start().trim_start_matches("DEK-Info:").trim();
+    let (cipher_name, iv_hex) = dek
+        .split_once(',')
+        .ok_or_else(|| VaultError::Crypto("malformed DEK-Info header".into()))?;
+    let cipher_name = cipher_name.trim();
+    let iv = hex_decode(iv_hex).ok_or_else(|| VaultError::Crypto("invalid DEK-Info IV".into()))?;
+
+    let (key_len, iv_len) = match cipher_name {
+        "AES-128-CBC" => (16usize, 16usize),
+        "AES-192-CBC" => (24, 16),
+        "AES-256-CBC" => (32, 16),
+        "DES-EDE3-CBC" => (24, 8),
+        "DES-CBC" => (8, 8),
+        other => {
+            return Err(VaultError::Crypto(format!(
+                "unsupported legacy PEM cipher: {}",
+                other
+            )));
+        }
+    };
+    if iv.len() != iv_len {
+        return Err(VaultError::Crypto("DEK-Info IV length mismatch".into()));
+    }
+
+    // Body: the base64 between the blank line after the headers and END.
+    let mut body = String::new();
+    let mut in_body = false;
+    for line in pem.lines() {
+        let t = line.trim();
+        if t.starts_with("-----END") {
+            break;
+        }
+        if in_body {
+            body.push_str(t);
+        } else if t.is_empty() {
+            in_body = true;
+        }
+    }
+    let ciphertext = base64::engine::general_purpose::STANDARD
+        .decode(body)
+        .map_err(|e| VaultError::Crypto(format!("legacy PEM base64: {}", e)))?;
+
+    let salt = &iv[..8.min(iv.len())];
+    let key = evp_bytes_to_key(passphrase, salt, key_len);
+
+    let mut buf = ciphertext;
+    macro_rules! decrypt_with {
+        ($cipher:ty) => {{
+            let pt = cbc::Decryptor::<$cipher>::new_from_slices(&key, &iv)
+                .map_err(|_| VaultError::Crypto("legacy PEM key/iv size".into()))?
+                .decrypt_padded_mut::<Pkcs7>(&mut buf)
+                .map_err(|_| VaultError::WrongKeyPassphrase)?;
+            pt.to_vec()
+        }};
+    }
+    let plaintext_der = match cipher_name {
+        "AES-128-CBC" => decrypt_with!(aes::Aes128),
+        "AES-192-CBC" => decrypt_with!(aes::Aes192),
+        "AES-256-CBC" => decrypt_with!(aes::Aes256),
+        "DES-EDE3-CBC" => decrypt_with!(des::TdesEde3),
+        "DES-CBC" => decrypt_with!(des::Des),
+        _ => unreachable!("cipher_name already validated above"),
+    };
+
+    let plain_pem = der_to_labeled_pem(label, &plaintext_der);
+    parse(&plain_pem, None)
+}
+
+// ssh-key 0.7's `EcdsaKeypair` carries the public half as a raw
+// `sec1::EncodedPoint`, so hand it the uncompressed SEC1 point derived
+// from the secret key's public component.
 fn parse_ec_p256(sk: p256::SecretKey) -> PrivateKey {
-    let public = sk.public_key().into();
+    use p256::elliptic_curve::sec1::ToSec1Point;
+    let public = sk.public_key().to_sec1_point(false);
     let private = ssh_key::private::EcdsaPrivateKey::<32>::from(sk);
     PrivateKey::from(ssh_key::private::EcdsaKeypair::NistP256 { public, private })
 }
 
 fn parse_ec_p384(sk: p384::SecretKey) -> PrivateKey {
-    let public = sk.public_key().into();
+    use p384::elliptic_curve::sec1::ToSec1Point;
+    let public = sk.public_key().to_sec1_point(false);
     let private = ssh_key::private::EcdsaPrivateKey::<48>::from(sk);
     PrivateKey::from(ssh_key::private::EcdsaKeypair::NistP384 { public, private })
+}
+
+fn parse_ec_p521(sk: p521::SecretKey) -> PrivateKey {
+    use p521::elliptic_curve::sec1::ToSec1Point;
+    let public = sk.public_key().to_sec1_point(false);
+    let private = ssh_key::private::EcdsaPrivateKey::<66>::from(sk);
+    PrivateKey::from(ssh_key::private::EcdsaKeypair::NistP521 { public, private })
 }
 
 /// Parse a PKCS#8 OneAsymmetricKey (RFC 5958) DER body and return the
@@ -203,21 +353,26 @@ fn take_tlv(buf: &[u8], expected_tag: u8) -> Option<(&[u8], &[u8])> {
 }
 
 /// Parse a traditional PEM key (PKCS#1, PKCS#8, SEC1) and convert to
-/// `ssh_key::PrivateKey`. Encrypted PKCS#8 is decrypted using
-/// `passphrase`. Encrypted PKCS#1 (OpenSSL DEK-Info) is rejected with
-/// an actionable error. The caller in `mod.rs` checks
-/// `is_traditional_encrypted` first to short-circuit before reaching us.
+/// `ssh_key::PrivateKey`. Encrypted PKCS#8 (`BEGIN ENCRYPTED PRIVATE
+/// KEY`) and OpenSSL-legacy traditional PEM (`DEK-Info`) are both
+/// decrypted using `passphrase`; `KeyNeedsPassphrase` is returned when
+/// an encrypted key arrives without one.
 pub fn parse(pem: &str, passphrase: Option<&str>) -> Result<PrivateKey, VaultError> {
     use rsa::pkcs1::DecodeRsaPrivateKey;
     use rsa::pkcs8::DecodePrivateKey;
 
-    // Reject the legacy OpenSSL DEK-Info path explicitly. The UI maps
-    // EncryptedLegacyPem to an i18n'd message that hints at PPK as the
-    // user-friendlier alternative.
+    // OpenSSL-legacy traditional PEM (`Proc-Type: 4,ENCRYPTED` +
+    // `DEK-Info`). Decrypt with EVP_BytesToKey(MD5) + the named CBC
+    // cipher, then re-dispatch the recovered PKCS#1 / SEC1 plaintext
+    // through the unencrypted path below.
     if pem.contains("DEK-Info:")
         && (pem.contains("BEGIN RSA PRIVATE KEY") || pem.contains("BEGIN EC PRIVATE KEY"))
     {
-        return Err(VaultError::EncryptedLegacyPem);
+        let pass = passphrase.unwrap_or("");
+        if pass.is_empty() {
+            return Err(VaultError::KeyNeedsPassphrase);
+        }
+        return decrypt_legacy_pem(pem, pass.as_bytes());
     }
 
     let normalized = rewrap_pem_body(pem);
@@ -250,8 +405,11 @@ pub fn parse(pem: &str, passphrase: Option<&str>) -> Result<PrivateKey, VaultErr
         if let Ok(sk) = p384::SecretKey::from_sec1_pem(pem) {
             return Ok(parse_ec_p384(sk));
         }
+        if let Ok(sk) = p521::SecretKey::from_sec1_pem(pem) {
+            return Ok(parse_ec_p521(sk));
+        }
         return Err(VaultError::Crypto(
-            "Unsupported EC curve (only P-256 and P-384 are supported)".into(),
+            "Unsupported EC curve (only P-256, P-384 and P-521 are supported)".into(),
         ));
     }
 
@@ -268,12 +426,15 @@ pub fn parse(pem: &str, passphrase: Option<&str>) -> Result<PrivateKey, VaultErr
         if let Ok(sk) = p384::SecretKey::from_pkcs8_pem(pem) {
             return Ok(parse_ec_p384(sk));
         }
+        if let Ok(sk) = p521::SecretKey::from_pkcs8_pem(pem) {
+            return Ok(parse_ec_p521(sk));
+        }
         if let Some(seed) = try_extract_ed25519_seed(pem) {
             let keypair = ssh_key::private::Ed25519Keypair::from_seed(&seed);
             return Ok(PrivateKey::from(keypair));
         }
         return Err(VaultError::Crypto(
-            "Unsupported PKCS#8 key type (supported: RSA, ECDSA P-256/P-384, Ed25519)".into(),
+            "Unsupported PKCS#8 key type (supported: RSA, ECDSA P-256/P-384/P-521, Ed25519)".into(),
         ));
     }
 
@@ -326,5 +487,132 @@ mod tests {
         );
         let got = try_extract_ed25519_seed(&pem).unwrap();
         assert_eq!(got, seed);
+    }
+
+    #[test]
+    fn evp_bytes_to_key_first_blocks_match_md5() {
+        use md5::{Digest, Md5};
+        let pw = b"password";
+        let salt = [1u8, 2, 3, 4, 5, 6, 7, 8];
+        let key = evp_bytes_to_key(pw, &salt, 32);
+        // D1 = MD5(password || salt)
+        let mut h = Md5::new();
+        h.update(pw);
+        h.update(salt);
+        let d1 = h.finalize();
+        assert_eq!(&key[..16], d1.as_slice());
+        // D2 = MD5(D1 || password || salt)
+        let mut h = Md5::new();
+        h.update(d1);
+        h.update(pw);
+        h.update(salt);
+        let d2 = h.finalize();
+        assert_eq!(&key[16..32], d2.as_slice());
+    }
+
+    #[test]
+    fn parse_p256_pkcs8_round_trips() {
+        // Exercises the `to_sec1_point` public-key path shared by all
+        // three ECDSA curves (the P-521 test below covers the same code
+        // for the 66-byte variant).
+        use p256::elliptic_curve::Generate;
+        use pkcs8::EncodePrivateKey;
+        let sk = p256::SecretKey::generate_from_rng(&mut rand::rng());
+        let pem = sk.to_pkcs8_pem(pkcs8::LineEnding::LF).unwrap();
+        let key = parse(&pem, None).unwrap();
+        assert!(matches!(
+            key.algorithm(),
+            ssh_key::Algorithm::Ecdsa {
+                curve: ssh_key::EcdsaCurve::NistP256
+            }
+        ));
+        assert!(key
+            .public_key()
+            .to_openssh()
+            .unwrap()
+            .starts_with("ecdsa-sha2-nistp256 "));
+    }
+
+    #[test]
+    fn parse_p521_pkcs8_round_trips() {
+        use p521::elliptic_curve::Generate;
+        use pkcs8::EncodePrivateKey;
+        let sk = p521::SecretKey::generate_from_rng(&mut rand::rng());
+        let pem = sk.to_pkcs8_pem(pkcs8::LineEnding::LF).unwrap();
+        let key = parse(&pem, None).unwrap();
+        assert!(matches!(
+            key.algorithm(),
+            ssh_key::Algorithm::Ecdsa {
+                curve: ssh_key::EcdsaCurve::NistP521
+            }
+        ));
+        // The recovered key re-encodes to a valid P-521 OpenSSH public key.
+        assert!(key
+            .public_key()
+            .to_openssh()
+            .unwrap()
+            .starts_with("ecdsa-sha2-nistp521 "));
+    }
+
+    #[test]
+    fn parse_legacy_encrypted_pkcs1_pem_round_trips() {
+        use base64::Engine;
+        use cbc::cipher::block_padding::Pkcs7;
+        use cbc::cipher::{BlockEncryptMut, KeyIvInit};
+        use rsa::pkcs1::{EncodeRsaPrivateKey, LineEnding};
+
+        // Fresh 1024-bit RSA key, no embedded secret. 1024 keeps the test
+        // fast; the path under test is format/KDF, not key strength.
+        let rsa_key = rsa::RsaPrivateKey::new(&mut rand::rng(), 1024).unwrap();
+        let want_fp = parse(&rsa_key.to_pkcs1_pem(LineEnding::LF).unwrap(), None)
+            .unwrap()
+            .fingerprint(ssh_key::HashAlg::Sha256)
+            .to_string();
+
+        // Encrypt the PKCS#1 DER exactly as OpenSSL would: EVP_BytesToKey
+        // /MD5 (salt = first 8 IV bytes) + AES-128-CBC + PKCS#7.
+        let der = rsa_key.to_pkcs1_der().unwrap();
+        let iv: [u8; 16] = [
+            0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99, 0xAA, 0xBB, 0xCC, 0xDD,
+            0xEE, 0xFF,
+        ];
+        let pass = b"correct horse battery";
+        let key = evp_bytes_to_key(pass, &iv[..8], 16);
+        let plain = der.as_bytes();
+        let mut buf = plain.to_vec();
+        let n = buf.len();
+        buf.resize(n + 16, 0);
+        let ct = cbc::Encryptor::<aes::Aes128>::new_from_slices(&key, &iv)
+            .unwrap()
+            .encrypt_padded_mut::<Pkcs7>(&mut buf, n)
+            .unwrap()
+            .to_vec();
+
+        let b64 = base64::engine::general_purpose::STANDARD.encode(&ct);
+        let mut body = String::new();
+        for chunk in b64.as_bytes().chunks(64) {
+            body.push_str(std::str::from_utf8(chunk).unwrap());
+            body.push('\n');
+        }
+        let iv_hex: String = iv.iter().map(|b| format!("{:02X}", b)).collect();
+        let pem = format!(
+            "-----BEGIN RSA PRIVATE KEY-----\n\
+             Proc-Type: 4,ENCRYPTED\n\
+             DEK-Info: AES-128-CBC,{iv_hex}\n\n\
+             {body}-----END RSA PRIVATE KEY-----\n"
+        );
+
+        // Missing passphrase prompts; wrong passphrase fails; correct
+        // passphrase recovers the identical key.
+        assert!(matches!(
+            parse(&pem, None),
+            Err(VaultError::KeyNeedsPassphrase)
+        ));
+        assert!(parse(&pem, Some("wrong")).is_err());
+        let got = parse(&pem, Some("correct horse battery")).unwrap();
+        assert_eq!(
+            got.fingerprint(ssh_key::HashAlg::Sha256).to_string(),
+            want_fp
+        );
     }
 }

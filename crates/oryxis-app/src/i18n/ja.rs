@@ -644,7 +644,6 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "key_passphrase_hint" => "この鍵は暗号化されています。一度だけパスフレーズを入力してください。鍵を復号するために使用され、その後破棄されます。復号された鍵は、すでにマスターパスワードで保護されている保管庫に保存されます。",
         "key_passphrase_wrong" => "パスフレーズが間違っています。もう一度お試しください。",
         "key_passphrase_required_msg" => "続行するには鍵のパスフレーズを入力してください。",
-        "key_encrypted_legacy_pem" => "これは OpenSSL で暗号化された PEM 鍵（Proc-Type:4,ENCRYPTED）です。この形式は直接復号できません。PuTTYgen から .ppk 形式で再エクスポートしてください（Conversions \u{2192} Export as PPK）。.ppk は対応しています。または先にパスフレーズを外してください：ssh-keygen -p -f <ファイル> -N ''。",
         "key_unsupported_kind" => "サポート外の鍵種別: {kind}。Ed25519、RSA、または ECDSA（P-256 または P-384）を使用してください。",
         "update_key" => "鍵を更新",
         "save_key" => "鍵を保存",

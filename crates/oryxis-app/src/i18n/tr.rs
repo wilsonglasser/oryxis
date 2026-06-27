@@ -699,7 +699,6 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "key_passphrase_hint" => "Bu anahtar şifrelenmiş. Parola ifadesini bir kez girin: anahtarın şifresini çözmek için kullanılıp sonra atılır. Şifresi çözülmüş anahtar, zaten ana parolanızla şifrelenmiş olan kasanın içinde saklanır.",
         "key_passphrase_wrong" => "Yanlış parola ifadesi. Lütfen tekrar deneyin.",
         "key_passphrase_required_msg" => "Devam etmek için anahtar parola ifadesini girin.",
-        "key_encrypted_legacy_pem" => "Bu, OpenSSL ile şifrelenmiş bir PEM (Proc-Type:4,ENCRYPTED), doğrudan çözemediğimiz bir format. Anahtarı PuTTYgen'den .ppk dosyası olarak yeniden dışa aktarın (Conversions \u{2192} Export as PPK), artık destekliyoruz. Ya da önce parolayı kaldırın: ssh-keygen -p -f <dosya> -N ''.",
         "key_unsupported_kind" => "Desteklenmeyen anahtar türü: {kind}. Ed25519, RSA veya ECDSA (P-256 ya da P-384) kullanın.",
         "update_key" => "Anahtarı Güncelle",
         "save_key" => "Anahtarı Kaydet",

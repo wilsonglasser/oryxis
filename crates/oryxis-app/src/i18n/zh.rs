@@ -644,7 +644,6 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "key_passphrase_hint" => "此密钥已加密。请输入一次口令：它将用于解密密钥，然后被丢弃。解密后的密钥存储在保险库中，保险库已由主密码保护。",
         "key_passphrase_wrong" => "口令错误，请重试。",
         "key_passphrase_required_msg" => "请输入密钥口令以继续。",
-        "key_encrypted_legacy_pem" => "这是 OpenSSL 加密的 PEM 私钥（Proc-Type:4,ENCRYPTED），我们暂不能直接解密该格式。请在 PuTTYgen 中以 .ppk 格式重新导出（Conversions \u{2192} Export as PPK），我们已经支持 .ppk；或先去除口令：ssh-keygen -p -f <文件> -N ''。",
         "key_unsupported_kind" => "不支持的密钥类型：{kind}。请使用 Ed25519、RSA 或 ECDSA（P-256 或 P-384）。",
         "update_key" => "更新密钥",
         "save_key" => "保存密钥",

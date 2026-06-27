@@ -5,7 +5,10 @@ use chacha20poly1305::{
     aead::{Aead, KeyInit, OsRng},
     ChaCha20Poly1305, Nonce,
 };
-use rand::RngCore;
+// Drive `aead::OsRng` through the `RngCore` trait re-exported alongside
+// it, so the at-rest crypto here doesn't pin the `rand` crate version
+// that `keygen` needs for ssh-key 0.7.
+use chacha20poly1305::aead::rand_core::RngCore;
 use rusqlite::{params, Connection as SqliteConn};
 use zeroize::Zeroizing;
 use uuid::Uuid;
@@ -56,13 +59,6 @@ pub enum VaultError {
 
     #[error("Wrong key passphrase")]
     WrongKeyPassphrase,
-
-    /// Legacy OpenSSL-encrypted PEM (`Proc-Type: 4,ENCRYPTED` +
-    /// `DEK-Info:`). We don't ship a PBKDF1-MD5 + DES-EDE3
-    /// implementation for this corner case. The caller surfaces an
-    /// i18n'd message with conversion hints.
-    #[error("Legacy OpenSSL-encrypted key (Proc-Type:4,ENCRYPTED) not supported")]
-    EncryptedLegacyPem,
 
     /// PPK file references an algorithm or KDF we don't implement
     /// (e.g. DSA, or an unknown PPK version). Caller surfaces an i18n

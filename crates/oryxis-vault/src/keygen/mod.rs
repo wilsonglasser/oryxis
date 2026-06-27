@@ -18,7 +18,7 @@ pub struct GeneratedKey {
 
 /// Generate an Ed25519 SSH key pair.
 pub fn generate_ed25519(label: &str) -> Result<GeneratedKey, VaultError> {
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
     let private_key = PrivateKey::random(&mut rng, Algorithm::Ed25519)
         .map_err(|e| VaultError::Crypto(format!("Key generation failed: {}", e)))?;
 
@@ -55,9 +55,11 @@ pub fn is_key_encrypted(private_pem: &str) -> bool {
 /// - OpenSSH (`BEGIN OPENSSH PRIVATE KEY`), supports passphrase-encrypted keys
 /// - PuTTY PPK v2 / v3 (`PuTTY-User-Key-File-2/3:`), supports passphrase-encrypted keys
 /// - PKCS#1 RSA (`BEGIN RSA PRIVATE KEY`)
-/// - PKCS#8 (`BEGIN PRIVATE KEY`), RSA, ECDSA P-256/P-384, Ed25519
-/// - Encrypted PKCS#8 (`BEGIN ENCRYPTED PRIVATE KEY`), RSA, ECDSA P-256/P-384
-/// - SEC1 EC (`BEGIN EC PRIVATE KEY`), P-256, P-384
+/// - PKCS#8 (`BEGIN PRIVATE KEY`), RSA, ECDSA P-256/P-384/P-521, Ed25519
+/// - Encrypted PKCS#8 (`BEGIN ENCRYPTED PRIVATE KEY`), RSA, ECDSA P-256/P-384/P-521
+/// - SEC1 EC (`BEGIN EC PRIVATE KEY`), P-256, P-384, P-521
+/// - OpenSSL-legacy traditional PEM (`Proc-Type: 4,ENCRYPTED` + `DEK-Info`),
+///   PKCS#1 RSA and SEC1 EC, decrypted with EVP_BytesToKey + AES/3DES-CBC
 ///
 /// `passphrase` is consulted only when the key is detected as encrypted.
 /// Returns `KeyNeedsPassphrase` if the key is encrypted and `passphrase` is
@@ -127,11 +129,7 @@ fn finalize(label: &str, private_key: PrivateKey) -> Result<GeneratedKey, VaultE
         Algorithm::Ecdsa { curve } => match curve {
             ssh_key::EcdsaCurve::NistP256 => KeyAlgorithm::EcdsaP256,
             ssh_key::EcdsaCurve::NistP384 => KeyAlgorithm::EcdsaP384,
-            ssh_key::EcdsaCurve::NistP521 => {
-                return Err(VaultError::UnsupportedKeyKind(
-                    "ecdsa-sha2-nistp521".into(),
-                ));
-            }
+            ssh_key::EcdsaCurve::NistP521 => KeyAlgorithm::EcdsaP521,
         },
         other => {
             return Err(VaultError::UnsupportedKeyKind(other.as_str().to_string()));
@@ -194,7 +192,7 @@ mod tests {
         // passphrase path the host-key import UI depends on.
         let src = generate_ed25519("enc-src").unwrap();
         let key = PrivateKey::from_openssh(&src.private_pem).unwrap();
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
         let enc_pem = key
             .encrypt(&mut rng, "pw123")
             .unwrap()
@@ -269,7 +267,7 @@ mod tests {
     #[test]
     fn import_encrypted_openssh_requires_passphrase() {
         use ssh_key::{Algorithm, PrivateKey};
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
         let key = PrivateKey::random(&mut rng, Algorithm::Ed25519).unwrap();
         let encrypted = key.encrypt(&mut rng, b"hunter2").unwrap();
         let pem = encrypted.to_openssh(ssh_key::LineEnding::LF).unwrap().to_string();

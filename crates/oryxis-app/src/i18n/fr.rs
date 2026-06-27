@@ -644,7 +644,6 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "key_passphrase_hint" => "Cette clé est chiffrée. Saisissez la phrase de passe une seule fois : elle servira à déchiffrer la clé puis sera supprimée. La clé déchiffrée est stockée dans le coffre, déjà protégé par votre mot de passe principal.",
         "key_passphrase_wrong" => "Phrase de passe incorrecte. Veuillez réessayer.",
         "key_passphrase_required_msg" => "Saisissez la phrase de passe de la clé pour continuer.",
-        "key_encrypted_legacy_pem" => "Cette clé est un PEM chiffré par OpenSSL (Proc-Type:4,ENCRYPTED), un format que nous ne pouvons pas déchiffrer directement. Réexportez la clé depuis PuTTYgen au format .ppk (Conversions \u{2192} Export as PPK), c'est désormais pris en charge, ou retirez la phrase de passe avec : ssh-keygen -p -f <fichier> -N ''.",
         "key_unsupported_kind" => "Type de clé non pris en charge : {kind}. Utilisez Ed25519, RSA ou ECDSA (P-256 ou P-384).",
         "update_key" => "Mettre à jour la clé",
         "save_key" => "Enregistrer la clé",

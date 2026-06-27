@@ -699,7 +699,6 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "key_passphrase_hint" => "Kunci ini terenkripsi. Masukkan passphrase sekali: itu akan dipakai untuk mendekripsi kunci, lalu dibuang. Kunci yang didekripsi disimpan di dalam vault, yang sudah terenkripsi dengan kata sandi master Anda.",
         "key_passphrase_wrong" => "Passphrase salah. Silakan coba lagi.",
         "key_passphrase_required_msg" => "Masukkan passphrase kunci untuk melanjutkan.",
-        "key_encrypted_legacy_pem" => "Ini adalah PEM terenkripsi OpenSSL (Proc-Type:4,ENCRYPTED), format yang tidak bisa kami dekripsi langsung. Ekspor ulang kunci dari PuTTYgen sebagai file .ppk (Conversions \u{2192} Export as PPK), yang kini kami dukung. Atau hapus passphrase dulu: ssh-keygen -p -f <file> -N ''.",
         "key_unsupported_kind" => "Tipe kunci tidak didukung: {kind}. Gunakan Ed25519, RSA, atau ECDSA (P-256 atau P-384).",
         "update_key" => "Perbarui Kunci",
         "save_key" => "Simpan Kunci",

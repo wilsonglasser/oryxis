@@ -699,7 +699,6 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "key_passphrase_hint" => "이 키는 암호화되어 있습니다. 암호를 한 번 입력하세요: 키를 복호화하는 데 사용된 후 폐기됩니다. 복호화된 키는 이미 마스터 비밀번호로 암호화된 볼트 내부에 저장됩니다.",
         "key_passphrase_wrong" => "잘못된 암호입니다. 다시 시도하세요.",
         "key_passphrase_required_msg" => "계속하려면 키 암호를 입력하세요.",
-        "key_encrypted_legacy_pem" => "이것은 OpenSSL로 암호화된 PEM(Proc-Type:4,ENCRYPTED)으로, 직접 복호화할 수 없는 형식입니다. PuTTYgen에서 키를 .ppk 파일로 다시 내보내세요(Conversions \u{2192} Export as PPK). 이제 이 형식을 지원합니다. 또는 먼저 암호를 제거하세요: ssh-keygen -p -f <file> -N ''.",
         "key_unsupported_kind" => "지원되지 않는 키 유형: {kind}. Ed25519, RSA 또는 ECDSA(P-256 또는 P-384)를 사용하세요.",
         "update_key" => "키 업데이트",
         "save_key" => "키 저장",

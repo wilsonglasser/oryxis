@@ -635,7 +635,6 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "key_passphrase_hint" => "Dieser Schlüssel ist verschlüsselt. Geben Sie die Passphrase einmal ein: sie wird zum Entschlüsseln des Schlüssels verwendet und danach verworfen. Der entschlüsselte Schlüssel wird im Tresor gespeichert, der bereits mit Ihrem Master-Passwort geschützt ist.",
         "key_passphrase_wrong" => "Falsche Passphrase. Bitte erneut versuchen.",
         "key_passphrase_required_msg" => "Schlüssel-Passphrase eingeben, um fortzufahren.",
-        "key_encrypted_legacy_pem" => "Dies ist ein von OpenSSL verschlüsselter PEM-Schlüssel (Proc-Type:4,ENCRYPTED), den wir nicht direkt entschlüsseln können. Exportiere den Schlüssel aus PuTTYgen erneut als .ppk-Datei (Conversions \u{2192} Export as PPK), das unterstützen wir jetzt. Alternativ kannst du die Passphrase vorher entfernen: ssh-keygen -p -f <datei> -N ''.",
         "key_unsupported_kind" => "Nicht unterstützter Schlüsseltyp: {kind}. Verwende Ed25519, RSA oder ECDSA (P-256 oder P-384).",
         "update_key" => "Schlüssel aktualisieren",
         "save_key" => "Schlüssel speichern",

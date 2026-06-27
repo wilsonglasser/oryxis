@@ -699,7 +699,6 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "key_passphrase_hint" => "Khóa này được mã hóa. Nhập cụm mật khẩu một lần: nó sẽ được dùng để giải mã khóa, rồi bị loại bỏ. Khóa đã giải mã được lưu bên trong kho, vốn đã được mã hóa bằng mật khẩu chính của bạn.",
         "key_passphrase_wrong" => "Cụm mật khẩu sai. Vui lòng thử lại.",
         "key_passphrase_required_msg" => "Nhập cụm mật khẩu của khóa để tiếp tục.",
-        "key_encrypted_legacy_pem" => "Đây là PEM được mã hóa bằng OpenSSL (Proc-Type:4,ENCRYPTED), một định dạng mà chúng tôi không thể giải mã trực tiếp. Hãy xuất lại khóa từ PuTTYgen dưới dạng tệp .ppk (Conversions \u{2192} Export as PPK), định dạng nay đã được hỗ trợ. Hoặc gỡ cụm mật khẩu trước: ssh-keygen -p -f <file> -N ''.",
         "key_unsupported_kind" => "Loại khóa không được hỗ trợ: {kind}. Dùng Ed25519, RSA, hoặc ECDSA (P-256 hoặc P-384).",
         "update_key" => "Cập nhật khóa",
         "save_key" => "Lưu khóa",

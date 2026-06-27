@@ -635,7 +635,6 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "key_passphrase_hint" => "Questa chiave è cifrata. Inserisci la passphrase una volta: verrà usata per decifrare la chiave e poi scartata. La chiave decifrata è conservata nel vault, già protetto dalla tua password principale.",
         "key_passphrase_wrong" => "Passphrase errata. Riprova.",
         "key_passphrase_required_msg" => "Inserisci la passphrase della chiave per continuare.",
-        "key_encrypted_legacy_pem" => "Questa è una chiave PEM cifrata da OpenSSL (Proc-Type:4,ENCRYPTED), un formato che non possiamo decifrare direttamente. Riesporta la chiave da PuTTYgen come file .ppk (Conversions \u{2192} Export as PPK), ora la supportiamo, oppure rimuovi la passphrase con: ssh-keygen -p -f <file> -N ''.",
         "key_unsupported_kind" => "Tipo di chiave non supportato: {kind}. Usa Ed25519, RSA o ECDSA (P-256 o P-384).",
         "update_key" => "Aggiorna Chiave",
         "save_key" => "Salva Chiave",

@@ -15,22 +15,35 @@ thiserror = { workspace = true }
 zeroize = { workspace = true }
 uuid = { workspace = true }
 chrono = { workspace = true }
-rand = { workspace = true }
+# Pinned to the same `rand` generation russh 0.61 already pulls in (its
+# `ThreadRng` implements `rand_core 0.10`'s `CryptoRng`, which
+# `ssh_key::PrivateKey::random` requires). Only `keygen` uses it; the
+# at-rest crypto in `store/` drives `aead::OsRng` through the
+# `rand_core` re-exported by `chacha20poly1305`, so it stays decoupled
+# from this version.
+rand = "0.10"
 dirs = "6"
 base64 = "0.22"
-ssh-key = { version = "0.6", features = ["ed25519", "std", "rand_core", "encryption", "rsa", "p256", "p384"] }
-rsa = { version = "0.9", features = ["pem"] }
-p256 = { version = "0.13", features = ["ecdsa", "pkcs8", "pem"] }
-p384 = { version = "0.13", features = ["ecdsa", "pkcs8", "pem"] }
+# ssh-key 0.7 is the version russh 0.61 consumes; pinning the vault to it
+# collapses the duplicate 0.6 copy (and its rsa 0.9 / p256 0.13 tails)
+# down to a single crypto stack across the workspace.
+ssh-key = { version = "=0.7.0-rc.10", features = ["ed25519", "std", "rand_core", "encryption", "rsa", "p256", "p384", "p521"] }
+rsa = "0.10.0-rc.18"
+p256 = { version = "0.14.0-rc.9", features = ["ecdsa", "pkcs8", "pem"] }
+p384 = { version = "0.14.0-rc.9", features = ["ecdsa", "pkcs8", "pem"] }
+p521 = { version = "0.14.0-rc.9", features = ["ecdsa", "pkcs8", "pem"] }
 # Encrypted PKCS#8 (`BEGIN ENCRYPTED PRIVATE KEY`) support. We decrypt
 # once with pkcs8's PBES2 implementation, then hand the inner plaintext
 # back to the per-algorithm PKCS#8 parsers above.
-pkcs8 = { version = "0.10", features = ["encryption", "pem"] }
-# PPK (PuTTY .ppk) parser primitives. All transitively present already
-# via russh / ssh-key / argon2; declared here to give the keygen module
-# stable direct paths.
+pkcs8 = { version = "0.11", features = ["encryption", "pem"] }
+# PPK (PuTTY .ppk) parser primitives plus OpenSSL-legacy traditional PEM
+# decryption (EVP_BytesToKey/MD5 + AES-CBC or DES-EDE3-CBC). All
+# transitively present already via russh / ssh-key; declared here to give
+# the keygen module stable direct paths.
 aes = "0.8"
 cbc = "0.1"
+des = "0.8"
+md-5 = "0.10"
 hmac = "0.12"
 sha1 = "0.10"
 sha2 = "0.10"

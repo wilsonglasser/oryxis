@@ -665,7 +665,6 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "key_passphrase_hint" => "Esta chave está criptografada. Digite a senha uma vez: ela será usada para descriptografar a chave e depois descartada. A chave descriptografada fica guardada dentro do cofre, que já é protegido pela sua senha mestre.",
         "key_passphrase_wrong" => "Senha incorreta. Tente novamente.",
         "key_passphrase_required_msg" => "Digite a senha da chave para continuar.",
-        "key_encrypted_legacy_pem" => "Esta é uma chave PEM criptografada pelo OpenSSL (Proc-Type:4,ENCRYPTED), formato que não conseguimos descriptografar diretamente. Reexporte a chave pelo PuTTYgen como .ppk (Conversions \u{2192} Export as PPK), agora temos suporte, ou remova a senha com: ssh-keygen -p -f <arquivo> -N ''.",
         "key_unsupported_kind" => "Tipo de chave não suportado: {kind}. Use Ed25519, RSA ou ECDSA (P-256 ou P-384).",
         "update_key" => "Atualizar Chave",
         "save_key" => "Salvar Chave",
