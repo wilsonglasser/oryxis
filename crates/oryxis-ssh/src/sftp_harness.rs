@@ -29,7 +29,7 @@ use crate::sftp::SftpClient;
 /// Throwaway ed25519 host key for the in-process server (generated once
 /// with `ssh-keygen`, never used anywhere real). Avoids pulling an RNG
 /// path into the test.
-const HARNESS_HOST_KEY: &str = "-----BEGIN OPENSSH PRIVATE KEY-----
+pub(crate) const HARNESS_HOST_KEY: &str = "-----BEGIN OPENSSH PRIVATE KEY-----
 b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAMwAAAAtzc2gtZW
 QyNTUxOQAAACBlvoDcBf/w9DbcBLuL2Rj1Lvv7QsEoUz4BIn2EjAQ7tgAAAJDSAIzt0gCM
 7QAAAAtzc2gtZWQyNTUxOQAAACBlvoDcBf/w9DbcBLuL2Rj1Lvv7QsEoUz4BIn2EjAQ7tg
