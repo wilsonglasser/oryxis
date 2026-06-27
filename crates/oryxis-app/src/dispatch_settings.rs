@@ -158,6 +158,28 @@ impl Oryxis {
         }
     }
 
+    /// Apply the session-only local terminal theme to every open
+    /// local/ephemeral pane (panes without a saved host). Host panes keep
+    /// their own resolution. `None` falls back to the global palette.
+    pub(crate) fn apply_local_terminal_palette(&self) {
+        let palette = match &self.local_terminal_theme {
+            Some(name) => self
+                .terminal_palette_for_name(name)
+                .unwrap_or_else(|| self.resolve_global_terminal_palette()),
+            None => self.resolve_global_terminal_palette(),
+        };
+        for tab in &self.tabs {
+            for pane in tab.pane_grid.panes.values() {
+                if matches!(pane.origin, crate::state::PaneOrigin::Host(_)) {
+                    continue;
+                }
+                if let Ok(mut state) = pane.terminal.lock() {
+                    state.palette = palette.clone();
+                }
+            }
+        }
+    }
+
     /// Re-paint only the tabs attached to a single host's label.
     /// Called when the per-host override changes.
     pub(crate) fn repaint_terminal_palettes_for_label(&self, label: &str) {
@@ -411,6 +433,28 @@ impl Oryxis {
                 }
                 self.terminal_palette = self.resolve_global_terminal_palette();
                 self.repaint_all_terminal_palettes();
+            }
+            Message::LocalConfigThemeChanged(name) => {
+                // Session-only override for local/ephemeral panes. Empty =
+                // follow the global terminal theme. Unknown names ignored.
+                if name.is_empty() {
+                    self.local_terminal_theme = None;
+                } else if self.terminal_palette_for_name(&name).is_some() {
+                    self.local_terminal_theme = Some(name);
+                } else {
+                    return Ok(Task::none());
+                }
+                self.apply_local_terminal_palette();
+            }
+            Message::LocalConfigSaveGlobal => {
+                // Promote the session override to the persisted global
+                // default, then drop it (the panes now follow global).
+                if let Some(name) = self.local_terminal_theme.take() {
+                    self.terminal_theme_override = Some(name.clone());
+                    self.persist_setting("terminal_theme_override", &name);
+                    self.terminal_palette = self.resolve_global_terminal_palette();
+                    self.repaint_all_terminal_palettes();
+                }
             }
             Message::ThemeEditorOpenPicker(slot) => {
                 self.theme_color_popover = Some((slot, self.mouse_position));

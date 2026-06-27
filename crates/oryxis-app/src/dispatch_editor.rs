@@ -787,9 +787,68 @@ impl Oryxis {
                 }
             }
 
+            // ── Live host-config edits from the terminal sidebar tab ──
+            Message::HostConfigThemeChanged(name) => {
+                // Empty sentinel = follow the global terminal theme (None).
+                let value = if name.is_empty() { None } else { Some(name) };
+                self.host_config_apply(|c| c.terminal_theme = value, true);
+            }
+            Message::HostConfigEncodingChanged(v) => {
+                let value = if v == "UTF-8" { None } else { Some(v) };
+                self.host_config_apply(|c| c.encoding = value, false);
+            }
+            Message::HostConfigTerminalTypeChanged(v) => {
+                let value = if v == "xterm-256color" { None } else { Some(v) };
+                self.host_config_apply(|c| c.terminal_type = value, false);
+            }
+            Message::HostConfigAutoTitleChanged(v) => {
+                use crate::i18n::t;
+                let value = if v == t("host_auto_title_show") {
+                    Some(true)
+                } else if v == t("host_auto_title_hide") {
+                    Some(false)
+                } else {
+                    None
+                };
+                self.host_config_apply(|c| c.auto_title = value, false);
+            }
+
             m => return Err(m),
         }
         Ok(Task::none())
+    }
+
+    /// Resolve the focused pane's connection index, apply `mutate`, persist
+    /// it (preserving the password), and refresh in-memory state. When
+    /// `repaint` is set (theme changes) the running terminal is repainted
+    /// for instant preview. A no-op when the focused pane isn't a saved host.
+    pub(crate) fn host_config_apply<F: FnOnce(&mut oryxis_core::models::connection::Connection)>(
+        &mut self,
+        mutate: F,
+        repaint: bool,
+    ) {
+        let Some(id) = self
+            .active_tab
+            .and_then(|i| self.tabs.get(i))
+            .and_then(|tab| match &tab.active().origin {
+                crate::state::PaneOrigin::Host(id) => Some(*id),
+                _ => None,
+            })
+        else {
+            return;
+        };
+        let Some(idx) = self.connections.iter().position(|c| c.id == id) else {
+            return;
+        };
+        mutate(&mut self.connections[idx]);
+        let label = self.connections[idx].label.clone();
+        if let Some(vault) = &self.vault {
+            // `None` preserves the encrypted password column untouched.
+            let _ = vault.save_connection(&self.connections[idx], None);
+        }
+        if repaint {
+            self.repaint_terminal_palettes_for_label(&label);
+        }
     }
 }
 

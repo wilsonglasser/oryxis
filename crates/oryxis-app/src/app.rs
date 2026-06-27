@@ -849,6 +849,12 @@ pub struct Oryxis {
     /// theme's display name (e.g. "Dracula") so the value survives new
     /// theme additions without a migration.
     pub(crate) terminal_theme_override: Option<String>,
+    /// Session-only theme override applied to local/ephemeral terminal
+    /// panes (which have no saved Connection). `None` follows the global
+    /// terminal theme. Set from the Host config sidebar tab when the
+    /// focused pane is a local shell; not persisted unless the user saves
+    /// it as the global default.
+    pub(crate) local_terminal_theme: Option<String>,
     pub(crate) terminal_font_size: f32,
     pub(crate) terminal_font_name: String,
 

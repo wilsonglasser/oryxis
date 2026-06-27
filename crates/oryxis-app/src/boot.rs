@@ -436,6 +436,7 @@ impl Oryxis {
                 proxy_search: String::new(),
                 terminal_palette: oryxis_terminal::TerminalPalette::default(),
                 terminal_theme_override: None,
+                local_terminal_theme: None,
                 terminal_font_size: 14.0,
                 terminal_font_name: "SauceCodePro Nerd Font".to_string(),
                 settings_section: SettingsSection::Interface,

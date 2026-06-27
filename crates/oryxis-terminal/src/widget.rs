@@ -1206,7 +1206,16 @@ where
                 if was_dragging {
                     return Some(CanvasAction::request_redraw().and_capture());
                 }
-                return Some(CanvasAction::capture());
+                // Only swallow the release when it belongs to this terminal:
+                // a finishing selection, or a release physically over the
+                // canvas. A stray release that lands on a sibling widget
+                // (e.g. a button in the terminal sidebar) must pass through,
+                // otherwise that widget never sees its release and its
+                // `on_press` never fires (iced buttons act on release).
+                if was_selecting || was_semantic || cursor.position_in(bounds).is_some() {
+                    return Some(CanvasAction::capture());
+                }
+                return None;
             }
             // Right-click, paste from clipboard. When the host wired an
             // `on_paste_request` callback we delegate the actual paste to

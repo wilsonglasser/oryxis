@@ -17,6 +17,9 @@ pub enum TerminalSidebarTab {
     #[default]
     Chat,
     Snippets,
+    /// Per-host appearance/behavior settings for the focused pane's
+    /// connection, edited live with the terminal visible alongside.
+    HostConfig,
 }
 
 /// Identifies a secret text field whose reveal/eye toggle is on. One

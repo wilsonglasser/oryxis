@@ -647,8 +647,19 @@ pub enum Message {
     CloudSearchChanged(String),
     ProxySearchChanged(String),
 
-    // Terminal side panel (Chat / Snippets / History tabs)
+    // Terminal side panel (Chat / Snippets / Host config tabs)
     SelectTerminalSidebarTab(crate::state::TerminalSidebarTab),
+    /// Live per-host edits from the Host config sidebar tab. Each mutates
+    /// the focused pane's connection, persists immediately, and (for the
+    /// theme) repaints the running terminal for instant preview.
+    HostConfigThemeChanged(String),
+    HostConfigEncodingChanged(String),
+    HostConfigTerminalTypeChanged(String),
+    HostConfigAutoTitleChanged(String),
+    /// Local/ephemeral panes have no saved host: pick a session-only theme
+    /// for the open local terminals, or promote it to the global default.
+    LocalConfigThemeChanged(String),
+    LocalConfigSaveGlobal,
     SidebarSnippetSearchChanged(String),
     /// Toggle the Snippets-tab sort popover.
     ToggleSidebarSort,
