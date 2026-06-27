@@ -27,6 +27,7 @@ pub(crate) mod settings_ui_themes;
 pub(crate) mod sftp;
 pub(crate) mod sidebar;
 pub(crate) mod sidebar_host_config;
+pub(crate) mod sidebar_chat;
 pub(crate) mod sidebar_snippets;
 pub(crate) mod snippets;
 pub(crate) mod status_bar;
