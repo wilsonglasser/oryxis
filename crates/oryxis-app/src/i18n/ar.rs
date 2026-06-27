@@ -314,6 +314,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "notify_toast" => "تنبيه داخل التطبيق",
         "notify_os" => "إشعار النظام",
         "keepalive_interval" => "فاصل البقاء على قيد الاتصال",
+        "new_connection_defaults" => "إعدادات الاتصال الجديد الافتراضية",
+        "new_connection_defaults_desc" => "تُملأ مسبقًا في النموذج عند إضافة مضيف.",
         "scrollback" => "سجل التمرير",
         "word_delimiters" => "فواصل الكلمات",
         "setting_word_delimiters_desc" => "الأحرف التي تفصل الكلمات عند التحديد بالنقر المزدوج. النقر الثلاثي يحدد السطر بأكمله دائمًا.",

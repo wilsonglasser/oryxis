@@ -973,6 +973,31 @@ impl Oryxis {
                 self.setting_keepalive_interval = sanitize_uint(&val, 86_400);
                 self.persist_setting("keepalive_interval", &self.setting_keepalive_interval);
             }
+            Message::ToggleDefaultAgentForwarding => {
+                self.setting_default_agent_forwarding = !self.setting_default_agent_forwarding;
+                self.persist_setting(
+                    "default_agent_forwarding",
+                    if self.setting_default_agent_forwarding { "true" } else { "false" },
+                );
+            }
+            Message::DefaultPortChanged(val) => {
+                self.setting_default_port = sanitize_uint(&val, 65_535);
+                self.persist_setting("default_port", &self.setting_default_port);
+            }
+            Message::DefaultKeepaliveChanged(val) => {
+                // Empty stays empty (= inherit the global keepalive); otherwise
+                // digits capped at 1 day.
+                self.setting_default_keepalive = if val.trim().is_empty() {
+                    String::new()
+                } else {
+                    sanitize_uint(&val, 86_400)
+                };
+                self.persist_setting("default_keepalive", &self.setting_default_keepalive);
+            }
+            Message::DefaultTerminalTypeChanged(val) => {
+                self.setting_default_terminal_type = val;
+                self.persist_setting("default_terminal_type", &self.setting_default_terminal_type);
+            }
             Message::SettingScrollbackChanged(val) => {
                 // Cap at 1M rows, alacritty allocates lazily but >1M is
                 // both unreasonable and a foot-gun for memory pressure.

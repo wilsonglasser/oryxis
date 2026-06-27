@@ -476,6 +476,10 @@ impl Oryxis {
                 setting_nav_rail_expanded: false,
                 setting_default_host_icon: "circular".into(),
                 setting_keepalive_interval: "30".into(),
+                setting_default_agent_forwarding: false,
+                setting_default_port: "22".into(),
+                setting_default_keepalive: String::new(),
+                setting_default_terminal_type: "xterm-256color".into(),
                 setting_cloud_auto_refresh_enabled: false,
                 setting_cloud_auto_refresh_interval_minutes: "30".into(),
                 setting_cloud_auto_archive_orphans: false,
@@ -1007,6 +1011,19 @@ impl Oryxis {
             }
             if let Ok(Some(v)) = vault.get_setting("keepalive_interval") {
                 self.setting_keepalive_interval = v;
+            }
+            // New-connection defaults (pre-filled into a fresh host form).
+            if let Ok(Some(v)) = vault.get_setting("default_agent_forwarding") {
+                self.setting_default_agent_forwarding = v == "true";
+            }
+            if let Ok(Some(v)) = vault.get_setting("default_port") {
+                self.setting_default_port = v;
+            }
+            if let Ok(Some(v)) = vault.get_setting("default_keepalive") {
+                self.setting_default_keepalive = v;
+            }
+            if let Ok(Some(v)) = vault.get_setting("default_terminal_type") {
+                self.setting_default_terminal_type = v;
             }
             // One-shot migration: 30s is the new default in this version,
             // up from the previous "0" (off). Users sitting at the old

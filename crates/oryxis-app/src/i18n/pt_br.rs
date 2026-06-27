@@ -308,6 +308,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "notify_toast" => "Toast no app",
         "notify_os" => "Notificação do sistema",
         "keepalive_interval" => "Intervalo de Keepalive",
+        "new_connection_defaults" => "Padrões de nova conexão",
+        "new_connection_defaults_desc" => "Pré-preenchidos no formulário ao adicionar um host.",
         "scrollback" => "Histórico de rolagem",
         "word_delimiters" => "Delimitadores de palavra",
         "setting_word_delimiters_desc" => "Caracteres que separam palavras ao selecionar com duplo clique. O triplo clique sempre seleciona a linha inteira.",

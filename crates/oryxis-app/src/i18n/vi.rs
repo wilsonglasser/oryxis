@@ -314,6 +314,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "notify_toast" => "Thông báo trong ứng dụng",
         "notify_os" => "Thông báo hệ thống",
         "keepalive_interval" => "Khoảng Keepalive",
+        "new_connection_defaults" => "Mặc định kết nối mới",
+        "new_connection_defaults_desc" => "Điền sẵn vào biểu mẫu khi thêm host.",
         "scrollback" => "Vùng cuộn lại",
         "word_delimiters" => "Ký tự phân tách từ",
         "setting_word_delimiters_desc" => "Các ký tự phân tách từ khi chọn bằng nhấp đúp. Nhấp ba lần luôn chọn toàn bộ dòng.",

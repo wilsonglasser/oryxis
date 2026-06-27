@@ -1001,6 +1001,14 @@ pub struct Oryxis {
     /// the renderer keeps the current shape.
     pub(crate) setting_default_host_icon: String,
     pub(crate) setting_keepalive_interval: String,
+    /// Defaults pre-filled into the form for a NEW connection, so the user
+    /// doesn't re-set the same fields every time. Persisted as
+    /// `default_agent_forwarding` / `default_port` / `default_keepalive` /
+    /// `default_terminal_type`.
+    pub(crate) setting_default_agent_forwarding: bool,
+    pub(crate) setting_default_port: String,
+    pub(crate) setting_default_keepalive: String,
+    pub(crate) setting_default_terminal_type: String,
     /// Background refresh of every cloud profile on a fixed interval.
     /// Off by default; opt-in to avoid surprise API calls.
     pub(crate) setting_cloud_auto_refresh_enabled: bool,

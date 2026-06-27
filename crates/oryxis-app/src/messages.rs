@@ -783,6 +783,11 @@ pub enum Message {
     ToggleNavRailExpanded,
     SettingDefaultHostIconChanged(String),
     SettingKeepaliveChanged(String),
+    /// New-connection defaults (pre-filled into a fresh host form).
+    ToggleDefaultAgentForwarding,
+    DefaultPortChanged(String),
+    DefaultKeepaliveChanged(String),
+    DefaultTerminalTypeChanged(String),
     SettingScrollbackChanged(String),
     SettingWordDelimitersChanged(String),
     SettingResetWordDelimiters,

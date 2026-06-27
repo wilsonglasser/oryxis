@@ -313,6 +313,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "notify_toast" => "In-App-Hinweis",
         "notify_os" => "Systembenachrichtigung",
         "keepalive_interval" => "Keepalive-Intervall",
+        "new_connection_defaults" => "Standardwerte für neue Verbindungen",
+        "new_connection_defaults_desc" => "Beim Hinzufügen eines Hosts ins Formular vorausgefüllt.",
         "scrollback" => "Scrollverlauf",
         "word_delimiters" => "Worttrenner",
         "setting_word_delimiters_desc" => "Zeichen, die Wörter bei der Auswahl per Doppelklick trennen. Dreifachklick wählt immer die ganze Zeile.",

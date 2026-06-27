@@ -313,6 +313,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "notify_toast" => "Уведомление в приложении",
         "notify_os" => "Системное уведомление",
         "keepalive_interval" => "Интервал Keepalive",
+        "new_connection_defaults" => "Значения по умолчанию для новых подключений",
+        "new_connection_defaults_desc" => "Подставляются в форму при добавлении хоста.",
         "scrollback" => "Буфер прокрутки",
         "word_delimiters" => "Разделители слов",
         "setting_word_delimiters_desc" => "Символы, разделяющие слова при выделении двойным щелчком. Тройной щелчок всегда выделяет всю строку.",

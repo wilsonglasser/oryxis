@@ -313,6 +313,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "notify_toast" => "应用内提示",
         "notify_os" => "系统通知",
         "keepalive_interval" => "心跳间隔",
+        "new_connection_defaults" => "新连接默认值",
+        "new_connection_defaults_desc" => "添加主机时预填到表单中。",
         "scrollback" => "回滚行数",
         "word_delimiters" => "单词分隔符",
         "setting_word_delimiters_desc" => "双击选择时用于分隔单词的字符。三击始终选择整行。",

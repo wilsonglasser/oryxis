@@ -13,6 +13,28 @@ use crate::app::{Message, Oryxis};
 use crate::state::{ConnectionForm, PortForwardForm, ProxyKind};
 
 impl Oryxis {
+    /// A blank connection form pre-filled with the user's new-connection
+    /// defaults (agent forwarding, port, keepalive, TERM), so they don't
+    /// re-set the same fields on every new host.
+    pub(crate) fn new_connection_form(&self) -> crate::state::ConnectionForm {
+        let term = &self.setting_default_terminal_type;
+        crate::state::ConnectionForm {
+            agent_forwarding: self.setting_default_agent_forwarding,
+            port: if self.setting_default_port.is_empty() || self.setting_default_port == "0" {
+                "22".to_string()
+            } else {
+                self.setting_default_port.clone()
+            },
+            keepalive_interval: self.setting_default_keepalive.clone(),
+            terminal_type: if term.is_empty() || term == "xterm-256color" {
+                None
+            } else {
+                Some(term.clone())
+            },
+            ..crate::state::ConnectionForm::default()
+        }
+    }
+
     /// Rebuild the native combo_box states backing the host editor's
     /// Parent Group and Initial Command / Snippet fields. Called on
     /// editor-open.
@@ -121,7 +143,7 @@ impl Oryxis {
                 self.show_session_group_panel = false;
                 self.group_edit_visible = false;
                 self.show_host_panel = true;
-                self.editor_form = ConnectionForm::default();
+                self.editor_form = self.new_connection_form();
                 self.editor_initial_command = iced::widget::text_editor::Content::new();
                 self.editor_startup_choice = crate::state::StartupChoice::None;
                 if let Some(gid) = self.active_group

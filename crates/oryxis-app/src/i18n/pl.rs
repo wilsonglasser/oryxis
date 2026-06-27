@@ -314,6 +314,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "notify_toast" => "Powiadomienie w aplikacji",
         "notify_os" => "Powiadomienie systemowe",
         "keepalive_interval" => "Interwał keepalive",
+        "new_connection_defaults" => "Domyślne dla nowych połączeń",
+        "new_connection_defaults_desc" => "Wstępnie wypełniane w formularzu przy dodawaniu hosta.",
         "scrollback" => "Bufor przewijania",
         "word_delimiters" => "Separatory słów",
         "setting_word_delimiters_desc" => "Znaki oddzielające słowa przy zaznaczaniu podwójnym kliknięciem. Potrójne kliknięcie zawsze zaznacza cały wiersz.",

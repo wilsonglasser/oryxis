@@ -314,6 +314,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "notify_toast" => "Uygulama içi bildirim",
         "notify_os" => "Sistem bildirimi",
         "keepalive_interval" => "Keepalive Aralığı",
+        "new_connection_defaults" => "Yeni bağlantı varsayılanları",
+        "new_connection_defaults_desc" => "Bir ana makine eklerken forma önceden doldurulur.",
         "scrollback" => "Geri kaydırma",
         "word_delimiters" => "Sözcük ayırıcıları",
         "setting_word_delimiters_desc" => "Çift tıklamayla seçimde sözcükleri ayıran karakterler. Üç tıklama her zaman tüm satırı seçer.",

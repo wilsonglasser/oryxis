@@ -313,6 +313,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "notify_toast" => "アプリ内トースト",
         "notify_os" => "システム通知",
         "keepalive_interval" => "キープアライブ間隔",
+        "new_connection_defaults" => "新規接続のデフォルト",
+        "new_connection_defaults_desc" => "ホスト追加時にフォームへ自動入力されます。",
         "scrollback" => "スクロールバック",
         "word_delimiters" => "単語区切り文字",
         "setting_word_delimiters_desc" => "ダブルクリック選択で単語を区切る文字。トリプルクリックは常に行全体を選択します。",

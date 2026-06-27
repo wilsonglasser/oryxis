@@ -314,6 +314,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "notify_toast" => "Toast dalam aplikasi",
         "notify_os" => "Notifikasi sistem",
         "keepalive_interval" => "Interval Keepalive",
+        "new_connection_defaults" => "Default koneksi baru",
+        "new_connection_defaults_desc" => "Diisi otomatis di formulir saat menambah host.",
         "scrollback" => "Scrollback",
         "word_delimiters" => "Pembatas kata",
         "setting_word_delimiters_desc" => "Karakter yang memisahkan kata saat memilih dengan klik ganda. Klik tiga kali selalu memilih seluruh baris.",

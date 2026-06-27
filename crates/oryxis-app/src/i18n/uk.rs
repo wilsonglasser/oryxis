@@ -314,6 +314,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "notify_toast" => "Сповіщення в застосунку",
         "notify_os" => "Системне сповіщення",
         "keepalive_interval" => "Інтервал keepalive",
+        "new_connection_defaults" => "Типові значення нового з'єднання",
+        "new_connection_defaults_desc" => "Підставляються у форму при додаванні хоста.",
         "scrollback" => "Буфер прокручування",
         "word_delimiters" => "Роздільники слів",
         "setting_word_delimiters_desc" => "Символи, що розділяють слова під час вибору подвійним клацанням. Потрійне клацання завжди вибирає весь рядок.",

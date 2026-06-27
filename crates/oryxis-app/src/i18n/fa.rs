@@ -314,6 +314,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "notify_toast" => "اعلان درون‌برنامه",
         "notify_os" => "اعلان سیستم",
         "keepalive_interval" => "فاصله Keepalive",
+        "new_connection_defaults" => "پیش‌فرض‌های اتصال جدید",
+        "new_connection_defaults_desc" => "هنگام افزودن میزبان در فرم پر می‌شود.",
         "scrollback" => "تاریخچه پیمایش",
         "word_delimiters" => "جداکننده‌های واژه",
         "setting_word_delimiters_desc" => "نویسه‌هایی که هنگام انتخاب با دوبار کلیک، واژه‌ها را جدا می‌کنند. سه‌بار کلیک همیشه کل خط را انتخاب می‌کند.",

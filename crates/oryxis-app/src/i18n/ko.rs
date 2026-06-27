@@ -314,6 +314,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "notify_toast" => "앱 내 토스트",
         "notify_os" => "시스템 알림",
         "keepalive_interval" => "Keepalive 간격",
+        "new_connection_defaults" => "새 연결 기본값",
+        "new_connection_defaults_desc" => "호스트 추가 시 양식에 미리 채워집니다.",
         "scrollback" => "스크롤백",
         "word_delimiters" => "단어 구분자",
         "setting_word_delimiters_desc" => "더블 클릭으로 선택할 때 단어를 구분하는 문자입니다. 트리플 클릭은 항상 줄 전체를 선택합니다.",

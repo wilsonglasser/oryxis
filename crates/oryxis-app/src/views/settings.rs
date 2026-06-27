@@ -629,6 +629,54 @@ impl Oryxis {
                         .style(crate::widgets::rounded_input_style).align_x(dir_align_x()),
                 ]);
 
+                // Defaults pre-filled into a NEW host form (so the user doesn't
+                // re-toggle agent forwarding / re-type a port every time).
+                let term_default_options: Vec<String> = [
+                    "xterm-256color", "xterm", "screen-256color", "tmux-256color",
+                    "screen", "linux", "vt220", "vt100", "ansi",
+                ]
+                .iter()
+                .map(|s| s.to_string())
+                .collect();
+                let new_conn_defaults_section = panel_section(column![
+                    text(crate::i18n::t("new_connection_defaults")).size(13).color(OryxisColors::t().text_primary),
+                    Space::new().height(4),
+                    text(t("new_connection_defaults_desc")).size(11).color(OryxisColors::t().text_muted),
+                    Space::new().height(10),
+                    toggle_row(crate::i18n::t("forward_ssh_agent"), self.setting_default_agent_forwarding, Message::ToggleDefaultAgentForwarding),
+                    Space::new().height(10),
+                    dir_row(vec![
+                        text(crate::i18n::t("port")).size(13).color(OryxisColors::t().text_secondary).into(),
+                        Space::new().width(Length::Fill).into(),
+                        text_input("22", &self.setting_default_port)
+                            .on_input(Message::DefaultPortChanged)
+                            .padding(10).width(120)
+                            .style(crate::widgets::rounded_input_style).align_x(dir_align_x()).into(),
+                    ]).align_y(iced::Alignment::Center),
+                    Space::new().height(10),
+                    dir_row(vec![
+                        text(crate::i18n::t("host_keepalive")).size(13).color(OryxisColors::t().text_secondary).into(),
+                        Space::new().width(Length::Fill).into(),
+                        text_input(&self.setting_keepalive_interval, &self.setting_default_keepalive)
+                            .on_input(Message::DefaultKeepaliveChanged)
+                            .padding(10).width(120)
+                            .style(crate::widgets::rounded_input_style).align_x(dir_align_x()).into(),
+                    ]).align_y(iced::Alignment::Center),
+                    Space::new().height(10),
+                    dir_row(vec![
+                        text(crate::i18n::t("host_terminal_type")).size(13).color(OryxisColors::t().text_secondary).into(),
+                        Space::new().width(Length::Fill).into(),
+                        pick_list(
+                            Some(self.setting_default_terminal_type.clone()),
+                            term_default_options,
+                            |s: &String| s.clone(),
+                        )
+                        .on_select(Message::DefaultTerminalTypeChanged)
+                        .width(200).padding(10)
+                        .style(crate::widgets::rounded_pick_list_style).into(),
+                    ]).align_y(iced::Alignment::Center),
+                ]);
+
                 let auto_reconnect_enabled = self.setting_auto_reconnect;
                 let auto_reconnect_section = panel_section(column![
                     toggle_row(
@@ -664,6 +712,8 @@ impl Oryxis {
                 scrollable(
                     container(
                         column![
+                            new_conn_defaults_section,
+                            Space::new().height(12),
                             keepalive_section,
                             Space::new().height(12),
                             auto_reconnect_section,

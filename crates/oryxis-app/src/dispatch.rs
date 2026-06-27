@@ -16,7 +16,7 @@ use crate::app::{Message, Oryxis};
 use crate::mcp::{
     install_mcp_config_to_file, install_mcp_config_to_wsl, mcp_config_json, mcp_config_json_wsl,
 };
-use crate::state::{ConnectionForm, EnvVarForm, PortForwardForm, VaultState, View};
+use crate::state::{EnvVarForm, PortForwardForm, VaultState, View};
 
 /// How long a dynamic group's resolved host list stays "fresh" before
 /// re-opening the group triggers a background re-resolve. Cloud
@@ -470,7 +470,7 @@ impl Oryxis {
             }
             Message::QuickHostContinue => {
                 if !self.quick_host_input.is_empty() {
-                    self.editor_form = ConnectionForm::default();
+                    self.editor_form = self.new_connection_form();
                     self.editor_initial_command =
                         iced::widget::text_editor::Content::new();
                     self.editor_form.hostname = self.quick_host_input.clone();

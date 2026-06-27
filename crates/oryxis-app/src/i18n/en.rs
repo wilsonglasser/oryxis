@@ -318,6 +318,8 @@ pub(super) fn lookup(key: &str) -> &'static str {
         "notify_toast" => "In-app toast",
         "notify_os" => "System notification",
         "keepalive_interval" => "Keepalive Interval",
+        "new_connection_defaults" => "New connection defaults",
+        "new_connection_defaults_desc" => "Pre-filled into the form when you add a host.",
         "scrollback" => "Scrollback",
         "word_delimiters" => "Word delimiters",
         "setting_word_delimiters_desc" => "Characters that separate words when double-clicking to select. Triple-click always selects the whole line.",
