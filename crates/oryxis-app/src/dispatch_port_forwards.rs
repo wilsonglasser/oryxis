@@ -28,6 +28,10 @@ use crate::app::{Message, Oryxis};
 enum PfStreamMsg {
     HostKey(HostKeyQuery),
     Done(Result<Arc<ForwardSession>, String>),
+    NoCommonAlgo {
+        category: oryxis_ssh::NegCategory,
+        server_offers: Vec<String>,
+    },
 }
 
 impl Oryxis {
@@ -308,6 +312,9 @@ impl Oryxis {
         let (hk_resp_tx, mut hk_resp_rx) = tokio::sync::mpsc::channel::<bool>(1);
         self.host_key_response_tx = Some(hk_resp_tx);
 
+        // Captured for the map closure (conn moves into the producer); the
+        // retry re-runs this same port-forward start.
+        let pf_conn_id = conn.id;
         let stream = iced::stream::channel::<PfStreamMsg>(8, move |mut sender: iced::futures::channel::mpsc::Sender<PfStreamMsg>| async move {
             let engine = SshEngine::new()
                 .with_host_key_check(host_key_check)
@@ -329,7 +336,7 @@ impl Oryxis {
                 }
             });
 
-            let result = engine
+            match engine
                 .connect_forward(
                     &conn,
                     password.as_deref(),
@@ -338,14 +345,34 @@ impl Oryxis {
                     resolver.as_ref(),
                 )
                 .await
-                .map(Arc::new)
-                .map_err(|e| e.to_string());
-            let _ = sender.send(PfStreamMsg::Done(result)).await;
+            {
+                Ok(session) => {
+                    let _ = sender.send(PfStreamMsg::Done(Ok(Arc::new(session)))).await;
+                }
+                Err(e) => {
+                    if let Some(nf) = e.negotiation_failure() {
+                        let _ = sender
+                            .send(PfStreamMsg::NoCommonAlgo {
+                                category: nf.category,
+                                server_offers: nf.server_offers,
+                            })
+                            .await;
+                    } else {
+                        let _ = sender.send(PfStreamMsg::Done(Err(e.to_string()))).await;
+                    }
+                }
+            }
         });
 
         Task::stream(stream).map(move |m| match m {
             PfStreamMsg::HostKey(q) => Message::SshHostKeyVerify(q),
             PfStreamMsg::Done(r) => Message::PortForwardStarted(id, r),
+            PfStreamMsg::NoCommonAlgo { category, server_offers } => Message::SshNoCommonAlgo {
+                conn_id: pf_conn_id,
+                category,
+                server_offers,
+                retry: Box::new(Message::StartPortForward(id)),
+            },
         })
     }
 

@@ -25,6 +25,10 @@ enum BackupOutcome {
 enum BackupConnectMsg {
     HostKey(oryxis_ssh::HostKeyQuery),
     Done(Result<BackupOutcome, String>),
+    NoCommonAlgo {
+        category: oryxis_ssh::NegCategory,
+        server_offers: Vec<String>,
+    },
 }
 
 impl Oryxis {
@@ -659,6 +663,9 @@ impl Oryxis {
         self.host_key_response_tx = Some(hk_resp_tx);
 
         let remote = path;
+        // Captured for the map (conn moves into the producer); the retry
+        // re-runs this backup transfer.
+        let backup_conn_id = conn.id;
         let stream = iced::stream::channel::<BackupConnectMsg>(
             8,
             move |mut sender: iced::futures::channel::mpsc::Sender<BackupConnectMsg>| async move {
@@ -685,19 +692,35 @@ impl Oryxis {
                     }
                 });
 
+                // Transport handshake first so a "no common algorithm"
+                // failure routes to the legacy fallback dialog.
+                let session = match engine
+                    .connect_with_resolver(
+                        &conn,
+                        password.as_deref(),
+                        private_key.as_deref(),
+                        80,
+                        24,
+                        resolver.as_ref(),
+                    )
+                    .await
+                {
+                    Ok((s, _rx)) => Arc::new(s),
+                    Err(e) => {
+                        if let Some(nf) = e.negotiation_failure() {
+                            let _ = sender
+                                .send(BackupConnectMsg::NoCommonAlgo {
+                                    category: nf.category,
+                                    server_offers: nf.server_offers,
+                                })
+                                .await;
+                        } else {
+                            let _ = sender.send(BackupConnectMsg::Done(Err(e.to_string()))).await;
+                        }
+                        return;
+                    }
+                };
                 let result = async {
-                    let (session, _rx) = engine
-                        .connect_with_resolver(
-                            &conn,
-                            password.as_deref(),
-                            private_key.as_deref(),
-                            80,
-                            24,
-                            resolver.as_ref(),
-                        )
-                        .await
-                        .map_err(|e| e.to_string())?;
-                    let session = Arc::new(session);
                     let client = session.open_sftp().await.map_err(|e| e.to_string())?;
                     if is_import {
                         let bytes =
@@ -724,6 +747,14 @@ impl Oryxis {
             BackupConnectMsg::Done(Ok(outcome)) => done_ok(outcome),
             BackupConnectMsg::Done(Err(e)) if is_import => Message::SftpBackupImportDone(Err(e)),
             BackupConnectMsg::Done(Err(e)) => Message::SftpBackupExportDone(Err(e)),
+            BackupConnectMsg::NoCommonAlgo { category, server_offers } => {
+                Message::SshNoCommonAlgo {
+                    conn_id: backup_conn_id,
+                    category,
+                    server_offers,
+                    retry: Box::new(Message::SftpBackupConfirm),
+                }
+            }
         }))
     }
 }

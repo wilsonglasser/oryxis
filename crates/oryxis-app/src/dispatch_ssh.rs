@@ -1265,6 +1265,9 @@ impl Oryxis {
                         ));
                     }
                 } else {
+                    // Drop any "busy" backup spinner while the dialog is up so
+                    // its retry (SftpBackupConfirm) isn't blocked by the guard.
+                    self.sftp_backup_busy = false;
                     self.pending_legacy_algo = Some(crate::state::PendingLegacyAlgo {
                         conn_id,
                         category,
@@ -1275,11 +1278,27 @@ impl Oryxis {
             }
             Message::LegacyAlgoCancel => {
                 self.pending_legacy_algo = None;
+                let msg = crate::i18n::t("legacy_algo_cancelled");
                 if let Some(ref mut progress) = self.connecting {
                     progress.failed = true;
-                    progress
-                        .logs
-                        .push((progress.step, crate::i18n::t("legacy_algo_cancelled").into()));
+                    progress.logs.push((progress.step, msg.into()));
+                }
+                // Clear the other paths' transient connecting state so
+                // cancelling the dialog never leaves a stuck "busy" backup or
+                // a spinning SFTP pane.
+                self.sftp_backup_busy = false;
+                if self.sftp_backup_open {
+                    self.sftp_backup_status = Some(Err(msg.to_string()));
+                }
+                for side in [
+                    crate::state::SftpPaneSide::Left,
+                    crate::state::SftpPaneSide::Right,
+                ] {
+                    let pane = self.sftp.pane_mut(side);
+                    if pane.remote_loading {
+                        pane.remote_loading = false;
+                        pane.error = Some(msg.to_string());
+                    }
                 }
             }
             Message::LegacyAlgoAccept { remember } => {
