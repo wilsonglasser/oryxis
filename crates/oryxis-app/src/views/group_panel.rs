@@ -1,6 +1,6 @@
 //! Manual host-group editor side panel: label + icon + color. Rendered
 //! in the same right-hand slot as the host / session-group editors (from
-//! `view_main::active_side_panel` when `group_edit_visible`). Folders had
+//! `view_main::active_side_panel` when `group_edit.visible`). Folders had
 //! a rename-only modal before; this surfaces the icon/color override the
 //! `Group` model already carries.
 
@@ -39,12 +39,12 @@ impl Oryxis {
 
         // Icon + color badge. Clicking opens the shared icon/color picker,
         // seeded from the in-memory form (deferred save).
-        let badge_bg = crate::os_icon::parse_hex_color(&self.group_edit_color)
+        let badge_bg = crate::os_icon::parse_hex_color(&self.group_edit.color)
             .unwrap_or_else(|| OryxisColors::t().accent);
-        let badge_glyph = if self.group_edit_icon.is_empty() {
+        let badge_glyph = if self.group_edit.icon.is_empty() {
             BrandIcon::Glyph(iced_fonts::lucide::boxes())
         } else {
-            crate::os_icon::custom_icon_glyph(&self.group_edit_icon)
+            crate::os_icon::custom_icon_glyph(&self.group_edit.icon)
         };
         let icon_badge = button(
             container(badge_glyph.view(18.0, Color::WHITE))
@@ -63,7 +63,7 @@ impl Oryxis {
         let general_section = panel_section(column![
             panel_field(
                 crate::i18n::t("name"),
-                text_input(crate::i18n::t("group_placeholder"), &self.group_edit_label)
+                text_input(crate::i18n::t("group_placeholder"), &self.group_edit.label)
                     .id(iced::widget::Id::new("group-edit-name"))
                     .on_input(Message::GroupEditLabelChanged)
                     .on_submit(Message::SaveGroupEdit)

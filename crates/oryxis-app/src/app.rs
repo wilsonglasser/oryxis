@@ -391,11 +391,7 @@ pub struct Oryxis {
     /// when `group_edit_visible`; `group_edit_id` is the group being
     /// edited. `group_edit_icon` / `group_edit_color` are empty strings
     /// when unset (no override → folder default glyph / accent).
-    pub(crate) group_edit_visible: bool,
-    pub(crate) group_edit_id: Option<Uuid>,
-    pub(crate) group_edit_label: String,
-    pub(crate) group_edit_icon: String,
-    pub(crate) group_edit_color: String,
+    pub(crate) group_edit: crate::state::GroupEditForm,
     /// Folder delete confirmation, group ID waiting for the user to
     /// pick "move hosts to root" / "delete with hosts" / cancel.
     pub(crate) folder_delete: Option<Uuid>,

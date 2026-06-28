@@ -210,11 +210,7 @@ impl Oryxis {
                 card_context_menu: None,
                 overlay: None,
                 folder_rename: None,
-                group_edit_visible: false,
-                group_edit_id: None,
-                group_edit_label: String::new(),
-                group_edit_icon: String::new(),
-                group_edit_color: String::new(),
+                group_edit: crate::state::GroupEditForm::default(),
                 folder_delete: None,
                 pending_auto_connect,
                 // Keep the inherited password in memory only when the

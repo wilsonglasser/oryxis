@@ -297,6 +297,20 @@ impl std::fmt::Display for ProxyKind {
     }
 }
 
+/// Rename / restyle form for a user group (folder), shown in the group
+/// edit panel. Distinct from the dynamic-group editor ([`CloudDynamicForm`])
+/// which edits cloud-backed groups.
+#[derive(Debug, Clone, Default)]
+pub(crate) struct GroupEditForm {
+    /// Whether the edit panel is currently shown.
+    pub visible: bool,
+    /// `Some` for the group being edited.
+    pub id: Option<Uuid>,
+    pub label: String,
+    pub icon: String,
+    pub color: String,
+}
+
 /// Edit form for a dynamic (cloud-backed) group. Opened from the ⋮ menu
 /// on a dynamic group card; edits the `cloud_query.template` (username,
 /// initial_command, transport, key, identity) plus the group's general

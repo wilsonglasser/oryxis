@@ -143,7 +143,7 @@ impl Oryxis {
                 self.cloud_dynamic_form.visible = false;
                 self.cloud_discover_visible = false;
                 self.show_session_group_panel = false;
-                self.group_edit_visible = false;
+                self.group_edit.visible = false;
                 self.show_host_panel = true;
                 self.editor_form = self.new_connection_form();
                 self.editor_initial_command = iced::widget::text_editor::Content::new();
@@ -171,7 +171,7 @@ impl Oryxis {
                     self.cloud_dynamic_form.visible = false;
                     self.cloud_discover_visible = false;
                     self.show_session_group_panel = false;
-                    self.group_edit_visible = false;
+                    self.group_edit.visible = false;
                     self.show_host_panel = true;
                     self.host_panel_error = None;
                     let has_pw = self.vault.as_ref()

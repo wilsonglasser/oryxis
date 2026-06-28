@@ -718,8 +718,8 @@ impl Oryxis {
                 } else if self.icon_picker_for_group_edit {
                     // Deferred save: flow into the manual group editor; the
                     // panel's own Save persists to the vault.
-                    self.group_edit_icon = self.icon_picker_icon.clone().unwrap_or_default();
-                    self.group_edit_color = self.icon_picker_color.clone().unwrap_or_default();
+                    self.group_edit.icon = self.icon_picker_icon.clone().unwrap_or_default();
+                    self.group_edit.color = self.icon_picker_color.clone().unwrap_or_default();
                 } else if let Some(conn_id) = self.icon_picker_for {
                     let icon = self.icon_picker_icon.clone();
                     let color = self.icon_picker_color.clone();
@@ -757,8 +757,8 @@ impl Oryxis {
                     self.cloud_dynamic_form.icon = String::new();
                     self.cloud_dynamic_form.color = String::new();
                 } else if self.icon_picker_for_group_edit {
-                    self.group_edit_icon = String::new();
-                    self.group_edit_color = String::new();
+                    self.group_edit.icon = String::new();
+                    self.group_edit.color = String::new();
                 } else if let Some(conn_id) = self.icon_picker_for
                     && let Some(conn) = self.connections.iter_mut().find(|c| c.id == conn_id) {
                     conn.custom_icon = None;
@@ -1095,11 +1095,11 @@ impl Oryxis {
             Message::EditGroup(gid) => {
                 self.overlay = None;
                 if let Some(group) = self.groups.iter().find(|g| g.id == gid) {
-                    self.group_edit_id = Some(gid);
-                    self.group_edit_label = group.label.clone();
-                    self.group_edit_icon = group.icon.clone().unwrap_or_default();
-                    self.group_edit_color = group.color.clone().unwrap_or_default();
-                    self.group_edit_visible = true;
+                    self.group_edit.id = Some(gid);
+                    self.group_edit.label = group.label.clone();
+                    self.group_edit.icon = group.icon.clone().unwrap_or_default();
+                    self.group_edit.color = group.color.clone().unwrap_or_default();
+                    self.group_edit.visible = true;
                     // Mutually exclusive with the other right-hand panels.
                     self.show_host_panel = false;
                     self.show_session_group_panel = false;
@@ -1109,20 +1109,20 @@ impl Oryxis {
                 }
             }
             Message::GroupEditLabelChanged(v) => {
-                self.group_edit_label = v;
+                self.group_edit.label = v;
             }
             Message::ShowGroupEditIconPicker => {
-                self.icon_picker_icon = if self.group_edit_icon.is_empty() {
+                self.icon_picker_icon = if self.group_edit.icon.is_empty() {
                     None
                 } else {
-                    Some(self.group_edit_icon.clone())
+                    Some(self.group_edit.icon.clone())
                 };
-                self.icon_picker_color = if self.group_edit_color.is_empty() {
+                self.icon_picker_color = if self.group_edit.color.is_empty() {
                     None
                 } else {
-                    Some(self.group_edit_color.clone())
+                    Some(self.group_edit.color.clone())
                 };
-                self.icon_picker_hex_input = self.group_edit_color.clone();
+                self.icon_picker_hex_input = self.group_edit.color.clone();
                 self.icon_picker_for = None;
                 self.icon_picker_for_group_form = false;
                 self.icon_picker_for_session_group = false;
@@ -1131,21 +1131,21 @@ impl Oryxis {
                 self.show_icon_picker = true;
             }
             Message::SaveGroupEdit => {
-                if let Some(gid) = self.group_edit_id {
-                    let trimmed = self.group_edit_label.trim().to_string();
+                if let Some(gid) = self.group_edit.id {
+                    let trimmed = self.group_edit.label.trim().to_string();
                     if !trimmed.is_empty()
                         && let Some(group) = self.groups.iter_mut().find(|g| g.id == gid)
                     {
                         group.label = trimmed;
-                        group.icon = if self.group_edit_icon.is_empty() {
+                        group.icon = if self.group_edit.icon.is_empty() {
                             None
                         } else {
-                            Some(self.group_edit_icon.clone())
+                            Some(self.group_edit.icon.clone())
                         };
-                        group.color = if self.group_edit_color.is_empty() {
+                        group.color = if self.group_edit.color.is_empty() {
                             None
                         } else {
-                            Some(self.group_edit_color.clone())
+                            Some(self.group_edit.color.clone())
                         };
                         group.updated_at = chrono::Utc::now();
                         if let Some(vault) = &self.vault {
@@ -1153,12 +1153,12 @@ impl Oryxis {
                         }
                     }
                 }
-                self.group_edit_visible = false;
-                self.group_edit_id = None;
+                self.group_edit.visible = false;
+                self.group_edit.id = None;
             }
             Message::CancelGroupEdit => {
-                self.group_edit_visible = false;
-                self.group_edit_id = None;
+                self.group_edit.visible = false;
+                self.group_edit.id = None;
             }
             Message::StartDeleteFolder(gid) => {
                 self.overlay = None;

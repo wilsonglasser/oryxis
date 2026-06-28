@@ -185,7 +185,7 @@ impl Oryxis {
             View::Dashboard => {
                 self.cloud_discover_visible
                     || self.cloud_dynamic_form.visible
-                    || self.group_edit_visible
+                    || self.group_edit.visible
                     || self.show_host_panel
                     || self.show_session_group_panel
             }
@@ -262,7 +262,7 @@ impl Oryxis {
                     Some(self.view_cloud_discover_panel())
                 } else if self.cloud_dynamic_form.visible {
                     Some(self.view_dynamic_group_form_panel())
-                } else if self.group_edit_visible {
+                } else if self.group_edit.visible {
                     Some(self.view_group_edit_panel())
                 } else if self.show_host_panel {
                     Some(self.view_host_panel())
@@ -2607,7 +2607,7 @@ impl Oryxis {
             View::Dashboard => {
                 self.cloud_discover_visible
                     || self.cloud_dynamic_form.visible
-                    || self.group_edit_visible
+                    || self.group_edit.visible
                     || self.show_host_panel
                     || self.show_session_group_panel
             }
