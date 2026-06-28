@@ -99,6 +99,15 @@ oryxis-cloud-aws = { path = "crates/oryxis-cloud-aws" }
 oryxis-cloud-k8s = { path = "crates/oryxis-cloud-k8s" }
 oryxis-plugin-protocol = { path = "crates/oryxis-plugin-protocol" }
 
+[profile.dev]
+# Line-tables-only debuginfo: keeps file:line in panic backtraces while
+# dropping the full local-variable info a step debugger would need. Shrinks
+# the dev binary from ~750 MB to a fraction of that, which (with the lld
+# linker in .cargo/config.toml) makes the final binary link, the slow "1
+# item" at the end of every build, dramatically faster. Bump back to 2 if
+# you need gdb/lldb variable inspection.
+debug = 1
+
 [profile.release]
 opt-level = 3
 lto = "thin"

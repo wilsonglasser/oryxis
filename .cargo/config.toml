@@ -4,3 +4,10 @@
 # machines without VC++ Redistributable installed.
 [target.'cfg(target_env = "msvc")']
 rustflags = ["-C", "target-feature=+crt-static"]
+
+# Use the LLVM linker (lld) on Linux. The default GNU ld is the bottleneck
+# in the final `oryxis(bin)` link step (a large debug binary), especially
+# under WSL; lld cuts that link time substantially. Install: `apt install lld`
+# (already present on this machine as /usr/bin/ld.lld).
+[target.x86_64-unknown-linux-gnu]
+rustflags = ["-C", "link-arg=-fuse-ld=lld"]
