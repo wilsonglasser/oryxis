@@ -243,13 +243,13 @@ impl Oryxis {
                 } else {
                     self.cloud_dynamic_form.icon.trim().to_string()
                 };
-                self.icon_picker_icon = Some(icon);
+                self.icon_picker.icon = Some(icon);
                 let color = self.cloud_dynamic_form.color.trim().to_string();
-                self.icon_picker_color = if color.is_empty() { None } else { Some(color.clone()) };
-                self.icon_picker_hex_input = color;
-                self.icon_picker_for = None;
-                self.icon_picker_for_group_form = true;
-                self.icon_picker_for_local_terminal = false;
+                self.icon_picker.color = if color.is_empty() { None } else { Some(color.clone()) };
+                self.icon_picker.hex_input = color;
+                self.icon_picker.for_id = None;
+                self.icon_picker.for_group_form = true;
+                self.icon_picker.for_local_terminal = false;
                 self.show_icon_picker = true;
             }
             Message::SaveDynamicGroup => {

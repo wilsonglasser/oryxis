@@ -229,7 +229,7 @@ impl Oryxis {
         }
         if self.show_icon_picker {
             self.show_icon_picker = false;
-            self.icon_picker_for = None;
+            self.icon_picker.for_id = None;
             return true;
         }
         if self.show_theme_picker {

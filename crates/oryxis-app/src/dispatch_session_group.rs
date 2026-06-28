@@ -183,14 +183,14 @@ impl Oryxis {
                 // choice flows back into `editor_session_group` on the
                 // picker's Save (deferred, like the dynamic-group form).
                 let form = &self.editor_session_group;
-                self.icon_picker_icon =
+                self.icon_picker.icon =
                     form.icon_style.clone().or_else(|| Some("boxes".to_string()));
-                self.icon_picker_color = form.color.clone();
-                self.icon_picker_hex_input = form.color.clone().unwrap_or_default();
-                self.icon_picker_for = None;
-                self.icon_picker_for_group_form = false;
-                self.icon_picker_for_session_group = true;
-                self.icon_picker_for_local_terminal = false;
+                self.icon_picker.color = form.color.clone();
+                self.icon_picker.hex_input = form.color.clone().unwrap_or_default();
+                self.icon_picker.for_id = None;
+                self.icon_picker.for_group_form = false;
+                self.icon_picker.for_session_group = true;
+                self.icon_picker.for_local_terminal = false;
                 self.show_icon_picker = true;
                 Ok(Task::none())
             }

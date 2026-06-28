@@ -1492,20 +1492,20 @@ impl Oryxis {
                 // it back at the form (deferred save on IconPickerSave).
                 // Fall back to the label's OS hint (then a terminal glyph)
                 // so the preview matches the card when there's no override.
-                self.icon_picker_icon = self.local_terminal_form.icon.clone().or_else(|| {
+                self.icon_picker.icon = self.local_terminal_form.icon.clone().or_else(|| {
                     crate::os_icon::local_shell_os_hint(&self.local_terminal_form.label)
                         .or_else(|| Some("terminal".to_string()))
                 });
-                self.icon_picker_color = self.local_terminal_form.color.clone();
-                self.icon_picker_hex_input =
+                self.icon_picker.color = self.local_terminal_form.color.clone();
+                self.icon_picker.hex_input =
                     self.local_terminal_form.color.clone().unwrap_or_default();
-                self.icon_picker_icon_search = String::new();
+                self.icon_picker.icon_search = String::new();
                 self.icon_color_popover = None;
-                self.icon_picker_for = None;
-                self.icon_picker_for_group_form = false;
-                self.icon_picker_for_session_group = false;
-                self.icon_picker_for_group_edit = false;
-                self.icon_picker_for_local_terminal = true;
+                self.icon_picker.for_id = None;
+                self.icon_picker.for_group_form = false;
+                self.icon_picker.for_session_group = false;
+                self.icon_picker.for_group_edit = false;
+                self.icon_picker.for_local_terminal = true;
                 self.show_icon_picker = true;
             }
             Message::LocalTerminalCardHovered(idx) => {

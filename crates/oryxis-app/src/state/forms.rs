@@ -297,6 +297,34 @@ impl std::fmt::Display for ProxyKind {
     }
 }
 
+/// Icon + color picker state (opened from a host editor's icon box and
+/// every other editor that carries an icon). The `for_*` flags route the
+/// picked result to the right target on confirm: a Connection in the
+/// vault (none set), or one of the deferred-save editor forms. The
+/// open/closed flag (`show_icon_picker`) and the HSV popover anchor
+/// (`icon_color_popover`) stay on `Oryxis`.
+#[derive(Debug, Clone, Default)]
+pub(crate) struct IconPickerState {
+    /// Connection the picker edits directly (saves straight to the vault);
+    /// `None` when one of the `for_*` deferred-save targets is set.
+    pub for_id: Option<Uuid>,
+    /// Route the result into the dynamic-group editor form instead of a
+    /// Connection (deferred save).
+    pub for_group_form: bool,
+    /// Route into the session-group editor form (deferred save).
+    pub for_session_group: bool,
+    /// Route into the manual host-group editor panel (deferred save).
+    pub for_group_edit: bool,
+    /// Route into the local-terminal add/edit modal form (deferred save).
+    pub for_local_terminal: bool,
+    pub icon: Option<String>,
+    pub color: Option<String>,
+    pub hex_input: String,
+    /// Search query for the full-library Lucide search. Empty shows the
+    /// curated preset grid; non-empty shows matches.
+    pub icon_search: String,
+}
+
 /// SFTP backup target picker state, shown when an export/import is routed
 /// through a remote host instead of a local file. `is_import` flips the
 /// picker between writing the encrypted blob (export) and reading it back

@@ -241,32 +241,10 @@ pub struct Oryxis {
 
     // Icon/color picker (from the host editor's icon box).
     pub(crate) show_icon_picker: bool,
-    pub(crate) icon_picker_for: Option<Uuid>,
-    /// When true, the icon picker writes its result back to the
-    /// dynamic group editor form fields (`cloud_dynamic_form_icon` /
-    /// `_color`) instead of persisting straight to a Connection in the
-    /// vault. Lets the same picker serve both the host editor (saves
-    /// directly) and the form-driven dynamic group editor (deferred
-    /// save when the user clicks the form's Save).
-    pub(crate) icon_picker_for_group_form: bool,
-    /// Same idea, targeting the session-group editor form. Deferred save:
-    /// the choice flows into `editor_session_group` and persists on the
-    /// form's Save.
-    pub(crate) icon_picker_for_session_group: bool,
-    /// Same idea, targeting the manual host-group editor side panel
-    /// (`group_edit_*`). Deferred save: the choice flows into the form
-    /// and persists on the panel's Save.
-    pub(crate) icon_picker_for_group_edit: bool,
-    /// Same idea, targeting the local-terminal add / edit modal form
-    /// (`local_terminal_form.icon` / `_color`). Deferred save: the choice
-    /// flows into the form and persists when the modal's Save is clicked.
-    pub(crate) icon_picker_for_local_terminal: bool,
-    pub(crate) icon_picker_icon: Option<String>,
-    pub(crate) icon_picker_color: Option<String>,
-    pub(crate) icon_picker_hex_input: String,
-    /// Search query for the icon picker's full-library Lucide search.
-    /// Empty shows the curated preset grid; non-empty shows matches.
-    pub(crate) icon_picker_icon_search: String,
+    /// Icon + color picker state (target routing, current selection,
+    /// search). The open flag (`show_icon_picker`) and the HSV popover
+    /// anchor (`icon_color_popover`) stay alongside it on `Oryxis`.
+    pub(crate) icon_picker: crate::state::IconPickerState,
     /// When set, the icon picker's HSV color popover is open, anchored at
     /// this point (the cursor position when the swatch was clicked). None
     /// keeps the picker collapsed behind the swatch + hex row.

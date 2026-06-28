@@ -647,35 +647,35 @@ impl Oryxis {
                 // accidentally overrode the auto-detected icon with
                 // the generic stack glyph.
                 if let Some(conn) = self.connections.iter().find(|c| c.id == conn_id) {
-                    self.icon_picker_icon = conn
+                    self.icon_picker.icon = conn
                         .custom_icon
                         .clone()
                         .or_else(|| conn.detected_os.clone())
                         .or_else(|| Some("server".to_string()));
-                    self.icon_picker_color = conn.custom_color.clone();
-                    self.icon_picker_hex_input = conn.custom_color.clone().unwrap_or_default();
+                    self.icon_picker.color = conn.custom_color.clone();
+                    self.icon_picker.hex_input = conn.custom_color.clone().unwrap_or_default();
                 }
-                self.icon_picker_icon_search.clear();
+                self.icon_picker.icon_search.clear();
                 self.icon_color_popover = None;
-                self.icon_picker_for = Some(conn_id);
-                self.icon_picker_for_local_terminal = false;
+                self.icon_picker.for_id = Some(conn_id);
+                self.icon_picker.for_local_terminal = false;
                 self.show_icon_picker = true;
             }
             Message::HideIconPicker => {
                 self.show_icon_picker = false;
-                self.icon_picker_for = None;
-                self.icon_picker_for_group_form = false;
-                self.icon_picker_for_session_group = false;
-                self.icon_picker_for_group_edit = false;
-                self.icon_picker_for_local_terminal = false;
-                self.icon_picker_icon_search.clear();
+                self.icon_picker.for_id = None;
+                self.icon_picker.for_group_form = false;
+                self.icon_picker.for_session_group = false;
+                self.icon_picker.for_group_edit = false;
+                self.icon_picker.for_local_terminal = false;
+                self.icon_picker.icon_search.clear();
                 self.icon_color_popover = None;
             }
             Message::IconPickerSelectIcon(name) => {
-                self.icon_picker_icon = Some(name);
+                self.icon_picker.icon = Some(name);
             }
             Message::IconPickerIconSearchChanged(q) => {
-                self.icon_picker_icon_search = q;
+                self.icon_picker.icon_search = q;
             }
             Message::IconPickerOpenColorPopover => {
                 self.icon_color_popover = Some(self.mouse_position);
@@ -684,45 +684,45 @@ impl Oryxis {
                 self.icon_color_popover = None;
             }
             Message::IconPickerSelectColor(hex) => {
-                self.icon_picker_hex_input = hex.clone();
-                self.icon_picker_color = Some(hex);
+                self.icon_picker.hex_input = hex.clone();
+                self.icon_picker.color = Some(hex);
             }
             Message::IconPickerHexInputChanged(v) => {
-                self.icon_picker_hex_input = v.clone();
+                self.icon_picker.hex_input = v.clone();
                 // Validate + commit only on well-formed #RRGGBB.
                 let trimmed = v.trim().trim_start_matches('#');
                 if trimmed.len() == 6 && trimmed.chars().all(|c| c.is_ascii_hexdigit()) {
-                    self.icon_picker_color = Some(format!("#{}", trimmed.to_uppercase()));
+                    self.icon_picker.color = Some(format!("#{}", trimmed.to_uppercase()));
                 }
             }
             Message::IconPickerSave => {
-                if self.icon_picker_for_local_terminal {
+                if self.icon_picker.for_local_terminal {
                     // Deferred save: flow the choice into the local-terminal
                     // add / edit form; the modal's own Add / Save persists it.
-                    self.local_terminal_form.icon = self.icon_picker_icon.clone();
-                    self.local_terminal_form.color = self.icon_picker_color.clone();
-                } else if self.icon_picker_for_session_group {
+                    self.local_terminal_form.icon = self.icon_picker.icon.clone();
+                    self.local_terminal_form.color = self.icon_picker.color.clone();
+                } else if self.icon_picker.for_session_group {
                     // Deferred save: flow the choice into the session-group
                     // editor form; the form's own Save persists it.
-                    self.editor_session_group.icon_style = self.icon_picker_icon.clone();
-                    self.editor_session_group.color = self.icon_picker_color.clone();
-                } else if self.icon_picker_for_group_form {
+                    self.editor_session_group.icon_style = self.icon_picker.icon.clone();
+                    self.editor_session_group.color = self.icon_picker.color.clone();
+                } else if self.icon_picker.for_group_form {
                     // Form-target: flow the choice back to the dynamic
                     // group editor fields. The form's own Save button
                     // persists to the vault, so the icon picker stays
                     // an in-memory editor here.
                     self.cloud_dynamic_form.icon =
-                        self.icon_picker_icon.clone().unwrap_or_default();
+                        self.icon_picker.icon.clone().unwrap_or_default();
                     self.cloud_dynamic_form.color =
-                        self.icon_picker_color.clone().unwrap_or_default();
-                } else if self.icon_picker_for_group_edit {
+                        self.icon_picker.color.clone().unwrap_or_default();
+                } else if self.icon_picker.for_group_edit {
                     // Deferred save: flow into the manual group editor; the
                     // panel's own Save persists to the vault.
-                    self.group_edit.icon = self.icon_picker_icon.clone().unwrap_or_default();
-                    self.group_edit.color = self.icon_picker_color.clone().unwrap_or_default();
-                } else if let Some(conn_id) = self.icon_picker_for {
-                    let icon = self.icon_picker_icon.clone();
-                    let color = self.icon_picker_color.clone();
+                    self.group_edit.icon = self.icon_picker.icon.clone().unwrap_or_default();
+                    self.group_edit.color = self.icon_picker.color.clone().unwrap_or_default();
+                } else if let Some(conn_id) = self.icon_picker.for_id {
+                    let icon = self.icon_picker.icon.clone();
+                    let color = self.icon_picker.color.clone();
                     if let Some(conn) = self.connections.iter_mut().find(|c| c.id == conn_id) {
                         conn.custom_icon = icon.clone();
                         conn.custom_color = color.clone();
@@ -734,12 +734,12 @@ impl Oryxis {
                     }
                 }
                 self.show_icon_picker = false;
-                self.icon_picker_for = None;
-                self.icon_picker_for_group_form = false;
-                self.icon_picker_for_session_group = false;
-                self.icon_picker_for_group_edit = false;
-                self.icon_picker_for_local_terminal = false;
-                self.icon_picker_icon_search.clear();
+                self.icon_picker.for_id = None;
+                self.icon_picker.for_group_form = false;
+                self.icon_picker.for_session_group = false;
+                self.icon_picker.for_group_edit = false;
+                self.icon_picker.for_local_terminal = false;
+                self.icon_picker.icon_search.clear();
                 self.icon_color_popover = None;
             }
             Message::IconPickerResetAuto => {
@@ -747,19 +747,19 @@ impl Oryxis {
                 // drive the icon again on the next successful connect.
                 // (Terminal-theme override is edited separately in the
                 // host editor and is not touched here.)
-                if self.icon_picker_for_local_terminal {
+                if self.icon_picker.for_local_terminal {
                     self.local_terminal_form.icon = None;
                     self.local_terminal_form.color = None;
-                } else if self.icon_picker_for_session_group {
+                } else if self.icon_picker.for_session_group {
                     self.editor_session_group.icon_style = None;
                     self.editor_session_group.color = None;
-                } else if self.icon_picker_for_group_form {
+                } else if self.icon_picker.for_group_form {
                     self.cloud_dynamic_form.icon = String::new();
                     self.cloud_dynamic_form.color = String::new();
-                } else if self.icon_picker_for_group_edit {
+                } else if self.icon_picker.for_group_edit {
                     self.group_edit.icon = String::new();
                     self.group_edit.color = String::new();
-                } else if let Some(conn_id) = self.icon_picker_for
+                } else if let Some(conn_id) = self.icon_picker.for_id
                     && let Some(conn) = self.connections.iter_mut().find(|c| c.id == conn_id) {
                     conn.custom_icon = None;
                     conn.custom_color = None;
@@ -768,11 +768,11 @@ impl Oryxis {
                     }
                 }
                 self.show_icon_picker = false;
-                self.icon_picker_for = None;
-                self.icon_picker_for_group_form = false;
-                self.icon_picker_for_session_group = false;
-                self.icon_picker_for_group_edit = false;
-                self.icon_picker_for_local_terminal = false;
+                self.icon_picker.for_id = None;
+                self.icon_picker.for_group_form = false;
+                self.icon_picker.for_session_group = false;
+                self.icon_picker.for_group_edit = false;
+                self.icon_picker.for_local_terminal = false;
                 self.icon_color_popover = None;
             }
             Message::CloseTab(idx) => {
@@ -1112,22 +1112,22 @@ impl Oryxis {
                 self.group_edit.label = v;
             }
             Message::ShowGroupEditIconPicker => {
-                self.icon_picker_icon = if self.group_edit.icon.is_empty() {
+                self.icon_picker.icon = if self.group_edit.icon.is_empty() {
                     None
                 } else {
                     Some(self.group_edit.icon.clone())
                 };
-                self.icon_picker_color = if self.group_edit.color.is_empty() {
+                self.icon_picker.color = if self.group_edit.color.is_empty() {
                     None
                 } else {
                     Some(self.group_edit.color.clone())
                 };
-                self.icon_picker_hex_input = self.group_edit.color.clone();
-                self.icon_picker_for = None;
-                self.icon_picker_for_group_form = false;
-                self.icon_picker_for_session_group = false;
-                self.icon_picker_for_group_edit = true;
-                self.icon_picker_for_local_terminal = false;
+                self.icon_picker.hex_input = self.group_edit.color.clone();
+                self.icon_picker.for_id = None;
+                self.icon_picker.for_group_form = false;
+                self.icon_picker.for_session_group = false;
+                self.icon_picker.for_group_edit = true;
+                self.icon_picker.for_local_terminal = false;
                 self.show_icon_picker = true;
             }
             Message::SaveGroupEdit => {

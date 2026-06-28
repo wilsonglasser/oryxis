@@ -25,12 +25,12 @@ impl Oryxis {
     fn icon_picker_auto_color(&self) -> Color {
         // Local-terminal target: the auto color is the label's OS-hint
         // brand color, so the swatch matches the card / picker chip.
-        if self.icon_picker_for_local_terminal {
+        if self.icon_picker.for_local_terminal {
             return os_icon::local_shell_os_hint(&self.local_terminal_form.label)
                 .map(|os| os_icon::resolve_icon(Some(&os), OryxisColors::t().accent).1)
                 .unwrap_or(OryxisColors::t().accent);
         }
-        self.icon_picker_for
+        self.icon_picker.for_id
             .and_then(|id| self.connections.iter().find(|c| c.id == id))
             .and_then(|c| c.detected_os.as_deref())
             .map(|os| os_icon::resolve_icon(Some(os), OryxisColors::t().accent).1)
@@ -40,12 +40,12 @@ impl Oryxis {
     pub(crate) fn view_icon_picker(&self) -> Element<'_, Message> {
         // ── Preview: current selection in a bigger box at the top ──
         let preview_color = self
-            .icon_picker_color
+            .icon_picker.color
             .as_deref()
             .and_then(parse_hex_color)
             .unwrap_or_else(|| self.icon_picker_auto_color());
         let preview_icon_id = self
-            .icon_picker_icon
+            .icon_picker.icon
             .as_deref()
             .unwrap_or("server");
         let preview = container(
@@ -65,8 +65,8 @@ impl Oryxis {
         // ── Icon section: curated presets up front, with a search box
         // that filters the full Lucide library. The whole font is
         // bundled already, so searching every glyph adds no weight. ──
-        let selected_icon = self.icon_picker_icon.clone();
-        let query = self.icon_picker_icon_search.trim().to_string();
+        let selected_icon = self.icon_picker.icon.clone();
+        let query = self.icon_picker.icon_search.trim().to_string();
 
         // Ids to render: search hits when the box has a query, otherwise
         // the curated preset list.
@@ -92,7 +92,7 @@ impl Oryxis {
             icon_rows.push(dir_row(current_row).spacing(6).into());
         }
 
-        let icon_search = text_input(t("icon_search"), &self.icon_picker_icon_search)
+        let icon_search = text_input(t("icon_search"), &self.icon_picker.icon_search)
             .on_input(Message::IconPickerIconSearchChanged)
             .padding(8)
             .size(12)
@@ -122,12 +122,12 @@ impl Oryxis {
         // editor uses) as a popover, so the picker isn't always taking
         // up vertical space in the modal. ──
         let current_color = self
-            .icon_picker_color
+            .icon_picker.color
             .as_deref()
             .and_then(parse_hex_color)
             .unwrap_or_else(|| self.icon_picker_auto_color());
 
-        let hex_input = text_input("#RRGGBB", &self.icon_picker_hex_input)
+        let hex_input = text_input("#RRGGBB", &self.icon_picker.hex_input)
             .on_input(Message::IconPickerHexInputChanged)
             .padding(8)
             .size(12)
@@ -284,7 +284,7 @@ impl Oryxis {
     /// full-screen backdrop that dismisses it on click-outside.
     fn icon_color_popover_view(&self, anchor: Point) -> Element<'_, Message> {
         let current = self
-            .icon_picker_color
+            .icon_picker.color
             .as_deref()
             .and_then(parse_hex_color)
             .unwrap_or_else(|| self.icon_picker_auto_color());
@@ -295,7 +295,7 @@ impl Oryxis {
             column![
                 crate::color_picker::color_picker(current, Message::IconPickerSelectColor),
                 Space::new().height(10),
-                text_input("#RRGGBB", &self.icon_picker_hex_input)
+                text_input("#RRGGBB", &self.icon_picker.hex_input)
                     .on_input(Message::IconPickerHexInputChanged)
                     .padding(7)
                     .size(12)
