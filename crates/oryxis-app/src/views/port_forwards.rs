@@ -357,7 +357,7 @@ impl Oryxis {
         let mut form = column![
             label_field(t("name"), &self.port_forward_form.label, "my-db-tunnel", Message::PfLabelChanged),
             Space::new().height(14),
-            text(t("port_forward_form.kind")).size(12).color(OryxisColors::t().text_secondary),
+            text(t("pf_kind")).size(12).color(OryxisColors::t().text_secondary),
             Space::new().height(4),
             kind_picker,
             Space::new().height(14),
@@ -365,9 +365,9 @@ impl Oryxis {
             Space::new().height(4),
             host_picker,
             Space::new().height(14),
-            label_field(t("port_forward_form.listen_host"), &self.port_forward_form.listen_host, "127.0.0.1", Message::PfListenHostChanged),
+            label_field(t("pf_listen_host"), &self.port_forward_form.listen_host, "127.0.0.1", Message::PfListenHostChanged),
             Space::new().height(14),
-            label_field(t("port_forward_form.listen_port"), &self.port_forward_form.listen_port, "8080", Message::PfListenPortChanged),
+            label_field(t("pf_listen_port"), &self.port_forward_form.listen_port, "8080", Message::PfListenPortChanged),
         ]
         .width(Length::Fill)
         .align_x(dir_align_x());
@@ -376,9 +376,9 @@ impl Oryxis {
         if self.port_forward_form.kind.has_target() {
             form = form
                 .push(Space::new().height(14))
-                .push(label_field(t("port_forward_form.target_host"), &self.port_forward_form.target_host, "10.0.0.5", Message::PfTargetHostChanged))
+                .push(label_field(t("pf_target_host"), &self.port_forward_form.target_host, "10.0.0.5", Message::PfTargetHostChanged))
                 .push(Space::new().height(14))
-                .push(label_field(t("port_forward_form.target_port"), &self.port_forward_form.target_port, "5432", Message::PfTargetPortChanged));
+                .push(label_field(t("pf_target_port"), &self.port_forward_form.target_port, "5432", Message::PfTargetPortChanged));
         }
 
         // Remote bind on 0.0.0.0 needs `GatewayPorts yes` on the server.
@@ -403,7 +403,7 @@ impl Oryxis {
             .push(Space::new().height(14))
             .push(
                 checkbox(self.port_forward_form.auto_start)
-                    .label(t("port_forward_form.auto_start"))
+                    .label(t("pf_auto_start"))
                     .on_toggle(Message::PfAutoStartToggled)
                     .size(16)
                     .text_size(12),

@@ -24,7 +24,7 @@ impl Oryxis {
         // field instead of doubling as a header subtitle.
         let title = container(
             dir_row(vec![
-                text(t("cloud_dynamic_form.title"))
+                text(t("cloud_dynamic_form_title"))
                     .size(16)
                     .color(OryxisColors::t().text_primary)
                     .into(),
@@ -226,7 +226,7 @@ impl Oryxis {
         // with the host editor so a dynamic group is a first-class
         // entity.
         let general_section = column![
-            text(t("cloud_dynamic_form.general"))
+            text(t("cloud_dynamic_form_general"))
                 .size(14)
                 .color(OryxisColors::t().text_primary),
             Space::new().height(10),
@@ -321,7 +321,7 @@ impl Oryxis {
             .into()
         } else {
             column![
-                text(t("cloud_dynamic_form.cluster"))
+                text(t("cloud_dynamic_form_cluster"))
                     .size(12)
                     .color(OryxisColors::t().text_secondary),
                 Space::new().height(4),
@@ -331,7 +331,7 @@ impl Oryxis {
                     .style(crate::widgets::rounded_input_style)
                     .align_x(dir_align_x()),
                 Space::new().height(14),
-                text(t("cloud_dynamic_form.service"))
+                text(t("cloud_dynamic_form_service"))
                     .size(12)
                     .color(OryxisColors::t().text_secondary),
                 Space::new().height(4),
@@ -341,17 +341,17 @@ impl Oryxis {
                     .style(crate::widgets::rounded_input_style)
                     .align_x(dir_align_x()),
                 Space::new().height(14),
-                text(t("cloud_dynamic_form.container"))
+                text(t("cloud_dynamic_form_container"))
                     .size(12)
                     .color(OryxisColors::t().text_secondary),
                 Space::new().height(4),
-                text_input(t("cloud_dynamic_form.container_ph"), &self.cloud_dynamic_form.container)
+                text_input(t("cloud_dynamic_form_container_ph"), &self.cloud_dynamic_form.container)
                     .on_input(Message::DynamicGroupFormContainerChanged)
                     .padding(10)
                     .style(crate::widgets::rounded_input_style)
                     .align_x(dir_align_x()),
                 Space::new().height(6),
-                text(t("cloud_dynamic_form.query_hint"))
+                text(t("cloud_dynamic_form_query_hint"))
                     .size(10)
                     .color(OryxisColors::t().text_muted),
             ]
@@ -361,13 +361,13 @@ impl Oryxis {
         };
 
         let source_section = column![
-            text(t("cloud_dynamic_form.source"))
+            text(t("cloud_dynamic_form_source"))
                 .size(14)
                 .color(OryxisColors::t().text_primary),
             Space::new().height(10),
             kind_fields,
             Space::new().height(14),
-            text(t("cloud_dynamic_form.transport"))
+            text(t("cloud_dynamic_form_transport"))
                 .size(12)
                 .color(OryxisColors::t().text_secondary),
             Space::new().height(4),
@@ -383,7 +383,7 @@ impl Oryxis {
                 .style(crate::widgets::rounded_input_style)
                 .align_x(dir_align_x()),
             Space::new().height(14),
-            text(t("cloud_dynamic_form.initial_command"))
+            text(t("cloud_dynamic_form_initial_command"))
                 .size(12)
                 .color(OryxisColors::t().text_secondary),
             Space::new().height(4),
@@ -393,13 +393,13 @@ impl Oryxis {
                 .style(crate::widgets::rounded_input_style)
                 .align_x(dir_align_x()),
             Space::new().height(14),
-            text(t("cloud_dynamic_form.key"))
+            text(t("cloud_dynamic_form_key"))
                 .size(12)
                 .color(OryxisColors::t().text_secondary),
             Space::new().height(4),
             key_pick,
             Space::new().height(14),
-            text(t("cloud_dynamic_form.identity"))
+            text(t("cloud_dynamic_form_identity"))
                 .size(12)
                 .color(OryxisColors::t().text_secondary),
             Space::new().height(4),

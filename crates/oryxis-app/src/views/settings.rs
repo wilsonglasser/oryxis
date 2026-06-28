@@ -2221,11 +2221,11 @@ impl Oryxis {
                         Some(Message::SftpBackupConfirm)
                     };
                     let confirm_label = if self.sftp_backup.busy {
-                        crate::i18n::t("sftp_backup.working")
+                        crate::i18n::t("sftp_backup_working")
                     } else if is_import {
-                        crate::i18n::t("sftp_backup.restore_confirm")
+                        crate::i18n::t("sftp_backup_restore_confirm")
                     } else {
-                        crate::i18n::t("sftp_backup.confirm")
+                        crate::i18n::t("sftp_backup_confirm")
                     };
                     let confirm_btn =
                         styled_button_opt(confirm_label, confirm_msg, OryxisColors::t().success);
@@ -2237,13 +2237,13 @@ impl Oryxis {
                     let mut sftp_section: iced::widget::Column<'_, Message> = column![
                         text(crate::i18n::t(title_key)).size(13).color(OryxisColors::t().text_primary),
                         Space::new().height(2),
-                        text(crate::i18n::t("sftp_backup.hint")).size(12).color(OryxisColors::t().text_muted),
+                        text(crate::i18n::t("sftp_backup_hint")).size(12).color(OryxisColors::t().text_muted),
                         Space::new().height(8),
-                        text(crate::i18n::t("sftp_backup.host")).size(12).color(OryxisColors::t().text_secondary),
+                        text(crate::i18n::t("sftp_backup_host")).size(12).color(OryxisColors::t().text_secondary),
                         Space::new().height(4),
                         host_picker,
                         Space::new().height(8),
-                        text(crate::i18n::t("sftp_backup.remote_path")).size(12).color(OryxisColors::t().text_secondary),
+                        text(crate::i18n::t("sftp_backup_remote_path")).size(12).color(OryxisColors::t().text_secondary),
                         Space::new().height(4),
                         path_field,
                     ];

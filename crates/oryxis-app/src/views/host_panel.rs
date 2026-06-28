@@ -361,7 +361,7 @@ impl Oryxis {
                     TransportKind::Ssm,
                 ];
                 column![
-                    text(t("cloud_dynamic_form.transport")).size(12).color(OryxisColors::t().text_muted),
+                    text(t("cloud_dynamic_form_transport")).size(12).color(OryxisColors::t().text_muted),
                     Space::new().height(8),
                     pick_list(Some(current), options, |t| match t {
                         TransportKind::Ssh => "SSH".to_string(),

@@ -691,13 +691,13 @@ impl Oryxis {
             .cloned()
         else {
             self.sftp_backup.status =
-                Some(Err(crate::i18n::t("sftp_backup.pick_host").to_string()));
+                Some(Err(crate::i18n::t("sftp_backup_pick_host").to_string()));
             return Ok(Task::none());
         };
         let path = self.sftp_backup.path.trim().to_string();
         if path.is_empty() {
             self.sftp_backup.status =
-                Some(Err(crate::i18n::t("sftp_backup.path_required").to_string()));
+                Some(Err(crate::i18n::t("sftp_backup_path_required").to_string()));
             return Ok(Task::none());
         }
         let is_import = self.sftp_backup.is_import;
@@ -741,7 +741,7 @@ impl Oryxis {
         let path_msg = path.clone();
         let done_ok = move |outcome: BackupOutcome| match outcome {
             BackupOutcome::Export(n) => Message::SftpBackupExportDone(Ok(crate::i18n::t(
-                "sftp_backup.export_ok",
+                "sftp_backup_export_ok",
             )
             .replace("{host}", &label)
             .replace("{path}", &path_msg)
@@ -769,7 +769,7 @@ impl Oryxis {
                     if is_import {
                         let bytes = client.read_file(&remote).await.map_err(|e| e.to_string())?;
                         if !oryxis_vault::is_valid_export(&bytes) {
-                            return Err(crate::i18n::t("sftp_backup.not_export").to_string());
+                            return Err(crate::i18n::t("sftp_backup_not_export").to_string());
                         }
                         Ok(BackupOutcome::Import(bytes))
                     } else {
@@ -871,7 +871,7 @@ impl Oryxis {
                         let bytes =
                             client.read_file(&remote).await.map_err(|e| e.to_string())?;
                         if !oryxis_vault::is_valid_export(&bytes) {
-                            return Err(crate::i18n::t("sftp_backup.not_export").to_string());
+                            return Err(crate::i18n::t("sftp_backup_not_export").to_string());
                         }
                         Ok(BackupOutcome::Import(bytes))
                     } else {

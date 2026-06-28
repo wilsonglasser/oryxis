@@ -891,7 +891,7 @@ impl Oryxis {
                 .padding(10)
                 .style(crate::widgets::rounded_pick_list_style);
                 column![
-                    text(crate::i18n::t("cloud_dynamic_form.transport"))
+                    text(crate::i18n::t("cloud_dynamic_form_transport"))
                         .size(12)
                         .color(OryxisColors::t().text_secondary),
                     Space::new().height(4),
