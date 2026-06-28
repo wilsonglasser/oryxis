@@ -122,18 +122,26 @@ impl Oryxis {
             self.keys_sort,
         );
 
-        let toolbar = container(
-            dir_row(vec![
-                self.vault_search_field(),
-                Space::new().width(10).into(),
-                sort_btn,
-                Space::new().width(8).into(),
-                add_btn,
-            ])
-            .align_y(iced::Alignment::Center),
-        )
-        .padding(Padding { top: 16.0, right: 24.0, bottom: 16.0, left: 24.0 })
-        .width(Length::Fill);
+        // Responsive collapse: search yields first, then folds to an
+        // icon; when the buttons can't fit they all move into a `…` menu.
+        let (search_collapsed, buttons_overflow) = self.toolbar_tiers();
+        let mut row_items: Vec<Element<'_, Message>> = vec![
+            self.vault_search_slot(search_collapsed),
+            Space::new().width(10).into(),
+        ];
+        if buttons_overflow {
+            row_items.push(crate::widgets::toolbar_overflow_icon(matches!(
+                self.overlay.as_ref().map(|o| &o.content),
+                Some(crate::state::OverlayContent::ToolbarOverflow)
+            )));
+        } else {
+            row_items.push(sort_btn);
+            row_items.push(Space::new().width(8).into());
+            row_items.push(add_btn);
+        }
+        let toolbar = container(dir_row(row_items).align_y(iced::Alignment::Center))
+            .padding(Padding { top: 16.0, right: 24.0, bottom: 16.0, left: 24.0 })
+            .width(Length::Fill);
 
         // ── Search bar ──
         // Collapses to zero height in Workspace mode where the search

@@ -52,13 +52,20 @@ impl Oryxis {
             Space::new().width(0).into()
         };
 
+        // Privacy reveal toggle, shown only when the global Privacy Mode is on
+        // (known hosts follow the global setting). Same eye affordance as Logs.
+        let mut toolbar_items: Vec<Element<'_, Message>> = vec![
+            // Title dropped (the nav shows the active section).
+            Space::new().width(0).into(),
+            Space::new().width(Length::Fill).into(),
+        ];
+        if self.setting_privacy_mode {
+            toolbar_items.push(crate::widgets::privacy_reveal_btn(self.privacy_revealed));
+            toolbar_items.push(Space::new().width(8).into());
+        }
+        toolbar_items.push(clear_all_btn);
         let toolbar = container(
-            dir_row(vec![
-                // Title dropped (the nav shows the active section).
-                Space::new().width(0).into(),
-                Space::new().width(Length::Fill).into(),
-                clear_all_btn,
-            ]).align_y(iced::Alignment::Center),
+            dir_row(toolbar_items).align_y(iced::Alignment::Center),
         )
         .padding(Padding { top: 16.0, right: 24.0, bottom: 16.0, left: 24.0 })
         .width(Length::Fill);
@@ -121,12 +128,22 @@ impl Oryxis {
                 }
             });
 
+            // Privacy Mode masks the hostname:port; the eye toggle in the
+            // toolbar reveals. Known hosts aren't tied to a saved connection,
+            // so this follows the global setting.
+            let host_title = format!("{}:{}", kh.hostname, kh.port);
+            let host_title = if self.setting_privacy_mode && !self.privacy_revealed {
+                crate::widgets::mask_blocks(&host_title)
+            } else {
+                host_title
+            };
+
             let entry = container(
                 dir_row(vec![
                     iced_fonts::lucide::shield_check().size(14).color(OryxisColors::t().success).into(),
                     Space::new().width(12).into(),
                     column![
-                        text(format!("{}:{}", kh.hostname, kh.port)).size(13).color(OryxisColors::t().text_primary),
+                        text(host_title).size(13).color(OryxisColors::t().text_primary),
                         Space::new().height(2),
                         text(format!("{} · {}", kh.key_type, fp_short)).size(10).color(OryxisColors::t().text_muted).font(iced::Font::MONOSPACE),
                         Space::new().height(2),

@@ -1680,13 +1680,21 @@ impl Oryxis {
                 } else {
                     format!(":{}", conn.port)
                 };
-                format!(
-                    "{}@{}{} · {}",
+                let address = format!(
+                    "{}@{}{}",
                     conn.username.as_deref().unwrap_or("root"),
                     conn.hostname,
-                    port_part,
-                    auth_label
-                )
+                    port_part
+                );
+                // Privacy Mode masks the address behind muted blocks,
+                // revealed when the card is hovered. The auth method label
+                // is not sensitive, so it stays readable.
+                let address = if self.privacy_active(conn) && self.hovered_card != Some(idx) {
+                    crate::widgets::mask_blocks(&address)
+                } else {
+                    address
+                };
+                format!("{} · {}", address, auth_label)
             } else {
                 auth_label.to_string()
             };

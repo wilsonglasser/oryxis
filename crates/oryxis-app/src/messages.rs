@@ -106,6 +106,9 @@ pub enum Message {
     /// Per-host auto-title (OSC 0/2) selection from the host editor pick:
     /// the localized "Default / Show / Hide" label.
     EditorAutoTitleChanged(String),
+    /// Per-host Privacy Mode selection from the host editor pick: the
+    /// localized "Default / On / Off" label.
+    EditorPrivacyModeChanged(String),
     /// Toggle a per-host SSH algorithm category between Auto (None) and a
     /// custom pinned list (seeded from the safe defaults).
     EditorAlgoSetAuto(crate::state::AlgoCategory, bool),
@@ -741,11 +744,16 @@ pub enum Message {
     /// reports, wheel-to-arrow translation). Routed to the active SSH
     /// session, falling back to the local PTY.
     TerminalInput(Vec<u8>),
-    /// The user ctrl-clicked a link in the terminal: retire the
-    /// one-time hover hint (persisted as `hint_link_click_used`).
+    /// The user left-dragged in a pane whose remote app has mouse tracking
+    /// on, so the drag is being reported instead of selecting text. Shows
+    /// the "hold Shift to select" toast. Fires at most once per pane.
+    TerminalMouseCaptureHint,
+    /// The user ctrl-clicked a link in the terminal: under `HintMode::Once`,
+    /// retire the "Ctrl + Click to open" tooltip for the focused pane.
     TerminalLinkOpened,
-    /// Settings: clear every `hint_*` one-time flag so all tips show again.
-    ResetHints,
+    /// Settings: terminal hint mode picker changed. Carries the localized
+    /// option label; the dispatch handler maps it back to a `HintMode`.
+    HintModeChanged(String),
     /// Flip the reveal/eye state of a secret input field.
     ToggleSecretVisibility(crate::state::SecretField),
     /// Settings: switch the auto-update release channel (stable/nightly).
@@ -784,6 +792,11 @@ pub enum Message {
     ToggleCardAccentGlass,
     /// Flip showing of the `user@host:port` address on host cards.
     ToggleShowHostAddress,
+    /// Flip the global Privacy Mode default (auto-hide sensitive data).
+    TogglePrivacyMode,
+    /// Toggle the Logs view Privacy Mode reveal (show raw sensitive data
+    /// in the timeline + session-log viewer until toggled back).
+    TogglePrivacyReveal,
     /// Host editor startup-command source changed (the picker label:
     /// the None sentinel, the Custom sentinel, or a snippet label).
     EditorStartupChoiceChanged(String),
@@ -926,6 +939,13 @@ pub enum Message {
     // persist it via the matching `*_sort` settings key.
     ToggleSortMenu(crate::state::SortMenuKind),
     SetListSort(crate::state::SortMenuKind, crate::state::ListSort),
+
+    // Responsive toolbar collapse (narrow windows). `ToggleToolbarSearch`
+    // pops/dismisses the floating search field when the inline box has
+    // collapsed to an icon; `ToggleToolbarOverflow` pops/dismisses the
+    // `…` menu folding the view's secondary toolbar actions.
+    ToggleToolbarSearch,
+    ToggleToolbarOverflow,
 
     // Proxy Identities (Settings → Proxies)
     ShowProxyIdentityForm(Option<Uuid>),
@@ -1327,6 +1347,31 @@ pub enum Message {
     /// task is racing against; the task lands back as
     /// `SyncNowFinished(Err("Cancelled"))` and clears the flags.
     SyncCancelInProgress,
+    /// Switch the sync transport between `"p2p"` and `"sftp"`. Persists
+    /// the setting, stops the P2P engine when leaving `p2p`, and starts
+    /// it when returning.
+    SyncTransportChanged(String),
+    /// Pick the host the SFTP-sync snapshot file lives on (also closes
+    /// the picker modal).
+    SyncSftpHostChanged(uuid::Uuid),
+    /// Open the "Select a host" modal for the SFTP-sync backup host.
+    SyncSftpOpenPicker,
+    /// Close that modal without changing the selection.
+    SyncSftpClosePicker,
+    /// Search-filter text change inside the host picker modal.
+    SyncSftpPickerSearch(String),
+    /// Text-input change for the SFTP-sync remote path.
+    SyncSftpPathChanged(String),
+    /// Text-input change for the SFTP-sync passphrase (persisted
+    /// encrypted on change).
+    SyncSftpPassphraseChanged(String),
+    /// Auto-cadence timer fired (transport `sftp`, mode `auto`): run a
+    /// sync round if one isn't already in flight.
+    SftpSyncTick,
+    /// An SFTP-sync round finished. `Ok` carries a short status summary;
+    /// `Err` a human-readable failure. A failed round never overwrites
+    /// the remote snapshot (see `dispatch_sftp_sync`).
+    SftpSyncDone(Result<String, String>),
 
     // Export / Import
     ExportVault,
@@ -1337,14 +1382,21 @@ pub enum Message {
     ExportConfirm,
     ExportCompleted(Result<String, String>),
     ImportVault,
-    /// Pick `~/.ssh/config` (or any file the user chooses), parse Host
-    /// blocks, and add each as a new connection record. No preview
-    /// modal yet, batch-imports everything non-wildcard and shows a
-    /// status banner.
+    /// Pick `~/.ssh/config` (or any file the user chooses) and read it.
+    /// The parsed Host blocks land in a preview modal where the user
+    /// ticks which to import.
     ImportSshConfig,
     /// File contents picked + read by the background task spawned from
-    /// `ImportSshConfig`; the handler parses and saves on the UI side.
+    /// `ImportSshConfig`; the handler parses and opens the preview.
     SshConfigFileLoaded(Result<String, String>),
+    /// Toggle one parsed host's inclusion in the SSH-config import.
+    SshImportToggle(usize),
+    /// Tick or untick every parsed host at once.
+    SshImportSelectAll(bool),
+    /// Save the ticked hosts and close the preview, emitting a toast.
+    SshImportConfirm,
+    /// Discard the SSH-config import preview without saving.
+    SshImportDismiss,
     ImportFileLoaded(Vec<u8>),
     ImportPasswordChanged(String),
     /// Decrypt the picked file with the entered password and reveal its
@@ -1416,8 +1468,15 @@ pub enum Message {
 
     // Share
     ShareConnection(usize),
-    #[allow(dead_code)]
-    ShareGroup(uuid::Uuid),
+    /// Open the unified "Export hosts…" dialog. `Some(gid)` pre-ticks
+    /// that folder (and its subfolders); `None` (root) pre-ticks every
+    /// group plus the ungrouped hosts. The effective `Hosts(...)` filter
+    /// is computed from the ticked folders on confirm.
+    ShowExportHosts(Option<uuid::Uuid>),
+    /// Toggle one folder's inclusion in the group-mode export.
+    ShareToggleGroup(uuid::Uuid),
+    /// Toggle inclusion of ungrouped (root) hosts in the export.
+    ShareToggleUngrouped,
     SharePasswordChanged(String),
     ShareToggleKeys,
     ShareConfirm,

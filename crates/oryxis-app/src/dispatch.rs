@@ -196,8 +196,12 @@ impl Oryxis {
                             self.vault_password_visible = false;
                             self.load_data_from_vault();
                             // Bring the sync engine up now that the
-                            // vault is open, if the user left it on.
-                            let sync_task = if self.sync_enabled {
+                            // vault is open, if the user left it on. Only
+                            // the P2P transport has a background engine;
+                            // SFTP reconciles on the cadence subscription.
+                            let sync_task = if self.sync_enabled
+                                && self.sync_transport != "sftp"
+                            {
                                 self.start_sync_engine()
                             } else {
                                 Task::none()
@@ -246,6 +250,9 @@ impl Oryxis {
                 // any pending capture so the next keystroke doesn't
                 // silently rebind an action from another screen.
                 self.editing_hotkey = None;
+                // Leaving the Logs view re-arms Privacy Mode masking so a
+                // revealed timeline doesn't stay exposed on the next visit.
+                self.privacy_revealed = false;
                 self.active_view = view;
                 self.active_tab = None;
                 // Drop any keyboard host selection when leaving / changing
@@ -468,6 +475,79 @@ impl Oryxis {
                 }
                 self.overlay = None;
             }
+            Message::ToggleToolbarSearch => {
+                use crate::state::{OverlayContent, OverlayState};
+                let already_open = matches!(
+                    self.overlay.as_ref().map(|o| &o.content),
+                    Some(OverlayContent::ToolbarSearch)
+                );
+                if already_open {
+                    self.overlay = None;
+                } else {
+                    // Anchor the floating field over the toolbar's search
+                    // zone: at the leading edge under LTR, by its trailing
+                    // edge under RTL (the render path subtracts the width).
+                    let menu_w = self.toolbar_search_width();
+                    let pad = 24.0_f32;
+                    let panel = if self.vault_panel_open() {
+                        crate::app::PANEL_WIDTH
+                    } else {
+                        0.0
+                    };
+                    let x = if crate::i18n::is_rtl_layout() {
+                        (self.window_size.width - panel - pad).max(menu_w)
+                    } else {
+                        self.vault_rail_width() + pad
+                    };
+                    // Sit over the toolbar row itself (the shared anchor is
+                    // tuned for dropdowns *below* the button row; back out
+                    // the button height + gap to land on the row).
+                    let y = (self.dashboard_dropdown_anchor_y() - 42.0).max(0.0);
+                    self.overlay = Some(OverlayState {
+                        content: OverlayContent::ToolbarSearch,
+                        x,
+                        y,
+                    });
+                    if let Some(id) = self.active_view_search_id() {
+                        return iced::widget::operation::focus(id);
+                    }
+                }
+            }
+            Message::ToggleToolbarOverflow => {
+                use crate::state::{OverlayContent, OverlayState};
+                let already_open = matches!(
+                    self.overlay.as_ref().map(|o| &o.content),
+                    Some(OverlayContent::ToolbarOverflow)
+                );
+                if already_open {
+                    self.overlay = None;
+                } else {
+                    // Trailing-edge anchor, mirroring the sort menu so the
+                    // `…` dropdown lands under the toolbar's right cluster.
+                    let menu_width = self.overlay_menu_width(&OverlayState {
+                        content: OverlayContent::ToolbarOverflow,
+                        x: 0.0,
+                        y: 0.0,
+                    });
+                    let pad = 24.0_f32;
+                    let panel = if self.vault_panel_open() {
+                        crate::app::PANEL_WIDTH
+                    } else {
+                        0.0
+                    };
+                    let x = if crate::i18n::is_rtl_layout() {
+                        panel + pad + menu_width
+                    } else {
+                        (self.window_size.width - panel - pad - menu_width).max(0.0)
+                    };
+                    let y = self.dashboard_dropdown_anchor_y();
+                    self.overlay = Some(OverlayState {
+                        content: OverlayContent::ToolbarOverflow,
+                        x,
+                        y,
+                    });
+                }
+            }
             Message::QuickHostContinue => {
                 if !self.quick_host_input.is_empty() {
                     self.editor_form = self.new_connection_form();
@@ -487,6 +567,7 @@ impl Oryxis {
             // -- Local shell --
             // -- Snippets --
             Message::ShowSnippetPanel => {
+                self.overlay = None;
                 self.show_snippet_panel = true;
                 self.snippet_label.clear();
                 self.snippet_command = iced::widget::text_editor::Content::new();
@@ -720,6 +801,9 @@ impl Oryxis {
             // every previously recorded session reappear after the
             // wipe finishes.
             Message::RequestClearHistory => {
+                // Close the `…` overflow menu before the confirm dialog
+                // rises (no-op when triggered from the inline button).
+                self.overlay = None;
                 self.clear_history_confirm = true;
             }
             Message::CancelClearHistory => {
@@ -790,6 +874,9 @@ impl Oryxis {
                         danger: true,
                     }),
                 });
+            }
+            Message::TogglePrivacyReveal => {
+                self.privacy_revealed = !self.privacy_revealed;
             }
             Message::LogRowHovered(id) => {
                 self.hovered_log_row = Some(id);
@@ -1099,11 +1186,25 @@ impl Oryxis {
                 if let Some(vault) = &self.vault {
                     let _ = vault.set_setting("sync_enabled", if self.sync_enabled { "true" } else { "false" });
                 }
-                if self.sync_enabled {
+                // SFTP transport has no background engine: enabling just
+                // persists the flag (the cadence subscription picks it up);
+                // disabling clears any stale status.
+                if self.sync_transport == "sftp" {
+                    self.sync_status = Some(
+                        crate::i18n::t(if self.sync_enabled {
+                            "sync_status_enabled"
+                        } else {
+                            "sync_status_stopped"
+                        })
+                        .to_string(),
+                    );
+                } else if self.sync_enabled {
                     return self.start_sync_engine();
+                } else {
+                    self.stop_sync_engine();
+                    self.sync_status =
+                        Some(crate::i18n::t("sync_status_stopped").to_string());
                 }
-                self.stop_sync_engine();
-                self.sync_status = Some(crate::i18n::t("sync_status_stopped").to_string());
             }
             Message::SyncTogglePasswords => {
                 self.sync_passwords = !self.sync_passwords;
@@ -1275,6 +1376,11 @@ impl Oryxis {
                 }
             }
             Message::SyncNow => {
+                // SFTP transport: a manual round goes through the
+                // snapshot path, not the P2P engine.
+                if self.sync_transport == "sftp" {
+                    return self.run_sftp_sync_round();
+                }
                 if self.sync_in_progress {
                     // Defensive: shouldn't fire because the UI swaps
                     // Sync Now for Cancel while a sync is running,
@@ -1320,6 +1426,75 @@ impl Oryxis {
                 // back as `SyncNowFinished(Err("__cancelled__"))` and
                 // clears it there, so the Cancel button stays visible
                 // until the cancellation actually settles.
+            }
+            Message::SyncTransportChanged(v) => {
+                if v != self.sync_transport {
+                    // Leaving P2P: tear the engine down so QUIC/mDNS stop.
+                    // Entering P2P (and enabled): bring it up.
+                    self.sync_transport = v.clone();
+                    if let Some(vault) = &self.vault {
+                        let _ = vault.set_setting("sync_transport", &v);
+                    }
+                    self.sync_status = None;
+                    self.sftp_sync_status = None;
+                    if v == "sftp" {
+                        self.stop_sync_engine();
+                    } else if self.sync_enabled {
+                        return self.start_sync_engine();
+                    }
+                }
+            }
+            Message::SyncSftpHostChanged(id) => {
+                self.sync_sftp_host_id = Some(id);
+                self.sync_sftp_picker_open = false;
+                self.sync_sftp_picker_search.clear();
+                if let Some(vault) = &self.vault {
+                    let _ = vault.set_setting("sync_sftp_host_id", &id.to_string());
+                }
+            }
+            Message::SyncSftpOpenPicker => {
+                self.sync_sftp_picker_open = true;
+                self.sync_sftp_picker_search.clear();
+            }
+            Message::SyncSftpClosePicker => {
+                self.sync_sftp_picker_open = false;
+                self.sync_sftp_picker_search.clear();
+            }
+            Message::SyncSftpPickerSearch(v) => {
+                self.sync_sftp_picker_search = v;
+            }
+            Message::SyncSftpPathChanged(v) => {
+                self.sync_sftp_remote_path = v.clone();
+                if let Some(vault) = &self.vault {
+                    let _ = vault.set_setting("sync_sftp_remote_path", &v);
+                }
+            }
+            Message::SyncSftpPassphraseChanged(v) => {
+                self.sync_sftp_passphrase = v.clone();
+                if let Some(vault) = &self.vault {
+                    let _ = vault.set_sync_sftp_passphrase(&v);
+                }
+            }
+            Message::SftpSyncTick => {
+                // Auto-cadence tick. Only act in SFTP+enabled+auto and
+                // when no round is already running; otherwise the tick
+                // is a no-op (the subscription keeps firing regardless).
+                if self.sync_transport == "sftp"
+                    && self.sync_enabled
+                    && self.sync_mode == "auto"
+                    && !self.sftp_sync_in_progress
+                {
+                    return self.run_sftp_sync_round();
+                }
+            }
+            Message::SftpSyncDone(result) => {
+                self.sftp_sync_in_progress = false;
+                if result.is_ok() {
+                    // The merge ran on a separate vault handle, so the
+                    // in-memory lists are stale: reload to reflect it.
+                    self.load_data_from_vault();
+                }
+                self.sftp_sync_status = Some(result);
             }
             Message::SyncNowFinished(result) => {
                 self.sync_in_progress = false;

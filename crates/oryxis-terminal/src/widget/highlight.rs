@@ -6,6 +6,11 @@ enum HighlightKind {
     Ip,
     Path,
     Number,
+    /// `user@host` prompt token (`root@web`). Detected only when Privacy
+    /// Mode is on; never colored (see [`highlight_color_at`]), it exists
+    /// solely so the draw pass can mask it. Also catches emails / typed
+    /// `ssh user@host` targets, which are sensitive too.
+    HostUser,
 }
 
 pub(crate) struct Highlight {
@@ -23,6 +28,7 @@ pub(crate) struct Highlight {
 pub(crate) fn detect_highlights(
     row_chars: &[(u16, Vec<(u16, char)>)],
     palette: &TerminalPalette,
+    privacy: bool,
 ) -> Vec<Highlight> {
     let ip_color = palette.ansi[5];   // magenta
     let url_color = palette.ansi[4];  // blue
@@ -144,6 +150,44 @@ pub(crate) fn detect_highlights(
                         i = j;
                         continue;
                     }
+                }
+                i += 1;
+            }
+        }
+
+        // --- user@host prompt tokens (Privacy Mode only): word@word ---
+        // Anchored on '@' with token chars on both sides. Token chars are
+        // alnum plus `. _ -` (host labels, usernames, email locals). This
+        // catches the unix prompt (`root@web`), emails, and typed
+        // `ssh user@host` targets, all of which are sensitive. Never
+        // colored, only masked, so it runs solely under Privacy Mode.
+        if privacy {
+            let is_tok = |b: u8| b.is_ascii_alphanumeric() || b == b'.' || b == b'_' || b == b'-';
+            let mut i = 0;
+            while i < len {
+                if bytes[i] == b'@'
+                    && i > 0
+                    && i + 1 < len
+                    && is_tok(bytes[i - 1])
+                    && is_tok(bytes[i + 1])
+                {
+                    let mut start = i;
+                    while start > 0 && is_tok(bytes[start - 1]) {
+                        start -= 1;
+                    }
+                    let mut end = i + 1;
+                    while end < len && is_tok(bytes[end]) {
+                        end += 1;
+                    }
+                    highlights.push(Highlight {
+                        row,
+                        start_col: start as u16,
+                        end_col: (end - 1) as u16,
+                        color: ip_color,
+                        kind: HighlightKind::HostUser,
+                    });
+                    i = end;
+                    continue;
                 }
                 i += 1;
             }
@@ -302,11 +346,51 @@ fn is_word_byte(b: u8) -> bool {
 #[inline]
 pub(crate) fn highlight_color_at(highlights: &[Highlight], row: u16, col: u16) -> Option<Color> {
     for h in highlights {
-        if h.row == row && col >= h.start_col && col <= h.end_col {
+        // HostUser is a Privacy-Mode-only marker, never a syntax color:
+        // skip it so prompts aren't tinted when keyword highlighting is on.
+        if h.kind != HighlightKind::HostUser
+            && h.row == row
+            && col >= h.start_col
+            && col <= h.end_col
+        {
             return Some(h.color);
         }
     }
     None
+}
+
+/// Find the IP / `user@host` privacy span covering a cell, returning its
+/// `(row, start_col, end_col)` (inclusive). Used by the draw pass to
+/// reveal the span the cursor is over while the rest stay masked, the same
+/// hover-reveal mechanic as [`hovered_url_range`].
+#[inline]
+pub(crate) fn privacy_span_at(
+    highlights: &[Highlight],
+    row: u16,
+    col: u16,
+) -> Option<(u16, u16, u16)> {
+    highlights
+        .iter()
+        .find(|h| {
+            (h.kind == HighlightKind::Ip || h.kind == HighlightKind::HostUser)
+                && h.row == row
+                && col >= h.start_col
+                && col <= h.end_col
+        })
+        .map(|h| (h.row, h.start_col, h.end_col))
+}
+
+/// Whether a cell falls inside any IP / `user@host` privacy span. The draw
+/// pass masks such cells (block glyph + muted color) unless they're in the
+/// currently revealed span.
+#[inline]
+pub(crate) fn is_privacy_cell(highlights: &[Highlight], row: u16, col: u16) -> bool {
+    highlights.iter().any(|h| {
+        (h.kind == HighlightKind::Ip || h.kind == HighlightKind::HostUser)
+            && h.row == row
+            && col >= h.start_col
+            && col <= h.end_col
+    })
 }
 
 /// Returns true when the given cell is part of a URL highlight, used by the
@@ -511,7 +595,7 @@ pub(crate) fn smart_span_at(
     // containment test. `detect_highlights` takes (row, cells) pairs; a
     // single synthetic row 0 is enough as long as we match on the same key.
     let rows = [(0u16, cols)];
-    let hit = detect_highlights(&rows, palette).into_iter().any(|h| {
+    let hit = detect_highlights(&rows, palette, false).into_iter().any(|h| {
         h.row == 0
             && h.kind != HighlightKind::Number
             && h.start_col <= right

@@ -212,6 +212,18 @@ impl Oryxis {
                     || (snapped.height - self.window_size.height).abs() > 0.5
                 {
                     self.window_size = snapped;
+                    // The floating toolbar search / overflow popovers are
+                    // anchored to a width that just changed, and the inline
+                    // field may now fit again. Dismiss them so they re-pop
+                    // at the right place (and the inline field re-mounts
+                    // without colliding on its widget Id).
+                    if matches!(
+                        self.overlay.as_ref().map(|o| &o.content),
+                        Some(crate::state::OverlayContent::ToolbarSearch)
+                            | Some(crate::state::OverlayContent::ToolbarOverflow)
+                    ) {
+                        self.overlay = None;
+                    }
                 }
             }
             Message::WindowFocusChanged(focused) => {

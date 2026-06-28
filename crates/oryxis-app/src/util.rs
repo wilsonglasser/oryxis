@@ -194,6 +194,63 @@ impl NotificationMode {
     }
 }
 
+/// How terminal teaching hints (the "hold Shift to select" mouse-capture
+/// toast, the "Ctrl + Click to open" link tooltip) are surfaced. Default
+/// `Once`: each hint shows a single time per terminal pane, enough to teach
+/// without nagging, and returns on a fresh pane (new tab / host). `Always`
+/// shows it on every trigger; `Never` silences them. Replaces the old
+/// persisted "shown once forever" flag + "Reset hints" button.
+#[derive(Clone, Copy, PartialEq, Eq, Default, Debug)]
+pub(crate) enum HintMode {
+    /// Show the hint every time its trigger fires.
+    Always,
+    /// Show the hint once per pane, then retire it for that pane.
+    #[default]
+    Once,
+    /// Never show terminal hints.
+    Never,
+}
+
+impl HintMode {
+    pub(crate) const ALL: [HintMode; 3] =
+        [HintMode::Always, HintMode::Once, HintMode::Never];
+
+    pub(crate) fn code(self) -> &'static str {
+        match self {
+            HintMode::Always => "always",
+            HintMode::Once => "once",
+            HintMode::Never => "never",
+        }
+    }
+
+    pub(crate) fn from_code(code: &str) -> Self {
+        match code {
+            "always" => HintMode::Always,
+            "never" => HintMode::Never,
+            _ => HintMode::Once,
+        }
+    }
+
+    pub(crate) fn label_key(self) -> &'static str {
+        match self {
+            HintMode::Always => "hint_mode_always",
+            HintMode::Once => "hint_mode_once",
+            HintMode::Never => "hint_mode_never",
+        }
+    }
+
+    /// Whether a hint should render now, given whether it has already been
+    /// shown for this pane. `Always` ignores the flag; `Once` honours it;
+    /// `Never` is always silent.
+    pub(crate) fn should_show(self, already_shown: bool) -> bool {
+        match self {
+            HintMode::Always => true,
+            HintMode::Once => !already_shown,
+            HintMode::Never => false,
+        }
+    }
+}
+
 /// Show a native OS notification (OSC 9). Returns whether it was dispatched;
 /// the caller falls back to an in-app toast on `false` (no notification daemon
 /// on Linux, or no registered AppUserModelID on a non-installed Windows build).

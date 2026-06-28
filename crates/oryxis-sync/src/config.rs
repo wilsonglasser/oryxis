@@ -7,6 +7,24 @@ pub enum SyncMode {
     Manual,
 }
 
+/// How a device exchanges sync state with the rest of its group. This is
+/// the **transport** axis and is orthogonal to [`SyncMode`] (the
+/// **cadence**): either transport can run Auto or Manual. A device is on
+/// one transport at a time, the two don't bridge (a `P2p` device and an
+/// `Sftp` device never meet).
+///
+/// - `P2p` negotiates a delta over a live QUIC/relay session with paired
+///   peers (mDNS + signaling + relay).
+/// - `Sftp` reconciles against a single encrypted snapshot file on an
+///   SFTP host that all group members read/modify/write. The "group" is
+///   defined by sharing the same file and the same passphrase.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+pub enum SyncTransport {
+    #[default]
+    P2p,
+    Sftp,
+}
+
 #[derive(Debug, Clone)]
 pub struct SyncConfig {
     pub enabled: bool,

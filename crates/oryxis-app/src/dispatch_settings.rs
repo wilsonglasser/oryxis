@@ -115,6 +115,25 @@ impl Oryxis {
         )
     }
 
+    /// Whether Privacy Mode is active for a connection. Per-host
+    /// override (`Connection.privacy_mode`) wins over the global
+    /// `setting_privacy_mode`; `None` inherits the global default.
+    pub(crate) fn privacy_active(&self, conn: &oryxis_core::models::Connection) -> bool {
+        conn.privacy_mode.unwrap_or(self.setting_privacy_mode)
+    }
+
+    /// Privacy Mode for a terminal pane, resolved from its label. Host
+    /// panes match a saved connection (so the per-host override applies);
+    /// local shells / WSL / PowerShell fall back to the global default.
+    pub(crate) fn privacy_active_for_label(&self, label: &str) -> bool {
+        let base = label.trim_end_matches(" (disconnected)");
+        self.connections
+            .iter()
+            .find(|c| c.label == base)
+            .map(|c| self.privacy_active(c))
+            .unwrap_or(self.setting_privacy_mode)
+    }
+
     /// Effective terminal palette for a known `Connection`. Per-host
     /// override wins, then the global override, then the app theme.
     pub(crate) fn resolve_terminal_palette_for_connection(
@@ -861,11 +880,13 @@ impl Oryxis {
                 );
             }
             Message::TerminalLinkOpened => {
-                // First successful ctrl-click on a link: the hint did
-                // its job, retire it permanently (until "Reset hints").
-                if !self.hint_link_click_used {
-                    self.hint_link_click_used = true;
-                    self.persist_setting("hint_link_click_used", "true");
+                // First successful ctrl-click on a link in this pane: the
+                // hint did its job, retire it for the pane (HintMode::Once).
+                // In-memory only, a fresh pane shows it again.
+                if let Some(tab_idx) = self.active_tab
+                    && let Some(tab) = self.tabs.get_mut(tab_idx)
+                {
+                    tab.active_mut().link_hint_shown = true;
                 }
             }
             Message::ToggleSecretVisibility(field) => {
@@ -873,13 +894,13 @@ impl Oryxis {
                     self.revealed_secrets.insert(field);
                 }
             }
-            Message::ResetHints => {
-                if let Some(vault) = &self.vault
-                    && let Err(e) = vault.delete_settings_with_prefix("hint_")
-                {
-                    tracing::warn!("failed to reset hints: {e}");
+            Message::HintModeChanged(name) => {
+                use crate::i18n::t;
+                use crate::util::HintMode;
+                if let Some(mode) = HintMode::ALL.iter().find(|m| t(m.label_key()) == name) {
+                    self.setting_hint_mode = *mode;
+                    self.persist_setting("terminal_hint_mode", mode.code());
                 }
-                self.hint_link_click_used = false;
             }
             Message::ToggleSmartContrast => {
                 self.setting_smart_contrast = !self.setting_smart_contrast;
@@ -896,6 +917,9 @@ impl Oryxis {
                 );
             }
             Message::ToggleHostListView => {
+                // Dismiss the `…` overflow menu when toggled from there
+                // (no-op for the inline toolbar button).
+                self.overlay = None;
                 self.setting_host_list_view = !self.setting_host_list_view;
                 self.persist_setting(
                     "host_list_view",
@@ -914,6 +938,13 @@ impl Oryxis {
                 self.persist_setting(
                     "show_host_address",
                     if self.setting_show_host_address { "true" } else { "false" },
+                );
+            }
+            Message::TogglePrivacyMode => {
+                self.setting_privacy_mode = !self.setting_privacy_mode;
+                self.persist_setting(
+                    "privacy_mode",
+                    if self.setting_privacy_mode { "true" } else { "false" },
                 );
             }
             Message::SettingToggleCloseToTray => {

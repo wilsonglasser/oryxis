@@ -45,6 +45,15 @@ pub(crate) enum OverlayContent {
     /// Sort dropdown anchored to the toolbar sort button in one of
     /// the card-grid views (Hosts / Keychain / Snippets).
     SortMenu(SortMenuKind),
+    /// Floating search field popped from the toolbar's search icon when
+    /// the window is too narrow for an inline search box. Carries no
+    /// payload: the field (id, value, on_input) is resolved from the
+    /// active view, exactly like the inline `vault_search_field`.
+    ToolbarSearch,
+    /// Overflow `…` menu folding the active view's secondary toolbar
+    /// actions (sort, view toggle, history pagination) when even the
+    /// icon-collapsed search can't free enough room for them inline.
+    ToolbarOverflow,
 }
 
 /// Which side-panel input the shared group picker is currently

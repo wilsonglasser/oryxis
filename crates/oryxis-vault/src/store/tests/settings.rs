@@ -12,6 +12,36 @@ fn settings_round_trip_string_value() {
 
 
 #[test]
+fn sync_sftp_passphrase_round_trips_encrypted() {
+    let mut vault = temp_vault();
+    vault.set_master_password("master").unwrap();
+    vault.set_sync_sftp_passphrase("hunter2-group-secret").unwrap();
+    assert_eq!(
+        vault.get_sync_sftp_passphrase().unwrap().as_deref(),
+        Some("hunter2-group-secret"),
+    );
+    // The stored column must be ciphertext, never the plaintext
+    // passphrase, mirroring the proxy/AI-key leak invariants.
+    let raw = vault.get_setting("sync_sftp_passphrase").unwrap().unwrap();
+    assert!(
+        !raw.contains("hunter2-group-secret"),
+        "passphrase must not sit in plaintext in the settings column"
+    );
+}
+
+#[test]
+fn sync_sftp_passphrase_empty_clears_row() {
+    let mut vault = temp_vault();
+    vault.set_master_password("master").unwrap();
+    vault.set_sync_sftp_passphrase("secret").unwrap();
+    // Clearing deletes the row (rather than storing ""), so a later
+    // key-rotation re-encrypt pass never chokes on an empty ciphertext.
+    vault.set_sync_sftp_passphrase("").unwrap();
+    assert_eq!(vault.get_sync_sftp_passphrase().unwrap(), None);
+    assert_eq!(vault.get_setting("sync_sftp_passphrase").unwrap(), None);
+}
+
+#[test]
 fn settings_get_unset_returns_none() {
     let vault = temp_vault();
     // No tests should pollute global state, but defensively

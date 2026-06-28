@@ -188,8 +188,10 @@ mod manifest;
 mod pairing;
 mod relay_glue;
 mod session;
+mod snapshot;
 
 pub use pairing::{format_pairing_link, parse_pairing_link};
+pub use snapshot::{build_full_snapshot, merge_snapshot};
 
 // Re-exported so `crate::engine::build_manifest` etc. still resolve
 // for the in-crate integration tests after the manifest split.

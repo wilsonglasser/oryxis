@@ -135,6 +135,8 @@ impl Oryxis {
         match message {
             // -- Connection editor --
             Message::ShowNewConnection => {
+                // Dismiss the `…` overflow menu if it launched this.
+                self.overlay = None;
                 // Mutually exclusive right-panel slot, close any
                 // other panel before opening the host editor.
                 self.cloud_form_visible = false;
@@ -260,6 +262,7 @@ impl Oryxis {
                         kex: conn.kex.clone(),
                         macs: conn.macs.clone(),
                         host_key_algorithms: conn.host_key_algorithms.clone(),
+                        privacy_mode: conn.privacy_mode,
                     };
                     let cmd = conn.initial_command.as_deref().unwrap_or_default();
                     self.editor_initial_command =
@@ -500,6 +503,17 @@ impl Oryxis {
                     None
                 };
             }
+            Message::EditorPrivacyModeChanged(v) => {
+                use crate::i18n::t;
+                // Map the localized pick label back to the tri-state override.
+                self.editor_form.privacy_mode = if v == t("host_privacy_mode_on") {
+                    Some(true)
+                } else if v == t("host_privacy_mode_off") {
+                    Some(false)
+                } else {
+                    None
+                };
+            }
             Message::EditorAlgoSetAuto(cat, auto) => {
                 // Auto = None (russh defaults). Switching to custom seeds the
                 // list with the safe defaults so the user adds legacy entries
@@ -662,6 +676,7 @@ impl Oryxis {
                     self.editor_form.keepalive_interval.parse::<u32>().ok()
                 };
                 conn.auto_title = self.editor_form.auto_title;
+                conn.privacy_mode = self.editor_form.privacy_mode;
                 // Map the editor form into either an inline ProxyConfig
                 // or a `proxy_identity_id` reference. Validates host /
                 // port / command up-front so the user gets an error

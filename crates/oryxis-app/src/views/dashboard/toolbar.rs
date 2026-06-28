@@ -301,7 +301,8 @@ impl Oryxis {
         let available = (self.window_size.width - nav_width - panel_width - 48.0).max(0.0);
         let responsive_cols =
             crate::widgets::card_grid_columns(available, crate::app::CARD_WIDTH, 12.0);
-        let view_toggle: Element<'_, Message> = if responsive_cols > 1 {
+        let show_view_toggle = responsive_cols > 1;
+        let view_toggle: Element<'_, Message> = if show_view_toggle {
             dir_row(vec![
                 crate::widgets::host_view_toggle_button(self.setting_host_list_view),
                 Space::new().width(6).into(),
@@ -312,52 +313,79 @@ impl Oryxis {
             Space::new().width(0).into()
         };
 
-        // Let the row size to its natural height (button chrome
-        // included) so the action button keeps its true visual size.
-        // Stability across views (dynamic group has no action) is
-        // handled by sizing the empty action slot to the same height
-        // in `resolved_action` above.
-        // Inside a group the breadcrumb fills the leading space (clipping
-        // when long), and the search sits to its right at a fixed width,
-        // just before the action cluster. At root there's no breadcrumb,
-        // so the search fills.
+        // ── Responsive collapse ──
+        // #1: search yields before the folder name. #2: but the search
+        // keeps a usable min-width, so once it hits that the breadcrumb
+        // clips instead; only when the min won't fit at all does the search
+        // fold to a floating-field icon. #3: when the whole button cluster
+        // can't fit alongside the icon, every action folds into a single
+        // `…` overflow menu (so the toolbar shows just the search + `…`).
+        const SEARCH_MIN: f32 = 180.0;
+        const ICON: f32 = 44.0;
+        const GAP_SC: f32 = 10.0; // search ↔ cluster
+        const GAP_BS: f32 = 12.0; // breadcrumb ↔ search
+        const BC_FLOOR: f32 = 50.0;
         let in_group = self.active_group.is_some();
-        let (left_el, mid_gap, search_el): (
-            Element<'_, Message>,
-            Element<'_, Message>,
-            Element<'_, Message>,
-        ) = if in_group {
-            (
-                container(toolbar_left).width(Length::Fill).clip(true).into(),
-                Space::new().width(12).into(),
-                container(self.vault_search_field())
-                    .width(Length::Fixed(340.0))
-                    .into(),
-            )
+        let leading_w = self.toolbar_leading_width();
+        let cluster_w = self.toolbar_cluster_width();
+        let toolbar_w = self.toolbar_content_width();
+        let (search_collapsed, buttons_overflow) = self.toolbar_tiers();
+        let overflow_open = matches!(
+            self.overlay.as_ref().map(|o| &o.content),
+            Some(crate::state::OverlayContent::ToolbarOverflow)
+        );
+
+        // Breadcrumb width. The inline trailing is the full cluster, or
+        // just the 44px `…` once the buttons have folded. While the search
+        // is a field, cap the breadcrumb so the Fill search keeps at least
+        // SEARCH_MIN (the name clips before the search shrinks past
+        // usable). Once the search is an icon, the breadcrumb takes
+        // whatever the icon + `…` leave.
+        let trailing_w = if buttons_overflow { ICON } else { cluster_w };
+        let left_el: Element<'_, Message> = if in_group {
+            let (cap, clip_to_cap) = if search_collapsed {
+                let c = (toolbar_w - ICON - GAP_SC - GAP_BS - trailing_w).max(0.0);
+                (c, true)
+            } else {
+                let zone = toolbar_w - trailing_w - GAP_SC - GAP_BS;
+                let c = (zone - SEARCH_MIN).max(BC_FLOOR);
+                (c, leading_w > c)
+            };
+            if clip_to_cap {
+                container(toolbar_left)
+                    .width(Length::Fixed(cap))
+                    .clip(true)
+                    .into()
+            } else {
+                container(toolbar_left).clip(true).into()
+            }
         } else {
-            (
-                toolbar_left,
-                Space::new().width(0).into(),
-                self.vault_search_field(),
-            )
+            toolbar_left
         };
-        let toolbar = container(
-            dir_row(vec![
-                left_el,
-                mid_gap,
-                search_el,
-                Space::new().width(10).into(),
-                view_toggle,
-                sort_btn,
-                Space::new().width(8).into(),
-                resolved_action,
-            ])
-            .align_y(iced::Alignment::Center),
-        )
-        // Top padding matches the 24px side padding so the page's inner
-        // spacing is uniform on the X and Y axes.
-        .padding(Padding { top: 16.0, right: 24.0, bottom: 16.0, left: 24.0 })
-        .width(Length::Fill);
+
+        let mut row_items: Vec<Element<'_, Message>> = vec![left_el];
+        if in_group {
+            row_items.push(Space::new().width(12).into());
+        }
+        row_items.push(self.vault_search_slot(search_collapsed));
+        row_items.push(Space::new().width(10).into());
+        if buttons_overflow {
+            // Every action folds into the one `…` menu.
+            row_items.push(crate::widgets::toolbar_overflow_icon(overflow_open));
+        } else {
+            row_items.push(view_toggle);
+            row_items.push(sort_btn);
+            row_items.push(Space::new().width(8).into());
+            row_items.push(resolved_action);
+        }
+
+        // Let the row size to its natural height (button chrome included)
+        // so the action button keeps its true visual size.
+        let toolbar = container(dir_row(row_items).align_y(iced::Alignment::Center))
+            // Top padding matches the 24px side padding so the page's inner
+            // spacing is uniform on the X and Y axes.
+            .padding(Padding { top: 16.0, right: 24.0, bottom: 16.0, left: 24.0 })
+            .width(Length::Fill);
         toolbar.into()
     }
 }

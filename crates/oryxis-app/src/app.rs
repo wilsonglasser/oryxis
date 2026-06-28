@@ -837,6 +837,11 @@ pub struct Oryxis {
     /// Session-log row under the cursor (Logs view); drives the
     /// clickable-row hover highlight.
     pub(crate) hovered_log_row: Option<Uuid>,
+    /// Privacy Mode reveal toggle for the Logs view. When `false` (the
+    /// default) sensitive data in the timeline + session-log viewer is
+    /// masked behind muted blocks; the toolbar / viewer "Reveal" button
+    /// flips this to show the raw values. Reset whenever the view is left.
+    pub(crate) privacy_revealed: bool,
 
     // Terminal theme
     /// Theme derived from the active app theme, used as the global
@@ -914,6 +919,12 @@ pub struct Oryxis {
     /// keeping addresses out of screenshots / screen shares. Port 22 is
     /// always omitted from the address regardless of this toggle.
     pub(crate) setting_show_host_address: bool,
+    /// Global Privacy Mode default: when on, sensitive data (host / ip /
+    /// user / port / proxy on cards and logs, plus IP and `user@host`
+    /// prompt tokens in the terminal) is auto-hidden behind muted blocks
+    /// and revealed on hover. Off by default. A per-host
+    /// `Connection.privacy_mode` override wins over this.
+    pub(crate) setting_privacy_mode: bool,
     /// When on, clicking the window's close button hides to the
     /// system tray instead of quitting. Only honoured on Windows
     /// (the tray module is a no-op everywhere else). Default off
@@ -1037,11 +1048,11 @@ pub struct Oryxis {
     /// Secret fields currently revealed via their eye toggle. Render
     /// state only, never persisted; cleared per-field on toggle.
     pub(crate) revealed_secrets: std::collections::HashSet<crate::state::SecretField>,
-    /// One-time hint state: true once the user has ctrl-clicked a link
-    /// in the terminal, which permanently retires the hover hint.
-    /// Persisted as the `hint_link_click_used` setting; "Reset hints"
-    /// clears every `hint_*` key and flips this back.
-    pub(crate) hint_link_click_used: bool,
+    /// How terminal teaching hints are surfaced (the mouse-capture toast
+    /// and the "Ctrl + Click to open" link tooltip). Persisted as the
+    /// `terminal_hint_mode` setting. `Once` (default) shows each hint a
+    /// single time per pane, tracked in-memory on `Pane`.
+    pub(crate) setting_hint_mode: crate::util::HintMode,
     /// Max parallel SFTP transfer slots (uploads/downloads). 1 = serial,
     /// up to 8 = aggressive. Each slot gets its own SFTP subsystem
     /// channel on the same SSH connection so they don't fight for the
@@ -1270,6 +1281,31 @@ pub struct Oryxis {
     /// confirm the heartbeat is alive (otherwise re-registers on the
     /// same IP look identical and the status freezes).
     pub(crate) sync_signaling_tick: u32,
+    /// Sync transport: `"p2p"` (QUIC + mDNS + relay, the default) or
+    /// `"sftp"` (reconcile against one encrypted snapshot file on an SFTP
+    /// host). A device runs one transport at a time; the two don't bridge.
+    pub(crate) sync_transport: String,
+    /// Connection the SFTP-sync snapshot file lives on, in `sftp`
+    /// transport. `None` until the user picks a host.
+    pub(crate) sync_sftp_host_id: Option<uuid::Uuid>,
+    /// Remote path of the shared snapshot file (e.g. `oryxis-sync.bin`).
+    pub(crate) sync_sftp_remote_path: String,
+    /// Group secret source for SFTP sync. Same passphrase + same file
+    /// across devices == one sync group. Held in memory while unlocked;
+    /// persisted encrypted (the `ai_api_key` pattern) so the background
+    /// timer can run unattended.
+    pub(crate) sync_sftp_passphrase: String,
+    /// An SFTP-sync round (download + merge + upload) is in flight.
+    /// Suppresses overlapping rounds (timer tick during a manual run).
+    pub(crate) sftp_sync_in_progress: bool,
+    /// Last SFTP-sync round outcome for the Sync settings status line.
+    pub(crate) sftp_sync_status: Option<Result<String, String>>,
+    /// The "Select a host" modal for picking the SFTP-sync backup host is
+    /// open. Mirrors the SFTP file-browser host picker rather than a flat
+    /// dropdown, so the row shows the OS badge + label + address.
+    pub(crate) sync_sftp_picker_open: bool,
+    /// Search filter inside that host picker modal.
+    pub(crate) sync_sftp_picker_search: String,
 
     // Export/Import
     pub(crate) show_export_dialog: bool,
@@ -1320,6 +1356,27 @@ pub struct Oryxis {
     /// connection label (single host) or group label. `None` falls back
     /// to a generic name.
     pub(crate) share_suggested_name: Option<String>,
+    /// True when the share dialog was opened via "Export hosts…" and
+    /// should render the per-folder include/exclude checklist. The
+    /// effective `share_filter` is computed from the ticked folders on
+    /// confirm. False for a single-host share, which sets `share_filter`
+    /// directly.
+    pub(crate) share_group_mode: bool,
+    /// Folders whose hosts are included in a group-mode export.
+    pub(crate) share_groups: std::collections::HashSet<uuid::Uuid>,
+    /// Whether ungrouped (root) hosts are included in a group-mode export.
+    pub(crate) share_include_ungrouped: bool,
+
+    // SSH config import preview
+    /// Hosts parsed from a picked `~/.ssh/config`, awaiting the user's
+    /// pick of which to import. Non-empty drives the preview modal.
+    pub(crate) ssh_import_hosts: Vec<crate::ssh_config::SshConfigHost>,
+    /// Per-host tick state, parallel to `ssh_import_hosts`.
+    pub(crate) ssh_import_selected: Vec<bool>,
+    /// Per-host "label already exists" flag, parallel to
+    /// `ssh_import_hosts`; these are surfaced and default to unticked.
+    pub(crate) ssh_import_existing: Vec<bool>,
+    pub(crate) show_ssh_import_dialog: bool,
 }
 
 
@@ -1369,11 +1426,17 @@ impl Oryxis {
         use crate::state::View;
         // Toolbar geometry (top to bottom):
         //   tab_bar(40) + hairline(2) + toolbar_top_pad(20)
-        //   + button(24) + gap(4) = 90
+        //   + button(24 content + 10 default iced button padding = 34)
+        //   + gap(8) = 104
+        // The earlier estimate counted the button as 24 and skipped its
+        // default vertical padding, which dropped the menu ~10 px too
+        // high so it overlapped the trigger's bottom edge. This anchor is
+        // shared by every toolbar split-menu (+ Host, keychain + Add, the
+        // sort menu), so they all clear the button consistently.
         // Add the horizontal sub-nav (~50) on top only when it actually
         // renders (horizontal orientation + a vault view). The vertical
         // rail sits to the LEFT, not above, so it adds no vertical offset.
-        const BASE_Y: f32 = 95.0;
+        const BASE_Y: f32 = 104.0;
         const SUBNAV_HEIGHT: f32 = 50.0;
         let horizontal_subnav = self.setting_nav_orientation != "vertical"
             && self.active_tab.is_none()

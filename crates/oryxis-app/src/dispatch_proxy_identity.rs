@@ -20,6 +20,7 @@ impl Oryxis {
     ) -> Result<Task<Message>, Message> {
         match message {
             Message::ShowProxyIdentityForm(maybe_id) => {
+                self.overlay = None;
                 self.proxy_identity_form_visible = true;
                 self.proxy_identity_form_error = None;
 

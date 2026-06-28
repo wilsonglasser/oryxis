@@ -11,6 +11,39 @@ use crate::state::ConnectionStep;
 use crate::theme::OryxisColors;
 
 impl Oryxis {
+    /// Redact a connection-progress string under Privacy Mode. The text is
+    /// our own controlled format ("Connecting to <host>...", `SSH host:port`),
+    /// so on top of the generic IP / `user@host` masking we also replace this
+    /// host's known hostname / username literally, which catches plain DNS
+    /// names the regex can't. Returns the input unchanged when off.
+    fn redact_progress(
+        &self,
+        progress: &crate::state::ConnectionProgress,
+        s: &str,
+    ) -> String {
+        let conn = self
+            .connections
+            .get(progress.connection_idx)
+            .filter(|c| c.label == progress.label)
+            .or_else(|| self.connections.iter().find(|c| c.label == progress.label));
+        let mask = conn
+            .map(|c| self.privacy_active(c))
+            .unwrap_or(self.setting_privacy_mode);
+        if !mask {
+            return s.to_string();
+        }
+        let mut out = crate::widgets::redact_for_display(s);
+        if let Some(c) = conn {
+            if !c.hostname.is_empty() {
+                out = out.replace(&c.hostname, &crate::widgets::mask_blocks(&c.hostname));
+            }
+            if let Some(u) = c.username.as_deref().filter(|u| !u.is_empty()) {
+                out = out.replace(u, &crate::widgets::mask_blocks(u));
+            }
+        }
+        out
+    }
+
     pub(crate) fn view_connection_progress(&self) -> Element<'_, Message> {
         let progress = match &self.connecting {
             Some(p) => p,
@@ -60,7 +93,8 @@ impl Oryxis {
             column![
                 text(&progress.label).size(16).color(OryxisColors::t().text_primary),
                 Space::new().height(2),
-                text(&progress.hostname).size(12).color(OryxisColors::t().text_muted),
+                text(self.redact_progress(progress, &progress.hostname))
+                    .size(12).color(OryxisColors::t().text_muted),
             ]
             .width(Length::Fill)
             .align_x(crate::widgets::dir_align_x())
@@ -481,7 +515,8 @@ impl Oryxis {
             // breathing room and lets the connector span cleanly to the next
             // node.
             let span: iced::widget::text::Span<'_, ()> =
-                iced::widget::text::Span::new(msg.clone()).color(OryxisColors::t().text_secondary);
+                iced::widget::text::Span::new(self.redact_progress(progress, msg))
+                    .color(OryxisColors::t().text_secondary);
             let message = iced::widget::rich_text::<(), Message, _, _>([span])
                 .size(13)
                 .selectable(true);

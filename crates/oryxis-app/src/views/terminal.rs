@@ -166,7 +166,7 @@ impl Oryxis {
         pane: &'a crate::state::Pane,
         is_focused: bool,
     ) -> Element<'a, Message> {
-        let term_view = TerminalView::new(Arc::clone(&pane.terminal))
+        let mut term_view = TerminalView::new(Arc::clone(&pane.terminal))
             .focused(is_focused)
             .with_bell_flash(pane.bell_flash)
             .with_font_size(self.terminal_font_size)
@@ -175,6 +175,7 @@ impl Oryxis {
             .with_right_click_copy(self.setting_right_click_copy)
             .with_bold_is_bright(self.setting_bold_is_bright)
             .with_keyword_highlight(self.setting_keyword_highlight)
+            .with_privacy(self.privacy_active_for_label(&pane.label))
             .with_smart_contrast(self.setting_smart_contrast)
             .with_word_delimiters(&self.setting_word_delimiters)
             .on_font_size_increase(Message::TerminalFontSizeIncrease)
@@ -182,10 +183,17 @@ impl Oryxis {
             .on_paste_request(Message::TerminalPasteFromClipboard)
             .on_terminal_input(Message::TerminalInput)
             .with_link_hint(
-                (!self.hint_link_click_used)
+                self.setting_hint_mode
+                    .should_show(pane.link_hint_shown)
                     .then(|| crate::i18n::t("terminal_link_hint").to_string()),
             )
             .on_link_opened(Message::TerminalLinkOpened);
+        // Wire the mouse-capture hint only while it should still show for
+        // this pane, so the widget stops emitting once HintMode::Once has
+        // retired it (and never emits under Never).
+        if self.setting_hint_mode.should_show(pane.mouse_hint_shown) {
+            term_view = term_view.on_mouse_capture_hint(|| Message::TerminalMouseCaptureHint);
+        }
         // Wrap the canvas so the focused pane asks the OS to enable its IME.
         // The terminal is a canvas (not a text_input), so without this winit
         // keeps the IME disabled and CJK input can't be switched on.

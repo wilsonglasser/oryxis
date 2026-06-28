@@ -97,6 +97,7 @@ impl Oryxis {
                 self.export_status = Some(result);
             }
             Message::ImportSshConfig => {
+                self.overlay = None;
                 self.ssh_config_import_status = None;
                 return Ok(Task::perform(
                     tokio::task::spawn_blocking(|| {
@@ -126,84 +127,107 @@ impl Oryxis {
             Message::SshConfigFileLoaded(Ok(text)) => {
                 let parsed = crate::ssh_config::parse(&text);
                 if parsed.is_empty() {
-                    self.ssh_config_import_status =
-                        Some(Err("No host blocks found in this file".into()));
-                    return Ok(Task::none());
+                    let msg = crate::i18n::t("ssh_import_none_found").to_string();
+                    self.ssh_config_import_status = Some(Err(msg.clone()));
+                    return Ok(self.show_toast(msg));
                 }
-                let Some(vault) = &self.vault else {
-                    self.ssh_config_import_status =
-                        Some(Err("Vault not unlocked".into()));
-                    return Ok(Task::none());
-                };
-                // Skip aliases that already exist as a connection label
-                //, re-importing the same config shouldn't pile up
-                // duplicates. Lossy de-dup, exact label match.
+                // Flag aliases that already exist as a connection label so
+                // the preview can surface them and default them to
+                // unticked, re-importing the same config shouldn't pile
+                // up duplicates. Lossy de-dup, exact label match.
                 let existing_labels: std::collections::HashSet<String> = self
                     .connections
                     .iter()
                     .map(|c| c.label.clone())
                     .collect();
-                let mut imported = 0usize;
-                let mut skipped = 0usize;
-                let mut errors: Vec<String> = Vec::new();
-                // Build all connections first so `link_proxy_jumps` can
-                // resolve sibling aliases to their freshly-assigned ids.
-                // `parsed_to_save` and `to_save` keep matching indices.
-                let mut parsed_to_save: Vec<&crate::ssh_config::SshConfigHost> = Vec::new();
-                let mut to_save: Vec<oryxis_core::models::connection::Connection> = Vec::new();
-                for host in &parsed {
-                    if existing_labels.contains(&host.alias) {
-                        skipped += 1;
-                        continue;
-                    }
-                    parsed_to_save.push(host);
-                    to_save.push(crate::ssh_config::to_connection(host));
+                self.ssh_import_existing = parsed
+                    .iter()
+                    .map(|h| existing_labels.contains(&h.alias))
+                    .collect();
+                // New hosts start ticked; known ones start unticked.
+                self.ssh_import_selected =
+                    self.ssh_import_existing.iter().map(|e| !e).collect();
+                self.ssh_import_hosts = parsed;
+                self.ssh_config_import_status = None;
+                self.show_ssh_import_dialog = true;
+            }
+            Message::SshImportToggle(i) => {
+                if let Some(sel) = self.ssh_import_selected.get_mut(i) {
+                    *sel = !*sel;
                 }
-                crate::ssh_config::link_proxy_jumps(&parsed_to_save.iter().map(|p| (*p).clone()).collect::<Vec<_>>(), &mut to_save);
+            }
+            Message::SshImportSelectAll(on) => {
+                for sel in &mut self.ssh_import_selected {
+                    *sel = on;
+                }
+            }
+            Message::SshImportDismiss => {
+                self.show_ssh_import_dialog = false;
+                self.ssh_import_hosts.clear();
+                self.ssh_import_selected.clear();
+                self.ssh_import_existing.clear();
+            }
+            Message::SshImportConfirm => {
+                let Some(vault) = &self.vault else {
+                    self.show_ssh_import_dialog = false;
+                    self.ssh_config_import_status =
+                        Some(Err("Vault not unlocked".into()));
+                    return Ok(Task::none());
+                };
+                // Ticked hosts, in original order so `link_proxy_jumps`
+                // can resolve sibling aliases to freshly-assigned ids.
+                let picked: Vec<crate::ssh_config::SshConfigHost> = self
+                    .ssh_import_hosts
+                    .iter()
+                    .zip(self.ssh_import_selected.iter())
+                    .filter(|(_, sel)| **sel)
+                    .map(|(h, _)| h.clone())
+                    .collect();
+                let total = picked.len();
+                let mut to_save: Vec<oryxis_core::models::connection::Connection> =
+                    picked.iter().map(crate::ssh_config::to_connection).collect();
+                crate::ssh_config::link_proxy_jumps(&picked, &mut to_save);
                 // One transaction for the batch, and patch the in-memory
-                // list with the rows that saved instead of re-reading
-                // the whole vault.
+                // list with the rows that saved instead of re-reading the
+                // whole vault.
                 let _ = vault.begin_batch();
-                let mut saved: Vec<oryxis_core::models::connection::Connection> = Vec::new();
-                for (host, conn) in parsed_to_save.iter().zip(to_save.iter()) {
+                let mut saved: Vec<oryxis_core::models::connection::Connection> =
+                    Vec::new();
+                let mut errors: Vec<String> = Vec::new();
+                for (host, conn) in picked.iter().zip(to_save.iter()) {
                     // No password yet, `~/.ssh/config` doesn't carry
-                    // credentials. The user can add one later in the
-                    // host editor; for now save without it.
+                    // credentials. The user can add one later in the host
+                    // editor; for now save without it.
                     match vault.save_connection(conn, None) {
-                        Ok(()) => {
-                            imported += 1;
-                            saved.push(conn.clone());
-                        }
+                        Ok(()) => saved.push(conn.clone()),
                         Err(e) => errors.push(format!("{}: {e}", host.alias)),
                     }
                 }
                 if let Err(e) = vault.commit_batch() {
                     vault.rollback_batch();
                     saved.clear();
-                    imported = 0;
                     errors.push(format!("commit: {e}"));
                 }
+                let imported = saved.len();
                 self.connections.extend(saved);
+                self.show_ssh_import_dialog = false;
+                self.ssh_import_hosts.clear();
+                self.ssh_import_selected.clear();
+                self.ssh_import_existing.clear();
                 let mut summary = format!(
                     "{} {} / {}",
                     crate::i18n::t("import_summary_imported"),
                     imported,
-                    parsed.len(),
+                    total,
                 );
-                if skipped > 0 {
-                    summary.push_str(&format!(
-                        " ({} {})",
-                        skipped,
-                        crate::i18n::t("import_summary_skipped"),
-                    ));
-                }
                 if errors.is_empty() {
-                    self.ssh_config_import_status = Some(Ok(summary));
+                    self.ssh_config_import_status = Some(Ok(summary.clone()));
                 } else {
-                    summary.push_str("; errors: ");
+                    summary.push_str("; ");
                     summary.push_str(&errors.join("; "));
-                    self.ssh_config_import_status = Some(Err(summary));
+                    self.ssh_config_import_status = Some(Err(summary.clone()));
                 }
+                return Ok(self.show_toast(summary));
             }
             Message::ImportVault => {
                 // Close the "+ Host ▾" add menu when reached from there.
@@ -404,6 +428,7 @@ impl Oryxis {
             Message::ShareConnection(idx) => {
                 self.overlay = None;
                 if let Some(conn) = self.connections.get(idx) {
+                    self.share_group_mode = false;
                     self.share_filter = Some(oryxis_vault::ExportFilter::Hosts(vec![conn.id]));
                     self.share_suggested_name = Some(share_file_name(&conn.label));
                     self.show_share_dialog = true;
@@ -412,18 +437,43 @@ impl Oryxis {
                     self.share_status = None;
                 }
             }
-            Message::ShareGroup(group_id) => {
+            Message::ShowExportHosts(scope) => {
                 self.overlay = None;
-                self.share_filter = Some(oryxis_vault::ExportFilter::Group(group_id));
-                self.share_suggested_name = self
-                    .groups
-                    .iter()
-                    .find(|g| g.id == group_id)
-                    .map(|g| share_file_name(&g.label));
+                self.share_group_mode = true;
+                // Pre-tick the in-scope folders. Inside a folder, tick it
+                // and its descendants (mirroring the old group + subgroup
+                // export); at root, tick every folder plus the ungrouped
+                // hosts so a no-op confirm exports everything.
+                match scope {
+                    Some(gid) => {
+                        self.share_groups = self.group_with_descendants(gid);
+                        self.share_include_ungrouped = false;
+                        self.share_suggested_name = self
+                            .groups
+                            .iter()
+                            .find(|g| g.id == gid)
+                            .map(|g| share_file_name(&g.label));
+                    }
+                    None => {
+                        self.share_groups =
+                            self.groups.iter().map(|g| g.id).collect();
+                        self.share_include_ungrouped = true;
+                        self.share_suggested_name = Some(share_file_name("hosts"));
+                    }
+                }
+                self.share_filter = None;
                 self.show_share_dialog = true;
                 self.share_password = String::new();
                 self.share_include_keys = false;
                 self.share_status = None;
+            }
+            Message::ShareToggleGroup(gid) => {
+                if !self.share_groups.remove(&gid) {
+                    self.share_groups.insert(gid);
+                }
+            }
+            Message::ShareToggleUngrouped => {
+                self.share_include_ungrouped = !self.share_include_ungrouped;
             }
             Message::SharePasswordChanged(v) => {
                 self.share_password = v;
@@ -432,6 +482,28 @@ impl Oryxis {
                 self.share_include_keys = !self.share_include_keys;
             }
             Message::ShareConfirm => {
+                // In group mode the filter is derived from the ticked
+                // folders just before export, so a mid-dialog tick is
+                // always reflected.
+                if self.share_group_mode {
+                    let ids: Vec<uuid::Uuid> = self
+                        .connections
+                        .iter()
+                        .filter(|c| match c.group_id {
+                            Some(g) => self.share_groups.contains(&g),
+                            None => self.share_include_ungrouped,
+                        })
+                        .map(|c| c.id)
+                        .collect();
+                    if ids.is_empty() {
+                        self.share_status = Some(Err(
+                            crate::i18n::t("export_nothing_selected").to_string(),
+                        ));
+                        return Ok(Task::none());
+                    }
+                    self.share_filter =
+                        Some(oryxis_vault::ExportFilter::Hosts(ids));
+                }
                 if self.share_password.is_empty() {
                     self.share_status = Some(Err("Password is required".into()));
                     return Ok(Task::none());
@@ -490,6 +562,25 @@ impl Oryxis {
                                     }
                                     self.share_status = Some(Ok(format!("Saved to {}", path.display())));
                                     self.show_share_dialog = false;
+                                    // Count exported hosts for the toast.
+                                    // `Hosts` covers the per-host share and
+                                    // the group-mode export (the only ways
+                                    // the dialog opens); other variants fall
+                                    // back to a generic confirmation.
+                                    let n = match &self.share_filter {
+                                        Some(oryxis_vault::ExportFilter::Hosts(ids)) => Some(ids.len()),
+                                        _ => None,
+                                    };
+                                    let toast = match n {
+                                        Some(n) => format!(
+                                            "{} {} {}",
+                                            crate::i18n::t("export_done"),
+                                            n,
+                                            crate::i18n::t("cat_connections"),
+                                        ),
+                                        None => crate::i18n::t("export_done").to_string(),
+                                    };
+                                    return Ok(self.show_toast(toast));
                                 }
                                 Err(e) => {
                                     self.share_status = Some(Err(format!("Write failed: {}", e)));
@@ -507,6 +598,9 @@ impl Oryxis {
                 self.share_filter = None;
                 self.share_status = None;
                 self.share_suggested_name = None;
+                self.share_group_mode = false;
+                self.share_groups.clear();
+                self.share_include_ungrouped = false;
             }
             m => return Err(m),
         }
@@ -515,6 +609,57 @@ impl Oryxis {
 }
 
 impl Oryxis {
+    /// Show a transient toast chip and schedule its auto-dismiss. Used
+    /// for import / export count feedback that should be visible from any
+    /// screen, not just the dialog that triggered it.
+    pub(crate) fn show_toast(&mut self, msg: String) -> Task<Message> {
+        self.show_toast_secs_inner(msg, 2600)
+    }
+
+    /// Like [`show_toast`] but with an explicit dwell in whole seconds, for
+    /// hints that are a sentence to read rather than a one-word confirmation.
+    pub(crate) fn show_toast_secs(&mut self, msg: String, secs: u64) -> Task<Message> {
+        self.show_toast_secs_inner(msg, secs * 1000)
+    }
+
+    fn show_toast_secs_inner(&mut self, msg: String, millis: u64) -> Task<Message> {
+        self.toast = Some(msg);
+        Task::perform(
+            async move {
+                tokio::time::sleep(std::time::Duration::from_millis(millis)).await;
+            },
+            |_| Message::ToastClear,
+        )
+    }
+
+    /// A folder id together with every folder nested beneath it. Drives
+    /// the group-mode export so picking a folder also picks its subfolders
+    /// (matching the old `ExportFilter::Group` reach).
+    pub(crate) fn group_with_descendants(
+        &self,
+        root: uuid::Uuid,
+    ) -> std::collections::HashSet<uuid::Uuid> {
+        let mut out = std::collections::HashSet::new();
+        out.insert(root);
+        // Repeated passes until no new child is added; group counts are
+        // small, so the quadratic walk is cheaper than building an index.
+        loop {
+            let mut grew = false;
+            for g in &self.groups {
+                if let Some(parent) = g.parent_id
+                    && out.contains(&parent)
+                    && out.insert(g.id)
+                {
+                    grew = true;
+                }
+            }
+            if !grew {
+                break;
+            }
+        }
+        out
+    }
+
     /// Reset and open the SFTP backup-target picker. `is_import` flips it
     /// between writing the blob (export) and reading it back (import).
     /// The host defaults to the first connection and the path to a plain

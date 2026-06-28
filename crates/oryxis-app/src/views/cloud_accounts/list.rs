@@ -18,62 +18,74 @@ use crate::widgets::{
 
 impl Oryxis {
     pub(crate) fn view_cloud_accounts(&self) -> Element<'_, Message> {
+        let primary: Element<'_, Message> = {
+            let fg = OryxisColors::t().button_text;
+            button(
+                container(
+                    dir_row(vec![
+                        text("+")
+                            .size(13)
+                            .font(iced::Font {
+                                weight: iced::font::Weight::Bold,
+                                ..iced::Font::new(crate::theme::SYSTEM_UI_FAMILY)
+                            })
+                            .color(fg)
+                            .into(),
+                        Space::new().width(4).into(),
+                        text(t("cloud_new_account_btn"))
+                            .size(11)
+                            .font(iced::Font {
+                                weight: iced::font::Weight::Bold,
+                                ..iced::Font::new(crate::theme::SYSTEM_UI_FAMILY)
+                            })
+                            .color(fg)
+                            .into(),
+                    ])
+                    .align_y(iced::Alignment::Center),
+                )
+                .center_y(Length::Fixed(24.0))
+                .padding(Padding {
+                    top: 0.0,
+                    right: 14.0,
+                    bottom: 0.0,
+                    left: 14.0,
+                }),
+            )
+            .on_press(Message::ShowCloudForm(None))
+            .style(|_, status| {
+                let bg = match status {
+                    BtnStatus::Hovered => OryxisColors::t().button_bg_hover,
+                    _ => OryxisColors::t().button_bg,
+                };
+                button::Style {
+                    background: Some(Background::Color(bg)),
+                    border: Border {
+                        radius: Radius::from(6.0),
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                }
+            })
+            .into()
+        };
+        // Responsive collapse: search yields first, then folds to an icon;
+        // at the narrowest the action moves into the `…` overflow menu.
+        let (search_collapsed, buttons_overflow) = self.toolbar_tiers();
+        let trailing: Element<'_, Message> = if buttons_overflow {
+            crate::widgets::toolbar_overflow_icon(matches!(
+                self.overlay.as_ref().map(|o| &o.content),
+                Some(crate::state::OverlayContent::ToolbarOverflow)
+            ))
+        } else {
+            primary
+        };
         let toolbar = container(
             dir_row(vec![
                 // Search fills the leading space (hidden + Fill spacer when
                 // there are no accounts, so the action stays trailing).
-                self.vault_search_field(),
+                self.vault_search_slot(search_collapsed),
                 Space::new().width(10).into(),
-                {
-                    let fg = OryxisColors::t().button_text;
-                    button(
-                        container(
-                            dir_row(vec![
-                                text("+")
-                                    .size(13)
-                                    .font(iced::Font {
-                                        weight: iced::font::Weight::Bold,
-                                        ..iced::Font::new(crate::theme::SYSTEM_UI_FAMILY)
-                                    })
-                                    .color(fg)
-                                    .into(),
-                                Space::new().width(4).into(),
-                                text(t("cloud_new_account_btn"))
-                                    .size(11)
-                                    .font(iced::Font {
-                                        weight: iced::font::Weight::Bold,
-                                        ..iced::Font::new(crate::theme::SYSTEM_UI_FAMILY)
-                                    })
-                                    .color(fg)
-                                    .into(),
-                            ])
-                            .align_y(iced::Alignment::Center),
-                        )
-                        .center_y(Length::Fixed(24.0))
-                        .padding(Padding {
-                            top: 0.0,
-                            right: 14.0,
-                            bottom: 0.0,
-                            left: 14.0,
-                        }),
-                    )
-                    .on_press(Message::ShowCloudForm(None))
-                    .style(|_, status| {
-                        let bg = match status {
-                            BtnStatus::Hovered => OryxisColors::t().button_bg_hover,
-                            _ => OryxisColors::t().button_bg,
-                        };
-                        button::Style {
-                            background: Some(Background::Color(bg)),
-                            border: Border {
-                                radius: Radius::from(6.0),
-                                ..Default::default()
-                            },
-                            ..Default::default()
-                        }
-                    })
-                    .into()
-                },
+                trailing,
             ])
             .align_y(iced::Alignment::Center),
         )

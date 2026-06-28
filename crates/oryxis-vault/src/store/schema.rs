@@ -249,6 +249,10 @@ impl VaultStore {
         // `session_logging` setting, 0 = never record, 1 = always record.
         // Existing rows stay NULL, so behavior is unchanged on upgrade.
         let _ = self.db.execute_batch("ALTER TABLE connections ADD COLUMN session_logging INTEGER;");
+        // Per-host Privacy Mode override. NULL = inherit the global
+        // `privacy_mode` setting, 0 = never hide, 1 = always hide.
+        // Existing rows stay NULL, so behavior is unchanged on upgrade.
+        let _ = self.db.execute_batch("ALTER TABLE connections ADD COLUMN privacy_mode INTEGER;");
         // Backing query for dynamic groups (ECS services / K8s workloads).
         // JSON-encoded `CloudQuery`. NULL for manual groups.
         let _ = self.db.execute_batch("ALTER TABLE groups ADD COLUMN cloud_query TEXT;");

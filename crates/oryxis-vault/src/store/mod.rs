@@ -135,6 +135,24 @@ fn derive_key(password: &[u8], salt: &[u8]) -> Result<[u8; KEY_LEN], VaultError>
     Ok(key)
 }
 
+/// Application-wide salt for the SFTP-sync group secret. Unlike vault
+/// encryption (random per-blob salt stored in the header), the sync
+/// secret must be **deterministic across devices**: every member derives
+/// the same key from the same passphrase, so any of them can create the
+/// shared snapshot file first without a salt-negotiation handshake. A
+/// fixed public salt is sound here because the only entropy is the
+/// passphrase, which the UX requires to be strong; the salt's job is just
+/// to domain-separate this derivation from any other Argon2 use.
+const SYNC_SECRET_SALT: &[u8; SALT_LEN] = b"oryxis-sftp-sync group secret v1";
+
+/// Derive the 32-byte group secret for the SFTP sync transport from a
+/// user passphrase. All devices sharing a passphrase derive the same key,
+/// which both seals the snapshot blob and feeds the per-entity AEAD in the
+/// sync engine. See [`SYNC_SECRET_SALT`] for why the salt is fixed.
+pub fn derive_sync_secret(passphrase: &str) -> Result<[u8; KEY_LEN], VaultError> {
+    derive_key(passphrase.as_bytes(), SYNC_SECRET_SALT)
+}
+
 /// Encrypt data with ChaCha20Poly1305. Returns: salt(32) + nonce(12) + ciphertext.
 pub(crate) fn encrypt(plaintext: &[u8], password: &[u8]) -> Result<Vec<u8>, VaultError> {
     let mut salt = [0u8; SALT_LEN];
@@ -688,6 +706,7 @@ impl VaultStore {
             self.convert_blob_column(table, id_col, col, dec, enc, lenient)?;
         }
         self.convert_settings_b64("ai_api_key", dec, enc, lenient)?;
+        self.convert_settings_b64("sync_sftp_passphrase", dec, enc, lenient)?;
         self.convert_settings_b64("sync_device_identity", dec, enc, lenient)?;
         // The session-recording content key only needs its wrapper
         // converted; the chunks themselves are sealed with the

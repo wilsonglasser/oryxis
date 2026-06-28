@@ -201,10 +201,28 @@ impl Oryxis {
             clear_btn = clear_btn.on_press(Message::RequestClearHistory);
         }
 
-        let toolbar = container(
-            crate::widgets::dir_row(vec![
-                self.vault_search_field(),
-                Space::new().width(10).into(),
+        // Responsive collapse: search yields first, then folds to an icon;
+        // when the cluster (range label + prev/next pager + "Clear all")
+        // can't fit, it all moves into the `…` overflow menu.
+        let (search_collapsed, buttons_overflow) = self.toolbar_tiers();
+        let overflow_open = matches!(
+            self.overlay.as_ref().map(|o| &o.content),
+            Some(crate::state::OverlayContent::ToolbarOverflow)
+        );
+        let mut row_items: Vec<Element<'_, Message>> =
+            vec![self.vault_search_slot(search_collapsed), Space::new().width(10).into()];
+        // Privacy reveal toggle, shown whenever Privacy Mode could mask
+        // something in this view (global on, or any host forces it on).
+        let privacy_applies = self.setting_privacy_mode
+            || self.connections.iter().any(|c| c.privacy_mode == Some(true));
+        if privacy_applies {
+            row_items.push(crate::widgets::privacy_reveal_btn(self.privacy_revealed));
+            row_items.push(Space::new().width(8).into());
+        }
+        if buttons_overflow {
+            row_items.push(crate::widgets::toolbar_overflow_icon(overflow_open));
+        } else {
+            row_items.extend([
                 text(range_label)
                     .size(11)
                     .color(OryxisColors::t().text_muted)
@@ -215,8 +233,10 @@ impl Oryxis {
                 next_btn,
                 Space::new().width(12).into(),
                 clear_btn.into(),
-            ])
-            .align_y(iced::Alignment::Center),
+            ]);
+        }
+        let toolbar = container(
+            crate::widgets::dir_row(row_items).align_y(iced::Alignment::Center),
         )
         .padding(Padding { top: 16.0, right: 24.0, bottom: 16.0, left: 24.0 })
         .width(Length::Fill);
@@ -254,16 +274,32 @@ impl Oryxis {
         };
 
         // ── Session viewer overlay ──
-        if let Some((_log_id, ref spans)) = self.viewing_session_log {
+        if let Some((log_id, ref spans)) = self.viewing_session_log {
             // Recreate the terminal's look: palette colors parsed from
             // the recording's SGR sequences over the theme background.
             let palette = self.resolve_global_terminal_palette();
             let default_fg = palette.foreground;
             let term_bg = palette.background;
+            // Resolve the recording's host to decide Privacy Mode. Per-host
+            // override wins; a deleted host falls back to the global default.
+            let viewer_conn = self
+                .session_logs
+                .iter()
+                .find(|e| e.id == log_id)
+                .and_then(|e| self.connections.iter().find(|c| c.id == e.connection_id));
+            let privacy_applies = viewer_conn
+                .map(|c| self.privacy_active(c))
+                .unwrap_or(self.setting_privacy_mode);
+            let mask = privacy_applies && !self.privacy_revealed;
             let rich_spans: Vec<iced::widget::text::Span<'_, ()>> = spans
                 .iter()
                 .map(|s| {
-                    iced::widget::text::Span::new(s.text.as_str())
+                    let txt = if mask {
+                        crate::widgets::redact_for_display(&s.text)
+                    } else {
+                        s.text.clone()
+                    };
+                    iced::widget::text::Span::new(txt)
                         .color(s.color.unwrap_or(default_fg))
                 })
                 .collect();
@@ -271,45 +307,54 @@ impl Oryxis {
                 .size(12)
                 .font(iced::Font::MONOSPACE)
                 .selectable(true);
+            // Header row: title, optional Privacy reveal toggle (only when
+            // the recording's host is under Privacy Mode), then Close.
+            let mut header_items: Vec<Element<'_, Message>> = vec![
+                text(crate::i18n::t("session_log"))
+                    .size(16)
+                    .color(OryxisColors::t().text_primary)
+                    .into(),
+                Space::new().width(Length::Fill).into(),
+            ];
+            if privacy_applies {
+                header_items.push(crate::widgets::privacy_reveal_btn(self.privacy_revealed));
+                header_items.push(Space::new().width(8).into());
+            }
+            header_items.push(
+                button(
+                    container(
+                        text(crate::i18n::t("close")).size(11).font(iced::Font {
+                            weight: iced::font::Weight::Bold,
+                            ..iced::Font::new(crate::theme::SYSTEM_UI_FAMILY)
+                        }).color(OryxisColors::t().text_muted),
+                    )
+                    .center_y(Length::Fixed(24.0))
+                    .padding(Padding {
+                        top: 0.0, right: 14.0, bottom: 0.0, left: 14.0,
+                    }),
+                )
+                .on_press(Message::CloseSessionLogView)
+                .style(|_, status| {
+                    let bg = match status {
+                        BtnStatus::Hovered => Color { a: 0.15, ..OryxisColors::t().error },
+                        _ => Color::TRANSPARENT,
+                    };
+                    button::Style {
+                        background: Some(Background::Color(bg)),
+                        border: Border {
+                            radius: Radius::from(6.0),
+                            color: OryxisColors::t().border,
+                            width: 1.0,
+                        },
+                        ..Default::default()
+                    }
+                })
+                .into(),
+            );
             let viewer = container(
                 column![
                     container(
-                        crate::widgets::dir_row(vec![
-                            text(crate::i18n::t("session_log"))
-                                .size(16)
-                                .color(OryxisColors::t().text_primary)
-                                .into(),
-                            Space::new().width(Length::Fill).into(),
-                            button(
-                                container(
-                                    text(crate::i18n::t("close")).size(11).font(iced::Font {
-                                        weight: iced::font::Weight::Bold,
-                                        ..iced::Font::new(crate::theme::SYSTEM_UI_FAMILY)
-                                    }).color(OryxisColors::t().text_muted),
-                                )
-                                .center_y(Length::Fixed(24.0))
-                                .padding(Padding {
-                                    top: 0.0, right: 14.0, bottom: 0.0, left: 14.0,
-                                }),
-                            )
-                            .on_press(Message::CloseSessionLogView)
-                            .style(|_, status| {
-                                let bg = match status {
-                                    BtnStatus::Hovered => Color { a: 0.15, ..OryxisColors::t().error },
-                                    _ => Color::TRANSPARENT,
-                                };
-                                button::Style {
-                                    background: Some(Background::Color(bg)),
-                                    border: Border {
-                                        radius: Radius::from(6.0),
-                                        color: OryxisColors::t().border,
-                                        width: 1.0,
-                                    },
-                                    ..Default::default()
-                                }
-                            })
-                            .into(),
-                        ]).align_y(iced::Alignment::Center),
+                        crate::widgets::dir_row(header_items).align_y(iced::Alignment::Center),
                     )
                     .padding(Padding {
                         top: 16.0, right: 20.0, bottom: 12.0, left: 20.0,
@@ -430,20 +475,39 @@ impl Oryxis {
             ..Default::default()
         });
 
+        // Privacy Mode: mask the hostname (a known sensitive value) and
+        // scrub any IP / user@host inside a failure message. Per-host
+        // override wins; a deleted host falls back to the global default.
+        // The Reveal toggle in the toolbar / viewer flips it off.
+        let mask = !self.privacy_revealed
+            && conn
+                .map(|c| self.privacy_active(c))
+                .unwrap_or(self.setting_privacy_mode);
+        let host_str = match row.hostname {
+            Some(h) if mask => crate::widgets::mask_blocks(h),
+            Some(h) => h.to_string(),
+            None => String::new(),
+        };
+
         // Subtitle line: hostname for sessions, "hostname · message"
         // for failures (collapses to hostname when there's no message).
         let subtitle = match &row.kind {
             TimelineKind::Failure(e) => {
-                if e.message.is_empty() {
-                    row.hostname.unwrap_or("").to_string()
-                } else if let Some(h) = row.hostname {
-                    format!("{h} · {}", e.message)
+                let msg = if mask {
+                    crate::widgets::redact_for_display(&e.message)
                 } else {
                     e.message.clone()
+                };
+                if msg.is_empty() {
+                    host_str.clone()
+                } else if !host_str.is_empty() {
+                    format!("{host_str} · {msg}")
+                } else {
+                    msg
                 }
             }
             TimelineKind::Session { entry, .. } => {
-                let hostname = row.hostname.unwrap_or("");
+                let hostname = host_str.as_str();
                 let duration = if let Some(ended) = entry.ended_at {
                     let dur = ended.signed_duration_since(entry.started_at);
                     let secs = dur.num_seconds();

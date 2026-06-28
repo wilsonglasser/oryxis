@@ -667,4 +667,188 @@ mod tests {
             "vacuumed tombstone must no longer appear in manifest, which is exactly why PeerStaleWarning exists as a mitigation"
         );
     }
+
+    // --- SFTP-transport snapshot round-trip ---------------------------
+    //
+    // Same reconciliation guarantees as the P2P manifest round-trip
+    // above, exercised through the "virtual peer" snapshot path
+    // (`build_full_snapshot` / `merge_snapshot`) instead of a live
+    // session. No SFTP I/O: the blob is passed in memory.
+
+    /// Group secret stand-in. In production this is derived from the
+    /// user passphrase via Argon2id; the snapshot functions only ever
+    /// see the resulting 32 bytes, so a fixed key is faithful here.
+    const SNAP_SECRET: [u8; 32] = [7u8; 32];
+
+    /// A snapshot built on device A and merged on device B materializes
+    /// A's entities on B, with secret fields intact.
+    #[test]
+    fn snapshot_round_trip_creates_entities_on_peer() {
+        use crate::engine::{build_full_snapshot, merge_snapshot};
+
+        let va = test_vault();
+        let conn = Connection::new("web", "10.0.0.1");
+        va.save_connection(&conn, Some("s3cret")).unwrap();
+        let va = Arc::new(Mutex::new(va));
+
+        let blob = build_full_snapshot(&va, &SNAP_SECRET).unwrap();
+
+        let vb = Arc::new(Mutex::new(test_vault()));
+        merge_snapshot(&vb, &blob, &SNAP_SECRET).unwrap();
+
+        let v = vb.lock().unwrap();
+        let got = v.list_connections().unwrap();
+        assert_eq!(got.len(), 1);
+        assert_eq!(got[0].id, conn.id);
+        // Passwords ride the snapshot only when `sync_passwords` is on;
+        // it defaults off, so the secret column must be empty here. This
+        // pins the gate so a future change can't silently start shipping
+        // passwords over SFTP.
+        assert!(v.get_connection_password(&conn.id).unwrap().is_none());
+    }
+
+    /// A newer edit on B, snapshotted back and merged into A, wins by
+    /// last-writer-wins; a stale copy never overwrites a newer one.
+    #[test]
+    fn snapshot_round_trip_lww_newer_wins() {
+        use crate::engine::{build_full_snapshot, merge_snapshot};
+
+        // A creates, B receives.
+        let va = Arc::new(Mutex::new(test_vault()));
+        let mut conn = Connection::new("box", "10.0.0.1");
+        va.lock().unwrap().save_connection(&conn, None).unwrap();
+        let blob_a = build_full_snapshot(&va, &SNAP_SECRET).unwrap();
+
+        let vb = Arc::new(Mutex::new(test_vault()));
+        merge_snapshot(&vb, &blob_a, &SNAP_SECRET).unwrap();
+
+        // B edits with a strictly newer stamp, snapshots back to A.
+        conn.hostname = "10.0.0.99".into();
+        conn.updated_at = chrono::Utc::now() + chrono::Duration::seconds(2);
+        vb.lock().unwrap().save_connection(&conn, None).unwrap();
+        let blob_b = build_full_snapshot(&vb, &SNAP_SECRET).unwrap();
+        merge_snapshot(&va, &blob_b, &SNAP_SECRET).unwrap();
+
+        let v = va.lock().unwrap();
+        let got = v.list_connections().unwrap();
+        assert_eq!(got.len(), 1);
+        assert_eq!(got[0].hostname, "10.0.0.99", "newer edit must win on A");
+    }
+
+    /// A delete on A (a tombstone) propagates through the snapshot and
+    /// removes the entity on B without resurrecting it.
+    #[test]
+    fn snapshot_round_trip_propagates_deletion() {
+        use crate::engine::{build_full_snapshot, merge_snapshot};
+
+        // A and B both hold the entity (A creates, B merges).
+        let va = Arc::new(Mutex::new(test_vault()));
+        let conn = Connection::new("doomed", "10.0.0.1");
+        va.lock().unwrap().save_connection(&conn, None).unwrap();
+        let blob_a = build_full_snapshot(&va, &SNAP_SECRET).unwrap();
+
+        let vb = Arc::new(Mutex::new(test_vault()));
+        merge_snapshot(&vb, &blob_a, &SNAP_SECRET).unwrap();
+        assert_eq!(vb.lock().unwrap().list_connections().unwrap().len(), 1);
+
+        // A deletes, snapshots the tombstone, B merges it.
+        va.lock().unwrap().delete_connection(&conn.id).unwrap();
+        let blob_del = build_full_snapshot(&va, &SNAP_SECRET).unwrap();
+        merge_snapshot(&vb, &blob_del, &SNAP_SECRET).unwrap();
+
+        assert!(
+            vb.lock().unwrap().list_connections().unwrap().is_empty(),
+            "delete must propagate, not resurrect, through the snapshot"
+        );
+    }
+
+    /// The real multi-instance case: a second instance that ALREADY has
+    /// its own hosts configured. Merging the group snapshot must UNION the
+    /// two sets (never wipe the local hosts), and a round-trip back must
+    /// converge both instances to the same union. This is the exact
+    /// behaviour of pointing a fresh device with existing data at the
+    /// shared SFTP snapshot.
+    #[test]
+    fn snapshot_merge_unions_with_existing_local_hosts() {
+        use crate::engine::{build_full_snapshot, merge_snapshot};
+        use std::collections::HashSet;
+
+        // Instance A has its own host.
+        let va = Arc::new(Mutex::new(test_vault()));
+        let host_a = Connection::new("server-a", "10.0.0.1");
+        va.lock().unwrap().save_connection(&host_a, None).unwrap();
+
+        // Instance B already has a DIFFERENT host configured locally.
+        let vb = Arc::new(Mutex::new(test_vault()));
+        let host_b = Connection::new("server-b", "10.0.0.2");
+        vb.lock().unwrap().save_connection(&host_b, None).unwrap();
+
+        // B pulls A's snapshot: B must now hold BOTH hosts (its own kept,
+        // A's added), not be overwritten by A's state.
+        let snap_a = build_full_snapshot(&va, &SNAP_SECRET).unwrap();
+        merge_snapshot(&vb, &snap_a, &SNAP_SECRET).unwrap();
+        let b_ids: HashSet<_> = vb
+            .lock()
+            .unwrap()
+            .list_connections()
+            .unwrap()
+            .into_iter()
+            .map(|c| c.id)
+            .collect();
+        assert!(b_ids.contains(&host_a.id), "A's host must be added to B");
+        assert!(
+            b_ids.contains(&host_b.id),
+            "B's own pre-existing host must be preserved, not wiped"
+        );
+        assert_eq!(b_ids.len(), 2);
+
+        // A pulls B's (now-merged) snapshot: both instances converge to
+        // the same union, no duplication.
+        let snap_b = build_full_snapshot(&vb, &SNAP_SECRET).unwrap();
+        merge_snapshot(&va, &snap_b, &SNAP_SECRET).unwrap();
+        let a_ids: HashSet<_> = va
+            .lock()
+            .unwrap()
+            .list_connections()
+            .unwrap()
+            .into_iter()
+            .map(|c| c.id)
+            .collect();
+        assert_eq!(a_ids, b_ids, "both instances converge to the same set");
+        assert_eq!(a_ids.len(), 2);
+    }
+
+    /// A snapshot sealed under one secret can't be opened under another:
+    /// `merge_snapshot` fails and leaves the vault untouched (so a caller
+    /// must not push a fresh snapshot after a failed merge).
+    #[test]
+    fn snapshot_wrong_secret_fails_and_preserves_vault() {
+        use crate::engine::{build_full_snapshot, merge_snapshot};
+
+        let va = Arc::new(Mutex::new(test_vault()));
+        va.lock()
+            .unwrap()
+            .save_connection(&Connection::new("a", "10.0.0.1"), None)
+            .unwrap();
+        let blob = build_full_snapshot(&va, &SNAP_SECRET).unwrap();
+
+        let vb = Arc::new(Mutex::new(test_vault()));
+        let wrong = [9u8; 32];
+        assert!(merge_snapshot(&vb, &blob, &wrong).is_err());
+        assert!(
+            vb.lock().unwrap().list_connections().unwrap().is_empty(),
+            "a failed merge must not partially mutate the vault"
+        );
+    }
+
+    /// A truncated or wrong-format blob is rejected on the header before
+    /// it ever reaches the AEAD.
+    #[test]
+    fn snapshot_bad_header_rejected() {
+        use crate::engine::merge_snapshot;
+
+        let vb = Arc::new(Mutex::new(test_vault()));
+        assert!(merge_snapshot(&vb, b"", &SNAP_SECRET).is_err());
+        assert!(merge_snapshot(&vb, b"NOTORX\x01\x00", &SNAP_SECRET).is_err());
+    }
 }

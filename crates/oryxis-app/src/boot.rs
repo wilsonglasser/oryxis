@@ -455,6 +455,8 @@ impl Oryxis {
                 setting_host_list_view: false,
                 setting_card_accent_glass: true,
                 setting_show_host_address: false,
+                setting_privacy_mode: false,
+                privacy_revealed: false,
                 setting_close_to_tray: false,
                 setting_minimize_to_tray: false,
                 tray_menu_signature: 0,
@@ -489,7 +491,7 @@ impl Oryxis {
                 setting_scrollback_rows: "10000".into(),
                 setting_word_delimiters: oryxis_terminal::DEFAULT_WORD_DELIMITERS.into(),
                 revealed_secrets: std::collections::HashSet::new(),
-                hint_link_click_used: false,
+                setting_hint_mode: crate::util::HintMode::default(),
                 setting_sftp_concurrency: "2".into(),
                 setting_sftp_connect_timeout: "15".into(),
                 setting_sftp_auth_timeout: "30".into(),
@@ -581,6 +583,14 @@ impl Oryxis {
                 sync_in_progress: false,
                 sync_abort_tx: None,
                 sync_signaling_tick: 0,
+                sync_transport: "p2p".into(),
+                sync_sftp_host_id: None,
+                sync_sftp_remote_path: String::new(),
+                sync_sftp_passphrase: String::new(),
+                sftp_sync_in_progress: false,
+                sftp_sync_status: None,
+                sync_sftp_picker_open: false,
+                sync_sftp_picker_search: String::new(),
                 show_export_dialog: false,
                 export_password: String::new(),
                 export_include_keys: true,
@@ -605,6 +615,13 @@ impl Oryxis {
                 share_filter: None,
                 share_status: None,
                 share_suggested_name: None,
+                share_group_mode: false,
+                share_groups: std::collections::HashSet::new(),
+                share_include_ungrouped: false,
+                ssh_import_hosts: Vec::new(),
+                ssh_import_selected: Vec::new(),
+                ssh_import_existing: Vec::new(),
+                show_ssh_import_dialog: false,
             },
             Task::none(),
         );
@@ -631,7 +648,12 @@ impl Oryxis {
         // Bring the sync engine up if the vault is already open and the
         // user left sync enabled. When the vault is locked we defer to
         // the `VaultUnlock` handler, same as `--connect`.
-        if app.vault_state == VaultState::Unlocked && app.sync_enabled {
+        // Only the P2P transport runs a background engine; the SFTP
+        // transport reconciles on the iced cadence subscription instead.
+        if app.vault_state == VaultState::Unlocked
+            && app.sync_enabled
+            && app.sync_transport != "sftp"
+        {
             tasks.push(app.start_sync_engine());
         }
 
@@ -845,6 +867,18 @@ impl Oryxis {
             if let Ok(Some(v)) = vault.get_setting("sync_listen_port") {
                 self.sync_listen_port = v;
             }
+            if let Ok(Some(v)) = vault.get_setting("sync_transport") {
+                self.sync_transport = v;
+            }
+            if let Ok(Some(v)) = vault.get_setting("sync_sftp_host_id") {
+                self.sync_sftp_host_id = uuid::Uuid::parse_str(&v).ok();
+            }
+            if let Ok(Some(v)) = vault.get_setting("sync_sftp_remote_path") {
+                self.sync_sftp_remote_path = v;
+            }
+            if let Ok(Some(v)) = vault.get_sync_sftp_passphrase() {
+                self.sync_sftp_passphrase = v;
+            }
             self.sync_peers = vault.list_sync_peers().unwrap_or_default();
             if let Ok(Some(v)) = vault.get_setting("ai_system_prompt") {
                 self.ai_system_prompt = text_editor::Content::with_text(&v);
@@ -902,6 +936,9 @@ impl Oryxis {
             }
             if let Ok(Some(v)) = vault.get_setting("show_host_address") {
                 self.setting_show_host_address = v == "true";
+            }
+            if let Ok(Some(v)) = vault.get_setting("privacy_mode") {
+                self.setting_privacy_mode = v == "true";
             }
             if let Ok(Some(v)) = vault.get_setting("close_to_tray") {
                 self.setting_close_to_tray = v == "true";
@@ -1058,8 +1095,8 @@ impl Oryxis {
             if let Ok(Some(v)) = vault.get_setting("word_delimiters") {
                 self.setting_word_delimiters = v;
             }
-            if let Ok(Some(v)) = vault.get_setting("hint_link_click_used") {
-                self.hint_link_click_used = v == "true";
+            if let Ok(Some(v)) = vault.get_setting("terminal_hint_mode") {
+                self.setting_hint_mode = crate::util::HintMode::from_code(&v);
             }
             if let Ok(Some(v)) = vault.get_setting("cloud_auto_refresh_enabled") {
                 self.setting_cloud_auto_refresh_enabled = v == "true";

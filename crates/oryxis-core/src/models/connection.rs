@@ -155,6 +155,14 @@ pub struct Connection {
     pub macs: Option<Vec<String>>,
     #[serde(default)]
     pub host_key_algorithms: Option<Vec<String>>,
+    /// Per-host override for Privacy Mode (auto-hide sensitive data:
+    /// host / ip / user / port / proxy on cards and logs, plus IP and
+    /// `user@host` prompt tokens in the terminal). `None` follows the
+    /// global `privacy_mode` setting; `Some(true)` always hides for this
+    /// host (even when the global toggle is off); `Some(false)` never
+    /// hides it (even when the global toggle is on).
+    #[serde(default)]
+    pub privacy_mode: Option<bool>,
 }
 
 impl Connection {
@@ -201,6 +209,7 @@ impl Connection {
             kex: None,
             macs: None,
             host_key_algorithms: None,
+            privacy_mode: None,
         }
     }
 }
@@ -430,6 +439,28 @@ mod tests {
             let json = serde_json::to_string(&conn).unwrap();
             let de: Connection = serde_json::from_str(&json).unwrap();
             assert_eq!(de.auto_title, v);
+        }
+    }
+
+    #[test]
+    fn privacy_mode_legacy_payload_defaults_to_none() {
+        let conn = Connection::new("legacy", "10.0.0.1");
+        let mut value = serde_json::to_value(&conn).unwrap();
+        value.as_object_mut().unwrap().remove("privacy_mode");
+        let de: Connection = serde_json::from_value(value).unwrap();
+        assert_eq!(de.privacy_mode, None);
+    }
+
+    #[test]
+    fn privacy_mode_round_trip() {
+        let mut conn = Connection::new("h", "1.2.3.4");
+        // None (inherit), Some(true) (force on), Some(false) (force off) must
+        // each round-trip distinctly, they have different semantics.
+        for v in [None, Some(true), Some(false)] {
+            conn.privacy_mode = v;
+            let json = serde_json::to_string(&conn).unwrap();
+            let de: Connection = serde_json::from_str(&json).unwrap();
+            assert_eq!(de.privacy_mode, v);
         }
     }
 

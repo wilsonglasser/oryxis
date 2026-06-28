@@ -535,9 +535,51 @@ impl Oryxis {
         // Share dialog overlay
         if self.show_share_dialog {
             let share_include_keys = self.share_include_keys;
+            // Group-mode export: a per-folder include/exclude checklist
+            // sits between the password and the keys toggle. A single-host
+            // share skips it (no folder choice to make).
+            let group_picker: Element<'_, Message> = if self.share_group_mode {
+                let mut list = column![text(crate::i18n::t("export_groups"))
+                    .size(12)
+                    .color(OryxisColors::t().text_muted)]
+                .spacing(6);
+                for g in &self.groups {
+                    let id = g.id;
+                    list = list.push(
+                        iced::widget::checkbox(self.share_groups.contains(&id))
+                            .label(g.label.as_str())
+                            .on_toggle(move |_| Message::ShareToggleGroup(id))
+                            .size(16)
+                            .text_size(13),
+                    );
+                }
+                list = list.push(
+                    iced::widget::checkbox(self.share_include_ungrouped)
+                        .label(crate::i18n::t("export_ungrouped"))
+                        .on_toggle(|_| Message::ShareToggleUngrouped)
+                        .size(16)
+                        .text_size(13),
+                );
+                column![
+                    iced::widget::container(
+                        iced::widget::scrollable(list)
+                            .height(Length::Fixed(160.0))
+                    )
+                    .width(280),
+                    Space::new().height(8),
+                ]
+                .into()
+            } else {
+                Space::new().height(0).into()
+            };
+            let dialog_title = if self.share_group_mode {
+                crate::i18n::t("export_hosts")
+            } else {
+                crate::i18n::t("share")
+            };
             let dialog_content = container(
                 column![
-                    text(crate::i18n::t("share")).size(16).color(OryxisColors::t().text_primary),
+                    text(dialog_title).size(16).color(OryxisColors::t().text_primary),
                     Space::new().height(12),
                     container(crate::widgets::password_input_with_eye(
                         crate::i18n::t("export_password"),
@@ -553,6 +595,7 @@ impl Oryxis {
                     ))
                     .width(280),
                     Space::new().height(8),
+                    group_picker,
                     row![
                         text(crate::i18n::t("include_private_keys")).size(13).color(OryxisColors::t().text_secondary),
                         Space::new().width(Length::Fill),
@@ -596,6 +639,96 @@ impl Oryxis {
                     base,
                     dialog_content.into(),
                     Some(Message::ShareDismiss),
+                    0.0,
+                ),
+                resize_overlay,
+            );
+        }
+
+        // SSH config import preview. Lists every parsed host with a
+        // checkbox so the user picks which to add; hosts whose label
+        // already exists are flagged and start unticked.
+        if self.show_ssh_import_dialog {
+            let ssh_total = self.ssh_import_hosts.len();
+            let ssh_selected =
+                self.ssh_import_selected.iter().filter(|s| **s).count();
+            let mut list = column![].spacing(4);
+            for (i, host) in self.ssh_import_hosts.iter().enumerate() {
+                let checked =
+                    self.ssh_import_selected.get(i).copied().unwrap_or(false);
+                let exists =
+                    self.ssh_import_existing.get(i).copied().unwrap_or(false);
+                // "user@hostname:port", falling back to the alias when
+                // HostName is omitted (OpenSSH treats the alias as host).
+                let mut detail = host
+                    .hostname
+                    .clone()
+                    .unwrap_or_else(|| host.alias.clone());
+                if let Some(u) = &host.user {
+                    detail = format!("{u}@{detail}");
+                }
+                if let Some(p) = host.port {
+                    detail = format!("{detail}:{p}");
+                }
+                let mut label = format!("{}  ({detail})", host.alias);
+                if exists {
+                    label.push_str("  · ");
+                    label.push_str(crate::i18n::t("ssh_import_exists"));
+                }
+                list = list.push(
+                    iced::widget::checkbox(checked)
+                        .label(label)
+                        .on_toggle(move |_| Message::SshImportToggle(i))
+                        .size(16)
+                        .text_size(13),
+                );
+            }
+            let dialog_content = container(
+                column![
+                    text(crate::i18n::t("import_ssh_config_btn"))
+                        .size(16)
+                        .color(OryxisColors::t().text_primary),
+                    Space::new().height(4),
+                    text(format!(
+                        "{} ({}/{})",
+                        crate::i18n::t("ssh_import_select"),
+                        ssh_selected,
+                        ssh_total,
+                    ))
+                        .size(12)
+                        .color(OryxisColors::t().text_muted),
+                    Space::new().height(8),
+                    row![
+                        styled_button(crate::i18n::t("select_all"), Message::SshImportSelectAll(true), OryxisColors::t().accent),
+                        Space::new().width(8),
+                        styled_button(crate::i18n::t("deselect_all"), Message::SshImportSelectAll(false), OryxisColors::t().text_muted),
+                    ],
+                    Space::new().height(8),
+                    container(
+                        iced::widget::scrollable(list)
+                            .height(Length::Fixed(280.0))
+                    )
+                    .width(440),
+                    Space::new().height(12),
+                    row![
+                        styled_button(crate::i18n::t("import_from_file"), Message::SshImportConfirm, OryxisColors::t().success),
+                        Space::new().width(8),
+                        styled_button(crate::i18n::t("cancel"), Message::SshImportDismiss, OryxisColors::t().text_muted),
+                    ],
+                ]
+                .padding(24),
+            )
+            .style(|_| container::Style {
+                background: Some(Background::Color(OryxisColors::t().bg_surface)),
+                border: Border { radius: Radius::from(12.0), color: OryxisColors::t().border, width: 1.0 },
+                ..Default::default()
+            });
+
+            return wrap_with_resize(
+                crate::widgets::modal_overlay(
+                    base,
+                    dialog_content.into(),
+                    Some(Message::SshImportDismiss),
                     0.0,
                 ),
                 resize_overlay,
@@ -1562,12 +1695,15 @@ impl Oryxis {
     /// Falls back to the kebab width when a combo's bounds cell
     /// hasn't been populated yet (extremely brief, before the first
     /// draw pass on a freshly opened panel).
-    fn overlay_menu_width(&self, overlay: &OverlayState) -> f32 {
+    pub(crate) fn overlay_menu_width(&self, overlay: &OverlayState) -> f32 {
         match &overlay.content {
             OverlayContent::SortMenu(_) => 220.0,
             // Wide enough for "Split side by side" / "Duplicate in New
             // Window" / "Close Other Tabs" to sit on one line.
             OverlayContent::SplitMenu | OverlayContent::TabActions(_) => 210.0,
+            // Fits "Import ~/.ssh/config" / "Export all hosts" and the
+            // longer translations of both on one line.
+            OverlayContent::CloudProviderPicker => 210.0,
             OverlayContent::CloudDiscoverGroupPicker => {
                 let b = self.cloud_discover_default_group_combo_bounds.get();
                 if b.width > 0.0 { b.width } else { 308.0 }
@@ -1583,11 +1719,22 @@ impl Oryxis {
                 };
                 if b.width > 0.0 { b.width } else { 308.0 }
             }
+            OverlayContent::ToolbarSearch => self.toolbar_search_width(),
+            OverlayContent::ToolbarOverflow => 210.0,
             _ => 150.0,
         }
     }
 
     pub(crate) fn render_overlay_menu(&self, overlay: &OverlayState) -> Element<'_, Message> {
+        // Floating toolbar search: just the live search input at full
+        // width, no popover chrome (it reads as the inline field having
+        // floated into the bar, not as a dropdown box).
+        if matches!(overlay.content, OverlayContent::ToolbarSearch) {
+            let w = self.overlay_menu_width(overlay);
+            return container(self.vault_search_field())
+                .width(Length::Fixed(w))
+                .into();
+        }
         // Per-variant width. Group pickers track the live combo width
         // measured by their `bounds_reporter` so the popover always
         // matches the input it dropdowns from; sort menu gets a wider
@@ -1706,18 +1853,39 @@ impl Oryxis {
                 ].into()
             }
             OverlayContent::CloudProviderPicker => {
-                // The "+ Host ▾" add menu. Always offers importing a
-                // `.oryxis` file (a full vault export or a single
-                // shared host), then one entry per configured cloud
-                // profile for discovery. Import lives here so it's
-                // reachable from where hosts are added instead of being
-                // buried in Settings.
-                let mut items = column![context_menu_item(
-                    iced_fonts::lucide::download(),
-                    crate::i18n::t("import_from_file"),
-                    Message::ImportVault,
-                    OryxisColors::t().text_secondary,
-                )];
+                // The "+ Host ▾" add menu. Offers importing a `.oryxis`
+                // file (a full vault export or a single shared host),
+                // importing an OpenSSH `~/.ssh/config`, exporting the
+                // current view, then one entry per configured cloud
+                // profile for discovery. Import / export live here so
+                // they're reachable from where hosts are managed
+                // instead of being buried in Settings.
+                let mut items = column![
+                    context_menu_item(
+                        iced_fonts::lucide::download(),
+                        crate::i18n::t("import_from_file"),
+                        Message::ImportVault,
+                        OryxisColors::t().text_secondary,
+                    ),
+                    context_menu_item(
+                        iced_fonts::lucide::file_code(),
+                        crate::i18n::t("import_ssh_config_btn"),
+                        Message::ImportSshConfig,
+                        OryxisColors::t().text_secondary,
+                    ),
+                ];
+                // Export hosts: opens the share dialog with a per-folder
+                // include/exclude checklist (keys-off by default), unlike
+                // the full-vault export in Settings. Pre-scoped to the
+                // active folder when one is open.
+                if !self.connections.is_empty() {
+                    items = items.push(context_menu_item(
+                        iced_fonts::lucide::upload(),
+                        crate::i18n::t("export_hosts"),
+                        Message::ShowExportHosts(self.active_group),
+                        OryxisColors::t().text_secondary,
+                    ));
+                }
                 // Only profiles whose provider plugin is installed can
                 // run discovery; hide the rest (they'd fail with a
                 // "binary not found" wall) until the plugin is back.
@@ -2158,6 +2326,181 @@ impl Oryxis {
                     .width(Length::Fixed(menu_content_width))
                     .into()
             }
+            // Rendered above via early return (no popover chrome).
+            OverlayContent::ToolbarSearch => Space::new().into(),
+            OverlayContent::ToolbarOverflow => {
+                // The `…` menu holds *every* toolbar action for the view
+                // (primary + secondary), so the narrow toolbar shows only
+                // the search icon + this one button.
+                use crate::state::{SortMenuKind, View};
+                let secondary = OryxisColors::t().text_secondary;
+                let mut col = column![].spacing(2);
+                match self.active_view {
+                    View::Dashboard => {
+                        // Primary add action mirrors the toolbar's
+                        // context-aware button (none in a dynamic group,
+                        // Discover in a cloud folder, else New host + the
+                        // import/cloud sub-menu).
+                        match self.active_group {
+                            Some(gid)
+                                if self
+                                    .groups
+                                    .iter()
+                                    .find(|g| g.id == gid)
+                                    .and_then(|g| g.cloud_query.as_ref())
+                                    .is_some() => {}
+                            Some(gid) => {
+                                let linked = self
+                                    .connections
+                                    .iter()
+                                    .filter(|c| c.group_id == Some(gid))
+                                    .find_map(|c| c.cloud_ref.as_ref().map(|r| r.profile_id))
+                                    .or_else(|| {
+                                        self.groups
+                                            .iter()
+                                            .filter(|g| g.parent_id == Some(gid))
+                                            .find_map(|g| {
+                                                g.cloud_query.as_ref().map(|q| q.profile_id)
+                                            })
+                                    });
+                                if let Some(pid) = linked {
+                                    col = col.push(context_menu_item(
+                                        iced_fonts::lucide::download(),
+                                        crate::i18n::t("cloud_discover"),
+                                        Message::ShowCloudDiscover(pid),
+                                        secondary,
+                                    ));
+                                } else {
+                                    col = col.push(context_menu_item(
+                                        iced_fonts::lucide::plus(),
+                                        crate::i18n::t("new_host"),
+                                        Message::ShowNewConnection,
+                                        secondary,
+                                    ));
+                                    col = col.push(context_menu_item(
+                                        iced_fonts::lucide::ellipsis(),
+                                        crate::i18n::t("toolbar_more"),
+                                        Message::ShowCloudProviderPicker,
+                                        secondary,
+                                    ));
+                                }
+                            }
+                            None => {
+                                col = col.push(context_menu_item(
+                                    iced_fonts::lucide::plus(),
+                                    crate::i18n::t("new_host"),
+                                    Message::ShowNewConnection,
+                                    secondary,
+                                ));
+                                col = col.push(context_menu_item(
+                                    iced_fonts::lucide::ellipsis(),
+                                    crate::i18n::t("toolbar_more"),
+                                    Message::ShowCloudProviderPicker,
+                                    secondary,
+                                ));
+                            }
+                        }
+                        // View toggle (grid <-> list) only when the grid
+                        // shows more than one column.
+                        let (icon, label) = if self.setting_host_list_view {
+                            (
+                                iced_fonts::lucide::layout_grid(),
+                                crate::i18n::t("toolbar_view_grid"),
+                            )
+                        } else {
+                            (iced_fonts::lucide::list(), crate::i18n::t("toolbar_view_list"))
+                        };
+                        col = col.push(context_menu_item(
+                            icon,
+                            label,
+                            Message::ToggleHostListView,
+                            secondary,
+                        ));
+                        col = col.push(context_menu_item(
+                            iced_fonts::lucide::arrow_down_a_z(),
+                            crate::i18n::t("toolbar_sort"),
+                            Message::ToggleSortMenu(SortMenuKind::Hosts),
+                            secondary,
+                        ));
+                    }
+                    View::Keys => {
+                        col = col.push(context_menu_item(
+                            iced_fonts::lucide::plus(),
+                            crate::i18n::t("add_btn"),
+                            Message::ToggleKeychainAddMenu,
+                            secondary,
+                        ));
+                        col = col.push(context_menu_item(
+                            iced_fonts::lucide::arrow_down_a_z(),
+                            crate::i18n::t("toolbar_sort"),
+                            Message::ToggleSortMenu(SortMenuKind::Keys),
+                            secondary,
+                        ));
+                    }
+                    View::Snippets => {
+                        col = col.push(context_menu_item(
+                            iced_fonts::lucide::plus(),
+                            crate::i18n::t("new_snippet"),
+                            Message::ShowSnippetPanel,
+                            secondary,
+                        ));
+                        col = col.push(context_menu_item(
+                            iced_fonts::lucide::arrow_down_a_z(),
+                            crate::i18n::t("toolbar_sort"),
+                            Message::ToggleSortMenu(SortMenuKind::Snippets),
+                            secondary,
+                        ));
+                    }
+                    View::Cloud => {
+                        col = col.push(context_menu_item(
+                            iced_fonts::lucide::plus(),
+                            crate::i18n::t("cloud_new_account"),
+                            Message::ShowCloudForm(None),
+                            secondary,
+                        ));
+                    }
+                    View::PortForwarding => {
+                        col = col.push(context_menu_item(
+                            iced_fonts::lucide::plus(),
+                            crate::i18n::t("new_port_forward"),
+                            Message::ShowPortForwardPanel,
+                            secondary,
+                        ));
+                    }
+                    View::Proxies => {
+                        col = col.push(context_menu_item(
+                            iced_fonts::lucide::plus(),
+                            crate::i18n::t("new_proxy_identity"),
+                            Message::ShowProxyIdentityForm(None),
+                            secondary,
+                        ));
+                    }
+                    View::History => {
+                        col = col.push(context_menu_item(
+                            iced_fonts::lucide::chevron_left(),
+                            crate::i18n::t("toolbar_prev"),
+                            Message::LogsPagePrev,
+                            secondary,
+                        ));
+                        col = col.push(context_menu_item(
+                            iced_fonts::lucide::chevron_right(),
+                            crate::i18n::t("toolbar_next"),
+                            Message::LogsPageNext,
+                            secondary,
+                        ));
+                        if !self.logs.is_empty() || !self.session_logs.is_empty() {
+                            col = col.push(context_menu_item(
+                                iced_fonts::lucide::trash(),
+                                crate::i18n::t("clear_all"),
+                                Message::RequestClearHistory,
+                                OryxisColors::t().error,
+                            ));
+                        }
+                    }
+                    _ => {}
+                }
+                col.into()
+            }
         };
 
         // Min-height (so a single-item menu reads as a real button-
@@ -2250,6 +2593,218 @@ impl Oryxis {
             View::Proxies => self.proxy_identities.is_empty(),
             _ => true,
         }
+    }
+
+    /// `true` when a side-panel editor is open over the active vault
+    /// view, so it narrows the content (and therefore the toolbar) by
+    /// `PANEL_WIDTH`. Mirrors `active_side_panel`'s conditions cheaply
+    /// (no Element built) for the responsive-toolbar width budget.
+    pub(crate) fn vault_panel_open(&self) -> bool {
+        if self.active_tab.is_some() {
+            return false;
+        }
+        match self.active_view {
+            View::Dashboard => {
+                self.cloud_discover_visible
+                    || self.cloud_dynamic_form_visible
+                    || self.group_edit_visible
+                    || self.show_host_panel
+                    || self.show_session_group_panel
+            }
+            View::Keys => self.show_key_panel || self.show_identity_panel,
+            View::Snippets => self.show_snippet_panel,
+            View::PortForwarding => self.show_port_forward_panel,
+            View::Proxies => self.proxy_identity_form_visible,
+            View::Cloud => self.cloud_form_visible,
+            _ => false,
+        }
+    }
+
+    /// Horizontal space the active view's toolbar Row actually has, after
+    /// the nav rail, any open side panel, and the toolbar's own 24px side
+    /// padding. Drives the responsive collapse tiers.
+    pub(crate) fn toolbar_content_width(&self) -> f32 {
+        let panel = if self.vault_panel_open() {
+            crate::app::PANEL_WIDTH
+        } else {
+            0.0
+        };
+        (self.window_size.width - self.vault_rail_width() - panel - 48.0).max(0.0)
+    }
+
+    // ── Responsive-toolbar geometry constants ──
+    // Toolbar action buttons are 24px of content inside iced's default
+    // 10px horizontal button padding, so a square icon button is 44px and
+    // a labelled button is (content + 20). These are the *real* rendered
+    // widths, used so the collapse tiers fire at the right window size
+    // (estimating low made the search collapse while space was still free).
+    const TB_ICON: f32 = 44.0; // square icon button (sort, view toggle, search/overflow icon)
+    const TB_SEARCH_MIN: f32 = 180.0; // smallest inline search worth keeping
+    const TB_GAP_SC: f32 = 10.0; // gap between the search slot and the cluster
+    const TB_GAP_BS: f32 = 12.0; // gap between breadcrumb and search (Hosts only)
+    const TB_BC_FLOOR: f32 = 50.0; // breadcrumb never shrinks below this before the search collapses
+
+    /// Full natural width of the active view's trailing button cluster
+    /// (every action, inline, with the gaps between them). Single source
+    /// of truth for both the collapse tiers and the floating-field width.
+    pub(crate) fn toolbar_cluster_width(&self) -> f32 {
+        match self.active_view {
+            View::Dashboard => {
+                // Grid/list toggle only shows above a single grid column.
+                let nav_width = self.vault_rail_width();
+                let panel = if self.vault_panel_open() {
+                    crate::app::PANEL_WIDTH
+                } else {
+                    0.0
+                };
+                let available =
+                    (self.window_size.width - nav_width - panel - 48.0).max(0.0);
+                let cols = crate::widgets::card_grid_columns(
+                    available,
+                    crate::app::CARD_WIDTH,
+                    12.0,
+                );
+                let toggle = if cols > 1 { Self::TB_ICON + 6.0 } else { 0.0 };
+                // Action button: none inside a dynamic group, "Discover"
+                // inside a cloud-linked folder, else the "+ Host" split.
+                let action = match self.active_group {
+                    Some(gid) => {
+                        let dynamic = self
+                            .groups
+                            .iter()
+                            .find(|g| g.id == gid)
+                            .and_then(|g| g.cloud_query.as_ref())
+                            .is_some();
+                        if dynamic {
+                            0.0
+                        } else {
+                            115.0
+                        }
+                    }
+                    None => 113.0,
+                };
+                toggle + Self::TB_ICON + 8.0 + action
+            }
+            // sort(44) + gap(8) + the "+ Add" split(~113).
+            View::Keys => Self::TB_ICON + 8.0 + 113.0,
+            // sort(44) + gap(8) + "+ Snippet"(~92).
+            View::Snippets => Self::TB_ICON + 8.0 + 92.0,
+            View::Cloud => 95.0,            // "+ Account"
+            View::PortForwarding => 92.0,   // "+ Port Forward"
+            View::Proxies => {
+                if self.proxy_identity_form_visible {
+                    0.0
+                } else {
+                    113.0 // "+ Add" split
+                }
+            }
+            // range label + prev/next pager(48 each) + "Clear all"(~98).
+            View::History => 330.0,
+            _ => 0.0,
+        }
+    }
+
+    /// Estimated natural width of the leading breadcrumb (Hosts inside a
+    /// group). 0 for every other view / the root host list. Overestimated
+    /// per char so a long / CJK folder name yields the search to its min
+    /// before the name itself clips.
+    pub(crate) fn toolbar_leading_width(&self) -> f32 {
+        if self.active_view != View::Dashboard {
+            return 0.0;
+        }
+        let Some(gid) = self.active_group else {
+            return 0.0;
+        };
+        let mut w = 0.0_f32;
+        let mut cursor = Some(gid);
+        let mut first = true;
+        for _ in 0..5 {
+            let Some(id) = cursor else { break };
+            let Some(g) = self.groups.iter().find(|g| g.id == id) else {
+                break;
+            };
+            if !first {
+                w += 22.0; // "/" separator + its surrounding spacing
+            }
+            first = false;
+            w += 18.0 + 6.0 + g.label.chars().count() as f32 * 12.0;
+            cursor = g.parent_id;
+        }
+        w
+    }
+
+    /// Width of the floating search field popped when the search collapses
+    /// to its icon. Because the search only ever collapses *after* the
+    /// buttons have folded into the `…` (see `toolbar_tiers`), the sole
+    /// inline trailing widget then is the 44px `…`, so the field spans the
+    /// whole leading + search zone up to it. Shared by `overlay_menu_width`
+    /// (rendering) and the toggle handler (anchor math) so both agree.
+    pub(crate) fn toolbar_search_width(&self) -> f32 {
+        (self.toolbar_content_width() - Self::TB_ICON - Self::TB_GAP_SC).clamp(200.0, 720.0)
+    }
+
+    /// Responsive toolbar tiers for the active view: whether the whole
+    /// button cluster folds into a single `…` overflow menu, and (only at
+    /// the very narrowest) whether the search itself collapses to a
+    /// floating-field icon.
+    ///
+    /// Priority is to keep the search a real field at a usable min-width:
+    /// when space runs out the *buttons* fold first (into the `…`) and the
+    /// breadcrumb clips, so the search field survives; the search only
+    /// becomes an icon when even a min-width field plus the `…` won't fit.
+    /// Both thresholds come from real rendered widths (never a
+    /// post-decision measurement), so the result is a monotonic step
+    /// function of window width and can't oscillate: the overflow
+    /// threshold sits above the collapse one because `cluster_w > TB_ICON`,
+    /// so a collapsed search always implies overflowed buttons.
+    pub(crate) fn toolbar_tiers(&self) -> (bool, bool) {
+        let leading_w = self.toolbar_leading_width();
+        let cluster_w = self.toolbar_cluster_width();
+        let in_group = leading_w > 0.0;
+        let gap_bs = if in_group { Self::TB_GAP_BS } else { 0.0 };
+        let bc_floor = if in_group { Self::TB_BC_FLOOR } else { 0.0 };
+        let w = self.toolbar_content_width();
+        // Room a min-width search field needs alongside the breadcrumb floor.
+        let base = bc_floor + gap_bs + Self::TB_SEARCH_MIN + Self::TB_GAP_SC;
+        // Fold the buttons once the full cluster won't fit beside that field.
+        let buttons_overflow = w < base + cluster_w;
+        // Collapse the search only once even the field + the lone `…` won't fit.
+        let search_collapsed = w < base + Self::TB_ICON;
+        (search_collapsed, buttons_overflow)
+    }
+
+    /// The toolbar search element: the inline field, or (when `collapsed`,
+    /// or whenever the floating field is already open) a search icon that
+    /// pops the floating field. Shared by every vault view's toolbar. The
+    /// icon hugs the trailing edge of the search zone via a leading Fill
+    /// spacer, so the button cluster after it stays pinned right.
+    pub(crate) fn vault_search_slot(&self, collapsed: bool) -> Element<'_, Message> {
+        if self.active_view_search_empty() {
+            // No search at all: keep a Fill spacer so the action cluster
+            // stays trailing, exactly as `vault_search_field` does.
+            return Space::new().width(Length::Fill).height(0).into();
+        }
+        // Force the icon whenever the floating field owns the input id, so
+        // the inline field is never mounted at the same time (duplicate
+        // `Id`) if a panel/resize flips `collapsed` while it's open.
+        let overlay_open = matches!(
+            self.overlay.as_ref().map(|o| &o.content),
+            Some(crate::state::OverlayContent::ToolbarSearch)
+        );
+        if collapsed || overlay_open {
+            // The slot must carry the toolbar row's Fill so the icon hugs
+            // the trailing edge of the search zone and the button cluster
+            // stays pinned right. A bare `dir_row` is a `Shrink` Row, which
+            // would swallow the inner Fill spacer, so force Fill here.
+            return crate::widgets::dir_row(vec![
+                Space::new().width(Length::Fill).into(),
+                crate::widgets::toolbar_search_icon(overlay_open),
+            ])
+            .align_y(iced::Alignment::Center)
+            .width(Length::Fill)
+            .into();
+        }
+        self.vault_search_field()
     }
 
     pub(crate) fn vault_search_field(&self) -> Element<'_, Message> {

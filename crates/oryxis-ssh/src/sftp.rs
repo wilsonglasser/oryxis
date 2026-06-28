@@ -7,7 +7,7 @@
 
 use russh::ChannelMsg;
 use russh_sftp::client::{RawSftpSession, SftpSession};
-use russh_sftp::protocol::{FileAttributes, OpenFlags};
+use russh_sftp::protocol::{FileAttributes, OpenFlags, Packet, StatusCode};
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
@@ -744,6 +744,43 @@ impl SftpClient {
             s.rename(from, to)
                 .await
                 .map_err(|e| SshError::Channel(format!("sftp rename({from} → {to}): {e}")))
+        })
+        .await
+    }
+
+    /// Atomically rename `from` over `to` via the
+    /// `posix-rename@openssh.com` extension, which replaces an existing
+    /// destination in one step. Plain SFTP v3 `rename` (above) is
+    /// specified to FAIL when the target exists, and many servers honour
+    /// that, so a write-temp-then-replace flow needs this extension to
+    /// stay atomic. The high-level `SftpSession` doesn't surface extended
+    /// requests, so this runs on a dedicated raw channel. Returns an error
+    /// (typically `OpUnsupported`) when the server lacks the extension;
+    /// callers that need portability fall back to remove + `rename`.
+    pub async fn posix_rename(&self, from: &str, to: &str) -> Result<(), SshError> {
+        let raw = self.open_raw_streaming().await?;
+        // posix-rename@openssh.com payload: `string oldpath; string
+        // newpath`, each an SSH string (u32 big-endian length + bytes).
+        let mut data = Vec::with_capacity(8 + from.len() + to.len());
+        data.extend_from_slice(&(from.len() as u32).to_be_bytes());
+        data.extend_from_slice(from.as_bytes());
+        data.extend_from_slice(&(to.len() as u32).to_be_bytes());
+        data.extend_from_slice(to.as_bytes());
+        let label = format!("posix_rename({from} → {to})");
+        self.with_op_timeout(&label, async {
+            match raw.extended("posix-rename@openssh.com", data).await {
+                Ok(Packet::Status(s)) if s.status_code == StatusCode::Ok => Ok(()),
+                Ok(Packet::Status(s)) => Err(SshError::Channel(format!(
+                    "sftp posix-rename({from} → {to}): {:?}",
+                    s.status_code
+                ))),
+                Ok(_) => Err(SshError::Channel(
+                    "sftp posix-rename: unexpected reply".into(),
+                )),
+                Err(e) => Err(SshError::Channel(format!(
+                    "sftp posix-rename({from} → {to}): {e}"
+                ))),
+            }
         })
         .await
     }

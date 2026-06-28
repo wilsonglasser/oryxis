@@ -88,6 +88,13 @@ pub struct TerminalWidgetState {
     /// Last `(col, row)` reported to the remote app, used to suppress
     /// duplicate motion reports while the cursor stays inside one cell.
     report_cell: Option<(u16, u16)>,
+    /// Per-drag guard: set once the "mouse tracking is swallowing your
+    /// selection" hint has fired during the current drag, so the many
+    /// motion events of one gesture emit a single hint. Reset on each
+    /// button press (start of a new drag). Cross-drag / per-pane
+    /// suppression lives in app state (`Pane::mouse_hint_shown` +
+    /// `HintMode`), which unwires the callback entirely once retired.
+    mouse_hint_emitted: bool,
     /// Previous left-click as `(time, position, count)`, used to classify
     /// the next press as single / double / triple / quad (300 ms / 6 px
     /// window). Rolled here rather than via `iced`'s `mouse::Click` because
@@ -132,6 +139,11 @@ pub struct TerminalView<Message = ()> {
     /// When true, the terminal scans visible rows for URLs / IPs / paths
     /// and tints them. Disable to recover frame time in dense UIs.
     keyword_highlight: bool,
+    /// Privacy Mode: when true, detected IP addresses and `user@host`
+    /// prompt tokens are masked with muted block glyphs and revealed only
+    /// when the cursor hovers their span. Runs independently of
+    /// `keyword_highlight` (detection happens even when tinting is off).
+    privacy: bool,
     /// When true, cells whose foreground and background end up
     /// perceptually too close (e.g. PowerShell's `$PSStyle.FileInfo
     /// .Directory` blue-on-blue, LS_COLORS' `ow` green-on-green) get
@@ -159,6 +171,12 @@ pub struct TerminalView<Message = ()> {
     /// so they reach the active SSH session; without it the widget
     /// falls back to a local-PTY write, which is dead on SSH tabs.
     on_terminal_input: Option<Box<dyn Fn(Vec<u8>) -> Message>>,
+    /// Optional callback fired the first time the user left-drags inside a
+    /// pane whose remote app has mouse tracking on (so the drag is being
+    /// reported instead of selecting text). Lets the app surface the
+    /// "hold Shift to select" hint at the exact moment selection is being
+    /// swallowed, rather than at TUI launch. Fires at most once per pane.
+    on_mouse_capture_hint: Option<Box<dyn Fn() -> Message>>,
     /// Localized "Ctrl + Click to open the link" tooltip text. `None`
     /// disables the hover hint entirely (the app stops passing it once
     /// the user has ctrl-clicked a link for the first time).
@@ -396,12 +414,14 @@ impl<Message> TerminalView<Message> {
             right_click_copy: false,
             bold_is_bright: true,
             keyword_highlight: true,
+            privacy: false,
             smart_contrast: true,
             word_delimiters: crate::backend::DEFAULT_WORD_DELIMITERS.to_string(),
             on_font_size_increase: None,
             on_font_size_decrease: None,
             on_paste_request: None,
             on_terminal_input: None,
+            on_mouse_capture_hint: None,
             link_hint_text: None,
             on_link_opened: None,
             focused: true,
@@ -451,6 +471,11 @@ impl<Message> TerminalView<Message> {
 
     pub fn with_smart_contrast(mut self, on: bool) -> Self {
         self.smart_contrast = on;
+        self
+    }
+
+    pub fn with_privacy(mut self, on: bool) -> Self {
+        self.privacy = on;
         self
     }
 
@@ -516,6 +541,15 @@ impl<Message> TerminalView<Message> {
         f: impl Fn(Vec<u8>) -> Message + 'static,
     ) -> Self {
         self.on_terminal_input = Some(Box::new(f));
+        self
+    }
+
+    /// Wire the "mouse tracking is swallowing your selection" hint. The
+    /// callback fires once per pane, on the first left-drag while the
+    /// remote app holds the mouse, so the app can show a transient
+    /// "hold Shift to select" toast at the moment it's relevant.
+    pub fn on_mouse_capture_hint(mut self, f: impl Fn() -> Message + 'static) -> Self {
+        self.on_mouse_capture_hint = Some(Box::new(f));
         self
     }
 
@@ -685,6 +719,9 @@ impl<Message> TerminalView<Message> {
                 let (col, row) = cell(pos);
                 widget_state.report_button = Some(rb);
                 widget_state.report_cell = Some((col, row));
+                // New drag: re-arm the per-drag hint guard so Always mode
+                // can fire once for this gesture too.
+                widget_state.mouse_hint_emitted = false;
                 let bytes =
                     mouse_report::encode(mode, MouseEventKind::Press, rb, col, row, mods)?;
                 Some(self.emit_input(bytes))
@@ -717,6 +754,20 @@ impl<Message> TerminalView<Message> {
                     None if mode.contains(TermMode::MOUSE_MOTION) => ReportButton::None,
                     None => return None,
                 };
+                // A left-button drag while the app holds the mouse is the
+                // user trying to select text that mouse tracking is
+                // swallowing. Surface the Shift bypass once per pane, on
+                // the first such drag. Dropping this single motion report
+                // (we return before encoding) is harmless: the next move
+                // reports the new cell.
+                if !widget_state.mouse_hint_emitted
+                    && widget_state.report_button == Some(ReportButton::Left)
+                    && let Some(cb) = &self.on_mouse_capture_hint
+                {
+                    widget_state.mouse_hint_emitted = true;
+                    widget_state.report_cell = Some((col, row));
+                    return Some(CanvasAction::publish(cb()).and_capture());
+                }
                 let bytes =
                     mouse_report::encode(mode, MouseEventKind::Motion, btn, col, row, mods)?;
                 widget_state.report_cell = Some((col, row));
@@ -1132,9 +1183,11 @@ where
                 // running the scan on every pixel contended with
                 // `state.process` (the SSH echo path), showing up as
                 // typing lag.
+                let cell_changed;
                 let new_hover_url = if let Some(pos) = cursor.position_in(bounds) {
                     let (col, vrow) = self.pixel_to_cell(pos);
                     let same_cell = widget_state.hovered_cell == Some((col, vrow));
+                    cell_changed = !same_cell;
                     widget_state.hovered_cell = Some((col, vrow));
                     if same_cell {
                         widget_state
@@ -1159,6 +1212,9 @@ where
                         None
                     }
                 } else {
+                    // Cursor left the canvas: a revealed privacy span must
+                    // re-mask, so flag a cell change when one was tracked.
+                    cell_changed = widget_state.hovered_cell.is_some();
                     widget_state.hovered_cell = None;
                     widget_state.hovered_osc8 = None;
                     None
@@ -1169,7 +1225,10 @@ where
                     _ => true,
                 };
                 widget_state.hovered_url = new_hover_url;
-                if hover_changed || url_changed {
+                // Under Privacy Mode a cell change can move the revealed
+                // span even when no URL is involved, so repaint on any cell
+                // change too (otherwise hovering an IP wouldn't reveal it).
+                if hover_changed || url_changed || (self.privacy && cell_changed) {
                     return Some(CanvasAction::request_redraw());
                 }
             }
@@ -1631,13 +1690,27 @@ where
         frame.fill_rectangle(Point::ORIGIN, bounds.size(), palette.background);
 
         // --- Detect syntax highlights ---
+        // Runs when keyword tinting OR Privacy Mode is on; the latter needs
+        // the IP / user@host spans to mask even when tinting is off.
         let highlights_start = perf_on.then(std::time::Instant::now);
-        let highlights = if self.keyword_highlight {
-            detect_highlights(&row_chars, palette)
+        let highlights = if self.keyword_highlight || self.privacy {
+            detect_highlights(&row_chars, palette, self.privacy)
         } else {
             Vec::new()
         };
         let highlights_dur = highlights_start.map(|t| t.elapsed()).unwrap_or_default();
+
+        // Privacy Mode: the IP / user@host span the cursor is over right
+        // now (from the last hovered cell), revealed while the rest stay
+        // masked. Mirrors `hovered_url_extent` but keyed off `hovered_cell`
+        // so it works without the cursor being over a clickable link.
+        let hovered_privacy_extent: Option<(u16, u16, u16)> = if self.privacy {
+            widget_state
+                .hovered_cell
+                .and_then(|(col, vrow)| privacy_span_at(&highlights, vrow, col))
+        } else {
+            None
+        };
 
         // Resolve which URL (if any) the cursor is over right now,
         // re-derived from the hovered cursor pixel position. We can't
@@ -1774,6 +1847,9 @@ where
 
             let mut fg = cd.fg;
             let mut bg = cd.bg;
+            // The glyph actually drawn for this cell. Privacy Mode swaps it
+            // for a block below; everything else draws the real character.
+            let mut glyph = cd.c;
 
             if cd.flags.contains(CellFlags::INVERSE) {
                 std::mem::swap(&mut fg, &mut bg);
@@ -1782,8 +1858,12 @@ where
                 fg = Color::from_rgba(fg.r * 0.66, fg.g * 0.66, fg.b * 0.66, fg.a);
             }
 
-            // Syntax highlight override (only when text has default/foreground color)
-            if let Some(hl_color) = highlight_color_at(&highlights, cd.row, cd.col) {
+            // Syntax highlight override (only when text has default/foreground
+            // color). Gated on `keyword_highlight` so Privacy Mode, which also
+            // populates `highlights`, doesn't tint tokens when tinting is off.
+            if self.keyword_highlight
+                && let Some(hl_color) = highlight_color_at(&highlights, cd.row, cd.col)
+            {
                 // Only override if the cell isn't already colored by the application
                 let fg_is_default =
                     (fg.r - palette.foreground.r).abs() < 0.02
@@ -1842,6 +1922,35 @@ where
                 }
             }
 
+            // Privacy Mode masking: cells inside an IP / user@host span get a
+            // muted redaction mark. Alphanumerics draw an inset filled bar
+            // (drawn after the background, below) instead of a full-block
+            // glyph: the bar is shorter than the cell, so adjacent masked
+            // lines keep a gap rather than merging into a solid wall. The
+            // separators (`.` / `@` / `-`) keep their real glyph in the same
+            // muted tone, so the value still reads as `▮▮▮.▮.▮`. The span the
+            // cursor hovers is revealed, the same hover-reveal as links.
+            let mut mask_bar = false;
+            if self.privacy && is_privacy_cell(&highlights, cd.row, cd.col) {
+                let revealed = hovered_privacy_extent.is_some_and(|(r, sc, ec)| {
+                    cd.row == r && cd.col >= sc && cd.col <= ec
+                });
+                if !revealed {
+                    // Opaque tone blended toward the background so it reads as
+                    // a flat redaction mark (no alpha bleed tinting it teal).
+                    fg = Color {
+                        r: palette.foreground.r * 0.45 + palette.background.r * 0.55,
+                        g: palette.foreground.g * 0.45 + palette.background.g * 0.55,
+                        b: palette.foreground.b * 0.45 + palette.background.b * 0.55,
+                        a: 1.0,
+                    };
+                    if glyph.is_alphanumeric() {
+                        mask_bar = true;
+                        glyph = ' ';
+                    }
+                }
+            }
+
             // Draw background
             let is_default_bg = !is_selected
                 && (bg.r - palette.background.r).abs() < 0.01
@@ -1851,6 +1960,19 @@ where
             if !is_default_bg {
                 let width = if cd.flags.contains(CellFlags::WIDE_CHAR) { cell_w * 2.0 } else { cell_w };
                 frame.fill_rectangle(Point::new(x, y), Size::new(width, cell_h), bg);
+            }
+
+            // Privacy redaction bar: an inset filled rect (drawn over the
+            // background) for a masked alphanumeric cell. The vertical inset
+            // is what keeps stacked masked lines from merging into a wall.
+            if mask_bar {
+                let width = if cd.flags.contains(CellFlags::WIDE_CHAR) { cell_w * 2.0 } else { cell_w };
+                let inset = (cell_h * 0.12).clamp(1.0, 3.0);
+                frame.fill_rectangle(
+                    Point::new(x, y + inset),
+                    Size::new(width, (cell_h - inset * 2.0).max(1.0)),
+                    fg,
+                );
             }
 
             // Draw character. Codepoints in the Unicode Private Use
@@ -1869,8 +1991,8 @@ where
             // so clipboard copy can recover the original TAB. It's
             // not a glyph: GNU `ls` in TTY column mode pads with tabs,
             // so rendering it would tofu after every filename.
-            if cd.c != ' ' && cd.c != '\0' && cd.c != '\t' {
-                let cp = cd.c as u32;
+            if glyph != ' ' && glyph != '\0' && glyph != '\t' {
+                let cp = glyph as u32;
                 // Both Private Use Areas: BMP PUA covers Powerline,
                 // Font Awesome, Devicons, Octicons, Codicons and the
                 // rest of the legacy Nerd Font ranges; SMP PUA is
@@ -1880,7 +2002,7 @@ where
                 let is_pua =
                     (0xE000..=0xF8FF).contains(&cp) || (0xF0000..=0xFFFFD).contains(&cp);
                 let is_wide = cd.flags.contains(CellFlags::WIDE_CHAR);
-                if !is_pua && !is_wide && cd.c.is_ascii_graphic() {
+                if !is_pua && !is_wide && glyph.is_ascii_graphic() {
                     // Batchable glyph: extend the open run when it lines
                     // up (same row, same color, contiguous or within a
                     // short bridgeable gap), otherwise start a new one.
@@ -1896,7 +2018,7 @@ where
                         for _ in r.next_col..cd.col {
                             r.content.push(' ');
                         }
-                        r.content.push(cd.c);
+                        r.content.push(glyph);
                         r.next_col = cd.col + 1;
                     } else {
                         if let Some(r) = run.take() {
@@ -1907,7 +2029,7 @@ where
                             start_col: cd.col,
                             next_col: cd.col + 1,
                             fg,
-                            content: cd.c.to_string(),
+                            content: glyph.to_string(),
                         });
                     }
                 } else {
@@ -1916,7 +2038,7 @@ where
                     }
                     let font = if is_pua { NERD_FONT } else { self.font };
                     frame.fill_text(CanvasText {
-                        content: cd.c.to_string(),
+                        content: glyph.to_string(),
                         position: Point::new(x, y),
                         color: fg,
                         size: Pixels(self.font_size),

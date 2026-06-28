@@ -210,6 +210,14 @@ impl Oryxis {
     /// Priority follows visual stacking order: pickers on top of
     /// the chrome are checked before background panels.
     pub(crate) fn close_topmost_modal(&mut self) -> bool {
+        // Open dropdown / popover overlay (sort menu, kebab menus, the
+        // floating toolbar search + overflow). Esc dismisses it first,
+        // matching the click-outside backdrop. Lightweight, so it takes
+        // priority over the heavier modals below.
+        if self.overlay.is_some() {
+            self.overlay = None;
+            return true;
+        }
         // Global pickers (rendered over the whole window).
         if self.show_new_tab_picker {
             self.show_new_tab_picker = false;

@@ -18,48 +18,58 @@ impl Oryxis {
             crate::state::SortMenuKind::Snippets,
             self.snippets_sort,
         );
-        let toolbar = container(
-            dir_row(vec![
-                self.vault_search_field(),
-                Space::new().width(10).into(),
-                sort_btn,
-                Space::new().width(8).into(),
-                {
-                    let fg = OryxisColors::t().button_text;
-                    button(
-                        container(
-                            dir_row(vec![
-                                text("+").size(13).font(iced::Font {
-                                    weight: iced::font::Weight::Bold,
-                                    ..iced::Font::new(crate::theme::SYSTEM_UI_FAMILY)
-                                }).color(fg).into(),
-                                Space::new().width(4).into(),
-                                text(t("snippet_btn")).size(11).font(iced::Font {
-                                    weight: iced::font::Weight::Bold,
-                                    ..iced::Font::new(crate::theme::SYSTEM_UI_FAMILY)
-                                }).color(fg).into(),
-                            ]).align_y(iced::Alignment::Center),
-                        )
-                        .center_y(Length::Fixed(24.0))
-                        .center_x(Length::Fixed(72.0)),
-                    )
-                    .on_press(Message::ShowSnippetPanel)
-                    .style(|_, status| {
-                        let bg = match status {
-                            BtnStatus::Hovered => OryxisColors::t().button_bg_hover,
-                            _ => OryxisColors::t().button_bg,
-                        };
-                        button::Style {
-                            background: Some(Background::Color(bg)),
-                            border: Border { radius: Radius::from(6.0), ..Default::default() },
-                            ..Default::default()
-                        }
-                    }).into()
-                },
-            ]).align_y(iced::Alignment::Center),
-        )
-        .padding(Padding { top: 16.0, right: 24.0, bottom: 16.0, left: 24.0 })
-        .width(Length::Fill);
+        let primary: Element<'_, Message> = {
+            let fg = OryxisColors::t().button_text;
+            button(
+                container(
+                    dir_row(vec![
+                        text("+").size(13).font(iced::Font {
+                            weight: iced::font::Weight::Bold,
+                            ..iced::Font::new(crate::theme::SYSTEM_UI_FAMILY)
+                        }).color(fg).into(),
+                        Space::new().width(4).into(),
+                        text(t("snippet_btn")).size(11).font(iced::Font {
+                            weight: iced::font::Weight::Bold,
+                            ..iced::Font::new(crate::theme::SYSTEM_UI_FAMILY)
+                        }).color(fg).into(),
+                    ]).align_y(iced::Alignment::Center),
+                )
+                .center_y(Length::Fixed(24.0))
+                .center_x(Length::Fixed(72.0)),
+            )
+            .on_press(Message::ShowSnippetPanel)
+            .style(|_, status| {
+                let bg = match status {
+                    BtnStatus::Hovered => OryxisColors::t().button_bg_hover,
+                    _ => OryxisColors::t().button_bg,
+                };
+                button::Style {
+                    background: Some(Background::Color(bg)),
+                    border: Border { radius: Radius::from(6.0), ..Default::default() },
+                    ..Default::default()
+                }
+            }).into()
+        };
+        // Responsive collapse: search yields first, then folds to an
+        // icon; when the buttons can't fit they all move into a `…` menu.
+        let (search_collapsed, buttons_overflow) = self.toolbar_tiers();
+        let mut row_items: Vec<Element<'_, Message>> = vec![
+            self.vault_search_slot(search_collapsed),
+            Space::new().width(10).into(),
+        ];
+        if buttons_overflow {
+            row_items.push(crate::widgets::toolbar_overflow_icon(matches!(
+                self.overlay.as_ref().map(|o| &o.content),
+                Some(crate::state::OverlayContent::ToolbarOverflow)
+            )));
+        } else {
+            row_items.push(sort_btn);
+            row_items.push(Space::new().width(8).into());
+            row_items.push(primary);
+        }
+        let toolbar = container(dir_row(row_items).align_y(iced::Alignment::Center))
+            .padding(Padding { top: 16.0, right: 24.0, bottom: 16.0, left: 24.0 })
+            .width(Length::Fill);
 
         let status: Element<'_, Message> = if let Some(err) = &self.snippet_error {
             container(Element::from(text(err.clone()).size(12).color(OryxisColors::t().error)))

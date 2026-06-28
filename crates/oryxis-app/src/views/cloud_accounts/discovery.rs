@@ -19,28 +19,19 @@ use super::section_header;
 
 impl Oryxis {
     pub(crate) fn view_cloud_discover_panel(&self) -> Element<'_, Message> {
-        // Header: title + small refresh-icon button + close (X). The
-        // refresh icon lives to the left of the close so the layout
-        // mirrors the "title, actions, close" idiom of the host
-        // editor panel; both header buttons share the same square chip
-        // style so they read as a paired action group.
-        let icon_btn_style = |_: &iced::Theme, status: BtnStatus| {
-            let bg = match status {
-                BtnStatus::Hovered => OryxisColors::t().bg_hover,
-                _ => OryxisColors::t().bg_surface,
-            };
-            button::Style {
-                background: Some(Background::Color(bg)),
-                border: Border {
-                    radius: Radius::from(6.0),
-                    ..Default::default()
-                },
-                ..Default::default()
-            }
+        // Header: title + refresh action + close (X), matching the
+        // "title, actions, close" idiom of the host / group editor
+        // panels. Both action glyphs are transparent muted icons (no
+        // chip background) so this header reads identically to the
+        // standard side-panel header.
+        let header_icon_style = |_: &iced::Theme, _: BtnStatus| button::Style {
+            background: Some(Background::Color(Color::TRANSPARENT)),
+            border: Border::default(),
+            ..Default::default()
         };
         let refresh_icon_btn = button(
             iced_fonts::lucide::refresh_cw()
-                .size(13)
+                .size(15)
                 .color(OryxisColors::t().text_muted),
         )
         .on_press(Message::CloudDiscoverRefresh)
@@ -50,8 +41,8 @@ impl Oryxis {
             bottom: 4.0,
             left: 8.0,
         })
-        .style(icon_btn_style);
-        let close_btn = button(text("\u{00D7}").size(14).color(OryxisColors::t().text_muted))
+        .style(header_icon_style);
+        let close_btn = button(text("\u{00D7}").size(20).color(OryxisColors::t().text_muted))
             .on_press(Message::HideCloudDiscover)
             .padding(Padding {
                 top: 4.0,
@@ -59,46 +50,71 @@ impl Oryxis {
                 bottom: 4.0,
                 left: 8.0,
             })
-            .style(icon_btn_style);
+            .style(header_icon_style);
         let title = container(
             dir_row(vec![
                 text(t("cloud_discover"))
-                    .size(18)
+                    .size(16)
                     .color(OryxisColors::t().text_primary)
                     .into(),
                 Space::new().width(Length::Fill).into(),
                 refresh_icon_btn.into(),
-                Space::new().width(6).into(),
+                Space::new().width(2).into(),
                 close_btn.into(),
             ])
             .align_y(iced::Alignment::Center),
         )
         .padding(Padding {
-            top: 20.0,
-            right: 20.0,
-            bottom: 8.0,
-            left: 20.0,
+            top: 12.0,
+            right: 16.0,
+            bottom: 12.0,
+            left: 16.0,
         });
 
         // Search bar, only meaningful when results are loaded, but
         // we render it always so the panel layout doesn't shift when
         // the state transitions.
+        // The panel surface is already `bg_surface`, so the shared
+        // `rounded_input_style` (also `bg_surface`) would blend into it.
+        // Lift the field one step to `bg_hover` so it reads as a raised
+        // search field, exactly the relationship the toolbar search has
+        // sitting on the darker main area.
+        let search_input_style = |_: &iced::Theme, status: text_input::Status| {
+            let c = OryxisColors::t();
+            let (border_color, border_width) = match status {
+                text_input::Status::Focused { .. } => (c.accent, 1.5),
+                _ => (c.border, 1.0),
+            };
+            text_input::Style {
+                background: Background::Color(c.bg_hover),
+                border: Border {
+                    radius: Radius::from(crate::widgets::INPUT_RADIUS),
+                    width: border_width,
+                    color: border_color,
+                },
+                icon: c.text_muted,
+                placeholder: c.text_muted,
+                value: c.text_primary,
+                selection: c.accent,
+            }
+        };
         let search = container(
             text_input(t("cloud_discover_search_ph"), &self.cloud_discover_filter)
                 .on_input(Message::CloudDiscoverFilterChanged)
                 .padding(Padding {
-                    top: 8.0,
-                    right: 10.0,
-                    bottom: 8.0,
-                    left: 10.0,
+                    top: 9.0,
+                    right: 12.0,
+                    bottom: 9.0,
+                    left: 12.0,
                 })
-                .style(crate::widgets::rounded_input_style).align_x(dir_align_x()),
+                .size(13)
+                .style(search_input_style).align_x(dir_align_x()),
         )
         .padding(Padding {
             top: 0.0,
-            right: 20.0,
+            right: 16.0,
             bottom: 12.0,
-            left: 20.0,
+            left: 16.0,
         });
 
         // Body content varies by state, keep each branch self-
@@ -220,13 +236,13 @@ impl Oryxis {
                 top: 0.0,
                 right: 0.0,
                 bottom: 8.0,
-                left: 20.0,
+                left: 16.0,
             }),
             container(footer).padding(Padding {
                 top: 0.0,
-                right: 20.0,
-                bottom: 20.0,
-                left: 20.0,
+                right: 16.0,
+                bottom: 16.0,
+                left: 16.0,
             }),
         ]
         .height(Length::Fill);

@@ -125,6 +125,10 @@ pub(crate) struct ConnectionForm {
     pub kex: Option<Vec<String>>,
     pub macs: Option<Vec<String>>,
     pub host_key_algorithms: Option<Vec<String>>,
+    /// Per-host Privacy Mode override. Mirrors `Connection.privacy_mode`:
+    /// `None` inherits the global setting, `Some(true/false)` forces it
+    /// on/off for this host.
+    pub privacy_mode: Option<bool>,
 }
 
 /// One SSH algorithm negotiation category, used to drive the per-host
@@ -329,6 +333,7 @@ impl Default for ConnectionForm {
             kex: None,
             macs: None,
             host_key_algorithms: None,
+            privacy_mode: None,
         }
     }
 }

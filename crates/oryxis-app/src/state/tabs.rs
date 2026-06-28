@@ -73,6 +73,13 @@ pub(crate) struct Pane {
     /// Latest OSC 9;4 progress the shell reported, drawn as a growing border
     /// around the tab. `None` (or state 0) means no active progress.
     pub progress: Option<oryxis_terminal::Progress>,
+    /// `HintMode::Once` bookkeeping: set once the "hold Shift to select"
+    /// mouse-capture toast has fired for this pane, so it retires here.
+    /// In-memory only, a fresh pane (new tab / host) starts over.
+    pub mouse_hint_shown: bool,
+    /// `HintMode::Once` bookkeeping: set once the user has ctrl-clicked a
+    /// link in this pane, retiring the "Ctrl + Click to open" tooltip here.
+    pub link_hint_shown: bool,
 }
 
 /// Process-wide auto-title gate (OSC 0/2). Mirrors the `LayoutDirection`
@@ -112,6 +119,8 @@ impl Pane {
             cwd: None,
             shell_marks: Vec::new(),
             progress: None,
+            mouse_hint_shown: false,
+            link_hint_shown: false,
         }
     }
 }

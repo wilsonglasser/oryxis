@@ -79,6 +79,39 @@ impl VaultStore {
         }
     }
 
+    /// Store the SFTP-sync group passphrase encrypted in the settings
+    /// table (base64-encoded). Same field-encryption path as the AI API
+    /// key, so it rides key rotation via `convert_settings_b64`. An empty
+    /// string clears it.
+    pub fn set_sync_sftp_passphrase(&self, passphrase: &str) -> Result<(), VaultError> {
+        if passphrase.is_empty() {
+            // Delete rather than store an empty value: a "" row would feed
+            // an empty ciphertext to the key-rotation re-encrypt pass and
+            // fail to decrypt. Absence is the cleared state.
+            self.db.execute(
+                "DELETE FROM settings WHERE key = ?1",
+                params!["sync_sftp_passphrase"],
+            )?;
+            return Ok(());
+        }
+        let encrypted = self.encrypt_field(passphrase)?;
+        let encoded = BASE64.encode(&encrypted);
+        self.set_setting("sync_sftp_passphrase", &encoded)
+    }
+
+    /// Retrieve and decrypt the SFTP-sync passphrase, or `None` when it
+    /// was never set (or explicitly cleared).
+    pub fn get_sync_sftp_passphrase(&self) -> Result<Option<String>, VaultError> {
+        match self.get_setting("sync_sftp_passphrase")? {
+            Some(encoded) if !encoded.is_empty() => {
+                let encrypted = BASE64.decode(encoded.as_bytes())
+                    .map_err(|e| VaultError::Crypto(format!("Base64 decode: {}", e)))?;
+                Ok(Some(self.decrypt_field(&encrypted)?))
+            }
+            _ => Ok(None),
+        }
+    }
+
     /// Persist the sync `DeviceIdentity` blob encrypted at rest. The
     /// caller (oryxis-sync) is responsible for the byte layout (see
     /// `crypto::DeviceIdentity::to_bytes`). We treat the bytes as

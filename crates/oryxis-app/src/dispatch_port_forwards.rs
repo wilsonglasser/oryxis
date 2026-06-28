@@ -42,6 +42,7 @@ impl Oryxis {
         match message {
             // -- Editor panel --
             Message::ShowPortForwardPanel => {
+                self.overlay = None;
                 self.show_port_forward_panel = true;
                 self.pf_editing_id = None;
                 self.pf_label.clear();

@@ -631,6 +631,26 @@ impl Oryxis {
             Message::EditorAutoTitleChanged,
         );
 
+        // Per-host Privacy Mode override: Default (inherit global) / On
+        // (always hide sensitive data for this host) / Off (never hide).
+        let privacy_mode_selected = match self.editor_form.privacy_mode {
+            Some(true) => t("host_privacy_mode_on"),
+            Some(false) => t("host_privacy_mode_off"),
+            None => t("host_privacy_mode_default"),
+        }
+        .to_string();
+        let row_privacy_mode: Element<'_, Message> = panel_option_pick(
+            iced_fonts::lucide::eye_off(),
+            t("host_privacy_mode"),
+            vec![
+                t("host_privacy_mode_default").to_string(),
+                t("host_privacy_mode_on").to_string(),
+                t("host_privacy_mode_off").to_string(),
+            ],
+            privacy_mode_selected,
+            Message::EditorPrivacyModeChanged,
+        );
+
         // Proxy rows (SSH > Network), nested inline (no card wrapper).
         let proxy_rows = self.build_proxy_rows();
 
@@ -1026,7 +1046,9 @@ impl Oryxis {
             column![section_header(t("terminal_settings")), Space::new().height(ROW_GAP)]
                 .push(appearance_items)
                 .push(Space::new().height(GROUP_GAP))
-                .push(row_session_logging),
+                .push(row_session_logging)
+                .push(Space::new().height(GROUP_GAP))
+                .push(row_privacy_mode),
         );
 
         // ── Layout ──

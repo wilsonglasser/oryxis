@@ -477,6 +477,18 @@ impl Oryxis {
                     }
                 }
             }
+            Message::TerminalMouseCaptureHint => {
+                // Mark the focused pane so HintMode::Once retires the hint
+                // (harmless under Always, where the view ignores the flag).
+                if let Some(tab_idx) = self.active_tab
+                    && let Some(tab) = self.tabs.get_mut(tab_idx)
+                {
+                    tab.active_mut().mouse_hint_shown = true;
+                }
+                // Longer dwell than the default toast: this one is a sentence
+                // to read, not a one-word "Copied" confirmation.
+                return Ok(self.show_toast_secs(crate::i18n::t("mouse_capture_hint").to_string(), 5));
+            }
             Message::KeyboardEvent(event) => {
                 // Track modifier state for downstream consumers (SFTP
                 // ctrl/shift-click selection). Always update first so
