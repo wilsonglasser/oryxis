@@ -260,14 +260,14 @@ impl Oryxis {
             // ── Identities ──
             Message::ShowIdentityPanel => {
                 self.show_identity_panel = true;
-                self.identity_form_label.clear();
-                self.identity_form_username.clear();
-                self.identity_form_password.clear();
-                self.identity_form_key = None;
-                self.identity_form_password_visible = false;
-                self.identity_form_password_touched = false;
-                self.identity_form_has_existing_password = false;
-                self.editing_identity_id = None;
+                self.identity_form.label.clear();
+                self.identity_form.username.clear();
+                self.identity_form.password.clear();
+                self.identity_form.key = None;
+                self.identity_form.password_visible = false;
+                self.identity_form.password_touched = false;
+                self.identity_form.has_existing_password = false;
+                self.identity_form.editing_id = None;
                 self.show_keychain_add_menu = false;
                 self.identity_context_menu = None;
                 self.overlay = None;
@@ -276,48 +276,48 @@ impl Oryxis {
                 self.show_identity_panel = false;
             }
             Message::IdentityLabelChanged(v) => {
-                self.identity_form_label = v;
+                self.identity_form.label = v;
             }
             Message::IdentityUsernameChanged(v) => {
-                self.identity_form_username = v;
+                self.identity_form.username = v;
             }
             Message::IdentityPasswordChanged(v) => {
-                self.identity_form_password_touched = true;
-                self.identity_form_password = v;
+                self.identity_form.password_touched = true;
+                self.identity_form.password = v;
             }
             Message::IdentityTogglePasswordVisibility => {
-                self.identity_form_password_visible = !self.identity_form_password_visible;
+                self.identity_form.password_visible = !self.identity_form.password_visible;
             }
             Message::IdentityKeyChanged(v) => {
-                self.identity_form_key = if v == "(none)" { None } else { Some(v) };
+                self.identity_form.key = if v == "(none)" { None } else { Some(v) };
             }
             Message::SaveIdentity => {
-                if self.identity_form_label.trim().is_empty() {
+                if self.identity_form.label.trim().is_empty() {
                     return Ok(Task::none());
                 }
-                let mut identity = if let Some(id) = self.editing_identity_id {
+                let mut identity = if let Some(id) = self.identity_form.editing_id {
                     self.identities.iter().find(|i| i.id == id).cloned()
                         .unwrap_or_else(|| Identity::new(""))
                 } else {
                     Identity::new("")
                 };
-                identity.label = self.identity_form_label.clone();
-                identity.username = if self.identity_form_username.is_empty() {
+                identity.label = self.identity_form.label.clone();
+                identity.username = if self.identity_form.username.is_empty() {
                     None
                 } else {
-                    Some(self.identity_form_username.clone())
+                    Some(self.identity_form.username.clone())
                 };
-                identity.key_id = self.identity_form_key.as_ref().and_then(|label| {
+                identity.key_id = self.identity_form.key.as_ref().and_then(|label| {
                     self.keys.iter().find(|k| k.label == *label).map(|k| k.id)
                 });
                 identity.updated_at = chrono::Utc::now();
 
-                let password = if !self.identity_form_password_touched {
+                let password = if !self.identity_form.password_touched {
                     None
-                } else if self.identity_form_password.is_empty() {
+                } else if self.identity_form.password.is_empty() {
                     Some("")
                 } else {
-                    Some(self.identity_form_password.as_str())
+                    Some(self.identity_form.password.as_str())
                 };
 
                 if let Some(vault) = &self.vault {
@@ -328,16 +328,16 @@ impl Oryxis {
             }
             Message::EditIdentity(idx) => {
                 if let Some(identity) = self.identities.get(idx) {
-                    self.editing_identity_id = Some(identity.id);
-                    self.identity_form_label = identity.label.clone();
-                    self.identity_form_username = identity.username.clone().unwrap_or_default();
-                    self.identity_form_password.clear();
-                    self.identity_form_password_touched = false;
-                    self.identity_form_password_visible = false;
-                    self.identity_form_has_existing_password = self.vault.as_ref()
+                    self.identity_form.editing_id = Some(identity.id);
+                    self.identity_form.label = identity.label.clone();
+                    self.identity_form.username = identity.username.clone().unwrap_or_default();
+                    self.identity_form.password.clear();
+                    self.identity_form.password_touched = false;
+                    self.identity_form.password_visible = false;
+                    self.identity_form.has_existing_password = self.vault.as_ref()
                         .and_then(|v| v.get_identity_password(&identity.id).ok().flatten())
                         .is_some();
-                    self.identity_form_key = identity.key_id.and_then(|kid| {
+                    self.identity_form.key = identity.key_id.and_then(|kid| {
                         self.keys.iter().find(|k| k.id == kid).map(|k| k.label.clone())
                     });
                     self.show_identity_panel = true;

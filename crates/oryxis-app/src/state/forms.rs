@@ -297,6 +297,24 @@ impl std::fmt::Display for ProxyKind {
     }
 }
 
+/// Add / edit form for a saved identity (username + optional password /
+/// key), shown in the keychain editor panel. The saved list lives in
+/// `Oryxis::identities`; this is editor state only. Password follows the
+/// tri-state convention (see [`ProxyIdentityForm`]).
+#[derive(Debug, Clone, Default)]
+pub(crate) struct IdentityForm {
+    pub label: String,
+    pub username: String,
+    pub password: String,
+    /// Selected SSH key label, when the identity authenticates by key.
+    pub key: Option<String>,
+    pub password_visible: bool,
+    pub password_touched: bool,
+    pub has_existing_password: bool,
+    /// `Some` when editing an existing identity (update in place).
+    pub editing_id: Option<Uuid>,
+}
+
 /// Add / edit form for a saved proxy identity, shown inline in the
 /// Settings → Proxies section. State is in-memory only until
 /// `SaveProxyIdentity` flushes it to the vault. The saved list itself

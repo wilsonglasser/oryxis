@@ -524,14 +524,7 @@ pub struct Oryxis {
     // loop enough to fill iced's 100-slot subscription channel.
     pub(crate) identities_with_password: std::collections::HashSet<Uuid>,
     pub(crate) show_identity_panel: bool,
-    pub(crate) identity_form_label: String,
-    pub(crate) identity_form_username: String,
-    pub(crate) identity_form_password: String,
-    pub(crate) identity_form_key: Option<String>,
-    pub(crate) identity_form_password_visible: bool,
-    pub(crate) identity_form_password_touched: bool,
-    pub(crate) identity_form_has_existing_password: bool,
-    pub(crate) editing_identity_id: Option<Uuid>,
+    pub(crate) identity_form: crate::state::IdentityForm,
     pub(crate) identity_context_menu: Option<usize>,
     pub(crate) show_keychain_add_menu: bool,
 

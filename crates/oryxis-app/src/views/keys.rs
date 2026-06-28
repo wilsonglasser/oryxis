@@ -765,7 +765,7 @@ impl Oryxis {
     }
 
     pub(crate) fn view_identity_panel(&self) -> Element<'_, Message> {
-        let panel_title = if self.editing_identity_id.is_some() { t("edit_identity") } else { t("new_identity") };
+        let panel_title = if self.identity_form.editing_id.is_some() { t("edit_identity") } else { t("new_identity") };
 
         // Panel header
         let panel_header = container(
@@ -789,7 +789,7 @@ impl Oryxis {
         let label_field = column![
             text(t("label")).size(12).color(OryxisColors::t().text_secondary),
             Space::new().height(6),
-            text_input(t("my_identity_placeholder"), &self.identity_form_label)
+            text_input(t("my_identity_placeholder"), &self.identity_form.label)
                 .on_input(Message::IdentityLabelChanged)
                 .padding(10)
                 .style(crate::widgets::rounded_input_style).align_x(dir_align_x()),
@@ -804,7 +804,7 @@ impl Oryxis {
             dir_row(vec![
                 iced_fonts::lucide::user().size(13).color(OryxisColors::t().text_muted).into(),
                 Space::new().width(10).into(),
-                text_input("root", &self.identity_form_username)
+                text_input("root", &self.identity_form.username)
                     .on_input(Message::IdentityUsernameChanged)
                     .padding(10)
                     .style(crate::widgets::rounded_input_style).align_x(dir_align_x())
@@ -815,8 +815,8 @@ impl Oryxis {
         .align_x(dir_align_x());
 
         // Password field with eye toggle
-        let identity_pw_placeholder: &'static str = if self.identity_form_has_existing_password
-            && !self.identity_form_password_touched
+        let identity_pw_placeholder: &'static str = if self.identity_form.has_existing_password
+            && !self.identity_form.password_touched
         {
             "\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}"
         } else {
@@ -830,10 +830,10 @@ impl Oryxis {
                 Space::new().width(10).into(),
                 password_input_with_eye(
                     identity_pw_placeholder,
-                    &self.identity_form_password,
+                    &self.identity_form.password,
                     Message::IdentityPasswordChanged,
                     None,
-                    self.identity_form_password_visible,
+                    self.identity_form.password_visible,
                     Message::IdentityTogglePasswordVisibility,
                     10.0,
                 ),
@@ -855,7 +855,7 @@ impl Oryxis {
                 text(t("add_key_btn")).size(12).color(OryxisColors::t().accent).into(),
                 Space::new().width(16).into(),
                 pick_list(
-                    Some(self.identity_form_key.clone().unwrap_or_else(|| "(none)".into())),
+                    Some(self.identity_form.key.clone().unwrap_or_else(|| "(none)".into())),
                     key_options,
                     |s: &String| s.clone(),
                 )
@@ -868,7 +868,7 @@ impl Oryxis {
         .align_x(dir_align_x());
 
         // Linked connections (only when editing)
-        let linked_section: Element<'_, Message> = if let Some(editing_id) = self.editing_identity_id {
+        let linked_section: Element<'_, Message> = if let Some(editing_id) = self.identity_form.editing_id {
             let linked: Vec<&Connection> = self.connections.iter()
                 .filter(|c| c.identity_id == Some(editing_id))
                 .collect();
@@ -905,8 +905,8 @@ impl Oryxis {
         };
 
         // Save button
-        let save_label = if self.editing_identity_id.is_some() { crate::i18n::t("update_identity") } else { crate::i18n::t("save_identity") };
-        let has_label = !self.identity_form_label.trim().is_empty();
+        let save_label = if self.identity_form.editing_id.is_some() { crate::i18n::t("update_identity") } else { crate::i18n::t("save_identity") };
+        let has_label = !self.identity_form.label.trim().is_empty();
         let save_btn = button(
             container(text(save_label).size(13).color(OryxisColors::t().text_primary))
                 .padding(Padding { top: 10.0, right: 0.0, bottom: 10.0, left: 0.0 })
