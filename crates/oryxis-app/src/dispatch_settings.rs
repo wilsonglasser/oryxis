@@ -52,6 +52,74 @@ fn app_theme_to_terminal(theme: AppTheme) -> oryxis_terminal::TerminalTheme {
 }
 
 impl Oryxis {
+    /// The curated local terminals as launch payloads, in list order.
+    /// Empty when never scanned or genuinely empty (the caller decides
+    /// what to do with an empty list).
+    pub(crate) fn local_terminal_specs(&self) -> Vec<crate::state::LocalShellSpec> {
+        self.local_terminals
+            .as_deref()
+            .unwrap_or(&[])
+            .iter()
+            .map(|e| e.to_spec())
+            .collect()
+    }
+
+    /// Persist the curated local-terminal list to the `local_terminals`
+    /// setting as JSON. Machine-local config, never synced or exported.
+    pub(crate) fn persist_local_terminals(&self) {
+        let json = serde_json::to_string(self.local_terminals.as_deref().unwrap_or(&[]))
+            .unwrap_or_else(|_| "[]".to_string());
+        if let Some(vault) = self.vault.as_ref()
+            && let Err(e) = vault.set_setting("local_terminals", &json)
+        {
+            tracing::warn!("Failed to persist local_terminals: {e}");
+        }
+    }
+
+    /// Persist the "always open X" preference (the entry key, or empty
+    /// for "always ask").
+    pub(crate) fn persist_local_terminal_default(&self) {
+        let value = self
+            .local_terminal_default
+            .map(|id| id.to_string())
+            .unwrap_or_default();
+        if let Some(vault) = self.vault.as_ref()
+            && let Err(e) = vault.set_setting("local_terminal_default", &value)
+        {
+            tracing::warn!("Failed to persist local_terminal_default: {e}");
+        }
+    }
+
+    /// Decide how to satisfy an "open local terminal" intent against the
+    /// already-scanned list: honor a valid "always open X" default, else
+    /// spawn directly when there's nothing to choose (0 or 1 entry), else
+    /// show the picker. Assumes `local_terminals` is `Some`.
+    fn decide_open_local_terminal(&mut self) -> Task<Message> {
+        // "Always open X": a default id still present in the list spawns
+        // straight away. A dangling id falls through to the count logic.
+        if let Some(id) = self.local_terminal_default
+            && let Some(spec) = self
+                .local_terminals
+                .as_deref()
+                .unwrap_or(&[])
+                .iter()
+                .find(|e| e.id == id)
+                .map(|e| e.to_spec())
+        {
+            return spawn_local_shell(self, Some((spec.program, spec.args, spec.label)));
+        }
+        let specs = self.local_terminal_specs();
+        match specs.as_slice() {
+            // Nothing curated: fall back to the OS default shell.
+            [] => spawn_local_shell(self, None),
+            [only] => spawn_local_shell(
+                self,
+                Some((only.program.clone(), only.args.clone(), only.label.clone())),
+            ),
+            _ => Task::done(Message::ShowLocalShellPicker),
+        }
+    }
+
     /// Effective terminal palette for callers that don't have a
     /// specific connection in mind: settings preview, local-shell tabs,
     /// new-tab spawn defaults. Order: explicit user override → app
@@ -1305,42 +1373,42 @@ impl Oryxis {
                 // this action; dismiss it so the spawned shell
                 // doesn't appear behind the still-open dropdown.
                 self.show_burger_menu = false;
-                // Windows always has at least cmd + PowerShell (plus
-                // possibly Git Bash / Nushell / Cygwin / MSYS2 / WSL),
-                // so the picker is always worth showing; detection there
-                // touches subprocesses and runs async via the picker.
-                if cfg!(target_os = "windows") {
-                    return Ok(Task::done(Message::ShowLocalShellPicker));
+                // First open ever: run the one-time scan, then act on the
+                // result. Every later open reads the persisted list (the
+                // scan never repeats unless the user asks for a re-scan).
+                if self.local_terminals.is_none() {
+                    return Ok(Task::perform(
+                        tokio::task::spawn_blocking(detect_local_shells),
+                        |result| Message::LocalShellsDetected(result.unwrap_or_default()),
+                    ));
                 }
-                // On Unix detection is just a few file reads, so decide
-                // inline: only interrupt with a picker when the user
-                // actually has more than one shell to choose from.
-                let shells = detect_local_shells();
-                if shells.len() > 1 {
-                    self.local_shells = Some(shells);
-                    return Ok(Task::done(Message::ShowLocalShellPicker));
-                }
-                return Ok(spawn_local_shell(self, None));
+                return Ok(self.decide_open_local_terminal());
             }
             Message::ShowLocalShellPicker => {
                 self.local_shell_picker_open = true;
-                if self.local_shells.is_none() {
-                    // Detection touches `where.exe` and `wsl --list`,
-                    // both of which can take seconds on a cold WSL
-                    // host. Run on a blocking thread so the picker
-                    // can paint immediately and we fill it in when
-                    // the result lands.
+                // The list is already populated by the time we get here
+                // (OpenLocalShell scans first). Guard the never-scanned
+                // case anyway so a direct dispatch still fills the picker.
+                if self.local_terminals.is_none() {
                     return Ok(Task::perform(
                         tokio::task::spawn_blocking(detect_local_shells),
-                        |result| match result {
-                            Ok(shells) => Message::LocalShellsDetected(shells),
-                            Err(_) => Message::LocalShellsDetected(Vec::new()),
-                        },
+                        |result| Message::LocalShellsDetected(result.unwrap_or_default()),
                     ));
                 }
             }
             Message::LocalShellsDetected(shells) => {
-                self.local_shells = Some(shells);
+                // One-time scan result: seed the curated list and persist.
+                let entries: Vec<crate::state::LocalTerminalEntry> =
+                    shells.into_iter().map(detected_entry).collect();
+                self.local_terminals = Some(entries);
+                self.persist_local_terminals();
+                // If the picker overlay is open it was opened explicitly,
+                // so just leave it showing the freshly filled list. If it
+                // isn't, this scan was triggered by an open intent, so
+                // continue the open decision now that we have the list.
+                if !self.local_shell_picker_open {
+                    return Ok(self.decide_open_local_terminal());
+                }
             }
             Message::HideLocalShellPicker => {
                 self.local_shell_picker_open = false;
@@ -1349,9 +1417,183 @@ impl Oryxis {
                 self.local_shell_picker_open = false;
                 return Ok(spawn_local_shell(self, Some((program, args, label))));
             }
+            Message::OpenLocalTerminalsSettings => {
+                self.local_shell_picker_open = false;
+                self.active_view = View::Settings;
+                self.settings_section = crate::state::SettingsSection::Terminal;
+            }
+            Message::RescanLocalTerminals => {
+                return Ok(Task::perform(
+                    tokio::task::spawn_blocking(detect_local_shells),
+                    |result| Message::LocalTerminalsRescanned(result.unwrap_or_default()),
+                ));
+            }
+            Message::LocalTerminalsRescanned(shells) => {
+                // Merge: keep everything already curated (manual entries and
+                // user edits), append only detected entries whose command
+                // isn't present yet. A previously-removed-but-still-detected
+                // entry reappearing on an explicit re-scan is expected.
+                let mut list = self.local_terminals.take().unwrap_or_default();
+                let mut seen: std::collections::HashSet<String> =
+                    list.iter().map(|e| e.cmd_key()).collect();
+                for s in shells {
+                    let entry = detected_entry(s);
+                    if seen.insert(entry.cmd_key()) {
+                        list.push(entry);
+                    }
+                }
+                self.local_terminals = Some(list);
+                self.persist_local_terminals();
+            }
+            Message::RemoveLocalTerminal(id) => {
+                if let Some(list) = self.local_terminals.as_mut() {
+                    list.retain(|e| e.id != id);
+                }
+                // Drop a default pointing at the now-removed entry.
+                if self.local_terminal_default == Some(id) {
+                    self.local_terminal_default = None;
+                    self.persist_local_terminal_default();
+                }
+                self.persist_local_terminals();
+            }
+            Message::SetDefaultLocalTerminal(id) => {
+                self.local_terminal_default = id;
+                self.persist_local_terminal_default();
+            }
+            Message::OpenLocalTerminalAddModal => {
+                self.local_terminal_form = crate::state::LocalTerminalForm::default();
+                self.local_terminal_add_open = true;
+            }
+            Message::OpenLocalTerminalEditModal(id) => {
+                if let Some(entry) = self
+                    .local_terminals
+                    .as_deref()
+                    .unwrap_or(&[])
+                    .iter()
+                    .find(|e| e.id == id)
+                {
+                    self.local_terminal_form = crate::state::LocalTerminalForm {
+                        editing_id: Some(id),
+                        label: entry.label.clone(),
+                        program: entry.program.clone(),
+                        args: entry.args.join(" "),
+                        color: entry.color.clone(),
+                        icon: entry.icon.clone(),
+                        error: None,
+                    };
+                    self.local_terminal_add_open = true;
+                }
+            }
+            Message::CloseLocalTerminalAddModal => {
+                self.local_terminal_add_open = false;
+            }
+            Message::OpenLocalTerminalIconPicker => {
+                // Seed the shared host icon picker from the form and target
+                // it back at the form (deferred save on IconPickerSave).
+                // Fall back to the label's OS hint (then a terminal glyph)
+                // so the preview matches the card when there's no override.
+                self.icon_picker_icon = self.local_terminal_form.icon.clone().or_else(|| {
+                    crate::os_icon::local_shell_os_hint(&self.local_terminal_form.label)
+                        .or_else(|| Some("terminal".to_string()))
+                });
+                self.icon_picker_color = self.local_terminal_form.color.clone();
+                self.icon_picker_hex_input =
+                    self.local_terminal_form.color.clone().unwrap_or_default();
+                self.icon_picker_icon_search = String::new();
+                self.icon_color_popover = None;
+                self.icon_picker_for = None;
+                self.icon_picker_for_group_form = false;
+                self.icon_picker_for_session_group = false;
+                self.icon_picker_for_group_edit = false;
+                self.icon_picker_for_local_terminal = true;
+                self.show_icon_picker = true;
+            }
+            Message::LocalTerminalCardHovered(idx) => {
+                self.hovered_local_terminal_card = Some(idx);
+            }
+            Message::LocalTerminalCardUnhovered => {
+                self.hovered_local_terminal_card = None;
+            }
+            Message::LocalTerminalFormLabelChanged(v) => {
+                self.local_terminal_form.label = v;
+                self.local_terminal_form.error = None;
+            }
+            Message::LocalTerminalFormProgramChanged(v) => {
+                self.local_terminal_form.program = v;
+                self.local_terminal_form.error = None;
+            }
+            Message::LocalTerminalFormArgsChanged(v) => {
+                self.local_terminal_form.args = v;
+                self.local_terminal_form.error = None;
+            }
+            Message::AddLocalTerminalSubmit => {
+                let label = self.local_terminal_form.label.trim().to_string();
+                let program = self.local_terminal_form.program.trim().to_string();
+                if label.is_empty() || program.is_empty() {
+                    self.local_terminal_form.error = Some("local_terminal_invalid");
+                } else {
+                    let args: Vec<String> = self
+                        .local_terminal_form
+                        .args
+                        .split_whitespace()
+                        .map(|s| s.to_string())
+                        .collect();
+                    let color = self.local_terminal_form.color.clone();
+                    let icon = self.local_terminal_form.icon.clone();
+                    let mut list = self.local_terminals.take().unwrap_or_default();
+                    match self.local_terminal_form.editing_id {
+                        // Edit in place: program/args/label/appearance all
+                        // change; the id and manual flag are preserved.
+                        Some(id) => {
+                            if let Some(e) = list.iter_mut().find(|e| e.id == id) {
+                                e.label = label;
+                                e.program = program;
+                                e.args = args;
+                                e.color = color;
+                                e.icon = icon;
+                            }
+                        }
+                        // Add a new manual entry, skipping an exact command
+                        // duplicate (label-only difference isn't worth a dup).
+                        None => {
+                            let entry = crate::state::LocalTerminalEntry {
+                                id: uuid::Uuid::new_v4(),
+                                label,
+                                program,
+                                args,
+                                manual: true,
+                                color,
+                                icon,
+                            };
+                            if !list.iter().any(|e| e.cmd_key() == entry.cmd_key()) {
+                                list.push(entry);
+                            }
+                        }
+                    }
+                    self.local_terminals = Some(list);
+                    self.persist_local_terminals();
+                    self.local_terminal_form = crate::state::LocalTerminalForm::default();
+                    self.local_terminal_add_open = false;
+                }
+            }
             m => return Err(m),
         }
         Ok(Task::none())
+    }
+}
+
+/// Build a fresh auto-detected curated entry from a scan result. Gets a
+/// new id and no manual flag / appearance override (the OS hint supplies
+/// the icon + color at render time until the user customizes it).
+fn detected_entry(s: crate::state::LocalShellSpec) -> crate::state::LocalTerminalEntry {
+    crate::state::LocalTerminalEntry {
+        id: uuid::Uuid::new_v4(),
+        label: s.label,
+        program: s.program,
+        args: s.args,
+        manual: false,
+        color: None,
+        icon: None,
     }
 }
 

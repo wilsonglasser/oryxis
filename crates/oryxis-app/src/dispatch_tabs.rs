@@ -658,6 +658,7 @@ impl Oryxis {
                 self.icon_picker_icon_search.clear();
                 self.icon_color_popover = None;
                 self.icon_picker_for = Some(conn_id);
+                self.icon_picker_for_local_terminal = false;
                 self.show_icon_picker = true;
             }
             Message::HideIconPicker => {
@@ -666,6 +667,7 @@ impl Oryxis {
                 self.icon_picker_for_group_form = false;
                 self.icon_picker_for_session_group = false;
                 self.icon_picker_for_group_edit = false;
+                self.icon_picker_for_local_terminal = false;
                 self.icon_picker_icon_search.clear();
                 self.icon_color_popover = None;
             }
@@ -694,7 +696,12 @@ impl Oryxis {
                 }
             }
             Message::IconPickerSave => {
-                if self.icon_picker_for_session_group {
+                if self.icon_picker_for_local_terminal {
+                    // Deferred save: flow the choice into the local-terminal
+                    // add / edit form; the modal's own Add / Save persists it.
+                    self.local_terminal_form.icon = self.icon_picker_icon.clone();
+                    self.local_terminal_form.color = self.icon_picker_color.clone();
+                } else if self.icon_picker_for_session_group {
                     // Deferred save: flow the choice into the session-group
                     // editor form; the form's own Save persists it.
                     self.editor_session_group.icon_style = self.icon_picker_icon.clone();
@@ -731,6 +738,7 @@ impl Oryxis {
                 self.icon_picker_for_group_form = false;
                 self.icon_picker_for_session_group = false;
                 self.icon_picker_for_group_edit = false;
+                self.icon_picker_for_local_terminal = false;
                 self.icon_picker_icon_search.clear();
                 self.icon_color_popover = None;
             }
@@ -739,7 +747,10 @@ impl Oryxis {
                 // drive the icon again on the next successful connect.
                 // (Terminal-theme override is edited separately in the
                 // host editor and is not touched here.)
-                if self.icon_picker_for_session_group {
+                if self.icon_picker_for_local_terminal {
+                    self.local_terminal_form.icon = None;
+                    self.local_terminal_form.color = None;
+                } else if self.icon_picker_for_session_group {
                     self.editor_session_group.icon_style = None;
                     self.editor_session_group.color = None;
                 } else if self.icon_picker_for_group_form {
@@ -761,6 +772,7 @@ impl Oryxis {
                 self.icon_picker_for_group_form = false;
                 self.icon_picker_for_session_group = false;
                 self.icon_picker_for_group_edit = false;
+                self.icon_picker_for_local_terminal = false;
                 self.icon_color_popover = None;
             }
             Message::CloseTab(idx) => {
@@ -1115,6 +1127,7 @@ impl Oryxis {
                 self.icon_picker_for_group_form = false;
                 self.icon_picker_for_session_group = false;
                 self.icon_picker_for_group_edit = true;
+                self.icon_picker_for_local_terminal = false;
                 self.show_icon_picker = true;
             }
             Message::SaveGroupEdit => {

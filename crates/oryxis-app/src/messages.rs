@@ -893,6 +893,38 @@ pub enum Message {
         label: String,
     },
 
+    // Local terminals management (Settings → Terminal card)
+    /// Navigate from the picker's "+ terminal" footer to the management
+    /// card; closes the picker overlay.
+    OpenLocalTerminalsSettings,
+    /// Re-run the auto-scan and merge new findings into the curated list
+    /// (keeps everything already there; re-adds detected entries removed
+    /// earlier, since it's an explicit user action).
+    RescanLocalTerminals,
+    /// Result of the async re-scan probe; merged + persisted on arrival.
+    LocalTerminalsRescanned(Vec<crate::state::LocalShellSpec>),
+    /// Remove one curated entry by its id.
+    RemoveLocalTerminal(uuid::Uuid),
+    /// Set the "always open X" default (the entry id), or `None` to
+    /// restore "always ask (picker)".
+    SetDefaultLocalTerminal(Option<uuid::Uuid>),
+    /// Open the "add local terminal" modal (blank form).
+    OpenLocalTerminalAddModal,
+    /// Open the modal to edit an existing entry by id.
+    OpenLocalTerminalEditModal(uuid::Uuid),
+    CloseLocalTerminalAddModal,
+    /// Open the host icon / color picker targeting the add-edit form.
+    OpenLocalTerminalIconPicker,
+    /// Add / edit form field edits.
+    LocalTerminalFormLabelChanged(String),
+    LocalTerminalFormProgramChanged(String),
+    LocalTerminalFormArgsChanged(String),
+    /// Commit the add / edit form into the curated list.
+    AddLocalTerminalSubmit,
+    /// Hover tracking for the per-card remove action.
+    LocalTerminalCardHovered(usize),
+    LocalTerminalCardUnhovered,
+
     // Keys
     ShowKeyPanel,
     HideKeyPanel,

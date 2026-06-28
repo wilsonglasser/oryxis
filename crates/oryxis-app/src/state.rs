@@ -36,8 +36,10 @@ pub(crate) use theme_editor::*;
 // ---------------------------------------------------------------------------
 
 /// One row in the Local Shell picker (Windows: cmd / PowerShell / a
-/// WSL distro). Populated lazily by `dispatch.rs::ShowLocalShellPicker`
-/// the first time the user opens the menu, then cached on `Oryxis`.
+/// WSL distro). The launch payload: also serialized inside
+/// `PaneOrigin::Local(..)` to restore a saved session group, so its
+/// shape is frozen. The persisted, user-curated config lives in the
+/// separate [`LocalTerminalEntry`].
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct LocalShellSpec {
     /// User-facing label, e.g. "PowerShell", "cmd", "Ubuntu (WSL)".
@@ -48,6 +50,68 @@ pub(crate) struct LocalShellSpec {
     /// Arguments tacked on after the program. For WSL distros this
     /// is `["-d", "<distro-name>"]`; for plain shells it's empty.
     pub args: Vec<String>,
+}
+
+/// One persisted entry in the curated local-terminal list. Machine-local
+/// config (paths and WSL distros differ per host), so this is stored as a
+/// JSON string in the `settings` table and deliberately kept *out* of
+/// sync and portable export.
+///
+/// The auto-scan runs once (first time the user opens the local terminal),
+/// populates this list and persists it; subsequent opens read from here
+/// instead of re-scanning. Users can add/remove entries and re-scan from
+/// Settings → Terminal.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct LocalTerminalEntry {
+    /// Stable identity, used by the "always open X" default and by the
+    /// edit / remove actions. `nil` only in legacy payloads written
+    /// before ids existed; `boot` reassigns those on load.
+    #[serde(default)]
+    pub id: Uuid,
+    /// User-facing label, e.g. "PowerShell", "Ubuntu (WSL)".
+    pub label: String,
+    /// Executable to spawn (bare name or full path).
+    pub program: String,
+    /// Arguments appended after the program.
+    #[serde(default)]
+    pub args: Vec<String>,
+    /// `true` when the user added this entry by hand; `false` for
+    /// auto-detected entries. Drives the "manual" badge in the UI and
+    /// is preserved across a re-scan.
+    #[serde(default)]
+    pub manual: bool,
+    /// Optional `#RRGGBB` accent override (icon picker). `None` falls back
+    /// to the OS-hint color at render time.
+    #[serde(default)]
+    pub color: Option<String>,
+    /// Optional icon id (icon picker). `None` falls back to the OS hint
+    /// derived from the label, then a generic terminal glyph.
+    #[serde(default)]
+    pub icon: Option<String>,
+}
+
+impl LocalTerminalEntry {
+    /// Command identity (`program` + args), used to dedup on re-scan so a
+    /// detected shell already in the list isn't appended twice. Distinct
+    /// from `id`, which is the user-facing stable handle for edit / remove
+    /// / default and survives a program/args edit.
+    pub fn cmd_key(&self) -> String {
+        let mut k = self.program.clone();
+        for a in &self.args {
+            k.push('\u{1f}');
+            k.push_str(a);
+        }
+        k
+    }
+
+    /// Convert to the launch payload consumed by the picker / spawn path.
+    pub fn to_spec(&self) -> LocalShellSpec {
+        LocalShellSpec {
+            label: self.label.clone(),
+            program: self.program.clone(),
+            args: self.args.clone(),
+        }
+    }
 }
 
 

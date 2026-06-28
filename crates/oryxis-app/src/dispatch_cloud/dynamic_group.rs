@@ -249,6 +249,7 @@ impl Oryxis {
                 self.icon_picker_hex_input = color;
                 self.icon_picker_for = None;
                 self.icon_picker_for_group_form = true;
+                self.icon_picker_for_local_terminal = false;
                 self.show_icon_picker = true;
             }
             Message::SaveDynamicGroup => {

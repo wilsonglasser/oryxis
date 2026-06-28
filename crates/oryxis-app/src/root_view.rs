@@ -31,6 +31,16 @@ impl Oryxis {
                 Some(Message::HideLocalShellPicker),
                 40.0,
             )
+        } else if self.local_terminal_add_open && !self.show_icon_picker {
+            // The add / edit modal yields while the shared icon picker is
+            // up (the picker layers inside `view_main`, below this overlay);
+            // it reappears with the chosen icon / color on picker save.
+            crate::widgets::modal_overlay(
+                base,
+                self.view_local_terminal_add_modal(),
+                Some(Message::CloseLocalTerminalAddModal),
+                40.0,
+            )
         } else if self.plugin_install_modal.is_some() {
             crate::widgets::modal_overlay(
                 base,

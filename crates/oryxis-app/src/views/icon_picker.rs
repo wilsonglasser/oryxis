@@ -23,6 +23,13 @@ impl Oryxis {
     /// preview / swatch / popover match what the tab and dashboard card
     /// render. Group targets and unknown OS fall back to the global accent.
     fn icon_picker_auto_color(&self) -> Color {
+        // Local-terminal target: the auto color is the label's OS-hint
+        // brand color, so the swatch matches the card / picker chip.
+        if self.icon_picker_for_local_terminal {
+            return os_icon::local_shell_os_hint(&self.local_terminal_form.label)
+                .map(|os| os_icon::resolve_icon(Some(&os), OryxisColors::t().accent).1)
+                .unwrap_or(OryxisColors::t().accent);
+        }
         self.icon_picker_for
             .and_then(|id| self.connections.iter().find(|c| c.id == id))
             .and_then(|c| c.detected_os.as_deref())

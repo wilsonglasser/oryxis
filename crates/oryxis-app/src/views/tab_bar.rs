@@ -377,6 +377,27 @@ impl Oryxis {
             let sg_custom_icon = session_group
                 .and_then(|g| g.icon_style.as_deref())
                 .filter(|s| !s.is_empty());
+            // Local-terminal appearance override: a curated entry (matched
+            // by label) can carry an explicit icon / color chosen in the
+            // Settings card, which wins over the OS hint so the tab chip
+            // reflects what the user picked. Session-group icon/color still
+            // take precedence (a grouped tab is the group's identity).
+            let is_local_pane =
+                matches!(tab.active().origin, crate::state::PaneOrigin::Local(_));
+            let lt_entry = if is_local_pane {
+                self.local_terminals
+                    .as_deref()
+                    .and_then(|list| list.iter().find(|e| e.label == base_label))
+            } else {
+                None
+            };
+            let lt_icon = lt_entry.and_then(|e| e.icon.as_deref());
+            let lt_color = lt_entry
+                .and_then(|e| e.color.as_deref())
+                .and_then(crate::widgets::parse_hex_color);
+            let tab_icon = sg_custom_icon.or(lt_icon);
+            let tab_badge_color = sg_custom_color.or(lt_color);
+            let tab_accent = sg_custom_color.or(lt_color).or(host_accent);
             if is_dragging {
                 // The dragged tab floats as a ghost following the cursor
                 // (built below); leave a same-width gap here that the other
@@ -394,10 +415,10 @@ impl Oryxis {
                     idx,
                     detected_os.as_deref(),
                     is_active,
-                    sg_custom_color.or(host_accent),
+                    tab_accent,
                     host_icon_style,
-                    sg_custom_icon,
-                    sg_custom_color,
+                    tab_icon,
+                    tab_badge_color,
                     status_dot,
                     solid_fill,
                 ));
@@ -412,10 +433,10 @@ impl Oryxis {
                     width,
                     self.setting_tab_close_button_side == "right",
                     status_dot,
-                    sg_custom_color.or(host_accent),
+                    tab_accent,
                     host_icon_style,
-                    sg_custom_icon,
-                    sg_custom_color,
+                    tab_icon,
+                    tab_badge_color,
                     tab.pinned,
                     solid_fill,
                     tab.active().progress,

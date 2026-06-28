@@ -169,6 +169,7 @@ impl Oryxis {
                 icon_picker_for_group_form: false,
                 icon_picker_for_session_group: false,
                 icon_picker_for_group_edit: false,
+                icon_picker_for_local_terminal: false,
                 icon_picker_icon: None,
                 icon_picker_color: None,
                 icon_picker_hex_input: String::new(),
@@ -526,7 +527,11 @@ impl Oryxis {
                 toast: None,
                 loaded_cjk_fonts: std::collections::HashSet::new(),
                 error_dialog: None,
-                local_shells: None,
+                local_terminals: None,
+                local_terminal_default: None,
+                local_terminal_form: crate::state::LocalTerminalForm::default(),
+                local_terminal_add_open: false,
+                hovered_local_terminal_card: None,
                 local_shell_picker_open: false,
                 chat_input: text_editor::Content::new(),
                 chat_loading: false,
@@ -851,6 +856,28 @@ impl Oryxis {
             }
             if let Ok(Some(v)) = vault.get_setting("snippets_sort") {
                 self.snippets_sort = crate::state::ListSort::from_storage_str(&v);
+            }
+            // Local terminals: curated, machine-local list persisted as JSON.
+            // Presence of the key means the one-time scan already ran; a
+            // corrupt / unparseable value falls back to a fresh scan (`None`).
+            if let Ok(Some(v)) = vault.get_setting("local_terminals") {
+                self.local_terminals = serde_json::from_str(&v).ok();
+                // Legacy payloads (pre-id) deserialize with nil ids. Stamp
+                // fresh ids so edit / remove / default have stable handles,
+                // and re-persist once so the ids stick across restarts.
+                if let Some(list) = self.local_terminals.as_mut()
+                    && list.iter().any(|e| e.id.is_nil())
+                {
+                    for e in list.iter_mut().filter(|e| e.id.is_nil()) {
+                        e.id = uuid::Uuid::new_v4();
+                    }
+                    self.persist_local_terminals();
+                }
+            }
+            if let Ok(Some(v)) = vault.get_setting("local_terminal_default") {
+                // Stored as the entry id; a legacy non-uuid value (old
+                // program/args key) simply resolves to "always ask".
+                self.local_terminal_default = uuid::Uuid::parse_str(&v).ok();
             }
             if let Ok(Some(v)) = vault.get_setting("sync_device_name") {
                 self.sync_device_name = v;

@@ -337,17 +337,17 @@ fn expanded_nav_btn<'a>(
 }
 
 impl Oryxis {
-    /// Local Shell picker modal, listed shells come from
-    /// `dispatch_settings::detect_local_shells`. Shown only on
-    /// Windows; non-Windows platforms `OpenLocalShell` directly.
+    /// Local Shell picker modal. Rows come from the curated, persisted
+    /// local-terminal list (`Oryxis::local_terminals`); a "+ terminal"
+    /// footer jumps to the management card in Settings → Terminal.
     pub(crate) fn view_local_shell_picker(&self) -> Element<'_, Message> {
-        let shells = self.local_shells.as_deref();
+        let entries = self.local_terminals.as_deref();
         let mut list = column![].spacing(2);
 
         // Probe still in flight, show a hint instead of an empty
         // dropdown so the user knows the picker is loading rather
         // than broken.
-        if shells.is_none() {
+        if entries.is_none() {
             list = list.push(
                 container(
                     text(crate::i18n::t("detecting_shells"))
@@ -363,17 +363,36 @@ impl Oryxis {
             );
         }
 
-        for spec in shells.unwrap_or(&[]) {
+        for entry in entries.unwrap_or(&[]) {
+            // Same icon + color resolution as the Settings card so the
+            // picker row matches: explicit override, OS hint, then a
+            // generic terminal glyph.
+            let (glyph, col) = crate::os_icon::local_terminal_icon(
+                entry.icon.as_deref(),
+                &entry.label,
+                entry.color.as_deref(),
+                OryxisColors::t().accent,
+            );
             list = list.push(
                 button(
                     container(
                         dir_row(vec![
-                            iced_fonts::lucide::terminal()
-                                .size(14)
-                                .color(OryxisColors::t().accent)
+                            container(glyph.view(13.0, Color::WHITE))
+                                .width(Length::Fixed(22.0))
+                                .height(Length::Fixed(22.0))
+                                .center_x(Length::Fixed(22.0))
+                                .center_y(Length::Fixed(22.0))
+                                .style(move |_| container::Style {
+                                    background: Some(Background::Color(col)),
+                                    border: Border {
+                                        radius: Radius::from(6.0),
+                                        ..Default::default()
+                                    },
+                                    ..Default::default()
+                                })
                                 .into(),
                             Space::new().width(10).into(),
-                            text(spec.label.clone())
+                            text(entry.label.clone())
                                 .size(13)
                                 .color(OryxisColors::t().text_primary)
                                 .into(),
@@ -384,9 +403,9 @@ impl Oryxis {
                     .align_x(dir_align_x()),
                 )
                 .on_press(Message::OpenLocalShellWith {
-                    program: spec.program.clone(),
-                    args: spec.args.clone(),
-                    label: spec.label.clone(),
+                    program: entry.program.clone(),
+                    args: entry.args.clone(),
+                    label: entry.label.clone(),
                 })
                 .padding(Padding {
                     top: 8.0,
@@ -434,10 +453,69 @@ impl Oryxis {
                 left: 8.0,
             })
             .width(Length::Fill);
+        // Footer shortcut into the management card (always present, even
+        // when the list is empty), separated by a top hairline.
+        let footer = container(
+            button(
+                container(
+                    dir_row(vec![
+                        iced_fonts::lucide::plus()
+                            .size(14)
+                            .color(OryxisColors::t().accent)
+                            .into(),
+                        Space::new().width(8).into(),
+                        text(crate::i18n::t("add_terminal"))
+                            .size(13)
+                            .color(OryxisColors::t().accent)
+                            .into(),
+                    ])
+                    .align_y(iced::Alignment::Center),
+                )
+                .width(Length::Fill)
+                .align_x(dir_align_x()),
+            )
+            .on_press(Message::OpenLocalTerminalsSettings)
+            .padding(Padding {
+                top: 8.0,
+                right: 16.0,
+                bottom: 8.0,
+                left: 12.0,
+            })
+            .width(Length::Fill)
+            .style(|_, status| {
+                let bg = match status {
+                    BtnStatus::Hovered => OryxisColors::t().bg_hover,
+                    BtnStatus::Pressed => OryxisColors::t().bg_selected,
+                    _ => Color::TRANSPARENT,
+                };
+                button::Style {
+                    background: Some(Background::Color(bg)),
+                    border: Border {
+                        radius: Radius::from(6.0),
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                }
+            }),
+        )
+        .padding(Padding {
+            top: 6.0,
+            right: 8.0,
+            bottom: 8.0,
+            left: 8.0,
+        })
+        .width(Length::Fill);
+        // 1px separator above the footer so it reads as a distinct zone.
+        let divider = container(Space::new().width(Length::Fill).height(1))
+            .width(Length::Fill)
+            .style(|_| container::Style {
+                background: Some(Background::Color(OryxisColors::t().border)),
+                ..Default::default()
+            });
         // Wrap the dialog in a MouseArea NoOp so clicks on its body
         // don't fall through to the scrim and dismiss it.
         let dialog = iced::widget::MouseArea::new(
-            container(column![header, body])
+            container(column![header, body, divider, footer])
                 .width(Length::Fixed(360.0))
                 .style(|_| container::Style {
                     background: Some(Background::Color(OryxisColors::t().bg_surface)),

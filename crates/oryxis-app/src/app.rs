@@ -257,6 +257,10 @@ pub struct Oryxis {
     /// (`group_edit_*`). Deferred save: the choice flows into the form
     /// and persists on the panel's Save.
     pub(crate) icon_picker_for_group_edit: bool,
+    /// Same idea, targeting the local-terminal add / edit modal form
+    /// (`local_terminal_form.icon` / `_color`). Deferred save: the choice
+    /// flows into the form and persists when the modal's Save is clicked.
+    pub(crate) icon_picker_for_local_terminal: bool,
     pub(crate) icon_picker_icon: Option<String>,
     pub(crate) icon_picker_color: Option<String>,
     pub(crate) icon_picker_hex_input: String,
@@ -1133,11 +1137,24 @@ pub struct Oryxis {
     /// would vanish before they can act on it. `None` = no dialog.
     pub(crate) error_dialog: Option<crate::state::ErrorDialog>,
 
-    /// Cached list of available local shells (PowerShell, cmd, WSL
-    /// distros, etc.), populated lazily when the user opens the
-    /// Local Shell picker so we don't pay the `wsl --list` spawn on
-    /// every boot. `None` means not detected yet.
-    pub(crate) local_shells: Option<Vec<crate::state::LocalShellSpec>>,
+    /// Curated list of local terminals (PowerShell, cmd, WSL distros,
+    /// manual entries, ...). The auto-scan runs once on first open and
+    /// persists into the `local_terminals` setting; this caches that
+    /// list. `None` means never scanned (the next open triggers the
+    /// one-time scan). Machine-local: never synced or exported.
+    pub(crate) local_terminals: Option<Vec<crate::state::LocalTerminalEntry>>,
+    /// "Always open X" preference: the id of the terminal to open without
+    /// a picker, or `None` for "always ask". Backed by the
+    /// `local_terminal_default` setting.
+    pub(crate) local_terminal_default: Option<uuid::Uuid>,
+    /// "Add terminal manually" form, shown in a modal opened from the
+    /// Settings → Terminal card.
+    pub(crate) local_terminal_form: crate::state::LocalTerminalForm,
+    /// True while the "add local terminal" modal is open.
+    pub(crate) local_terminal_add_open: bool,
+    /// Index of the local-terminal card under the cursor, for the
+    /// hover-revealed remove action (card-action-icon convention).
+    pub(crate) hovered_local_terminal_card: Option<usize>,
     /// True while the Local Shell picker overlay is showing. Only
     /// surfaces on Windows where there's a real choice between cmd /
     /// PowerShell / WSL distros, non-Windows just spawns the

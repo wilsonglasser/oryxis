@@ -270,6 +270,29 @@ pub(crate) fn local_shell_os_hint(label: &str) -> Option<String> {
     None
 }
 
+/// Resolve the icon glyph and accent color for a curated local terminal.
+/// Precedence: the user's explicit override (icon picker), then the OS
+/// hint derived from the label (brand icon + brand color), then a generic
+/// terminal glyph on the global `accent`. Shared by the Settings card and
+/// the local-shell picker so both render a terminal the same way.
+pub(crate) fn local_terminal_icon(
+    icon: Option<&str>,
+    label: &str,
+    color: Option<&str>,
+    accent: Color,
+) -> (BrandIcon, Color) {
+    let os = local_shell_os_hint(label);
+    let icon_id = icon
+        .map(|s| s.to_string())
+        .or_else(|| os.clone())
+        .unwrap_or_else(|| "terminal".to_string());
+    let col = color
+        .and_then(crate::widgets::parse_hex_color)
+        .or_else(|| os.as_deref().map(|o| resolve_icon(Some(o), accent).1))
+        .unwrap_or(accent);
+    (custom_icon_glyph(&icon_id), col)
+}
+
 /// Cloud-transport tabs carry a prefix in their label so the user
 /// can tell SSM-into-EC2 from ECS-Exec-into-container apart
 /// (`SSM · ...`, `ECS · ...`, `K8s · ...`). Map that prefix back to

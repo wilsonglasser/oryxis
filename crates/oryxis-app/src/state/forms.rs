@@ -2,6 +2,25 @@
 
 use super::*;
 
+/// Add / edit form for a local terminal, shown in a modal from the
+/// Settings → Terminal card. `args` is a single space-separated string
+/// here and split on submit.
+#[derive(Debug, Clone, Default)]
+pub(crate) struct LocalTerminalForm {
+    /// `Some` when editing an existing entry (update in place); `None`
+    /// when adding a new one.
+    pub editing_id: Option<Uuid>,
+    pub label: String,
+    pub program: String,
+    pub args: String,
+    /// `#RRGGBB` accent override chosen via the icon picker.
+    pub color: Option<String>,
+    /// Icon id chosen via the icon picker.
+    pub icon: Option<String>,
+    /// Inline validation error (i18n key), shown under the form on a bad submit.
+    pub error: Option<&'static str>,
+}
+
 /// One editable row in the session-group editor: a pane's display label
 /// (read-only) plus its per-pane initial script. Rows are ordered the same
 /// as the layout's leaf walk, so scripts merge back by index on save.

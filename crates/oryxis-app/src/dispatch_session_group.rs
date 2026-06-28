@@ -190,6 +190,7 @@ impl Oryxis {
                 self.icon_picker_for = None;
                 self.icon_picker_for_group_form = false;
                 self.icon_picker_for_session_group = true;
+                self.icon_picker_for_local_terminal = false;
                 self.show_icon_picker = true;
                 Ok(Task::none())
             }
