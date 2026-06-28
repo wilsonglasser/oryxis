@@ -1143,25 +1143,15 @@ pub struct Oryxis {
     pub(crate) sync_relay_url: String,
     pub(crate) sync_listen_port: String,
     pub(crate) sync_peers: Vec<oryxis_vault::SyncPeerRow>,
-    pub(crate) sync_pairing_code: Option<String>,
     pub(crate) sync_status: Option<String>,
     /// Live P2P sync engine, present only while sync is enabled. Holds
     /// a dedicated vault handle plus the QUIC / mDNS background tasks.
     pub(crate) sync_runtime: Option<crate::sync_runtime::SyncRuntime>,
     /// Mirrors `sync_runtime.is_some()` for cheap UI checks.
     pub(crate) sync_engine_running: bool,
-    /// Which pairing sub-view the Sync settings panel shows.
-    pub(crate) sync_pairing_state: crate::state::SyncPairingState,
-    /// The 6-digit code typed in when joining another device's pairing.
-    pub(crate) sync_join_code_input: String,
-    /// The host address (`ip:port`) typed in when joining a pairing.
-    pub(crate) sync_join_target_input: String,
-    /// Shareable `oryxis://pair/...` link for the currently-hosted
-    /// pairing code, cleared on cancel / complete.
-    pub(crate) sync_pairing_link: Option<String>,
-    /// `oryxis://pair/...` link pasted in by the joiner as an
-    /// alternative to typing code + `ip:port`. Resolved via signaling.
-    pub(crate) sync_join_link_input: String,
+    /// Transient device-pairing UI (hosted code / link, join inputs, and
+    /// which pairing sub-view the Sync panel shows).
+    pub(crate) sync_pairing: crate::state::SyncPairingForm,
     /// Live mDNS-discovered peers on the LAN. Deduped by `device_id`.
     pub(crate) sync_discovered: Vec<crate::state::DiscoveredPeerInfo>,
     /// `Sync Now` in flight. Drives the Cancel button + suppresses
@@ -1180,27 +1170,12 @@ pub struct Oryxis {
     /// `"sftp"` (reconcile against one encrypted snapshot file on an SFTP
     /// host). A device runs one transport at a time; the two don't bridge.
     pub(crate) sync_transport: String,
-    /// Connection the SFTP-sync snapshot file lives on, in `sftp`
-    /// transport. `None` until the user picks a host.
-    pub(crate) sync_sftp_host_id: Option<uuid::Uuid>,
-    /// Remote path of the shared snapshot file (e.g. `oryxis-sync.bin`).
-    pub(crate) sync_sftp_remote_path: String,
-    /// Group secret source for SFTP sync. Same passphrase + same file
-    /// across devices == one sync group. Held in memory while unlocked;
-    /// persisted encrypted (the `ai_api_key` pattern) so the background
-    /// timer can run unattended.
-    pub(crate) sync_sftp_passphrase: String,
-    /// An SFTP-sync round (download + merge + upload) is in flight.
-    /// Suppresses overlapping rounds (timer tick during a manual run).
-    pub(crate) sftp_sync_in_progress: bool,
-    /// Last SFTP-sync round outcome for the Sync settings status line.
-    pub(crate) sftp_sync_status: Option<Result<String, String>>,
-    /// The "Select a host" modal for picking the SFTP-sync backup host is
-    /// open. Mirrors the SFTP file-browser host picker rather than a flat
-    /// dropdown, so the row shows the OS badge + label + address.
-    pub(crate) sync_sftp_picker_open: bool,
-    /// Search filter inside that host picker modal.
-    pub(crate) sync_sftp_picker_search: String,
+    /// Transient state for the SFTP sync transport (snapshot host, remote
+    /// path, group passphrase, host picker) plus the in-flight round's
+    /// progress + last outcome. The group passphrase is held in memory
+    /// while unlocked and persisted encrypted (the `ai_api_key` pattern)
+    /// so the background timer can run unattended.
+    pub(crate) sftp_sync_form: crate::state::SftpSyncForm,
 
     // Export/Import
     pub(crate) show_export_dialog: bool,

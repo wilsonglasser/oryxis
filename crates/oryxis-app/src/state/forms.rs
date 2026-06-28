@@ -297,6 +297,41 @@ impl std::fmt::Display for ProxyKind {
     }
 }
 
+/// Transient state for the device-pairing flow (Settings → Sync). Holds
+/// the codes / links this device generates and the inputs for joining a
+/// peer. The persisted sync settings, the engine runtime handles and the
+/// discovered-peer list stay on `Oryxis`; this is just the pairing UI.
+#[derive(Debug, Clone, Default)]
+pub(crate) struct SyncPairingForm {
+    /// Pairing code this device is currently hosting (shown to the peer).
+    pub code: Option<String>,
+    /// Shareable `oryxis://pair` link / QR payload for this device.
+    pub link: Option<String>,
+    pub state: SyncPairingState,
+    /// Peer's pairing code typed into the Join box.
+    pub join_code_input: String,
+    /// Peer's address typed into the Join box.
+    pub join_target_input: String,
+    /// Peer's `oryxis://pair` link pasted into the Join box.
+    pub join_link_input: String,
+}
+
+/// Transient state for syncing the vault over SFTP (the SFTP sync
+/// transport form in Settings → Sync), plus the in-flight progress. The
+/// persisted transport choice stays on `Oryxis`.
+#[derive(Debug, Clone, Default)]
+pub(crate) struct SftpSyncForm {
+    /// Host the vault blob is synced through, `None` until picked.
+    pub host_id: Option<uuid::Uuid>,
+    pub remote_path: String,
+    pub passphrase: String,
+    pub picker_open: bool,
+    pub picker_search: String,
+    /// True while the SFTP sync task is in flight.
+    pub in_progress: bool,
+    pub status: Option<Result<String, String>>,
+}
+
 /// Icon + color picker state (opened from a host editor's icon box and
 /// every other editor that carries an icon). The `for_*` flags route the
 /// picked result to the right target on confirm: a Connection in the

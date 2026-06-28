@@ -2535,7 +2535,7 @@ impl Oryxis {
                         // round is in flight so the click has immediate
                         // feedback. There's no engine/Cancel path (the
                         // transfer can't be safely aborted mid-write).
-                        let (label, msg) = if self.sftp_sync_in_progress {
+                        let (label, msg) = if self.sftp_sync_form.in_progress {
                             (crate::i18n::t("sftp_sync_running"), None)
                         } else {
                             (crate::i18n::t("sync_now"), Some(Message::SyncNow))
@@ -2571,7 +2571,7 @@ impl Oryxis {
                 // its own round outcome (success muted / error red); P2P
                 // keeps the engine status string.
                 if self.sync_transport == "sftp" {
-                    if let Some(status) = &self.sftp_sync_status {
+                    if let Some(status) = &self.sftp_sync_form.status {
                         let (txt, color) = match status {
                             Ok(s) => (s.clone(), OryxisColors::t().text_muted),
                             Err(e) => (e.clone(), OryxisColors::t().error),
@@ -2586,7 +2586,7 @@ impl Oryxis {
                         .push(text(status.as_str()).size(12).color(OryxisColors::t().text_muted));
                 }
 
-                // Pairing. The sub-view depends on `sync_pairing_state`:
+                // Pairing. The sub-view depends on `sync_pairing.state`:
                 // Idle shows the two entry buttons; Hosting shows the
                 // generated code; Joining shows the code + address form.
                 let mut pairing_section: iced::widget::Column<'_, Message> = column![
@@ -2594,7 +2594,7 @@ impl Oryxis {
                     Space::new().height(8),
                 ];
 
-                match self.sync_pairing_state {
+                match self.sync_pairing.state {
                     crate::state::SyncPairingState::Idle => {
                         pairing_section = pairing_section.push(dir_row(vec![
                             styled_button(
@@ -2656,7 +2656,7 @@ impl Oryxis {
                                 .size(12)
                                 .color(OryxisColors::t().text_secondary))
                             .push(Space::new().height(6));
-                        if let Some(code) = &self.sync_pairing_code {
+                        if let Some(code) = &self.sync_pairing.code {
                             pairing_section = pairing_section
                                 .push(text(code.as_str())
                                     .size(30)
@@ -2666,7 +2666,7 @@ impl Oryxis {
                         // Copy button + the QR. The link works only
                         // when both ends have a signaling URL set
                         // (Settings > Sync > Advanced).
-                        if let Some(link) = &self.sync_pairing_link {
+                        if let Some(link) = &self.sync_pairing.link {
                             pairing_section = pairing_section
                                 .push(Space::new().height(12))
                                 .push(text(crate::i18n::t("sync_pairing_link_label"))
@@ -2694,7 +2694,7 @@ impl Oryxis {
                     crate::state::SyncPairingState::Joining => {
                         let code_input = text_input(
                             crate::i18n::t("sync_pairing_code_placeholder"),
-                            &self.sync_join_code_input,
+                            &self.sync_pairing.join_code_input,
                         )
                         .on_input(Message::SyncJoinCodeChanged)
                         .padding(8)
@@ -2703,7 +2703,7 @@ impl Oryxis {
                         .align_x(dir_align_x());
                         let target_input = text_input(
                             crate::i18n::t("sync_pairing_target_placeholder"),
-                            &self.sync_join_target_input,
+                            &self.sync_pairing.join_target_input,
                         )
                         .on_input(Message::SyncJoinTargetChanged)
                         .padding(8)
@@ -2712,7 +2712,7 @@ impl Oryxis {
                         .align_x(dir_align_x());
                         let link_input = text_input(
                             crate::i18n::t("sync_pairing_link_placeholder"),
-                            &self.sync_join_link_input,
+                            &self.sync_pairing.join_link_input,
                         )
                         .on_input(Message::SyncJoinLinkChanged)
                         .padding(8)
@@ -2757,7 +2757,7 @@ impl Oryxis {
                 // in the Options card, but when the user is actively
                 // pairing they're looking here, so we mirror it
                 // adjacent to the form they're filling in.
-                if !matches!(self.sync_pairing_state, crate::state::SyncPairingState::Idle)
+                if !matches!(self.sync_pairing.state, crate::state::SyncPairingState::Idle)
                     && let Some(status) = &self.sync_status
                 {
                     pairing_section = pairing_section
@@ -2919,7 +2919,7 @@ impl Oryxis {
                 // search), not a flat dropdown. The trigger shows the
                 // current selection or a placeholder.
                 let selected_conn = self
-                    .sync_sftp_host_id
+                    .sftp_sync_form.host_id
                     .and_then(|id| self.connections.iter().find(|c| c.id == id));
                 let host_trigger_inner: Element<'_, Message> = if let Some(c) = selected_conn {
                     dir_row(vec![
@@ -2969,7 +2969,7 @@ impl Oryxis {
                     });
                 let path_input = text_input(
                     "/home/user/oryxis-sync/",
-                    &self.sync_sftp_remote_path,
+                    &self.sftp_sync_form.remote_path,
                 )
                 .on_input(Message::SyncSftpPathChanged)
                 .padding(10)
@@ -2978,7 +2978,7 @@ impl Oryxis {
                 .align_x(dir_align_x());
                 let passphrase_input = text_input(
                     crate::i18n::t("sftp_sync_passphrase_placeholder"),
-                    &self.sync_sftp_passphrase,
+                    &self.sftp_sync_form.passphrase,
                 )
                 .on_input(Message::SyncSftpPassphraseChanged)
                 .secure(true)
@@ -3280,7 +3280,7 @@ impl Oryxis {
         // Overlay the SFTP-sync host picker modal across the whole page
         // when open (same scrim + centered dialog pattern as the SFTP
         // file browser's picker).
-        if self.sync_sftp_picker_open {
+        if self.sftp_sync_form.picker_open {
             iced::widget::Stack::new()
                 .push(layout)
                 .push(sync_host_picker_modal(self))
@@ -4013,7 +4013,7 @@ fn host_badge<'a>(
 /// OS badge + label + address. Rendered as a dimming scrim plus a centered
 /// dialog; the caller stacks it over the settings page.
 fn sync_host_picker_modal(app: &Oryxis) -> Element<'_, Message> {
-    let q = app.sync_sftp_picker_search.to_lowercase();
+    let q = app.sftp_sync_form.picker_search.to_lowercase();
     let mut list = column![].spacing(2);
     for conn in app.connections.iter().filter(|c| {
         q.is_empty()
@@ -4089,7 +4089,7 @@ fn sync_host_picker_modal(app: &Oryxis) -> Element<'_, Message> {
             .align_y(iced::Alignment::Center)
             .width(Length::Fill),
             Space::new().height(8),
-            text_input(t("search_hosts"), &app.sync_sftp_picker_search)
+            text_input(t("search_hosts"), &app.sftp_sync_form.picker_search)
                 .on_input(Message::SyncSftpPickerSearch)
                 .padding(10)
                 .style(crate::widgets::rounded_input_style)

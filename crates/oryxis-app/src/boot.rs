@@ -491,27 +491,16 @@ impl Oryxis {
                 sync_relay_url: String::new(),
                 sync_listen_port: "0".into(),
                 sync_peers: Vec::new(),
-                sync_pairing_code: None,
                 sync_status: None,
                 sync_runtime: None,
                 sync_engine_running: false,
-                sync_pairing_state: crate::state::SyncPairingState::Idle,
-                sync_join_code_input: String::new(),
-                sync_join_target_input: String::new(),
-                sync_pairing_link: None,
-                sync_join_link_input: String::new(),
+                sync_pairing: crate::state::SyncPairingForm::default(),
                 sync_discovered: Vec::new(),
                 sync_in_progress: false,
                 sync_abort_tx: None,
                 sync_signaling_tick: 0,
                 sync_transport: "p2p".into(),
-                sync_sftp_host_id: None,
-                sync_sftp_remote_path: String::new(),
-                sync_sftp_passphrase: String::new(),
-                sftp_sync_in_progress: false,
-                sftp_sync_status: None,
-                sync_sftp_picker_open: false,
-                sync_sftp_picker_search: String::new(),
+                sftp_sync_form: crate::state::SftpSyncForm::default(),
                 show_export_dialog: false,
                 export_password: String::new(),
                 export_include_keys: true,
@@ -802,13 +791,13 @@ impl Oryxis {
                 self.sync_transport = v;
             }
             if let Ok(Some(v)) = vault.get_setting("sync_sftp_host_id") {
-                self.sync_sftp_host_id = uuid::Uuid::parse_str(&v).ok();
+                self.sftp_sync_form.host_id = uuid::Uuid::parse_str(&v).ok();
             }
             if let Ok(Some(v)) = vault.get_setting("sync_sftp_remote_path") {
-                self.sync_sftp_remote_path = v;
+                self.sftp_sync_form.remote_path = v;
             }
             if let Ok(Some(v)) = vault.get_sync_sftp_passphrase() {
-                self.sync_sftp_passphrase = v;
+                self.sftp_sync_form.passphrase = v;
             }
             self.sync_peers = vault.list_sync_peers().unwrap_or_default();
             if let Ok(Some(v)) = vault.get_setting("ai_system_prompt") {

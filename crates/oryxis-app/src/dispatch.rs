@@ -1259,9 +1259,9 @@ impl Oryxis {
                     let handle = runtime.handle();
                     let code = handle.start_hosting_pairing();
                     let link = handle.pairing_link(&code);
-                    self.sync_pairing_link = Some(link);
-                    self.sync_pairing_code = Some(code);
-                    self.sync_pairing_state = crate::state::SyncPairingState::Hosting;
+                    self.sync_pairing.link = Some(link);
+                    self.sync_pairing.code = Some(code);
+                    self.sync_pairing.state = crate::state::SyncPairingState::Hosting;
                 } else {
                     self.sync_status =
                         Some(crate::i18n::t("sync_status_disabled").to_string());
@@ -1271,27 +1271,27 @@ impl Oryxis {
                 if let Some(runtime) = &self.sync_runtime {
                     runtime.handle().cancel_hosting_pairing();
                 }
-                self.sync_pairing_code = None;
-                self.sync_pairing_link = None;
-                self.sync_pairing_state = crate::state::SyncPairingState::Idle;
+                self.sync_pairing.code = None;
+                self.sync_pairing.link = None;
+                self.sync_pairing.state = crate::state::SyncPairingState::Idle;
             }
             Message::SyncJoinPairingRequested => {
-                self.sync_pairing_state = crate::state::SyncPairingState::Joining;
-                self.sync_join_code_input.clear();
-                self.sync_join_target_input.clear();
-                self.sync_join_link_input.clear();
+                self.sync_pairing.state = crate::state::SyncPairingState::Joining;
+                self.sync_pairing.join_code_input.clear();
+                self.sync_pairing.join_target_input.clear();
+                self.sync_pairing.join_link_input.clear();
             }
             Message::SyncJoinCodeChanged(v) => {
-                self.sync_join_code_input = v;
+                self.sync_pairing.join_code_input = v;
             }
             Message::SyncJoinTargetChanged(v) => {
-                self.sync_join_target_input = v;
+                self.sync_pairing.join_target_input = v;
             }
             Message::SyncJoinLinkChanged(v) => {
-                self.sync_join_link_input = v;
+                self.sync_pairing.join_link_input = v;
             }
             Message::SyncJoinPairingCancel => {
-                self.sync_pairing_state = crate::state::SyncPairingState::Idle;
+                self.sync_pairing.state = crate::state::SyncPairingState::Idle;
             }
             Message::SyncPairWithDiscovered(device_id) => {
                 if let Some(peer) = self
@@ -1299,10 +1299,10 @@ impl Oryxis {
                     .iter()
                     .find(|p| p.device_id == device_id)
                 {
-                    self.sync_pairing_state = crate::state::SyncPairingState::Joining;
-                    self.sync_join_code_input.clear();
-                    self.sync_join_link_input.clear();
-                    self.sync_join_target_input = peer.addr.to_string();
+                    self.sync_pairing.state = crate::state::SyncPairingState::Joining;
+                    self.sync_pairing.join_code_input.clear();
+                    self.sync_pairing.join_link_input.clear();
+                    self.sync_pairing.join_target_input = peer.addr.to_string();
                 }
             }
             Message::SyncJoinPairingByLink => {
@@ -1311,7 +1311,7 @@ impl Oryxis {
                         Some(crate::i18n::t("sync_status_disabled").to_string());
                     return Task::none();
                 };
-                let link = self.sync_join_link_input.trim().to_string();
+                let link = self.sync_pairing.join_link_input.trim().to_string();
                 if oryxis_sync::parse_pairing_link(&link).is_none() {
                     self.sync_status = Some(
                         crate::i18n::t("sync_pairing_bad_link").to_string(),
@@ -1337,14 +1337,14 @@ impl Oryxis {
                         Some(crate::i18n::t("sync_status_disabled").to_string());
                     return Task::none();
                 };
-                let code = self.sync_join_code_input.trim().to_string();
+                let code = self.sync_pairing.join_code_input.trim().to_string();
                 if code.len() != 6 || !code.chars().all(|c| c.is_ascii_digit()) {
                     self.sync_status =
                         Some(crate::i18n::t("sync_pairing_invalid_code").to_string());
                     return Task::none();
                 }
                 let addr: std::net::SocketAddr =
-                    match self.sync_join_target_input.trim().parse() {
+                    match self.sync_pairing.join_target_input.trim().parse() {
                         Ok(a) => a,
                         Err(_) => {
                             self.sync_status = Some(
@@ -1436,7 +1436,7 @@ impl Oryxis {
                         let _ = vault.set_setting("sync_transport", &v);
                     }
                     self.sync_status = None;
-                    self.sftp_sync_status = None;
+                    self.sftp_sync_form.status = None;
                     if v == "sftp" {
                         self.stop_sync_engine();
                     } else if self.sync_enabled {
@@ -1445,32 +1445,32 @@ impl Oryxis {
                 }
             }
             Message::SyncSftpHostChanged(id) => {
-                self.sync_sftp_host_id = Some(id);
-                self.sync_sftp_picker_open = false;
-                self.sync_sftp_picker_search.clear();
+                self.sftp_sync_form.host_id = Some(id);
+                self.sftp_sync_form.picker_open = false;
+                self.sftp_sync_form.picker_search.clear();
                 if let Some(vault) = &self.vault {
                     let _ = vault.set_setting("sync_sftp_host_id", &id.to_string());
                 }
             }
             Message::SyncSftpOpenPicker => {
-                self.sync_sftp_picker_open = true;
-                self.sync_sftp_picker_search.clear();
+                self.sftp_sync_form.picker_open = true;
+                self.sftp_sync_form.picker_search.clear();
             }
             Message::SyncSftpClosePicker => {
-                self.sync_sftp_picker_open = false;
-                self.sync_sftp_picker_search.clear();
+                self.sftp_sync_form.picker_open = false;
+                self.sftp_sync_form.picker_search.clear();
             }
             Message::SyncSftpPickerSearch(v) => {
-                self.sync_sftp_picker_search = v;
+                self.sftp_sync_form.picker_search = v;
             }
             Message::SyncSftpPathChanged(v) => {
-                self.sync_sftp_remote_path = v.clone();
+                self.sftp_sync_form.remote_path = v.clone();
                 if let Some(vault) = &self.vault {
                     let _ = vault.set_setting("sync_sftp_remote_path", &v);
                 }
             }
             Message::SyncSftpPassphraseChanged(v) => {
-                self.sync_sftp_passphrase = v.clone();
+                self.sftp_sync_form.passphrase = v.clone();
                 if let Some(vault) = &self.vault {
                     let _ = vault.set_sync_sftp_passphrase(&v);
                 }
@@ -1482,19 +1482,19 @@ impl Oryxis {
                 if self.sync_transport == "sftp"
                     && self.sync_enabled
                     && self.sync_mode == "auto"
-                    && !self.sftp_sync_in_progress
+                    && !self.sftp_sync_form.in_progress
                 {
                     return self.run_sftp_sync_round();
                 }
             }
             Message::SftpSyncDone(result) => {
-                self.sftp_sync_in_progress = false;
+                self.sftp_sync_form.in_progress = false;
                 if result.is_ok() {
                     // The merge ran on a separate vault handle, so the
                     // in-memory lists are stale: reload to reflect it.
                     self.load_data_from_vault();
                 }
-                self.sftp_sync_status = Some(result);
+                self.sftp_sync_form.status = Some(result);
             }
             Message::SyncNowFinished(result) => {
                 self.sync_in_progress = false;
@@ -1549,7 +1549,7 @@ impl Oryxis {
                         }
                     }
                     SyncEvent::PairingCodeGenerated { code } => {
-                        self.sync_pairing_code = Some(code);
+                        self.sync_pairing.code = Some(code);
                     }
                     SyncEvent::PairingCompleted { device_name, .. } => {
                         self.sync_status = Some(format!(
@@ -1559,10 +1559,10 @@ impl Oryxis {
                         // Pairing done on either side: close the modal
                         // sub-view, drop the hosted code / link / QR,
                         // and refresh the peer list.
-                        self.sync_pairing_state =
+                        self.sync_pairing.state =
                             crate::state::SyncPairingState::Idle;
-                        self.sync_pairing_code = None;
-                        self.sync_pairing_link = None;
+                        self.sync_pairing.code = None;
+                        self.sync_pairing.link = None;
                         if let Some(vault) = &self.vault {
                             self.sync_peers =
                                 vault.list_sync_peers().unwrap_or_default();
@@ -1579,12 +1579,12 @@ impl Oryxis {
                         // re-entering everything. Host-side: clear
                         // the code/link since the single-shot was
                         // consumed even on failure.
-                        if self.sync_pairing_state
+                        if self.sync_pairing.state
                             == crate::state::SyncPairingState::Hosting
                         {
-                            self.sync_pairing_code = None;
-                            self.sync_pairing_link = None;
-                            self.sync_pairing_state =
+                            self.sync_pairing.code = None;
+                            self.sync_pairing.link = None;
+                            self.sync_pairing.state =
                                 crate::state::SyncPairingState::Idle;
                         }
                     }

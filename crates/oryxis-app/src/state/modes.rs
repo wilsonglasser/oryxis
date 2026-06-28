@@ -254,9 +254,9 @@ pub(crate) struct DiscoveredPeerInfo {
     pub addr: std::net::SocketAddr,
 }
 
-/// Which pairing sub-view the Sync settings panel is showing. The
-/// hosted code itself lives in `Oryxis.sync_pairing_code`; the join
-/// inputs live in `sync_join_code_input` / `sync_join_target_input`.
+/// Which pairing sub-view the Sync settings panel is showing. The hosted
+/// code and the join inputs live alongside this in
+/// [`SyncPairingForm`](super::SyncPairingForm) on `Oryxis.sync_pairing`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub(crate) enum SyncPairingState {
     /// Default: just the two "Host" / "Join" entry buttons.
