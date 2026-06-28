@@ -297,6 +297,56 @@ impl std::fmt::Display for ProxyKind {
     }
 }
 
+/// Add / edit form for a saved proxy identity, shown inline in the
+/// Settings → Proxies section. State is in-memory only until
+/// `SaveProxyIdentity` flushes it to the vault. The saved list itself
+/// lives in `Oryxis::proxy_identities` (this is form state only).
+///
+/// Password follows the tri-state convention: `has_existing_password`
+/// records whether the stored row carries one, `password_touched`
+/// tracks whether the user edited the field this session, so save can
+/// distinguish "leave as-is" from "clear" from "set".
+#[derive(Debug, Clone)]
+pub(crate) struct ProxyIdentityForm {
+    /// Whether the inline editor is currently shown.
+    pub visible: bool,
+    pub label: String,
+    pub kind: ProxyKind,
+    pub host: String,
+    pub port: String,
+    pub username: String,
+    pub password: String,
+    pub password_visible: bool,
+    pub password_touched: bool,
+    pub has_existing_password: bool,
+    /// `Some` when editing an existing identity (update in place); `None`
+    /// when adding a new one.
+    pub editing_id: Option<Uuid>,
+    /// Inline validation error, shown under the form on a bad submit.
+    pub error: Option<String>,
+}
+
+impl Default for ProxyIdentityForm {
+    fn default() -> Self {
+        Self {
+            visible: false,
+            label: String::new(),
+            // SOCKS5 is the most common proxy kind, matching the host
+            // editor's default proxy selection.
+            kind: ProxyKind::Socks5,
+            host: String::new(),
+            port: String::new(),
+            username: String::new(),
+            password: String::new(),
+            password_visible: false,
+            password_touched: false,
+            has_existing_password: false,
+            editing_id: None,
+            error: None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Default)]
 pub(crate) struct PortForwardForm {
     pub local_port: String,

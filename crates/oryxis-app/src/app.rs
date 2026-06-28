@@ -545,21 +545,11 @@ pub struct Oryxis {
     pub(crate) snippets_sort: crate::state::ListSort,
 
     // Proxy Identities, reusable proxy configs edited inline inside
-    // the Settings → Proxies section. Form state is in-memory only
-    // until SaveProxyIdentity flushes to the vault.
+    // the Settings → Proxies section. The saved list lives here; the
+    // inline editor's transient state is grouped in `proxy_identity_form`
+    // (in-memory only until SaveProxyIdentity flushes to the vault).
     pub(crate) proxy_identities: Vec<oryxis_core::models::proxy_identity::ProxyIdentity>,
-    pub(crate) proxy_identity_form_visible: bool,
-    pub(crate) proxy_identity_form_label: String,
-    pub(crate) proxy_identity_form_kind: crate::state::ProxyKind,
-    pub(crate) proxy_identity_form_host: String,
-    pub(crate) proxy_identity_form_port: String,
-    pub(crate) proxy_identity_form_username: String,
-    pub(crate) proxy_identity_form_password: String,
-    pub(crate) proxy_identity_form_password_visible: bool,
-    pub(crate) proxy_identity_form_password_touched: bool,
-    pub(crate) proxy_identity_form_has_existing_password: bool,
-    pub(crate) editing_proxy_identity_id: Option<Uuid>,
-    pub(crate) proxy_identity_form_error: Option<String>,
+    pub(crate) proxy_identity_form: crate::state::ProxyIdentityForm,
 
     // Cloud Accounts, CloudProfile rows + the wizard form. Wizard is
     // intentionally minimal in v0.6 PR 3: provider + AWS profile auth

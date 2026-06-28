@@ -3473,7 +3473,7 @@ impl Oryxis {
         // Empty + no form open → polished centered empty state (matches
         // Hosts / Keychain / Snippets), no toolbar (search hidden + the
         // "+ New" lives in the CTA).
-        if self.proxy_identities.is_empty() && !self.proxy_identity_form_visible {
+        if self.proxy_identities.is_empty() && !self.proxy_identity_form.visible {
             let empty = crate::widgets::empty_state(
                 iced_fonts::lucide::router()
                     .size(32)
@@ -3499,7 +3499,7 @@ impl Oryxis {
         // at the narrowest the action moves into the `…` overflow menu.
         // (The action is gone while the form panel is open.)
         let (search_collapsed, buttons_overflow) = self.toolbar_tiers();
-        let trailing: Element<'_, Message> = if self.proxy_identity_form_visible {
+        let trailing: Element<'_, Message> = if self.proxy_identity_form.visible {
             Space::new().width(0).height(Length::Fixed(32.0)).into()
         } else if buttons_overflow {
             crate::widgets::toolbar_overflow_icon(matches!(
@@ -3600,7 +3600,7 @@ impl Oryxis {
     }
 
     /// The inline create / edit form for a proxy identity. Used inside
-    /// `view_settings_proxies` when `proxy_identity_form_visible` is on.
+    /// `view_settings_proxies` when `proxy_identity_form.visible` is on.
     pub(crate) fn view_proxy_identity_form(&self) -> Element<'_, Message> {
         use crate::state::ProxyKind;
 
@@ -3614,7 +3614,7 @@ impl Oryxis {
         ];
 
         let kind_picker = pick_list(
-            Some(self.proxy_identity_form_kind),
+            Some(self.proxy_identity_form.kind),
             wire_kinds,
             |k: &ProxyKind| k.to_string(),
         )
@@ -3622,21 +3622,21 @@ impl Oryxis {
         .padding(10)
         .style(crate::widgets::rounded_pick_list_style);
 
-        let pw_placeholder: &str = if self.proxy_identity_form_has_existing_password
-            && !self.proxy_identity_form_password_touched
+        let pw_placeholder: &str = if self.proxy_identity_form.has_existing_password
+            && !self.proxy_identity_form.password_touched
         {
             crate::i18n::t("proxy_password_existing")
         } else {
             crate::i18n::t("proxy_password_placeholder")
         };
 
-        let pw_input = text_input(pw_placeholder, &self.proxy_identity_form_password)
+        let pw_input = text_input(pw_placeholder, &self.proxy_identity_form.password)
             .on_input(Message::ProxyIdentityFormPasswordChanged)
-            .secure(!self.proxy_identity_form_password_visible)
+            .secure(!self.proxy_identity_form.password_visible)
             .padding(10)
             .style(crate::widgets::rounded_input_style).align_x(dir_align_x());
 
-        let save_label = if self.editing_proxy_identity_id.is_some() {
+        let save_label = if self.proxy_identity_form.editing_id.is_some() {
             crate::i18n::t("save")
         } else {
             crate::i18n::t("add")
@@ -3661,7 +3661,7 @@ impl Oryxis {
         let col = column![
             panel_field(
                 crate::i18n::t("proxy_identity_label"),
-                text_input("home-bastion", &self.proxy_identity_form_label)
+                text_input("home-bastion", &self.proxy_identity_form.label)
                     .on_input(Message::ProxyIdentityFormLabelChanged)
                     .padding(10)
                     .style(crate::widgets::rounded_input_style).align_x(dir_align_x())
@@ -3674,7 +3674,7 @@ impl Oryxis {
                 crate::i18n::t("proxy_host"),
                 text_input(
                     crate::i18n::t("proxy_host_placeholder"),
-                    &self.proxy_identity_form_host,
+                    &self.proxy_identity_form.host,
                 )
                 .on_input(Message::ProxyIdentityFormHostChanged)
                 .padding(10)
@@ -3684,7 +3684,7 @@ impl Oryxis {
             Space::new().height(12),
             panel_field(
                 crate::i18n::t("proxy_port"),
-                text_input("1080", &self.proxy_identity_form_port)
+                text_input("1080", &self.proxy_identity_form.port)
                     .on_input(Message::ProxyIdentityFormPortChanged)
                     .padding(6)
                     .width(70)
@@ -3696,7 +3696,7 @@ impl Oryxis {
                 crate::i18n::t("proxy_username"),
                 text_input(
                     crate::i18n::t("proxy_username_placeholder"),
-                    &self.proxy_identity_form_username,
+                    &self.proxy_identity_form.username,
                 )
                 .on_input(Message::ProxyIdentityFormUsernameChanged)
                 .padding(10)
@@ -3709,7 +3709,7 @@ impl Oryxis {
 
         // ── Header (title + close), matching the host / session-group
         // side panels so every editor reads the same. ──
-        let title = if self.editing_proxy_identity_id.is_some() {
+        let title = if self.proxy_identity_form.editing_id.is_some() {
             crate::i18n::t("edit_proxy_identity")
         } else {
             crate::i18n::t("new_proxy_identity")
@@ -3747,7 +3747,7 @@ impl Oryxis {
 
         // Inline error sits OUTSIDE the scrollable, just above the footer,
         // so it stays visible regardless of scroll position.
-        let error_el: Element<'_, Message> = if let Some(err) = &self.proxy_identity_form_error {
+        let error_el: Element<'_, Message> = if let Some(err) = &self.proxy_identity_form.error {
             container(text(err.as_str()).size(12).color(OryxisColors::t().error))
                 .padding(Padding { top: 0.0, right: 16.0, bottom: 8.0, left: 16.0 })
                 .into()

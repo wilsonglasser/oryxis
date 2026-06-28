@@ -192,7 +192,7 @@ impl Oryxis {
             View::Keys => self.show_key_panel || self.show_identity_panel,
             View::Snippets => self.show_snippet_panel,
             View::PortForwarding => self.show_port_forward_panel,
-            View::Proxies => self.proxy_identity_form_visible,
+            View::Proxies => self.proxy_identity_form.visible,
             View::Cloud => self.cloud_form_visible,
             _ => false,
         }
@@ -288,7 +288,7 @@ impl Oryxis {
                 .show_port_forward_panel
                 .then(|| self.view_port_forward_panel()),
             View::Proxies => self
-                .proxy_identity_form_visible
+                .proxy_identity_form.visible
                 .then(|| self.view_proxy_identity_form()),
             View::Cloud => self.cloud_form_visible.then(|| self.view_cloud_form_panel()),
             _ => None,
@@ -2614,7 +2614,7 @@ impl Oryxis {
             View::Keys => self.show_key_panel || self.show_identity_panel,
             View::Snippets => self.show_snippet_panel,
             View::PortForwarding => self.show_port_forward_panel,
-            View::Proxies => self.proxy_identity_form_visible,
+            View::Proxies => self.proxy_identity_form.visible,
             View::Cloud => self.cloud_form_visible,
             _ => false,
         }
@@ -2692,7 +2692,7 @@ impl Oryxis {
             View::Cloud => 95.0,            // "+ Account"
             View::PortForwarding => 92.0,   // "+ Port Forward"
             View::Proxies => {
-                if self.proxy_identity_form_visible {
+                if self.proxy_identity_form.visible {
                     0.0
                 } else {
                     113.0 // "+ Add" split

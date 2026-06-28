@@ -21,8 +21,8 @@ impl Oryxis {
         match message {
             Message::ShowProxyIdentityForm(maybe_id) => {
                 self.overlay = None;
-                self.proxy_identity_form_visible = true;
-                self.proxy_identity_form_error = None;
+                self.proxy_identity_form.visible = true;
+                self.proxy_identity_form.error = None;
 
                 if let Some(id) = maybe_id
                     && let Some(pi) = self.proxy_identities.iter().find(|p| p.id == id)
@@ -33,46 +33,46 @@ impl Oryxis {
                         .and_then(|v| v.get_proxy_identity_password(&id).ok())
                         .flatten()
                         .is_some();
-                    self.editing_proxy_identity_id = Some(id);
-                    self.proxy_identity_form_label = pi.label.clone();
-                    self.proxy_identity_form_kind = match &pi.proxy_type {
+                    self.proxy_identity_form.editing_id = Some(id);
+                    self.proxy_identity_form.label = pi.label.clone();
+                    self.proxy_identity_form.kind = match &pi.proxy_type {
                         ProxyType::Socks5 => ProxyKind::Socks5,
                         ProxyType::Socks4 => ProxyKind::Socks4,
                         ProxyType::Http => ProxyKind::Http,
                         ProxyType::Command(_) => ProxyKind::Command,
                     };
-                    self.proxy_identity_form_host = pi.host.clone();
-                    self.proxy_identity_form_port = if pi.port == 0 {
+                    self.proxy_identity_form.host = pi.host.clone();
+                    self.proxy_identity_form.port = if pi.port == 0 {
                         String::new()
                     } else {
                         pi.port.to_string()
                     };
-                    self.proxy_identity_form_username = pi.username.clone().unwrap_or_default();
+                    self.proxy_identity_form.username = pi.username.clone().unwrap_or_default();
                     // Mirror the connection-password UX, never pre-fill the
                     // encrypted password, just flag that one exists so the
                     // user can leave it untouched to preserve.
-                    self.proxy_identity_form_password = String::new();
-                    self.proxy_identity_form_password_touched = false;
-                    self.proxy_identity_form_has_existing_password = has_pw;
+                    self.proxy_identity_form.password = String::new();
+                    self.proxy_identity_form.password_touched = false;
+                    self.proxy_identity_form.has_existing_password = has_pw;
                 } else {
-                    self.editing_proxy_identity_id = None;
-                    self.proxy_identity_form_label = String::new();
-                    self.proxy_identity_form_kind = ProxyKind::Socks5;
-                    self.proxy_identity_form_host = String::new();
-                    self.proxy_identity_form_port = "1080".into();
-                    self.proxy_identity_form_username = String::new();
-                    self.proxy_identity_form_password = String::new();
-                    self.proxy_identity_form_password_touched = false;
-                    self.proxy_identity_form_has_existing_password = false;
+                    self.proxy_identity_form.editing_id = None;
+                    self.proxy_identity_form.label = String::new();
+                    self.proxy_identity_form.kind = ProxyKind::Socks5;
+                    self.proxy_identity_form.host = String::new();
+                    self.proxy_identity_form.port = "1080".into();
+                    self.proxy_identity_form.username = String::new();
+                    self.proxy_identity_form.password = String::new();
+                    self.proxy_identity_form.password_touched = false;
+                    self.proxy_identity_form.has_existing_password = false;
                 }
-                self.proxy_identity_form_password_visible = false;
+                self.proxy_identity_form.password_visible = false;
             }
             Message::HideProxyIdentityForm => {
-                self.proxy_identity_form_visible = false;
-                self.proxy_identity_form_error = None;
+                self.proxy_identity_form.visible = false;
+                self.proxy_identity_form.error = None;
             }
             Message::ProxyIdentityFormLabelChanged(v) => {
-                self.proxy_identity_form_label = v;
+                self.proxy_identity_form.label = v;
             }
             Message::ProxyIdentityFormKindChanged(kind) => {
                 // The picker only ever feeds back the four wire types
@@ -82,37 +82,37 @@ impl Oryxis {
                     kind,
                     ProxyKind::Socks5 | ProxyKind::Socks4 | ProxyKind::Http | ProxyKind::Command
                 ) {
-                    self.proxy_identity_form_kind = kind;
+                    self.proxy_identity_form.kind = kind;
                     if let Some(p) = kind.default_port()
-                        && self.proxy_identity_form_port.is_empty()
+                        && self.proxy_identity_form.port.is_empty()
                     {
-                        self.proxy_identity_form_port = p.to_string();
+                        self.proxy_identity_form.port = p.to_string();
                     }
                 }
             }
             Message::ProxyIdentityFormHostChanged(v) => {
-                self.proxy_identity_form_host = v;
+                self.proxy_identity_form.host = v;
             }
             Message::ProxyIdentityFormPortChanged(v) => {
-                self.proxy_identity_form_port = v;
+                self.proxy_identity_form.port = v;
             }
             Message::ProxyIdentityFormUsernameChanged(v) => {
-                self.proxy_identity_form_username = v;
+                self.proxy_identity_form.username = v;
             }
             Message::ProxyIdentityFormPasswordChanged(v) => {
-                self.proxy_identity_form_password_touched = true;
-                self.proxy_identity_form_password = v;
+                self.proxy_identity_form.password_touched = true;
+                self.proxy_identity_form.password = v;
             }
             Message::SaveProxyIdentity => {
-                let label = self.proxy_identity_form_label.trim().to_string();
+                let label = self.proxy_identity_form.label.trim().to_string();
                 if label.is_empty() {
-                    self.proxy_identity_form_error =
+                    self.proxy_identity_form.error =
                         Some(crate::i18n::t("proxy_identity_err_label_required").into());
                     return Ok(Task::none());
                 }
 
                 // Build the ProxyType based on the chosen kind.
-                let proxy_type = match self.proxy_identity_form_kind {
+                let proxy_type = match self.proxy_identity_form.kind {
                     ProxyKind::Socks5 => ProxyType::Socks5,
                     ProxyKind::Socks4 => ProxyType::Socks4,
                     ProxyKind::Http => ProxyType::Http,
@@ -121,35 +121,35 @@ impl Oryxis {
                         // command string; we don't expose a separate field
                         // for it here yet, so reject early instead of
                         // silently storing an empty command.
-                        self.proxy_identity_form_error =
+                        self.proxy_identity_form.error =
                             Some(crate::i18n::t("proxy_identity_err_command_unsupported").into());
                         return Ok(Task::none());
                     }
                     ProxyKind::None | ProxyKind::Identity(_) => {
                         // These can't be the kind of a saved identity itself.
-                        self.proxy_identity_form_error =
+                        self.proxy_identity_form.error =
                             Some(crate::i18n::t("proxy_identity_err_invalid_kind").into());
                         return Ok(Task::none());
                     }
                 };
 
-                let port: u16 = match self.proxy_identity_form_port.parse() {
+                let port: u16 = match self.proxy_identity_form.port.parse() {
                     Ok(p) if p > 0 => p,
                     _ => {
-                        self.proxy_identity_form_error =
+                        self.proxy_identity_form.error =
                             Some(crate::i18n::t("proxy_err_port_invalid").into());
                         return Ok(Task::none());
                     }
                 };
 
-                if self.proxy_identity_form_host.trim().is_empty() {
-                    self.proxy_identity_form_error =
+                if self.proxy_identity_form.host.trim().is_empty() {
+                    self.proxy_identity_form.error =
                         Some(crate::i18n::t("proxy_err_host_required").into());
                     return Ok(Task::none());
                 }
 
                 let now = chrono::Utc::now();
-                let mut identity = if let Some(id) = self.editing_proxy_identity_id {
+                let mut identity = if let Some(id) = self.proxy_identity_form.editing_id {
                     self.proxy_identities
                         .iter()
                         .find(|p| p.id == id)
@@ -160,23 +160,23 @@ impl Oryxis {
                 };
                 identity.label = label;
                 identity.proxy_type = proxy_type;
-                identity.host = self.proxy_identity_form_host.clone();
+                identity.host = self.proxy_identity_form.host.clone();
                 identity.port = port;
-                identity.username = if self.proxy_identity_form_username.is_empty() {
+                identity.username = if self.proxy_identity_form.username.is_empty() {
                     None
                 } else {
-                    Some(self.proxy_identity_form_username.clone())
+                    Some(self.proxy_identity_form.username.clone())
                 };
                 identity.updated_at = now;
 
                 // Only forward the password to the vault when the user
                 // actually edited the field, preserves the existing
                 // encrypted value otherwise (mirrors `save_identity`).
-                let password_arg = if self.proxy_identity_form_password_touched {
-                    if self.proxy_identity_form_password.is_empty() {
+                let password_arg = if self.proxy_identity_form.password_touched {
+                    if self.proxy_identity_form.password.is_empty() {
                         Some("")
                     } else {
-                        Some(self.proxy_identity_form_password.as_str())
+                        Some(self.proxy_identity_form.password.as_str())
                     }
                 } else {
                     None
@@ -185,12 +185,12 @@ impl Oryxis {
                 if let Some(vault) = &self.vault {
                     match vault.save_proxy_identity(&identity, password_arg) {
                         Ok(()) => {
-                            self.proxy_identity_form_visible = false;
-                            self.proxy_identity_form_error = None;
+                            self.proxy_identity_form.visible = false;
+                            self.proxy_identity_form.error = None;
                             self.load_data_from_vault();
                         }
                         Err(e) => {
-                            self.proxy_identity_form_error = Some(e.to_string());
+                            self.proxy_identity_form.error = Some(e.to_string());
                         }
                     }
                 }
