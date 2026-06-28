@@ -428,94 +428,94 @@ impl Oryxis {
             Message::ShareConnection(idx) => {
                 self.overlay = None;
                 if let Some(conn) = self.connections.get(idx) {
-                    self.share_group_mode = false;
-                    self.share_filter = Some(oryxis_vault::ExportFilter::Hosts(vec![conn.id]));
-                    self.share_suggested_name = Some(share_file_name(&conn.label));
+                    self.share.group_mode = false;
+                    self.share.filter = Some(oryxis_vault::ExportFilter::Hosts(vec![conn.id]));
+                    self.share.suggested_name = Some(share_file_name(&conn.label));
                     self.show_share_dialog = true;
-                    self.share_password = String::new();
-                    self.share_include_keys = false;
-                    self.share_status = None;
+                    self.share.password = String::new();
+                    self.share.include_keys = false;
+                    self.share.status = None;
                 }
             }
             Message::ShowExportHosts(scope) => {
                 self.overlay = None;
-                self.share_group_mode = true;
+                self.share.group_mode = true;
                 // Pre-tick the in-scope folders. Inside a folder, tick it
                 // and its descendants (mirroring the old group + subgroup
                 // export); at root, tick every folder plus the ungrouped
                 // hosts so a no-op confirm exports everything.
                 match scope {
                     Some(gid) => {
-                        self.share_groups = self.group_with_descendants(gid);
-                        self.share_include_ungrouped = false;
-                        self.share_suggested_name = self
+                        self.share.groups = self.group_with_descendants(gid);
+                        self.share.include_ungrouped = false;
+                        self.share.suggested_name = self
                             .groups
                             .iter()
                             .find(|g| g.id == gid)
                             .map(|g| share_file_name(&g.label));
                     }
                     None => {
-                        self.share_groups =
+                        self.share.groups =
                             self.groups.iter().map(|g| g.id).collect();
-                        self.share_include_ungrouped = true;
-                        self.share_suggested_name = Some(share_file_name("hosts"));
+                        self.share.include_ungrouped = true;
+                        self.share.suggested_name = Some(share_file_name("hosts"));
                     }
                 }
-                self.share_filter = None;
+                self.share.filter = None;
                 self.show_share_dialog = true;
-                self.share_password = String::new();
-                self.share_include_keys = false;
-                self.share_status = None;
+                self.share.password = String::new();
+                self.share.include_keys = false;
+                self.share.status = None;
             }
             Message::ShareToggleGroup(gid) => {
-                if !self.share_groups.remove(&gid) {
-                    self.share_groups.insert(gid);
+                if !self.share.groups.remove(&gid) {
+                    self.share.groups.insert(gid);
                 }
             }
             Message::ShareToggleUngrouped => {
-                self.share_include_ungrouped = !self.share_include_ungrouped;
+                self.share.include_ungrouped = !self.share.include_ungrouped;
             }
             Message::SharePasswordChanged(v) => {
-                self.share_password = v;
+                self.share.password = v;
             }
             Message::ShareToggleKeys => {
-                self.share_include_keys = !self.share_include_keys;
+                self.share.include_keys = !self.share.include_keys;
             }
             Message::ShareConfirm => {
                 // In group mode the filter is derived from the ticked
                 // folders just before export, so a mid-dialog tick is
                 // always reflected.
-                if self.share_group_mode {
+                if self.share.group_mode {
                     let ids: Vec<uuid::Uuid> = self
                         .connections
                         .iter()
                         .filter(|c| match c.group_id {
-                            Some(g) => self.share_groups.contains(&g),
-                            None => self.share_include_ungrouped,
+                            Some(g) => self.share.groups.contains(&g),
+                            None => self.share.include_ungrouped,
                         })
                         .map(|c| c.id)
                         .collect();
                     if ids.is_empty() {
-                        self.share_status = Some(Err(
+                        self.share.status = Some(Err(
                             crate::i18n::t("export_nothing_selected").to_string(),
                         ));
                         return Ok(Task::none());
                     }
-                    self.share_filter =
+                    self.share.filter =
                         Some(oryxis_vault::ExportFilter::Hosts(ids));
                 }
-                if self.share_password.is_empty() {
-                    self.share_status = Some(Err("Password is required".into()));
+                if self.share.password.is_empty() {
+                    self.share.status = Some(Err("Password is required".into()));
                     return Ok(Task::none());
                 }
-                if self.vault.is_some() && self.share_filter.is_some() {
+                if self.vault.is_some() && self.share.filter.is_some() {
                     // Open the save dialog FIRST (off the event loop), then
                     // encrypt on the follow-up message. Argon2 takes tens of
                     // ms and the dialog can block for as long as the user
                     // browses; picking the path first also skips the work
                     // entirely when the user cancels.
                     let default_name = self
-                        .share_suggested_name
+                        .share.suggested_name
                         .clone()
                         .unwrap_or_else(|| "shared.oryxis".to_string());
                     return Ok(Task::perform(
@@ -534,16 +534,16 @@ impl Oryxis {
                 }
             }
             Message::SharePathChosen(path) => {
-                if let (Some(vault), Some(filter)) = (&self.vault, &self.share_filter) {
+                if let (Some(vault), Some(filter)) = (&self.vault, &self.share.filter) {
                     let options = oryxis_vault::ExportOptions {
-                        include_private_keys: self.share_include_keys,
+                        include_private_keys: self.share.include_keys,
                         filter: filter.clone(),
                         // A host/group share carries everything in scope,
                         // settings + cross-cutting families are withheld
                         // anyway because the filter is not `All`.
                         selection: oryxis_vault::ExportSelection::all(),
                     };
-                    match oryxis_vault::export_vault(vault, &self.share_password, options) {
+                    match oryxis_vault::export_vault(vault, &self.share.password, options) {
                         Ok(data) => {
                             match std::fs::write(&path, &data) {
                                 Ok(()) => {
@@ -560,14 +560,14 @@ impl Oryxis {
                                             std::fs::Permissions::from_mode(0o600),
                                         );
                                     }
-                                    self.share_status = Some(Ok(format!("Saved to {}", path.display())));
+                                    self.share.status = Some(Ok(format!("Saved to {}", path.display())));
                                     self.show_share_dialog = false;
                                     // Count exported hosts for the toast.
                                     // `Hosts` covers the per-host share and
                                     // the group-mode export (the only ways
                                     // the dialog opens); other variants fall
                                     // back to a generic confirmation.
-                                    let n = match &self.share_filter {
+                                    let n = match &self.share.filter {
                                         Some(oryxis_vault::ExportFilter::Hosts(ids)) => Some(ids.len()),
                                         _ => None,
                                     };
@@ -583,24 +583,24 @@ impl Oryxis {
                                     return Ok(self.show_toast(toast));
                                 }
                                 Err(e) => {
-                                    self.share_status = Some(Err(format!("Write failed: {}", e)));
+                                    self.share.status = Some(Err(format!("Write failed: {}", e)));
                                 }
                             }
                         }
                         Err(e) => {
-                            self.share_status = Some(Err(e.to_string()));
+                            self.share.status = Some(Err(e.to_string()));
                         }
                     }
                 }
             }
             Message::ShareDismiss => {
                 self.show_share_dialog = false;
-                self.share_filter = None;
-                self.share_status = None;
-                self.share_suggested_name = None;
-                self.share_group_mode = false;
-                self.share_groups.clear();
-                self.share_include_ungrouped = false;
+                self.share.filter = None;
+                self.share.status = None;
+                self.share.suggested_name = None;
+                self.share.group_mode = false;
+                self.share.groups.clear();
+                self.share.include_ungrouped = false;
             }
             m => return Err(m),
         }

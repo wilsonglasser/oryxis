@@ -297,6 +297,29 @@ impl std::fmt::Display for ProxyKind {
     }
 }
 
+/// Transient state for the "Share / Export hosts" dialog. The dialog-open
+/// flag stays on `Oryxis` (`show_share_dialog`); this groups everything the
+/// dialog edits. In group mode the effective `filter` is computed from the
+/// ticked `groups` (+ `include_ungrouped`) on confirm; a single-host share
+/// sets `filter` directly.
+#[derive(Debug, Clone, Default)]
+pub(crate) struct ShareForm {
+    pub password: String,
+    pub include_keys: bool,
+    pub filter: Option<oryxis_vault::ExportFilter>,
+    pub status: Option<Result<String, String>>,
+    /// Default file name suggested in the save dialog, derived from the
+    /// connection label (single host) or group label.
+    pub suggested_name: Option<String>,
+    /// True when opened via "Export hosts…" (renders the per-folder
+    /// include/exclude checklist); false for a single-host share.
+    pub group_mode: bool,
+    /// Folders whose hosts are included in a group-mode export.
+    pub groups: std::collections::HashSet<uuid::Uuid>,
+    /// Whether ungrouped (root) hosts are included in a group-mode export.
+    pub include_ungrouped: bool,
+}
+
 /// Add / edit form for a saved identity (username + optional password /
 /// key), shown in the keychain editor panel. The saved list lives in
 /// `Oryxis::identities`; this is editor state only. Password follows the

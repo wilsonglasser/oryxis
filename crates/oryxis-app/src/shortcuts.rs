@@ -278,9 +278,9 @@ impl Oryxis {
         }
         if self.show_share_dialog {
             self.show_share_dialog = false;
-            self.share_filter = None;
-            self.share_status = None;
-            self.share_suggested_name = None;
+            self.share.filter = None;
+            self.share.status = None;
+            self.share.suggested_name = None;
             return true;
         }
         if self.cloud_import_confirm_visible {

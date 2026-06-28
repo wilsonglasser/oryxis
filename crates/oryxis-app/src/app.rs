@@ -1346,26 +1346,10 @@ pub struct Oryxis {
     /// section's import card.
     pub(crate) ssh_config_import_status: Option<Result<String, String>>,
 
-    // Share
+    // Share. The dialog-open flag stays at the top level; its transient
+    // editor state is grouped in `share`.
     pub(crate) show_share_dialog: bool,
-    pub(crate) share_password: String,
-    pub(crate) share_include_keys: bool,
-    pub(crate) share_filter: Option<oryxis_vault::ExportFilter>,
-    pub(crate) share_status: Option<Result<String, String>>,
-    /// Default file name suggested in the save dialog, derived from the
-    /// connection label (single host) or group label. `None` falls back
-    /// to a generic name.
-    pub(crate) share_suggested_name: Option<String>,
-    /// True when the share dialog was opened via "Export hosts…" and
-    /// should render the per-folder include/exclude checklist. The
-    /// effective `share_filter` is computed from the ticked folders on
-    /// confirm. False for a single-host share, which sets `share_filter`
-    /// directly.
-    pub(crate) share_group_mode: bool,
-    /// Folders whose hosts are included in a group-mode export.
-    pub(crate) share_groups: std::collections::HashSet<uuid::Uuid>,
-    /// Whether ungrouped (root) hosts are included in a group-mode export.
-    pub(crate) share_include_ungrouped: bool,
+    pub(crate) share: crate::state::ShareForm,
 
     // SSH config import preview
     /// Hosts parsed from a picked `~/.ssh/config`, awaiting the user's

@@ -534,11 +534,11 @@ impl Oryxis {
 
         // Share dialog overlay
         if self.show_share_dialog {
-            let share_include_keys = self.share_include_keys;
+            let share_include_keys = self.share.include_keys;
             // Group-mode export: a per-folder include/exclude checklist
             // sits between the password and the keys toggle. A single-host
             // share skips it (no folder choice to make).
-            let group_picker: Element<'_, Message> = if self.share_group_mode {
+            let group_picker: Element<'_, Message> = if self.share.group_mode {
                 let mut list = column![text(crate::i18n::t("export_groups"))
                     .size(12)
                     .color(OryxisColors::t().text_muted)]
@@ -546,7 +546,7 @@ impl Oryxis {
                 for g in &self.groups {
                     let id = g.id;
                     list = list.push(
-                        iced::widget::checkbox(self.share_groups.contains(&id))
+                        iced::widget::checkbox(self.share.groups.contains(&id))
                             .label(g.label.as_str())
                             .on_toggle(move |_| Message::ShareToggleGroup(id))
                             .size(16)
@@ -554,7 +554,7 @@ impl Oryxis {
                     );
                 }
                 list = list.push(
-                    iced::widget::checkbox(self.share_include_ungrouped)
+                    iced::widget::checkbox(self.share.include_ungrouped)
                         .label(crate::i18n::t("export_ungrouped"))
                         .on_toggle(|_| Message::ShareToggleUngrouped)
                         .size(16)
@@ -572,7 +572,7 @@ impl Oryxis {
             } else {
                 Space::new().height(0).into()
             };
-            let dialog_title = if self.share_group_mode {
+            let dialog_title = if self.share.group_mode {
                 crate::i18n::t("export_hosts")
             } else {
                 crate::i18n::t("share")
@@ -583,7 +583,7 @@ impl Oryxis {
                     Space::new().height(12),
                     container(crate::widgets::password_input_with_eye(
                         crate::i18n::t("export_password"),
-                        &self.share_password,
+                        &self.share.password,
                         Message::SharePasswordChanged,
                         None,
                         self.revealed_secrets
@@ -616,7 +616,7 @@ impl Oryxis {
                         Space::new().width(8),
                         styled_button(crate::i18n::t("cancel"), Message::ShareDismiss, OryxisColors::t().text_muted),
                     ],
-                    if let Some(status) = &self.share_status {
+                    if let Some(status) = &self.share.status {
                         let (msg, color) = match status {
                             Ok(m) => (m.as_str(), OryxisColors::t().success),
                             Err(m) => (m.as_str(), OryxisColors::t().error),

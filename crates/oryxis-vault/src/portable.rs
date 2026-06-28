@@ -299,7 +299,7 @@ pub(crate) fn is_portable_setting(key: &str) -> bool {
     true
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum ExportFilter {
     /// Export everything.
     All,
