@@ -174,6 +174,7 @@ impl Oryxis {
                 connecting: None,
                 connect_anim_tick: 0,
                 last_window_press_at: None,
+                modal_stack: Vec::new(),
                 pending_legacy_algo: None,
                 pending_host_key: None,
                 host_key_response_tx: None,

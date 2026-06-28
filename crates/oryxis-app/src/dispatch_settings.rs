@@ -572,6 +572,7 @@ impl Oryxis {
                     ansi: std::array::from_fn(|i| hex(p.ansi[i])),
                     error: None,
                 });
+                self.open_modal(crate::state::Modal::ThemeEditor);
             }
             Message::ThemeImportOpen => {
                 self.show_theme_import = true;
@@ -603,6 +604,7 @@ impl Oryxis {
                         let mut form = crate::state::ThemeEditorForm::from_theme(&theme);
                         form.editing_id = None;
                         self.theme_editor = Some(form);
+                        self.open_modal(crate::state::Modal::ThemeEditor);
                         self.show_theme_import = false;
                     }
                     Err(e) => self.theme_import_error = Some(e),
@@ -690,11 +692,11 @@ impl Oryxis {
                 if let Some(theme) = self.custom_terminal_themes.get(idx) {
                     self.theme_editor =
                         Some(crate::state::ThemeEditorForm::from_theme(theme));
+                    self.open_modal(crate::state::Modal::ThemeEditor);
                 }
             }
             Message::ThemeEditorClose => {
-                self.theme_editor = None;
-                self.theme_color_popover = None;
+                self.close_modal(crate::state::Modal::ThemeEditor);
             }
             Message::ThemeEditorNameChanged(name) => {
                 if let Some(form) = &mut self.theme_editor {
@@ -720,8 +722,7 @@ impl Oryxis {
                         form.error = Some(err);
                     }
                 } else {
-                    self.theme_editor = None;
-                    self.theme_color_popover = None;
+                    self.close_modal(crate::state::Modal::ThemeEditor);
                 }
             }
             Message::ThemeDelete(idx) => {

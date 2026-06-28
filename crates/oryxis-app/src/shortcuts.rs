@@ -156,6 +156,41 @@ impl Oryxis {
         }
     }
 
+    /// Push a blocking modal onto the stack (idempotent: re-opening an
+    /// already-open modal keeps the single entry). The caller populates
+    /// the modal's companion data field alongside this call; the two are
+    /// kept in sync by routing every close through [`Self::close_modal`] /
+    /// [`Self::close_topmost_modal`].
+    pub(crate) fn open_modal(&mut self, m: crate::state::Modal) {
+        if !self.modal_stack.contains(&m) {
+            self.modal_stack.push(m);
+        }
+    }
+
+    /// Close a specific modal: drop it from the stack and clear its
+    /// companion field(s). Used by Cancel buttons / explicit-close
+    /// messages (Esc goes through [`Self::close_topmost_modal`]).
+    pub(crate) fn close_modal(&mut self, m: crate::state::Modal) {
+        self.modal_stack.retain(|x| *x != m);
+        self.clear_modal_state(m);
+    }
+
+    /// Clear the companion state a modal owns on `Oryxis`. Single place
+    /// the per-modal field cleanup lives, so the stack and the data fields
+    /// can never drift out of sync.
+    fn clear_modal_state(&mut self, m: crate::state::Modal) {
+        use crate::state::Modal;
+        match m {
+            Modal::ThemeEditor => {
+                self.theme_editor = None;
+                self.theme_color_popover = None;
+            }
+            Modal::FolderDelete => {
+                self.folder_delete = None;
+            }
+        }
+    }
+
     /// `true` when a global picker / modal overlay is open and should
     /// swallow keyboard input instead of letting it fall through to the
     /// PTY underneath. Mirrors the set checked by `close_topmost_modal`
@@ -175,14 +210,18 @@ impl Oryxis {
     /// dismisses it. The SFTP modals now layer at the app root via
     /// `layer_sftp_modals`, so they satisfy that invariant too.
     pub(crate) fn any_modal_blocks_input(&self) -> bool {
-        self.show_new_tab_picker
+        // Migrated modals (theme editor, folder-delete confirm) live on the
+        // stack; this `any` is exhaustive over their variants via
+        // `Modal::blocks_input`. The remaining flags below are checked until
+        // they migrate too.
+        self.modal_stack.iter().any(|m| m.blocks_input())
+            || self.show_new_tab_picker
             || self.show_tab_jump
             || self.show_icon_picker
             || self.show_theme_picker
             || self.show_chain_editor
             || self.show_session_group_panel
             || self.folder_rename.is_some()
-            || self.folder_delete.is_some()
             // Keyboard-interactive (2FA / OTP) prompt: its text fields own
             // the keyboard. Without this, a split-pane connect (where the
             // terminal stays live behind the app-level modal) would echo
@@ -190,7 +229,6 @@ impl Oryxis {
             // path is already covered by the `connecting.is_none()` gate.
             || self.pending_kbi_prompt.is_some()
             // Theme + share + cloud-import modals (all carry text inputs).
-            || self.theme_editor.is_some()
             || self.show_theme_import
             || self.ui_theme_editor.is_some()
             || self.show_share_dialog
@@ -216,6 +254,13 @@ impl Oryxis {
         // priority over the heavier modals below.
         if self.overlay.is_some() {
             self.overlay = None;
+            return true;
+        }
+        // Migrated modals: the stack's top is the most-recently-opened, so
+        // popping it honors visual stacking order directly. The remaining
+        // non-migrated modals are checked below until they move over too.
+        if let Some(m) = self.modal_stack.pop() {
+            self.clear_modal_state(m);
             return true;
         }
         // Global pickers (rendered over the whole window).
@@ -251,10 +296,6 @@ impl Oryxis {
             self.folder_rename = None;
             return true;
         }
-        if self.folder_delete.is_some() {
-            self.folder_delete = None;
-            return true;
-        }
         if self.show_session_group_panel {
             self.show_session_group_panel = false;
             self.session_group_panel_error = None;
@@ -262,11 +303,6 @@ impl Oryxis {
         }
         // Settings theme + share + cloud-import modals. Cleanup mirrors each
         // modal's own Cancel handler so Esc leaves no stale companion state.
-        if self.theme_editor.is_some() {
-            self.theme_editor = None;
-            self.theme_color_popover = None;
-            return true;
-        }
         if self.ui_theme_editor.is_some() {
             self.ui_theme_editor = None;
             self.ui_color_popover = None;

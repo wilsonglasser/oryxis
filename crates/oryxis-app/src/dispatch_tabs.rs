@@ -1090,7 +1090,7 @@ impl Oryxis {
             }
             Message::CancelFolderModal => {
                 self.folder_rename = None;
-                self.folder_delete = None;
+                self.close_modal(crate::state::Modal::FolderDelete);
             }
             Message::EditGroup(gid) => {
                 self.overlay = None;
@@ -1163,9 +1163,10 @@ impl Oryxis {
             Message::StartDeleteFolder(gid) => {
                 self.overlay = None;
                 self.folder_delete = Some(gid);
+                self.open_modal(crate::state::Modal::FolderDelete);
             }
             Message::DeleteFolderKeepHosts => {
-                if let Some(gid) = self.folder_delete.take() {
+                if let Some(gid) = self.folder_delete {
                     // Move every host inside the folder to the root.
                     for conn in self.connections.iter_mut() {
                         if conn.group_id == Some(gid) {
@@ -1183,10 +1184,11 @@ impl Oryxis {
                     if self.active_group == Some(gid) {
                         self.active_group = None;
                     }
+                    self.close_modal(crate::state::Modal::FolderDelete);
                 }
             }
             Message::DeleteFolderWithHosts => {
-                if let Some(gid) = self.folder_delete.take() {
+                if let Some(gid) = self.folder_delete {
                     // Drop every host inside the folder, then the folder.
                     let to_drop: Vec<_> = self
                         .connections
@@ -1205,6 +1207,7 @@ impl Oryxis {
                     if self.active_group == Some(gid) {
                         self.active_group = None;
                     }
+                    self.close_modal(crate::state::Modal::FolderDelete);
                 }
             }
             Message::CloseOtherTabs(idx) => {
