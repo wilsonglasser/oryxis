@@ -86,7 +86,7 @@ impl Oryxis {
         .padding(Padding { top: 16.0, right: 24.0, bottom: 16.0, left: 24.0 })
         .width(Length::Fill);
 
-        let status: Element<'_, Message> = if let Some(err) = &self.pf_error {
+        let status: Element<'_, Message> = if let Some(err) = &self.port_forward_form.error {
             container(Element::from(text(err.clone()).size(12).color(OryxisColors::t().error)))
                 .padding(Padding { top: 0.0, right: 24.0, bottom: 8.0, left: 24.0 }).into()
         } else {
@@ -297,7 +297,7 @@ impl Oryxis {
     }
 
     pub(crate) fn view_port_forward_panel(&self) -> Element<'_, Message> {
-        let is_editing = self.pf_editing_id.is_some();
+        let is_editing = self.port_forward_form.editing_id.is_some();
         let title = if is_editing { t("edit_port_forward") } else { t("new_port_forward") };
 
         let panel_header = container(
@@ -318,7 +318,7 @@ impl Oryxis {
 
         // Kind picker. All three directions are implemented.
         let kind_options = ForwardKind::ALL.to_vec();
-        let kind_picker = pick_list(Some(self.pf_kind), kind_options, |k: &ForwardKind| k.to_string())
+        let kind_picker = pick_list(Some(self.port_forward_form.kind), kind_options, |k: &ForwardKind| k.to_string())
             .on_select(Message::PfKindChanged)
             .padding(10)
             .style(crate::widgets::rounded_pick_list_style);
@@ -327,7 +327,7 @@ impl Oryxis {
         // resolves the label back to the connection id.
         let host_options: Vec<String> = self.connections.iter().map(|c| c.label.clone()).collect();
         let selected_host_label = self
-            .pf_host_id
+            .port_forward_form.host_id
             .and_then(|id| self.connections.iter().find(|c| c.id == id))
             .map(|c| c.label.clone());
         let host_lookup: std::collections::HashMap<String, uuid::Uuid> = self
@@ -355,9 +355,9 @@ impl Oryxis {
         };
 
         let mut form = column![
-            label_field(t("name"), &self.pf_label, "my-db-tunnel", Message::PfLabelChanged),
+            label_field(t("name"), &self.port_forward_form.label, "my-db-tunnel", Message::PfLabelChanged),
             Space::new().height(14),
-            text(t("pf_kind")).size(12).color(OryxisColors::t().text_secondary),
+            text(t("port_forward_form.kind")).size(12).color(OryxisColors::t().text_secondary),
             Space::new().height(4),
             kind_picker,
             Space::new().height(14),
@@ -365,24 +365,24 @@ impl Oryxis {
             Space::new().height(4),
             host_picker,
             Space::new().height(14),
-            label_field(t("pf_listen_host"), &self.pf_listen_host, "127.0.0.1", Message::PfListenHostChanged),
+            label_field(t("port_forward_form.listen_host"), &self.port_forward_form.listen_host, "127.0.0.1", Message::PfListenHostChanged),
             Space::new().height(14),
-            label_field(t("pf_listen_port"), &self.pf_listen_port, "8080", Message::PfListenPortChanged),
+            label_field(t("port_forward_form.listen_port"), &self.port_forward_form.listen_port, "8080", Message::PfListenPortChanged),
         ]
         .width(Length::Fill)
         .align_x(dir_align_x());
 
         // Target fields hidden for Dynamic (the SOCKS client picks the dest).
-        if self.pf_kind.has_target() {
+        if self.port_forward_form.kind.has_target() {
             form = form
                 .push(Space::new().height(14))
-                .push(label_field(t("pf_target_host"), &self.pf_target_host, "10.0.0.5", Message::PfTargetHostChanged))
+                .push(label_field(t("port_forward_form.target_host"), &self.port_forward_form.target_host, "10.0.0.5", Message::PfTargetHostChanged))
                 .push(Space::new().height(14))
-                .push(label_field(t("pf_target_port"), &self.pf_target_port, "5432", Message::PfTargetPortChanged));
+                .push(label_field(t("port_forward_form.target_port"), &self.port_forward_form.target_port, "5432", Message::PfTargetPortChanged));
         }
 
         // Remote bind on 0.0.0.0 needs `GatewayPorts yes` on the server.
-        if self.pf_kind == ForwardKind::Remote && self.pf_listen_host.trim() == "0.0.0.0" {
+        if self.port_forward_form.kind == ForwardKind::Remote && self.port_forward_form.listen_host.trim() == "0.0.0.0" {
             form = form
                 .push(Space::new().height(10))
                 .push(text(t("gateway_ports_hint")).size(11).color(OryxisColors::t().warning));
@@ -391,9 +391,9 @@ impl Oryxis {
         // A dynamic SOCKS forward is an unauthenticated proxy. Bound to a
         // non-loopback address it becomes an open proxy into the remote
         // network for anyone who can reach this host. Warn explicitly.
-        let listen = self.pf_listen_host.trim();
+        let listen = self.port_forward_form.listen_host.trim();
         let exposed = !matches!(listen, "" | "127.0.0.1" | "localhost" | "::1" | "[::1]");
-        if self.pf_kind == ForwardKind::Dynamic && exposed {
+        if self.port_forward_form.kind == ForwardKind::Dynamic && exposed {
             form = form
                 .push(Space::new().height(10))
                 .push(text(t("socks_open_proxy_hint")).size(11).color(OryxisColors::t().warning));
@@ -402,14 +402,14 @@ impl Oryxis {
         form = form
             .push(Space::new().height(14))
             .push(
-                checkbox(self.pf_auto_start)
-                    .label(t("pf_auto_start"))
+                checkbox(self.port_forward_form.auto_start)
+                    .label(t("port_forward_form.auto_start"))
                     .on_toggle(Message::PfAutoStartToggled)
                     .size(16)
                     .text_size(12),
             );
 
-        let panel_error: Element<'_, Message> = if let Some(err) = &self.pf_error {
+        let panel_error: Element<'_, Message> = if let Some(err) = &self.port_forward_form.error {
             Element::from(text(err.clone()).size(11).color(OryxisColors::t().error))
         } else {
             Space::new().height(0).into()
@@ -429,7 +429,7 @@ impl Oryxis {
         });
 
         let mut bottom = column![save_btn];
-        if let Some(edit_id) = self.pf_editing_id
+        if let Some(edit_id) = self.port_forward_form.editing_id
             && let Some(idx) = self.port_forward_rules.iter().position(|r| r.id == edit_id)
         {
             let del_btn = button(

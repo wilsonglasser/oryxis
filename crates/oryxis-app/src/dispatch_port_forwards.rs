@@ -44,55 +44,55 @@ impl Oryxis {
             Message::ShowPortForwardPanel => {
                 self.overlay = None;
                 self.show_port_forward_panel = true;
-                self.pf_editing_id = None;
-                self.pf_label.clear();
-                self.pf_kind = oryxis_core::models::port_forward_rule::ForwardKind::Local;
+                self.port_forward_form.editing_id = None;
+                self.port_forward_form.label.clear();
+                self.port_forward_form.kind = oryxis_core::models::port_forward_rule::ForwardKind::Local;
                 // Default the host to the first connection so the picker
                 // isn't empty on a fresh rule.
-                self.pf_host_id = self.connections.first().map(|c| c.id);
-                self.pf_listen_host = "127.0.0.1".into();
-                self.pf_listen_port.clear();
-                self.pf_target_host.clear();
-                self.pf_target_port.clear();
-                self.pf_auto_start = false;
-                self.pf_error = None;
+                self.port_forward_form.host_id = self.connections.first().map(|c| c.id);
+                self.port_forward_form.listen_host = "127.0.0.1".into();
+                self.port_forward_form.listen_port.clear();
+                self.port_forward_form.target_host.clear();
+                self.port_forward_form.target_port.clear();
+                self.port_forward_form.auto_start = false;
+                self.port_forward_form.error = None;
             }
             Message::HidePortForwardPanel => {
                 self.show_port_forward_panel = false;
             }
-            Message::PfLabelChanged(v) => self.pf_label = v,
-            Message::PfKindChanged(k) => self.pf_kind = k,
-            Message::PfHostChanged(id) => self.pf_host_id = Some(id),
-            Message::PfListenHostChanged(v) => self.pf_listen_host = v,
+            Message::PfLabelChanged(v) => self.port_forward_form.label = v,
+            Message::PfKindChanged(k) => self.port_forward_form.kind = k,
+            Message::PfHostChanged(id) => self.port_forward_form.host_id = Some(id),
+            Message::PfListenHostChanged(v) => self.port_forward_form.listen_host = v,
             Message::PfListenPortChanged(v) => {
-                self.pf_listen_port = v.chars().filter(|c| c.is_ascii_digit()).collect();
+                self.port_forward_form.listen_port = v.chars().filter(|c| c.is_ascii_digit()).collect();
             }
-            Message::PfTargetHostChanged(v) => self.pf_target_host = v,
+            Message::PfTargetHostChanged(v) => self.port_forward_form.target_host = v,
             Message::PfTargetPortChanged(v) => {
-                self.pf_target_port = v.chars().filter(|c| c.is_ascii_digit()).collect();
+                self.port_forward_form.target_port = v.chars().filter(|c| c.is_ascii_digit()).collect();
             }
-            Message::PfAutoStartToggled(v) => self.pf_auto_start = v,
+            Message::PfAutoStartToggled(v) => self.port_forward_form.auto_start = v,
             Message::EditPortForwardRule(idx) => {
                 if let Some(rule) = self.port_forward_rules.get(idx) {
                     self.show_port_forward_panel = true;
-                    self.pf_editing_id = Some(rule.id);
-                    self.pf_label = rule.label.clone();
-                    self.pf_kind = rule.kind;
-                    self.pf_host_id = Some(rule.host_id);
-                    self.pf_listen_host = rule.listen_host.clone();
-                    self.pf_listen_port = rule.listen_port.to_string();
-                    self.pf_target_host = rule.target_host.clone();
-                    self.pf_target_port = rule.target_port.to_string();
-                    self.pf_auto_start = rule.auto_start;
-                    self.pf_error = None;
+                    self.port_forward_form.editing_id = Some(rule.id);
+                    self.port_forward_form.label = rule.label.clone();
+                    self.port_forward_form.kind = rule.kind;
+                    self.port_forward_form.host_id = Some(rule.host_id);
+                    self.port_forward_form.listen_host = rule.listen_host.clone();
+                    self.port_forward_form.listen_port = rule.listen_port.to_string();
+                    self.port_forward_form.target_host = rule.target_host.clone();
+                    self.port_forward_form.target_port = rule.target_port.to_string();
+                    self.port_forward_form.auto_start = rule.auto_start;
+                    self.port_forward_form.error = None;
                 }
             }
             Message::SavePortForwardRule => {
                 if let Some(err) = self.save_port_forward_rule() {
-                    self.pf_error = Some(err);
+                    self.port_forward_form.error = Some(err);
                 } else {
                     self.show_port_forward_panel = false;
-                    self.pf_error = None;
+                    self.port_forward_form.error = None;
                     self.load_data_from_vault();
                 }
             }
@@ -142,14 +142,14 @@ impl Oryxis {
                         // with no UI to stop (or against the user's intent).
                         if was_starting && self.port_forward_rules.iter().any(|r| r.id == id) {
                             self.active_forwards.insert(id, session);
-                            self.pf_error = None;
+                            self.port_forward_form.error = None;
                         } else {
                             drop(session);
                         }
                     }
                     Err(e) => {
                         // Toggle bounces back to off and the error surfaces.
-                        self.pf_error = Some(e);
+                        self.port_forward_form.error = Some(e);
                     }
                 }
             }
@@ -183,25 +183,25 @@ impl Oryxis {
     /// Validate the editor draft and persist it. Returns `Some(error)` on
     /// a validation failure (left in the panel), `None` on success.
     fn save_port_forward_rule(&mut self) -> Option<String> {
-        let label = self.pf_label.trim();
+        let label = self.port_forward_form.label.trim();
         if label.is_empty() {
             return Some(crate::i18n::t("pf_err_required").to_string());
         }
-        let Some(host_id) = self.pf_host_id else {
+        let Some(host_id) = self.port_forward_form.host_id else {
             return Some(crate::i18n::t("pf_err_host").to_string());
         };
         if !self.connections.iter().any(|c| c.id == host_id) {
             return Some(crate::i18n::t("pf_err_host").to_string());
         }
-        let Some(listen_port) = parse_port(&self.pf_listen_port) else {
+        let Some(listen_port) = parse_port(&self.port_forward_form.listen_port) else {
             return Some(crate::i18n::t("pf_err_port").to_string());
         };
-        let (target_host, target_port) = if self.pf_kind.has_target() {
-            let th = self.pf_target_host.trim();
+        let (target_host, target_port) = if self.port_forward_form.kind.has_target() {
+            let th = self.port_forward_form.target_host.trim();
             if th.is_empty() {
                 return Some(crate::i18n::t("pf_err_required").to_string());
             }
-            let Some(tp) = parse_port(&self.pf_target_port) else {
+            let Some(tp) = parse_port(&self.port_forward_form.target_port) else {
                 return Some(crate::i18n::t("pf_err_port").to_string());
             };
             (th.to_string(), tp)
@@ -209,23 +209,23 @@ impl Oryxis {
             (String::new(), 0)
         };
 
-        let mut rule = if let Some(id) = self.pf_editing_id {
+        let mut rule = if let Some(id) = self.port_forward_form.editing_id {
             self.port_forward_rules
                 .iter()
                 .find(|r| r.id == id)
                 .cloned()
-                .unwrap_or_else(|| PortForwardRule::new("", self.pf_kind, host_id))
+                .unwrap_or_else(|| PortForwardRule::new("", self.port_forward_form.kind, host_id))
         } else {
-            PortForwardRule::new("", self.pf_kind, host_id)
+            PortForwardRule::new("", self.port_forward_form.kind, host_id)
         };
         rule.label = label.to_string();
-        rule.kind = self.pf_kind;
+        rule.kind = self.port_forward_form.kind;
         rule.host_id = host_id;
-        rule.listen_host = self.pf_listen_host.trim().to_string();
+        rule.listen_host = self.port_forward_form.listen_host.trim().to_string();
         rule.listen_port = listen_port;
         rule.target_host = target_host;
         rule.target_port = target_port;
-        rule.auto_start = self.pf_auto_start;
+        rule.auto_start = self.port_forward_form.auto_start;
         rule.updated_at = chrono::Utc::now();
 
         let vault = self.vault.as_ref()?;
@@ -257,7 +257,7 @@ impl Oryxis {
             .find(|c| c.id == rule.host_id)
             .cloned()
         else {
-            self.pf_error = Some(crate::i18n::t("pf_err_host").to_string());
+            self.port_forward_form.error = Some(crate::i18n::t("pf_err_host").to_string());
             return Task::none();
         };
 

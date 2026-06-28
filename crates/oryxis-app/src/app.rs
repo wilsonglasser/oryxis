@@ -792,16 +792,7 @@ pub struct Oryxis {
     /// prevents a double-start).
     pub(crate) port_forward_starting: std::collections::HashSet<Uuid>,
     pub(crate) show_port_forward_panel: bool,
-    pub(crate) pf_label: String,
-    pub(crate) pf_kind: oryxis_core::models::port_forward_rule::ForwardKind,
-    pub(crate) pf_host_id: Option<Uuid>,
-    pub(crate) pf_listen_host: String,
-    pub(crate) pf_listen_port: String,
-    pub(crate) pf_target_host: String,
-    pub(crate) pf_target_port: String,
-    pub(crate) pf_auto_start: bool,
-    pub(crate) pf_editing_id: Option<Uuid>,
-    pub(crate) pf_error: Option<String>,
+    pub(crate) port_forward_form: crate::state::PortForwardRuleForm,
     pub(crate) hovered_port_forward_card: Option<usize>,
     pub(crate) port_forward_search: String,
     /// Toolbar search needles for the Cloud Accounts and Proxies views.

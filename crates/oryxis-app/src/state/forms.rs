@@ -297,6 +297,46 @@ impl std::fmt::Display for ProxyKind {
     }
 }
 
+/// Add / edit form for a standalone port-forward rule (the
+/// `PortForwardRule` entity, independent of any terminal session), shown
+/// in the Port Forwards panel. Distinct from [`PortForwardForm`], which
+/// holds the inline forwards edited within a connection. The saved rules
+/// live in `Oryxis::port_forward_rules`; this is editor state only.
+#[derive(Debug, Clone)]
+pub(crate) struct PortForwardRuleForm {
+    pub label: String,
+    pub kind: oryxis_core::models::port_forward_rule::ForwardKind,
+    /// Host this rule tunnels through (`None` until picked).
+    pub host_id: Option<Uuid>,
+    pub listen_host: String,
+    pub listen_port: String,
+    pub target_host: String,
+    pub target_port: String,
+    pub auto_start: bool,
+    /// `Some` when editing an existing rule (update in place).
+    pub editing_id: Option<Uuid>,
+    pub error: Option<String>,
+}
+
+impl Default for PortForwardRuleForm {
+    fn default() -> Self {
+        Self {
+            label: String::new(),
+            kind: oryxis_core::models::port_forward_rule::ForwardKind::Local,
+            host_id: None,
+            // Loopback is the safe default listen address for a local
+            // forward; binding 0.0.0.0 is opt-in.
+            listen_host: "127.0.0.1".into(),
+            listen_port: String::new(),
+            target_host: String::new(),
+            target_port: String::new(),
+            auto_start: false,
+            editing_id: None,
+            error: None,
+        }
+    }
+}
+
 /// Transient state for the "Share / Export hosts" dialog. The dialog-open
 /// flag stays on `Oryxis` (`show_share_dialog`); this groups everything the
 /// dialog edits. In group mode the effective `filter` is computed from the
