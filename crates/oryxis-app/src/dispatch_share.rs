@@ -360,7 +360,7 @@ impl Oryxis {
                 self.import_status = None;
                 self.import_file_data = None;
                 self.import_summary = None;
-                self.sftp_backup_open = false;
+                self.sftp_backup.open = false;
             }
 
             // ── Backup / Restore over SFTP ──
@@ -384,29 +384,29 @@ impl Oryxis {
                 self.open_sftp_backup_picker(true);
             }
             Message::SftpBackupHostSelected(idx) => {
-                self.sftp_backup_host = Some(idx);
+                self.sftp_backup.host = Some(idx);
             }
             Message::SftpBackupPathChanged(v) => {
-                self.sftp_backup_path = v;
+                self.sftp_backup.path = v;
             }
             Message::SftpBackupCancel => {
-                self.sftp_backup_open = false;
-                self.sftp_backup_busy = false;
-                self.sftp_backup_status = None;
+                self.sftp_backup.open = false;
+                self.sftp_backup.busy = false;
+                self.sftp_backup.status = None;
             }
             Message::SftpBackupConfirm => {
                 return self.run_sftp_backup();
             }
             Message::SftpBackupExportDone(res) => {
-                self.sftp_backup_busy = false;
+                self.sftp_backup.busy = false;
                 self.host_key_response_tx = None;
                 match res {
-                    Ok(msg) => self.sftp_backup_status = Some(Ok(msg)),
-                    Err(e) => self.sftp_backup_status = Some(Err(e)),
+                    Ok(msg) => self.sftp_backup.status = Some(Ok(msg)),
+                    Err(e) => self.sftp_backup.status = Some(Err(e)),
                 }
             }
             Message::SftpBackupImportDone(res) => {
-                self.sftp_backup_busy = false;
+                self.sftp_backup.busy = false;
                 self.host_key_response_tx = None;
                 match res {
                     Ok(data) => {
@@ -414,13 +414,13 @@ impl Oryxis {
                         // picker, so open the import dialog and inspect the
                         // blob straight away (jumps to category selection;
                         // a wrong password surfaces its error there).
-                        self.sftp_backup_open = false;
-                        self.sftp_backup_status = None;
+                        self.sftp_backup.open = false;
+                        self.sftp_backup.status = None;
                         self.import_file_data = Some(data);
                         self.show_import_dialog = true;
                         return Ok(Task::done(Message::ImportInspect));
                     }
-                    Err(e) => self.sftp_backup_status = Some(Err(e)),
+                    Err(e) => self.sftp_backup.status = Some(Err(e)),
                 }
             }
 
@@ -665,15 +665,15 @@ impl Oryxis {
     /// The host defaults to the first connection and the path to a plain
     /// `vault.oryxis` so a one-host user can confirm immediately.
     fn open_sftp_backup_picker(&mut self, is_import: bool) {
-        self.sftp_backup_is_import = is_import;
-        self.sftp_backup_open = true;
-        self.sftp_backup_busy = false;
-        self.sftp_backup_status = None;
-        if self.sftp_backup_path.trim().is_empty() {
-            self.sftp_backup_path = "vault.oryxis".to_string();
+        self.sftp_backup.is_import = is_import;
+        self.sftp_backup.open = true;
+        self.sftp_backup.busy = false;
+        self.sftp_backup.status = None;
+        if self.sftp_backup.path.trim().is_empty() {
+            self.sftp_backup.path = "vault.oryxis".to_string();
         }
-        if self.sftp_backup_host.is_none() && !self.connections.is_empty() {
-            self.sftp_backup_host = Some(0);
+        if self.sftp_backup.host.is_none() && !self.connections.is_empty() {
+            self.sftp_backup.host = Some(0);
         }
     }
 
@@ -682,30 +682,30 @@ impl Oryxis {
     /// with the shared host-key modal) and transfer the encrypted blob.
     fn run_sftp_backup(&mut self) -> Result<Task<Message>, Message> {
         // Guard against a second confirm while a transfer is in flight.
-        if self.sftp_backup_busy {
+        if self.sftp_backup.busy {
             return Ok(Task::none());
         }
         let Some(conn) = self
-            .sftp_backup_host
+            .sftp_backup.host
             .and_then(|i| self.connections.get(i))
             .cloned()
         else {
-            self.sftp_backup_status =
-                Some(Err(crate::i18n::t("sftp_backup_pick_host").to_string()));
+            self.sftp_backup.status =
+                Some(Err(crate::i18n::t("sftp_backup.pick_host").to_string()));
             return Ok(Task::none());
         };
-        let path = self.sftp_backup_path.trim().to_string();
+        let path = self.sftp_backup.path.trim().to_string();
         if path.is_empty() {
-            self.sftp_backup_status =
-                Some(Err(crate::i18n::t("sftp_backup_path_required").to_string()));
+            self.sftp_backup.status =
+                Some(Err(crate::i18n::t("sftp_backup.path_required").to_string()));
             return Ok(Task::none());
         }
-        let is_import = self.sftp_backup_is_import;
+        let is_import = self.sftp_backup.is_import;
         // Restore needs the decrypt password up front (mirrors export, which
         // collects the encrypt password before the picker opens). The fetched
         // blob is inspected with it as soon as it lands.
         if is_import && self.import_password.is_empty() {
-            self.sftp_backup_status =
+            self.sftp_backup.status =
                 Some(Err(crate::i18n::t("password_required").to_string()));
             return Ok(Task::none());
         }
@@ -727,21 +727,21 @@ impl Oryxis {
             match oryxis_vault::export_vault(vault, &self.export_password, options) {
                 Ok(d) => Some(d),
                 Err(e) => {
-                    self.sftp_backup_status = Some(Err(e.to_string()));
+                    self.sftp_backup.status = Some(Err(e.to_string()));
                     return Ok(Task::none());
                 }
             }
         };
 
-        self.sftp_backup_busy = true;
-        self.sftp_backup_status = None;
+        self.sftp_backup.busy = true;
+        self.sftp_backup.status = None;
 
         // Status formatter shared by both connect paths. Captures clones so
         // `path` stays owned for the remote-path bindings below.
         let path_msg = path.clone();
         let done_ok = move |outcome: BackupOutcome| match outcome {
             BackupOutcome::Export(n) => Message::SftpBackupExportDone(Ok(crate::i18n::t(
-                "sftp_backup_export_ok",
+                "sftp_backup.export_ok",
             )
             .replace("{host}", &label)
             .replace("{path}", &path_msg)
@@ -761,7 +761,7 @@ impl Oryxis {
         });
 
         if let Some(session) = existing {
-            let remote = self.sftp_backup_path.trim().to_string();
+            let remote = self.sftp_backup.path.trim().to_string();
             let data = export_data;
             return Ok(Task::perform(
                 async move {
@@ -769,7 +769,7 @@ impl Oryxis {
                     if is_import {
                         let bytes = client.read_file(&remote).await.map_err(|e| e.to_string())?;
                         if !oryxis_vault::is_valid_export(&bytes) {
-                            return Err(crate::i18n::t("sftp_backup_not_export").to_string());
+                            return Err(crate::i18n::t("sftp_backup.not_export").to_string());
                         }
                         Ok(BackupOutcome::Import(bytes))
                     } else {
@@ -871,7 +871,7 @@ impl Oryxis {
                         let bytes =
                             client.read_file(&remote).await.map_err(|e| e.to_string())?;
                         if !oryxis_vault::is_valid_export(&bytes) {
-                            return Err(crate::i18n::t("sftp_backup_not_export").to_string());
+                            return Err(crate::i18n::t("sftp_backup.not_export").to_string());
                         }
                         Ok(BackupOutcome::Import(bytes))
                     } else {

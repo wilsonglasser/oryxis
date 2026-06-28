@@ -2162,12 +2162,12 @@ impl Oryxis {
                 // SFTP backup-target picker (export to / import from a
                 // saved host). Reuses the export/import password + selection
                 // state above; here the user only picks the host and path.
-                if self.sftp_backup_open {
-                    let is_import = self.sftp_backup_is_import;
+                if self.sftp_backup.open {
+                    let is_import = self.sftp_backup.is_import;
                     let host_options: Vec<String> =
                         self.connections.iter().map(|c| c.label.clone()).collect();
                     let selected_host = self
-                        .sftp_backup_host
+                        .sftp_backup.host
                         .and_then(|i| self.connections.get(i))
                         .map(|c| c.label.clone());
                     let host_lookup: std::collections::HashMap<String, usize> = self
@@ -2185,7 +2185,7 @@ impl Oryxis {
                         .width(300)
                         .padding(10)
                         .style(crate::widgets::rounded_pick_list_style);
-                    let path_field = text_input("vault.oryxis", &self.sftp_backup_path)
+                    let path_field = text_input("vault.oryxis", &self.sftp_backup.path)
                         .on_input(Message::SftpBackupPathChanged)
                         .on_submit(Message::SftpBackupConfirm)
                         .width(300)
@@ -2215,17 +2215,17 @@ impl Oryxis {
                         None
                     };
                     let title_key = if is_import { "restore_from_sftp" } else { "backup_to_sftp" };
-                    let confirm_msg = if self.sftp_backup_busy {
+                    let confirm_msg = if self.sftp_backup.busy {
                         None
                     } else {
                         Some(Message::SftpBackupConfirm)
                     };
-                    let confirm_label = if self.sftp_backup_busy {
-                        crate::i18n::t("sftp_backup_working")
+                    let confirm_label = if self.sftp_backup.busy {
+                        crate::i18n::t("sftp_backup.working")
                     } else if is_import {
-                        crate::i18n::t("sftp_backup_restore_confirm")
+                        crate::i18n::t("sftp_backup.restore_confirm")
                     } else {
-                        crate::i18n::t("sftp_backup_confirm")
+                        crate::i18n::t("sftp_backup.confirm")
                     };
                     let confirm_btn =
                         styled_button_opt(confirm_label, confirm_msg, OryxisColors::t().success);
@@ -2237,13 +2237,13 @@ impl Oryxis {
                     let mut sftp_section: iced::widget::Column<'_, Message> = column![
                         text(crate::i18n::t(title_key)).size(13).color(OryxisColors::t().text_primary),
                         Space::new().height(2),
-                        text(crate::i18n::t("sftp_backup_hint")).size(12).color(OryxisColors::t().text_muted),
+                        text(crate::i18n::t("sftp_backup.hint")).size(12).color(OryxisColors::t().text_muted),
                         Space::new().height(8),
-                        text(crate::i18n::t("sftp_backup_host")).size(12).color(OryxisColors::t().text_secondary),
+                        text(crate::i18n::t("sftp_backup.host")).size(12).color(OryxisColors::t().text_secondary),
                         Space::new().height(4),
                         host_picker,
                         Space::new().height(8),
-                        text(crate::i18n::t("sftp_backup_remote_path")).size(12).color(OryxisColors::t().text_secondary),
+                        text(crate::i18n::t("sftp_backup.remote_path")).size(12).color(OryxisColors::t().text_secondary),
                         Space::new().height(4),
                         path_field,
                     ];
@@ -2255,7 +2255,7 @@ impl Oryxis {
                     sftp_section = sftp_section
                         .push(Space::new().height(10))
                         .push(dir_row(vec![confirm_btn, Space::new().width(8).into(), cancel_btn]));
-                    if let Some(status) = &self.sftp_backup_status {
+                    if let Some(status) = &self.sftp_backup.status {
                         let (msg, color) = match status {
                             Ok(m) => (m.clone(), OryxisColors::t().success),
                             Err(e) => (e.clone(), OryxisColors::t().error),

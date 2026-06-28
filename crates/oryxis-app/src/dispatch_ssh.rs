@@ -1267,7 +1267,7 @@ impl Oryxis {
                 } else {
                     // Drop any "busy" backup spinner while the dialog is up so
                     // its retry (SftpBackupConfirm) isn't blocked by the guard.
-                    self.sftp_backup_busy = false;
+                    self.sftp_backup.busy = false;
                     self.pending_legacy_algo = Some(crate::state::PendingLegacyAlgo {
                         conn_id,
                         category,
@@ -1286,9 +1286,9 @@ impl Oryxis {
                 // Clear the other paths' transient connecting state so
                 // cancelling the dialog never leaves a stuck "busy" backup or
                 // a spinning SFTP pane.
-                self.sftp_backup_busy = false;
-                if self.sftp_backup_open {
-                    self.sftp_backup_status = Some(Err(msg.to_string()));
+                self.sftp_backup.busy = false;
+                if self.sftp_backup.open {
+                    self.sftp_backup.status = Some(Err(msg.to_string()));
                 }
                 for side in [
                     crate::state::SftpPaneSide::Left,

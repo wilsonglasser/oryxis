@@ -1245,19 +1245,10 @@ pub struct Oryxis {
     pub(crate) import_status: Option<Result<String, String>>,
     /// SFTP backup target picker. Shown when the user routes an
     /// export/import through a remote host instead of a local file.
-    /// `sftp_backup_is_import` flips the same picker between writing the
-    /// encrypted blob (export) and reading it back (import); the
-    /// export/import password + selection state above is reused as-is.
-    pub(crate) sftp_backup_open: bool,
-    pub(crate) sftp_backup_is_import: bool,
-    /// Index into `connections` of the chosen host, `None` until picked.
-    pub(crate) sftp_backup_host: Option<usize>,
-    /// Remote path the blob is written to / read from.
-    pub(crate) sftp_backup_path: String,
-    /// True while the connect + transfer task is in flight (disables the
-    /// confirm button and shows progress).
-    pub(crate) sftp_backup_busy: bool,
-    pub(crate) sftp_backup_status: Option<Result<String, String>>,
+    /// `is_import` flips the same picker between writing the encrypted
+    /// blob (export) and reading it back (import); the export/import
+    /// password + selection state above is reused as-is.
+    pub(crate) sftp_backup: crate::state::SftpBackupForm,
     /// Latest result of an `~/.ssh/config` import, `Ok(message)` is
     /// rendered as a green banner, `Err` as red, in the Security
     /// section's import card.

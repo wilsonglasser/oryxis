@@ -297,6 +297,24 @@ impl std::fmt::Display for ProxyKind {
     }
 }
 
+/// SFTP backup target picker state, shown when an export/import is routed
+/// through a remote host instead of a local file. `is_import` flips the
+/// picker between writing the encrypted blob (export) and reading it back
+/// (import); the export/import password + selection state is reused.
+#[derive(Debug, Clone, Default)]
+pub(crate) struct SftpBackupForm {
+    /// Whether the picker is currently shown.
+    pub open: bool,
+    pub is_import: bool,
+    /// Index into `connections` of the chosen host, `None` until picked.
+    pub host: Option<usize>,
+    /// Remote path the blob is written to / read from.
+    pub path: String,
+    /// True while the connect + transfer task is in flight.
+    pub busy: bool,
+    pub status: Option<Result<String, String>>,
+}
+
 /// Rename / restyle form for a user group (folder), shown in the group
 /// edit panel. Distinct from the dynamic-group editor ([`CloudDynamicForm`])
 /// which edits cloud-backed groups.
