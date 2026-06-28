@@ -490,21 +490,13 @@ pub struct Oryxis {
     // Keys
     pub(crate) keys: Vec<SshKey>,
     pub(crate) show_key_panel: bool,
-    pub(crate) key_import_label: String,
+    /// Live multi-line PEM editor buffer. Stays on `Oryxis` (not in
+    /// `key_import_form`) because `text_editor::Content` is not `Clone`.
     pub(crate) key_import_content: text_editor::Content,
-    pub(crate) key_import_pem: String,  // raw string for import
-    /// Passphrase for an encrypted private key. Lives in memory only, once
-    /// the key is decrypted on import, it is re-encoded unencrypted and the
-    /// vault's master key takes over for at-rest protection.
-    pub(crate) key_import_passphrase: String,
-    /// Set when import_key returns `KeyNeedsPassphrase`. Drives the
-    /// passphrase row in the import panel.
-    pub(crate) key_import_passphrase_required: bool,
-    pub(crate) key_import_passphrase_visible: bool,
+    pub(crate) key_import_form: crate::state::KeyImportForm,
     pub(crate) key_error: Option<String>,
     pub(crate) key_success: Option<String>,
     pub(crate) key_context_menu: Option<usize>,
-    pub(crate) editing_key_id: Option<Uuid>,
     pub(crate) key_search: String,
     /// Workspace-mode contextual search backing for Snippets view.
     /// Matches against snippet label + command.

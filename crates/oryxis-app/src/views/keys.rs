@@ -578,8 +578,8 @@ impl Oryxis {
     }
 
     pub(crate) fn view_key_import_panel(&self) -> Element<'_, Message> {
-        let has_content = !self.key_import_pem.is_empty();
-        let panel_title = if self.editing_key_id.is_some() { t("edit_key") } else { t("add_key") };
+        let has_content = !self.key_import_form.pem.is_empty();
+        let panel_title = if self.key_import_form.editing_id.is_some() { t("edit_key") } else { t("add_key") };
 
         // Panel header
         let panel_header = container(
@@ -603,7 +603,7 @@ impl Oryxis {
         let name_field = column![
             text(t("name")).size(12).color(OryxisColors::t().text_secondary),
             Space::new().height(6),
-            text_input("my-server-key", &self.key_import_label)
+            text_input("my-server-key", &self.key_import_form.label)
                 .on_input(Message::KeyImportLabelChanged)
                 .padding(10)
                 .style(crate::widgets::rounded_input_style).align_x(dir_align_x()),
@@ -647,7 +647,7 @@ impl Oryxis {
                     Space::new().width(6).into(),
                     text(
                         t("loaded_bytes")
-                            .replacen("{bytes}", &self.key_import_pem.len().to_string(), 1),
+                            .replacen("{bytes}", &self.key_import_form.pem.len().to_string(), 1),
                     )
                     .size(12).color(OryxisColors::t().success).into(),
                 ]).align_y(iced::Alignment::Center),
@@ -669,7 +669,7 @@ impl Oryxis {
         // Passphrase prompt, shown only after import_key signals the key
         // is encrypted. The hint explains the one-time-decrypt model so
         // users understand we're not storing the passphrase anywhere.
-        let passphrase_section: Element<'_, Message> = if self.key_import_passphrase_required {
+        let passphrase_section: Element<'_, Message> = if self.key_import_form.passphrase_required {
             column![
                 Space::new().height(12),
                 text(t("key_passphrase_label")).size(12).color(OryxisColors::t().text_secondary),
@@ -679,10 +679,10 @@ impl Oryxis {
                     Space::new().width(10).into(),
                     password_input_with_eye(
                         t("key_passphrase_placeholder"),
-                        &self.key_import_passphrase,
+                        &self.key_import_form.passphrase,
                         Message::KeyImportPassphraseChanged,
                         Some(Message::ImportKey),
-                        self.key_import_passphrase_visible,
+                        self.key_import_form.passphrase_visible,
                         Message::KeyImportPassphraseToggleVisibility,
                         10.0,
                     ),
@@ -705,7 +705,7 @@ impl Oryxis {
         };
 
         // Save button
-        let save_label = if self.editing_key_id.is_some() { t("update_key") } else { t("save_key") };
+        let save_label = if self.key_import_form.editing_id.is_some() { t("update_key") } else { t("save_key") };
         let save_btn = button(
             container(text(save_label).size(13).color(OryxisColors::t().text_primary))
                 .padding(Padding { top: 10.0, right: 0.0, bottom: 10.0, left: 0.0 })

@@ -297,6 +297,28 @@ impl std::fmt::Display for ProxyKind {
     }
 }
 
+/// Import / edit form for an SSH key, shown in the keychain key panel.
+/// The multi-line PEM editor buffer (`key_import_content`) stays on
+/// `Oryxis` because `text_editor::Content` is not `Clone`; this struct
+/// holds the surrounding scalar inputs. The saved keys live in
+/// `Oryxis::keys`.
+#[derive(Debug, Clone, Default)]
+pub(crate) struct KeyImportForm {
+    pub label: String,
+    /// Raw PEM string for import (mirrors the live editor buffer).
+    pub pem: String,
+    /// Passphrase for an encrypted private key. In memory only; once the
+    /// key is decrypted on import it is re-encoded unencrypted and the
+    /// vault's master key takes over for at-rest protection.
+    pub passphrase: String,
+    /// Set when import_key returns `KeyNeedsPassphrase`; drives the
+    /// passphrase row in the import panel.
+    pub passphrase_required: bool,
+    pub passphrase_visible: bool,
+    /// `Some` when editing an existing key (update in place).
+    pub editing_id: Option<Uuid>,
+}
+
 /// Add / edit form for a standalone port-forward rule (the
 /// `PortForwardRule` entity, independent of any terminal session), shown
 /// in the Port Forwards panel. Distinct from [`PortForwardForm`], which
