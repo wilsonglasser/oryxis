@@ -30,7 +30,7 @@ impl Oryxis {
                 // Close any other right-panel (mutually exclusive slot).
                 self.show_host_panel = false;
                 self.cloud_form.visible = false;
-                self.cloud_dynamic_form_visible = false;
+                self.cloud_dynamic_form.visible = false;
                 self.group_edit_visible = false;
                 self.cloud_discover_visible = true;
                 self.cloud_discover_profile_id = Some(profile_id);

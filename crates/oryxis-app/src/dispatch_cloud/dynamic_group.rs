@@ -122,27 +122,27 @@ impl Oryxis {
                 self.cloud_form.visible = false;
                 self.cloud_discover_visible = false;
                 self.group_edit_visible = false;
-                self.cloud_dynamic_form_visible = true;
-                self.cloud_dynamic_form_group_id = Some(gid);
-                self.cloud_dynamic_form_username =
+                self.cloud_dynamic_form.visible = true;
+                self.cloud_dynamic_form.group_id = Some(gid);
+                self.cloud_dynamic_form.username =
                     query.template.username.clone().unwrap_or_default();
-                self.cloud_dynamic_form_initial_command =
+                self.cloud_dynamic_form.initial_command =
                     query.template.initial_command.clone().unwrap_or_default();
-                self.cloud_dynamic_form_transport = query.template.transport;
-                self.cloud_dynamic_form_selected_key = query.template.key_id.and_then(|kid| {
+                self.cloud_dynamic_form.transport = query.template.transport;
+                self.cloud_dynamic_form.selected_key = query.template.key_id.and_then(|kid| {
                     self.keys.iter().find(|k| k.id == kid).map(|k| k.label.clone())
                 });
-                self.cloud_dynamic_form_selected_identity =
+                self.cloud_dynamic_form.selected_identity =
                     query.template.identity_id.and_then(|iid| {
                         self.identities
                             .iter()
                             .find(|i| i.id == iid)
                             .map(|i| i.label.clone())
                     });
-                self.cloud_dynamic_form_label = group.label.clone();
-                self.cloud_dynamic_form_color = group.color.clone().unwrap_or_default();
-                self.cloud_dynamic_form_icon = group.icon.clone().unwrap_or_default();
-                self.cloud_dynamic_form_parent_label = group
+                self.cloud_dynamic_form.label = group.label.clone();
+                self.cloud_dynamic_form.color = group.color.clone().unwrap_or_default();
+                self.cloud_dynamic_form.icon = group.icon.clone().unwrap_or_default();
+                self.cloud_dynamic_form.parent_label = group
                     .parent_id
                     .and_then(|pid| self.groups.iter().find(|g| g.id == pid))
                     .map(|g| g.label.clone())
@@ -153,98 +153,98 @@ impl Oryxis {
                         service,
                         container,
                     } => {
-                        self.cloud_dynamic_form_is_k8s = false;
-                        self.cloud_dynamic_form_cluster = cluster.clone();
-                        self.cloud_dynamic_form_service = service.clone();
-                        self.cloud_dynamic_form_container = container.clone();
-                        self.cloud_dynamic_form_k8s_context = String::new();
-                        self.cloud_dynamic_form_namespace = String::new();
-                        self.cloud_dynamic_form_k8s_selector_kind =
+                        self.cloud_dynamic_form.is_k8s = false;
+                        self.cloud_dynamic_form.cluster = cluster.clone();
+                        self.cloud_dynamic_form.service = service.clone();
+                        self.cloud_dynamic_form.container = container.clone();
+                        self.cloud_dynamic_form.k8s_context = String::new();
+                        self.cloud_dynamic_form.namespace = String::new();
+                        self.cloud_dynamic_form.k8s_selector_kind =
                             crate::state::K8sSelectorKind::Labels;
-                        self.cloud_dynamic_form_k8s_selector_value = String::new();
+                        self.cloud_dynamic_form.k8s_selector_value = String::new();
                     }
                     oryxis_core::models::cloud::CloudQueryKind::K8sPods {
                         context,
                         namespace,
                         selector,
                     } => {
-                        self.cloud_dynamic_form_is_k8s = true;
-                        self.cloud_dynamic_form_k8s_context = context.clone();
-                        self.cloud_dynamic_form_namespace = namespace.clone();
+                        self.cloud_dynamic_form.is_k8s = true;
+                        self.cloud_dynamic_form.k8s_context = context.clone();
+                        self.cloud_dynamic_form.namespace = namespace.clone();
                         let (kind, value) = selector_to_form(selector);
-                        self.cloud_dynamic_form_k8s_selector_kind = kind;
-                        self.cloud_dynamic_form_k8s_selector_value = value;
-                        self.cloud_dynamic_form_cluster = String::new();
-                        self.cloud_dynamic_form_service = String::new();
-                        self.cloud_dynamic_form_container = String::new();
+                        self.cloud_dynamic_form.k8s_selector_kind = kind;
+                        self.cloud_dynamic_form.k8s_selector_value = value;
+                        self.cloud_dynamic_form.cluster = String::new();
+                        self.cloud_dynamic_form.service = String::new();
+                        self.cloud_dynamic_form.container = String::new();
                     }
                 }
             }
             Message::HideDynamicGroupForm => {
-                self.cloud_dynamic_form_visible = false;
-                self.cloud_dynamic_form_group_id = None;
+                self.cloud_dynamic_form.visible = false;
+                self.cloud_dynamic_form.group_id = None;
             }
             Message::DynamicGroupFormUsernameChanged(v) => {
-                self.cloud_dynamic_form_username = v;
+                self.cloud_dynamic_form.username = v;
             }
             Message::DynamicGroupFormInitialCommandChanged(v) => {
-                self.cloud_dynamic_form_initial_command = v;
+                self.cloud_dynamic_form.initial_command = v;
             }
             Message::DynamicGroupFormTransportChanged(t) => {
-                self.cloud_dynamic_form_transport = t;
+                self.cloud_dynamic_form.transport = t;
             }
             Message::DynamicGroupFormKeyChanged(label) => {
-                self.cloud_dynamic_form_selected_key = if label == "(none)" {
+                self.cloud_dynamic_form.selected_key = if label == "(none)" {
                     None
                 } else {
                     Some(label)
                 };
             }
             Message::DynamicGroupFormIdentityChanged(label) => {
-                self.cloud_dynamic_form_selected_identity = if label == "(none)" {
+                self.cloud_dynamic_form.selected_identity = if label == "(none)" {
                     None
                 } else {
                     Some(label)
                 };
             }
             Message::DynamicGroupFormLabelChanged(v) => {
-                self.cloud_dynamic_form_label = v;
+                self.cloud_dynamic_form.label = v;
             }
             Message::DynamicGroupFormParentChanged(v) => {
-                self.cloud_dynamic_form_parent_label = v;
+                self.cloud_dynamic_form.parent_label = v;
             }
             Message::DynamicGroupFormClusterChanged(v) => {
-                self.cloud_dynamic_form_cluster = v;
+                self.cloud_dynamic_form.cluster = v;
             }
             Message::DynamicGroupFormServiceChanged(v) => {
-                self.cloud_dynamic_form_service = v;
+                self.cloud_dynamic_form.service = v;
             }
             Message::DynamicGroupFormContainerChanged(v) => {
-                self.cloud_dynamic_form_container = v;
+                self.cloud_dynamic_form.container = v;
             }
             Message::DynamicGroupFormK8sContextChanged(v) => {
-                self.cloud_dynamic_form_k8s_context = v;
+                self.cloud_dynamic_form.k8s_context = v;
             }
             Message::DynamicGroupFormNamespaceChanged(v) => {
-                self.cloud_dynamic_form_namespace = v;
+                self.cloud_dynamic_form.namespace = v;
             }
             Message::DynamicGroupFormK8sSelectorKindChanged(k) => {
-                self.cloud_dynamic_form_k8s_selector_kind = k;
+                self.cloud_dynamic_form.k8s_selector_kind = k;
             }
             Message::DynamicGroupFormK8sSelectorValueChanged(v) => {
-                self.cloud_dynamic_form_k8s_selector_value = v;
+                self.cloud_dynamic_form.k8s_selector_value = v;
             }
             Message::ShowIconPickerForDynamicGroupForm => {
                 // Pre-fill the picker from the current form values so
                 // re-opens preserve the user's in-flight selection.
                 // Fallback to `server` so the preview always renders.
-                let icon = if self.cloud_dynamic_form_icon.trim().is_empty() {
+                let icon = if self.cloud_dynamic_form.icon.trim().is_empty() {
                     "server".to_string()
                 } else {
-                    self.cloud_dynamic_form_icon.trim().to_string()
+                    self.cloud_dynamic_form.icon.trim().to_string()
                 };
                 self.icon_picker_icon = Some(icon);
-                let color = self.cloud_dynamic_form_color.trim().to_string();
+                let color = self.cloud_dynamic_form.color.trim().to_string();
                 self.icon_picker_color = if color.is_empty() { None } else { Some(color.clone()) };
                 self.icon_picker_hex_input = color;
                 self.icon_picker_for = None;
@@ -253,7 +253,7 @@ impl Oryxis {
                 self.show_icon_picker = true;
             }
             Message::SaveDynamicGroup => {
-                let Some(gid) = self.cloud_dynamic_form_group_id else {
+                let Some(gid) = self.cloud_dynamic_form.group_id else {
                     return Ok(Task::none());
                 };
                 let Some(mut group) = self.groups.iter().find(|g| g.id == gid).cloned()
@@ -264,26 +264,26 @@ impl Oryxis {
                     return Ok(Task::none());
                 };
                 query.template.username =
-                    if self.cloud_dynamic_form_username.trim().is_empty() {
+                    if self.cloud_dynamic_form.username.trim().is_empty() {
                         None
                     } else {
-                        Some(self.cloud_dynamic_form_username.trim().to_string())
+                        Some(self.cloud_dynamic_form.username.trim().to_string())
                     };
                 query.template.initial_command =
-                    if self.cloud_dynamic_form_initial_command.trim().is_empty() {
+                    if self.cloud_dynamic_form.initial_command.trim().is_empty() {
                         None
                     } else {
-                        Some(self.cloud_dynamic_form_initial_command.clone())
+                        Some(self.cloud_dynamic_form.initial_command.clone())
                     };
-                query.template.transport = self.cloud_dynamic_form_transport;
+                query.template.transport = self.cloud_dynamic_form.transport;
                 query.template.key_id = self
-                    .cloud_dynamic_form_selected_key
+                    .cloud_dynamic_form.selected_key
                     .as_ref()
                     .and_then(|label| {
                         self.keys.iter().find(|k| &k.label == label).map(|k| k.id)
                     });
                 query.template.identity_id = self
-                    .cloud_dynamic_form_selected_identity
+                    .cloud_dynamic_form.selected_identity
                     .as_ref()
                     .and_then(|label| {
                         self.identities
@@ -302,9 +302,9 @@ impl Oryxis {
                         service,
                         container,
                     } => {
-                        *cluster = self.cloud_dynamic_form_cluster.trim().to_string();
-                        *service = self.cloud_dynamic_form_service.trim().to_string();
-                        *container = self.cloud_dynamic_form_container.trim().to_string();
+                        *cluster = self.cloud_dynamic_form.cluster.trim().to_string();
+                        *service = self.cloud_dynamic_form.service.trim().to_string();
+                        *container = self.cloud_dynamic_form.container.trim().to_string();
                     }
                     // K8s query fields: persist context / namespace and the
                     // parsed `k=v,k=v` label selector.
@@ -313,32 +313,32 @@ impl Oryxis {
                         namespace,
                         selector,
                     } => {
-                        *context = self.cloud_dynamic_form_k8s_context.trim().to_string();
-                        *namespace = self.cloud_dynamic_form_namespace.trim().to_string();
+                        *context = self.cloud_dynamic_form.k8s_context.trim().to_string();
+                        *namespace = self.cloud_dynamic_form.namespace.trim().to_string();
                         *selector = form_to_selector(
-                            self.cloud_dynamic_form_k8s_selector_kind,
-                            &self.cloud_dynamic_form_k8s_selector_value,
+                            self.cloud_dynamic_form.k8s_selector_kind,
+                            &self.cloud_dynamic_form.k8s_selector_value,
                         );
                     }
                 }
                 group.cloud_query = Some(query);
-                let new_label = self.cloud_dynamic_form_label.trim();
+                let new_label = self.cloud_dynamic_form.label.trim();
                 if !new_label.is_empty() {
                     group.label = new_label.to_string();
                 }
-                group.color = if self.cloud_dynamic_form_color.trim().is_empty() {
+                group.color = if self.cloud_dynamic_form.color.trim().is_empty() {
                     None
                 } else {
-                    Some(self.cloud_dynamic_form_color.trim().to_string())
+                    Some(self.cloud_dynamic_form.color.trim().to_string())
                 };
-                group.icon = if self.cloud_dynamic_form_icon.trim().is_empty() {
+                group.icon = if self.cloud_dynamic_form.icon.trim().is_empty() {
                     None
                 } else {
-                    Some(self.cloud_dynamic_form_icon.trim().to_string())
+                    Some(self.cloud_dynamic_form.icon.trim().to_string())
                 };
                 // Parent picker uses label matching like the host
                 // editor's `parent_group`. Empty / unmatched = root.
-                let parent_trimmed = self.cloud_dynamic_form_parent_label.trim();
+                let parent_trimmed = self.cloud_dynamic_form.parent_label.trim();
                 group.parent_id = if parent_trimmed.is_empty() {
                     None
                 } else {
@@ -351,8 +351,8 @@ impl Oryxis {
                 if let Some(vault) = &self.vault
                     && vault.save_group(&group).is_ok()
                 {
-                    self.cloud_dynamic_form_visible = false;
-                    self.cloud_dynamic_form_group_id = None;
+                    self.cloud_dynamic_form.visible = false;
+                    self.cloud_dynamic_form.group_id = None;
                     self.load_data_from_vault();
                 }
             }

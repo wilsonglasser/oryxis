@@ -184,7 +184,7 @@ impl Oryxis {
         match self.active_view {
             View::Dashboard => {
                 self.cloud_discover_visible
-                    || self.cloud_dynamic_form_visible
+                    || self.cloud_dynamic_form.visible
                     || self.group_edit_visible
                     || self.show_host_panel
                     || self.show_session_group_panel
@@ -260,7 +260,7 @@ impl Oryxis {
             View::Dashboard => {
                 if self.cloud_discover_visible {
                     Some(self.view_cloud_discover_panel())
-                } else if self.cloud_dynamic_form_visible {
+                } else if self.cloud_dynamic_form.visible {
                     Some(self.view_dynamic_group_form_panel())
                 } else if self.group_edit_visible {
                     Some(self.view_group_edit_panel())
@@ -891,7 +891,7 @@ impl Oryxis {
                 .padding(10)
                 .style(crate::widgets::rounded_pick_list_style);
                 column![
-                    text(crate::i18n::t("cloud_dynamic_form_transport"))
+                    text(crate::i18n::t("cloud_dynamic_form.transport"))
                         .size(12)
                         .color(OryxisColors::t().text_secondary),
                     Space::new().height(4),
@@ -2606,7 +2606,7 @@ impl Oryxis {
         match self.active_view {
             View::Dashboard => {
                 self.cloud_discover_visible
-                    || self.cloud_dynamic_form_visible
+                    || self.cloud_dynamic_form.visible
                     || self.group_edit_visible
                     || self.show_host_panel
                     || self.show_session_group_panel

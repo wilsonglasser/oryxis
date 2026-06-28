@@ -660,38 +660,7 @@ pub struct Oryxis {
     /// Edit-dynamic-group form. Opened from the ⋮ menu on a dynamic
     /// group card (root or nested). Edits the `cloud_query.template`
     /// fields: username, initial_command, transport, key, identity.
-    pub(crate) cloud_dynamic_form_visible: bool,
-    pub(crate) cloud_dynamic_form_group_id: Option<Uuid>,
-    pub(crate) cloud_dynamic_form_username: String,
-    pub(crate) cloud_dynamic_form_initial_command: String,
-    pub(crate) cloud_dynamic_form_transport: oryxis_core::models::cloud::TransportKind,
-    /// Selected key label (or `"(none)"`); resolved to a `key_id` on save.
-    pub(crate) cloud_dynamic_form_selected_key: Option<String>,
-    /// Selected identity label (or `"(none)"`); resolved to an `identity_id` on save.
-    pub(crate) cloud_dynamic_form_selected_identity: Option<String>,
-    /// General-section fields, parity with the host editor so a
-    /// dynamic group is a first-class entity (rename, color, icon,
-    /// move under any user group). Persisted on Save.
-    pub(crate) cloud_dynamic_form_label: String,
-    pub(crate) cloud_dynamic_form_color: String,
-    pub(crate) cloud_dynamic_form_icon: String,
-    pub(crate) cloud_dynamic_form_parent_label: String,
-    /// Cloud-source fields (ECS variant). Editing these repoints the group
-    /// at a different upstream collection so the next resolve hits the new
-    /// cluster/service/container. K8s groups use the `_k8s_*` fields below.
-    pub(crate) cloud_dynamic_form_cluster: String,
-    pub(crate) cloud_dynamic_form_service: String,
-    pub(crate) cloud_dynamic_form_container: String,
-    /// K8s dynamic-group source fields, used when the edited group's query
-    /// is `K8sPods`. `is_k8s` flips the editor between the ECS and K8s
-    /// source sections. The selector value's meaning depends on
-    /// `selector_kind`: a `k=v,k=v` string for `Labels`, otherwise a single
-    /// resource name.
-    pub(crate) cloud_dynamic_form_is_k8s: bool,
-    pub(crate) cloud_dynamic_form_k8s_context: String,
-    pub(crate) cloud_dynamic_form_namespace: String,
-    pub(crate) cloud_dynamic_form_k8s_selector_kind: crate::state::K8sSelectorKind,
-    pub(crate) cloud_dynamic_form_k8s_selector_value: String,
+    pub(crate) cloud_dynamic_form: crate::state::CloudDynamicForm,
 
     /// Hover tracking for the kebab on dynamic-group cards (root + nested).
     pub(crate) hovered_dynamic_group_card: Option<Uuid>,

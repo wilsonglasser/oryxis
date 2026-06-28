@@ -385,7 +385,7 @@ impl Oryxis {
                 use crate::state::{GroupPickerTarget, OverlayContent};
                 match target {
                     GroupPickerTarget::DynamicFormParent => {
-                        self.cloud_dynamic_form_parent_label = label;
+                        self.cloud_dynamic_form.parent_label = label;
                     }
                     GroupPickerTarget::SessionGroupFolder => {
                         self.editor_session_group.group_name = label;

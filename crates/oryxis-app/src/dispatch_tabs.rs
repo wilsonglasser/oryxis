@@ -711,9 +711,9 @@ impl Oryxis {
                     // group editor fields. The form's own Save button
                     // persists to the vault, so the icon picker stays
                     // an in-memory editor here.
-                    self.cloud_dynamic_form_icon =
+                    self.cloud_dynamic_form.icon =
                         self.icon_picker_icon.clone().unwrap_or_default();
-                    self.cloud_dynamic_form_color =
+                    self.cloud_dynamic_form.color =
                         self.icon_picker_color.clone().unwrap_or_default();
                 } else if self.icon_picker_for_group_edit {
                     // Deferred save: flow into the manual group editor; the
@@ -754,8 +754,8 @@ impl Oryxis {
                     self.editor_session_group.icon_style = None;
                     self.editor_session_group.color = None;
                 } else if self.icon_picker_for_group_form {
-                    self.cloud_dynamic_form_icon = String::new();
-                    self.cloud_dynamic_form_color = String::new();
+                    self.cloud_dynamic_form.icon = String::new();
+                    self.cloud_dynamic_form.color = String::new();
                 } else if self.icon_picker_for_group_edit {
                     self.group_edit_icon = String::new();
                     self.group_edit_color = String::new();
@@ -1104,7 +1104,7 @@ impl Oryxis {
                     self.show_host_panel = false;
                     self.show_session_group_panel = false;
                     self.cloud_form.visible = false;
-                    self.cloud_dynamic_form_visible = false;
+                    self.cloud_dynamic_form.visible = false;
                     self.cloud_discover_visible = false;
                 }
             }

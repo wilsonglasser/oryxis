@@ -572,7 +572,7 @@ impl Oryxis {
                     && self.active_tab.is_none()
                     && !self.show_host_panel
                     && !self.show_session_group_panel
-                    && !self.cloud_dynamic_form_visible
+                    && !self.cloud_dynamic_form.visible
                     && !self.cloud_discover_visible
                     && !self.any_modal_blocks_input()
                     && let keyboard::Event::KeyPressed { key, modifiers, .. } = &event

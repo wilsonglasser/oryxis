@@ -297,6 +297,73 @@ impl std::fmt::Display for ProxyKind {
     }
 }
 
+/// Edit form for a dynamic (cloud-backed) group. Opened from the ⋮ menu
+/// on a dynamic group card; edits the `cloud_query.template` (username,
+/// initial_command, transport, key, identity) plus the group's general
+/// fields (label, color, icon, parent) and its cloud source. `is_k8s`
+/// flips the source section between the ECS (`cluster`/`service`/
+/// `container`) and Kubernetes (`k8s_*`) field sets.
+#[derive(Debug, Clone)]
+pub(crate) struct CloudDynamicForm {
+    /// Whether the edit form is currently shown.
+    pub visible: bool,
+    pub group_id: Option<Uuid>,
+    pub username: String,
+    pub initial_command: String,
+    pub transport: oryxis_core::models::cloud::TransportKind,
+    /// Selected key label (or `"(none)"`); resolved to a `key_id` on save.
+    pub selected_key: Option<String>,
+    /// Selected identity label (or `"(none)"`); resolved to an `identity_id` on save.
+    pub selected_identity: Option<String>,
+    /// General-section fields, parity with the host editor (rename, color,
+    /// icon, move under any user group). Persisted on Save.
+    pub label: String,
+    pub color: String,
+    pub icon: String,
+    pub parent_label: String,
+    /// Cloud-source fields (ECS variant).
+    pub cluster: String,
+    pub service: String,
+    pub container: String,
+    /// K8s dynamic-group source fields, used when the edited group's query
+    /// is `K8sPods`. The selector value's meaning depends on
+    /// `k8s_selector_kind`: a `k=v,k=v` string for `Labels`, otherwise a
+    /// single resource name.
+    pub is_k8s: bool,
+    pub k8s_context: String,
+    pub namespace: String,
+    pub k8s_selector_kind: K8sSelectorKind,
+    pub k8s_selector_value: String,
+}
+
+impl Default for CloudDynamicForm {
+    fn default() -> Self {
+        Self {
+            visible: false,
+            group_id: None,
+            username: String::new(),
+            initial_command: String::new(),
+            // ECS Exec is the most common dynamic-group transport; the
+            // editor swaps it to KubectlExec when `is_k8s` is set.
+            transport: oryxis_core::models::cloud::TransportKind::EcsExec,
+            selected_key: None,
+            selected_identity: None,
+            label: String::new(),
+            color: String::new(),
+            icon: String::new(),
+            parent_label: String::new(),
+            cluster: String::new(),
+            service: String::new(),
+            container: String::new(),
+            is_k8s: false,
+            k8s_context: String::new(),
+            namespace: String::new(),
+            k8s_selector_kind: K8sSelectorKind::Labels,
+            k8s_selector_value: String::new(),
+        }
+    }
+}
+
 /// Add / edit wizard form for a cloud account (`CloudProfile`). Covers
 /// every provider + auth combination (AWS profile / access key / SSO,
 /// Kubernetes kubeconfig); only the fields for the selected
