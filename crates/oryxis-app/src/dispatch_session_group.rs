@@ -271,7 +271,7 @@ impl Oryxis {
     fn open_session_group_editor(&mut self, mut form: SessionGroupForm) -> Task<Message> {
         // Mutually exclusive right-panel slot, close other panels first.
         self.show_host_panel = false;
-        self.cloud_form_visible = false;
+        self.cloud_form.visible = false;
         self.cloud_dynamic_form_visible = false;
         self.cloud_discover_visible = false;
         self.group_edit_visible = false;

@@ -29,7 +29,7 @@ impl Oryxis {
                 self.overlay = None;
                 // Close any other right-panel (mutually exclusive slot).
                 self.show_host_panel = false;
-                self.cloud_form_visible = false;
+                self.cloud_form.visible = false;
                 self.cloud_dynamic_form_visible = false;
                 self.group_edit_visible = false;
                 self.cloud_discover_visible = true;

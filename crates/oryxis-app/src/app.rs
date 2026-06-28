@@ -541,40 +541,9 @@ pub struct Oryxis {
     // only. Access key + SSO + the discover-and-pick step land in
     // follow-up PRs once the foundation is exercised.
     pub(crate) cloud_profiles: Vec<oryxis_core::models::cloud_profile::CloudProfile>,
-    pub(crate) cloud_form_visible: bool,
-    pub(crate) cloud_form_label: String,
-    pub(crate) cloud_form_provider: crate::state::CloudProviderChoice,
-    pub(crate) cloud_form_auth_kind: crate::state::CloudAuthChoice,
-    pub(crate) cloud_form_aws_profile_name: String,
-    /// Workload regions, the first entry is the default region and the
-    /// full list drives discovery fan-out. Persisted as both `region`
-    /// (= first) and `regions` (= full list) for forward compat with
-    /// older builds.
-    pub(crate) cloud_form_aws_regions: Vec<String>,
-    /// Draft text in the region input box, committed to
-    /// `cloud_form_aws_regions` on Enter.
-    pub(crate) cloud_form_aws_region_draft: String,
-    /// Access Key auth fields. The secret access key follows the
-    /// password-tri-state convention (`*_touched` differentiates
-    /// "leave alone" from "explicitly cleared").
-    pub(crate) cloud_form_aws_access_key_id: String,
-    pub(crate) cloud_form_aws_access_key_secret: String,
-    pub(crate) cloud_form_aws_access_key_secret_touched: bool,
-    pub(crate) cloud_form_aws_access_key_secret_visible: bool,
-    pub(crate) cloud_form_aws_access_key_session_token: String,
-    pub(crate) cloud_form_aws_has_existing_secret: bool,
-    /// SSO (IAM Identity Center) auth fields.
-    pub(crate) cloud_form_aws_sso_start_url: String,
-    pub(crate) cloud_form_aws_sso_region: String,
-    pub(crate) cloud_form_aws_sso_account_id: String,
-    pub(crate) cloud_form_aws_sso_role_name: String,
-    /// Kubernetes (Kubeconfig) auth fields. Both optional: blank
-    /// kubeconfig = kubectl's default, blank context = current-context.
-    pub(crate) cloud_form_kubeconfig_path: String,
-    pub(crate) cloud_form_context: String,
-    pub(crate) editing_cloud_profile_id: Option<Uuid>,
-    pub(crate) cloud_form_error: Option<String>,
-    pub(crate) cloud_form_test_state: crate::state::CloudTestState,
+    /// Transient state for the add/edit cloud-account wizard (covers all
+    /// provider + auth combinations).
+    pub(crate) cloud_form: crate::state::CloudForm,
     pub(crate) cloud_provider_registry: std::sync::Arc<oryxis_cloud::CloudProviderRegistry>,
     /// Concrete plugin providers kept here as well as inside the
     /// registry, so the install / update path can call

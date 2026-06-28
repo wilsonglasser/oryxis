@@ -292,26 +292,26 @@ impl Oryxis {
     /// state, used by `test_credentials` so the user can verify
     /// without saving first. Returns `None` when the label is empty.
     pub(super) fn build_cloud_profile_for_test(&self) -> Option<CloudProfile> {
-        let label = self.cloud_form_label.trim();
+        let label = self.cloud_form.label.trim();
         if label.is_empty() {
             return None;
         }
-        let mut profile = CloudProfile::new(label, self.cloud_form_provider.id());
-        profile.auth_kind = self.cloud_form_auth_kind.id().to_string();
+        let mut profile = CloudProfile::new(label, self.cloud_form.provider.id());
+        profile.auth_kind = self.cloud_form.auth_kind.id().to_string();
         profile.config = self.serialize_cloud_form_config();
         // Test Credentials runs against the *current* form values
         // (not what's persisted in the vault yet), so feed the form's
         // secret straight in. For the "edit existing profile, didn't
         // touch the secret field" case, fall back to the stored
         // secret so the test still works without re-typing.
-        profile.secret = if self.cloud_form_aws_access_key_secret_touched {
-            if self.cloud_form_aws_access_key_secret.is_empty() {
+        profile.secret = if self.cloud_form.aws_access_key_secret_touched {
+            if self.cloud_form.aws_access_key_secret.is_empty() {
                 None
             } else {
-                Some(self.cloud_form_aws_access_key_secret.clone())
+                Some(self.cloud_form.aws_access_key_secret.clone())
             }
         } else {
-            self.editing_cloud_profile_id.and_then(|id| {
+            self.cloud_form.editing_id.and_then(|id| {
                 self.vault
                     .as_ref()
                     .and_then(|v| v.get_cloud_profile_secret(&id).ok().flatten())
@@ -377,41 +377,41 @@ impl Oryxis {
                 obj.insert(k.into(), serde_json::Value::String(v.into()));
             }
         };
-        match self.cloud_form_provider {
+        match self.cloud_form.provider {
             CloudProviderChoice::Aws => {
                 // Workload regions are shared across all AWS auth
                 // kinds. Persist both the legacy `region` key (= first
                 // entry) and the `regions` array so older builds keep
                 // working. SSO has its own `sso_region` for the IdC
                 // endpoint, unrelated.
-                if let Some(first) = self.cloud_form_aws_regions.first() {
+                if let Some(first) = self.cloud_form.aws_regions.first() {
                     put(&mut obj, "region", first);
                 }
-                if !self.cloud_form_aws_regions.is_empty() {
+                if !self.cloud_form.aws_regions.is_empty() {
                     let arr: Vec<serde_json::Value> = self
-                        .cloud_form_aws_regions
+                        .cloud_form.aws_regions
                         .iter()
                         .map(|r| serde_json::Value::String(r.clone()))
                         .collect();
                     obj.insert("regions".into(), serde_json::Value::Array(arr));
                 }
-                match self.cloud_form_auth_kind {
+                match self.cloud_form.auth_kind {
                     CloudAuthChoice::Profile => {
-                        put(&mut obj, "profile_name", &self.cloud_form_aws_profile_name);
+                        put(&mut obj, "profile_name", &self.cloud_form.aws_profile_name);
                     }
                     CloudAuthChoice::AccessKey => {
-                        put(&mut obj, "access_key_id", &self.cloud_form_aws_access_key_id);
+                        put(&mut obj, "access_key_id", &self.cloud_form.aws_access_key_id);
                         put(
                             &mut obj,
                             "access_key_session_token",
-                            &self.cloud_form_aws_access_key_session_token,
+                            &self.cloud_form.aws_access_key_session_token,
                         );
                     }
                     CloudAuthChoice::Sso => {
-                        put(&mut obj, "sso_start_url", &self.cloud_form_aws_sso_start_url);
-                        put(&mut obj, "sso_region", &self.cloud_form_aws_sso_region);
-                        put(&mut obj, "sso_account_id", &self.cloud_form_aws_sso_account_id);
-                        put(&mut obj, "sso_role_name", &self.cloud_form_aws_sso_role_name);
+                        put(&mut obj, "sso_start_url", &self.cloud_form.aws_sso_start_url);
+                        put(&mut obj, "sso_region", &self.cloud_form.aws_sso_region);
+                        put(&mut obj, "sso_account_id", &self.cloud_form.aws_sso_account_id);
+                        put(&mut obj, "sso_role_name", &self.cloud_form.aws_sso_role_name);
                     }
                     CloudAuthChoice::Kubeconfig => {
                         // Kubeconfig auth belongs to the K8s provider; under
@@ -423,8 +423,8 @@ impl Oryxis {
                 // Both optional: a blank kubeconfig falls back to
                 // kubectl's default file, a blank context to the
                 // kubeconfig's current-context. `put` skips empties.
-                put(&mut obj, "kubeconfig", &self.cloud_form_kubeconfig_path);
-                put(&mut obj, "context", &self.cloud_form_context);
+                put(&mut obj, "kubeconfig", &self.cloud_form.kubeconfig_path);
+                put(&mut obj, "context", &self.cloud_form.context);
             }
         }
         serde_json::Value::Object(obj).to_string()

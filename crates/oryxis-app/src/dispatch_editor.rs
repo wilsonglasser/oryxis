@@ -139,7 +139,7 @@ impl Oryxis {
                 self.overlay = None;
                 // Mutually exclusive right-panel slot, close any
                 // other panel before opening the host editor.
-                self.cloud_form_visible = false;
+                self.cloud_form.visible = false;
                 self.cloud_dynamic_form_visible = false;
                 self.cloud_discover_visible = false;
                 self.show_session_group_panel = false;
@@ -167,7 +167,7 @@ impl Oryxis {
                 self.overlay = None;
                 if let Some(conn) = self.connections.get(idx) {
                     // Mutually exclusive right-panel slot.
-                    self.cloud_form_visible = false;
+                    self.cloud_form.visible = false;
                     self.cloud_dynamic_form_visible = false;
                     self.cloud_discover_visible = false;
                     self.show_session_group_panel = false;

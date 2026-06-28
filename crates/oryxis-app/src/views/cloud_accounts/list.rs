@@ -1,7 +1,7 @@
 //! Cards list, the toolbar at the top of the Cloud Accounts panel
 //! plus the responsive grid of `CloudProfile` cards. Empty state lives
 //! here too. The wizard form panel is mounted on the right when
-//! `cloud_form_visible` is on.
+//! `cloud_form.visible` is on.
 
 use iced::border::Radius;
 use iced::widget::button::Status as BtnStatus;
@@ -308,7 +308,7 @@ impl Oryxis {
             }
 
             let nav_width = self.vault_rail_width();
-            let panel_width = if self.cloud_form_visible { PANEL_WIDTH } else { 0.0 };
+            let panel_width = if self.cloud_form.visible { PANEL_WIDTH } else { 0.0 };
             let available =
                 (self.window_size.width - nav_width - panel_width - 48.0).max(0.0);
             let cols = card_grid_columns(available, CARD_WIDTH, 12.0);

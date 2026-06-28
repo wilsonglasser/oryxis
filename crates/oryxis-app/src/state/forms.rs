@@ -297,6 +297,50 @@ impl std::fmt::Display for ProxyKind {
     }
 }
 
+/// Add / edit wizard form for a cloud account (`CloudProfile`). Covers
+/// every provider + auth combination (AWS profile / access key / SSO,
+/// Kubernetes kubeconfig); only the fields for the selected
+/// `provider` + `auth_kind` are rendered. The saved profiles live in
+/// `Oryxis::cloud_profiles`; this is wizard state only.
+#[derive(Debug, Clone, Default)]
+pub(crate) struct CloudForm {
+    /// Whether the wizard is currently shown.
+    pub visible: bool,
+    pub label: String,
+    pub provider: CloudProviderChoice,
+    pub auth_kind: CloudAuthChoice,
+    pub aws_profile_name: String,
+    /// Workload regions; the first entry is the default region and the
+    /// full list drives discovery fan-out. Persisted as both `region`
+    /// (= first) and `regions` (= full list) for forward compat.
+    pub aws_regions: Vec<String>,
+    /// Draft text in the region input box, committed to `aws_regions`
+    /// on Enter.
+    pub aws_region_draft: String,
+    /// Access Key auth fields. The secret follows the password-tri-state
+    /// convention (`*_touched` differentiates "leave alone" from
+    /// "explicitly cleared").
+    pub aws_access_key_id: String,
+    pub aws_access_key_secret: String,
+    pub aws_access_key_secret_touched: bool,
+    pub aws_access_key_secret_visible: bool,
+    pub aws_access_key_session_token: String,
+    pub aws_has_existing_secret: bool,
+    /// SSO (IAM Identity Center) auth fields.
+    pub aws_sso_start_url: String,
+    pub aws_sso_region: String,
+    pub aws_sso_account_id: String,
+    pub aws_sso_role_name: String,
+    /// Kubernetes (Kubeconfig) auth fields. Both optional: blank
+    /// kubeconfig = kubectl's default, blank context = current-context.
+    pub kubeconfig_path: String,
+    pub context: String,
+    /// `Some` when editing an existing profile (update in place).
+    pub editing_id: Option<Uuid>,
+    pub error: Option<String>,
+    pub test_state: CloudTestState,
+}
+
 /// Import / edit form for an SSH key, shown in the keychain key panel.
 /// The multi-line PEM editor buffer (`key_import_content`) stays on
 /// `Oryxis` because `text_editor::Content` is not `Clone`; this struct

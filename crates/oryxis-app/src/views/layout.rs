@@ -193,7 +193,7 @@ impl Oryxis {
             View::Snippets => self.show_snippet_panel,
             View::PortForwarding => self.show_port_forward_panel,
             View::Proxies => self.proxy_identity_form.visible,
-            View::Cloud => self.cloud_form_visible,
+            View::Cloud => self.cloud_form.visible,
             _ => false,
         }
     }
@@ -290,7 +290,7 @@ impl Oryxis {
             View::Proxies => self
                 .proxy_identity_form.visible
                 .then(|| self.view_proxy_identity_form()),
-            View::Cloud => self.cloud_form_visible.then(|| self.view_cloud_form_panel()),
+            View::Cloud => self.cloud_form.visible.then(|| self.view_cloud_form_panel()),
             _ => None,
         }
     }
@@ -2615,7 +2615,7 @@ impl Oryxis {
             View::Snippets => self.show_snippet_panel,
             View::PortForwarding => self.show_port_forward_panel,
             View::Proxies => self.proxy_identity_form.visible,
-            View::Cloud => self.cloud_form_visible,
+            View::Cloud => self.cloud_form.visible,
             _ => false,
         }
     }

@@ -15,7 +15,7 @@ use crate::widgets::{dir_align_x, dir_row};
 
 impl Oryxis {
     pub(crate) fn view_cloud_form_panel(&self) -> Element<'_, Message> {
-        let is_editing = self.editing_cloud_profile_id.is_some();
+        let is_editing = self.cloud_form.editing_id.is_some();
         let title = if is_editing {
             t("cloud_edit_account")
         } else {
@@ -59,7 +59,7 @@ impl Oryxis {
         // ── Provider picker ── AWS + Kubernetes.
         let provider_options = vec![CloudProviderChoice::Aws, CloudProviderChoice::K8s];
         let provider_pick = pick_list(
-            Some(self.cloud_form_provider),
+            Some(self.cloud_form.provider),
             provider_options,
             |c| match c {
                 CloudProviderChoice::Aws => "AWS".to_string(),
@@ -71,7 +71,7 @@ impl Oryxis {
         .style(crate::widgets::rounded_pick_list_style);
 
         // ── Auth picker ── (only Profile is implemented today.)
-        let auth_options = match self.cloud_form_provider {
+        let auth_options = match self.cloud_form.provider {
             CloudProviderChoice::Aws => vec![
                 CloudAuthChoice::Profile,
                 CloudAuthChoice::AccessKey,
@@ -80,7 +80,7 @@ impl Oryxis {
             CloudProviderChoice::K8s => vec![CloudAuthChoice::Kubeconfig],
         };
         let auth_pick = pick_list(
-            Some(self.cloud_form_auth_kind),
+            Some(self.cloud_form.auth_kind),
             auth_options,
             |a| match a {
                 CloudAuthChoice::Profile => t("cloud_auth_profile").to_string(),
@@ -98,7 +98,7 @@ impl Oryxis {
         // full list drives discovery fan-out. SSO has its own
         // `sso_region` separately (the IdC endpoint, not workload).
         let chips: Vec<Element<'_, Message>> = self
-            .cloud_form_aws_regions
+            .cloud_form.aws_regions
             .iter()
             .enumerate()
             .map(|(i, r)| region_chip(r.as_str(), i))
@@ -123,7 +123,7 @@ impl Oryxis {
                 .color(OryxisColors::t().text_secondary),
             Space::new().height(4),
             chips_block,
-            text_input("us-east-1", &self.cloud_form_aws_region_draft)
+            text_input("us-east-1", &self.cloud_form.aws_region_draft)
                 .on_input(Message::CloudFormAwsRegionDraftChanged)
                 .on_submit(Message::CloudFormAwsRegionAdd)
                 .padding(10)
@@ -138,13 +138,13 @@ impl Oryxis {
         // Auth-kind-specific fields. We render only the ones that
         // apply to the current pick so the form doesn't sprawl with
         // irrelevant inputs.
-        let aws_fields: Element<'_, Message> = match self.cloud_form_auth_kind {
+        let aws_fields: Element<'_, Message> = match self.cloud_form.auth_kind {
             CloudAuthChoice::Profile => column![
                 text(t("cloud_aws_profile_name"))
                     .size(12)
                     .color(OryxisColors::t().text_secondary),
                 Space::new().height(4),
-                text_input("default", &self.cloud_form_aws_profile_name)
+                text_input("default", &self.cloud_form.aws_profile_name)
                     .on_input(Message::CloudFormAwsProfileNameChanged)
                     .padding(10)
                     .style(crate::widgets::rounded_input_style).align_x(dir_align_x()),
@@ -153,7 +153,7 @@ impl Oryxis {
             ]
             .into(),
             CloudAuthChoice::AccessKey => {
-                let secret_placeholder = if self.cloud_form_aws_has_existing_secret {
+                let secret_placeholder = if self.cloud_form.aws_has_existing_secret {
                     t("cloud_aws_access_key_secret_kept")
                 } else {
                     t("cloud_aws_access_key_secret_ph")
@@ -163,7 +163,7 @@ impl Oryxis {
                         .size(12)
                         .color(OryxisColors::t().text_secondary),
                     Space::new().height(4),
-                    text_input("AKIAIOSFODNN7EXAMPLE", &self.cloud_form_aws_access_key_id)
+                    text_input("AKIAIOSFODNN7EXAMPLE", &self.cloud_form.aws_access_key_id)
                         .on_input(Message::CloudFormAwsAccessKeyIdChanged)
                         .padding(10)
                         .style(crate::widgets::rounded_input_style).align_x(dir_align_x()),
@@ -172,9 +172,9 @@ impl Oryxis {
                         .size(12)
                         .color(OryxisColors::t().text_secondary),
                     Space::new().height(4),
-                    text_input(secret_placeholder, &self.cloud_form_aws_access_key_secret)
+                    text_input(secret_placeholder, &self.cloud_form.aws_access_key_secret)
                         .on_input(Message::CloudFormAwsAccessKeySecretChanged)
-                        .secure(!self.cloud_form_aws_access_key_secret_visible)
+                        .secure(!self.cloud_form.aws_access_key_secret_visible)
                         .padding(10)
                         .style(crate::widgets::rounded_input_style).align_x(dir_align_x()),
                     Space::new().height(14),
@@ -182,7 +182,7 @@ impl Oryxis {
                         .size(12)
                         .color(OryxisColors::t().text_secondary),
                     Space::new().height(4),
-                    text_input(t("cloud_aws_access_key_session_token_ph"), &self.cloud_form_aws_access_key_session_token)
+                    text_input(t("cloud_aws_access_key_session_token_ph"), &self.cloud_form.aws_access_key_session_token)
                         .on_input(Message::CloudFormAwsAccessKeySessionTokenChanged)
                         .padding(10)
                         .style(crate::widgets::rounded_input_style).align_x(dir_align_x()),
@@ -196,7 +196,7 @@ impl Oryxis {
                     .size(12)
                     .color(OryxisColors::t().text_secondary),
                 Space::new().height(4),
-                text_input("https://acme.awsapps.com/start", &self.cloud_form_aws_sso_start_url)
+                text_input("https://acme.awsapps.com/start", &self.cloud_form.aws_sso_start_url)
                     .on_input(Message::CloudFormAwsSsoStartUrlChanged)
                     .padding(10)
                     .style(crate::widgets::rounded_input_style).align_x(dir_align_x()),
@@ -205,7 +205,7 @@ impl Oryxis {
                     .size(12)
                     .color(OryxisColors::t().text_secondary),
                 Space::new().height(4),
-                text_input("us-east-1", &self.cloud_form_aws_sso_region)
+                text_input("us-east-1", &self.cloud_form.aws_sso_region)
                     .on_input(Message::CloudFormAwsSsoRegionChanged)
                     .padding(10)
                     .style(crate::widgets::rounded_input_style).align_x(dir_align_x()),
@@ -214,7 +214,7 @@ impl Oryxis {
                     .size(12)
                     .color(OryxisColors::t().text_secondary),
                 Space::new().height(4),
-                text_input("123456789012", &self.cloud_form_aws_sso_account_id)
+                text_input("123456789012", &self.cloud_form.aws_sso_account_id)
                     .on_input(Message::CloudFormAwsSsoAccountIdChanged)
                     .padding(10)
                     .style(crate::widgets::rounded_input_style).align_x(dir_align_x()),
@@ -223,7 +223,7 @@ impl Oryxis {
                     .size(12)
                     .color(OryxisColors::t().text_secondary),
                 Space::new().height(4),
-                text_input("AdministratorAccess", &self.cloud_form_aws_sso_role_name)
+                text_input("AdministratorAccess", &self.cloud_form.aws_sso_role_name)
                     .on_input(Message::CloudFormAwsSsoRoleNameChanged)
                     .padding(10)
                     .style(crate::widgets::rounded_input_style).align_x(dir_align_x()),
@@ -240,7 +240,7 @@ impl Oryxis {
                     .size(12)
                     .color(OryxisColors::t().text_secondary),
                 Space::new().height(4),
-                text_input(t("cloud_k8s_kubeconfig_ph"), &self.cloud_form_kubeconfig_path)
+                text_input(t("cloud_k8s_kubeconfig_ph"), &self.cloud_form.kubeconfig_path)
                     .on_input(Message::CloudFormKubeconfigPathChanged)
                     .padding(10)
                     .style(crate::widgets::rounded_input_style)
@@ -254,7 +254,7 @@ impl Oryxis {
                     .size(12)
                     .color(OryxisColors::t().text_secondary),
                 Space::new().height(4),
-                text_input(t("cloud_k8s_context_ph"), &self.cloud_form_context)
+                text_input(t("cloud_k8s_context_ph"), &self.cloud_form.context)
                     .on_input(Message::CloudFormContextChanged)
                     .padding(10)
                     .style(crate::widgets::rounded_input_style)
@@ -268,7 +268,7 @@ impl Oryxis {
         };
 
         // ── Test credentials button + result line ──
-        let test_status: Element<'_, Message> = match &self.cloud_form_test_state {
+        let test_status: Element<'_, Message> = match &self.cloud_form.test_state {
             CloudTestState::Idle => Space::new().height(0).into(),
             CloudTestState::Running => text(t("cloud_test_running"))
                 .size(11)
@@ -290,9 +290,9 @@ impl Oryxis {
         // not installed, the call would fail with a cryptic
         // `BinaryNotFound` error, so block it at the button level and
         // surface the install banner above.
-        let plugin_missing = !self.is_plugin_ready(self.cloud_form_provider);
+        let plugin_missing = !self.is_plugin_ready(self.cloud_form.provider);
         let test_button_disabled =
-            matches!(self.cloud_form_test_state, CloudTestState::Running) || plugin_missing;
+            matches!(self.cloud_form.test_state, CloudTestState::Running) || plugin_missing;
 
         let test_btn = {
             let mut btn = button(
@@ -333,11 +333,11 @@ impl Oryxis {
         // provider (AWS and Kubernetes alike) runs as a subprocess
         // plugin, so both surface this when their plugin is missing.
         let plugin_banner: Element<'_, Message> = if plugin_missing {
-            let provider_id_str = self.cloud_form_provider.id();
+            let provider_id_str = self.cloud_form.provider.id();
             // Brand name (not translated) for the title prefix, so the
             // banner reads "AWS plugin not installed" / "Kubernetes
             // plugin not installed" per the selected provider.
-            let provider_display = match self.cloud_form_provider {
+            let provider_display = match self.cloud_form.provider {
                 CloudProviderChoice::Aws => "AWS",
                 CloudProviderChoice::K8s => "Kubernetes",
             };
@@ -419,7 +419,7 @@ impl Oryxis {
                 .size(12)
                 .color(OryxisColors::t().text_secondary),
             Space::new().height(4),
-            text_input("prod-aws", &self.cloud_form_label)
+            text_input("prod-aws", &self.cloud_form.label)
                 .on_input(Message::CloudFormLabelChanged)
                 .padding(10)
                 .style(crate::widgets::rounded_input_style).align_x(dir_align_x()),
@@ -445,7 +445,7 @@ impl Oryxis {
         .width(Length::Fill)
         .align_x(dir_align_x());
 
-        let panel_error: Element<'_, Message> = if let Some(err) = &self.cloud_form_error {
+        let panel_error: Element<'_, Message> = if let Some(err) = &self.cloud_form.error {
             text(err.clone())
                 .size(11)
                 .color(OryxisColors::t().error)
@@ -481,7 +481,7 @@ impl Oryxis {
         });
 
         let mut bottom = column![save_btn];
-        if let Some(edit_id) = self.editing_cloud_profile_id {
+        if let Some(edit_id) = self.cloud_form.editing_id {
             let del_btn = button(
                 container(
                     text(t("delete"))

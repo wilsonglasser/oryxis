@@ -119,7 +119,7 @@ impl Oryxis {
                 // other panel that's currently open so the user
                 // doesn't end up with two side-by-side editors.
                 self.show_host_panel = false;
-                self.cloud_form_visible = false;
+                self.cloud_form.visible = false;
                 self.cloud_discover_visible = false;
                 self.group_edit_visible = false;
                 self.cloud_dynamic_form_visible = true;
