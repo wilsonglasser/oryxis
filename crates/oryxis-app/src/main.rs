@@ -25,6 +25,7 @@ mod dispatch_snippets;
 mod dispatch_navigation;
 mod dispatch_history;
 mod dispatch_mcp;
+mod dispatch_sync;
 mod dispatch_proxy_identity;
 mod dispatch_cloud;
 mod dispatch_plugins;
