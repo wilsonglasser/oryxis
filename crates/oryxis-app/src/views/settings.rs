@@ -196,6 +196,2699 @@ impl Oryxis {
             .into()
     }
 
+    fn view_settings_terminal(&self) -> Element<'_, Message> {
+        let mut toggles_col: iced::widget::Column<'_, Message> = column![
+            toggle_row(crate::i18n::t("copy_on_select"), self.setting_copy_on_select, Message::ToggleCopyOnSelect),
+        ];
+        // Sub-option, only meaningful while copy-on-select is on.
+        // Indent it on the leading edge so it reads as nested.
+        if self.setting_copy_on_select {
+            let indent = if crate::i18n::is_rtl_layout() {
+                Padding { right: 22.0, ..Padding::ZERO }
+            } else {
+                Padding { left: 22.0, ..Padding::ZERO }
+            };
+            toggles_col = toggles_col
+                .push(Space::new().height(8))
+                .push(
+                    container(toggle_row(
+                        crate::i18n::t("copy_requires_right_click"),
+                        self.setting_right_click_copy,
+                        Message::ToggleRightClickCopy,
+                    ))
+                    .padding(indent),
+                );
+        }
+        // Selection / clipboard behaviour.
+        let toggles_section = panel_section(toggles_col);
+
+        // Text rendering toggles (their own card so they sit under
+        // the Appearance group, not mixed with clipboard behaviour).
+        let text_render_section = panel_section(column![
+            toggle_row(crate::i18n::t("bold_bright"), self.setting_bold_is_bright, Message::ToggleBoldIsBright),
+            Space::new().height(10),
+            toggle_row(crate::i18n::t("keyword_highlight"), self.setting_keyword_highlight, Message::ToggleKeywordHighlight),
+            Space::new().height(10),
+            toggle_row(crate::i18n::t("smart_contrast"), self.setting_smart_contrast, Message::ToggleSmartContrast),
+            Space::new().height(10),
+            toggle_row(crate::i18n::t("terminal_auto_title"), crate::state::auto_title_enabled(), Message::ToggleTerminalAutoTitle),
+            Space::new().height(10),
+            dir_row(vec![
+                text(crate::i18n::t("terminal_bell")).size(13).color(OryxisColors::t().text_secondary).into(),
+                Space::new().width(Length::Fill).into(),
+                pick_list(
+                    Some(crate::i18n::t(self.setting_bell_mode.label_key()).to_string()),
+                    crate::util::BellMode::ALL
+                        .iter()
+                        .map(|m| crate::i18n::t(m.label_key()).to_string())
+                        .collect::<Vec<_>>(),
+                    |s: &String| s.clone(),
+                )
+                .on_select(Message::BellModeChanged)
+                .width(200)
+                .padding(10)
+                .style(crate::widgets::rounded_pick_list_style)
+                .into(),
+            ]).align_y(iced::Alignment::Center),
+            Space::new().height(10),
+            dir_row(vec![
+                text(crate::i18n::t("terminal_clipboard")).size(13).color(OryxisColors::t().text_secondary).into(),
+                Space::new().width(Length::Fill).into(),
+                pick_list(
+                    Some(crate::i18n::t(self.setting_clipboard_access.label_key()).to_string()),
+                    crate::util::ClipboardAccess::ALL
+                        .iter()
+                        .map(|m| crate::i18n::t(m.label_key()).to_string())
+                        .collect::<Vec<_>>(),
+                    |s: &String| s.clone(),
+                )
+                .on_select(Message::ClipboardAccessChanged)
+                .width(200)
+                .padding(10)
+                .style(crate::widgets::rounded_pick_list_style)
+                .into(),
+            ]).align_y(iced::Alignment::Center),
+            Space::new().height(10),
+            dir_row(vec![
+                text(crate::i18n::t("terminal_notification")).size(13).color(OryxisColors::t().text_secondary).into(),
+                Space::new().width(Length::Fill).into(),
+                pick_list(
+                    Some(crate::i18n::t(self.setting_notification_mode.label_key()).to_string()),
+                    crate::util::NotificationMode::ALL
+                        .iter()
+                        .map(|m| crate::i18n::t(m.label_key()).to_string())
+                        .collect::<Vec<_>>(),
+                    |s: &String| s.clone(),
+                )
+                .on_select(Message::NotificationModeChanged)
+                .width(200)
+                .padding(10)
+                .style(crate::widgets::rounded_pick_list_style)
+                .into(),
+            ]).align_y(iced::Alignment::Center),
+        ]);
+
+        let font_size_section = panel_section(column![
+            dir_row(vec![
+                text(crate::i18n::t("terminal_font_size")).size(13).color(OryxisColors::t().text_primary).into(),
+                Space::new().width(Length::Fill).into(),
+                button(
+                    container(text("\u{2212}").size(14).color(OryxisColors::t().text_primary))
+                        .padding(Padding { top: 4.0, right: 10.0, bottom: 4.0, left: 10.0 }),
+                )
+                .on_press(Message::TerminalFontSizeDecrease)
+                .style(|_, status| {
+                    let bg = match status {
+                        BtnStatus::Hovered => OryxisColors::t().bg_hover,
+                        _ => OryxisColors::t().bg_selected,
+                    };
+                    button::Style {
+                        background: Some(Background::Color(bg)),
+                        border: Border { radius: Radius::from(4.0), ..Default::default() },
+                        ..Default::default()
+                    }
+                }).into(),
+                Space::new().width(8).into(),
+                text(format!("{:.0}", self.terminal_font_size)).size(13).color(OryxisColors::t().text_primary).into(),
+                Space::new().width(8).into(),
+                button(
+                    container(text("+").size(14).color(OryxisColors::t().text_primary))
+                        .padding(Padding { top: 4.0, right: 10.0, bottom: 4.0, left: 10.0 }),
+                )
+                .on_press(Message::TerminalFontSizeIncrease)
+                .style(|_, status| {
+                    let bg = match status {
+                        BtnStatus::Hovered => OryxisColors::t().bg_hover,
+                        _ => OryxisColors::t().bg_selected,
+                    };
+                    button::Style {
+                        background: Some(Background::Color(bg)),
+                        border: Border { radius: Radius::from(4.0), ..Default::default() },
+                        ..Default::default()
+                    }
+                }).into(),
+            ]).align_y(iced::Alignment::Center),
+        ]);
+
+        let scrollback_section = panel_section(column![
+            text(crate::i18n::t("scrollback")).size(13).color(OryxisColors::t().text_primary),
+            Space::new().height(4),
+            text(t("setting_scrollback_desc"))
+                .size(11).color(OryxisColors::t().text_muted),
+            Space::new().height(8),
+            text_input("10000", &self.setting_scrollback_rows)
+                .on_input(Message::SettingScrollbackChanged)
+                .padding(10)
+                .width(240)
+                .style(crate::widgets::rounded_input_style).align_x(dir_align_x()),
+        ]);
+
+        let word_delimiters_section = panel_section(column![
+            text(crate::i18n::t("word_delimiters")).size(13).color(OryxisColors::t().text_primary),
+            Space::new().height(4),
+            text(t("setting_word_delimiters_desc"))
+                .size(11).color(OryxisColors::t().text_muted),
+            Space::new().height(8),
+            dir_row(vec![
+                text_input(oryxis_terminal::DEFAULT_WORD_DELIMITERS, &self.setting_word_delimiters)
+                    .on_input(Message::SettingWordDelimitersChanged)
+                    .padding(10)
+                    .width(240)
+                    .style(crate::widgets::rounded_input_style)
+                    .align_x(dir_align_x())
+                    .into(),
+                Space::new().width(8).into(),
+                styled_button(
+                    crate::i18n::t("word_delimiters_reset"),
+                    Message::SettingResetWordDelimiters,
+                    OryxisColors::t().bg_selected,
+                ),
+            ]).align_y(iced::Alignment::Center),
+        ]);
+
+        // Terminal theme picker. First card is the "follow
+        // app theme" sentinel (terminal_theme_override = None);
+        // the rest are explicit palette previews so the user
+        // can compare colours without applying each one. Per-host
+        // overrides configured via the icon picker still win
+        // over this global pick.
+        let mut theme_cards: Vec<Element<'_, Message>> = Vec::new();
+        // The sentinel renders as a real palette card previewing
+        // the app-theme-derived palette (every app theme has a
+        // same-named terminal palette), instead of the old
+        // input-looking box that read as a text field.
+        let app_theme_name = crate::theme::AppTheme::active().name();
+        let follow_palette = self
+            .terminal_palette_for_name(app_theme_name)
+            .unwrap_or_default();
+        let follow_label =
+            format!("{} ({})", t("terminal_theme_follow_app"), app_theme_name);
+        theme_cards.push(crate::widgets::terminal_theme_card(
+            follow_palette,
+            &follow_label,
+            self.terminal_theme_override.is_none(),
+            Message::TerminalThemeChanged(String::new()),
+        ));
+        for theme in oryxis_terminal::TerminalTheme::ALL.iter() {
+            let is_selected = self
+                .terminal_theme_override
+                .as_deref()
+                == Some(theme.name());
+            theme_cards.push(crate::widgets::terminal_theme_card(
+                theme.palette(),
+                theme.name(),
+                is_selected,
+                Message::TerminalThemeChanged(theme.name().to_string()),
+            ));
+        }
+        // User-defined themes after the built-ins, each with the
+        // hover edit / delete affordances.
+        for (idx, ct) in self.custom_terminal_themes.iter().enumerate() {
+            let is_selected =
+                self.terminal_theme_override.as_deref() == Some(ct.name.as_str());
+            let palette = self
+                .terminal_palette_for_name(&ct.name)
+                .unwrap_or_default();
+            theme_cards.push(self.terminal_custom_theme_card(
+                idx,
+                &ct.name,
+                palette,
+                is_selected,
+            ));
+        }
+        // "+ New custom theme" + "Import" cards last.
+        theme_cards.push(crate::views::settings_themes::terminal_theme_add_card());
+        theme_cards.push(crate::views::settings_themes::terminal_theme_import_card());
+        // 2-column responsive grid for theme cards. Cards still
+        // use the existing swatch-+-name layout (the "bolinhas"
+        // style); only the row arrangement changes from a single
+        // tall column to a side-by-side pair so the picker
+        // doesn't dominate the settings panel vertically.
+        let theme_grid = crate::widgets::distribute_card_grid(
+            theme_cards,
+            2,
+            8.0,
+            8.0,
+        );
+        let theme_picker_section = panel_section(column![
+            text(t("terminal_theme")).size(13).color(OryxisColors::t().text_primary),
+            Space::new().height(4),
+            text(t("terminal_theme_desc"))
+                .size(11).color(OryxisColors::t().text_muted),
+            Space::new().height(10),
+            theme_grid,
+        ]);
+
+        // Font picker. The list comes from a fontdb scan of
+        // monospace families installed on the system (cached
+        // for the process lifetime; rescanning per frame read
+        // every font file from disk), with a hardcoded
+        // fallback when the scan returns nothing.
+        let fonts: &'static [String] = crate::app::enumerate_terminal_fonts();
+        // Live sample rendered in the picked font on the active
+        // terminal palette: the user can confirm the font exists
+        // on their machine and preview the theme at a glance. The
+        // font name comes straight from the (`'static`) enumerated
+        // list, so `Family::Name` needs no leak.
+        let preview_font = fonts
+            .iter()
+            .find(|f| f.as_str() == self.terminal_font_name)
+            .map(|f| iced::Font {
+                family: iced::font::Family::Name(f.as_str()),
+                ..iced::Font::MONOSPACE
+            })
+            .unwrap_or(iced::Font::MONOSPACE);
+        let active_term_theme = self
+            .terminal_theme_override
+            .clone()
+            .unwrap_or_else(|| crate::theme::AppTheme::active().name().to_string());
+        let pal = self
+            .terminal_palette_for_name(&active_term_theme)
+            .unwrap_or_default();
+        let (fg, bg) = (pal.foreground, pal.background);
+        let (c_green, c_blue, c_cyan, c_yellow) =
+            (pal.ansi[2], pal.ansi[4], pal.ansi[6], pal.ansi[3]);
+        let fs = self.terminal_font_size;
+        let font_preview = container(
+            column![
+                text("The quick brown fox 1234567890 {}[]()<>")
+                    .font(preview_font).size(fs).color(fg),
+                Space::new().height(4),
+                dir_row(vec![
+                    text("user").font(preview_font).size(fs).color(c_green).into(),
+                    text("@").font(preview_font).size(fs).color(fg).into(),
+                    text("host").font(preview_font).size(fs).color(c_blue).into(),
+                    text(":").font(preview_font).size(fs).color(fg).into(),
+                    text("~/dev").font(preview_font).size(fs).color(c_cyan).into(),
+                    text("$ ").font(preview_font).size(fs).color(fg).into(),
+                    text("git status").font(preview_font).size(fs).color(c_yellow).into(),
+                ]),
+                Space::new().height(4),
+                // Nerd Font glyphs (branch, powerline, home, folder,
+                // github, git, code, terminal). Render as tofu boxes
+                // if the picked font lacks Nerd Font icon coverage,
+                // which is exactly the at-a-glance check we want.
+                text("\u{e0a0} \u{e0b0} \u{f015} \u{f07b} \u{f09b} \u{e702} \u{f121} \u{f120}")
+                    .font(preview_font).size(fs).color(c_green),
+            ],
+        )
+        .padding(12)
+        .width(Length::Fill)
+        .style(move |_| container::Style {
+            background: Some(Background::Color(bg)),
+            border: Border {
+                radius: Radius::from(8.0),
+                color: OryxisColors::t().border,
+                width: 1.0,
+            },
+            ..Default::default()
+        });
+        let font_picker_section = panel_section(column![
+            text(crate::i18n::t("terminal_font")).size(13).color(OryxisColors::t().text_primary),
+            Space::new().height(4),
+            text(t("setting_font_desc"))
+                .size(11).color(OryxisColors::t().text_muted),
+            Space::new().height(8),
+            pick_list(
+                Some(self.terminal_font_name.clone()),
+                fonts,
+                |s: &String| s.clone(),
+            )
+            .on_select(Message::TerminalFontChanged)
+            .width(260).padding(10).style(crate::widgets::rounded_pick_list_style),
+            Space::new().height(12),
+            font_preview,
+        ]);
+
+        // Grouped under "h2" headers, same pattern as Interface:
+        // Behavior (selection, delimiters, scrollback) then
+        // Appearance (rendering, font, theme). Connection + logging
+        // knobs live in their own sections.
+        use crate::widgets::settings_group_header as gh;
+        scrollable(
+            container(
+                column![
+                    gh(crate::i18n::t("terminal_group_behavior")),
+                    Space::new().height(8),
+                    toggles_section,
+                    Space::new().height(12),
+                    word_delimiters_section,
+                    Space::new().height(12),
+                    scrollback_section,
+                    Space::new().height(18),
+                    gh(crate::i18n::t("terminal_group_appearance")),
+                    Space::new().height(8),
+                    text_render_section,
+                    Space::new().height(12),
+                    font_size_section,
+                    Space::new().height(12),
+                    font_picker_section,
+                    Space::new().height(12),
+                    theme_picker_section,
+                    Space::new().height(18),
+                    gh(crate::i18n::t("local_terminals")),
+                    Space::new().height(8),
+                    self.local_terminals_card(),
+                    Space::new().height(24),
+                ]
+                .width(Length::Fill)
+                .align_x(dir_align_x()),
+            )
+            .padding(Padding { top: 24.0, right: 24.0, bottom: 24.0, left: 24.0 }),
+        )
+        .height(Length::Fill)
+        .into()
+    }
+
+    fn view_settings_connection(&self) -> Element<'_, Message> {
+        let keepalive_section = panel_section(column![
+            text(crate::i18n::t("keepalive_interval")).size(13).color(OryxisColors::t().text_primary),
+            Space::new().height(4),
+            text(t("setting_keepalive_desc"))
+                .size(11).color(OryxisColors::t().text_muted),
+            Space::new().height(8),
+            text_input("30", &self.setting_keepalive_interval)
+                .on_input(Message::SettingKeepaliveChanged)
+                .padding(10)
+                .width(240)
+                .style(crate::widgets::rounded_input_style).align_x(dir_align_x()),
+        ]);
+
+        // Defaults pre-filled into a NEW host form (so the user doesn't
+        // re-toggle agent forwarding / re-type a port every time).
+        let term_default_options: Vec<String> = [
+            "xterm-256color", "xterm", "screen-256color", "tmux-256color",
+            "screen", "linux", "vt220", "vt100", "ansi",
+        ]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+        let new_conn_defaults_section = panel_section(column![
+            text(crate::i18n::t("new_connection_defaults")).size(13).color(OryxisColors::t().text_primary),
+            Space::new().height(4),
+            text(t("new_connection_defaults_desc")).size(11).color(OryxisColors::t().text_muted),
+            Space::new().height(10),
+            toggle_row(crate::i18n::t("forward_ssh_agent"), self.setting_default_agent_forwarding, Message::ToggleDefaultAgentForwarding),
+            Space::new().height(10),
+            dir_row(vec![
+                text(crate::i18n::t("port")).size(13).color(OryxisColors::t().text_secondary).into(),
+                Space::new().width(Length::Fill).into(),
+                text_input("22", &self.setting_default_port)
+                    .on_input(Message::DefaultPortChanged)
+                    .padding(10).width(120)
+                    .style(crate::widgets::rounded_input_style).align_x(dir_align_x()).into(),
+            ]).align_y(iced::Alignment::Center),
+            Space::new().height(10),
+            dir_row(vec![
+                text(crate::i18n::t("host_keepalive")).size(13).color(OryxisColors::t().text_secondary).into(),
+                Space::new().width(Length::Fill).into(),
+                text_input(&self.setting_keepalive_interval, &self.setting_default_keepalive)
+                    .on_input(Message::DefaultKeepaliveChanged)
+                    .padding(10).width(120)
+                    .style(crate::widgets::rounded_input_style).align_x(dir_align_x()).into(),
+            ]).align_y(iced::Alignment::Center),
+            Space::new().height(10),
+            dir_row(vec![
+                text(crate::i18n::t("host_terminal_type")).size(13).color(OryxisColors::t().text_secondary).into(),
+                Space::new().width(Length::Fill).into(),
+                pick_list(
+                    Some(self.setting_default_terminal_type.clone()),
+                    term_default_options,
+                    |s: &String| s.clone(),
+                )
+                .on_select(Message::DefaultTerminalTypeChanged)
+                .width(200).padding(10)
+                .style(crate::widgets::rounded_pick_list_style).into(),
+            ]).align_y(iced::Alignment::Center),
+        ]);
+
+        let auto_reconnect_enabled = self.setting_auto_reconnect;
+        let auto_reconnect_section = panel_section(column![
+            toggle_row(
+                crate::i18n::t("auto_reconnect"),
+                auto_reconnect_enabled,
+                Message::SettingToggleAutoReconnect,
+            ),
+            Space::new().height(4),
+            text(t("setting_reconnect_desc"))
+                .size(11).color(OryxisColors::t().text_muted),
+            Space::new().height(8),
+            text(crate::i18n::t("max_reconnect_attempts")).size(12).color(OryxisColors::t().text_secondary),
+            Space::new().height(4),
+            text_input("5", &self.setting_max_reconnect_attempts)
+                .on_input(Message::SettingMaxReconnectChanged)
+                .padding(10)
+                .width(240)
+                .style(crate::widgets::rounded_input_style).align_x(dir_align_x()),
+        ]);
+
+        let os_detection_enabled = self.setting_os_detection;
+        let os_detection_section = panel_section(column![
+            toggle_row(
+                crate::i18n::t("os_detection"),
+                os_detection_enabled,
+                Message::SettingToggleOsDetection,
+            ),
+            Space::new().height(4),
+            text(t("setting_os_detect_desc"))
+                .size(11).color(OryxisColors::t().text_muted),
+        ]);
+
+        scrollable(
+            container(
+                column![
+                    new_conn_defaults_section,
+                    Space::new().height(12),
+                    keepalive_section,
+                    Space::new().height(12),
+                    auto_reconnect_section,
+                    Space::new().height(12),
+                    os_detection_section,
+                    Space::new().height(24),
+                ]
+                .width(Length::Fill)
+                .align_x(dir_align_x()),
+            )
+            .padding(Padding { top: 24.0, right: 24.0, bottom: 24.0, left: 24.0 }),
+        )
+        .height(Length::Fill)
+        .into()
+    }
+
+    fn view_settings_sftp(&self) -> Element<'_, Message> {
+        let concurrency_section = panel_section(column![
+            text(t("transfer_parallelism"))
+                .size(13)
+                .color(OryxisColors::t().text_primary),
+            Space::new().height(4),
+            text(t("setting_sftp_concurrency_desc"))
+                .size(11)
+                .color(OryxisColors::t().text_muted),
+            Space::new().height(8),
+            text_input("2", &self.setting_sftp_concurrency)
+                .on_input(Message::SettingSftpConcurrencyChanged)
+                .padding(10)
+                .width(240)
+                .style(crate::widgets::rounded_input_style).align_x(dir_align_x()),
+        ]);
+
+        let timeout_input = |label: &str, hint: &str, value: &str, on_input: fn(String) -> Message| {
+            panel_section(column![
+                text(label.to_string())
+                    .size(13)
+                    .color(OryxisColors::t().text_primary),
+                Space::new().height(4),
+                text(hint.to_string())
+                    .size(11)
+                    .color(OryxisColors::t().text_muted),
+                Space::new().height(8),
+                text_input("0", value)
+                    .on_input(on_input)
+                    .padding(10)
+                    .width(240)
+                    .style(crate::widgets::rounded_input_style).align_x(dir_align_x()),
+            ])
+        };
+
+        let connect_section = timeout_input(
+            t("connect_timeout"),
+            t("connect_timeout_desc"),
+            &self.setting_sftp_connect_timeout,
+            Message::SettingSftpConnectTimeoutChanged,
+        );
+        let auth_section = timeout_input(
+            t("auth_timeout"),
+            t("auth_timeout_desc"),
+            &self.setting_sftp_auth_timeout,
+            Message::SettingSftpAuthTimeoutChanged,
+        );
+        let session_section = timeout_input(
+            t("channel_open_timeout"),
+            t("channel_open_timeout_desc"),
+            &self.setting_sftp_session_timeout,
+            Message::SettingSftpSessionTimeoutChanged,
+        );
+        let op_section = timeout_input(
+            t("operation_timeout"),
+            t("operation_timeout_desc"),
+            &self.setting_sftp_op_timeout,
+            Message::SettingSftpOpTimeoutChanged,
+        );
+
+        // Enable/disable lives on the Plugins screen now; this
+        // section only renders while SFTP is enabled, showing its
+        // tuning knobs (parallelism, timeouts).
+        let mut content_col: iced::widget::Column<'_, Message> = column![]
+            .width(Length::Fill)
+            .align_x(dir_align_x());
+
+        if self.sftp_enabled {
+            content_col = content_col
+                .push(concurrency_section)
+                .push(Space::new().height(12))
+                .push(connect_section)
+                .push(Space::new().height(12))
+                .push(auth_section)
+                .push(Space::new().height(12))
+                .push(session_section)
+                .push(Space::new().height(12))
+                .push(op_section);
+        }
+        content_col = content_col.push(Space::new().height(24));
+
+        scrollable(
+            container(content_col)
+                .padding(Padding { top: 24.0, right: 24.0, bottom: 24.0, left: 24.0 }),
+        )
+        .height(Length::Fill)
+        .into()
+    }
+
+    fn view_settings_ai(&self) -> Element<'_, Message> {
+        // Enable/disable lives on the Plugins screen now; this
+        // section only renders while AI is enabled.
+        let mut content_col = column![
+            // The assistant runs commands on connected servers
+            // (some auto-execute); keep the warning in view.
+            text(crate::i18n::t("ai_enable_warning")).size(12).color(OryxisColors::t().text_muted),
+        ]
+        .width(Length::Fill)
+        .align_x(dir_align_x());
+
+        if self.ai.enabled {
+            let current_info = crate::ai::provider_info(&self.ai.provider);
+            let provider_options: Vec<String> = crate::ai::PROVIDERS
+                .iter()
+                .map(|p| p.display.to_string())
+                .collect();
+
+            let provider_pick: Element<'_, Message> = pick_list(
+                Some(current_info.display.to_string()),
+                provider_options,
+                |s: &String| s.clone(),
+            )
+            .on_select(Message::AiProviderChanged)
+            .width(220)
+            .padding(10)
+            .style(crate::widgets::rounded_pick_list_style)
+            .into();
+
+            let model_input: Element<'_, Message> = text_input(t("ai_model_placeholder"), &self.ai.model)
+                .on_input(Message::AiModelChanged)
+                .padding(10)
+                .width(300)
+                .style(crate::widgets::rounded_input_style).align_x(dir_align_x())
+                .into();
+
+            // When a key is already stored, the input is cleared
+            // for security but the placeholder communicates that
+            // a key exists, typing replaces it on save.
+            let key_placeholder = if self.ai.api_key_set {
+                t("ai_key_saved_placeholder")
+            } else {
+                "sk-..."
+            };
+            let key_input: Element<'_, Message> = container(
+                crate::widgets::password_input_with_eye(
+                    key_placeholder,
+                    &self.ai.api_key,
+                    Message::AiApiKeyChanged,
+                    Some(Message::SaveAiApiKey),
+                    self.revealed_secrets
+                        .contains(&crate::state::SecretField::AiApiKey),
+                    Message::ToggleSecretVisibility(
+                        crate::state::SecretField::AiApiKey,
+                    ),
+                    10.0,
+                ),
+            )
+            .width(280)
+            .into();
+            let save_btn = styled_button(crate::i18n::t("save"), Message::SaveAiApiKey, OryxisColors::t().accent);
+            let key_status: Element<'_, Message> = if self.ai.api_key_set {
+                dir_row(vec![
+                    iced_fonts::lucide::circle_check().size(13).color(OryxisColors::t().success).into(),
+                    Space::new().width(6).into(),
+                    text(t("api_key_saved")).size(12).color(OryxisColors::t().success).into(),
+                ])
+                .align_y(iced::Alignment::Center)
+                .into()
+            } else {
+                dir_row(vec![
+                    iced_fonts::lucide::circle_alert().size(13).color(OryxisColors::t().text_muted).into(),
+                    Space::new().width(6).into(),
+                    text(t("no_api_key")).size(12).color(OryxisColors::t().text_muted).into(),
+                ])
+                .align_y(iced::Alignment::Center)
+                .into()
+            };
+
+            let mut provider_col = column![
+                panel_field(t("provider"), provider_pick),
+                Space::new().height(12),
+                panel_field(t("model"), model_input),
+            ];
+
+            if current_info.kind == crate::ai::ProviderKind::Custom {
+                let url_input: Element<'_, Message> = text_input("https://api.example.com/v1/chat/completions", &self.ai.api_url)
+                    .on_input(Message::AiApiUrlChanged)
+                    .padding(10)
+                    .width(300)
+                    .style(crate::widgets::rounded_input_style).align_x(dir_align_x())
+                    .into();
+                provider_col = provider_col
+                    .push(Space::new().height(12))
+                    .push(panel_field(crate::i18n::t("api_url"), url_input));
+            }
+
+            provider_col = provider_col
+                .push(Space::new().height(12))
+                .push(panel_field(
+                    "API Key",
+                    dir_row(vec![key_input, Space::new().width(8).into(), save_btn])
+                        .align_y(iced::Alignment::Center)
+                        .into(),
+                ))
+                .push(Space::new().height(4))
+                .push(key_status);
+
+            content_col = content_col
+                .push(Space::new().height(12))
+                .push(panel_section(provider_col));
+
+            // System prompt, multi-line editor that grows with the
+            // content. `Length::Shrink` lets the editor auto-resize
+            // to fit its text, capped by the panel's scroll area.
+            let prompt_editor: Element<'_, Message> = iced::widget::text_editor(&self.ai.system_prompt)
+                .placeholder(t("ai_system_prompt_placeholder"))
+                .on_action(Message::AiSystemPromptAction)
+                .padding(10)
+                .height(Length::Shrink)
+                .style(|_theme, status| {
+                    let c = OryxisColors::t();
+                    let (border_color, border_width) = match status {
+                        iced::widget::text_editor::Status::Focused { .. } => (c.accent, 1.5),
+                        _ => (c.border, 1.0),
+                    };
+                    iced::widget::text_editor::Style {
+                        background: iced::Background::Color(c.bg_surface),
+                        border: iced::Border {
+                            radius: iced::border::Radius::from(crate::widgets::INPUT_RADIUS),
+                            width: border_width,
+                            color: border_color,
+                        },
+                        placeholder: c.text_muted,
+                        value: c.text_primary,
+                        selection: c.accent,
+                    }
+                })
+                .into();
+            let prompt_section = panel_section(column![
+                panel_field(t("additional_system_prompt"), prompt_editor),
+                Space::new().height(4),
+                text(t("ai_system_prompt_desc"))
+                    .size(11).color(OryxisColors::t().text_muted),
+            ]);
+            content_col = content_col
+                .push(Space::new().height(12))
+                .push(prompt_section);
+        }
+
+        scrollable(
+            container(content_col)
+                .padding(Padding { top: 24.0, right: 24.0, bottom: 24.0, left: 24.0 }),
+        )
+        .height(Length::Fill)
+        .into()
+    }
+
+    fn view_settings_interface(&self) -> Element<'_, Message> {
+        use crate::theme::AppTheme;
+        let active_name = self.active_app_theme_name.as_str();
+
+        // Built-in themes, then custom UI themes, then the "+" card.
+        let mut cards: Vec<Element<'_, Message>> = Vec::new();
+        for theme in AppTheme::ALL.iter() {
+            let name = theme.name();
+            cards.push(crate::views::settings_ui_themes::app_theme_card(
+                name,
+                theme.colors_ref(),
+                name == active_name,
+                Message::AppThemeChanged(name.to_string()),
+            ));
+        }
+        // Resolve custom colors up front (the card only reads Copy
+        // values, so this temporary outlives the borrow).
+        let custom_colors: Vec<crate::theme::ThemeColors> = self
+            .custom_ui_themes
+            .iter()
+            .map(|t| crate::theme::theme_colors_from_hex(&t.colors))
+            .collect();
+        for (idx, theme) in self.custom_ui_themes.iter().enumerate() {
+            cards.push(self.ui_theme_custom_card(
+                idx,
+                &theme.name,
+                &custom_colors[idx],
+                theme.name == active_name,
+            ));
+        }
+        cards.push(crate::views::settings_ui_themes::ui_theme_add_card());
+
+        // Chunk the cards into rows of two (Elements aren't Clone, so
+        // drain pairs instead of `chunks`).
+        let mut grid_rows: Vec<Element<'_, Message>> = Vec::new();
+        let mut iter = cards.into_iter();
+        while let Some(a) = iter.next() {
+            let mut cells = vec![a];
+            if let Some(b) = iter.next() {
+                cells.push(b);
+            } else {
+                cells.push(Space::new().width(Length::FillPortion(1)).into());
+            }
+            grid_rows.push(dir_row(cells).spacing(12).into());
+        }
+
+        // Language picker
+        let lang_options: Vec<String> = crate::i18n::Language::ALL
+            .iter()
+            .map(|l| l.name().to_string())
+            .collect();
+        let active_lang_name = crate::i18n::Language::active().name().to_string();
+
+        let language_section = panel_section(column![
+            dir_row(vec![
+                text(crate::i18n::t("language")).size(13).color(OryxisColors::t().text_primary).into(),
+                Space::new().width(Length::Fill).into(),
+                pick_list(
+                    Some(active_lang_name),
+                    lang_options,
+                    |s: &String| s.clone(),
+                )
+                .on_select(Message::LanguageChanged)
+                .width(200)
+                .padding(10)
+                .style(crate::widgets::rounded_pick_list_style)
+                .into(),
+            ]).align_y(iced::Alignment::Center),
+        ]);
+
+        // Layout direction picker, Auto (follow language) by
+        // default; explicit LTR/RTL overrides regardless of
+        // language. Useful for users who want Persian text but a
+        // familiar sidebar position.
+        let dir_options: Vec<String> = crate::i18n::LayoutDirection::ALL
+            .iter()
+            .map(|d| crate::i18n::t(d.label_key()).to_string())
+            .collect();
+        let active_dir_name = crate::i18n::t(
+            crate::i18n::LayoutDirection::active().label_key(),
+        )
+        .to_string();
+
+        let layout_dir_section = panel_section(column![
+            dir_row(vec![
+                text(crate::i18n::t("layout_direction")).size(13).color(OryxisColors::t().text_primary).into(),
+                Space::new().width(Length::Fill).into(),
+                pick_list(
+                    Some(active_dir_name),
+                    dir_options,
+                    |s: &String| s.clone(),
+                )
+                .on_select(Message::LayoutDirectionChanged)
+                .width(240)
+                .padding(10)
+                .style(crate::widgets::rounded_pick_list_style)
+                .into(),
+            ]).align_y(iced::Alignment::Center),
+        ]);
+
+        // The dashboard appearance toggles read as one cluster, so
+        // they share a single card (matching the tabs group) instead
+        // of one box per toggle. Each toggle keeps its muted
+        // description line; 12 px separates the rows.
+        let dashboard_section = panel_section(column![
+            toggle_row(
+                crate::i18n::t("flatten_hosts_label"),
+                self.flatten_hosts,
+                Message::FlattenHostsToggle,
+            ),
+            Space::new().height(4),
+            text(crate::i18n::t("flatten_hosts_desc"))
+                .size(11)
+                .color(OryxisColors::t().text_muted),
+            Space::new().height(12),
+            toggle_row(
+                crate::i18n::t("show_host_address_label"),
+                self.setting_show_host_address,
+                Message::ToggleShowHostAddress,
+            ),
+            Space::new().height(4),
+            text(crate::i18n::t("show_host_address_desc"))
+                .size(11)
+                .color(OryxisColors::t().text_muted),
+            Space::new().height(12),
+            toggle_row(
+                crate::i18n::t("card_accent_glass_label"),
+                self.setting_card_accent_glass,
+                Message::ToggleCardAccentGlass,
+            ),
+            Space::new().height(4),
+            text(crate::i18n::t("card_accent_glass_desc"))
+                .size(11)
+                .color(OryxisColors::t().text_muted),
+        ]);
+
+        // Tab fill style: gradient (default) vs a flat accent tint.
+        // Token-as-value pattern like the other tab pickers.
+        let fill_options = vec!["gradient".to_string(), "solid".to_string()];
+        let status_bar_section = panel_section(column![
+            toggle_row(
+                crate::i18n::t("show_status_bar"),
+                self.setting_show_status_bar,
+                Message::SettingToggleShowStatusBar,
+            ),
+            Space::new().height(8),
+            toggle_row(
+                crate::i18n::t("tab_accent_line"),
+                self.setting_tab_accent_line,
+                Message::SettingToggleTabAccentLine,
+            ),
+            Space::new().height(8),
+            toggle_row(
+                crate::i18n::t("tab_accent_wash"),
+                self.setting_tab_accent_wash,
+                Message::SettingToggleTabAccentWash,
+            ),
+            Space::new().height(8),
+            dir_row(vec![
+                text(crate::i18n::t("tab_fill_style"))
+                    .size(13)
+                    .color(OryxisColors::t().text_primary)
+                    .into(),
+                Space::new().width(Length::Fill).into(),
+                pick_list(
+                    Some(self.setting_tab_fill_style.clone()),
+                    fill_options,
+                    |s: &String| {
+                        crate::i18n::t(if s == "solid" {
+                            "tab_fill_solid"
+                        } else {
+                            "tab_fill_gradient"
+                        })
+                        .to_string()
+                    },
+                )
+                .on_select(Message::SettingTabFillStyleChanged)
+                .width(180)
+                .padding(10)
+                .style(crate::widgets::rounded_pick_list_style)
+                .into(),
+            ]).align_y(iced::Alignment::Center),
+            Space::new().height(12),
+            self.tab_appearance_preview(),
+        ]);
+
+        // Tray toggles only mean something on Windows (the
+        // tray module is a no-op on macOS/Linux). Hide the
+        // whole section on those platforms so we don't dangle
+        // settings the user can't actually exercise.
+        let tray_section = panel_section(column![
+            text(crate::i18n::t("system_tray"))
+                .size(13)
+                .color(OryxisColors::t().text_primary),
+            Space::new().height(8),
+            toggle_row(
+                crate::i18n::t("close_to_tray"),
+                self.setting_close_to_tray,
+                Message::SettingToggleCloseToTray,
+            ),
+            Space::new().height(4),
+            text(crate::i18n::t("close_to_tray_desc"))
+                .size(11)
+                .color(OryxisColors::t().text_muted),
+            Space::new().height(10),
+            toggle_row(
+                crate::i18n::t("minimize_to_tray"),
+                self.setting_minimize_to_tray,
+                Message::SettingToggleMinimizeToTray,
+            ),
+            Space::new().height(4),
+            text(crate::i18n::t("minimize_to_tray_desc"))
+                .size(11)
+                .color(OryxisColors::t().text_muted),
+        ]);
+
+        // Tab close button position picker. We use the token
+        // strings ("left" / "right") as the picker's value type
+        // and only translate to the localized display in the
+        // `to_string` closure. The previous wiring used the
+        // localized labels as values, so the on_select handler
+        // always saw "Left"/"Right" (case + spelling locale-
+        // dependent) and never matched the "right" arm.
+        let close_options = vec![
+            "left".to_string(),
+            "right".to_string(),
+        ];
+        let tabs_section = panel_section(column![
+            dir_row(vec![
+                text(crate::i18n::t("close_button_position"))
+                    .size(13)
+                    .color(OryxisColors::t().text_primary)
+                    .into(),
+                Space::new().width(Length::Fill).into(),
+                pick_list(
+                    Some(self.setting_tab_close_button_side.clone()),
+                    close_options,
+                    |s: &String| {
+                        crate::i18n::t(if s == "right" {
+                            "close_position_right"
+                        } else {
+                            "close_position_left"
+                        })
+                        .to_string()
+                    },
+                )
+                .on_select(Message::SettingTabCloseButtonSideChanged)
+                .width(160)
+                .padding(10)
+                .style(crate::widgets::rounded_pick_list_style)
+                .into(),
+            ]).align_y(iced::Alignment::Center),
+            Space::new().height(8),
+            dir_row(vec![
+                text(crate::i18n::t("pinned_tab_style"))
+                    .size(13)
+                    .color(OryxisColors::t().text_primary)
+                    .into(),
+                Space::new().width(Length::Fill).into(),
+                pick_list(
+                    Some(self.setting_pinned_tab_style.clone()),
+                    vec!["compact".to_string(), "full".to_string()],
+                    |s: &String| {
+                        crate::i18n::t(if s == "full" {
+                            "pinned_tab_style_full"
+                        } else {
+                            "pinned_tab_style_compact"
+                        })
+                        .to_string()
+                    },
+                )
+                .on_select(Message::SettingPinnedTabStyleChanged)
+                .width(180)
+                .padding(10)
+                .style(crate::widgets::rounded_pick_list_style)
+                .into(),
+            ]).align_y(iced::Alignment::Center),
+            Space::new().height(8),
+            toggle_row(
+                crate::i18n::t("show_tab_status_dot"),
+                self.setting_show_tab_status_dot,
+                Message::SettingToggleShowTabStatusDot,
+            ),
+        ]);
+
+        // Layout mode picker: same token-as-value pattern as
+        // the close-button picker. The display closure
+        // translates the token to the localized label.
+        let layout_options = vec![
+            "horizontal".to_string(),
+            "vertical".to_string(),
+        ];
+        let layout_section = panel_section(column![
+            dir_row(vec![
+                text(crate::i18n::t("nav_orientation"))
+                    .size(13)
+                    .color(OryxisColors::t().text_primary)
+                    .into(),
+                Space::new().width(Length::Fill).into(),
+                pick_list(
+                    Some(self.setting_nav_orientation.clone()),
+                    layout_options,
+                    |s: &String| {
+                        crate::i18n::t(if s == "vertical" {
+                            "nav_orientation_vertical"
+                        } else {
+                            "nav_orientation_horizontal"
+                        })
+                        .to_string()
+                    },
+                )
+                .on_select(Message::SettingNavOrientationChanged)
+                .width(200)
+                .padding(10)
+                .style(crate::widgets::rounded_pick_list_style)
+                .into(),
+            ]).align_y(iced::Alignment::Center),
+            Space::new().height(4),
+            text(crate::i18n::t("nav_orientation_desc"))
+                .size(11)
+                .color(OryxisColors::t().text_muted),
+        ]);
+
+        // Default host icon picker: tokens drive the value,
+        // localized labels come from `to_string`.
+        let icon_options = vec![
+            "circular".to_string(),
+            "square".to_string(),
+            "rounded".to_string(),
+            "outline".to_string(),
+            "initials".to_string(),
+        ];
+        let icon_section = panel_section(column![
+            dir_row(vec![
+                text(crate::i18n::t("default_host_icon"))
+                    .size(13)
+                    .color(OryxisColors::t().text_primary)
+                    .into(),
+                Space::new().width(Length::Fill).into(),
+                pick_list(
+                    Some(self.setting_default_host_icon.clone()),
+                    icon_options,
+                    |s: &String| {
+                        let key = match s.as_str() {
+                            "square" => "icon_square",
+                            "rounded" => "icon_rounded",
+                            "outline" => "icon_outline",
+                            "initials" => "icon_initials",
+                            _ => "icon_circular",
+                        };
+                        crate::i18n::t(key).to_string()
+                    },
+                )
+                .on_select(Message::SettingDefaultHostIconChanged)
+                .width(200)
+                .padding(10)
+                .style(crate::widgets::rounded_pick_list_style)
+                .into(),
+            ]).align_y(iced::Alignment::Center),
+            Space::new().height(12),
+            self.card_appearance_preview(),
+        ]);
+
+        // Renderer backend picker + a hint that it only takes
+        // effect after a restart (the backend is fixed at process
+        // start). Escape hatch for GPU/driver stacks that corrupt
+        // the wgpu surface: "auto" (best/Vulkan), "opengl" (still
+        // GPU, dodges most Vulkan-on-Mesa bugs), "software" (CPU).
+        // Token-as-value pattern: the picker stores the token and
+        // the display closure translates it to the localized label.
+        let renderer_options = vec![
+            "auto".to_string(),
+            "opengl".to_string(),
+            "software".to_string(),
+        ];
+        let renderer_active_line: Element<'_, Message> =
+            if let Some((backend, adapter)) = &self.renderer_active {
+                column![
+                    Space::new().height(4),
+                    text(format!(
+                        "{}: {} ({})",
+                        crate::i18n::t("renderer_active"),
+                        backend,
+                        adapter
+                    ))
+                    .size(11)
+                    .color(OryxisColors::t().text_secondary),
+                ]
+                .into()
+            } else {
+                Space::new().height(0).into()
+            };
+        let rendering_section = panel_section(column![
+            dir_row(vec![
+                text(crate::i18n::t("renderer_backend"))
+                    .size(13)
+                    .color(OryxisColors::t().text_primary)
+                    .into(),
+                Space::new().width(Length::Fill).into(),
+                pick_list(
+                    Some(self.setting_renderer_backend.clone()),
+                    renderer_options,
+                    |s: &String| {
+                        let key = match s.as_str() {
+                            "opengl" => "renderer_opengl",
+                            "software" => "renderer_software",
+                            _ => "renderer_auto",
+                        };
+                        crate::i18n::t(key).to_string()
+                    },
+                )
+                .on_select(Message::SettingRendererBackendChanged)
+                .width(200)
+                .padding(10)
+                .style(crate::widgets::rounded_pick_list_style)
+                .into(),
+            ]).align_y(iced::Alignment::Center),
+            Space::new().height(4),
+            text(crate::i18n::t("renderer_backend_desc"))
+                .size(11)
+                .color(OryxisColors::t().text_muted),
+            // What the compositor actually selected. Resolves the
+            // ambiguity of "Automatic" (which GPU backend won?)
+            // and confirms an opengl/software override or a
+            // runtime fallback actually took effect.
+            renderer_active_line,
+        ]);
+
+        // Terminal teaching hints (the mouse-capture toast, the
+        // "Ctrl + Click to open" link tip) are governed by one
+        // tri-state mode. `Once` (default) shows each a single time
+        // per pane; `Always` repeats; `Never` silences them.
+        let hints_section = panel_section(column![
+            dir_row(vec![
+                text(crate::i18n::t("terminal_hints"))
+                    .size(13)
+                    .color(OryxisColors::t().text_primary)
+                    .into(),
+                Space::new().width(Length::Fill).into(),
+                pick_list(
+                    Some(crate::i18n::t(self.setting_hint_mode.label_key()).to_string()),
+                    crate::util::HintMode::ALL
+                        .iter()
+                        .map(|m| crate::i18n::t(m.label_key()).to_string())
+                        .collect::<Vec<_>>(),
+                    |s: &String| s.clone(),
+                )
+                .on_select(Message::HintModeChanged)
+                .width(200)
+                .padding(10)
+                .style(crate::widgets::rounded_pick_list_style)
+                .into(),
+            ])
+            .align_y(iced::Alignment::Center),
+            Space::new().height(4),
+            text(crate::i18n::t("terminal_hints_desc"))
+                .size(11)
+                .color(OryxisColors::t().text_muted),
+        ]);
+
+        // Explicit `Space::new()` between elements (no
+        // `.spacing()`) so the gap before the first panel
+        // matches the SFTP section's 16 px exactly; the
+        // previous `.spacing(12)` was stacking on top of the
+        // explicit gaps to roughly double them.
+        // Grouped under "h2" headers so related cards read as a
+        // cluster (the section had grown into a flat list that was
+        // hard to scan). Group gaps are 18 px, intra-group 12 px,
+        // header-to-first-card 8 px.
+        use crate::widgets::settings_group_header as gh;
+        let mut content_col = column![
+            gh(crate::i18n::t("interface_group_general")),
+            Space::new().height(8),
+            language_section,
+            Space::new().height(12),
+            layout_dir_section,
+            Space::new().height(12),
+            layout_section,
+            Space::new().height(18),
+            gh(crate::i18n::t("interface_group_dashboard")),
+            Space::new().height(8),
+            dashboard_section,
+            Space::new().height(12),
+            icon_section,
+            Space::new().height(18),
+            gh(crate::i18n::t("interface_group_tabs")),
+            Space::new().height(8),
+            tabs_section,
+            Space::new().height(12),
+            status_bar_section,
+            Space::new().height(18),
+            gh(crate::i18n::t("interface_group_theme")),
+            Space::new().height(8),
+        ]
+        .width(Length::Fill)
+        .align_x(dir_align_x());
+
+        // App-theme swatch grid sits under the Theme header.
+        for row_el in grid_rows {
+            content_col = content_col
+                .push(row_el)
+                .push(Space::new().height(8));
+        }
+
+        // Advanced: renderer backend + reset hints, plus the
+        // system tray toggles on Windows (a no-op elsewhere, so
+        // hidden on macOS/Linux).
+        content_col = content_col
+            .push(Space::new().height(10))
+            .push(gh(crate::i18n::t("interface_group_advanced")))
+            .push(Space::new().height(8))
+            .push(rendering_section)
+            .push(Space::new().height(12))
+            .push(hints_section);
+        if cfg!(target_os = "windows") {
+            content_col = content_col
+                .push(Space::new().height(12))
+                .push(tray_section);
+        } else {
+            let _ = tray_section; // keep helper construction warning-free.
+        }
+        content_col = content_col.push(Space::new().height(24));
+
+        scrollable(
+            container(content_col)
+                .padding(Padding { top: 24.0, right: 24.0, bottom: 24.0, left: 24.0 }),
+        )
+        .height(Length::Fill)
+        .into()
+    }
+
+    fn view_settings_shortcuts(&self) -> Element<'_, Message> {
+        use crate::hotkeys::{default_bindings, HotkeyAction};
+        let defaults = default_bindings();
+
+        // Header: title + hint + global reset button.
+        let header = column![
+                                text(crate::i18n::t("hotkey_edit_hint"))
+                .size(11)
+                .color(OryxisColors::t().text_muted),
+            Space::new().height(10),
+            styled_button(
+                crate::i18n::t("hotkey_reset_all"),
+                Message::ResetAllHotkeys,
+                OryxisColors::t().bg_selected,
+            ),
+            Space::new().height(16),
+        ]
+        .width(Length::Fill)
+        .align_x(dir_align_x());
+
+        let mut rows_col = column![header]
+            .spacing(8)
+            .width(Length::Fill)
+            .align_x(dir_align_x());
+
+        for action in HotkeyAction::all() {
+            let row_el = self.hotkey_editor_row(*action, defaults.get(action).copied());
+            rows_col = rows_col.push(row_el);
+        }
+
+        // Read-only footer: terminal copy/paste and Ctrl+Wheel
+        // zoom are handled in different layers (the terminal
+        // widget owns copy selection; the wheel handler lives
+        // in the scroll event). Surfaced here so the user
+        // doesn't think they're missing.
+        let static_rows = column![
+            Space::new().height(20),
+            text(crate::i18n::t("hotkey_terminal_handled"))
+                .size(11)
+                .color(OryxisColors::t().text_muted),
+            Space::new().height(8),
+            shortcut_row(
+                vec![key_badge("Ctrl"), key_badge("Shift"), key_badge("C")],
+                crate::i18n::t("copy_terminal"),
+            ),
+            shortcut_row(
+                vec![key_badge("Ctrl"), key_badge("Shift"), key_badge("V")],
+                crate::i18n::t("paste_terminal"),
+            ),
+            shortcut_row(
+                vec![key_badge("Ctrl"), key_badge("Wheel")],
+                crate::i18n::t("font_zoom_wheel"),
+            ),
+        ]
+        .spacing(8)
+        .width(Length::Fill)
+        .align_x(dir_align_x());
+        rows_col = rows_col.push(static_rows);
+
+        scrollable(
+            container(rows_col)
+                .padding(Padding { top: 24.0, right: 24.0, bottom: 24.0, left: 24.0 }),
+        )
+        .height(Length::Fill)
+        .into()
+    }
+
+    fn view_settings_security(&self) -> Element<'_, Message> {
+        let password_toggle = toggle_row(
+            crate::i18n::t("vault_password"),
+            self.vault_ui.has_user_password,
+            Message::ToggleVaultPassword,
+        );
+
+        let password_section: Element<'_, Message> = if !self.vault_ui.has_user_password {
+            // Show password input to enable
+            let input = container(crate::widgets::password_input_with_eye(
+                t("new_master_password_placeholder"),
+                &self.vault_ui.new_password,
+                Message::VaultNewPasswordChanged,
+                Some(Message::SetVaultPassword),
+                self.revealed_secrets
+                    .contains(&crate::state::SecretField::VaultNewPassword),
+                Message::ToggleSecretVisibility(
+                    crate::state::SecretField::VaultNewPassword,
+                ),
+                10.0,
+            ))
+            .width(300);
+            // Second hidden entry: both are masked, so a typo in
+            // the first would otherwise only surface at the next
+            // unlock, when the only recovery is to destroy the
+            // vault. Require them to match before accepting.
+            let confirm = container(crate::widgets::password_input_with_eye(
+                t("confirm_master_password_placeholder"),
+                &self.vault_ui.confirm_password,
+                Message::VaultConfirmPasswordChanged,
+                Some(Message::SetVaultPassword),
+                self.revealed_secrets
+                    .contains(&crate::state::SecretField::VaultConfirmPassword),
+                Message::ToggleSecretVisibility(
+                    crate::state::SecretField::VaultConfirmPassword,
+                ),
+                10.0,
+            ))
+            .width(300);
+            let btn = styled_button(crate::i18n::t("set_password"), Message::SetVaultPassword, OryxisColors::t().accent);
+            let error: Element<'_, Message> = if let Some(err) = &self.vault_ui.password_error {
+                text(err.clone()).size(12).color(OryxisColors::t().error).into()
+            } else {
+                Space::new().height(0).into()
+            };
+            column![
+                Space::new().height(8),
+                text(t("vault_set_password_desc"))
+                    .size(11).color(OryxisColors::t().text_muted),
+                Space::new().height(8),
+                input,
+                Space::new().height(8),
+                confirm,
+                Space::new().height(8),
+                btn,
+                error,
+            ].into()
+        } else {
+            let note: Element<'_, Message> = text(t("vault_protected_note"))
+                .size(11).color(OryxisColors::t().text_muted).into();
+            let error: Element<'_, Message> = if let Some(err) = &self.vault_ui.password_error {
+                text(err.clone()).size(12).color(OryxisColors::t().error).into()
+            } else {
+                Space::new().height(0).into()
+            };
+            // Explicit Remove button: toggling the header switch off
+            // also removes the password, but that's not discoverable;
+            // an outright button makes the destructive-but-reversible
+            // action obvious. Reuses the same handler as the toggle.
+            let remove_btn = styled_button(
+                crate::i18n::t("remove_password"),
+                Message::ToggleVaultPassword,
+                OryxisColors::t().warning,
+            );
+            column![Space::new().height(4), note, Space::new().height(8), remove_btn, error].into()
+        };
+
+        // Lock Vault only makes sense once a master password is
+        // set; without one, locking has nothing to protect and
+        // the unlock screen would have no way to re-enter (the
+        // vault re-opens itself with an empty key). Show the
+        // button when a password exists; otherwise replace with
+        // a muted note telling the user how to enable locking.
+        let lock_btn: Element<'_, Message> = if self.vault_ui.has_user_password {
+            button(
+                container(
+                    dir_row(vec![
+                        iced_fonts::lucide::lock().size(14).color(OryxisColors::t().warning).into(),
+                        Space::new().width(10).into(),
+                        text(crate::i18n::t("lock_vault")).size(13).color(OryxisColors::t().warning).into(),
+                    ]).align_y(iced::Alignment::Center),
+                )
+                .padding(Padding { top: 10.0, right: 20.0, bottom: 10.0, left: 20.0 }),
+            )
+            .on_press(Message::LockVault)
+            .style(|_, status| {
+                let bg = match status {
+                    BtnStatus::Hovered => Color { a: 0.15, ..OryxisColors::t().warning },
+                    _ => Color::TRANSPARENT,
+                };
+                button::Style {
+                    background: Some(Background::Color(bg)),
+                    border: Border { radius: Radius::from(8.0), color: OryxisColors::t().warning, width: 1.0 },
+                    ..Default::default()
+                }
+            })
+            .into()
+        } else {
+            text(crate::i18n::t("lock_vault_requires_password"))
+                .size(11)
+                .color(OryxisColors::t().text_muted)
+                .into()
+        };
+
+        // MCP Server moved to its own Settings sidebar entry
+        // in v0.7 (see `view_settings_mcp`). Keeping it here
+        // was crowding the Security panel.
+
+        // Export/Import section
+        let export_btn = styled_button(crate::i18n::t("export_vault"), Message::ExportVault, OryxisColors::t().accent);
+        let import_btn = styled_button(crate::i18n::t("import_vault"), Message::ImportVault, OryxisColors::t().text_muted);
+        // Restore from a remote host. Export-to-SFTP is reached from
+        // inside the export dialog (it needs the password first).
+        let import_sftp_btn = styled_button(crate::i18n::t("import_from_sftp"), Message::ImportFromSftp, OryxisColors::t().text_muted);
+
+        let mut export_import_section: iced::widget::Column<'_, Message> = column![
+            text(crate::i18n::t("export_import")).size(14).color(OryxisColors::t().text_muted),
+            Space::new().height(8),
+            dir_row(vec![export_btn, Space::new().width(8).into(), import_btn, Space::new().width(8).into(), import_sftp_btn]),
+        ];
+
+        // Show export dialog inline
+        if self.show_export_dialog {
+            let pw_input = container(crate::widgets::password_input_with_eye(
+                crate::i18n::t("export_password"),
+                &self.export_password,
+                Message::ExportPasswordChanged,
+                None,
+                self.revealed_secrets
+                    .contains(&crate::state::SecretField::ExportPassword),
+                Message::ToggleSecretVisibility(
+                    crate::state::SecretField::ExportPassword,
+                ),
+                10.0,
+            ))
+            .width(300);
+            // One checkbox per category, all checked by default.
+            let mut categories: iced::widget::Column<'_, Message> =
+                column![text(crate::i18n::t("export_select_what"))
+                    .size(12)
+                    .color(OryxisColors::t().text_muted)]
+                .spacing(6);
+            for cat in oryxis_vault::ExportCategory::ALL {
+                categories = categories.push(
+                    checkbox(self.export_selection.get(cat))
+                        .label(crate::i18n::t(category_label_key(cat)))
+                        .on_toggle(move |_| Message::ExportToggleCategory(cat))
+                        .size(16)
+                        .text_size(13),
+                );
+            }
+            // Private-key material is a sub-option of the Keys
+            // category, only meaningful when Keys is being exported.
+            let keys_toggle: Element<'_, Message> = if self.export_selection.keys {
+                dir_row(vec![
+                    text(crate::i18n::t("include_private_keys")).size(13).color(OryxisColors::t().text_secondary).into(),
+                    Space::new().width(Length::Fill).into(),
+                    button(
+                        text(if self.export_include_keys { "ON" } else { "OFF" }).size(12)
+                    ).on_press(Message::ExportToggleKeys).style(move |_theme, _status| {
+                        button::Style {
+                            background: Some(Background::Color(if self.export_include_keys { OryxisColors::t().success } else { OryxisColors::t().bg_hover })),
+                            border: Border { radius: Radius::from(4.0), ..Default::default() },
+                            text_color: OryxisColors::t().text_primary,
+                            ..Default::default()
+                        }
+                    }).into(),
+                ]).align_y(iced::Alignment::Center).into()
+            } else {
+                Space::new().height(0).into()
+            };
+            let confirm_btn = styled_button(crate::i18n::t("export_confirm"), Message::ExportConfirm, OryxisColors::t().success);
+            let sftp_btn = styled_button(crate::i18n::t("export_to_sftp"), Message::ExportToSftp, OryxisColors::t().accent);
+            let cancel_btn = styled_button(crate::i18n::t("cancel"), Message::ExportImportDismiss, OryxisColors::t().text_muted);
+            export_import_section = export_import_section
+                .push(Space::new().height(12))
+                .push(pw_input)
+                .push(Space::new().height(10))
+                .push(categories)
+                .push(Space::new().height(8))
+                .push(keys_toggle)
+                .push(Space::new().height(8))
+                .push(dir_row(vec![confirm_btn, Space::new().width(8).into(), sftp_btn, Space::new().width(8).into(), cancel_btn]));
+        }
+
+        // Show import dialog inline
+        if self.show_import_dialog {
+            let pw_input = container(crate::widgets::password_input_with_eye(
+                crate::i18n::t("import_password"),
+                &self.import_password,
+                Message::ImportPasswordChanged,
+                // Enter inspects in phase 1, imports in phase 2.
+                Some(if self.import_summary.is_some() {
+                    Message::ImportConfirm
+                } else {
+                    Message::ImportInspect
+                }),
+                self.revealed_secrets
+                    .contains(&crate::state::SecretField::ImportPassword),
+                Message::ToggleSecretVisibility(
+                    crate::state::SecretField::ImportPassword,
+                ),
+                10.0,
+            ))
+            .width(300);
+            let cancel_btn = styled_button(crate::i18n::t("cancel"), Message::ExportImportDismiss, OryxisColors::t().text_muted);
+            export_import_section = export_import_section
+                .push(Space::new().height(12))
+                .push(text(crate::i18n::t("import_password_hint")).size(12).color(OryxisColors::t().text_muted))
+                .push(Space::new().height(4))
+                .push(pw_input);
+            if let Some(summary) = &self.import_summary {
+                // Phase 2: the file is decrypted, show what it
+                // holds. Present categories are interactive
+                // checkboxes (with counts); absent ones are
+                // greyed so the user sees the full shape.
+                let mut categories: iced::widget::Column<'_, Message> =
+                    column![text(crate::i18n::t("import_select_what"))
+                        .size(12)
+                        .color(OryxisColors::t().text_muted)]
+                    .spacing(6);
+                for cat in oryxis_vault::ExportCategory::ALL {
+                    let count = summary.count(cat);
+                    let label = crate::i18n::t(category_label_key(cat));
+                    if count > 0 {
+                        categories = categories.push(
+                            checkbox(self.import_selection.get(cat))
+                                .label(format!("{label} ({count})"))
+                                .on_toggle(move |_| Message::ImportToggleCategory(cat))
+                                .size(16)
+                                .text_size(13),
+                        );
+                    } else {
+                        categories = categories.push(
+                            text(format!("{label} ({})", crate::i18n::t("import_not_in_file")))
+                                .size(13)
+                                .color(OryxisColors::t().text_muted),
+                        );
+                    }
+                }
+                let confirm_btn = styled_button(crate::i18n::t("import_confirm"), Message::ImportConfirm, OryxisColors::t().success);
+                export_import_section = export_import_section
+                    .push(Space::new().height(10))
+                    .push(categories)
+                    .push(Space::new().height(8))
+                    .push(dir_row(vec![confirm_btn, Space::new().width(8).into(), cancel_btn]));
+            } else {
+                // Phase 1: enter the password, then inspect.
+                let inspect_btn = styled_button(crate::i18n::t("import_inspect"), Message::ImportInspect, OryxisColors::t().accent);
+                export_import_section = export_import_section
+                    .push(Space::new().height(8))
+                    .push(dir_row(vec![inspect_btn, Space::new().width(8).into(), cancel_btn]));
+            }
+        }
+
+        // SFTP backup-target picker (export to / import from a
+        // saved host). Reuses the export/import password + selection
+        // state above; here the user only picks the host and path.
+        if self.sftp_backup.open {
+            let is_import = self.sftp_backup.is_import;
+            let host_options: Vec<String> =
+                self.connections.iter().map(|c| c.label.clone()).collect();
+            let selected_host = self
+                .sftp_backup.host
+                .and_then(|i| self.connections.get(i))
+                .map(|c| c.label.clone());
+            let host_lookup: std::collections::HashMap<String, usize> = self
+                .connections
+                .iter()
+                .enumerate()
+                .map(|(i, c)| (c.label.clone(), i))
+                .collect();
+            let host_picker = pick_list(selected_host, host_options, |s: &String| s.clone())
+                .on_select(move |label: String| {
+                    Message::SftpBackupHostSelected(
+                        host_lookup.get(&label).copied().unwrap_or(0),
+                    )
+                })
+                .width(300)
+                .padding(10)
+                .style(crate::widgets::rounded_pick_list_style);
+            let path_field = text_input("vault.oryxis", &self.sftp_backup.path)
+                .on_input(Message::SftpBackupPathChanged)
+                .on_submit(Message::SftpBackupConfirm)
+                .width(300)
+                .padding(10)
+                .style(crate::widgets::rounded_input_style);
+            // Restore collects the decrypt password here (export
+            // already has it in the dialog above), so both flows ask
+            // for the password before the confirm button.
+            let import_pw: Option<Element<'_, Message>> = if is_import {
+                Some(
+                    container(crate::widgets::password_input_with_eye(
+                        crate::i18n::t("import_password"),
+                        &self.import_password,
+                        Message::ImportPasswordChanged,
+                        Some(Message::SftpBackupConfirm),
+                        self.revealed_secrets
+                            .contains(&crate::state::SecretField::ImportPassword),
+                        Message::ToggleSecretVisibility(
+                            crate::state::SecretField::ImportPassword,
+                        ),
+                        10.0,
+                    ))
+                    .width(300)
+                    .into(),
+                )
+            } else {
+                None
+            };
+            let title_key = if is_import { "restore_from_sftp" } else { "backup_to_sftp" };
+            let confirm_msg = if self.sftp_backup.busy {
+                None
+            } else {
+                Some(Message::SftpBackupConfirm)
+            };
+            let confirm_label = if self.sftp_backup.busy {
+                crate::i18n::t("sftp_backup_working")
+            } else if is_import {
+                crate::i18n::t("sftp_backup_restore_confirm")
+            } else {
+                crate::i18n::t("sftp_backup_confirm")
+            };
+            let confirm_btn =
+                styled_button_opt(confirm_label, confirm_msg, OryxisColors::t().success);
+            let cancel_btn = styled_button(
+                crate::i18n::t("cancel"),
+                Message::SftpBackupCancel,
+                OryxisColors::t().text_muted,
+            );
+            let mut sftp_section: iced::widget::Column<'_, Message> = column![
+                text(crate::i18n::t(title_key)).size(13).color(OryxisColors::t().text_primary),
+                Space::new().height(2),
+                text(crate::i18n::t("sftp_backup_hint")).size(12).color(OryxisColors::t().text_muted),
+                Space::new().height(8),
+                text(crate::i18n::t("sftp_backup_host")).size(12).color(OryxisColors::t().text_secondary),
+                Space::new().height(4),
+                host_picker,
+                Space::new().height(8),
+                text(crate::i18n::t("sftp_backup_remote_path")).size(12).color(OryxisColors::t().text_secondary),
+                Space::new().height(4),
+                path_field,
+            ];
+            if let Some(pw) = import_pw {
+                sftp_section = sftp_section
+                    .push(Space::new().height(10))
+                    .push(pw);
+            }
+            sftp_section = sftp_section
+                .push(Space::new().height(10))
+                .push(dir_row(vec![confirm_btn, Space::new().width(8).into(), cancel_btn]));
+            if let Some(status) = &self.sftp_backup.status {
+                let (msg, color) = match status {
+                    Ok(m) => (m.clone(), OryxisColors::t().success),
+                    Err(e) => (e.clone(), OryxisColors::t().error),
+                };
+                sftp_section = sftp_section
+                    .push(Space::new().height(8))
+                    .push(text(msg).size(12).color(color));
+            }
+            export_import_section = export_import_section
+                .push(Space::new().height(14))
+                .push(sftp_section);
+        }
+
+        // Status messages
+        if let Some(status) = &self.export_status {
+            let (msg, color) = match status {
+                Ok(m) => (m.as_str(), OryxisColors::t().success),
+                Err(m) => (m.as_str(), OryxisColors::t().error),
+            };
+            export_import_section = export_import_section
+                .push(Space::new().height(8))
+                .push(text(msg).size(12).color(color));
+        }
+        if let Some(status) = &self.import_status {
+            let (msg, color) = match status {
+                Ok(m) => (m.as_str(), OryxisColors::t().success),
+                Err(m) => (m.as_str(), OryxisColors::t().error),
+            };
+            export_import_section = export_import_section
+                .push(Space::new().height(8))
+                .push(text(msg).size(12).color(color));
+        }
+
+        // SSH config import, separate card, sits below the
+        // vault export/import. One-shot batch importer; no
+        // preview yet.
+        let ssh_config_btn = styled_button(
+            t("import_ssh_config_btn"),
+            Message::ImportSshConfig,
+            OryxisColors::t().accent,
+        );
+        let mut ssh_config_section: iced::widget::Column<'_, Message> = column![
+            text(t("ssh_config_import"))
+                .size(14)
+                .color(OryxisColors::t().text_muted),
+            Space::new().height(4),
+            text(t("ssh_config_import_desc"))
+                .size(11)
+                .color(OryxisColors::t().text_muted),
+            Space::new().height(8),
+            ssh_config_btn,
+        ];
+        if let Some(status) = &self.ssh_config_import_status {
+            let (msg, color) = match status {
+                Ok(m) => (m.as_str(), OryxisColors::t().success),
+                Err(m) => (m.as_str(), OryxisColors::t().error),
+            };
+            ssh_config_section = ssh_config_section
+                .push(Space::new().height(8))
+                .push(text(msg).size(12).color(color));
+        }
+
+        // Privacy & logging: session recordings, connection
+        // history and the retention window. Moved here from the
+        // Terminal section, recordings are scrubbed for secrets
+        // and sealed at rest, so they belong with the vault.
+        let privacy_mode_section = panel_section(column![
+            toggle_row(
+                crate::i18n::t("privacy_mode_label"),
+                self.setting_privacy_mode,
+                Message::TogglePrivacyMode,
+            ),
+            Space::new().height(4),
+            text(crate::i18n::t("privacy_mode_desc"))
+                .size(11).color(OryxisColors::t().text_muted),
+        ]);
+
+        let session_logging_enabled = self.setting_session_logging;
+        let session_logging_section = panel_section(column![
+            toggle_row(
+                crate::i18n::t("session_logging"),
+                session_logging_enabled,
+                Message::SettingToggleSessionLogging,
+            ),
+            Space::new().height(4),
+            text(t("setting_session_logging_desc"))
+                .size(11).color(OryxisColors::t().text_muted),
+        ]);
+
+        let connection_history_enabled = self.setting_connection_history;
+        let connection_history_section = panel_section(column![
+            toggle_row(
+                crate::i18n::t("connection_history"),
+                connection_history_enabled,
+                Message::SettingToggleConnectionHistory,
+            ),
+            Space::new().height(4),
+            text(t("setting_connection_history_desc"))
+                .size(11).color(OryxisColors::t().text_muted),
+        ]);
+
+        // Retention: auto-delete connection events + finished
+        // recordings past the picked age. Codes are stable
+        // setting values; the mapper localizes per code.
+        const RETENTION_CODES: [&str; 7] =
+            ["off", "1d", "3d", "7d", "14d", "30d", "90d"];
+        let retention_selected = RETENTION_CODES
+            .iter()
+            .copied()
+            .find(|c| *c == self.setting_logs_retention)
+            .unwrap_or("off");
+        let logs_retention_section = panel_section(column![
+            text(crate::i18n::t("log_retention_label"))
+                .size(13)
+                .color(OryxisColors::t().text_primary),
+            Space::new().height(4),
+            text(t("setting_log_retention_desc"))
+                .size(11).color(OryxisColors::t().text_muted),
+            Space::new().height(8),
+            pick_list(
+                Some(retention_selected),
+                &RETENTION_CODES[..],
+                |code: &&str| {
+                    crate::i18n::t(match *code {
+                        "1d" => "log_retention_1d",
+                        "3d" => "log_retention_3d",
+                        "7d" => "log_retention_7d",
+                        "14d" => "log_retention_14d",
+                        "30d" => "log_retention_30d",
+                        "90d" => "log_retention_90d",
+                        _ => "log_retention_off",
+                    })
+                    .to_string()
+                },
+            )
+            .on_select(Message::LogsRetentionChanged)
+            .width(260).padding(10).style(crate::widgets::rounded_pick_list_style),
+        ]);
+
+        scrollable(
+            container(
+                column![
+                    panel_section(column![password_toggle]),
+                    password_section,
+                    Space::new().height(24),
+                    lock_btn,
+                    Space::new().height(24),
+                    privacy_mode_section,
+                    Space::new().height(12),
+                    session_logging_section,
+                    Space::new().height(12),
+                    connection_history_section,
+                    Space::new().height(12),
+                    logs_retention_section,
+                    Space::new().height(24),
+                    panel_section(export_import_section),
+                    Space::new().height(12),
+                    panel_section(ssh_config_section),
+                    Space::new().height(24),
+                ]
+                .width(Length::Fill)
+                .align_x(dir_align_x()),
+            )
+            .padding(Padding { top: 24.0, right: 24.0, bottom: 24.0, left: 24.0 }),
+        )
+        .height(Length::Fill)
+        .into()
+    }
+
+    fn view_settings_sync(&self) -> Element<'_, Message> {
+        // Device info
+        let device_name_input = text_input(
+            crate::i18n::t("sync_device_name_hint"),
+            &self.sync.device_name,
+        )
+        .on_input(Message::SyncDeviceNameChanged)
+        .padding(10)
+        .width(300)
+        .style(crate::widgets::rounded_input_style).align_x(dir_align_x());
+
+        let device_section = panel_section(column![
+            text(crate::i18n::t("sync_device")).size(14).color(OryxisColors::t().text_muted),
+            Space::new().height(8),
+            text(crate::i18n::t("sync_device_name")).size(12).color(OryxisColors::t().text_muted),
+            Space::new().height(4),
+            device_name_input,
+        ]);
+
+        // Enable/disable lives on the Plugins screen now.
+        let mode_label = if self.sync.mode == "auto" { t("sync_mode_auto") } else { t("sync_mode_manual") };
+        let auto_label = t("sync_mode_auto").to_string();
+        let manual_label = t("sync_mode_manual").to_string();
+        let mode_pick = pick_list(
+            Some(mode_label.to_string()),
+            vec![auto_label.clone(), manual_label.clone()],
+            |s: &String| s.clone(),
+        )
+        .on_select(move |v| {
+            // Compare against localized labels first; fall back
+            // to English so labels persisted in another locale
+            // still resolve to a known mode.
+            let mode = if v == auto_label || v == "Auto" {
+                "auto"
+            } else {
+                "manual"
+            };
+            Message::SyncModeChanged(mode.to_string())
+        })
+        .text_size(13)
+        .padding(10)
+        .style(crate::widgets::rounded_pick_list_style);
+
+        let passwords_toggle = toggle_row(
+            crate::i18n::t("sync_passwords"),
+            self.sync.passwords,
+            Message::SyncTogglePasswords,
+        );
+
+        // Live engine state indicator, sits right under the
+        // enable toggle so the user sees whether the QUIC /
+        // mDNS background tasks are actually up. The SFTP
+        // transport runs no background engine, so reporting
+        // "Engine stopped" there would read as broken; show a
+        // transport-appropriate label instead.
+        let engine_state = if self.sync.transport == "sftp" {
+            let (label, color) = if self.sync.enabled {
+                (
+                    crate::i18n::t("sftp_sync_active_label"),
+                    OryxisColors::t().success,
+                )
+            } else {
+                (
+                    crate::i18n::t("sync_engine_stopped_label"),
+                    OryxisColors::t().text_muted,
+                )
+            };
+            text(label).size(11).color(color)
+        } else if self.sync.engine_running {
+            text(crate::i18n::t("sync_engine_running_label"))
+                .size(11)
+                .color(OryxisColors::t().success)
+        } else {
+            text(crate::i18n::t("sync_engine_stopped_label"))
+                .size(11)
+                .color(OryxisColors::t().text_muted)
+        };
+
+        // Master enable panel sits at the top, same shape as
+        // the Enable SFTP / Enable AI panels: a single toggle
+        // (with the engine state hint right under it). When
+        // the master toggle is off, every other Sync panel
+        // is hidden below so the surface collapses to just
+        // the on/off knob.
+        let enable_section: iced::widget::Column<'_, Message> = column![
+            engine_state,
+        ];
+
+        let mut options_section: iced::widget::Column<'_, Message> = column![
+            text(crate::i18n::t("sync_options")).size(14).color(OryxisColors::t().text_muted),
+            Space::new().height(8),
+            dir_row(vec![
+                text(crate::i18n::t("sync_mode")).size(13).color(OryxisColors::t().text_secondary).into(),
+                Space::new().width(Length::Fill).into(),
+                mode_pick.into(),
+            ]).align_y(iced::Alignment::Center),
+            Space::new().height(8),
+            passwords_toggle,
+            Space::new().height(4),
+            text(crate::i18n::t("sync_passwords_desc"))
+                .size(11)
+                .color(OryxisColors::t().text_muted),
+        ];
+
+        if self.sync.enabled && self.sync.mode == "manual" {
+            if self.sync.transport == "sftp" {
+                // SFTP round: relabel + disable the button while a
+                // round is in flight so the click has immediate
+                // feedback. There's no engine/Cancel path (the
+                // transfer can't be safely aborted mid-write).
+                let (label, msg) = if self.sync.sftp.in_progress {
+                    (crate::i18n::t("sftp_sync_running"), None)
+                } else {
+                    (crate::i18n::t("sync_now"), Some(Message::SyncNow))
+                };
+                options_section = options_section.push(Space::new().height(8)).push(
+                    styled_button_opt(label, msg, OryxisColors::t().accent),
+                );
+            } else {
+                // P2P: swap Sync Now <-> Cancel while a sync is in
+                // flight. Cancel races a oneshot against the sync
+                // future in dispatch; the click drops the QUIC
+                // connection immediately.
+                let action_btn = if self.sync.in_progress {
+                    styled_button(
+                        crate::i18n::t("sync_pairing_cancel"),
+                        Message::SyncCancelInProgress,
+                        OryxisColors::t().button_bg,
+                    )
+                } else {
+                    styled_button(
+                        crate::i18n::t("sync_now"),
+                        Message::SyncNow,
+                        OryxisColors::t().accent,
+                    )
+                };
+                options_section = options_section
+                    .push(Space::new().height(8))
+                    .push(action_btn);
+            }
+        }
+
+        // Status line directly under the action button. SFTP shows
+        // its own round outcome (success muted / error red); P2P
+        // keeps the engine status string.
+        if self.sync.transport == "sftp" {
+            if let Some(status) = &self.sync.sftp.status {
+                let (txt, color) = match status {
+                    Ok(s) => (s.clone(), OryxisColors::t().text_muted),
+                    Err(e) => (e.clone(), OryxisColors::t().error),
+                };
+                options_section = options_section
+                    .push(Space::new().height(8))
+                    .push(text(txt).size(12).color(color));
+            }
+        } else if let Some(status) = &self.sync.status {
+            options_section = options_section
+                .push(Space::new().height(8))
+                .push(text(status.as_str()).size(12).color(OryxisColors::t().text_muted));
+        }
+
+        // Pairing. The sub-view depends on `sync_pairing.state`:
+        // Idle shows the two entry buttons; Hosting shows the
+        // generated code; Joining shows the code + address form.
+        let mut pairing_section: iced::widget::Column<'_, Message> = column![
+            text(crate::i18n::t("sync_pairing")).size(14).color(OryxisColors::t().text_muted),
+            Space::new().height(8),
+        ];
+
+        match self.sync.pairing.state {
+            crate::state::SyncPairingState::Idle => {
+                pairing_section = pairing_section.push(dir_row(vec![
+                    styled_button(
+                        crate::i18n::t("sync_host_pairing"),
+                        Message::SyncStartPairing,
+                        OryxisColors::t().accent,
+                    ),
+                    Space::new().width(8).into(),
+                    styled_button(
+                        crate::i18n::t("sync_join_pairing"),
+                        Message::SyncJoinPairingRequested,
+                        OryxisColors::t().button_bg,
+                    ),
+                ]));
+                // Live mDNS-discovered devices on the LAN.
+                // One-click "Pair" switches to the join form
+                // with the address pre-filled, so the user
+                // only has to enter the 6-digit code.
+                if !self.sync.discovered.is_empty() {
+                    pairing_section = pairing_section
+                        .push(Space::new().height(14))
+                        .push(text(crate::i18n::t("sync_discovered_devices"))
+                            .size(12)
+                            .color(OryxisColors::t().text_secondary))
+                        .push(Space::new().height(6));
+                    for peer in &self.sync.discovered {
+                        let label = if peer.device_name.is_empty() {
+                            crate::i18n::t("sync_discovered_unnamed").to_string()
+                        } else {
+                            peer.device_name.clone()
+                        };
+                        let pair_btn = styled_button(
+                            crate::i18n::t("sync_pair_with_this"),
+                            Message::SyncPairWithDiscovered(peer.device_id),
+                            OryxisColors::t().button_bg,
+                        );
+                        pairing_section = pairing_section
+                            .push(dir_row(vec![
+                                text(label)
+                                    .size(13)
+                                    .color(OryxisColors::t().text_primary)
+                                    .into(),
+                                Space::new().width(8).into(),
+                                text(peer.addr.to_string())
+                                    .size(11)
+                                    .color(OryxisColors::t().text_muted)
+                                    .into(),
+                                Space::new().width(Length::Fill).into(),
+                                pair_btn,
+                            ])
+                            .align_y(iced::Alignment::Center))
+                            .push(Space::new().height(4));
+                    }
+                }
+            }
+            crate::state::SyncPairingState::Hosting => {
+                pairing_section = pairing_section
+                    .push(text(crate::i18n::t("sync_pairing_show_code"))
+                        .size(12)
+                        .color(OryxisColors::t().text_secondary))
+                    .push(Space::new().height(6));
+                if let Some(code) = &self.sync.pairing.code {
+                    pairing_section = pairing_section
+                        .push(text(code.as_str())
+                            .size(30)
+                            .color(OryxisColors::t().success));
+                }
+                // Cross-network pairing block: the link + a
+                // Copy button + the QR. The link works only
+                // when both ends have a signaling URL set
+                // (Settings > Sync > Advanced).
+                if let Some(link) = &self.sync.pairing.link {
+                    pairing_section = pairing_section
+                        .push(Space::new().height(12))
+                        .push(text(crate::i18n::t("sync_pairing_link_label"))
+                            .size(12)
+                            .color(OryxisColors::t().text_secondary))
+                        .push(Space::new().height(4))
+                        .push(text(link.as_str())
+                            .size(11)
+                            .color(OryxisColors::t().text_muted))
+                        .push(Space::new().height(6))
+                        .push(styled_button(
+                            crate::i18n::t("sync_pairing_copy_link"),
+                            Message::CopyToClipboard(link.clone()),
+                            OryxisColors::t().button_bg,
+                        ));
+                }
+                pairing_section = pairing_section
+                    .push(Space::new().height(12))
+                    .push(styled_button(
+                        crate::i18n::t("sync_pairing_cancel"),
+                        Message::SyncCancelHostingPairing,
+                        OryxisColors::t().button_bg,
+                    ));
+            }
+            crate::state::SyncPairingState::Joining => {
+                let code_input = text_input(
+                    crate::i18n::t("sync_pairing_code_placeholder"),
+                    &self.sync.pairing.join_code_input,
+                )
+                .on_input(Message::SyncJoinCodeChanged)
+                .padding(8)
+                .width(280)
+                .style(crate::widgets::rounded_input_style)
+                .align_x(dir_align_x());
+                let target_input = text_input(
+                    crate::i18n::t("sync_pairing_target_placeholder"),
+                    &self.sync.pairing.join_target_input,
+                )
+                .on_input(Message::SyncJoinTargetChanged)
+                .padding(8)
+                .width(320)
+                .style(crate::widgets::rounded_input_style)
+                .align_x(dir_align_x());
+                let link_input = text_input(
+                    crate::i18n::t("sync_pairing_link_placeholder"),
+                    &self.sync.pairing.join_link_input,
+                )
+                .on_input(Message::SyncJoinLinkChanged)
+                .padding(8)
+                .width(360)
+                .style(crate::widgets::rounded_input_style)
+                .align_x(dir_align_x());
+                pairing_section = pairing_section
+                    .push(code_input)
+                    .push(Space::new().height(8))
+                    .push(target_input)
+                    .push(Space::new().height(10))
+                    .push(dir_row(vec![
+                        styled_button(
+                            crate::i18n::t("sync_pairing_connect"),
+                            Message::SyncJoinPairingConnect,
+                            OryxisColors::t().accent,
+                        ),
+                        Space::new().width(8).into(),
+                        styled_button(
+                            crate::i18n::t("sync_pairing_cancel"),
+                            Message::SyncJoinPairingCancel,
+                            OryxisColors::t().button_bg,
+                        ),
+                    ]))
+                    .push(Space::new().height(14))
+                    .push(text(crate::i18n::t("sync_pairing_or_separator"))
+                        .size(11)
+                        .color(OryxisColors::t().text_muted))
+                    .push(Space::new().height(6))
+                    .push(link_input)
+                    .push(Space::new().height(8))
+                    .push(styled_button(
+                        crate::i18n::t("sync_pairing_connect_with_link"),
+                        Message::SyncJoinPairingByLink,
+                        OryxisColors::t().accent,
+                    ));
+            }
+        }
+
+        // Inline status banner inside the pairing card. The
+        // same `sync_status` field also shows under "Sync Now"
+        // in the Options card, but when the user is actively
+        // pairing they're looking here, so we mirror it
+        // adjacent to the form they're filling in.
+        if !matches!(self.sync.pairing.state, crate::state::SyncPairingState::Idle)
+            && let Some(status) = &self.sync.status
+        {
+            pairing_section = pairing_section
+                .push(Space::new().height(8))
+                .push(text(status.as_str())
+                    .size(11)
+                    .color(OryxisColors::t().text_muted));
+        }
+
+        // Paired devices list. Empty until the first successful
+        // pairing on either side; pre-Phase B builds never
+        // populated this because the engine wasn't wired.
+        if !self.sync.peers.is_empty() {
+            pairing_section = pairing_section
+                .push(Space::new().height(14))
+                .push(text(crate::i18n::t("sync_paired_devices"))
+                    .size(12)
+                    .color(OryxisColors::t().text_secondary))
+                .push(Space::new().height(6));
+            for peer in &self.sync.peers {
+                let last_sync = peer.last_synced_at
+                    // Stored UTC; show in the user's local timezone.
+                    .map(|d| {
+                        d.with_timezone(&chrono::Local)
+                            .format("%Y-%m-%d %H:%M")
+                            .to_string()
+                    })
+                    .unwrap_or_else(|| crate::i18n::t("sync_never").into());
+                let unpair = button(
+                    text(crate::i18n::t("sync_unpair")).size(11).color(OryxisColors::t().error)
+                ).on_press(Message::SyncUnpairDevice(peer.peer_id)).style(|_, _| button::Style {
+                    background: Some(Background::Color(Color::TRANSPARENT)),
+                    ..Default::default()
+                });
+                pairing_section = pairing_section.push(
+                    dir_row(vec![
+                        text(&peer.device_name).size(13).color(OryxisColors::t().text_primary).into(),
+                        Space::new().width(Length::Fill).into(),
+                        text(last_sync).size(11).color(OryxisColors::t().text_muted).into(),
+                        Space::new().width(8).into(),
+                        unpair.into(),
+                    ]).align_y(iced::Alignment::Center),
+                ).push(Space::new().height(4));
+            }
+        }
+
+        // Advanced
+        let signaling_input = text_input("https://...", &self.sync.signaling_url)
+            .on_input(Message::SyncSignalingUrlChanged)
+            .padding(8)
+            .width(300)
+            .style(crate::widgets::rounded_input_style).align_x(dir_align_x());
+        let signaling_token_input = container(
+            crate::widgets::password_input_with_eye(
+                crate::i18n::t("sync_signaling_token_placeholder"),
+                &self.sync.signaling_token,
+                Message::SyncSignalingTokenChanged,
+                None,
+                self.revealed_secrets
+                    .contains(&crate::state::SecretField::SyncSignalingToken),
+                Message::ToggleSecretVisibility(
+                    crate::state::SecretField::SyncSignalingToken,
+                ),
+                8.0,
+            ),
+        )
+        .width(300);
+        let relay_input = text_input(crate::i18n::t("sync_relay_optional"), &self.sync.relay_url)
+            .on_input(Message::SyncRelayUrlChanged)
+            .padding(8)
+            .width(300)
+            .style(crate::widgets::rounded_input_style).align_x(dir_align_x());
+        let port_input = text_input("0", &self.sync.listen_port)
+            .on_input(Message::SyncListenPortChanged)
+            .padding(8)
+            .width(100)
+            .style(crate::widgets::rounded_input_style).align_x(dir_align_x());
+
+        let advanced_section = panel_section(column![
+            text(crate::i18n::t("sync_advanced")).size(14).color(OryxisColors::t().text_muted),
+            Space::new().height(8),
+            text(crate::i18n::t("sync_signaling_url")).size(12).color(OryxisColors::t().text_muted),
+            Space::new().height(4),
+            signaling_input,
+            Space::new().height(8),
+            text(crate::i18n::t("sync_signaling_token")).size(12).color(OryxisColors::t().text_muted),
+            Space::new().height(4),
+            signaling_token_input,
+            Space::new().height(8),
+            text(crate::i18n::t("sync_relay_url")).size(12).color(OryxisColors::t().text_muted),
+            Space::new().height(4),
+            relay_input,
+            Space::new().height(8),
+            text(crate::i18n::t("sync_listen_port")).size(12).color(OryxisColors::t().text_muted),
+            Space::new().height(4),
+            port_input,
+        ]);
+
+        // Plain-language primer: what sync is, that it's optional and
+        // LAN-only by default (no Oryxis server), and what the user
+        // must set up to sync across networks. Answers the recurring
+        // "is sync required / where does my data go?" question.
+        let how_section = panel_section(column![
+            text(crate::i18n::t("sync_how_title")).size(14).color(OryxisColors::t().text_muted),
+            Space::new().height(8),
+            text(crate::i18n::t("sync_how_body"))
+                .size(12)
+                .color(OryxisColors::t().text_secondary),
+        ]);
+
+        // Transport picker (P2P vs SFTP), the "one or the other"
+        // choice. Always visible while sync is enabled; selecting
+        // it persists the setting and (un)mounts the P2P engine.
+        let is_sftp = self.sync.transport == "sftp";
+        let p2p_label = crate::i18n::t("sync_transport_p2p").to_string();
+        let sftp_label = crate::i18n::t("sync_transport_sftp").to_string();
+        let transport_selected = if is_sftp {
+            sftp_label.clone()
+        } else {
+            p2p_label.clone()
+        };
+        let sftp_label_for_select = sftp_label.clone();
+        let transport_pick = pick_list(
+            Some(transport_selected),
+            vec![p2p_label.clone(), sftp_label.clone()],
+            |s: &String| s.clone(),
+        )
+        .on_select(move |v| {
+            let tr = if v == sftp_label_for_select || v == "SFTP" {
+                "sftp"
+            } else {
+                "p2p"
+            };
+            Message::SyncTransportChanged(tr.to_string())
+        })
+        .text_size(13)
+        .padding(10)
+        .style(crate::widgets::rounded_pick_list_style);
+        let transport_section = panel_section(column![
+            text(crate::i18n::t("sync_transport"))
+                .size(14)
+                .color(OryxisColors::t().text_muted),
+            Space::new().height(8),
+            dir_row(vec![
+                text(crate::i18n::t("sync_transport_field"))
+                    .size(13)
+                    .color(OryxisColors::t().text_secondary)
+                    .into(),
+                Space::new().width(Length::Fill).into(),
+                transport_pick.into(),
+            ])
+            .align_y(iced::Alignment::Center),
+        ]);
+
+        // SFTP-transport config: host, remote path, passphrase,
+        // status, and the group/known-host notes.
+        // Host field opens the same rich "Select a host" modal as
+        // the SFTP file browser (OS badge + label + address +
+        // search), not a flat dropdown. The trigger shows the
+        // current selection or a placeholder.
+        let selected_conn = self
+            .sync.sftp.host_id
+            .and_then(|id| self.connections.iter().find(|c| c.id == id));
+        let host_trigger_inner: Element<'_, Message> = if let Some(c) = selected_conn {
+            dir_row(vec![
+                host_badge(c, &self.setting_default_host_icon, 22.0),
+                Space::new().width(10).into(),
+                text(c.label.clone())
+                    .size(13)
+                    .color(OryxisColors::t().text_primary)
+                    .into(),
+                Space::new().width(Length::Fill).into(),
+                text("\u{25BE}").size(12).color(OryxisColors::t().text_muted).into(),
+            ])
+            .align_y(iced::Alignment::Center)
+            .into()
+        } else {
+            dir_row(vec![
+                text(crate::i18n::t("select_a_host"))
+                    .size(13)
+                    .color(OryxisColors::t().text_muted)
+                    .into(),
+                Space::new().width(Length::Fill).into(),
+                text("\u{25BE}").size(12).color(OryxisColors::t().text_muted).into(),
+            ])
+            .align_y(iced::Alignment::Center)
+            .into()
+        };
+        let host_pick = button(host_trigger_inner)
+            .on_press(Message::SyncSftpOpenPicker)
+            .padding(10)
+            .width(300)
+            .style(|_, status| {
+                let c = OryxisColors::t();
+                let border = match status {
+                    BtnStatus::Hovered => c.accent_hover,
+                    _ => c.border,
+                };
+                button::Style {
+                    background: Some(Background::Color(c.bg_surface)),
+                    text_color: c.text_primary,
+                    border: Border {
+                        radius: Radius::from(8.0),
+                        width: 1.0,
+                        color: border,
+                    },
+                    ..Default::default()
+                }
+            });
+        let path_input = text_input(
+            "/home/user/oryxis-sync/",
+            &self.sync.sftp.remote_path,
+        )
+        .on_input(Message::SyncSftpPathChanged)
+        .padding(10)
+        .width(300)
+        .style(crate::widgets::rounded_input_style)
+        .align_x(dir_align_x());
+        let passphrase_input = text_input(
+            crate::i18n::t("sftp_sync_passphrase_placeholder"),
+            &self.sync.sftp.passphrase,
+        )
+        .on_input(Message::SyncSftpPassphraseChanged)
+        .secure(true)
+        .padding(10)
+        .width(300)
+        .style(crate::widgets::rounded_input_style)
+        .align_x(dir_align_x());
+        let mut sftp_section_col = column![
+            text(crate::i18n::t("sftp_sync_title"))
+                .size(14)
+                .color(OryxisColors::t().text_muted),
+            Space::new().height(8),
+            panel_field(crate::i18n::t("sftp_sync_host"), host_pick.into()),
+            Space::new().height(8),
+            panel_field(crate::i18n::t("sftp_sync_path"), path_input.into()),
+            Space::new().height(8),
+            panel_field(
+                crate::i18n::t("sftp_sync_passphrase"),
+                passphrase_input.into(),
+            ),
+        ];
+        // (The round status lives under the Sync Now button in the
+        // options panel above, not here, so feedback sits next to
+        // the control that triggers it.)
+        sftp_section_col = sftp_section_col
+            .push(Space::new().height(12))
+            .push(
+                text(crate::i18n::t("sftp_sync_note_group"))
+                    .size(11)
+                    .color(OryxisColors::t().text_muted),
+            )
+            .push(Space::new().height(4))
+            .push(
+                text(crate::i18n::t("sftp_sync_note_bridge"))
+                    .size(11)
+                    .color(OryxisColors::t().text_muted),
+            )
+            .push(Space::new().height(4))
+            .push(
+                text(crate::i18n::t("sftp_sync_note_hostkey"))
+                    .size(11)
+                    .color(OryxisColors::t().text_muted),
+            );
+        let sftp_section = panel_section(sftp_section_col);
+
+        let mut content_col: iced::widget::Column<'_, Message> = column![
+            panel_section(enable_section),
+        ]
+        .width(Length::Fill)
+        .align_x(dir_align_x());
+
+        content_col = content_col
+            .push(Space::new().height(12))
+            .push(how_section);
+
+        if self.sync.enabled {
+            content_col = content_col
+                .push(Space::new().height(12))
+                .push(transport_section)
+                .push(Space::new().height(12))
+                .push(panel_section(options_section));
+            if is_sftp {
+                content_col = content_col
+                    .push(Space::new().height(12))
+                    .push(sftp_section);
+            } else {
+                content_col = content_col
+                    .push(Space::new().height(12))
+                    .push(device_section)
+                    .push(Space::new().height(12))
+                    .push(panel_section(pairing_section))
+                    .push(Space::new().height(12))
+                    .push(advanced_section);
+            }
+        }
+        content_col = content_col.push(Space::new().height(24));
+
+        scrollable(
+            container(content_col)
+                .padding(Padding { top: 24.0, right: 24.0, bottom: 24.0, left: 24.0 }),
+        )
+        .height(Length::Fill)
+        .into()
+    }
+
+    fn view_settings_about(&self) -> Element<'_, Message> {
+        // Channel-aware build string: nightly builds append the
+        // channel + short commit so a nightly user sees exactly what
+        // they're running, not just the base version number.
+        let version_str = match crate::update::build_channel() {
+            crate::update::UpdateChannel::Nightly => format!(
+                "Oryxis v{} nightly ({})",
+                env!("CARGO_PKG_VERSION"),
+                env!("ORYXIS_GIT_SHA").chars().take(7).collect::<String>(),
+            ),
+            crate::update::UpdateChannel::Stable => {
+                format!("Oryxis v{}", env!("CARGO_PKG_VERSION"))
+            }
+        };
+        // Logo beside the name + tagline, like the lock screen.
+        let about_header = dir_row(vec![
+            iced::widget::svg(self.logo_handle.clone())
+                .width(Length::Fixed(48.0))
+                .height(Length::Fixed(48.0))
+                .into(),
+            Space::new().width(14).into(),
+            column![
+                text(version_str).size(16).color(OryxisColors::t().text_primary),
+                Space::new().height(4),
+                text(t("app_tagline")).size(13).color(OryxisColors::t().text_secondary),
+            ]
+            .align_x(dir_align_x())
+            .into(),
+        ])
+        .align_y(iced::Alignment::Center);
+        let about_section = panel_section(column![
+            about_header,
+            Space::new().height(16),
+            settings_row(t("built_with"), "Iced, russh, alacritty_terminal".into()),
+            Space::new().height(6),
+            settings_row(t("license"), "AGPL-3.0".into()),
+            Space::new().height(6),
+            crate::widgets::settings_row_link(
+                crate::i18n::t("website"),
+                "oryxis.app".into(),
+                "https://oryxis.app/".into(),
+            ),
+            Space::new().height(6),
+            crate::widgets::settings_row_link(
+                crate::i18n::t("github"),
+                "github.com/wilsonglasser/oryxis".into(),
+                "https://github.com/wilsonglasser/oryxis".into(),
+            ),
+        ]);
+
+        // Each stat row navigates to its section (issue #38):
+        // the count doubles as a shortcut into the data it
+        // describes. Logs combines connection events + session
+        // recordings, matching what the Logs view lists.
+        let vault_section = panel_section(column![
+            text(crate::i18n::t("vault_stats")).size(14).color(OryxisColors::t().text_muted),
+            Space::new().height(8),
+            crate::widgets::settings_row_nav(
+                crate::i18n::t("hosts"),
+                self.connections.len().to_string(),
+                Message::ChangeView(crate::state::View::Dashboard),
+            ),
+            Space::new().height(6),
+            crate::widgets::settings_row_nav(
+                crate::i18n::t("keychain"),
+                self.keys.len().to_string(),
+                Message::ChangeView(crate::state::View::Keys),
+            ),
+            Space::new().height(6),
+            crate::widgets::settings_row_nav(
+                crate::i18n::t("snippets"),
+                self.snippets.len().to_string(),
+                Message::ChangeView(crate::state::View::Snippets),
+            ),
+            Space::new().height(6),
+            crate::widgets::settings_row_nav(
+                t("groups"),
+                self.groups.len().to_string(),
+                Message::ChangeView(crate::state::View::Dashboard),
+            ),
+            Space::new().height(6),
+            crate::widgets::settings_row_nav(
+                t("logs"),
+                (self.logs_total + self.session_logs_total).to_string(),
+                Message::ChangeView(crate::state::View::History),
+            ),
+        ]);
+
+        let auto_update_enabled = self.setting_auto_check_updates;
+        let check_now_btn = styled_button(
+            t("check_for_updates_now"),
+            Message::CheckForUpdateManual,
+            OryxisColors::t().accent,
+        );
+        let status_line: Element<'_, Message> = match &self.update_check_status {
+            Some(status) => {
+                use crate::update::UpdateStatus;
+                let (msg, color) = match status {
+                    UpdateStatus::Checking => (
+                        t("update_check_checking").to_string(),
+                        OryxisColors::t().text_muted,
+                    ),
+                    UpdateStatus::UpToDate => (
+                        format!(
+                            "{} ({})",
+                            t("update_check_up_to_date"),
+                            env!("CARGO_PKG_VERSION"),
+                        ),
+                        OryxisColors::t().success,
+                    ),
+                    UpdateStatus::Failed(cause) => (
+                        format!("{}: {}", t("update_check_failed"), cause),
+                        OryxisColors::t().error,
+                    ),
+                };
+                // Failures get an inline Retry next to the cause so
+                // the user doesn't have to hunt for the check button.
+                let mut line_items: Vec<Element<'_, Message>> =
+                    vec![text(msg).size(11).color(color).into()];
+                if matches!(status, UpdateStatus::Failed(_)) {
+                    line_items.push(Space::new().width(10).into());
+                    line_items.push(styled_button(
+                        t("retry"),
+                        Message::CheckForUpdateManual,
+                        OryxisColors::t().text_muted,
+                    ));
+                }
+                let line = crate::widgets::dir_row(line_items)
+                    .align_y(iced::Alignment::Center);
+                container(line)
+                    .padding(Padding { top: 8.0, right: 0.0, bottom: 0.0, left: 0.0 })
+                    .into()
+            }
+            None => Space::new().height(0).into(),
+        };
+        let channel_picker = pick_list(
+            Some(self.setting_update_channel),
+            crate::update::UPDATE_CHANNELS.to_vec(),
+            |c: &crate::update::UpdateChannel| match c {
+                crate::update::UpdateChannel::Stable => t("update_channel_stable").to_string(),
+                crate::update::UpdateChannel::Nightly => t("update_channel_nightly").to_string(),
+            },
+        )
+        .on_select(Message::SettingUpdateChannelChanged)
+        .width(260)
+        .padding(10)
+        .style(crate::widgets::rounded_pick_list_style);
+        // Bleeding-edge warning, only while the nightly channel is
+        // selected, so stable users don't see scary copy.
+        let channel_note: Element<'_, Message> =
+            if self.setting_update_channel == crate::update::UpdateChannel::Nightly {
+                container(
+                    text(t("update_channel_nightly_warning"))
+                        .size(11)
+                        .color(OryxisColors::t().text_muted),
+                )
+                .padding(Padding { top: 4.0, right: 0.0, bottom: 0.0, left: 0.0 })
+                .into()
+            } else {
+                Space::new().height(0).into()
+            };
+        let auto_update_section = panel_section(column![
+            toggle_row(
+                crate::i18n::t("auto_check_updates"),
+                auto_update_enabled,
+                Message::SettingToggleAutoCheckUpdates,
+            ),
+            Space::new().height(4),
+            text(t("setting_update_check_desc"))
+                .size(11).color(OryxisColors::t().text_muted),
+            Space::new().height(12),
+            text(t("update_channel")).size(12).color(OryxisColors::t().text_secondary),
+            Space::new().height(4),
+            channel_picker,
+            channel_note,
+            Space::new().height(10),
+            check_now_btn,
+            status_line,
+        ]);
+
+        scrollable(
+            container(
+                column![
+                    about_section,
+                    Space::new().height(12),
+                    auto_update_section,
+                    Space::new().height(12),
+                    vault_section,
+                    Space::new().height(24),
+                ]
+                .width(Length::Fill)
+                .align_x(dir_align_x()),
+            )
+            .padding(Padding { top: 24.0, right: 24.0, bottom: 24.0, left: 24.0 }),
+        )
+        .height(Length::Fill)
+        .into()
+    }
+
     /// The "add local terminal" modal: label / program / arguments form
     /// with inline validation and a Cancel / Add footer. Layered by
     /// `root_view` when `local_terminal_add_open` is set.
@@ -570,2698 +3263,23 @@ impl Oryxis {
 
         // ── Settings content ──
         let settings_content: Element<'_, Message> = match self.settings_section {
-            SettingsSection::Terminal => {
-                let mut toggles_col: iced::widget::Column<'_, Message> = column![
-                    toggle_row(crate::i18n::t("copy_on_select"), self.setting_copy_on_select, Message::ToggleCopyOnSelect),
-                ];
-                // Sub-option, only meaningful while copy-on-select is on.
-                // Indent it on the leading edge so it reads as nested.
-                if self.setting_copy_on_select {
-                    let indent = if crate::i18n::is_rtl_layout() {
-                        Padding { right: 22.0, ..Padding::ZERO }
-                    } else {
-                        Padding { left: 22.0, ..Padding::ZERO }
-                    };
-                    toggles_col = toggles_col
-                        .push(Space::new().height(8))
-                        .push(
-                            container(toggle_row(
-                                crate::i18n::t("copy_requires_right_click"),
-                                self.setting_right_click_copy,
-                                Message::ToggleRightClickCopy,
-                            ))
-                            .padding(indent),
-                        );
-                }
-                // Selection / clipboard behaviour.
-                let toggles_section = panel_section(toggles_col);
+            SettingsSection::Terminal => self.view_settings_terminal(),
 
-                // Text rendering toggles (their own card so they sit under
-                // the Appearance group, not mixed with clipboard behaviour).
-                let text_render_section = panel_section(column![
-                    toggle_row(crate::i18n::t("bold_bright"), self.setting_bold_is_bright, Message::ToggleBoldIsBright),
-                    Space::new().height(10),
-                    toggle_row(crate::i18n::t("keyword_highlight"), self.setting_keyword_highlight, Message::ToggleKeywordHighlight),
-                    Space::new().height(10),
-                    toggle_row(crate::i18n::t("smart_contrast"), self.setting_smart_contrast, Message::ToggleSmartContrast),
-                    Space::new().height(10),
-                    toggle_row(crate::i18n::t("terminal_auto_title"), crate::state::auto_title_enabled(), Message::ToggleTerminalAutoTitle),
-                    Space::new().height(10),
-                    dir_row(vec![
-                        text(crate::i18n::t("terminal_bell")).size(13).color(OryxisColors::t().text_secondary).into(),
-                        Space::new().width(Length::Fill).into(),
-                        pick_list(
-                            Some(crate::i18n::t(self.setting_bell_mode.label_key()).to_string()),
-                            crate::util::BellMode::ALL
-                                .iter()
-                                .map(|m| crate::i18n::t(m.label_key()).to_string())
-                                .collect::<Vec<_>>(),
-                            |s: &String| s.clone(),
-                        )
-                        .on_select(Message::BellModeChanged)
-                        .width(200)
-                        .padding(10)
-                        .style(crate::widgets::rounded_pick_list_style)
-                        .into(),
-                    ]).align_y(iced::Alignment::Center),
-                    Space::new().height(10),
-                    dir_row(vec![
-                        text(crate::i18n::t("terminal_clipboard")).size(13).color(OryxisColors::t().text_secondary).into(),
-                        Space::new().width(Length::Fill).into(),
-                        pick_list(
-                            Some(crate::i18n::t(self.setting_clipboard_access.label_key()).to_string()),
-                            crate::util::ClipboardAccess::ALL
-                                .iter()
-                                .map(|m| crate::i18n::t(m.label_key()).to_string())
-                                .collect::<Vec<_>>(),
-                            |s: &String| s.clone(),
-                        )
-                        .on_select(Message::ClipboardAccessChanged)
-                        .width(200)
-                        .padding(10)
-                        .style(crate::widgets::rounded_pick_list_style)
-                        .into(),
-                    ]).align_y(iced::Alignment::Center),
-                    Space::new().height(10),
-                    dir_row(vec![
-                        text(crate::i18n::t("terminal_notification")).size(13).color(OryxisColors::t().text_secondary).into(),
-                        Space::new().width(Length::Fill).into(),
-                        pick_list(
-                            Some(crate::i18n::t(self.setting_notification_mode.label_key()).to_string()),
-                            crate::util::NotificationMode::ALL
-                                .iter()
-                                .map(|m| crate::i18n::t(m.label_key()).to_string())
-                                .collect::<Vec<_>>(),
-                            |s: &String| s.clone(),
-                        )
-                        .on_select(Message::NotificationModeChanged)
-                        .width(200)
-                        .padding(10)
-                        .style(crate::widgets::rounded_pick_list_style)
-                        .into(),
-                    ]).align_y(iced::Alignment::Center),
-                ]);
+            SettingsSection::Connection => self.view_settings_connection(),
 
-                let font_size_section = panel_section(column![
-                    dir_row(vec![
-                        text(crate::i18n::t("terminal_font_size")).size(13).color(OryxisColors::t().text_primary).into(),
-                        Space::new().width(Length::Fill).into(),
-                        button(
-                            container(text("\u{2212}").size(14).color(OryxisColors::t().text_primary))
-                                .padding(Padding { top: 4.0, right: 10.0, bottom: 4.0, left: 10.0 }),
-                        )
-                        .on_press(Message::TerminalFontSizeDecrease)
-                        .style(|_, status| {
-                            let bg = match status {
-                                BtnStatus::Hovered => OryxisColors::t().bg_hover,
-                                _ => OryxisColors::t().bg_selected,
-                            };
-                            button::Style {
-                                background: Some(Background::Color(bg)),
-                                border: Border { radius: Radius::from(4.0), ..Default::default() },
-                                ..Default::default()
-                            }
-                        }).into(),
-                        Space::new().width(8).into(),
-                        text(format!("{:.0}", self.terminal_font_size)).size(13).color(OryxisColors::t().text_primary).into(),
-                        Space::new().width(8).into(),
-                        button(
-                            container(text("+").size(14).color(OryxisColors::t().text_primary))
-                                .padding(Padding { top: 4.0, right: 10.0, bottom: 4.0, left: 10.0 }),
-                        )
-                        .on_press(Message::TerminalFontSizeIncrease)
-                        .style(|_, status| {
-                            let bg = match status {
-                                BtnStatus::Hovered => OryxisColors::t().bg_hover,
-                                _ => OryxisColors::t().bg_selected,
-                            };
-                            button::Style {
-                                background: Some(Background::Color(bg)),
-                                border: Border { radius: Radius::from(4.0), ..Default::default() },
-                                ..Default::default()
-                            }
-                        }).into(),
-                    ]).align_y(iced::Alignment::Center),
-                ]);
+            SettingsSection::Sftp => self.view_settings_sftp(),
 
-                let scrollback_section = panel_section(column![
-                    text(crate::i18n::t("scrollback")).size(13).color(OryxisColors::t().text_primary),
-                    Space::new().height(4),
-                    text(t("setting_scrollback_desc"))
-                        .size(11).color(OryxisColors::t().text_muted),
-                    Space::new().height(8),
-                    text_input("10000", &self.setting_scrollback_rows)
-                        .on_input(Message::SettingScrollbackChanged)
-                        .padding(10)
-                        .width(240)
-                        .style(crate::widgets::rounded_input_style).align_x(dir_align_x()),
-                ]);
+            SettingsSection::AI => self.view_settings_ai(),
 
-                let word_delimiters_section = panel_section(column![
-                    text(crate::i18n::t("word_delimiters")).size(13).color(OryxisColors::t().text_primary),
-                    Space::new().height(4),
-                    text(t("setting_word_delimiters_desc"))
-                        .size(11).color(OryxisColors::t().text_muted),
-                    Space::new().height(8),
-                    dir_row(vec![
-                        text_input(oryxis_terminal::DEFAULT_WORD_DELIMITERS, &self.setting_word_delimiters)
-                            .on_input(Message::SettingWordDelimitersChanged)
-                            .padding(10)
-                            .width(240)
-                            .style(crate::widgets::rounded_input_style)
-                            .align_x(dir_align_x())
-                            .into(),
-                        Space::new().width(8).into(),
-                        styled_button(
-                            crate::i18n::t("word_delimiters_reset"),
-                            Message::SettingResetWordDelimiters,
-                            OryxisColors::t().bg_selected,
-                        ),
-                    ]).align_y(iced::Alignment::Center),
-                ]);
+            SettingsSection::Interface => self.view_settings_interface(),
 
-                // Terminal theme picker. First card is the "follow
-                // app theme" sentinel (terminal_theme_override = None);
-                // the rest are explicit palette previews so the user
-                // can compare colours without applying each one. Per-host
-                // overrides configured via the icon picker still win
-                // over this global pick.
-                let mut theme_cards: Vec<Element<'_, Message>> = Vec::new();
-                // The sentinel renders as a real palette card previewing
-                // the app-theme-derived palette (every app theme has a
-                // same-named terminal palette), instead of the old
-                // input-looking box that read as a text field.
-                let app_theme_name = crate::theme::AppTheme::active().name();
-                let follow_palette = self
-                    .terminal_palette_for_name(app_theme_name)
-                    .unwrap_or_default();
-                let follow_label =
-                    format!("{} ({})", t("terminal_theme_follow_app"), app_theme_name);
-                theme_cards.push(crate::widgets::terminal_theme_card(
-                    follow_palette,
-                    &follow_label,
-                    self.terminal_theme_override.is_none(),
-                    Message::TerminalThemeChanged(String::new()),
-                ));
-                for theme in oryxis_terminal::TerminalTheme::ALL.iter() {
-                    let is_selected = self
-                        .terminal_theme_override
-                        .as_deref()
-                        == Some(theme.name());
-                    theme_cards.push(crate::widgets::terminal_theme_card(
-                        theme.palette(),
-                        theme.name(),
-                        is_selected,
-                        Message::TerminalThemeChanged(theme.name().to_string()),
-                    ));
-                }
-                // User-defined themes after the built-ins, each with the
-                // hover edit / delete affordances.
-                for (idx, ct) in self.custom_terminal_themes.iter().enumerate() {
-                    let is_selected =
-                        self.terminal_theme_override.as_deref() == Some(ct.name.as_str());
-                    let palette = self
-                        .terminal_palette_for_name(&ct.name)
-                        .unwrap_or_default();
-                    theme_cards.push(self.terminal_custom_theme_card(
-                        idx,
-                        &ct.name,
-                        palette,
-                        is_selected,
-                    ));
-                }
-                // "+ New custom theme" + "Import" cards last.
-                theme_cards.push(crate::views::settings_themes::terminal_theme_add_card());
-                theme_cards.push(crate::views::settings_themes::terminal_theme_import_card());
-                // 2-column responsive grid for theme cards. Cards still
-                // use the existing swatch-+-name layout (the "bolinhas"
-                // style); only the row arrangement changes from a single
-                // tall column to a side-by-side pair so the picker
-                // doesn't dominate the settings panel vertically.
-                let theme_grid = crate::widgets::distribute_card_grid(
-                    theme_cards,
-                    2,
-                    8.0,
-                    8.0,
-                );
-                let theme_picker_section = panel_section(column![
-                    text(t("terminal_theme")).size(13).color(OryxisColors::t().text_primary),
-                    Space::new().height(4),
-                    text(t("terminal_theme_desc"))
-                        .size(11).color(OryxisColors::t().text_muted),
-                    Space::new().height(10),
-                    theme_grid,
-                ]);
+            SettingsSection::Shortcuts => self.view_settings_shortcuts(),
 
-                // Font picker. The list comes from a fontdb scan of
-                // monospace families installed on the system (cached
-                // for the process lifetime; rescanning per frame read
-                // every font file from disk), with a hardcoded
-                // fallback when the scan returns nothing.
-                let fonts: &'static [String] = crate::app::enumerate_terminal_fonts();
-                // Live sample rendered in the picked font on the active
-                // terminal palette: the user can confirm the font exists
-                // on their machine and preview the theme at a glance. The
-                // font name comes straight from the (`'static`) enumerated
-                // list, so `Family::Name` needs no leak.
-                let preview_font = fonts
-                    .iter()
-                    .find(|f| f.as_str() == self.terminal_font_name)
-                    .map(|f| iced::Font {
-                        family: iced::font::Family::Name(f.as_str()),
-                        ..iced::Font::MONOSPACE
-                    })
-                    .unwrap_or(iced::Font::MONOSPACE);
-                let active_term_theme = self
-                    .terminal_theme_override
-                    .clone()
-                    .unwrap_or_else(|| crate::theme::AppTheme::active().name().to_string());
-                let pal = self
-                    .terminal_palette_for_name(&active_term_theme)
-                    .unwrap_or_default();
-                let (fg, bg) = (pal.foreground, pal.background);
-                let (c_green, c_blue, c_cyan, c_yellow) =
-                    (pal.ansi[2], pal.ansi[4], pal.ansi[6], pal.ansi[3]);
-                let fs = self.terminal_font_size;
-                let font_preview = container(
-                    column![
-                        text("The quick brown fox 1234567890 {}[]()<>")
-                            .font(preview_font).size(fs).color(fg),
-                        Space::new().height(4),
-                        dir_row(vec![
-                            text("user").font(preview_font).size(fs).color(c_green).into(),
-                            text("@").font(preview_font).size(fs).color(fg).into(),
-                            text("host").font(preview_font).size(fs).color(c_blue).into(),
-                            text(":").font(preview_font).size(fs).color(fg).into(),
-                            text("~/dev").font(preview_font).size(fs).color(c_cyan).into(),
-                            text("$ ").font(preview_font).size(fs).color(fg).into(),
-                            text("git status").font(preview_font).size(fs).color(c_yellow).into(),
-                        ]),
-                        Space::new().height(4),
-                        // Nerd Font glyphs (branch, powerline, home, folder,
-                        // github, git, code, terminal). Render as tofu boxes
-                        // if the picked font lacks Nerd Font icon coverage,
-                        // which is exactly the at-a-glance check we want.
-                        text("\u{e0a0} \u{e0b0} \u{f015} \u{f07b} \u{f09b} \u{e702} \u{f121} \u{f120}")
-                            .font(preview_font).size(fs).color(c_green),
-                    ],
-                )
-                .padding(12)
-                .width(Length::Fill)
-                .style(move |_| container::Style {
-                    background: Some(Background::Color(bg)),
-                    border: Border {
-                        radius: Radius::from(8.0),
-                        color: OryxisColors::t().border,
-                        width: 1.0,
-                    },
-                    ..Default::default()
-                });
-                let font_picker_section = panel_section(column![
-                    text(crate::i18n::t("terminal_font")).size(13).color(OryxisColors::t().text_primary),
-                    Space::new().height(4),
-                    text(t("setting_font_desc"))
-                        .size(11).color(OryxisColors::t().text_muted),
-                    Space::new().height(8),
-                    pick_list(
-                        Some(self.terminal_font_name.clone()),
-                        fonts,
-                        |s: &String| s.clone(),
-                    )
-                    .on_select(Message::TerminalFontChanged)
-                    .width(260).padding(10).style(crate::widgets::rounded_pick_list_style),
-                    Space::new().height(12),
-                    font_preview,
-                ]);
+            SettingsSection::Security => self.view_settings_security(),
 
-                // Grouped under "h2" headers, same pattern as Interface:
-                // Behavior (selection, delimiters, scrollback) then
-                // Appearance (rendering, font, theme). Connection + logging
-                // knobs live in their own sections.
-                use crate::widgets::settings_group_header as gh;
-                scrollable(
-                    container(
-                        column![
-                            gh(crate::i18n::t("terminal_group_behavior")),
-                            Space::new().height(8),
-                            toggles_section,
-                            Space::new().height(12),
-                            word_delimiters_section,
-                            Space::new().height(12),
-                            scrollback_section,
-                            Space::new().height(18),
-                            gh(crate::i18n::t("terminal_group_appearance")),
-                            Space::new().height(8),
-                            text_render_section,
-                            Space::new().height(12),
-                            font_size_section,
-                            Space::new().height(12),
-                            font_picker_section,
-                            Space::new().height(12),
-                            theme_picker_section,
-                            Space::new().height(18),
-                            gh(crate::i18n::t("local_terminals")),
-                            Space::new().height(8),
-                            self.local_terminals_card(),
-                            Space::new().height(24),
-                        ]
-                        .width(Length::Fill)
-                        .align_x(dir_align_x()),
-                    )
-                    .padding(Padding { top: 24.0, right: 24.0, bottom: 24.0, left: 24.0 }),
-                )
-                .height(Length::Fill)
-                .into()
-            }
+            SettingsSection::Sync => self.view_settings_sync(),
 
-            SettingsSection::Connection => {
-                let keepalive_section = panel_section(column![
-                    text(crate::i18n::t("keepalive_interval")).size(13).color(OryxisColors::t().text_primary),
-                    Space::new().height(4),
-                    text(t("setting_keepalive_desc"))
-                        .size(11).color(OryxisColors::t().text_muted),
-                    Space::new().height(8),
-                    text_input("30", &self.setting_keepalive_interval)
-                        .on_input(Message::SettingKeepaliveChanged)
-                        .padding(10)
-                        .width(240)
-                        .style(crate::widgets::rounded_input_style).align_x(dir_align_x()),
-                ]);
-
-                // Defaults pre-filled into a NEW host form (so the user doesn't
-                // re-toggle agent forwarding / re-type a port every time).
-                let term_default_options: Vec<String> = [
-                    "xterm-256color", "xterm", "screen-256color", "tmux-256color",
-                    "screen", "linux", "vt220", "vt100", "ansi",
-                ]
-                .iter()
-                .map(|s| s.to_string())
-                .collect();
-                let new_conn_defaults_section = panel_section(column![
-                    text(crate::i18n::t("new_connection_defaults")).size(13).color(OryxisColors::t().text_primary),
-                    Space::new().height(4),
-                    text(t("new_connection_defaults_desc")).size(11).color(OryxisColors::t().text_muted),
-                    Space::new().height(10),
-                    toggle_row(crate::i18n::t("forward_ssh_agent"), self.setting_default_agent_forwarding, Message::ToggleDefaultAgentForwarding),
-                    Space::new().height(10),
-                    dir_row(vec![
-                        text(crate::i18n::t("port")).size(13).color(OryxisColors::t().text_secondary).into(),
-                        Space::new().width(Length::Fill).into(),
-                        text_input("22", &self.setting_default_port)
-                            .on_input(Message::DefaultPortChanged)
-                            .padding(10).width(120)
-                            .style(crate::widgets::rounded_input_style).align_x(dir_align_x()).into(),
-                    ]).align_y(iced::Alignment::Center),
-                    Space::new().height(10),
-                    dir_row(vec![
-                        text(crate::i18n::t("host_keepalive")).size(13).color(OryxisColors::t().text_secondary).into(),
-                        Space::new().width(Length::Fill).into(),
-                        text_input(&self.setting_keepalive_interval, &self.setting_default_keepalive)
-                            .on_input(Message::DefaultKeepaliveChanged)
-                            .padding(10).width(120)
-                            .style(crate::widgets::rounded_input_style).align_x(dir_align_x()).into(),
-                    ]).align_y(iced::Alignment::Center),
-                    Space::new().height(10),
-                    dir_row(vec![
-                        text(crate::i18n::t("host_terminal_type")).size(13).color(OryxisColors::t().text_secondary).into(),
-                        Space::new().width(Length::Fill).into(),
-                        pick_list(
-                            Some(self.setting_default_terminal_type.clone()),
-                            term_default_options,
-                            |s: &String| s.clone(),
-                        )
-                        .on_select(Message::DefaultTerminalTypeChanged)
-                        .width(200).padding(10)
-                        .style(crate::widgets::rounded_pick_list_style).into(),
-                    ]).align_y(iced::Alignment::Center),
-                ]);
-
-                let auto_reconnect_enabled = self.setting_auto_reconnect;
-                let auto_reconnect_section = panel_section(column![
-                    toggle_row(
-                        crate::i18n::t("auto_reconnect"),
-                        auto_reconnect_enabled,
-                        Message::SettingToggleAutoReconnect,
-                    ),
-                    Space::new().height(4),
-                    text(t("setting_reconnect_desc"))
-                        .size(11).color(OryxisColors::t().text_muted),
-                    Space::new().height(8),
-                    text(crate::i18n::t("max_reconnect_attempts")).size(12).color(OryxisColors::t().text_secondary),
-                    Space::new().height(4),
-                    text_input("5", &self.setting_max_reconnect_attempts)
-                        .on_input(Message::SettingMaxReconnectChanged)
-                        .padding(10)
-                        .width(240)
-                        .style(crate::widgets::rounded_input_style).align_x(dir_align_x()),
-                ]);
-
-                let os_detection_enabled = self.setting_os_detection;
-                let os_detection_section = panel_section(column![
-                    toggle_row(
-                        crate::i18n::t("os_detection"),
-                        os_detection_enabled,
-                        Message::SettingToggleOsDetection,
-                    ),
-                    Space::new().height(4),
-                    text(t("setting_os_detect_desc"))
-                        .size(11).color(OryxisColors::t().text_muted),
-                ]);
-
-                scrollable(
-                    container(
-                        column![
-                            new_conn_defaults_section,
-                            Space::new().height(12),
-                            keepalive_section,
-                            Space::new().height(12),
-                            auto_reconnect_section,
-                            Space::new().height(12),
-                            os_detection_section,
-                            Space::new().height(24),
-                        ]
-                        .width(Length::Fill)
-                        .align_x(dir_align_x()),
-                    )
-                    .padding(Padding { top: 24.0, right: 24.0, bottom: 24.0, left: 24.0 }),
-                )
-                .height(Length::Fill)
-                .into()
-            }
-
-            SettingsSection::Sftp => {
-                let concurrency_section = panel_section(column![
-                    text(t("transfer_parallelism"))
-                        .size(13)
-                        .color(OryxisColors::t().text_primary),
-                    Space::new().height(4),
-                    text(t("setting_sftp_concurrency_desc"))
-                        .size(11)
-                        .color(OryxisColors::t().text_muted),
-                    Space::new().height(8),
-                    text_input("2", &self.setting_sftp_concurrency)
-                        .on_input(Message::SettingSftpConcurrencyChanged)
-                        .padding(10)
-                        .width(240)
-                        .style(crate::widgets::rounded_input_style).align_x(dir_align_x()),
-                ]);
-
-                let timeout_input = |label: &str, hint: &str, value: &str, on_input: fn(String) -> Message| {
-                    panel_section(column![
-                        text(label.to_string())
-                            .size(13)
-                            .color(OryxisColors::t().text_primary),
-                        Space::new().height(4),
-                        text(hint.to_string())
-                            .size(11)
-                            .color(OryxisColors::t().text_muted),
-                        Space::new().height(8),
-                        text_input("0", value)
-                            .on_input(on_input)
-                            .padding(10)
-                            .width(240)
-                            .style(crate::widgets::rounded_input_style).align_x(dir_align_x()),
-                    ])
-                };
-
-                let connect_section = timeout_input(
-                    t("connect_timeout"),
-                    t("connect_timeout_desc"),
-                    &self.setting_sftp_connect_timeout,
-                    Message::SettingSftpConnectTimeoutChanged,
-                );
-                let auth_section = timeout_input(
-                    t("auth_timeout"),
-                    t("auth_timeout_desc"),
-                    &self.setting_sftp_auth_timeout,
-                    Message::SettingSftpAuthTimeoutChanged,
-                );
-                let session_section = timeout_input(
-                    t("channel_open_timeout"),
-                    t("channel_open_timeout_desc"),
-                    &self.setting_sftp_session_timeout,
-                    Message::SettingSftpSessionTimeoutChanged,
-                );
-                let op_section = timeout_input(
-                    t("operation_timeout"),
-                    t("operation_timeout_desc"),
-                    &self.setting_sftp_op_timeout,
-                    Message::SettingSftpOpTimeoutChanged,
-                );
-
-                // Enable/disable lives on the Plugins screen now; this
-                // section only renders while SFTP is enabled, showing its
-                // tuning knobs (parallelism, timeouts).
-                let mut content_col: iced::widget::Column<'_, Message> = column![]
-                    .width(Length::Fill)
-                    .align_x(dir_align_x());
-
-                if self.sftp_enabled {
-                    content_col = content_col
-                        .push(concurrency_section)
-                        .push(Space::new().height(12))
-                        .push(connect_section)
-                        .push(Space::new().height(12))
-                        .push(auth_section)
-                        .push(Space::new().height(12))
-                        .push(session_section)
-                        .push(Space::new().height(12))
-                        .push(op_section);
-                }
-                content_col = content_col.push(Space::new().height(24));
-
-                scrollable(
-                    container(content_col)
-                        .padding(Padding { top: 24.0, right: 24.0, bottom: 24.0, left: 24.0 }),
-                )
-                .height(Length::Fill)
-                .into()
-            }
-
-            SettingsSection::AI => {
-                // Enable/disable lives on the Plugins screen now; this
-                // section only renders while AI is enabled.
-                let mut content_col = column![
-                    // The assistant runs commands on connected servers
-                    // (some auto-execute); keep the warning in view.
-                    text(crate::i18n::t("ai_enable_warning")).size(12).color(OryxisColors::t().text_muted),
-                ]
-                .width(Length::Fill)
-                .align_x(dir_align_x());
-
-                if self.ai.enabled {
-                    let current_info = crate::ai::provider_info(&self.ai.provider);
-                    let provider_options: Vec<String> = crate::ai::PROVIDERS
-                        .iter()
-                        .map(|p| p.display.to_string())
-                        .collect();
-
-                    let provider_pick: Element<'_, Message> = pick_list(
-                        Some(current_info.display.to_string()),
-                        provider_options,
-                        |s: &String| s.clone(),
-                    )
-                    .on_select(Message::AiProviderChanged)
-                    .width(220)
-                    .padding(10)
-                    .style(crate::widgets::rounded_pick_list_style)
-                    .into();
-
-                    let model_input: Element<'_, Message> = text_input(t("ai_model_placeholder"), &self.ai.model)
-                        .on_input(Message::AiModelChanged)
-                        .padding(10)
-                        .width(300)
-                        .style(crate::widgets::rounded_input_style).align_x(dir_align_x())
-                        .into();
-
-                    // When a key is already stored, the input is cleared
-                    // for security but the placeholder communicates that
-                    // a key exists, typing replaces it on save.
-                    let key_placeholder = if self.ai.api_key_set {
-                        t("ai_key_saved_placeholder")
-                    } else {
-                        "sk-..."
-                    };
-                    let key_input: Element<'_, Message> = container(
-                        crate::widgets::password_input_with_eye(
-                            key_placeholder,
-                            &self.ai.api_key,
-                            Message::AiApiKeyChanged,
-                            Some(Message::SaveAiApiKey),
-                            self.revealed_secrets
-                                .contains(&crate::state::SecretField::AiApiKey),
-                            Message::ToggleSecretVisibility(
-                                crate::state::SecretField::AiApiKey,
-                            ),
-                            10.0,
-                        ),
-                    )
-                    .width(280)
-                    .into();
-                    let save_btn = styled_button(crate::i18n::t("save"), Message::SaveAiApiKey, OryxisColors::t().accent);
-                    let key_status: Element<'_, Message> = if self.ai.api_key_set {
-                        dir_row(vec![
-                            iced_fonts::lucide::circle_check().size(13).color(OryxisColors::t().success).into(),
-                            Space::new().width(6).into(),
-                            text(t("api_key_saved")).size(12).color(OryxisColors::t().success).into(),
-                        ])
-                        .align_y(iced::Alignment::Center)
-                        .into()
-                    } else {
-                        dir_row(vec![
-                            iced_fonts::lucide::circle_alert().size(13).color(OryxisColors::t().text_muted).into(),
-                            Space::new().width(6).into(),
-                            text(t("no_api_key")).size(12).color(OryxisColors::t().text_muted).into(),
-                        ])
-                        .align_y(iced::Alignment::Center)
-                        .into()
-                    };
-
-                    let mut provider_col = column![
-                        panel_field(t("provider"), provider_pick),
-                        Space::new().height(12),
-                        panel_field(t("model"), model_input),
-                    ];
-
-                    if current_info.kind == crate::ai::ProviderKind::Custom {
-                        let url_input: Element<'_, Message> = text_input("https://api.example.com/v1/chat/completions", &self.ai.api_url)
-                            .on_input(Message::AiApiUrlChanged)
-                            .padding(10)
-                            .width(300)
-                            .style(crate::widgets::rounded_input_style).align_x(dir_align_x())
-                            .into();
-                        provider_col = provider_col
-                            .push(Space::new().height(12))
-                            .push(panel_field(crate::i18n::t("api_url"), url_input));
-                    }
-
-                    provider_col = provider_col
-                        .push(Space::new().height(12))
-                        .push(panel_field(
-                            "API Key",
-                            dir_row(vec![key_input, Space::new().width(8).into(), save_btn])
-                                .align_y(iced::Alignment::Center)
-                                .into(),
-                        ))
-                        .push(Space::new().height(4))
-                        .push(key_status);
-
-                    content_col = content_col
-                        .push(Space::new().height(12))
-                        .push(panel_section(provider_col));
-
-                    // System prompt, multi-line editor that grows with the
-                    // content. `Length::Shrink` lets the editor auto-resize
-                    // to fit its text, capped by the panel's scroll area.
-                    let prompt_editor: Element<'_, Message> = iced::widget::text_editor(&self.ai.system_prompt)
-                        .placeholder(t("ai_system_prompt_placeholder"))
-                        .on_action(Message::AiSystemPromptAction)
-                        .padding(10)
-                        .height(Length::Shrink)
-                        .style(|_theme, status| {
-                            let c = OryxisColors::t();
-                            let (border_color, border_width) = match status {
-                                iced::widget::text_editor::Status::Focused { .. } => (c.accent, 1.5),
-                                _ => (c.border, 1.0),
-                            };
-                            iced::widget::text_editor::Style {
-                                background: iced::Background::Color(c.bg_surface),
-                                border: iced::Border {
-                                    radius: iced::border::Radius::from(crate::widgets::INPUT_RADIUS),
-                                    width: border_width,
-                                    color: border_color,
-                                },
-                                placeholder: c.text_muted,
-                                value: c.text_primary,
-                                selection: c.accent,
-                            }
-                        })
-                        .into();
-                    let prompt_section = panel_section(column![
-                        panel_field(t("additional_system_prompt"), prompt_editor),
-                        Space::new().height(4),
-                        text(t("ai_system_prompt_desc"))
-                            .size(11).color(OryxisColors::t().text_muted),
-                    ]);
-                    content_col = content_col
-                        .push(Space::new().height(12))
-                        .push(prompt_section);
-                }
-
-                scrollable(
-                    container(content_col)
-                        .padding(Padding { top: 24.0, right: 24.0, bottom: 24.0, left: 24.0 }),
-                )
-                .height(Length::Fill)
-                .into()
-            }
-
-            SettingsSection::Interface => {
-                use crate::theme::AppTheme;
-                let active_name = self.active_app_theme_name.as_str();
-
-                // Built-in themes, then custom UI themes, then the "+" card.
-                let mut cards: Vec<Element<'_, Message>> = Vec::new();
-                for theme in AppTheme::ALL.iter() {
-                    let name = theme.name();
-                    cards.push(crate::views::settings_ui_themes::app_theme_card(
-                        name,
-                        theme.colors_ref(),
-                        name == active_name,
-                        Message::AppThemeChanged(name.to_string()),
-                    ));
-                }
-                // Resolve custom colors up front (the card only reads Copy
-                // values, so this temporary outlives the borrow).
-                let custom_colors: Vec<crate::theme::ThemeColors> = self
-                    .custom_ui_themes
-                    .iter()
-                    .map(|t| crate::theme::theme_colors_from_hex(&t.colors))
-                    .collect();
-                for (idx, theme) in self.custom_ui_themes.iter().enumerate() {
-                    cards.push(self.ui_theme_custom_card(
-                        idx,
-                        &theme.name,
-                        &custom_colors[idx],
-                        theme.name == active_name,
-                    ));
-                }
-                cards.push(crate::views::settings_ui_themes::ui_theme_add_card());
-
-                // Chunk the cards into rows of two (Elements aren't Clone, so
-                // drain pairs instead of `chunks`).
-                let mut grid_rows: Vec<Element<'_, Message>> = Vec::new();
-                let mut iter = cards.into_iter();
-                while let Some(a) = iter.next() {
-                    let mut cells = vec![a];
-                    if let Some(b) = iter.next() {
-                        cells.push(b);
-                    } else {
-                        cells.push(Space::new().width(Length::FillPortion(1)).into());
-                    }
-                    grid_rows.push(dir_row(cells).spacing(12).into());
-                }
-
-                // Language picker
-                let lang_options: Vec<String> = crate::i18n::Language::ALL
-                    .iter()
-                    .map(|l| l.name().to_string())
-                    .collect();
-                let active_lang_name = crate::i18n::Language::active().name().to_string();
-
-                let language_section = panel_section(column![
-                    dir_row(vec![
-                        text(crate::i18n::t("language")).size(13).color(OryxisColors::t().text_primary).into(),
-                        Space::new().width(Length::Fill).into(),
-                        pick_list(
-                            Some(active_lang_name),
-                            lang_options,
-                            |s: &String| s.clone(),
-                        )
-                        .on_select(Message::LanguageChanged)
-                        .width(200)
-                        .padding(10)
-                        .style(crate::widgets::rounded_pick_list_style)
-                        .into(),
-                    ]).align_y(iced::Alignment::Center),
-                ]);
-
-                // Layout direction picker, Auto (follow language) by
-                // default; explicit LTR/RTL overrides regardless of
-                // language. Useful for users who want Persian text but a
-                // familiar sidebar position.
-                let dir_options: Vec<String> = crate::i18n::LayoutDirection::ALL
-                    .iter()
-                    .map(|d| crate::i18n::t(d.label_key()).to_string())
-                    .collect();
-                let active_dir_name = crate::i18n::t(
-                    crate::i18n::LayoutDirection::active().label_key(),
-                )
-                .to_string();
-
-                let layout_dir_section = panel_section(column![
-                    dir_row(vec![
-                        text(crate::i18n::t("layout_direction")).size(13).color(OryxisColors::t().text_primary).into(),
-                        Space::new().width(Length::Fill).into(),
-                        pick_list(
-                            Some(active_dir_name),
-                            dir_options,
-                            |s: &String| s.clone(),
-                        )
-                        .on_select(Message::LayoutDirectionChanged)
-                        .width(240)
-                        .padding(10)
-                        .style(crate::widgets::rounded_pick_list_style)
-                        .into(),
-                    ]).align_y(iced::Alignment::Center),
-                ]);
-
-                // The dashboard appearance toggles read as one cluster, so
-                // they share a single card (matching the tabs group) instead
-                // of one box per toggle. Each toggle keeps its muted
-                // description line; 12 px separates the rows.
-                let dashboard_section = panel_section(column![
-                    toggle_row(
-                        crate::i18n::t("flatten_hosts_label"),
-                        self.flatten_hosts,
-                        Message::FlattenHostsToggle,
-                    ),
-                    Space::new().height(4),
-                    text(crate::i18n::t("flatten_hosts_desc"))
-                        .size(11)
-                        .color(OryxisColors::t().text_muted),
-                    Space::new().height(12),
-                    toggle_row(
-                        crate::i18n::t("show_host_address_label"),
-                        self.setting_show_host_address,
-                        Message::ToggleShowHostAddress,
-                    ),
-                    Space::new().height(4),
-                    text(crate::i18n::t("show_host_address_desc"))
-                        .size(11)
-                        .color(OryxisColors::t().text_muted),
-                    Space::new().height(12),
-                    toggle_row(
-                        crate::i18n::t("card_accent_glass_label"),
-                        self.setting_card_accent_glass,
-                        Message::ToggleCardAccentGlass,
-                    ),
-                    Space::new().height(4),
-                    text(crate::i18n::t("card_accent_glass_desc"))
-                        .size(11)
-                        .color(OryxisColors::t().text_muted),
-                ]);
-
-                // Tab fill style: gradient (default) vs a flat accent tint.
-                // Token-as-value pattern like the other tab pickers.
-                let fill_options = vec!["gradient".to_string(), "solid".to_string()];
-                let status_bar_section = panel_section(column![
-                    toggle_row(
-                        crate::i18n::t("show_status_bar"),
-                        self.setting_show_status_bar,
-                        Message::SettingToggleShowStatusBar,
-                    ),
-                    Space::new().height(8),
-                    toggle_row(
-                        crate::i18n::t("tab_accent_line"),
-                        self.setting_tab_accent_line,
-                        Message::SettingToggleTabAccentLine,
-                    ),
-                    Space::new().height(8),
-                    toggle_row(
-                        crate::i18n::t("tab_accent_wash"),
-                        self.setting_tab_accent_wash,
-                        Message::SettingToggleTabAccentWash,
-                    ),
-                    Space::new().height(8),
-                    dir_row(vec![
-                        text(crate::i18n::t("tab_fill_style"))
-                            .size(13)
-                            .color(OryxisColors::t().text_primary)
-                            .into(),
-                        Space::new().width(Length::Fill).into(),
-                        pick_list(
-                            Some(self.setting_tab_fill_style.clone()),
-                            fill_options,
-                            |s: &String| {
-                                crate::i18n::t(if s == "solid" {
-                                    "tab_fill_solid"
-                                } else {
-                                    "tab_fill_gradient"
-                                })
-                                .to_string()
-                            },
-                        )
-                        .on_select(Message::SettingTabFillStyleChanged)
-                        .width(180)
-                        .padding(10)
-                        .style(crate::widgets::rounded_pick_list_style)
-                        .into(),
-                    ]).align_y(iced::Alignment::Center),
-                    Space::new().height(12),
-                    self.tab_appearance_preview(),
-                ]);
-
-                // Tray toggles only mean something on Windows (the
-                // tray module is a no-op on macOS/Linux). Hide the
-                // whole section on those platforms so we don't dangle
-                // settings the user can't actually exercise.
-                let tray_section = panel_section(column![
-                    text(crate::i18n::t("system_tray"))
-                        .size(13)
-                        .color(OryxisColors::t().text_primary),
-                    Space::new().height(8),
-                    toggle_row(
-                        crate::i18n::t("close_to_tray"),
-                        self.setting_close_to_tray,
-                        Message::SettingToggleCloseToTray,
-                    ),
-                    Space::new().height(4),
-                    text(crate::i18n::t("close_to_tray_desc"))
-                        .size(11)
-                        .color(OryxisColors::t().text_muted),
-                    Space::new().height(10),
-                    toggle_row(
-                        crate::i18n::t("minimize_to_tray"),
-                        self.setting_minimize_to_tray,
-                        Message::SettingToggleMinimizeToTray,
-                    ),
-                    Space::new().height(4),
-                    text(crate::i18n::t("minimize_to_tray_desc"))
-                        .size(11)
-                        .color(OryxisColors::t().text_muted),
-                ]);
-
-                // Tab close button position picker. We use the token
-                // strings ("left" / "right") as the picker's value type
-                // and only translate to the localized display in the
-                // `to_string` closure. The previous wiring used the
-                // localized labels as values, so the on_select handler
-                // always saw "Left"/"Right" (case + spelling locale-
-                // dependent) and never matched the "right" arm.
-                let close_options = vec![
-                    "left".to_string(),
-                    "right".to_string(),
-                ];
-                let tabs_section = panel_section(column![
-                    dir_row(vec![
-                        text(crate::i18n::t("close_button_position"))
-                            .size(13)
-                            .color(OryxisColors::t().text_primary)
-                            .into(),
-                        Space::new().width(Length::Fill).into(),
-                        pick_list(
-                            Some(self.setting_tab_close_button_side.clone()),
-                            close_options,
-                            |s: &String| {
-                                crate::i18n::t(if s == "right" {
-                                    "close_position_right"
-                                } else {
-                                    "close_position_left"
-                                })
-                                .to_string()
-                            },
-                        )
-                        .on_select(Message::SettingTabCloseButtonSideChanged)
-                        .width(160)
-                        .padding(10)
-                        .style(crate::widgets::rounded_pick_list_style)
-                        .into(),
-                    ]).align_y(iced::Alignment::Center),
-                    Space::new().height(8),
-                    dir_row(vec![
-                        text(crate::i18n::t("pinned_tab_style"))
-                            .size(13)
-                            .color(OryxisColors::t().text_primary)
-                            .into(),
-                        Space::new().width(Length::Fill).into(),
-                        pick_list(
-                            Some(self.setting_pinned_tab_style.clone()),
-                            vec!["compact".to_string(), "full".to_string()],
-                            |s: &String| {
-                                crate::i18n::t(if s == "full" {
-                                    "pinned_tab_style_full"
-                                } else {
-                                    "pinned_tab_style_compact"
-                                })
-                                .to_string()
-                            },
-                        )
-                        .on_select(Message::SettingPinnedTabStyleChanged)
-                        .width(180)
-                        .padding(10)
-                        .style(crate::widgets::rounded_pick_list_style)
-                        .into(),
-                    ]).align_y(iced::Alignment::Center),
-                    Space::new().height(8),
-                    toggle_row(
-                        crate::i18n::t("show_tab_status_dot"),
-                        self.setting_show_tab_status_dot,
-                        Message::SettingToggleShowTabStatusDot,
-                    ),
-                ]);
-
-                // Layout mode picker: same token-as-value pattern as
-                // the close-button picker. The display closure
-                // translates the token to the localized label.
-                let layout_options = vec![
-                    "horizontal".to_string(),
-                    "vertical".to_string(),
-                ];
-                let layout_section = panel_section(column![
-                    dir_row(vec![
-                        text(crate::i18n::t("nav_orientation"))
-                            .size(13)
-                            .color(OryxisColors::t().text_primary)
-                            .into(),
-                        Space::new().width(Length::Fill).into(),
-                        pick_list(
-                            Some(self.setting_nav_orientation.clone()),
-                            layout_options,
-                            |s: &String| {
-                                crate::i18n::t(if s == "vertical" {
-                                    "nav_orientation_vertical"
-                                } else {
-                                    "nav_orientation_horizontal"
-                                })
-                                .to_string()
-                            },
-                        )
-                        .on_select(Message::SettingNavOrientationChanged)
-                        .width(200)
-                        .padding(10)
-                        .style(crate::widgets::rounded_pick_list_style)
-                        .into(),
-                    ]).align_y(iced::Alignment::Center),
-                    Space::new().height(4),
-                    text(crate::i18n::t("nav_orientation_desc"))
-                        .size(11)
-                        .color(OryxisColors::t().text_muted),
-                ]);
-
-                // Default host icon picker: tokens drive the value,
-                // localized labels come from `to_string`.
-                let icon_options = vec![
-                    "circular".to_string(),
-                    "square".to_string(),
-                    "rounded".to_string(),
-                    "outline".to_string(),
-                    "initials".to_string(),
-                ];
-                let icon_section = panel_section(column![
-                    dir_row(vec![
-                        text(crate::i18n::t("default_host_icon"))
-                            .size(13)
-                            .color(OryxisColors::t().text_primary)
-                            .into(),
-                        Space::new().width(Length::Fill).into(),
-                        pick_list(
-                            Some(self.setting_default_host_icon.clone()),
-                            icon_options,
-                            |s: &String| {
-                                let key = match s.as_str() {
-                                    "square" => "icon_square",
-                                    "rounded" => "icon_rounded",
-                                    "outline" => "icon_outline",
-                                    "initials" => "icon_initials",
-                                    _ => "icon_circular",
-                                };
-                                crate::i18n::t(key).to_string()
-                            },
-                        )
-                        .on_select(Message::SettingDefaultHostIconChanged)
-                        .width(200)
-                        .padding(10)
-                        .style(crate::widgets::rounded_pick_list_style)
-                        .into(),
-                    ]).align_y(iced::Alignment::Center),
-                    Space::new().height(12),
-                    self.card_appearance_preview(),
-                ]);
-
-                // Renderer backend picker + a hint that it only takes
-                // effect after a restart (the backend is fixed at process
-                // start). Escape hatch for GPU/driver stacks that corrupt
-                // the wgpu surface: "auto" (best/Vulkan), "opengl" (still
-                // GPU, dodges most Vulkan-on-Mesa bugs), "software" (CPU).
-                // Token-as-value pattern: the picker stores the token and
-                // the display closure translates it to the localized label.
-                let renderer_options = vec![
-                    "auto".to_string(),
-                    "opengl".to_string(),
-                    "software".to_string(),
-                ];
-                let renderer_active_line: Element<'_, Message> =
-                    if let Some((backend, adapter)) = &self.renderer_active {
-                        column![
-                            Space::new().height(4),
-                            text(format!(
-                                "{}: {} ({})",
-                                crate::i18n::t("renderer_active"),
-                                backend,
-                                adapter
-                            ))
-                            .size(11)
-                            .color(OryxisColors::t().text_secondary),
-                        ]
-                        .into()
-                    } else {
-                        Space::new().height(0).into()
-                    };
-                let rendering_section = panel_section(column![
-                    dir_row(vec![
-                        text(crate::i18n::t("renderer_backend"))
-                            .size(13)
-                            .color(OryxisColors::t().text_primary)
-                            .into(),
-                        Space::new().width(Length::Fill).into(),
-                        pick_list(
-                            Some(self.setting_renderer_backend.clone()),
-                            renderer_options,
-                            |s: &String| {
-                                let key = match s.as_str() {
-                                    "opengl" => "renderer_opengl",
-                                    "software" => "renderer_software",
-                                    _ => "renderer_auto",
-                                };
-                                crate::i18n::t(key).to_string()
-                            },
-                        )
-                        .on_select(Message::SettingRendererBackendChanged)
-                        .width(200)
-                        .padding(10)
-                        .style(crate::widgets::rounded_pick_list_style)
-                        .into(),
-                    ]).align_y(iced::Alignment::Center),
-                    Space::new().height(4),
-                    text(crate::i18n::t("renderer_backend_desc"))
-                        .size(11)
-                        .color(OryxisColors::t().text_muted),
-                    // What the compositor actually selected. Resolves the
-                    // ambiguity of "Automatic" (which GPU backend won?)
-                    // and confirms an opengl/software override or a
-                    // runtime fallback actually took effect.
-                    renderer_active_line,
-                ]);
-
-                // Terminal teaching hints (the mouse-capture toast, the
-                // "Ctrl + Click to open" link tip) are governed by one
-                // tri-state mode. `Once` (default) shows each a single time
-                // per pane; `Always` repeats; `Never` silences them.
-                let hints_section = panel_section(column![
-                    dir_row(vec![
-                        text(crate::i18n::t("terminal_hints"))
-                            .size(13)
-                            .color(OryxisColors::t().text_primary)
-                            .into(),
-                        Space::new().width(Length::Fill).into(),
-                        pick_list(
-                            Some(crate::i18n::t(self.setting_hint_mode.label_key()).to_string()),
-                            crate::util::HintMode::ALL
-                                .iter()
-                                .map(|m| crate::i18n::t(m.label_key()).to_string())
-                                .collect::<Vec<_>>(),
-                            |s: &String| s.clone(),
-                        )
-                        .on_select(Message::HintModeChanged)
-                        .width(200)
-                        .padding(10)
-                        .style(crate::widgets::rounded_pick_list_style)
-                        .into(),
-                    ])
-                    .align_y(iced::Alignment::Center),
-                    Space::new().height(4),
-                    text(crate::i18n::t("terminal_hints_desc"))
-                        .size(11)
-                        .color(OryxisColors::t().text_muted),
-                ]);
-
-                // Explicit `Space::new()` between elements (no
-                // `.spacing()`) so the gap before the first panel
-                // matches the SFTP section's 16 px exactly; the
-                // previous `.spacing(12)` was stacking on top of the
-                // explicit gaps to roughly double them.
-                // Grouped under "h2" headers so related cards read as a
-                // cluster (the section had grown into a flat list that was
-                // hard to scan). Group gaps are 18 px, intra-group 12 px,
-                // header-to-first-card 8 px.
-                use crate::widgets::settings_group_header as gh;
-                let mut content_col = column![
-                    gh(crate::i18n::t("interface_group_general")),
-                    Space::new().height(8),
-                    language_section,
-                    Space::new().height(12),
-                    layout_dir_section,
-                    Space::new().height(12),
-                    layout_section,
-                    Space::new().height(18),
-                    gh(crate::i18n::t("interface_group_dashboard")),
-                    Space::new().height(8),
-                    dashboard_section,
-                    Space::new().height(12),
-                    icon_section,
-                    Space::new().height(18),
-                    gh(crate::i18n::t("interface_group_tabs")),
-                    Space::new().height(8),
-                    tabs_section,
-                    Space::new().height(12),
-                    status_bar_section,
-                    Space::new().height(18),
-                    gh(crate::i18n::t("interface_group_theme")),
-                    Space::new().height(8),
-                ]
-                .width(Length::Fill)
-                .align_x(dir_align_x());
-
-                // App-theme swatch grid sits under the Theme header.
-                for row_el in grid_rows {
-                    content_col = content_col
-                        .push(row_el)
-                        .push(Space::new().height(8));
-                }
-
-                // Advanced: renderer backend + reset hints, plus the
-                // system tray toggles on Windows (a no-op elsewhere, so
-                // hidden on macOS/Linux).
-                content_col = content_col
-                    .push(Space::new().height(10))
-                    .push(gh(crate::i18n::t("interface_group_advanced")))
-                    .push(Space::new().height(8))
-                    .push(rendering_section)
-                    .push(Space::new().height(12))
-                    .push(hints_section);
-                if cfg!(target_os = "windows") {
-                    content_col = content_col
-                        .push(Space::new().height(12))
-                        .push(tray_section);
-                } else {
-                    let _ = tray_section; // keep helper construction warning-free.
-                }
-                content_col = content_col.push(Space::new().height(24));
-
-                scrollable(
-                    container(content_col)
-                        .padding(Padding { top: 24.0, right: 24.0, bottom: 24.0, left: 24.0 }),
-                )
-                .height(Length::Fill)
-                .into()
-            }
-
-            SettingsSection::Shortcuts => {
-                use crate::hotkeys::{default_bindings, HotkeyAction};
-                let defaults = default_bindings();
-
-                // Header: title + hint + global reset button.
-                let header = column![
-                                        text(crate::i18n::t("hotkey_edit_hint"))
-                        .size(11)
-                        .color(OryxisColors::t().text_muted),
-                    Space::new().height(10),
-                    styled_button(
-                        crate::i18n::t("hotkey_reset_all"),
-                        Message::ResetAllHotkeys,
-                        OryxisColors::t().bg_selected,
-                    ),
-                    Space::new().height(16),
-                ]
-                .width(Length::Fill)
-                .align_x(dir_align_x());
-
-                let mut rows_col = column![header]
-                    .spacing(8)
-                    .width(Length::Fill)
-                    .align_x(dir_align_x());
-
-                for action in HotkeyAction::all() {
-                    let row_el = self.hotkey_editor_row(*action, defaults.get(action).copied());
-                    rows_col = rows_col.push(row_el);
-                }
-
-                // Read-only footer: terminal copy/paste and Ctrl+Wheel
-                // zoom are handled in different layers (the terminal
-                // widget owns copy selection; the wheel handler lives
-                // in the scroll event). Surfaced here so the user
-                // doesn't think they're missing.
-                let static_rows = column![
-                    Space::new().height(20),
-                    text(crate::i18n::t("hotkey_terminal_handled"))
-                        .size(11)
-                        .color(OryxisColors::t().text_muted),
-                    Space::new().height(8),
-                    shortcut_row(
-                        vec![key_badge("Ctrl"), key_badge("Shift"), key_badge("C")],
-                        crate::i18n::t("copy_terminal"),
-                    ),
-                    shortcut_row(
-                        vec![key_badge("Ctrl"), key_badge("Shift"), key_badge("V")],
-                        crate::i18n::t("paste_terminal"),
-                    ),
-                    shortcut_row(
-                        vec![key_badge("Ctrl"), key_badge("Wheel")],
-                        crate::i18n::t("font_zoom_wheel"),
-                    ),
-                ]
-                .spacing(8)
-                .width(Length::Fill)
-                .align_x(dir_align_x());
-                rows_col = rows_col.push(static_rows);
-
-                scrollable(
-                    container(rows_col)
-                        .padding(Padding { top: 24.0, right: 24.0, bottom: 24.0, left: 24.0 }),
-                )
-                .height(Length::Fill)
-                .into()
-            }
-
-            SettingsSection::Security => {
-                let password_toggle = toggle_row(
-                    crate::i18n::t("vault_password"),
-                    self.vault_ui.has_user_password,
-                    Message::ToggleVaultPassword,
-                );
-
-                let password_section: Element<'_, Message> = if !self.vault_ui.has_user_password {
-                    // Show password input to enable
-                    let input = container(crate::widgets::password_input_with_eye(
-                        t("new_master_password_placeholder"),
-                        &self.vault_ui.new_password,
-                        Message::VaultNewPasswordChanged,
-                        Some(Message::SetVaultPassword),
-                        self.revealed_secrets
-                            .contains(&crate::state::SecretField::VaultNewPassword),
-                        Message::ToggleSecretVisibility(
-                            crate::state::SecretField::VaultNewPassword,
-                        ),
-                        10.0,
-                    ))
-                    .width(300);
-                    // Second hidden entry: both are masked, so a typo in
-                    // the first would otherwise only surface at the next
-                    // unlock, when the only recovery is to destroy the
-                    // vault. Require them to match before accepting.
-                    let confirm = container(crate::widgets::password_input_with_eye(
-                        t("confirm_master_password_placeholder"),
-                        &self.vault_ui.confirm_password,
-                        Message::VaultConfirmPasswordChanged,
-                        Some(Message::SetVaultPassword),
-                        self.revealed_secrets
-                            .contains(&crate::state::SecretField::VaultConfirmPassword),
-                        Message::ToggleSecretVisibility(
-                            crate::state::SecretField::VaultConfirmPassword,
-                        ),
-                        10.0,
-                    ))
-                    .width(300);
-                    let btn = styled_button(crate::i18n::t("set_password"), Message::SetVaultPassword, OryxisColors::t().accent);
-                    let error: Element<'_, Message> = if let Some(err) = &self.vault_ui.password_error {
-                        text(err.clone()).size(12).color(OryxisColors::t().error).into()
-                    } else {
-                        Space::new().height(0).into()
-                    };
-                    column![
-                        Space::new().height(8),
-                        text(t("vault_set_password_desc"))
-                            .size(11).color(OryxisColors::t().text_muted),
-                        Space::new().height(8),
-                        input,
-                        Space::new().height(8),
-                        confirm,
-                        Space::new().height(8),
-                        btn,
-                        error,
-                    ].into()
-                } else {
-                    let note: Element<'_, Message> = text(t("vault_protected_note"))
-                        .size(11).color(OryxisColors::t().text_muted).into();
-                    let error: Element<'_, Message> = if let Some(err) = &self.vault_ui.password_error {
-                        text(err.clone()).size(12).color(OryxisColors::t().error).into()
-                    } else {
-                        Space::new().height(0).into()
-                    };
-                    // Explicit Remove button: toggling the header switch off
-                    // also removes the password, but that's not discoverable;
-                    // an outright button makes the destructive-but-reversible
-                    // action obvious. Reuses the same handler as the toggle.
-                    let remove_btn = styled_button(
-                        crate::i18n::t("remove_password"),
-                        Message::ToggleVaultPassword,
-                        OryxisColors::t().warning,
-                    );
-                    column![Space::new().height(4), note, Space::new().height(8), remove_btn, error].into()
-                };
-
-                // Lock Vault only makes sense once a master password is
-                // set; without one, locking has nothing to protect and
-                // the unlock screen would have no way to re-enter (the
-                // vault re-opens itself with an empty key). Show the
-                // button when a password exists; otherwise replace with
-                // a muted note telling the user how to enable locking.
-                let lock_btn: Element<'_, Message> = if self.vault_ui.has_user_password {
-                    button(
-                        container(
-                            dir_row(vec![
-                                iced_fonts::lucide::lock().size(14).color(OryxisColors::t().warning).into(),
-                                Space::new().width(10).into(),
-                                text(crate::i18n::t("lock_vault")).size(13).color(OryxisColors::t().warning).into(),
-                            ]).align_y(iced::Alignment::Center),
-                        )
-                        .padding(Padding { top: 10.0, right: 20.0, bottom: 10.0, left: 20.0 }),
-                    )
-                    .on_press(Message::LockVault)
-                    .style(|_, status| {
-                        let bg = match status {
-                            BtnStatus::Hovered => Color { a: 0.15, ..OryxisColors::t().warning },
-                            _ => Color::TRANSPARENT,
-                        };
-                        button::Style {
-                            background: Some(Background::Color(bg)),
-                            border: Border { radius: Radius::from(8.0), color: OryxisColors::t().warning, width: 1.0 },
-                            ..Default::default()
-                        }
-                    })
-                    .into()
-                } else {
-                    text(crate::i18n::t("lock_vault_requires_password"))
-                        .size(11)
-                        .color(OryxisColors::t().text_muted)
-                        .into()
-                };
-
-                // MCP Server moved to its own Settings sidebar entry
-                // in v0.7 (see `view_settings_mcp`). Keeping it here
-                // was crowding the Security panel.
-
-                // Export/Import section
-                let export_btn = styled_button(crate::i18n::t("export_vault"), Message::ExportVault, OryxisColors::t().accent);
-                let import_btn = styled_button(crate::i18n::t("import_vault"), Message::ImportVault, OryxisColors::t().text_muted);
-                // Restore from a remote host. Export-to-SFTP is reached from
-                // inside the export dialog (it needs the password first).
-                let import_sftp_btn = styled_button(crate::i18n::t("import_from_sftp"), Message::ImportFromSftp, OryxisColors::t().text_muted);
-
-                let mut export_import_section: iced::widget::Column<'_, Message> = column![
-                    text(crate::i18n::t("export_import")).size(14).color(OryxisColors::t().text_muted),
-                    Space::new().height(8),
-                    dir_row(vec![export_btn, Space::new().width(8).into(), import_btn, Space::new().width(8).into(), import_sftp_btn]),
-                ];
-
-                // Show export dialog inline
-                if self.show_export_dialog {
-                    let pw_input = container(crate::widgets::password_input_with_eye(
-                        crate::i18n::t("export_password"),
-                        &self.export_password,
-                        Message::ExportPasswordChanged,
-                        None,
-                        self.revealed_secrets
-                            .contains(&crate::state::SecretField::ExportPassword),
-                        Message::ToggleSecretVisibility(
-                            crate::state::SecretField::ExportPassword,
-                        ),
-                        10.0,
-                    ))
-                    .width(300);
-                    // One checkbox per category, all checked by default.
-                    let mut categories: iced::widget::Column<'_, Message> =
-                        column![text(crate::i18n::t("export_select_what"))
-                            .size(12)
-                            .color(OryxisColors::t().text_muted)]
-                        .spacing(6);
-                    for cat in oryxis_vault::ExportCategory::ALL {
-                        categories = categories.push(
-                            checkbox(self.export_selection.get(cat))
-                                .label(crate::i18n::t(category_label_key(cat)))
-                                .on_toggle(move |_| Message::ExportToggleCategory(cat))
-                                .size(16)
-                                .text_size(13),
-                        );
-                    }
-                    // Private-key material is a sub-option of the Keys
-                    // category, only meaningful when Keys is being exported.
-                    let keys_toggle: Element<'_, Message> = if self.export_selection.keys {
-                        dir_row(vec![
-                            text(crate::i18n::t("include_private_keys")).size(13).color(OryxisColors::t().text_secondary).into(),
-                            Space::new().width(Length::Fill).into(),
-                            button(
-                                text(if self.export_include_keys { "ON" } else { "OFF" }).size(12)
-                            ).on_press(Message::ExportToggleKeys).style(move |_theme, _status| {
-                                button::Style {
-                                    background: Some(Background::Color(if self.export_include_keys { OryxisColors::t().success } else { OryxisColors::t().bg_hover })),
-                                    border: Border { radius: Radius::from(4.0), ..Default::default() },
-                                    text_color: OryxisColors::t().text_primary,
-                                    ..Default::default()
-                                }
-                            }).into(),
-                        ]).align_y(iced::Alignment::Center).into()
-                    } else {
-                        Space::new().height(0).into()
-                    };
-                    let confirm_btn = styled_button(crate::i18n::t("export_confirm"), Message::ExportConfirm, OryxisColors::t().success);
-                    let sftp_btn = styled_button(crate::i18n::t("export_to_sftp"), Message::ExportToSftp, OryxisColors::t().accent);
-                    let cancel_btn = styled_button(crate::i18n::t("cancel"), Message::ExportImportDismiss, OryxisColors::t().text_muted);
-                    export_import_section = export_import_section
-                        .push(Space::new().height(12))
-                        .push(pw_input)
-                        .push(Space::new().height(10))
-                        .push(categories)
-                        .push(Space::new().height(8))
-                        .push(keys_toggle)
-                        .push(Space::new().height(8))
-                        .push(dir_row(vec![confirm_btn, Space::new().width(8).into(), sftp_btn, Space::new().width(8).into(), cancel_btn]));
-                }
-
-                // Show import dialog inline
-                if self.show_import_dialog {
-                    let pw_input = container(crate::widgets::password_input_with_eye(
-                        crate::i18n::t("import_password"),
-                        &self.import_password,
-                        Message::ImportPasswordChanged,
-                        // Enter inspects in phase 1, imports in phase 2.
-                        Some(if self.import_summary.is_some() {
-                            Message::ImportConfirm
-                        } else {
-                            Message::ImportInspect
-                        }),
-                        self.revealed_secrets
-                            .contains(&crate::state::SecretField::ImportPassword),
-                        Message::ToggleSecretVisibility(
-                            crate::state::SecretField::ImportPassword,
-                        ),
-                        10.0,
-                    ))
-                    .width(300);
-                    let cancel_btn = styled_button(crate::i18n::t("cancel"), Message::ExportImportDismiss, OryxisColors::t().text_muted);
-                    export_import_section = export_import_section
-                        .push(Space::new().height(12))
-                        .push(text(crate::i18n::t("import_password_hint")).size(12).color(OryxisColors::t().text_muted))
-                        .push(Space::new().height(4))
-                        .push(pw_input);
-                    if let Some(summary) = &self.import_summary {
-                        // Phase 2: the file is decrypted, show what it
-                        // holds. Present categories are interactive
-                        // checkboxes (with counts); absent ones are
-                        // greyed so the user sees the full shape.
-                        let mut categories: iced::widget::Column<'_, Message> =
-                            column![text(crate::i18n::t("import_select_what"))
-                                .size(12)
-                                .color(OryxisColors::t().text_muted)]
-                            .spacing(6);
-                        for cat in oryxis_vault::ExportCategory::ALL {
-                            let count = summary.count(cat);
-                            let label = crate::i18n::t(category_label_key(cat));
-                            if count > 0 {
-                                categories = categories.push(
-                                    checkbox(self.import_selection.get(cat))
-                                        .label(format!("{label} ({count})"))
-                                        .on_toggle(move |_| Message::ImportToggleCategory(cat))
-                                        .size(16)
-                                        .text_size(13),
-                                );
-                            } else {
-                                categories = categories.push(
-                                    text(format!("{label} ({})", crate::i18n::t("import_not_in_file")))
-                                        .size(13)
-                                        .color(OryxisColors::t().text_muted),
-                                );
-                            }
-                        }
-                        let confirm_btn = styled_button(crate::i18n::t("import_confirm"), Message::ImportConfirm, OryxisColors::t().success);
-                        export_import_section = export_import_section
-                            .push(Space::new().height(10))
-                            .push(categories)
-                            .push(Space::new().height(8))
-                            .push(dir_row(vec![confirm_btn, Space::new().width(8).into(), cancel_btn]));
-                    } else {
-                        // Phase 1: enter the password, then inspect.
-                        let inspect_btn = styled_button(crate::i18n::t("import_inspect"), Message::ImportInspect, OryxisColors::t().accent);
-                        export_import_section = export_import_section
-                            .push(Space::new().height(8))
-                            .push(dir_row(vec![inspect_btn, Space::new().width(8).into(), cancel_btn]));
-                    }
-                }
-
-                // SFTP backup-target picker (export to / import from a
-                // saved host). Reuses the export/import password + selection
-                // state above; here the user only picks the host and path.
-                if self.sftp_backup.open {
-                    let is_import = self.sftp_backup.is_import;
-                    let host_options: Vec<String> =
-                        self.connections.iter().map(|c| c.label.clone()).collect();
-                    let selected_host = self
-                        .sftp_backup.host
-                        .and_then(|i| self.connections.get(i))
-                        .map(|c| c.label.clone());
-                    let host_lookup: std::collections::HashMap<String, usize> = self
-                        .connections
-                        .iter()
-                        .enumerate()
-                        .map(|(i, c)| (c.label.clone(), i))
-                        .collect();
-                    let host_picker = pick_list(selected_host, host_options, |s: &String| s.clone())
-                        .on_select(move |label: String| {
-                            Message::SftpBackupHostSelected(
-                                host_lookup.get(&label).copied().unwrap_or(0),
-                            )
-                        })
-                        .width(300)
-                        .padding(10)
-                        .style(crate::widgets::rounded_pick_list_style);
-                    let path_field = text_input("vault.oryxis", &self.sftp_backup.path)
-                        .on_input(Message::SftpBackupPathChanged)
-                        .on_submit(Message::SftpBackupConfirm)
-                        .width(300)
-                        .padding(10)
-                        .style(crate::widgets::rounded_input_style);
-                    // Restore collects the decrypt password here (export
-                    // already has it in the dialog above), so both flows ask
-                    // for the password before the confirm button.
-                    let import_pw: Option<Element<'_, Message>> = if is_import {
-                        Some(
-                            container(crate::widgets::password_input_with_eye(
-                                crate::i18n::t("import_password"),
-                                &self.import_password,
-                                Message::ImportPasswordChanged,
-                                Some(Message::SftpBackupConfirm),
-                                self.revealed_secrets
-                                    .contains(&crate::state::SecretField::ImportPassword),
-                                Message::ToggleSecretVisibility(
-                                    crate::state::SecretField::ImportPassword,
-                                ),
-                                10.0,
-                            ))
-                            .width(300)
-                            .into(),
-                        )
-                    } else {
-                        None
-                    };
-                    let title_key = if is_import { "restore_from_sftp" } else { "backup_to_sftp" };
-                    let confirm_msg = if self.sftp_backup.busy {
-                        None
-                    } else {
-                        Some(Message::SftpBackupConfirm)
-                    };
-                    let confirm_label = if self.sftp_backup.busy {
-                        crate::i18n::t("sftp_backup_working")
-                    } else if is_import {
-                        crate::i18n::t("sftp_backup_restore_confirm")
-                    } else {
-                        crate::i18n::t("sftp_backup_confirm")
-                    };
-                    let confirm_btn =
-                        styled_button_opt(confirm_label, confirm_msg, OryxisColors::t().success);
-                    let cancel_btn = styled_button(
-                        crate::i18n::t("cancel"),
-                        Message::SftpBackupCancel,
-                        OryxisColors::t().text_muted,
-                    );
-                    let mut sftp_section: iced::widget::Column<'_, Message> = column![
-                        text(crate::i18n::t(title_key)).size(13).color(OryxisColors::t().text_primary),
-                        Space::new().height(2),
-                        text(crate::i18n::t("sftp_backup_hint")).size(12).color(OryxisColors::t().text_muted),
-                        Space::new().height(8),
-                        text(crate::i18n::t("sftp_backup_host")).size(12).color(OryxisColors::t().text_secondary),
-                        Space::new().height(4),
-                        host_picker,
-                        Space::new().height(8),
-                        text(crate::i18n::t("sftp_backup_remote_path")).size(12).color(OryxisColors::t().text_secondary),
-                        Space::new().height(4),
-                        path_field,
-                    ];
-                    if let Some(pw) = import_pw {
-                        sftp_section = sftp_section
-                            .push(Space::new().height(10))
-                            .push(pw);
-                    }
-                    sftp_section = sftp_section
-                        .push(Space::new().height(10))
-                        .push(dir_row(vec![confirm_btn, Space::new().width(8).into(), cancel_btn]));
-                    if let Some(status) = &self.sftp_backup.status {
-                        let (msg, color) = match status {
-                            Ok(m) => (m.clone(), OryxisColors::t().success),
-                            Err(e) => (e.clone(), OryxisColors::t().error),
-                        };
-                        sftp_section = sftp_section
-                            .push(Space::new().height(8))
-                            .push(text(msg).size(12).color(color));
-                    }
-                    export_import_section = export_import_section
-                        .push(Space::new().height(14))
-                        .push(sftp_section);
-                }
-
-                // Status messages
-                if let Some(status) = &self.export_status {
-                    let (msg, color) = match status {
-                        Ok(m) => (m.as_str(), OryxisColors::t().success),
-                        Err(m) => (m.as_str(), OryxisColors::t().error),
-                    };
-                    export_import_section = export_import_section
-                        .push(Space::new().height(8))
-                        .push(text(msg).size(12).color(color));
-                }
-                if let Some(status) = &self.import_status {
-                    let (msg, color) = match status {
-                        Ok(m) => (m.as_str(), OryxisColors::t().success),
-                        Err(m) => (m.as_str(), OryxisColors::t().error),
-                    };
-                    export_import_section = export_import_section
-                        .push(Space::new().height(8))
-                        .push(text(msg).size(12).color(color));
-                }
-
-                // SSH config import, separate card, sits below the
-                // vault export/import. One-shot batch importer; no
-                // preview yet.
-                let ssh_config_btn = styled_button(
-                    t("import_ssh_config_btn"),
-                    Message::ImportSshConfig,
-                    OryxisColors::t().accent,
-                );
-                let mut ssh_config_section: iced::widget::Column<'_, Message> = column![
-                    text(t("ssh_config_import"))
-                        .size(14)
-                        .color(OryxisColors::t().text_muted),
-                    Space::new().height(4),
-                    text(t("ssh_config_import_desc"))
-                        .size(11)
-                        .color(OryxisColors::t().text_muted),
-                    Space::new().height(8),
-                    ssh_config_btn,
-                ];
-                if let Some(status) = &self.ssh_config_import_status {
-                    let (msg, color) = match status {
-                        Ok(m) => (m.as_str(), OryxisColors::t().success),
-                        Err(m) => (m.as_str(), OryxisColors::t().error),
-                    };
-                    ssh_config_section = ssh_config_section
-                        .push(Space::new().height(8))
-                        .push(text(msg).size(12).color(color));
-                }
-
-                // Privacy & logging: session recordings, connection
-                // history and the retention window. Moved here from the
-                // Terminal section, recordings are scrubbed for secrets
-                // and sealed at rest, so they belong with the vault.
-                let privacy_mode_section = panel_section(column![
-                    toggle_row(
-                        crate::i18n::t("privacy_mode_label"),
-                        self.setting_privacy_mode,
-                        Message::TogglePrivacyMode,
-                    ),
-                    Space::new().height(4),
-                    text(crate::i18n::t("privacy_mode_desc"))
-                        .size(11).color(OryxisColors::t().text_muted),
-                ]);
-
-                let session_logging_enabled = self.setting_session_logging;
-                let session_logging_section = panel_section(column![
-                    toggle_row(
-                        crate::i18n::t("session_logging"),
-                        session_logging_enabled,
-                        Message::SettingToggleSessionLogging,
-                    ),
-                    Space::new().height(4),
-                    text(t("setting_session_logging_desc"))
-                        .size(11).color(OryxisColors::t().text_muted),
-                ]);
-
-                let connection_history_enabled = self.setting_connection_history;
-                let connection_history_section = panel_section(column![
-                    toggle_row(
-                        crate::i18n::t("connection_history"),
-                        connection_history_enabled,
-                        Message::SettingToggleConnectionHistory,
-                    ),
-                    Space::new().height(4),
-                    text(t("setting_connection_history_desc"))
-                        .size(11).color(OryxisColors::t().text_muted),
-                ]);
-
-                // Retention: auto-delete connection events + finished
-                // recordings past the picked age. Codes are stable
-                // setting values; the mapper localizes per code.
-                const RETENTION_CODES: [&str; 7] =
-                    ["off", "1d", "3d", "7d", "14d", "30d", "90d"];
-                let retention_selected = RETENTION_CODES
-                    .iter()
-                    .copied()
-                    .find(|c| *c == self.setting_logs_retention)
-                    .unwrap_or("off");
-                let logs_retention_section = panel_section(column![
-                    text(crate::i18n::t("log_retention_label"))
-                        .size(13)
-                        .color(OryxisColors::t().text_primary),
-                    Space::new().height(4),
-                    text(t("setting_log_retention_desc"))
-                        .size(11).color(OryxisColors::t().text_muted),
-                    Space::new().height(8),
-                    pick_list(
-                        Some(retention_selected),
-                        &RETENTION_CODES[..],
-                        |code: &&str| {
-                            crate::i18n::t(match *code {
-                                "1d" => "log_retention_1d",
-                                "3d" => "log_retention_3d",
-                                "7d" => "log_retention_7d",
-                                "14d" => "log_retention_14d",
-                                "30d" => "log_retention_30d",
-                                "90d" => "log_retention_90d",
-                                _ => "log_retention_off",
-                            })
-                            .to_string()
-                        },
-                    )
-                    .on_select(Message::LogsRetentionChanged)
-                    .width(260).padding(10).style(crate::widgets::rounded_pick_list_style),
-                ]);
-
-                scrollable(
-                    container(
-                        column![
-                            panel_section(column![password_toggle]),
-                            password_section,
-                            Space::new().height(24),
-                            lock_btn,
-                            Space::new().height(24),
-                            privacy_mode_section,
-                            Space::new().height(12),
-                            session_logging_section,
-                            Space::new().height(12),
-                            connection_history_section,
-                            Space::new().height(12),
-                            logs_retention_section,
-                            Space::new().height(24),
-                            panel_section(export_import_section),
-                            Space::new().height(12),
-                            panel_section(ssh_config_section),
-                            Space::new().height(24),
-                        ]
-                        .width(Length::Fill)
-                        .align_x(dir_align_x()),
-                    )
-                    .padding(Padding { top: 24.0, right: 24.0, bottom: 24.0, left: 24.0 }),
-                )
-                .height(Length::Fill)
-                .into()
-            }
-
-            SettingsSection::Sync => {
-                // Device info
-                let device_name_input = text_input(
-                    crate::i18n::t("sync_device_name_hint"),
-                    &self.sync.device_name,
-                )
-                .on_input(Message::SyncDeviceNameChanged)
-                .padding(10)
-                .width(300)
-                .style(crate::widgets::rounded_input_style).align_x(dir_align_x());
-
-                let device_section = panel_section(column![
-                    text(crate::i18n::t("sync_device")).size(14).color(OryxisColors::t().text_muted),
-                    Space::new().height(8),
-                    text(crate::i18n::t("sync_device_name")).size(12).color(OryxisColors::t().text_muted),
-                    Space::new().height(4),
-                    device_name_input,
-                ]);
-
-                // Enable/disable lives on the Plugins screen now.
-                let mode_label = if self.sync.mode == "auto" { t("sync_mode_auto") } else { t("sync_mode_manual") };
-                let auto_label = t("sync_mode_auto").to_string();
-                let manual_label = t("sync_mode_manual").to_string();
-                let mode_pick = pick_list(
-                    Some(mode_label.to_string()),
-                    vec![auto_label.clone(), manual_label.clone()],
-                    |s: &String| s.clone(),
-                )
-                .on_select(move |v| {
-                    // Compare against localized labels first; fall back
-                    // to English so labels persisted in another locale
-                    // still resolve to a known mode.
-                    let mode = if v == auto_label || v == "Auto" {
-                        "auto"
-                    } else {
-                        "manual"
-                    };
-                    Message::SyncModeChanged(mode.to_string())
-                })
-                .text_size(13)
-                .padding(10)
-                .style(crate::widgets::rounded_pick_list_style);
-
-                let passwords_toggle = toggle_row(
-                    crate::i18n::t("sync_passwords"),
-                    self.sync.passwords,
-                    Message::SyncTogglePasswords,
-                );
-
-                // Live engine state indicator, sits right under the
-                // enable toggle so the user sees whether the QUIC /
-                // mDNS background tasks are actually up. The SFTP
-                // transport runs no background engine, so reporting
-                // "Engine stopped" there would read as broken; show a
-                // transport-appropriate label instead.
-                let engine_state = if self.sync.transport == "sftp" {
-                    let (label, color) = if self.sync.enabled {
-                        (
-                            crate::i18n::t("sftp_sync_active_label"),
-                            OryxisColors::t().success,
-                        )
-                    } else {
-                        (
-                            crate::i18n::t("sync_engine_stopped_label"),
-                            OryxisColors::t().text_muted,
-                        )
-                    };
-                    text(label).size(11).color(color)
-                } else if self.sync.engine_running {
-                    text(crate::i18n::t("sync_engine_running_label"))
-                        .size(11)
-                        .color(OryxisColors::t().success)
-                } else {
-                    text(crate::i18n::t("sync_engine_stopped_label"))
-                        .size(11)
-                        .color(OryxisColors::t().text_muted)
-                };
-
-                // Master enable panel sits at the top, same shape as
-                // the Enable SFTP / Enable AI panels: a single toggle
-                // (with the engine state hint right under it). When
-                // the master toggle is off, every other Sync panel
-                // is hidden below so the surface collapses to just
-                // the on/off knob.
-                let enable_section: iced::widget::Column<'_, Message> = column![
-                    engine_state,
-                ];
-
-                let mut options_section: iced::widget::Column<'_, Message> = column![
-                    text(crate::i18n::t("sync_options")).size(14).color(OryxisColors::t().text_muted),
-                    Space::new().height(8),
-                    dir_row(vec![
-                        text(crate::i18n::t("sync_mode")).size(13).color(OryxisColors::t().text_secondary).into(),
-                        Space::new().width(Length::Fill).into(),
-                        mode_pick.into(),
-                    ]).align_y(iced::Alignment::Center),
-                    Space::new().height(8),
-                    passwords_toggle,
-                    Space::new().height(4),
-                    text(crate::i18n::t("sync_passwords_desc"))
-                        .size(11)
-                        .color(OryxisColors::t().text_muted),
-                ];
-
-                if self.sync.enabled && self.sync.mode == "manual" {
-                    if self.sync.transport == "sftp" {
-                        // SFTP round: relabel + disable the button while a
-                        // round is in flight so the click has immediate
-                        // feedback. There's no engine/Cancel path (the
-                        // transfer can't be safely aborted mid-write).
-                        let (label, msg) = if self.sync.sftp.in_progress {
-                            (crate::i18n::t("sftp_sync_running"), None)
-                        } else {
-                            (crate::i18n::t("sync_now"), Some(Message::SyncNow))
-                        };
-                        options_section = options_section.push(Space::new().height(8)).push(
-                            styled_button_opt(label, msg, OryxisColors::t().accent),
-                        );
-                    } else {
-                        // P2P: swap Sync Now <-> Cancel while a sync is in
-                        // flight. Cancel races a oneshot against the sync
-                        // future in dispatch; the click drops the QUIC
-                        // connection immediately.
-                        let action_btn = if self.sync.in_progress {
-                            styled_button(
-                                crate::i18n::t("sync_pairing_cancel"),
-                                Message::SyncCancelInProgress,
-                                OryxisColors::t().button_bg,
-                            )
-                        } else {
-                            styled_button(
-                                crate::i18n::t("sync_now"),
-                                Message::SyncNow,
-                                OryxisColors::t().accent,
-                            )
-                        };
-                        options_section = options_section
-                            .push(Space::new().height(8))
-                            .push(action_btn);
-                    }
-                }
-
-                // Status line directly under the action button. SFTP shows
-                // its own round outcome (success muted / error red); P2P
-                // keeps the engine status string.
-                if self.sync.transport == "sftp" {
-                    if let Some(status) = &self.sync.sftp.status {
-                        let (txt, color) = match status {
-                            Ok(s) => (s.clone(), OryxisColors::t().text_muted),
-                            Err(e) => (e.clone(), OryxisColors::t().error),
-                        };
-                        options_section = options_section
-                            .push(Space::new().height(8))
-                            .push(text(txt).size(12).color(color));
-                    }
-                } else if let Some(status) = &self.sync.status {
-                    options_section = options_section
-                        .push(Space::new().height(8))
-                        .push(text(status.as_str()).size(12).color(OryxisColors::t().text_muted));
-                }
-
-                // Pairing. The sub-view depends on `sync_pairing.state`:
-                // Idle shows the two entry buttons; Hosting shows the
-                // generated code; Joining shows the code + address form.
-                let mut pairing_section: iced::widget::Column<'_, Message> = column![
-                    text(crate::i18n::t("sync_pairing")).size(14).color(OryxisColors::t().text_muted),
-                    Space::new().height(8),
-                ];
-
-                match self.sync.pairing.state {
-                    crate::state::SyncPairingState::Idle => {
-                        pairing_section = pairing_section.push(dir_row(vec![
-                            styled_button(
-                                crate::i18n::t("sync_host_pairing"),
-                                Message::SyncStartPairing,
-                                OryxisColors::t().accent,
-                            ),
-                            Space::new().width(8).into(),
-                            styled_button(
-                                crate::i18n::t("sync_join_pairing"),
-                                Message::SyncJoinPairingRequested,
-                                OryxisColors::t().button_bg,
-                            ),
-                        ]));
-                        // Live mDNS-discovered devices on the LAN.
-                        // One-click "Pair" switches to the join form
-                        // with the address pre-filled, so the user
-                        // only has to enter the 6-digit code.
-                        if !self.sync.discovered.is_empty() {
-                            pairing_section = pairing_section
-                                .push(Space::new().height(14))
-                                .push(text(crate::i18n::t("sync_discovered_devices"))
-                                    .size(12)
-                                    .color(OryxisColors::t().text_secondary))
-                                .push(Space::new().height(6));
-                            for peer in &self.sync.discovered {
-                                let label = if peer.device_name.is_empty() {
-                                    crate::i18n::t("sync_discovered_unnamed").to_string()
-                                } else {
-                                    peer.device_name.clone()
-                                };
-                                let pair_btn = styled_button(
-                                    crate::i18n::t("sync_pair_with_this"),
-                                    Message::SyncPairWithDiscovered(peer.device_id),
-                                    OryxisColors::t().button_bg,
-                                );
-                                pairing_section = pairing_section
-                                    .push(dir_row(vec![
-                                        text(label)
-                                            .size(13)
-                                            .color(OryxisColors::t().text_primary)
-                                            .into(),
-                                        Space::new().width(8).into(),
-                                        text(peer.addr.to_string())
-                                            .size(11)
-                                            .color(OryxisColors::t().text_muted)
-                                            .into(),
-                                        Space::new().width(Length::Fill).into(),
-                                        pair_btn,
-                                    ])
-                                    .align_y(iced::Alignment::Center))
-                                    .push(Space::new().height(4));
-                            }
-                        }
-                    }
-                    crate::state::SyncPairingState::Hosting => {
-                        pairing_section = pairing_section
-                            .push(text(crate::i18n::t("sync_pairing_show_code"))
-                                .size(12)
-                                .color(OryxisColors::t().text_secondary))
-                            .push(Space::new().height(6));
-                        if let Some(code) = &self.sync.pairing.code {
-                            pairing_section = pairing_section
-                                .push(text(code.as_str())
-                                    .size(30)
-                                    .color(OryxisColors::t().success));
-                        }
-                        // Cross-network pairing block: the link + a
-                        // Copy button + the QR. The link works only
-                        // when both ends have a signaling URL set
-                        // (Settings > Sync > Advanced).
-                        if let Some(link) = &self.sync.pairing.link {
-                            pairing_section = pairing_section
-                                .push(Space::new().height(12))
-                                .push(text(crate::i18n::t("sync_pairing_link_label"))
-                                    .size(12)
-                                    .color(OryxisColors::t().text_secondary))
-                                .push(Space::new().height(4))
-                                .push(text(link.as_str())
-                                    .size(11)
-                                    .color(OryxisColors::t().text_muted))
-                                .push(Space::new().height(6))
-                                .push(styled_button(
-                                    crate::i18n::t("sync_pairing_copy_link"),
-                                    Message::CopyToClipboard(link.clone()),
-                                    OryxisColors::t().button_bg,
-                                ));
-                        }
-                        pairing_section = pairing_section
-                            .push(Space::new().height(12))
-                            .push(styled_button(
-                                crate::i18n::t("sync_pairing_cancel"),
-                                Message::SyncCancelHostingPairing,
-                                OryxisColors::t().button_bg,
-                            ));
-                    }
-                    crate::state::SyncPairingState::Joining => {
-                        let code_input = text_input(
-                            crate::i18n::t("sync_pairing_code_placeholder"),
-                            &self.sync.pairing.join_code_input,
-                        )
-                        .on_input(Message::SyncJoinCodeChanged)
-                        .padding(8)
-                        .width(280)
-                        .style(crate::widgets::rounded_input_style)
-                        .align_x(dir_align_x());
-                        let target_input = text_input(
-                            crate::i18n::t("sync_pairing_target_placeholder"),
-                            &self.sync.pairing.join_target_input,
-                        )
-                        .on_input(Message::SyncJoinTargetChanged)
-                        .padding(8)
-                        .width(320)
-                        .style(crate::widgets::rounded_input_style)
-                        .align_x(dir_align_x());
-                        let link_input = text_input(
-                            crate::i18n::t("sync_pairing_link_placeholder"),
-                            &self.sync.pairing.join_link_input,
-                        )
-                        .on_input(Message::SyncJoinLinkChanged)
-                        .padding(8)
-                        .width(360)
-                        .style(crate::widgets::rounded_input_style)
-                        .align_x(dir_align_x());
-                        pairing_section = pairing_section
-                            .push(code_input)
-                            .push(Space::new().height(8))
-                            .push(target_input)
-                            .push(Space::new().height(10))
-                            .push(dir_row(vec![
-                                styled_button(
-                                    crate::i18n::t("sync_pairing_connect"),
-                                    Message::SyncJoinPairingConnect,
-                                    OryxisColors::t().accent,
-                                ),
-                                Space::new().width(8).into(),
-                                styled_button(
-                                    crate::i18n::t("sync_pairing_cancel"),
-                                    Message::SyncJoinPairingCancel,
-                                    OryxisColors::t().button_bg,
-                                ),
-                            ]))
-                            .push(Space::new().height(14))
-                            .push(text(crate::i18n::t("sync_pairing_or_separator"))
-                                .size(11)
-                                .color(OryxisColors::t().text_muted))
-                            .push(Space::new().height(6))
-                            .push(link_input)
-                            .push(Space::new().height(8))
-                            .push(styled_button(
-                                crate::i18n::t("sync_pairing_connect_with_link"),
-                                Message::SyncJoinPairingByLink,
-                                OryxisColors::t().accent,
-                            ));
-                    }
-                }
-
-                // Inline status banner inside the pairing card. The
-                // same `sync_status` field also shows under "Sync Now"
-                // in the Options card, but when the user is actively
-                // pairing they're looking here, so we mirror it
-                // adjacent to the form they're filling in.
-                if !matches!(self.sync.pairing.state, crate::state::SyncPairingState::Idle)
-                    && let Some(status) = &self.sync.status
-                {
-                    pairing_section = pairing_section
-                        .push(Space::new().height(8))
-                        .push(text(status.as_str())
-                            .size(11)
-                            .color(OryxisColors::t().text_muted));
-                }
-
-                // Paired devices list. Empty until the first successful
-                // pairing on either side; pre-Phase B builds never
-                // populated this because the engine wasn't wired.
-                if !self.sync.peers.is_empty() {
-                    pairing_section = pairing_section
-                        .push(Space::new().height(14))
-                        .push(text(crate::i18n::t("sync_paired_devices"))
-                            .size(12)
-                            .color(OryxisColors::t().text_secondary))
-                        .push(Space::new().height(6));
-                    for peer in &self.sync.peers {
-                        let last_sync = peer.last_synced_at
-                            // Stored UTC; show in the user's local timezone.
-                            .map(|d| {
-                                d.with_timezone(&chrono::Local)
-                                    .format("%Y-%m-%d %H:%M")
-                                    .to_string()
-                            })
-                            .unwrap_or_else(|| crate::i18n::t("sync_never").into());
-                        let unpair = button(
-                            text(crate::i18n::t("sync_unpair")).size(11).color(OryxisColors::t().error)
-                        ).on_press(Message::SyncUnpairDevice(peer.peer_id)).style(|_, _| button::Style {
-                            background: Some(Background::Color(Color::TRANSPARENT)),
-                            ..Default::default()
-                        });
-                        pairing_section = pairing_section.push(
-                            dir_row(vec![
-                                text(&peer.device_name).size(13).color(OryxisColors::t().text_primary).into(),
-                                Space::new().width(Length::Fill).into(),
-                                text(last_sync).size(11).color(OryxisColors::t().text_muted).into(),
-                                Space::new().width(8).into(),
-                                unpair.into(),
-                            ]).align_y(iced::Alignment::Center),
-                        ).push(Space::new().height(4));
-                    }
-                }
-
-                // Advanced
-                let signaling_input = text_input("https://...", &self.sync.signaling_url)
-                    .on_input(Message::SyncSignalingUrlChanged)
-                    .padding(8)
-                    .width(300)
-                    .style(crate::widgets::rounded_input_style).align_x(dir_align_x());
-                let signaling_token_input = container(
-                    crate::widgets::password_input_with_eye(
-                        crate::i18n::t("sync_signaling_token_placeholder"),
-                        &self.sync.signaling_token,
-                        Message::SyncSignalingTokenChanged,
-                        None,
-                        self.revealed_secrets
-                            .contains(&crate::state::SecretField::SyncSignalingToken),
-                        Message::ToggleSecretVisibility(
-                            crate::state::SecretField::SyncSignalingToken,
-                        ),
-                        8.0,
-                    ),
-                )
-                .width(300);
-                let relay_input = text_input(crate::i18n::t("sync_relay_optional"), &self.sync.relay_url)
-                    .on_input(Message::SyncRelayUrlChanged)
-                    .padding(8)
-                    .width(300)
-                    .style(crate::widgets::rounded_input_style).align_x(dir_align_x());
-                let port_input = text_input("0", &self.sync.listen_port)
-                    .on_input(Message::SyncListenPortChanged)
-                    .padding(8)
-                    .width(100)
-                    .style(crate::widgets::rounded_input_style).align_x(dir_align_x());
-
-                let advanced_section = panel_section(column![
-                    text(crate::i18n::t("sync_advanced")).size(14).color(OryxisColors::t().text_muted),
-                    Space::new().height(8),
-                    text(crate::i18n::t("sync_signaling_url")).size(12).color(OryxisColors::t().text_muted),
-                    Space::new().height(4),
-                    signaling_input,
-                    Space::new().height(8),
-                    text(crate::i18n::t("sync_signaling_token")).size(12).color(OryxisColors::t().text_muted),
-                    Space::new().height(4),
-                    signaling_token_input,
-                    Space::new().height(8),
-                    text(crate::i18n::t("sync_relay_url")).size(12).color(OryxisColors::t().text_muted),
-                    Space::new().height(4),
-                    relay_input,
-                    Space::new().height(8),
-                    text(crate::i18n::t("sync_listen_port")).size(12).color(OryxisColors::t().text_muted),
-                    Space::new().height(4),
-                    port_input,
-                ]);
-
-                // Plain-language primer: what sync is, that it's optional and
-                // LAN-only by default (no Oryxis server), and what the user
-                // must set up to sync across networks. Answers the recurring
-                // "is sync required / where does my data go?" question.
-                let how_section = panel_section(column![
-                    text(crate::i18n::t("sync_how_title")).size(14).color(OryxisColors::t().text_muted),
-                    Space::new().height(8),
-                    text(crate::i18n::t("sync_how_body"))
-                        .size(12)
-                        .color(OryxisColors::t().text_secondary),
-                ]);
-
-                // Transport picker (P2P vs SFTP), the "one or the other"
-                // choice. Always visible while sync is enabled; selecting
-                // it persists the setting and (un)mounts the P2P engine.
-                let is_sftp = self.sync.transport == "sftp";
-                let p2p_label = crate::i18n::t("sync_transport_p2p").to_string();
-                let sftp_label = crate::i18n::t("sync_transport_sftp").to_string();
-                let transport_selected = if is_sftp {
-                    sftp_label.clone()
-                } else {
-                    p2p_label.clone()
-                };
-                let sftp_label_for_select = sftp_label.clone();
-                let transport_pick = pick_list(
-                    Some(transport_selected),
-                    vec![p2p_label.clone(), sftp_label.clone()],
-                    |s: &String| s.clone(),
-                )
-                .on_select(move |v| {
-                    let tr = if v == sftp_label_for_select || v == "SFTP" {
-                        "sftp"
-                    } else {
-                        "p2p"
-                    };
-                    Message::SyncTransportChanged(tr.to_string())
-                })
-                .text_size(13)
-                .padding(10)
-                .style(crate::widgets::rounded_pick_list_style);
-                let transport_section = panel_section(column![
-                    text(crate::i18n::t("sync_transport"))
-                        .size(14)
-                        .color(OryxisColors::t().text_muted),
-                    Space::new().height(8),
-                    dir_row(vec![
-                        text(crate::i18n::t("sync_transport_field"))
-                            .size(13)
-                            .color(OryxisColors::t().text_secondary)
-                            .into(),
-                        Space::new().width(Length::Fill).into(),
-                        transport_pick.into(),
-                    ])
-                    .align_y(iced::Alignment::Center),
-                ]);
-
-                // SFTP-transport config: host, remote path, passphrase,
-                // status, and the group/known-host notes.
-                // Host field opens the same rich "Select a host" modal as
-                // the SFTP file browser (OS badge + label + address +
-                // search), not a flat dropdown. The trigger shows the
-                // current selection or a placeholder.
-                let selected_conn = self
-                    .sync.sftp.host_id
-                    .and_then(|id| self.connections.iter().find(|c| c.id == id));
-                let host_trigger_inner: Element<'_, Message> = if let Some(c) = selected_conn {
-                    dir_row(vec![
-                        host_badge(c, &self.setting_default_host_icon, 22.0),
-                        Space::new().width(10).into(),
-                        text(c.label.clone())
-                            .size(13)
-                            .color(OryxisColors::t().text_primary)
-                            .into(),
-                        Space::new().width(Length::Fill).into(),
-                        text("\u{25BE}").size(12).color(OryxisColors::t().text_muted).into(),
-                    ])
-                    .align_y(iced::Alignment::Center)
-                    .into()
-                } else {
-                    dir_row(vec![
-                        text(crate::i18n::t("select_a_host"))
-                            .size(13)
-                            .color(OryxisColors::t().text_muted)
-                            .into(),
-                        Space::new().width(Length::Fill).into(),
-                        text("\u{25BE}").size(12).color(OryxisColors::t().text_muted).into(),
-                    ])
-                    .align_y(iced::Alignment::Center)
-                    .into()
-                };
-                let host_pick = button(host_trigger_inner)
-                    .on_press(Message::SyncSftpOpenPicker)
-                    .padding(10)
-                    .width(300)
-                    .style(|_, status| {
-                        let c = OryxisColors::t();
-                        let border = match status {
-                            BtnStatus::Hovered => c.accent_hover,
-                            _ => c.border,
-                        };
-                        button::Style {
-                            background: Some(Background::Color(c.bg_surface)),
-                            text_color: c.text_primary,
-                            border: Border {
-                                radius: Radius::from(8.0),
-                                width: 1.0,
-                                color: border,
-                            },
-                            ..Default::default()
-                        }
-                    });
-                let path_input = text_input(
-                    "/home/user/oryxis-sync/",
-                    &self.sync.sftp.remote_path,
-                )
-                .on_input(Message::SyncSftpPathChanged)
-                .padding(10)
-                .width(300)
-                .style(crate::widgets::rounded_input_style)
-                .align_x(dir_align_x());
-                let passphrase_input = text_input(
-                    crate::i18n::t("sftp_sync_passphrase_placeholder"),
-                    &self.sync.sftp.passphrase,
-                )
-                .on_input(Message::SyncSftpPassphraseChanged)
-                .secure(true)
-                .padding(10)
-                .width(300)
-                .style(crate::widgets::rounded_input_style)
-                .align_x(dir_align_x());
-                let mut sftp_section_col = column![
-                    text(crate::i18n::t("sftp_sync_title"))
-                        .size(14)
-                        .color(OryxisColors::t().text_muted),
-                    Space::new().height(8),
-                    panel_field(crate::i18n::t("sftp_sync_host"), host_pick.into()),
-                    Space::new().height(8),
-                    panel_field(crate::i18n::t("sftp_sync_path"), path_input.into()),
-                    Space::new().height(8),
-                    panel_field(
-                        crate::i18n::t("sftp_sync_passphrase"),
-                        passphrase_input.into(),
-                    ),
-                ];
-                // (The round status lives under the Sync Now button in the
-                // options panel above, not here, so feedback sits next to
-                // the control that triggers it.)
-                sftp_section_col = sftp_section_col
-                    .push(Space::new().height(12))
-                    .push(
-                        text(crate::i18n::t("sftp_sync_note_group"))
-                            .size(11)
-                            .color(OryxisColors::t().text_muted),
-                    )
-                    .push(Space::new().height(4))
-                    .push(
-                        text(crate::i18n::t("sftp_sync_note_bridge"))
-                            .size(11)
-                            .color(OryxisColors::t().text_muted),
-                    )
-                    .push(Space::new().height(4))
-                    .push(
-                        text(crate::i18n::t("sftp_sync_note_hostkey"))
-                            .size(11)
-                            .color(OryxisColors::t().text_muted),
-                    );
-                let sftp_section = panel_section(sftp_section_col);
-
-                let mut content_col: iced::widget::Column<'_, Message> = column![
-                    panel_section(enable_section),
-                ]
-                .width(Length::Fill)
-                .align_x(dir_align_x());
-
-                content_col = content_col
-                    .push(Space::new().height(12))
-                    .push(how_section);
-
-                if self.sync.enabled {
-                    content_col = content_col
-                        .push(Space::new().height(12))
-                        .push(transport_section)
-                        .push(Space::new().height(12))
-                        .push(panel_section(options_section));
-                    if is_sftp {
-                        content_col = content_col
-                            .push(Space::new().height(12))
-                            .push(sftp_section);
-                    } else {
-                        content_col = content_col
-                            .push(Space::new().height(12))
-                            .push(device_section)
-                            .push(Space::new().height(12))
-                            .push(panel_section(pairing_section))
-                            .push(Space::new().height(12))
-                            .push(advanced_section);
-                    }
-                }
-                content_col = content_col.push(Space::new().height(24));
-
-                scrollable(
-                    container(content_col)
-                        .padding(Padding { top: 24.0, right: 24.0, bottom: 24.0, left: 24.0 }),
-                )
-                .height(Length::Fill)
-                .into()
-            }
-
-            SettingsSection::About => {
-                // Channel-aware build string: nightly builds append the
-                // channel + short commit so a nightly user sees exactly what
-                // they're running, not just the base version number.
-                let version_str = match crate::update::build_channel() {
-                    crate::update::UpdateChannel::Nightly => format!(
-                        "Oryxis v{} nightly ({})",
-                        env!("CARGO_PKG_VERSION"),
-                        env!("ORYXIS_GIT_SHA").chars().take(7).collect::<String>(),
-                    ),
-                    crate::update::UpdateChannel::Stable => {
-                        format!("Oryxis v{}", env!("CARGO_PKG_VERSION"))
-                    }
-                };
-                // Logo beside the name + tagline, like the lock screen.
-                let about_header = dir_row(vec![
-                    iced::widget::svg(self.logo_handle.clone())
-                        .width(Length::Fixed(48.0))
-                        .height(Length::Fixed(48.0))
-                        .into(),
-                    Space::new().width(14).into(),
-                    column![
-                        text(version_str).size(16).color(OryxisColors::t().text_primary),
-                        Space::new().height(4),
-                        text(t("app_tagline")).size(13).color(OryxisColors::t().text_secondary),
-                    ]
-                    .align_x(dir_align_x())
-                    .into(),
-                ])
-                .align_y(iced::Alignment::Center);
-                let about_section = panel_section(column![
-                    about_header,
-                    Space::new().height(16),
-                    settings_row(t("built_with"), "Iced, russh, alacritty_terminal".into()),
-                    Space::new().height(6),
-                    settings_row(t("license"), "AGPL-3.0".into()),
-                    Space::new().height(6),
-                    crate::widgets::settings_row_link(
-                        crate::i18n::t("website"),
-                        "oryxis.app".into(),
-                        "https://oryxis.app/".into(),
-                    ),
-                    Space::new().height(6),
-                    crate::widgets::settings_row_link(
-                        crate::i18n::t("github"),
-                        "github.com/wilsonglasser/oryxis".into(),
-                        "https://github.com/wilsonglasser/oryxis".into(),
-                    ),
-                ]);
-
-                // Each stat row navigates to its section (issue #38):
-                // the count doubles as a shortcut into the data it
-                // describes. Logs combines connection events + session
-                // recordings, matching what the Logs view lists.
-                let vault_section = panel_section(column![
-                    text(crate::i18n::t("vault_stats")).size(14).color(OryxisColors::t().text_muted),
-                    Space::new().height(8),
-                    crate::widgets::settings_row_nav(
-                        crate::i18n::t("hosts"),
-                        self.connections.len().to_string(),
-                        Message::ChangeView(crate::state::View::Dashboard),
-                    ),
-                    Space::new().height(6),
-                    crate::widgets::settings_row_nav(
-                        crate::i18n::t("keychain"),
-                        self.keys.len().to_string(),
-                        Message::ChangeView(crate::state::View::Keys),
-                    ),
-                    Space::new().height(6),
-                    crate::widgets::settings_row_nav(
-                        crate::i18n::t("snippets"),
-                        self.snippets.len().to_string(),
-                        Message::ChangeView(crate::state::View::Snippets),
-                    ),
-                    Space::new().height(6),
-                    crate::widgets::settings_row_nav(
-                        t("groups"),
-                        self.groups.len().to_string(),
-                        Message::ChangeView(crate::state::View::Dashboard),
-                    ),
-                    Space::new().height(6),
-                    crate::widgets::settings_row_nav(
-                        t("logs"),
-                        (self.logs_total + self.session_logs_total).to_string(),
-                        Message::ChangeView(crate::state::View::History),
-                    ),
-                ]);
-
-                let auto_update_enabled = self.setting_auto_check_updates;
-                let check_now_btn = styled_button(
-                    t("check_for_updates_now"),
-                    Message::CheckForUpdateManual,
-                    OryxisColors::t().accent,
-                );
-                let status_line: Element<'_, Message> = match &self.update_check_status {
-                    Some(status) => {
-                        use crate::update::UpdateStatus;
-                        let (msg, color) = match status {
-                            UpdateStatus::Checking => (
-                                t("update_check_checking").to_string(),
-                                OryxisColors::t().text_muted,
-                            ),
-                            UpdateStatus::UpToDate => (
-                                format!(
-                                    "{} ({})",
-                                    t("update_check_up_to_date"),
-                                    env!("CARGO_PKG_VERSION"),
-                                ),
-                                OryxisColors::t().success,
-                            ),
-                            UpdateStatus::Failed(cause) => (
-                                format!("{}: {}", t("update_check_failed"), cause),
-                                OryxisColors::t().error,
-                            ),
-                        };
-                        // Failures get an inline Retry next to the cause so
-                        // the user doesn't have to hunt for the check button.
-                        let mut line_items: Vec<Element<'_, Message>> =
-                            vec![text(msg).size(11).color(color).into()];
-                        if matches!(status, UpdateStatus::Failed(_)) {
-                            line_items.push(Space::new().width(10).into());
-                            line_items.push(styled_button(
-                                t("retry"),
-                                Message::CheckForUpdateManual,
-                                OryxisColors::t().text_muted,
-                            ));
-                        }
-                        let line = crate::widgets::dir_row(line_items)
-                            .align_y(iced::Alignment::Center);
-                        container(line)
-                            .padding(Padding { top: 8.0, right: 0.0, bottom: 0.0, left: 0.0 })
-                            .into()
-                    }
-                    None => Space::new().height(0).into(),
-                };
-                let channel_picker = pick_list(
-                    Some(self.setting_update_channel),
-                    crate::update::UPDATE_CHANNELS.to_vec(),
-                    |c: &crate::update::UpdateChannel| match c {
-                        crate::update::UpdateChannel::Stable => t("update_channel_stable").to_string(),
-                        crate::update::UpdateChannel::Nightly => t("update_channel_nightly").to_string(),
-                    },
-                )
-                .on_select(Message::SettingUpdateChannelChanged)
-                .width(260)
-                .padding(10)
-                .style(crate::widgets::rounded_pick_list_style);
-                // Bleeding-edge warning, only while the nightly channel is
-                // selected, so stable users don't see scary copy.
-                let channel_note: Element<'_, Message> =
-                    if self.setting_update_channel == crate::update::UpdateChannel::Nightly {
-                        container(
-                            text(t("update_channel_nightly_warning"))
-                                .size(11)
-                                .color(OryxisColors::t().text_muted),
-                        )
-                        .padding(Padding { top: 4.0, right: 0.0, bottom: 0.0, left: 0.0 })
-                        .into()
-                    } else {
-                        Space::new().height(0).into()
-                    };
-                let auto_update_section = panel_section(column![
-                    toggle_row(
-                        crate::i18n::t("auto_check_updates"),
-                        auto_update_enabled,
-                        Message::SettingToggleAutoCheckUpdates,
-                    ),
-                    Space::new().height(4),
-                    text(t("setting_update_check_desc"))
-                        .size(11).color(OryxisColors::t().text_muted),
-                    Space::new().height(12),
-                    text(t("update_channel")).size(12).color(OryxisColors::t().text_secondary),
-                    Space::new().height(4),
-                    channel_picker,
-                    channel_note,
-                    Space::new().height(10),
-                    check_now_btn,
-                    status_line,
-                ]);
-
-                scrollable(
-                    container(
-                        column![
-                            about_section,
-                            Space::new().height(12),
-                            auto_update_section,
-                            Space::new().height(12),
-                            vault_section,
-                            Space::new().height(24),
-                        ]
-                        .width(Length::Fill)
-                        .align_x(dir_align_x()),
-                    )
-                    .padding(Padding { top: 24.0, right: 24.0, bottom: 24.0, left: 24.0 }),
-                )
-                .height(Length::Fill)
-                .into()
-            }
+            SettingsSection::About => self.view_settings_about(),
             SettingsSection::Cloud => self.view_cloud_sync_settings(),
             SettingsSection::Plugins => self.view_plugins_panel(),
             SettingsSection::Mcp => self.view_settings_mcp(),
