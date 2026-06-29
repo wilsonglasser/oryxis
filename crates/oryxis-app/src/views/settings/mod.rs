@@ -1141,9 +1141,13 @@ impl Oryxis {
         // badge is rendered with a distinct muted style so the user
         // sees at a glance which slot is fixed.
         let pills: Element<'_, Message> = if is_editing {
+            // Capture state: paint with the high-contrast `button_text`
+            // foreground, the readable pairing for the `button_bg`
+            // surface this button already uses. Painting accent-on-bg
+            // here washed the placeholder out against the dark button.
             text(crate::i18n::t("hotkey_press_a_key"))
                 .size(12)
-                .color(OryxisColors::t().accent)
+                .color(OryxisColors::t().button_text)
                 .into()
         } else if let Some(b) = binding {
             let labels = b.badges();

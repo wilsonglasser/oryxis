@@ -76,7 +76,7 @@ impl Oryxis {
             let remove_btn = styled_button(
                 crate::i18n::t("remove_password"),
                 Message::ToggleVaultPassword,
-                OryxisColors::t().warning,
+                OryxisColors::t().error,
             );
             column![Space::new().height(4), note, Space::new().height(8), remove_btn, error].into()
         };
