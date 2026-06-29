@@ -1091,61 +1091,14 @@ pub struct Oryxis {
     // MCP Server
     pub(crate) mcp: crate::state::McpState,
 
-    // Sync
-    pub(crate) sync_enabled: bool,
-    pub(crate) sync_mode: String,
-    /// When on, sync wraps connection / identity / proxy-identity
-    /// payloads with their decrypted passwords so peers can mirror
-    /// them. Off by default, passwords stay device-local until the
-    /// user explicitly opts in via Settings → Sync.
-    pub(crate) sync_passwords: bool,
+    // Sync (settings + runtime engine handles + pairing/SFTP forms)
+    pub(crate) sync: crate::state::SyncState,
     /// When on, the dashboard root shows two sections, Groups (manual
     /// folder cards) and Hosts (a flat list of every connection,
     /// including those that live inside a group). When off, root
     /// matches the legacy behaviour: groups at top, only ungrouped
-    /// hosts beneath. Default: on.
+    /// hosts beneath. Default: on. (Dashboard layout, not a sync field.)
     pub(crate) flatten_hosts: bool,
-    pub(crate) sync_device_name: String,
-    pub(crate) sync_signaling_url: String,
-    /// Bearer token for the signaling endpoint. Sent on every
-    /// `POST /register` / `GET /lookup`. Empty == not configured.
-    pub(crate) sync_signaling_token: String,
-    pub(crate) sync_relay_url: String,
-    pub(crate) sync_listen_port: String,
-    pub(crate) sync_peers: Vec<oryxis_vault::SyncPeerRow>,
-    pub(crate) sync_status: Option<String>,
-    /// Live P2P sync engine, present only while sync is enabled. Holds
-    /// a dedicated vault handle plus the QUIC / mDNS background tasks.
-    pub(crate) sync_runtime: Option<crate::sync_runtime::SyncRuntime>,
-    /// Mirrors `sync_runtime.is_some()` for cheap UI checks.
-    pub(crate) sync_engine_running: bool,
-    /// Transient device-pairing UI (hosted code / link, join inputs, and
-    /// which pairing sub-view the Sync panel shows).
-    pub(crate) sync_pairing: crate::state::SyncPairingForm,
-    /// Live mDNS-discovered peers on the LAN. Deduped by `device_id`.
-    pub(crate) sync_discovered: Vec<crate::state::DiscoveredPeerInfo>,
-    /// `Sync Now` in flight. Drives the Cancel button + suppresses
-    /// re-clicks on Sync Now while a sync is already running.
-    pub(crate) sync_in_progress: bool,
-    /// One-shot abort channel for the in-flight `Sync Now` Task. The
-    /// task races `sync_now().await` against this receiver, so
-    /// `Cancel` immediately drops the QUIC connection.
-    pub(crate) sync_abort_tx: Option<tokio::sync::oneshot::Sender<()>>,
-    /// Visible heartbeat counter for signaling re-registers. Bumps on
-    /// every successful `SignalingRegistered` event so the user can
-    /// confirm the heartbeat is alive (otherwise re-registers on the
-    /// same IP look identical and the status freezes).
-    pub(crate) sync_signaling_tick: u32,
-    /// Sync transport: `"p2p"` (QUIC + mDNS + relay, the default) or
-    /// `"sftp"` (reconcile against one encrypted snapshot file on an SFTP
-    /// host). A device runs one transport at a time; the two don't bridge.
-    pub(crate) sync_transport: String,
-    /// Transient state for the SFTP sync transport (snapshot host, remote
-    /// path, group passphrase, host picker) plus the in-flight round's
-    /// progress + last outcome. The group passphrase is held in memory
-    /// while unlocked and persisted encrypted (the `ai_api_key` pattern)
-    /// so the background timer can run unattended.
-    pub(crate) sftp_sync_form: crate::state::SftpSyncForm,
 
     // Export/Import
     pub(crate) show_export_dialog: bool,

@@ -50,7 +50,7 @@ impl Oryxis {
                 toggle_row_desc(
                     crate::i18n::t("sync"),
                     crate::i18n::t("feature_sync_desc"),
-                    self.sync_enabled,
+                    self.sync.enabled,
                     Message::SyncToggleEnabled,
                 ),
             ]),

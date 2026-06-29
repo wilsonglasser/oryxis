@@ -94,17 +94,17 @@ impl Oryxis {
     fn build_sync_config(&self) -> SyncConfig {
         let mut config = SyncConfig {
             enabled: true,
-            mode: if self.sync_mode == "auto" {
+            mode: if self.sync.mode == "auto" {
                 SyncMode::Auto
             } else {
                 SyncMode::Manual
             },
-            relay_url: if self.sync_relay_url.trim().is_empty() {
+            relay_url: if self.sync.relay_url.trim().is_empty() {
                 None
             } else {
-                Some(self.sync_relay_url.clone())
+                Some(self.sync.relay_url.clone())
             },
-            listen_port: self.sync_listen_port.trim().parse().unwrap_or(0),
+            listen_port: self.sync.listen_port.trim().parse().unwrap_or(0),
             auto_interval_secs: 300,
             ..SyncConfig::default()
         };
@@ -113,13 +113,13 @@ impl Oryxis {
         // to LAN-only (`None`). The token follows the same rule and
         // is `None` (so the signaling client sends no `Authorization`)
         // when the field is empty.
-        let url = self.sync_signaling_url.trim();
+        let url = self.sync.signaling_url.trim();
         config.signaling_url = if url.is_empty() {
             None
         } else {
             Some(url.to_string())
         };
-        let token = self.sync_signaling_token.trim();
+        let token = self.sync.signaling_token.trim();
         config.signaling_token = if token.is_empty() {
             None
         } else {
@@ -133,7 +133,7 @@ impl Oryxis {
     /// No-op (`Task::none`) if the engine is already running or the
     /// vault isn't available.
     pub(crate) fn start_sync_engine(&mut self) -> Task<Message> {
-        if self.sync_runtime.is_some() {
+        if self.sync.runtime.is_some() {
             return Task::none();
         }
         let Some(vault) = &self.vault else {
@@ -141,24 +141,24 @@ impl Oryxis {
         };
         let db_path = vault.db_path().to_path_buf();
         let config = self.build_sync_config();
-        let device_name = if self.sync_device_name.trim().is_empty() {
+        let device_name = if self.sync.device_name.trim().is_empty() {
             "oryxis-device".to_string()
         } else {
-            self.sync_device_name.clone()
+            self.sync.device_name.clone()
         };
         let master_password = self.master_password.clone();
 
         match SyncRuntime::spawn(config, &device_name, &db_path, master_password.as_deref()) {
             Ok((runtime, event_rx)) => {
-                self.sync_runtime = Some(runtime);
-                self.sync_engine_running = true;
-                self.sync_status = Some(crate::i18n::t("sync_status_running").to_string());
+                self.sync.runtime = Some(runtime);
+                self.sync.engine_running = true;
+                self.sync.status = Some(crate::i18n::t("sync_status_running").to_string());
                 let stream = tokio_stream::wrappers::UnboundedReceiverStream::new(event_rx);
                 Task::stream(stream).map(Message::SyncEngineEvent)
             }
             Err(e) => {
-                self.sync_engine_running = false;
-                self.sync_status =
+                self.sync.engine_running = false;
+                self.sync.status =
                     Some(format!("{}: {e}", crate::i18n::t("sync_status_failed")));
                 tracing::warn!("sync engine failed to start: {e}");
                 Task::none()
@@ -168,9 +168,9 @@ impl Oryxis {
 
     /// Stop the sync engine if it is running. Idempotent.
     pub(crate) fn stop_sync_engine(&mut self) {
-        if let Some(mut runtime) = self.sync_runtime.take() {
+        if let Some(mut runtime) = self.sync.runtime.take() {
             runtime.stop();
         }
-        self.sync_engine_running = false;
+        self.sync.engine_running = false;
     }
 }

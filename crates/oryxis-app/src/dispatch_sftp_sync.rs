@@ -41,21 +41,21 @@ impl Oryxis {
     /// merge off-thread. Returns `Task::none()` (with an inline status) on
     /// any precondition failure, so the caller can fire it blindly.
     pub(crate) fn run_sftp_sync_round(&mut self) -> Task<Message> {
-        if self.sftp_sync_form.in_progress {
+        if self.sync.sftp.in_progress {
             return Task::none();
         }
 
-        let Some(host_id) = self.sftp_sync_form.host_id else {
-            self.sftp_sync_form.status = Some(Err(t("sftp_sync_no_host").to_string()));
+        let Some(host_id) = self.sync.sftp.host_id else {
+            self.sync.sftp.status = Some(Err(t("sftp_sync_no_host").to_string()));
             return Task::none();
         };
         let Some(conn) = self.connections.iter().find(|c| c.id == host_id).cloned() else {
-            self.sftp_sync_form.status = Some(Err(t("sftp_sync_no_host").to_string()));
+            self.sync.sftp.status = Some(Err(t("sftp_sync_no_host").to_string()));
             return Task::none();
         };
-        let remote_input = self.sftp_sync_form.remote_path.trim();
+        let remote_input = self.sync.sftp.remote_path.trim();
         if remote_input.is_empty() {
-            self.sftp_sync_form.status = Some(Err(t("sftp_sync_no_path").to_string()));
+            self.sync.sftp.status = Some(Err(t("sftp_sync_no_path").to_string()));
             return Task::none();
         }
         // Resolve the snapshot FILE path. The user may give just a
@@ -67,14 +67,14 @@ impl Oryxis {
         } else {
             remote_input.to_string()
         };
-        if self.sftp_sync_form.passphrase.is_empty() {
-            self.sftp_sync_form.status = Some(Err(t("sftp_sync_no_passphrase").to_string()));
+        if self.sync.sftp.passphrase.is_empty() {
+            self.sync.sftp.status = Some(Err(t("sftp_sync_no_passphrase").to_string()));
             return Task::none();
         }
-        let secret = match oryxis_vault::derive_sync_secret(&self.sftp_sync_form.passphrase) {
+        let secret = match oryxis_vault::derive_sync_secret(&self.sync.sftp.passphrase) {
             Ok(s) => s,
             Err(e) => {
-                self.sftp_sync_form.status = Some(Err(e.to_string()));
+                self.sync.sftp.status = Some(Err(e.to_string()));
                 return Task::none();
             }
         };
@@ -135,8 +135,8 @@ impl Oryxis {
             }
         });
 
-        self.sftp_sync_form.in_progress = true;
-        self.sftp_sync_form.status = Some(Ok(t("sftp_sync_running").to_string()));
+        self.sync.sftp.in_progress = true;
+        self.sync.sftp.status = Some(Ok(t("sftp_sync_running").to_string()));
 
         Task::perform(
             async move {

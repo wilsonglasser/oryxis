@@ -457,34 +457,8 @@ impl Oryxis {
                 sftp_col_drag: None,
                 sftp_hovered_col: None,
                 mcp: crate::state::McpState::default(),
-                sync_enabled: false,
-                sync_mode: "manual".into(),
-                sync_passwords: false,
+                sync: crate::state::SyncState::default(),
                 flatten_hosts: true,
-                sync_device_name: String::new(),
-                // `signaling_url` is now `Option<String>` on the
-                // engine config; the app state uses a plain `String`
-                // (empty == not set) so a Settings text input can
-                // drive it.
-                sync_signaling_url: oryxis_sync::SyncConfig::default()
-                    .signaling_url
-                    .unwrap_or_default(),
-                sync_signaling_token: oryxis_sync::SyncConfig::default()
-                    .signaling_token
-                    .unwrap_or_default(),
-                sync_relay_url: String::new(),
-                sync_listen_port: "0".into(),
-                sync_peers: Vec::new(),
-                sync_status: None,
-                sync_runtime: None,
-                sync_engine_running: false,
-                sync_pairing: crate::state::SyncPairingForm::default(),
-                sync_discovered: Vec::new(),
-                sync_in_progress: false,
-                sync_abort_tx: None,
-                sync_signaling_tick: 0,
-                sync_transport: "p2p".into(),
-                sftp_sync_form: crate::state::SftpSyncForm::default(),
                 show_export_dialog: false,
                 export_password: String::new(),
                 export_include_keys: true,
@@ -533,8 +507,8 @@ impl Oryxis {
         // Only the P2P transport runs a background engine; the SFTP
         // transport reconciles on the iced cadence subscription instead.
         if app.vault_ui.state == VaultState::Unlocked
-            && app.sync_enabled
-            && app.sync_transport != "sftp"
+            && app.sync.enabled
+            && app.sync.transport != "sftp"
         {
             tasks.push(app.start_sync_engine());
         }
@@ -714,13 +688,13 @@ impl Oryxis {
 
             // Sync settings
             if let Ok(Some(v)) = vault.get_setting("sync_enabled") {
-                self.sync_enabled = v == "true";
+                self.sync.enabled = v == "true";
             }
             if let Ok(Some(v)) = vault.get_setting("sync_mode") {
-                self.sync_mode = v;
+                self.sync.mode = v;
             }
             if let Ok(Some(v)) = vault.get_setting("sync_passwords") {
-                self.sync_passwords = v == "true";
+                self.sync.passwords = v == "true";
             }
             if let Ok(Some(v)) = vault.get_setting("flatten_hosts") {
                 self.flatten_hosts = v == "true";
@@ -757,33 +731,33 @@ impl Oryxis {
                 self.local_terminal_default = uuid::Uuid::parse_str(&v).ok();
             }
             if let Ok(Some(v)) = vault.get_setting("sync_device_name") {
-                self.sync_device_name = v;
+                self.sync.device_name = v;
             }
             if let Ok(Some(v)) = vault.get_setting("sync_signaling_url") {
-                self.sync_signaling_url = v;
+                self.sync.signaling_url = v;
             }
             if let Ok(Some(v)) = vault.get_setting("sync_signaling_token") {
-                self.sync_signaling_token = v;
+                self.sync.signaling_token = v;
             }
             if let Ok(Some(v)) = vault.get_setting("sync_relay_url") {
-                self.sync_relay_url = v;
+                self.sync.relay_url = v;
             }
             if let Ok(Some(v)) = vault.get_setting("sync_listen_port") {
-                self.sync_listen_port = v;
+                self.sync.listen_port = v;
             }
             if let Ok(Some(v)) = vault.get_setting("sync_transport") {
-                self.sync_transport = v;
+                self.sync.transport = v;
             }
             if let Ok(Some(v)) = vault.get_setting("sync_sftp_host_id") {
-                self.sftp_sync_form.host_id = uuid::Uuid::parse_str(&v).ok();
+                self.sync.sftp.host_id = uuid::Uuid::parse_str(&v).ok();
             }
             if let Ok(Some(v)) = vault.get_setting("sync_sftp_remote_path") {
-                self.sftp_sync_form.remote_path = v;
+                self.sync.sftp.remote_path = v;
             }
             if let Ok(Some(v)) = vault.get_sync_sftp_passphrase() {
-                self.sftp_sync_form.passphrase = v;
+                self.sync.sftp.passphrase = v;
             }
-            self.sync_peers = vault.list_sync_peers().unwrap_or_default();
+            self.sync.peers = vault.list_sync_peers().unwrap_or_default();
             if let Ok(Some(v)) = vault.get_setting("ai_system_prompt") {
                 self.ai.system_prompt = text_editor::Content::with_text(&v);
             }
