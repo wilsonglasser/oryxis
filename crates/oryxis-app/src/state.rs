@@ -18,6 +18,7 @@ pub(crate) use oryxis_terminal::widget::TerminalState;
 pub(crate) use uuid::Uuid;
 
 mod forms;
+mod mcp;
 mod modal;
 mod modes;
 mod overlay;
@@ -26,6 +27,7 @@ mod tabs;
 mod theme_editor;
 
 pub(crate) use forms::*;
+pub(crate) use mcp::*;
 pub(crate) use modal::*;
 pub(crate) use modes::*;
 pub(crate) use overlay::*;

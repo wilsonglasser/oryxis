@@ -1095,15 +1095,15 @@ impl Oryxis {
                 }
             }
             Message::ToggleMcpServer => {
-                self.mcp_server_enabled = !self.mcp_server_enabled;
+                self.mcp.server_enabled = !self.mcp.server_enabled;
                 if let Some(vault) = &self.vault {
-                    let _ = vault.set_setting("mcp_server_enabled", if self.mcp_server_enabled { "true" } else { "false" });
+                    let _ = vault.set_setting("mcp_server_enabled", if self.mcp.server_enabled { "true" } else { "false" });
                 }
                 // MCP ships as a plugin (~5 MB binary external clients
                 // like Claude Desktop spawn). First-time enable triggers
                 // the install modal; an already-installed plugin or a
                 // dev binary on the side both make this a no-op.
-                if self.mcp_server_enabled
+                if self.mcp.server_enabled
                     && !crate::mcp_install::is_installed()
                     && !crate::dispatch_plugins::dev_binary_present("mcp")
                 {
@@ -1113,26 +1113,26 @@ impl Oryxis {
                 }
             }
             Message::ShowMcpInfo => {
-                self.show_mcp_info = true;
-                self.mcp_config_copied = false;
+                self.mcp.show_info = true;
+                self.mcp.config_copied = false;
             }
             Message::HideMcpInfo => {
-                self.show_mcp_info = false;
-                self.mcp_config_copied = false;
+                self.mcp.show_info = false;
+                self.mcp.config_copied = false;
             }
             Message::CopyMcpConfig => {
-                self.mcp_config_copied = true;
-                let json = if self.mcp_target_wsl {
-                    mcp_config_json_wsl(&self.mcp_server_token)
+                self.mcp.config_copied = true;
+                let json = if self.mcp.target_wsl {
+                    mcp_config_json_wsl(&self.mcp.server_token)
                 } else {
-                    mcp_config_json(&self.mcp_server_token)
+                    mcp_config_json(&self.mcp.server_token)
                 };
                 return iced::clipboard::write(json).discard();
             }
             Message::InstallMcpConfig => {
-                self.mcp_install_status = None;
-                let token = self.mcp_server_token.clone();
-                let wsl = self.mcp_target_wsl;
+                self.mcp.install_status = None;
+                let token = self.mcp.server_token.clone();
+                let wsl = self.mcp.target_wsl;
                 return Task::perform(
                     async move {
                         if wsl {
@@ -1145,14 +1145,14 @@ impl Oryxis {
                 );
             }
             Message::SetMcpTarget(is_wsl) => {
-                self.mcp_target_wsl = is_wsl;
+                self.mcp.target_wsl = is_wsl;
                 // The Copy / Install feedback from the previous target no
                 // longer reflects what's on screen.
-                self.mcp_config_copied = false;
-                self.mcp_install_status = None;
+                self.mcp.config_copied = false;
+                self.mcp.install_status = None;
             }
             Message::InstallMcpConfigResult(result) => {
-                self.mcp_install_status = Some(result);
+                self.mcp.install_status = Some(result);
             }
             Message::RegenerateMcpToken => {
                 use rand::RngCore;
@@ -1164,20 +1164,20 @@ impl Oryxis {
                     let _ = write!(token, "{b:02x}");
                 }
                 self.persist_setting("mcp_server_token", &token);
-                self.mcp_server_token = token;
+                self.mcp.server_token = token;
                 // Reveal once after regenerating so the user can copy
                 // it without an extra click; flip it back to masked
                 // explicitly via `ToggleMcpTokenVisibility`.
-                self.mcp_token_visible = true;
+                self.mcp.token_visible = true;
                 // The Claude config on disk still carries the old
                 // token, prompt the user to re-install.
-                self.mcp_install_status = None;
+                self.mcp.install_status = None;
             }
             Message::ToggleMcpTokenVisibility => {
-                self.mcp_token_visible = !self.mcp_token_visible;
+                self.mcp.token_visible = !self.mcp.token_visible;
             }
             Message::CopyMcpToken => {
-                return iced::clipboard::write(self.mcp_server_token.clone()).discard();
+                return iced::clipboard::write(self.mcp.server_token.clone()).discard();
             }
 
             // ── Sync ──

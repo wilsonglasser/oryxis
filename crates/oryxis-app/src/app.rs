@@ -1108,21 +1108,7 @@ pub struct Oryxis {
     pub(crate) sftp_hovered_col: Option<(crate::state::SftpPaneSide, crate::state::SftpColumn)>,
 
     // MCP Server
-    pub(crate) mcp_server_enabled: bool,
-    pub(crate) show_mcp_info: bool,
-    pub(crate) mcp_config_copied: bool,
-    pub(crate) mcp_install_status: Option<Result<String, String>>,
-    /// Token MCP clients must present (via `ORYXIS_MCP_TOKEN` env)
-    /// to talk to the server. Empty disables auth (backward-compat).
-    pub(crate) mcp_server_token: String,
-    /// When true, the token is rendered as plain text in the panel;
-    /// otherwise as a row of bullets. Sensitive enough to keep masked
-    /// by default, the user opts in to seeing it.
-    pub(crate) mcp_token_visible: bool,
-    /// Which client the setup snippet / Copy / Install target: the
-    /// native client (`false`) or one running inside WSL (`true`). Only
-    /// reachable on Windows, where the toggle that flips it renders.
-    pub(crate) mcp_target_wsl: bool,
+    pub(crate) mcp: crate::state::McpState,
 
     // Sync
     pub(crate) sync_enabled: bool,

@@ -188,7 +188,7 @@ impl Oryxis {
         // MCP migration: v0.6 shipped `oryxis-mcp` inside the OS
         // package; v0.7+ downloads it as a plugin. Install it now when
         // the user already had MCP enabled but no plugin binary exists.
-        if self.mcp_server_enabled
+        if self.mcp.server_enabled
             && !crate::mcp_install::is_installed()
             && !dev_binary_present("mcp")
         {
@@ -431,7 +431,7 @@ impl Oryxis {
             }
 
             Message::PluginInstallDone(id, result) => {
-                let token = self.mcp_server_token.clone();
+                let token = self.mcp.server_token.clone();
                 let rebind_provider = self.plugin_providers.get(&id).cloned();
                 if let Some(entry) =
                     self.plugins.iter_mut().find(|p| p.provider_id == id)
@@ -532,7 +532,7 @@ impl Oryxis {
                         );
                     }
                     // A removed server shouldn't stay toggled on.
-                    self.mcp_server_enabled = false;
+                    self.mcp.server_enabled = false;
                     if let Some(vault) = &self.vault {
                         let _ = vault.set_setting("mcp_server_enabled", "false");
                     }

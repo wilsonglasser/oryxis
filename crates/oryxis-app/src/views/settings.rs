@@ -3547,7 +3547,7 @@ impl Oryxis {
             container(text(crate::i18n::t("mcp_setup_guide")).size(12).color(OryxisColors::t().accent))
                 .padding(Padding { top: 6.0, right: 16.0, bottom: 6.0, left: 16.0 }),
         )
-        .on_press(if self.show_mcp_info { Message::HideMcpInfo } else { Message::ShowMcpInfo })
+        .on_press(if self.mcp.show_info { Message::HideMcpInfo } else { Message::ShowMcpInfo })
         .style(|_, status| {
             let bg = match status {
                 BtnStatus::Hovered => Color { a: 0.1, ..OryxisColors::t().accent },
@@ -3562,7 +3562,7 @@ impl Oryxis {
         let mut mcp_col = column![
             toggle_row(
                 crate::i18n::t("mcp_server"),
-                self.mcp_server_enabled,
+                self.mcp.server_enabled,
                 Message::ToggleMcpServer,
             ),
             Space::new().height(12),
@@ -3572,15 +3572,15 @@ impl Oryxis {
                 mcp_guide_btn.into(),
             ]).align_y(iced::Alignment::Center),
         ];
-        if self.show_mcp_info {
+        if self.mcp.show_info {
             mcp_col = mcp_col
                 .push(Space::new().height(12))
                 .push(mcp_info_panel(
-                    self.mcp_config_copied,
-                    &self.mcp_install_status,
-                    &self.mcp_server_token,
-                    self.mcp_token_visible,
-                    self.mcp_target_wsl,
+                    self.mcp.config_copied,
+                    &self.mcp.install_status,
+                    &self.mcp.server_token,
+                    self.mcp.token_visible,
+                    self.mcp.target_wsl,
                 ));
         }
 
