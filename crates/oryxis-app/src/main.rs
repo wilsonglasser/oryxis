@@ -19,6 +19,7 @@ mod dispatch_ai;
 mod dispatch_editor;
 mod dispatch_keys;
 mod dispatch_known_hosts;
+mod dispatch_tray;
 mod dispatch_proxy_identity;
 mod dispatch_cloud;
 mod dispatch_plugins;
