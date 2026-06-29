@@ -280,20 +280,15 @@ pub struct Oryxis {
     // MODAL FIELDS: the booleans / options below (and others scattered in
     // this struct: ui_theme_editor, show_theme_import, show_share_dialog,
     // cloud_import_confirm_visible, folder_rename, show_*_picker, ...) each
-    // drive a modal overlay. These are being migrated onto `modal_stack`
-    // below; until a modal moves over, a new one that carries a text field
-    // MUST still be added to `any_modal_blocks_input()` (and, if global,
-    // `close_topmost_modal()`) in shortcuts.rs, or its keystrokes leak into
-    // the terminal behind it. Render every blocking modal through
+    // drive a modal overlay and remain the single source of truth for
+    // whether that modal is open. They are now enumerated by
+    // `crate::state::Modal`: `Oryxis::is_modal_open` / `close_modal`
+    // (shortcuts.rs) are exhaustive matches over every variant, so
+    // `any_modal_blocks_input` / `close_topmost_modal` can no longer miss a
+    // modal (a new one fails to compile until it has a `Modal` variant +
+    // both match arms). Render every blocking modal through
     // `widgets::modal_overlay` so the scrim can't reintroduce mouse
     // bleed-through.
-    //
-    // Ordered stack of open blocking modals (topmost last). Migrated
-    // modals (theme editor, folder-delete confirm) live here instead of a
-    // standalone flag; `any_modal_blocks_input` / `close_topmost_modal`
-    // match on it exhaustively. Their form data stays in the dedicated
-    // fields below, kept in sync via `open_modal` / `close_modal`.
-    pub(crate) modal_stack: Vec<crate::state::Modal>,
 
     // Legacy-algorithm fallback dialog (server offers only cbc/sha1/...).
     pub(crate) pending_legacy_algo: Option<crate::state::PendingLegacyAlgo>,

@@ -1163,7 +1163,6 @@ impl Oryxis {
             Message::StartDeleteFolder(gid) => {
                 self.overlay = None;
                 self.folder_delete = Some(gid);
-                self.open_modal(crate::state::Modal::FolderDelete);
             }
             Message::DeleteFolderKeepHosts => {
                 if let Some(gid) = self.folder_delete {

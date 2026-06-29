@@ -156,38 +156,83 @@ impl Oryxis {
         }
     }
 
-    /// Push a blocking modal onto the stack (idempotent: re-opening an
-    /// already-open modal keeps the single entry). The caller populates
-    /// the modal's companion data field alongside this call; the two are
-    /// kept in sync by routing every close through [`Self::close_modal`] /
-    /// [`Self::close_topmost_modal`].
-    pub(crate) fn open_modal(&mut self, m: crate::state::Modal) {
-        if !self.modal_stack.contains(&m) {
-            self.modal_stack.push(m);
+    /// Whether the given blocking modal is currently open. The `show_*`
+    /// flag / `Option<_>` data field on `Oryxis` is the source of truth;
+    /// this exhaustive `match` is what makes `any_modal_blocks_input`
+    /// compiler-complete (a new `Modal` variant cannot compile without an
+    /// arm here).
+    pub(crate) fn is_modal_open(&self, m: crate::state::Modal) -> bool {
+        use crate::state::Modal;
+        match m {
+            Modal::NewTabPicker => self.show_new_tab_picker,
+            Modal::TabJump => self.show_tab_jump,
+            Modal::IconPicker => self.show_icon_picker,
+            Modal::ThemePicker => self.show_theme_picker,
+            Modal::ChainEditor => self.show_chain_editor,
+            Modal::SessionGroupPanel => self.show_session_group_panel,
+            Modal::FolderRename => self.folder_rename.is_some(),
+            Modal::FolderDelete => self.folder_delete.is_some(),
+            Modal::KbiPrompt => self.pending_kbi_prompt.is_some(),
+            Modal::ThemeEditor => self.theme_editor.is_some(),
+            Modal::ThemeImport => self.show_theme_import,
+            Modal::UiThemeEditor => self.ui_theme_editor.is_some(),
+            Modal::ShareDialog => self.show_share_dialog,
+            Modal::CloudImportConfirm => self.cloud_import_confirm_visible,
+            Modal::SftpRename => self.sftp.rename.is_some(),
+            Modal::SftpNewEntry => self.sftp.new_entry.is_some(),
+            Modal::SftpProperties => self.sftp.properties.is_some(),
+            Modal::SftpOverwrite => self.sftp.overwrite_prompt.is_some(),
+            Modal::SftpPicker => self.sftp.picker_open,
         }
     }
 
-    /// Close a specific modal: drop it from the stack and clear its
-    /// companion field(s). Used by Cancel buttons / explicit-close
-    /// messages (Esc goes through [`Self::close_topmost_modal`]).
+    /// Close a specific modal: clear its `show_*` flag / `Option<_>` field
+    /// plus any companion state, mirroring each modal's own Cancel handler
+    /// so Esc leaves nothing stale. The exhaustive `match` is what makes
+    /// `close_topmost_modal` compiler-complete. (The chain editor's
+    /// two-stage Esc is handled by the caller before this is reached.)
     pub(crate) fn close_modal(&mut self, m: crate::state::Modal) {
-        self.modal_stack.retain(|x| *x != m);
-        self.clear_modal_state(m);
-    }
-
-    /// Clear the companion state a modal owns on `Oryxis`. Single place
-    /// the per-modal field cleanup lives, so the stack and the data fields
-    /// can never drift out of sync.
-    fn clear_modal_state(&mut self, m: crate::state::Modal) {
         use crate::state::Modal;
         match m {
+            Modal::NewTabPicker => self.show_new_tab_picker = false,
+            Modal::TabJump => self.show_tab_jump = false,
+            Modal::IconPicker => {
+                self.show_icon_picker = false;
+                self.icon_picker.for_id = None;
+            }
+            Modal::ThemePicker => self.show_theme_picker = false,
+            Modal::ChainEditor => self.show_chain_editor = false,
+            Modal::SessionGroupPanel => {
+                self.show_session_group_panel = false;
+                self.session_group_panel_error = None;
+            }
+            Modal::FolderRename => self.folder_rename = None,
+            Modal::FolderDelete => self.folder_delete = None,
+            Modal::KbiPrompt => self.pending_kbi_prompt = None,
             Modal::ThemeEditor => {
                 self.theme_editor = None;
                 self.theme_color_popover = None;
             }
-            Modal::FolderDelete => {
-                self.folder_delete = None;
+            Modal::ThemeImport => self.show_theme_import = false,
+            Modal::UiThemeEditor => {
+                self.ui_theme_editor = None;
+                self.ui_color_popover = None;
             }
+            Modal::ShareDialog => {
+                self.show_share_dialog = false;
+                self.share.filter = None;
+                self.share.status = None;
+                self.share.suggested_name = None;
+            }
+            Modal::CloudImportConfirm => {
+                self.cloud_import_confirm_visible = false;
+                self.cloud_discover_default_group_picker_open = false;
+            }
+            Modal::SftpRename => self.sftp.rename = None,
+            Modal::SftpNewEntry => self.sftp.new_entry = None,
+            Modal::SftpProperties => self.sftp.properties = None,
+            Modal::SftpOverwrite => self.sftp.overwrite_prompt = None,
+            Modal::SftpPicker => self.sftp.picker_open = false,
         }
     }
 
@@ -210,35 +255,16 @@ impl Oryxis {
     /// dismisses it. The SFTP modals now layer at the app root via
     /// `layer_sftp_modals`, so they satisfy that invariant too.
     pub(crate) fn any_modal_blocks_input(&self) -> bool {
-        // Migrated modals (theme editor, folder-delete confirm) live on the
-        // stack; this `any` is exhaustive over their variants via
-        // `Modal::blocks_input`. The remaining flags below are checked until
-        // they migrate too.
-        self.modal_stack.iter().any(|m| m.blocks_input())
-            || self.show_new_tab_picker
-            || self.show_tab_jump
-            || self.show_icon_picker
-            || self.show_theme_picker
-            || self.show_chain_editor
-            || self.show_session_group_panel
-            || self.folder_rename.is_some()
-            // Keyboard-interactive (2FA / OTP) prompt: its text fields own
-            // the keyboard. Without this, a split-pane connect (where the
-            // terminal stays live behind the app-level modal) would echo
-            // the OTP into the PTY as well. The inline connect-progress
-            // path is already covered by the `connecting.is_none()` gate.
-            || self.pending_kbi_prompt.is_some()
-            // Theme + share + cloud-import modals (all carry text inputs).
-            || self.show_theme_import
-            || self.ui_theme_editor.is_some()
-            || self.show_share_dialog
-            || self.cloud_import_confirm_visible
-            // SFTP modals (full-window overlays via `layer_sftp_modals`).
-            || self.sftp.rename.is_some()
-            || self.sftp.new_entry.is_some()
-            || self.sftp.properties.is_some()
-            || self.sftp.overwrite_prompt.is_some()
-            || self.sftp.picker_open
+        // Exhaustive over every modal via `is_modal_open` (compiler-checked
+        // match) + `Modal::ALL`: a new modal variant can't be added without
+        // an `is_modal_open` arm, so it can never silently leak keystrokes
+        // into the PTY behind it. The keyboard-interactive (2FA / OTP)
+        // prompt is included here (its text fields own the keyboard); the
+        // inline connect-progress path is gated separately by
+        // `connecting.is_none()`.
+        crate::state::Modal::ALL
+            .iter()
+            .any(|&m| m.blocks_input() && self.is_modal_open(m))
     }
 
     /// Closes the topmost open modal / overlay if any, and returns
@@ -256,80 +282,23 @@ impl Oryxis {
             self.overlay = None;
             return true;
         }
-        // Migrated modals: the stack's top is the most-recently-opened, so
-        // popping it honors visual stacking order directly. The remaining
-        // non-migrated modals are checked below until they move over too.
-        if let Some(m) = self.modal_stack.pop() {
-            self.clear_modal_state(m);
-            return true;
-        }
-        // Global pickers (rendered over the whole window).
-        if self.show_new_tab_picker {
-            self.show_new_tab_picker = false;
-            return true;
-        }
-        if self.show_tab_jump {
-            self.show_tab_jump = false;
-            return true;
-        }
-        if self.show_icon_picker {
-            self.show_icon_picker = false;
-            self.icon_picker.for_id = None;
-            return true;
-        }
-        if self.show_theme_picker {
-            self.show_theme_picker = false;
-            return true;
-        }
-        if self.show_chain_editor {
-            // Esc in "add a hop" mode pops back to the chain list;
-            // only a second Esc closes the whole editor.
-            if self.chain_editor_adding {
-                self.chain_editor_adding = false;
-                self.chain_editor_search.clear();
-            } else {
-                self.show_chain_editor = false;
+        // Walk the Esc-close priority order and dismiss the first open
+        // modal. `close_modal` is a compiler-checked exhaustive match, so a
+        // new modal can't be added without deciding its cleanup; adding it
+        // to `ESC_ORDER` then makes Esc dismiss it.
+        for &m in crate::state::Modal::ESC_ORDER {
+            if self.is_modal_open(m) {
+                // The chain editor's Esc is two-stage: in "add a hop" mode
+                // the first Esc pops back to the chain list, only a second
+                // closes the whole editor.
+                if m == crate::state::Modal::ChainEditor && self.chain_editor_adding {
+                    self.chain_editor_adding = false;
+                    self.chain_editor_search.clear();
+                    return true;
+                }
+                self.close_modal(m);
+                return true;
             }
-            return true;
-        }
-        if self.folder_rename.is_some() {
-            self.folder_rename = None;
-            return true;
-        }
-        if self.show_session_group_panel {
-            self.show_session_group_panel = false;
-            self.session_group_panel_error = None;
-            return true;
-        }
-        // Settings theme + share + cloud-import modals. Cleanup mirrors each
-        // modal's own Cancel handler so Esc leaves no stale companion state.
-        if self.ui_theme_editor.is_some() {
-            self.ui_theme_editor = None;
-            self.ui_color_popover = None;
-            return true;
-        }
-        if self.show_theme_import {
-            self.show_theme_import = false;
-            return true;
-        }
-        if self.show_share_dialog {
-            self.show_share_dialog = false;
-            self.share.filter = None;
-            self.share.status = None;
-            self.share.suggested_name = None;
-            return true;
-        }
-        if self.cloud_import_confirm_visible {
-            self.cloud_import_confirm_visible = false;
-            self.cloud_discover_default_group_picker_open = false;
-            return true;
-        }
-        // SFTP host picker: no inline Cancel button (it dismisses on a
-        // backdrop click), so Esc is its keyboard equivalent. Mirrors the
-        // `SftpClosePicker` handler, which only flips the flag.
-        if self.sftp.picker_open {
-            self.sftp.picker_open = false;
-            return true;
         }
         // Burger menu last; it's a dropdown rather than a modal but
         // Esc still feels right for it.
