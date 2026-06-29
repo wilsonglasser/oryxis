@@ -273,7 +273,7 @@ pub(crate) fn play_system_beep() {
     {
         // 0xFFFFFFFF = a simple speaker beep, independent of the sound scheme.
         unsafe {
-            windows_sys::Win32::UI::WindowsAndMessaging::MessageBeep(0xFFFF_FFFF);
+            windows_sys::Win32::System::Diagnostics::Debug::MessageBeep(0xFFFF_FFFF);
         }
     }
     #[cfg(target_os = "macos")]
