@@ -32,7 +32,7 @@ impl Oryxis {
                 toggle_row_desc(
                     crate::i18n::t("ai_assistant"),
                     crate::i18n::t("feature_ai_desc"),
-                    self.ai_enabled,
+                    self.ai.enabled,
                     Message::ToggleAiEnabled,
                 ),
                 Space::new().height(12),

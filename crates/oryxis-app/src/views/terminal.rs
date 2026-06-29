@@ -213,7 +213,7 @@ impl Oryxis {
         use crate::state::TerminalSidebarTab as STab;
         // Chat is only reachable when AI is enabled; otherwise the active
         // tab effectively falls back to Snippets.
-        let active = if self.terminal_sidebar_tab == STab::Chat && !self.ai_enabled {
+        let active = if self.terminal_sidebar_tab == STab::Chat && !self.ai.enabled {
             STab::Snippets
         } else {
             self.terminal_sidebar_tab
@@ -223,7 +223,7 @@ impl Oryxis {
         // Icon tabs on the leading edge; contextual Reset (Chat only) and
         // the Close X on the trailing edge, same affordance as the chrome.
         let mut strip: Vec<Element<'_, Message>> = Vec::new();
-        if self.ai_enabled {
+        if self.ai.enabled {
             strip.push(sidebar_tab_btn(
                 iced_fonts::lucide::sparkles(),
                 active == STab::Chat,

@@ -983,13 +983,7 @@ pub struct Oryxis {
     pub(crate) reconnect_counters: std::collections::HashMap<Uuid, u32>,
 
     // AI Chat settings
-    pub(crate) ai_enabled: bool,
-    pub(crate) ai_provider: String,
-    pub(crate) ai_model: String,
-    pub(crate) ai_api_key: String,
-    pub(crate) ai_api_key_set: bool,
-    pub(crate) ai_api_url: String,
-    pub(crate) ai_system_prompt: text_editor::Content,
+    pub(crate) ai: crate::state::AiState,
 
     // Vault password settings
     pub(crate) vault_has_user_password: bool,

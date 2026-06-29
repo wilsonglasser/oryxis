@@ -17,6 +17,7 @@ pub(crate) use oryxis_ssh::{SftpClient, SftpEntry, SshSession};
 pub(crate) use oryxis_terminal::widget::TerminalState;
 pub(crate) use uuid::Uuid;
 
+mod ai;
 mod forms;
 mod mcp;
 mod modal;
@@ -26,6 +27,7 @@ mod sftp;
 mod tabs;
 mod theme_editor;
 
+pub(crate) use ai::*;
 pub(crate) use forms::*;
 pub(crate) use mcp::*;
 pub(crate) use modal::*;

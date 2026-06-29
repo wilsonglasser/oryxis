@@ -488,7 +488,7 @@ impl Oryxis {
                 (crate::i18n::t("security_privacy"), SettingsSection::Security),
                 (crate::i18n::t("features_and_plugins"), SettingsSection::Plugins),
             ];
-            if self.ai_enabled {
+            if self.ai.enabled {
                 items.push((crate::i18n::t("ai_assistant"), SettingsSection::AI));
             }
             // MCP gets its settings section once the MCP plugin is
@@ -1149,8 +1149,8 @@ impl Oryxis {
                 .width(Length::Fill)
                 .align_x(dir_align_x());
 
-                if self.ai_enabled {
-                    let current_info = crate::ai::provider_info(&self.ai_provider);
+                if self.ai.enabled {
+                    let current_info = crate::ai::provider_info(&self.ai.provider);
                     let provider_options: Vec<String> = crate::ai::PROVIDERS
                         .iter()
                         .map(|p| p.display.to_string())
@@ -1167,7 +1167,7 @@ impl Oryxis {
                     .style(crate::widgets::rounded_pick_list_style)
                     .into();
 
-                    let model_input: Element<'_, Message> = text_input(t("ai_model_placeholder"), &self.ai_model)
+                    let model_input: Element<'_, Message> = text_input(t("ai_model_placeholder"), &self.ai.model)
                         .on_input(Message::AiModelChanged)
                         .padding(10)
                         .width(300)
@@ -1177,7 +1177,7 @@ impl Oryxis {
                     // When a key is already stored, the input is cleared
                     // for security but the placeholder communicates that
                     // a key exists, typing replaces it on save.
-                    let key_placeholder = if self.ai_api_key_set {
+                    let key_placeholder = if self.ai.api_key_set {
                         t("ai_key_saved_placeholder")
                     } else {
                         "sk-..."
@@ -1185,7 +1185,7 @@ impl Oryxis {
                     let key_input: Element<'_, Message> = container(
                         crate::widgets::password_input_with_eye(
                             key_placeholder,
-                            &self.ai_api_key,
+                            &self.ai.api_key,
                             Message::AiApiKeyChanged,
                             Some(Message::SaveAiApiKey),
                             self.revealed_secrets
@@ -1199,7 +1199,7 @@ impl Oryxis {
                     .width(280)
                     .into();
                     let save_btn = styled_button(crate::i18n::t("save"), Message::SaveAiApiKey, OryxisColors::t().accent);
-                    let key_status: Element<'_, Message> = if self.ai_api_key_set {
+                    let key_status: Element<'_, Message> = if self.ai.api_key_set {
                         dir_row(vec![
                             iced_fonts::lucide::circle_check().size(13).color(OryxisColors::t().success).into(),
                             Space::new().width(6).into(),
@@ -1224,7 +1224,7 @@ impl Oryxis {
                     ];
 
                     if current_info.kind == crate::ai::ProviderKind::Custom {
-                        let url_input: Element<'_, Message> = text_input("https://api.example.com/v1/chat/completions", &self.ai_api_url)
+                        let url_input: Element<'_, Message> = text_input("https://api.example.com/v1/chat/completions", &self.ai.api_url)
                             .on_input(Message::AiApiUrlChanged)
                             .padding(10)
                             .width(300)
@@ -1253,7 +1253,7 @@ impl Oryxis {
                     // System prompt, multi-line editor that grows with the
                     // content. `Length::Shrink` lets the editor auto-resize
                     // to fit its text, capped by the panel's scroll area.
-                    let prompt_editor: Element<'_, Message> = iced::widget::text_editor(&self.ai_system_prompt)
+                    let prompt_editor: Element<'_, Message> = iced::widget::text_editor(&self.ai.system_prompt)
                         .placeholder(t("ai_system_prompt_placeholder"))
                         .on_action(Message::AiSystemPromptAction)
                         .padding(10)

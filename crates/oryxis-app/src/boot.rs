@@ -428,13 +428,7 @@ impl Oryxis {
                 update_error: None,
                 update_check_status: None,
                 reconnect_counters: std::collections::HashMap::new(),
-                ai_enabled: false,
-                ai_provider: "anthropic".into(),
-                ai_model: "claude-sonnet-4-20250514".into(),
-                ai_api_key: String::new(),
-                ai_api_key_set: false,
-                ai_api_url: String::new(),
-                ai_system_prompt: text_editor::Content::new(),
+                ai: crate::state::AiState::default(),
                 vault_has_user_password,
                 vault_new_password: String::new(),
                 vault_confirm_password: String::new(),
@@ -701,18 +695,18 @@ impl Oryxis {
 
             // AI settings
             if let Ok(Some(v)) = vault.get_setting("ai_enabled") {
-                self.ai_enabled = v == "true";
+                self.ai.enabled = v == "true";
             }
             if let Ok(Some(v)) = vault.get_setting("ai_provider") {
-                self.ai_provider = v;
+                self.ai.provider = v;
             }
             if let Ok(Some(v)) = vault.get_setting("ai_model") {
-                self.ai_model = v;
+                self.ai.model = v;
             }
             if let Ok(Some(v)) = vault.get_setting("ai_api_url") {
-                self.ai_api_url = v;
+                self.ai.api_url = v;
             }
-            self.ai_api_key_set = vault.get_ai_api_key().ok().flatten().is_some();
+            self.ai.api_key_set = vault.get_ai_api_key().ok().flatten().is_some();
             if let Ok(Some(v)) = vault.get_setting("mcp_server_enabled") {
                 self.mcp.server_enabled = v == "true";
             }
@@ -795,7 +789,7 @@ impl Oryxis {
             }
             self.sync_peers = vault.list_sync_peers().unwrap_or_default();
             if let Ok(Some(v)) = vault.get_setting("ai_system_prompt") {
-                self.ai_system_prompt = text_editor::Content::with_text(&v);
+                self.ai.system_prompt = text_editor::Content::with_text(&v);
             }
 
             // Terminal / SFTP / connection settings, load whatever

@@ -125,9 +125,9 @@ impl Oryxis {
         match message {
             // ── AI settings ──
             Message::ToggleAiEnabled => {
-                self.ai_enabled = !self.ai_enabled;
+                self.ai.enabled = !self.ai.enabled;
                 if let Some(vault) = &self.vault {
-                    let _ = vault.set_setting("ai_enabled", if self.ai_enabled { "true" } else { "false" });
+                    let _ = vault.set_setting("ai_enabled", if self.ai.enabled { "true" } else { "false" });
                 }
             }
             Message::AiProviderChanged(provider) => {
@@ -136,63 +136,63 @@ impl Oryxis {
                 // the value can't be resolved.
                 let info = crate::ai::provider_from_display(&provider)
                     .unwrap_or_else(|| crate::ai::provider_info(&provider));
-                self.ai_provider = info.id.to_string();
+                self.ai.provider = info.id.to_string();
                 if let Some(vault) = &self.vault {
-                    let _ = vault.set_setting("ai_provider", &self.ai_provider);
+                    let _ = vault.set_setting("ai_provider", &self.ai.provider);
                 }
                 // Suggest the provider's default model when the user hasn't
                 // picked one. For Custom we keep whatever model is set.
                 if !info.default_model.is_empty() {
-                    self.ai_model = info.default_model.into();
+                    self.ai.model = info.default_model.into();
                     if let Some(vault) = &self.vault {
-                        let _ = vault.set_setting("ai_model", &self.ai_model);
+                        let _ = vault.set_setting("ai_model", &self.ai.model);
                     }
                 }
                 // Presets always use their bundled URL; clear any stale
                 // override so Save doesn't carry it across providers.
                 if info.kind != crate::ai::ProviderKind::Custom {
-                    self.ai_api_url.clear();
+                    self.ai.api_url.clear();
                     if let Some(vault) = &self.vault {
                         let _ = vault.set_setting("ai_api_url", "");
                     }
                 }
             }
             Message::AiModelChanged(model) => {
-                self.ai_model = model;
+                self.ai.model = model;
                 if let Some(vault) = &self.vault {
-                    let _ = vault.set_setting("ai_model", &self.ai_model);
+                    let _ = vault.set_setting("ai_model", &self.ai.model);
                 }
             }
             Message::AiApiKeyChanged(key) => {
-                self.ai_api_key = key;
+                self.ai.api_key = key;
             }
             Message::AiApiUrlChanged(url) => {
-                self.ai_api_url = url;
+                self.ai.api_url = url;
                 if let Some(vault) = &self.vault {
-                    let _ = vault.set_setting("ai_api_url", &self.ai_api_url);
+                    let _ = vault.set_setting("ai_api_url", &self.ai.api_url);
                 }
             }
             Message::AiSystemPromptAction(action) => {
                 let was_edit = action.is_edit();
-                self.ai_system_prompt.perform(action);
+                self.ai.system_prompt.perform(action);
                 if was_edit
                     && let Some(vault) = &self.vault
                 {
-                    let _ = vault.set_setting("ai_system_prompt", &self.ai_system_prompt.text());
+                    let _ = vault.set_setting("ai_system_prompt", &self.ai.system_prompt.text());
                 }
             }
             Message::SaveAiApiKey => {
-                if !self.ai_api_key.is_empty()
+                if !self.ai.api_key.is_empty()
                     && let Some(vault) = &self.vault
-                    && vault.set_ai_api_key(&self.ai_api_key).is_ok() {
-                        self.ai_api_key.clear();
-                        self.ai_api_key_set = true;
+                    && vault.set_ai_api_key(&self.ai.api_key).is_ok() {
+                        self.ai.api_key.clear();
+                        self.ai.api_key_set = true;
                 }
             }
 
             // ── AI chat sidebar ──
             Message::ToggleChatSidebar => {
-                let ai_enabled = self.ai_enabled;
+                let ai_enabled = self.ai.enabled;
                 let mut closing = false;
                 if let Some(idx) = self.active_tab
                     && let Some(tab) = self.tabs.get_mut(idx) {
@@ -357,7 +357,7 @@ impl Oryxis {
             }
             Message::SendChat => {
                 let input = self.chat_input.text().trim().to_string();
-                if input.is_empty() || !self.ai_enabled {
+                if input.is_empty() || !self.ai.enabled {
                     return Ok(Task::none());
                 }
                 if let Some(idx) = self.active_tab
@@ -389,13 +389,13 @@ impl Oryxis {
                             .and_then(|v| v.get_setting("ai_system_prompt").ok().flatten());
 
                         let config = crate::ai::AiConfig {
-                            provider: self.ai_provider.clone(),
-                            model: self.ai_model.clone(),
+                            provider: self.ai.provider.clone(),
+                            model: self.ai.model.clone(),
                             api_key,
-                            api_url: if self.ai_api_url.is_empty() {
+                            api_url: if self.ai.api_url.is_empty() {
                                 None
                             } else {
-                                Some(self.ai_api_url.clone())
+                                Some(self.ai.api_url.clone())
                             },
                             system_prompt: extra_prompt,
                         };
@@ -696,13 +696,13 @@ impl Oryxis {
                             .and_then(|v| v.get_ai_api_key().ok().flatten())
                             .unwrap_or_default();
                         let config = crate::ai::AiConfig {
-                            provider: self.ai_provider.clone(),
-                            model: self.ai_model.clone(),
+                            provider: self.ai.provider.clone(),
+                            model: self.ai.model.clone(),
                             api_key,
-                            api_url: if self.ai_api_url.is_empty() {
+                            api_url: if self.ai.api_url.is_empty() {
                                 None
                             } else {
-                                Some(self.ai_api_url.clone())
+                                Some(self.ai.api_url.clone())
                             },
                             system_prompt: None,
                         };
@@ -871,10 +871,10 @@ impl Oryxis {
                             .and_then(|v| v.get_setting("ai_system_prompt").ok().flatten());
 
                         let config = crate::ai::AiConfig {
-                            provider: self.ai_provider.clone(),
-                            model: self.ai_model.clone(),
+                            provider: self.ai.provider.clone(),
+                            model: self.ai.model.clone(),
                             api_key,
-                            api_url: if self.ai_api_url.is_empty() { None } else { Some(self.ai_api_url.clone()) },
+                            api_url: if self.ai.api_url.is_empty() { None } else { Some(self.ai.api_url.clone()) },
                             system_prompt: extra_prompt,
                         };
 
