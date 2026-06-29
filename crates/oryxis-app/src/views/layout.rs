@@ -91,6 +91,104 @@ fn open_link_button<'a>(label: String, url: String) -> Element<'a, Message> {
     .into()
 }
 
+/// One choice row in the folder-delete modal: a full-width card with a
+/// leading icon badge (tinted by `accent` to color-code safe vs
+/// destructive), a semibold title and a muted one-line consequence. Both
+/// hover and press shift the fill and tint the border, so the card never
+/// reads as inert.
+fn folder_choice_card<'a>(
+    glyph: iced::widget::Text<'a>,
+    title: &'a str,
+    desc: &'a str,
+    msg: Message,
+    accent: Color,
+) -> Element<'a, Message> {
+    let c = OryxisColors::t();
+    let badge = container(glyph.size(17).color(accent))
+        .width(Length::Fixed(34.0))
+        .height(Length::Fixed(34.0))
+        .center_x(Length::Fixed(34.0))
+        .center_y(Length::Fixed(34.0))
+        .style(move |_| container::Style {
+            background: Some(Background::Color(Color { a: 0.12, ..accent })),
+            border: Border { radius: Radius::from(8.0), ..Default::default() },
+            ..Default::default()
+        });
+    let texts = column![
+        text(title.to_owned())
+            .size(13)
+            .font(iced::Font {
+                weight: iced::font::Weight::Semibold,
+                ..iced::Font::new(crate::theme::SYSTEM_UI_FAMILY)
+            })
+            .color(c.text_primary),
+        Space::new().height(2),
+        text(desc.to_owned())
+            .size(11)
+            .color(c.text_muted)
+            .width(Length::Fill),
+    ]
+    .width(Length::Fill)
+    .align_x(dir_align_x());
+    let body = dir_row(vec![badge.into(), Space::new().width(12).into(), texts.into()])
+        .align_y(iced::Alignment::Center);
+    button(
+        container(body).padding(Padding { top: 11.0, right: 14.0, bottom: 11.0, left: 14.0 }),
+    )
+    .width(Length::Fill)
+    .on_press(msg)
+    .style(move |_, status| {
+        let (bg, border_color) = match status {
+            iced::widget::button::Status::Pressed => (Color { a: 0.16, ..accent }, accent),
+            iced::widget::button::Status::Hovered => {
+                (c.bg_hover, Color { a: 0.55, ..accent })
+            }
+            _ => (Color::TRANSPARENT, c.border),
+        };
+        iced::widget::button::Style {
+            background: Some(Background::Color(bg)),
+            border: Border { radius: Radius::from(10.0), color: border_color, width: 1.0 },
+            ..Default::default()
+        }
+    })
+    .into()
+}
+
+/// Low-emphasis, full-width text button used for the modal "Cancel" so it
+/// does not compete with the colored action cards above it. Transparent at
+/// rest, picks up `bg_hover` / `bg_selected` on hover / press.
+fn ghost_button<'a>(label: &'a str, msg: Message) -> Element<'a, Message> {
+    let c = OryxisColors::t();
+    button(
+        container(
+            text(label.to_owned())
+                .size(12)
+                .font(iced::Font {
+                    weight: iced::font::Weight::Bold,
+                    ..iced::Font::new(crate::theme::SYSTEM_UI_FAMILY)
+                })
+                .color(c.text_muted),
+        )
+        .center_x(Length::Fill)
+        .padding(Padding { top: 7.0, right: 14.0, bottom: 7.0, left: 14.0 }),
+    )
+    .width(Length::Fill)
+    .on_press(msg)
+    .style(move |_, status| {
+        let bg = match status {
+            iced::widget::button::Status::Pressed => c.bg_selected,
+            iced::widget::button::Status::Hovered => c.bg_hover,
+            _ => Color::TRANSPARENT,
+        };
+        iced::widget::button::Style {
+            background: Some(Background::Color(bg)),
+            border: Border { radius: Radius::from(8.0), ..Default::default() },
+            ..Default::default()
+        }
+    })
+    .into()
+}
+
 /// Invisible hit-zone used on the window edges and corners. Captures a press
 /// and hands off to the OS as a native resize drag. Double-click on N/S
 /// expands to full monitor height, same convention Windows uses (no
@@ -1136,44 +1234,96 @@ impl Oryxis {
                 .iter()
                 .filter(|c| c.group_id == Some(gid))
                 .count();
-            let dialog = container(
+            let c = OryxisColors::t();
+
+            // Tinted circular warning badge anchoring the dialog.
+            let badge = container(
+                iced_fonts::lucide::triangle_alert().size(22).color(c.error),
+            )
+            .width(Length::Fixed(48.0))
+            .height(Length::Fixed(48.0))
+            .center_x(Length::Fixed(48.0))
+            .center_y(Length::Fixed(48.0))
+            .style(move |_| container::Style {
+                background: Some(Background::Color(Color { a: 0.12, ..c.error })),
+                border: Border { radius: Radius::from(24.0), ..Default::default() },
+                ..Default::default()
+            });
+
+            // Subtitle: the folder name, plus the host count when it carries
+            // any (an empty folder has nothing to qualify).
+            let subtitle = if host_count == 0 {
+                format!("\"{}\"", folder_name)
+            } else {
+                format!("\"{}\"  ·  {}", folder_name, crate::i18n::host_count(host_count))
+            };
+            let header = column![
+                badge,
+                Space::new().height(14),
+                text(crate::i18n::t("delete_folder_question"))
+                    .size(17)
+                    .font(iced::Font {
+                        weight: iced::font::Weight::Semibold,
+                        ..iced::Font::new(crate::theme::SYSTEM_UI_FAMILY)
+                    })
+                    .color(c.text_primary),
+                Space::new().height(6),
+                text(subtitle)
+                    .size(12)
+                    .color(c.text_muted)
+                    .width(Length::Fill)
+                    .align_x(iced::alignment::Horizontal::Center),
+            ]
+            .width(Length::Fill)
+            .align_x(iced::Alignment::Center);
+
+            // Empty folders have no hosts to move or destroy, so the
+            // three-way choice collapses to a single, honest "remove the
+            // folder" action.
+            let actions = if host_count == 0 {
+                column![folder_choice_card(
+                    iced_fonts::lucide::trash(),
+                    crate::i18n::t("delete_folder_empty"),
+                    crate::i18n::t("delete_folder_empty_desc"),
+                    Message::DeleteFolderWithHosts,
+                    c.error,
+                )]
+            } else {
                 column![
-                    text(crate::i18n::t("delete_folder_question"))
-                        .size(16)
-                        .color(OryxisColors::t().text_primary),
-                    Space::new().height(6),
-                    text(format!(
-                        "\"{}\", {}",
-                        folder_name,
-                        crate::i18n::host_count(host_count)
-                    ))
-                        .size(13)
-                        .color(OryxisColors::t().text_muted),
-                    Space::new().height(16),
-                    styled_button(
+                    folder_choice_card(
+                        iced_fonts::lucide::folder_open(),
                         crate::i18n::t("delete_folder_keep_hosts"),
+                        crate::i18n::t("delete_folder_keep_hosts_desc"),
                         Message::DeleteFolderKeepHosts,
-                        OryxisColors::t().accent,
+                        c.accent,
                     ),
-                    Space::new().height(8),
-                    styled_button(
+                    Space::new().height(10),
+                    folder_choice_card(
+                        iced_fonts::lucide::trash(),
                         crate::i18n::t("delete_folder_with_hosts"),
+                        crate::i18n::t("delete_folder_with_hosts_desc"),
                         Message::DeleteFolderWithHosts,
-                        OryxisColors::t().error,
-                    ),
-                    Space::new().height(8),
-                    styled_button(
-                        crate::i18n::t("cancel"),
-                        Message::CancelFolderModal,
-                        OryxisColors::t().text_muted,
+                        c.error,
                     ),
                 ]
-                .padding(24)
-                .width(360),
+            }
+            .width(Length::Fill);
+
+            let dialog = container(
+                column![
+                    header,
+                    Space::new().height(20),
+                    actions,
+                    Space::new().height(14),
+                    ghost_button(crate::i18n::t("cancel"), Message::CancelFolderModal),
+                ]
+                .width(Length::Fill)
+                .padding(24),
             )
-            .style(|_| container::Style {
-                background: Some(Background::Color(OryxisColors::t().bg_surface)),
-                border: Border { radius: Radius::from(12.0), color: OryxisColors::t().border, width: 1.0 },
+            .width(Length::Fixed(400.0))
+            .style(move |_| container::Style {
+                background: Some(Background::Color(c.bg_surface)),
+                border: Border { radius: Radius::from(14.0), color: c.border, width: 1.0 },
                 ..Default::default()
             });
 
