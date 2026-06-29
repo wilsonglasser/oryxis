@@ -21,6 +21,7 @@ mod dispatch_keys;
 mod dispatch_known_hosts;
 mod dispatch_tray;
 mod dispatch_vault;
+mod dispatch_snippets;
 mod dispatch_proxy_identity;
 mod dispatch_cloud;
 mod dispatch_plugins;
