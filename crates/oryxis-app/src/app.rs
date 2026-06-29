@@ -34,8 +34,7 @@ pub static APP_IS_PRIMARY: std::sync::atomic::AtomicBool =
     std::sync::atomic::AtomicBool::new(true);
 
 use crate::state::{
-    ConnectionForm, ConnectionProgress, OverlayState, SettingsSection, TerminalTab, VaultState,
-    View,
+    ConnectionForm, ConnectionProgress, OverlayState, SettingsSection, TerminalTab, View,
 };
 use crate::theme::OryxisColors;
 
@@ -168,10 +167,7 @@ pub(crate) fn enumerate_terminal_fonts() -> &'static [String] {
 pub struct Oryxis {
     // Vault
     pub(crate) vault: Option<VaultStore>,
-    pub(crate) vault_state: VaultState,
-    pub(crate) vault_password_input: String,
-    pub(crate) vault_password_visible: bool,
-    pub(crate) vault_error: Option<String>,
+    pub(crate) vault_ui: crate::state::VaultUi,
     // Vector logo handles (see boot.rs). SVG goes through iced's
     // resvg/tiny-skia path instead of the wgpu image atlas, which on
     // GNOME Wayland fractional scaling corrupted the raster PNG into
@@ -985,15 +981,6 @@ pub struct Oryxis {
     // AI Chat settings
     pub(crate) ai: crate::state::AiState,
 
-    // Vault password settings
-    pub(crate) vault_has_user_password: bool,
-    pub(crate) vault_new_password: String,
-    /// Re-typed copy of the new master password. Must match
-    /// `vault_new_password` before [`Message::SetVaultPassword`] is
-    /// accepted, so a typo in a hidden field can't lock the user out.
-    pub(crate) vault_confirm_password: String,
-    pub(crate) vault_password_error: Option<String>,
-    pub(crate) vault_destroy_confirm: bool,
 
     /// Transient bottom-of-chat status chip, currently used for the
     /// "Copied to clipboard" feedback after a Copy button click.

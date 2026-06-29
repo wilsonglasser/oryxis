@@ -134,10 +134,11 @@ impl Oryxis {
         let (mut app, task) = (
             Self {
                 vault,
-                vault_state,
-                vault_password_input: String::new(),
-                vault_password_visible: false,
-                vault_error: None,
+                vault_ui: crate::state::VaultUi {
+                    state: vault_state,
+                    has_user_password: vault_has_user_password,
+                    ..Default::default()
+                },
                 // Vector logo: rendered through iced's SVG (resvg) path so
                 // it stays crisp at any scale and avoids the wgpu image-atlas
                 // corruption seen on GNOME Wayland fractional scaling. Both
@@ -429,11 +430,6 @@ impl Oryxis {
                 update_check_status: None,
                 reconnect_counters: std::collections::HashMap::new(),
                 ai: crate::state::AiState::default(),
-                vault_has_user_password,
-                vault_new_password: String::new(),
-                vault_confirm_password: String::new(),
-                vault_password_error: None,
-                vault_destroy_confirm: false,
                 toast: None,
                 loaded_cjk_fonts: std::collections::HashSet::new(),
                 error_dialog: None,
@@ -513,7 +509,7 @@ impl Oryxis {
         );
 
         // If auto-unlocked (no user password), load data immediately
-        if app.vault_state == VaultState::Unlocked {
+        if app.vault_ui.state == VaultState::Unlocked {
             app.load_data_from_vault();
         }
 
@@ -522,7 +518,7 @@ impl Oryxis {
         // after boot. When the vault is locked, we defer until VaultUnlock
         // succeeds (handled in that branch).
         let mut tasks = vec![task, Task::done(Message::CheckForUpdate)];
-        if app.vault_state == VaultState::Unlocked
+        if app.vault_ui.state == VaultState::Unlocked
             && let Some(connect_id) = app.pending_auto_connect.take()
             && let Some(idx) = app
                 .connections
@@ -536,7 +532,7 @@ impl Oryxis {
         // the `VaultUnlock` handler, same as `--connect`.
         // Only the P2P transport runs a background engine; the SFTP
         // transport reconciles on the iced cadence subscription instead.
-        if app.vault_state == VaultState::Unlocked
+        if app.vault_ui.state == VaultState::Unlocked
             && app.sync_enabled
             && app.sync_transport != "sftp"
         {
@@ -545,7 +541,7 @@ impl Oryxis {
 
         // Auto-start port forward rules marked `auto_start`. Deferred to
         // `VaultUnlock` when the vault is locked, same as sync / --connect.
-        if app.vault_state == VaultState::Unlocked {
+        if app.vault_ui.state == VaultState::Unlocked {
             tasks.extend(app.auto_start_port_forwards());
         }
 
@@ -560,7 +556,7 @@ impl Oryxis {
         // the `VaultUnlock` handler, which calls the same method once
         // the user's password opens it (the boot constructor can't
         // re-run). See `spawn_plugin_unlock_tasks`.
-        if app.vault_state == VaultState::Unlocked {
+        if app.vault_ui.state == VaultState::Unlocked {
             tasks.extend(app.spawn_plugin_unlock_tasks());
         }
 

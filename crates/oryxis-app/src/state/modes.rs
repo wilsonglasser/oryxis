@@ -2,8 +2,9 @@
 
 use super::*;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub(crate) enum VaultState {
+    #[default]
     Loading,
     NeedSetup,
     Locked,

@@ -1343,8 +1343,8 @@ impl Oryxis {
             Message::LockVault => {
                 if let Some(vault) = &mut self.vault {
                     vault.lock();
-                    if self.vault_has_user_password {
-                        self.vault_state = VaultState::Locked;
+                    if self.vault_ui.has_user_password {
+                        self.vault_ui.state = VaultState::Locked;
                         self.connections.clear();
                         self.keys.clear();
                         self.snippets.clear();

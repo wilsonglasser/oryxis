@@ -103,35 +103,35 @@ impl Oryxis {
         match message {
             // -- Vault --
             Message::VaultPasswordChanged(pw) => {
-                self.vault_password_input = pw;
+                self.vault_ui.password_input = pw;
             }
             Message::VaultTogglePasswordVisibility => {
-                self.vault_password_visible = !self.vault_password_visible;
+                self.vault_ui.password_visible = !self.vault_ui.password_visible;
             }
             Message::VaultSetup => {
-                if self.vault_password_input.len() < 4 {
-                    self.vault_error =
+                if self.vault_ui.password_input.len() < 4 {
+                    self.vault_ui.error =
                         Some(crate::i18n::t("password_too_short").to_string());
                     return Task::none();
                 }
                 if let Some(vault) = &mut self.vault {
-                    match vault.set_master_password(&self.vault_password_input) {
+                    match vault.set_master_password(&self.vault_ui.password_input) {
                         Ok(()) => {
                             let _ = vault.set_setting("has_user_password", "1");
-                            self.vault_has_user_password = true;
-                            self.vault_state = VaultState::Unlocked;
-                            self.vault_error = None;
+                            self.vault_ui.has_user_password = true;
+                            self.vault_ui.state = VaultState::Unlocked;
+                            self.vault_ui.error = None;
                             // Cache for child-window spawn.
-                            self.master_password = Some(self.vault_password_input.clone());
-                            self.vault_password_input.clear();
-                            self.vault_password_visible = false;
+                            self.master_password = Some(self.vault_ui.password_input.clone());
+                            self.vault_ui.password_input.clear();
+                            self.vault_ui.password_visible = false;
                             self.load_data_from_vault();
                             return iced::widget::operation::focus(iced::widget::Id::new(
                                 "search-dashboard",
                             ));
                         }
                         Err(e) => {
-                            self.vault_error = Some(e.to_string());
+                            self.vault_ui.error = Some(e.to_string());
                         }
                     }
                 }
@@ -140,39 +140,39 @@ impl Oryxis {
                 if let Some(vault) = &mut self.vault {
                     match vault.open_without_password() {
                         Ok(()) => {
-                            self.vault_state = VaultState::Unlocked;
-                            self.vault_error = None;
+                            self.vault_ui.state = VaultState::Unlocked;
+                            self.vault_ui.error = None;
                             self.load_data_from_vault();
                             return iced::widget::operation::focus(iced::widget::Id::new(
                                 "search-dashboard",
                             ));
                         }
                         Err(VaultError::InvalidPassword) => {
-                            self.vault_error = Some(
+                            self.vault_ui.error = Some(
                                 crate::i18n::t("vault_already_has_password").to_string(),
                             );
                         }
                         Err(e) => {
-                            self.vault_error = Some(format!("Failed to create vault: {}", e));
+                            self.vault_ui.error = Some(format!("Failed to create vault: {}", e));
                         }
                     }
                 }
             }
             Message::VaultDestroyConfirm => {
-                self.vault_destroy_confirm = !self.vault_destroy_confirm;
+                self.vault_ui.destroy_confirm = !self.vault_ui.destroy_confirm;
             }
             Message::VaultDestroy => {
                 if let Some(vault) = &mut self.vault {
                     match vault.destroy_and_recreate() {
                         Ok(()) => {
-                            self.vault_state = VaultState::NeedSetup;
-                            self.vault_error = None;
-                            self.vault_destroy_confirm = false;
-                            self.vault_password_input.clear();
-                            self.vault_password_visible = false;
+                            self.vault_ui.state = VaultState::NeedSetup;
+                            self.vault_ui.error = None;
+                            self.vault_ui.destroy_confirm = false;
+                            self.vault_ui.password_input.clear();
+                            self.vault_ui.password_visible = false;
                         }
                         Err(e) => {
-                            self.vault_error = Some(format!("Failed to reset vault: {}", e));
+                            self.vault_ui.error = Some(format!("Failed to reset vault: {}", e));
                         }
                     }
                 }
@@ -181,19 +181,19 @@ impl Oryxis {
                 // Ignore the submit when no password was typed (pressing
                 // Enter on an empty field or clicking Unlock with it blank
                 // shouldn't run a doomed unlock attempt or surface an error).
-                if self.vault_password_input.is_empty() {
+                if self.vault_ui.password_input.is_empty() {
                     return Task::none();
                 }
                 if let Some(vault) = &mut self.vault {
-                    match vault.unlock(&self.vault_password_input) {
+                    match vault.unlock(&self.vault_ui.password_input) {
                         Ok(()) => {
-                            self.vault_state = VaultState::Unlocked;
-                            self.vault_error = None;
+                            self.vault_ui.state = VaultState::Unlocked;
+                            self.vault_ui.error = None;
                             // Retain the password in memory so we can spawn
                             // child windows with it via stdin pipe.
-                            self.master_password = Some(self.vault_password_input.clone());
-                            self.vault_password_input.clear();
-                            self.vault_password_visible = false;
+                            self.master_password = Some(self.vault_ui.password_input.clone());
+                            self.vault_ui.password_input.clear();
+                            self.vault_ui.password_visible = false;
                             self.load_data_from_vault();
                             // Bring the sync engine up now that the
                             // vault is open, if the user left it on. Only
@@ -235,10 +235,10 @@ impl Oryxis {
                             return Task::batch(unlock_tasks);
                         }
                         Err(VaultError::InvalidPassword) => {
-                            self.vault_error = Some("Invalid password".into());
+                            self.vault_ui.error = Some("Invalid password".into());
                         }
                         Err(e) => {
-                            self.vault_error = Some(e.to_string());
+                            self.vault_ui.error = Some(e.to_string());
                         }
                     }
                 }
@@ -981,57 +981,57 @@ impl Oryxis {
 
             // ── Vault password management ──
             Message::ToggleVaultPassword => {
-                if self.vault_has_user_password {
+                if self.vault_ui.has_user_password {
                     // Remove password
                     if let Some(vault) = &mut self.vault {
                         match vault.remove_user_password() {
                             Ok(()) => {
-                                self.vault_has_user_password = false;
-                                self.vault_password_error = None;
-                                self.vault_new_password.clear();
-                                self.vault_confirm_password.clear();
+                                self.vault_ui.has_user_password = false;
+                                self.vault_ui.password_error = None;
+                                self.vault_ui.new_password.clear();
+                                self.vault_ui.confirm_password.clear();
                             }
                             Err(e) => {
-                                self.vault_password_error = Some(e.to_string());
+                                self.vault_ui.password_error = Some(e.to_string());
                             }
                         }
                     }
                 } else {
                     // Show password input (don't do anything yet, user needs to type and confirm)
-                    self.vault_new_password.clear();
-                    self.vault_confirm_password.clear();
-                    self.vault_password_error = None;
+                    self.vault_ui.new_password.clear();
+                    self.vault_ui.confirm_password.clear();
+                    self.vault_ui.password_error = None;
                 }
             }
             Message::VaultNewPasswordChanged(pw) => {
-                self.vault_new_password = pw;
+                self.vault_ui.new_password = pw;
             }
             Message::VaultConfirmPasswordChanged(pw) => {
-                self.vault_confirm_password = pw;
+                self.vault_ui.confirm_password = pw;
             }
             Message::SetVaultPassword => {
-                if self.vault_new_password.len() < 4 {
-                    self.vault_password_error =
+                if self.vault_ui.new_password.len() < 4 {
+                    self.vault_ui.password_error =
                         Some(crate::i18n::t("password_too_short").to_string());
                     return Task::none();
                 }
                 // Both fields are hidden, so a typo would otherwise be
                 // invisible until the next unlock (when it's too late).
-                if self.vault_new_password != self.vault_confirm_password {
-                    self.vault_password_error =
+                if self.vault_ui.new_password != self.vault_ui.confirm_password {
+                    self.vault_ui.password_error =
                         Some(crate::i18n::t("passwords_do_not_match").to_string());
                     return Task::none();
                 }
                 if let Some(vault) = &mut self.vault {
-                    match vault.set_user_password(&self.vault_new_password) {
+                    match vault.set_user_password(&self.vault_ui.new_password) {
                         Ok(()) => {
-                            self.vault_has_user_password = true;
-                            self.vault_password_error = None;
-                            self.vault_new_password.clear();
-                            self.vault_confirm_password.clear();
+                            self.vault_ui.has_user_password = true;
+                            self.vault_ui.password_error = None;
+                            self.vault_ui.new_password.clear();
+                            self.vault_ui.confirm_password.clear();
                         }
                         Err(e) => {
-                            self.vault_password_error = Some(e.to_string());
+                            self.vault_ui.password_error = Some(e.to_string());
                         }
                     }
                 }

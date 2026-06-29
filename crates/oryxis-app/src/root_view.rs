@@ -10,7 +10,7 @@ use crate::theme::OryxisColors;
 
 impl Oryxis {
     pub fn view(&self) -> Element<'_, Message> {
-        let base = match self.vault_state {
+        let base = match self.vault_ui.state {
             VaultState::Loading => self.view_vault_error("Failed to open vault database"),
             VaultState::NeedSetup => self.view_vault_setup(),
             VaultState::Locked => self.view_vault_unlock(),

@@ -42,10 +42,10 @@ impl Oryxis {
     ) -> Element<'a, Message> {
         container(password_input_with_eye(
             placeholder,
-            &self.vault_password_input,
+            &self.vault_ui.password_input,
             Message::VaultPasswordChanged,
             Some(on_submit),
-            self.vault_password_visible,
+            self.vault_ui.password_visible,
             Message::VaultTogglePasswordVisibility,
             12.0,
         ))
@@ -86,7 +86,7 @@ impl Oryxis {
             }
         });
 
-        let error = if let Some(err) = &self.vault_error {
+        let error = if let Some(err) = &self.vault_ui.error {
             Element::from(text(err.clone()).size(13).color(OryxisColors::t().error))
         } else {
             Space::new().height(0).into()
@@ -123,13 +123,13 @@ impl Oryxis {
 
         let btn = styled_button(crate::i18n::t("unlock"), Message::VaultUnlock, OryxisColors::t().accent);
 
-        let error = if let Some(err) = &self.vault_error {
+        let error = if let Some(err) = &self.vault_ui.error {
             Element::from(text(err.clone()).size(13).color(OryxisColors::t().error))
         } else {
             Space::new().height(0).into()
         };
 
-        let destroy_section: Element<'_, Message> = if self.vault_destroy_confirm {
+        let destroy_section: Element<'_, Message> = if self.vault_ui.destroy_confirm {
             column![
                 text(crate::i18n::t("vault_destroy_confirm")).size(12).color(OryxisColors::t().error),
                 Space::new().height(6),

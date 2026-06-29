@@ -26,6 +26,7 @@ mod overlay;
 mod sftp;
 mod tabs;
 mod theme_editor;
+mod vault;
 
 pub(crate) use ai::*;
 pub(crate) use forms::*;
@@ -36,6 +37,7 @@ pub(crate) use overlay::*;
 pub(crate) use sftp::*;
 pub(crate) use tabs::*;
 pub(crate) use theme_editor::*;
+pub(crate) use vault::*;
 
 // ---------------------------------------------------------------------------
 // Local shell picker

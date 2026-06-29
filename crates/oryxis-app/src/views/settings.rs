@@ -1897,15 +1897,15 @@ impl Oryxis {
             SettingsSection::Security => {
                 let password_toggle = toggle_row(
                     crate::i18n::t("vault_password"),
-                    self.vault_has_user_password,
+                    self.vault_ui.has_user_password,
                     Message::ToggleVaultPassword,
                 );
 
-                let password_section: Element<'_, Message> = if !self.vault_has_user_password {
+                let password_section: Element<'_, Message> = if !self.vault_ui.has_user_password {
                     // Show password input to enable
                     let input = container(crate::widgets::password_input_with_eye(
                         t("new_master_password_placeholder"),
-                        &self.vault_new_password,
+                        &self.vault_ui.new_password,
                         Message::VaultNewPasswordChanged,
                         Some(Message::SetVaultPassword),
                         self.revealed_secrets
@@ -1922,7 +1922,7 @@ impl Oryxis {
                     // vault. Require them to match before accepting.
                     let confirm = container(crate::widgets::password_input_with_eye(
                         t("confirm_master_password_placeholder"),
-                        &self.vault_confirm_password,
+                        &self.vault_ui.confirm_password,
                         Message::VaultConfirmPasswordChanged,
                         Some(Message::SetVaultPassword),
                         self.revealed_secrets
@@ -1934,7 +1934,7 @@ impl Oryxis {
                     ))
                     .width(300);
                     let btn = styled_button(crate::i18n::t("set_password"), Message::SetVaultPassword, OryxisColors::t().accent);
-                    let error: Element<'_, Message> = if let Some(err) = &self.vault_password_error {
+                    let error: Element<'_, Message> = if let Some(err) = &self.vault_ui.password_error {
                         text(err.clone()).size(12).color(OryxisColors::t().error).into()
                     } else {
                         Space::new().height(0).into()
@@ -1954,7 +1954,7 @@ impl Oryxis {
                 } else {
                     let note: Element<'_, Message> = text(t("vault_protected_note"))
                         .size(11).color(OryxisColors::t().text_muted).into();
-                    let error: Element<'_, Message> = if let Some(err) = &self.vault_password_error {
+                    let error: Element<'_, Message> = if let Some(err) = &self.vault_ui.password_error {
                         text(err.clone()).size(12).color(OryxisColors::t().error).into()
                     } else {
                         Space::new().height(0).into()
@@ -1977,7 +1977,7 @@ impl Oryxis {
                 // vault re-opens itself with an empty key). Show the
                 // button when a password exists; otherwise replace with
                 // a muted note telling the user how to enable locking.
-                let lock_btn: Element<'_, Message> = if self.vault_has_user_password {
+                let lock_btn: Element<'_, Message> = if self.vault_ui.has_user_password {
                     button(
                         container(
                             dir_row(vec![

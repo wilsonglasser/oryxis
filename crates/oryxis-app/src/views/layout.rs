@@ -3348,7 +3348,7 @@ impl Oryxis {
         // Lock Vault only when a master password is set; without one,
         // locking has nothing to protect and the unlock screen has no
         // way to re-enter (mirrors the Settings -> Security gating).
-        let lock_item: Element<'_, Message> = if self.vault_has_user_password {
+        let lock_item: Element<'_, Message> = if self.vault_ui.has_user_password {
             item("lock_vault", Message::LockVault, None)
         } else {
             Space::new().height(0).into()
