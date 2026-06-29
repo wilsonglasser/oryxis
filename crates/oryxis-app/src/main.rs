@@ -23,6 +23,7 @@ mod dispatch_tray;
 mod dispatch_vault;
 mod dispatch_snippets;
 mod dispatch_navigation;
+mod dispatch_history;
 mod dispatch_proxy_identity;
 mod dispatch_cloud;
 mod dispatch_plugins;
