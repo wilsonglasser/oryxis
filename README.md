@@ -73,7 +73,7 @@ Most SSH clients are either powerful but ugly (PuTTY), pretty but Electron-heavy
   <img src="resources/screen_1.png" width="720" alt="Hosts dashboard with cards, groups, and quick search">
 </p>
 <p align="center">
-  <em>Hosts dashboard. Card grid with groups, distro auto-detection, inline quick connect.</em>
+  <em>Hosts dashboard. Vertical navigation rail, card grid with groups, distro auto-detection, keyboard-driven selection.</em>
 </p>
 
 <p align="center">
@@ -112,10 +112,10 @@ Most SSH clients are either powerful but ugly (PuTTY), pretty but Electron-heavy
 </p>
 
 <p align="center">
-  <img src="resources/screen_6.png" width="720" alt="Settings Interface section with workspace mode and tab options">
+  <img src="resources/screen_6.png" width="720" alt="Settings Interface section with tab styling and the app theme grid">
 </p>
 <p align="center">
-  <em>Settings → Interface. Workspace layout mode, customizable host icons, dynamic accent, layout direction (LTR / RTL).</em>
+  <em>Settings → Interface. Navigation orientation, tab styling with live preview, top-bar accent wash, and the app theme grid.</em>
 </p>
 
 ## Features
