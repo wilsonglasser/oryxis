@@ -228,5 +228,17 @@ fn unlock_wrong_password_fails() {
     assert!(vault.is_locked());
 }
 
+
+#[test]
+fn verify_password_matches_without_changing_state() {
+    let mut vault = temp_vault();
+    vault.set_master_password("correct").unwrap();
+    // Right password -> true, wrong -> false, neither mutates the
+    // unlocked state (the change-password form relies on this).
+    assert!(vault.verify_password("correct").unwrap());
+    assert!(!vault.verify_password("wrong").unwrap());
+    assert!(!vault.is_locked());
+}
+
 // ── Connections CRUD ──
 

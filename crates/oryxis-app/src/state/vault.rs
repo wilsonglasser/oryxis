@@ -25,6 +25,18 @@ pub(crate) struct VaultUi {
     /// form is revealed. Flipped by the header switch so the toggle has a
     /// visible effect before a password exists; ignored once one is set.
     pub(crate) show_password_form: bool,
+    /// Two-step confirm latch for removing the master password. Toggling
+    /// the switch off (or the removal path) arms this; the destructive
+    /// action only runs once the user confirms, so an accidental flip
+    /// doesn't silently drop encryption.
+    pub(crate) confirm_remove_password: bool,
+    /// Whether the "change master password" form is open (only meaningful
+    /// once a password is set). Reuses `new_password` / `confirm_password`
+    /// for the new value and adds `current_password` for verification.
+    pub(crate) change_password_open: bool,
+    /// Current master password typed in the change-password form, checked
+    /// against the vault before the rotation runs.
+    pub(crate) current_password: String,
     /// New master password (Settings > Security).
     pub(crate) new_password: String,
     /// Confirm new master password (Settings > Security).

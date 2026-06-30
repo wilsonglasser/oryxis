@@ -3,7 +3,117 @@
 use super::*;
 use iced::widget::column;
 
+/// A highlighted, tinted callout: leading icon, bold title, muted
+/// description, all framed by a soft border in `accent`. Shared by the
+/// "why set a password" prompt (accent) and the "vault is protected"
+/// state (success) so both read as deliberate emphasis, not stray text.
+fn vault_callout<'a>(
+    icon: Element<'a, Message>,
+    title: &'a str,
+    desc: &'a str,
+    accent: Color,
+) -> Element<'a, Message> {
+    container(
+        dir_row(vec![
+            icon,
+            Space::new().width(12).into(),
+            column![
+                text(title)
+                    .size(13)
+                    .font(iced::Font {
+                        weight: iced::font::Weight::Semibold,
+                        ..iced::Font::DEFAULT
+                    })
+                    .color(OryxisColors::t().text_primary),
+                Space::new().height(4),
+                text(desc).size(11).color(OryxisColors::t().text_secondary),
+            ]
+            .width(Length::Fill)
+            .align_x(dir_align_x())
+            .into(),
+        ])
+        .align_y(iced::Alignment::Start),
+    )
+    .padding(14)
+    .width(Length::Fill)
+    .style(move |_| container::Style {
+        background: Some(Background::Color(Color { a: 0.10, ..accent })),
+        border: Border {
+            radius: Radius::from(8.0),
+            color: Color { a: 0.4, ..accent },
+            width: 1.0,
+        },
+        ..Default::default()
+    })
+    .into()
+}
+
 impl Oryxis {
+    /// The change-master-password form: current password (verified
+    /// before the rotation runs), then the new password twice. Tab walks
+    /// the three fields (see the KeyboardEvent handler); Enter on any
+    /// field submits. Only rendered while `change_password_open`.
+    fn change_password_form(&self) -> Element<'_, Message> {
+        use crate::state::SecretField;
+        let current = container(crate::widgets::password_input_with_eye(
+            t("current_master_password_placeholder"),
+            &self.vault_ui.current_password,
+            Message::VaultCurrentPasswordChanged,
+            Some(Message::ConfirmChangeVaultPassword),
+            self.revealed_secrets.contains(&SecretField::VaultCurrentPassword),
+            Message::ToggleSecretVisibility(SecretField::VaultCurrentPassword),
+            10.0,
+        ))
+        .width(300);
+        let new = container(crate::widgets::password_input_with_eye(
+            t("new_master_password_placeholder"),
+            &self.vault_ui.new_password,
+            Message::VaultNewPasswordChanged,
+            Some(Message::ConfirmChangeVaultPassword),
+            self.revealed_secrets.contains(&SecretField::VaultNewPassword),
+            Message::ToggleSecretVisibility(SecretField::VaultNewPassword),
+            10.0,
+        ))
+        .width(300);
+        let confirm = container(crate::widgets::password_input_with_eye(
+            t("confirm_master_password_placeholder"),
+            &self.vault_ui.confirm_password,
+            Message::VaultConfirmPasswordChanged,
+            Some(Message::ConfirmChangeVaultPassword),
+            self.revealed_secrets.contains(&SecretField::VaultConfirmPassword),
+            Message::ToggleSecretVisibility(SecretField::VaultConfirmPassword),
+            10.0,
+        ))
+        .width(300);
+        let error: Element<'_, Message> = if let Some(err) = &self.vault_ui.password_error {
+            text(err.clone()).size(12).color(OryxisColors::t().error).into()
+        } else {
+            Space::new().height(0).into()
+        };
+        let update_btn = styled_button(
+            crate::i18n::t("update_password"),
+            Message::ConfirmChangeVaultPassword,
+            OryxisColors::t().accent,
+        );
+        let cancel_btn = styled_button(
+            crate::i18n::t("cancel"),
+            Message::CancelChangeVaultPassword,
+            OryxisColors::t().text_muted,
+        );
+        panel_section(column![
+            text(t("change_password_title")).size(13).color(OryxisColors::t().text_primary),
+            Space::new().height(10),
+            current,
+            Space::new().height(8),
+            new,
+            Space::new().height(8),
+            confirm,
+            Space::new().height(10),
+            dir_row(vec![update_btn, Space::new().width(8).into(), cancel_btn]),
+            error,
+        ])
+    }
+
     pub(crate) fn view_settings_security(&self) -> Element<'_, Message> {
         // The switch reflects either a committed password or an open
         // set-password form, so toggling it before a password exists
@@ -18,43 +128,15 @@ impl Oryxis {
             // No master password yet. Always lead with a highlighted
             // callout explaining why one matters; reveal the actual
             // input form only once the user flips the switch on.
-            let importance = container(
-                dir_row(vec![
-                    iced_fonts::lucide::shield()
-                        .size(20)
-                        .color(OryxisColors::t().accent)
-                        .into(),
-                    Space::new().width(12).into(),
-                    column![
-                        text(t("vault_importance_title"))
-                            .size(13)
-                            .font(iced::Font {
-                                weight: iced::font::Weight::Semibold,
-                                ..iced::Font::DEFAULT
-                            })
-                            .color(OryxisColors::t().text_primary),
-                        Space::new().height(4),
-                        text(t("vault_importance_desc"))
-                            .size(11)
-                            .color(OryxisColors::t().text_secondary),
-                    ]
-                    .width(Length::Fill)
-                    .align_x(dir_align_x())
+            let importance = vault_callout(
+                iced_fonts::lucide::shield()
+                    .size(20)
+                    .color(OryxisColors::t().accent)
                     .into(),
-                ])
-                .align_y(iced::Alignment::Start),
-            )
-            .padding(14)
-            .width(Length::Fill)
-            .style(|_| container::Style {
-                background: Some(Background::Color(Color { a: 0.10, ..OryxisColors::t().accent })),
-                border: Border {
-                    radius: Radius::from(8.0),
-                    color: Color { a: 0.4, ..OryxisColors::t().accent },
-                    width: 1.0,
-                },
-                ..Default::default()
-            });
+                t("vault_importance_title"),
+                t("vault_importance_desc"),
+                OryxisColors::t().accent,
+            );
 
             if !self.vault_ui.show_password_form {
                 // Switch is off: callout only, no input fields.
@@ -113,23 +195,62 @@ impl Oryxis {
             ].into()
             }
         } else {
-            let note: Element<'_, Message> = text(t("vault_protected_note"))
-                .size(11).color(OryxisColors::t().text_muted).into();
             let error: Element<'_, Message> = if let Some(err) = &self.vault_ui.password_error {
                 text(err.clone()).size(12).color(OryxisColors::t().error).into()
             } else {
                 Space::new().height(0).into()
             };
-            // Explicit Remove button: toggling the header switch off
-            // also removes the password, but that's not discoverable;
-            // an outright button makes the destructive-but-reversible
-            // action obvious. Reuses the same handler as the toggle.
-            let remove_btn = styled_button(
-                crate::i18n::t("remove_password"),
-                Message::ToggleVaultPassword,
-                OryxisColors::t().error,
-            );
-            column![Space::new().height(4), note, Space::new().height(8), remove_btn, error].into()
+            if self.vault_ui.confirm_remove_password {
+                // Confirm prompt armed by the header switch. The header
+                // toggle is the single removal path now (the old
+                // standalone Remove button was redundant); this two-step
+                // gate makes disabling deliberate, not a one-click slip.
+                let warn_callout = vault_callout(
+                    iced_fonts::lucide::triangle_alert()
+                        .size(20)
+                        .color(OryxisColors::t().warning)
+                        .into(),
+                    t("vault_remove_confirm_title"),
+                    t("vault_remove_confirm_desc"),
+                    OryxisColors::t().warning,
+                );
+                let remove_btn = styled_button(
+                    crate::i18n::t("remove_password"),
+                    Message::ConfirmRemoveVaultPassword,
+                    OryxisColors::t().error,
+                );
+                let cancel_btn = styled_button(
+                    crate::i18n::t("cancel"),
+                    Message::CancelRemoveVaultPassword,
+                    OryxisColors::t().text_muted,
+                );
+                column![
+                    Space::new().height(8),
+                    warn_callout,
+                    Space::new().height(10),
+                    dir_row(vec![
+                        remove_btn,
+                        Space::new().width(8).into(),
+                        cancel_btn,
+                    ]),
+                    error,
+                ]
+                .into()
+            } else {
+                // Steady protected state: a highlighted success callout
+                // rather than a faint one-liner, so the reassurance reads
+                // as a deliberate status.
+                let protected = vault_callout(
+                    iced_fonts::lucide::shield_check()
+                        .size(20)
+                        .color(OryxisColors::t().success)
+                        .into(),
+                    t("vault_protected_title"),
+                    t("vault_protected_note"),
+                    OryxisColors::t().success,
+                );
+                column![Space::new().height(8), protected, error].into()
+            }
         };
 
         // Lock Vault only makes sense once a master password is
@@ -167,6 +288,44 @@ impl Oryxis {
                 .size(11)
                 .color(OryxisColors::t().text_muted)
                 .into()
+        };
+
+        // "Update password" sits beside Lock Vault: rotate the master
+        // password (current -> new) without removing encryption. Both
+        // controls only apply once a password exists; when it does, the
+        // change form drops in below the button row when opened.
+        let lock_row: Element<'_, Message> = if self.vault_ui.has_user_password {
+            let update_btn = button(
+                container(
+                    dir_row(vec![
+                        iced_fonts::lucide::key_round().size(14).color(OryxisColors::t().accent).into(),
+                        Space::new().width(10).into(),
+                        text(crate::i18n::t("update_password")).size(13).color(OryxisColors::t().accent).into(),
+                    ]).align_y(iced::Alignment::Center),
+                )
+                .padding(Padding { top: 10.0, right: 20.0, bottom: 10.0, left: 20.0 }),
+            )
+            .on_press(Message::OpenChangeVaultPassword)
+            .style(|_, status| {
+                let bg = match status {
+                    BtnStatus::Hovered => Color { a: 0.15, ..OryxisColors::t().accent },
+                    _ => Color::TRANSPARENT,
+                };
+                button::Style {
+                    background: Some(Background::Color(bg)),
+                    border: Border { radius: Radius::from(8.0), color: OryxisColors::t().accent, width: 1.0 },
+                    ..Default::default()
+                }
+            })
+            .into();
+            let buttons = dir_row(vec![lock_btn, Space::new().width(10).into(), update_btn]);
+            if self.vault_ui.change_password_open {
+                column![buttons, Space::new().height(12), self.change_password_form()].into()
+            } else {
+                buttons.into()
+            }
+        } else {
+            lock_btn
         };
 
         // MCP Server moved to its own Settings sidebar entry
@@ -562,7 +721,7 @@ impl Oryxis {
                     panel_section(column![password_toggle]),
                     password_section,
                     Space::new().height(24),
-                    lock_btn,
+                    lock_row,
                     Space::new().height(24),
                     privacy_mode_section,
                     Space::new().height(12),

@@ -439,6 +439,30 @@ impl VaultStore {
         Ok(())
     }
 
+    /// Verify `password` against the stored check value without touching
+    /// the unlocked state. Used to confirm the current master password
+    /// before rotating it, so a rotation can't run on a wrong guess.
+    /// Returns `Ok(false)` for a wrong password (decryption fails);
+    /// real errors (locked / no check row / corrupt salt) propagate.
+    pub fn verify_password(&self, password: &str) -> Result<bool, VaultError> {
+        let check: Vec<u8> = self
+            .db
+            .query_row(
+                "SELECT value FROM vault_meta WHERE key = 'password_check'",
+                [],
+                |row| row.get(0),
+            )
+            .map_err(|_| VaultError::Locked)?;
+        let pw_bytes = password.as_bytes();
+        let plain = if check.first() == Some(&FIELD_FORMAT_V2) {
+            let key = self.derive_vault_key(pw_bytes)?;
+            decrypt_with_key(&check, &key)
+        } else {
+            decrypt(&check, pw_bytes)
+        };
+        Ok(matches!(plain, Ok(p) if p == b"oryxis_vault_ok"))
+    }
+
     /// Argon2id over the vault-level salt stored in `vault_meta`
     /// (`kdf_salt`), created on first use.
     fn derive_vault_key(&self, password: &[u8]) -> Result<[u8; KEY_LEN], VaultError> {

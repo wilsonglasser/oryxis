@@ -1240,9 +1240,20 @@ pub enum Message {
 
     // Vault password management
     ToggleVaultPassword,
+    /// Commit the master-password removal after the confirm prompt.
+    ConfirmRemoveVaultPassword,
+    /// Dismiss the remove-password confirm prompt without removing.
+    CancelRemoveVaultPassword,
     VaultNewPasswordChanged(String),
     VaultConfirmPasswordChanged(String),
     SetVaultPassword,
+    /// Open / close the change-master-password form.
+    OpenChangeVaultPassword,
+    CancelChangeVaultPassword,
+    /// Current-password field of the change-password form.
+    VaultCurrentPasswordChanged(String),
+    /// Verify the current password and rotate to the new one.
+    ConfirmChangeVaultPassword,
 
     // AI chat sidebar
     ToggleChatSidebar,

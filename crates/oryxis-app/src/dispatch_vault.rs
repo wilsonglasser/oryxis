@@ -161,21 +161,13 @@ impl Oryxis {
             // ── Vault password management ──
             Message::ToggleVaultPassword => {
                 if self.vault_ui.has_user_password {
-                    // Remove password
-                    if let Some(vault) = &mut self.vault {
-                        match vault.remove_user_password() {
-                            Ok(()) => {
-                                self.vault_ui.has_user_password = false;
-                                self.vault_ui.show_password_form = false;
-                                self.vault_ui.password_error = None;
-                                self.vault_ui.new_password.clear();
-                                self.vault_ui.confirm_password.clear();
-                            }
-                            Err(e) => {
-                                self.vault_ui.password_error = Some(e.to_string());
-                            }
-                        }
-                    }
+                    // Removing encryption is destructive: arm the confirm
+                    // prompt instead of dropping the password on a single
+                    // click. The switch stays on until the user confirms.
+                    // Close the change form so the two can't stack.
+                    self.vault_ui.confirm_remove_password = true;
+                    self.vault_ui.change_password_open = false;
+                    self.vault_ui.password_error = None;
                 } else {
                     // No password yet: the switch reveals / hides the inline
                     // set-password form. Nothing is committed until the user
@@ -185,6 +177,27 @@ impl Oryxis {
                     self.vault_ui.confirm_password.clear();
                     self.vault_ui.password_error = None;
                 }
+            }
+            Message::ConfirmRemoveVaultPassword => {
+                if let Some(vault) = &mut self.vault {
+                    match vault.remove_user_password() {
+                        Ok(()) => {
+                            self.vault_ui.has_user_password = false;
+                            self.vault_ui.show_password_form = false;
+                            self.vault_ui.confirm_remove_password = false;
+                            self.vault_ui.password_error = None;
+                            self.vault_ui.new_password.clear();
+                            self.vault_ui.confirm_password.clear();
+                        }
+                        Err(e) => {
+                            self.vault_ui.password_error = Some(e.to_string());
+                        }
+                    }
+                }
+            }
+            Message::CancelRemoveVaultPassword => {
+                self.vault_ui.confirm_remove_password = false;
+                self.vault_ui.password_error = None;
             }
             Message::VaultNewPasswordChanged(pw) => {
                 self.vault_ui.new_password = pw;
@@ -213,6 +226,69 @@ impl Oryxis {
                             self.vault_ui.password_error = None;
                             self.vault_ui.new_password.clear();
                             self.vault_ui.confirm_password.clear();
+                        }
+                        Err(e) => {
+                            self.vault_ui.password_error = Some(e.to_string());
+                        }
+                    }
+                }
+            }
+            Message::OpenChangeVaultPassword => {
+                // Reveal the change form; start from a clean slate so a
+                // stale value from a previous open can't leak in. Dismiss
+                // any armed remove-confirm so the two can't stack.
+                self.vault_ui.change_password_open = true;
+                self.vault_ui.confirm_remove_password = false;
+                self.vault_ui.current_password.clear();
+                self.vault_ui.new_password.clear();
+                self.vault_ui.confirm_password.clear();
+                self.vault_ui.password_error = None;
+            }
+            Message::CancelChangeVaultPassword => {
+                self.vault_ui.change_password_open = false;
+                self.vault_ui.current_password.clear();
+                self.vault_ui.new_password.clear();
+                self.vault_ui.confirm_password.clear();
+                self.vault_ui.password_error = None;
+            }
+            Message::VaultCurrentPasswordChanged(pw) => {
+                self.vault_ui.current_password = pw;
+            }
+            Message::ConfirmChangeVaultPassword => {
+                if self.vault_ui.new_password.len() < 4 {
+                    self.vault_ui.password_error =
+                        Some(crate::i18n::t("password_too_short").to_string());
+                    return Ok(Task::none());
+                }
+                if self.vault_ui.new_password != self.vault_ui.confirm_password {
+                    self.vault_ui.password_error =
+                        Some(crate::i18n::t("passwords_do_not_match").to_string());
+                    return Ok(Task::none());
+                }
+                if let Some(vault) = &mut self.vault {
+                    // Verify the current password before rotating. The vault
+                    // is already unlocked, so this guards against someone
+                    // changing the password at an unattended session, and
+                    // against a typo silently rotating to an unknown key.
+                    match vault.verify_password(&self.vault_ui.current_password) {
+                        Ok(true) => match vault.set_user_password(&self.vault_ui.new_password) {
+                            Ok(()) => {
+                                self.vault_ui.change_password_open = false;
+                                self.vault_ui.password_error = None;
+                                self.vault_ui.current_password.clear();
+                                self.vault_ui.new_password.clear();
+                                self.vault_ui.confirm_password.clear();
+                                return Ok(self.show_toast(
+                                    crate::i18n::t("password_updated").to_string(),
+                                ));
+                            }
+                            Err(e) => {
+                                self.vault_ui.password_error = Some(e.to_string());
+                            }
+                        },
+                        Ok(false) => {
+                            self.vault_ui.password_error =
+                                Some(crate::i18n::t("current_password_incorrect").to_string());
                         }
                         Err(e) => {
                             self.vault_ui.password_error = Some(e.to_string());

@@ -547,6 +547,23 @@ impl Oryxis {
                         iced::widget::operation::focus_next()
                     });
                 }
+                // Settings -> Security password forms open -> Tab /
+                // Shift+Tab walk the password fields like a browser form,
+                // instead of leaking a literal \t. Same focus-chain
+                // mechanism as the host editor above. Covers both the
+                // set-password and change-password forms.
+                if self.active_view == crate::state::View::Settings
+                    && self.settings_section == crate::state::SettingsSection::Security
+                    && (self.vault_ui.show_password_form || self.vault_ui.change_password_open)
+                    && let keyboard::Event::KeyPressed { key, modifiers, .. } = &event
+                    && matches!(key, keyboard::Key::Named(keyboard::key::Named::Tab))
+                {
+                    return Ok(if modifiers.shift() {
+                        iced::widget::operation::focus_previous()
+                    } else {
+                        iced::widget::operation::focus_next()
+                    });
+                }
                 // Ctrl+Tab / Ctrl+Shift+Tab: move the strip focus one slot
                 // forward / backward through [Home, pinned, tabs], wrapping
                 // around (Home is part of the cycle). Positional, not MRU, so

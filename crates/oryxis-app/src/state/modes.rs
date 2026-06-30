@@ -38,6 +38,8 @@ pub enum SecretField {
     VaultNewPassword,
     /// Confirm new master password (Settings > Security).
     VaultConfirmPassword,
+    /// Current master password in the change-password form (Settings > Security).
+    VaultCurrentPassword,
     /// Portable export password (Settings > Security).
     ExportPassword,
     /// Portable import password (Settings > Security).
