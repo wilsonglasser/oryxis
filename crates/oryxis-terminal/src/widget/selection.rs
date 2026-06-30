@@ -150,6 +150,26 @@ mod selection_tests {
     }
 
     #[test]
+    fn flowing_selection_skips_wide_char_spacers() {
+        // Each CJK glyph occupies two grid cells: the leading cell holds the
+        // character, the trailing cell is a WIDE_CHAR_SPACER whose `c` is a
+        // space. Copying must emit the glyph once, not "glyph + space".
+        // (GitHub issue #51: extra spaces in the middle of copied content.)
+        let state = state_with(&["专用发票"]);
+        // 4 glyphs span columns 0..=7 (two cells each).
+        let sel = Selection { start: (0, 0), end: (7, 0), block: false };
+        assert_eq!(state.get_selection_text(&sel), "专用发票");
+    }
+
+    #[test]
+    fn block_selection_skips_wide_char_spacers() {
+        // The block branch must drop spacer cells too.
+        let state = state_with(&["专用发票"]);
+        let sel = Selection { start: (0, 0), end: (7, 0), block: true };
+        assert_eq!(state.get_selection_text(&sel), "专用发票");
+    }
+
+    #[test]
     fn smart_select_grabs_whole_url() {
         // A click anywhere inside the URL returns the full token span,
         // even though "/" and ":" are word delimiters that would split it.

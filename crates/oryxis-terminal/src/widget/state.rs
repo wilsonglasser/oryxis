@@ -184,6 +184,7 @@ impl TerminalState {
     pub fn get_selection_text(&self, sel: &Selection) -> String {
         use alacritty_terminal::grid::Dimensions;
         use alacritty_terminal::index::{Column, Line};
+        use alacritty_terminal::term::cell::Flags as CellFlags;
         let grid = self.backend.term.grid();
         let topmost = grid.topmost_line();
         let bottommost = grid.bottommost_line();
@@ -207,7 +208,10 @@ impl TerminalState {
                 let mut line_str = String::new();
                 for c in c0..=c1.min(last_col) {
                     let cell = &row[Column(c as usize)];
-                    if cell.c != '\0' {
+                    // The trailing cell of a wide (CJK) glyph is a spacer
+                    // whose `c` is a space; skip it so a double-width char
+                    // doesn't copy out as "char + space".
+                    if cell.c != '\0' && !cell.flags.contains(CellFlags::WIDE_CHAR_SPACER) {
                         line_str.push(cell.c);
                     }
                 }
@@ -248,7 +252,9 @@ impl TerminalState {
             let mut line_str = String::new();
             for c in start_col..=end_col {
                 let cell = &row[Column(c as usize)];
-                if cell.c != '\0' {
+                // Skip wide-char spacer cells (the trailing half of a CJK
+                // glyph), otherwise each one copies out as an extra space.
+                if cell.c != '\0' && !cell.flags.contains(CellFlags::WIDE_CHAR_SPACER) {
                     line_str.push(cell.c);
                 }
             }
