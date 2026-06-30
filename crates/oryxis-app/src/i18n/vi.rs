@@ -165,7 +165,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "hotkey_show_tab_jump" => "Nhảy tới tab",
         "hotkey_open_local_shell" => "Mở shell cục bộ",
         "hotkey_new_window" => "Mở cửa sổ mới",
-        "hotkey_close_active_tab" => "Đóng tab đang mở",
+        "hotkey_close_active_tab" => "Đóng tab hoặc khung",
         "hotkey_open_port_forwards" => "Mở chuyển tiếp cổng",
         "hotkey_open_settings" => "Mở cài đặt",
         "hotkey_open_sftp" => "Mở SFTP",
@@ -176,6 +176,10 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "hotkey_font_zoom_in" => "Phóng to phông chữ",
         "hotkey_font_zoom_out" => "Thu nhỏ phông chữ",
         "hotkey_font_zoom_reset" => "Khôi phục cỡ phông chữ",
+        "hotkey_focus_pane_left" => "Chuyển tiêu điểm sang khung trái",
+        "hotkey_focus_pane_right" => "Chuyển tiêu điểm sang khung phải",
+        "hotkey_focus_pane_up" => "Chuyển tiêu điểm sang khung trên",
+        "hotkey_focus_pane_down" => "Chuyển tiêu điểm sang khung dưới",
         "detecting_shells" => "Đang dò shell…",
 
         // Actions

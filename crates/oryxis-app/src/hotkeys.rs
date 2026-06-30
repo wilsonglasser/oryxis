@@ -41,6 +41,14 @@ pub enum HotkeyAction {
     FontZoomIn,
     FontZoomOut,
     FontZoomReset,
+    // Terminal split panes. These only fire while the terminal view is
+    // focused (`terminal_only`); elsewhere the key is left free.
+    SplitPaneVertical,
+    SplitPaneHorizontal,
+    FocusPaneLeft,
+    FocusPaneRight,
+    FocusPaneUp,
+    FocusPaneDown,
 }
 
 impl HotkeyAction {
@@ -64,6 +72,12 @@ impl HotkeyAction {
             FontZoomIn,
             FontZoomOut,
             FontZoomReset,
+            SplitPaneVertical,
+            SplitPaneHorizontal,
+            FocusPaneLeft,
+            FocusPaneRight,
+            FocusPaneUp,
+            FocusPaneDown,
         ]
     }
 
@@ -88,6 +102,12 @@ impl HotkeyAction {
             FontZoomIn => "font_zoom_in",
             FontZoomOut => "font_zoom_out",
             FontZoomReset => "font_zoom_reset",
+            SplitPaneVertical => "split_pane_vertical",
+            SplitPaneHorizontal => "split_pane_horizontal",
+            FocusPaneLeft => "focus_pane_left",
+            FocusPaneRight => "focus_pane_right",
+            FocusPaneUp => "focus_pane_up",
+            FocusPaneDown => "focus_pane_down",
         }
     }
 
@@ -110,7 +130,31 @@ impl HotkeyAction {
             FontZoomIn => "hotkey_font_zoom_in",
             FontZoomOut => "hotkey_font_zoom_out",
             FontZoomReset => "hotkey_font_zoom_reset",
+            // Reuse the context-menu split labels (already translated in
+            // all 17 languages) rather than minting parallel keys.
+            SplitPaneVertical => "split_side_by_side",
+            SplitPaneHorizontal => "split_stacked",
+            FocusPaneLeft => "hotkey_focus_pane_left",
+            FocusPaneRight => "hotkey_focus_pane_right",
+            FocusPaneUp => "hotkey_focus_pane_up",
+            FocusPaneDown => "hotkey_focus_pane_down",
         }
+    }
+
+    /// Whether the action only applies while the terminal view is
+    /// focused. The dispatch loop skips these elsewhere so the key
+    /// stays free in other views (and doesn't swallow the event).
+    pub fn terminal_only(self) -> bool {
+        use HotkeyAction::*;
+        matches!(
+            self,
+            SplitPaneVertical
+                | SplitPaneHorizontal
+                | FocusPaneLeft
+                | FocusPaneRight
+                | FocusPaneUp
+                | FocusPaneDown
+        )
     }
 
     /// Whether the primary key (suffix) is editable. Family actions
@@ -626,6 +670,17 @@ pub fn default_bindings() -> HotkeyMap {
     put(&mut m, FontZoomIn, primary_ctrl, false, false, primary_logo, Punct("="));
     put(&mut m, FontZoomOut, primary_ctrl, false, false, primary_logo, Punct("-"));
     put(&mut m, FontZoomReset, primary_ctrl, false, false, primary_logo, Char('0'));
+    // Terminal split panes. Ctrl+Shift (Cmd+Shift on macOS): Shift lifts
+    // these out of the terminal control-sequence gate and the directional
+    // arrows out of cursor-key reach. Vertical split is on D ("divide")
+    // because Ctrl+Shift+E is the OpenSftp binding above; O keeps the
+    // GNOME Terminal stacked-split convention.
+    put(&mut m, SplitPaneVertical, primary_ctrl, true, false, primary_logo, Char('d'));
+    put(&mut m, SplitPaneHorizontal, primary_ctrl, true, false, primary_logo, Char('o'));
+    put(&mut m, FocusPaneLeft, primary_ctrl, true, false, primary_logo, Named(keyboard::key::Named::ArrowLeft));
+    put(&mut m, FocusPaneRight, primary_ctrl, true, false, primary_logo, Named(keyboard::key::Named::ArrowRight));
+    put(&mut m, FocusPaneUp, primary_ctrl, true, false, primary_logo, Named(keyboard::key::Named::ArrowUp));
+    put(&mut m, FocusPaneDown, primary_ctrl, true, false, primary_logo, Named(keyboard::key::Named::ArrowDown));
     m
 }
 

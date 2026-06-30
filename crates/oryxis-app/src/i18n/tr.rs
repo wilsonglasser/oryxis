@@ -165,7 +165,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "hotkey_show_tab_jump" => "Sekmeye atla",
         "hotkey_open_local_shell" => "Yerel shell aç",
         "hotkey_new_window" => "Yeni pencere aç",
-        "hotkey_close_active_tab" => "Etkin sekmeyi kapat",
+        "hotkey_close_active_tab" => "Sekmeyi veya bölmeyi kapat",
         "hotkey_open_port_forwards" => "Port yönlendirmelerini aç",
         "hotkey_open_settings" => "Ayarları aç",
         "hotkey_open_sftp" => "SFTP'yi aç",
@@ -176,6 +176,10 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "hotkey_font_zoom_in" => "Yazı tipini büyüt",
         "hotkey_font_zoom_out" => "Yazı tipini küçült",
         "hotkey_font_zoom_reset" => "Yazı tipi yakınlaştırmasını sıfırla",
+        "hotkey_focus_pane_left" => "Soldaki bölmeye odaklan",
+        "hotkey_focus_pane_right" => "Sağdaki bölmeye odaklan",
+        "hotkey_focus_pane_up" => "Üstteki bölmeye odaklan",
+        "hotkey_focus_pane_down" => "Alttaki bölmeye odaklan",
         "detecting_shells" => "Shell'ler algılanıyor…",
 
         // Actions

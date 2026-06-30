@@ -165,7 +165,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "hotkey_show_tab_jump" => "Перейти до вкладки",
         "hotkey_open_local_shell" => "Відкрити локальну оболонку",
         "hotkey_new_window" => "Відкрити нове вікно",
-        "hotkey_close_active_tab" => "Закрити активну вкладку",
+        "hotkey_close_active_tab" => "Закрити вкладку або панель",
         "hotkey_open_port_forwards" => "Відкрити прокидання портів",
         "hotkey_open_settings" => "Відкрити налаштування",
         "hotkey_open_sftp" => "Відкрити SFTP",
@@ -176,6 +176,10 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "hotkey_font_zoom_in" => "Збільшити шрифт",
         "hotkey_font_zoom_out" => "Зменшити шрифт",
         "hotkey_font_zoom_reset" => "Скинути масштаб шрифту",
+        "hotkey_focus_pane_left" => "Фокус на панель ліворуч",
+        "hotkey_focus_pane_right" => "Фокус на панель праворуч",
+        "hotkey_focus_pane_up" => "Фокус на панель вгорі",
+        "hotkey_focus_pane_down" => "Фокус на панель внизу",
         "detecting_shells" => "Виявлення оболонок…",
 
         // Actions

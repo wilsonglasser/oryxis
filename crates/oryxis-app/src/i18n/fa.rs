@@ -165,7 +165,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "hotkey_show_tab_jump" => "پرش به تب",
         "hotkey_open_local_shell" => "باز کردن شل محلی",
         "hotkey_new_window" => "باز کردن پنجره جدید",
-        "hotkey_close_active_tab" => "بستن تب فعال",
+        "hotkey_close_active_tab" => "بستن تب یا پنل",
         "hotkey_open_port_forwards" => "باز کردن انتقال‌های پورت",
         "hotkey_open_settings" => "باز کردن تنظیمات",
         "hotkey_open_sftp" => "باز کردن SFTP",
@@ -176,6 +176,10 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "hotkey_font_zoom_in" => "بزرگ کردن فونت",
         "hotkey_font_zoom_out" => "کوچک کردن فونت",
         "hotkey_font_zoom_reset" => "بازنشانی اندازه فونت",
+        "hotkey_focus_pane_left" => "تمرکز روی پنل چپ",
+        "hotkey_focus_pane_right" => "تمرکز روی پنل راست",
+        "hotkey_focus_pane_up" => "تمرکز روی پنل بالا",
+        "hotkey_focus_pane_down" => "تمرکز روی پنل پایین",
         "detecting_shells" => "در حال شناسایی شل‌ها…",
 
         // Actions

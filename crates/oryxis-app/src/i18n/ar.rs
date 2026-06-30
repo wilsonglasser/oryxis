@@ -165,7 +165,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "hotkey_show_tab_jump" => "الانتقال إلى علامة التبويب",
         "hotkey_open_local_shell" => "فتح الصدفة المحلية",
         "hotkey_new_window" => "فتح نافذة جديدة",
-        "hotkey_close_active_tab" => "إغلاق علامة التبويب النشطة",
+        "hotkey_close_active_tab" => "إغلاق علامة التبويب أو اللوحة",
         "hotkey_open_port_forwards" => "فتح إعادة توجيه المنافذ",
         "hotkey_open_settings" => "فتح الإعدادات",
         "hotkey_open_sftp" => "فتح SFTP",
@@ -176,6 +176,10 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "hotkey_font_zoom_in" => "تكبير الخط",
         "hotkey_font_zoom_out" => "تصغير الخط",
         "hotkey_font_zoom_reset" => "إعادة تعيين حجم الخط",
+        "hotkey_focus_pane_left" => "التركيز على اللوحة اليسرى",
+        "hotkey_focus_pane_right" => "التركيز على اللوحة اليمنى",
+        "hotkey_focus_pane_up" => "التركيز على اللوحة العلوية",
+        "hotkey_focus_pane_down" => "التركيز على اللوحة السفلية",
         "detecting_shells" => "جارٍ اكتشاف الصدفات…",
 
         // Actions

@@ -424,35 +424,6 @@ impl Oryxis {
             }
         }
 
-        // 1b. Split-pane shortcuts (terminal view only). Fixed bindings,
-        //     mirroring GNOME Terminal, not (yet) in the rebind editor:
-        //     Ctrl+Shift+E / O split the focused pane side-by-side /
-        //     stacked, Ctrl+Shift+W closes it, and Ctrl+Shift+arrows move
-        //     focus between panes.
-        if self.active_view == View::Terminal && modifiers.control() && modifiers.shift() {
-            use iced::widget::pane_grid::{Axis, Direction};
-            if let Key::Character(c) = key {
-                match c.as_str() {
-                    "e" | "E" => return Some(self.update(Message::SplitPane(Axis::Vertical))),
-                    "o" | "O" => return Some(self.update(Message::SplitPane(Axis::Horizontal))),
-                    "w" | "W" => return Some(self.update(Message::ClosePane)),
-                    _ => {}
-                }
-            }
-            if let Key::Named(named) = key {
-                let dir = match named {
-                    Named::ArrowLeft => Some(Direction::Left),
-                    Named::ArrowRight => Some(Direction::Right),
-                    Named::ArrowUp => Some(Direction::Up),
-                    Named::ArrowDown => Some(Direction::Down),
-                    _ => None,
-                };
-                if let Some(d) = dir {
-                    return Some(self.update(Message::FocusPaneDir(d)));
-                }
-            }
-        }
-
         // 2. Binding-table dispatch. First match wins. When the
         //    terminal view is focused, any binding shaped like a
         //    shell control sequence (Ctrl+letter with no other
@@ -468,6 +439,12 @@ impl Oryxis {
         //    allocation that the prior `.to_vec()` paid.
         let in_terminal = self.active_view == View::Terminal;
         for &action in HotkeyAction::all() {
+            // Split-pane actions only apply inside the terminal view.
+            // Skipping (not consuming) elsewhere leaves their key free
+            // in other views and avoids a confusing no-op.
+            if action.terminal_only() && !in_terminal {
+                continue;
+            }
             let bind_copy = self.hotkey_bindings.get(&action).copied();
             if in_terminal
                 && bind_copy.is_some_and(|b| b.is_terminal_control_sequence())
@@ -621,7 +598,13 @@ impl Oryxis {
             OpenLocalShell => Task::done(Message::OpenLocalShell),
             NewWindow => Task::done(Message::SpawnNewWindow),
             CloseActiveTab => {
-                if let Some(idx) = self.active_tab {
+                // In the terminal view this closes the focused split
+                // pane; ClosePane already falls back to closing the whole
+                // tab when it's the last pane. Elsewhere there are no
+                // panes, so close the active tab directly.
+                if self.active_view == View::Terminal {
+                    Task::done(Message::ClosePane)
+                } else if let Some(idx) = self.active_tab {
                     Task::done(Message::CloseTab(idx))
                 } else {
                     Task::none()
@@ -698,6 +681,26 @@ impl Oryxis {
                 self.terminal_font_size = 14.0;
                 self.persist_setting("terminal_font_size", "14");
                 Task::none()
+            }
+            // Terminal split panes. The loop only reaches these in the
+            // terminal view (terminal_only gate), so no view check here.
+            SplitPaneVertical => {
+                Task::done(Message::SplitPane(iced::widget::pane_grid::Axis::Vertical))
+            }
+            SplitPaneHorizontal => {
+                Task::done(Message::SplitPane(iced::widget::pane_grid::Axis::Horizontal))
+            }
+            FocusPaneLeft => {
+                Task::done(Message::FocusPaneDir(iced::widget::pane_grid::Direction::Left))
+            }
+            FocusPaneRight => {
+                Task::done(Message::FocusPaneDir(iced::widget::pane_grid::Direction::Right))
+            }
+            FocusPaneUp => {
+                Task::done(Message::FocusPaneDir(iced::widget::pane_grid::Direction::Up))
+            }
+            FocusPaneDown => {
+                Task::done(Message::FocusPaneDir(iced::widget::pane_grid::Direction::Down))
             }
         }
     }

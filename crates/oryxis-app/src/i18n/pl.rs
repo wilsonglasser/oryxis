@@ -165,7 +165,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "hotkey_show_tab_jump" => "Przejdź do karty",
         "hotkey_open_local_shell" => "Otwórz lokalną powłokę",
         "hotkey_new_window" => "Otwórz nowe okno",
-        "hotkey_close_active_tab" => "Zamknij aktywną kartę",
+        "hotkey_close_active_tab" => "Zamknij kartę lub panel",
         "hotkey_open_port_forwards" => "Otwórz przekierowania portów",
         "hotkey_open_settings" => "Otwórz ustawienia",
         "hotkey_open_sftp" => "Otwórz SFTP",
@@ -176,6 +176,10 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "hotkey_font_zoom_in" => "Powiększ czcionkę",
         "hotkey_font_zoom_out" => "Pomniejsz czcionkę",
         "hotkey_font_zoom_reset" => "Resetuj powiększenie czcionki",
+        "hotkey_focus_pane_left" => "Fokus na panel po lewej",
+        "hotkey_focus_pane_right" => "Fokus na panel po prawej",
+        "hotkey_focus_pane_up" => "Fokus na panel u góry",
+        "hotkey_focus_pane_down" => "Fokus na panel u dołu",
         "detecting_shells" => "Wykrywanie powłok…",
 
         // Actions

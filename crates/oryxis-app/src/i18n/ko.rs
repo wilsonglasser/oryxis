@@ -165,7 +165,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "hotkey_show_tab_jump" => "탭으로 이동",
         "hotkey_open_local_shell" => "로컬 셸 열기",
         "hotkey_new_window" => "새 창 열기",
-        "hotkey_close_active_tab" => "활성 탭 닫기",
+        "hotkey_close_active_tab" => "탭 또는 분할 창 닫기",
         "hotkey_open_port_forwards" => "포트 포워딩 열기",
         "hotkey_open_settings" => "설정 열기",
         "hotkey_open_sftp" => "SFTP 열기",
@@ -176,6 +176,10 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "hotkey_font_zoom_in" => "글꼴 확대",
         "hotkey_font_zoom_out" => "글꼴 축소",
         "hotkey_font_zoom_reset" => "글꼴 확대/축소 재설정",
+        "hotkey_focus_pane_left" => "왼쪽 분할 창 포커스",
+        "hotkey_focus_pane_right" => "오른쪽 분할 창 포커스",
+        "hotkey_focus_pane_up" => "위쪽 분할 창 포커스",
+        "hotkey_focus_pane_down" => "아래쪽 분할 창 포커스",
         "detecting_shells" => "셸 감지 중…",
 
         // Actions

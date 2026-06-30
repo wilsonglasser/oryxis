@@ -165,7 +165,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "hotkey_show_tab_jump" => "Lompat ke tab",
         "hotkey_open_local_shell" => "Buka shell lokal",
         "hotkey_new_window" => "Buka jendela baru",
-        "hotkey_close_active_tab" => "Tutup tab aktif",
+        "hotkey_close_active_tab" => "Tutup tab atau panel",
         "hotkey_open_port_forwards" => "Buka port forward",
         "hotkey_open_settings" => "Buka pengaturan",
         "hotkey_open_sftp" => "Buka SFTP",
@@ -176,6 +176,10 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "hotkey_font_zoom_in" => "Perbesar font",
         "hotkey_font_zoom_out" => "Perkecil font",
         "hotkey_font_zoom_reset" => "Atur ulang zoom font",
+        "hotkey_focus_pane_left" => "Fokus ke panel kiri",
+        "hotkey_focus_pane_right" => "Fokus ke panel kanan",
+        "hotkey_focus_pane_up" => "Fokus ke panel atas",
+        "hotkey_focus_pane_down" => "Fokus ke panel bawah",
         "detecting_shells" => "Mendeteksi shell…",
 
         // Actions
