@@ -168,12 +168,15 @@ pub(crate) struct ClientHandler {
 
 /// Extract the `IdentityAgent` value from an ssh_config-style fragment.
 ///
-/// Pageant (PuTTY 0.81+) and KeePassXC create a per-launch agent pipe
-/// whose name changes every run and publish it as an `IdentityAgent`
-/// line in `%USERPROFILE%\.ssh\pageant.conf`. The value may use forward
-/// slashes (`//./pipe/pageant.<user>.<guid>`); normalize them to the
-/// backslash form the named-pipe client expects. Accepts both the
-/// `Keyword Value` and `Keyword=Value` ssh_config spellings.
+/// This is the *fallback* Pageant discovery path (`windows_agent_pipe`
+/// enumerates the live pipe first). Pageant (PuTTY 0.81+) and KeePassXC
+/// create a per-launch agent pipe whose name changes every run and can
+/// publish it as an `IdentityAgent` line in a conf file (default
+/// `%USERPROFILE%\.ssh\pageant.conf`, but `--openssh-config` may point
+/// it elsewhere, which is why pipe enumeration is preferred). The value
+/// may use forward slashes (`//./pipe/pageant.<user>.<guid>`); normalize
+/// them to the backslash form the named-pipe client expects. Accepts
+/// both the `Keyword Value` and `Keyword=Value` ssh_config spellings.
 #[cfg(any(windows, test))]
 fn parse_identity_agent(contents: &str) -> Option<String> {
     for raw in contents.lines() {
@@ -201,15 +204,105 @@ fn parse_identity_agent(contents: &str) -> Option<String> {
     None
 }
 
+/// Pick the current user's live Pageant agent pipe from a list of
+/// named-pipe names (as returned by enumerating `\\.\pipe\`).
+///
+/// Pageant (PuTTY 0.81+) / KeePassXC publish a per-launch pipe named
+/// `pageant.<user>.<guid>` where `<guid>` is randomized every run. We
+/// match the current user's entry and return the full `\\.\pipe\<name>`
+/// path the named-pipe client expects. Matching is case-insensitive
+/// (Win32 pipe names are), but the original name's casing is preserved
+/// in the returned path.
+///
+/// When the user is unknown we fall back to any `pageant.<x>.<guid>`
+/// shaped name (single-user machines, the common case), accepting the
+/// small risk of another user's pipe over missing the keys entirely.
+#[cfg(any(windows, test))]
+fn pick_pageant_pipe(names: &[String], user: Option<&str>) -> Option<String> {
+    let is_match = |name: &str| -> bool {
+        let lower = name.to_ascii_lowercase();
+        match user {
+            Some(u) if !u.is_empty() => {
+                // Trailing dot pins the user segment boundary so
+                // `pageant.user.` never matches `pageant.user2.<guid>`.
+                let prefix = format!("pageant.{}.", u.to_ascii_lowercase());
+                lower.starts_with(&prefix) && lower.len() > prefix.len()
+            }
+            _ => {
+                lower.starts_with("pageant.")
+                    && lower.matches('.').count() >= 2
+                    && !lower.ends_with('.')
+            }
+        }
+    };
+    names
+        .iter()
+        .find(|n| is_match(n))
+        .map(|n| format!(r"\\.\pipe\{n}"))
+}
+
+/// Enumerate the Windows named-pipe namespace (`\\.\pipe\`), returning
+/// the bare pipe names (without the `\\.\pipe\` prefix). Empty on any
+/// failure, callers fall back to other discovery paths.
+#[cfg(windows)]
+fn list_named_pipes() -> Vec<String> {
+    use std::os::windows::ffi::OsStrExt;
+    use windows_sys::Win32::Foundation::INVALID_HANDLE_VALUE;
+    use windows_sys::Win32::Storage::FileSystem::{
+        FindClose, FindFirstFileW, FindNextFileW, WIN32_FIND_DATAW,
+    };
+
+    let pattern: Vec<u16> = std::ffi::OsStr::new(r"\\.\pipe\*")
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect();
+    let mut data: WIN32_FIND_DATAW = unsafe { std::mem::zeroed() };
+    let handle = unsafe { FindFirstFileW(pattern.as_ptr(), &mut data) };
+    if handle == INVALID_HANDLE_VALUE {
+        return Vec::new();
+    }
+    let mut out = Vec::new();
+    loop {
+        let len = data
+            .cFileName
+            .iter()
+            .position(|&c| c == 0)
+            .unwrap_or(data.cFileName.len());
+        let name = String::from_utf16_lossy(&data.cFileName[..len]);
+        if !name.is_empty() && name != "." && name != ".." {
+            out.push(name);
+        }
+        if unsafe { FindNextFileW(handle, &mut data) } == 0 {
+            break;
+        }
+    }
+    unsafe {
+        FindClose(handle);
+    }
+    out
+}
+
 /// Resolve the Windows ssh-agent named pipe to dial.
 ///
-/// Honors a Pageant/KeePassXC `pageant.conf` (see `parse_identity_agent`)
-/// when present so we pick up keys loaded into Pageant, whose pipe name
-/// is randomized per launch. Falls back to the fixed Windows OpenSSH
-/// agent pipe otherwise.
+/// Discovery order:
+/// 1. The live Pageant/KeePassXC pipe, found by enumerating the
+///    named-pipe namespace (`pick_pageant_pipe`). Authoritative: no
+///    config file, no per-launch path to chase (`--openssh-config` can
+///    point anywhere), and never stale (a `pageant.conf` can name a
+///    dead guid; the live pipe is ground truth). Works even when
+///    Pageant was launched without `--openssh-config`, when no conf is
+///    written at all.
+/// 2. A published `pageant.conf` `IdentityAgent` line at the default
+///    `%USERPROFILE%\.ssh\pageant.conf` (see `parse_identity_agent`).
+/// 3. The fixed Windows OpenSSH agent pipe.
 #[cfg(windows)]
 fn windows_agent_pipe() -> String {
     const OPENSSH_PIPE: &str = r"\\.\pipe\openssh-ssh-agent";
+    let user = std::env::var("USERNAME").ok();
+    if let Some(pipe) = pick_pageant_pipe(&list_named_pipes(), user.as_deref()) {
+        tracing::info!("Using live Pageant agent pipe {pipe}");
+        return pipe;
+    }
     if let Some(profile) = std::env::var_os("USERPROFILE") {
         let conf = std::path::Path::new(&profile)
             .join(".ssh")
@@ -2637,6 +2730,64 @@ mod tests {
             parse_identity_agent(conf).as_deref(),
             Some(r"\\.\pipe\pageant.late")
         );
+    }
+
+    #[test]
+    fn pageant_pipe_matches_current_user() {
+        let names = vec![
+            "openssh-ssh-agent".to_string(),
+            "pageant.alice.deadbeef".to_string(),
+        ];
+        assert_eq!(
+            pick_pageant_pipe(&names, Some("alice")).as_deref(),
+            Some(r"\\.\pipe\pageant.alice.deadbeef")
+        );
+    }
+
+    #[test]
+    fn pageant_pipe_match_is_case_insensitive() {
+        let names = vec!["Pageant.Alice.ABCD".to_string()];
+        assert_eq!(
+            pick_pageant_pipe(&names, Some("alice")).as_deref(),
+            // Original casing preserved in the returned path.
+            Some(r"\\.\pipe\Pageant.Alice.ABCD")
+        );
+    }
+
+    #[test]
+    fn pageant_pipe_user_segment_boundary() {
+        // `alice` must not match another user whose name starts with it.
+        let names = vec!["pageant.alice2.cafe".to_string()];
+        assert_eq!(pick_pageant_pipe(&names, Some("alice")), None);
+    }
+
+    #[test]
+    fn pageant_pipe_ignores_non_pageant_pipes() {
+        let names = vec![
+            "openssh-ssh-agent".to_string(),
+            "discord-ipc-0".to_string(),
+        ];
+        assert_eq!(pick_pageant_pipe(&names, Some("alice")), None);
+    }
+
+    #[test]
+    fn pageant_pipe_unknown_user_accepts_any_pageant() {
+        let names = vec!["pageant.bob.f00d".to_string()];
+        assert_eq!(
+            pick_pageant_pipe(&names, None).as_deref(),
+            Some(r"\\.\pipe\pageant.bob.f00d")
+        );
+        // ...but still requires the `<user>.<guid>` shape, not a bare prefix.
+        assert_eq!(pick_pageant_pipe(&["pageant.".to_string()], None), None);
+        assert_eq!(
+            pick_pageant_pipe(&["pageant.solo".to_string()], None),
+            None
+        );
+    }
+
+    #[test]
+    fn pageant_pipe_empty_list_is_none() {
+        assert_eq!(pick_pageant_pipe(&[], Some("alice")), None);
     }
 
     #[test]

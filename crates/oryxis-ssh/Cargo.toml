@@ -18,6 +18,14 @@ base64 = { workspace = true }
 # charsets (Big5, Shift-JIS, CP437, ...). UTF-8 hosts skip it entirely.
 encoding_rs = "0.8"
 
+# Enumerate the named-pipe namespace to discover Pageant/KeePassXC's
+# per-launch agent pipe (windows_agent_pipe). Windows-only.
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.59", features = [
+    "Win32_Foundation",
+    "Win32_Storage_FileSystem",
+] }
+
 [dev-dependencies]
 # Spin up an ephemeral OpenSSH container per test for hermetic SFTP /
 # SSH integration coverage, no real credentials, no shared state, no
