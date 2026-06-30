@@ -554,6 +554,98 @@ pub(crate) fn ctrl_key_bytes(key: &keyboard::Key) -> Option<Vec<u8>> {
     }
 }
 
+// ── New-connection default helpers ──
+//
+// These translate the typed "default host profile" settings to / from
+// their settings-table string form and the localized picker labels.
+
+/// Localized picker label for an auth method (mirrors the host editor's
+/// auth picker).
+pub(crate) fn auth_method_label(m: &oryxis_core::models::connection::AuthMethod) -> String {
+    use crate::i18n::t;
+    use oryxis_core::models::connection::AuthMethod;
+    match m {
+        AuthMethod::Auto => t("auth_auto"),
+        AuthMethod::Password => t("auth_password"),
+        AuthMethod::Key => t("auth_key"),
+        AuthMethod::Agent => t("auth_agent"),
+        AuthMethod::Interactive => t("auth_interactive"),
+    }
+    .to_string()
+}
+
+/// Resolve a localized (or English) auth-picker label back to the enum.
+/// Mirrors `EditorAuthMethodChanged`: English fallback keeps a label
+/// persisted in another locale resolvable. Unknown values are `Auto`.
+pub(crate) fn auth_method_from_label(v: &str) -> oryxis_core::models::connection::AuthMethod {
+    use crate::i18n::t;
+    use oryxis_core::models::connection::AuthMethod;
+    if v == t("auth_password") || v == "Password" {
+        AuthMethod::Password
+    } else if v == t("auth_key") || v == "Key" {
+        AuthMethod::Key
+    } else if v == t("auth_agent") || v == "Agent" {
+        AuthMethod::Agent
+    } else if v == t("auth_interactive") || v == "Interactive" {
+        AuthMethod::Interactive
+    } else {
+        AuthMethod::Auto
+    }
+}
+
+/// Stable settings-table string for an auth method (the variant name,
+/// locale-independent so the persisted value survives a language switch).
+pub(crate) fn auth_method_to_setting(m: &oryxis_core::models::connection::AuthMethod) -> String {
+    use oryxis_core::models::connection::AuthMethod;
+    match m {
+        AuthMethod::Auto => "Auto",
+        AuthMethod::Password => "Password",
+        AuthMethod::Key => "Key",
+        AuthMethod::Agent => "Agent",
+        AuthMethod::Interactive => "Interactive",
+    }
+    .to_string()
+}
+
+/// Parse the settings-table auth-method string back to the enum; unknown
+/// / legacy values fall back to `Auto`.
+pub(crate) fn auth_method_from_setting(v: &str) -> oryxis_core::models::connection::AuthMethod {
+    use oryxis_core::models::connection::AuthMethod;
+    match v {
+        "Password" => AuthMethod::Password,
+        "Key" => AuthMethod::Key,
+        "Agent" => AuthMethod::Agent,
+        "Interactive" => AuthMethod::Interactive,
+        _ => AuthMethod::Auto,
+    }
+}
+
+/// Serialize the default env-var rows to the JSON array stored in the
+/// settings table. Rows with a blank key are dropped (key trimmed) so a
+/// half-typed row never persists; values may contain `=`, hence JSON
+/// rather than `KEY=VALUE` lines.
+pub(crate) fn env_vars_to_setting(rows: &[crate::state::EnvVarForm]) -> String {
+    let kept: Vec<oryxis_core::models::connection::EnvVar> = rows
+        .iter()
+        .filter(|e| !e.key.trim().is_empty())
+        .map(|e| oryxis_core::models::connection::EnvVar {
+            key: e.key.trim().to_string(),
+            value: e.value.clone(),
+        })
+        .collect();
+    serde_json::to_string(&kept).unwrap_or_else(|_| "[]".to_string())
+}
+
+/// Parse the settings-table env-vars JSON into editable form rows. A
+/// malformed / legacy value yields an empty list rather than an error.
+pub(crate) fn env_vars_from_setting(v: &str) -> Vec<crate::state::EnvVarForm> {
+    serde_json::from_str::<Vec<oryxis_core::models::connection::EnvVar>>(v)
+        .unwrap_or_default()
+        .into_iter()
+        .map(|e| crate::state::EnvVarForm { key: e.key, value: e.value })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -682,5 +774,45 @@ mod tests {
         // Even if the global setting is malformed, an explicit per-host
         // value must still apply.
         assert_eq!(resolve_keepalive(Some(45), "garbage"), Some(Duration::from_secs(45)));
+    }
+
+    #[test]
+    fn default_auth_method_setting_round_trips_and_defaults_to_auto() {
+        use oryxis_core::models::connection::AuthMethod;
+        for m in [
+            AuthMethod::Auto,
+            AuthMethod::Password,
+            AuthMethod::Key,
+            AuthMethod::Agent,
+            AuthMethod::Interactive,
+        ] {
+            let s = auth_method_to_setting(&m);
+            assert_eq!(auth_method_from_setting(&s), m);
+        }
+        // Unknown / legacy values fall back to Auto, never panic.
+        assert_eq!(auth_method_from_setting("garbage"), AuthMethod::Auto);
+        assert_eq!(auth_method_from_setting(""), AuthMethod::Auto);
+    }
+
+    #[test]
+    fn default_env_vars_setting_round_trips_and_drops_blank_keys() {
+        let rows = vec![
+            crate::state::EnvVarForm { key: "LANG".into(), value: "en_US.UTF-8".into() },
+            // Value carrying an '=' must survive (JSON, not KEY=VALUE lines).
+            crate::state::EnvVarForm { key: "FLAGS".into(), value: "a=b=c".into() },
+            // Blank / whitespace key is dropped; key is trimmed.
+            crate::state::EnvVarForm { key: "  ".into(), value: "ignored".into() },
+            crate::state::EnvVarForm { key: " LC_ALL ".into(), value: "C".into() },
+        ];
+        let serialized = env_vars_to_setting(&rows);
+        let back = env_vars_from_setting(&serialized);
+        assert_eq!(back.len(), 3);
+        assert_eq!(back[0].key, "LANG");
+        assert_eq!(back[0].value, "en_US.UTF-8");
+        assert_eq!(back[1].value, "a=b=c");
+        assert_eq!(back[2].key, "LC_ALL");
+        // A malformed / legacy value yields an empty list, never an error.
+        assert!(env_vars_from_setting("not json").is_empty());
+        assert!(env_vars_from_setting("").is_empty());
     }
 }

@@ -97,6 +97,7 @@ impl Oryxis {
         let message = try_handler!(self, message, handle_known_hosts);
         let message = try_handler!(self, message, handle_tray);
         let message = try_handler!(self, message, handle_vault);
+        let message = try_handler!(self, message, handle_onboarding);
         let message = try_handler!(self, message, handle_snippets);
         let message = try_handler!(self, message, handle_navigation);
         let message = try_handler!(self, message, handle_history);

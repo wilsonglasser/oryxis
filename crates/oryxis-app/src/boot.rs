@@ -169,6 +169,7 @@ impl Oryxis {
                 icon_picker: crate::state::IconPickerState::default(),
                 icon_color_popover: None,
                 show_theme_picker: false,
+                onboarding_slide: 0,
                 show_chain_editor: false,
                 chain_editor_adding: false,
                 chain_editor_search: String::new(),
@@ -402,6 +403,19 @@ impl Oryxis {
                 setting_default_port: "22".into(),
                 setting_default_keepalive: String::new(),
                 setting_default_terminal_type: "xterm-256color".into(),
+                setting_default_username: String::new(),
+                setting_default_auth_method:
+                    oryxis_core::models::connection::AuthMethod::Auto,
+                setting_default_identity_id: None,
+                setting_default_key_id: None,
+                setting_default_group_id: None,
+                setting_default_proxy_identity_id: None,
+                // Mirror `Connection::new` / `ConnectionForm::default`, which
+                // expose new hosts via MCP by default.
+                setting_default_mcp_enabled: true,
+                setting_default_encoding: None,
+                setting_default_env_vars: Vec::new(),
+                setting_defaults_collapsed: false,
                 setting_cloud_auto_refresh_enabled: false,
                 setting_cloud_auto_refresh_interval_minutes: "30".into(),
                 setting_cloud_auto_archive_orphans: false,
@@ -947,6 +961,36 @@ impl Oryxis {
             }
             if let Ok(Some(v)) = vault.get_setting("default_terminal_type") {
                 self.setting_default_terminal_type = v;
+            }
+            if let Ok(Some(v)) = vault.get_setting("default_username") {
+                self.setting_default_username = v;
+            }
+            if let Ok(Some(v)) = vault.get_setting("default_auth_method") {
+                self.setting_default_auth_method = crate::util::auth_method_from_setting(&v);
+            }
+            if let Ok(Some(v)) = vault.get_setting("default_identity_id") {
+                self.setting_default_identity_id = uuid::Uuid::parse_str(&v).ok();
+            }
+            if let Ok(Some(v)) = vault.get_setting("default_key_id") {
+                self.setting_default_key_id = uuid::Uuid::parse_str(&v).ok();
+            }
+            if let Ok(Some(v)) = vault.get_setting("default_group_id") {
+                self.setting_default_group_id = uuid::Uuid::parse_str(&v).ok();
+            }
+            if let Ok(Some(v)) = vault.get_setting("default_proxy_identity_id") {
+                self.setting_default_proxy_identity_id = uuid::Uuid::parse_str(&v).ok();
+            }
+            if let Ok(Some(v)) = vault.get_setting("default_mcp_enabled") {
+                self.setting_default_mcp_enabled = v == "true";
+            }
+            if let Ok(Some(v)) = vault.get_setting("default_encoding") {
+                self.setting_default_encoding = if v.is_empty() { None } else { Some(v) };
+            }
+            if let Ok(Some(v)) = vault.get_setting("default_env_vars") {
+                self.setting_default_env_vars = crate::util::env_vars_from_setting(&v);
+            }
+            if let Ok(Some(v)) = vault.get_setting("defaults_collapsed") {
+                self.setting_defaults_collapsed = v == "true";
             }
             // One-shot migration: 30s is the new default in this version,
             // up from the previous "0" (off). Users sitting at the old

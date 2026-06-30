@@ -250,6 +250,9 @@ pub struct Oryxis {
     /// `terminal_theme` field is updated as soon as the user picks
     /// a card.
     pub(crate) show_theme_picker: bool,
+    /// Current slide index of the first-run onboarding carousel
+    /// (`VaultState::NeedSetup`).
+    pub(crate) onboarding_slide: usize,
     /// Whether the jump host picker modal is open. Opened from the
     /// Chain editor (Termius-style multi-hop jump-host editor), opened
     /// from the "Host Chaining" row in the host editor. `adding` flips
@@ -909,6 +912,27 @@ pub struct Oryxis {
     pub(crate) setting_default_port: String,
     pub(crate) setting_default_keepalive: String,
     pub(crate) setting_default_terminal_type: String,
+    /// Default "host profile" fields (extended new-connection defaults), so
+    /// a fleet of identical hosts (same login / key / proxy / folder) needs
+    /// no re-typing. Entity references are stored by UUID and resolved to a
+    /// label when seeding the form; a deleted entity resolves to no default.
+    /// Persisted as `default_username` / `default_auth_method` /
+    /// `default_identity_id` / `default_key_id` / `default_group_id` /
+    /// `default_proxy_identity_id` / `default_mcp_enabled` /
+    /// `default_encoding` / `default_env_vars`.
+    pub(crate) setting_default_username: String,
+    pub(crate) setting_default_auth_method: oryxis_core::models::connection::AuthMethod,
+    pub(crate) setting_default_identity_id: Option<Uuid>,
+    pub(crate) setting_default_key_id: Option<Uuid>,
+    pub(crate) setting_default_group_id: Option<Uuid>,
+    pub(crate) setting_default_proxy_identity_id: Option<Uuid>,
+    pub(crate) setting_default_mcp_enabled: bool,
+    pub(crate) setting_default_encoding: Option<String>,
+    pub(crate) setting_default_env_vars: Vec<crate::state::EnvVarForm>,
+    /// Collapsed state of the (now long) "New connection defaults" card in
+    /// Settings → Connection. Persisted as `defaults_collapsed` so the
+    /// choice sticks; the field rows are hidden behind the header when set.
+    pub(crate) setting_defaults_collapsed: bool,
     /// Background refresh of every cloud profile on a fixed interval.
     /// Off by default; opt-in to avoid surprise API calls.
     pub(crate) setting_cloud_auto_refresh_enabled: bool,

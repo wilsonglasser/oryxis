@@ -18,6 +18,7 @@ pub(crate) mod keys;
 pub(crate) mod known_hosts;
 pub(crate) mod layout;
 pub(crate) mod new_tab_picker;
+pub(crate) mod onboarding;
 pub(crate) mod plugins_panel;
 pub(crate) mod port_forwards;
 pub(crate) mod session_group_panel;

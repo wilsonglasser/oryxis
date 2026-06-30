@@ -18,6 +18,27 @@ impl Oryxis {
     /// re-set the same fields on every new host.
     pub(crate) fn new_connection_form(&self) -> crate::state::ConnectionForm {
         let term = &self.setting_default_terminal_type;
+        // Resolve the entity-reference defaults (identity / key / group /
+        // proxy) to the label the form uses, dropping any that point at a
+        // deleted entity so a stale default never blocks a new host.
+        let default_identity = self.setting_default_identity_id.and_then(|id| {
+            self.identities.iter().find(|i| i.id == id).map(|i| i.label.clone())
+        });
+        let default_key = self
+            .setting_default_key_id
+            .and_then(|id| self.keys.iter().find(|k| k.id == id).map(|k| k.label.clone()));
+        let default_group = self
+            .setting_default_group_id
+            .and_then(|id| self.groups.iter().find(|g| g.id == id).map(|g| g.label.clone()))
+            .unwrap_or_default();
+        // A default proxy is a saved Proxy Identity reference; inline
+        // proxies are per-host by nature and aren't defaulted. Drop a
+        // dangling reference (identity deleted) back to no proxy.
+        let proxy_kind = self
+            .setting_default_proxy_identity_id
+            .filter(|id| self.proxy_identities.iter().any(|p| p.id == *id))
+            .map(crate::state::ProxyKind::Identity)
+            .unwrap_or(crate::state::ProxyKind::None);
         crate::state::ConnectionForm {
             agent_forwarding: self.setting_default_agent_forwarding,
             port: if self.setting_default_port.is_empty() || self.setting_default_port == "0" {
@@ -31,6 +52,15 @@ impl Oryxis {
             } else {
                 Some(term.clone())
             },
+            username: self.setting_default_username.clone(),
+            auth_method: self.setting_default_auth_method.clone(),
+            selected_identity: default_identity,
+            selected_key: default_key,
+            group_name: default_group,
+            proxy_kind,
+            mcp_enabled: self.setting_default_mcp_enabled,
+            encoding: self.setting_default_encoding.clone(),
+            env_vars: self.setting_default_env_vars.clone(),
             ..crate::state::ConnectionForm::default()
         }
     }

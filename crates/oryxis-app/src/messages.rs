@@ -26,6 +26,13 @@ pub enum Message {
     VaultDestroyConfirm,
     VaultDestroy,
 
+    // First-run welcome / onboarding carousel (rendered off
+    // `VaultState::NeedSetup`). These drive the slide index; the final
+    // slide creates the vault via the existing Vault* messages.
+    OnboardingNext,
+    OnboardingBack,
+    OnboardingSkipToEnd,
+
     // Navigation
     ChangeView(View),
     QuickHostInput(String),
@@ -831,6 +838,21 @@ pub enum Message {
     DefaultPortChanged(String),
     DefaultKeepaliveChanged(String),
     DefaultTerminalTypeChanged(String),
+    /// Extended new-connection defaults (the default host profile).
+    DefaultUsernameChanged(String),
+    DefaultAuthMethodChanged(String),
+    DefaultIdentityChanged(String),
+    DefaultKeyChanged(String),
+    DefaultGroupChanged(String),
+    DefaultProxyChanged(String),
+    ToggleDefaultMcpEnabled,
+    DefaultEncodingChanged(String),
+    DefaultAddEnvVar,
+    DefaultRemoveEnvVar(usize),
+    DefaultEnvVarKeyChanged(usize, String),
+    DefaultEnvVarValueChanged(usize, String),
+    /// Collapse / expand the "New connection defaults" card.
+    ToggleDefaultsCollapsed,
     SettingScrollbackChanged(String),
     SettingWordDelimitersChanged(String),
     SettingResetWordDelimiters,
