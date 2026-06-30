@@ -929,6 +929,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "remove_password" => "비밀번호 제거",
         "vault_set_password_desc" => "볼트를 보호할 마스터 비밀번호를 설정하세요. Oryxis를 열 때마다 입력해야 합니다.",
         "vault_protected_note" => "볼트가 마스터 비밀번호로 보호되어 있습니다.",
+        "vault_importance_title" => "마스터 비밀번호를 설정해야 하는 이유",
+        "vault_importance_desc" => "볼트에는 SSH 키, 호스트 비밀번호 및 기타 자격 증명이 저장됩니다. 마스터 비밀번호가 없으면 이 컴퓨터에 접근할 수 있는 누구나 읽을 수 있습니다. 설정하면 볼트가 저장 시 암호화되어 비밀번호로만 열 수 있습니다.",
         "ssh_config_import" => "SSH 구성 가져오기",
         "ssh_config_import_desc" => "OpenSSH 구성 파일을 선택하세요(기본값 ~/.ssh/config). 각 `Host` 블록은 연결 레코드가 됩니다. 와일드카드와 기존 레이블은 건너뜁니다.",
         "import_ssh_config_btn" => "~/.ssh/config 가져오기",

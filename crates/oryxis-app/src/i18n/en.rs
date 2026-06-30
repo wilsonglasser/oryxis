@@ -935,6 +935,8 @@ pub(super) fn lookup(key: &str) -> &'static str {
         "remove_password" => "Remove password",
         "vault_set_password_desc" => "Set a master password to protect your vault. You will need to enter it each time you open Oryxis.",
         "vault_protected_note" => "Your vault is protected with a master password.",
+        "vault_importance_title" => "Why set a master password?",
+        "vault_importance_desc" => "Your vault stores SSH keys, host passwords and other credentials. Without a master password they are readable by anyone with access to this computer. Setting one encrypts the vault at rest, so it can only be opened with your password.",
         "ssh_config_import" => "SSH config import",
         "ssh_config_import_desc" => "Pick an OpenSSH config file (defaults to ~/.ssh/config). Each `Host` block becomes a connection record; wildcards and existing labels are skipped.",
         "import_ssh_config_btn" => "Import ~/.ssh/config",

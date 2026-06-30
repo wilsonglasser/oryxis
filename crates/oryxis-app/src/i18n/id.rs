@@ -929,6 +929,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "remove_password" => "Hapus kata sandi",
         "vault_set_password_desc" => "Atur kata sandi master untuk melindungi vault Anda. Anda perlu memasukkannya setiap kali membuka Oryxis.",
         "vault_protected_note" => "Vault Anda dilindungi dengan kata sandi master.",
+        "vault_importance_title" => "Mengapa mengatur kata sandi master?",
+        "vault_importance_desc" => "Vault Anda menyimpan kunci SSH, kata sandi host, dan kredensial lainnya. Tanpa kata sandi master, siapa pun yang memiliki akses ke komputer ini dapat membacanya. Mengaturnya mengenkripsi vault saat tidak digunakan, sehingga hanya dapat dibuka dengan kata sandi Anda.",
         "ssh_config_import" => "Impor konfigurasi SSH",
         "ssh_config_import_desc" => "Pilih file konfigurasi OpenSSH (default ~/.ssh/config). Tiap blok `Host` menjadi catatan koneksi; wildcard dan label yang sudah ada dilewati.",
         "import_ssh_config_btn" => "Impor ~/.ssh/config",

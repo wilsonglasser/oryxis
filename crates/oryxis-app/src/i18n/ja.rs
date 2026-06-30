@@ -854,6 +854,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "remove_password" => "パスワードを削除",
         "vault_set_password_desc" => "保管庫を保護するためにマスターパスワードを設定します。Oryxis を開くたびに入力が必要です。",
         "vault_protected_note" => "保管庫はマスターパスワードで保護されています。",
+        "vault_importance_title" => "マスターパスワードを設定する理由",
+        "vault_importance_desc" => "保管庫には SSH 鍵、ホストのパスワード、その他の認証情報が保存されます。マスターパスワードがないと、このコンピューターにアクセスできる人なら誰でも読み取れます。設定すると保管庫が保存時に暗号化され、あなたのパスワードでのみ開けるようになります。",
         "ssh_config_import" => "SSH config インポート",
         "ssh_config_import_desc" => "OpenSSH 設定ファイルを選択（デフォルト ~/.ssh/config）。各 `Host` ブロックは接続レコードになります；ワイルドカードと既存のラベルはスキップされます。",
         "import_ssh_config_btn" => "~/.ssh/config をインポート",

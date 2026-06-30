@@ -929,6 +929,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "remove_password" => "Xóa mật khẩu",
         "vault_set_password_desc" => "Đặt mật khẩu chính để bảo vệ kho của bạn. Bạn sẽ cần nhập nó mỗi lần mở Oryxis.",
         "vault_protected_note" => "Kho của bạn được bảo vệ bằng mật khẩu chính.",
+        "vault_importance_title" => "Tại sao nên đặt mật khẩu chính?",
+        "vault_importance_desc" => "Kho của bạn lưu trữ khóa SSH, mật khẩu máy chủ và các thông tin xác thực khác. Nếu không có mật khẩu chính, bất kỳ ai có quyền truy cập máy tính này đều có thể đọc chúng. Đặt mật khẩu chính sẽ mã hóa kho khi không sử dụng, để chỉ có thể mở bằng mật khẩu của bạn.",
         "ssh_config_import" => "Nhập SSH config",
         "ssh_config_import_desc" => "Chọn một tệp cấu hình OpenSSH (mặc định ~/.ssh/config). Mỗi khối `Host` trở thành một bản ghi kết nối; ký tự đại diện và nhãn đã có sẽ bị bỏ qua.",
         "import_ssh_config_btn" => "Nhập ~/.ssh/config",

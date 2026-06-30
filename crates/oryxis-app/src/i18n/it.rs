@@ -845,6 +845,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "remove_password" => "Rimuovi password",
         "vault_set_password_desc" => "Imposta una password principale per proteggere il tuo vault. Dovrai inserirla ogni volta che apri Oryxis.",
         "vault_protected_note" => "Il tuo vault è protetto con una password principale.",
+        "vault_importance_title" => "Perché impostare una password principale?",
+        "vault_importance_desc" => "Il tuo vault memorizza chiavi SSH, password degli host e altre credenziali. Senza una password principale sono leggibili da chiunque abbia accesso a questo computer. Impostandone una il vault viene cifrato a riposo e può essere aperto solo con la tua password.",
         "ssh_config_import" => "Import SSH config",
         "ssh_config_import_desc" => "Seleziona un file OpenSSH config (predefinito ~/.ssh/config). Ogni blocco `Host` diventa una connessione; i wildcard e le etichette esistenti sono saltati.",
         "import_ssh_config_btn" => "Importa ~/.ssh/config",

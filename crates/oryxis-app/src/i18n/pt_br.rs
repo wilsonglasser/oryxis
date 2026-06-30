@@ -890,6 +890,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "remove_password" => "Remover senha",
         "vault_set_password_desc" => "Defina uma senha mestre para proteger seu cofre. Você precisará digitá-la cada vez que abrir o Oryxis.",
         "vault_protected_note" => "Seu cofre está protegido com uma senha mestre.",
+        "vault_importance_title" => "Por que definir uma senha mestre?",
+        "vault_importance_desc" => "Seu cofre armazena chaves SSH, senhas de hosts e outras credenciais. Sem uma senha mestre, elas ficam legíveis por qualquer pessoa com acesso a este computador. Definir uma criptografa o cofre em repouso, para que só possa ser aberto com a sua senha.",
         "password_too_short" => "A senha deve ter pelo menos 4 caracteres",
         "vault_already_has_password" => "Este cofre já possui uma senha. Digite-a acima para desbloquear.",
         "ssh_config_import" => "Importar SSH config",

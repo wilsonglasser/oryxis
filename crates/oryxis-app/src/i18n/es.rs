@@ -851,6 +851,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "remove_password" => "Eliminar contraseña",
         "vault_set_password_desc" => "Establece una contraseña maestra para proteger tu bóveda. Deberás introducirla cada vez que abras Oryxis.",
         "vault_protected_note" => "Tu bóveda está protegida con una contraseña maestra.",
+        "vault_importance_title" => "¿Por qué establecer una contraseña maestra?",
+        "vault_importance_desc" => "Tu bóveda almacena claves SSH, contraseñas de hosts y otras credenciales. Sin una contraseña maestra, cualquiera con acceso a este equipo puede leerlas. Al establecer una se cifra la bóveda en reposo, de modo que solo pueda abrirse con tu contraseña.",
         "ssh_config_import" => "Importar SSH config",
         "ssh_config_import_desc" => "Selecciona un archivo OpenSSH config (por defecto ~/.ssh/config). Cada bloque `Host` se convierte en una conexión; comodines y etiquetas existentes se omiten.",
         "import_ssh_config_btn" => "Importar ~/.ssh/config",

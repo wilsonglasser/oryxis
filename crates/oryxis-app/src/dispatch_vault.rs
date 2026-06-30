@@ -166,6 +166,7 @@ impl Oryxis {
                         match vault.remove_user_password() {
                             Ok(()) => {
                                 self.vault_ui.has_user_password = false;
+                                self.vault_ui.show_password_form = false;
                                 self.vault_ui.password_error = None;
                                 self.vault_ui.new_password.clear();
                                 self.vault_ui.confirm_password.clear();
@@ -176,7 +177,10 @@ impl Oryxis {
                         }
                     }
                 } else {
-                    // Show password input (don't do anything yet, user needs to type and confirm)
+                    // No password yet: the switch reveals / hides the inline
+                    // set-password form. Nothing is committed until the user
+                    // types, confirms, and presses Set Password.
+                    self.vault_ui.show_password_form = !self.vault_ui.show_password_form;
                     self.vault_ui.new_password.clear();
                     self.vault_ui.confirm_password.clear();
                     self.vault_ui.password_error = None;
@@ -205,6 +209,7 @@ impl Oryxis {
                     match vault.set_user_password(&self.vault_ui.new_password) {
                         Ok(()) => {
                             self.vault_ui.has_user_password = true;
+                            self.vault_ui.show_password_form = false;
                             self.vault_ui.password_error = None;
                             self.vault_ui.new_password.clear();
                             self.vault_ui.confirm_password.clear();

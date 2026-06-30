@@ -935,6 +935,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "remove_password" => "Usuń hasło",
         "vault_set_password_desc" => "Ustaw hasło główne, aby chronić sejf. Będziesz musiał wprowadzać je przy każdym otwarciu Oryxis.",
         "vault_protected_note" => "Twój sejf jest chroniony hasłem głównym.",
+        "vault_importance_title" => "Po co ustawiać hasło główne?",
+        "vault_importance_desc" => "Twój sejf przechowuje klucze SSH, hasła hostów i inne poświadczenia. Bez hasła głównego może je odczytać każdy, kto ma dostęp do tego komputera. Ustawienie go szyfruje sejf w spoczynku, dzięki czemu można go otworzyć tylko Twoim hasłem.",
         "ssh_config_import" => "Import konfiguracji SSH",
         "ssh_config_import_desc" => "Wybierz plik konfiguracji OpenSSH (domyślnie ~/.ssh/config). Każdy blok `Host` staje się rekordem połączenia; symbole wieloznaczne i istniejące etykiety są pomijane.",
         "import_ssh_config_btn" => "Importuj ~/.ssh/config",

@@ -845,6 +845,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "remove_password" => "Passwort entfernen",
         "vault_set_password_desc" => "Legen Sie ein Master-Passwort fest, um Ihren Tresor zu schützen. Sie müssen es bei jedem Öffnen von Oryxis eingeben.",
         "vault_protected_note" => "Ihr Tresor ist mit einem Master-Passwort geschützt.",
+        "vault_importance_title" => "Warum ein Master-Passwort festlegen?",
+        "vault_importance_desc" => "Ihr Tresor speichert SSH-Schlüssel, Host-Passwörter und andere Anmeldedaten. Ohne Master-Passwort sind sie für jeden mit Zugriff auf diesen Computer lesbar. Mit einem Master-Passwort wird der Tresor im Ruhezustand verschlüsselt und kann nur mit Ihrem Passwort geöffnet werden.",
         "ssh_config_import" => "SSH-Config-Import",
         "ssh_config_import_desc" => "Wählen Sie eine OpenSSH-Konfigurationsdatei (Standard ~/.ssh/config). Jeder `Host`-Block wird zu einer Verbindung; Wildcards und vorhandene Labels werden übersprungen.",
         "import_ssh_config_btn" => "~/.ssh/config importieren",

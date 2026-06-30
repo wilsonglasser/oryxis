@@ -21,6 +21,10 @@ pub(crate) struct VaultUi {
     pub(crate) error: Option<String>,
     /// Whether a master password is set (vs the empty-password vault).
     pub(crate) has_user_password: bool,
+    /// When no master password is set yet, whether the inline set-password
+    /// form is revealed. Flipped by the header switch so the toggle has a
+    /// visible effect before a password exists; ignored once one is set.
+    pub(crate) show_password_form: bool,
     /// New master password (Settings > Security).
     pub(crate) new_password: String,
     /// Confirm new master password (Settings > Security).

@@ -854,6 +854,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "remove_password" => "移除密码",
         "vault_set_password_desc" => "设置主密码以保护您的保险库。每次打开 Oryxis 时都需要输入。",
         "vault_protected_note" => "您的保险库受主密码保护。",
+        "vault_importance_title" => "为什么要设置主密码？",
+        "vault_importance_desc" => "您的保险库存储 SSH 密钥、主机密码和其他凭据。没有主密码，任何能访问这台计算机的人都能读取它们。设置主密码后，保险库在静态时会被加密，只能用您的密码打开。",
         "ssh_config_import" => "SSH config 导入",
         "ssh_config_import_desc" => "选择 OpenSSH 配置文件（默认 ~/.ssh/config）。每个 `Host` 块成为一个连接记录；通配符和已存在的标签会被跳过。",
         "import_ssh_config_btn" => "导入 ~/.ssh/config",

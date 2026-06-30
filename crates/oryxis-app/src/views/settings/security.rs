@@ -5,13 +5,61 @@ use iced::widget::column;
 
 impl Oryxis {
     pub(crate) fn view_settings_security(&self) -> Element<'_, Message> {
+        // The switch reflects either a committed password or an open
+        // set-password form, so toggling it before a password exists
+        // visibly moves the control (and reveals / hides the form).
         let password_toggle = toggle_row(
             crate::i18n::t("vault_password"),
-            self.vault_ui.has_user_password,
+            self.vault_ui.has_user_password || self.vault_ui.show_password_form,
             Message::ToggleVaultPassword,
         );
 
         let password_section: Element<'_, Message> = if !self.vault_ui.has_user_password {
+            // No master password yet. Always lead with a highlighted
+            // callout explaining why one matters; reveal the actual
+            // input form only once the user flips the switch on.
+            let importance = container(
+                dir_row(vec![
+                    iced_fonts::lucide::shield()
+                        .size(20)
+                        .color(OryxisColors::t().accent)
+                        .into(),
+                    Space::new().width(12).into(),
+                    column![
+                        text(t("vault_importance_title"))
+                            .size(13)
+                            .font(iced::Font {
+                                weight: iced::font::Weight::Semibold,
+                                ..iced::Font::DEFAULT
+                            })
+                            .color(OryxisColors::t().text_primary),
+                        Space::new().height(4),
+                        text(t("vault_importance_desc"))
+                            .size(11)
+                            .color(OryxisColors::t().text_secondary),
+                    ]
+                    .width(Length::Fill)
+                    .align_x(dir_align_x())
+                    .into(),
+                ])
+                .align_y(iced::Alignment::Start),
+            )
+            .padding(14)
+            .width(Length::Fill)
+            .style(|_| container::Style {
+                background: Some(Background::Color(Color { a: 0.10, ..OryxisColors::t().accent })),
+                border: Border {
+                    radius: Radius::from(8.0),
+                    color: Color { a: 0.4, ..OryxisColors::t().accent },
+                    width: 1.0,
+                },
+                ..Default::default()
+            });
+
+            if !self.vault_ui.show_password_form {
+                // Switch is off: callout only, no input fields.
+                column![Space::new().height(8), importance].into()
+            } else {
             // Show password input to enable
             let input = container(crate::widgets::password_input_with_eye(
                 t("new_master_password_placeholder"),
@@ -51,6 +99,8 @@ impl Oryxis {
             };
             column![
                 Space::new().height(8),
+                importance,
+                Space::new().height(12),
                 text(t("vault_set_password_desc"))
                     .size(11).color(OryxisColors::t().text_muted),
                 Space::new().height(8),
@@ -61,6 +111,7 @@ impl Oryxis {
                 btn,
                 error,
             ].into()
+            }
         } else {
             let note: Element<'_, Message> = text(t("vault_protected_note"))
                 .size(11).color(OryxisColors::t().text_muted).into();

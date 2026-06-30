@@ -854,6 +854,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "remove_password" => "Supprimer le mot de passe",
         "vault_set_password_desc" => "Définissez un mot de passe maître pour protéger votre coffre. Vous devrez le saisir à chaque ouverture d'Oryxis.",
         "vault_protected_note" => "Votre coffre est protégé par un mot de passe maître.",
+        "vault_importance_title" => "Pourquoi définir un mot de passe maître ?",
+        "vault_importance_desc" => "Votre coffre stocke des clés SSH, des mots de passe d'hôtes et d'autres identifiants. Sans mot de passe maître, ils sont lisibles par quiconque a accès à cet ordinateur. En définir un chiffre le coffre au repos, afin qu'il ne puisse être ouvert qu'avec votre mot de passe.",
         "ssh_config_import" => "Import SSH config",
         "ssh_config_import_desc" => "Sélectionnez un fichier OpenSSH config (par défaut ~/.ssh/config). Chaque bloc `Host` devient une connexion ; les wildcards et labels existants sont ignorés.",
         "import_ssh_config_btn" => "Importer ~/.ssh/config",

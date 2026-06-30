@@ -934,6 +934,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "remove_password" => "إزالة كلمة المرور",
         "vault_set_password_desc" => "عيّن كلمة مرور رئيسية لحماية الخزنة. سيُطلب منك إدخالها كلما فتحت Oryxis.",
         "vault_protected_note" => "خزنتك محمية بكلمة مرور رئيسية.",
+        "vault_importance_title" => "لماذا تعيين كلمة مرور رئيسية؟",
+        "vault_importance_desc" => "تخزن خزنتك مفاتيح SSH وكلمات مرور المضيفين وبيانات اعتماد أخرى. بدون كلمة مرور رئيسية يمكن لأي شخص لديه وصول إلى هذا الحاسوب قراءتها. تعيين واحدة يشفّر الخزنة في حالة السكون بحيث لا يمكن فتحها إلا بكلمة مرورك.",
         "ssh_config_import" => "استيراد SSH config",
         "ssh_config_import_desc" => "اختر ملف تكوين OpenSSH (الافتراضي ~/.ssh/config). يتم تحويل كل كتلة `Host` إلى سجل اتصال؛ يتم تجاهل أحرف البدل والتسميات الموجودة.",
         "import_ssh_config_btn" => "استيراد ~/.ssh/config",

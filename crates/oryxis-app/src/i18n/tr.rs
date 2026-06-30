@@ -929,6 +929,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "remove_password" => "Parolayı kaldır",
         "vault_set_password_desc" => "Kasanızı korumak için bir ana parola belirleyin. Oryxis'i her açtığınızda girmeniz gerekecek.",
         "vault_protected_note" => "Kasanız bir ana parolayla korunuyor.",
+        "vault_importance_title" => "Neden ana parola belirlemelisiniz?",
+        "vault_importance_desc" => "Kasanız SSH anahtarlarını, ana bilgisayar parolalarını ve diğer kimlik bilgilerini saklar. Ana parola olmadan, bu bilgisayara erişimi olan herkes bunları okuyabilir. Bir tane belirlemek kasayı beklemede şifreler, böylece yalnızca parolanızla açılabilir.",
         "ssh_config_import" => "SSH config içe aktar",
         "ssh_config_import_desc" => "Bir OpenSSH config dosyası seçin (varsayılan ~/.ssh/config). Her `Host` bloğu bir bağlantı kaydı olur; joker karakterler ve mevcut etiketler atlanır.",
         "import_ssh_config_btn" => "~/.ssh/config içe aktar",
