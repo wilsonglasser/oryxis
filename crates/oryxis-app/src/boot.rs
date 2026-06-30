@@ -597,6 +597,17 @@ impl Oryxis {
             }
             self.connections = vault.list_connections().unwrap_or_default();
             self.groups = vault.list_groups().unwrap_or_default();
+            // Repair invalid parent links before anything renders. Only a
+            // manual folder is a container: a dynamic (cloud_query) group
+            // resolves its own children and is never opened as a folder,
+            // and a deleted folder leaves its children dangling. In both
+            // cases the child renders nowhere (not at root since it has a
+            // parent, not inside any openable folder) yet still counts as
+            // "imported", so the user sees it vanish but can't re-import.
+            // Re-home each such group on its nearest manual-folder ancestor
+            // (or root) and persist the fix. Idempotent: a no-op once the
+            // hierarchy is clean.
+            repair_group_parents(&mut self.groups, vault);
             self.session_groups = vault.list_session_groups().unwrap_or_default();
             self.keys = vault.list_keys().unwrap_or_default();
             self.identities = vault.list_identities().unwrap_or_default();
@@ -1332,6 +1343,64 @@ impl Oryxis {
     }
 }
 
+/// Re-home every group whose parent is not a valid manual folder onto its
+/// nearest manual-folder ancestor (or root). A dynamic (cloud_query) group
+/// is never a container, and a parent that no longer exists is dangling: a
+/// child left pointing at either renders nowhere while still counting as
+/// imported. The walk skips dynamic ancestors and resolves a missing id (or
+/// running off the top) to root. Persists only the rows that actually move,
+/// so it's a cheap no-op once the hierarchy is clean. A `visited` set guards
+/// against a parent cycle in corrupt data.
+fn repair_group_parents(
+    groups: &mut [oryxis_core::models::Group],
+    vault: &VaultStore,
+) {
+    // id -> (parent_id, is_manual_folder)
+    let index: std::collections::HashMap<uuid::Uuid, (Option<uuid::Uuid>, bool)> =
+        groups
+            .iter()
+            .map(|g| (g.id, (g.parent_id, g.cloud_query.is_none())))
+            .collect();
+    let fixes: Vec<(uuid::Uuid, Option<uuid::Uuid>)> = groups
+        .iter()
+        .filter_map(|g| {
+            let resolved = nearest_manual_parent(g.parent_id, &index);
+            (resolved != g.parent_id).then_some((g.id, resolved))
+        })
+        .collect();
+    for (gid, new_parent) in fixes {
+        if let Some(g) = groups.iter_mut().find(|g| g.id == gid) {
+            g.parent_id = new_parent;
+            g.updated_at = chrono::Utc::now();
+            let _ = vault.save_group(g);
+        }
+    }
+}
+
+/// Walk up from `parent` to the nearest manual-folder ancestor in `index`
+/// (`id -> (parent_id, is_manual_folder)`). Dynamic ancestors are skipped;
+/// a missing id, a `None` parent, or a cycle resolves to root (`None`). Pure
+/// so the resolution rule is unit-testable without a vault.
+fn nearest_manual_parent(
+    parent: Option<uuid::Uuid>,
+    index: &std::collections::HashMap<uuid::Uuid, (Option<uuid::Uuid>, bool)>,
+) -> Option<uuid::Uuid> {
+    let mut cur = parent;
+    let mut visited: std::collections::HashSet<uuid::Uuid> =
+        std::collections::HashSet::new();
+    loop {
+        let pid = cur?;
+        if !visited.insert(pid) {
+            return None; // cycle: bail to root
+        }
+        match index.get(&pid) {
+            None => return None,                  // dangling parent
+            Some((_, true)) => return Some(pid),  // manual folder: valid container
+            Some((grandparent, false)) => cur = *grandparent, // dynamic: skip upward
+        }
+    }
+}
+
 /// Pure mapping from legacy inline `Connection.port_forwards` to standalone
 /// `PortForwardRule`s. Every legacy forward is Local, binds `127.0.0.1` on
 /// its old `local_port`, targets the old `remote_host:remote_port`, and is
@@ -1397,5 +1466,71 @@ mod port_forward_migration_tests {
     fn no_forwards_yields_no_rules() {
         let conn = Connection::new("plain", "10.0.0.3");
         assert!(legacy_forwards_to_rules(&[conn]).is_empty());
+    }
+}
+
+#[cfg(test)]
+mod group_parent_repair_tests {
+    use super::nearest_manual_parent;
+    use std::collections::HashMap;
+    use uuid::Uuid;
+
+    // (parent_id, is_manual_folder)
+    type Index = HashMap<Uuid, (Option<Uuid>, bool)>;
+
+    #[test]
+    fn manual_parent_is_kept() {
+        let folder = Uuid::new_v4();
+        let mut idx: Index = HashMap::new();
+        idx.insert(folder, (None, true)); // manual folder at root
+        assert_eq!(nearest_manual_parent(Some(folder), &idx), Some(folder));
+    }
+
+    #[test]
+    fn root_parent_stays_root() {
+        let idx: Index = HashMap::new();
+        assert_eq!(nearest_manual_parent(None, &idx), None);
+    }
+
+    #[test]
+    fn dangling_parent_resolves_to_root() {
+        let missing = Uuid::new_v4();
+        let idx: Index = HashMap::new(); // id not present
+        assert_eq!(nearest_manual_parent(Some(missing), &idx), None);
+    }
+
+    #[test]
+    fn dynamic_parent_is_skipped_up_to_manual_folder() {
+        // The exact shape of the reported bug: a dynamic group renamed
+        // under a folder whose label collides with a sibling dynamic
+        // group, so it ends up parented on the dynamic one. It must be
+        // re-homed on the manual folder above the dynamic parent.
+        let folder = Uuid::new_v4(); // manual "ECS Example"
+        let dyn_group = Uuid::new_v4(); // dynamic "ECS Example", child of folder
+        let mut idx: Index = HashMap::new();
+        idx.insert(folder, (None, true));
+        idx.insert(dyn_group, (Some(folder), false));
+        assert_eq!(nearest_manual_parent(Some(dyn_group), &idx), Some(folder));
+    }
+
+    #[test]
+    fn all_dynamic_ancestors_resolve_to_root() {
+        let dyn_a = Uuid::new_v4();
+        let dyn_b = Uuid::new_v4();
+        let mut idx: Index = HashMap::new();
+        idx.insert(dyn_a, (None, false)); // dynamic at root
+        idx.insert(dyn_b, (Some(dyn_a), false)); // dynamic under dynamic
+        assert_eq!(nearest_manual_parent(Some(dyn_b), &idx), None);
+    }
+
+    #[test]
+    fn parent_cycle_bails_to_root() {
+        let a = Uuid::new_v4();
+        let b = Uuid::new_v4();
+        let mut idx: Index = HashMap::new();
+        // Two dynamic groups pointing at each other: corrupt, must not loop.
+        idx.insert(a, (Some(b), false));
+        idx.insert(b, (Some(a), false));
+        assert_eq!(nearest_manual_parent(Some(a), &idx), None);
     }
 }

@@ -338,13 +338,24 @@ impl Oryxis {
                 };
                 // Parent picker uses label matching like the host
                 // editor's `parent_group`. Empty / unmatched = root.
+                // Only a manual folder (`cloud_query.is_none()`) is a
+                // valid container, so the match skips dynamic groups,
+                // otherwise a label shared with a dynamic group (e.g.
+                // two "ECS Example" rows, one folder + one cloud group)
+                // could re-home this group under the dynamic one, where
+                // it never renders again. Mirrors the import-side filter
+                // in `dispatch_cloud/discovery.rs`.
                 let parent_trimmed = self.cloud_dynamic_form.parent_label.trim();
                 group.parent_id = if parent_trimmed.is_empty() {
                     None
                 } else {
                     self.groups
                         .iter()
-                        .find(|g| g.label == parent_trimmed && g.id != gid)
+                        .find(|g| {
+                            g.label == parent_trimmed
+                                && g.id != gid
+                                && g.cloud_query.is_none()
+                        })
                         .map(|g| g.id)
                 };
                 group.updated_at = chrono::Utc::now();

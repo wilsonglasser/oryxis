@@ -22,3 +22,6 @@ site
 # Local app run logs (debug launches)
 nohup.out
 nohup_x11.out
+
+# Claude Code session attachments / local scratch
+/.oxyris/

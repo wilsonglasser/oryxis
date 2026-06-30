@@ -1176,6 +1176,18 @@ impl Oryxis {
                             }
                         }
                     }
+                    // Re-home nested sub-groups (e.g. ECS / K8s dynamic
+                    // groups) to root too, so they don't dangle off the
+                    // deleted parent and vanish from every view.
+                    for g in self.groups.iter_mut() {
+                        if g.parent_id == Some(gid) {
+                            g.parent_id = None;
+                            g.updated_at = chrono::Utc::now();
+                            if let Some(vault) = &self.vault {
+                                let _ = vault.save_group(g);
+                            }
+                        }
+                    }
                     if let Some(vault) = &self.vault {
                         let _ = vault.delete_group(&gid);
                     }
@@ -1195,6 +1207,19 @@ impl Oryxis {
                         .filter(|c| c.group_id == Some(gid))
                         .map(|c| c.id)
                         .collect();
+                    // Nested sub-groups (dynamic ECS / K8s groups) aren't
+                    // "hosts": re-home them to root rather than deleting
+                    // them with the folder, so an import isn't silently
+                    // lost and nothing dangles off the removed parent.
+                    for g in self.groups.iter_mut() {
+                        if g.parent_id == Some(gid) {
+                            g.parent_id = None;
+                            g.updated_at = chrono::Utc::now();
+                            if let Some(vault) = &self.vault {
+                                let _ = vault.save_group(g);
+                            }
+                        }
+                    }
                     if let Some(vault) = &self.vault {
                         for cid in &to_drop {
                             let _ = vault.delete_connection(cid);
