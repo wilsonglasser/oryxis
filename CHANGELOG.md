@@ -4,7 +4,7 @@ All notable changes to Oryxis are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the
 project uses [SemVer](https://semver.org/spec/v2.0.0.html).
 
-## [0.8.3] - Unreleased
+## [0.8.3] - 2026-06-30
 
 ### Added
 - **Vertical navigation rail.** Settings -> Interface now has a
@@ -65,6 +65,111 @@ project uses [SemVer](https://semver.org/spec/v2.0.0.html).
   (NVIDIA GeForce RTX 3080)"), so "Automatic" is no longer opaque and a
   backend fallback is diagnosable. Backed by a new
   `system::graphics_information()` exposed in the iced fork.
+- **OSC escape-sequence support in the terminal.** A resumable OSC
+  scanner reads the same byte stream fed to the emulator and surfaces
+  the sequences alacritty doesn't expose: **OSC 8** explicit hyperlinks
+  (Ctrl+Click opens the real target even when the visible label isn't a
+  URL), **OSC 7** working-directory reports (a new local shell opens in
+  the focused pane's directory), **OSC 133** shell-integration marks
+  (captured per pane), and **OSC 52** clipboard access behind a new
+  "Clipboard access" setting (off / write-only / read-write, default
+  write-only, so a remote may set but not read your local clipboard).
+- **Desktop notifications from the terminal.** OSC 9 notifications
+  surface through a new "Notifications" setting (off / in-app toast / OS
+  notification, default OS) and fire only while the window is unfocused;
+  OS mode uses the native toast / libnotify and falls back to an in-app
+  toast. OSC 9;4 progress is drawn as a coloured border that grows
+  clockwise around the tab (accent / amber / red by reported state).
+- **Terminal conformance pass.** Application-cursor-keys mode (DECCKM),
+  modified navigation keys in the xterm `CSI 1;<mod>` form (Ctrl / Shift
+  / Alt + arrows / Home / End / PageUp / Del / F-keys), Shift+Tab
+  back-tab and Alt-as-ESC (Meta), so `mc` / `vim` / `less` / readline /
+  tmux key bindings work over SSH. Cell advance is measured per font, so
+  Fira Code and other off-ratio fonts no longer overlap glyphs.
+- **Tab title from the shell (OSC 0/2).** Off by default (the curated
+  host label stays); a global toggle plus a per-host `auto-title`
+  override shows the shell-reported title in the tab strip.
+- **Per-host terminal type (TERM).** A host whose terminfo trips on the
+  default can send `xterm` / `linux` / `vt100` / `screen-256color` etc.
+  instead of `xterm-256color`; local shells keep the default.
+- **Host config sidebar tab.** A cog tab beside Chat and Snippets edits
+  the focused pane's settings live with the terminal in view (per-host
+  theme, encoding, terminal type, auto-title), plus the global
+  appearance controls. A local pane gets a session-only theme with
+  one-click promotion to the global default.
+- **Persistent local-terminal list.** Detected and manual local shells
+  are cached and managed from Settings -> Terminal as cards (icon +
+  colour via the shared picker; add / edit / remove / re-scan, and an
+  "always open X" default that skips the picker). Machine-local: kept
+  out of sync and portable export.
+- **Terminal hints.** A "hold Shift to select" toast appears when a
+  mouse-capturing application is running in the pane.
+- **Per-host legacy algorithm overrides.** Reach old servers that only
+  offer cbc / 3des / sha1 / dh-group1 by pinning ciphers, key exchange,
+  MACs or host-key algorithms per host. Each category defaults to Auto
+  (russh's safe set) and switches to a checklist in the host editor;
+  rides sync + portable export.
+- **Automatic legacy-algorithm fallback.** When a handshake fails with
+  "no common algorithm", a dialog offers to reconnect with legacy
+  algorithms (Cancel / Connect once / Always allow) instead of
+  dead-ending. The expansion is secure-first, so a modern server still
+  negotiates a strong cipher. Offered on every interactive connect
+  (terminal, SFTP, port-forward, SFTP backup); MCP honors pins
+  headlessly.
+- **More key formats.** ECDSA **P-521** keys (generate / import / store)
+  and OpenSSL traditional (legacy) **PEM** private keys with `DEK-Info`
+  encryption (3DES / DES / AES-CBC), which were previously rejected.
+  Backed by a migration onto the ssh-key 0.7 crypto stack russh already
+  pulls.
+- **Privacy Mode.** A global toggle plus a per-host override masks host
+  / IP / user / port / proxy behind muted block glyphs in cards, the
+  History view and the terminal pane, revealed on hover or an eye
+  toggle. Detection runs in the terminal highlight pass, so it works
+  with keyword tinting off.
+- **SFTP sync transport.** A file-based alternative to P2P sync: a group
+  reconciles against one sealed snapshot on a backup host (download, LWW
+  merge into the vault, rebuild, atomic upload via
+  `posix-rename@openssh.com`), with host / path / passphrase settings
+  and an auto-cadence tick.
+- **Vault export / import over SFTP.** The export dialog gains "To SFTP"
+  and an "Import from SFTP" entry that write / read the encrypted blob
+  to a saved host plus a remote path, reusing a live session or opening
+  a fresh SFTP connection through the same host-key verification as the
+  terminal mount. A plain-language "How sync works" panel was added to
+  the Sync settings.
+- **Granular settings export / import.** Vault export now covers
+  application settings and lets you tick exactly which entity families
+  to include (11 categories), with a content-aware selection on import
+  that shows what the file holds before applying. Device-local and
+  security keys are withheld from the file.
+- **Selective SSH config import.** A preview modal lets you tick which
+  parsed `Host` blocks to import (flagging label collisions) instead of
+  importing all of `~/.ssh/config` at once. A unified host-export dialog
+  with a per-folder checklist (plus an ungrouped toggle) replaces the
+  per-host Share actions.
+- **New connection defaults.** Settings -> Connection gains a "New
+  connection defaults" card (agent forwarding, default port, keepalive
+  and TERM) that pre-fills every new host form.
+- **SFTP file-manager overhaul.** A resizable centre divider; show /
+  hide, resize and reorder columns (new Type / Permissions / Owner, with
+  Type reading the file's MIME type from an embedded ~1246-entry table);
+  horizontal scroll with a sticky header; keyboard navigation (arrows /
+  Enter / Tab, with ".." as a virtual first row); a resizable
+  message-log panel; inline slow-click rename and double-click-to-fit
+  columns; FileZilla-style context menus (New folder / New file /
+  Refresh / Show hidden / Open in File Manager, with cross-platform
+  reveal); an SFTP entry in the new-tab picker; reliable cross-pane
+  drag-and-drop; and a numeric (octal) mode input in Properties.
+- **Tab fill style.** A gradient (default) or flat accent-tint picker
+  routed through one shared active-tab helper, with live previews under
+  Settings -> Interface (a mock tab strip and host card that reuse the
+  real render helpers, so they can't drift from the UI).
+- **First-run onboarding carousel.** A full-page 5-slide welcome
+  (welcome, encrypted vault, connect, sync, AI) ending in the
+  master-password setup slide, replacing the dry vault-setup screen.
+- **Confirm-before-remove dialogs** for every keychain delete (host,
+  session group, snippet, key, identity), so a stray click can't
+  silently drop an item.
 
 ### Changed
 - **One layout, two nav orientations.** The Classic sidebar and the
@@ -116,6 +221,15 @@ project uses [SemVer](https://semver.org/spec/v2.0.0.html).
 - **Unified on/off toggle.** Every toggle (settings rows and the plugin
   auto-update controls) now renders the same switch; the plugin toggles
   dropped their one-off ON/OFF pill style.
+- **Ctrl+Tab cycles positionally.** Ctrl+Tab / Ctrl+Shift+Tab walk the
+  unified strip ([Home, pinned, tabs]) with wrap-around, and Alt+arrow
+  cycling traverses that same order across terminal and SFTP tabs
+  (it used to skip SFTP tabs and ignore pinning).
+- **Responsive vault toolbar.** The search field collapses to an icon
+  and secondary actions move into an overflow menu when the window is
+  too narrow, with RTL-aware anchoring.
+- **Windows release binaries are Authenticode code-signed** (via
+  SignPath), so SmartScreen / UAC show a verified publisher.
 
 ### Fixed
 - Cloud Accounts cards now show the accent border on hover, like the
@@ -158,6 +272,38 @@ project uses [SemVer](https://semver.org/spec/v2.0.0.html).
 - "Open in File Manager" now uses the OS-native name: **File Explorer**
   on Windows and **Finder** on macOS (other platforms keep the generic
   label).
+- **Terminal scrollback survives reconnect.** Manual and silent 30 s
+  auto-reconnect on a single-pane SSH tab now re-attach in place (a dim
+  "[reconnecting...]" marker) instead of rebuilding the alacritty grid
+  and wiping the screen plus scrollback the user was looking at.
+- **A synchronized-update (DEC ?2026) timeout is now driven**, so an app
+  that opens a sync update and then blocks on input (e.g. `docker
+  compose`'s "(y/N)" prompt) no longer freezes the pane on the
+  pre-update frame.
+- **AI chat tool loops can't run away.** A safe read-only command already
+  auto-run this turn is no longer re-run unconditionally (it is surfaced
+  for explicit approval), and the stream is cancellable, so closing the
+  sidebar or starting a new conversation actually stops it.
+- **macOS clipboard shortcuts.** Cmd+C / Cmd+V now drive copy / paste
+  (Cmd is reported as the `logo` modifier on macOS); Ctrl keeps its Unix
+  meaning, and bare Cmd combos no longer leak a stray character into the
+  PTY.
+- **Right-click paste** is gated on the copy-on-select setting (which
+  bundles select-to-copy with right-click-paste); it used to fire even
+  when the setting was off.
+- **Local-terminal tabs tint the top bar** by detected OS (PowerShell /
+  cmd / WSL), matching the tab icon colour instead of falling back to
+  the default accent.
+- **Terminal selection no longer clears on a bare modifier press**
+  (Ctrl / Shift / Alt / Super), so select-then-copy works when
+  copy-on-select is off.
+- **Wide-character spacers are skipped when copying a selection**, so
+  CJK / emoji text copies without embedded gaps.
+- **Pageant agent-pipe discovery** enumerates the named-pipe namespace
+  and matches the live `pageant.<user>.<guid>` pipe instead of
+  hard-coding the `pageant.conf` path, so it works wherever pageant
+  wrote its config (e.g. Scoop installs).
+- The Windows `MessageBeep` module path and feature gate were corrected.
 - **MCP plugin unlocks v0.8.2-migrated vaults again.** The published
   `oryxis-mcp` binary (`mcp-v0.1.0`) predated the v0.8.2 vault sealing
   change and rejected the new field format with "Crypto error: Data too
