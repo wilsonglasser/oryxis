@@ -374,6 +374,28 @@ impl Oryxis {
         } else {
             None
         };
+        // Host address for the second line of the tab, showing the
+        // `host:port` destination. Only shown when the "Show host
+        // address on tabs" setting is on; local shells, ephemeral
+        // cloud tabs, and renamed tabs are skipped. Privacy Mode
+        // masks it when the tab is not hovered. Resolved through
+        // the pane's origin (id-based) so it survives OSC title
+        // changes.
+        let tab_address: Option<String> = if self.setting_show_tab_host_address
+            && tab.custom_name.is_none()
+        {
+            let conn = self.pane_origin_connection(tab.active().id);
+            conn.map(|c| {
+                let raw = format!("{}:{}", c.hostname, c.port);
+                if is_hovered {
+                    raw
+                } else {
+                    self.privacy_display_label(&c.label, &raw, &ctx.privacy_terms)
+                }
+            })
+        } else {
+            None
+        };
         let lt_icon = lt_entry.and_then(|e| e.icon.as_deref());
         let lt_color = lt_entry
             .and_then(|e| e.color.as_deref())
@@ -464,6 +486,7 @@ impl Oryxis {
                 ctx.solid_fill,
                 zmodem_progress.or(tab.active().progress),
                 files_mode,
+                tab_address,
             )
         }
     }

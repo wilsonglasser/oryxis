@@ -499,6 +499,9 @@ pub(crate) fn session_tab<'a>(
     // Hybrid tab (issue #61): `Some(state)` renders the clickable mode
     // glyph (>_ terminal / folder files); `None` hides it (no SSH).
     files_mode: Option<bool>,
+    // Optional second-line address (`host:port`) shown below the
+    // label when the "Show host address on tabs" setting is on.
+    address: Option<String>,
 ) -> Element<'a, Message> {
     // Contrast validator (issue #79): the accent renders as the active
     // tab's TEXT (plus borders and the gradient wash) over the strip, so
@@ -689,6 +692,10 @@ pub(crate) fn session_tab<'a>(
         close_btn()
     };
 
+    // Tab number (1-based), prepended to the label as a subtle prefix
+    // so the user can identify tabs for quick switching (Ctrl+1..9).
+    let display_label = format!("{}. {}", idx + 1, display_label);
+
     let label_text = text(display_label)
         .size(12)
         .line_height(1.0)
@@ -696,6 +703,20 @@ pub(crate) fn session_tab<'a>(
         .font(SYSTEM_UI_SEMIBOLD)
         .color(fg)
         .width(Length::Fill);
+
+    // Second-line host address, shown below the label when enabled.
+    let address_row: Option<Element<'_, Message>> = address.map(|addr| {
+        container(
+            text(addr)
+                .size(10)
+                .line_height(1.0)
+                .wrapping(iced::widget::text::Wrapping::None)
+                .font(SYSTEM_UI_SEMIBOLD)
+                .color(Color { a: 0.55, ..fg }),
+        )
+        .padding(Padding { top: 1.0, right: 0.0, bottom: 0.0, left: 0.0 })
+        .into()
+    });
 
     // Hybrid mode glyph: shows the tab's current surface, clicking
     // flips it (shared with the pinned chip form).
@@ -715,7 +736,15 @@ pub(crate) fn session_tab<'a>(
             items.push(chip);
         }
         items.push(Space::new().width(5).into());
-        items.push(label_text.into());
+        // When an address line is present, stack label + address vertically.
+        let label_column: Element<'_, Message> = if let Some(addr) = address_row {
+            iced::widget::Column::with_children(vec![label_text.into(), addr])
+                .width(Length::Fill)
+                .into()
+        } else {
+            label_text.into()
+        };
+        items.push(label_column);
         if close_on_right {
             // Trailing slot reserves its width even when the X isn't
             // currently shown, so the label position doesn't jump on hover.

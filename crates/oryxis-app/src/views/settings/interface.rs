@@ -220,6 +220,16 @@ impl Oryxis {
             ),
             Space::new().height(8),
             self.nav_toggle_row(
+                crate::i18n::t("show_tab_host_address_label"),
+                self.setting_show_tab_host_address,
+                Message::Settings(SettingsMessage::ToggleShowTabHostAddress),
+            ),
+            Space::new().height(4),
+            text(crate::i18n::t("show_tab_host_address_desc"))
+                .size(11)
+                .color(OryxisColors::t().text_muted),
+            Space::new().height(8),
+            self.nav_toggle_row(
                 crate::i18n::t("show_tab_status_dot"),
                 self.setting_show_tab_status_dot,
                 Message::Settings(SettingsMessage::SettingToggleShowTabStatusDot),

@@ -48,7 +48,6 @@ impl Oryxis {
         let label = conn.label.clone();
         let hostname = format!("Serial {} @ {}", conn.hostname, config.params.baud);
         let terminal = Arc::new(Mutex::new(state));
-        let tab_idx = self.tabs.len();
 
         let session_log_id = if self.should_record_session(Some(&conn)) {
             self.vault.as_ref().map(|vault| {
@@ -83,7 +82,7 @@ impl Oryxis {
             new_tab.relaunch = Some(Box::new(Message::Ssh(SshMessage::QuickConnect(Box::new(entry.clone())))));
         }
         let pane_id = new_tab.active().id;
-        self.tabs.push(new_tab);
+        let tab_idx = self.push_terminal_tab(new_tab);
 
         self.connecting = Some(ConnectionProgress {
             label: label.clone(),

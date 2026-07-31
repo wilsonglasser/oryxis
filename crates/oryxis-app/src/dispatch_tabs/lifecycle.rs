@@ -470,6 +470,14 @@ impl Oryxis {
 
     pub(super) fn handle_duplicate_tab(&mut self, idx: usize) -> Task<Message> {
         self.overlay = None;
+        // The new tab should land right after the original so the user
+        // sees the copy next to its source. The tab-spawning sites check
+        // this flag and insert (instead of push) then clear it.
+        self.next_tab_insert_at = Some(idx + 1);
+        tracing::info!(
+            "handle_duplicate_tab: idx={idx}, next_tab_insert_at=Some({})",
+            idx + 1
+        );
         // Local shell tabs aren't backed by a saved connection; for
         // those we just open a fresh shell tab. SSH tabs find their
         // connection by label and dispatch `ConnectSsh` so the user
@@ -501,6 +509,7 @@ impl Oryxis {
                 return Task::done(Message::Ssh(SshMessage::ConnectSsh(ci)));
             }
         }
+        self.next_tab_insert_at = None;
         Task::none()
     }
 

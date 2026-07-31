@@ -199,6 +199,11 @@ pub struct Oryxis {
 
     // Tabs
     pub(crate) tabs: Vec<TerminalTab>,
+    /// When set, the next tab spawned (by any path: Duplicate Tab, SSH
+    /// connect, local shell, cloud, ...) is inserted at this index instead
+    /// of appended at the end. Set by `handle_duplicate_tab` so the copy
+    /// lands right after the original tab; cleared on consumption.
+    pub(crate) next_tab_insert_at: Option<usize>,
     /// Set while the new-tab picker is open *to fill a split pane* rather
     /// than open a new tab: `(tab_idx, pane_to_split, axis)`. The picker's
     /// selection (host or local shell) lands in a new pane next to the
@@ -1231,6 +1236,9 @@ pub struct Oryxis {
     /// keeping addresses out of screenshots / screen shares. Port 22 is
     /// always omitted from the address regardless of this toggle.
     pub(crate) setting_show_host_address: bool,
+    /// When on, tabs show the connection address (`host:port`)
+    /// as a second line below the tab label. Off by default.
+    pub(crate) setting_show_tab_host_address: bool,
     /// Privacy Mode (issue #78): global toggle, session override, hint
     /// flag, always/never mask lists, per-class gates and the Logs
     /// reveal toggle. See [`crate::state::PrivacyState`].
@@ -1733,6 +1741,49 @@ pub struct Oryxis {
 // `boot`, `load_data_from_vault`, `persist_setting` live in `crate::boot`.
 
 impl Oryxis {
+    /// Insert a terminal tab at the position requested by
+    /// `next_tab_insert_at` (clearing it afterwards), or append at the end
+    /// when no position was requested. Returns the index where the tab
+    /// landed. Used by every tab-spawning site so "Duplicate Tab" lands
+    /// the copy right after the original.
+    pub(crate) fn push_terminal_tab(&mut self, tab: TerminalTab) -> usize {
+        let id = tab._id;
+        if let Some(at) = self.next_tab_insert_at.take() {
+            let at = at.min(self.tabs.len());
+            tracing::info!(
+                "push_terminal_tab: inserting at index {at} (requested), label=\"{}\"",
+                tab.label
+            );
+            // Insert into `tab_order` at the matching position so the
+            // tab appears in the strip right after the duplicated tab.
+            // `reconcile_tab_order` only *appends* new ids, so without
+            // this the display order would always place it at the end.
+            let insert_pos = if at > 0 && at <= self.tabs.len() {
+                let prev_id = self.tabs[at - 1]._id;
+                self.tab_order
+                    .iter()
+                    .position(|r| matches!(r, crate::state::TabRef::Terminal(x) if *x == prev_id))
+                    .map(|p| p + 1)
+            } else {
+                self.tab_order
+                    .iter()
+                    .position(|r| matches!(r, crate::state::TabRef::Terminal(_)))
+            };
+            if let Some(pos) = insert_pos {
+                self.tab_order
+                    .insert(pos, crate::state::TabRef::Terminal(id));
+            } else {
+                self.tab_order.push(crate::state::TabRef::Terminal(id));
+            }
+            self.tabs.insert(at, tab);
+            at
+        } else {
+            let idx = self.tabs.len();
+            self.tabs.push(tab);
+            idx
+        }
+    }
+
     /// Days for a retention code; `None` = retention off.
     pub(crate) fn retention_days(code: &str) -> Option<i64> {
         match code {

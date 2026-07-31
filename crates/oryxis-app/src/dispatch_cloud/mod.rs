@@ -215,7 +215,6 @@ impl Oryxis {
         ) {
             Ok((mut state, rx)) => {
                 state.set_palette(self.terminal_palette.clone());
-                let tab_idx = self.tabs.len();
                 let label = tab_label.to_string();
                 let mut plugin_tab = TerminalTab::new_single(
                     label.clone(),
@@ -228,7 +227,7 @@ impl Oryxis {
                 // that re-creates them, so Duplicate Tab can relaunch.
                 plugin_tab.relaunch = relaunch.map(Box::new);
                 let pane_id = plugin_tab.active().id;
-                self.tabs.push(plugin_tab);
+                let tab_idx = self.push_terminal_tab(plugin_tab);
                 // SSM/ECS sessions don't go through the SSH connecting
                 // pipeline, so a leftover `connecting` (e.g. a previous
                 // host's timeout that wasn't cleared) would otherwise

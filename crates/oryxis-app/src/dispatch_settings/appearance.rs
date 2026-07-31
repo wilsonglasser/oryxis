@@ -145,6 +145,13 @@ impl Oryxis {
                     if self.setting_show_host_address { "true" } else { "false" },
                 );
             }
+            SettingsMessage::ToggleShowTabHostAddress => {
+                self.setting_show_tab_host_address = !self.setting_show_tab_host_address;
+                self.persist_setting(
+                    "show_tab_host_address",
+                    if self.setting_show_tab_host_address { "true" } else { "false" },
+                );
+            }
             SettingsMessage::SettingToggleShowTabStatusDot => {
                 self.setting_show_tab_status_dot = !self.setting_show_tab_status_dot;
                 self.persist_setting(

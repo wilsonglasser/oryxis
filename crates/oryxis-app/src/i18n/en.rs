@@ -1046,6 +1046,8 @@ pub(super) fn lookup(key: &str) -> &'static str {
         "card_accent_glass_desc" => "Soft per-colour wash on dashboard cards (host/group colour fading across).",
         "show_host_address_label" => "Show host address",
         "show_host_address_desc" => "Show user@host:port on host cards. Off by default keeps addresses out of screenshots. Port 22 is always omitted.",
+        "show_tab_host_address_label" => "Show host address on tabs",
+        "show_tab_host_address_desc" => "Show host:port below the tab label. Off by default.",
         "privacy_mode_label" => "Privacy mode",
         "privacy_mode_desc" => "Auto-hide sensitive data (host, IP, user, port, proxy) behind muted blocks, revealed on hover. In the terminal, IPs and user@host prompt tokens are masked too. Off by default. Set per host in the host editor.",
         "privacy_class_public_ips" => "Mask public IP addresses",

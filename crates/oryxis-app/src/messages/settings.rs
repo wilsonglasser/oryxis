@@ -260,6 +260,8 @@ pub enum SettingsMessage {
     ToggleCardAccentGlass,
     /// Flip showing of the `user@host:port` address on host cards.
     ToggleShowHostAddress,
+    /// Flip showing of the `host:port` address on tab labels.
+    ToggleShowTabHostAddress,
     /// Flip the global Privacy Mode default (auto-hide sensitive data).
     TogglePrivacyMode,
     /// Privacy Mode session override (issue #78): press once to force

@@ -518,6 +518,9 @@ impl Oryxis {
             if let Ok(Some(v)) = vault.get_setting("show_host_address") {
                 self.setting_show_host_address = v == "true";
             }
+            if let Ok(Some(v)) = vault.get_setting("show_tab_host_address") {
+                self.setting_show_tab_host_address = v == "true";
+            }
             if let Ok(Some(v)) = vault.get_setting("privacy_mode") {
                 self.privacy.mode = v == "true";
             }

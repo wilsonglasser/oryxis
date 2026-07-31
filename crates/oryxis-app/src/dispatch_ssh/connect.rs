@@ -228,7 +228,6 @@ impl Oryxis {
                 let label = conn.label.clone();
                 let hostname = format!("SSH {}:{}", conn.hostname, conn.port);
                 let terminal = Arc::new(Mutex::new(state));
-                let tab_idx = self.tabs.len();
 
                 // Create session log for terminal recording,
                 // unless recording is disabled (per-host
@@ -306,7 +305,7 @@ impl Oryxis {
                 // session events route to it, so the right pane
                 // gets the bytes even after the tab is split.
                 let pane_id = new_tab.active().id;
-                self.tabs.push(new_tab);
+                let tab_idx = self.push_terminal_tab(new_tab);
 
                 // Show progress view instead of terminal
                 self.connecting = Some(ConnectionProgress {
