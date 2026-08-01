@@ -537,7 +537,7 @@ pub(crate) fn session_tab<'a>(
     };
 
     let is_disconnected = label.ends_with(" (disconnected)");
-    let display_label_full = label.trim_end_matches(" (disconnected)").to_string();
+    let display_label_full = format!("{}. {}", idx + 1, label.trim_end_matches(" (disconnected)"));
     // When the close X gets its own trailing slot, the label has less
     // horizontal room. Reserve the X's slot + a small gap so the
     // truncation kicks in earlier instead of the X clipping over the
@@ -692,17 +692,13 @@ pub(crate) fn session_tab<'a>(
         close_btn()
     };
 
-    // Tab number (1-based), prepended to the label as a subtle prefix
-    // so the user can identify tabs for quick switching (Ctrl+1..9).
-    let display_label = format!("{}. {}", idx + 1, display_label);
-
-    let label_text = text(display_label)
+    let label_text = text(display_label.clone())
         .size(12)
         .line_height(1.0)
         .wrapping(iced::widget::text::Wrapping::None)
         .font(SYSTEM_UI_SEMIBOLD)
         .color(fg)
-        .width(Length::Fill);
+        .width(Length::Shrink);
 
     // Second-line host address, shown below the label when enabled.
     let address_row: Option<Element<'_, Message>> = address.map(|addr| {
@@ -712,9 +708,8 @@ pub(crate) fn session_tab<'a>(
                 .line_height(1.0)
                 .wrapping(iced::widget::text::Wrapping::None)
                 .font(SYSTEM_UI_SEMIBOLD)
-                .color(Color { a: 0.55, ..fg }),
+                .color(Color { a: 0.50, ..fg }),
         )
-        .padding(Padding { top: 1.0, right: 0.0, bottom: 0.0, left: 0.0 })
         .into()
     });
 
@@ -739,13 +734,15 @@ pub(crate) fn session_tab<'a>(
         // When an address line is present, stack label + address vertically.
         let label_column: Element<'_, Message> = if let Some(addr) = address_row {
             iced::widget::Column::with_children(vec![label_text.into(), addr])
-                .width(Length::Fill)
+                .width(Length::Shrink)
                 .into()
         } else {
             label_text.into()
         };
         items.push(label_column);
         if close_on_right {
+            // Push the trailing close button to the right edge.
+            items.push(Space::new().width(Length::Fill).into());
             // Trailing slot reserves its width even when the X isn't
             // currently shown, so the label position doesn't jump on hover.
             let trailing_slot: Element<'_, Message> = if show_close {
@@ -778,6 +775,7 @@ pub(crate) fn session_tab<'a>(
             .padding(Padding { top: 0.0, right: 4.0, bottom: 0.0, left: 2.0 }),
     )
     .width(Length::Fixed(width))
+    .clip(true)
     .on_press(Message::Tabs(TabsMessage::SelectTab(idx)))
     .style(move |_, status| {
         let hover_bg: Background = match status {

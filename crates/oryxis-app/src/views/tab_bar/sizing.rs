@@ -229,19 +229,28 @@ pub(crate) fn settings_tab_width(label: &str) -> f32 {
 pub(crate) fn truncate_label(label: &str, width: f32) -> String {
     let reserved = TAB_ICON_SLOT + 5.0 + 4.0 + 4.0; // icon + gap + padding
     let usable = (width - reserved).max(0.0);
-    let max_chars = (usable / TAB_CHAR_WIDTH).floor() as usize;
-    if max_chars == 0 {
+    let max_px = usable;
+    if max_px <= 0.0 {
         return String::new();
     }
-    let chars: Vec<char> = label.chars().collect();
-    if chars.len() <= max_chars {
+    // Count display width: CJK / fullwidth characters are roughly 2x
+    // the Latin character width (TAB_CHAR_WIDTH). Reserve one Latin
+    // char width for the ellipsis before measuring.
+    let ellipsis_px = TAB_CHAR_WIDTH;
+    let mut px: f32 = 0.0;
+    let mut cut_at: usize = 0;
+    for (i, ch) in label.char_indices() {
+        let ch_w = if ch > '\u{2e80}' { TAB_CHAR_WIDTH * 2.0 } else { TAB_CHAR_WIDTH };
+        if px + ch_w + ellipsis_px > max_px {
+            break;
+        }
+        px += ch_w;
+        cut_at = i + ch.len_utf8();
+    }
+    if cut_at >= label.len() {
         return label.to_string();
     }
-    let cut: String = chars
-        .iter()
-        .take(max_chars.saturating_sub(1))
-        .collect();
-    format!("{}…", cut)
+    format!("{}…", &label[..cut_at])
 }
 
 /// Session tab: icon badge (host icon by default, X on hover) + label.
