@@ -1045,6 +1045,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "card_accent_glass_desc" => "Delikatny gradient w kolorze każdej karty (kolor hosta/grupy).",
         "show_host_address_label" => "Pokaż adres hosta",
         "show_host_address_desc" => "Pokazuje user@host:port na kartach. Domyślnie wyłączone, aby adresy nie trafiały na zrzuty ekranu. Port 22 jest zawsze pomijany.",
+        "show_tab_host_address_label" => "Pokaż adres hosta na kartach",
+        "show_tab_host_address_desc" => "Pokazuje host:port pod etykietą karty. Domyślnie wyłączone.",
         "privacy_mode_label" => "Tryb prywatności",
         "privacy_mode_desc" => "Automatycznie ukrywa wrażliwe dane (host, IP, użytkownik, port, proxy) za przyciemnionymi blokami, odsłanianymi po najechaniu kursorem. W terminalu maskowane są też adresy IP oraz tokeny user@host w wierszu zachęty. Domyślnie wyłączony. Ustawiany dla każdego hosta w edytorze hosta.",
         "privacy_class_public_ips" => "Maskuj publiczne IP",

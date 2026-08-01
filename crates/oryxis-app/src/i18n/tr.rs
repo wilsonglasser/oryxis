@@ -1039,6 +1039,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "card_accent_glass_desc" => "Her kartın renginde hafif geçiş (sunucu/grup rengi solarak).",
         "show_host_address_label" => "Ana makine adresini göster",
         "show_host_address_desc" => "Kartlarda user@host:port'u gösterir. Varsayılan olarak kapalıdır, adresleri ekran görüntülerinin dışında tutar. 22 numaralı bağlantı noktası her zaman atlanır.",
+        "show_tab_host_address_label" => "Ana makine adresini sekmelerde göster",
+        "show_tab_host_address_desc" => "Sekme etiketinin altında host:port'u gösterir. Varsayılan olarak kapalıdır.",
         "privacy_mode_label" => "Gizlilik modu",
         "privacy_mode_desc" => "Hassas verileri (ana makine, IP, kullanıcı, port, proxy) otomatik olarak soluk blokların arkasına gizler, fareyle üzerine gelince gösterir. Terminalde de IP'ler ve istemdeki user@host belirteçleri maskelenir. Varsayılan olarak kapalıdır. Her ana makine için ana makine düzenleyicisinden ayarlanır.",
         "privacy_class_public_ips" => "Genel IP adreslerini maskele",

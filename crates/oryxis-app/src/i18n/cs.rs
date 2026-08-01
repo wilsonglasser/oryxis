@@ -1045,6 +1045,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "card_accent_glass_desc" => "Jemné barevné tónování dlaždic nástěnky (barva hostitele/skupiny plynule přechází).",
         "show_host_address_label" => "Zobrazit adresu hostitele",
         "show_host_address_desc" => "Zobrazí user@host:port na dlaždicích hostitelů. Vypnuto drží adresy mimo snímky obrazovky. Port 22 se vždy vynechává.",
+        "show_tab_host_address_label" => "Zobrazit adresu hostitele na panelech",
+        "show_tab_host_address_desc" => "Zobrazí host:port pod štítkem panelu. Ve výchozím stavu vypnuto.",
         "privacy_mode_label" => "Režim soukromí",
         "privacy_mode_desc" => "Automaticky skryje citlivá data (hostitel, IP, uživatel, port, proxy) za tlumené bloky, odhalené najetím myší. V terminálu se maskují i IP adresy a tokeny user@host v promptu. Ve výchozím stavu vypnuto. Lze nastavit pro jednotlivé hostitele v editoru.",
         "privacy_class_public_ips" => "Maskovat veřejné IP",

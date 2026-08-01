@@ -874,6 +874,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "card_accent_glass_desc" => "Sanfter Farbverlauf je Karte (Host-/Gruppenfarbe blendet aus).",
         "show_host_address_label" => "Host-Adresse anzeigen",
         "show_host_address_desc" => "Zeigt user@host:port auf den Karten. Standardmäßig aus, hält Adressen aus Screenshots heraus. Port 22 wird immer weggelassen.",
+        "show_tab_host_address_label" => "Host-Adresse auf Tabs anzeigen",
+        "show_tab_host_address_desc" => "Zeigt host:port unter dem Tab-Label an. Standardmäßig aus.",
         "privacy_mode_label" => "Datenschutzmodus",
         "privacy_mode_desc" => "Blendet sensible Daten (Host, IP, Benutzer, Port, Proxy) automatisch hinter abgedunkelten Blöcken aus, die beim Überfahren mit der Maus sichtbar werden. Im Terminal werden auch IPs und user@host-Prompt-Token maskiert. Standardmäßig aus. Pro Host im Host-Editor einstellbar.",
         "privacy_class_public_ips" => "Öffentliche IPs maskieren",

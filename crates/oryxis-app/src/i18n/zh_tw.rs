@@ -883,6 +883,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "card_accent_glass_desc" => "卡片依各自顏色漸淡的輕微疊加（主機/群組顏色）。",
         "show_host_address_label" => "顯示主機位址",
         "show_host_address_desc" => "在卡片上顯示 user@host:port。預設關閉，讓位址不出現在螢幕截圖中。連接埠 22 一律省略。",
+        "show_tab_host_address_label" => "在分頁上顯示主機位址",
+        "show_tab_host_address_desc" => "在分頁標籤下方顯示 host:port。預設關閉。",
         "privacy_mode_label" => "隱私權模式",
         "privacy_mode_desc" => "自動將敏感資料（主機、IP、使用者、連接埠、代理）隱藏在黯淡的色塊後面，懸停時顯示。在終端機中，IP 和提示符號中的 user@host 標記也會被遮蔽。預設關閉。可在主機編輯器中依主機設定。",
         "privacy_class_public_ips" => "遮蔽公網 IP 位址",

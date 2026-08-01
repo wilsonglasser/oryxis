@@ -883,6 +883,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "card_accent_glass_desc" => "各カードの色がフェードする淡いオーバーレイ（ホスト/グループの色）。",
         "show_host_address_label" => "ホストアドレスを表示",
         "show_host_address_desc" => "カードに user@host:port を表示します。デフォルトはオフで、アドレスがスクリーンショットに写りません。ポート 22 は常に省略されます。",
+        "show_tab_host_address_label" => "タブにホストアドレスを表示",
+        "show_tab_host_address_desc" => "タブラベルの下に host:port を表示します。デフォルトはオフです。",
         "privacy_mode_label" => "プライバシーモード",
         "privacy_mode_desc" => "機密データ（ホスト、IP、ユーザー、ポート、プロキシ）を暗くしたブロックの後ろに自動的に隠し、ホバーすると表示します。ターミナルでも IP やプロンプトの user@host トークンがマスクされます。デフォルトはオフです。ホストエディターでホストごとに設定します。",
         "privacy_class_public_ips" => "パブリック IP をマスク",

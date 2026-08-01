@@ -1009,6 +1009,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "card_accent_glass_desc" => "Leve degradê na cor de cada card do painel (cor do host/grupo esmaecendo).",
         "show_host_address_label" => "Mostrar endereço do host",
         "show_host_address_desc" => "Mostra user@host:porta nos cards. Desativado por padrão mantém endereços fora de capturas de tela. A porta 22 é sempre omitida.",
+        "show_tab_host_address_label" => "Mostrar endereço do host nas abas",
+        "show_tab_host_address_desc" => "Mostra host:porta abaixo do rótulo da aba. Desativado por padrão.",
         "privacy_mode_label" => "Modo de privacidade",
         "privacy_mode_desc" => "Oculta automaticamente dados sensíveis (host, IP, usuário, porta, proxy) atrás de blocos esmaecidos, revelados ao passar o mouse. No terminal, IPs e tokens user@host do prompt também são mascarados. Desativado por padrão. Defina por host no editor de host.",
         "privacy_class_public_ips" => "Mascarar IPs públicos",

@@ -883,6 +883,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "card_accent_glass_desc" => "卡片按各自颜色渐隐的轻微叠加（主机/分组颜色）。",
         "show_host_address_label" => "显示主机地址",
         "show_host_address_desc" => "在卡片上显示 user@host:port。默认关闭，使地址不出现在截图中。端口 22 始终省略。",
+        "show_tab_host_address_label" => "在标签页上显示主机地址",
+        "show_tab_host_address_desc" => "在标签页标签下方显示 host:port。默认关闭。",
         "privacy_mode_label" => "隐私模式",
         "privacy_mode_desc" => "自动将敏感数据（主机、IP、用户、端口、代理）隐藏在暗淡的色块后面，悬停时显示。在终端中，IP 和提示符中的 user@host 标记也会被遮盖。默认关闭。可在主机编辑器中按主机设置。",
         "privacy_class_public_ips" => "遮蔽公网 IP 地址",

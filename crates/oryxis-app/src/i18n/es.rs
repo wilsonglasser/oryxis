@@ -880,6 +880,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "card_accent_glass_desc" => "Leve degradado con el color de cada tarjeta (color del host/grupo difuminándose).",
         "show_host_address_label" => "Mostrar dirección del host",
         "show_host_address_desc" => "Muestra user@host:puerto en las tarjetas. Desactivado por defecto mantiene las direcciones fuera de las capturas. El puerto 22 siempre se omite.",
+        "show_tab_host_address_label" => "Mostrar dirección del host en pestañas",
+        "show_tab_host_address_desc" => "Muestra host:puerto debajo de la etiqueta de pestaña. Desactivado por defecto.",
         "privacy_mode_label" => "Modo de privacidad",
         "privacy_mode_desc" => "Oculta automáticamente los datos sensibles (host, IP, usuario, puerto, proxy) tras bloques atenuados, revelados al pasar el ratón. En la terminal, también se enmascaran las IP y los tokens user@host del prompt. Desactivado por defecto. Se configura por host en el editor de host.",
         "privacy_class_public_ips" => "Enmascarar IPs públicas",

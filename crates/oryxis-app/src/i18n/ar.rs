@@ -1057,6 +1057,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "card_accent_glass_desc" => "تدرّج خفيف بلون كل بطاقة (لون المضيف/المجموعة يتلاشى).",
         "show_host_address_label" => "إظهار عنوان المضيف",
         "show_host_address_desc" => "يُظهر user@host:port على البطاقات. مُعطّل افتراضيًا لإبقاء العناوين خارج لقطات الشاشة. يُحذف المنفذ 22 دائمًا.",
+        "show_tab_host_address_label" => "إظهار عنوان المضيف في التبويبات",
+        "show_tab_host_address_desc" => "إظهار host:port أسفل عنوان التبويب. مُعطّل افتراضيًا.",
         "privacy_mode_label" => "وضع الخصوصية",
         "privacy_mode_desc" => "يُخفي تلقائيًا البيانات الحساسة (host، IP، المستخدم، port، الوكيل) خلف كتل باهتة تظهر عند التمرير. في الطرفية، يتم إخفاء عناوين IP ورموز user@host في موجّه الأوامر أيضًا. مُعطّل افتراضيًا. يُضبط لكل مضيف في محرّر المضيف.",
         "privacy_class_public_ips" => "إخفاء عناوين IP العامة",

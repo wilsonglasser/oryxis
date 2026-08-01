@@ -1039,6 +1039,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "card_accent_glass_desc" => "Gradasi lembut warna tiap kartu (warna host/grup memudar).",
         "show_host_address_label" => "Tampilkan alamat host",
         "show_host_address_desc" => "Menampilkan user@host:port pada kartu. Nonaktif secara default menjaga alamat dari tangkapan layar. Port 22 selalu dihilangkan.",
+        "show_tab_host_address_label" => "Tampilkan alamat host pada tab",
+        "show_tab_host_address_desc" => "Menampilkan host:port di bawah label tab. Nonaktif secara default.",
         "privacy_mode_label" => "Mode privasi",
         "privacy_mode_desc" => "Secara otomatis menyembunyikan data sensitif (host, IP, pengguna, port, proxy) di balik blok redup, ditampilkan saat kursor diarahkan. Di terminal, IP dan token user@host pada prompt juga disamarkan. Nonaktif secara default. Diatur per host di editor host.",
         "privacy_class_public_ips" => "Samarkan IP publik",

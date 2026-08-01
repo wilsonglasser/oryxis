@@ -883,6 +883,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "card_accent_glass_desc" => "Léger dégradé à la couleur de chaque carte (couleur de l'hôte/groupe).",
         "show_host_address_label" => "Afficher l'adresse de l'hôte",
         "show_host_address_desc" => "Affiche user@hôte:port sur les cartes. Désactivé par défaut, garde les adresses hors des captures. Le port 22 est toujours omis.",
+        "show_tab_host_address_label" => "Afficher l'adresse de l'hôte sur les onglets",
+        "show_tab_host_address_desc" => "Affiche hôte:port sous l'étiquette d'onglet. Désactivé par défaut.",
         "privacy_mode_label" => "Mode de confidentialité",
         "privacy_mode_desc" => "Masque automatiquement les données sensibles (hôte, IP, utilisateur, port, proxy) derrière des blocs atténués, révélés au survol. Dans le terminal, les IP et les jetons user@host de l'invite sont aussi masqués. Désactivé par défaut. Se règle par hôte dans l'éditeur d'hôte.",
         "privacy_class_public_ips" => "Masquer les IP publiques",

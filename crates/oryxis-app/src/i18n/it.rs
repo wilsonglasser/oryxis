@@ -874,6 +874,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "card_accent_glass_desc" => "Leggera sfumatura del colore di ogni scheda (colore host/gruppo).",
         "show_host_address_label" => "Mostra indirizzo host",
         "show_host_address_desc" => "Mostra user@host:porta sulle schede. Disattivato per impostazione predefinita tiene gli indirizzi fuori dagli screenshot. La porta 22 è sempre omessa.",
+        "show_tab_host_address_label" => "Mostra indirizzo host sulle schede",
+        "show_tab_host_address_desc" => "Mostra host:porta sotto l'etichetta della scheda. Disattivato per impostazione predefinita.",
         "privacy_mode_label" => "Modalità privacy",
         "privacy_mode_desc" => "Nasconde automaticamente i dati sensibili (host, IP, utente, porta, proxy) dietro blocchi attenuati, rivelati al passaggio del mouse. Nel terminale vengono mascherati anche gli IP e i token user@host del prompt. Disattivata per impostazione predefinita. Si imposta per host nell'editor dell'host.",
         "privacy_class_public_ips" => "Maschera IP pubblici",

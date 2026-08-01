@@ -1039,6 +1039,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "card_accent_glass_desc" => "카드별 색상이 옅게 번지는 효과(호스트/그룹 색상).",
         "show_host_address_label" => "호스트 주소 표시",
         "show_host_address_desc" => "카드에 user@host:port를 표시합니다. 기본값은 꺼짐으로 주소가 스크린샷에 노출되지 않습니다. 포트 22는 항상 생략됩니다.",
+        "show_tab_host_address_label" => "탭에 호스트 주소 표시",
+        "show_tab_host_address_desc" => "탭 레이블 아래에 host:port를 표시합니다. 기본값은 꺼짐입니다.",
         "privacy_mode_label" => "개인정보 보호 모드",
         "privacy_mode_desc" => "민감한 데이터(호스트, IP, 사용자, 포트, 프록시)를 흐린 블록 뒤에 자동으로 숨기고 마우스를 올리면 표시합니다. 터미널에서도 IP와 프롬프트의 user@host 토큰이 가려집니다. 기본값은 꺼짐입니다. 호스트 편집기에서 호스트별로 설정합니다.",
         "privacy_class_public_ips" => "공인 IP 마스킹",

@@ -1039,6 +1039,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "card_accent_glass_desc" => "Lớp phủ nhẹ theo màu từng thẻ (màu host/nhóm mờ dần).",
         "show_host_address_label" => "Hiển thị địa chỉ host",
         "show_host_address_desc" => "Hiển thị user@host:port trên thẻ. Mặc định tắt để địa chỉ không lọt vào ảnh chụp màn hình. Cổng 22 luôn được bỏ qua.",
+        "show_tab_host_address_label" => "Hiển thị địa chỉ host trên tab",
+        "show_tab_host_address_desc" => "Hiển thị host:port bên dưới nhãn tab. Tắt theo mặc định.",
         "privacy_mode_label" => "Chế độ riêng tư",
         "privacy_mode_desc" => "Tự động ẩn dữ liệu nhạy cảm (host, IP, người dùng, port, proxy) sau các khối mờ, hiện ra khi di chuột. Trong terminal, các IP và token user@host trên dấu nhắc cũng được che. Tắt theo mặc định. Đặt riêng cho từng host trong trình chỉnh sửa host.",
         "privacy_class_public_ips" => "Che IP công cộng",
