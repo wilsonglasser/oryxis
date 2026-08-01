@@ -698,7 +698,7 @@ pub(crate) fn session_tab<'a>(
         .wrapping(iced::widget::text::Wrapping::None)
         .font(SYSTEM_UI_SEMIBOLD)
         .color(fg)
-        .width(Length::Shrink);
+        .width(if is_active { Length::Fill } else { Length::Shrink });
 
     // Second-line host address, shown below the label when enabled.
     let address_row: Option<Element<'_, Message>> = address.map(|addr| {
@@ -734,7 +734,8 @@ pub(crate) fn session_tab<'a>(
         // When an address line is present, stack label + address vertically.
         let label_column: Element<'_, Message> = if let Some(addr) = address_row {
             iced::widget::Column::with_children(vec![label_text.into(), addr])
-                .width(Length::Shrink)
+                .spacing(1.0)
+                .width(if is_active { Length::Fill } else { Length::Shrink })
                 .into()
         } else {
             label_text.into()
