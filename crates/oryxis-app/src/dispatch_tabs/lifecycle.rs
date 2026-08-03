@@ -468,16 +468,32 @@ impl Oryxis {
         Task::none()
     }
 
+    /// Arm the strip placement for the copy a Duplicate is about to
+    /// spawn, per the `duplicate_tab_position` setting.
+    ///
+    /// Armed only when a tab is actually coming: a duplicate that spawns
+    /// nothing would leave the request pending, and the next unrelated
+    /// tab (minutes later, from anywhere) would take its slot. The TTL on
+    /// [`crate::state::PendingTabPlacement`] is the backstop for the
+    /// failures we cannot see coming from here (a cloud plugin that never
+    /// starts, a PTY that refuses to spawn); this covers the one we can.
+    fn arm_tab_placement(&mut self, source_id: uuid::Uuid) {
+        use crate::state::{PendingTabPlacement, TabPlacement};
+        let placement = TabPlacement::from_setting(&self.setting_duplicate_tab_position);
+        // Appending IS what an unarmed spawn does, so leave it unarmed
+        // and there is nothing that can go stale.
+        if placement == TabPlacement::End {
+            return;
+        }
+        self.pending_tab_placement = Some(PendingTabPlacement {
+            source_id,
+            placement,
+            armed_at: std::time::Instant::now(),
+        });
+    }
+
     pub(super) fn handle_duplicate_tab(&mut self, idx: usize) -> Task<Message> {
         self.overlay = None;
-        // The new tab should land right after the original so the user
-        // sees the copy next to its source. The tab-spawning sites check
-        // this flag and insert (instead of push) then clear it.
-        self.next_tab_insert_at = Some(idx + 1);
-        tracing::info!(
-            "handle_duplicate_tab: idx={idx}, next_tab_insert_at=Some({})",
-            idx + 1
-        );
         // Local shell tabs aren't backed by a saved connection; for
         // those we just open a fresh shell tab. SSH tabs find their
         // connection by label and dispatch `ConnectSsh` so the user
@@ -485,15 +501,38 @@ impl Oryxis {
         // (ECS Exec / kubectl) re-open via the relaunch message
         // stashed on the tab at spawn time.
         if let Some(tab) = self.tabs.get(idx) {
-            let is_local_shell = tab.active().session.is_none()
-                && tab.label == "Local Shell";
-            if is_local_shell {
-                return Task::done(Message::Settings(SettingsMessage::OpenLocalShell));
+            let source_id = tab._id;
+            // Local shells are identified by their pane ORIGIN, not by
+            // the label: only an unpicked default shell is ever labelled
+            // "Local Shell", so a curated entry ("bash (default)",
+            // "PowerShell", a WSL distro) used to miss this branch, miss
+            // the connection-by-label lookup below too, and make
+            // Duplicate a silent no-op on every configured terminal.
+            //
+            // The origin also carries the exact program + args, so the
+            // copy respawns THAT shell instead of re-opening the picker,
+            // the same resolution `reopen_dormant_tab` does for a pinned
+            // `PinnedTabSpec::LocalShell`. An empty program means "the OS
+            // default", which only `OpenLocalShell` can resolve.
+            if let crate::state::PaneOrigin::Local(spec) = &tab.active().origin {
+                let msg = if spec.program.is_empty() {
+                    Message::Settings(SettingsMessage::OpenLocalShell)
+                } else {
+                    Message::Settings(SettingsMessage::OpenLocalShellWith {
+                        program: spec.program.clone(),
+                        args: spec.args.clone(),
+                        label: spec.label.clone(),
+                    })
+                };
+                self.arm_tab_placement(source_id);
+                return Task::done(msg);
             }
             // Cloud tabs with no saved connection (ECS Exec,
             // kubectl pod) carry the message that re-opens them.
             if let Some(relaunch) = tab.relaunch.as_deref() {
-                return Task::done(relaunch.clone());
+                let msg = relaunch.clone();
+                self.arm_tab_placement(source_id);
+                return Task::done(msg);
             }
             // Connection-backed tabs (SSH, InstanceConnect, and
             // SSM-into-EC2) duplicate by re-finding the host by
@@ -506,10 +545,19 @@ impl Oryxis {
                 .trim_start_matches(crate::app::SSM_TAB_PREFIX)
                 .to_string();
             if let Some(ci) = self.connections.iter().position(|c| c.label == base_label) {
+                // A remote-desktop host opens an OS client, never a tab
+                // (`start_ssh_tab` punts to `launch_remote_desktop`), so
+                // arming here would park the request on nothing.
+                let spawns_tab = !matches!(
+                    self.connections[ci].protocol,
+                    oryxis_core::models::connection::ConnectionProtocol::RemoteDesktop
+                );
+                if spawns_tab {
+                    self.arm_tab_placement(source_id);
+                }
                 return Task::done(Message::Ssh(SshMessage::ConnectSsh(ci)));
             }
         }
-        self.next_tab_insert_at = None;
         Task::none()
     }
 

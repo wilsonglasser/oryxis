@@ -55,6 +55,7 @@ impl Oryxis {
             drag_uniform_w: SIDE_TAB_WIDTH,
             uniform_w: Some(SIDE_TAB_WIDTH),
             session_widths: Vec::new(),
+            number_px: self.tab_number_px(),
         };
         let chips_per_row = ((SIDE_TAB_WIDTH + TAB_SPACING)
             / (CHIP_W + TAB_SPACING))
@@ -100,12 +101,15 @@ impl Oryxis {
         let mut items: Vec<Element<'_, Message>> = Vec::new();
         let mut chip_row: Vec<Element<'_, Message>> = Vec::new();
         let mut row_count = 0usize;
-        for entry in self.strip_order() {
+        // Slots count the full strip order (see `strip_tab_element`):
+        // with the pins docked in the top bar this list skips them, and
+        // a local counter would renumber the rest from 1.
+        for (slot, entry) in self.strip_order().into_iter().enumerate() {
             let pinned = self.strip_entry_pinned(entry);
             if pins_top && pinned {
                 continue;
             }
-            let el = self.strip_tab_element(&ctx, entry);
+            let el = self.strip_tab_element(&ctx, entry, slot);
             if compact_pins && pinned {
                 chip_row.push(el);
                 if chip_row.len() == chips_per_row {
@@ -312,11 +316,11 @@ impl Oryxis {
     ) -> Vec<Element<'_, Message>> {
         let mut rows: Vec<Element<'_, Message>> = Vec::new();
         let mut chip_row: Vec<Element<'_, Message>> = Vec::new();
-        for entry in self.strip_order() {
+        for (slot, entry) in self.strip_order().into_iter().enumerate() {
             if !self.strip_entry_pinned(entry) {
                 continue;
             }
-            let el = self.strip_tab_element(ctx, entry);
+            let el = self.strip_tab_element(ctx, entry, slot);
             if compact_pins {
                 chip_row.push(el);
                 if chip_row.len() == chips_per_row {

@@ -42,6 +42,67 @@ pub(crate) enum HostIconStyle {
     Initials,
 }
 
+/// The same badge shape as [`host_icon`], carrying short TEXT (the tab
+/// number under `tab_number_style = "icon"`) instead of a glyph or the
+/// host initials. Kept next to `host_icon` so the number badge inherits
+/// any shape the host-icon styles grow, and so the `Initials` style is
+/// not abused for it: its two-leading-chars rule would render tab 12 as
+/// "1".
+///
+pub(crate) fn host_icon_text<'a>(
+    style: HostIconStyle,
+    color: Color,
+    label: &str,
+    size: f32,
+) -> Element<'a, Message> {
+    let half = size / 2.0;
+    let (radius, fill, fg) = match style {
+        HostIconStyle::Circular | HostIconStyle::Initials => {
+            (half, color, contrast_fg(color))
+        }
+        HostIconStyle::Square => (0.0, color, contrast_fg(color)),
+        HostIconStyle::Rounded => (size * 0.25, color, contrast_fg(color)),
+        // Transparent badge: the text carries the colour, like the glyph
+        // does in `host_icon`.
+        HostIconStyle::Outline => (half, Color::TRANSPARENT, color),
+    };
+    let border = if matches!(style, HostIconStyle::Outline) {
+        Border { radius: Radius::from(radius), color, width: 1.5 }
+    } else {
+        Border { radius: Radius::from(radius), ..Default::default() }
+    };
+    // Long numbers step down a size so three digits still fit the slot
+    // instead of clipping against the badge edge.
+    let font_size = match label.chars().count() {
+        0..=2 => (size * 0.45).max(8.0),
+        _ => (size * 0.36).max(7.0),
+    };
+    container(
+        text(label.to_string())
+            .size(font_size)
+            .font(crate::theme::SYSTEM_UI_SEMIBOLD)
+            .color(fg),
+    )
+        .center_x(Length::Fixed(size))
+        .center_y(Length::Fixed(size))
+        .style(move |_| container::Style {
+            background: Some(Background::Color(fill)),
+            border,
+            ..Default::default()
+        })
+        .into()
+}
+
+/// White on a dark badge, the theme's primary text on a light one.
+fn contrast_fg(color: Color) -> Color {
+    let lum = 0.299 * color.r + 0.587 * color.g + 0.114 * color.b;
+    if lum < 0.55 {
+        Color::WHITE
+    } else {
+        OryxisColors::t().text_primary
+    }
+}
+
 /// Render a host badge in the chosen style. The badge is a fixed
 /// `size x size` square; the inner geometry adapts to `style`:
 ///

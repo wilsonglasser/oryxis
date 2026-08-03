@@ -31,7 +31,28 @@ impl Oryxis {
         .width(Length::Fill)
         .align_x(dir_align_x());
 
-        let mut rows_col = column![header]
+        // Ctrl+digit slot mapping. Not a binding (the chord is editable
+        // in the table below like any other), but what the slots COUNT,
+        // which is the only part of this action a user can be surprised
+        // by: on vaults from before the change the Home tab holds slot 1,
+        // so the third tab answers to Ctrl+4 and the tab numbers read one
+        // ahead of their chords.
+        let slot_row = column![
+            self.nav_toggle_row(
+                crate::i18n::t("tab_slot_includes_home"),
+                self.setting_tab_slot_includes_home,
+                Message::Settings(SettingsMessage::SettingToggleTabSlotIncludesHome),
+            ),
+            Space::new().height(4),
+            text(crate::i18n::t("tab_slot_includes_home_desc"))
+                .size(11)
+                .color(OryxisColors::t().text_muted),
+            Space::new().height(16),
+        ]
+        .width(Length::Fill)
+        .align_x(dir_align_x());
+
+        let mut rows_col = column![header, slot_row]
             .spacing(8)
             .width(Length::Fill)
             .align_x(dir_align_x());

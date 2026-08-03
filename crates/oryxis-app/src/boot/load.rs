@@ -631,6 +631,35 @@ impl Oryxis {
             {
                 self.setting_pinned_tab_style = v;
             }
+            // Ctrl+digit slots: the Home area tab used to own the first
+            // one, so the Nth tab answered to Ctrl+N+1. New vaults are
+            // stamped as migrated when they are created (`boot`), so an
+            // unstamped vault is one that existed before the change and
+            // keeps the old mapping until the user says otherwise
+            // (Settings > Shortcuts, or the one-click align offered next
+            // to the tab-number setting).
+            if vault
+                .get_setting("tab_slots_home_migrated")
+                .ok()
+                .flatten()
+                .is_none()
+            {
+                self.setting_tab_slot_includes_home = true;
+                let _ = vault.set_setting("tab_slot_includes_home", "true");
+                let _ = vault.set_setting("tab_slots_home_migrated", "true");
+            } else if let Ok(Some(v)) = vault.get_setting("tab_slot_includes_home") {
+                self.setting_tab_slot_includes_home = v == "true";
+            }
+            if let Ok(Some(v)) = vault.get_setting("duplicate_tab_position")
+                && (v == "next" || v == "end" || v == "start")
+            {
+                self.setting_duplicate_tab_position = v;
+            }
+            if let Ok(Some(v)) = vault.get_setting("tab_number_style")
+                && (v == "off" || v == "prefix" || v == "icon")
+            {
+                self.setting_tab_number_style = v;
+            }
             if let Ok(Some(v)) = vault.get_setting("show_tab_status_dot") {
                 self.setting_show_tab_status_dot = v == "true";
             }

@@ -28,30 +28,9 @@ impl Oryxis {
             // default. Port 22 is the SSH default, so it's always omitted.
             let subtitle = if self.setting_show_host_address {
                 use oryxis_core::models::connection::ConnectionProtocol;
-                let address = match conn.protocol {
-                    // Serial: the "address" is the port path + baud, no
-                    // user / TCP port (which are SSH concepts).
-                    ConnectionProtocol::Serial => {
-                        let baud = conn.serial.map(|s| s.baud).unwrap_or(9600);
-                        format!("{} @ {}", conn.hostname, baud)
-                    }
-                    // SSH / Telnet: user@host[:port], omitting each
-                    // protocol's default port.
-                    _ => {
-                        let default_port = conn.protocol.default_port().unwrap_or(22);
-                        let port_part = if conn.port == default_port {
-                            String::new()
-                        } else {
-                            format!(":{}", conn.port)
-                        };
-                        format!(
-                            "{}@{}{}",
-                            conn.username.as_deref().unwrap_or("root"),
-                            conn.hostname,
-                            port_part
-                        )
-                    }
-                };
+                // Shared with the tab strip's second line, so the two
+                // surfaces render the same address for the same host.
+                let address = crate::util::host_address_label(conn);
                 // Privacy Mode masks the address behind muted blocks,
                 // revealed when the card is hovered. The auth method label
                 // is not sensitive, so it stays readable.

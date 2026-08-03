@@ -233,6 +233,7 @@ impl Oryxis {
         let mut widest = TAB_MIN_WIDTH;
         let mut flexible = 0.0f32;
         let mut pinned_chips = 0.0f32;
+        let number_px = self.tab_number_px();
         for entry in self.strip_order() {
             let content = match entry {
                 StripEntry::Sftp(idx) => {
@@ -243,7 +244,7 @@ impl Oryxis {
                         pinned_chips += 1.0;
                         continue;
                     }
-                    tab_content_width(tab.display_label(), close_on_right, false)
+                    tab_content_width(tab.display_label(), close_on_right, false, number_px)
                 }
                 StripEntry::Terminal(idx) => {
                     let Some(tab) = self.tabs.get(idx) else {
@@ -257,10 +258,11 @@ impl Oryxis {
                         tab.display_label(self.tab_auto_title(tab)),
                         close_on_right,
                         tab.pane_count() > 1,
+                        number_px,
                     )
                 }
                 StripEntry::Settings => {
-                    settings_tab_width(crate::i18n::t("settings"))
+                    settings_tab_width(crate::i18n::t("settings"), number_px)
                 }
             };
             widest = widest.max(content);
@@ -295,6 +297,7 @@ impl Oryxis {
     /// content-hugged; the scrollable is the overflow safety net).
     fn chrome_bar_pins_ctx(&self) -> StripCtx {
         let close_on_right = self.setting_tab_close_button_side == "right";
+        let number_px = self.tab_number_px();
         let mut session_widths = vec![TAB_MIN_WIDTH; self.tabs.len()];
         let mut max_inactive_content = TAB_MIN_WIDTH;
         for (i, tab) in self.tabs.iter().enumerate() {
@@ -305,6 +308,7 @@ impl Oryxis {
                     tab.display_label(self.tab_auto_title(tab)),
                     close_on_right,
                     tab.pane_count() > 1,
+                    number_px,
                 );
                 session_widths[i] = cw;
                 max_inactive_content = max_inactive_content.max(cw);
@@ -320,6 +324,7 @@ impl Oryxis {
             drag_uniform_w: max_inactive_content.clamp(TAB_MIN_WIDTH, TAB_NATURAL_WIDTH),
             uniform_w: None,
             session_widths,
+            number_px,
         }
     }
 
@@ -329,11 +334,14 @@ impl Oryxis {
     /// the window-drag / double-click-maximize titlebar contract.
     fn chrome_bar_pins<'a>(&'a self, ctx: &StripCtx) -> Element<'a, Message> {
         let mut items: Vec<Element<'a, Message>> = Vec::new();
-        for entry in self.strip_order() {
+        // Numbering counts the FULL strip, so the pinned chips the
+        // chrome bar shows keep the numbers they have in the strip
+        // proper instead of restarting at 1 here.
+        for (slot, entry) in self.strip_order().into_iter().enumerate() {
             if !self.strip_entry_pinned(entry) {
                 continue;
             }
-            items.push(self.strip_tab_element(ctx, entry));
+            items.push(self.strip_tab_element(ctx, entry, slot));
         }
         let strip = scrollable(
             row(items)
@@ -469,6 +477,7 @@ impl Oryxis {
         // fixed at CHIP_W and don't participate in the flexible sizing.
         let close_on_right = self.setting_tab_close_button_side == "right";
         let compact_pins = self.setting_pinned_tab_style == "compact";
+        let number_px = self.tab_number_px();
         let mut session_widths = vec![TAB_MIN_WIDTH; n_tabs];
         let mut max_inactive_content = TAB_MIN_WIDTH;
         for (i, tab) in self.tabs.iter().enumerate() {
@@ -481,6 +490,7 @@ impl Oryxis {
                     tab.display_label(self.tab_auto_title(tab)),
                     close_on_right,
                     tab.pane_count() > 1,
+                    number_px,
                 );
                 session_widths[i] = cw;
                 max_inactive_content = max_inactive_content.max(cw);
@@ -584,9 +594,10 @@ impl Oryxis {
             drag_uniform_w,
             uniform_w: self.uniform_tab_width(close_on_right, compact_pins, approx_strip_width),
             session_widths,
+            number_px,
         };
-        for entry in self.strip_order() {
-            tab_items.push(self.strip_tab_element(&ctx, entry));
+        for (slot, entry) in self.strip_order().into_iter().enumerate() {
+            tab_items.push(self.strip_tab_element(&ctx, entry, slot));
         }
         // "+" trails the last tab, browser-style (issue #38). Only when
         // the strip TRULY overflows (tabs at min width still don't fit,
@@ -818,6 +829,34 @@ impl Oryxis {
     /// Each entry is `(is_sftp, storage_index)`. SFTP refs are dropped when
     /// the SFTP feature is off. Shared by `view_tab_bar` (rendering) and
     /// `tab_scroll_to_active` (offset math) so the two can't drift.
+    /// The `tab_number_style` setting, parsed.
+    pub(crate) fn tab_number_style(&self) -> TabNumberStyle {
+        TabNumberStyle::from_setting(&self.setting_tab_number_style)
+    }
+
+    /// Room every chip reserves for the number prefix, sized to the
+    /// WIDEST number in the strip so the labels stay aligned instead of
+    /// stepping right when the strip crosses ten tabs. Zero when the
+    /// number is off or drawn in the badge slot, which costs no width.
+    pub(crate) fn tab_number_px(&self) -> f32 {
+        if self.tab_number_style() != TabNumberStyle::Prefix {
+            return 0.0;
+        }
+        let digits = self.strip_order().len().max(1).to_string().len();
+        label_px_width(&format!("{}. ", "9".repeat(digits)))
+    }
+
+    /// The tab's number for `slot`, or `None` when numbering is off.
+    pub(crate) fn tab_number_at(&self, slot: usize) -> Option<TabNumber> {
+        match self.tab_number_style() {
+            TabNumberStyle::Off => None,
+            style => Some(TabNumber {
+                value: slot + 1,
+                in_icon: style == TabNumberStyle::Icon,
+            }),
+        }
+    }
+
     pub(crate) fn strip_order(&self) -> Vec<StripEntry> {
         let pinned_of = |r: &crate::state::TabRef| -> bool {
             match r {

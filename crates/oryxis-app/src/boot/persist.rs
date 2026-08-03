@@ -148,7 +148,7 @@ impl Oryxis {
             } else {
                 let tab = crate::state::TerminalTab::new_dormant_pinned(label, spec);
                 self.tab_order.push(crate::state::TabRef::Terminal(tab._id));
-                self.push_terminal_tab(tab);
+                self.tabs.push(tab);
             }
         }
         // The tabs sit dormant in the strip; the app still boots to its

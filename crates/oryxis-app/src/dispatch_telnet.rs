@@ -93,6 +93,7 @@ impl Oryxis {
         let label = conn.label.clone();
         let hostname = format!("Telnet {}:{}", conn.hostname, conn.port);
         let terminal = Arc::new(Mutex::new(state));
+        let tab_idx = self.tabs.len();
 
         // Session recording rides the shared PtyOutput path, so a Telnet
         // session records exactly like an SSH one.
@@ -129,7 +130,7 @@ impl Oryxis {
             new_tab.relaunch = Some(Box::new(Message::Ssh(SshMessage::QuickConnect(Box::new(entry.clone())))));
         }
         let pane_id = new_tab.active().id;
-        let tab_idx = self.push_terminal_tab(new_tab);
+        self.tabs.push(new_tab);
 
         self.connecting = Some(ConnectionProgress {
             label: label.clone(),

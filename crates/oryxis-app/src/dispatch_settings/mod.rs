@@ -224,6 +224,9 @@ impl Oryxis {
             | SettingsMessage::SettingToggleTabAccentText
             | SettingsMessage::SettingTabCloseButtonSideChanged(..)
             | SettingsMessage::SettingPinnedTabStyleChanged(..)
+            | SettingsMessage::SettingDuplicateTabPositionChanged(..)
+            | SettingsMessage::SettingTabNumberStyleChanged(..)
+            | SettingsMessage::SettingToggleTabSlotIncludesHome
             | SettingsMessage::SettingTabFillStyleChanged(..)
             | SettingsMessage::SettingTabAccentColorChanged(..)
             | SettingsMessage::SettingTabBarPositionChanged(..)

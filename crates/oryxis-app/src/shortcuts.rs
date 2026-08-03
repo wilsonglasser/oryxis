@@ -21,7 +21,15 @@ impl Oryxis {
         // strip order (terminal + SFTP tabs, pinned-first), exactly as
         // `views/tab_bar.rs` renders it, so Ctrl+N lands on the Nth visible
         // chip. SFTP is a tab now, not a fixed Ctrl+2 area tab.
-        let mut slots: Vec<Message> = vec![Message::Navigation(NavigationMessage::ChangeView(View::Dashboard))];
+        let mut slots: Vec<Message> = Vec::new();
+        // Home only takes the first slot on vaults that predate the
+        // change (see `setting_tab_slot_includes_home`). Off, Ctrl+N is
+        // the Nth chip in the strip, which is the number the tab shows;
+        // Home stays reachable on Ctrl+Shift+1 (the vault section slot)
+        // and on its house icon.
+        if self.setting_tab_slot_includes_home {
+            slots.push(Message::Navigation(NavigationMessage::ChangeView(View::Dashboard)));
+        }
         slots.extend(self.ordered_tab_refs().iter().filter_map(|r| self.tab_ref_select_msg(r)));
         slots.into_iter().nth(slot)
     }

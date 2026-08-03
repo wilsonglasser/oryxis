@@ -61,13 +61,41 @@ impl Oryxis {
         });
         for id in self.tabs.iter().map(|t| t._id).collect::<Vec<_>>() {
             if !self.tab_order.iter().any(|r| matches!(r, TabRef::Terminal(x) if *x == id)) {
-                self.tab_order.push(TabRef::Terminal(id));
+                self.place_new_tab_ref(TabRef::Terminal(id));
             }
         }
         for id in self.sftp_tabs.iter().map(|t| t.id).collect::<Vec<_>>() {
             if !self.tab_order.iter().any(|r| matches!(r, TabRef::Sftp(x) if *x == id)) {
                 self.tab_order.push(TabRef::Sftp(id));
             }
+        }
+    }
+
+    /// Give a just-born tab its strip slot: at the end like every other
+    /// tab, unless a Duplicate armed a [`crate::state::PendingTabPlacement`]
+    /// for it.
+    ///
+    /// This is the single door every new terminal tab walks through
+    /// (`reconcile_tab_order` runs at the end of every `update`), which
+    /// is why the placement lives here instead of at the spawn sites:
+    /// SSH, Telnet, Serial, local shell, session groups and the
+    /// asynchronous cloud plugins all arrive here, several updates late
+    /// in the cloud case, with no per-site wiring to keep in sync.
+    ///
+    /// Only `tab_order` moves. `Oryxis::tabs` keeps append-only
+    /// semantics, so no `active_tab` / `last_terminal_tab` /
+    /// `connecting.tab_idx` / `pending_pane_split` index goes stale.
+    fn place_new_tab_ref(&mut self, r: crate::state::TabRef) {
+        let at = self
+            .pending_tab_placement
+            .take()
+            // A duplicate that never produced a tab must not reposition
+            // an unrelated one opened later.
+            .filter(|p| !p.is_expired())
+            .and_then(|p| placement_index(&self.tab_order, p.placement, p.source_id));
+        match at {
+            Some(at) => self.tab_order.insert(at.min(self.tab_order.len()), r),
+            None => self.tab_order.push(r),
         }
     }
 
@@ -182,3 +210,117 @@ impl Oryxis {
     }
 
 }
+
+/// Where a new strip entry lands, given the placement a Duplicate armed.
+/// `None` means "append", which is what every unarmed spawn does.
+///
+/// Pure (no `Oryxis`) so the ordering rules are unit-testable: this is
+/// the whole behavioural difference between "the copy shows up beside
+/// its original" and "the copy shows up wherever".
+fn placement_index(
+    order: &[crate::state::TabRef],
+    placement: crate::state::TabPlacement,
+    source_id: uuid::Uuid,
+) -> Option<usize> {
+    use crate::state::TabPlacement;
+    match placement {
+        TabPlacement::End => None,
+        // Head of the strip. `strip_order` renders the pinned partition
+        // first whatever `tab_order` says, so for the unpinned copy this
+        // reads as "first unpinned tab", which is what the user sees.
+        TabPlacement::Start => Some(0),
+        // The original may have been closed while its copy was still
+        // connecting: append rather than guess a slot.
+        TabPlacement::NextToOriginal => order
+            .iter()
+            .position(|e| e.strip_id() == source_id)
+            .map(|p| p + 1),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::placement_index;
+    use crate::state::{TabPlacement, TabRef};
+    use uuid::Uuid;
+
+    /// A strip holding two terminal tabs around an SFTP tab, plus
+    /// Settings: the placement walks `tab_order` by strip id, so the
+    /// other tab kinds are just entries it has to count over.
+    fn strip() -> (Vec<TabRef>, Uuid, Uuid) {
+        let a = Uuid::from_u128(1);
+        let b = Uuid::from_u128(2);
+        let sftp = Uuid::from_u128(3);
+        (
+            vec![
+                TabRef::Terminal(a),
+                TabRef::Sftp(sftp),
+                TabRef::Terminal(b),
+                TabRef::Settings,
+            ],
+            a,
+            b,
+        )
+    }
+
+    #[test]
+    fn next_to_original_lands_immediately_after_its_source() {
+        let (order, a, b) = strip();
+        assert_eq!(
+            placement_index(&order, TabPlacement::NextToOriginal, a),
+            Some(1),
+            "a copy of the first tab goes before the SFTP tab that follows it"
+        );
+        assert_eq!(
+            placement_index(&order, TabPlacement::NextToOriginal, b),
+            Some(3),
+            "a copy of the last terminal tab goes before Settings"
+        );
+    }
+
+    #[test]
+    fn a_closed_original_appends_instead_of_guessing() {
+        let (order, ..) = strip();
+        // The source was closed while its copy was still connecting.
+        assert_eq!(
+            placement_index(&order, TabPlacement::NextToOriginal, Uuid::from_u128(99)),
+            None
+        );
+    }
+
+    #[test]
+    fn start_and_end_ignore_the_source() {
+        let (order, a, _) = strip();
+        assert_eq!(placement_index(&order, TabPlacement::Start, a), Some(0));
+        assert_eq!(placement_index(&order, TabPlacement::End, a), None);
+        // Even a dangling source id keeps those two honest.
+        let gone = Uuid::from_u128(99);
+        assert_eq!(placement_index(&order, TabPlacement::Start, gone), Some(0));
+        assert_eq!(placement_index(&order, TabPlacement::End, gone), None);
+    }
+
+    #[test]
+    fn settings_can_be_the_source_of_a_placement() {
+        // Not reachable from Duplicate today (Settings has no duplicate
+        // action), but the strip id is synthetic and the lookup must not
+        // silently miss it if one ever appears.
+        let (order, ..) = strip();
+        assert_eq!(
+            placement_index(
+                &order,
+                TabPlacement::NextToOriginal,
+                crate::state::SETTINGS_TAB_ID
+            ),
+            Some(4)
+        );
+    }
+
+    #[test]
+    fn an_empty_strip_appends_whatever_was_asked() {
+        let empty: Vec<TabRef> = Vec::new();
+        let id = Uuid::from_u128(1);
+        assert_eq!(placement_index(&empty, TabPlacement::NextToOriginal, id), None);
+        assert_eq!(placement_index(&empty, TabPlacement::Start, id), Some(0));
+    }
+}
+

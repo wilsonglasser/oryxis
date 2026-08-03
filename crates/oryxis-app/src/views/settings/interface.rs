@@ -4,6 +4,44 @@ use super::*;
 use iced::widget::column;
 
 impl Oryxis {
+    /// The one-line "your Ctrl+digit slots are off by one" notice under
+    /// the tab-number picker, with the button that aligns them.
+    ///
+    /// Shown only when it is actually true: numbering on AND the legacy
+    /// mapping still in place (Home owning the first slot, which only
+    /// vaults from before the change have). Everyone else gets a
+    /// zero-height `Space`, which the fork keeps in the child list, so
+    /// the surrounding column's slot count never changes.
+    fn tab_number_slot_offset_notice(&self) -> Element<'_, Message> {
+        use crate::views::tab_bar::TabNumberStyle;
+        if self.tab_number_style() == TabNumberStyle::Off
+            || !self.setting_tab_slot_includes_home
+        {
+            return Space::new().into();
+        }
+        crate::widgets::dir_row(vec![
+            text(crate::i18n::t("tab_number_slot_offset"))
+                .size(11)
+                .color(OryxisColors::t().warning)
+                .width(Length::Fill)
+                .into(),
+            self.settings_nav_slot_labeled(
+                crate::i18n::t("tab_number_slot_align"),
+                crate::keynav::RowAction::activate(Message::Settings(
+                    SettingsMessage::SettingToggleTabSlotIncludesHome,
+                )),
+                6.0,
+                styled_button(
+                    crate::i18n::t("tab_number_slot_align"),
+                    Message::Settings(SettingsMessage::SettingToggleTabSlotIncludesHome),
+                    OryxisColors::t().bg_selected,
+                ),
+            ),
+        ])
+        .align_y(iced::Alignment::Center)
+        .into()
+    }
+
     pub(crate) fn view_settings_interface(&self) -> Element<'_, Message> {
         // Keyboard rows are recorded in visual order: the sections are
         // deliberately CONSTRUCTED in the same order they render (the
@@ -217,6 +255,48 @@ impl Oryxis {
                 },
                 180.0,
                 |v| Message::Settings(SettingsMessage::SettingPinnedTabStyleChanged(v)),
+            ),
+            Space::new().height(8),
+            self.nav_pick_row(
+                crate::i18n::t("tab_number_style"),
+                vec!["off".to_string(), "prefix".to_string(), "icon".to_string()],
+                self.setting_tab_number_style.clone(),
+                |s: &String| {
+                    crate::i18n::t(match s.as_str() {
+                        "prefix" => "tab_number_style_prefix",
+                        "icon" => "tab_number_style_icon",
+                        _ => "tab_number_style_off",
+                    })
+                    .to_string()
+                },
+                200.0,
+                |v| Message::Settings(SettingsMessage::SettingTabNumberStyleChanged(v)),
+            ),
+            Space::new().height(4),
+            text(crate::i18n::t("tab_number_style_desc"))
+                .size(11)
+                .color(OryxisColors::t().text_muted),
+            // The numbers are strip positions and so is Ctrl+digit, but
+            // on a vault from before the slot change Home holds slot 1
+            // and the two read one apart. Only someone who turns the
+            // numbers ON can be misled by that, so the offer to align
+            // them lives right here instead of nagging everyone else.
+            self.tab_number_slot_offset_notice(),
+            Space::new().height(8),
+            self.nav_pick_row(
+                crate::i18n::t("duplicate_tab_position"),
+                vec!["next".to_string(), "end".to_string(), "start".to_string()],
+                self.setting_duplicate_tab_position.clone(),
+                |s: &String| {
+                    crate::i18n::t(match s.as_str() {
+                        "end" => "duplicate_tab_position_end",
+                        "start" => "duplicate_tab_position_start",
+                        _ => "duplicate_tab_position_next",
+                    })
+                    .to_string()
+                },
+                200.0,
+                |v| Message::Settings(SettingsMessage::SettingDuplicateTabPositionChanged(v)),
             ),
             Space::new().height(8),
             self.nav_toggle_row(

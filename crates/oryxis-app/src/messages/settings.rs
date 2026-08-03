@@ -312,6 +312,12 @@ pub enum SettingsMessage {
     RelaunchApp,
     SettingTabCloseButtonSideChanged(String),
     SettingPinnedTabStyleChanged(String),
+    /// Where a duplicated tab lands: "next" / "end" / "start".
+    SettingDuplicateTabPositionChanged(String),
+    /// Tab numbering: "off" / "prefix" / "icon".
+    SettingTabNumberStyleChanged(String),
+    /// Flip whether the Home area tab owns the first Ctrl+digit slot.
+    SettingToggleTabSlotIncludesHome,
     SettingTabFillStyleChanged(String),
     SettingTabAccentColorChanged(String),
     /// Dock the tab strip at the top (default) or the bottom of the

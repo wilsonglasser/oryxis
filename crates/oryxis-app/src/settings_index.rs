@@ -69,6 +69,9 @@ pub(crate) static SETTINGS_INDEX: &[SettingsIndexEntry] = &[
     e(S::Interface, "default_host_icon", "default host icon avatar style"),
     e(S::Interface, "close_button_position", "tab close button position left right"),
     e(S::Interface, "pinned_tab_style", "pinned tab style compact icon"),
+    e(S::Interface, "tab_number_style", "tab number index numbering prefix badge icon slot ctrl digit"),
+    e(S::Interface, "duplicate_tab_position", "duplicate tab position next beside end start append copy"),
+    e(S::Interface, "show_tab_host_address_label", "tab host address ip port second line show"),
     e(S::Interface, "show_tab_status_dot", "tab status dot connection indicator"),
     e(S::Interface, "tab_accent_text", "tab text accent color tint"),
     e(S::Interface, "tab_accent_color", "tab accent color host app source"),
@@ -225,6 +228,7 @@ pub(crate) static SETTINGS_INDEX: &[SettingsIndexEntry] = &[
     // (the update rows live in `update_entries()`, they don't exist in
     // a packaged build)
     // ── Shortcuts ──────────────────────────────────────────────────
+    e(S::Shortcuts, "tab_slot_includes_home", "ctrl digit tab slot home first number offset shortcut"),
     e(S::Shortcuts, "hotkey_reset_all", "reset all shortcuts hotkeys defaults keybindings"),
     // ── Cloud ──────────────────────────────────────────────────────
     e(S::Cloud, "settings_cloud_auto_refresh", "cloud auto refresh profiles discover"),

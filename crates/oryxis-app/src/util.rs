@@ -645,6 +645,40 @@ pub(crate) fn resolve_keepalive(
     (secs > 0).then(|| std::time::Duration::from_secs(secs))
 }
 
+/// The connection's address as the UI shows it: `user@host[:port]` for
+/// SSH / Telnet (each protocol's default port omitted, so the common case
+/// stays short), and `port @ baud` for a serial line, where a TCP port and
+/// a username are meaningless.
+///
+/// Shared by the dashboard card subtitle (`show_host_address`) and the
+/// tab's second line (`show_tab_host_address`) so the two can never
+/// disagree about what a host's address looks like. Privacy masking is
+/// the caller's, because the two surfaces reveal on different gestures
+/// (card hover vs tab hover).
+pub(crate) fn host_address_label(conn: &oryxis_core::models::Connection) -> String {
+    use oryxis_core::models::connection::ConnectionProtocol;
+    match conn.protocol {
+        ConnectionProtocol::Serial => {
+            let baud = conn.serial.map(|s| s.baud).unwrap_or(9600);
+            format!("{} @ {}", conn.hostname, baud)
+        }
+        _ => {
+            let default_port = conn.protocol.default_port().unwrap_or(22);
+            let port_part = if conn.port == default_port {
+                String::new()
+            } else {
+                format!(":{}", conn.port)
+            };
+            format!(
+                "{}@{}{}",
+                conn.username.as_deref().unwrap_or("root"),
+                conn.hostname,
+                port_part
+            )
+        }
+    }
+}
+
 // ── New-connection default helpers ──
 //
 // These translate the typed "default host profile" settings to / from

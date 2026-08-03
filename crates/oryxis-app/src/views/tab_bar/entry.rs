@@ -26,6 +26,10 @@ pub(crate) struct StripCtx {
     /// (active natural, inactives content-hugged and possibly shrunk
     /// under overflow). Empty in vertical mode.
     pub(crate) session_widths: Vec<f32>,
+    /// Width every chip reserves for the tab-number prefix
+    /// (`Oryxis::tab_number_px`), 0 when numbering is off or drawn in
+    /// the badge slot.
+    pub(crate) number_px: f32,
 }
 
 impl Oryxis {
@@ -95,12 +99,20 @@ impl Oryxis {
     /// Build the strip element for one `strip_order` entry: the session
     /// or SFTP tab, its compact pinned chip, or the same-width gap the
     /// other tabs slide around while that entry is being dragged.
+    ///
+    /// `slot` is the entry's 0-based position in the FULL strip order,
+    /// which is what the tab number renders. Callers that skip entries
+    /// (the chrome bar takes only the pinned ones, the side strip only
+    /// the unpinned) must still count from the unfiltered order, or the
+    /// numbering would restart per surface.
     pub(crate) fn strip_tab_element(
         &self,
         ctx: &StripCtx,
         entry: StripEntry,
+        slot: usize,
     ) -> Element<'_, Message> {
         let active_idx = self.active_tab;
+        let number = self.tab_number_at(slot);
         // Terminal and SFTP tabs share one strip; SFTP tabs are active
         // only while the SFTP surface itself is up.
         let sftp_surface = self.active_tab.is_none() && self.active_view == View::Sftp;
@@ -115,7 +127,7 @@ impl Oryxis {
                 } else if is_active {
                     TAB_NATURAL_WIDTH
                 } else {
-                    settings_tab_width(label)
+                    settings_tab_width(label, ctx.number_px)
                 }
             });
             let is_dragging = self
@@ -133,6 +145,7 @@ impl Oryxis {
                 width,
                 ctx.close_on_right,
                 ctx.solid_fill,
+                number,
             );
         }
         let idx = match entry {
@@ -191,7 +204,7 @@ impl Oryxis {
                 } else if is_active {
                     TAB_NATURAL_WIDTH
                 } else {
-                    tab_content_width(&display_label, ctx.close_on_right, false)
+                    tab_content_width(&display_label, ctx.close_on_right, false, ctx.number_px)
                 }
             });
             // The dragged tab floats as a ghost; leave a same-width
@@ -205,9 +218,9 @@ impl Oryxis {
                 let gap_w = if ctx.compact_pins && tab.pinned { CHIP_W } else { width };
                 return Space::new().width(gap_w).height(TAB_HEIGHT).into();
             } else if ctx.compact_pins && tab.pinned {
-                return sftp_pinned_chip(idx, is_active, badge_accent, host_accent, ctx.solid_fill);
+                return sftp_pinned_chip(idx, is_active, badge_accent, host_accent, ctx.solid_fill, number);
             }
-            return sftp_session_tab(idx, &display_label, is_active, width, badge_accent, host_accent, self.setting_tab_accent_text, tab.pinned, ctx.solid_fill);
+            return sftp_session_tab(idx, &display_label, is_active, width, badge_accent, host_accent, self.setting_tab_accent_text, tab.pinned, ctx.solid_fill, number);
         }
         let tab = &self.tabs[idx];
         let is_active = active_idx == Some(idx);
@@ -374,23 +387,29 @@ impl Oryxis {
         } else {
             None
         };
-        // Host address for the second line of the tab, showing the
-        // `host:port` destination. Only shown when the "Show host
-        // address on tabs" setting is on; local shells, ephemeral
-        // cloud tabs, and renamed tabs are skipped. Privacy Mode
-        // masks it when the tab is not hovered. Resolved through
-        // the pane's origin (id-based) so it survives OSC title
-        // changes.
+        // Second line of the tab: the connection address, in the SAME
+        // form the host cards use (`host_address_label`: default port
+        // omitted, serial lines as `port @ baud`) and behind the same
+        // off-by-default setting, so addresses stay out of screenshots
+        // unless the user asks for them.
+        //
+        // Local shells and ephemeral cloud tabs have no saved
+        // connection, so they simply have no address; a renamed tab
+        // keeps its rename alone (the user replaced the identity).
+        // Resolved through the pane's ORIGIN (id-based), so an OSC
+        // title change cannot repoint it at another host.
+        //
+        // Privacy Mode masks it in blocks and reveals on hover, exactly
+        // like the card address, rather than redacting it as a label.
         let tab_address: Option<String> = if self.setting_show_tab_host_address
             && tab.custom_name.is_none()
         {
-            let conn = self.pane_origin_connection(tab.active().id);
-            conn.map(|c| {
-                let raw = format!("{}:{}", c.hostname, c.port);
-                if is_hovered {
-                    raw
+            self.pane_origin_connection(tab.active().id).map(|c| {
+                let address = crate::util::host_address_label(c);
+                if self.privacy_active(c) && !is_hovered {
+                    crate::widgets::mask_blocks(&address)
                 } else {
-                    self.privacy_display_label(&c.label, &raw, &ctx.privacy_terms)
+                    address
                 }
             })
         } else {
@@ -443,6 +462,7 @@ impl Oryxis {
                 self.setting_tab_accent_text,
                 ctx.solid_fill,
                 files_mode,
+                number,
             )
         } else {
             // An in-flight ZMODEM transfer (any pane of the tab)
@@ -487,6 +507,7 @@ impl Oryxis {
                 zmodem_progress.or(tab.active().progress),
                 files_mode,
                 tab_address,
+                number,
             )
         }
     }

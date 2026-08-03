@@ -225,6 +225,31 @@ impl Oryxis {
                 self.setting_pinned_tab_style = normalized.into();
                 self.persist_setting("pinned_tab_style", normalized);
             }
+            SettingsMessage::SettingDuplicateTabPositionChanged(val) => {
+                let normalized = match val.as_str() {
+                    "end" => "end",
+                    "start" => "start",
+                    _ => "next",
+                };
+                self.setting_duplicate_tab_position = normalized.into();
+                self.persist_setting("duplicate_tab_position", normalized);
+            }
+            SettingsMessage::SettingTabNumberStyleChanged(val) => {
+                let normalized = match val.as_str() {
+                    "prefix" => "prefix",
+                    "icon" => "icon",
+                    _ => "off",
+                };
+                self.setting_tab_number_style = normalized.into();
+                self.persist_setting("tab_number_style", normalized);
+            }
+            SettingsMessage::SettingToggleTabSlotIncludesHome => {
+                self.setting_tab_slot_includes_home = !self.setting_tab_slot_includes_home;
+                self.persist_setting(
+                    "tab_slot_includes_home",
+                    if self.setting_tab_slot_includes_home { "true" } else { "false" },
+                );
+            }
             SettingsMessage::SettingTabFillStyleChanged(val) => {
                 let normalized = match val.as_str() {
                     "solid" => "solid",

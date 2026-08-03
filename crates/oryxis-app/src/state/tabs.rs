@@ -795,6 +795,73 @@ pub(crate) struct TerminalTab {
     pub broadcast: bool,
 }
 
+/// Where the copy a "Duplicate Tab" spawns lands in the strip
+/// (`duplicate_tab_position` setting). Ordering only: this never decides
+/// anything about `Oryxis::tabs`, whose indices are load-bearing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub(crate) enum TabPlacement {
+    /// Immediately after the tab it was duplicated from, so a copy made
+    /// from a tab early in a long strip stays next to its source instead
+    /// of landing off-screen at the far end (PR #110's report).
+    #[default]
+    NextToOriginal,
+    /// The historical behaviour: appended at the far end of the strip.
+    End,
+    /// At the head of the strip (after the pinned partition).
+    Start,
+}
+
+impl TabPlacement {
+    /// Parse the `duplicate_tab_position` setting value; anything
+    /// unrecognized falls back to the default, mirroring
+    /// `TabBarPos::from_setting`.
+    pub(crate) fn from_setting(v: &str) -> Self {
+        match v {
+            "end" => Self::End,
+            "start" => Self::Start,
+            _ => Self::NextToOriginal,
+        }
+    }
+}
+
+/// A Duplicate whose new tab has not been born yet.
+///
+/// The copy is spawned by re-dispatching the source tab's own open
+/// message (`ConnectSsh` / `OpenLocalShell` / a cloud `relaunch`), and
+/// for cloud tabs that answer lands several updates later, so the
+/// placement has to be remembered rather than applied inline.
+///
+/// It is deliberately a STRIP placement keyed by tab id, not an index
+/// into `Oryxis::tabs`: `active_tab`, `last_terminal_tab`,
+/// `connecting.tab_idx` and `pending_pane_split` all hold positions in
+/// that vec, and every removal path fixes them up by hand
+/// (`teardown_tab_at`, `adjust_last_terminal_tab_after_remove`).
+/// Inserting into the middle of it would silently invalidate all four,
+/// so the copy is appended like any other tab and only its `tab_order`
+/// entry moves.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct PendingTabPlacement {
+    /// The tab that was duplicated. An id, so closing or reordering
+    /// tabs while the copy is still connecting cannot repoint it.
+    pub(crate) source_id: Uuid,
+    pub(crate) placement: TabPlacement,
+    /// When it was armed, for [`Self::is_expired`].
+    pub(crate) armed_at: std::time::Instant,
+}
+
+impl PendingTabPlacement {
+    /// A duplicate that never produces a tab (the cloud plugin fails to
+    /// start, the PTY refuses to spawn) would otherwise leave this armed
+    /// forever and reposition some unrelated tab opened minutes later.
+    /// Nothing legitimate takes this long: even a cloud session that has
+    /// to download its plugin answers well inside it.
+    const TTL: std::time::Duration = std::time::Duration::from_secs(20);
+
+    pub(crate) fn is_expired(&self) -> bool {
+        self.armed_at.elapsed() > Self::TTL
+    }
+}
+
 /// Reference to an open tab in the unified strip. Terminal and SFTP tabs
 /// share one reorderable, pinnable row; identity is by `Uuid` (stable
 /// across reorder / close) rather than a vec index. Reserved for the full

@@ -82,6 +82,22 @@ pub(crate) fn area_tab<'a>(
     btn
 }
 
+/// The label a numbered tab renders: `"12. foo"` under the prefix style,
+/// untouched under the badge style (there the number replaces the icon)
+/// and when numbering is off. Shared by every strip renderer so the
+/// number can never appear on one kind of tab and not another.
+pub(crate) fn numbered_label(label: &str, number: Option<TabNumber>) -> String {
+    match number {
+        Some(n) if !n.in_icon => format!("{}{}", n.prefix(), label),
+        _ => label.to_string(),
+    }
+}
+
+/// Whether this tab draws its number in the badge slot.
+fn number_in_badge(number: Option<TabNumber>) -> Option<usize> {
+    number.filter(|n| n.in_icon).map(|n| n.value)
+}
+
 /// A SFTP browser tab chip in the strip, styled to match the terminal session
 /// tabs: a rounded folder badge (tinted with the mounted host's accent) + the
 /// label, with the close X *inside* the tab fill as a trailing slot (shown on
@@ -109,6 +125,8 @@ pub(crate) fn sftp_session_tab<'a>(
     accent_text: bool,
     pinned: bool,
     solid_fill: bool,
+    // Strip position under `tab_number_style`; `None` = numbering off.
+    number: Option<TabNumber>,
 ) -> Element<'a, Message> {
     // The contrast-validated (issue #79) gated accent is what may render
     // as text, border and gradient wash over the strip; the raw brand
@@ -135,7 +153,11 @@ pub(crate) fn sftp_session_tab<'a>(
     // Badge: always the folder glyph (so an SFTP tab stays recognizable as
     // SFTP, not mistaken for a terminal), tinted with the mounted host's color
     // (custom or OS-brand) so it still "inherits" the host's hue.
-    let badge = container(iced_fonts::lucide::folder_tree().size(12).color(Color::WHITE))
+    let badge_glyph: Element<'_, Message> = match number_in_badge(number) {
+        Some(n) => text(n.to_string()).size(10).font(SYSTEM_UI_SEMIBOLD).color(Color::WHITE).into(),
+        None => iced_fonts::lucide::folder_tree().size(12).color(Color::WHITE).into(),
+    };
+    let badge = container(badge_glyph)
         .center_x(Length::Fixed(TAB_ICON_SLOT))
         .center_y(Length::Fixed(TAB_ICON_SLOT))
         .style(move |_| container::Style {
@@ -146,7 +168,7 @@ pub(crate) fn sftp_session_tab<'a>(
     // Always render the X inside the tab fill (no separate hover state).
     let show_close = true;
     let label_width = (width - TAB_ICON_SLOT - TAB_ICON_SLOT - 12.0).max(0.0);
-    let label_text = text(truncate_label(label, label_width))
+    let label_text = text(truncate_label(&numbered_label(label, number), label_width))
         .size(12)
         .line_height(1.0)
         .wrapping(iced::widget::text::Wrapping::None)
@@ -229,6 +251,7 @@ pub(crate) fn settings_tab<'a>(
     width: f32,
     close_on_right: bool,
     solid_fill: bool,
+    number: Option<TabNumber>,
 ) -> Element<'a, Message> {
     let accent = crate::theme::readable_accent_on(
         OryxisColors::t().accent,
@@ -245,7 +268,18 @@ pub(crate) fn settings_tab<'a>(
         Background::Color(Color::TRANSPARENT)
     };
     let badge = || {
-        container(iced_fonts::lucide::settings().size(12).color(Color::WHITE))
+        // Under `tab_number_style = "icon"` the strip position takes the
+        // badge slot here too, so the Settings chip is numbered like
+        // every other one instead of being the gap in the sequence.
+        let glyph: Element<'a, Message> = match number_in_badge(number) {
+            Some(n) => text(n.to_string())
+                .size(10)
+                .font(SYSTEM_UI_SEMIBOLD)
+                .color(Color::WHITE)
+                .into(),
+            None => iced_fonts::lucide::settings().size(12).color(Color::WHITE).into(),
+        };
+        container(glyph)
             .center_x(Length::Fixed(TAB_ICON_SLOT))
             .center_y(Length::Fixed(TAB_ICON_SLOT))
             .style(move |_| container::Style {
@@ -296,7 +330,7 @@ pub(crate) fn settings_tab<'a>(
     // is what truncated "Settings" to "Sett…" on a min-width chip, so the
     // reserve has to match `settings_tab_width` exactly.
     let label_width = (width - TAB_ICON_SLOT - 4.0).max(0.0);
-    let label_text = text(truncate_label(label, label_width))
+    let label_text = text(truncate_label(&numbered_label(label, number), label_width))
         .size(12)
         .line_height(1.0)
         .wrapping(iced::widget::text::Wrapping::None)
@@ -353,10 +387,15 @@ pub(crate) fn settings_tab<'a>(
 /// Compact (Chrome-style) pinned SFTP tab: icon-only folder chip at a fixed
 /// width. Select on click, right-click opens the context menu. Mirrors
 /// `pinned_tab_chip` for the SFTP side.
-pub(crate) fn sftp_pinned_chip<'a>(idx: usize, is_active: bool, badge_accent: Color, host_accent: Option<Color>, solid_fill: bool) -> Element<'a, Message> {
+pub(crate) fn sftp_pinned_chip<'a>(idx: usize, is_active: bool, badge_accent: Color, host_accent: Option<Color>, solid_fill: bool, number: Option<TabNumber>) -> Element<'a, Message> {
     // Folder glyph (SFTP identity) tinted with the host brand, ungated so
-    // the identity survives `tab_accent_color = "app"`.
-    let badge = container(iced_fonts::lucide::folder_tree().size(12).color(Color::WHITE))
+    // the identity survives `tab_accent_color = "app"`. Icon-only, so a
+    // number takes the glyph's place under either numbering style.
+    let badge_glyph: Element<'_, Message> = match number {
+        Some(n) => text(n.value.to_string()).size(10).font(SYSTEM_UI_SEMIBOLD).color(Color::WHITE).into(),
+        None => iced_fonts::lucide::folder_tree().size(12).color(Color::WHITE).into(),
+    };
+    let badge = container(badge_glyph)
         .center_x(Length::Fixed(TAB_ICON_SLOT))
         .center_y(Length::Fixed(TAB_ICON_SLOT))
         .style(move |_| container::Style {
@@ -499,9 +538,12 @@ pub(crate) fn session_tab<'a>(
     // Hybrid tab (issue #61): `Some(state)` renders the clickable mode
     // glyph (>_ terminal / folder files); `None` hides it (no SSH).
     files_mode: Option<bool>,
-    // Optional second-line address (`host:port`) shown below the
-    // label when the "Show host address on tabs" setting is on.
+    // Optional second line under the label: the connection address,
+    // already formatted and privacy-masked by the caller (shared with
+    // the host cards' subtitle). `None` = setting off / no host.
     address: Option<String>,
+    // Strip position under `tab_number_style`; `None` = numbering off.
+    number: Option<TabNumber>,
 ) -> Element<'a, Message> {
     // Contrast validator (issue #79): the accent renders as the active
     // tab's TEXT (plus borders and the gradient wash) over the strip, so
@@ -537,7 +579,8 @@ pub(crate) fn session_tab<'a>(
     };
 
     let is_disconnected = label.ends_with(" (disconnected)");
-    let display_label_full = format!("{}. {}", idx + 1, label.trim_end_matches(" (disconnected)"));
+    let display_label_full =
+        numbered_label(label.trim_end_matches(" (disconnected)"), number);
     // When the close X gets its own trailing slot, the label has less
     // horizontal room. Reserve the X's slot + a small gap so the
     // truncation kicks in earlier instead of the X clipping over the
@@ -582,14 +625,26 @@ pub(crate) fn session_tab<'a>(
         // Square / Outline / Initials). For Initials the OS glyph is
         // ignored and the leading letters of the label render; for
         // the other styles the glyph paints inside the shape.
-        let glyph_el: Element<'_, Message> = glyph.view(12.0, Color::WHITE);
-        let base = crate::widgets::host_icon(
-            host_icon_style,
-            badge_color,
-            label,
-            Some(glyph_el),
-            TAB_ICON_SLOT,
-        );
+        // Under `tab_number_style = "icon"` the number takes this slot
+        // instead, in the same shape, so the strip keeps its rhythm.
+        let base = match number_in_badge(number) {
+            Some(n) => crate::widgets::host_icon_text(
+                host_icon_style,
+                badge_color,
+                &n.to_string(),
+                TAB_ICON_SLOT,
+            ),
+            None => {
+                let glyph_el: Element<'_, Message> = glyph.view(12.0, Color::WHITE);
+                crate::widgets::host_icon(
+                    host_icon_style,
+                    badge_color,
+                    label,
+                    Some(glyph_el),
+                    TAB_ICON_SLOT,
+                )
+            }
+        };
         // Wrap in a container so the existing status_dot Stack code
         // below still has a container to compose with; host_icon
         // already returns an Element so we re-wrap to keep the
@@ -698,19 +753,21 @@ pub(crate) fn session_tab<'a>(
         .wrapping(iced::widget::text::Wrapping::None)
         .font(SYSTEM_UI_SEMIBOLD)
         .color(fg)
-        .width(if is_active { Length::Fill } else { Length::Shrink });
+        .width(Length::Fill);
 
-    // Second-line host address, shown below the label when enabled.
+    // Second line: the connection address, dimmer and a size down so the
+    // label stays the primary read. Truncated against the same width the
+    // label uses, so a long address ellipsizes instead of pushing the
+    // close X out of the chip.
     let address_row: Option<Element<'_, Message>> = address.map(|addr| {
-        container(
-            text(addr)
-                .size(10)
-                .line_height(1.0)
-                .wrapping(iced::widget::text::Wrapping::None)
-                .font(SYSTEM_UI_SEMIBOLD)
-                .color(Color { a: 0.50, ..fg }),
-        )
-        .into()
+        text(truncate_label(&addr, label_width))
+            .size(10)
+            .line_height(1.0)
+            .wrapping(iced::widget::text::Wrapping::None)
+            .font(SYSTEM_UI_SEMIBOLD)
+            .color(Color { a: 0.60, ..fg })
+            .width(Length::Fill)
+            .into()
     });
 
     // Hybrid mode glyph: shows the tab's current surface, clicking
@@ -731,19 +788,20 @@ pub(crate) fn session_tab<'a>(
             items.push(chip);
         }
         items.push(Space::new().width(5).into());
-        // When an address line is present, stack label + address vertically.
+        // With an address line the label becomes a two-row column. It
+        // keeps the label's own `Length::Fill`, so the close X still
+        // sits at the trailing edge and the single-line geometry (which
+        // every tab uses when the setting is off) is untouched.
         let label_column: Element<'_, Message> = if let Some(addr) = address_row {
             iced::widget::Column::with_children(vec![label_text.into(), addr])
-                .spacing(1.0)
-                .width(if is_active { Length::Fill } else { Length::Shrink })
+                .spacing(1)
+                .width(Length::Fill)
                 .into()
         } else {
             label_text.into()
         };
         items.push(label_column);
         if close_on_right {
-            // Push the trailing close button to the right edge.
-            items.push(Space::new().width(Length::Fill).into());
             // Trailing slot reserves its width even when the X isn't
             // currently shown, so the label position doesn't jump on hover.
             let trailing_slot: Element<'_, Message> = if show_close {
@@ -1076,6 +1134,8 @@ pub(crate) fn pinned_tab_chip<'a>(
     // Hybrid tab: `Some(state)` widens the chip to carry the mode glyph
     // (a pinned hybrid must not lose its toggle).
     files_mode: Option<bool>,
+    // Strip position under `tab_number_style`; `None` = numbering off.
+    number: Option<TabNumber>,
 ) -> Element<'a, Message> {
     // Contrast validator (issue #79): the accent tints the mode-chip
     // glyph and the active gradient wash, both over the strip; the OS
@@ -1090,8 +1150,21 @@ pub(crate) fn pinned_tab_chip<'a>(
     } else {
         crate::os_icon::resolve_icon(detected_os, fallback)
     };
-    let glyph_el: Element<'_, Message> = glyph.view(13.0, Color::WHITE);
-    let base = crate::widgets::host_icon(host_icon_style, badge_color, "", Some(glyph_el), TAB_ICON_SLOT);
+    // A compact pinned chip is icon-only, so it has nowhere to put a
+    // prefix: BOTH numbering styles land in the badge here, otherwise the
+    // pinned tabs would be the silent gap in an otherwise numbered strip.
+    let base = match number {
+        Some(n) => crate::widgets::host_icon_text(
+            host_icon_style,
+            badge_color,
+            &n.value.to_string(),
+            TAB_ICON_SLOT,
+        ),
+        None => {
+            let glyph_el: Element<'_, Message> = glyph.view(13.0, Color::WHITE);
+            crate::widgets::host_icon(host_icon_style, badge_color, "", Some(glyph_el), TAB_ICON_SLOT)
+        }
+    };
     let badge: Element<'_, Message> = if status_dot.is_some() || attention_dot.is_some() {
         let mut stack = iced::widget::Stack::new().push(
             container(base)

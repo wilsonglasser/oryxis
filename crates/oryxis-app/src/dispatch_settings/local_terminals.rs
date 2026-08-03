@@ -402,6 +402,7 @@ pub(crate) fn spawn_local_shell_in(
                 program_label, args_label
             );
             state.set_palette(app.terminal_palette.clone());
+            let tab_idx = app.tabs.len();
             let label = pick
                 .as_ref()
                 .map(|(_, _, l)| l.clone())
@@ -413,13 +414,12 @@ pub(crate) fn spawn_local_shell_in(
                 program: pick.as_ref().map(|(p, _, _)| p.clone()).unwrap_or_default(),
                 args: pick.as_ref().map(|(_, a, _)| a.clone()).unwrap_or_default(),
             });
-            let mut tab = TerminalTab::new_single(
+            app.tabs.push(TerminalTab::new_single(
                 label,
                 Arc::new(Mutex::new(state)),
-            );
-            tab.active_mut().origin = origin;
-            let pane_id = tab.active().id;
-            let tab_idx = app.push_terminal_tab(tab);
+            ));
+            app.tabs[tab_idx].active_mut().origin = origin;
+            let pane_id = app.tabs[tab_idx].active().id;
             app.active_tab = Some(tab_idx);
             app.remember_terminal_tab_focus(tab_idx);
             app.active_view = View::Terminal;
