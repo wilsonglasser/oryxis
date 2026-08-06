@@ -1,6 +1,6 @@
 # Architecture
 
-Oryxis is a Cargo workspace of 23 crates. The UI layer is an
+Oryxis is a Cargo workspace of 24 crates. The UI layer is an
 [iced](https://iced.rs) application on the wgpu backend; everything below it
 is a set of focused engines (SSH, Telnet, serial, vault, sync, terminal)
 that the app composes.
@@ -53,6 +53,7 @@ that the app composes.
 | `oryxis-telnet` | Native Telnet engine: RFC 854/855 option negotiation (RFC 1143 state machine), NAWS, terminal-type, charset transcoding |
 | `oryxis-serial` | Serial console sessions: COM / `/dev/tty*`, configurable baud, framing, flow control, line endings, local echo |
 | `oryxis-zmodem` | ZMODEM transfer engine: auto-detects `sz` / `rz` on the byte stream over SSH, Telnet and serial |
+| `oryxis-archive` | Archive operations for the SFTP file browser: browse and read/write zip and tar over local and remote (ranged) reads, transport-agnostic |
 | `oryxis-vault` | Encrypted vault: SQLite + Argon2id + ChaCha20-Poly1305 per-field + session logs / recordings + `.oryxis` export/import |
 | `oryxis-biometric` | Biometric / OS-keyring app unlock: Windows Hello, macOS Touch ID (Keychain user presence), Linux Secret Service |
 | `oryxis-sync` | P2P sync engine: QUIC (quinn) + mDNS + STUN + signaling + HTTP relay fallback + Ed25519/X25519 + LWW conflict resolution |

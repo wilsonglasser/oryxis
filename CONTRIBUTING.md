@@ -32,7 +32,7 @@ cd oryxis
 cargo run
 ```
 
-`docs/ARCHITECTURE.md` maps the 23-crate workspace; most UI work lands in
+`docs/ARCHITECTURE.md` maps the 24-crate workspace; most UI work lands in
 `crates/oryxis-app`, engine work in `oryxis-ssh` / `oryxis-vault` /
 `oryxis-sync` / `oryxis-terminal`.
 
