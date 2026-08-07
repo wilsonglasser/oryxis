@@ -270,6 +270,8 @@ impl Oryxis {
     fn open_session_group_editor(&mut self, mut form: SessionGroupForm) -> Task<Message> {
         // Mutually exclusive right-panel slot, close other panels first.
         self.panels.host_panel = false;
+        // Sweep revealed stored secrets (typed edits survive).
+        self.sweep_editor_secrets();
         self.panel_nav_clear();
         self.cloud_form.visible = false;
         self.cloud_dynamic_form.visible = false;

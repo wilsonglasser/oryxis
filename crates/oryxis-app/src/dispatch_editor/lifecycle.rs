@@ -7,6 +7,32 @@
 use super::*;
 
 impl Oryxis {
+    /// Sweep the host editor's secret buffers once the panel closes, so
+    /// a revealed (decrypted) stored value doesn't keep sitting in RAM
+    /// behind a closed panel. Only untouched buffers are cleared: those
+    /// hold the prefilled STORED plaintext shown by the eye toggle,
+    /// which the vault re-decrypts on demand the next time the eye is
+    /// opened. A touched buffer holds the user's own typing (new host /
+    /// replaced password); the author's original code always let that
+    /// linger until the next editor open, and sweeping it would eat
+    /// work-in-progress when the panel is merely switched to another
+    /// one. `clear()` never sets the touched flag, so the tri-state save
+    /// semantics are untouched.
+    pub(crate) fn sweep_editor_secrets(&mut self) {
+        if !self.editor_form.password.touched() {
+            self.editor_form.password.clear();
+        }
+        if !self.editor_form.proxy_password.touched() {
+            self.editor_form.proxy_password.clear();
+        }
+        if !self.editor_form.totp_secret.touched() {
+            self.editor_form.totp_secret.clear();
+        }
+        if !self.editor_form.target_password.touched() {
+            self.editor_form.target_password.clear();
+        }
+    }
+
     pub(super) fn handle_editor_lifecycle(&mut self, message: EditorMessage) -> Task<Message> {
         match message {
             EditorMessage::ShowNewConnection => {
@@ -240,6 +266,9 @@ impl Oryxis {
                             self.panels.host_panel = false;
                             self.panel_nav_clear();
                             self.host_panel_error = None;
+                            // The save consumed the secrets; drop any
+                            // plaintext the eye may have revealed.
+                            self.sweep_editor_secrets();
                             // Re-paint any open tabs of this host so a
                             // newly chosen palette takes effect without
                             // a reconnect.
@@ -311,12 +340,18 @@ impl Oryxis {
                 self.panels.host_panel = false;
                 self.panel_nav_clear();
                 self.host_panel_error = None;
+                // The typed secrets rode into the quick-connect entry;
+                // drop any revealed plaintext from the form buffers.
+                self.sweep_editor_secrets();
                 return self.update(Message::Ssh(SshMessage::QuickConnect(Box::new(entry))));
             }
             EditorMessage::EditorCancel => {
                 self.panels.host_panel = false;
                 self.panel_nav_clear();
                 self.host_panel_error = None;
+                // Nothing was saved; sweep revealed stored plaintext
+                // (typed edits survive, the author's original behavior).
+                self.sweep_editor_secrets();
             }
             EditorMessage::RequestDeleteConnection(idx) => {
                 if let Some(conn) = self.connections.get(idx) {
@@ -337,6 +372,7 @@ impl Oryxis {
                         let _ = vault.delete_chat_conversations_for_connection(&id);
                         self.panels.host_panel = false;
                         self.panel_nav_clear();
+                        self.sweep_editor_secrets();
                         self.load_data_from_vault();
                     }
                 }

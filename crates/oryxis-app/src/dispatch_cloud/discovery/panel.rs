@@ -19,6 +19,8 @@ impl Oryxis {
                 self.overlay = None;
                 // Close any other right-panel (mutually exclusive slot).
                 self.panels.host_panel = false;
+                // Sweep revealed stored secrets (typed edits survive).
+                self.sweep_editor_secrets();
                 self.cloud_form.visible = false;
                 self.cloud_dynamic_form.visible = false;
                 self.group_edit.visible = false;

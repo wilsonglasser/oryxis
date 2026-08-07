@@ -29,6 +29,8 @@ impl Oryxis {
                     self.group_edit.visible = true;
                     // Mutually exclusive with the other right-hand panels.
                     self.panels.host_panel = false;
+                    // Sweep revealed stored secrets (typed edits survive).
+                    self.sweep_editor_secrets();
                     self.panel_nav_clear();
                     self.panels.session_group_panel = false;
                     self.cloud_form.visible = false;
@@ -56,6 +58,8 @@ impl Oryxis {
                     };
                     // Mutually exclusive with the other right-hand panels.
                     self.panels.host_panel = false;
+                    // Sweep revealed stored secrets (typed edits survive).
+                    self.sweep_editor_secrets();
                     self.panel_nav_clear();
                     self.panels.session_group_panel = false;
                     self.cloud_form.visible = false;
@@ -79,6 +83,8 @@ impl Oryxis {
                 };
                 // Mutually exclusive with the other right-hand panels.
                 self.panels.host_panel = false;
+                // Sweep revealed stored secrets (typed edits survive).
+                self.sweep_editor_secrets();
                 self.panel_nav_clear();
                 self.panels.session_group_panel = false;
                 self.cloud_form.visible = false;

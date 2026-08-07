@@ -37,8 +37,30 @@ impl Oryxis {
                 }
             }
             SettingsMessage::ToggleSecretVisibility(field) => {
-                if !self.revealed_secrets.remove(&field) {
+                if self.revealed_secrets.remove(&field) {
+                    // Hiding: the host editor's stored proxy password was
+                    // decrypted into the buffer on reveal; drop it right
+                    // away. Typed buffers (AI key, vault passwords,
+                    // export/share) keep their text.
+                    if field == crate::state::SecretField::ProxyPassword
+                        && !self.editor_form.proxy_password.touched()
+                    {
+                        self.editor_form.proxy_password.clear();
+                    }
+                } else {
                     self.revealed_secrets.insert(field);
+                    // Revealing a stored proxy password on demand: decrypt
+                    // it into the buffer only for the moment it is shown
+                    // (prefill stays untouched, so an unedited field still
+                    // preserves the stored value on save).
+                    if field == crate::state::SecretField::ProxyPassword
+                        && !self.editor_form.proxy_password.touched()
+                        && let Some(id) = self.editor_form.editing_id
+                        && let Some(pw) = self.vault.as_ref()
+                            .and_then(|v| v.get_proxy_password(&id).ok().flatten())
+                    {
+                        self.editor_form.proxy_password.prefill(pw);
+                    }
                 }
             }
             m => return Err(m),

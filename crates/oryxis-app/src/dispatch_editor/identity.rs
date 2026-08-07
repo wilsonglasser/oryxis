@@ -21,14 +21,51 @@ impl Oryxis {
                 self.editor_form.password.set(v.into_inner());
             }
             EditorMessage::EditorTogglePasswordVisibility => {
-                self.editor_form.password_visible = !self.editor_form.password_visible;
+                if self.editor_form.password_visible {
+                    // Hide: drop a prefilled (untouched) stored plaintext
+                    // right away; typed edits stay masked in the buffer.
+                    if !self.editor_form.password.touched() {
+                        self.editor_form.password.clear();
+                    }
+                    self.editor_form.password_visible = false;
+                } else {
+                    // Reveal on demand: a stored password is decrypted
+                    // into the buffer only for the moment it is shown
+                    // (prefill stays untouched, so an unedited field
+                    // still preserves the stored value on save).
+                    if !self.editor_form.password.touched()
+                        && let Some(id) = self.editor_form.editing_id
+                        && let Some(pw) = self.vault.as_ref()
+                            .and_then(|v| v.get_connection_password(&id).ok().flatten())
+                    {
+                        self.editor_form.password.prefill(pw);
+                    }
+                    self.editor_form.password_visible = true;
+                }
             }
             EditorMessage::EditorTotpChanged(v) => {
                 self.editor_form.username_focused = false;
                 self.editor_form.totp_secret.set(v.into_inner());
             }
             EditorMessage::EditorToggleTotpVisibility => {
-                self.editor_form.totp_visible = !self.editor_form.totp_visible;
+                if self.editor_form.totp_visible {
+                    // Hide: drop a prefilled (untouched) stored secret
+                    // right away; typed edits stay masked in the buffer.
+                    if !self.editor_form.totp_secret.touched() {
+                        self.editor_form.totp_secret.clear();
+                    }
+                    self.editor_form.totp_visible = false;
+                } else {
+                    // Reveal on demand, same lazy decrypt as the password.
+                    if !self.editor_form.totp_secret.touched()
+                        && let Some(id) = self.editor_form.editing_id
+                        && let Some(secret) = self.vault.as_ref()
+                            .and_then(|v| v.get_connection_totp_secret(&id).ok().flatten())
+                    {
+                        self.editor_form.totp_secret.prefill(secret);
+                    }
+                    self.editor_form.totp_visible = true;
+                }
             }
             EditorMessage::EditorUseTotpToggled => {
                 self.editor_form.use_totp = !self.editor_form.use_totp;

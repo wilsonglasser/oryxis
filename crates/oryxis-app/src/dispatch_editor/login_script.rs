@@ -137,8 +137,27 @@ impl Oryxis {
                 self.editor_form.target_password.set(v.into_inner());
             }
             EditorMessage::EditorToggleTargetPasswordVisibility => {
-                self.editor_form.target_password_visible =
-                    !self.editor_form.target_password_visible;
+                if self.editor_form.target_password_visible {
+                    // Hide: drop a prefilled (untouched) stored plaintext
+                    // right away; typed edits stay masked in the buffer.
+                    if !self.editor_form.target_password.touched() {
+                        self.editor_form.target_password.clear();
+                    }
+                    self.editor_form.target_password_visible = false;
+                } else {
+                    // Reveal on demand: a stored target password is
+                    // decrypted into the buffer only for the moment it is
+                    // shown (prefill stays untouched, so an unedited
+                    // field still preserves the stored value on save).
+                    if !self.editor_form.target_password.touched()
+                        && let Some(id) = self.editor_form.editing_id
+                        && let Some(pw) = self.vault.as_ref()
+                            .and_then(|v| v.get_connection_target_password(&id).ok().flatten())
+                    {
+                        self.editor_form.target_password.prefill(pw);
+                    }
+                    self.editor_form.target_password_visible = true;
+                }
             }
             EditorMessage::EditorScriptDraftTemplateChanged(choice) => {
                 let template = if choice == crate::i18n::t("login_script_tpl_jumpserver") {
