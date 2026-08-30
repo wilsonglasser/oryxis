@@ -1,2 +1,4 @@
 43e196706b3cc28794e5bf7d44b8df8f9e4fe131cc4392277fadc8b9767c2107  target/release/oryxis
 6371096872b367f5561e74bcf2d179805f2b3753c999e5a9b5de6565c0305087  target/release/oryxis-mcp
+platform: arm64 (Apple Silicon), LC_BUILD_VERSION minos 11.0, SDK 27.0
+compatibility: macOS 11+ — covers the last three releases (15/26/27); arm64-only slice, matching upstream release policy

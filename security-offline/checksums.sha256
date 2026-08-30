@@ -17,6 +17,7 @@ b7b6718bd5888e467151d79758157cb5006307524d979318f1a3c7077f61d500  ./11-SECURITY-
 9b7b0b53c29f489184386a08500875aeb00c998bf3829f50bf2aa543e64a7862  ./REMOVALS.json
 a16c003ca63f39e6f8f7fa42d79ee08a971f7f4f18bb71b3117f4f7d54e3eedb  ./STATUS-LEDGER.md
 a02f64fb1a0d6d9f84daaeda7c7ce49bf39605f1d44576f5d20f3c9ba0ac6a5e  ./evidence/pty-preexisting.txt
+c4f5afe5b72061c4da8eb1ac2355f918eec287f06aa6f177ffe80884963b1261  ./evidence/release-binaries.txt
 cde7bebb8578f02471b69dd04b902ca9d6868ae3fe4006865e1ea8fc9e81205f  ./evidence/removal-greps.txt
 75e14072e7444514b9781477037427d85989aa2a9f5ea4725c855a32a8c5266f  ./evidence/test-results.txt
 19eaf43821a7660ec323a87c8457bf74823beb296c39f5e01aa8a683aa50f061  ./evidence/verify-removals-run.txt
