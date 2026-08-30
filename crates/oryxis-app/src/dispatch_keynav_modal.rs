@@ -64,7 +64,7 @@ impl Oryxis {
                 // router. Letting the generic layer claim it would eat
                 // Up/Down/Enter from the shell underneath.
                 OC::SplitMenu | OC::ToolbarSearch | OC::PasswordSuggest { .. } => return None,
-                OC::GroupPicker(_) | OC::CloudDiscoverGroupPicker => SurfaceFamily::Picker,
+                OC::GroupPicker(_) => SurfaceFamily::Picker,
                 _ => SurfaceFamily::Menu,
             };
             return Some((
@@ -97,7 +97,6 @@ impl Oryxis {
                     | Modal::ClearHistoryConfirm
                     | Modal::SshImport
                     | Modal::ShareDialog
-                    | Modal::CloudImportConfirm
                     // Dial security prompts: the REFUSING button is the
                     // default-ringed action on both, so a stray Enter can
                     // never trust a host key or spawn a command proxy
@@ -168,7 +167,6 @@ impl Oryxis {
             ModalSurface::Modal(
                 Modal::ShareDialog
                     | Modal::SshImport
-                    | Modal::CloudImportConfirm
                     // The snippet-variables prompt is a column of value
                     // text_inputs; the caret must keep Space (and Left/Right)
                     // so typing a value never fires the default Confirm and

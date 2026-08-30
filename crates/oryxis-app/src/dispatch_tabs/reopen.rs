@@ -100,17 +100,12 @@ impl Oryxis {
             if matches!(entry.spec, PinnedTabSpec::Sftp { .. }) {
                 return self.reopen_closed_sftp_tab(entry);
             }
-            // The async flag is the dormant path's business (it has a
-            // placeholder chip to hold open while a plugin answers);
-            // here the placement below covers both kinds.
-            let (open, _async_spawn) = self.spec_open_message(&entry.spec);
+            let open = self.spec_open_message(&entry.spec);
             let Some(open) = open else { continue };
             // Where the chip goes back, through the one door every new
             // tab walks (`place_new_tab_ref`). It resolves the neighbour
             // fresh, so a neighbour that closed in the meantime degrades
-            // to appending instead of guessing a stale index, and it is
-            // the only placement that also works for the cloud specs,
-            // whose tab arrives several updates later.
+            // to appending instead of guessing a stale index.
             self.arm_reopen_placement(entry.after_id);
             return self.update(open);
         }

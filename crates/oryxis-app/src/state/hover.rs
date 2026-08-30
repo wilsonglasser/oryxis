@@ -63,11 +63,6 @@ pub(crate) struct HoverState {
     pub(crate) port_forward_card: Option<usize>,
     pub(crate) local_terminal_card: Option<usize>,
 
-    /// Cloud account card and the dynamic-group card beside it, both
-    /// keyed by id for the same reason folders are.
-    pub(crate) cloud_card: Option<Uuid>,
-    pub(crate) dynamic_group_card: Option<Uuid>,
-
     /// Terminal theme cards: the user's own, and the built-ins (whose
     /// only hover action is Clone).
     pub(crate) theme_card: Option<usize>,
@@ -194,15 +189,6 @@ impl HoverState {
 
     pub(crate) fn leave_local_terminal_card(&mut self, idx: usize) {
         Self::leave(&mut self.local_terminal_card, idx);
-    }
-
-    /// Cloud accounts and the dynamic-group cards on the dashboard.
-    pub(crate) fn leave_cloud_card(&mut self, id: Uuid) {
-        Self::leave(&mut self.cloud_card, id);
-    }
-
-    pub(crate) fn leave_dynamic_group_card(&mut self, id: Uuid) {
-        Self::leave(&mut self.dynamic_group_card, id);
     }
 
     /// Theme galleries: the user's own and the built-ins, terminal and UI.
@@ -339,7 +325,7 @@ mod tests {
         assert!(!hover.tab_close_armed);
     }
 
-    /// The id-keyed lists (folder / cloud / dynamic-group cards, log rows)
+    /// The id-keyed lists (folder cards, log rows)
     /// re-sort under the cursor, so they carry a `Uuid` instead of a
     /// position. The guard is the same compare, and it has to hold for a
     /// key that is not `Copy`-cheap ordering.

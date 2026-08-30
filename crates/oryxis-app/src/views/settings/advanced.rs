@@ -8,8 +8,6 @@ impl Oryxis {
     pub(crate) fn view_settings_advanced(&self) -> Element<'_, Message> {
         // Keyboard rows are recorded in visual order.
         self.keynav_settings_reset();
-        // ── Download mirror (China / blocked-network delivery) ──
-        let mirror_section = self.download_mirror_section();
         // ── Debug logging ──
         let log_path = crate::logging::log_path()
             .map(|p| p.display().to_string())
@@ -115,8 +113,6 @@ impl Oryxis {
         scrollable(
             container(
                 column![
-                    mirror_section,
-                    Space::new().height(12),
                     diagnostics_section,
                     Space::new().height(24),
                 ]
@@ -131,152 +127,5 @@ impl Oryxis {
         .on_scroll(|v| Message::Settings(SettingsMessage::SectionScrolled(v.relative_offset().y)))
         .height(Length::Fill)
         .into()
-    }
-
-    /// The download-mirror block: picker (Auto / GitHub / Custom),
-    /// and while Custom is selected a URL field plus a Test button
-    /// running the reachability probe. Content integrity never
-    /// depends on the mirror (sha256/Ed25519 gates), so the URL is
-    /// user-configurable without a trust prompt.
-    fn download_mirror_section(&self) -> Element<'_, Message> {
-        let ui = &self.download_mirror;
-
-        // `custom_pending` is the only case the choice can't answer:
-        // the picker sits on Custom while the URL is still being typed
-        // and nothing has been persisted yet.
-        let selected_token = if ui.custom_pending {
-            "custom"
-        } else {
-            ui.choice.token()
-        };
-        let display = |token: &String| {
-            t(match token.as_str() {
-                "github" => "download_mirror_github",
-                "project" => "download_mirror_project",
-                "custom" => "download_mirror_custom",
-                _ => "download_mirror_auto",
-            })
-            .to_string()
-        };
-        let picker = self.nav_pick_row(
-            t("download_mirror"),
-            vec![
-                "auto".into(),
-                "github".into(),
-                "project".into(),
-                "custom".into(),
-            ],
-            selected_token.to_string(),
-            display,
-            220.0,
-            |v| Message::Settings(SettingsMessage::DownloadMirrorPicked(v)),
-        );
-
-        let mut rows = column![
-            picker,
-            Space::new().height(4),
-            text(t("download_mirror_desc")).size(11).color(OryxisColors::t().text_muted),
-        ];
-
-        // Test is offered by every mirror-first mode, since both have
-        // an endpoint of their own to reach (`net_mirror::probe_target`
-        // resolves which). Auto and GitHub-only dial GitHub first and
-        // have nothing mirror-shaped to probe.
-        let testable = matches!(selected_token, "custom" | "project");
-        if testable {
-            // Built where it is DRAWN, not hoisted: `settings_nav_slot`
-            // records the keyboard row as a side effect of building, and
-            // the ring walks in record order. Constructed before the URL
-            // field, Test claimed the first slot while sitting last in
-            // the row, so Tab went Test -> URL -> Save.
-            let make_test_btn = |app: &Self| -> Element<'_, Message> {
-                if ui.testing {
-                    styled_button_opt(t("download_mirror_test_running"), None, OryxisColors::t().bg_selected)
-                } else {
-                    app.settings_nav_slot(
-                        crate::keynav::RowAction::activate(Message::Settings(SettingsMessage::DownloadMirrorTest)),
-                        6.0,
-                        styled_button(
-                            t("download_mirror_test"),
-                            Message::Settings(SettingsMessage::DownloadMirrorTest),
-                            OryxisColors::t().bg_selected,
-                        ),
-                    )
-                }
-            };
-            if selected_token == "custom" {
-                // Keyboard rows: the URL field (Enter commits), then
-                // Save, then Test.
-                let url_idx = self.settings_nav_record(crate::keynav::RowAction::input(
-                    iced::widget::Id::new("set-download-mirror-url"),
-                ));
-                let url_field = self.settings_nav_ring_at(
-                    url_idx,
-                    10.0,
-                    text_input(t("download_mirror_url_placeholder"), &ui.url_input)
-                        .id(iced::widget::Id::new("set-download-mirror-url"))
-                        .on_input(|v| Message::Settings(SettingsMessage::DownloadMirrorUrlEdited(v)))
-                        .on_submit(Message::Settings(SettingsMessage::DownloadMirrorUrlCommitted))
-                        .padding(10)
-                        .width(360)
-                        .style(crate::widgets::rounded_input_style)
-                        .into(),
-                );
-                let save_btn = self.settings_nav_slot(
-                    crate::keynav::RowAction::activate(Message::Settings(SettingsMessage::DownloadMirrorUrlCommitted)),
-                    6.0,
-                    styled_button(
-                        t("save"),
-                        Message::Settings(SettingsMessage::DownloadMirrorUrlCommitted),
-                        OryxisColors::t().accent,
-                    ),
-                );
-                let test_btn = make_test_btn(self);
-                rows = rows
-                    .push(Space::new().height(10))
-                    .push(
-                        dir_row(vec![
-                            url_field,
-                            Space::new().width(8).into(),
-                            save_btn,
-                            Space::new().width(8).into(),
-                            test_btn,
-                        ])
-                        .align_y(iced::Alignment::Center),
-                    );
-                if ui.url_error {
-                    rows = rows.push(Space::new().height(6)).push(
-                        text(t("download_mirror_https_required"))
-                            .size(11)
-                            .color(OryxisColors::t().error),
-                    );
-                }
-            } else {
-                // The project mirror has no address to type: the host
-                // is the app's own, so Test is the whole control.
-                rows = rows
-                    .push(Space::new().height(10))
-                    .push(dir_row(vec![make_test_btn(self)]).align_y(iced::Alignment::Center));
-            }
-            match &ui.test_result {
-                Some(Ok(ms)) => {
-                    rows = rows.push(Space::new().height(6)).push(
-                        text(format!("{} ({ms} ms)", t("download_mirror_test_ok")))
-                            .size(11)
-                            .color(OryxisColors::t().success),
-                    );
-                }
-                Some(Err(cause)) => {
-                    rows = rows.push(Space::new().height(6)).push(
-                        text(format!("{}: {cause}", t("download_mirror_test_fail")))
-                            .size(11)
-                            .color(OryxisColors::t().error),
-                    );
-                }
-                None => {}
-            }
-        }
-
-        panel_section(rows)
     }
 }

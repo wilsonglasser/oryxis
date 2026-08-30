@@ -114,13 +114,6 @@ impl Oryxis {
                 self.keynav_clear_content();
                 self.keynav.settings_row_actions.borrow_mut().clear();
                 let mut tasks = vec![self.renderer_info_task()];
-                // Opening the Sync section re-probes `git` availability
-                // (a task, never in `view()`): the git card's "install
-                // it and reopen this screen" instruction relies on a
-                // reopen actually re-checking.
-                if section == crate::state::SettingsSection::Sync && self.sync.transport == "git" {
-                    tasks.push(crate::dispatch_git_sync::git_availability_task());
-                }
                 // Clicking another matching section while a search is
                 // active scrolls that section's first match into view.
                 // Otherwise sections remember where you left them (issue

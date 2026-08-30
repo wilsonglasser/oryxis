@@ -1,0 +1,11 @@
+ID,feature,code location,trigger,default state,source process,destination,resolution path,protocol,authentication,data sent,data received,retry,fallback,disable control,user visibility,decision
+E-01,SSH family,oryxis-ssh engine,user connect,on-demand,oryxis,user hosts,DNS→IP,SSH,host keys+creds,session I/O,session I/O,user only,typed-error to UI,per-host config,visible,KEEP (essential)
+E-02,AI provider call,ai/mod.rs ai/wire.rs,explicit invocation,OFF (no provider/key configured),oryxis,user-configured provider (catalog defaults per provider),DNS,HTTPS SSE,bearer API key (vault),terminal context/prompt/tool calls,completion stream,user retry only,fail-safe: confirm-required on transport error,leave unconfigured / remove key,settings AI panel,KEEP (user-initiated; disclosed)
+E-03,font fetch,fonts.rs:774-863,selection/boot-heal,automatic only for already-configured font,oryxis,raw.githubusercontent.com pinned commits,DNS,HTTPS,none,UA string,font bytes,no mirror fallback,system-font fallback (local),use bundled fonts / pre-cache,downloading hint,KEEP (hash-pinned)
+E-04,WoL,wol.rs:67,user click,on-demand,oryxis,255.255.255.255:9,broadcast,UDP,none,MAC packet,none,no,no,per-host field,row UI,KEEP (link-local)
+E-05,harness daemon,harness/serve.rs,dev flag,OFF in release,oryxis,loopback:6799,none,TCP,none,commands,results,no,no,dev feature gate,dev only,TEST_ONLY
+E-06,release/update lookup,dispatch_update.rs (DELETED),boot + menu,was on,---,api.github.com via net_mirror (DELETED),---,HTTPS,---,version metadata,---,---,---,---,REMOVED
+E-07,plugin catalog/binaries,plugins/download.rs (DELETED),install/update,was manual,---,github/dl.oryxis.app (DELETED),---,HTTPS,Ed25519,---,---,---,---,---,REMOVED
+E-08,sync engine + signaling + relay,oryxis-sync/-relay/signaling-worker (DELETED),settings toggle,was off,---,peers + worker + relay,---,QUIC/HTTPS,TOFU+pinned,---,---,---,---,---,REMOVED
+E-09,cloud provider discovery,oryxis-cloud* (DELETED),account add/refresh,was manual,---,AWS/Azure/GCP/K8s APIs,---,HTTPS,cloud creds,---,---,---,---,---,REMOVED
+E-10,vendor mirror routing,net_mirror.rs (DELETED),any GitHub-bound fetch,was configurable,---,dl.oryxis.app / dl-cn.oryxis.app,---,HTTPS,---,---,---,---,---,---,REMOVED

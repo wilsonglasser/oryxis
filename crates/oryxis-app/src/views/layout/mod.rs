@@ -5,7 +5,7 @@ pub(crate) use iced::widget::{button, container, text, text_input, MouseArea, Sp
 pub(crate) use iced::window::Direction;
 pub(crate) use iced::{Background, Border, Color, Element, Length, Padding};
 
-pub(crate) use crate::app::{SftpMessage, SettingsMessage, TabsMessage, EditorMessage, KeysMessage, SidebarFilesMessage, TerminalMessage, SshMessage, CloudMessage, HistoryMessage, NavigationMessage, UpdateMessage, ProxyIdentityMessage, PluginMessage, AgentMessage, RemoteDesktopMessage, Message, Oryxis, PlayerMessage, SessionGroupMessage, PortForwardMessage, VaultMessage, ShareMessage, SnippetMessage};
+pub(crate) use crate::app::{SftpMessage, SettingsMessage, TabsMessage, EditorMessage, KeysMessage, SidebarFilesMessage, TerminalMessage, SshMessage, HistoryMessage, NavigationMessage, ProxyIdentityMessage, PluginMessage, AgentMessage, RemoteDesktopMessage, Message, Oryxis, PlayerMessage, SessionGroupMessage, PortForwardMessage, VaultMessage, ShareMessage, SnippetMessage};
 pub(crate) use crate::state::{OverlayContent, OverlayState, View};
 pub(crate) use crate::theme::OryxisColors;
 pub(crate) use crate::widgets::{context_menu_item, dir_align_x, dir_row, styled_button};
@@ -64,9 +64,7 @@ impl Oryxis {
         }
         match self.active_view {
             View::Dashboard => {
-                self.cloud_discover.visible
-                    || self.cloud_dynamic_form.visible
-                    || self.group_edit.visible
+                self.group_edit.visible
                     || self.panels.host_panel
                     || self.panels.session_group_panel
             }
@@ -76,7 +74,6 @@ impl Oryxis {
             View::Snippets => self.panels.snippet_panel,
             View::PortForwarding => self.panels.port_forward_panel,
             View::Proxies => self.proxy_identity_form.visible,
-            View::Cloud => self.cloud_form.visible,
             _ => false,
         }
     }
@@ -105,7 +102,6 @@ impl Oryxis {
                     | View::Keys
                     | View::Snippets
                     | View::PortForwarding
-                    | View::Cloud
                     | View::Proxies
                     | View::KnownHosts
                     | View::History
@@ -192,11 +188,7 @@ impl Oryxis {
         }
         match self.active_view {
             View::Dashboard => {
-                if self.cloud_discover.visible {
-                    Some(self.view_cloud_discover_panel())
-                } else if self.cloud_dynamic_form.visible {
-                    Some(self.view_dynamic_group_form_panel())
-                } else if self.group_edit.visible {
+                if self.group_edit.visible {
                     Some(self.view_group_edit_panel())
                 } else if self.panels.host_panel {
                     Some(self.view_host_panel())
@@ -226,7 +218,6 @@ impl Oryxis {
             View::Proxies => self
                 .proxy_identity_form.visible
                 .then(|| self.view_proxy_identity_form()),
-            View::Cloud => self.cloud_form.visible.then(|| self.view_cloud_form_panel()),
             _ => None,
         }
     }
@@ -239,7 +230,7 @@ impl Oryxis {
     }
 
     /// The accent colour the top bar "breathes": the active tab's
-    /// per-host / per-session-group colour (or cloud brand) when a
+    /// per-host / per-session-group colour when a
     /// connection tab is open, else the app accent for Home / vault /
     /// settings. Independent of the on/off `setting_tab_accent_line`
     /// toggle, so both the bottom hairline and the bar wash share one
@@ -266,12 +257,7 @@ impl Oryxis {
             {
                 return col;
             }
-            // 2) cloud-transport tabs inherit the parent dynamic-group
-            //    brand colour (AWS orange, K8s blue, ...).
-            if let Some(brand) = crate::os_icon::tab_label_cloud_brand(label) {
-                return crate::os_icon::provider_icon(brand, OryxisColors::t().accent).1;
-            }
-            // 3) OS brand colour from a detected OS or a local-shell hint
+            // 2) OS brand colour from a detected OS or a local-shell hint
             //    (PowerShell/cmd -> Windows blue, "Ubuntu (WSL)" -> Ubuntu
             //    orange), matching the per-tab icon tint.
             if let Some(os) = self.tab_detected_os(label) {
@@ -325,7 +311,6 @@ impl Oryxis {
                 View::Keys => self.view_keys(),
                 View::Snippets => self.view_snippets(),
                 View::PortForwarding => self.view_port_forwards(),
-                View::Cloud => self.view_cloud_accounts(),
                 View::Proxies => self.view_settings_proxies(),
                 View::KnownHosts => self.view_known_hosts(),
                 View::History => self.view_history(),
@@ -348,7 +333,7 @@ impl Oryxis {
 
     /// Search field for the active vault sub-view, filling its toolbar
     /// slot. Returns an empty widget for views without a search backing
-    /// (Cloud / Proxies / Known Hosts). The id matches
+    /// (Proxies / Known Hosts). The id matches
     /// `active_view_search_id` so the global Ctrl+F handler can focus it.
     /// True when the active view has no records at all (so there's
     /// nothing to search). Distinct from "search matched nothing": this
@@ -365,7 +350,6 @@ impl Oryxis {
             View::Snippets => self.snippets.is_empty(),
             View::PortForwarding => self.port_forward_rules.is_empty(),
             View::History => self.logs.is_empty() && self.session_logs.is_empty(),
-            View::Cloud => self.cloud_profiles.is_empty(),
             View::Proxies => self.proxy_identities.is_empty(),
             View::Monitoring => self.dash_hosts().is_empty(),
             _ => true,
@@ -382,9 +366,7 @@ impl Oryxis {
         }
         match self.active_view {
             View::Dashboard => {
-                self.cloud_discover.visible
-                    || self.cloud_dynamic_form.visible
-                    || self.group_edit.visible
+                self.group_edit.visible
                     || self.panels.host_panel
                     || self.panels.session_group_panel
             }
@@ -394,7 +376,6 @@ impl Oryxis {
             View::Snippets => self.panels.snippet_panel,
             View::PortForwarding => self.panels.port_forward_panel,
             View::Proxies => self.proxy_identity_form.visible,
-            View::Cloud => self.cloud_form.visible,
             _ => false,
         }
     }

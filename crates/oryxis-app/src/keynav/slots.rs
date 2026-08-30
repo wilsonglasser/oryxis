@@ -719,8 +719,8 @@ impl crate::app::Oryxis {
     }
 
     /// Record one generic content-action row (single-column): used by
-    /// content surfaces whose rows fire arbitrary messages, like the
-    /// dynamic cloud-group task list. The caller clears via
+    /// content surfaces whose rows fire arbitrary messages. The caller
+    /// clears via
     /// `keynav_clear_content` at the top of its render pass.
     pub(crate) fn content_action_slot<'a>(
         &self,

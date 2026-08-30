@@ -11,7 +11,7 @@
 //! presentation. Same one-owner rule as `mouse_binding_owner()`.
 
 use crate::app::Oryxis;
-use crate::state::{PaneOrigin, TerminalTab};
+use crate::state::TerminalTab;
 
 /// What a tab's FOCUSED pane can say about its transport. Presentation
 /// (a dot color, a text segment) belongs to the callers; nothing here
@@ -42,8 +42,7 @@ pub(crate) enum TabConnState {
     /// as one answering instantly, so the one moment the protocol earns
     /// its keep was the one moment the interface said nothing.
     NoContact,
-    /// The transport is gone: a remote pane whose session died, or a
-    /// plugin-backed cloud tab whose process exited.
+    /// The transport is gone: a remote pane whose session died.
     Lost,
     /// Nothing to report. A local shell (its shell is not a connection)
     /// or a dormant pinned placeholder that never dialed.
@@ -86,12 +85,10 @@ pub(crate) fn derive_conn_state(
     if dial == DialProgress::Failed {
         return TabConnState::Lost;
     }
-    // Plugin-backed cloud tabs (ECS Exec / SSM Session / `kubectl
-    // exec`) carry no `session` handle: their transport IS the local
-    // plugin process, and its only death signal is `PluginSessionEnded`
-    // stamping this suffix. Checked before the session branch so the
-    // SSH relabel (`dispatch_ssh::errors`) wins there too, whether or
-    // not the dead handle is still attached.
+    // A relabel to "… (disconnected)" is the death signal the SSH
+    // error path (`dispatch_ssh::errors`) stamps on a tab whose
+    // session died. Checked before the session branch so it wins
+    // whether or not the dead handle is still attached.
     if tab.label.ends_with(" (disconnected)") {
         return TabConnState::Lost;
     }
@@ -115,17 +112,9 @@ pub(crate) fn derive_conn_state(
             _ => TabConnState::Connected,
         };
     }
-    // No handle at all. `PaneOrigin::Ephemeral` is the field's DEFAULT,
-    // not a claim that the pane is remote, so it can't be read as one:
-    // a live cloud tab and a dormant placeholder both land here.
-    if matches!(pane.origin, PaneOrigin::Local(_)) {
-        return TabConnState::Idle;
-    }
-    if tab.is_plugin_backed() {
-        // Live by elimination: a dead plugin tab carries the suffix
-        // handled above.
-        return TabConnState::Connected;
-    }
+    // No handle at all: nothing to report. `PaneOrigin::Ephemeral` is
+    // the field's DEFAULT, not a claim that the pane is remote, and a
+    // local shell's shell is not a connection either.
     TabConnState::Idle
 }
 
@@ -153,7 +142,7 @@ impl Oryxis {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::state::{LocalShellSpec, TerminalState};
+    use crate::state::{LocalShellSpec, PaneOrigin, TerminalState};
     use std::sync::{Arc, Mutex};
 
     fn tab(label: &str) -> TerminalTab {
@@ -197,25 +186,13 @@ mod tests {
         );
     }
 
-    /// The suffix is the only death signal a plugin-backed cloud tab
-    /// has, since its transport is a local process rather than a
-    /// `session` handle.
+    /// The suffix is the relabel the SSH error path stamps when a
+    /// session dies, and a split tab's focused pane can carry it while
+    /// its siblings stay connected.
     #[test]
     fn a_disconnected_label_reads_as_lost() {
-        let mut t = tab("ECS · api (disconnected)");
-        t.ssm_keepalive = true;
+        let t = tab("prod-db (disconnected)");
         assert_eq!(derive_conn_state(&t, DialProgress::None), TabConnState::Lost);
-    }
-
-    /// The regression this module exists for: a live ECS / SSM /
-    /// kubectl tab has no `session` and keeps the default
-    /// `PaneOrigin::Ephemeral`, which a naive "not local means remote"
-    /// test paints as a dead connection for the session's whole life.
-    #[test]
-    fn a_live_plugin_tab_reads_as_connected() {
-        let mut t = tab("ECS · api (abc12345)");
-        t.ssm_keepalive = true;
-        assert_eq!(derive_conn_state(&t, DialProgress::None), TabConnState::Connected);
     }
 
     #[test]

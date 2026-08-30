@@ -91,7 +91,7 @@ impl JsonRpcResponse {
     }
 
     /// Error response carrying a structured `data` payload, used by
-    /// plugins to ship a serialized `CloudError` back to the host.
+    /// plugins to ship a serialized error back to the host.
     pub fn error_with_data(id: Value, err: JsonRpcError) -> Self {
         Self {
             jsonrpc: "2.0".into(),
@@ -107,8 +107,7 @@ impl JsonRpcResponse {
 pub struct JsonRpcError {
     pub code: i32,
     pub message: String,
-    /// Structured payload. For provider failures this is the
-    /// serialized `CloudError` (see [`crate::error`]).
+    /// Structured payload for provider failures.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub data: Option<Value>,
 }
@@ -126,8 +125,8 @@ pub mod error_codes {
     pub const INVALID_PARAMS: i32 = -32602;
     /// Internal plugin error not attributable to the provider call.
     pub const INTERNAL_ERROR: i32 = -32603;
-    /// The call reached the provider and the provider returned a
-    /// `CloudError`. The `data` field carries the serialized error
+    /// The call reached the provider and the provider returned an
+    /// error. The `data` field carries the serialized error
     /// so the host can rebuild the exact variant.
     pub const PROVIDER_ERROR: i32 = -32000;
 }

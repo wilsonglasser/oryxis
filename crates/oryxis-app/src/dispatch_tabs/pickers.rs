@@ -35,12 +35,6 @@ impl Oryxis {
                 // the leftover top-level needle.
                 self.new_tab_picker_group = Some(gid);
                 self.new_tab_picker_search.clear();
-                // Cloud-query group: kick off (or refresh) the resolve so
-                // the ECS tasks / K8s pods load. Reuses the same TTL gate
-                // as the dashboard's OpenGroup so we don't hammer the API.
-                if self.dynamic_group_needs_resolve(gid) {
-                    return self.handle_cloud(CloudMessage::DynamicGroupResolve(gid));
-                }
             }
             TabsMessage::NewTabPickerBack => {
                 self.new_tab_picker_group = None;
@@ -166,7 +160,6 @@ impl Oryxis {
             TabsMessage::HideIconPicker => {
                 self.panels.icon_picker = false;
                 self.icon_picker.for_id = None;
-                self.icon_picker.for_group_form = false;
                 self.icon_picker.for_session_group = false;
                 self.icon_picker.for_group_edit = false;
                 self.icon_picker.for_local_terminal = false;

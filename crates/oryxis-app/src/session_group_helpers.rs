@@ -25,7 +25,7 @@ pub(crate) fn from_split_axis(axis: SplitAxis) -> Axis {
 }
 
 /// Walk a tab's live pane grid into a serializable layout, pruning panes
-/// that can't be referenced by id (cloud / ephemeral). Returns `None` if
+/// that can't be referenced by id (ephemeral). Returns `None` if
 /// every leaf was pruned (nothing savable). The second tuple element is the
 /// ordered editor rows (one per surviving leaf, scripts start empty), in the
 /// same left-to-right order as the layout's leaf walk.
@@ -330,7 +330,6 @@ mod tests {
             chat_last_md_parse: None,
             chat_saved_id: None,
             chat_persisted: 0,
-            ssm_keepalive: false,
             relaunch: None,
             session_group_id: None,
             pinned: false,

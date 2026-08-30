@@ -73,7 +73,7 @@ use iced_test::core::widget::operation::Operation;
 use iced_test::emulator::{self, Emulator, Event};
 use iced_test::futures::futures::channel::mpsc::{self, TryRecvError};
 
-/// How long the initial boot (vault open, font tasks, update check)
+/// How long the initial boot (vault open, font tasks)
 /// may take before the interactive modes give up waiting and hand
 /// control over anyway. Generous because a cold tokio +
 /// headless-renderer start under a software rasterizer can be slow.

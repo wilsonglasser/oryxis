@@ -419,7 +419,7 @@ impl Oryxis {
             .iter()
             .filter(|c| c.group_id == Some(gid))
             .count();
-        // Nested groups (manual subgroups or cloud dynamic groups) are
+        // Nested groups (manual subgroups) are
         // never deleted with the folder, they get promoted one level
         // up; the copy below says so instead of calling the folder
         // "empty".

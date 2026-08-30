@@ -194,25 +194,6 @@ pub(crate) static SETTINGS_INDEX: &[SettingsIndexEntry] = &[
     e(S::Security, "import_vault", "import vault restore load file portable"),
     e(S::Security, "import_from_sftp", "import sftp remote restore backup"),
     e(S::Security, "import_ssh_config_btn", "import ssh config openssh hosts migrate"),
-    // ── Sync ───────────────────────────────────────────────────────
-    e(S::Sync, "sync_transport_field", "sync transport method p2p sftp snapshot"),
-    e(S::Sync, "sync_transport_folder", "folder sync snapshot onedrive dropbox google drive icloud network share usb"),
-    e(S::Sync, "sync_transport_git", "git sync snapshot repository remote history versions forge gitlab gitea"),
-    e(S::Sync, "sync_transport_webdav", "webdav sync snapshot nextcloud owncloud synology server url etag"),
-    e(S::Sync, "sftp_sync_host", "sftp sync backup host server select"),
-    e(S::Sync, "sftp_sync_path", "sftp sync remote path directory folder"),
-    e(S::Sync, "sftp_sync_passphrase", "sftp sync passphrase password encrypt"),
-    e(S::Sync, "sync_mode", "sync mode auto manual automatic"),
-    e(S::Sync, "sync_passwords", "sync passwords credentials devices share"),
-    e(S::Sync, "sync_now", "sync now manual trigger run push pull"),
-    e(S::Sync, "sync_device_name", "device name label identify sync peer"),
-    e(S::Sync, "sync_host_pairing", "pair device host pairing new add"),
-    e(S::Sync, "sync_join_pairing", "pair device join code connect link"),
-    e(S::Sync, "sync_signaling_url", "signaling server url sync internet"),
-    e(S::Sync, "sync_signaling_token", "signaling token auth secret relay"),
-    e(S::Sync, "sync_relay_url", "relay url server sync nat traversal"),
-    e(S::Sync, "sync_listen_port", "listen port sync p2p network bind"),
-    e(S::Sync, "sync_wizard_button", "set up relay self host server wizard compose"),
     // ── AI ─────────────────────────────────────────────────────────
     e(S::AI, "provider", "ai provider openai anthropic ollama llm"),
     e(S::AI, "model", "ai model name gpt claude llama"),
@@ -247,51 +228,23 @@ pub(crate) static SETTINGS_INDEX: &[SettingsIndexEntry] = &[
     e(S::Agent, "agent_server_copy_path", "ssh agent socket path copy pipe"),
     e(S::Agent, "agent_server_snippet_ssh_config", "ssh agent identityagent config snippet"),
     // ── Advanced ───────────────────────────────────────────────────
-    e(S::Advanced, "download_mirror", "download mirror china github custom proxy project"),
     e(S::Advanced, "debug_logging", "debug logging enable log file diagnostics"),
     e(S::Advanced, "perf_overlay", "performance hud overlay fps terminal frames"),
     e(S::Advanced, "copy_env_info", "copy environment info report github issue diagnostics"),
     // ── About ──────────────────────────────────────────────────────
-    // (the update rows live in `update_entries()`, they don't exist in
-    // a packaged build)
     // ── Shortcuts ──────────────────────────────────────────────────
     e(S::Shortcuts, "tab_slot_includes_home", "ctrl digit tab slot home first number offset shortcut"),
     e(S::Shortcuts, "hotkey_reset_all", "reset all shortcuts hotkeys defaults keybindings"),
-    // ── Cloud ──────────────────────────────────────────────────────
-    e(S::Cloud, "settings_cloud_auto_refresh", "cloud auto refresh profiles discover"),
-    e(S::Cloud, "settings_cloud_auto_refresh_interval", "cloud refresh interval minutes"),
-    e(S::Cloud, "settings_cloud_auto_archive", "cloud auto archive orphaned hosts"),
-    e(S::Cloud, "settings_cloud_orphan_archive_days", "cloud orphan archive days retention"),
     // ── Features & Plugins ─────────────────────────────────────────
     e(S::Plugins, "ai_assistant", "feature ai assistant enable chat"),
     e(S::Plugins, "sftp", "feature sftp file transfer browser enable"),
-    e(S::Plugins, "sync", "feature sync vault devices enable p2p"),
     e(S::Plugins, "remote_desktop", "feature remote desktop rdp vnc enable"),
     e(S::Plugins, "feature_monitoring", "feature host monitoring enable vitals"),
     e(S::Plugins, "feature_tmux", "feature tmux session manager multiplexer attach kill"),
     e(S::Plugins, "agent_server", "feature ssh agent server enable"),
-    e(S::Plugins, "plugin_action_check_updates", "plugin check updates all providers"),
-    e(S::Plugins, "plugins_auto_update_global", "plugin auto update all global"),
 ];
 
 /// The self-update rows, present only in unpackaged builds. Inside an
-/// MSIX package the Microsoft Store services the app and Settings >
-/// About renders no update panel at all, so a search hit here would
-/// open a section whose row can never appear. Same rule as
-/// [`platform_entries`], gated at runtime instead of at compile time.
-fn update_entries() -> &'static [SettingsIndexEntry] {
-    static UPDATE: &[SettingsIndexEntry] = &[
-        e(S::About, "auto_check_updates", "update auto check startup"),
-        e(S::About, "update_channel", "update channel stable nightly"),
-        e(S::About, "check_for_updates_now", "check for updates now manual version"),
-    ];
-    if crate::packaged::is_packaged() {
-        &[]
-    } else {
-        UPDATE
-    }
-}
-
 /// Platform-gated entries appended to the base index: rows that only
 /// exist in some builds, so a search on the other platforms can't
 /// surface a result whose row can never render.
@@ -385,7 +338,6 @@ impl crate::app::Oryxis {
             SETTINGS_INDEX
                 .iter()
                 .chain(platform_entries())
-                .chain(update_entries())
                 .filter_map(|entry| {
                     let pos = section_pos(entry.section)?;
                     let label = crate::i18n::t(entry.label_key);
@@ -422,7 +374,6 @@ impl crate::app::Oryxis {
         let mut out: Vec<(usize, usize, SettingsSection, &'static str)> = SETTINGS_INDEX
             .iter()
             .chain(platform_entries())
-            .chain(update_entries())
             .enumerate()
             .filter_map(|(i, entry)| {
                 let pos = sections.iter().position(|(_, v)| *v == entry.section)?;
@@ -445,7 +396,6 @@ mod tests {
         SETTINGS_INDEX
             .iter()
             .chain(platform_entries())
-            .chain(update_entries())
     }
 
     #[test]

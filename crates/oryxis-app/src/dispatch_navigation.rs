@@ -8,7 +8,7 @@
 
 use iced::Task;
 
-use crate::app::{CloudMessage, NavigationMessage, Message, Oryxis};
+use crate::app::{NavigationMessage, Message, Oryxis};
 use crate::state::View;
 
 impl Oryxis {
@@ -202,18 +202,7 @@ impl Oryxis {
                 // it: Settings has a search id, so an early return there
                 // would shadow both of these every time.
                 let settings_tasks: Vec<Task<Message>> = if view == View::Settings {
-                    let mut tasks = vec![self.renderer_info_task(), self.settings_restore_scroll()];
-                    // Landing straight on the remembered Sync section
-                    // (issue #120) also skips ChangeSettingsSection, so
-                    // the git card's availability re-probe fires here
-                    // too; "install it and reopen this screen" must
-                    // stay true for this door as well.
-                    if self.settings_section == crate::state::SettingsSection::Sync
-                        && self.sync.transport == "git"
-                    {
-                        tasks.push(crate::dispatch_git_sync::git_availability_task());
-                    }
-                    tasks
+                    vec![self.renderer_info_task(), self.settings_restore_scroll()]
                 } else {
                     Vec::new()
                 };
@@ -235,17 +224,6 @@ impl Oryxis {
             NavigationMessage::OpenGroup(gid) => {
                 self.active_group = Some(gid);
                 self.host_search.clear();
-                // Auto-trigger resolve when the user opens a dynamic
-                // group, saves an extra click. Re-resolve when there's
-                // no cache yet, or when the cached list has gone stale
-                // (older than the TTL): cloud resources like ECS tasks
-                // recycle, and a stale list means clicking a dead task
-                // fails until a manual Refresh. A still-`Loading` or
-                // `Failed` cache is left alone (don't restart in-flight
-                // resolves; let the user retry a failure explicitly).
-                if self.dynamic_group_needs_resolve(gid) {
-                    return self.handle_cloud(CloudMessage::DynamicGroupResolve(gid));
-                }
             }
             NavigationMessage::HostSearchChanged(v) => {
                 // An emptied box ends the ad-hoc target it described, so
@@ -260,12 +238,6 @@ impl Oryxis {
                 // The filtered set just changed; drop the keyboard
                 // selection so it can't point at a now-hidden host. Enter
                 // still connects the top result while a search is active.
-                self.keynav.focus = None;
-            }
-            NavigationMessage::HostFilterByCloudProfile(maybe_pid) => {
-                self.host_filter_cloud_profile = maybe_pid;
-                // Filter changed the visible set; drop the keyboard
-                // selection so Enter can't connect a now-hidden host.
                 self.keynav.focus = None;
             }
             // (helpers for the tag filter live below the handler impl)
@@ -317,7 +289,7 @@ impl Oryxis {
                     }
                     None => self.host_filter_tags.push(tag),
                 }
-                // Same reasoning as the cloud-profile filter above.
+                // Same reasoning as the tag filter above.
                 self.keynav.focus = None;
             }
             NavigationMessage::ClearHostTagFilter => {
@@ -335,9 +307,6 @@ impl Oryxis {
                     self.overlay = None;
                 } else {
                     let bounds = match target {
-                        GroupPickerTarget::DynamicFormParent => {
-                            self.dynamic_form_parent_combo_bounds.get()
-                        }
                         GroupPickerTarget::SessionGroupFolder => {
                             self.session_group_folder_combo_bounds.get()
                         }
@@ -370,9 +339,6 @@ impl Oryxis {
             NavigationMessage::GroupPickerPick(target, label) => {
                 use crate::state::{GroupPickerTarget, OverlayContent};
                 match target {
-                    GroupPickerTarget::DynamicFormParent => {
-                        self.cloud_dynamic_form.parent_label = label;
-                    }
                     GroupPickerTarget::SessionGroupFolder => {
                         self.editor_session_group.group_name = label;
                     }

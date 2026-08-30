@@ -322,17 +322,6 @@ pub enum SettingsMessage {
     /// Flip the Settings > Advanced debug logging (tracing events also
     /// written to the exportable `~/.oryxis/oryxis-debug.log`).
     SettingToggleDebugLogging,
-    /// Settings > Advanced: download-mirror picker changed
-    /// ("auto" / "github" / "custom").
-    DownloadMirrorPicked(String),
-    /// Custom mirror URL field edited (live value).
-    DownloadMirrorUrlEdited(String),
-    /// Custom mirror URL committed (Enter / Save): validate + persist.
-    DownloadMirrorUrlCommitted,
-    /// Run the mirror reachability probe against the entered URL.
-    DownloadMirrorTest,
-    /// Probe outcome: latency in ms, or the failure cause.
-    DownloadMirrorTestResult(Result<u64, String>),
     /// Reveal the debug log file in the OS file manager (falls back to
     /// the `~/.oryxis` folder while no log file exists yet).
     RevealDebugLog,
@@ -476,10 +465,6 @@ pub enum SettingsMessage {
     /// Hover tracking for the per-card remove action.
     LocalTerminalCardHovered(usize),
     LocalTerminalCardUnhovered(usize),
-    SettingCloudAutoRefreshToggle,
-    SettingCloudAutoRefreshIntervalChanged(String),
-    SettingCloudAutoArchiveToggle,
-    SettingCloudOrphanArchiveDaysChanged(String),
     /// A CJK font (Korean / Chinese / Japanese) finished downloading or
     /// was read from cache; `Ok` carries the font bytes to hand to
     /// `iced::font::load`. Carries the language code so the in-memory

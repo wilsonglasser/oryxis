@@ -234,29 +234,6 @@ impl Oryxis {
             TabsMessage::DetachTabSftp(idx) => return self.handle_detach_tab_sftp(idx),
             TabsMessage::CloseTabSftpSession(idx) => return self.handle_close_tab_sftp_session(idx),
             TabsMessage::OpenTerminalForSftpTab(idx) => return self.handle_open_terminal_for_sftp_tab(idx),
-            TabsMessage::SsmKeepaliveTick => {
-                // Toggle each SSM/ECS terminal between `base` and
-                // `base - 1` rows. Every tick is therefore a genuine size
-                // change, which fires a SIGWINCH the plugin forwards to
-                // SSM as a resize event, and resize events reset the
-                // server's idle timer. No base means we're focused (the
-                // ticker shouldn't be mounted then), so it's a no-op.
-                if let Some((base_cols, base_rows)) = self.ssm_keepalive_base {
-                    let shrunk = base_rows.saturating_sub(1).max(2);
-                    for tab in self.tabs.iter().filter(|t| t.ssm_keepalive) {
-                        for pane in tab.pane_grid.panes.values() {
-                            if let Ok(mut state) = pane.terminal.lock() {
-                                let target = if state.rows() == base_rows {
-                                    shrunk
-                                } else {
-                                    base_rows
-                                };
-                                state.resize(base_cols, target);
-                            }
-                        }
-                    }
-                }
-            }
             TabsMessage::BusyAnimTick => {
                 // The increment IS the re-render: the strip derives the
                 // marching-dots frame from this counter (issue #146).

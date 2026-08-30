@@ -1,27 +1,35 @@
 //! Plugin-managed install layer for `oryxis-mcp`.
 //!
-//! MCP differs from cloud plugins: external clients (Claude Desktop,
+//! MCP differs from other plugins: external clients (Claude Desktop,
 //! Claude Code, Cursor) are the ones that spawn `oryxis-mcp`, not the
-//! app. The app's plugin subsystem still owns download / verify /
-//! cache, but the binary then has to live at a *stable* path the
+//! app. The app performs no network fetches anymore — whatever sits in
+//! the local cache (or next to the app executable as a dev build) is
+//! what runs — but the binary still has to live at a *stable* path the
 //! external client can hardcode in its config and not have invalidated
 //! every time the plugin updates.
 //!
 //! Layout:
 //!
 //! ```text
-//! ~/.oryxis/plugins/mcp/0.1.0/oryxis-mcp     (versioned cache, plugin infra writes this)
+//! ~/.oryxis/plugins/mcp/0.1.0/oryxis-mcp     (versioned cache, populated out of band)
+//! ~/.oryxis/plugins/mcp/manifest.json        (last seen manifest: sha256 + signature)
 //! ~/.oryxis/bin/oryxis-mcp                   (stable launcher, this module manages)
 //! ```
 //!
-//! Install flow: plugin code downloads + verifies + writes the
-//! versioned binary, then [`sync_launcher_from_cache`] copies the
-//! active version into the stable launcher path. External clients
-//! always spawn the launcher path.
+//! Install flow: [`verify_cached_binary`] re-checks the cached binary
+//! against the cached manifest (SHA-256 match, then Ed25519 signature
+//! against this build's trust anchors — production key always, dev key
+//! only in debug builds), and only then does
+//! [`sync_launcher_from_cache`] copy the active version into the stable
+//! launcher path. External clients always spawn the launcher path, so
+//! nothing reaches it unsigned: release builds fail closed on a cache
+//! whose contents do not match a signed manifest entry.
 
 use std::path::PathBuf;
 
-use crate::plugins::{cache, PluginError};
+use sha2::{Digest, Sha256};
+
+use crate::plugins::{cache, manifest, verify, PluginError};
 
 /// Stable launcher directory: `~/.oryxis/bin/`.
 pub(crate) fn launcher_dir() -> Result<PathBuf, PluginError> {
@@ -44,9 +52,72 @@ pub(crate) fn is_installed() -> bool {
     launcher_path().map(|p| p.exists()).unwrap_or(false)
 }
 
+/// Re-verify the cached MCP binary against the cached manifest before
+/// anything copies it to the launcher path external clients spawn.
+///
+/// The download path that used to gate this is gone; the cache is now
+/// populated out of band (release installers, a dev build, a manual
+/// copy), which makes the copy into `~/.oryxis/bin/` the trust
+/// boundary: a same-user process can write the cache, but an unsigned
+/// or manifest-mismatched binary must never become the launcher that
+/// Claude Desktop spawns with the MCP token (and, if the user opted
+/// in, the vault master password) in reach.
+///
+/// Matching is by SHA-256 across the version's manifest entries rather
+/// than by os/arch: the cache only ever holds the one binary for this
+/// machine, and a hash match is both stricter and immune to a
+/// platform-tagging mistake. Debug builds additionally honor the dev
+/// signing key (see [`verify`]), so locally built binaries install
+/// after a `oryxis-plugin-signer --dev` signature; release builds
+/// trust the production key only and fail closed.
+fn verify_cached_binary(source: &std::path::Path, version: &str) -> Result<Vec<u8>, PluginError> {
+    let manifest_path = cache::manifest_path("mcp")?;
+    let manifest_json = std::fs::read_to_string(&manifest_path).map_err(|e| {
+        PluginError::Integrity(format!(
+            "no cached manifest at {} to verify the MCP binary against \
+             (populate the cache with a signed release, or in a debug build \
+             sign it with `oryxis-plugin-signer --dev` and record it in \
+             manifest.json): {e}",
+            manifest_path.display()
+        ))
+    })?;
+    let parsed = manifest::PluginManifest::parse(&manifest_json)?;
+    let entry = parsed.find_version(version).ok_or_else(|| {
+        PluginError::Integrity(format!(
+            "cached manifest has no entry for MCP version {version}"
+        ))
+    })?;
+
+    let bytes = std::fs::read(source)?;
+    // Returned to the caller so the bytes that land in the launcher are
+    // the exact bytes verified here — a re-read of the path would reopen
+    // the verify/copy race for no benefit (the buffer is already in
+    // memory). sha2 0.11 returns a `hybrid_array::Array` with no LowerHex
+    // impl; format the bytes directly (same as the font pin check).
+    let digest: String = Sha256::digest(&bytes).iter().map(|b| format!("{b:02x}")).collect();
+    let matched = entry
+        .binaries
+        .iter()
+        .find(|b| b.sha256.eq_ignore_ascii_case(&digest))
+        .ok_or_else(|| {
+            PluginError::Integrity(format!(
+                "cached MCP binary does not match any signed manifest entry \
+                 for version {version} (sha256 {digest}); refusing to install it \
+                 as the launcher"
+            ))
+        })?;
+    verify::verify(&bytes, &matched.signature).map_err(|e| {
+        PluginError::Integrity(format!(
+            "MCP binary failed its Ed25519 signature check; refusing to \
+             install it as the launcher: {e}"
+        ))
+    })?;
+    Ok(bytes)
+}
+
 /// Copy the currently-active cached MCP binary into the stable
-/// launcher path, atomically. Call this after a successful plugin
-/// install / update.
+/// launcher path, atomically, after verifying it against the cached
+/// manifest. Call this after a successful plugin install / update.
 ///
 /// Windows can't overwrite a running `.exe` (sharing violation), so
 /// if the launcher is held open by a live Claude Desktop process we
@@ -55,15 +126,21 @@ pub(crate) fn is_installed() -> bool {
 /// just overwrites.
 pub(crate) fn sync_launcher_from_cache() -> Result<PathBuf, PluginError> {
     let dest = launcher_path()?;
+    let version = cache::current_version("mcp")?
+        .ok_or_else(|| PluginError::BinaryNotFound(dest.clone()))?;
     let source = cache::current_binary("mcp")?
         .ok_or_else(|| PluginError::BinaryNotFound(dest.clone()))?;
+    let verified = verify_cached_binary(&source, &version)?;
     let dir = launcher_dir()?;
     std::fs::create_dir_all(&dir)?;
 
-    // Write to a `.tmp` sibling first so a half-finished copy can't
-    // shadow the working launcher even if the process crashes mid-way.
+    // Write the VERIFIED in-memory bytes to a `.tmp` sibling first so a
+    // half-finished copy can't shadow the working launcher even if the
+    // process crashes mid-way — and so what lands is by construction the
+    // buffer that passed the hash + signature gates, never a fresh
+    // (racy) re-read of the cache path.
     let tmp = dir.join(format!("{}.tmp", cache::binary_name("mcp")));
-    std::fs::copy(&source, &tmp)?;
+    std::fs::write(&tmp, &verified)?;
     set_executable(&tmp)?;
 
     if cfg!(windows) && dest.exists() {
@@ -86,61 +163,6 @@ pub(crate) fn sync_launcher_from_cache() -> Result<PathBuf, PluginError> {
     Ok(dest)
 }
 
-/// Called from the plugin install completion handler when `mcp`
-/// finishes. Refreshes the stable launcher from the freshly-activated
-/// cached version and, if the user previously ran "Install to Claude
-/// Code" (an `oryxis` entry exists in `~/.claude.json`, or in the
-/// legacy `~/.claude/.mcp.json` dead-letter file older releases
-/// wrote), rewrites the config too so its `command` points at the
-/// launcher path the new version landed at (which also migrates a
-/// legacy entry to the correct file). `vault_pw` carries the master
-/// password when the user opted in to embedding it, so the refresh
-/// doesn't strip it from the config. Best-effort: failures are
-/// logged but don't roll back the install.
-pub(crate) fn post_install_refresh(token: &str, vault_pw: Option<&str>) {
-    if let Err(e) = sync_launcher_from_cache() {
-        tracing::warn!(
-            target = "oryxis::mcp",
-            error = %e,
-            "failed to refresh stable MCP launcher after install"
-        );
-        return;
-    }
-    if !crate::mcp::mcp_config_installed() {
-        return;
-    }
-    if let Err(msg) = crate::mcp::install_mcp_config_to_file(token, vault_pw) {
-        tracing::warn!(
-            target = "oryxis::mcp",
-            error = %msg,
-            "failed to refresh ~/.claude.json after install"
-        );
-    }
-}
-
-/// One-shot migration / first-install: fetch the manifest, pick the
-/// best compatible version, download + verify it. Used on boot when
-/// `mcp_server_enabled` was already set but no plugin binary is
-/// present, typically a v0.6 user upgrading to the plugin-managed
-/// layout. Returns the version string so the standard
-/// `PluginInstallDone` handler can flip `current` and refresh the
-/// launcher.
-pub(crate) async fn migrate_install() -> Result<String, String> {
-    let manifest = crate::plugins::download::fetch_manifest("mcp")
-        .await
-        .map_err(|e| e.to_string())?;
-    let best = manifest
-        .best(
-            env!("CARGO_PKG_VERSION"),
-            oryxis_plugin_protocol::SUPPORTED_PROTOCOL_VERSIONS,
-        )
-        .ok_or_else(|| "no compatible mcp version".to_string())?
-        .clone();
-    crate::plugins::download::download_and_install("mcp", &best, |_, _| {})
-        .await
-        .map_err(|e| e.to_string())?;
-    Ok(best.version)
-}
 
 /// Boot-time cleanup of the `.old` launcher [`sync_launcher_from_cache`]
 /// left behind on Windows when it couldn't overwrite the live `.exe`.

@@ -42,7 +42,7 @@ fn pad4(n: usize) -> usize {
 
 /// Constant-time byte comparison. Cookies are 16 bytes, so a
 /// hand-rolled loop is fine; pulling in `subtle` for one helper is
-/// overkill (same call as `oryxis-relay`'s bearer-token compare).
+/// overkill for an X11 auth cookie compare.
 /// The length check short-circuits: a wrong LENGTH is not secret, only
 /// the position of the first differing byte is.
 fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {

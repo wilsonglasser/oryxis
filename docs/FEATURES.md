@@ -418,29 +418,6 @@ Setup for Claude Code (`~/.claude.json`):
 
 If your vault has no password, omit the `env` field.
 
-## Cloud accounts (AWS, GCP, Azure, Kubernetes)
-
-- **AWS.** Encrypted profiles (named profile, static keys, or IAM Identity
-  Center / SSO) with a "Test credentials" button; EC2 and ECS discovery
-  grouped by region and cluster; EC2 Instance Connect one-shot key push
-  with AMI-aware OS user inference; SSM Session for private instances with
-  no open ports; ECS Exec into live containers.
-- **Google Cloud.** Compute Engine discovery and GKE clusters via the
-  `gcloud` CLI you already authenticate with; adding a GKE cluster wires it
-  up as a Kubernetes account (runs `get-credentials` for you).
-- **Azure.** VM discovery and AKS clusters via the `az` CLI; AKS clusters
-  become Kubernetes accounts the same way.
-- **Kubernetes.** Kubeconfig auth (path + context), discovers Deployments /
-  StatefulSets / DaemonSets across namespaces, imports them as dynamic
-  groups that resolve to live pods, and opens an interactive shell via
-  `kubectl exec -it`. A thin CLI wrapper, no heavy SDK.
-- **Dynamic groups.** Imports nest under a folder named after the profile;
-  services / workloads become groups that resolve live on expand, with
-  multi-container Lens and Copy CLI per row.
-- **On-demand plugins.** Every provider ships as an Ed25519-signed
-  subprocess plugin downloaded on first use, so the core binary stays
-  small. Discovery is best-effort per service: an API you never enabled
-  doesn't sink the rest.
 
 ## Identity system
 
@@ -564,7 +541,7 @@ vulnerability disclosure policy.
   in `Host editor → Terminal`, and choose whether they add to the global
   ones or are the only ones that apply; replacing with an empty list is
   how a noisy host turns highlighting off entirely. Per-host rules ride
-  sync and the portable export with the rest of the connection.
+  the portable export with the rest of the connection.
 - **23 languages.** English, Português, Español, Français, Deutsch,
   Italiano, 简体中文, 繁體中文, 日本語, Русский, فارسی, العربية, עברית,
   한국어, Polski, Türkçe, Bahasa Indonesia, Tiếng Việt, Українська, ไทย,
@@ -582,58 +559,18 @@ vulnerability disclosure policy.
 - **Smart merge.** Import merges by UUID, keeping the newer record (LWW).
 - **Round-trips proxy data** so a fresh device gets working proxy auth.
 
-## Sync
-
-Five transports, one at a time, all carrying the same encrypted payload.
-
-- **Peer-to-peer (default).** Sync vault data between devices over QUIC,
-  no cloud dependency and no account.
-- **LAN discovery.** Automatic peer discovery via mDNS with one-click pair.
-- **Cross-network discovery.** Self-hostable signaling (Cloudflare Worker
-  or `oryxis-relay`) plus STUN for NAT traversal. See
-  [SELF_HOSTING.md](../SELF_HOSTING.md).
-- **Pairing.** 6-digit code then Ed25519 challenge/response;
-  `oryxis://pair/...` link and QR code.
-- **E2E encrypted.** Payloads sealed with X25519 + XChaCha20-Poly1305
-  (192-bit nonces).
-- **Tombstone-driven deletes** with a 30-day TTL gated by active-peer
-  catch-up.
-- **Audit hardening.** Signed register/unregister with TOFU pinning, replay
-  rejection, bounded session maps, and `verify_strict` across client and
-  server.
-- **Optional relay** (ciphertext-only) and **opt-in password sync**, off by
-  default.
-- **SFTP file.** One encrypted snapshot on a host from your vault; each
-  device merges what is there and writes back.
-- **Folder.** The same snapshot in a directory the machine already
-  mounts, which covers every cloud client's folder (OneDrive, Google
-  Drive, Dropbox, iCloud), a network share, Syncthing or an external
-  disk without Oryxis talking to any provider. Installed with an atomic
-  rename, so a reader never sees half of one.
-- **Git.** The snapshot committed to any remote `git clone` accepts, and
-  the only transport that keeps HISTORY, so a vault wrecked by a bad
-  import can be read back from an earlier commit. Drives the `git`
-  already installed; a push rejected as non-fast-forward redoes the
-  round instead of forcing over it.
-- **WebDAV.** Nextcloud, ownCloud, Synology or anything else that speaks
-  it: a collection URL, an account and an app password, with no client
-  to install and no OAuth app to register. The only file transport that
-  DETECTS a conflict rather than healing one afterwards (`If-Match` on
-  the ETag), and it warns when a `http://` URL would send the password
-  in the clear.
-- **Auto or manual.** Snapshot transports reconcile on a five-minute
-  cadence in Auto, and only on demand in Manual. None of them runs while
-  the vault is locked.
 
 ## Plugin subsystem
 
-- **Out-of-process plugins.** Cloud providers and the MCP server run as
-  subprocess binaries over JSON-RPC stdio.
-- **Signed binaries.** Every plugin is Ed25519-signed and verified against
-  a baked-in key before execution.
-- **Manifest + cache.** The right asset for the host arch is downloaded on
-  demand and verified (signature + sha256).
-- **Install errors translated** across all 23 languages.
+- **Local-only.** Nothing is downloaded anymore: whatever sits in the
+  local plugin cache (or next to the app executable as a dev build) is
+  what runs.
+- **Signed binaries.** A plugin binary must carry a valid Ed25519
+  signature against the baked-in key before it is copied to the stable
+  launcher path external clients spawn; release builds fail closed on
+  unsigned binaries.
+- **Manifest + cache.** The app reads the cached `manifest.json` to
+  resolve the active version and its signature.
 
 ## OS integration
 
@@ -688,7 +625,7 @@ Five transports, one at a time, all carrying the same encrypted payload.
   binding follows the tabs, and Ctrl+Alt+B reaches the other region.
 - **Hosts tree.** An mRemoteNG-style tree of the vault as a sidebar tab
   beside your session (folders fold in place, hosts connect on click,
-  saved arrangements and dynamic cloud groups included), and the same
+  saved arrangements included), and the same
   tree as a third dashboard view mode next to grid and list, with
   search force-expanding matches to their whole subtree.
 - **Configurable status bar.** Every segment is individually

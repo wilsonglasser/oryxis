@@ -7,16 +7,11 @@ impl Oryxis {
     pub(crate) fn load_data_from_vault(&mut self) {
         self.load_vault_entities();
         self.load_vault_plugins_and_logs();
-        self.load_vault_locale_ai_sync();
+        self.load_vault_locale_ai();
         self.load_vault_terminal_settings();
         self.load_vault_hotkeys_and_defaults();
 
-        // Run cloud-layout migration after the immutable `vault` borrow
-        // ends. Idempotent; only writes rows that need fixing.
-        // Take ownership of the option so we hand the migration a real
-        // borrow without conflicting with `&mut self`. Restored below.
         if let Some(vault) = self.vault.take() {
-            self.migrate_legacy_cloud_layout(&vault);
             self.migrate_port_forwards(&vault);
             self.vault = Some(vault);
         }
@@ -25,47 +20,18 @@ impl Oryxis {
         self.restore_pinned_tabs_dormant();
     }
 
-    /// Auto-archive sweep (uses the previously-loaded orphan setting)
-    /// then the core entity lists: connections, groups (parent repair),
-    /// session groups, keys, identities, proxy identities, cloud profiles.
+    /// Load the core entity lists: connections, groups (parent repair),
+    /// session groups, keys, identities, proxy identities.
     fn load_vault_entities(&mut self) {
         if let Some(vault) = &self.vault {
-            // Auto-archive sweep: when the user has opted into the
-            // cleanup, drop orphan-imported hosts whose `orphaned_at`
-            // is older than the configured threshold. Runs before the
-            // in-memory load so the deleted rows don't briefly appear
-            // and then vanish.
-            if self.prefs.cloud_auto_archive_orphans {
-                let days = self
-                    .prefs.cloud_orphan_archive_days
-                    .parse::<i64>()
-                    .ok()
-                    .filter(|d| *d > 0)
-                    .unwrap_or(7);
-                let cutoff = chrono::Utc::now() - chrono::Duration::days(days);
-                if let Ok(existing) = vault.list_connections() {
-                    for c in existing.iter() {
-                        if let Some(cr) = c.cloud_ref.as_ref()
-                            && let Some(orphaned_at) = cr.orphaned_at
-                            && orphaned_at < cutoff
-                        {
-                            let _ = vault.delete_connection(&c.id);
-                        }
-                    }
-                }
-            }
             self.connections = vault.list_connections().unwrap_or_default();
             self.groups = vault.list_groups().unwrap_or_default();
-            // Repair invalid parent links before anything renders. Only a
-            // manual folder is a container: a dynamic (cloud_query) group
-            // resolves its own children and is never opened as a folder,
-            // and a deleted folder leaves its children dangling. In both
-            // cases the child renders nowhere (not at root since it has a
-            // parent, not inside any openable folder) yet still counts as
-            // "imported", so the user sees it vanish but can't re-import.
-            // Re-home each such group on its nearest manual-folder ancestor
-            // (or root) and persist the fix. Idempotent: a no-op once the
-            // hierarchy is clean.
+            // Repair invalid parent links before anything renders. A
+            // deleted folder leaves its children dangling: the child
+            // renders nowhere (not at root since it has a parent, not
+            // inside any openable folder). Re-home each such group on
+            // its nearest manual-folder ancestor (or root) and persist
+            // the fix. Idempotent: a no-op once the hierarchy is clean.
             repair_group_parents(&mut self.groups, vault);
             self.session_groups = vault.list_session_groups().unwrap_or_default();
             self.keys = vault.list_keys().unwrap_or_default();
@@ -75,7 +41,6 @@ impl Oryxis {
                 .unwrap_or_default();
             self.proxy_identities = vault.list_proxy_identities().unwrap_or_default();
             self.login_scripts = vault.list_login_scripts().unwrap_or_default();
-            self.cloud_profiles = vault.list_cloud_profiles().unwrap_or_default();
         }
     }
 
@@ -84,16 +49,9 @@ impl Oryxis {
     fn load_vault_plugins_and_logs(&mut self) {
         if let Some(vault) = &self.vault {
 
-            // Plugins panel: global auto-update default from settings,
-            // then rebuild the per-provider rows from the on-disk
-            // cache (+ per-plugin override / pin settings).
-            if let Ok(Some(v)) = vault.get_setting("plugins_auto_update_global") {
-                self.plugins_auto_update_global = v != "false";
-            }
-            self.plugins = crate::dispatch_plugins::load_plugin_entries(
-                vault,
-                self.plugins_auto_update_global,
-            );
+            // Plugins panel: rebuild the per-provider rows from the
+            // on-disk cache.
+            self.plugins = crate::dispatch_plugins::load_plugin_entries();
 
             // (migration runs after the rest of the load, see end of fn)
             self.snippets = vault.list_snippets().unwrap_or_default();
@@ -157,8 +115,8 @@ impl Oryxis {
     }
 
     /// Language / layout / theme, the derived terminal palette, plus the
-    /// AI, MCP, sync and local-terminal settings.
-    fn load_vault_locale_ai_sync(&mut self) {
+    /// AI, MCP and local-terminal settings.
+    fn load_vault_locale_ai(&mut self) {
         if let Some(vault) = &self.vault {
 
             // Language: "auto" (the default, also what a missing row
@@ -255,16 +213,6 @@ impl Oryxis {
                 self.mcp.include_vault_password = v == "true";
             }
 
-            // Sync settings
-            if let Ok(Some(v)) = vault.get_setting("sync_enabled") {
-                self.sync.enabled = v == "true";
-            }
-            if let Ok(Some(v)) = vault.get_setting("sync_mode") {
-                self.sync.mode = v;
-            }
-            if let Ok(Some(v)) = vault.get_setting("sync_passwords") {
-                self.sync.passwords = v == "true";
-            }
             if let Ok(Some(v)) = vault.get_setting("flatten_hosts") {
                 self.flatten_hosts = v == "true";
             }
@@ -299,100 +247,6 @@ impl Oryxis {
                 // program/args key) simply resolves to "always ask".
                 self.local_terminal_default = uuid::Uuid::parse_str(&v).ok();
             }
-            if let Ok(Some(v)) = vault.get_setting("sync_device_name") {
-                self.sync.device_name = v;
-            }
-            // One-time grandfather of the hosted relay (v0.9 -> v0.10):
-            // release builds used to bake a hosted signaling URL in as an
-            // implicit default, so a syncing device could be using it with
-            // an ABSENT sync_signaling_url setting. Write the baked URL
-            // into the settings once, as if the user had configured it by
-            // hand, then never touch it again: existing sync setups keep
-            // working, while fresh installs (and vaults that never enabled
-            // sync) start LAN-only with no hosted endpoint anywhere.
-            // Present-but-empty means the user explicitly cleared the
-            // field; that choice is respected and not migrated over.
-            if vault.get_setting("sync_hosted_migrated").ok().flatten().is_none() {
-                let was_syncing = matches!(
-                    vault.get_setting("sync_enabled"),
-                    Ok(Some(v)) if v == "true"
-                );
-                let url_absent =
-                    matches!(vault.get_setting("sync_signaling_url"), Ok(None));
-                let mut mark_done = true;
-                if was_syncing && url_absent {
-                    let (url, token) =
-                        oryxis_sync::config::legacy_hosted_signaling();
-                    if let Some(url) = url {
-                        let _ = vault.set_setting("sync_signaling_url", &url);
-                        if let Some(token) = token
-                            && matches!(
-                                vault.get_setting("sync_signaling_token"),
-                                Ok(None)
-                            )
-                        {
-                            let _ =
-                                vault.set_setting("sync_signaling_token", &token);
-                        }
-                    } else {
-                        // A user WAS syncing on the hosted default, but this
-                        // binary has no baked-in hosted URL to migrate (a
-                        // self-built / fork build without the CI secret).
-                        // Leave the flag unset so a later official build can
-                        // still complete the migration instead of silently
-                        // dropping the user's internet sync.
-                        mark_done = false;
-                    }
-                }
-                if mark_done {
-                    let _ = vault.set_setting("sync_hosted_migrated", "true");
-                }
-            }
-            if let Ok(Some(v)) = vault.get_setting("sync_signaling_url") {
-                self.sync.signaling_url = v;
-            }
-            if let Ok(Some(v)) = vault.get_setting("sync_signaling_token") {
-                self.sync.signaling_token = v;
-            }
-            if let Ok(Some(v)) = vault.get_setting("sync_relay_url") {
-                self.sync.relay_url = v;
-            }
-            if let Ok(Some(v)) = vault.get_setting("sync_listen_port") {
-                self.sync.listen_port = v;
-            }
-            if let Ok(Some(v)) = vault.get_setting("sync_transport") {
-                self.sync.transport = v;
-            }
-            if let Ok(Some(v)) = vault.get_setting("sync_sftp_host_id") {
-                self.sync.sftp.host_id = uuid::Uuid::parse_str(&v).ok();
-            }
-            if let Ok(Some(v)) = vault.get_setting("sync_sftp_remote_path") {
-                self.sync.sftp.remote_path = v;
-            }
-            if let Ok(Some(v)) = vault.get_setting("sync_webdav_url") {
-                self.sync.webdav.url = v;
-            }
-            if let Ok(Some(v)) = vault.get_setting("sync_webdav_user") {
-                self.sync.webdav.user = v;
-            }
-            if let Ok(Some(v)) = vault.get_sync_webdav_password() {
-                self.sync.webdav.password = v;
-            }
-            // The shared group secret: only the KNOWLEDGE flag reaches
-            // state. The field starts empty and the stored value never
-            // pre-fills it: a masked pre-filled passphrase turns every
-            // later keystroke into an append that silently swaps the
-            // group key under the existing snapshot ("Decryption failed
-            // (wrong key?)" on the next round). One secret across every
-            // snapshot transport, so the SFTP / folder / Git / WebDAV
-            // cards share the same placeholder.
-            match vault.get_sync_sftp_passphrase() {
-                Ok(Some(_)) => self.sync.passphrase_known = true,
-                Ok(None) => self.sync.passphrase_known = false,
-                // Locked vault: leave the previous session's flag alone.
-                Err(_) => {}
-            }
-            self.sync.peers = vault.list_sync_peers().unwrap_or_default();
             if let Ok(Some(v)) = vault.get_setting("ai_system_prompt") {
                 self.ai.system_prompt = text_editor::Content::with_text(&v);
             }
@@ -716,14 +570,6 @@ impl Oryxis {
                         }
                     };
             }
-            if let Ok(Some(v)) = vault.get_setting("download_mirror") {
-                let choice = crate::net_mirror::MirrorChoice::from_setting(&v);
-                if let crate::net_mirror::MirrorChoice::Custom(url) = &choice {
-                    self.download_mirror.url_input = url.clone();
-                }
-                self.download_mirror.choice = choice.clone();
-                crate::net_mirror::set_choice(choice);
-            }
             self.agent.confirm = vault
                 .get_setting("agent_server_confirm")
                 .ok()
@@ -867,12 +713,6 @@ impl Oryxis {
             }
             if let Ok(Some(v)) = vault.get_setting("ssh_connection_reuse") {
                 self.prefs.ssh_connection_reuse = v == "true";
-            }
-            if let Ok(Some(v)) = vault.get_setting("sync_folder_path") {
-                self.sync.folder.path = v;
-            }
-            if let Ok(Some(v)) = vault.get_setting("sync_git_remote") {
-                self.sync.git.remote = v;
             }
             if let Ok(Some(v)) = vault.get_setting("side_panel_width")
                 && let Ok(w) = v.parse::<f32>()
@@ -1160,18 +1000,6 @@ impl Oryxis {
             if let Ok(Some(v)) = vault.get_setting("terminal_hint_mode") {
                 self.prefs.hint_mode = crate::util::HintMode::from_code(&v);
             }
-            if let Ok(Some(v)) = vault.get_setting("cloud_auto_refresh_enabled") {
-                self.prefs.cloud_auto_refresh_enabled = v == "true";
-            }
-            if let Ok(Some(v)) = vault.get_setting("cloud_auto_refresh_interval_minutes") {
-                self.prefs.cloud_auto_refresh_interval_minutes = v;
-            }
-            if let Ok(Some(v)) = vault.get_setting("cloud_auto_archive_orphans") {
-                self.prefs.cloud_auto_archive_orphans = v == "true";
-            }
-            if let Ok(Some(v)) = vault.get_setting("cloud_orphan_archive_days") {
-                self.prefs.cloud_orphan_archive_days = v;
-            }
             if let Ok(Some(v)) = vault.get_setting("auto_reconnect") {
                 self.prefs.auto_reconnect = v == "true";
             }
@@ -1217,12 +1045,6 @@ impl Oryxis {
                 // permissive answer a missing row gives: a bad value
                 // must not silently start deleting recordings.
                 self.prefs.session_log_max_bytes = v.parse::<u64>().ok().filter(|n| *n > 0);
-            }
-            if let Ok(Some(v)) = vault.get_setting("auto_check_updates") {
-                self.prefs.auto_check_updates = v == "true";
-            }
-            if let Ok(Some(v)) = vault.get_setting("update_channel") {
-                self.prefs.update_channel = crate::update::UpdateChannel::from_setting(&v);
             }
             if let Ok(Some(v)) = vault.get_setting("sftp_concurrency") {
                 self.prefs.sftp_concurrency = v;

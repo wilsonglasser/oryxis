@@ -247,7 +247,6 @@ impl Oryxis {
                 self.icon_picker.icon_search = String::new();
                 self.icon_color_popover = None;
                 self.icon_picker.for_id = None;
-                self.icon_picker.for_group_form = false;
                 self.icon_picker.for_session_group = false;
                 self.icon_picker.for_group_edit = false;
                 self.icon_picker.for_local_terminal = true;

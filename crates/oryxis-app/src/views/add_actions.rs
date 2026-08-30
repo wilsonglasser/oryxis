@@ -3,8 +3,7 @@
 //! surfaces, one list, so a new entry can never land on one and be
 //! forgotten on the other.
 //!
-//! - hosts: `add_host_actions` feeds "+ Host ▾"
-//!   (`build_menu_cloud_provider_picker`) and `dashboard_empty_state`.
+//! - hosts: `add_host_actions` feeds `dashboard_empty_state`.
 //! - keychain: `add_key_actions` feeds "+ ADD ▾"
 //!   (`build_menu_keychain_add`) and the keychain empty state
 //!   (`views/keys/list.rs`). The empty state shipped with only the two
@@ -14,32 +13,28 @@
 use iced::widget::{button, container, text};
 use iced::{Background, Border, Color, Element, Length, Padding};
 
-use crate::app::{CloudMessage, KeysMessage, ShareMessage, TabsMessage, Message, Oryxis};
+use crate::app::{KeysMessage, ShareMessage, TabsMessage, Message, Oryxis};
 use crate::os_icon::BrandIcon;
 use crate::theme::OryxisColors;
 use crate::widgets::dir_row;
 
 /// One entry of an add catalog: how it looks, what it says, what it
-/// fires. `label` borrows from `Oryxis` so cloud entries can carry the
-/// profile's own name.
+/// fires.
 pub(crate) struct AddAction<'a> {
     pub(crate) icon: BrandIcon,
     pub(crate) label: &'a str,
     pub(crate) msg: Message,
-    /// Icon tint: the brand color for cloud providers, a neutral
-    /// secondary for the built-in actions.
+    /// Icon tint: a neutral secondary for the built-in actions.
     pub(crate) color: Color,
 }
 
 impl Oryxis {
     /// Every "add a host" action available right now, in display order:
     /// import a `.oryxis` file (a full vault export or a single shared
-    /// host), import an OpenSSH `~/.ssh/config`, add a remote-desktop
-    /// host (only with the opt-in feature on), export the current view
-    /// (only with hosts to export), then one discovery entry per
-    /// configured cloud profile. Import / export live here so they're
-    /// reachable from where hosts are managed instead of being buried
-    /// in Settings.
+    /// host), a new (sub)group, and export the current view (only with
+    /// hosts to export). Import / export live here so they're reachable
+    /// from where hosts are managed instead of being buried in
+    /// Settings.
     pub(crate) fn add_host_actions(&self) -> Vec<AddAction<'_>> {
         let secondary = OryxisColors::t().text_secondary;
         // ONE import entry (owner call): the hub modal names every
@@ -52,23 +47,15 @@ impl Oryxis {
             color: secondary,
         }];
         // Group creation, context-symmetric and always the leading
-        // entry. Inside a manual folder it's "New subgroup" (a child of
-        // the open folder): the folder kebab offers the same action from
+        // entry. Inside a folder it's "New subgroup" (a child of the
+        // open folder): the folder kebab offers the same action from
         // the parent view, this covers creating one while the folder
         // itself is open (its own card, and thus its kebab, isn't
         // visible there). At the vault root it's "New group" (a fresh
         // top-level folder), so an empty group can be born here instead
         // of only by typing a new name in the host editor's group combo.
-        // Dynamic groups derive their contents from the cloud query, so
-        // they take neither: no manual children, and their toolbar shows
-        // Discover rather than this add menu.
         match self.active_group {
-            Some(gid)
-                if self
-                    .groups
-                    .iter()
-                    .any(|g| g.id == gid && g.cloud_query.is_none()) =>
-            {
+            Some(gid) => {
                 actions.insert(
                     0,
                     AddAction {
@@ -90,7 +77,6 @@ impl Oryxis {
                     },
                 );
             }
-            _ => {}
         }
         // Remote desktop has no add entry of its own: it is one of the
         // protocols in the host editor's picker, like Telnet or Serial.
@@ -107,23 +93,6 @@ impl Oryxis {
                 label: crate::i18n::t("export_hosts"),
                 msg: Message::Share(ShareMessage::ShowExportHosts(self.active_group)),
                 color: secondary,
-            });
-        }
-        // Only profiles whose provider plugin is installed can run
-        // discovery; hide the rest (they'd fail with a "binary not
-        // found" wall) until the plugin is back.
-        for cp in self
-            .cloud_profiles
-            .iter()
-            .filter(|p| self.cloud_provider_installed(&p.provider))
-        {
-            let (icon, brand) =
-                crate::os_icon::provider_icon(&cp.provider, OryxisColors::t().accent);
-            actions.push(AddAction {
-                icon,
-                label: cp.label.as_str(),
-                msg: Message::Cloud(CloudMessage::ShowCloudDiscover(cp.id)),
-                color: brand,
             });
         }
         actions

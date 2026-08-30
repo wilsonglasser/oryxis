@@ -92,15 +92,13 @@ impl Oryxis {
     /// post-update flush net in `dispatch.rs` watches. The flag alone
     /// is not the answer: the drawer only renders on the Dashboard with
     /// no tab focused, and it sits LAST in the Dashboard's panel chain
-    /// (`views/layout/mod.rs::side_panel_open`), so a cloud panel or a
-    /// group editor opening takes the slot while `host_panel` stays
-    /// true. Mirrors that chain; a condition added there belongs here.
+    /// (`views/layout/mod.rs::side_panel_open`), so a group editor
+    /// opening takes the slot while `host_panel` stays true. Mirrors
+    /// that chain; a condition added there belongs here.
     pub(crate) fn host_editor_visible(&self) -> bool {
         self.panels.host_panel
             && self.active_tab.is_none()
             && self.active_view == crate::state::View::Dashboard
-            && !self.cloud_discover.visible
-            && !self.cloud_dynamic_form.visible
             && !self.group_edit.visible
     }
 

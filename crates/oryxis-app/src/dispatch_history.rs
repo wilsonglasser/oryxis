@@ -8,7 +8,7 @@
 
 use iced::Task;
 
-use crate::app::{HistoryMessage, CommandHistoryMessage, PluginMessage, Message, Oryxis};
+use crate::app::{HistoryMessage, CommandHistoryMessage, Message, Oryxis};
 
 impl Oryxis {
     pub(crate) fn handle_history(
@@ -271,13 +271,13 @@ impl Oryxis {
                     return self
                         .show_toast(crate::i18n::t("gif_export_started").to_string());
                 }
-                // Plugin not installed yet: park the export and open the
-                // consent modal; `PluginInstallDone("gif", Ok)` resumes.
+                // Plugin not installed: there is no download path
+                // anymore, so tell the user the binary is missing and
+                // keep the export parked nowhere.
                 let Some(binary) = crate::gif_export::resolve_binary() else {
-                    self.gif_export.pending = Some(log_id);
-                    return self.update(Message::Plugin(PluginMessage::ShowPluginInstallModal(
-                        crate::gif_export::PROVIDER_ID.to_string(),
-                    )));
+                    return self.show_toast(
+                        crate::i18n::t("plugin_err_binary_not_found").to_string(),
+                    );
                 };
                 // Same source as the .cast export: flush first, resolve
                 // the terminal type + theme like the live pane did (the

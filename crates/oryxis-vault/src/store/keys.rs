@@ -59,7 +59,6 @@ impl VaultStore {
                 key.updated_at.to_rfc3339(),
             ],
         )?;
-        self.clear_tombstone("key", &key.id)?;
         Ok(())
     }
 
@@ -135,7 +134,6 @@ impl VaultStore {
     pub fn delete_key(&self, id: &Uuid) -> Result<(), VaultError> {
         self.db
             .execute("DELETE FROM keys WHERE id = ?1", params![id.to_string()])?;
-        self.record_tombstone("key", id)?;
         Ok(())
     }
 

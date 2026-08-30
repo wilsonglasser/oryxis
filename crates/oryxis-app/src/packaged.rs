@@ -68,6 +68,8 @@ pub(crate) fn application_user_model_id() -> Option<String> {
 }
 
 /// Non-Windows builds are never packaged; MSIX is a Windows container.
+/// Only Windows call sites exist, so other targets see it as dead code.
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
 #[cfg(not(target_os = "windows"))]
 pub(crate) fn is_packaged() -> bool {
     false

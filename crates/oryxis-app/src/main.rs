@@ -37,8 +37,6 @@ mod dispatch_vault;
 mod dispatch_snippets;
 mod dispatch_navigation;
 mod dispatch_onboarding;
-mod dispatch_folder_sync;
-mod dispatch_git_sync;
 mod dispatch_global;
 mod dispatch_history;
 mod dispatch_player;
@@ -48,9 +46,7 @@ mod dispatch_monitor;
 mod dispatch_monitor_dash;
 mod dispatch_tmux;
 mod dispatch_mcp;
-mod dispatch_sync;
 mod dispatch_proxy_identity;
-mod dispatch_cloud;
 mod dispatch_plugins;
 mod dispatch_port_forwards;
 mod dispatch_session_group;
@@ -60,7 +56,6 @@ mod dispatch_sftp_console;
 mod dispatch_sidebar_files;
 mod dispatch_sftp_archive;
 mod dispatch_sftp_files;
-mod dispatch_sftp_sync;
 mod dispatch_sftp_transfers;
 mod dispatch_share;
 mod dispatch_remote_desktop;
@@ -69,8 +64,7 @@ mod dispatch_ssh;
 mod dispatch_tabs;
 mod dispatch_telnet;
 mod dispatch_terminal;
-mod dispatch_update;
-mod dispatch_webdav_sync;
+
 mod dispatch_zmodem;
 mod font_family;
 mod fonts;
@@ -84,32 +78,24 @@ mod logging;
 mod stall_watchdog;
 mod agent_server;
 mod dispatch_agent;
-mod net_mirror;
 mod mcp;
 mod mcp_install;
 mod messages;
 mod mime_types;
 mod os_icon;
-// MSIX / Microsoft Store container probe. Gates the self-updater and
-// the explicit AppUserModelID, both of which are wrong inside a package.
+// MSIX / Microsoft Store container probe. Gates the explicit
+// AppUserModelID, which is wrong inside a package.
 mod packaged;
 // Split-anchor geometry for dropping a dragged tab into a pane grid.
 mod pane_drop;
 // Answering the engine's command-proxy approval question on dials with
 // no user behind them.
 mod proxy_consent;
-// Cloud-provider plugin subsystem. Inert until the cloud dispatch
-// path is rewired onto it in a later PR, the `allow` keeps the
-// clippy `-D warnings` gate green while the infra (and its public
-// re-exports) sit unused.
+// Plugin subsystem: manifest parsing, verify, cache, host.
 #[allow(dead_code, unused_imports)]
 mod plugins;
 mod renderer_probe;
 mod root_view;
-// Locates the AWS `session-manager-plugin` system binary. Pure
-// path-finding, no SDK, relocated here from `oryxis-cloud-aws` when
-// the AWS provider moved into its plugin subprocess.
-mod session_manager_plugin;
 mod hotkeys;
 mod ansi_render;
 mod session_group_helpers;
@@ -132,7 +118,6 @@ mod ssh_config;
 mod ssh_reuse;
 mod state;
 mod subscription;
-mod sync_runtime;
 mod tab_conn_state;
 mod tab_cycle;
 mod terminal_appearance;
@@ -143,7 +128,6 @@ mod theme_import;
 mod tmux;
 mod tray;
 mod tray_ipc;
-mod update;
 mod util;
 mod views;
 mod widgets;
@@ -195,10 +179,6 @@ fn main() -> iced::Result {
     // generic "dispatch failure" and reqwest panics with "No provider
     // set". See the helper for why the tree carries exactly one backend.
     util::ensure_crypto_provider();
-
-    // Sweep the `.old.exe` left behind by a Windows nightly self-update
-    // (no-op elsewhere). Done before anything else touches the binary.
-    update::sweep_stale_binary();
 
     // Renderer escape hatch. Some GPU/driver stacks (seen on GNOME +
     // Mesa) corrupt the wgpu surface, bleeding other windows' pixels

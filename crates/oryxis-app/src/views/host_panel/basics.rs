@@ -1,5 +1,5 @@
 //! Host editor: universal Host-card fields (label, parent group, tags,
-//! connection target, protocol / cloud-transport pickers, numeric port).
+//! connection target, protocol picker, numeric port).
 use super::*;
 use iced::widget::column;
 
@@ -156,97 +156,42 @@ impl Oryxis {
 
     pub(super) fn hp_protocol_row(&self) -> Option<Element<'_, Message>> {
         use oryxis_core::models::connection::ConnectionProtocol as Proto;
-        // Protocol picker (Connection). A cloud-imported host has its own
-        // transport picker below and is always SSH-family, so the two are
-        // mutually exclusive: hide the protocol picker on cloud hosts.
+        // Protocol picker (Connection).
         //
         // Every protocol is in the ONE picker, remote desktop included.
         // It used to be a separate "Add remote desktop" entry in the add
         // menu, which meant a user looking for RDP opened this list,
         // failed to find it, and concluded the app had none.
-        let protocol_row: Option<Element<'_, Message>> = if self.editor_form.cloud_transport
-            .is_some()
-        {
-            None
-        } else {
-            let mut options =
-                vec![Proto::Ssh, Proto::Telnet, Proto::Raw, Proto::Serial, Proto::Local];
-            // Remote desktop stays behind its opt-in feature flag, so it
-            // is offered only where it can actually be used; a host that
-            // already IS one keeps the option visible, or editing it
-            // would silently rewrite its protocol on the next pick.
-            if self.remote_desktop_enabled || self.editor_form.protocol == Proto::RemoteDesktop {
-                options.push(Proto::RemoteDesktop);
-            }
-            let picker = self.panel_nav_slot(
-                crate::keynav::RowAction::input(iced::widget::Id::new("editor-pick-protocol")),
-                crate::widgets::INPUT_RADIUS,
-                pick_list(Some(self.editor_form.protocol), options, |p| p.to_string())
-                    .on_select(|v| Message::Editor(EditorMessage::EditorProtocolChanged(v)))
-                    .id(iced::widget::Id::new("editor-pick-protocol"))
-                    .on_open(Message::Navigation(NavigationMessage::PickOpenChanged(true)))
-                    .on_close(Message::Navigation(NavigationMessage::PickOpenChanged(false)))
-                    .width(120)
-                    .padding(10)
-                    .style(crate::widgets::rounded_pick_list_style)
-                    .into(),
-            );
-            Some(
-                column![
-                    text(t("protocol")).size(12).color(OryxisColors::t().text_muted),
-                    Space::new().height(8),
-                    picker,
-                ]
+        let mut options =
+            vec![Proto::Ssh, Proto::Telnet, Proto::Raw, Proto::Serial, Proto::Local];
+        // Remote desktop stays behind its opt-in feature flag, so it
+        // is offered only where it can actually be used; a host that
+        // already IS one keeps the option visible, or editing it
+        // would silently rewrite its protocol on the next pick.
+        if self.remote_desktop_enabled || self.editor_form.protocol == Proto::RemoteDesktop {
+            options.push(Proto::RemoteDesktop);
+        }
+        let picker = self.panel_nav_slot(
+            crate::keynav::RowAction::input(iced::widget::Id::new("editor-pick-protocol")),
+            crate::widgets::INPUT_RADIUS,
+            pick_list(Some(self.editor_form.protocol), options, |p| p.to_string())
+                .on_select(|v| Message::Editor(EditorMessage::EditorProtocolChanged(v)))
+                .id(iced::widget::Id::new("editor-pick-protocol"))
+                .on_open(Message::Navigation(NavigationMessage::PickOpenChanged(true)))
+                .on_close(Message::Navigation(NavigationMessage::PickOpenChanged(false)))
+                .width(120)
+                .padding(10)
+                .style(crate::widgets::rounded_pick_list_style)
                 .into(),
-            )
-        };
-        protocol_row
-    }
-
-    pub(super) fn hp_cloud_transport_row(&self) -> Option<Element<'_, Message>> {
-        // Cloud-managed transport picker (Connection), only when the
-        // connection being edited carries a `cloud_ref` (i.e. it was
-        // imported from a cloud provider). Lets the user flip between
-        // SSH (default) and AWS Instance Connect / SSM transports.
-        // Built here (before the SSH card widgets) so its keyboard row
-        // records in visual order inside the Host card.
-        let cloud_transport_row: Option<Element<'_, Message>> =
-            self.editor_form.cloud_transport.map(|current| {
-                use oryxis_core::models::cloud::TransportKind;
-                let options = vec![
-                    TransportKind::Ssh,
-                    TransportKind::InstanceConnect,
-                    TransportKind::Ssm,
-                ];
-                // Focusable select: Tab reaches it, Enter/Space open it,
-                // the widget owns arrows/Esc while focused (fork support).
-                let picker = self.panel_nav_slot(
-                    crate::keynav::RowAction::input(iced::widget::Id::new(
-                        "editor-pick-cloud-transport",
-                    )),
-                    crate::widgets::INPUT_RADIUS,
-                    pick_list(Some(current), options, |t| match t {
-                        TransportKind::Ssh => "SSH".to_string(),
-                        TransportKind::InstanceConnect => "EC2 Instance Connect".to_string(),
-                        TransportKind::Ssm => "SSM Session".to_string(),
-                        TransportKind::EcsExec => "ECS Exec".to_string(),
-                        TransportKind::KubectlExec => "kubectl exec".to_string(),
-                    })
-                    .on_select(|v| Message::Editor(EditorMessage::EditorCloudTransportChanged(v)))
-                    .id(iced::widget::Id::new("editor-pick-cloud-transport"))
-                    .on_open(Message::Navigation(NavigationMessage::PickOpenChanged(true)))
-                    .on_close(Message::Navigation(NavigationMessage::PickOpenChanged(false)))
-                    .padding(10)
-                    .style(crate::widgets::rounded_pick_list_style)
-                    .into(),
-                );
-                column![
-                    text(t("cloud_dynamic_form_transport")).size(12).color(OryxisColors::t().text_muted),
-                    Space::new().height(8),
-                    picker,
-                ].into()
-            });
-        cloud_transport_row
+        );
+        Some(
+            column![
+                text(t("protocol")).size(12).color(OryxisColors::t().text_muted),
+                Space::new().height(8),
+                picker,
+            ]
+            .into(),
+        )
     }
 
     pub(super) fn hp_port_input(&self, is_serial: bool) -> Element<'_, Message> {

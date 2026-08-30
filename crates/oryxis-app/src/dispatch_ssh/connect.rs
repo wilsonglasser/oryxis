@@ -13,7 +13,6 @@ use iced::Task;
 use std::sync::{Arc, Mutex};
 use uuid::Uuid;
 
-use oryxis_core::models::cloud::TransportKind;
 use oryxis_ssh::{SshEngine, SshSession};
 use oryxis_terminal::widget::TerminalState;
 
@@ -116,17 +115,6 @@ impl Oryxis {
         origin: crate::state::ProgressOrigin,
     ) -> Task<Message> {
         let is_quick = matches!(origin, crate::state::ProgressOrigin::Quick(_));
-        // SSM Session transport short-circuits the SSH
-        // pipeline entirely, it goes through
-        // `session-manager-plugin` instead of opening a
-        // TCP+SSH connection. Punt to the dedicated
-        // dispatch handler before we waste time setting up
-        // the SSH-specific state below.
-        if let Some(cref) = conn.cloud_ref.as_ref()
-            && cref.transport_pref == TransportKind::Ssm
-        {
-            return self.start_ssm_session_for_connection(&conn);
-        }
         // Every non-SSH protocol branches to its own (much thinner)
         // connect path: no SSH engine, no host keys, no jump chains.
         match conn.protocol {
@@ -451,92 +439,6 @@ impl Oryxis {
                 let algo_macs = conn.macs.clone();
                 let algo_host_keys = conn.host_key_algorithms.clone();
 
-                // Resolve EC2 Instance Connect pre-step
-                // when the connection's `cloud_ref` asks
-                // for it. Tri-state result so the closure
-                // can either skip silently (not asked
-                // for), run the API call (have everything),
-                // or surface a clear setup error (asked
-                // for it but missing key / profile).
-                // Box `Run` so the enum's stack size matches
-                // its smallest variant, otherwise clippy
-                // flags the variant disparity.
-                struct InstanceConnectRun {
-                    provider:
-                        std::sync::Arc<dyn oryxis_cloud::CloudProvider>,
-                    profile: oryxis_core::models::cloud_profile::CloudProfile,
-                    region: String,
-                    instance_id: String,
-                    os_user: String,
-                    public_key: String,
-                }
-                enum InstanceConnectPlan {
-                    Skip,
-                    Run(Box<InstanceConnectRun>),
-                    MissingKey,
-                    MissingProfile,
-                    MissingRegion,
-                }
-                let instance_connect_plan: InstanceConnectPlan = (|| {
-                    let Some(cref) = conn.cloud_ref.as_ref() else {
-                        return InstanceConnectPlan::Skip;
-                    };
-                    if cref.transport_pref != TransportKind::InstanceConnect {
-                        return InstanceConnectPlan::Skip;
-                    }
-                    let Some(region) = cref.region.clone() else {
-                        return InstanceConnectPlan::MissingRegion;
-                    };
-                    let Some(profile) = self
-                        .cloud_profiles
-                        .iter()
-                        .find(|p| p.id == cref.profile_id)
-                        .cloned()
-                    else {
-                        return InstanceConnectPlan::MissingProfile;
-                    };
-                    // The provider is the plugin that pushes the key.
-                    // It's seeded at boot and effectively always
-                    // present; fold the can't-happen "not registered"
-                    // case into MissingProfile rather than adding a
-                    // variant (and an i18n key in 11 languages) for it.
-                    let Some(provider) =
-                        self.cloud_provider_registry.get(&profile.provider)
-                    else {
-                        return InstanceConnectPlan::MissingProfile;
-                    };
-                    let key_id = conn.key_id.or_else(|| {
-                        conn.identity_id.and_then(|iid| {
-                            self.identities
-                                .iter()
-                                .find(|i| i.id == iid)
-                                .and_then(|i| i.key_id)
-                        })
-                    });
-                    let Some(key_id) = key_id else {
-                        return InstanceConnectPlan::MissingKey;
-                    };
-                    let Some(pubkey) = self
-                        .keys
-                        .iter()
-                        .find(|k| k.id == key_id)
-                        .map(|k| k.public_key.clone())
-                    else {
-                        return InstanceConnectPlan::MissingKey;
-                    };
-                    if pubkey.trim().is_empty() {
-                        return InstanceConnectPlan::MissingKey;
-                    }
-                    InstanceConnectPlan::Run(Box::new(InstanceConnectRun {
-                        provider,
-                        profile,
-                        region,
-                        instance_id: cref.resource_id.clone(),
-                        os_user: username.clone(),
-                        public_key: pubkey,
-                    }))
-                })();
-
                 // Captured for the map closure below, since `conn`
                 // itself is moved into the stream producer.
                 let map_conn_id = conn.id;
@@ -636,92 +538,6 @@ impl Oryxis {
                                 let _ = resp_tx.send(answers);
                             }
                         });
-
-                        tracing::info!(
-                            target = "oryxis::dispatch_ssh",
-                            plan = match &instance_connect_plan {
-                                InstanceConnectPlan::Skip => "skip (no cloud_ref or transport != InstanceConnect)",
-                                InstanceConnectPlan::Run(_) => "run (push key via SendSSHPublicKey)",
-                                InstanceConnectPlan::MissingKey => "abort (no SSH key linked)",
-                                InstanceConnectPlan::MissingProfile => "abort (cloud profile gone)",
-                                InstanceConnectPlan::MissingRegion => "abort (region missing on cloud_ref)",
-                            },
-                            "Instance Connect pre-step decision"
-                        );
-
-                        // Pre-step: EC2 Instance Connect.
-                        // AWS injects the public key into
-                        // the instance's authorized_keys
-                        // for ~60s; we have that window
-                        // to dial. Setup misconfigurations
-                        // (missing key / profile / region)
-                        // bail loudly here instead of
-                        // silently degrading to plain SSH
-                        //, that path would just confuse
-                        // the user into wondering why the
-                        // transport pick didn't take.
-                        match instance_connect_plan {
-                            InstanceConnectPlan::Skip => {}
-                            InstanceConnectPlan::Run(run) => {
-                                let InstanceConnectRun {
-                                    provider,
-                                    profile,
-                                    region,
-                                    instance_id,
-                                    os_user,
-                                    public_key,
-                                } = *run;
-                                let _ = sender
-                                    .send(SshStreamMsg::Progress(
-                                        ConnectionStep::Connecting,
-                                        format!(
-                                            "Pushing temporary public key to {instance_id} via EC2 Instance Connect…"
-                                        ),
-                                    ))
-                                    .await;
-                                if let Err(e) = provider
-                                    .push_instance_connect_key(
-                                        &profile,
-                                        &region,
-                                        &instance_id,
-                                        &os_user,
-                                        &public_key,
-                                    )
-                                    .await
-                                {
-                                    let _ = sender
-                                        .send(SshStreamMsg::Error(format!(
-                                            "EC2 Instance Connect push failed: {e}"
-                                        )))
-                                        .await;
-                                    return;
-                                }
-                            }
-                            InstanceConnectPlan::MissingKey => {
-                                let _ = sender
-                                    .send(SshStreamMsg::Error(
-                                        crate::i18n::t("ic_err_missing_key").into(),
-                                    ))
-                                    .await;
-                                return;
-                            }
-                            InstanceConnectPlan::MissingProfile => {
-                                let _ = sender
-                                    .send(SshStreamMsg::Error(
-                                        crate::i18n::t("ic_err_missing_profile").into(),
-                                    ))
-                                    .await;
-                                return;
-                            }
-                            InstanceConnectPlan::MissingRegion => {
-                                let _ = sender
-                                    .send(SshStreamMsg::Error(
-                                        crate::i18n::t("ic_err_missing_region").into(),
-                                    ))
-                                    .await;
-                                return;
-                            }
-                        }
 
                         // Route context up front: the dial happens inside
                         // `establish_transport`, so jump chains and proxies
@@ -1059,7 +875,7 @@ impl Oryxis {
     /// Connect a saved host into a new split pane. Uses the one-shot
     /// `connect_with_resolver` (no full progress timeline); the pane shows a
     /// "Connecting…" line until output arrives. Host-key prompts reuse the
-    /// shared modal. Cloud-transport hosts fall back to a normal tab.
+    /// shared modal.
     pub(crate) fn connect_ssh_into_pane(
         &mut self,
         conn_idx: usize,
@@ -1070,16 +886,6 @@ impl Oryxis {
         let Some(conn) = self.connections.get(conn_idx).cloned() else {
             return Task::none();
         };
-        // SSM / ECS / kubectl transports need their own plugin PTY, not a
-        // plain SSH session, so they can't live in this pane path yet; open
-        // them as a normal tab instead.
-        if conn
-            .cloud_ref
-            .as_ref()
-            .is_some_and(|c| c.transport_pref != TransportKind::Ssh)
-        {
-            return self.update(Message::Ssh(SshMessage::ConnectSsh(conn_idx)));
-        }
 
         // Display-only terminal, fed by the SSH stream (same as a normal SSH
         // tab). Seed a "Connecting…" line for immediate feedback.
@@ -1109,8 +915,7 @@ impl Oryxis {
     }
 
     /// Connect a quick-connect entry into a new split pane, mirroring
-    /// `connect_ssh_into_pane` for the ad-hoc store (no cloud-transport
-    /// fallback: ephemeral hosts never carry a `cloud_ref`).
+    /// `connect_ssh_into_pane` for the ad-hoc store.
     pub(crate) fn quick_connect_into_pane(
         &mut self,
         entry_id: Uuid,

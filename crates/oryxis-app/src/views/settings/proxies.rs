@@ -152,10 +152,10 @@ impl Oryxis {
         }
         self.keynav_set_content_rows(proxy_nav);
 
-        // "+ Proxy" button, same Cloud-Accounts pattern: bold plus
+        // "+ Proxy" button, same pattern as the other vault views: bold plus
         // glyph + bold label in the accent fill. Lives on the
         // trailing edge of the toolbar so the section header reads
-        // exactly like Hosts / Keychain / Snippets / Cloud.
+        // exactly like Hosts / Keychain / Snippets.
         let add_btn: Element<'_, Message> = {
             let fg = OryxisColors::t().button_text;
             button(

@@ -38,7 +38,7 @@ impl Oryxis {
         }
 
         // Only saved hosts carry the opt-in flag: a quick-connect, local
-        // or cloud pane has no vault row to enable it on.
+        // pane has no vault row to enable it on.
         let Some(conn_id) = self.monitor_pane_connection() else {
             return placeholder(t("monitor_requires_host"));
         };

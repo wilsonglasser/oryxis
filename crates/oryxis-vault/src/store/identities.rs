@@ -43,7 +43,6 @@ impl VaultStore {
                 identity.updated_at.to_rfc3339(),
             ],
         )?;
-        self.clear_tombstone("identity", &identity.id)?;
         Ok(())
     }
 
@@ -139,7 +138,6 @@ impl VaultStore {
             "DELETE FROM identities WHERE id = ?1",
             params![id.to_string()],
         )?;
-        self.record_tombstone("identity", id)?;
         Ok(())
     }
 
@@ -189,7 +187,6 @@ impl VaultStore {
                 identity.updated_at.to_rfc3339(),
             ],
         )?;
-        self.clear_tombstone("proxy_identity", &identity.id)?;
         Ok(())
     }
 
@@ -299,7 +296,6 @@ impl VaultStore {
             "DELETE FROM proxy_identities WHERE id = ?1",
             params![id.to_string()],
         )?;
-        self.record_tombstone("proxy_identity", id)?;
         Ok(())
     }
 

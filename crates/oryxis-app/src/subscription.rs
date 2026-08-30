@@ -5,7 +5,7 @@ use std::sync::atomic::{AtomicI32, Ordering};
 
 use iced::Subscription;
 
-use crate::app::{SftpMessage, SettingsMessage, TabsMessage, TerminalMessage, CloudMessage, PortForwardMessage, AiMessage, SyncMessage, PlayerMessage, Message, Oryxis};
+use crate::app::{SftpMessage, SettingsMessage, TabsMessage, TerminalMessage, PortForwardMessage, AiMessage, PlayerMessage, Message, Oryxis};
 #[cfg(target_os = "windows")]
 use crate::app::TrayMessage;
 
@@ -215,22 +215,6 @@ impl Oryxis {
             }
         });
         let mut subs = vec![events];
-
-        // While a passphrase edit is open, any left click is a candidate
-        // for "focus left the field": probe the click position against the
-        // field's last drawn bounds, and fall back to a focus query when
-        // the geometry is inconclusive or the buffer is stale (a
-        // select-all delete clears the display without firing on_input).
-        if self.sync.passphrase_editing {
-            subs.push(iced::event::listen_with(|event, _status, _window| {
-                match event {
-                    iced::event::Event::Mouse(iced::mouse::Event::ButtonPressed(
-                        iced::mouse::Button::Left,
-                    )) => Some(Message::Sync(SyncMessage::PassphraseBlurCheck)),
-                    _ => None,
-                }
-            }));
-        }
 
         // Stall-watchdog pacemaker (#104): while debug logging is on, a
         // 500 ms NoOp keeps the update heartbeat beating on an idle app,
@@ -531,64 +515,6 @@ impl Oryxis {
             subs.push(
                 iced::time::every(std::time::Duration::from_secs(2))
                     .map(|_| Message::Terminal(TerminalMessage::SessionLogFlushTick)),
-            );
-        }
-
-        // Cloud auto-refresh ticker. Only mounts the subscription when
-        // the user enabled the toggle in Settings; otherwise zero
-        // background API calls. Interval reads the persisted setting
-        // and falls back to 30 min on any parse failure so a malformed
-        // value doesn't pin the ticker at 1 ms.
-        if self.prefs.cloud_auto_refresh_enabled && !self.cloud_profiles.is_empty() {
-            let minutes = self
-                .prefs.cloud_auto_refresh_interval_minutes
-                .parse::<u64>()
-                .ok()
-                .filter(|m| *m > 0)
-                .unwrap_or(30);
-            subs.push(
-                iced::time::every(std::time::Duration::from_secs(minutes * 60))
-                    .map(|_| Message::Cloud(CloudMessage::CloudAutoRefreshTick)),
-            );
-        }
-        // Cloud SSM/ECS idle keepalive. The SSM websocket drops the
-        // session after ~20 min of inactivity, which bites when the user
-        // alt-tabs away and comes back much later. We only mount the
-        // ticker while the window is unfocused (an in-focus session has
-        // the user's own input resetting the idle timer, and resizing a
-        // visible terminal would be jarring) and only when at least one
-        // SSM/ECS tab is open. 4 min comfortably beats the 20 min
-        // default even allowing for a missed tick; users who lowered the
-        // SSM idle timeout below ~5 min would need the server-side
-        // setting raised instead.
-        if !self.window_focused
-            && self.tabs.iter().any(|t| t.ssm_keepalive)
-        {
-            subs.push(
-                iced::time::every(std::time::Duration::from_secs(240))
-                    .map(|_| Message::Tabs(TabsMessage::SsmKeepaliveTick)),
-            );
-        }
-        // Snapshot-transport auto cadence. The P2P transport runs its
-        // own timer inside the engine; the snapshot transports (SFTP,
-        // folder, Git, WebDAV) have none, so the cadence lives here.
-        // Mounts for any of them in enabled + auto; the tick is a no-op
-        // while a round is already in flight. 5 min matches the P2P
-        // `auto_interval_secs` default.
-        // Unlocked is a REAL condition here, not belt and braces: a soft
-        // auto-lock zeroizes the master key and drops
-        // `master_password` while the app keeps running, and the round
-        // would then reach a server with stored credentials on behalf
-        // of a vault the user believes is closed (and fail, since it
-        // cannot decrypt anything).
-        if self.sync.enabled
-            && !self.sync_uses_p2p()
-            && self.sync.mode == "auto"
-            && self.vault_ui.state == crate::state::VaultState::Unlocked
-        {
-            subs.push(
-                iced::time::every(std::time::Duration::from_secs(300))
-                    .map(|_| Message::Sync(SyncMessage::SnapshotTick)),
             );
         }
 

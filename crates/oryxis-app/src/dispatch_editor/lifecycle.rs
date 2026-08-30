@@ -25,9 +25,6 @@ impl Oryxis {
                 self.overlay = None;
                 if let Some(conn) = self.connections.iter().find(|c| c.id == id) {
                     // Mutually exclusive right-panel slot.
-                    self.cloud_form.visible = false;
-                    self.cloud_dynamic_form.visible = false;
-                    self.cloud_discover.visible = false;
                     self.panels.session_group_panel = false;
                     self.group_edit.visible = false;
                     self.panels.host_panel = true;
@@ -105,9 +102,6 @@ impl Oryxis {
                 };
                 // Mutually exclusive right-panel slot, and the panel lives
                 // on the dashboard (the menu was clicked from a terminal).
-                self.cloud_form.visible = false;
-                self.cloud_dynamic_form.visible = false;
-                self.cloud_discover.visible = false;
                 self.panels.session_group_panel = false;
                 self.group_edit.visible = false;
                 self.panels.host_panel = true;
@@ -356,12 +350,6 @@ impl Oryxis {
                     dup.updated_at = now;
                     // A fresh host has never been used.
                     dup.last_used = None;
-                    // A cloud-imported host is bound to one discovered
-                    // resource; a copy pointing at the same one would be
-                    // clobbered (or orphaned) by the next refresh, and
-                    // `customized_fields` only means anything next to it.
-                    dup.cloud_ref = None;
-                    dup.customized_fields.clear();
                     if let Some(vault) = &self.vault {
                         // Secrets live in their own encrypted columns, so
                         // they are copied explicitly rather than riding
@@ -427,19 +415,6 @@ impl Oryxis {
                             self.chain_editor_adding = true;
                             self.chain_editor_search.clear();
                         }
-                    }
-                    P::Cloud => {
-                        // The cloud import lives in its own view; the
-                        // pristine create form has nothing to keep.
-                        self.panels.host_panel = false;
-                        self.panel_nav_clear();
-                        self.host_panel_error = None;
-                        self.editor_form.sweep_secrets();
-                        return self.update(Message::Navigation(
-                            crate::app::NavigationMessage::ChangeView(
-                                crate::state::View::Cloud,
-                            ),
-                        ));
                     }
                 }
             }

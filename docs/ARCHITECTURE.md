@@ -1,9 +1,11 @@
 # Architecture
 
-Oryxis is a Cargo workspace of 25 crates. The UI layer is an
+Oryxis is a Cargo workspace of 14 crates. The UI layer is an
 [iced](https://iced.rs) application on the wgpu backend; everything below it
-is a set of focused engines (SSH, Telnet, serial, vault, sync, terminal)
-that the app composes.
+is a set of focused engines (SSH, Telnet, serial, vault, terminal)
+that the app composes. This is the offline edition: cloud providers,
+device sync, the auto-updater, and the plugin download catalog are
+removed.
 
 ```
 +--------------------------------------------------------------------+
@@ -24,26 +26,19 @@ that the app composes.
 | oryxis-archive tar/zip over  |                                     |
 |   SFTP + local codecs        |                                     |
 +--------------------------------------------------------------------+
-| Cloud providers + plugin subsystem                                 |
-| oryxis-cloud              provider trait (discovery + transport)   |
-| oryxis-cloud-aws/-gcp/-azure/-k8s        provider implementations  |
-| *-plugin                  subprocess binaries (JSON-RPC 2.0)       |
-| oryxis-plugin-protocol    stdio wire contract                      |
-| oryxis-plugin-signer      Ed25519 sign + SHA-256                   |
-+------------------------------+-------------------------------------+
-| P2P sync                     | AI / automation                     |
-| oryxis-sync                  | oryxis-mcp                          |
-| quinn QUIC, mDNS, STUN,      | JSON-RPC 2.0 over stdio,            |
-| signaling + relay,           | list / get / exec SSH hosts         |
-| Ed25519/X25519, LWW          | for AI assistants                   |
-| oryxis-relay (self-host)     |                                     |
-+------------------------------+-------------------------------------+
+| Plugin subsystem (local-only)             | AI / automation        |
+| oryxis-plugin-protocol  stdio wire        | oryxis-mcp             |
+| oryxis-plugin-signer    Ed25519 sign      | JSON-RPC 2.0 over      |
+|                         + SHA-256         | stdio, list / get /    |
+| cache under ~/.oryxis, verified,          | exec SSH hosts         |
+| never fetched                             | for AI assistants      |
++-------------------------------------------+-----------------------+
 | Terminal                     | Core model types                    |
 | oryxis-terminal              | oryxis-core                         |
 | alacritty_terminal,          | Connection, Key, Identity,          |
 | custom widget + PTY,         | ProxyIdentity, Group, Snippet,      |
 | themes + custom themes       | KnownHost, PortForwardRule,         |
-|                              | SessionGroup, CloudAccount, ...     |
+|                              | SessionGroup, ...                   |
 +--------------------------------------------------------------------+
 ```
 
@@ -51,8 +46,8 @@ that the app composes.
 
 | Crate | Purpose |
 |-------|---------|
-| `oryxis-app` | Iced app: views, themes, i18n, AI chat, SFTP browser, cloud UI, split panes, overlays, keyboard navigation |
-| `oryxis-core` | Shared model types: Connection, SshKey, Identity, ProxyIdentity, Group, Snippet, KnownHost, PortForwardRule, SessionGroup, CloudAccount, custom themes, LogEntry |
+| `oryxis-app` | Iced app: views, themes, i18n, AI chat, SFTP browser, split panes, overlays, keyboard navigation |
+| `oryxis-core` | Shared model types: Connection, SshKey, Identity, ProxyIdentity, Group, Snippet, KnownHost, PortForwardRule, SessionGroup, custom themes, LogEntry |
 | `oryxis-terminal` | Terminal widget: alacritty_terminal + custom canvas widget + PTY + themes + URL/IP/path detection |
 | `oryxis-ssh` | SSH engine: auto-auth, jump hosts, SOCKS/HTTP/Command proxy, Local/Remote/Dynamic forwarding, SFTP, TOFU, RSA-SHA2 |
 | `oryxis-mosh` | mosh carried over an SSH host: the `mosh-server` handover (remote command synthesis with shell quoting, announcement parsing) and the UDP session that follows, driving the `mosh-rs` crate and publishing escape bytes so the pane reads it like any other transport |
@@ -62,19 +57,8 @@ that the app composes.
 | `oryxis-archive` | SFTP archive operations: remote `tar` / `unzip` / `zip` command synthesis with safe quoting (POSIX + Windows), local zip / tar.gz codecs, zip central-directory browsing over ranged reads |
 | `oryxis-vault` | Encrypted vault: SQLite + Argon2id + ChaCha20-Poly1305 per-field + session logs / recordings + `.oryxis` export/import |
 | `oryxis-biometric` | Biometric / OS-keyring app unlock: Windows Hello, macOS Touch ID (Keychain user presence), Linux Secret Service |
-| `oryxis-sync` | P2P sync engine: QUIC (quinn) + mDNS + STUN + signaling + HTTP relay fallback + Ed25519/X25519 + LWW conflict resolution |
-| `oryxis-relay` | Self-hostable signaling + relay HTTP server (axum + in-memory queues) |
 | `oryxis-mcp` | MCP server binary: JSON-RPC 2.0 over stdio, exposes SSH hosts to AI assistants. Distributed as a plugin, not bundled in the OS installers |
-| `oryxis-cloud` | Cloud provider abstraction: a `CloudProvider` trait split into discovery (list resources) and transport (open a channel: SSH / SSM / ECS Exec / kubectl exec) |
-| `oryxis-cloud-aws` | AWS provider: named profiles, static keys, IAM Identity Center (SSO), EC2 + ECS discovery |
-| `oryxis-cloud-gcp` | Google Cloud provider: Compute Engine + GKE discovery driven through the `gcloud` CLI |
-| `oryxis-cloud-azure` | Azure provider: VMs + AKS discovery driven through the `az` CLI |
-| `oryxis-cloud-k8s` | Kubernetes provider: kubeconfig auth, workload discovery and pod shells driven through the `kubectl` CLI |
-| `oryxis-cloud-aws-plugin` | AWS provider packaged as a standalone subprocess (JSON-RPC 2.0 over stdio) |
-| `oryxis-cloud-gcp-plugin` | Google Cloud provider packaged as a standalone subprocess |
-| `oryxis-cloud-azure-plugin` | Azure provider packaged as a standalone subprocess |
-| `oryxis-cloud-k8s-plugin` | Kubernetes provider packaged as a standalone subprocess |
-| `oryxis-plugin-protocol` | Wire protocol for cloud-provider plugins: line-delimited JSON-RPC 2.0 over stdio |
+| `oryxis-plugin-protocol` | Plugin wire contract: line-delimited JSON-RPC 2.0 over stdio, plus the shared dev signing seed |
 | `oryxis-plugin-signer` | CLI that signs a plugin binary with the Ed25519 key and computes the SHA-256 the manifest needs |
 
 ## Tech stack
@@ -87,10 +71,8 @@ that the app composes.
 | Terminal | alacritty_terminal |
 | SSH | russh (async, pure Rust, RSA-SHA2) |
 | Telnet / Serial / ZMODEM | native Rust engines (`oryxis-telnet`, `oryxis-serial`, `oryxis-zmodem`) |
-| Cloud | AWS (EC2/ECS, SSM, EC2 Instance Connect), GCP (`gcloud`), Azure (`az`), Kubernetes (`kubectl`), as Ed25519-signed subprocess plugins |
 | AI | reqwest + Anthropic / OpenAI-compatible / Gemini APIs |
 | MCP | JSON-RPC 2.0 over stdio |
-| P2P Sync | quinn (QUIC), mDNS, STUN, HTTP relay fallback, Ed25519/X25519, XChaCha20-Poly1305 |
 | Encryption at rest | Argon2id + ChaCha20-Poly1305 |
 | Storage | SQLite (rusqlite) |
 | Async | Tokio |
@@ -98,12 +80,12 @@ that the app composes.
 ## Design notes
 
 - **No Electron, no webview.** The whole UI is a single native binary;
-  optional capabilities (cloud providers, MCP server) are downloaded on
-  demand as signed subprocess plugins so the core stays small.
+  the MCP server ships as a signed local plugin binary, nothing is
+  downloaded on demand.
 - **Secrets are per-field encrypted.** Credentials never live in plaintext
   columns; structural tests enforce it.
-- **The vault is the source of truth.** Sync, export and the MCP server all
+- **The vault is the source of truth.** Export and the MCP server both
   read through the same store; nothing bypasses it.
-- **Plugins are sandboxed by process.** Cloud providers speak line-delimited
-  JSON-RPC 2.0 over stdio and are Ed25519-signature-verified before every
-  execution.
+- **Plugins are verified, then trusted on disk.** A plugin binary must
+  pass its Ed25519 signature check before it is copied to the stable
+  launcher path; the cache lives under `~/.oryxis` (user-private).

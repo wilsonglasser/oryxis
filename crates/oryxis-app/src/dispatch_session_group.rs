@@ -58,9 +58,8 @@ impl Oryxis {
                     return Task::none();
                 };
                 let Some((layout, rows)) = snapshot_tab_layout(tab) else {
-                    // Every pane was non-referenceable (e.g. a cloud-only
-                    // tab). Nothing to save; tell the user instead of
-                    // opening an empty editor.
+                    // Every pane was non-referenceable. Nothing to save;
+                    // tell the user instead of opening an empty editor.
                     self.set_toast(crate::i18n::t("session_group_nothing_to_save").to_string());
                     return toast_clear(3);
                 };
@@ -188,7 +187,6 @@ impl Oryxis {
                 self.icon_picker.color = form.color.clone();
                 self.icon_picker.hex_input = form.color.clone().unwrap_or_default();
                 self.icon_picker.for_id = None;
-                self.icon_picker.for_group_form = false;
                 self.icon_picker.for_session_group = true;
                 self.icon_picker.for_local_terminal = false;
                 self.panels.icon_picker = true;
@@ -274,9 +272,6 @@ impl Oryxis {
         // Drop what the host editor's eyes revealed.
         self.editor_form.sweep_secrets();
         self.panel_nav_clear();
-        self.cloud_form.visible = false;
-        self.cloud_dynamic_form.visible = false;
-        self.cloud_discover.visible = false;
         self.group_edit.visible = false;
         // Seed the multi-line script buffer from the first pane.
         form.current_pane = 0;
@@ -424,7 +419,6 @@ impl Oryxis {
             chat_last_md_parse: None,
             chat_saved_id: None,
             chat_persisted: 0,
-            ssm_keepalive: false,
             relaunch: None,
             session_group_id: Some(group.id),
             pinned: false,

@@ -11,17 +11,6 @@ members = [
     "crates/oryxis-terminal",
     "crates/oryxis-vault",
     "crates/oryxis-biometric",
-    "crates/oryxis-sync",
-    "crates/oryxis-relay",
-    "crates/oryxis-cloud",
-    "crates/oryxis-cloud-aws",
-    "crates/oryxis-cloud-aws-plugin",
-    "crates/oryxis-cloud-k8s",
-    "crates/oryxis-cloud-k8s-plugin",
-    "crates/oryxis-cloud-gcp",
-    "crates/oryxis-cloud-gcp-plugin",
-    "crates/oryxis-cloud-azure",
-    "crates/oryxis-cloud-azure-plugin",
     "crates/oryxis-plugin-protocol",
     "crates/oryxis-plugin-signer",
     "crates/oryxis-app",
@@ -142,12 +131,6 @@ oryxis-zmodem = { path = "crates/oryxis-zmodem" }
 oryxis-terminal = { path = "crates/oryxis-terminal" }
 oryxis-vault = { path = "crates/oryxis-vault" }
 oryxis-biometric = { path = "crates/oryxis-biometric" }
-oryxis-sync = { path = "crates/oryxis-sync" }
-oryxis-cloud = { path = "crates/oryxis-cloud" }
-oryxis-cloud-aws = { path = "crates/oryxis-cloud-aws" }
-oryxis-cloud-k8s = { path = "crates/oryxis-cloud-k8s" }
-oryxis-cloud-gcp = { path = "crates/oryxis-cloud-gcp" }
-oryxis-cloud-azure = { path = "crates/oryxis-cloud-azure" }
 oryxis-plugin-protocol = { path = "crates/oryxis-plugin-protocol" }
 
 [profile.dev]

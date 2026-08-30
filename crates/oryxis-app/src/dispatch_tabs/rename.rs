@@ -89,16 +89,6 @@ impl Oryxis {
                     y: anchor.1,
                 });
             }
-            TabsMessage::StartRenameFolder(gid) => {
-                self.overlay = None;
-                let current = self
-                    .groups
-                    .iter()
-                    .find(|g| g.id == gid)
-                    .map(|g| g.label.clone())
-                    .unwrap_or_default();
-                self.folder_rename = Some((gid, current));
-            }
             TabsMessage::FolderRenameInput(val) => {
                 if let Some((_, ref mut buf)) = self.folder_rename {
                     *buf = val;

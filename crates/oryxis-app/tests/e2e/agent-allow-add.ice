@@ -21,10 +21,11 @@ click "Features & Plugins"
 expect "SSH Agent"
 # The SSH Agent toggle sits last in the Features list, so every new
 # feature row above it pushes this y down: 305 -> 350 with Host
-# monitoring (#83), 350 -> 395 with tmux sessions. Read the row's own
-# bounds with `texts` when it drifts again; the label sits ~16 px above
-# the toggle's centre.
-click (1141, 395)
+# monitoring (#83), 350 -> 395 with tmux sessions, 395 -> 350 when the
+# Sync feature row above was removed with the offline transformation.
+# Read the row's own bounds with `texts` when it drifts again; the
+# label sits ~16 px above the toggle's centre.
+click (1141, 350)
 # The agent runtime is a LISTENER, so from here on the boot task never
 # reports done and every instruction waits out the per-instruction
 # timeout instead. Same reason terminal-primary-selection.ice drops it

@@ -130,107 +130,20 @@ impl Oryxis {
             Padding { top: 8.0, right: pad_trailing, bottom: 8.0, left: 2.0 }
         };
 
-        // Cloud-origin badge: small brand glyph that used to sit
-        // inline with the label (and got clipped on long names).
-        // Moved to the LEADING edge of the subtitle row so it
-        // never competes with the title for horizontal space.
-        // Stored as (brand_key, badge_color, is_orphan) so the
-        // glyph can be re-resolved at the use site instead of
-        // moved out of a shared tuple (`BrandIcon::view` consumes
-        // self and `BrandIcon` doesn't impl Clone).
-        let cloud_decoration: Option<(&'static str, Color, bool)> =
-            conn.cloud_ref.as_ref().map(|cr| {
-                let provider = self
-                    .cloud_profiles
-                    .iter()
-                    .find(|p| p.id == cr.profile_id)
-                    .map(|p| p.provider.as_str())
-                    .unwrap_or("cloud");
-                let brand_key = crate::os_icon::provider_brand_key(provider);
-                let is_orphan = cr.orphaned_at.is_some();
-                let (_brand_glyph, brand_color_default) = crate::os_icon::provider_icon(
-                    brand_key,
-                    OryxisColors::t().accent,
-                );
-                let badge_color = if is_orphan {
-                    OryxisColors::t().text_muted
-                } else {
-                    brand_color_default
-                };
-                (brand_key, badge_color, is_orphan)
-            });
+        // The subtitle sits inline with the label (and got clipped on
+        // long names).
+        let label_color = OryxisColors::t().text_primary;
+        let label_el: Element<'_, Message> = text(display_label.clone())
+            .size(13)
+            .color(label_color)
+            .wrapping(iced::widget::text::Wrapping::None)
+            .into();
 
-        let label_color = match &cloud_decoration {
-            Some((_, _, true)) => OryxisColors::t().text_muted,
-            _ => OryxisColors::t().text_primary,
-        };
-        let label_el: Element<'_, Message> = if let Some((_, _, true)) = &cloud_decoration {
-            // Orphan: keep the pill next to the label so the user
-            // sees it at the title's eye level.
-            let muted = OryxisColors::t().text_muted;
-            let pill = container(
-                text(t("host_orphan_label"))
-                    .size(9)
-                    .color(OryxisColors::t().text_muted),
-            )
-            .padding(Padding {
-                top: 1.0,
-                right: 6.0,
-                bottom: 1.0,
-                left: 6.0,
-            })
-            .style(move |_| container::Style {
-                background: Some(Background::Color(Color { a: 0.10, ..muted })),
-                border: Border {
-                    radius: Radius::from(6.0),
-                    color: Color { a: 0.30, ..muted },
-                    width: 1.0,
-                },
-                ..Default::default()
-            });
-            dir_row(vec![
-                text(display_label.clone())
-                    .size(13)
-                    .color(label_color)
-                    .wrapping(iced::widget::text::Wrapping::None)
-                    .into(),
-                Space::new().width(6).into(),
-                pill.into(),
-            ])
-            .align_y(iced::Alignment::Center)
-            .into()
-        } else {
-            text(display_label.clone())
-                .size(13)
-                .color(label_color)
-                .wrapping(iced::widget::text::Wrapping::None)
-                .into()
-        };
-
-        // Subtitle row carries the brand badge on its leading edge
-        // when this host is cloud-sourced. Manual hosts get just
-        // the subtitle text (no leading gap).
-        let subtitle_el: Element<'_, Message> = match &cloud_decoration {
-            Some((brand_key, color, _)) => {
-                let glyph = crate::os_icon::custom_icon_glyph(brand_key);
-                dir_row(vec![
-                    glyph.view(10.0, *color),
-                    Space::new().width(6).into(),
-                    text(subtitle)
-                        .size(10)
-                        .color(OryxisColors::t().text_muted)
-                        .wrapping(iced::widget::text::Wrapping::None)
-                        .into(),
-                ])
-                .align_y(iced::Alignment::Center)
-                .into()
-            }
-            None => text(subtitle)
-                .size(10)
-                .color(OryxisColors::t().text_muted)
-                .wrapping(iced::widget::text::Wrapping::None)
-                .into(),
-        };
+        let subtitle_el: Element<'_, Message> = text(subtitle)
+            .size(10)
+            .color(OryxisColors::t().text_muted)
+            .wrapping(iced::widget::text::Wrapping::None)
+            .into();
 
         let card_btn = button(
             container(

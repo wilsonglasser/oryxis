@@ -255,21 +255,6 @@ fn sweep_legacy_mcp_config() {
     }
 }
 
-/// Whether Claude Code's user config already carries an `oryxis` MCP
-/// entry (or the legacy dead-letter file does), i.e. the user ran
-/// "Install to Claude Code" at some point and a plugin update should
-/// refresh the entry.
-pub(crate) fn mcp_config_installed() -> bool {
-    let has_oryxis_entry = |path: &std::path::Path| {
-        std::fs::read_to_string(path)
-            .ok()
-            .and_then(|c| serde_json::from_str::<serde_json::Value>(&c).ok())
-            .map(|v| v.get("mcpServers").and_then(|s| s.get("oryxis")).is_some())
-            .unwrap_or(false)
-    };
-    claude_code_config_path().is_ok_and(|p| has_oryxis_entry(&p))
-        || legacy_mcp_config_path().is_ok_and(|p| has_oryxis_entry(&p))
-}
 
 /// Whether the ACTIVE Claude Code config (`~/.claude.json` only, never
 /// the legacy dead-letter) currently carries an `oryxis` MCP entry. The

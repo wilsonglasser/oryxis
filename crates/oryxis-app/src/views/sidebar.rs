@@ -49,7 +49,6 @@ impl Oryxis {
         if self.logs_surface_visible() {
             items.push(rail_item(iced_fonts::lucide::history(), crate::i18n::t("logs"), View::History, act(View::History), expanded, kb(View::History)));
         }
-        items.push(rail_item(iced_fonts::lucide::cloud(), crate::i18n::t("cloud_accounts"), View::Cloud, act(View::Cloud), expanded, kb(View::Cloud)));
         items.push(rail_item(iced_fonts::lucide::router(), crate::i18n::t("proxies"), View::Proxies, act(View::Proxies), expanded, kb(View::Proxies)));
         items.push(rail_item(iced_fonts::lucide::shield_check(), crate::i18n::t("known_hosts"), View::KnownHosts, act(View::KnownHosts), expanded, kb(View::KnownHosts)));
         if self.prefs.host_monitoring {

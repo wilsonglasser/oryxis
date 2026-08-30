@@ -122,100 +122,10 @@ impl VaultStore {
         }
     }
 
-    /// Store the SFTP-sync group passphrase encrypted in the settings
-    /// table (base64-encoded). Same field-encryption path as the AI API
-    /// key, so it rides key rotation via `convert_settings_b64`. An empty
-    /// string clears it.
-    pub fn set_sync_sftp_passphrase(&self, passphrase: &str) -> Result<(), VaultError> {
-        if passphrase.is_empty() {
-            // Delete rather than store an empty value: a "" row would feed
-            // an empty ciphertext to the key-rotation re-encrypt pass and
-            // fail to decrypt. Absence is the cleared state.
-            self.db.execute(
-                "DELETE FROM settings WHERE key = ?1",
-                params!["sync_sftp_passphrase"],
-            )?;
-            return Ok(());
-        }
-        let encrypted = self.encrypt_field(passphrase)?;
-        let encoded = BASE64.encode(&encrypted);
-        self.set_setting("sync_sftp_passphrase", &encoded)
-    }
 
-    /// Retrieve and decrypt the SFTP-sync passphrase, or `None` when it
-    /// was never set (or explicitly cleared).
-    pub fn get_sync_sftp_passphrase(&self) -> Result<Option<String>, VaultError> {
-        match self.get_setting("sync_sftp_passphrase")? {
-            Some(encoded) if !encoded.is_empty() => {
-                let encrypted = BASE64.decode(encoded.as_bytes())
-                    .map_err(|e| VaultError::Crypto(format!("Base64 decode: {}", e)))?;
-                Ok(Some(self.decrypt_field(&encrypted)?))
-            }
-            _ => Ok(None),
-        }
-    }
 
-    /// Persist the WebDAV account password encrypted at rest.
-    ///
-    /// A DIFFERENT secret from the sync passphrase, deliberately: the
-    /// passphrase derives the snapshot key and every device in a group
-    /// shares it, while this is one account's credential on one server.
-    /// Collapsing them would put the server password in the hands of
-    /// everyone in the sync group.
-    pub fn set_sync_webdav_password(&self, password: &str) -> Result<(), VaultError> {
-        if password.is_empty() {
-            // Absence is the cleared state; see `set_sync_sftp_passphrase`.
-            self.db.execute(
-                "DELETE FROM settings WHERE key = ?1",
-                params!["sync_webdav_password"],
-            )?;
-            return Ok(());
-        }
-        let encrypted = self.encrypt_field(password)?;
-        let encoded = BASE64.encode(&encrypted);
-        self.set_setting("sync_webdav_password", &encoded)
-    }
 
-    /// Retrieve and decrypt the WebDAV account password.
-    pub fn get_sync_webdav_password(&self) -> Result<Option<String>, VaultError> {
-        match self.get_setting("sync_webdav_password")? {
-            Some(encoded) if !encoded.is_empty() => {
-                let encrypted = BASE64
-                    .decode(encoded.as_bytes())
-                    .map_err(|e| VaultError::Crypto(format!("Base64 decode: {}", e)))?;
-                Ok(Some(self.decrypt_field(&encrypted)?))
-            }
-            _ => Ok(None),
-        }
-    }
 
-    /// Persist the sync `DeviceIdentity` blob encrypted at rest. The
-    /// caller (oryxis-sync) is responsible for the byte layout (see
-    /// `crypto::DeviceIdentity::to_bytes`). We treat the bytes as
-    /// opaque secret material and encrypt with the master key, then
-    /// base64-encode for storage in the `settings` text column.
-    pub fn set_sync_device_identity(&self, bytes: &[u8]) -> Result<(), VaultError> {
-        let key = self.require_unlocked()?;
-        let encrypted = encrypt_with_key(bytes, key)?;
-        let encoded = BASE64.encode(&encrypted);
-        self.set_setting("sync_device_identity", &encoded)
-    }
 
-    /// Retrieve and decrypt the sync `DeviceIdentity` blob, or `None`
-    /// if no identity has been persisted yet. Returns an error if the
-    /// stored value is corrupt or the master key has rotated without
-    /// re-encryption (see `convert_all_fields`).
-    pub fn get_sync_device_identity(&self) -> Result<Option<Vec<u8>>, VaultError> {
-        let key = self.require_unlocked()?;
-        match self.get_setting("sync_device_identity")? {
-            Some(encoded) => {
-                let encrypted = BASE64
-                    .decode(encoded.as_bytes())
-                    .map_err(|e| VaultError::Crypto(format!("Base64 decode: {}", e)))?;
-                Ok(Some(decrypt_with_key(&encrypted, key)?))
-            }
-            None => Ok(None),
-        }
-    }
 
 }

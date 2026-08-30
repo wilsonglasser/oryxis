@@ -46,7 +46,7 @@ impl Oryxis {
     /// Whether a new session should be recorded to the vault. A per-host
     /// `Connection.session_logging` override wins; otherwise the global
     /// `session_logging` setting decides. Panes without a saved
-    /// connection (cloud / SSM / local) fall through to the global value.
+    /// connection (local shells) fall through to the global value.
     pub(crate) fn should_record_session(
         &self,
         conn: Option<&oryxis_core::models::connection::Connection>,

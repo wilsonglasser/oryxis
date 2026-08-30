@@ -33,13 +33,11 @@ mod vault_import;
 mod chat_ui;
 mod hover;
 mod panels;
-mod cloud_discover;
 mod snippet_form;
 mod keys_ui;
 mod sftp_chrome;
 mod prefs;
 mod sftp;
-mod sync;
 mod tabs;
 mod theme_editor;
 mod vault;
@@ -60,13 +58,11 @@ pub(crate) use vault_import::VaultImportState;
 pub(crate) use chat_ui::ChatUi;
 pub(crate) use hover::HoverState;
 pub(crate) use panels::PanelsOpen;
-pub(crate) use cloud_discover::CloudDiscoverUi;
 pub(crate) use snippet_form::SnippetForm;
 pub(crate) use keys_ui::KeysUi;
 pub(crate) use sftp_chrome::SftpChrome;
 pub(crate) use prefs::{resolve_download_dir, AppPrefs};
 pub(crate) use sftp::*;
-pub(crate) use sync::*;
 pub(crate) use tabs::*;
 pub(crate) use theme_editor::*;
 pub(crate) use vault::*;
@@ -113,7 +109,7 @@ pub(crate) struct PendingSnippetVars {
     ///
     /// Resolving the target on CONFIRM instead would read whatever tab is
     /// active by then, and the modal blocks the user's input, not the
-    /// app's messages: a cloud plugin answering, a background connect
+    /// app's messages: a background connect
     /// landing or a session group opening all activate their new tab
     /// while the user is still filling in the variables. The snippet
     /// would then run on a host nobody chose, which for a snippet is a
@@ -317,18 +313,6 @@ pub(crate) struct ErrorDialogAction {
     /// Destructive actions (delete, uninstall) render in the error
     /// red; recovery actions keep the accent.
     pub danger: bool,
-}
-
-/// Armed when the user asked to reconnect an ECS Exec session whose
-/// task is gone while the dynamic group is still resolving. Once
-/// `DynamicGroupResolved` lands for `group_id`, the handler picks the
-/// running task (preferring `fallback_task_id` when it survived) and
-/// connects.
-#[derive(Debug, Clone)]
-pub(crate) struct PendingEcsAutoConnect {
-    pub group_id: Uuid,
-    pub container: String,
-    pub fallback_task_id: String,
 }
 
 

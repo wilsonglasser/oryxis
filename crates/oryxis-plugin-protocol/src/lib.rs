@@ -1,14 +1,13 @@
-//! Wire protocol for Oryxis cloud-provider plugins.
+//! Wire protocol shared by Oryxis plugins.
 //!
-//! Cloud providers (`aws`, future `gcp` / `azure` / `k8s`) ship as
-//! separate binaries the app spawns as subprocesses, speaking
-//! line-delimited JSON-RPC 2.0 over stdio, the same framing the
-//! `oryxis-mcp` server already uses.
+//! Plugins ship as separate binaries the app downloads on demand,
+//! speaking line-delimited JSON-RPC 2.0 over stdio, the same framing
+//! the `oryxis-mcp` server already uses.
 //!
 //! This crate is *only the types*: no tokio, no stdio, no spawn
 //! logic. The host side (`oryxis-app::plugins`) and every plugin
-//! binary (`oryxis-cloud-aws-plugin`, ...) both depend on it so the
-//! contract lives in exactly one place.
+//! binary both depend on it so the contract lives in exactly one
+//! place.
 //!
 //! ## Versioning
 //!
@@ -24,20 +23,9 @@
 //! exists so a plugin pinned to an older release can still be driven
 //! by a newer app (and vice versa) without a hard failure.
 
-pub mod error;
 pub mod jsonrpc;
-pub mod methods;
 
-pub use error::{cloud_error_to_rpc, rpc_error_to_cloud};
 pub use jsonrpc::{error_codes, JsonRpcError, JsonRpcRequest, JsonRpcResponse};
-pub use methods::*;
-
-// Re-export the canonical shared types so the host and plugins reach
-// for one path. `CloudError` stays canonical in `oryxis-cloud`; the
-// persisted model types stay canonical in `oryxis-core`. This crate
-// never redefines a DTO it can borrow.
-pub use oryxis_cloud::{CloudError, DiscoveredHost, DiscoveryResult, SessionPayload};
-pub use oryxis_core::models::{CloudProfile, CloudQuery, CloudResourceType, TransportKind};
 
 /// Protocol versions this build of the contract understands, newest
 /// last. Bump by appending a value here (and keeping the old ones)

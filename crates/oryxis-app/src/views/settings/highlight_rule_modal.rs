@@ -27,7 +27,7 @@ impl Oryxis {
     /// is the source of truth (the modal registry's rule: no second
     /// `show_*` flag), gated on the surface that owns the list actually
     /// being up, so a panel closed by something other than a click (the
-    /// soft auto-lock, a cloud import finishing) can never leave a modal
+    /// soft auto-lock, an import finishing) can never leave a modal
     /// floating over a screen that has nothing to do with it.
     pub(crate) fn highlight_rule_editor_open(&self) -> bool {
         if self.highlight_rule_form.editing.is_none() {

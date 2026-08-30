@@ -3,7 +3,7 @@
 //! `local_terminals`, `appearance`, `terminal_prefs`, `defaults`,
 //! `advanced`, `privacy`); the match below keeps the arms that fit
 //! no family: language + layout, hotkey editing, section switching,
-//! SFTP / cloud / reconnect knobs and the auto-lock idle tick.
+//! SFTP / reconnect knobs and the auto-lock idle tick.
 
 #![allow(clippy::result_large_err)]
 #![allow(clippy::collapsible_if)]
@@ -330,11 +330,6 @@ impl Oryxis {
             m @ (SettingsMessage::SettingRendererBackendChanged(..)
             | SettingsMessage::RendererInfoLoaded(..)
             | SettingsMessage::SettingToggleDebugLogging
-            | SettingsMessage::DownloadMirrorPicked(..)
-            | SettingsMessage::DownloadMirrorUrlEdited(..)
-            | SettingsMessage::DownloadMirrorUrlCommitted
-            | SettingsMessage::DownloadMirrorTest
-            | SettingsMessage::DownloadMirrorTestResult(..)
             | SettingsMessage::RevealDebugLog
             | SettingsMessage::ClearDebugLog
             | SettingsMessage::RelaunchApp) => {
@@ -397,10 +392,6 @@ impl Oryxis {
             | SettingsMessage::SettingToggleMinimizeToTray
             | SettingsMessage::SettingToggleSftpEnabled
             | SettingsMessage::SettingKeepaliveChanged(..)
-            | SettingsMessage::SettingCloudAutoRefreshToggle
-            | SettingsMessage::SettingCloudAutoRefreshIntervalChanged(..)
-            | SettingsMessage::SettingCloudAutoArchiveToggle
-            | SettingsMessage::SettingCloudOrphanArchiveDaysChanged(..)
             | SettingsMessage::SettingSftpConcurrencyChanged(..)
             | SettingsMessage::SettingSftpConnectTimeoutChanged(..)
             | SettingsMessage::SettingSftpAuthTimeoutChanged(..)

@@ -245,10 +245,7 @@ impl Write for DebugFileWriter {
 /// `(backend, adapter)` pair from app state; the line is omitted while
 /// it hasn't resolved (e.g. the log header written during boot).
 pub(crate) fn environment_report(renderer: Option<&(String, String)>) -> String {
-    let channel = match crate::update::build_channel() {
-        crate::update::UpdateChannel::Stable => "stable",
-        crate::update::UpdateChannel::Nightly => "nightly",
-    };
+    let channel = if env!("ORYXIS_CHANNEL") == "nightly" { "nightly" } else { "stable" };
     let sha: String = env!("ORYXIS_GIT_SHA").chars().take(7).collect();
     let mut lines = vec![
         format!("Oryxis: v{} ({channel}, {sha})", env!("CARGO_PKG_VERSION")),
@@ -275,11 +272,6 @@ pub(crate) fn environment_report(renderer: Option<&(String, String)>) -> String 
             lines.push(format!("Vulkan implicit layers: {layers}"));
         }
     }
-    #[cfg(target_os = "windows")]
-    lines.push(format!(
-        "Install: {}",
-        if crate::update::is_per_user_install() { "per-user" } else { "system" }
-    ));
     if let Some((backend, adapter)) = renderer {
         lines.push(format!("Renderer: {backend}, {adapter}"));
     }

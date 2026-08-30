@@ -16,13 +16,12 @@ name: Nightly
 on:
   push:
     branches: [main]
-    # Skip pure docs / screenshot / signaling-worker churn since the
+    # Skip pure docs / screenshot churn since the
     # binary doesn't change. CI still runs on those via ci.yml.
     paths-ignore:
       - '**/*.md'
       - 'resources/screen_*.png'
       - 'resources/screen_*.gif'
-      - 'signaling-worker/**'
       - '.github/workflows/release*.yml'
 
 # Cancel an in-flight nightly when a newer commit lands. The rolling
@@ -37,11 +36,6 @@ permissions:
 
 env:
   CARGO_TERM_COLOR: always
-  # Same signaling endpoint the release builds bake in, so a nightly
-  # is exercised against the same server the user-facing tagged
-  # builds use.
-  ORYXIS_SIGNALING_URL: ${{ secrets.ORYXIS_SIGNALING_URL }}
-  ORYXIS_SIGNALING_TOKEN: ${{ secrets.ORYXIS_SIGNALING_TOKEN }}
   # Stamp the binary as a nightly build at the exact commit. `build.rs`
   # bakes these into ORYXIS_CHANNEL / ORYXIS_GIT_SHA so the in-app
   # nightly updater can tell what it's running and compare against the
@@ -317,14 +311,3 @@ jobs:
             --target "$GITHUB_SHA" \
             dist/*
 
-  # Sync the published assets + API snapshots to the download mirror
-  # (dl.oryxis.app / dl-cn.oryxis.app), the Auto fallback for networks
-  # where GitHub is blocked (mainland China). Layout contract lives in
-  # publish-mirror.yml and net_mirror.rs.
-  mirror:
-    name: Publish to download mirror
-    needs: [publish]
-    uses: ./.github/workflows/publish-mirror.yml
-    with:
-      tag: nightly-latest
-    secrets: inherit

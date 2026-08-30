@@ -788,27 +788,21 @@ async fn ensure_and_read(asset: &'static FontAsset) -> Result<Vec<u8>, String> {
         // "downloading" toast and the in-memory guard stuck forever.
         .connect_timeout(std::time::Duration::from_secs(15))
         .timeout(std::time::Duration::from_secs(90))
-        // Never let a mirror redirect the font fetch to plaintext http.
-        // The sha256 pin already guards integrity; this keeps the fetch
-        // consistent with the update / plugin surfaces.
+        // Never let a redirect move the font fetch to plaintext http.
+        // The sha256 pin already guards integrity; https keeps the
+        // fetch itself confidential.
         .https_only(true)
         .build()
         .map_err(|e| e.to_string())?;
-    // Mirror-aware: try each candidate URL (mirror first when one is
-    // configured, then direct) until one answers. The SHA-256 gate
-    // below keeps any mirror untrusted.
-    let mut resp = None;
-    let mut last_err = String::new();
-    for url in crate::net_mirror::candidates(asset.url) {
-        match client.get(&url).send().await.and_then(|r| r.error_for_status()) {
-            Ok(r) => {
-                resp = Some(r);
-                break;
-            }
-            Err(e) => last_err = e.to_string(),
-        }
-    }
-    let resp = resp.ok_or(last_err)?;
+    // Direct fetch of the pinned canonical URL only; there is no mirror
+    // layer anymore. The SHA-256 gate below is the integrity contract,
+    // so the host serving the bytes never needs to be trusted.
+    let resp = client
+        .get(asset.url)
+        .send()
+        .await
+        .and_then(|r| r.error_for_status())
+        .map_err(|e| e.to_string())?;
 
     // Cap a little above the pinned length so a wrong/redirected body
     // can't exhaust memory; the SHA-256 below is the real gate.

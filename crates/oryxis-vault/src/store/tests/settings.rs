@@ -12,68 +12,6 @@ fn settings_round_trip_string_value() {
 
 
 #[test]
-fn sync_sftp_passphrase_round_trips_encrypted() {
-    let mut vault = temp_vault();
-    vault.set_master_password("master").unwrap();
-    vault.set_sync_sftp_passphrase("hunter2-group-secret").unwrap();
-    assert_eq!(
-        vault.get_sync_sftp_passphrase().unwrap().as_deref(),
-        Some("hunter2-group-secret"),
-    );
-    // The stored column must be ciphertext, never the plaintext
-    // passphrase, mirroring the proxy/AI-key leak invariants.
-    let raw = vault.get_setting("sync_sftp_passphrase").unwrap().unwrap();
-    assert!(
-        !raw.contains("hunter2-group-secret"),
-        "passphrase must not sit in plaintext in the settings column"
-    );
-}
-
-#[test]
-fn sync_sftp_passphrase_empty_clears_row() {
-    let mut vault = temp_vault();
-    vault.set_master_password("master").unwrap();
-    vault.set_sync_sftp_passphrase("secret").unwrap();
-    // Clearing deletes the row (rather than storing ""), so a later
-    // key-rotation re-encrypt pass never chokes on an empty ciphertext.
-    vault.set_sync_sftp_passphrase("").unwrap();
-    assert_eq!(vault.get_sync_sftp_passphrase().unwrap(), None);
-    assert_eq!(vault.get_setting("sync_sftp_passphrase").unwrap(), None);
-}
-
-/// The passphrase must survive a close-and-reopen of the vault: the
-/// git / SFTP / folder / WebDAV transports derive the SAME snapshot key
-/// from the field that a later session hydrates from storage. A lossy
-/// round-trip here would surface as "Decryption failed (wrong key?)"
-/// after every app restart even though the user typed the same phrase.
-#[test]
-fn sync_sftp_passphrase_survives_close_and_reopen() {
-    let dir = tempfile::tempdir().unwrap();
-    let db = dir.path().join("vault.db");
-    {
-        let mut vault = VaultStore::open(&db).unwrap();
-        vault.set_master_password("master").unwrap();
-        vault.set_sync_sftp_passphrase("hunter2-group-secret").unwrap();
-    }
-    // Simulate an app restart: a brand-new handle, same file.
-    let mut vault = VaultStore::open(&db).unwrap();
-    vault.unlock("master").unwrap();
-    assert_eq!(
-        vault.get_sync_sftp_passphrase().unwrap().as_deref(),
-        Some("hunter2-group-secret"),
-        "the passphrase must round-trip through a restart"
-    );
-    // And the derived snapshot key must be identical, which is the
-    // actual contract the sync transports rely on.
-    let before = super::super::derive_sync_secret("hunter2-group-secret").unwrap();
-    let after = super::super::derive_sync_secret(
-        &vault.get_sync_sftp_passphrase().unwrap().unwrap(),
-    )
-    .unwrap();
-    assert_eq!(before, after);
-}
-
-#[test]
 fn files_recent_folders_round_trip_encrypted() {
     let mut vault = temp_vault();
     vault.set_master_password("master").unwrap();

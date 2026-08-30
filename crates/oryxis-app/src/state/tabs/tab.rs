@@ -7,7 +7,6 @@
 //! one reopens as (`PinnedTabSpec`).
 
 use super::super::*;
-use crate::messages::CloudMessage;
 
 /// A terminal tab. Its panes live in an iced `pane_grid::State`, which owns
 /// the split layout (N-way horizontal / vertical splits) and resizing. A
@@ -86,16 +85,10 @@ pub(crate) struct TerminalTab {
     /// pending-tool bubble is popped), which is why the flush compares
     /// against the current length instead of trusting this blindly.
     pub chat_persisted: usize,
-    /// True for cloud SSM / ECS-Exec tabs (a `session-manager-plugin`
-    /// PTY). These talk SSM over a websocket whose idle timer kills the
-    /// session after ~20 min of inactivity, so they get the
-    /// resize-based keepalive while the window is unfocused. Plain SSH /
-    /// local tabs leave this `false`.
-    pub ssm_keepalive: bool,
     /// Message that re-creates this session, for "Duplicate Tab". Set
-    /// only for cloud tabs that have no saved `Connection` to look up
-    /// by label (ECS Exec, kubectl pod). SSH / InstanceConnect / SSM
-    /// tabs are connection-backed and duplicate via label lookup
+    /// only for tabs that have no saved `Connection` to look up
+    /// by label (quick-connect shells over serial / telnet / local
+    /// forwards). Connection-backed tabs duplicate via label lookup
     /// instead, so they leave this `None`.
     pub relaunch: Option<Box<crate::messages::Message>>,
     /// Set when this tab was opened from a saved session group (or just
@@ -173,7 +166,7 @@ impl TabPlacement {
 /// The spec is the one a PIN persists, so reopening a closed tab and
 /// reopening a pinned one resolve through the same code: a saved host by
 /// id (immune to reordering and renaming), a local shell by program +
-/// args, a cloud session by its group, an SFTP tab by both its panes.
+/// args, an SFTP tab by both its panes.
 /// `pin_spec` answering `None` is what excludes a tab from the stack,
 /// which keeps quick-connect out of it for the reason it is out of pins:
 /// the entry dies with the tab, and holding it would mean keeping
@@ -199,9 +192,9 @@ pub(crate) struct ClosedTab {
 /// A Duplicate whose new tab has not been born yet.
 ///
 /// The copy is spawned by re-dispatching the source tab's own open
-/// message (`ConnectSsh` / `OpenLocalShell` / a cloud `relaunch`), and
-/// for cloud tabs that answer lands several updates later, so the
-/// placement has to be remembered rather than applied inline.
+/// message (`ConnectSsh` / `OpenLocalShell` / a quick-connect
+/// `relaunch`), and for those the answer can land several updates
+/// later, so the placement has to be remembered rather than applied inline.
 ///
 /// It is deliberately a STRIP placement keyed by tab id, not an index
 /// into `Oryxis::tabs`: `active_tab`, `last_terminal_tab` and
@@ -222,11 +215,10 @@ pub(crate) struct PendingTabPlacement {
 }
 
 impl PendingTabPlacement {
-    /// A duplicate that never produces a tab (the cloud plugin fails to
-    /// start, the PTY refuses to spawn) would otherwise leave this armed
-    /// forever and reposition some unrelated tab opened minutes later.
-    /// Nothing legitimate takes this long: even a cloud session that has
-    /// to download its plugin answers well inside it.
+    /// A duplicate that never produces a tab (the PTY refuses to
+    /// spawn) would otherwise leave this armed forever and reposition
+    /// some unrelated tab opened minutes later. Nothing legitimate
+    /// takes this long.
     const TTL: std::time::Duration = std::time::Duration::from_secs(20);
 
     pub(crate) fn is_expired(&self) -> bool {
@@ -331,7 +323,7 @@ impl SftpTab {
 
 /// Persisted restore spec for a pinned tab. Stored as JSON in the
 /// `pinned_tabs` setting; on boot each becomes a dormant pinned tab that
-/// reopens lazily on first select. Cloud / ephemeral tabs have no spec and
+/// reopens lazily on first select. Ephemeral tabs have no spec and
 /// aren't persisted.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub(crate) enum PinnedTabSpec {
@@ -340,24 +332,6 @@ pub(crate) enum PinnedTabSpec {
     Host { id: Uuid, label: String },
     /// A local shell, reopened with the captured program / args.
     LocalShell { program: String, args: Vec<String>, label: String },
-    /// An ECS Exec session, reopened with `ConnectEcsExecTask` (same
-    /// mechanism the in-session reconnect uses; the task id may have
-    /// recycled, in which case the reconnect re-resolves the group).
-    EcsExec {
-        group_id: Uuid,
-        task_id: String,
-        task_label: String,
-        container: String,
-        label: String,
-    },
-    /// A kubectl exec session, reopened with `ConnectKubectlExecPod`.
-    KubectlExec {
-        group_id: Uuid,
-        namespace: String,
-        pod: String,
-        container: String,
-        label: String,
-    },
     /// A pinned SFTP browser tab. Captures both panes (Local vs which
     /// connection); reopened dormant and re-mounts its remote pane(s) on first
     /// focus.
@@ -397,27 +371,16 @@ impl PinnedTabSpec {
         match self {
             PinnedTabSpec::Host { label, .. } => label,
             PinnedTabSpec::LocalShell { label, .. } => label,
-            PinnedTabSpec::EcsExec { label, .. } => label,
-            PinnedTabSpec::KubectlExec { label, .. } => label,
             PinnedTabSpec::Sftp { label, .. } => label,
         }
     }
 
-    /// Identity key for de-duplicating pins. Ephemeral resource ids
-    /// (ECS task, K8s pod) are excluded on purpose: a recycled task
-    /// produces a spec with a different task_id but it is still the
-    /// same pin, and keeping both is how duplicate chips appear.
+    /// Identity key for de-duplicating pins.
     pub fn dedupe_key(&self) -> String {
         match self {
             PinnedTabSpec::Host { id, .. } => format!("host:{id}"),
             PinnedTabSpec::LocalShell { program, args, label } => {
                 format!("local:{program}:{}:{label}", args.join("\u{1f}"))
-            }
-            PinnedTabSpec::EcsExec { group_id, container, .. } => {
-                format!("ecs:{group_id}:{container}")
-            }
-            PinnedTabSpec::KubectlExec { group_id, namespace, container, .. } => {
-                format!("k8s:{group_id}:{namespace}:{container}")
             }
             PinnedTabSpec::Sftp { left, right, .. } => {
                 let key = |p: &SftpPaneSpec| match p {
@@ -457,7 +420,6 @@ impl TerminalTab {
             chat_last_md_parse: None,
             chat_saved_id: None,
             chat_persisted: 0,
-            ssm_keepalive: false,
             relaunch: None,
             session_group_id: None,
             pinned: false,
@@ -483,7 +445,7 @@ impl TerminalTab {
     }
 
     /// Restore spec for persisting this pinned tab, or `None` if it can't be
-    /// reopened (cloud / ephemeral pane with no stable reference). A dormant
+    /// reopened (an ephemeral pane with no stable reference). A dormant
     /// tab keeps the spec it was created with; a live tab derives one from
     /// its focused pane's origin.
     pub fn pin_spec(&self) -> Option<PinnedTabSpec> {
@@ -502,45 +464,15 @@ impl TerminalTab {
         match &self.active().origin {
             PaneOrigin::Host(id) => Some(PinnedTabSpec::Host { id: *id, label: base }),
             // Quick-connect hosts have no stable reference to restore from
-            // (the entry dies with the app), so the pin is session-only,
-            // like SSM tabs.
+            // (the entry dies with the app), so the pin is session-only.
             PaneOrigin::QuickHost(_) => None,
             PaneOrigin::Local(spec) => Some(PinnedTabSpec::LocalShell {
                 program: spec.program.clone(),
                 args: spec.args.clone(),
                 label: spec.label.clone(),
             }),
-            // Cloud exec tabs have no saved Connection, but carry the
-            // relaunch message that recreates them; mirror it into a
-            // serializable spec. SSM (relaunch None) and anything else stay
-            // unpersisted.
-            PaneOrigin::Ephemeral => match self.relaunch.as_deref() {
-                Some(crate::messages::Message::Cloud(CloudMessage::ConnectEcsExecTask {
-                    group_id,
-                    task_id,
-                    task_label,
-                    container,
-                })) => Some(PinnedTabSpec::EcsExec {
-                    group_id: *group_id,
-                    task_id: task_id.clone(),
-                    task_label: task_label.clone(),
-                    container: container.clone(),
-                    label: base,
-                }),
-                Some(crate::messages::Message::Cloud(CloudMessage::ConnectKubectlExecPod {
-                    group_id,
-                    namespace,
-                    pod,
-                    container,
-                })) => Some(PinnedTabSpec::KubectlExec {
-                    group_id: *group_id,
-                    namespace: namespace.clone(),
-                    pod: pod.clone(),
-                    container: container.clone(),
-                    label: base,
-                }),
-                _ => None,
-            },
+            // An ephemeral pane has no stable reference to restore from.
+            PaneOrigin::Ephemeral => None,
         }
     }
 
@@ -577,18 +509,6 @@ impl TerminalTab {
         } else if self.pane_grid.panes.len() > 1 {
             self.pane_grid.maximize(self.focused);
         }
-    }
-
-    /// True for plugin-backed cloud tabs (ECS Exec / SSM Session /
-    /// `kubectl exec`): the session is a local `session-manager-plugin`
-    /// or `kubectl` process on a PTY, so the pane carries no `session`
-    /// handle and the tab reads as sessionless to anything that looks
-    /// for one. `spawn_plugin_tab` is the only thing that raises
-    /// `ssm_keepalive`, which is why that flag doubles as the marker
-    /// (the keepalive is a consequence of being plugin-backed, not a
-    /// separate fact).
-    pub fn is_plugin_backed(&self) -> bool {
-        self.ssm_keepalive
     }
 
     /// Currently focused pane. Falls back to the first pane if `focused`

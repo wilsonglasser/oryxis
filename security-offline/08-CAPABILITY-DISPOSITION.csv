@@ -1,0 +1,28 @@
+capability,disposition,rationale,rollback
+SSH/SFTP/mosh/telnet/serial/zmodem connect,KEEP,essential purpose; user-initiated to user-configured targets,git revert
+ssh-agent bridge (socket/pipe),KEEP+HARDEN,core credential UX; confirm mode + 0600/DACL already,git revert
+vault (SQLite AEAD + Argon2id + biometric),KEEP,core; unchanged,git revert
+portable export/import,KEEP+HARDEN,backup portability; deny-list covers removed-subsystem keys,git revert
+importers (PuTTY/mRemoteNG/etc.),KEEP,user migration,git revert
+deep links (theme/ssh),KEEP,strict parsing; ssh:// never dials,git revert
+SFTP dual-pane + console,KEEP,core,git revert
+snippets/history/logs/session recording,KEEP,core,git revert
+themes + 23-language i18n,KEEP,core (dead cloud/sync keys pruned),git revert
+GIF export plugin (local binary),KEEP,local-only spawn of cached binary,git revert
+Wake-on-LAN,KEEP,link-local UDP; user click,git revert
+RDP/VNC launcher,KEEP,user action; PATH-resolved client,git revert
+MCP server (oryxis-mcp stdio),KEEP+HARDEN,local bridge for AI clients; NEW: launcher copy signature-gated,git revert
+AI assistant (user provider/key),KEEP+DISCLOSE,opt-in egress; default off; documented condition,git revert
+font downloads (CJK + packs),KEEP+HARDEN,commit-pinned SHA-256; vendor mirror layer removed this session; direct canonical URL only,git revert
+harness daemon,TEST_ONLY,dev feature; loopback,git revert
+cloud provider discovery (AWS/Azure/GCP/K8s + 4 plugin binaries),REMOVE,not needed for core; vendor APIs + creds in vault,git revert (dirs under version control)
+P2P sync engine (QUIC/mDNS/STUN/LWW),REMOVE,device sync not required; large attack surface + shared-passphrase crypto,git revert
+signaling worker (Cloudflare) + relay server,REMOVE,server infra for removed sync,git revert
+git/WebDAV/SFTP-folder sync transports,REMOVE,already deleted pre-audit,git revert
+auto-updater + release lookups,REMOVE,silent egress + download-and-run,git revert
+vendor download mirror (dl.oryxis.app/dl-cn),REMOVE,untrusted-mirror routing; fonts now direct,git revert
+plugin catalog + binary downloads,REMOVE,remote code fetch; cache now local-only,git revert
+vault sync API (peers/tombstones/sync secret),REMOVE,orphaned by sync removal; kept legacy-table drops for old vaults,git revert
+sync/cloud/update/mirror UI + settings + i18n keys,REMOVE,dead surfaces of removed features,git revert
+cloud_* / sync_* CI release+publish workflows,REMOVE,build/publish logic for removed components,git revert
+SELF_HOSTING.md + sync/cloud doc sections,REMOVE,docs for removed features,git revert

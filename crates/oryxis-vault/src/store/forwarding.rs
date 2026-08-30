@@ -24,7 +24,6 @@ impl VaultStore {
                 rule.updated_at.to_rfc3339(),
             ],
         )?;
-        self.clear_tombstone("port_forward_rule", &rule.id)?;
         Ok(())
     }
 
@@ -68,7 +67,6 @@ impl VaultStore {
             "DELETE FROM port_forward_rules WHERE id = ?1",
             params![id.to_string()],
         )?;
-        self.record_tombstone("port_forward_rule", id)?;
         Ok(())
     }
 

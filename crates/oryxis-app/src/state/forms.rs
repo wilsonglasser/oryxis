@@ -423,13 +423,6 @@ pub(crate) struct ConnectionForm {
     /// `None` inherits the global setting, `Some(true/false)` forces it on/off
     /// for this host.
     pub auto_title: Option<bool>,
-    /// Cloud-managed transport selection. Only meaningful when the
-    /// connection being edited has a `cloud_ref`, the editor renders
-    /// the picker conditionally. `None` here = "no cloud_ref to
-    /// edit". The actual `cloud_ref.transport_pref` field is
-    /// preserved when the user doesn't touch this picker.
-    pub cloud_transport:
-        Option<oryxis_core::models::cloud::TransportKind>,
     /// Per-host icon shape override. `None` falls back to the global
     /// `default_host_icon` setting. Mirrors `Connection.icon_style`.
     pub icon_style: Option<String>,
@@ -493,8 +486,6 @@ pub(crate) enum HostEditorPreset {
     /// Host reached through a jump host: opens the Network section and
     /// (when the vault has candidates) the chain editor's add flow.
     ViaBastion,
-    /// Import from a cloud provider: hands the flow to the Cloud view.
-    Cloud,
 }
 
 impl HostEditorPreset {
@@ -503,7 +494,6 @@ impl HostEditorPreset {
         match self {
             Self::BasicSsh => "preset_basic_ssh",
             Self::ViaBastion => "preset_via_bastion",
-            Self::Cloud => "preset_cloud",
         }
     }
 }
@@ -708,98 +698,6 @@ impl std::fmt::Display for ProxyKind {
     }
 }
 
-/// Transient state for the device-pairing flow (Settings → Sync). Holds
-/// the codes / links this device generates and the inputs for joining a
-/// peer. The persisted sync settings, the engine runtime handles and the
-/// discovered-peer list stay on `Oryxis`; this is just the pairing UI.
-#[derive(Debug, Clone, Default)]
-pub(crate) struct SyncPairingForm {
-    /// Pairing code this device is currently hosting (shown to the peer).
-    pub code: Option<String>,
-    /// Shareable `oryxis://pair` link / QR payload for this device.
-    pub link: Option<String>,
-    pub state: SyncPairingState,
-    /// Peer's pairing code typed into the Join box.
-    pub join_code_input: String,
-    /// Peer's address typed into the Join box.
-    pub join_target_input: String,
-    /// Peer's `oryxis://pair` link pasted into the Join box.
-    pub join_link_input: String,
-}
-
-/// Git sync transport: the snapshot committed to a Git remote.
-///
-/// The one backend that keeps HISTORY, which is why it exists next to
-/// the folder transport: every round is a commit, so a vault wrecked by
-/// a bad import can be read back from an earlier one.
-#[derive(Debug, Clone, Default)]
-pub(crate) struct GitSyncForm {
-    /// Remote URL, anything `git clone` accepts.
-    pub remote: String,
-    pub in_progress: bool,
-    pub status: Option<Result<String, String>>,
-    /// Whether a usable `git` is on PATH. `None` = probe in flight (boot,
-    /// a transport switch or opening the Sync section resolves it within
-    /// a moment); the card
-    /// disables "Sync now" until it is known. Probed on a worker thread
-    /// ONLY: the old per-render `git_available()` call inside `view()`
-    /// spawned a subprocess on the UI thread, freezing the app and
-    /// flashing a console window per call on Windows.
-    pub git_available: Option<bool>,
-}
-
-/// WebDAV sync transport: the snapshot on a Nextcloud / ownCloud /
-/// Synology or plain WebDAV server.
-///
-/// The only file transport with a real compare-and-swap (`If-Match` on
-/// the ETag), which is why it is worth having next to the folder
-/// transport that already reaches those servers through their desktop
-/// client: not every machine can run that client.
-#[derive(Debug, Clone, Default)]
-pub(crate) struct WebdavSyncForm {
-    /// Collection or file URL. A trailing `/` means "put the shared
-    /// snapshot name in here".
-    pub url: String,
-    /// Account name on the server.
-    pub user: String,
-    /// Account password, ideally an app password. Stored encrypted and
-    /// deliberately NOT the group passphrase (which lives on
-    /// `SyncState.passphrase_input`).
-    pub password: String,
-    pub in_progress: bool,
-    pub status: Option<Result<String, String>>,
-}
-
-/// Folder sync transport: one encrypted snapshot in a local directory.
-///
-/// The directory is whatever the OS already mounts, which is the whole
-/// point: a cloud client's folder (OneDrive, Drive, Dropbox, iCloud), a
-/// network share, an external disk, a Syncthing directory. No OAuth, no
-/// client secret, no provider API to keep working, and every one of
-/// those destinations arrives at once.
-#[derive(Debug, Clone, Default)]
-pub(crate) struct FolderSyncForm {
-    /// Directory (or full file path) the snapshot lives in.
-    pub path: String,
-    pub in_progress: bool,
-    pub status: Option<Result<String, String>>,
-}
-
-/// Transient state for syncing the vault over SFTP (the SFTP sync
-/// transport form in Settings → Sync), plus the in-flight progress. The
-/// persisted transport choice stays on `Oryxis`.
-#[derive(Debug, Clone, Default)]
-pub(crate) struct SftpSyncForm {
-    /// Host the vault blob is synced through, `None` until picked.
-    pub host_id: Option<uuid::Uuid>,
-    pub remote_path: String,
-    pub picker_open: bool,
-    pub picker_search: String,
-    /// True while the SFTP sync task is in flight.
-    pub in_progress: bool,
-    pub status: Option<Result<String, String>>,
-}
-
 /// Icon + color picker state (opened from a host editor's icon box and
 /// every other editor that carries an icon). The `for_*` flags route the
 /// picked result to the right target on confirm: a Connection in the
@@ -811,9 +709,6 @@ pub(crate) struct IconPickerState {
     /// Connection the picker edits directly (saves straight to the vault);
     /// `None` when one of the `for_*` deferred-save targets is set.
     pub for_id: Option<Uuid>,
-    /// Route the result into the dynamic-group editor form instead of a
-    /// Connection (deferred save).
-    pub for_group_form: bool,
     /// Route into the session-group editor form (deferred save).
     pub for_session_group: bool,
     /// Route into the manual host-group editor panel (deferred save).
@@ -847,8 +742,7 @@ pub(crate) struct SftpBackupForm {
 }
 
 /// Rename / restyle form for a user group (folder), shown in the group
-/// edit panel. Distinct from the dynamic-group editor ([`CloudDynamicForm`])
-/// which edits cloud-backed groups.
+/// edit panel.
 #[derive(Debug, Clone, Default)]
 pub(crate) struct GroupEditForm {
     /// Whether the edit panel is currently shown.
@@ -884,124 +778,6 @@ pub(crate) struct GroupEditForm {
     /// Environment variables the group contributes, merged by name
     /// with what the host and the other ancestors provide.
     pub env_vars: Vec<oryxis_core::models::connection::EnvVar>,
-}
-
-/// Edit form for a dynamic (cloud-backed) group. Opened from the ⋮ menu
-/// on a dynamic group card; edits the `cloud_query.template` (username,
-/// initial_command, transport, key, identity) plus the group's general
-/// fields (label, color, icon, parent) and its cloud source. `is_k8s`
-/// flips the source section between the ECS (`cluster`/`service`/
-/// `container`) and Kubernetes (`k8s_*`) field sets.
-#[derive(Debug, Clone)]
-pub(crate) struct CloudDynamicForm {
-    /// Whether the edit form is currently shown.
-    pub visible: bool,
-    pub group_id: Option<Uuid>,
-    pub username: String,
-    pub initial_command: String,
-    pub transport: oryxis_core::models::cloud::TransportKind,
-    /// Selected key label (or `"(none)"`); resolved to a `key_id` on save.
-    pub selected_key: Option<String>,
-    /// Selected identity label (or `"(none)"`); resolved to an `identity_id` on save.
-    pub selected_identity: Option<String>,
-    /// General-section fields, parity with the host editor (rename, color,
-    /// icon, move under any user group). Persisted on Save.
-    pub label: String,
-    pub color: String,
-    pub icon: String,
-    pub parent_label: String,
-    /// Cloud-source fields (ECS variant).
-    pub cluster: String,
-    pub service: String,
-    pub container: String,
-    /// K8s dynamic-group source fields, used when the edited group's query
-    /// is `K8sPods`. The selector value's meaning depends on
-    /// `k8s_selector_kind`: a `k=v,k=v` string for `Labels`, otherwise a
-    /// single resource name.
-    pub is_k8s: bool,
-    pub k8s_context: String,
-    pub namespace: String,
-    pub k8s_selector_kind: K8sSelectorKind,
-    pub k8s_selector_value: String,
-}
-
-impl Default for CloudDynamicForm {
-    fn default() -> Self {
-        Self {
-            visible: false,
-            group_id: None,
-            username: String::new(),
-            initial_command: String::new(),
-            // ECS Exec is the most common dynamic-group transport; the
-            // editor swaps it to KubectlExec when `is_k8s` is set.
-            transport: oryxis_core::models::cloud::TransportKind::EcsExec,
-            selected_key: None,
-            selected_identity: None,
-            label: String::new(),
-            color: String::new(),
-            icon: String::new(),
-            parent_label: String::new(),
-            cluster: String::new(),
-            service: String::new(),
-            container: String::new(),
-            is_k8s: false,
-            k8s_context: String::new(),
-            namespace: String::new(),
-            k8s_selector_kind: K8sSelectorKind::Labels,
-            k8s_selector_value: String::new(),
-        }
-    }
-}
-
-/// Add / edit wizard form for a cloud account (`CloudProfile`). Covers
-/// every provider + auth combination (AWS profile / access key / SSO,
-/// Kubernetes kubeconfig); only the fields for the selected
-/// `provider` + `auth_kind` are rendered. The saved profiles live in
-/// `Oryxis::cloud_profiles`; this is wizard state only.
-#[derive(Debug, Clone, Default)]
-pub(crate) struct CloudForm {
-    /// Whether the wizard is currently shown.
-    pub visible: bool,
-    pub label: String,
-    pub provider: CloudProviderChoice,
-    pub auth_kind: CloudAuthChoice,
-    pub aws_profile_name: String,
-    /// Workload regions; the first entry is the default region and the
-    /// full list drives discovery fan-out. Persisted as both `region`
-    /// (= first) and `regions` (= full list) for forward compat.
-    pub aws_regions: Vec<String>,
-    /// Draft text in the region input box, committed to `aws_regions`
-    /// on Enter.
-    pub aws_region_draft: String,
-    /// Access Key auth fields. The secret follows the password-tri-state
-    /// convention (`*_touched` differentiates "leave alone" from
-    /// "explicitly cleared").
-    pub aws_access_key_id: String,
-    pub aws_access_key_secret: String,
-    pub aws_access_key_secret_touched: bool,
-    pub aws_access_key_secret_visible: bool,
-    pub aws_access_key_session_token: String,
-    pub aws_has_existing_secret: bool,
-    /// SSO (IAM Identity Center) auth fields.
-    pub aws_sso_start_url: String,
-    pub aws_sso_region: String,
-    pub aws_sso_account_id: String,
-    pub aws_sso_role_name: String,
-    /// Kubernetes (Kubeconfig) auth fields. Both optional: blank
-    /// kubeconfig = kubectl's default, blank context = current-context.
-    pub kubeconfig_path: String,
-    pub context: String,
-    /// GCP project id to scope discovery to. Optional: blank = whatever
-    /// `gcloud config get-value project` resolves (the active project).
-    pub gcp_project: String,
-    /// Azure subscription id (or name) to scope discovery to. Optional:
-    /// blank = whatever `az account show` resolves (the active
-    /// subscription).
-    pub azure_subscription: String,
-    /// `Some` when editing an existing profile (update in place).
-    pub editing_id: Option<Uuid>,
-    pub error: Option<String>,
-    pub test_state: CloudTestState,
 }
 
 /// Import / edit form for an SSH key, shown in the keychain key panel.
@@ -1404,7 +1180,6 @@ impl Default for ConnectionForm {
             target_password_rescue: SecretInput::default(),
             login_script_draft: None,
             auto_title: None,
-            cloud_transport: None,
             icon_style: None,
             encoding: None,
             terminal_type: None,

@@ -144,9 +144,6 @@ impl Oryxis {
             }
         }
         self.adjust_last_terminal_tab_after_remove(src_idx);
-        if self.pin_next_plugin_tab == Some(drag.from_id) {
-            self.pin_next_plugin_tab = None;
-        }
         if self.hybrid_sftp_owner == Some(drag.from_id) {
             self.hybrid_sftp_owner = None;
             self.sftp = crate::state::SftpState::default();
@@ -155,10 +152,6 @@ impl Oryxis {
         let Some(dest_idx) = self.tabs.iter().position(|t| t._id == dest_id) else {
             return;
         };
-        // An SSM / ECS tab stays alive by being nudged on a timer; the
-        // flag is per TAB, so a pane arriving from a keepalive tab would
-        // quietly start idling out. Carry it over.
-        self.tabs[dest_idx].ssm_keepalive |= source.ssm_keepalive;
         let tab = &mut self.tabs[dest_idx];
         let landed = insert_panes(&mut tab.pane_grid, proposal.target, panes);
         if let Some(first) = landed.first() {

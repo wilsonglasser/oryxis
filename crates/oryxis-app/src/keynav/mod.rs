@@ -70,8 +70,6 @@ pub(crate) enum ToolbarItem {
     Sort,
     /// The primary action button ("+ HOST", "+ ADD", "Clear all", ...).
     Primary,
-    /// The chevron half of a split primary button.
-    PrimaryChevron,
     /// History pager: previous page.
     PagerPrev,
     /// History pager: next page.
@@ -86,10 +84,6 @@ pub(crate) enum ToolbarItem {
     /// search field (rendered whenever that field is on screen, inline
     /// or in the collapsed-search overlay).
     SearchContent,
-    /// Context-aware dashboard primary inside a provider folder:
-    /// "+ DISCOVER" for the linked cloud profile. Carries the profile
-    /// id so activation needs no re-derivation of the folder link.
-    CloudDiscover(uuid::Uuid),
 }
 
 /// A keyboard-selectable item, recorded by the views during render.
@@ -116,8 +110,6 @@ pub(crate) enum NavItem {
     PortForward(usize),
     /// History row (session-log id, current page only).
     HistoryLog(uuid::Uuid),
-    /// Cloud-account card (profile id).
-    CloudAccount(uuid::Uuid),
     /// Proxy-identity row.
     Proxy(uuid::Uuid),
     /// Known-host row (index into the rendered list).
@@ -130,8 +122,8 @@ pub(crate) enum NavItem {
     SettingsRow(usize),
     /// Generic content row carrying its own recorded `RowAction`
     /// (index into `content_actions`). Used by content surfaces whose
-    /// rows fire arbitrary messages (the dynamic cloud-group task
-    /// list); same index+clamp model as `SettingsRow`.
+    /// rows fire arbitrary messages; same index+clamp model as
+    /// `SettingsRow`.
     ContentAction(usize),
 }
 
@@ -190,7 +182,7 @@ pub(crate) struct KeyNavState {
     /// `report_container_id`) as the scroll-into-view anchor.
     pub(crate) settings_first_match_idx: std::cell::Cell<Option<usize>>,
     /// Generic content actions: the `RowAction` behind each recorded
-    /// `NavItem::ContentAction` (dynamic cloud-group task list).
+    /// `NavItem::ContentAction`.
     pub(crate) content_actions: RefCell<Vec<RowAction>>,
     /// Side-panel row mode (host editor first): selected row index
     /// into `panel_items`, or `None` while iced's input focus owns

@@ -240,23 +240,6 @@ impl VaultStore {
             CREATE UNIQUE INDEX IF NOT EXISTS idx_command_history_conn_cmd
                 ON command_history(connection_id, command);
 
-            -- Cloud account credentials (AWS profile / SSO / access key,
-            -- K8s kubeconfig path, ...). `config` carries the non-secret
-            -- JSON payload owned by each provider crate. `secret` is the
-            -- per-field encrypted blob hydrated only when the provider
-            -- actually needs it (mirrors `identities.password`).
-            CREATE TABLE IF NOT EXISTS cloud_profiles (
-                id              TEXT PRIMARY KEY,
-                label           TEXT NOT NULL,
-                provider        TEXT NOT NULL,
-                auth_kind       TEXT NOT NULL,
-                config          TEXT NOT NULL DEFAULT '{}',
-                secret          BLOB,
-                last_discovered TEXT,
-                created_at      TEXT NOT NULL,
-                updated_at      TEXT NOT NULL
-            );
-
             -- Saved AI chat conversations, one row per tab conversation.
             -- Local-only like session logs and command history: never
             -- synced, never in the portable export.
@@ -324,9 +307,6 @@ impl VaultStore {
         // a plaintext column like `public_key`). NULL = no certificate.
         let _ = self.db.execute_batch("ALTER TABLE keys ADD COLUMN certificate TEXT;");
         let _ = self.db.execute_batch("ALTER TABLE connections ADD COLUMN terminal_theme TEXT;");
-        // Cloud-managed handle for hosts imported from a `cloud_profiles`
-        // row (EC2 in v0.6). JSON-encoded `CloudRef`. NULL for manual hosts.
-        let _ = self.db.execute_batch("ALTER TABLE connections ADD COLUMN cloud_ref TEXT;");
         // Per-host initial command sent right after the shell opens.
         // Independent of cloud, used by ECS / K8s entries that drop into
         // `/bin/sh` and want `exec bash`.
@@ -346,10 +326,6 @@ impl VaultStore {
         let _ = self.db.execute_batch("ALTER TABLE connections ADD COLUMN macs TEXT;");
         let _ = self.db.execute_batch("ALTER TABLE connections ADD COLUMN host_key_algorithms TEXT;");
         let _ = self.db.execute_batch("ALTER TABLE connections ADD COLUMN icon_style TEXT;");
-        // JSON array of field names the user has explicitly overridden
-        // on a cloud-imported host. Reimport leaves listed fields
-        // alone. NULL / empty for manual hosts and untouched imports.
-        let _ = self.db.execute_batch("ALTER TABLE connections ADD COLUMN customized_fields TEXT;");
         // JSON array of per-host environment variables sent via SSH setenv.
         let _ = self.db.execute_batch("ALTER TABLE connections ADD COLUMN env_vars TEXT;");
         // Per-host character encoding label (NULL = UTF-8).
@@ -397,9 +373,6 @@ impl VaultStore {
         // Outbound address-family preference ('auto' | 'v4' | 'v6');
         // NULL on older rows reads as 'auto'.
         let _ = self.db.execute_batch("ALTER TABLE connections ADD COLUMN address_family TEXT;");
-        // Backing query for dynamic groups (ECS services / K8s workloads).
-        // JSON-encoded `CloudQuery`. NULL for manual groups.
-        let _ = self.db.execute_batch("ALTER TABLE groups ADD COLUMN cloud_query TEXT;");
         let _ = self.db.execute_batch("ALTER TABLE keys ADD COLUMN updated_at TEXT;");
         let _ = self.db.execute_batch("ALTER TABLE groups ADD COLUMN created_at TEXT;");
         let _ = self.db.execute_batch("ALTER TABLE groups ADD COLUMN updated_at TEXT;");

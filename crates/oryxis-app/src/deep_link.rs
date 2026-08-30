@@ -10,8 +10,7 @@
 //! - **Routing** ([`Oryxis::handle_deep_link`]): every route lands on
 //!   an EXISTING confirm surface with the payload prefilled, never on
 //!   a side effect. A theme link opens the import panel (Apply ->
-//!   editor -> Save stays the user's call); a pairing link opens
-//!   Settings > Sync with the join field filled; an `ssh://` link
+//!   editor -> Save stays the user's call); an `ssh://` link
 //!   opens the ad-hoc host editor with the target filled in. Nothing
 //!   installs, joins or DIALS on its own, so a hostile link can at
 //!   worst open a screen.
@@ -48,14 +47,10 @@ use iced::Task;
 const MAX_URL_LEN: usize = 128 * 1024;
 
 /// A parsed, shape-validated deep link. Payload validation beyond the
-/// shape (does the theme import? is the pairing peer reachable?) stays
+/// shape (does the theme import?) stays
 /// with the flows the link routes into.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DeepLink {
-    /// `oryxis://pair/<device_id>/<code>`: the sync pairing link the
-    /// hosting device displays. Carried verbatim; the join flow's own
-    /// `oryxis_sync::parse_pairing_link` re-validates at join time.
-    Pair(String),
     /// `oryxis://theme/<base64url JSON>`: a theme file to import, the
     /// same bytes the gallery's Copy button yields. `ui` mirrors the
     /// `oryxis_ui_theme` marker and picks which import panel opens.
@@ -77,17 +72,13 @@ pub fn parse(url: &str) -> Option<DeepLink> {
     }
     // Browsers and the Windows shell like to append a trailing slash
     // to protocol launches. Neither route's payload can legitimately
-    // end in one (pairing codes are digits, base64url has no `/`), so
+    // end in one (base64url has no `/`), so
     // strip it before the strict parsers see the link.
     let url = url.trim().trim_end_matches('/');
     if let Some(authority) = url.strip_prefix("ssh://") {
         return parse_ssh_authority(authority).map(DeepLink::SshTarget);
     }
     let rest = url.strip_prefix("oryxis://")?;
-    if rest.starts_with("pair/") {
-        oryxis_sync::parse_pairing_link(url)?;
-        return Some(DeepLink::Pair(url.to_string()));
-    }
     let payload = rest.strip_prefix("theme/")?;
     let engine = base64::engine::general_purpose::URL_SAFE_NO_PAD;
     let bytes = engine.decode(payload).ok()?;
@@ -141,15 +132,6 @@ impl crate::app::Oryxis {
             return Task::none();
         }
         match link {
-            DeepLink::Pair(url) => {
-                // Prefill the join field and land on Settings > Sync;
-                // the user presses Join (and confirms the code) as if
-                // they had pasted the link themselves.
-                self.sync.pairing.join_link_input = url;
-                Task::done(Message::Tabs(TabsMessage::OpenSettingsSection(
-                    crate::state::SettingsSection::Sync,
-                )))
-            }
             DeepLink::ThemeInstall { json, ui } => {
                 // Mirror the ThemeImportOpen / UiThemeImportOpen
                 // handlers (which reset these fields) and then prefill
@@ -338,26 +320,6 @@ mod tests {
     fn browser_trailing_slash_is_tolerated() {
         let link = format!("{}/", format_theme_link(TERMINAL_JSON));
         assert!(parse(&link).is_some());
-        let pair = "oryxis://pair/8f7a1c8e-3b1f-4e0e-9d3c-2b1a0f9e8d7c/123456/";
-        assert_eq!(
-            parse(pair),
-            Some(DeepLink::Pair(pair.trim_end_matches('/').to_string()))
-        );
-    }
-
-    #[test]
-    fn pair_links_stay_strict() {
-        // Bad code length / non-digits / broken uuid all fail shape
-        // validation here, exactly like the join field would reject.
-        assert_eq!(parse("oryxis://pair/not-a-uuid/123456"), None);
-        assert_eq!(
-            parse("oryxis://pair/8f7a1c8e-3b1f-4e0e-9d3c-2b1a0f9e8d7c/12345"),
-            None
-        );
-        assert_eq!(
-            parse("oryxis://pair/8f7a1c8e-3b1f-4e0e-9d3c-2b1a0f9e8d7c/abcdef"),
-            None
-        );
     }
 
     #[test]

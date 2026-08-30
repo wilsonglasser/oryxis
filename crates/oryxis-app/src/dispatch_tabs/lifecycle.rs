@@ -5,9 +5,8 @@
 #![allow(clippy::result_large_err)]
 
 use iced::Task;
-use oryxis_core::models::cloud::TransportKind;
 
-use crate::app::{SettingsMessage, SshMessage, CloudMessage, Message, Oryxis, TabsMessage};
+use crate::app::{SettingsMessage, SshMessage, Message, Oryxis, TabsMessage};
 use crate::state::View;
 
 impl Oryxis {
@@ -85,12 +84,6 @@ impl Oryxis {
         // the tab (dropped with it), but abort first so the
         // detached task stops promptly rather than on next poll.
         self.abort_chat_task_for(self.tabs[idx]._id);
-        // A pending placeholder replacement aimed at this tab
-        // would otherwise go stale and hijack the next
-        // unrelated cloud spawn.
-        if self.pin_next_plugin_tab == Some(self.tabs[idx]._id) {
-            self.pin_next_plugin_tab = None;
-        }
         // A hybrid Files-mode owner dies with its tab: the
         // hoisted browsing state is discarded (any transfer on
         // it rode the session being torn down anyway).
@@ -247,11 +240,10 @@ impl Oryxis {
         // Prefer an in-place reconnect that REUSES the pane's existing
         // terminal, so the scrollback the user was looking at survives
         // the round-trip instead of being wiped by a fresh tab. Only a
-        // single-pane tab backed by a saved plain-SSH connection
-        // qualifies: cloud transports (SSM / ECS / kubectl) need their
-        // own PTY path, and a split tab's live sibling panes must not be
-        // torn down. Everything else falls back to the legacy
-        // remove-and-rebuild below.
+        // single-pane tab backed by a saved connection qualifies: a
+        // split tab's live sibling panes must not be torn down.
+        // Everything else falls back to the legacy remove-and-rebuild
+        // below.
         // What the in-place reconnect should respawn: a saved host
         // (by index) or a quick-connect entry (by id).
         enum ReuseTarget {
@@ -289,11 +281,7 @@ impl Oryxis {
                 }
                 _ => self.connections.iter().position(|c| c.label == base_label)?,
             };
-            let plain_ssh = self.connections[conn_idx]
-                .cloud_ref
-                .as_ref()
-                .is_none_or(|c| c.transport_pref == TransportKind::Ssh);
-            plain_ssh.then_some((ReuseTarget::Saved(conn_idx), pane_id, base_label))
+            Some((ReuseTarget::Saved(conn_idx), pane_id, base_label))
         });
         if let Some((target, pane_id, base_label)) = reuse {
             // Persist whatever this pane recorded before we tear its
@@ -382,8 +370,8 @@ impl Oryxis {
                 ),
             ]);
         }
-        // Legacy fallback (multi-pane, cloud transport, or a dead tab
-        // with no live in-place path): remove the tab and rebuild via
+        // Legacy fallback (multi-pane, or a dead tab with no live
+        // in-place path): remove the tab and rebuild via
         // ConnectSsh / QuickConnect / a local respawn / the tab's
         // stashed relaunch message. A tab nothing can rebuild is KEPT
         // (with a toast saying why), never silently destroyed.
@@ -427,9 +415,9 @@ impl Oryxis {
             } else {
                 None
             };
-            // What re-opens the tab once it's gone. Ephemeral cloud tabs
-            // (ECS Exec / kubectl pod) rebuild via the relaunch message
-            // stashed at spawn time, the same way Duplicate does.
+            // What re-opens the tab once it's gone: quick-connect tabs
+            // rebuild via the relaunch message stashed at spawn time,
+            // the same way Duplicate does.
             let rebuild = if let Some(ci) = conn_idx {
                 Some(Message::Ssh(SshMessage::ConnectSsh(ci)))
             } else if let Some(entry) = quick_entry {
@@ -498,8 +486,8 @@ impl Oryxis {
     /// nothing would leave the request pending, and the next unrelated
     /// tab (minutes later, from anywhere) would take its slot. The TTL on
     /// [`crate::state::PendingTabPlacement`] is the backstop for the
-    /// failures we cannot see coming from here (a cloud plugin that never
-    /// starts, a PTY that refuses to spawn); this covers the one we can.
+    /// failures we cannot see coming from here (a PTY that refuses to
+    /// spawn); this covers the one we can.
     fn arm_tab_placement(&mut self, source_id: uuid::Uuid) {
         use crate::state::{PendingTabPlacement, TabPlacement};
         let placement = TabPlacement::from_setting(&self.prefs.duplicate_tab_position);
@@ -520,9 +508,9 @@ impl Oryxis {
         // Local shell tabs aren't backed by a saved connection; for
         // those we just open a fresh shell tab. SSH tabs find their
         // connection by label and dispatch `ConnectSsh` so the user
-        // gets a second live session into the same box. Cloud tabs
-        // (ECS Exec / kubectl) re-open via the relaunch message
-        // stashed on the tab at spawn time.
+        // gets a second live session into the same box. Quick-connect
+        // tabs re-open via the relaunch message stashed on the tab at
+        // spawn time.
         if let Some(tab) = self.tabs.get(idx) {
             let source_id = tab._id;
             // Local shells are identified by their pane ORIGIN, not by
@@ -550,22 +538,18 @@ impl Oryxis {
                 self.arm_tab_placement(source_id);
                 return Task::done(msg);
             }
-            // Cloud tabs with no saved connection (ECS Exec,
-            // kubectl pod) carry the message that re-opens them.
+            // Quick-connect tabs with no saved connection carry the
+            // message that re-opens them.
             if let Some(relaunch) = tab.relaunch.as_deref() {
                 let msg = relaunch.clone();
                 self.arm_tab_placement(source_id);
                 return Task::done(msg);
             }
-            // Connection-backed tabs (SSH, InstanceConnect, and
-            // SSM-into-EC2) duplicate by re-finding the host by
-            // label. SSM tabs carry a title prefix, strip it so
-            // the lookup matches; ConnectSsh re-routes to SSM via
-            // the cloud_ref transport check.
+            // Connection-backed tabs duplicate by re-finding the host
+            // by label.
             let base_label = tab
                 .label
                 .trim_end_matches(" (disconnected)")
-                .trim_start_matches(crate::app::SSM_TAB_PREFIX)
                 .to_string();
             if let Some(ci) = self.connections.iter().position(|c| c.label == base_label) {
                 // A remote-desktop host opens an OS client, never a tab
@@ -584,16 +568,11 @@ impl Oryxis {
         Task::none()
     }
 
-    /// The message that reopens `spec`, plus whether the tab it produces
-    /// arrives ASYNCHRONOUSLY.
+    /// The message that reopens `spec`.
     ///
     /// Resolved fresh every time: a host id maps to a different index than
     /// it did last session, and the connection may have been deleted since
-    /// (`None`, which every caller reads as "nothing to reopen"). Cloud
-    /// sessions spawn through a plugin several updates later, so they
-    /// cannot ride a synchronous "did a tab get appended" check, and the
-    /// flag is what saves each caller from having to know which specs
-    /// those are.
+    /// (`None`, which every caller reads as "nothing to reopen").
     ///
     /// One authority for both reopen paths: a dormant PIN selected for the
     /// first time, and a tab the user closed and asked back
@@ -601,10 +580,9 @@ impl Oryxis {
     pub(super) fn spec_open_message(
         &self,
         spec: &crate::state::PinnedTabSpec,
-    ) -> (Option<Message>, bool) {
+    ) -> Option<Message> {
         use crate::state::PinnedTabSpec;
-        let mut cloud = false;
-        let open = match spec {
+        match spec {
             PinnedTabSpec::Host { id, .. } => self
                 .connections
                 .iter()
@@ -617,44 +595,11 @@ impl Oryxis {
                     label: label.clone(),
                 }))
             }
-            PinnedTabSpec::EcsExec {
-                group_id,
-                task_id,
-                container,
-                ..
-            } => {
-                cloud = true;
-                // ECS task ids are ephemeral (services recycle tasks), so
-                // a saved id is expected to go stale. Resolve the group
-                // and connect to the task currently running; the saved id
-                // only wins when it still exists.
-                Some(Message::Cloud(CloudMessage::EcsExecConnectFreshTask {
-                    group_id: *group_id,
-                    container: container.clone(),
-                    fallback_task_id: task_id.clone(),
-                }))
-            }
-            PinnedTabSpec::KubectlExec {
-                group_id,
-                namespace,
-                pod,
-                container,
-                ..
-            } => {
-                cloud = true;
-                Some(Message::Cloud(CloudMessage::ConnectKubectlExecPod {
-                    group_id: *group_id,
-                    namespace: namespace.clone(),
-                    pod: pod.clone(),
-                    container: container.clone(),
-                }))
-            }
             // SFTP dormant tabs live in `sftp_tabs`, not `self.tabs`, and reopen
             // via `SelectSftpTab` (which re-mounts their panes), so this
             // terminal-tab reopen path never produces an open message for them.
             PinnedTabSpec::Sftp { .. } => None,
-        };
-        (open, cloud)
+        }
     }
 
     /// First select of a dormant pinned tab: drop the placeholder and fire
@@ -668,32 +613,9 @@ impl Oryxis {
         else {
             return Task::none();
         };
-        let (open, cloud) = self.spec_open_message(&spec);
-        if cloud {
-            // Cloud sessions spawn asynchronously. Keep the dormant
-            // placeholder in the strip (so its chip doesn't blink out) and let
-            // `spawn_plugin_tab` replace it in place by id, inheriting its slot
-            // + pin. We don't persist here: the dormant spec stays in the
-            // setting as a safety net until the live tab re-persists. Stay on
-            // the placeholder pane with a connecting hint instead of bouncing
-            // to Hosts while the session resolves + spawns.
-            self.pin_next_plugin_tab = Some(self.tabs[idx]._id);
-            self.active_tab = Some(idx);
-            self.remember_terminal_tab_focus(idx);
-            self.active_view = View::Terminal;
-            if let Some(pane) = self.tabs[idx].pane_grid.panes.values().next()
-                && let Ok(mut term) = pane.terminal.lock()
-            {
-                let hint = format!(
-                    "\r\n\x1b[2m  {}\x1b[0m\r\n",
-                    crate::i18n::t("connecting_status")
-                );
-                term.process(hint.as_bytes());
-            }
-            return open.map(|m| self.update(m)).unwrap_or_else(Task::none);
-        }
+        let open = self.spec_open_message(&spec);
 
-        // Host / local: the connect appends a live tab synchronously, so
+        // The connect appends a live tab synchronously, so
         // remove the placeholder and slot the live tab into its place.
         let dormant_id = self.tabs[idx]._id;
         // Where the placeholder sits in the strip, captured BEFORE the

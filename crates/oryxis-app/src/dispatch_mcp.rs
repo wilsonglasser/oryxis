@@ -8,7 +8,7 @@
 
 use iced::Task;
 
-use crate::app::{McpMessage, PluginMessage, Message, Oryxis};
+use crate::app::{McpMessage, Message, Oryxis};
 use crate::mcp::{install_mcp_config_to_file, install_mcp_config_to_wsl, mcp_config_json, mcp_config_json_wsl};
 
 impl Oryxis {
@@ -23,17 +23,24 @@ impl Oryxis {
                 if let Some(vault) = &self.vault {
                     let _ = vault.set_setting("mcp_server_enabled", if self.mcp.server_enabled { "true" } else { "false" });
                 }
-                // MCP ships as a plugin (~5 MB binary external clients
-                // like Claude Desktop spawn). First-time enable triggers
-                // the install modal; an already-installed plugin or a
-                // dev binary on the side both make this a no-op.
-                if self.mcp.server_enabled
-                    && !crate::mcp_install::is_installed()
-                    && !crate::dispatch_plugins::dev_binary_present("mcp")
-                {
-                    return Task::done(Message::Plugin(PluginMessage::ShowPluginInstallModal(
-                        "mcp".to_string(),
-                    )));
+                // MCP ships as a local plugin binary (~5 MB) external
+                // clients like Claude Desktop spawn. The app never
+                // downloads it: turning the server on tries to make
+                // the launcher from whatever sits in the local plugin
+                // cache — signature-checked, so a mismatched or
+                // unsigned cache fails closed — and the status line
+                // says why there is nothing to spawn when it can't.
+                if self.mcp.server_enabled {
+                    self.mcp.install_status = crate::mcp_install::sync_launcher_from_cache()
+                        .err()
+                        .map(|e| {
+                            tracing::warn!(
+                                target = "oryxis::mcp",
+                                error = %e,
+                                "no verified MCP launcher could be installed from the plugin cache"
+                            );
+                            Err(format!("launcher: {e}"))
+                        });
                 }
             }
             McpMessage::ShowMcpInfo => {

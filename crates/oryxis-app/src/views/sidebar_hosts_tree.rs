@@ -20,14 +20,12 @@ use crate::widgets::dir_row;
 
 const STAB: crate::state::TerminalSidebarTab = crate::state::TerminalSidebarTab::HostsTree;
 
-/// Per-group subtree aggregates (hosts, saved arrangements, visible
-/// dynamic groups anywhere below), built once per frame by
-/// `tree_subtree_counts`.
+/// Per-group subtree aggregates (hosts, saved arrangements), built
+/// once per frame by `tree_subtree_counts`.
 #[derive(Default)]
 struct TreeSubtreeCounts {
     hosts: std::collections::HashMap<Uuid, usize>,
     sessions: std::collections::HashMap<Uuid, usize>,
-    dynamic: std::collections::HashSet<Uuid>,
 }
 
 /// Indent per tree level, applied on the leading edge (via `dir_row`,
@@ -72,9 +70,6 @@ impl Oryxis {
 
         let needle = self.hosts_tree_search.trim().to_lowercase();
         let mut rows: Vec<Element<'_, Message>> = Vec::new();
-        // Dynamic (cloud-query) groups whose provider plugin isn't
-        // installed are invisible, dashboard parity.
-        let hidden_profiles = self.hidden_cloud_profile_ids();
         // Which groups earn a row this frame, decided BEFORE any row
         // is built: the keynav recording happens at construction time,
         // so rows must be built strictly in display order (a subtree
@@ -82,8 +77,8 @@ impl Oryxis {
         // folder, records phantom indices the keyboard then acts on -
         // that shipped as Enter connecting a host that wasn't even on
         // screen).
-        let counts = self.tree_subtree_counts(&hidden_profiles);
-        let visible = self.tree_visibility(&needle, &hidden_profiles, &counts);
+        let counts = self.tree_subtree_counts();
+        let visible = self.tree_visibility(&needle, &counts);
         // The needle-free visibility, for subtrees under a folder that
         // MATCHED the search: a matching folder shows everything it
         // would show without a search (the ancestor-match rule both
@@ -92,7 +87,7 @@ impl Oryxis {
         let visible_base = if needle.is_empty() {
             None
         } else {
-            Some(self.tree_visibility("", &hidden_profiles, &counts))
+            Some(self.tree_visibility("", &counts))
         };
         let visible_base = visible_base.as_ref().unwrap_or(&visible);
         // Sync LWW merges can leave dangling parents and cycles; a
@@ -241,15 +236,6 @@ impl Oryxis {
             }
         }
 
-        if group.cloud_query.is_some() {
-            // The resolved ECS tasks / K8s pods (or the pending /
-            // loading / failed state) render as this folder's
-            // children. The resolve itself fires from the expand
-            // click (`HostsTreeToggleGroup`), never from view().
-            let (mut dyn_rows, _) =
-                self.tree_dynamic_rows(group, depth + 1, needle, label_match);
-            rows.append(&mut dyn_rows);
-        }
     }
 
     /// Which groups earn a row for this frame's needle, computed
@@ -258,25 +244,19 @@ impl Oryxis {
     /// the `group_has_visible_content` style; the pre-seeded `false`
     /// doubles as the cycle guard.
     ///
-    /// The rules, per group:
-    /// - dynamic (cloud-query): hidden provider = never; otherwise
-    ///   shown, under a search only when its label or a resolved
-    ///   task/pod matches.
-    /// - manual: needs a saved host or a visible dynamic group
-    ///   somewhere below (an empty folder has nothing to connect to,
-    ///   owner ask); under a search additionally its label, one of
-    ///   its hosts, or a descendant must match.
+    /// The rules, per group: needs a saved host or a saved
+    /// arrangement somewhere below (an empty folder has nothing to
+    /// connect to, owner ask); under a search additionally its label,
+    /// one of its hosts, or a descendant must match.
     fn tree_visibility(
         &self,
         needle: &str,
-        hidden_profiles: &std::collections::HashSet<Uuid>,
         counts: &TreeSubtreeCounts,
     ) -> std::collections::HashMap<Uuid, bool> {
         fn visible(
             app: &Oryxis,
             gid: Uuid,
             needle: &str,
-            hidden_profiles: &std::collections::HashSet<Uuid>,
             counts: &TreeSubtreeCounts,
             memo: &mut std::collections::HashMap<Uuid, bool>,
         ) -> bool {
@@ -288,70 +268,39 @@ impl Oryxis {
                 return false;
             };
             let searching = !needle.is_empty();
-            let v = if let Some(q) = group.cloud_query.as_ref() {
-                if hidden_profiles.contains(&q.profile_id) {
-                    false
-                } else if !searching {
-                    true
-                } else {
-                    group.label.to_lowercase().contains(needle)
-                        || app.tree_dynamic_host_matches(gid, needle)
-                }
+            let has_content = counts.hosts.get(&gid).copied().unwrap_or(0) > 0
+                || counts.sessions.get(&gid).copied().unwrap_or(0) > 0;
+            let v = if !has_content {
+                false
+            } else if !searching {
+                true
             } else {
-                let has_content = counts.hosts.get(&gid).copied().unwrap_or(0) > 0
-                    || counts.sessions.get(&gid).copied().unwrap_or(0) > 0
-                    || counts.dynamic.contains(&gid);
-                if !has_content {
-                    false
-                } else if !searching {
-                    true
-                } else {
-                    group.label.to_lowercase().contains(needle)
-                        || app.connections.iter().any(|c| {
-                            c.group_id == Some(gid)
-                                && crate::util::host_matches_search(c, needle)
+                group.label.to_lowercase().contains(needle)
+                    || app.connections.iter().any(|c| {
+                        c.group_id == Some(gid)
+                            && crate::util::host_matches_search(c, needle)
+                    })
+                    || app
+                        .session_groups
+                        .iter()
+                        .any(|sg| {
+                            sg.group_id == Some(gid)
+                                && sg.label.to_lowercase().contains(needle)
                         })
-                        || app
-                            .session_groups
-                            .iter()
-                            .any(|sg| {
-                                sg.group_id == Some(gid)
-                                    && sg.label.to_lowercase().contains(needle)
-                            })
-                        || app
-                            .groups
-                            .iter()
-                            .filter(|g| g.parent_id == Some(gid))
-                            .any(|g| {
-                                visible(app, g.id, needle, hidden_profiles, counts, memo)
-                            })
-                }
+                    || app
+                        .groups
+                        .iter()
+                        .filter(|g| g.parent_id == Some(gid))
+                        .any(|g| visible(app, g.id, needle, counts, memo))
             };
             memo.insert(gid, v);
             v
         }
         let mut memo = std::collections::HashMap::new();
         for g in &self.groups {
-            visible(self, g.id, needle, hidden_profiles, counts, &mut memo);
+            visible(self, g.id, needle, counts, &mut memo);
         }
         memo
-    }
-
-    /// Whether any RESOLVED task/pod of a dynamic group matches the
-    /// needle (unresolved groups can't answer, so they only match by
-    /// label).
-    fn tree_dynamic_host_matches(&self, gid: Uuid, needle: &str) -> bool {
-        match self.cloud_dynamic_group_state.get(&gid) {
-            Some(crate::state::DynamicGroupState::Loaded { hosts, .. }) => {
-                hosts.iter().any(|h| {
-                    h.resource_id.to_lowercase().contains(needle)
-                        || h.container_name
-                            .as_deref()
-                            .is_some_and(|n| n.to_lowercase().contains(needle))
-                })
-            }
-            _ => false,
-        }
     }
 
     /// One folder row: chevron + folder glyph (the group's custom icon
@@ -372,18 +321,13 @@ impl Oryxis {
         } else {
             iced_fonts::lucide::chevron_right()
         };
-        // Icon precedence mirrors the dashboard folder / dynamic-group
-        // cards (owner ask: the group's REAL badge, not a generic
-        // glyph): an explicit user icon wins, then the query-derived
-        // brand (ecs / kubernetes). Background: explicit group colour,
+        // Icon precedence mirrors the dashboard folder cards (owner
+        // ask: the group's REAL badge, not a generic glyph): an
+        // explicit user icon wins. Background: explicit group colour,
         // else the brand colour, else a plain folder glyph with no
         // badge at all - an all-accent badge on every folder would
         // turn the tree into a colour wall.
-        let brand: Option<&str> = group.cloud_query.as_ref().map(|q| match q.kind {
-            oryxis_core::models::cloud::CloudQueryKind::EcsTasks { .. } => "ecs",
-            oryxis_core::models::cloud::CloudQueryKind::K8sPods { .. } => "kubernetes",
-        });
-        let icon_id = group.icon.as_deref().filter(|s| !s.is_empty()).or(brand);
+        let icon_id = group.icon.as_deref().filter(|s| !s.is_empty());
         let group_color = group.color.as_deref().and_then(crate::os_icon::parse_hex_color);
         let folder: Element<'a, Message> = match icon_id {
             Some(icon_id) => {
@@ -411,17 +355,8 @@ impl Oryxis {
                 }
             }
         };
-        // Dynamic groups count what the resolve brought back (nothing
-        // before the first expand); manual folders count their
-        // subtree's saved hosts.
-        let subtree_hosts = if group.cloud_query.is_some() {
-            match self.cloud_dynamic_group_state.get(&group.id) {
-                Some(crate::state::DynamicGroupState::Loaded { hosts, .. }) => hosts.len(),
-                _ => 0,
-            }
-        } else {
-            counts.hosts.get(&group.id).copied().unwrap_or(0)
-        };
+        // Folders count their subtree's saved hosts.
+        let subtree_hosts = counts.hosts.get(&group.id).copied().unwrap_or(0);
         let mut items: Vec<Element<'a, Message>> = vec![
             Space::new().width(depth as f32 * INDENT).into(),
             chevron.size(12).color(c.text_muted).into(),
@@ -645,15 +580,11 @@ impl Oryxis {
     }
 
     /// Subtree aggregates for EVERY group in one pass over the vault:
-    /// each host / saved arrangement / visible dynamic group marks its
-    /// whole ancestor chain walking up (cycle-guarded, the
-    /// `groups_containing_cloud_profile` shape). Replaces the
-    /// per-folder `Group::subtree_ids` scans, which made every frame
-    /// quadratic in the group count.
-    fn tree_subtree_counts(
-        &self,
-        hidden_profiles: &std::collections::HashSet<Uuid>,
-    ) -> TreeSubtreeCounts {
+    /// each host / saved arrangement marks its whole ancestor chain
+    /// walking up (cycle-guarded). Replaces the per-folder
+    /// `Group::subtree_ids` scans, which made every frame quadratic
+    /// in the group count.
+    fn tree_subtree_counts(&self) -> TreeSubtreeCounts {
         let parent_of: std::collections::HashMap<Uuid, Option<Uuid>> =
             self.groups.iter().map(|g| (g.id, g.parent_id)).collect();
         let mut counts = TreeSubtreeCounts::default();
@@ -678,188 +609,9 @@ impl Oryxis {
                 up_chain(gid, &mut |g| *counts.sessions.entry(g).or_insert(0) += 1);
             }
         }
-        for g in &self.groups {
-            if g.cloud_query
-                .as_ref()
-                .is_some_and(|q| !hidden_profiles.contains(&q.profile_id))
-            {
-                up_chain(g.id, &mut |anc| {
-                    counts.dynamic.insert(anc);
-                });
-            }
-        }
         counts
     }
 
-    /// A dynamic group's children: the resolved ECS tasks / K8s pods,
-    /// or the pending / loading / failed state as informational rows.
-    /// Returns the rows plus whether any resolved host matched the
-    /// search needle (`group_matched` short-circuits the filter: a
-    /// matching folder shows everything it has, like manual groups).
-    /// Connect messages mirror the dashboard grid / new-tab picker
-    /// verbatim, container fallback included.
-    fn tree_dynamic_rows<'a>(
-        &'a self,
-        group: &'a Group,
-        depth: usize,
-        needle: &str,
-        group_matched: bool,
-    ) -> (Vec<Element<'a, Message>>, bool) {
-        use crate::app::CloudMessage;
-        use crate::state::DynamicGroupState;
-        let gid = group.id;
-        let (ecs_container, k8s_namespace) = match group.cloud_query.as_ref().map(|q| &q.kind) {
-            Some(oryxis_core::models::cloud::CloudQueryKind::EcsTasks { container, .. }) => {
-                (container.clone(), None)
-            }
-            Some(oryxis_core::models::cloud::CloudQueryKind::K8sPods { namespace, .. }) => {
-                (String::new(), Some(namespace.clone()))
-            }
-            None => return (Vec::new(), false),
-        };
-
-        match self.cloud_dynamic_group_state.get(&gid) {
-            None => (vec![tree_info_row(t("cloud_dynamic_group_pending"), depth)], false),
-            Some(DynamicGroupState::Loading) => {
-                (vec![tree_info_row(t("cloud_discover_running"), depth)], false)
-            }
-            Some(DynamicGroupState::Failed(msg)) => {
-                let retry_msg = Message::Cloud(CloudMessage::DynamicGroupResolve(gid));
-                let retry_items: Vec<Element<'a, Message>> = vec![
-                    Space::new().width(depth as f32 * INDENT + 16.0).into(),
-                    iced_fonts::lucide::refresh_cw()
-                        .size(13)
-                        .color(OryxisColors::t().text_primary)
-                        .into(),
-                    Space::new().width(6).into(),
-                    text(t("cloud_discover_refresh"))
-                        .size(12)
-                        .color(OryxisColors::t().text_primary)
-                        .into(),
-                ];
-                let retry = self.sidebar_nav_slot(
-                    crate::keynav::SidebarRow::list_button(retry_msg.clone()),
-                    STAB,
-                    6.0,
-                    tree_row_button(retry_items, retry_msg),
-                );
-                (
-                    vec![
-                        tree_info_row_owned(
-                            format!("{}: {msg}", t("cloud_test_failed")),
-                            depth,
-                        ),
-                        retry,
-                    ],
-                    false,
-                )
-            }
-            Some(DynamicGroupState::Loaded { hosts, .. }) => {
-                let mut rows: Vec<Element<'a, Message>> = Vec::new();
-                let mut matched = false;
-                // Dynamic hosts have no saved Connection, so the
-                // global Privacy Mode default decides the redaction
-                // (issue #78); filtering stays on the RAW strings.
-                let privacy_terms = self.privacy_terms();
-                let redact = |s: &str| {
-                    if self.privacy_global_active() {
-                        crate::widgets::redact_for_display(
-                            s,
-                            &privacy_terms,
-                            self.privacy_classes(),
-                        )
-                    } else {
-                        s.to_string()
-                    }
-                };
-                for h in hosts {
-                    let primary = match &h.container_name {
-                        Some(name) if !name.is_empty() => name.clone(),
-                        _ => h.resource_id.clone(),
-                    };
-                    if !group_matched
-                        && !needle.is_empty()
-                        && !primary.to_lowercase().contains(needle)
-                        && !h.resource_id.to_lowercase().contains(needle)
-                    {
-                        continue;
-                    }
-                    matched = true;
-                    let status_upper: Option<String> =
-                        h.status.as_deref().map(|s| s.to_ascii_uppercase());
-                    // Only RUNNING (or unknown) tasks can be exec'd
-                    // into; a PENDING / STOPPED one yields an opaque
-                    // error on click.
-                    let connectable =
-                        matches!(status_upper.as_deref(), Some("RUNNING") | None);
-                    let msg = match &k8s_namespace {
-                        Some(ns) => Message::Cloud(CloudMessage::ConnectKubectlExecPod {
-                            group_id: gid,
-                            namespace: ns.clone(),
-                            pod: h.resource_id.clone(),
-                            container: h.container_name.clone().unwrap_or_default(),
-                        }),
-                        None => Message::Cloud(CloudMessage::ConnectEcsExecTask {
-                            group_id: gid,
-                            task_id: h.resource_id.clone(),
-                            task_label: h.label.clone(),
-                            container: h
-                                .container_name
-                                .clone()
-                                .unwrap_or_else(|| ecs_container.clone()),
-                        }),
-                    };
-                    let c = OryxisColors::t();
-                    let mut items: Vec<Element<'a, Message>> = vec![
-                        Space::new().width(depth as f32 * INDENT + 16.0).into(),
-                        iced_fonts::lucide::cloud()
-                            .size(13)
-                            .color(if connectable { c.text_muted } else { c.border })
-                            .into(),
-                        Space::new().width(6).into(),
-                        text(redact(&primary))
-                            .size(12)
-                            .color(if connectable { c.text_primary } else { c.text_muted })
-                            .wrapping(iced::widget::text::Wrapping::None)
-                            .into(),
-                    ];
-                    if let Some(status) = status_upper.as_deref().filter(|s| *s != "RUNNING")
-                    {
-                        items.push(Space::new().width(6).into());
-                        items.push(
-                            text(status.to_string()).size(10).color(c.text_muted).into(),
-                        );
-                    }
-                    items.push(Space::new().width(Length::Fill).into());
-                    let row = tree_row_button(items, msg.clone());
-                    // Non-connectable tasks stay unrecorded so the
-                    // keyboard never lands on a dead row (the click
-                    // still explains itself via the error path).
-                    rows.push(if connectable {
-                        self.sidebar_nav_slot(
-                            crate::keynav::SidebarRow::list_button(msg),
-                            STAB,
-                            6.0,
-                            row,
-                        )
-                    } else {
-                        row
-                    });
-                }
-                if rows.is_empty() {
-                    rows.push(tree_info_row(
-                        if needle.is_empty() || group_matched {
-                            t("cloud_dynamic_group_no_tasks")
-                        } else {
-                            t("no_matches")
-                        },
-                        depth,
-                    ));
-                }
-                (rows, matched)
-            }
-        }
-    }
 }
 
 /// Shared row chrome: full-width flat button with hover / press
@@ -889,30 +641,6 @@ fn tree_row_button<'a>(
             ..Default::default()
         }
     })
-    .into()
-}
-
-/// Muted, indented informational row for a dynamic group's transient
-/// states (pending / loading / failed / no tasks). Not recorded: the
-/// keyboard has nothing to do on it.
-fn tree_info_row(label: &str, depth: usize) -> Element<'_, Message> {
-    tree_info_row_owned(label.to_string(), depth)
-}
-
-fn tree_info_row_owned<'a>(label: String, depth: usize) -> Element<'a, Message> {
-    container(
-        dir_row(vec![
-            Space::new().width(depth as f32 * INDENT + 16.0).into(),
-            text(label)
-                .size(11)
-                .color(OryxisColors::t().text_muted)
-                .wrapping(iced::widget::text::Wrapping::None)
-                .into(),
-        ])
-        .align_y(iced::Alignment::Center),
-    )
-    .padding(Padding { top: 5.0, right: 6.0, bottom: 5.0, left: 6.0 })
-    .width(Length::Fill)
     .into()
 }
 

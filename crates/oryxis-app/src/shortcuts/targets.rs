@@ -146,7 +146,6 @@ impl Oryxis {
                 // most.
                 Some(widget::Id::new("search-sftp-remote"))
             }
-            View::Cloud => Some(widget::Id::new("search-cloud")),
             View::Proxies => Some(widget::Id::new("search-proxies")),
             // A hybrid tab in Files mode is the SFTP surface: Ctrl+F
             // focuses the remote filter, parity with View::Sftp above.

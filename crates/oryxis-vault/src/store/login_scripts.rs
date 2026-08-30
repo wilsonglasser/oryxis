@@ -24,7 +24,6 @@ impl VaultStore {
                 script.updated_at.to_rfc3339(),
             ],
         )?;
-        self.clear_tombstone("login_script", &script.id)?;
         Ok(())
     }
 
@@ -81,7 +80,6 @@ impl VaultStore {
             "DELETE FROM login_scripts WHERE id = ?1",
             params![id.to_string()],
         )?;
-        self.record_tombstone("login_script", id)?;
         Ok(())
     }
 

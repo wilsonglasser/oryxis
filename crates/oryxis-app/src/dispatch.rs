@@ -14,12 +14,6 @@ use iced::Task;
 use crate::app::{SftpMessage, TabsMessage, TerminalMessage, Message, Oryxis};
 
 /// How long a dynamic group's resolved host list stays "fresh" before
-/// re-opening the group triggers a background re-resolve. Cloud
-/// resources (ECS tasks especially) recycle, so a list older than this
-/// is likely to contain dead rows that fail on click. 60s balances
-/// freshness against hammering the cloud API on every navigation.
-pub(crate) const DYNAMIC_GROUP_CACHE_TTL_SECS: i64 = 60;
-
 /// A message routed to the sub-handler that owns its variant came back
 /// declined: the router's group list and the sub's match went out of
 /// sync (the variant was listed under the wrong group). Loud so the
@@ -141,7 +135,7 @@ impl Oryxis {
         // And the RISING edge re-arms it. The closing flush drops the
         // baseline (that is what makes a form nobody can see inert), but
         // the paths above only HIDE the drawer: focusing a terminal tab,
-        // changing view, a cloud panel taking the slot. None of them
+        // changing view, a side panel taking the slot. None of them
         // touch `editor_form`, so coming back re-renders the same live
         // form with no baseline to compare against, and
         // `editor_autosave_kick` alone never fires again (it only runs on
@@ -356,7 +350,6 @@ impl Oryxis {
             Message::RemoteDesktop(m) => self.handle_remote_desktop(m),
             Message::SessionGroup(m) => self.handle_session_group(m),
             Message::Zmodem(m) => self.handle_zmodem(m),
-            Message::Update(m) => self.handle_update(m),
             Message::PortForward(m) => self.handle_port_forwards(m),
             Message::Agent(m) => self.handle_agent(m),
             Message::ProxyIdentity(m) => self.handle_proxy_identity(m),
@@ -366,7 +359,6 @@ impl Oryxis {
             Message::Plugin(m) => self.handle_plugins(m),
             Message::Snippet(m) => self.handle_snippets(m),
             Message::Vault(m) => self.handle_vault(m),
-            Message::Sync(m) => self.handle_sync(m),
             Message::Mcp(m) => self.handle_mcp(m),
             Message::Editor(m) => {
                 // Record the auto-save baseline once per opened host
@@ -395,7 +387,6 @@ impl Oryxis {
                 task
             }
             Message::Keys(m) => self.handle_keys(m),
-            Message::Cloud(m) => self.handle_cloud(m),
             Message::Ssh(m) => self.handle_ssh(m),
             Message::Tabs(m) => self.handle_tabs(m),
             Message::Sftp(m) => self.handle_sftp_domain(m),

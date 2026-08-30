@@ -813,9 +813,9 @@ impl Oryxis {
     /// new tab gets focused (manual select, opening a local shell,
     /// connecting an SSH session, etc.), without this the new tab
     /// can land off-screen when the strip is in scroll mode.
-    /// Resolve the OS / brand icon hint for a tab from its (de-suffixed)
-    /// label: a saved connection's detected OS, else a local-shell hint, else
-    /// the cloud brand parsed from an `ECS · ...` / `K8s · ...` prefix.
+    /// Resolve the OS icon hint for a tab from its (de-suffixed)
+    /// label: a saved connection's detected OS, else a local-shell
+    /// hint.
     /// Effective auto-title (OSC 0/2) decision for a tab: the focused host's
     /// per-host `Connection.auto_title` override wins over the global
     /// `terminal_auto_title` setting; local shells and hosts with no override
@@ -833,13 +833,10 @@ impl Oryxis {
 
     pub(crate) fn tab_detected_os(&self, base_label: &str) -> Option<String> {
         // Saved hosts first, then quick-connect entries (their detection
-        // result lives in memory only), then the local/cloud hints.
+        // result lives in memory only), then the local hints.
         self.any_connection_by_label(base_label)
             .and_then(|c| c.detected_os.clone())
             .or_else(|| crate::os_icon::local_shell_os_hint(base_label))
-            .or_else(|| {
-                crate::os_icon::tab_label_cloud_brand(base_label).map(|s| s.to_string())
-            })
     }
 
     /// Display order of the unified tab strip: pinned-first over the

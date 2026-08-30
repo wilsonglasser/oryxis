@@ -1,0 +1,74 @@
+{
+  "schema": "aegis-offline/removals@1",
+  "generated": "2026-08-30",
+  "base_revision": "4b8ef3b8e323f21d5665ce00e3fe43a75a18a7e4",
+  "note": "Part 1 was inherited mid-flight in the working tree (uncommitted at audit start); Parts 2–3 were completed by this audit. All removals are working-tree deletions, fully recoverable via git.",
+  "removed_capabilities": [
+    {
+      "capability": "Cloud provider discovery & connect (AWS/Azure/GCP/K8s)",
+      "code": ["crates/oryxis-cloud/", "crates/oryxis-cloud-{aws,azure,gcp,k8s}/", "crates/oryxis-cloud-{aws,azure,gcp,k8s}-plugin/", "crates/oryxis-app/src/dispatch_cloud/", "crates/oryxis-app/src/views/cloud_accounts/", "crates/oryxis-app/src/views/dashboard/grid/cloud.rs", "crates/oryxis-core/src/models/cloud.rs", "crates/oryxis-core/src/models/cloud_profile.rs", "crates/oryxis-vault/src/store/cloud.rs", "crates/oryxis-vault/src/store/tests/cloud.rs", "plugins/{aws,azure,gcp,k8s}.json", "dynamic groups / cloud_ref / cloud_query / TransportKind branches across state, dispatch, views"],
+      "dependencies": ["aws-sdk codegen tree", "azure/gcp/k8s SDKs (via pruned workspace members)"],
+      "config": ["cloud_auto_refresh_enabled", "cloud_auto_refresh_interval_minutes", "cloud_auto_archive_orphans", "cloud_orphan_archive_days", "sync_* / download_mirror keys retained on the portable-import deny-list only"],
+      "permissions": "none extra",
+      "migrations": "schema stops creating sync tables; legacy vaults: tables dropped only on destroy_and_recreate; sync_* encrypted settings still rotated on password change if present",
+      "docs": ["README cloud sections", "docs/FEATURES.md Cloud accounts section", "docs/ARCHITECTURE.md crate rows"],
+      "tests": ["store/tests/cloud.rs", "cloud-open-plugins.ice", "cloud i18n keys ×23 languages"],
+      "verification": "rg 'CloudMessage|View::Cloud|oryxis-cloud|models::cloud' → zero hits in production code; workspace compiles"
+    },
+    {
+      "capability": "P2P device sync + signaling + relay",
+      "code": ["crates/oryxis-sync/", "crates/oryxis-relay/", "signaling-worker/", "crates/oryxis-app/src/dispatch_sync.rs", "dispatch_{git,webdav,sftp,folder}_sync.rs", "sync_runtime.rs", "state/sync.rs", "messages/sync.rs", "views/settings/sync.rs", "vault sync API (SyncPeerRow, Tombstone, derive_sync_secret, sync_peers/sync_metadata, typed sync settings accessors)"],
+      "dependencies": ["quinn/QUIC tree", "mdns", "stun", "axum relay server deps (pruned from lockfile)"],
+      "config": ["sync_enabled", "sync_mode", "sync_device_identity/name/listen_port", "sync_signaling_token", "sync_sftp_passphrase", "sync_webdav_*", "sync_git_remote", "sync_folder_path (deny-listed for import; no writers remain)"],
+      "permissions": "sync UDP/TCP listeners gone with the engine",
+      "migrations": "convert_all_fields no longer walks sync_peers (password-change fix for fresh vaults); legacy encrypted settings still rotated",
+      "docs": ["SELF_HOSTING.md (deleted)", "README sync sections", "docs/FEATURES.md Sync section"],
+      "tests": ["store/tests/sync.rs", "sync-passphrase-reopen.ice", "derive_sync_secret golden vector", "sync i18n keys ×23"],
+      "verification": "rg 'oryxis-sync|oryxis-relay|signaling|derive_sync_secret|SyncPeerRow|Tombstone' → zero in production code"
+    },
+    {
+      "capability": "Auto-updater / release lookups / vendor download mirror",
+      "code": ["crates/oryxis-app/src/dispatch_update.rs", "update.rs", "net_mirror.rs", "views/update_modal.rs", "views/settings/host_picker.rs", "messages/update.rs", "boot release-check task"],
+      "dependencies": [],
+      "config": ["download_mirror (deny-listed for import; no reader remains)", "update_channel (deny-listed)"],
+      "permissions": "",
+      "migrations": "",
+      "docs": ["README/SECURITY.md updater claims rewritten"],
+      "tests": ["download-mirror.ice", "update i18n keys ×23"],
+      "verification": "rg 'api.github.com|dl.oryxis.app|dl-cn.oryxis.app|net_mirror' → zero in production code"
+    },
+    {
+      "capability": "Remote plugin catalog & binary downloads",
+      "code": ["crates/oryxis-app/src/plugins/download.rs", "plugins/host.rs", "plugins/provider.rs", "session_manager_plugin.rs", "oryxis-plugin-protocol error/methods (JSON-RPC host halves)"],
+      "dependencies": [],
+      "config": "",
+      "permissions": "",
+      "migrations": "",
+      "docs": ["docs/FEATURES.md Plugin subsystem rewritten (local-only)"],
+      "tests": "",
+      "verification": "rg 'plugins::download|PluginProvider' → zero; cache/manifest/verify retained for local use with new launcher gate"
+    },
+    {
+      "capability": "CI publish/release paths for removed components",
+      "code": [".github/workflows/release-{aws,azure,gcp,k8s,relay}.yml", ".github/workflows/publish-mirror.yml"],
+      "dependencies": [],
+      "config": "",
+      "permissions": "",
+      "migrations": "",
+      "docs": "",
+      "tests": "",
+      "verification": "ls .github/workflows"
+    },
+    {
+      "capability": "Dead i18n strings for removed features",
+      "code": ["222 keys removed from each of 23 language files (5,106 lines)"],
+      "dependencies": [],
+      "config": "",
+      "permissions": "",
+      "migrations": "",
+      "docs": "",
+      "tests": "per-key reference verification before deletion (live keys like update_key retained)",
+      "verification": "i18n files compile; UI spot-checks via existing e2e suite"
+    }
+  ]
+}

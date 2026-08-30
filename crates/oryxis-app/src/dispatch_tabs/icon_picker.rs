@@ -19,15 +19,6 @@ impl Oryxis {
             // editor form; the form's own Save persists it.
             self.editor_session_group.icon_style = self.icon_picker.icon.clone();
             self.editor_session_group.color = self.icon_picker.color.clone();
-        } else if self.icon_picker.for_group_form {
-            // Form-target: flow the choice back to the dynamic
-            // group editor fields. The form's own Save button
-            // persists to the vault, so the icon picker stays
-            // an in-memory editor here.
-            self.cloud_dynamic_form.icon =
-                self.icon_picker.icon.clone().unwrap_or_default();
-            self.cloud_dynamic_form.color =
-                self.icon_picker.color.clone().unwrap_or_default();
         } else if self.icon_picker.for_group_edit {
             // Deferred save: flow into the manual group editor; the
             // panel's own Save persists to the vault.
@@ -48,7 +39,6 @@ impl Oryxis {
         }
         self.panels.icon_picker = false;
         self.icon_picker.for_id = None;
-        self.icon_picker.for_group_form = false;
         self.icon_picker.for_session_group = false;
         self.icon_picker.for_group_edit = false;
         self.icon_picker.for_local_terminal = false;
@@ -68,9 +58,6 @@ impl Oryxis {
         } else if self.icon_picker.for_session_group {
             self.editor_session_group.icon_style = None;
             self.editor_session_group.color = None;
-        } else if self.icon_picker.for_group_form {
-            self.cloud_dynamic_form.icon = String::new();
-            self.cloud_dynamic_form.color = String::new();
         } else if self.icon_picker.for_group_edit {
             self.group_edit.icon = String::new();
             self.group_edit.color = String::new();
@@ -84,7 +71,6 @@ impl Oryxis {
         }
         self.panels.icon_picker = false;
         self.icon_picker.for_id = None;
-        self.icon_picker.for_group_form = false;
         self.icon_picker.for_session_group = false;
         self.icon_picker.for_group_edit = false;
         self.icon_picker.for_local_terminal = false;

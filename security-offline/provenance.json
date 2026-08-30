@@ -1,0 +1,31 @@
+{
+ "schema": "aegis-offline/provenance@1",
+ "generated": "2026-08-30T14:46:31.628370+00:00",
+ "source": {
+  "repository": "/Users/srv/Documents/Projects/oryxis (clone of github.com/wilsonglasser/oryxis, AGPL-3.0)",
+  "base_revision": "4b8ef3b8e323f21d5665ce00e3fe43a75a18a7e4",
+  "working_tree": {
+   "state": "dirty-by-design: inherited offline transformation completed by this audit; nothing committed",
+   "changed_paths": 309,
+   "diff_vs_head": " 308 files changed, 882 insertions(+), 49319 deletions(-)",
+   "diff_sha256_uncommitted": "4917e9f1c235e118b34161e877266623f97f1d38e450c610e03db74fa3bb9933"
+  }
+ },
+ "toolchain": {
+  "cargo": "cargo 1.98.0 (797e8a9bc 2026-08-05)",
+  "rustc": "rustc 1.98.0 (88d9e12ae 2026-08-18)",
+  "host": "darwin 27.0.0 arm64"
+ },
+ "inputs": {
+  "lockfile_sha256": "a0ca23cc9970a92f737022cd73fdf027575b88a71992533c1423217d60f8f1a8",
+  "lockfile_packages": 777,
+  "git_dependencies": "8 unique, all lockfile-pinned (4 wilsonglasser forks, 1Password/arboard, iced-rs/cryoglyph, iced_fonts, winrt-notification)"
+ },
+ "execution_notes": [
+  "No target-provided binary/installer executed; only cargo build/check/test of first-party code",
+  "build.rs files (oryxis-app: git version stamp) inspected before first cargo invocation",
+  "install.sh inspected, not executed",
+  "cargo fetched pinned lockfile revisions over HTTPS once (build-time, disclosed); runtime offline compliance proven statically + operator rehearsal scripts",
+  "CI workflows inspected; 6 removed (vendor mirror + removed-component releases); none executed"
+ ]
+}

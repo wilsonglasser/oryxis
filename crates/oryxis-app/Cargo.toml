@@ -60,15 +60,7 @@ oryxis-zmodem = { workspace = true }
 oryxis-terminal = { workspace = true }
 oryxis-vault = { workspace = true }
 oryxis-biometric = { workspace = true }
-oryxis-sync = { workspace = true }
-oryxis-cloud = { workspace = true }
 oryxis-plugin-protocol = { workspace = true }
-# `oryxis-cloud-aws` is intentionally NOT a dependency, the AWS
-# provider (and its ~1.2 GB of aws-sdk codegen) now lives in the
-# `oryxis-cloud-aws-plugin` subprocess. The app talks to it over
-# JSON-RPC via `plugins::PluginProvider`.
-# `CloudProvider` is an async trait, the app needs `async-trait` to
-# implement it for `PluginProvider`.
 async-trait = "0.1"
 # Zeroize the decrypted private-key PEM in the agent sign path so the
 # decrypt-per-signature contract leaves no plaintext copy in freed heap.

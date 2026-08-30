@@ -8,6 +8,5 @@ repository.workspace = true
 
 [dependencies]
 oryxis-core = { workspace = true }
-oryxis-cloud = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

@@ -9,7 +9,7 @@ use super::super::*;
 
 /// What a pane reconnects to, so a saved session group can reference it.
 /// This is an explicit discriminator rather than inferring "local" from a
-/// missing connection id: cloud/SSM/ECS panes also lack a saved
+/// missing connection id: ephemeral panes also lack a saved
 /// `Connection`, so `None`-means-local would mis-save them. `Ephemeral`
 /// covers those (and any pane we can't reference by id); they are pruned
 /// when a tab is saved as a session group.
@@ -24,7 +24,7 @@ pub(crate) enum PaneOrigin {
     QuickHost(Uuid),
     /// A local terminal; the spec is captured so the same shell is restored.
     Local(LocalShellSpec),
-    /// Cloud/SSM/ECS or otherwise non-referenceable pane.
+    /// Non-referenceable pane.
     Ephemeral,
 }
 
@@ -455,7 +455,7 @@ pub(crate) struct LoginScriptRun {
 
 impl Pane {
     /// The SAVED connection this pane runs on, if any. `None` for local
-    /// shells, cloud / ephemeral panes, and quick-connect hosts, which
+    /// shells, ephemeral panes, and quick-connect hosts, which
     /// live outside `Oryxis::connections` and so carry no stored
     /// per-host settings to look up.
     pub fn saved_conn_id(&self) -> Option<Uuid> {

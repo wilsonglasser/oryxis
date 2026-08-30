@@ -46,11 +46,6 @@ pub static PENDING_CONNECT_TARGET: OnceLock<String> = OnceLock::new();
 /// it cannot control.
 pub static HARNESS_ACTIVE: OnceLock<bool> = OnceLock::new();
 
-/// Whether this process is running under the headless harness.
-pub fn harness_active() -> bool {
-    HARNESS_ACTIVE.get().copied().unwrap_or(false)
-}
-
 /// True when this process is currently the primary (owns the system
 /// tray icon). Stored as an AtomicBool rather than OnceLock so the
 /// child-promotion path can flip it at runtime when the previous
@@ -68,7 +63,7 @@ use crate::theme::OryxisColors;
 
 // `Message` lives in its own module; re-export so call sites that
 // import `crate::app::Message` keep working.
-pub use crate::messages::{Message, SettingsMessage, TabsMessage, EditorMessage, KeysMessage, SidebarFilesMessage, MonitorMessage, TmuxMessage, TerminalMessage, SshMessage, CloudMessage, HistoryMessage, McpMessage, NavigationMessage, CommandHistoryMessage, UpdateMessage, ProxyIdentityMessage, PluginMessage, AgentMessage, ZmodemMessage, KnownHostMessage, RemoteDesktopMessage, TrayMessage, SessionGroupMessage, PortForwardMessage, VaultMessage, SnippetMessage, AiMessage, OnboardingMessage, PlayerMessage, ShareMessage, SftpMessage, SyncMessage};
+pub use crate::messages::{Message, SettingsMessage, TabsMessage, EditorMessage, KeysMessage, SidebarFilesMessage, MonitorMessage, TmuxMessage, TerminalMessage, SshMessage, HistoryMessage, McpMessage, NavigationMessage, CommandHistoryMessage, ProxyIdentityMessage, PluginMessage, AgentMessage, ZmodemMessage, KnownHostMessage, RemoteDesktopMessage, TrayMessage, SessionGroupMessage, PortForwardMessage, VaultMessage, SnippetMessage, AiMessage, OnboardingMessage, PlayerMessage, ShareMessage, SftpMessage};
 
 // Layout constants
 pub(crate) const DEFAULT_TERM_COLS: u32 = 120;
@@ -306,12 +301,6 @@ pub struct Oryxis {
     pub(crate) active_view: View,
     pub(crate) active_group: Option<Uuid>,  // None = root, Some(id) = inside folder
     pub(crate) host_search: String,
-    /// When set, the dashboard grid hides every host / group whose
-    /// cloud origin doesn't match this profile id. Activated by
-    /// clicking the small provider badge on a cloud-sourced host card,
-    /// cleared from the chip at the top of the grid. None means no
-    /// cloud filter.
-    pub(crate) host_filter_cloud_profile: Option<Uuid>,
     /// Dashboard tag filter: only hosts carrying AT LEAST ONE of these
     /// tags (case-insensitive) are listed, and only groups whose
     /// subtree contains such a host render. In-memory like the search
@@ -386,8 +375,7 @@ pub struct Oryxis {
     pub(crate) last_terminal_tab: Option<usize>,
     pub(crate) new_tab_picker_search: String,
     /// When set, the new-tab picker is drilled into this group, showing
-    /// its members (or, for a cloud-query group, its resolved ECS tasks /
-    /// K8s pods) instead of the top-level group + recent list. `None` is
+    /// its members instead of the top-level group + recent list. `None` is
     /// the top level. Reset to `None` whenever the picker opens or closes.
     pub(crate) new_tab_picker_group: Option<Uuid>,
     pub(crate) tab_jump_search: String,
@@ -436,7 +424,7 @@ pub struct Oryxis {
 
     // MODAL FIELDS: the booleans / options below (and others scattered in
     // this struct: ui_theme_editor, show_theme_import, show_share_dialog,
-    // cloud_import_confirm_visible, folder_rename, show_*_picker, ...) each
+    // folder_rename, show_*_picker, ...) each
     // drive a modal overlay and remain the single source of truth for
     // whether that modal is open. They are now enumerated by
     // `crate::state::Modal`: `Oryxis::is_modal_open` / `close_modal`
@@ -666,8 +654,6 @@ pub struct Oryxis {
     /// not to the user's configuration.
     /// See [`crate::state::PanelsOpen`].
     pub(crate) panels: crate::state::PanelsOpen,
-    /// See [`crate::state::CloudDiscoverUi`].
-    pub(crate) cloud_discover: crate::state::CloudDiscoverUi,
     /// See [`crate::state::SnippetForm`].
     pub(crate) snippet_form: crate::state::SnippetForm,
     /// See [`crate::state::KeysUi`].
@@ -751,17 +737,8 @@ pub struct Oryxis {
     /// when it detects that drift.
     pub(crate) window_windowed_pos_prev: Option<Point>,
     /// Whether the OS window currently has focus. Driven by the
-    /// `Focused` / `Unfocused` window events. The cloud SSM/ECS
-    /// keepalive only ticks while this is `false` (the user alt-tabbed
-    /// away), since an active session resets the SSM idle timer on its
-    /// own via the user's input.
+    /// `Focused` / `Unfocused` window events.
     pub(crate) window_focused: bool,
-    /// Terminal size `(cols, rows)` captured the moment the window lost
-    /// focus, used as the anchor the SSM keepalive toggles around (it
-    /// resizes to `rows - 1` and back so each tick produces a real
-    /// SIGWINCH, which is what resets the SSM idle timer). `None` while
-    /// focused.
-    pub(crate) ssm_keepalive_base: Option<(u16, u16)>,
     /// Live keyboard modifier state, updated from `ModifiersChanged`
     /// keyboard events. Used by SFTP click logic for ctrl/shift-click
     /// selection, iced's MouseArea events don't include modifiers.
@@ -886,33 +863,9 @@ pub struct Oryxis {
     /// for it is remote output.
     pub(crate) trigger_confirm: Option<crate::dispatch_terminal::TriggerConfirmCard>,
 
-    // Cloud Accounts, CloudProfile rows + the wizard form. Wizard is
-    // intentionally minimal in v0.6 PR 3: provider + AWS profile auth
-    // only. Access key + SSO + the discover-and-pick step land in
-    // follow-up PRs once the foundation is exercised.
-    pub(crate) cloud_profiles: Vec<oryxis_core::models::cloud_profile::CloudProfile>,
-    /// Transient state for the add/edit cloud-account wizard (covers all
-    /// provider + auth combinations).
-    pub(crate) cloud_form: crate::state::CloudForm,
-    pub(crate) cloud_provider_registry: std::sync::Arc<oryxis_cloud::CloudProviderRegistry>,
-    /// Concrete plugin providers kept here as well as inside the
-    /// registry, so the install / update path can call
-    /// `PluginProvider::rebind` after `cache::set_current` flips the
-    /// active version. The registry only exposes the `CloudProvider`
-    /// trait surface, which doesn't include rebind on purpose.
-    pub(crate) plugin_providers:
-        std::collections::HashMap<String, std::sync::Arc<crate::plugins::PluginProvider>>,
-
-    // Plugins panel, one row per cloud-provider plugin. Cloud
-    // providers run as downloaded subprocess plugins; this is where
-    // the user installs, updates, pins, and rolls them back.
+    // Plugins panel, one row per distributed plugin. This is where
+    // the user reviews and removes them.
     pub(crate) plugins: Vec<crate::state::PluginUiEntry>,
-    /// Global default for plugin auto-update. Per-plugin overrides
-    /// live on each `PluginUiEntry`.
-    pub(crate) plugins_auto_update_global: bool,
-    /// When `Some(provider_id)`, the first-use install opt-in modal
-    /// is shown for that provider.
-    pub(crate) plugin_install_modal: Option<String>,
     /// Native combo_box state for the host editor's Parent Group field.
     /// Holds the (visible) group labels + the filtered subset and the
     /// live typed value. Rebuilt on editor-open via
@@ -941,8 +894,6 @@ pub struct Oryxis {
     pub(crate) group_picker_search: String,
     /// Host editor's startup-command source (None / a snippet / custom).
     pub(crate) editor_startup_choice: crate::state::StartupChoice,
-    /// Bounds of the dynamic group editor's Parent Group combo row.
-    pub(crate) dynamic_form_parent_combo_bounds: crate::widgets::BoundsCell,
     /// Bounds of the session-group editor's Folder combo row.
     pub(crate) session_group_folder_combo_bounds: crate::widgets::BoundsCell,
     /// Bounds of the manual group editor's Parent Group combo row.
@@ -971,23 +922,6 @@ pub struct Oryxis {
     pub(crate) toolbar_sort_btn_bounds: crate::widgets::BoundsCell,
     /// Bounds of the active toolbar's `…` overflow button, same role.
     pub(crate) toolbar_overflow_btn_bounds: crate::widgets::BoundsCell,
-    /// Modal that asks the user to pick the transport for the EC2
-    /// hosts about to be imported. Only opened when there's at
-    /// least one EC2 selected, pure-ECS imports skip straight to
-    /// the import logic since dynamic groups always use ECS Exec.
-    pub(crate) cloud_import_confirm_visible: bool,
-    /// Per-dynamic-group resolve cache. Populated when the user opens
-    /// the group (or hits Refresh inside it); reused on re-open until
-    /// the user manually refreshes.
-    pub(crate) cloud_dynamic_group_state:
-        std::collections::HashMap<Uuid, crate::state::DynamicGroupState>,
-
-    /// Edit-dynamic-group form. Opened from the ⋮ menu on a dynamic
-    /// group card (root or nested). Edits the `cloud_query.template`
-    /// fields: username, initial_command, transport, key, identity.
-    pub(crate) cloud_dynamic_form: crate::state::CloudDynamicForm,
-
-
 
     // Snippets
     pub(crate) snippets: Vec<oryxis_core::models::snippet::Snippet>,
@@ -1129,8 +1063,7 @@ pub struct Oryxis {
     /// kebab mounted while the pointer travels to the menu.
     pub(crate) port_forward_context_menu: Option<usize>,
     pub(crate) port_forward_search: String,
-    /// Toolbar search needles for the Cloud Accounts and Proxies views.
-    pub(crate) cloud_search: String,
+    /// Toolbar search needle for the Proxies view.
     pub(crate) proxy_search: String,
 
     // Known hosts & logs
@@ -1161,8 +1094,8 @@ pub struct Oryxis {
     /// fallback when neither `terminal_theme_override` nor a per-host
     /// override is set.
     /// Cached resolved global terminal palette (built-in or custom).
-    /// Applied to new tabs / local shells / cloud sessions; recomputed when
-    /// the global theme or a custom theme changes.
+    /// Applied to new tabs / local shells; recomputed when the global
+    /// theme or a custom theme changes.
     pub(crate) terminal_palette: oryxis_terminal::TerminalPalette,
     /// User pick that overrides the app-theme-derived terminal palette.
     /// `None` means "follow the app theme" (default). Stored as the
@@ -1249,11 +1182,6 @@ pub struct Oryxis {
     /// flag, always/never mask lists, per-class gates and the Logs
     /// reveal toggle. See [`crate::state::PrivacyState`].
     pub(crate) privacy: crate::state::PrivacyState,
-    /// Download-mirror block state (Settings > Advanced): persisted
-    /// choice + custom-URL editing + probe outcome. The effective
-    /// choice also lives in `net_mirror`'s process-wide slot so the
-    /// download tasks can read it without `&Oryxis`.
-    pub(crate) download_mirror: crate::net_mirror::MirrorUi,
     /// Signature of (tabs len, last tab uuid, connections len, max
     /// last_used timestamp) computed during the last tray menu
     /// rebuild. The TrayPoll handler recomputes the signature each
@@ -1284,21 +1212,10 @@ pub struct Oryxis {
     /// each tick and only re-writes when it differs so we don't
     /// churn the filesystem ten times a second.
     pub(crate) ipc_state_signature: u64,
-    /// One-shot: set when reopening a *pinned cloud* dormant tab. Because the
-    /// cloud spawn is async (the tab is born later, in `spawn_plugin_tab`),
-    /// the pin intent can't ride the synchronous len-check the host / local
-    /// paths use; this carries it instead and is consumed on the next
-    /// plugin-tab spawn. `Some(dormant_id)` = replace the dormant placeholder
-    /// (found by this id) in place, so its strip chip doesn't blink out during
-    /// the async connect, and inherit its slot + pin.
-    pub(crate) pin_next_plugin_tab: Option<uuid::Uuid>,
-    /// See `state::PendingEcsAutoConnect`: deferred connect-to-current
-    /// ECS task while the dynamic group re-resolves.
-    pub(crate) pending_ecs_autoconnect: Option<crate::state::PendingEcsAutoConnect>,
     /// In-progress tab reorder drag (see `TabDrag`). `None` when not dragging.
     pub(crate) tab_drag: Option<crate::state::TabDrag>,
     /// Live width of the right-side editor drawer (host / key / identity /
-    /// snippet / port-forward / cloud forms, all of them: they share one
+    /// snippet / port-forward forms, all of them: they share one
     /// width, like they shared one constant). Defaults to `PANEL_WIDTH`,
     /// dragged via the drawer's edge handle, persisted as the
     /// `side_panel_width` setting on release.
@@ -1344,15 +1261,6 @@ pub struct Oryxis {
     /// (setting row + lock-screen button) hides when false. Not persisted.
     pub(crate) biometric_available: bool,
 
-    // Update state (set by the async GitHub check on boot)
-    pub(crate) pending_update: Option<crate::update::UpdateInfo>,
-    pub(crate) update_downloading: bool,
-    pub(crate) update_progress: f32,
-    pub(crate) update_error: Option<String>,
-    /// Last manual-check outcome shown near the "Check now" button in
-    /// settings. `None` hides the line; the enum picks i18n + color at
-    /// render time (Checking / UpToDate / Failed(cause)).
-    pub(crate) update_check_status: Option<crate::update::UpdateStatus>,
     /// Attempt counters keyed by connection UUID, persists across tab recreations.
     pub(crate) reconnect_counters: std::collections::HashMap<Uuid, u32>,
 
@@ -1438,9 +1346,6 @@ pub struct Oryxis {
 
     // MCP Server
     pub(crate) mcp: crate::state::McpState,
-
-    // Sync (settings + runtime engine handles + pairing/SFTP forms)
-    pub(crate) sync: crate::state::SyncState,
 
     // ── SSH-agent server (B1): expose vault keys over the standard
     // ssh-agent socket. Feature-gated (off by default), in-core (the

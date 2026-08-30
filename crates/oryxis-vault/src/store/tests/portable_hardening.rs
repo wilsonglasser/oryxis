@@ -11,7 +11,6 @@ use crate::portable::{
 use oryxis_core::models::connection::{ProxyConfig, ProxyType};
 use oryxis_core::models::identity::Identity;
 use oryxis_core::models::session_group::{PaneLayout, PaneMember, PaneSource, SessionGroup};
-use oryxis_core::models::CloudProfile;
 use oryxis_core::models::CustomTerminalTheme;
 
 fn unlocked_vault_with(password: &str) -> VaultStore {
@@ -120,14 +119,6 @@ fn full_roundtrip_every_entity_different_master_password() {
     );
     vault.save_session_group(&sg).unwrap();
 
-    // Cloud profile with credential.
-    let mut cloud = CloudProfile::new("prod-aws", "aws");
-    cloud.auth_kind = "access_key".into();
-    cloud.config = r#"{"region":"eu-west-1"}"#.into();
-    vault
-        .save_cloud_profile(&cloud, Some("AKIA-secret-material"))
-        .unwrap();
-
     // Settings: AI key (encrypted per-field), language, theme, and the
     // custom terminal theme the connection references by name.
     vault.set_ai_api_key("sk-ai-key-material").unwrap();
@@ -146,7 +137,6 @@ fn full_roundtrip_every_entity_different_master_password() {
     assert_eq!(result.keys_added, 1);
     assert_eq!(result.identities_added, 1);
     assert_eq!(result.proxy_identities_added, 1);
-    assert_eq!(result.cloud_profiles_added, 1);
     assert_eq!(result.snippets_added, 1);
     assert_eq!(result.known_hosts_added, 1);
     assert_eq!(result.port_forward_rules_added, 1);
@@ -221,13 +211,6 @@ fn full_roundtrip_every_entity_different_master_password() {
         generated.key.certificate,
     );
     assert_eq!(
-        target
-            .get_cloud_profile_secret(&cloud.id)
-            .unwrap()
-            .as_deref(),
-        Some("AKIA-secret-material")
-    );
-    assert_eq!(
         target.get_ai_api_key().unwrap().as_deref(),
         Some("sk-ai-key-material")
     );
@@ -291,8 +274,6 @@ fn export_blob_contains_no_plaintext_secrets() {
         .set_connection_totp_secret(&conn.id, Some(MARKERS[2]))
         .unwrap();
 
-    let cloud = CloudProfile::new("cp", "aws");
-    vault.save_cloud_profile(&cloud, Some(MARKERS[6])).unwrap();
     vault.set_ai_api_key(MARKERS[7]).unwrap();
 
     let data = export_vault(&vault, "export-pw", all_options()).unwrap();
@@ -565,7 +546,7 @@ fn imports_fixture_export_v09() {
 /// colleague's hands, through whatever moved it. Carrying the approval
 /// would let the file answer "yes, run this" on a computer whose owner
 /// never saw the line, which is the same hole in a different courier
-/// (sync is the other one, covered in `oryxis-sync`). The proxy itself
+/// (the removed sync engine was the other one). The proxy itself
 /// still exports, exactly like any other connection field: what stays
 /// behind is only the permission to run it.
 #[test]

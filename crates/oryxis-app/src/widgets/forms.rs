@@ -162,23 +162,6 @@ pub(crate) fn toggle_switch<'a>(value: bool, msg: Message) -> Element<'a, Messag
         .into()
 }
 
-/// Inline label + [`toggle_switch`], for compact placements (e.g.
-/// plugin auto-update) where the control sits next to its label rather
-/// than across a full-width row like [`toggle_row`].
-pub(crate) fn toggle_switch_labeled<'a>(
-    label: &'a str,
-    value: bool,
-    msg: Message,
-) -> Element<'a, Message> {
-    dir_row(vec![
-        text(label).size(11).color(OryxisColors::t().text_secondary).into(),
-        Space::new().width(8).into(),
-        toggle_switch(value, msg),
-    ])
-    .align_y(iced::Alignment::Center)
-    .into()
-}
-
 /// A full-width settings row: label on the leading edge, [`toggle_switch`]
 /// on the trailing edge.
 pub(crate) fn toggle_row<'a>(label: &'a str, value: bool, msg: Message) -> Element<'a, Message> {
@@ -359,7 +342,7 @@ pub(crate) fn shortcut_row<'a>(keys: Vec<Element<'a, Message>>, action: &'a str)
 }
 
 /// Chrome for the right-side editor panels (host editor, key import /
-/// generate, identity, snippet, port-forward, cloud forms, ...):
+/// generate, identity, snippet, port-forward forms, ...):
 /// `width` total (pass the live `Oryxis::panel_width`), the given panel
 /// background, and a 4 px draggable handle on the LEADING edge (between
 /// main content and panel) instead of a full frame. The handle replaces

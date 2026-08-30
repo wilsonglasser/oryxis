@@ -132,16 +132,6 @@ impl Oryxis {
             AiMessage::HostsTreeToggleGroup(gid) => {
                 if !self.hosts_tree_expanded.remove(&gid) {
                     self.hosts_tree_expanded.insert(gid);
-                    // Expanding a dynamic (cloud-query) group kicks
-                    // off or refreshes its resolve, behind the same
-                    // TTL gate as the dashboard's OpenGroup and the
-                    // new-tab picker, so the ECS tasks / K8s pods are
-                    // already loading by the time the rows render.
-                    if self.dynamic_group_needs_resolve(gid) {
-                        return self.handle_cloud(
-                            crate::app::CloudMessage::DynamicGroupResolve(gid),
-                        );
-                    }
                 }
             }
             AiMessage::HostsTreeSearchChanged(v) => {

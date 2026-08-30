@@ -43,9 +43,8 @@ pub enum TabsMessage {
     /// Enter pressed in the picker search: quick-connect when the input
     /// parses as `user@host[:port]`, otherwise a no-op.
     NewTabPickerSubmit,
-    /// Drill into a group in the new-tab picker. For a cloud-query group
-    /// this also kicks off (or refreshes) the resolve so the ECS tasks /
-    /// K8s pods load. `Uuid` is the group id.
+    /// Drill into a group in the new-tab picker. `Uuid` is the group
+    /// id.
     NewTabPickerOpenGroup(Uuid),
     /// Step back out of a drilled-into group to the top-level picker list.
     NewTabPickerBack,
@@ -131,7 +130,6 @@ pub enum TabsMessage {
     /// clipboard. From the tab context menu.
     CopyTabAddress(usize),
     ShowFolderActions(Uuid),
-    StartRenameFolder(Uuid),
     FolderRenameInput(String),
     ConfirmRenameFolder,
     CancelFolderModal,
@@ -195,14 +193,8 @@ pub enum TabsMessage {
     /// saved coordinates landed on a monitor that is no longer there,
     /// move the window back onto the current monitor.
     WindowEnsureOnScreen,
-    /// OS window gained (`true`) or lost (`false`) focus. Gates the
-    /// cloud SSM/ECS keepalive ticker: it only runs while unfocused.
+    /// OS window gained (`true`) or lost (`false`) focus.
     WindowFocusChanged(bool),
-    /// Periodic tick (mounted only while the window is unfocused and at
-    /// least one SSM/ECS tab is open) that nudges those tabs' terminal
-    /// size so the SSM idle timer resets and a long alt-tab away doesn't
-    /// drop the session.
-    SsmKeepaliveTick,
     /// Animation tick for the strip's running-command indicator (issue
     /// #146). Mounted only while some pane has a command in flight
     /// (smart tabs on): fast while one is past the long-command

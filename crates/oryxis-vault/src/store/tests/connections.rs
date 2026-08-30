@@ -783,31 +783,14 @@ fn list_mcp_connections_filters() {
 
 
 #[test]
-fn connection_cloud_ref_and_initial_command_round_trip() {
-    use oryxis_core::models::cloud::{CloudRef, CloudResourceType, TransportKind};
-
+fn connection_initial_command_round_trips() {
     let vault = unlocked_vault();
-    let profile_id = uuid::Uuid::new_v4();
     let mut conn = Connection::new("prod-web-1", "10.0.0.1");
-    conn.cloud_ref = Some(CloudRef {
-        profile_id,
-        resource_type: CloudResourceType::Ec2,
-        resource_id: "i-0abcdef".into(),
-        region: Some("us-east-1".into()),
-        transport_pref: TransportKind::InstanceConnect,
-        auto_refresh_hostname: true,
-        orphaned_at: None,
-    });
     conn.initial_command = Some("exec bash".into());
     vault.save_connection(&conn, None).unwrap();
 
     let listed = vault.list_connections().unwrap();
     let back = listed.iter().find(|c| c.id == conn.id).unwrap();
-    let cr = back.cloud_ref.as_ref().expect("cloud_ref preserved");
-    assert_eq!(cr.profile_id, profile_id);
-    assert_eq!(cr.resource_id, "i-0abcdef");
-    assert_eq!(cr.transport_pref, TransportKind::InstanceConnect);
-    assert!(cr.auto_refresh_hostname);
     assert_eq!(back.initial_command.as_deref(), Some("exec bash"));
 }
 

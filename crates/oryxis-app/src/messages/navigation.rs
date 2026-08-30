@@ -67,17 +67,13 @@ pub enum NavigationMessage {
     PickOpenChanged(bool),
     /// Open / close the shared group picker for a side-panel parent
     /// group input. Anchors the popover at the matching combo's
-    /// measured bounds (`dynamic_form_parent_combo_bounds` or
+    /// measured bounds (
     /// `session_group_folder_combo_bounds`).
     ToggleGroupPicker(crate::state::GroupPickerTarget),
     /// Live filter for the shared group-picker popover.
     GroupPickerSearchChanged(String),
     /// Route a pick into the matching form field and close the
-    /// popover. Existing field-change messages (`EditorGroupChanged`,
-    /// `DynamicGroupFormParentChanged`) still drive the write.
+    /// popover. Existing field-change messages (`EditorGroupChanged`)
+    /// still drive the write.
     GroupPickerPick(crate::state::GroupPickerTarget, String),
-    /// Apply / clear the dashboard cloud-profile filter. Passing None
-    /// clears it; passing Some(pid) restricts the grid to items whose
-    /// cloud origin matches that profile.
-    HostFilterByCloudProfile(Option<Uuid>),
 }

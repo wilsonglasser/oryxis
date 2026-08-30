@@ -421,7 +421,6 @@ impl Oryxis {
                         .map(|(h, _)| h)
                         .collect();
                     let total = picked.len();
-                    let _ = vault.begin_batch();
                     let mut saved: Vec<oryxis_core::models::connection::Connection> =
                         Vec::new();
                     let mut errors: Vec<String> = Vec::new();
@@ -437,11 +436,6 @@ impl Oryxis {
                                 errors.push(format!("{}: {e}", host.conn.label))
                             }
                         }
-                    }
-                    if let Err(e) = vault.commit_batch() {
-                        vault.rollback_batch();
-                        saved.clear();
-                        errors.push(format!("commit: {e}"));
                     }
                     let imported = saved.len();
                     self.connections.extend(saved);
@@ -476,10 +470,8 @@ impl Oryxis {
                 let mut to_save: Vec<oryxis_core::models::connection::Connection> =
                     picked.iter().map(crate::ssh_config::to_connection).collect();
                 crate::ssh_config::link_proxy_jumps(&picked, &mut to_save);
-                // One transaction for the batch, and patch the in-memory
-                // list with the rows that saved instead of re-reading the
-                // whole vault.
-                let _ = vault.begin_batch();
+                // Patch the in-memory list with the rows that saved
+                // instead of re-reading the whole vault.
                 let mut saved: Vec<oryxis_core::models::connection::Connection> =
                     Vec::new();
                 let mut errors: Vec<String> = Vec::new();
@@ -491,11 +483,6 @@ impl Oryxis {
                         Ok(()) => saved.push(conn.clone()),
                         Err(e) => errors.push(format!("{}: {e}", host.alias)),
                     }
-                }
-                if let Err(e) = vault.commit_batch() {
-                    vault.rollback_batch();
-                    saved.clear();
-                    errors.push(format!("commit: {e}"));
                 }
                 let imported = saved.len();
                 self.connections.extend(saved);
@@ -609,7 +596,6 @@ impl Oryxis {
                                 (result.groups_added, "cat_groups"),
                                 (result.identities_added + result.identities_updated, "cat_identities"),
                                 (result.proxy_identities_added + result.proxy_identities_updated, "cat_proxies"),
-                                (result.cloud_profiles_added + result.cloud_profiles_updated, "cat_cloud_profiles"),
                                 (result.snippets_added, "cat_snippets"),
                                 (result.known_hosts_added, "cat_known_hosts"),
                                 (result.port_forward_rules_added, "cat_port_forwards"),

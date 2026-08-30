@@ -18,12 +18,10 @@ impl Oryxis {
     /// secret never appears in argv (which `ps aux` would expose).
     pub(crate) fn spawn_oryxis_child(&self, source_tab: Option<usize>) {
         // Map the tab back to a saved connection so the child opens the
-        // same host. SSM-into-EC2 tabs carry a title prefix; strip it so
-        // the lookup matches (the child re-routes to SSM via cloud_ref).
-        // ECS Exec / kubectl tabs are ephemeral dynamic-group resources
-        // with no saved connection, so they resolve to None and the child
-        // opens a plain window (a fresh process can't carry an in-memory
-        // relaunch message across the boundary).
+        // same host. Quick-connect tabs have no saved connection, so
+        // they resolve to None and the child opens a plain window (a
+        // fresh process can't carry an in-memory relaunch message
+        // across the boundary).
         let connect_uuid = source_tab.and_then(|idx| {
             self.tabs.get(idx).and_then(|tab| {
                 let base_label = tab

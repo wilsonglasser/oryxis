@@ -51,7 +51,7 @@ impl Oryxis {
             let is_active = self.active_tab == Some(idx);
             // Match the tab-bar's OS-coloured badge so users recognise
             // the same visual cue from the strip up here, including the
-            // local-shell and cloud-brand fallbacks (so ECS / K8s tabs get
+            // local-shell fallbacks
             // their brand icon instead of the generic fallback).
             let lookup = tab.label.trim_end_matches(" (disconnected)").to_string();
             let detected_os = self.tab_detected_os(&lookup);

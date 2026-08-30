@@ -138,7 +138,6 @@ impl Oryxis {
         let tags_field = self.hp_tags_field();
         let hostname_row = takes_address.then(|| self.hp_hostname_row(is_serial));
         let protocol_row = self.hp_protocol_row();
-        let cloud_transport_row = self.hp_cloud_transport_row();
         let port_input = self.hp_port_input(!self.editor_form.protocol.uses_network_port());
 
         // ── Compose one card per semantic group ──
@@ -176,9 +175,6 @@ impl Oryxis {
         }
         if let Some(pr) = protocol_row {
             host_col = host_col.push(Space::new().height(ROW_GAP)).push(pr);
-        }
-        if let Some(ct) = cloud_transport_row {
-            host_col = host_col.push(Space::new().height(ROW_GAP)).push(ct);
         }
         let host_section = panel_section(host_col);
 

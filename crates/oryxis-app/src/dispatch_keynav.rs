@@ -16,7 +16,7 @@
 use iced::keyboard;
 use iced::Task;
 
-use crate::app::{SettingsMessage, TabsMessage, EditorMessage, KeysMessage, SshMessage, CloudMessage, HistoryMessage, NavigationMessage, ProxyIdentityMessage, KnownHostMessage, SessionGroupMessage, PortForwardMessage, SnippetMessage, DashNavItem, Message, Oryxis};
+use crate::app::{SettingsMessage, TabsMessage, EditorMessage, KeysMessage, SshMessage, HistoryMessage, NavigationMessage, ProxyIdentityMessage, KnownHostMessage, SessionGroupMessage, PortForwardMessage, SnippetMessage, DashNavItem, Message, Oryxis};
 use crate::keynav::movement::{cycle_zone, grid_move, index_move, linear_move, MoveKey};
 use crate::keynav::{FocusZone, NavItem, ToolbarItem};
 use crate::state::View;
@@ -139,11 +139,6 @@ impl Oryxis {
                 // toggle — and scrolling the page away mid-typing. The
                 // fall-through keeps the zone cycle (Tab from the search
                 // field enters Content at its first row).
-                // Leaving the sync passphrase field by Tab is a deliberate
-                // walk-away: an open edit is abandoned, empty or not.
-                if self.sync.passphrase_editing {
-                    self.exit_passphrase_edit();
-                }
                 if let Some(task) = self.settings_ring_idle_resolve(*named, modifiers.shift()) {
                     return Some(task);
                 }
@@ -164,14 +159,7 @@ impl Oryxis {
             // `util.rs` PTY routing); same rule as the Character
             // guard above.
             Named::Space if self.keynav.focus.is_some() => self.keynav_activate(),
-            Named::Escape => {
-                // An open sync passphrase edit is cancelled by Esc like
-                // any other cancel: back to the read-only mask.
-                if self.sync.passphrase_editing {
-                    self.exit_passphrase_edit();
-                }
-                self.keynav_escape()
-            }
+            Named::Escape => self.keynav_escape(),
             Named::ArrowUp
             | Named::ArrowDown
             | Named::ArrowLeft
@@ -453,10 +441,7 @@ impl Oryxis {
             && self.prefs.host_view_mode == crate::state::HostViewMode::Tree
             && self.host_search.trim().is_empty()
             && let NavItem::Dash(DashNavItem::Group(gid)) = cur
-            && self
-                .groups
-                .iter()
-                .any(|g| g.id == gid && g.cloud_query.is_none())
+            && self.groups.iter().any(|g| g.id == gid)
         {
             let rtl = crate::i18n::is_rtl_layout();
             let expand = matches!(named, Named::ArrowRight) != rtl;
@@ -666,22 +651,12 @@ impl Oryxis {
                 let i = self.session_logs.iter().position(|l| l.id == id)?;
                 Message::History(HistoryMessage::RequestDeleteSessionLog(i))
             }
-            // Cloud accounts and proxy identities delete OUTRIGHT today,
-            // with no confirmation anywhere: their menu row goes straight
+            // Proxy identities delete OUTRIGHT today, with no
+            // confirmation anywhere: their menu row goes straight
             // to the vault. Binding a key to that would hand the user a
             // one-keystroke unrecoverable delete, so they get the same
             // confirm as everything else, which also closes the gap for
             // the mouse.
-            NavItem::CloudAccount(id) => {
-                let name = self
-                    .cloud_profiles
-                    .iter()
-                    .find(|p| p.id == id)
-                    .map(|p| p.label.clone())
-                    .unwrap_or_default();
-                self.confirm_remove(name, Message::Cloud(CloudMessage::DeleteCloudProfile(id)));
-                return Some(Task::none());
-            }
             NavItem::Proxy(id) => {
                 let name = self
                     .proxy_identities
@@ -732,22 +707,12 @@ impl Oryxis {
         let msg = match item {
             NavItem::Dash(DashNavItem::Host(i)) => Message::Tabs(TabsMessage::ShowCardMenu(i)),
             NavItem::Dash(DashNavItem::Group(gid)) => {
-                // Dynamic (cloud-query) folders carry their own menu.
-                let dynamic = self
-                    .groups
-                    .iter()
-                    .any(|g| g.id == gid && g.cloud_query.is_some());
-                if dynamic {
-                    Message::Cloud(CloudMessage::ShowDynamicGroupCardMenu(gid))
-                } else {
-                    Message::Tabs(TabsMessage::ShowFolderActions(gid))
-                }
+                Message::Tabs(TabsMessage::ShowFolderActions(gid))
             }
             NavItem::Dash(DashNavItem::SessionGroup(i)) => Message::SessionGroup(SessionGroupMessage::ShowSessionGroupMenu(i)),
             NavItem::Key(i) => Message::Keys(KeysMessage::ShowKeyMenu(i)),
             NavItem::Identity(i) => Message::Keys(KeysMessage::ShowIdentityMenu(i)),
             NavItem::Snippet(i) => Message::Snippet(SnippetMessage::ShowSnippetMenu(i)),
-            NavItem::CloudAccount(id) => Message::Cloud(CloudMessage::ShowCloudCardMenu(id)),
             // Session-log rows carry a kebab menu (Export .cast /
             // transcript / commands / Delete). The row is keyed by uuid;
             // the menu is keyed by the index into `session_logs`, so map
@@ -777,8 +742,7 @@ impl Oryxis {
 
     /// Primary action of a content item, matching what a mouse click
     /// on the card/row does (see the plan table: Known Hosts' only
-    /// row action is delete, which is confirm-gated; Cloud cards have
-    /// no click action so Enter opens the edit form).
+    /// row action is delete, which is confirm-gated).
     fn keynav_activate_content(&mut self, item: NavItem) -> Task<Message> {
         // Settings rows carry their own recorded action: buttons and
         // toggles dispatch it and KEEP the selection (repeat toggling
@@ -800,12 +764,10 @@ impl Oryxis {
             return Task::none();
         }
         let msg = match item {
-            // Tree view mode: Enter folds/unfolds a MANUAL folder in
-            // place (there is no drill-down to open); dynamic groups
-            // keep the drill into their cloud screen.
+            // Tree view mode: Enter folds/unfolds a folder in place
+            // (there is no drill-down to open).
             NavItem::Dash(DashNavItem::Group(gid))
-                if self.prefs.host_view_mode == crate::state::HostViewMode::Tree
-                    && self.groups.iter().any(|g| g.id == gid && g.cloud_query.is_none()) =>
+                if self.prefs.host_view_mode == crate::state::HostViewMode::Tree =>
             {
                 Message::Ai(crate::app::AiMessage::HostsTreeToggleGroup(gid))
             }
@@ -823,12 +785,11 @@ impl Oryxis {
             }
             NavItem::PortForward(i) => Message::PortForward(PortForwardMessage::EditPortForwardRule(i)),
             NavItem::HistoryLog(id) => Message::History(HistoryMessage::ViewSessionLog(id)),
-            NavItem::CloudAccount(id) => Message::Cloud(CloudMessage::ShowCloudForm(Some(id))),
             NavItem::Proxy(id) => Message::ProxyIdentity(ProxyIdentityMessage::ShowProxyIdentityForm(Some(id))),
             NavItem::KnownHost(i) => Message::KnownHost(KnownHostMessage::RequestDeleteKnownHost(i)),
             NavItem::ContentAction(i) => {
-                // Generic action rows (dynamic cloud-group task list,
-                // the empty dashboard's create/import block) carry
+                // Generic action rows (e.g. the empty dashboard's
+                // create/import block) carry
                 // their own recorded `RowAction`. Same verbs as the
                 // Settings rows above: an input row hands the keyboard
                 // to the real text input, everything else dispatches.
@@ -876,8 +837,6 @@ impl Oryxis {
             (View::History, ToolbarItem::SearchContent) => Message::History(HistoryMessage::SearchContentToggled),
             (View::Dashboard, ToolbarItem::Sort) => Message::Navigation(NavigationMessage::ToggleSortMenu(SortMenuKind::Hosts)),
             (View::Dashboard, ToolbarItem::Primary) => Message::Editor(EditorMessage::ShowNewConnection),
-            (View::Dashboard, ToolbarItem::PrimaryChevron) => Message::Cloud(CloudMessage::ShowCloudProviderPicker),
-            (View::Dashboard, ToolbarItem::CloudDiscover(pid)) => Message::Cloud(CloudMessage::ShowCloudDiscover(pid)),
             (View::Keys, ToolbarItem::Sort) => Message::Navigation(NavigationMessage::ToggleSortMenu(SortMenuKind::Keys)),
             (View::Keys, ToolbarItem::Primary) => Message::Keys(KeysMessage::ToggleKeychainAddMenu),
             (View::Snippets, ToolbarItem::Sort) => Message::Navigation(NavigationMessage::ToggleSortMenu(SortMenuKind::Snippets)),
@@ -886,7 +845,6 @@ impl Oryxis {
             (View::History, ToolbarItem::Primary) => Message::History(HistoryMessage::RequestClearHistory),
             (View::History, ToolbarItem::PagerPrev) => Message::History(HistoryMessage::LogsPagePrev),
             (View::History, ToolbarItem::PagerNext) => Message::History(HistoryMessage::LogsPageNext),
-            (View::Cloud, ToolbarItem::Primary) => Message::Cloud(CloudMessage::ShowCloudForm(None)),
             (View::Proxies, ToolbarItem::Primary) => Message::ProxyIdentity(ProxyIdentityMessage::ShowProxyIdentityForm(None)),
             (View::KnownHosts, ToolbarItem::Primary) => Message::KnownHost(KnownHostMessage::RequestClearAllKnownHosts),
             (_, ToolbarItem::PrivacyReveal) => Message::TogglePrivacyReveal,
@@ -898,7 +856,7 @@ impl Oryxis {
 
     /// Whether the content zone moves linearly (single-column rows).
     /// The dashboard follows its grid/list toggle; the card grids
-    /// (keychain, snippets, port forwards, cloud) are 2-D; History,
+    /// (keychain, snippets, port forwards) are 2-D; History,
     /// Proxies and Known Hosts are true 1-D lists.
     fn content_list_mode(&self) -> bool {
         match self.active_view {
@@ -907,7 +865,7 @@ impl Oryxis {
             View::Dashboard => {
                 self.prefs.host_view_mode != crate::state::HostViewMode::Grid
             }
-            View::Keys | View::Snippets | View::Cloud | View::PortForwarding => false,
+            View::Keys | View::Snippets | View::PortForwarding => false,
             // Settings rows and the remaining vault views are
             // single-column lists.
             _ => true,
@@ -935,7 +893,6 @@ impl Oryxis {
             View::Snippets => ("snippets-grid-scroll", 60.0),
             View::PortForwarding => ("port-forwards-scroll", 64.0),
             View::History => ("history-list-scroll", 52.0),
-            View::Cloud => ("cloud-accounts-scroll", 60.0),
             View::Proxies => ("proxies-list-scroll", 56.0),
             View::KnownHosts => ("known-hosts-scroll", 48.0),
             View::Settings => (self.settings_section.scroll_id(), 52.0),

@@ -287,7 +287,7 @@ pub(crate) struct AppPrefs {
     pub(crate) show_tab_status_dot: bool,
     /// When true (default), the hairline under the tab strip thickens
     /// to 2 px and tints itself with the active host's accent (per-
-    /// host color → cloud brand → global accent). When false, it
+    /// host color → global accent). When false, it
     /// collapses to the same neutral 1 px border the non-tabbed
     /// screens use, so the user always sees a flat chrome regardless
     /// of which host is open.
@@ -304,7 +304,7 @@ pub(crate) struct AppPrefs {
     /// keeps living in the badge, active wash, pinned border and dots.
     pub(crate) tab_accent_text: bool,
     /// Where the strip's accent colour comes from: `"host"` (default,
-    /// per-host custom colour, session-group colour, cloud brand or OS
+    /// per-host custom colour, session-group colour or OS
     /// brand) or `"app"` (always the global app accent, disabling
     /// per-host colouring in the fill, wash, hairline and text at
     /// once). OS badges keep their brand colour either way, identity
@@ -435,17 +435,6 @@ pub(crate) struct AppPrefs {
     /// Settings → Connection. Persisted as `defaults_collapsed` so the
     /// choice sticks; the field rows are hidden behind the header when set.
     pub(crate) defaults_collapsed: bool,
-    /// Background refresh of every cloud profile on a fixed interval.
-    /// Off by default; opt-in to avoid surprise API calls.
-    pub(crate) cloud_auto_refresh_enabled: bool,
-    /// Minutes between auto-refresh ticks. Stored as a string to match
-    /// the rest of the int-setting family (`setting_keepalive_interval`,
-    /// etc.) and let the Settings UI accept partial typed input.
-    pub(crate) cloud_auto_refresh_interval_minutes: String,
-    /// When on, the next boot deletes orphaned cloud-imported hosts
-    /// (resource gone upstream) older than `orphan_archive_days`.
-    pub(crate) cloud_auto_archive_orphans: bool,
-    pub(crate) cloud_orphan_archive_days: String,
     pub(crate) scrollback_rows: String,
     /// Characters that terminate a word for double-click selection in the
     /// terminal (the "word delimiters" set). Defaults to
@@ -536,9 +525,6 @@ pub(crate) struct AppPrefs {
     /// Persisted as `session_log_max_bytes` ("off" or a byte count), so
     /// a future picker can offer other sizes without a migration.
     pub(crate) session_log_max_bytes: Option<u64>,
-    pub(crate) auto_check_updates: bool,
-    /// Release stream the updater follows (`stable` / `nightly`).
-    pub(crate) update_channel: crate::update::UpdateChannel,
 }
 
 impl Default for AppPrefs {
@@ -640,10 +626,6 @@ impl Default for AppPrefs {
             default_encoding: None,
             default_env_vars: Vec::new(),
             defaults_collapsed: false,
-            cloud_auto_refresh_enabled: false,
-            cloud_auto_refresh_interval_minutes: "30".into(),
-            cloud_auto_archive_orphans: false,
-            cloud_orphan_archive_days: "7".into(),
             scrollback_rows: "10000".into(),
             word_delimiters: oryxis_terminal::DEFAULT_WORD_DELIMITERS.into(),
             hint_mode: crate::util::HintMode::default(),
@@ -667,10 +649,6 @@ impl Default for AppPrefs {
             connection_history: false,
             logs_retention: "off".into(),
             session_log_max_bytes: None,
-            // Overwritten by `boot` right after this, which read pre-unlock: the boot check runs while the vault can still be locked.
-            auto_check_updates: true,
-            // Overwritten by `boot` right after this, which same pre-unlock read as `auto_check_updates`.
-            update_channel: crate::update::UpdateChannel::default(),
         }
     }
 }

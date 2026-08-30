@@ -1,13 +1,12 @@
 //! Dashboard toolbar, the breadcrumb on the left, and the trailing
-//! action button (`+ host` for manual folders, `⬇ Discover` for
-//! cloud-linked ones, nothing for dynamic groups).
+//! `+ host` action button.
 
 use iced::border::Radius;
 use iced::widget::button::Status as BtnStatus;
 use iced::widget::{button, container, text, Space};
 use iced::{Background, Border, Color, Element, Length, Padding};
 
-use crate::app::{EditorMessage, CloudMessage, NavigationMessage, Message, Oryxis};
+use crate::app::{EditorMessage, NavigationMessage, Message, Oryxis};
 use crate::i18n::t;
 use crate::theme::OryxisColors;
 use crate::widgets::dir_row;
@@ -82,29 +81,11 @@ impl Oryxis {
             Space::new().into()
         };
 
-        // "+ Host [▾]" split button, primary half opens the manual
-        // SSH editor (unchanged), the chevron half opens the add menu
-        // overlay: import a `.oryxis` file (vault or shared host) plus
-        // cloud discovery per configured profile. Launching from the
-        // Hosts view keeps every "add a host" path in one place (the
-        // user naturally goes here to add hosts). Layout mirrors the
-        // keychain "+ ADD ▼" split exactly so both toolbars stay
-        // visually consistent. The chevron is always emitted so import
-        // stays reachable even before any cloud profile exists.
-        let rtl = crate::i18n::is_rtl_layout();
-        // Pre-compute the rounded-corner radii so the leading half
-        // rounds the leading edge and the chevron rounds the trailing
-        // edge, flipped under RTL.
-        let label_radius = if rtl {
-            Radius { top_left: 0.0, bottom_left: 0.0, top_right: 6.0, bottom_right: 6.0 }
-        } else {
-            Radius { top_left: 6.0, bottom_left: 6.0, top_right: 0.0, bottom_right: 0.0 }
-        };
-        let chevron_radius = if rtl {
-            Radius { top_left: 6.0, bottom_left: 6.0, top_right: 0.0, bottom_right: 0.0 }
-        } else {
-            Radius { top_left: 0.0, bottom_left: 0.0, top_right: 6.0, bottom_right: 6.0 }
-        };
+        // "+ Host" button: opens the manual SSH editor. The other
+        // "add a host" paths (import / export / new group) live in the
+        // empty state's action buttons, so the toolbar keeps the one
+        // primary verb.
+        let label_radius = Radius::from(6.0);
 
         let primary_btn = button(
             container(
@@ -136,172 +117,12 @@ impl Oryxis {
             }
         });
 
-        // 1px divider between the two halves, same alpha-tinted black
-        // the keychain split uses.
-        let separator = container(Space::new().width(1).height(16))
-            .style(|_| container::Style {
-                background: Some(Background::Color(Color { a: 0.3, ..Color::BLACK })),
-                ..Default::default()
-            });
-        let chevron_btn = button(
-            container(
-                iced_fonts::lucide::chevron_down::<iced::Theme, iced::Renderer>()
-                    .size(12)
-                    .color(OryxisColors::t().button_text),
-            )
-            .center_y(Length::Fixed(24.0))
-            .padding(Padding { top: 0.0, right: 4.0, bottom: 0.0, left: 4.0 }),
-        )
-        .on_press(Message::Cloud(CloudMessage::ShowCloudProviderPicker))
-        .style(move |_, status| {
-            let bg = match status {
-                BtnStatus::Hovered => OryxisColors::t().button_bg_hover,
-                _ => OryxisColors::t().button_bg,
-            };
-            button::Style {
-                background: Some(Background::Color(bg)),
-                border: Border { radius: chevron_radius, ..Default::default() },
-                ..Default::default()
-            }
-        });
-        // Keyboard-navigation focus rings on each split half; the
-        // recording (visual order) happens at row assembly below.
-        let primary_el = self
+        let resolved_action = self
             .keynav_toolbar_ring(crate::keynav::ToolbarItem::Primary, primary_btn.into());
-        let chevron_el = self.keynav_toolbar_ring(
-            crate::keynav::ToolbarItem::PrimaryChevron,
-            chevron_btn.into(),
-        );
-        // Report the split group's on-screen rect so the chevron's
-        // dropdown anchors to the real button (2 px below, trailing
-        // edges aligned) in every layout, vertical rail included.
-        let action_group: Element<'_, Message> = crate::widgets::bounds_reporter(
-            dir_row(vec![primary_el, separator.into(), chevron_el])
-                .align_y(iced::Alignment::Center),
-            self.toolbar_split_btn_bounds.clone(),
-        );
+        let resolved_items = vec![crate::keynav::ToolbarItem::Primary];
 
-        // Context-aware toolbar action: inside a dynamic group there
-        // is no "+ host", tasks come from the cloud resolver. Inside
-        // a provider folder (= a manual folder linked to a cloud
-        // profile via its children's `cloud_ref`/`cloud_query`),
-        // "+ HOST" turns into "+ DISCOVER" so the user lands directly
-        // in the right import flow.
-        // Alongside the element, expose which keynav items the resolved
-        // action contributes (in visual order) so the row assembly can
-        // record exactly what rendered.
-        let (resolved_action, resolved_items): (
-            Element<'_, Message>,
-            Vec<crate::keynav::ToolbarItem>,
-        ) = if let Some(gid) = self.active_group {
-            // Is this a dynamic group?
-            let dynamic_query_profile = self
-                .groups
-                .iter()
-                .find(|g| g.id == gid)
-                .and_then(|g| g.cloud_query.as_ref())
-                .map(|q| q.profile_id);
-            if dynamic_query_profile.is_some() {
-                // Dynamic group → no "+ host" button. Reserve the
-                // same vertical slot the visible button would occupy
-                // so the breadcrumb row keeps its height. Iced's
-                // button widget adds its own DEFAULT_PADDING (5 top
-                // + 5 bottom) on top of the inner container's
-                // `center_y(Length::Fixed(24.0))`, so the rendered
-                // button is 24 + 10 = 34 px tall. Anchoring the
-                // slot to 34 keeps the breadcrumb glyph baseline at
-                // the same y-position across views; iced's Space
-                // also ignores `height` when `width == 0`, so use a
-                // 1 px-wide sliver to actually force the height.
-                (
-                    Space::new()
-                        .width(Length::Fixed(1.0))
-                        .height(Length::Fixed(34.0))
-                        .into(),
-                    Vec::new(),
-                )
-            } else {
-                // Manual folder: derive the linked profile from any
-                // child host's cloud_ref or any child dynamic group's
-                // cloud_query.
-                let linked_profile = self
-                    .connections
-                    .iter()
-                    .filter(|c| c.group_id == Some(gid))
-                    .find_map(|c| c.cloud_ref.as_ref().map(|r| r.profile_id))
-                    .or_else(|| {
-                        self.groups
-                            .iter()
-                            .filter(|g| g.parent_id == Some(gid))
-                            .find_map(|g| g.cloud_query.as_ref().map(|q| q.profile_id))
-                    });
-                match linked_profile {
-                    Some(pid) => {
-                        let fg = OryxisColors::t().button_text;
-                        let discover: Element<'_, Message> = button(
-                            container(
-                                dir_row(vec![
-                                    iced_fonts::lucide::download()
-                                        .size(13)
-                                        .color(fg)
-                                        .into(),
-                                    Space::new().width(4).into(),
-                                    text(t("cloud_discover"))
-                                        .size(11)
-                                        .font(iced::Font {
-                                            weight: iced::font::Weight::Bold,
-                                            ..iced::Font::new(crate::theme::SYSTEM_UI_FAMILY)
-                                        })
-                                        .color(fg)
-                                        .into(),
-                                ])
-                                .align_y(iced::Alignment::Center),
-                            )
-                            .center_y(Length::Fixed(24.0))
-                            .padding(Padding {
-                                top: 0.0,
-                                right: 14.0,
-                                bottom: 0.0,
-                                left: 14.0,
-                            }),
-                        )
-                        .on_press(Message::Cloud(CloudMessage::ShowCloudDiscover(pid)))
-                        .style(|_, status| {
-                            let bg = match status {
-                                BtnStatus::Hovered => OryxisColors::t().button_bg_hover,
-                                _ => OryxisColors::t().button_bg,
-                            };
-                            button::Style {
-                                background: Some(Background::Color(bg)),
-                                border: Border { radius: Radius::from(6.0), ..Default::default() },
-                                ..Default::default()
-                            }
-                        })
-                        .into();
-                        let item = crate::keynav::ToolbarItem::CloudDiscover(pid);
-                        (self.keynav_toolbar_ring(item, discover), vec![item])
-                    }
-                    None => (
-                        action_group,
-                        vec![
-                            crate::keynav::ToolbarItem::Primary,
-                            crate::keynav::ToolbarItem::PrimaryChevron,
-                        ],
-                    ),
-                }
-            }
-        } else {
-            (
-                action_group,
-                vec![
-                    crate::keynav::ToolbarItem::Primary,
-                    crate::keynav::ToolbarItem::PrimaryChevron,
-                ],
-            )
-        };
-
-        // Sort dropdown trigger, sits just before the "+ Host" /
-        // "+ Discover" action. Glyph reflects the active sort so the
+        // Sort dropdown trigger, sits just before the "+ Host"
+        // action. Glyph reflects the active sort so the
         // current mode is readable without opening the menu.
         let sort_btn = self.keynav_toolbar_ring(
             crate::keynav::ToolbarItem::Sort,
@@ -344,7 +165,7 @@ impl Oryxis {
         // Grid/List toggle, hidden once the window is so narrow that the
         // grid already renders as a single column (list == grid there).
         let nav_width = self.vault_rail_width();
-        let panel_open = self.cloud_discover.visible || self.panels.host_panel;
+        let panel_open = self.panels.host_panel;
         let panel_width = if panel_open { self.panel_width } else { 0.0 };
         let available = (self.window_size.width
             - nav_width

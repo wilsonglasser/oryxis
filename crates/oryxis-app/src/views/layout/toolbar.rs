@@ -63,22 +63,9 @@ impl Oryxis {
                 } else {
                     0.0
                 };
-                // Action button: none inside a dynamic group, "Discover"
-                // inside a cloud-linked folder, else the "+ Host" split.
+                // Action button: the "+ Host" split.
                 let action = match self.active_group {
-                    Some(gid) => {
-                        let dynamic = self
-                            .groups
-                            .iter()
-                            .find(|g| g.id == gid)
-                            .and_then(|g| g.cloud_query.as_ref())
-                            .is_some();
-                        if dynamic {
-                            0.0
-                        } else {
-                            115.0
-                        }
-                    }
+                    Some(_) => 115.0,
                     None => 113.0,
                 };
                 toggle + tag_filter + Self::TB_ICON + 8.0 + action
@@ -96,7 +83,6 @@ impl Oryxis {
                 };
                 tag_filter + Self::TB_ICON + 8.0 + 92.0
             }
-            View::Cloud => 95.0,            // "+ Account"
             View::PortForwarding => 92.0,   // "+ Port Forward"
             View::Proxies => {
                 if self.proxy_identity_form.visible {
@@ -262,11 +248,6 @@ impl Oryxis {
                     self.history_search.as_str(),
                     |v| Message::Keys(KeysMessage::HistorySearchChanged(v)),
                 ),
-                View::Cloud => (
-                    "search_cloud_accounts",
-                    self.cloud_search.as_str(),
-                    |v| Message::Cloud(CloudMessage::CloudSearchChanged(v)),
-                ),
                 View::Proxies => (
                     "search_proxies",
                     self.proxy_search.as_str(),
@@ -285,7 +266,6 @@ impl Oryxis {
             View::Snippets => "search-snippets",
             View::PortForwarding => "search-port-forwards",
             View::History => "search-history",
-            View::Cloud => "search-cloud",
             View::Proxies => "search-proxies",
             View::Monitoring => "search-monitor",
             _ => "search-vault-subnav",
@@ -676,9 +656,8 @@ impl Oryxis {
         if self.logs_surface_visible() {
             defs.push(("logs", View::History));
         }
-        // Cloud Accounts / Proxies / Known Hosts were Settings sections
-        // in v0.7; they're now first-class vault surfaces.
-        defs.push(("cloud_accounts", View::Cloud));
+        // Proxies / Known Hosts were Settings sections in v0.7;
+        // they're now first-class vault surfaces.
         defs.push(("proxies", View::Proxies));
         defs.push(("known_hosts", View::KnownHosts));
         // Multi-host monitor dashboard (issue #95), a pill by owner

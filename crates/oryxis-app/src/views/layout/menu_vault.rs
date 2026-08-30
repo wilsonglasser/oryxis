@@ -329,11 +329,10 @@ impl Oryxis {
             items = items.push(self.menu_item(pin_icon, pin_label, Message::Tabs(TabsMessage::ToggleTabPin(idx)), OryxisColors::t().text_secondary));
         }
         // "Duplicate in New Window" spawns a fresh process that
-        // can only re-open hosts saved in the vault. ECS Exec /
-        // kubectl tabs are ephemeral dynamic-group sessions (no
-        // saved connection, no uuid to hand the child), flagged
-        // by a `relaunch` message, so hide the item there rather
-        // than open an empty window.
+        // can only re-open hosts saved in the vault. Quick-connect
+        // tabs (serial / telnet) have no saved connection and no
+        // uuid to hand the child, flagged by a `relaunch` message,
+        // so hide the item there rather than open an empty window.
         let new_window_ok = self
             .tabs
             .get(idx)
@@ -343,8 +342,8 @@ impl Oryxis {
             items = items.push(self.menu_item(iced_fonts::lucide::external_link(), crate::i18n::t("duplicate_new_window"), Message::Tabs(TabsMessage::DuplicateInNewWindow(idx)), OryxisColors::t().text_secondary));
         }
         // Copy the focused pane's host address. Only offered when the pane's
-        // origin still resolves to a connection: a local shell, an SSM / ECS
-        // pane or a deleted host has no address to hand over.
+        // origin still resolves to a connection: a local shell or a
+        // deleted host has no address to hand over.
         if self
             .tabs
             .get(idx)
@@ -544,150 +543,6 @@ impl Oryxis {
         .into()
     }
 
-    pub(crate) fn build_menu_cloud_discover_group_picker(
-        &self,
-        overlay: &OverlayState,
-    ) -> Element<'_, Message> {
-        // Search input + filtered list. The search field is
-        // the menu's own filter (independent of the modal's
-        // "Import into" input). Picking a row fills the
-        // input and closes the menu.
-        let picker_needle = self
-            .cloud_discover.default_group_picker_search
-            .trim()
-            .to_lowercase();
-        // Rows are full breadcrumb paths so a subgroup is a pickable
-        // import target; the import side resolves paths first.
-        let mut all_groups: Vec<String> = self
-            .groups
-            .iter()
-            .filter(|g| g.cloud_query.is_none())
-            .map(|g| oryxis_core::models::Group::path_of(&self.groups, g.id))
-            .filter(|path| {
-                picker_needle.is_empty()
-                    || path.to_lowercase().contains(&picker_needle)
-            })
-            .collect();
-        all_groups.sort_by_key(|s| s.to_lowercase());
-        all_groups.dedup();
-        // Width chases the combo bounds via the outer
-        // wrapper in `view_main` + `overlay_menu_width`; the
-        // inner content fills whatever space that outer
-        // container hands down. Padding 4+4 on the outer
-        // wrapper means content fills (combo_width - 8).
-        let menu_outer_width = self.overlay_menu_width(overlay);
-        let menu_content_width = (menu_outer_width - 8.0).max(80.0);
-        // Search input uses a distinct surface tint so the
-        // user reads it as the popover's own filter (not a
-        // second copy of the modal's "Import into" field).
-        // Mirrors what most context-menus do with their
-        // header row: tinted bg + tighter border than the
-        // form inputs underneath.
-        let search_input = iced::widget::text_input(
-            crate::i18n::t("search_groups"),
-            &self.cloud_discover.default_group_picker_search,
-        )
-        .on_input(
-            |v| Message::Cloud(CloudMessage::CloudDiscoverDefaultGroupPickerSearchChanged(v)),
-        )
-        .padding(8)
-        .width(Length::Fixed(menu_content_width))
-        .style(|_theme: &iced::Theme, status| {
-            let palette = OryxisColors::t();
-            let bg = match status {
-                iced::widget::text_input::Status::Focused { .. }
-                | iced::widget::text_input::Status::Hovered => palette.bg_hover,
-                _ => palette.bg_selected,
-            };
-            let border_color = match status {
-                iced::widget::text_input::Status::Focused { .. } => palette.accent,
-                _ => palette.border,
-            };
-            iced::widget::text_input::Style {
-                background: Background::Color(bg),
-                border: Border {
-                    radius: Radius::from(6.0),
-                    color: border_color,
-                    width: 1.0,
-                },
-                placeholder: palette.text_muted,
-                value: palette.text_primary,
-                selection: Color { a: 0.30, ..palette.accent },
-            }
-        });
-        let list_el: Element<'_, Message> = if all_groups.is_empty() {
-            container(
-                text(crate::i18n::t("cloud_discover_no_matches"))
-                    .size(12)
-                    .color(OryxisColors::t().text_muted),
-            )
-            .padding(Padding {
-                top: 12.0,
-                right: 12.0,
-                bottom: 12.0,
-                left: 12.0,
-            })
-            .into()
-        } else {
-            // Plain label rows: dropped the leading folder
-            // glyph since every entry is a folder by
-            // definition (the picker only lists groups) and
-            // the icon was just visual noise.
-            let mut items = column![].spacing(2);
-            for label in all_groups {
-                let display = label.clone();
-                let row = iced::widget::button(
-                    container(
-                        text(display)
-                            .size(12)
-                            .color(OryxisColors::t().text_primary),
-                    )
-                    .padding(Padding {
-                        top: 6.0,
-                        right: 10.0,
-                        bottom: 6.0,
-                        left: 10.0,
-                    })
-                    .width(Length::Fill),
-                )
-                .on_press(
-                    Message::Cloud(CloudMessage::CloudDiscoverDefaultGroupPick(label.clone())),
-                )
-                .width(Length::Fill)
-                .style(|_, status| {
-                    let bg = match status {
-                        iced::widget::button::Status::Hovered => {
-                            OryxisColors::t().bg_hover
-                        }
-                        _ => Color::TRANSPARENT,
-                    };
-                    iced::widget::button::Style {
-                        background: Some(Background::Color(bg)),
-                        border: Border {
-                            radius: Radius::from(4.0),
-                            ..Default::default()
-                        },
-                        ..Default::default()
-                    }
-                });
-                items = items.push(self.modal_nav_slot(
-                    crate::keynav::RowAction::activate(
-                        Message::Cloud(CloudMessage::CloudDiscoverDefaultGroupPick(label)),
-                    ),
-                    4.0,
-                    false,
-                    row.into(),
-                ));
-            }
-            iced::widget::scrollable(items)
-                .height(Length::Fixed(220.0))
-                .into()
-        };
-        column![search_input, Space::new().height(8), list_el]
-            .width(Length::Fixed(menu_content_width))
-            .into()
-    }
-
     pub(crate) fn build_menu_group_picker(
         &self,
         overlay: &OverlayState,
@@ -723,7 +578,7 @@ impl Oryxis {
         let mut all_groups: Vec<String> = self
             .groups
             .iter()
-            .filter(|g| g.cloud_query.is_none() && !excluded.contains(&g.id))
+            .filter(|g| !excluded.contains(&g.id))
             .map(|g| oryxis_core::models::Group::path_of(&self.groups, g.id))
             .filter(|path| {
                 needle.is_empty() || path.to_lowercase().contains(&needle)
@@ -837,69 +692,13 @@ impl Oryxis {
         let mut col = column![].spacing(2);
         match self.active_view {
             View::Dashboard => {
-                // Primary add action mirrors the toolbar's
-                // context-aware button (none in a dynamic group,
-                // Discover in a cloud folder, else New host + the
-                // import/cloud sub-menu).
-                match self.active_group {
-                    Some(gid)
-                        if self
-                            .groups
-                            .iter()
-                            .find(|g| g.id == gid)
-                            .and_then(|g| g.cloud_query.as_ref())
-                            .is_some() => {}
-                    Some(gid) => {
-                        let linked = self
-                            .connections
-                            .iter()
-                            .filter(|c| c.group_id == Some(gid))
-                            .find_map(|c| c.cloud_ref.as_ref().map(|r| r.profile_id))
-                            .or_else(|| {
-                                self.groups
-                                    .iter()
-                                    .filter(|g| g.parent_id == Some(gid))
-                                    .find_map(|g| {
-                                        g.cloud_query.as_ref().map(|q| q.profile_id)
-                                    })
-                            });
-                        if let Some(pid) = linked {
-                            col = col.push(self.menu_item(
-                                iced_fonts::lucide::download(),
-                                crate::i18n::t("cloud_discover"),
-                                Message::Cloud(CloudMessage::ShowCloudDiscover(pid)),
-                                secondary,
-                            ));
-                        } else {
-                            col = col.push(self.menu_item(
-                                iced_fonts::lucide::plus(),
-                                crate::i18n::t("new_host"),
-                                Message::Editor(EditorMessage::ShowNewConnection),
-                                secondary,
-                            ));
-                            col = col.push(self.menu_item(
-                                iced_fonts::lucide::ellipsis(),
-                                crate::i18n::t("toolbar_more"),
-                                Message::Cloud(CloudMessage::ShowCloudProviderPicker),
-                                secondary,
-                            ));
-                        }
-                    }
-                    None => {
-                        col = col.push(self.menu_item(
-                            iced_fonts::lucide::plus(),
-                            crate::i18n::t("new_host"),
-                            Message::Editor(EditorMessage::ShowNewConnection),
-                            secondary,
-                        ));
-                        col = col.push(self.menu_item(
-                            iced_fonts::lucide::ellipsis(),
-                            crate::i18n::t("toolbar_more"),
-                            Message::Cloud(CloudMessage::ShowCloudProviderPicker),
-                            secondary,
-                        ));
-                    }
-                }
+                // Primary add action mirrors the toolbar's button.
+                col = col.push(self.menu_item(
+                    iced_fonts::lucide::plus(),
+                    crate::i18n::t("new_host"),
+                    Message::Editor(EditorMessage::ShowNewConnection),
+                    secondary,
+                ));
                 // View cycler: the entry names the NEXT mode (grid ->
                 // list -> tree -> grid), opposite convention from the
                 // toolbar button, which shows the current one.
@@ -972,14 +771,6 @@ impl Oryxis {
                     iced_fonts::lucide::arrow_down_a_z(),
                     crate::i18n::t("toolbar_sort"),
                     Message::Navigation(NavigationMessage::ToggleSortMenu(SortMenuKind::Snippets)),
-                    secondary,
-                ));
-            }
-            View::Cloud => {
-                col = col.push(self.menu_item(
-                    iced_fonts::lucide::plus(),
-                    crate::i18n::t("cloud_new_account"),
-                    Message::Cloud(CloudMessage::ShowCloudForm(None)),
                     secondary,
                 ));
             }

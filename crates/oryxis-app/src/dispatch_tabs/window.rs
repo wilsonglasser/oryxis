@@ -343,19 +343,6 @@ impl Oryxis {
                     pane.attention = None;
                 }
             }
-            // Restore any SSM/ECS terminal the keepalive may have
-            // left at `rows - 1` (it nudges and lets the next
-            // draw snap back, but no draw fires while the tab is
-            // off-screen). Explicit so a refocus is always clean.
-            if let Some((cols, rows)) = self.ssm_keepalive_base.take() {
-                for tab in self.tabs.iter().filter(|t| t.ssm_keepalive) {
-                    for pane in tab.pane_grid.panes.values() {
-                        if let Ok(mut state) = pane.terminal.lock() {
-                            state.resize(cols, rows);
-                        }
-                    }
-                }
-            }
             // A notification toast raised while the window was unfocused
             // is left up (no auto-dismiss timer) so it isn't gone before
             // you look; clear it a few seconds after you return.
@@ -380,21 +367,6 @@ impl Oryxis {
             // here rather than leave it stranded (which would freeze
             // MRU tracking until the next real Ctrl-release).
             self.commit_tab_cycle();
-            // Anchor the keepalive toggle to the size the window
-            // had when it lost focus. All plugin tabs share the
-            // window, so the first one's size is representative.
-            self.ssm_keepalive_base = self
-                .tabs
-                .iter()
-                .filter(|t| t.ssm_keepalive)
-                .find_map(|t| {
-                    t.pane_grid.panes.values().next().and_then(|p| {
-                        p.terminal
-                            .lock()
-                            .ok()
-                            .map(|s| (s.cols(), s.rows()))
-                    })
-                });
         }
         Task::none()
     }
@@ -497,31 +469,9 @@ impl Oryxis {
                 })
                 .discard();
         }
-        // Real close (not tray-hide): gracefully drain the plugin
-        // subprocesses (flush logs / close SDK clients on stdin EOF)
-        // before the window closes and the process exits. Providers
-        // drain in parallel; the whole thing is time-bounded so a
-        // wedged plugin can't hold the app open.
-        let providers: Vec<std::sync::Arc<crate::plugins::PluginProvider>> =
-            self.plugin_providers.values().cloned().collect();
-        Task::perform(
-            async move {
-                let drain = futures_util::future::join_all(
-                    providers.iter().map(|p| p.shutdown()),
-                );
-                let _ = tokio::time::timeout(
-                    std::time::Duration::from_millis(2000),
-                    drain,
-                )
-                .await;
-            },
-            |_: ()| Message::NoOp,
-        )
-        .then(|_| {
-            iced::window::latest().then(|id_opt| match id_opt {
-                Some(id) => iced::window::close(id),
-                None => Task::none(),
-            })
+        iced::window::latest().then(|id_opt| match id_opt {
+            Some(id) => iced::window::close(id),
+            None => Task::none(),
         })
     }
 

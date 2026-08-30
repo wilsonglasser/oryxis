@@ -1,0 +1,286 @@
+{
+ "schema": "aegis-offline/findings@1",
+ "generated": "2026-08-30",
+ "target_revision": "4b8ef3b8e323f21d5665ce00e3fe43a75a18a7e4 + uncommitted offline transformation (this working tree)",
+ "findings": [
+  {
+   "id": "AEGIS-0001",
+   "title": "MCP launcher copied from cache without signature re-verification",
+   "status": "CONFIRMED",
+   "severity": "HIGH",
+   "confidence": "HIGH",
+   "category": "hardening",
+   "standards": [
+    "CWE-494"
+   ],
+   "affected_components": [
+    "crates/oryxis-app/src/mcp_install.rs",
+    "crates/oryxis-app/src/plugins/cache.rs"
+   ],
+   "evidence": {
+    "source_locations": [
+     "mcp_install.rs:56-87 (pre-edit)",
+     "plugins/verify.rs (orphaned, zero callers)"
+    ],
+    "runtime_observations": [],
+    "commands": [
+     "rg -n 'verify::' crates/oryxis-app/src --type rust"
+    ]
+   },
+   "trigger": "MCP plugin install/refresh copies cache binary to the stable launcher path",
+   "default_reachable": true,
+   "attacker_preconditions": [
+    "same-user code execution",
+    "write access to ~/.oryxis/plugins/mcp/**"
+   ],
+   "data_or_capability_at_risk": [
+    "MCP server token",
+    "vault master password (if embedded)",
+    "SSH host access via MCP"
+   ],
+   "impact": "Planted binary becomes the process external AI clients spawn with secrets in reach",
+   "root_cause": "Deletion of the downloader removed the only verification call site; the copy path had none",
+   "exploitability": "Requires prior local write; raises bar specifically against cache-planting",
+   "offline_relevance": "Local trust boundary, not egress",
+   "recommended_fix": "Verify manifest sha256 + Ed25519 at the copy boundary, fail closed in release",
+   "implemented_fix": "verify_cached_binary() gate in sync_launcher_from_cache (this audit)",
+   "validation": "cargo check + unit tests; manual review",
+   "rollback": "git revert of mcp_install.rs hunk",
+   "residual_risk": "Pre-existing launcher on disk not re-verified at boot (equivalent to same-user code exec). Fleet follow-up closed the verify/copy TOCTOU: the gate now writes the exact verified bytes.",
+   "references": []
+  },
+  {
+   "id": "AEGIS-0002",
+   "title": "Inherited half-transformation: broken build, silent SQL column shift, INSERT arity bug",
+   "status": "CONFIRMED",
+   "severity": "HIGH",
+   "confidence": "HIGH",
+   "category": "vulnerability",
+   "standards": [
+    "CWE-703"
+   ],
+   "affected_components": [
+    "crates/oryxis-app/src/fonts.rs",
+    "crates/oryxis-vault/src/store/connections.rs"
+   ],
+   "evidence": {
+    "source_locations": [
+     "fonts.rs:802 -> deleted net_mirror",
+     "connections.rs SELECT lists vs row-mapper indexes",
+     "INSERT 65 cols vs ?1..?67"
+    ],
+    "commands": [
+     "cargo check -p oryxis-vault (38 errors at intake)",
+     "python3 arity check (65/65 after fix)"
+    ]
+   },
+   "trigger": "Any vault save (SQL arity) or connection list read (column shift)",
+   "default_reachable": true,
+   "attacker_preconditions": [],
+   "data_or_capability_at_risk": [
+    "vault row integrity"
+   ],
+   "impact": "Runtime SQL error on save; silent field mis-mapping on read",
+   "root_cause": "Partial deletion of cloud columns without completing the positional plumbing",
+   "recommended_fix": "Complete the removal consistently",
+   "implemented_fix": "Direct pinned URL fetch; NULL sentinels at retired SELECT positions; INSERT renumbered 65/65",
+   "validation": "cargo test -p oryxis-vault: 257 passed",
+   "rollback": "git revert",
+   "residual_risk": "None known; round-trip tests cover the mapper",
+   "references": []
+  },
+  {
+   "id": "AEGIS-0003",
+   "title": "AI assistant sends terminal context to third-party LLM",
+   "status": "CONFIRMED",
+   "severity": "MEDIUM",
+   "confidence": "HIGH",
+   "category": "privacy",
+   "affected_components": [
+    "crates/oryxis-app/src/ai/"
+   ],
+   "trigger": "Explicit user invocation with configured provider + API key",
+   "default_reachable": false,
+   "data_or_capability_at_risk": [
+    "terminal session context",
+    "prompt content"
+   ],
+   "implemented_fix": "Retained as Controlled-Network carve-out (default-off, user endpoint/key, redaction, judge fail-safe)",
+   "residual_risk": "Operators who configure a provider accept the disclosed egress",
+   "references": []
+  },
+  {
+   "id": "AEGIS-0004",
+   "title": "Opt-in vault master password embed in ~/.claude.json",
+   "status": "CONFIRMED",
+   "severity": "MEDIUM",
+   "category": "privacy",
+   "affected_components": [
+    "crates/oryxis-app/src/mcp.rs"
+   ],
+   "trigger": "Explicit confirmation during MCP install",
+   "default_reachable": false,
+   "implemented_fix": "Retained by design; documented operating condition (decline the embed)",
+   "residual_risk": "Plaintext secret on disk in client config",
+   "references": []
+  },
+  {
+   "id": "AEGIS-0005",
+   "title": "ProxyCommand sh -c from ssh_config",
+   "status": "CONFIRMED",
+   "severity": "MEDIUM",
+   "category": "exposure",
+   "standards": [
+    "CWE-78"
+   ],
+   "affected_components": [
+    "crates/oryxis-ssh/src/engine/connect.rs"
+   ],
+   "trigger": "Connecting through a host whose ssh_config defines ProxyCommand",
+   "default_reachable": false,
+   "attacker_preconditions": [
+    "control of an imported/loaded ssh_config"
+   ],
+   "implemented_fix": "Per-dial consent dialog + fingerprint trust set (pre-existing, retained)",
+   "residual_risk": "Consent fatigue",
+   "references": []
+  },
+  {
+   "id": "AEGIS-0006",
+   "title": "Silent boot-time font fetch for configured terminal font",
+   "status": "CONFIRMED",
+   "severity": "LOW",
+   "category": "offline-violation",
+   "affected_components": [
+    "crates/oryxis-app/src/fonts.rs"
+   ],
+   "trigger": "Configured pack font missing on disk at boot, or CJK language selected",
+   "default_reachable": true,
+   "implemented_fix": "Kept: commit-pinned URLs, SHA-256+length pin, size cap, https-only, atomic install, vendor-mirror layer removed",
+   "residual_risk": "Network observer learns a font was fetched (no content sensitivity)",
+   "references": []
+  },
+  {
+   "id": "AEGIS-0007",
+   "title": "Dependency trust concentrates in maintainer forks",
+   "status": "CONFIRMED",
+   "severity": "MEDIUM",
+   "category": "supply-chain",
+   "affected_components": [
+    "Cargo.lock"
+   ],
+   "evidence": {
+    "commands": [
+     "grep 'source = \"git+' Cargo.lock"
+    ]
+   },
+   "implemented_fix": "Verified exact-rev pinning; accepted residual under documented threat model",
+   "residual_risk": "Compromised fork rev compiles into the binary",
+   "references": []
+  },
+  {
+   "id": "AEGIS-0008",
+   "title": "Dev plugin-signing seed is public",
+   "status": "CONFIRMED",
+   "severity": "INFO",
+   "category": "hardening",
+   "affected_components": [
+    "crates/oryxis-plugin-protocol",
+    "crates/oryxis-app/src/plugins/verify.rs"
+   ],
+   "implemented_fix": "None needed: dev key trusted only under debug_assertions; prod key compile-time overridable, all-zero key rejected",
+   "residual_risk": "None in release builds",
+   "references": []
+  },
+  {
+   "id": "AEGIS-0009",
+   "title": "Advisory-database scan not performed",
+   "status": "NOT TESTED",
+   "severity": "INFO",
+   "category": "supply-chain",
+   "implemented_fix": "Lockfile pinning verified; SBOM generated; runbook step defined for operators with cargo-audit",
+   "residual_risk": "Unknown CVEs in dependency tree unquantified here",
+   "references": []
+  },
+  {
+   "id": "AEGIS-0010",
+   "title": "Dynamic network-denial rehearsal not performed",
+   "status": "NOT TESTED",
+   "severity": "INFO",
+   "implemented_fix": "Static egress proof + rehearsal scripts provided (network-policy/); verdict capped at CONDITIONAL PASS",
+   "residual_risk": "Unobserved runtime behavior",
+   "references": []
+  },
+  {
+   "id": "AEGIS-0011",
+   "title": "Dead residue of removed features (settings, e2e, i18n keys)",
+   "status": "CONFIRMED",
+   "severity": "LOW",
+   "category": "hygiene",
+   "implemented_fix": "Removed end-to-end this session (see 11-SECURITY-CHANGES, 12-VALIDATION)",
+   "residual_risk": "None",
+   "references": []
+  },
+  {
+   "id": "AEGIS-0012",
+   "title": "Hardcoded throwaway SSH host key in test harness",
+   "status": "CONFIRMED",
+   "severity": "INFO",
+   "category": "hygiene",
+   "affected_components": [
+    "crates/oryxis-ssh/src/sftp_harness.rs"
+   ],
+   "trigger": "test builds only",
+   "default_reachable": false,
+   "implemented_fix": "Disclosed; test-only code path with documented provenance",
+   "residual_risk": "None in production",
+   "references": []
+  },
+  {
+   "id": "AEGIS-0013",
+   "title": "User-clicked external links to oryxis.app/github.com",
+   "status": "CONFIRMED",
+   "severity": "INFO",
+   "category": "exposure",
+   "affected_components": [
+    "views/settings/about.rs",
+    "views/settings_*themes.rs"
+   ],
+   "trigger": "explicit click",
+   "default_reachable": false,
+   "implemented_fix": "None needed: OpenUrl only, no automated fetch",
+   "residual_risk": "None",
+   "references": []
+  },
+  {
+   "id": "AEGIS-0014",
+   "title": "Local forwards can bind 0.0.0.0 by rule",
+   "status": "CONFIRMED",
+   "severity": "INFO",
+   "category": "exposure",
+   "affected_components": [
+    "crates/oryxis-ssh/src/engine/forwarding.rs"
+   ],
+   "trigger": "user-configured forward rule",
+   "default_reachable": false,
+   "implemented_fix": "Disclosed as intentional capability (localhost default)",
+   "residual_risk": "LAN-exposed listeners if the user configures them",
+   "references": []
+  },
+  {
+   "id": "AEGIS-0015",
+   "title": "Archive extraction restores archive-supplied mode bits",
+   "status": "CONFIRMED",
+   "severity": "INFO",
+   "category": "hardening",
+   "affected_components": [
+    "crates/oryxis-archive/src/local.rs"
+   ],
+   "trigger": "user-directed extract",
+   "default_reachable": true,
+   "implemented_fix": "Disclosed; upstream behavior",
+   "residual_risk": "Crafted archive can set group/world bits on extracted files",
+   "references": []
+  }
+ ]
+}

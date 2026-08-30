@@ -4,7 +4,7 @@
 //! recording as a temporary `.cast` (the same asciicast v3 the export
 //! action produces, terminal theme embedded in the header), hands the
 //! plugin the input/output paths, and reports the outcome as a toast.
-//! Unlike cloud plugins there is no JSON-RPC protocol: the contract is
+//! Unlike the MCP plugin there is no JSON-RPC protocol: the contract is
 //! just the CLI (`oryxis-gif <in.cast> <out.gif>`), so only the
 //! distribution half of the plugin subsystem applies.
 
@@ -16,8 +16,7 @@ use crate::plugins::cache;
 pub(crate) const PROVIDER_ID: &str = "gif";
 
 /// Resolve the plugin binary: a freshly-built `target/debug` sibling
-/// wins in debug builds (the dev loop, mirroring
-/// `PluginProvider::resolve_binary`), otherwise the active cached
+/// wins in debug builds (the dev loop), otherwise the active cached
 /// version. `None` = not installed, the caller opens the install
 /// modal.
 pub(crate) fn resolve_binary() -> Option<PathBuf> {

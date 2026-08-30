@@ -51,9 +51,6 @@ impl Oryxis {
             OverlayContent::SplitMenu
             | OverlayContent::TabActions(_)
             | OverlayContent::TabBarActions => 210.0,
-            // Fits "Import ~/.ssh/config" / "Export all hosts" and the
-            // longer translations of both on one line.
-            OverlayContent::CloudProviderPicker => 210.0,
             // "Export transcript (.txt)" + translations on one line,
             // with room for the privacy footer to wrap sanely.
             OverlayContent::SessionLogActions(_) => 240.0,
@@ -72,15 +69,8 @@ impl Oryxis {
             // "Check for updates" / "Remove downloaded files" +
             // translations on one line.
             OverlayContent::PluginActions(_) => 230.0,
-            OverlayContent::CloudDiscoverGroupPicker => {
-                let b = self.cloud_discover.default_group_combo_bounds.get();
-                if b.width > 0.0 { b.width } else { 308.0 }
-            }
             OverlayContent::GroupPicker(target) => {
                 let b = match target {
-                    crate::state::GroupPickerTarget::DynamicFormParent => {
-                        self.dynamic_form_parent_combo_bounds.get()
-                    }
                     crate::state::GroupPickerTarget::SessionGroupFolder => {
                         self.session_group_folder_combo_bounds.get()
                     }
@@ -295,7 +285,6 @@ impl Oryxis {
         if !matches!(
             overlay.content,
             OverlayContent::GroupPicker(_)
-                | OverlayContent::CloudDiscoverGroupPicker
                 | OverlayContent::SplitMenu
         ) {
             self.keynav.modal.default.set(Some(0));
@@ -350,9 +339,6 @@ impl Oryxis {
             OverlayContent::PortForwardActions(idx) => self.build_menu_port_forward_actions(*idx),
             OverlayContent::KeychainAdd => self.build_menu_keychain_add(),
             OverlayContent::FolderActions(gid) => self.build_menu_folder_actions(*gid),
-            OverlayContent::DynamicGroupActions(id) => self.build_menu_dynamic_group_actions(*id),
-            OverlayContent::CloudProfileActions(id) => self.build_menu_cloud_profile_actions(*id),
-            OverlayContent::CloudProviderPicker => self.build_menu_cloud_provider_picker(),
             OverlayContent::SidebarFilesRow { path, is_dir } => {
                 self.build_menu_sidebar_files_row(path.clone(), *is_dir)
             }
@@ -364,9 +350,6 @@ impl Oryxis {
             OverlayContent::SplitMenu => self.build_menu_split(),
             OverlayContent::TabBarActions => self.build_menu_tab_bar_actions(),
             OverlayContent::SortMenu(kind) => self.build_menu_sort(*kind),
-            OverlayContent::CloudDiscoverGroupPicker => {
-                self.build_menu_cloud_discover_group_picker(overlay)
-            }
             OverlayContent::GroupPicker(target) => self.build_menu_group_picker(overlay, *target),
             // Rendered above via early return (no popover chrome).
             OverlayContent::ToolbarSearch => Space::new().into(),
@@ -697,25 +680,20 @@ impl Oryxis {
                 Space::new().into()
             },
             indent(item(
-                "cloud_accounts",
-                Message::Navigation(NavigationMessage::ChangeView(View::Cloud)),
-                self.hotkey_label_for_vault_slot(6)
-            )),
-            indent(item(
                 "proxies",
                 Message::Navigation(NavigationMessage::ChangeView(View::Proxies)),
-                self.hotkey_label_for_vault_slot(7)
+                self.hotkey_label_for_vault_slot(6)
             )),
             indent(item(
                 "known_hosts",
                 Message::Navigation(NavigationMessage::ChangeView(View::KnownHosts)),
-                self.hotkey_label_for_vault_slot(8)
+                self.hotkey_label_for_vault_slot(7)
             )),
             if self.prefs.host_monitoring {
                 indent(item(
                     "monitor_dash_pill",
                     Message::Navigation(NavigationMessage::ChangeView(View::Monitoring)),
-                    self.hotkey_label_for_vault_slot(9)
+                    self.hotkey_label_for_vault_slot(8)
                 ))
             } else {
                 Space::new().into()
@@ -741,7 +719,6 @@ impl Oryxis {
             sep,
             item("local_shell", Message::Settings(SettingsMessage::OpenLocalShell), hk_local_shell),
             item("new_window", Message::Tabs(TabsMessage::SpawnNewWindow), hk_new_window),
-            item("check_for_updates_now", Message::Update(UpdateMessage::CheckForUpdateManual), None),
             // Lock Vault only when a master password is set; without one,
             // locking has nothing to protect and the unlock screen has no
             // way to re-enter (mirrors the Settings -> Security gating).

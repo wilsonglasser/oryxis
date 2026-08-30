@@ -422,15 +422,6 @@ impl Oryxis {
             );
         }
 
-        // Cloud import confirmation modal. Always opens on Import (no
-        // ECS-only short-circuit) so the user can set the target
-        // group from the same surface that already gates the
-        // transport choice. Transport row hides itself when the
-        // batch is ECS-only since dynamic groups always run ECS Exec.
-        if self.cloud_import_confirm_visible {
-            return self.layer_cloud_import_confirm(base, resize_overlay);
-        }
-
         // Snippet-variables prompt: a snippet with `{name}` placeholders
         // parks here so the values are filled before anything reaches
         // the session. Same dialog shell as the careful paste below.

@@ -22,7 +22,6 @@ impl VaultStore {
                 snippet.updated_at.to_rfc3339(),
             ],
         )?;
-        self.clear_tombstone("snippet", &snippet.id)?;
         Ok(())
     }
 
@@ -80,7 +79,6 @@ impl VaultStore {
             "DELETE FROM install_runs WHERE snippet_id = ?1",
             params![id.to_string()],
         )?;
-        self.record_tombstone("snippet", id)?;
         Ok(())
     }
 

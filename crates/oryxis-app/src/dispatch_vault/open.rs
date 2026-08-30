@@ -122,33 +122,9 @@ impl Oryxis {
                             // Re-arm the ssh-agent's dedicated handle if a
                             // runtime survived a soft lock.
                             self.agent_on_unlock();
-                            // Bring the sync engine up now that the
-                            // vault is open, if the user left it on. Only
-                            // the P2P transport has a background engine;
-                            // the snapshot transports reconcile on the
-                            // cadence subscription.
-                            let sync_task = if self.sync.enabled && self.sync_uses_p2p() {
-                                self.start_sync_engine()
-                            } else {
-                                Task::none()
-                            };
                             // Auto-start port forward rules now that the
                             // vault (and its credentials) is open.
-                            let mut unlock_tasks = vec![sync_task];
-                            unlock_tasks.extend(self.auto_start_port_forwards());
-                            // The git card's availability probe spawns a
-                            // subprocess, so it runs as a task (never in
-                            // `view()`). Same probe the boot path and
-                            // `TransportChanged` fire.
-                            if self.sync.transport == "git" {
-                                unlock_tasks
-                                    .push(crate::dispatch_git_sync::git_availability_task());
-                            }
-                            // Plugin migrate-install + auto-update: for a
-                            // password vault these are deferred from boot
-                            // to here, now that the plugin rows are loaded
-                            // (boot saw a locked vault with no rows).
-                            unlock_tasks.extend(self.spawn_plugin_unlock_tasks());
+                            let mut unlock_tasks = self.auto_start_port_forwards();
                             // One-time performance-mode auto-enable notice.
                             unlock_tasks.push(self.take_perf_mode_toast_task());
                             // Bring the ssh-agent up if the user left it on.

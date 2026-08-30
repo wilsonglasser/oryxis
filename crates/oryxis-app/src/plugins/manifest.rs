@@ -11,7 +11,7 @@
 //! (see [`version_key`]) rather than a `semver` dependency: every
 //! version string in play is a plain three-part release tag, and the
 //! codebase already prefers rolling tiny helpers over pulling crates
-//! for one function (cf. `session_manager_plugin::which`).
+//! for one function.
 
 use serde::{Deserialize, Serialize};
 
@@ -20,7 +20,7 @@ use super::PluginError;
 /// Parsed contents of a provider's manifest JSON.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PluginManifest {
-    /// Stable provider id, matches `CloudProvider::id()`.
+    /// Stable provider id.
     pub provider_id: String,
     /// Every published version, newest-last is *not* assumed, the
     /// app sorts explicitly.

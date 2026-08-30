@@ -342,14 +342,14 @@ impl Oryxis {
                 pane.last_submitted = Some(cmd.clone());
             }
             // Session recording keys on the log, not the host, so
-            // quick-connect / local / cloud panes are covered too.
+            // quick-connect / local panes are covered too.
             if let Some(log_id) = pane.session_log_id {
                 let off = pane
                     .session_log_t0
                     .map(|t| t.elapsed().as_millis() as i64);
                 session_cmds.extend(cmds.iter().map(|c| (log_id, off, c.clone())));
             }
-            // Only saved hosts get history (quick-connect / local / cloud
+            // Only saved hosts get history (quick-connect / local
             // panes have no persistable identity to key it on).
             if want_history && let Some(hid) = host {
                 captured.extend(cmds.into_iter().map(|cmd| (hid, cmd)));

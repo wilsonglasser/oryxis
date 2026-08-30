@@ -7,17 +7,17 @@ use iced::Task;
 
 use crate::app::{Message, OnboardingMessage, Oryxis};
 
-/// Last slide index. The carousel has seven slides (0..=6): four
+/// Last slide index. The carousel has six slides (0..=5): three
 /// feature slides, the optional-features toggles, the import offer,
 /// and finally the master-password setup. Kept here as the single
 /// source of truth for navigation clamping and the "Skip" jump.
-pub(crate) const ONBOARDING_LAST_SLIDE: usize = 6;
+pub(crate) const ONBOARDING_LAST_SLIDE: usize = 5;
 
 /// Index of the optional-features slide (toggles).
-pub(crate) const ONBOARDING_FEATURES_SLIDE: usize = 4;
+pub(crate) const ONBOARDING_FEATURES_SLIDE: usize = 3;
 
 /// Index of the import-offer slide.
-pub(crate) const ONBOARDING_IMPORT_SLIDE: usize = 5;
+pub(crate) const ONBOARDING_IMPORT_SLIDE: usize = 4;
 
 impl Oryxis {
     pub(crate) fn handle_onboarding(

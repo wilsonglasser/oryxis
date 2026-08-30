@@ -226,7 +226,7 @@ impl Oryxis {
                 // (`conn.label`): the same file opened from both surfaces
                 // must be recognised as already being edited, not watched
                 // twice. Falls back to the pane's own label for panes with
-                // no vault connection (quick-connect, cloud, local).
+                // no vault connection (quick-connect, local).
                 let host = match self.active_pane_mut().map(|p| p.origin.clone()) {
                     Some(crate::state::PaneOrigin::Host(id)) => self
                         .connections

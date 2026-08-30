@@ -54,7 +54,7 @@ impl Oryxis {
 
     /// Snapshot the currently-pinned tabs (those with a reopenable spec) to
     /// the `pinned_tabs` setting so they reappear, dormant, next launch.
-    /// Cloud / ephemeral pinned tabs have no spec and are skipped.
+    /// Ephemeral pinned tabs have no spec and are skipped.
     pub(crate) fn persist_pinned_tabs(&self) {
         // De-duplicate by pin identity: a dormant placeholder and its
         // freshly-reopened live tab can briefly coexist (or a missed

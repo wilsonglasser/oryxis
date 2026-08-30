@@ -49,9 +49,8 @@ impl Oryxis {
     /// Write (or clear) the SFTP landing folder of the host mounted in
     /// `side`, both in memory and in the vault, and confirm with a toast.
     /// The pane is matched by its host label, the same key the remount path
-    /// uses; a pane showing Local (or a host that isn't a saved connection,
-    /// e.g. a cloud-discovered one that was never imported) simply has
-    /// nothing to store, and says so.
+    /// uses; a pane showing Local (or a host that isn't a saved
+    /// connection) simply has nothing to store, and says so.
     fn store_sftp_initial_path(
         &mut self,
         side: SftpPaneSide,

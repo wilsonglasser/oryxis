@@ -37,8 +37,6 @@ mod terminal;
 pub use terminal::TerminalMessage;
 mod ssh;
 pub use ssh::SshMessage;
-mod cloud;
-pub use cloud::CloudMessage;
 mod history;
 pub use history::HistoryMessage;
 mod mcp;
@@ -47,8 +45,6 @@ mod navigation;
 pub use navigation::NavigationMessage;
 mod command_history;
 pub use command_history::CommandHistoryMessage;
-mod update;
-pub use update::UpdateMessage;
 mod proxy_identity;
 pub use proxy_identity::ProxyIdentityMessage;
 mod plugin;
@@ -75,8 +71,6 @@ mod snippet;
 pub use snippet::SnippetMessage;
 mod share;
 pub use share::ShareMessage;
-mod sync;
-pub use sync::SyncMessage;
 
 /// The four per-class Privacy Mode gates (issue #78 block 1), each
 /// mirroring a `privacy_mask_*` setting. The usernames class covers
@@ -200,8 +194,6 @@ pub enum Message {
     Terminal(TerminalMessage),
     // Zmodem (handle_zmodem)
     Zmodem(ZmodemMessage),
-    // Cloud (handle_cloud)
-    Cloud(CloudMessage),
     // Settings (handle_settings)
     Settings(SettingsMessage),
 
@@ -271,8 +263,6 @@ pub enum Message {
     // session-logs surface without re-introducing the messages.
 
     // Settings
-    // Update (handle_update)
-    Update(UpdateMessage),
     /// Toggle the Logs view Privacy Mode reveal (show raw sensitive data
     /// in the timeline + session-log viewer until toggled back).
     TogglePrivacyReveal,
@@ -320,18 +310,9 @@ pub enum Message {
 
     // Proxy Identities (Settings → Proxies)
 
-    // Cloud Accounts
-    // Wired to a future "show password" eye icon next to the secret
-    // input, `text_input.secure(false)` flips when this fires.
-
-    // Cloud Discovery & Import
-
-    // Plugins panel, cloud-provider plugin install / update lifecycle.
+    // Plugins panel, plugin install / update lifecycle.
     // Plugin (handle_plugin)
     Plugin(PluginMessage),
-
-    // Edit dynamic group panel, sets template fields (key, identity,
-    // transport, initial command) on a `Group.cloud_query`.
 
     // Connection identity
 
@@ -348,9 +329,6 @@ pub enum Message {
     // MCP
     // Mcp (handle_mcp)
     Mcp(McpMessage),
-
-    // Sync
-    Sync(SyncMessage),
 
     // Export / Import
     // Export / import / share (handle_share)

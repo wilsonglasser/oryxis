@@ -8,7 +8,7 @@ use iced::{Point, Task};
 
 use oryxis_vault::VaultStore;
 
-use crate::app::{TabsMessage, SshMessage, UpdateMessage, Message, Oryxis, AUTO_CONNECT, AUTO_PASSWORD};
+use crate::app::{TabsMessage, SshMessage, Message, Oryxis, AUTO_CONNECT, AUTO_PASSWORD};
 use crate::state::{ConnectionForm, SettingsSection, VaultState, View};
 
 mod load;
@@ -53,16 +53,6 @@ impl Oryxis {
         let mut restored_window_pos: Option<iced::Point> = None;
         let mut restored_maximized = false;
         let mut restored_fullscreen = false;
-        // Update-check settings, hydrated pre-unlock: the boot
-        // `CheckForUpdate` fires while the vault can still be locked, so
-        // reading these only in `load_data_from_vault` made a locked-vault
-        // boot check run on the default channel (Stable) and ignore a
-        // disabled auto-check. A nightly binary checked on Stable is
-        // always offered the latest stable (the un-strand rule in
-        // `update::check_stable`), which nagged nightly users with a
-        // same-version "update" on every boot.
-        let mut auto_check_updates = true;
-        let mut update_channel = crate::update::UpdateChannel::default();
 
         // Language baseline before any vault read: follow the OS locale
         // (English when unsupported), so the very first boot, the setup
@@ -177,12 +167,6 @@ impl Oryxis {
                 biometric_unlock_enabled = flag == "true";
             }
             biometric_available = oryxis_biometric::default_provider().is_available();
-            if let Ok(Some(flag)) = v.get_setting("auto_check_updates") {
-                auto_check_updates = flag == "true";
-            }
-            if let Ok(Some(c)) = v.get_setting("update_channel") {
-                update_channel = crate::update::UpdateChannel::from_setting(&c);
-            }
             // Same clamp as main(): a corrupt row must not produce a
             // degenerate size (it feeds terminal layout math via
             // `window_size` before the first Resized event lands).
@@ -214,40 +198,6 @@ impl Oryxis {
                 Some("true")
             );
         }
-
-        // Plugin providers are kept twice: once as `Arc<dyn CloudProvider>`
-        // inside the registry (used by every CloudProvider call site)
-        // and once as `Arc<PluginProvider>` in `plugin_providers` (so
-        // the install path can call rebind after `cache::set_current`).
-        // Both fields point at the SAME Arc so a rebind through the
-        // concrete map propagates to the registered trait object.
-        let aws_provider =
-            std::sync::Arc::new(crate::plugins::PluginProvider::new("aws"));
-        let k8s_provider =
-            std::sync::Arc::new(crate::plugins::PluginProvider::new("k8s"));
-        let gcp_provider =
-            std::sync::Arc::new(crate::plugins::PluginProvider::new("gcp"));
-        let azure_provider =
-            std::sync::Arc::new(crate::plugins::PluginProvider::new("azure"));
-        let plugin_providers = {
-            let mut m: std::collections::HashMap<
-                String,
-                std::sync::Arc<crate::plugins::PluginProvider>,
-            > = std::collections::HashMap::new();
-            m.insert("aws".to_string(), aws_provider.clone());
-            m.insert("k8s".to_string(), k8s_provider.clone());
-            m.insert("gcp".to_string(), gcp_provider.clone());
-            m.insert("azure".to_string(), azure_provider.clone());
-            m
-        };
-        let cloud_provider_registry = {
-            let mut reg = oryxis_cloud::CloudProviderRegistry::new();
-            reg.register(aws_provider.clone());
-            reg.register(k8s_provider.clone());
-            reg.register(gcp_provider.clone());
-            reg.register(azure_provider.clone());
-            std::sync::Arc::new(reg)
-        };
 
         let (mut app, task) = (
             Self {
@@ -389,7 +339,6 @@ impl Oryxis {
                 window_windowed_pos: restored_window_pos,
                 window_windowed_pos_prev: restored_window_pos,
                 window_focused: true,
-                ssm_keepalive_base: None,
                 window_maximized: restored_maximized,
                 window_fullscreen: restored_fullscreen,
                 // Restoring straight into fullscreen re-shows the
@@ -424,8 +373,6 @@ impl Oryxis {
                 highlight_rules_cache: std::cell::RefCell::new(std::collections::HashMap::new()),
                 highlight_rule_form: crate::state::HighlightRuleForm::default(),
                 trigger_confirm: None,
-                cloud_profiles: Vec::new(),
-                cloud_form: crate::state::CloudForm::default(),
                 editor_parent_combo: iced::widget::combo_box::State::new(Vec::new()),
                 editor_startup_combo: iced::widget::combo_box::State::new(Vec::new()),
                 editor_login_script_combo: iced::widget::combo_box::State::new(Vec::new()),
@@ -433,7 +380,6 @@ impl Oryxis {
                 editor_key_combo: iced::widget::combo_box::State::new(Vec::new()),
                 group_picker_search: String::new(),
                 editor_startup_choice: crate::state::StartupChoice::None,
-                dynamic_form_parent_combo_bounds: crate::widgets::new_bounds_cell(),
                 session_group_folder_combo_bounds: crate::widgets::new_bounds_cell(),
                 group_edit_parent_combo_bounds: crate::widgets::new_bounds_cell(),
                 plus_btn_bounds: crate::widgets::new_bounds_cell(),
@@ -443,23 +389,11 @@ impl Oryxis {
                 toolbar_split_btn_bounds: crate::widgets::new_bounds_cell(),
                 toolbar_sort_btn_bounds: crate::widgets::new_bounds_cell(),
                 toolbar_overflow_btn_bounds: crate::widgets::new_bounds_cell(),
-                host_filter_cloud_profile: None,
                 host_filter_tags: Vec::new(),
-                cloud_import_confirm_visible: false,
-                cloud_dynamic_group_state: std::collections::HashMap::new(),
-                cloud_dynamic_form: crate::state::CloudDynamicForm::default(),
-                // Provider registry seeded once at boot. AWS runs as a
-                // plugin subprocess via `PluginProvider`; K8s lands in
-                // a follow-up PR. The Arc lets us hand the registry to
-                // async tasks without locking.
-                cloud_provider_registry,
-                plugin_providers,
                 // Plugins panel state, the defaults here are replaced
                 // by `load_data_from_vault` once the vault is unlocked
                 // (settings + on-disk plugin cache).
-                plugins_auto_update_global: true,
                 plugins: Vec::new(),
-                plugin_install_modal: None,
                 snippets: Vec::new(),
                 install_runs: std::collections::HashMap::new(),
                 custom_terminal_themes: Vec::new(),
@@ -475,18 +409,15 @@ impl Oryxis {
                 monitor_ports_open: false,
                 monitor_disks_open: true,
                 panels: crate::state::PanelsOpen::default(),
-                cloud_discover: crate::state::CloudDiscoverUi::default(),
                 snippet_form: crate::state::SnippetForm::default(),
                 keys_ui: crate::state::KeysUi::default(),
                 sftp_chrome: crate::state::SftpChrome::default(),
                 prefs: crate::state::AppPrefs {
-                    // Hydrated before the unlock (the lock screen and the
-                    // boot update check both run while the vault can still
-                    // be locked), so these three come from the reads above
-                    // rather than from the factory defaults.
+                    // Hydrated before the unlock (the lock screen runs
+                    // while the vault can still be locked), so this one
+                    // comes from the read above rather than the factory
+                    // default.
                     biometric_unlock_enabled,
-                    auto_check_updates,
-                    update_channel,
                     ..Default::default()
                 },
                 sftp_edit_upload_all: false,
@@ -522,7 +453,6 @@ impl Oryxis {
                 port_forward_form: crate::state::PortForwardRuleForm::default(),
                 port_forward_context_menu: None,
                 port_forward_search: String::new(),
-                cloud_search: String::new(),
                 proxy_search: String::new(),
                 terminal_palette: oryxis_terminal::TerminalPalette::default(),
                 terminal_theme_override: None,
@@ -548,15 +478,12 @@ impl Oryxis {
                 sidebar_snippet_group: None,
                 pending_perf_mode_toast: false,
                 privacy: crate::state::PrivacyState::default(),
-                download_mirror: Default::default(),
                 agent: crate::state::AgentState::default(),
                 tray_menu_signature: 0,
                 jumplist_signature: 0,
                 jumplist_window_tagged: false,
                 is_window_hidden: false,
                 ipc_state_signature: 0,
-                pin_next_plugin_tab: None,
-                pending_ecs_autoconnect: None,
                 tab_drag: None,
                 panel_width: crate::app::PANEL_WIDTH,
                 panel_resize_drag: None,
@@ -573,11 +500,6 @@ impl Oryxis {
                 last_session_log_capacity_check: std::time::Instant::now(),
                 last_unlock: None,
                 biometric_available,
-                pending_update: None,
-                update_downloading: false,
-                update_progress: 0.0,
-                update_error: None,
-                update_check_status: None,
                 reconnect_counters: std::collections::HashMap::new(),
                 ai: crate::state::AiState::default(),
                 toast: None,
@@ -606,7 +528,6 @@ impl Oryxis {
                 hosts_tree_expanded: std::collections::HashSet::new(),
                 hosts_tree_search: String::new(),
                 mcp: crate::state::McpState::default(),
-                sync: crate::state::SyncState::default(),
                 flatten_hosts: true,
                 export_password: String::new(),
                 export_include_keys: true,
@@ -637,49 +558,6 @@ impl Oryxis {
         // after boot. When the vault is locked, we defer until VaultUnlock
         // succeeds (handled in that branch).
         let mut tasks = vec![task];
-        // The boot release lookup is for a person to act on, so an
-        // emulated run skips it (`app::HARNESS_ACTIVE`) rather than
-        // waiting on a network it does not control. The handler's own
-        // `auto_check_updates` gate stays the user-facing switch; this
-        // one is about who is watching.
-        if !crate::app::harness_active() {
-            tasks.push(Task::done(Message::Update(UpdateMessage::CheckForUpdate)));
-        }
-        // A Windows nightly self-replace that fails after the app has
-        // exited has no UI left to report to; the helper leaves a marker
-        // in TEMP instead. Surface it here so a failed swap is never
-        // silent (the boot check above re-offers the same build, so the
-        // user can just try again).
-        if let Some(detail) = crate::update::take_update_failure() {
-            tracing::warn!(
-                target = "oryxis::update",
-                detail = %detail,
-                "previous self-update failed after exit",
-            );
-            // A blocking dialog, not a toast: the boot check right above
-            // lands 1-2s later and its "update available" toast + modal
-            // would overwrite/cover a 2.5s toast, which made a failing
-            // swap look exactly like a successful update that "didn't
-            // stick". The body carries the helper's captured error
-            // verbatim (the actual `copy`/`move` stderr), so the user
-            // sees WHY instead of a generic shrug; the update modal
-            // yields while this dialog is up (root_view gates on it).
-            app.error_dialog = Some(crate::state::ErrorDialog {
-                title: crate::i18n::t("update_replace_failed").to_string(),
-                body: detail,
-                // The title's own wording tells the user to open the
-                // release page, so the dialog carries the button rather
-                // than leaving them to find it.
-                link: Some(crate::state::ErrorDialogLink {
-                    label: crate::i18n::t("download").to_string(),
-                    url: format!(
-                        "https://github.com/{}/releases/latest",
-                        crate::update::RELEASE_REPO
-                    ),
-                }),
-                action: None,
-            });
-        }
         if app.vault_ui.state == VaultState::Unlocked
             && let Some(connect_id) = app.pending_auto_connect.take()
             && let Some(idx) = app
@@ -703,45 +581,26 @@ impl Oryxis {
             let route = app.handle_connect_target(&target);
             tasks.push(route);
         }
-        // Bring the sync engine up if the vault is already open and the
-        // user left sync enabled. When the vault is locked we defer to
-        // the `VaultUnlock` handler, same as `--connect`.
-        // Only the P2P transport runs a background engine; every
-        // snapshot transport reconciles on the iced cadence
-        // subscription instead.
-        if app.vault_ui.state == VaultState::Unlocked
-            && app.sync.enabled
-            && app.sync_uses_p2p()
-        {
-            tasks.push(app.start_sync_engine());
-        }
-        // The git card's availability probe spawns a subprocess, so it
-        // runs as a task rather than inside `view()`. Fire it whenever
-        // the git transport can be on screen (also done on `VaultUnlock`
-        // and on `TransportChanged`).
-        if app.vault_ui.state == VaultState::Unlocked && app.sync.transport == "git" {
-            tasks.push(crate::dispatch_git_sync::git_availability_task());
-        }
 
         // Auto-start port forward rules marked `auto_start`. Deferred to
-        // `VaultUnlock` when the vault is locked, same as sync / --connect.
+        // `VaultUnlock` when the vault is locked, same as --connect.
         if app.vault_ui.state == VaultState::Unlocked {
             tasks.extend(app.auto_start_port_forwards());
         }
 
         // Sweep any leftover `.old.exe` from a previous Windows MCP
-        // update (no-op on Unix), before the plugin tasks below may lay
-        // down a fresh launcher copy.
+        // update (no-op on Unix), then try to (re)install the launcher
+        // from the local plugin cache: a signed build may have landed
+        // there out of band (release installer, a dev copy). An empty
+        // or unverified cache is the ordinary fresh state, not an
+        // error — the MCP toggle explains it when asked.
         crate::mcp_install::sweep_stale_launcher();
-        // MCP migrate-install + plugin auto-update both need the vault
-        // unlocked (they read `mcp_server_enabled` / the plugin rows
-        // `load_data_from_vault` populates). When the vault is
-        // password-protected it's still locked here, so these defer to
-        // the `VaultUnlock` handler, which calls the same method once
-        // the user's password opens it (the boot constructor can't
-        // re-run). See `spawn_plugin_unlock_tasks`.
-        if app.vault_ui.state == VaultState::Unlocked {
-            tasks.extend(app.spawn_plugin_unlock_tasks());
+        if let Err(e) = crate::mcp_install::sync_launcher_from_cache() {
+            tracing::debug!(
+                target = "oryxis::mcp",
+                error = %e,
+                "MCP launcher not refreshed from plugin cache"
+            );
         }
         // One-time performance-mode auto-enable notice, for the
         // auto-unlocked (no-password) vault. The password path shows it
@@ -749,10 +608,11 @@ impl Oryxis {
         tasks.push(app.take_perf_mode_toast_task());
 
         // If the saved language uses a CJK script (Korean / Chinese /
-        // Japanese), fetch + load its on-demand font now so the lock
-        // screen and the rest of the UI render it instead of tofu. The
-        // language was already the user's choice, so this is silent (no
-        // toast). A missing font degrades to the system CJK font.
+        // Japanese), load its on-demand font from the local cache now
+        // so the lock screen and the rest of the UI render it instead
+        // of tofu. The language was already the user's choice, so this
+        // is silent (no toast). An uncached font degrades to the
+        // system CJK font; nothing is fetched from the network.
         {
             let lang = crate::i18n::Language::active();
             if let Some(code) = crate::fonts::asset_code(lang) {
@@ -763,11 +623,9 @@ impl Oryxis {
 
         // Terminal font pack (issue #109): load every already-cached
         // pack face now so a terminal picked to one of them renders
-        // right from its first frame, and silently fetch the face the
-        // picked family + weight needs when it isn't cached yet
-        // (settings that arrived via sync / import land on a machine
-        // without the file). Guard semantics mirror the CJK block
-        // above.
+        // right from its first frame. Faces that aren't in the local
+        // cache degrade to the bundled fallback; the app never fetches
+        // fonts from the network.
         for (key, task) in crate::fonts::boot_pack_tasks(
             &app.terminal_font_name,
             app.terminal_font_weight,

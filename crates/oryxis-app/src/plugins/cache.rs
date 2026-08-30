@@ -7,10 +7,10 @@
 //!
 //! ```text
 //! ~/.oryxis/plugins/
-//!   aws/
-//!     0.3.1/oryxis-cloud-aws-plugin
-//!     0.4.2/oryxis-cloud-aws-plugin
-//!     current                       <- text file: "0.4.2"
+//!   <provider>/
+//!     0.1.0/oryxis-<provider>-plugin
+//!     0.2.0/oryxis-<provider>-plugin
+//!     current                       <- text file: "0.2.0"
 //!     manifest.json                 <- last seen, for offline use
 //! ```
 //!
@@ -112,8 +112,8 @@ pub fn current_version(provider_id: &str) -> Result<Option<String>, PluginError>
 }
 
 /// Point `current` at `version`. The version directory must already
-/// hold a binary, callers download + verify first, then flip the
-/// pointer so a half-written install is never made active.
+/// hold a binary; callers flip the pointer only after the binary
+/// is in place so a partial state is never made active.
 pub fn set_current(provider_id: &str, version: &str) -> Result<(), PluginError> {
     let bin = binary_path(provider_id, version)?;
     if !bin.exists() {
@@ -133,14 +133,12 @@ pub fn set_current(provider_id: &str, version: &str) -> Result<(), PluginError> 
 /// version is installed / activated.
 ///
 /// Note: this only verifies the file exists. The Ed25519 + SHA-256
-/// gates run once at install time
-/// (`super::download::download_and_install`), and after that we
-/// trust the disk. If the on-disk binary is later corrupted out of
-/// band (disk error, an external process editing the file, malware)
-/// the next spawn fails at runtime rather than at this check. A
-/// re-verify on every boot would buy detection at the cost of
-/// hashing the binary on the hot path, the trade isn't worth it
-/// while the cache lives under `~/.oryxis/` (user-private path).
+/// gate runs when a binary crosses a trust boundary — the MCP
+/// launcher copy in `mcp_install::verify_cached_binary` re-checks the
+/// cached manifest before anything lands on the path external clients
+/// spawn. Within the cache itself we trust the disk: the path is
+/// user-private (`~/.oryxis/`), and re-hashing every binary on the
+/// hot path is not worth it when the boundary crossings are covered.
 pub fn current_binary(provider_id: &str) -> Result<Option<PathBuf>, PluginError> {
     match current_version(provider_id)? {
         Some(v) => {
@@ -153,7 +151,7 @@ pub fn current_binary(provider_id: &str) -> Result<Option<PathBuf>, PluginError>
 
 /// Every installed version of a provider, sorted ascending by
 /// semver-ish ordering. A directory only counts when it actually
-/// holds the binary, a bare directory from an interrupted download
+/// holds the binary, a bare directory from an interrupted install
 /// is ignored.
 pub fn installed_versions(provider_id: &str) -> Result<Vec<String>, PluginError> {
     let dir = provider_dir(provider_id)?;

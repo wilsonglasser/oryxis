@@ -62,7 +62,7 @@ impl Oryxis {
         let pane = tab.active();
         // A quick-connect host lives in an in-memory store that is gone
         // next launch, so only a saved connection is worth referencing;
-        // everything else (local shell, cloud exec) records as hostless.
+        // everything else (local shells) records as hostless.
         let connection_id = match pane.origin {
             crate::state::PaneOrigin::Host(id) => Some(id),
             _ => None,

@@ -44,7 +44,7 @@ native**.
 | UI stack | Native Rust (iced + wgpu) | Electron | Native | Electron |
 | License | AGPL-3.0, open source | Proprietary | MIT | MIT |
 | Credential storage | Local encrypted vault | Vendor cloud account | None | Local config files |
-| Device sync | P2P, E2E encrypted, optionally self-hosted relay | Vendor cloud (subscription) | None | Via Tabby Web |
+| Device sync | None (offline edition) | Vendor cloud (subscription) | None | Via Tabby Web |
 | SFTP | Dual-pane GUI **and** an interactive console | Paid plan | CLI only | Basic panel |
 | Price | Free | Free tier + subscription | Free | Free |
 
@@ -134,17 +134,10 @@ matching installer. Windows binaries are Authenticode-signed (see
   own, opened from any host.
 - **Session recording.** Encrypted at rest; exports to asciinema `.cast`
   (theme embedded) or plain transcript, output-only by design.
-- **Cloud accounts.** AWS, Google Cloud, Azure and Kubernetes discovery
-  and connect (EC2, SSM, ECS Exec, GKE, AKS, `kubectl`), shipped as
-  signed on-demand plugins.
 - **AI where you work.** A per-tab assistant (bring your own key:
   Anthropic, OpenAI, Gemini, or compatible) with layered auto-exec safety,
   plus an [MCP server](docs/FEATURES.md#mcp-server) that exposes your
   hosts to AI clients like Claude Code.
-- **P2P sync, no cloud.** End-to-end encrypted (X25519 +
-  XChaCha20-Poly1305) over QUIC; mDNS on the LAN, optional
-  [self-hosted](SELF_HOSTING.md) signaling/relay across networks. No
-  account, no vendor server.
 - **Keyboard-first.** `user@host` quick connect (Ctrl+K), MRU tab
   switching, full keyboard navigation down to the last toggle, every
   hotkey rebindable.
@@ -163,8 +156,7 @@ Want the file browser to track your shell exactly?
 **[Following the shell's directory](docs/CWD.md)** has the snippet.
 Getting a copy of your vault off this machine, into a cloud folder or
 anywhere else? **[Backups and where to keep them](docs/BACKUP.md)**
-covers sync, export, and the tools that carry a file the rest of the
-way.
+covers export, and the tools that carry a file the rest of the way.
 
 ## Screenshots
 
@@ -185,10 +177,6 @@ Click any thumbnail for the full-size image.
     <td align="center">
       <a href="resources/screen_3.png"><img src="resources/screen_3.png" width="390" alt="Terminal session with streaming AI Chat sidebar"></a>
       <br><em>Streaming AI sidebar with per-block Copy / Play</em>
-    </td>
-    <td align="center">
-      <a href="resources/screen_4.png"><img src="resources/screen_4.png" width="390" alt="Cloud Accounts editor with AWS provider and regions"></a>
-      <br><em>Cloud Accounts: AWS / Kubernetes providers, multi-region fan-out</em>
     </td>
   </tr>
   <tr>
@@ -218,10 +206,8 @@ Click any thumbnail for the full-size image.
    brings its saved sessions over in one step.
 3. **Connect:** click a host card. Split panes, the Files sidebar, SFTP
    and snippets are one keystroke away.
-4. **Optional extras:** AI chat (Settings > AI), MCP server
-   (Settings > Security, [setup guide](docs/FEATURES.md#mcp-server)),
-   P2P sync between your devices (Settings > Sync,
-   [self-hosting guide](SELF_HOSTING.md)).
+4. **Optional extras:** AI chat (Settings > AI) and the MCP server
+   (Settings > Security, [setup guide](docs/FEATURES.md#mcp-server)).
 
 Questions? Check the
 [FAQ](https://github.com/wilsonglasser/oryxis/discussions/66) or open a
@@ -230,9 +216,12 @@ Questions? Check the
 ## Security
 
 Everything sensitive is encrypted per-field at rest (Argon2id +
-ChaCha20-Poly1305), host keys are TOFU-pinned, sync payloads are
-end-to-end encrypted, plugins are Ed25519-signature-verified before
-execution, and there is no telemetry of any kind.
+ChaCha20-Poly1305), host keys are TOFU-pinned, plugin binaries are
+Ed25519-signature-verified before execution, and there is no telemetry
+of any kind. This offline edition has no update checks, no plugin
+catalog fetches, no cloud providers, and no device sync; the only
+network it speaks is the SSH family you dial, plus the AI assistant
+and font downloads you explicitly configure.
 
 The full security model and the vulnerability disclosure policy live in
 [SECURITY.md](SECURITY.md). Please report vulnerabilities privately.
@@ -268,9 +257,6 @@ tracks it interactively.
   external agent.
 - **Utilities:** an optional network tools panel (DNS, ping /
   traceroute, port test, TLS check, WHOIS, RBL).
-- **Vault & sync:** one-click relay deploy (the app installs
-  `oryxis-relay` on a host from your vault over SSH, with the script
-  shown before it runs).
 - **China & CJK:** Alibaba Cloud (ECS) and Tencent Cloud (CVM)
   providers, and an East Asian ambiguous-width option.
 - **AI ops toolkit:** the assistant graduates from generating shell
@@ -281,9 +267,6 @@ tracks it interactively.
 
 **Exploring**
 
-- **Team vaults over P2P sync:** share a vault with teammates with no
-  hosted server; per-member key wrapping, re-key on member removal,
-  optional self-hosted relay mailbox for teams never online together.
 - **Multi-host AI agent:** the typed-operation agent detached from a
   single tab, investigating across vault hosts over ad-hoc SSH channels,
   gated by explicit per-host opt-in.

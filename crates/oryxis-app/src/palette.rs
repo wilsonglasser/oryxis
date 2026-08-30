@@ -188,7 +188,7 @@ impl Oryxis {
         if self.ai.enabled {
             items.push((t("ai_assistant"), S::AI));
         }
-        if self.cloud_provider_installed("mcp") {
+        if self.plugin_installed("mcp") {
             items.push((t("mcp_server"), S::Mcp));
         }
         if self.sftp_enabled {
@@ -197,16 +197,10 @@ impl Oryxis {
         if self.prefs.host_monitoring {
             items.push((t("settings_section_monitoring"), S::Monitoring));
         }
-        if self.sync.enabled {
-            items.push((t("sync"), S::Sync));
-        }
         // Same gate as the Features toggle: no listener on this
         // platform means no section either.
         if self.agent.enabled && crate::agent_server::listener_socket_display().is_some() {
             items.push((t("agent_server"), S::Agent));
-        }
-        if self.any_cloud_provider_installed() {
-            items.push((t("settings_cloud_section"), S::Cloud));
         }
         items.push((t("settings_advanced"), S::Advanced));
         items.push((t("about"), S::About));

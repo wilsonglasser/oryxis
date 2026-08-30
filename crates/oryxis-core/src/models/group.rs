@@ -1,7 +1,6 @@
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use super::cloud::CloudQuery;
 use super::connection::EnvVar;
 
 /// Per-parameter defaults a group hands down to the hosts inside it
@@ -66,13 +65,6 @@ pub struct Group {
     pub is_shared: bool,
     pub created_at: chrono::DateTime<chrono::Utc>,
     pub updated_at: chrono::DateTime<chrono::Utc>,
-    /// When set, the group's children are not stored in the vault but
-    /// resolved on each expand by a `CloudProvider::resolve_query`
-    /// call. Manual groups have `None`. Dynamic groups must not also
-    /// have manually-attached children, the contents are 100% derived
-    /// from the query.
-    #[serde(default)]
-    pub cloud_query: Option<CloudQuery>,
     /// Per-parameter defaults inherited by the hosts in this group.
     /// `None` = the group sets nothing, which is what every group
     /// created before this feature deserializes to.
@@ -248,8 +240,7 @@ impl Group {
     /// Resolve a Parent Group combo value to a group id. The combos
     /// display full paths, so an exact path match wins; a bare label
     /// (typed by hand) falls back to the first label match, preserving
-    /// the historical find-by-label semantics. Only manual folders
-    /// qualify (`cloud_query.is_none()`), and `excluded` removes a
+    /// the historical find-by-label semantics. `excluded` removes a
     /// subtree from the candidates (the re-parent cycle guard). An
     /// empty / unmatched input returns `None` (root).
     pub fn resolve_path_or_label(
@@ -261,11 +252,7 @@ impl Group {
         if input.is_empty() {
             return None;
         }
-        let candidates = || {
-            groups
-                .iter()
-                .filter(|g| g.cloud_query.is_none() && !excluded.contains(&g.id))
-        };
+        let candidates = || groups.iter().filter(|g| !excluded.contains(&g.id));
         candidates()
             .find(|g| Group::path_of(groups, g.id) == input)
             .or_else(|| candidates().find(|g| g.label == input))
@@ -280,9 +267,9 @@ impl Group {
     ///
     /// The path is split on the " / " separator; each segment is
     /// trimmed and empty segments are dropped. Walking from the root,
-    /// every segment reuses the first existing MANUAL group
-    /// (`cloud_query.is_none()`) with that exact label under the running
-    /// parent, or creates a fresh group parented to it. New groups are
+    /// every segment reuses the first existing group with that exact
+    /// label under the running parent, or creates a fresh group
+    /// parented to it. New groups are
     /// appended to `groups` (so later segments and repeat calls see
     /// them) AND collected into `created` for the caller to persist to
     /// the vault. Returns the deepest segment's id, or `None` when the
@@ -310,16 +297,14 @@ impl Group {
             if label.is_empty() {
                 continue;
             }
-            // Reuse an existing manual folder at this level (same label
+            // Reuse an existing folder at this level (same label
             // under the running parent), else create one. Matching on
             // the running parent (not just the label) is what makes
             // "Prod / Web" create a NEW Web under Prod even when a
             // root-level Web already exists.
             let existing = groups
                 .iter()
-                .find(|g| {
-                    g.cloud_query.is_none() && g.parent_id == parent && g.label == label
-                })
+                .find(|g| g.parent_id == parent && g.label == label)
                 .map(|g| g.id);
             let id = match existing {
                 Some(id) => id,
@@ -372,7 +357,6 @@ impl Group {
             is_shared: false,
             created_at: now,
             updated_at: now,
-            cloud_query: None,
             defaults: None,
         }
     }
@@ -619,29 +603,13 @@ mod tests {
     }
 
     #[test]
-    fn resolve_skips_excluded_and_dynamic_groups() {
+    fn resolve_skips_excluded_groups() {
         let root = Group::new("Prod");
         let child = child_of("Frontend", root.id);
-        let mut dynamic = Group::new("Dyn");
-        dynamic.cloud_query = Some(CloudQuery {
-            profile_id: Uuid::new_v4(),
-            kind: super::super::cloud::CloudQueryKind::EcsTasks {
-                cluster: String::new(),
-                service: String::new(),
-                container: String::new(),
-            },
-            template: super::super::cloud::ConnectionTemplate::new(
-                super::super::cloud::TransportKind::EcsExec,
-            ),
-        });
-        let groups = vec![root.clone(), child.clone(), dynamic.clone()];
+        let groups = vec![root.clone(), child.clone()];
 
         let excluded = Group::subtree_ids(&groups, root.id);
         assert_eq!(Group::resolve_path_or_label(&groups, "Prod", &excluded), None);
-        assert_eq!(
-            Group::resolve_path_or_label(&groups, "Dyn", &std::collections::HashSet::new()),
-            None
-        );
     }
 
     #[test]

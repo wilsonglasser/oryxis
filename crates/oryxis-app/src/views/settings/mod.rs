@@ -1,4 +1,4 @@
-//! Settings screen, terminal, AI, theme, shortcuts, security, sync, about.
+//! Settings screen, terminal, AI, theme, shortcuts, security, about.
 
 pub(crate) use iced::border::Radius;
 pub(crate) use iced::widget::{button, checkbox, container, pick_list, scrollable, text, text_input, Space};
@@ -9,7 +9,7 @@ use iced::widget::column;
 pub(crate) use iced::widget::button::Status as BtnStatus;
 pub(crate) use iced::{Background, Border, Color, Element, Length, Padding};
 
-pub(crate) use crate::app::{SettingsMessage, McpMessage, NavigationMessage, CommandHistoryMessage, UpdateMessage, ProxyIdentityMessage, AgentMessage, ZmodemMessage, Message, Oryxis, VaultMessage, AiMessage, ShareMessage, SyncMessage, NAV_RAIL_WIDTH_EXPANDED};
+pub(crate) use crate::app::{SettingsMessage, McpMessage, NavigationMessage, CommandHistoryMessage, ProxyIdentityMessage, AgentMessage, ZmodemMessage, Message, Oryxis, VaultMessage, AiMessage, ShareMessage, NAV_RAIL_WIDTH_EXPANDED};
 pub(crate) use crate::i18n::t;
 pub(crate) use crate::state::SettingsSection;
 pub(crate) use crate::theme::OryxisColors;
@@ -26,7 +26,6 @@ mod ai;
 mod connection;
 mod highlight_rule_modal;
 mod highlight_rules;
-mod host_picker;
 mod interface;
 mod local_terminals;
 pub(crate) mod login_scripts;
@@ -37,14 +36,7 @@ mod security;
 mod monitoring;
 mod sftp;
 mod shortcuts;
-mod sync;
 mod terminal;
-
-// `host_badge` is shared with the section submodules through the
-// `use super::*` glob (the Sync section renders it in its host picker
-// trigger), so it is re-exported here.
-pub(crate) use host_picker::host_badge;
-use host_picker::sync_host_picker_modal;
 
 impl Oryxis {
     pub(crate) fn view_settings(&self) -> Element<'_, Message> {
@@ -57,7 +49,7 @@ impl Oryxis {
             // sequence) and didn't reflect how users actually move
             // through the panel.
             // Core sections, then the "feature plugin" sections (AI /
-            // MCP / SFTP / Sync / SSH Agent / Cloud Sync) which only
+            // MCP / SFTP / SSH Agent) which only
             // appear once the feature is enabled on the Plugins screen,
             // then About. The
             // enable/disable toggles live on the Plugins screen, not here.
@@ -266,13 +258,10 @@ impl Oryxis {
 
             SettingsSection::Security => self.view_settings_security(),
 
-            SettingsSection::Sync => self.view_settings_sync(),
-
             SettingsSection::Agent => self.view_settings_agent(),
 
             SettingsSection::Advanced => self.view_settings_advanced(),
             SettingsSection::About => self.view_settings_about(),
-            SettingsSection::Cloud => self.view_cloud_sync_settings(),
             SettingsSection::Plugins => self.view_plugins_panel(),
             SettingsSection::Mcp => self.view_settings_mcp(),
         };
@@ -287,19 +276,7 @@ impl Oryxis {
         .width(Length::Fill)
         .height(Length::Fill);
 
-        // Overlay the SFTP-sync host picker modal across the whole page
-        // when open (same scrim + centered dialog pattern as the SFTP
-        // file browser's picker).
-        if self.sync.sftp.picker_open {
-            iced::widget::Stack::new()
-                .push(layout)
-                .push(sync_host_picker_modal(self))
-                .width(Length::Fill)
-                .height(Length::Fill)
-                .into()
-        } else {
-            layout.into()
-        }
+        layout.into()
     }
 }
 
@@ -312,7 +289,6 @@ pub(crate) fn category_label_key(c: oryxis_vault::ExportCategory) -> &'static st
         C::Keys => "cat_keys",
         C::Identities => "cat_identities",
         C::ProxyIdentities => "cat_proxies",
-        C::CloudProfiles => "cat_cloud_profiles",
         C::Snippets => "cat_snippets",
         C::KnownHosts => "cat_known_hosts",
         C::PortForwardRules => "cat_port_forwards",

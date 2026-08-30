@@ -182,7 +182,7 @@ impl Oryxis {
             )));
             return Task::batch([select, mount]);
         }
-        // Ad-hoc host (quick connect / cloud): mount the live
+        // Ad-hoc host (quick connect): mount the live
         // session directly, mirroring OpenSftpForTab's fallback.
         {
             let pane = self.sftp.pane_mut(crate::state::SftpPaneSide::Right);

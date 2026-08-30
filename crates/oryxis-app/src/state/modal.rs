@@ -68,7 +68,6 @@ pub(crate) enum Modal {
     UiThemeEditor,
     UiThemeImport,
     ShareDialog,
-    CloudImportConfirm,
     /// Shared error / single-action confirm dialog (`error_dialog`),
     /// also the confirm step for known-host and session-log deletes.
     ErrorDialog,
@@ -154,7 +153,6 @@ impl Modal {
         Modal::UiThemeEditor,
         Modal::UiThemeImport,
         Modal::ShareDialog,
-        Modal::CloudImportConfirm,
         Modal::ErrorDialog,
         Modal::ClearHistoryConfirm,
         Modal::SshImport,
@@ -235,7 +233,6 @@ impl Modal {
         Modal::UiThemeImport,
         Modal::UiThemeGallery,
         Modal::ShareDialog,
-        Modal::CloudImportConfirm,
         Modal::SftpPicker,
         // Read-only info dialog; Esc just closes it.
         Modal::CertificateViewer,
@@ -269,7 +266,6 @@ impl Modal {
             | Modal::UiThemeEditor
             | Modal::UiThemeImport
             | Modal::ShareDialog
-            | Modal::CloudImportConfirm
             | Modal::ErrorDialog
             | Modal::ClearHistoryConfirm
             | Modal::SshImport
@@ -322,7 +318,6 @@ mod tests {
                 | Modal::UiThemeEditor
                 | Modal::UiThemeImport
                 | Modal::ShareDialog
-                | Modal::CloudImportConfirm
                 | Modal::ErrorDialog
                 | Modal::ClearHistoryConfirm
                 | Modal::SshImport
@@ -341,7 +336,7 @@ mod tests {
                 | Modal::LockVaultConfirm => {}
             }
         }
-        assert_eq!(Modal::ALL.len(), 39, "add the new variant to Modal::ALL");
+        assert_eq!(Modal::ALL.len(), 38, "add the new variant to Modal::ALL");
         // Every Esc-closeable modal must also be a known modal.
         for m in Modal::ESC_ORDER {
             assert!(Modal::ALL.contains(m));

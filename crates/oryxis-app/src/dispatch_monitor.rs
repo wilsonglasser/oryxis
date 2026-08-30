@@ -404,7 +404,7 @@ impl Oryxis {
     }
 
     /// Connection id behind the focused pane, if it is a saved host.
-    /// Quick-connect / local / cloud panes have no vault row to carry the
+    /// Quick-connect / local panes have no vault row to carry the
     /// opt-in flag, so they can't be monitored.
     pub(crate) fn monitor_pane_connection(&self) -> Option<Uuid> {
         let idx = self.active_tab?;

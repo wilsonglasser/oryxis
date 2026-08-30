@@ -160,7 +160,7 @@ const FILES_RECENT_CAP: usize = 20;
 impl Oryxis {
     /// Record a visited folder in the persistent, host-keyed history and
     /// write it back. No-op for panes with no saved host (quick-connect,
-    /// local, cloud), which have no stable key to file it under.
+    /// local), which have no stable key to file it under.
     fn record_files_recent(&mut self, pane_id: uuid::Uuid, path: &str) {
         if path.is_empty() {
             return;

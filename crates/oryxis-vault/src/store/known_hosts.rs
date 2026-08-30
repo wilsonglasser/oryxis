@@ -36,7 +36,6 @@ impl VaultStore {
                 kh.updated_at.to_rfc3339(),
             ],
         )?;
-        self.clear_tombstone("known_host", &kh.id)?;
         Ok(())
     }
 
@@ -71,7 +70,6 @@ impl VaultStore {
 
     pub fn delete_known_host(&self, id: &Uuid) -> Result<(), VaultError> {
         self.db.execute("DELETE FROM known_hosts WHERE id = ?1", params![id.to_string()])?;
-        self.record_tombstone("known_host", id)?;
         Ok(())
     }
 }

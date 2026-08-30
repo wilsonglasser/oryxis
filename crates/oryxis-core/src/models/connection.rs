@@ -1,7 +1,6 @@
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use super::cloud::CloudRef;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Connection {
@@ -198,12 +197,6 @@ pub struct Connection {
     /// without a migration. `None` falls through to the global pick.
     #[serde(default)]
     pub terminal_theme: Option<String>,
-    /// Set on hosts imported from a cloud profile (EC2 in v0.6). Carries
-    /// the stable resource handle so the connect path can re-resolve
-    /// hostname / pick the right transport on each session. `None` for
-    /// manually-added hosts.
-    #[serde(default)]
-    pub cloud_ref: Option<CloudRef>,
     /// Sent to the remote shell right after the session opens. Used to
     /// escape minimal entry shells (`exec bash` on ECS / distroless) or
     /// to drop into a specific working directory. `None` skips the step.
@@ -251,17 +244,6 @@ pub struct Connection {
     /// older peers that never saw the field.
     #[serde(default)]
     pub icon_style: Option<String>,
-    /// Names of fields the user has explicitly overridden after this
-    /// host was imported from a cloud provider. Reimport / refresh
-    /// flows consult this list before overwriting a field with the
-    /// upstream value: if the field name appears here, the user's value
-    /// wins. Empty on manually-added hosts and on freshly-imported
-    /// cloud hosts. Today only `label`, `hostname`, and `username` are
-    /// tracked since those are the fields AWS discovery actually
-    /// pushes; the structure stays open-ended so future providers can
-    /// flag more without a schema change.
-    #[serde(default)]
-    pub customized_fields: Vec<String>,
     /// Per-host override for terminal session recording. `None` follows
     /// the global `session_logging` setting; `Some(true)` always records
     /// this host (even when the global toggle is off); `Some(false)`
@@ -418,7 +400,6 @@ impl Connection {
             monitor_enabled: false,
             monitor_disks: None,
             terminal_theme: None,
-            cloud_ref: None,
             initial_command: None,
             startup_snippet_id: None,
             login_script_id: None,
@@ -427,7 +408,6 @@ impl Connection {
             mac_address: None,
             auto_title: None,
             icon_style: None,
-            customized_fields: Vec::new(),
             session_logging: None,
             ciphers: None,
             kex: None,

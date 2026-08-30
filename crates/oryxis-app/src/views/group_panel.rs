@@ -188,21 +188,8 @@ impl Oryxis {
         // the fields above describe the FOLDER, these describe the
         // hosts in it, and mixing the two reads as one long form where
         // nothing signals that half of it reaches other records.
-        //
-        // Dynamic (cloud-backed) groups are excluded: their contents
-        // come from a query template that already carries username,
-        // key and identity, so a second inheritance path over the same
-        // fields would be two answers to one question.
-        let is_dynamic = self
-            .group_edit
-            .id
-            .and_then(|gid| self.groups.iter().find(|g| g.id == gid))
-            .is_some_and(|g| g.cloud_query.is_some());
-        let defaults_section: Element<'_, Message> = if is_dynamic {
-            Space::new().height(0).into()
-        } else {
-            panel_section(column![self.group_defaults_section()])
-        };
+        let defaults_section: Element<'_, Message> =
+            panel_section(column![self.group_defaults_section()]);
 
         let form_scroll = scrollable(
             container(column![general_section, Space::new().height(12), defaults_section])

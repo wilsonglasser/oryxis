@@ -73,7 +73,7 @@ pub enum HotkeyAction {
     ToggleBroadcastInput,
     /// Jump to a vault section by position. Family: Ctrl+Shift +
     /// digit 1..8 (Hosts, Keychain, Snippets, Port Forwarding,
-    /// Logs, Cloud Accounts, Proxies, Known Hosts); 9 is spare.
+    /// Logs, Proxies, Known Hosts); 9 is spare.
     VaultSectionSlot,
     // Vault-area section cycling (Hosts -> Keychain -> ... in sub-nav
     // order). Only fire in the vault area (`vault_only`); inside a

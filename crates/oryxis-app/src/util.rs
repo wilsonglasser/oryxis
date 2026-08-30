@@ -758,10 +758,8 @@ pub(crate) fn sanitize_uint(input: &str, max: u64) -> String {
 /// The gate matters because of what sits behind it on Windows: the OS
 /// handler resolves a bare path or a UNC name to a program and RUNS it,
 /// so an unvalidated string is an execution primitive, not a navigation.
-/// The updater's `html_url` is the case that proves the point, it comes
-/// from release metadata a download mirror is free to author (mirrors
-/// are untrusted by design, `net_mirror`), and nothing else on that path
-/// checks it.
+/// Web links shown in the UI can come from remote data the app renders
+/// verbatim, and nothing else on that path checks them.
 fn browser_scheme_allowed(url: &str) -> bool {
     let Some((scheme, _)) = url.split_once(':') else {
         return false;
@@ -801,7 +799,7 @@ pub(crate) fn open_in_browser(url: &str) -> Result<(), std::io::Error> {
         // expanded. A release note whose `html_url` read
         // `https://github.com/x&calc` ran `calc` on the click. Quoting the
         // argument would not have been enough either, a `"` in the URL
-        // closes the quote. Same idiom as `update::launch_installer`.
+        // closes the quote.
         let mut file: Vec<u16> = std::ffi::OsStr::new(url).encode_wide().collect();
         file.push(0);
 

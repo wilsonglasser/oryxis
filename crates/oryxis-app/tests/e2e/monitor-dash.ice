@@ -25,8 +25,9 @@ expect "Host monitoring"
 # The toggler is hit by position (clicking a toggle row's label does
 # not flip it); this file declares its own viewport so the coordinate
 # is deterministic, and the `expect "Monitoring"` below is the loud
-# failure if a row is ever inserted above this one.
-click (1181, 298)
+# failure if a row is ever inserted above this one. 298 -> 260 when the
+# Sync feature row above was removed with the offline transformation.
+click (1181, 260)
 settle
 # Back to the vault area: the pill strip now carries the entry.
 click (57, 20)

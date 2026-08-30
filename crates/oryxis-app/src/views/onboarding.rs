@@ -99,8 +99,8 @@ impl Oryxis {
             .into()
     }
 
-    /// One of the four feature slides (welcome / vault / connect / sync).
-    /// Slide 0 is a hero: logo + headline + tagline. Slides 1..3 lead with
+    /// One of the three feature slides (welcome / vault / connect).
+    /// Slide 0 is a hero: logo + headline + tagline. Slides 1..2 lead with
     /// a tinted glyph, a headline, and a short bulleted highlight list so
     /// the value reads at a glance. All copy comes from i18n (17 languages).
     fn onboarding_feature_slide(&self, slide: usize) -> Element<'_, Message> {
@@ -110,8 +110,7 @@ impl Oryxis {
         } else {
             let glyph = match slide {
                 1 => iced_fonts::lucide::shield(),
-                2 => iced_fonts::lucide::terminal(),
-                _ => iced_fonts::lucide::sparkles(),
+                _ => iced_fonts::lucide::terminal(),
             };
             onboarding_icon_badge(glyph.size(38).color(accent).into(), accent)
         };
@@ -119,8 +118,7 @@ impl Oryxis {
         let title_key = match slide {
             0 => "onboarding_welcome_title",
             1 => "onboarding_vault_title",
-            2 => "onboarding_connect_title",
-            _ => "onboarding_sync_title",
+            _ => "onboarding_connect_title",
         };
 
         // Slide 0 stays a single tagline; the feature slides become a
@@ -134,8 +132,7 @@ impl Oryxis {
         } else {
             let bullets = match slide {
                 1 => ["onboarding_vault_b1", "onboarding_vault_b2", "onboarding_vault_b3"],
-                2 => ["onboarding_connect_b1", "onboarding_connect_b2", "onboarding_connect_b3"],
-                _ => ["onboarding_sync_b1", "onboarding_sync_b2", "onboarding_sync_b3"],
+                _ => ["onboarding_connect_b1", "onboarding_connect_b2", "onboarding_connect_b3"],
             };
             column![
                 onboarding_bullet(t(bullets[0])),
@@ -173,7 +170,7 @@ impl Oryxis {
     /// the settings table (plaintext, reachable before the vault is
     /// initialized, the same path boot uses to stamp a fresh vault).
     fn onboarding_features_slide(&self) -> Element<'_, Message> {
-        use crate::app::{AgentMessage, AiMessage, SettingsMessage, SyncMessage};
+        use crate::app::{AgentMessage, AiMessage, SettingsMessage};
         let accent = OryxisColors::t().accent;
         let badge = onboarding_icon_badge(
             iced_fonts::lucide::sliders_horizontal().size(38).color(accent).into(),
@@ -194,12 +191,6 @@ impl Oryxis {
                 t("feature_sftp_desc"),
                 self.sftp_enabled,
                 Message::Settings(SettingsMessage::SettingToggleSftpEnabled),
-            ),
-            (
-                t("sync"),
-                t("feature_sync_desc"),
-                self.sync.enabled,
-                Message::Sync(SyncMessage::ToggleEnabled),
             ),
             (
                 t("remote_desktop"),

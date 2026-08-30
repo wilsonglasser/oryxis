@@ -48,7 +48,6 @@ impl Oryxis {
             Modal::UiThemeEditor => self.ui_theme_editor.is_some(),
             Modal::UiThemeImport => self.panels.ui_theme_import,
             Modal::ShareDialog => self.panels.share_dialog,
-            Modal::CloudImportConfirm => self.cloud_import_confirm_visible,
             Modal::ErrorDialog => self.error_dialog.is_some(),
             Modal::ClearHistoryConfirm => self.clear_history_confirm,
             Modal::SshImport => self.panels.ssh_import_dialog,
@@ -167,10 +166,6 @@ impl Oryxis {
                 self.share.filter = None;
                 self.share.status = None;
                 self.share.suggested_name = None;
-            }
-            Modal::CloudImportConfirm => {
-                self.cloud_import_confirm_visible = false;
-                self.cloud_discover.default_group_picker_open = false;
             }
             // Esc on the error dialog is always Dismiss, never the
             // dialog's action (mirrors ErrorDialogDismiss).

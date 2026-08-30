@@ -141,9 +141,6 @@ impl Oryxis {
         self.overlay = None;
         // Mutually exclusive right-panel slot, close any other panel
         // before opening the host editor.
-        self.cloud_form.visible = false;
-        self.cloud_dynamic_form.visible = false;
-        self.cloud_discover.visible = false;
         self.panels.session_group_panel = false;
         self.group_edit.visible = false;
         self.panels.host_panel = true;
@@ -159,7 +156,7 @@ impl Oryxis {
         // lands it there: prefill with the full breadcrumb path, which
         // is what the combo displays and what the save resolves first.
         if let Some(gid) = self.active_group
-            && self.groups.iter().any(|g| g.id == gid && g.cloud_query.is_none())
+            && self.groups.iter().any(|g| g.id == gid)
         {
             self.editor_form.group_name =
                 oryxis_core::models::Group::path_of(&self.groups, gid);
@@ -425,9 +422,8 @@ impl Oryxis {
 
         // Snapshot the pre-edit Connection (when editing an
         // existing row) so we can diff the user's changes after
-        // all the per-field assignments below. The diff feeds
-        // `customized_fields`, which the cloud reimport flow
-        // honours to leave user-edited values alone on refresh.
+        // all the per-field assignments below (the proxy command
+        // trust check compares against it).
         let original: Option<Connection> = self
             .editor_form
             .editing_id
@@ -659,15 +655,6 @@ impl Oryxis {
                 conn.initial_command = None;
             }
         }
-        // If the host is cloud-imported (carries a cloud_ref)
-        // and the user picked a transport in the editor,
-        // persist it onto the existing CloudRef. Don't touch
-        // anything else (resource_id, region, profile_id).
-        if let Some(picked) = self.editor_form.cloud_transport
-            && let Some(cref) = conn.cloud_ref.as_mut()
-        {
-            cref.transport_pref = picked;
-        }
         // Empty string == inherit global; "0" == explicitly disabled
         // on this host; positive integer == per-host override.
         conn.keepalive_interval = if self.editor_form.keepalive_interval.is_empty() {
@@ -790,32 +777,6 @@ impl Oryxis {
         conn.proxy_identity_id = proxy_resolution.proxy_identity_id;
         conn.updated_at = chrono::Utc::now();
 
-        // Track user edits on cloud-imported hosts so the next
-        // refresh from AWS doesn't clobber them. Only the
-        // fields that discovery actually pushes are tracked,
-        // anything else (port, color, group_id, ...) is fully
-        // user-controlled on imported hosts already and doesn't
-        // need a flag.
-        if conn.cloud_ref.is_some()
-            && let Some(orig) = &original
-        {
-            let mut customized = conn.customized_fields.clone();
-            let mark = |list: &mut Vec<String>, name: &str| {
-                if !list.iter().any(|s| s == name) {
-                    list.push(name.to_string());
-                }
-            };
-            if conn.label != orig.label {
-                mark(&mut customized, "label");
-            }
-            if conn.hostname != orig.hostname {
-                mark(&mut customized, "hostname");
-            }
-            if conn.username != orig.username {
-                mark(&mut customized, "username");
-            }
-            conn.customized_fields = customized;
-        }
         // Validate a newly typed TOTP secret before anything is
         // written, so a typo'd secret can't be stored and then
         // silently fail at connect time. Cleared/untouched skip, and a
@@ -1009,10 +970,6 @@ impl Oryxis {
             login_script_draft: None,
             auto_title: conn.auto_title,
             tags_text: conn.tags.join(", "),
-            cloud_transport: conn
-                .cloud_ref
-                .as_ref()
-                .map(|r| r.transport_pref),
             icon_style: conn.icon_style.clone(),
             encoding: conn.encoding.clone(),
             terminal_type: conn.terminal_type.clone(),
@@ -1155,7 +1112,6 @@ impl Oryxis {
                 | EditorMessage::EditorRemoveEnvVar(..)
                 | EditorMessage::EditorEnvVarKeyChanged(..)
                 | EditorMessage::EditorEnvVarValueChanged(..)
-                | EditorMessage::EditorCloudTransportChanged(..)
             ) => self.handle_editor_integration(m),
             m @ (
                 EditorMessage::EditorSerialBaudChanged(..)

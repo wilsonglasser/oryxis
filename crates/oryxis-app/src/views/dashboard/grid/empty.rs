@@ -125,8 +125,8 @@ impl Oryxis {
 
         // Secondary paths: the "+ Host ▾" menu's own entries, as
         // buttons. A dropdown on an otherwise blank screen hides the
-        // only other ways in (import, cloud discovery) behind a chevron
-        // the first-run user has no reason to click.
+        // only other ways in (import) behind a chevron the first-run
+        // user has no reason to click.
         let actions = self.add_host_actions();
         if !actions.is_empty() {
             items.push(Space::new().height(24).into());

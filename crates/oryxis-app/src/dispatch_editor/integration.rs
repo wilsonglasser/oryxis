@@ -69,9 +69,6 @@ impl Oryxis {
                     e.value = v;
                 }
             }
-            EditorMessage::EditorCloudTransportChanged(t) => {
-                self.editor_form.cloud_transport = Some(t);
-            }
             // Routed here by the parent; anything else is a
             // grouping mistake, not a runtime case.
             m => return crate::dispatch::unrouted(m),

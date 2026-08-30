@@ -47,15 +47,6 @@ pub(crate) enum OverlayContent {
     /// nothing destructive: that area is also the window-drag handle.
     TabBarActions,
     FolderActions(Uuid),
-    CloudProfileActions(Uuid),
-    /// Kebab menu on a dynamic-group card (ECS / K8s service folder).
-    /// Items: Edit (template) and Delete.
-    DynamicGroupActions(Uuid),
-    /// Dropdown menu rendered next to "+ Host", lists every
-    /// configured cloud profile so the user can launch discovery
-    /// directly from the Hosts view. Only opened when at least one
-    /// profile is configured (otherwise the chevron is hidden).
-    CloudProviderPicker,
     /// Dropdown next to the Snippets sort button: multi-select
     /// snippet-tag filter, mirroring `HostTagFilter`.
     SnippetTagFilter,
@@ -76,12 +67,6 @@ pub(crate) enum OverlayContent {
     /// host-tag filter over the timeline rows, mirroring
     /// `HostTagFilter`.
     HistoryTagFilter,
-    /// Floating context menu for the Discover import modal's
-    /// "Import into" combo. Carries a search input + the full list
-    /// of user groups. Rendered through the modal's local Stack
-    /// (the global overlay path is short-circuited by the modal's
-    /// early return).
-    CloudDiscoverGroupPicker,
     /// Shared group-picker popover for side-panel Parent Group
     /// inputs. The target enum tells the dispatch which form field
     /// the picked value flows into so the same overlay machinery
@@ -186,7 +171,6 @@ pub(crate) enum PasswordSourceKind {
 /// popover anchors precisely under the right chevron.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum GroupPickerTarget {
-    DynamicFormParent,
     SessionGroupFolder,
     /// Parent combo in the manual group editor side panel. The list
     /// excludes the edited group's own subtree (no cycles).

@@ -19,9 +19,9 @@ credited in the release notes unless they prefer otherwise.
 
 ## Supported versions
 
-Only the latest release receives security fixes. Oryxis ships small and
-often, so upgrading is always the remediation path; the auto-updater and
-`winget upgrade` keep installs current.
+Only the latest release receives security fixes. This offline edition
+has no auto-updater; re-build from source or replace the binary
+manually to pick up fixes.
 
 ## Security model
 
@@ -37,19 +37,18 @@ What Oryxis does to protect your credentials:
   key in memory.
 - **Host verification.** TOFU host key pinning, verified on every
   connection.
-- **Sync.** P2P payloads are end-to-end encrypted with X25519 +
-  XChaCha20-Poly1305; relay servers only ever see ciphertext. Password sync
-  is opt-in and off by default.
-- **Plugins.** Subprocess plugins are Ed25519-signature-verified against a
-  baked-in key before every execution, plus a SHA-256 manifest check at
-  download time.
+- **Plugins.** Local-only plugin cache; a plugin binary must pass its
+  Ed25519 signature check (against the baked-in key) and the manifest's
+  SHA-256 before it is copied to the stable launcher path external
+  clients spawn. Release builds fail closed on unsigned binaries.
 - **AI.** Bring-your-own-key, stored encrypted; Privacy Mode redaction runs
   before terminal context reaches any model; the auto-exec path has a
   deterministic block-list floor plus an independent judge.
-- **No telemetry.** The app makes no phone-home calls. Network traffic is
-  limited to what you ask for: your SSH/Telnet sessions, update checks
-  against GitHub Releases, plugin downloads, your AI provider, and your
-  sync peers.
+- **No telemetry.** The app makes no phone-home calls, no update checks,
+  and no catalog fetches. Network traffic is limited to what you ask
+  for: your SSH/Telnet/mosh sessions, your AI provider (only if you
+  configure one), and commit-pinned font downloads for languages or
+  font packs you select.
 - **Pure-Rust crypto path.** No C dependencies in the cryptography stack.
 
 ## Code signing

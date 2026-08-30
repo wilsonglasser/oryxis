@@ -218,7 +218,7 @@ pub(crate) fn card_accent_wash<'a>(card: Element<'a, Message>, color: Color) -> 
 /// 20px title, a 13px muted description, and an optional CTA button
 /// (`cta_button`). Centered in the available space. The shared template
 /// behind every "nothing here yet" screen (hosts, keychain, snippets,
-/// port forwards, cloud, proxies, known hosts, history). Pass the icon
+/// port forwards, proxies, known hosts, history). Pass the icon
 /// pre-sized/coloured (e.g. `lucide::route().size(32).color(...).into()`).
 /// The tile an empty state opens with: a fixed square box with the glyph
 /// centered. Padding-only sizing tracked the glyph's own width/height

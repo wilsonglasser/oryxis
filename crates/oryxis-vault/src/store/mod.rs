@@ -9,8 +9,6 @@ use rusqlite::{params, Connection as SqliteConn};
 use zeroize::{Zeroize, Zeroizing};
 use uuid::Uuid;
 
-pub(crate) use oryxis_core::models::cloud::{CloudQuery, CloudRef};
-pub(crate) use oryxis_core::models::cloud_profile::CloudProfile;
 pub(crate) use oryxis_core::models::custom_terminal_theme::CustomTerminalTheme;
 pub(crate) use oryxis_core::models::custom_ui_theme::CustomUiTheme;
 pub(crate) use oryxis_core::models::connection::{
@@ -115,33 +113,10 @@ pub struct CommandHistoryEntry {
     pub last_used_at: DateTime<Utc>,
 }
 
-/// Row from the sync_peers table.
-#[derive(Debug, Clone)]
-pub struct SyncPeerRow {
-    pub peer_id: Uuid,
-    pub device_name: String,
-    pub public_key: Vec<u8>,
-    pub last_known_ip: Option<String>,
-    pub last_known_port: Option<u16>,
-    pub last_synced_at: Option<DateTime<Utc>>,
-    pub paired_at: DateTime<Utc>,
-    pub is_active: bool,
-}
-
-/// A deletion record from the `sync_metadata` table. Every `delete_*`
-/// records one so the sync engine can propagate the removal: without
-/// it, a peer that still holds the entity would push its stale copy
-/// back on the next sync and the delete would silently undo itself.
-///
-/// `entity_type` is the wire string from `oryxis_sync::protocol::
-/// EntityType`'s `Display` impl (`"connection"`, `"key"`, …). The vault
-/// stays string-typed here to avoid a dependency cycle on `oryxis-sync`.
-#[derive(Debug, Clone)]
-pub struct Tombstone {
-    pub entity_type: String,
-    pub entity_id: Uuid,
-    pub deleted_at: DateTime<Utc>,
-}
+/// Row from the sync_peers table. REMOVED with the sync engine; this
+/// marker comment documents where the type lived so old readers of the
+/// vault format can orient (the tables themselves are still dropped by
+/// `destroy_and_recreate` for legacy vaults).
 
 // ---------------------------------------------------------------------------
 // Crypto helpers
@@ -167,11 +142,10 @@ fn os_random(buf: &mut [u8]) -> Result<(), VaultError> {
 }
 
 /// Derive a 256-bit key from a password using Argon2id with the crate's
-/// DEFAULT parameters. Frozen forever: this backs [`derive_sync_secret`]
-/// (whose key must be identical across devices and app versions) and the
-/// [`encrypt`] / [`decrypt`] blob format (whose parameters are implicit
-/// in the wire layout used by portable export and legacy per-field
-/// blobs). Tuning happens only in [`VaultStore::derive_vault_key`] via
+/// DEFAULT parameters. Frozen forever: this backs the [`encrypt`] /
+/// [`decrypt`] blob format (whose parameters are implicit in the wire
+/// layout used by portable export and legacy per-field blobs). Tuning
+/// happens only in [`VaultStore::derive_vault_key`] via
 /// [`derive_key_with_params`]; never route those two consumers here with
 /// non-default params or cross-version compatibility breaks.
 fn derive_key(password: &[u8], salt: &[u8]) -> Result<[u8; KEY_LEN], VaultError> {
@@ -296,24 +270,6 @@ pub fn calibrate_kdf() -> KdfParams {
     params
 }
 
-/// Application-wide salt for the SFTP-sync group secret. Unlike vault
-/// encryption (random per-blob salt stored in the header), the sync
-/// secret must be **deterministic across devices**: every member derives
-/// the same key from the same passphrase, so any of them can create the
-/// shared snapshot file first without a salt-negotiation handshake. A
-/// fixed public salt is sound here because the only entropy is the
-/// passphrase, which the UX requires to be strong; the salt's job is just
-/// to domain-separate this derivation from any other Argon2 use.
-const SYNC_SECRET_SALT: &[u8; SALT_LEN] = b"oryxis-sftp-sync group secret v1";
-
-/// Derive the 32-byte group secret for the SFTP sync transport from a
-/// user passphrase. All devices sharing a passphrase derive the same key,
-/// which both seals the snapshot blob and feeds the per-entity AEAD in the
-/// sync engine. See [`SYNC_SECRET_SALT`] for why the salt is fixed.
-pub fn derive_sync_secret(passphrase: &str) -> Result<[u8; KEY_LEN], VaultError> {
-    derive_key(passphrase.as_bytes(), SYNC_SECRET_SALT)
-}
-
 /// Encrypt data with ChaCha20Poly1305. Returns: salt(32) + nonce(12) + ciphertext.
 pub(crate) fn encrypt(plaintext: &[u8], password: &[u8]) -> Result<Vec<u8>, VaultError> {
     let mut salt = [0u8; SALT_LEN];
@@ -425,7 +381,6 @@ pub struct VaultStore {
 
 
 mod chat;
-mod cloud;
 mod command_history;
 mod connections;
 mod forwarding;
@@ -440,7 +395,6 @@ mod proxy_trust;
 mod schema;
 mod settings;
 mod snippets;
-mod sync;
 
 pub use chat::{ChatConversationEntry, ChatMessageEntry};
 pub use logs::{SealedSessionOutput, CONTENT_SEARCH_MAX_SCAN_BYTES};
@@ -875,7 +829,6 @@ impl VaultStore {
              DROP TABLE IF EXISTS session_logs;
              DROP TABLE IF EXISTS session_log_chunks;
              DROP TABLE IF EXISTS command_history;
-             DROP TABLE IF EXISTS cloud_profiles;
              DROP TABLE IF EXISTS sync_peers;
              DROP TABLE IF EXISTS sync_metadata;
              VACUUM;"
@@ -1021,8 +974,6 @@ impl VaultStore {
             ("keys", "id", "private_key"),
             ("identities", "id", "password"),
             ("proxy_identities", "id", "password"),
-            ("cloud_profiles", "id", "secret"),
-            ("sync_peers", "peer_id", "shared_secret"),
         ] {
             self.convert_blob_column(table, id_col, col, dec, enc, lenient)?;
         }

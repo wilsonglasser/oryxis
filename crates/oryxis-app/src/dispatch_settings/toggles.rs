@@ -1,5 +1,5 @@
 //! One-field settings with no machinery: performance mode, tray
-//! behaviour, SFTP limits, cloud refresh, keepalive.
+//! behaviour, SFTP limits, keepalive.
 //!
 //! Grouped by having nothing to say for themselves. Each writes a field
 //! and persists it; anything that needed more than that is in one of the
@@ -65,49 +65,6 @@ impl Oryxis {
                 // accidentally type a runaway value.
                 self.prefs.keepalive_interval = sanitize_uint(&val, 86_400);
                 self.persist_setting("keepalive_interval", &self.prefs.keepalive_interval);
-            }
-            SettingsMessage::SettingCloudAutoRefreshToggle => {
-                self.prefs.cloud_auto_refresh_enabled =
-                    !self.prefs.cloud_auto_refresh_enabled;
-                self.persist_setting(
-                    "cloud_auto_refresh_enabled",
-                    if self.prefs.cloud_auto_refresh_enabled { "true" } else { "false" },
-                );
-            }
-            SettingsMessage::SettingCloudAutoRefreshIntervalChanged(val) => {
-                // Floor of 1 minute, ceiling of 1 day. AWS rate limits
-                // are well above a per-minute pace for the discovery
-                // calls we make, but the ceiling is just a sanity cap.
-                self.prefs.cloud_auto_refresh_interval_minutes =
-                    sanitize_uint(&val, 1_440);
-                if self.prefs.cloud_auto_refresh_interval_minutes == "0" {
-                    self.prefs.cloud_auto_refresh_interval_minutes = "1".into();
-                }
-                self.persist_setting(
-                    "cloud_auto_refresh_interval_minutes",
-                    &self.prefs.cloud_auto_refresh_interval_minutes,
-                );
-            }
-            SettingsMessage::SettingCloudAutoArchiveToggle => {
-                self.prefs.cloud_auto_archive_orphans =
-                    !self.prefs.cloud_auto_archive_orphans;
-                self.persist_setting(
-                    "cloud_auto_archive_orphans",
-                    if self.prefs.cloud_auto_archive_orphans { "true" } else { "false" },
-                );
-            }
-            SettingsMessage::SettingCloudOrphanArchiveDaysChanged(val) => {
-                // Floor of 1 day (an orphan needs at least one full day
-                // to "settle" so a transient AWS API hiccup doesn't
-                // wipe legitimate hosts). Ceiling of one year.
-                self.prefs.cloud_orphan_archive_days = sanitize_uint(&val, 365);
-                if self.prefs.cloud_orphan_archive_days == "0" {
-                    self.prefs.cloud_orphan_archive_days = "1".into();
-                }
-                self.persist_setting(
-                    "cloud_orphan_archive_days",
-                    &self.prefs.cloud_orphan_archive_days,
-                );
             }
             SettingsMessage::SettingSftpConcurrencyChanged(val) => {
                 // Cap at 8, beyond that the SSH channel multiplexer

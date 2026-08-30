@@ -1,0 +1,15 @@
+ID,permission/surface,platform,code location,default,post-transformation,notes
+P-01,filesystem ~/.oryxis (vault 0600, dir user-private),all,oryxis-core/paths.rs; vault store mod.rs,user-only,unchanged,ORYXIS_HOME override honored
+P-02,ssh-agent Unix socket 0600,unix,agent_server/listener.rs:42-92,off,unchanged,confirm-per-signature mode available
+P-03,named pipe user DACL + anti-squat,windows,agent_server/listener.rs:199-300,off,unchanged,reject_remote_clients (no SMB)
+P-04,clipboard read/write,all,iced clipboard; terminal OSC 52,default write-only for OSC 52,unchanged,portable-export deny-listed setting guards readwrite
+P-05,OS keystore (biometric unlock),all,oryxis-biometric,off,unchanged,stores master password locally behind biometry; explicit user opt-in
+P-06,notifications/sound,all,util.rs:698-708,local only,unchanged,no push service
+P-07,URL opener (open/xdg-open/explorer),all,util.rs:826-895,user action,unchanged,args quoted; documented &-click fix
+P-08,subprocess exec (plugin/gif/rdp/vnc/open-with/wsl),all,see 01-ARCHITECTURE,user action,unchanged except: MCP launcher copy now signature-gated,external clients spawn launcher
+P-09,Windows mutex single-instance,windows,tray.rs:287-327,on,unchanged,
+P-10,shell exec ProxyCommand,all,oryxis-ssh connect.rs:556,per-dial consent,unchanged,sharpest exec edge; consent-gated
+P-11,localhost TCP listener (harness),all,harness/serve.rs,dev builds only,unchanged,feature not compiled into release profile usage
+P-12,cloud plugin subprocesses (aws/azure/gcp/k8s),all,oryxis-cloud-*-plugin (DELETED),---,REMOVED,directories deleted; workspace pruned
+P-13,scheduled tasks/services/launch agents,---,none present,n/a,n/a,verified absent (rg launchd/systemd/RunKeys/autorun)
+P-14,deep-link scheme registration,macos unregistered; win/linux per installer,deep_link.rs:34-38,n/a,unchanged,macOS scheme not registered (noted)

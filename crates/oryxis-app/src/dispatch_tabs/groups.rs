@@ -35,20 +35,11 @@ impl Oryxis {
                     self.editor_form.sweep_secrets();
                     self.panel_nav_clear();
                     self.panels.session_group_panel = false;
-                    self.cloud_form.visible = false;
-                    self.cloud_dynamic_form.visible = false;
-                    self.cloud_discover.visible = false;
                 }
             }
             TabsMessage::NewSubgroup(gid) => {
                 self.overlay = None;
-                // Only a manual folder can contain manual children
-                // (dynamic groups derive their contents from the query).
-                let parent_label = self
-                    .groups
-                    .iter()
-                    .any(|g| g.id == gid && g.cloud_query.is_none())
-                    .then(|| oryxis_core::models::Group::path_of(&self.groups, gid));
+                let parent_label = Some(oryxis_core::models::Group::path_of(&self.groups, gid));
                 if let Some(parent_label) = parent_label {
                     self.group_edit = crate::state::GroupEditForm {
                         visible: true,
@@ -66,9 +57,6 @@ impl Oryxis {
                     self.editor_form.sweep_secrets();
                     self.panel_nav_clear();
                     self.panels.session_group_panel = false;
-                    self.cloud_form.visible = false;
-                    self.cloud_dynamic_form.visible = false;
-                    self.cloud_discover.visible = false;
                 }
             }
             TabsMessage::NewGroup => {
@@ -93,9 +81,6 @@ impl Oryxis {
                 self.editor_form.sweep_secrets();
                 self.panel_nav_clear();
                 self.panels.session_group_panel = false;
-                self.cloud_form.visible = false;
-                self.cloud_dynamic_form.visible = false;
-                self.cloud_discover.visible = false;
             }
             TabsMessage::GroupEditLabelChanged(v) => {
                 self.group_edit.label = v;
@@ -162,7 +147,6 @@ impl Oryxis {
                 };
                 self.icon_picker.hex_input = self.group_edit.color.clone();
                 self.icon_picker.for_id = None;
-                self.icon_picker.for_group_form = false;
                 self.icon_picker.for_session_group = false;
                 self.icon_picker.for_group_edit = true;
                 self.icon_picker.for_local_terminal = false;
@@ -234,11 +218,7 @@ impl Oryxis {
                         let dup = self
                             .groups
                             .iter()
-                            .find(|g| {
-                                g.cloud_query.is_none()
-                                    && g.parent_id == parent_id
-                                    && g.label == trimmed
-                            })
+                            .find(|g| g.parent_id == parent_id && g.label == trimmed)
                             .map(|g| g.id);
                         if let Some(gid) = dup {
                             if let Some(group) =

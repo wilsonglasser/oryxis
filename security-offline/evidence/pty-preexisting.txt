@@ -1,0 +1,6 @@
+== PTY interop pre-existing failure check ==
+worktree at HEAD 4b8ef3b8:
+  test result: FAILED. 0 passed; 1 failed (round_trips_over_a_real_pty: "Not a typewriter" / ENOTTY)
+working tree (transformed):
+  identical failure, identical error
+conclusion: pre-existing darwin-27 platform issue, not a transformation regression

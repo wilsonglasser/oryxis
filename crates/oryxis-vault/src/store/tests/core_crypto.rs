@@ -84,22 +84,12 @@ fn every_encrypted_field_survives_master_password_change() {
     let proxy_ident = ProxyIdentity::new("p");
     vault.save_proxy_identity(&proxy_ident, Some("proxy-ident-pw")).unwrap();
 
-    let profile = CloudProfile::new("aws-prod", "aws");
-    vault.save_cloud_profile(&profile, Some("cloud-secret")).unwrap();
-
-    let peer_id = Uuid::new_v4();
-    vault
-        .save_sync_peer(&peer_id, "laptop", b"pubkey", Some(b"shared-secret"), &Utc::now())
-        .unwrap();
-
     // Encrypted SETTINGS are a second class, converted alongside the
     // BLOB columns in `convert_all_fields`. They were the exact drift
     // that shipped once (a new column the rotation walk forgot), so
     // pin every one: adding an encrypted setting without a rotation arm
     // must fail here.
     vault.set_ai_api_key("sk-secret-key").unwrap();
-    vault.set_sync_sftp_passphrase("sftp-group-pass").unwrap();
-    vault.set_sync_webdav_password("webdav-app-pass").unwrap();
     vault
         .set_files_recent_folders(r#"["/srv/logs","/home/me"]"#)
         .unwrap();
@@ -126,24 +116,8 @@ fn every_encrypted_field_survives_master_password_change() {
         vault.get_proxy_identity_password(&proxy_ident.id).unwrap().as_deref(),
         Some("proxy-ident-pw")
     );
-    assert_eq!(
-        vault.get_cloud_profile_secret(&profile.id).unwrap().as_deref(),
-        Some("cloud-secret")
-    );
-    assert_eq!(
-        vault.get_sync_peer_shared_secret(&peer_id).unwrap().as_deref(),
-        Some(b"shared-secret".as_slice())
-    );
     // The encrypted settings decrypt under the new master key too.
     assert_eq!(vault.get_ai_api_key().unwrap().as_deref(), Some("sk-secret-key"));
-    assert_eq!(
-        vault.get_sync_sftp_passphrase().unwrap().as_deref(),
-        Some("sftp-group-pass")
-    );
-    assert_eq!(
-        vault.get_sync_webdav_password().unwrap().as_deref(),
-        Some("webdav-app-pass")
-    );
     assert_eq!(
         vault.get_files_recent_folders().unwrap().as_deref(),
         Some(r#"["/srv/logs","/home/me"]"#)
@@ -411,21 +385,6 @@ fn calibrate_respects_floors() {
     assert!(p.t >= crate::store::KdfParams::DEFAULT.t);
     assert!(p.t <= 8);
     assert_eq!(p.p, 1);
-}
-
-#[test]
-fn sync_secret_unchanged_by_tuning() {
-    // The sync group secret is FROZEN on the default KDF (derive_key),
-    // independent of any vault's tuned params. Golden vector: tuning must
-    // never move it (a different value would partition sync groups by
-    // hardware). Captured from the pre-E1 derivation.
-    let secret = crate::store::derive_sync_secret("golden-passphrase").unwrap();
-    let hex: String = secret.iter().map(|b| format!("{b:02x}")).collect();
-    assert_eq!(
-        hex,
-        "b511e608b703b038d1d02fdfb13419de1fefa5a63830906563797e10b683f96f",
-        "sync secret must stay frozen across E1"
-    );
 }
 
 // ── Connections CRUD ──

@@ -1,0 +1,24 @@
+=== REMOVAL VERIFICATION GREPS (production code, i18n excluded) ===
+net_mirror                   1
+CloudMessage                 0
+View::Cloud                  0
+oryxis_sync\|oryxis-sync     0
+oryxis_relay\|oryxis-relay   0
+oryxis-cloud                 6
+dl\.oryxis\.app              0
+dl-cn\.oryxis\.app           0
+api\.github\.com             0
+signaling                    4
+derive_sync_secret           0
+SyncPeerRow                  0
+Tombstone                    0
+plugins::download            0
+PluginProvider               0
+dispatch_update              0
+UpdateMessage                0
+download_mirror              3
+=== leftovers detail (if any) ===
+crates/oryxis-vault/src/portable.rs:287:    // - `download_mirror` re-points every GitHub-bound request, including
+crates/oryxis-vault/src/portable.rs:289:    //   a link. Mirrors are untrusted by design (`net_mirror`), which is
+crates/oryxis-vault/src/portable.rs:302:        "download_mirror",
+crates/oryxis-vault/src/store/tests/portable_hardening.rs:750:        ("download_mirror", "https://attacker.example"),
