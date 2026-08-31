@@ -702,14 +702,15 @@ impl Oryxis {
             }
             TerminalMessage::TerminalCopyVisibleScreen(pane_id) => {
                 self.overlay = None;
-                if let Some(pane) = self.pane_by_id(pane_id)
-                    && let Ok(state) = pane.terminal.lock()
-                {
-                    let text = state.visible_text();
-                    drop(state);
-                    if !text.is_empty() {
-                        return self.update(Message::CopyToClipboard(text));
-                    }
+                let text = {
+                    self.pane_by_id(pane_id).and_then(|pane| {
+                        let state = pane.terminal.lock().ok()?;
+                        let text = state.visible_text();
+                        (!text.is_empty()).then_some(text)
+                    })
+                };
+                if let Some(text) = text {
+                    return self.update(Message::CopyToClipboard(text));
                 }
             }
             TerminalMessage::TerminalClearScrollback(pane_id) => {
