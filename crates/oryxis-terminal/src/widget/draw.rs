@@ -276,6 +276,9 @@ where
                 let max_scroll = grid.total_lines().saturating_sub(grid.screen_lines()) as i32;
                 widget_state.scroll_offset.get().clamp(0, max_scroll)
             };
+            // Preserve the resolved viewport position for actions outside the
+            // widget, such as the tab menu's visible-screen export.
+            state.set_viewport_scroll_offset(scroll_offset);
 
             // Faint PRIMARY ghost: the demoted rectangle of the
             // last selection, shown only when no live highlight is

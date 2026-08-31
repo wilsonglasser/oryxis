@@ -40,6 +40,10 @@ pub struct TerminalState {
     /// (C1: center the active search match). `Cell` so the immutable
     /// draw pass can consume it, mirroring `reset_scroll_on_output`.
     pub pending_scroll: std::cell::Cell<Option<i32>>,
+    /// The scrollback offset of the viewport most recently drawn by the
+    /// widget. Kept on the terminal state so app-level actions can export
+    /// exactly what the user is looking at, rather than the whole buffer.
+    viewport_scroll_offset: i32,
     /// The OSC 8 hyperlink under the pointer (C3), for the app's reveal
     /// chip. `None` when the pointer is over no explicit link. Updated by
     /// the widget's hover handler under the render lock.
@@ -75,7 +79,7 @@ impl TerminalState {
         let (pty, rx) =
             PtyHandle::spawn_command(cols, rows, None, &[], cwd, env, &backend.event_proxy)?;
         let palette = TerminalPalette::default();
-        Ok((Self { backend, pty: Some(pty), palette, remote_resize_tx: None, render_epoch: 0, search: None, pending_scroll: std::cell::Cell::new(None), hovered_link: None, preedit: String::new() }, rx))
+        Ok((Self { backend, pty: Some(pty), palette, remote_resize_tx: None, render_epoch: 0, search: None, pending_scroll: std::cell::Cell::new(None), viewport_scroll_offset: 0, hovered_link: None, preedit: String::new() }, rx))
     }
 
     /// Like `new` but spawns an explicit program (e.g. PowerShell or
@@ -108,7 +112,7 @@ impl TerminalState {
             cols, rows, Some(program), args, cwd, env, &backend.event_proxy,
         )?;
         let palette = TerminalPalette::default();
-        Ok((Self { backend, pty: Some(pty), palette, remote_resize_tx: None, render_epoch: 0, search: None, pending_scroll: std::cell::Cell::new(None), hovered_link: None, preedit: String::new() }, rx))
+        Ok((Self { backend, pty: Some(pty), palette, remote_resize_tx: None, render_epoch: 0, search: None, pending_scroll: std::cell::Cell::new(None), viewport_scroll_offset: 0, hovered_link: None, preedit: String::new() }, rx))
     }
 
     pub fn new_no_pty(
@@ -117,7 +121,7 @@ impl TerminalState {
     ) -> TerminalResult<Self> {
         let backend = TerminalBackend::new(cols, rows);
         let palette = TerminalPalette::default();
-        Ok(Self { backend, pty: None, palette, remote_resize_tx: None, render_epoch: 0, search: None, pending_scroll: std::cell::Cell::new(None), hovered_link: None, preedit: String::new() })
+        Ok(Self { backend, pty: None, palette, remote_resize_tx: None, render_epoch: 0, search: None, pending_scroll: std::cell::Cell::new(None), viewport_scroll_offset: 0, hovered_link: None, preedit: String::new() })
     }
 
     /// A PTY-less state with an explicit scrollback budget, for the
@@ -131,7 +135,7 @@ impl TerminalState {
     ) -> TerminalResult<Self> {
         let backend = TerminalBackend::new_with_scrollback(cols, rows, scrollback);
         let palette = TerminalPalette::default();
-        Ok(Self { backend, pty: None, palette, remote_resize_tx: None, render_epoch: 0, search: None, pending_scroll: std::cell::Cell::new(None), hovered_link: None, preedit: String::new() })
+        Ok(Self { backend, pty: None, palette, remote_resize_tx: None, render_epoch: 0, search: None, pending_scroll: std::cell::Cell::new(None), viewport_scroll_offset: 0, hovered_link: None, preedit: String::new() })
     }
 
     /// Wire a remote resize sender, called from the app once an SSH
@@ -544,6 +548,29 @@ impl TerminalState {
             block: false,
         };
         self.get_selection_text(&sel).trim_end().to_string()
+    }
+
+    /// Text in the viewport currently shown by the terminal widget, with no
+    /// rows outside it from scrollback. This is intentionally distinct from
+    /// [`Self::all_text`], which includes the whole buffer.
+    pub fn visible_text(&self) -> String {
+        use alacritty_terminal::grid::Dimensions;
+        let grid = self.backend.term.grid();
+        let last_col = grid.columns().saturating_sub(1) as u16;
+        let last_visible_line = grid.screen_lines().saturating_sub(1) as i32;
+        let offset = self.viewport_scroll_offset;
+        let selection = Selection {
+            start: (0, -offset),
+            end: (last_col, last_visible_line - offset),
+            block: false,
+        };
+        self.get_selection_text(&selection).trim_end().to_string()
+    }
+
+    /// Store the viewport offset resolved by the widget for the frame it is
+    /// drawing. The app reads this later for its visible-screen export action.
+    pub(crate) fn set_viewport_scroll_offset(&mut self, offset: i32) {
+        self.viewport_scroll_offset = offset;
     }
 
     /// Drop the scrollback history, keeping the visible screen (the PuTTY
@@ -1143,6 +1170,22 @@ mod tests {
             state.render_epoch() > e1,
             "set_palette() must advance the render epoch"
         );
+    }
+
+    #[test]
+    fn visible_text_exports_only_the_drawn_viewport() {
+        let mut state = TerminalState::new_no_pty_with_scrollback(24, 3, 100)
+            .expect("headless state");
+        state.process(b"one\r\ntwo\r\nthree\r\nfour\r\nfive");
+
+        // The live edge shows the last three rows; no earlier scrollback
+        // belongs in a visible-screen export.
+        assert_eq!(state.visible_text(), "three\nfour\nfive");
+
+        // A scrolled viewport follows the exact three rows that the widget
+        // would draw rather than silently snapping back to the live edge.
+        state.set_viewport_scroll_offset(2);
+        assert_eq!(state.visible_text(), "one\ntwo\nthree");
     }
 
     // ── Anchored region reads (AI tool capture) ──

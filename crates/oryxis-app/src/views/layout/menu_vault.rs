@@ -354,6 +354,16 @@ impl Oryxis {
         {
             items = items.push(self.menu_item(iced_fonts::lucide::clipboard_copy(), crate::i18n::t("copy_host_address"), Message::Tabs(TabsMessage::CopyTabAddress(idx)), OryxisColors::t().text_secondary));
         }
+        // Export only the active pane's displayed viewport. Unlike terminal
+        // "Copy All", this deliberately excludes all off-screen scrollback.
+        if let Some(pane_id) = self.tabs.get(idx).map(|tab| tab.active().id) {
+            items = items.push(self.menu_item(
+                iced_fonts::lucide::clipboard_copy(),
+                crate::i18n::t("export_visible_screen"),
+                Message::Terminal(TerminalMessage::TerminalCopyVisibleScreen(pane_id)),
+                OryxisColors::t().text_secondary,
+            ));
+        }
         items = items.push(self.menu_item(iced_fonts::lucide::rotate_cw(), crate::i18n::t("reconnect"), Message::Tabs(TabsMessage::ReconnectTab(idx)), OryxisColors::t().accent));
         items = items.push(self.menu_item(iced_fonts::lucide::x(), crate::i18n::t("close_tab"), Message::Tabs(TabsMessage::CloseTab(idx)), OryxisColors::t().text_secondary));
         // Right under the closes, and only with something to bring back:
