@@ -54,15 +54,16 @@ settle
 # when the background-image row joined it, 1991 -> 2091 when the
 # highlight-rules block landed after Appearance, 2091 -> 2276 when the
 # font-weight and text-thickness rows joined the font block (which also
-# pushed the copy row past the old 2200 viewport), and 2276 -> 2227
-# when the #143 polish shortened the section above.
+# pushed the copy row past the old 2200 viewport), 2276 -> 2227 when the
+# #143 polish shortened the section above, and 2227 -> 2334 when the two
+# link rows (confirm + callback tunnel) joined the behaviour card.
 #
 # That last one sat broken for a while because this
 # file runs late in the alphabet and the batch aborts on the FIRST
 # failure, so three earlier stale tests hid it. Read the row back
 # with `find "Capture command history"` and use label_y + 8 rather
 # than guessing a delta.
-click (1340, 2227)
+click (1340, 2334)
 settle
 absent "Copy shell integration snippet"
 absent "Rotate key"
