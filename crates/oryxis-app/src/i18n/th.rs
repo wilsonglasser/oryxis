@@ -520,6 +520,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "right_click_extend" => "ขยายส่วนที่เลือก",
         "terminal_copy" => "คัดลอก",
         "terminal_copy_all" => "คัดลอกทั้งหมด",
+        "terminal_copy_screen" => "คัดลอกหน้าจอ",
         "terminal_paste" => "วาง",
         "terminal_clear_scrollback" => "ล้าง Scrollback",
         "terminal_search_placeholder" => "ค้นหาในบัฟเฟอร์",

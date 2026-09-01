@@ -500,6 +500,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "right_click_extend" => "選択範囲を拡張",
         "terminal_copy" => "コピー",
         "terminal_copy_all" => "すべてコピー",
+        "terminal_copy_screen" => "画面をコピー",
         "terminal_paste" => "貼り付け",
         "terminal_clear_scrollback" => "スクロールバックをクリア",
         "terminal_search_placeholder" => "バッファ内を検索",

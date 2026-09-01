@@ -501,6 +501,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "right_click_extend" => "Rozszerz zaznaczenie",
         "terminal_copy" => "Kopiuj",
         "terminal_copy_all" => "Kopiuj wszystko",
+        "terminal_copy_screen" => "Kopiuj ekran",
         "terminal_paste" => "Wklej",
         "terminal_clear_scrollback" => "Wyczyść bufor przewijania",
         "terminal_search_placeholder" => "Szukaj w buforze",

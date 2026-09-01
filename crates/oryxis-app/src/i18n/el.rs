@@ -520,6 +520,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "right_click_extend" => "Επέκταση επιλογής",
         "terminal_copy" => "Αντιγραφή",
         "terminal_copy_all" => "Αντιγραφή όλων",
+        "terminal_copy_screen" => "Αντιγραφή οθόνης",
         "terminal_paste" => "Επικόλληση",
         "terminal_clear_scrollback" => "Καθαρισμός ιστορικού κύλισης",
         "terminal_search_placeholder" => "Αναζήτηση στο buffer",

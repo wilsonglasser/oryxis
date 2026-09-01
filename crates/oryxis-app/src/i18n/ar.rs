@@ -501,6 +501,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "right_click_extend" => "توسيع التحديد",
         "terminal_copy" => "نسخ",
         "terminal_copy_all" => "نسخ الكل",
+        "terminal_copy_screen" => "نسخ الشاشة",
         "terminal_paste" => "لصق",
         "terminal_clear_scrollback" => "مسح التمرير",
         "terminal_search_placeholder" => "بحث في المخزن",

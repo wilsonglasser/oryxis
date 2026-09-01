@@ -501,6 +501,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "right_click_extend" => "선택 확장",
         "terminal_copy" => "복사",
         "terminal_copy_all" => "모두 복사",
+        "terminal_copy_screen" => "화면 복사",
         "terminal_paste" => "붙여넣기",
         "terminal_clear_scrollback" => "스크롤백 지우기",
         "terminal_search_placeholder" => "버퍼에서 찾기",

@@ -43,6 +43,9 @@ pub struct TerminalState {
     /// The scrollback offset of the viewport most recently drawn by the
     /// widget. Kept on the terminal state so app-level actions can export
     /// exactly what the user is looking at, rather than the whole buffer.
+    /// The widget owns the live value; this is a copy, only as fresh as the
+    /// pane's last frame, which is why the menu entry reading it is offered
+    /// only while the pane is on screen.
     viewport_scroll_offset: i32,
     /// The OSC 8 hyperlink under the pointer (C3), for the app's reveal
     /// chip. `None` when the pointer is over no explicit link. Updated by
@@ -553,12 +556,18 @@ impl TerminalState {
     /// Text in the viewport currently shown by the terminal widget, with no
     /// rows outside it from scrollback. This is intentionally distinct from
     /// [`Self::all_text`], which includes the whole buffer.
+    ///
+    /// The offset is re-clamped here with the draw's own bound rather than
+    /// trusted as stored: a resize or a `clear_scrollback` between frames
+    /// shrinks the history the value was measured against, and a range past
+    /// the top of the grid would silently read as a shorter screen.
     pub fn visible_text(&self) -> String {
         use alacritty_terminal::grid::Dimensions;
         let grid = self.backend.term.grid();
         let last_col = grid.columns().saturating_sub(1) as u16;
         let last_visible_line = grid.screen_lines().saturating_sub(1) as i32;
-        let offset = self.viewport_scroll_offset;
+        let max_scroll = grid.total_lines().saturating_sub(grid.screen_lines()) as i32;
+        let offset = self.viewport_scroll_offset.clamp(0, max_scroll);
         let selection = Selection {
             start: (0, -offset),
             end: (last_col, last_visible_line - offset),
@@ -568,7 +577,7 @@ impl TerminalState {
     }
 
     /// Store the viewport offset resolved by the widget for the frame it is
-    /// drawing. The app reads this later for its visible-screen export action.
+    /// drawing, which is what [`Self::visible_text`] reads back.
     pub(crate) fn set_viewport_scroll_offset(&mut self, offset: i32) {
         self.viewport_scroll_offset = offset;
     }
@@ -1186,6 +1195,23 @@ mod tests {
         // would draw rather than silently snapping back to the live edge.
         state.set_viewport_scroll_offset(2);
         assert_eq!(state.visible_text(), "one\ntwo\nthree");
+    }
+
+    #[test]
+    fn visible_text_clamps_an_offset_the_grid_no_longer_holds() {
+        let mut state =
+            TerminalState::new_no_pty_with_scrollback(24, 3, 100).expect("headless state");
+        state.process(b"one\r\ntwo\r\nthree\r\nfour\r\nfive");
+
+        // An offset past the top of the buffer reads as the oldest screen the
+        // grid can show, never as a range half outside it.
+        state.set_viewport_scroll_offset(9);
+        assert_eq!(state.visible_text(), "one\ntwo\nthree");
+
+        // Dropping the history is the case that arrives without a frame in
+        // between: the stored offset outlives the lines it pointed at.
+        state.clear_scrollback();
+        assert_eq!(state.visible_text(), "three\nfour\nfive");
     }
 
     // ── Anchored region reads (AI tool capture) ──

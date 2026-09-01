@@ -501,6 +501,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "right_click_extend" => "Mở rộng vùng chọn",
         "terminal_copy" => "Sao chép",
         "terminal_copy_all" => "Sao chép tất cả",
+        "terminal_copy_screen" => "Sao chép màn hình",
         "terminal_paste" => "Dán",
         "terminal_clear_scrollback" => "Xóa cuộn lại",
         "terminal_search_placeholder" => "Tìm trong bộ đệm",

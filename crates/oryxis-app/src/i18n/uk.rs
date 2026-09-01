@@ -501,6 +501,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "right_click_extend" => "Розширити виділення",
         "terminal_copy" => "Копіювати",
         "terminal_copy_all" => "Копіювати все",
+        "terminal_copy_screen" => "Копіювати екран",
         "terminal_paste" => "Вставити",
         "terminal_clear_scrollback" => "Очистити буфер прокручування",
         "terminal_search_placeholder" => "Пошук у буфері",

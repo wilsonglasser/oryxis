@@ -354,13 +354,23 @@ impl Oryxis {
         {
             items = items.push(self.menu_item(iced_fonts::lucide::clipboard_copy(), crate::i18n::t("copy_host_address"), Message::Tabs(TabsMessage::CopyTabAddress(idx)), OryxisColors::t().text_secondary));
         }
-        // Export only the active pane's displayed viewport. Unlike terminal
-        // "Copy All", this deliberately excludes all off-screen scrollback.
-        if let Some(pane_id) = self.tabs.get(idx).map(|tab| tab.active().id) {
+        // "Copy Screen" belongs to the terminal's own context menu, which
+        // only exists under the Menu right-click scheme: on the other two
+        // there is no other door to it, so the tab menu becomes it.
+        // Offered only for the tab ON SCREEN, and never in Files mode: the
+        // viewport it copies is the one the widget last drew, and a
+        // background pane keeps taking output without redrawing, so its
+        // stored position would no longer be what anyone is looking at.
+        if self.prefs.terminal_right_click != crate::util::RightClickMode::Menu
+            && Some(idx) == self.active_tab
+            && self.terminal_surface_visible()
+            && let Some(pane_id) =
+                self.tabs.get(idx).filter(|t| !t.files_mode).map(|t| t.active().id)
+        {
             items = items.push(self.menu_item(
                 iced_fonts::lucide::clipboard_copy(),
-                crate::i18n::t("export_visible_screen"),
-                Message::Terminal(TerminalMessage::TerminalCopyVisibleScreen(pane_id)),
+                crate::i18n::t("terminal_copy_screen"),
+                Message::Terminal(TerminalMessage::TerminalCopyScreen(pane_id)),
                 OryxisColors::t().text_secondary,
             ));
         }
@@ -1075,6 +1085,17 @@ impl Oryxis {
                 iced_fonts::lucide::copy_check(),
                 crate::i18n::t("terminal_copy_all"),
                 Message::Terminal(TerminalMessage::TerminalCopyAll(pane_id)),
+                OryxisColors::t().text_secondary,
+            ))
+            // Next to "Copy All" because it answers the same question with
+            // the opposite scope: the screen as drawn, scroll position
+            // included, and nothing off it. Here the pane is necessarily
+            // the one under the cursor and necessarily visible, which is
+            // what makes the drawn viewport the right thing to export.
+            .push(self.menu_item(
+                iced_fonts::lucide::clipboard_copy(),
+                crate::i18n::t("terminal_copy_screen"),
+                Message::Terminal(TerminalMessage::TerminalCopyScreen(pane_id)),
                 OryxisColors::t().text_secondary,
             ))
             .push(self.menu_item(

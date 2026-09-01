@@ -501,6 +501,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "right_click_extend" => "Seçimi genişlet",
         "terminal_copy" => "Kopyala",
         "terminal_copy_all" => "Tümünü kopyala",
+        "terminal_copy_screen" => "Ekranı kopyala",
         "terminal_paste" => "Yapıştır",
         "terminal_clear_scrollback" => "Kaydırma geçmişini temizle",
         "terminal_search_placeholder" => "Arabellekte ara",

@@ -172,9 +172,9 @@ pub enum TerminalMessage {
     /// Copy the whole buffer (scrollback + screen) of a pane to the
     /// clipboard (context-menu "Copy All"). `pane_id`.
     TerminalCopyAll(Uuid),
-    /// Copy only the pane's currently displayed viewport (including a
-    /// scrollback position), without any off-screen history. `pane_id`.
-    TerminalCopyVisibleScreen(Uuid),
+    /// Copy only the pane's displayed viewport, scroll position included and
+    /// off-screen history excluded (context-menu "Copy Screen"). `pane_id`.
+    TerminalCopyScreen(Uuid),
     /// Drop a pane's scrollback history (context-menu "Clear
     /// Scrollback"). `pane_id`.
     TerminalClearScrollback(Uuid),

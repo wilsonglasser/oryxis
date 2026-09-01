@@ -501,6 +501,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "right_click_extend" => "Perluas seleksi",
         "terminal_copy" => "Salin",
         "terminal_copy_all" => "Salin semua",
+        "terminal_copy_screen" => "Salin layar",
         "terminal_paste" => "Tempel",
         "terminal_clear_scrollback" => "Bersihkan scrollback",
         "terminal_search_placeholder" => "Cari di buffer",

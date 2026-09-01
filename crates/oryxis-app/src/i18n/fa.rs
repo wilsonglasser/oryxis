@@ -501,6 +501,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "right_click_extend" => "گسترش انتخاب",
         "terminal_copy" => "کپی",
         "terminal_copy_all" => "کپی همه",
+        "terminal_copy_screen" => "کپی صفحه",
         "terminal_paste" => "چسباندن",
         "terminal_clear_scrollback" => "پاک کردن اسکرول‌بک",
         "terminal_search_placeholder" => "جستجو در بافر",

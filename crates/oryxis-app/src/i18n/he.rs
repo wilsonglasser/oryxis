@@ -520,6 +520,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "right_click_extend" => "הרחבת בחירה",
         "terminal_copy" => "העתקה",
         "terminal_copy_all" => "העתקת הכול",
+        "terminal_copy_screen" => "העתקת המסך",
         "terminal_paste" => "הדבקה",
         "terminal_clear_scrollback" => "ניקוי היסטוריית הגלילה",
         "terminal_search_placeholder" => "חיפוש במאגר",

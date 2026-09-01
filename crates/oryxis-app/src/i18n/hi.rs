@@ -520,6 +520,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "right_click_extend" => "चयन बढ़ाएं",
         "terminal_copy" => "कॉपी करें",
         "terminal_copy_all" => "सब कॉपी करें",
+        "terminal_copy_screen" => "स्क्रीन कॉपी करें",
         "terminal_paste" => "पेस्ट करें",
         "terminal_clear_scrollback" => "स्क्रोलबैक साफ़ करें",
         "terminal_search_placeholder" => "बफ़र में खोजें",

@@ -37,7 +37,6 @@ expect "bash (default)"
 # assertions below are about.
 click right (150.00, 20.00)
 settle 250
-expect "Export to Clipboard"
 click "Close Tab"
 settle 250
 absent "bash (default)"

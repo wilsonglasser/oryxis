@@ -500,6 +500,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "right_click_extend" => "Расширить выделение",
         "terminal_copy" => "Копировать",
         "terminal_copy_all" => "Копировать всё",
+        "terminal_copy_screen" => "Копировать экран",
         "terminal_paste" => "Вставить",
         "terminal_clear_scrollback" => "Очистить буфер прокрутки",
         "terminal_search_placeholder" => "Поиск в буфере",

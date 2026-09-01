@@ -500,6 +500,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "right_click_extend" => "Estendi selezione",
         "terminal_copy" => "Copia",
         "terminal_copy_all" => "Copia tutto",
+        "terminal_copy_screen" => "Copia schermo",
         "terminal_paste" => "Incolla",
         "terminal_clear_scrollback" => "Cancella cronologia",
         "terminal_search_placeholder" => "Cerca nel buffer",

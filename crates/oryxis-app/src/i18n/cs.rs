@@ -520,6 +520,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "right_click_extend" => "Rozšířit výběr",
         "terminal_copy" => "Kopírovat",
         "terminal_copy_all" => "Kopírovat vše",
+        "terminal_copy_screen" => "Kopírovat obrazovku",
         "terminal_paste" => "Vložit",
         "terminal_clear_scrollback" => "Vymazat scrollback",
         "terminal_search_placeholder" => "Hledat v bufferu",
