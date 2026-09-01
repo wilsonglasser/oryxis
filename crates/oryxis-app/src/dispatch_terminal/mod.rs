@@ -11,6 +11,9 @@
 //! - `triggers`: what a user highlight rule DOES when it matches
 //!   (notification / beep / snippet), including the confirmation that
 //!   keeps remote output from choosing which snippet runs.
+//! - `links`  : opening a URL the terminal printed: the confirmation a
+//!   remote host's link gets, and the SSH tunnel a loopback OAuth
+//!   callback needs before a browser here can complete it.
 //!
 //! The small arms (pane focus/split/close, search bar, broadcast
 //! toggles, paste/copy, context menu, IME commit) stay here.
@@ -19,9 +22,11 @@
 
 mod drop;
 mod keyboard;
+mod links;
 mod output;
 mod triggers;
 
+pub(crate) use links::LinkConfirmCard;
 pub(crate) use triggers::TriggerConfirmCard;
 
 use iced::Task;
@@ -365,6 +370,9 @@ impl Oryxis {
                 if let Some(pane_id) = closed_pane {
                     self.tmux_reset_pane(&pane_id);
                 }
+                // A callback tunnel belongs to the pane that opened it,
+                // and the local port it holds should go back with it.
+                self.prune_link_forwards();
                 // Same rule as CloseTab: drop the monitor series only
                 // when the closed pane was the machine's last live one
                 // anywhere (the closed pane is already out of the grid,
@@ -449,6 +457,21 @@ impl Oryxis {
                 {
                     pane.bell_flash = false;
                 }
+            }
+            TerminalMessage::TerminalLinkActivated(pane_id, url) => {
+                return self.activate_terminal_link(pane_id, url);
+            }
+            TerminalMessage::TerminalLinkDecision(open) => {
+                return self.resolve_link_confirm(open);
+            }
+            TerminalMessage::TerminalLinkCopy => {
+                return self.copy_link_confirm();
+            }
+            TerminalMessage::TerminalLinkTunnelReady(pane_id, port, url, outcome) => {
+                return self.link_tunnel_ready(pane_id, port, url, outcome);
+            }
+            TerminalMessage::TerminalLinkTunnelClosed(pane_id, port) => {
+                self.link_tunnel_closed(pane_id, port);
             }
             TerminalMessage::TriggerConfirmDecision(allow) => {
                 self.resolve_trigger_confirm(allow);

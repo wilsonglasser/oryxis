@@ -164,6 +164,71 @@ impl SshSession {
         Ok(crate::sftp::SftpClient::new(session, handle_for_exec, timeout))
     }
 
+    /// Open a `-L` forward on THIS session's existing connection, bound
+    /// to a caller-chosen local port.
+    ///
+    /// Another channel on a connection that is already authenticated, so
+    /// it costs no second handshake and no second password prompt - the
+    /// point of `SshTransport` being shared. What it cannot do is pick
+    /// the local port the way `connect_local_forward_ephemeral` does: a
+    /// loopback OAuth callback is registered with the authorization
+    /// server as an exact `redirect_uri`, so the local end has to be the
+    /// very port the remote process is listening on or the browser lands
+    /// nowhere. A port already bound here is therefore an error and not
+    /// something to work around - the caller's cue to say so, rather
+    /// than to send a browser (carrying an authorization code) to
+    /// whatever else holds that port.
+    ///
+    /// Binds LOOPBACK only, never `0.0.0.0`: the far end is a service on
+    /// the remote's loopback that is deliberately not exposed, and the
+    /// near end is for this machine's browser alone. The family is the
+    /// caller's (a callback written at `[::1]` is dialled over IPv6 and
+    /// an IPv4 listener would not be found), the refusal is not: a dial
+    /// site that passed a routable address would put that service on the
+    /// network, so this checks rather than trusts.
+    pub async fn open_local_forward(
+        &self,
+        listen_host: &str,
+        listen_port: u16,
+        target_host: &str,
+        target_port: u16,
+        policy: AutoClose,
+    ) -> Result<ForwardSession, SshError> {
+        if !listen_host
+            .parse::<std::net::IpAddr>()
+            .is_ok_and(|ip| ip.is_loopback())
+        {
+            return Err(SshError::Channel(format!(
+                "refusing to bind {listen_host}: not a loopback address"
+            )));
+        }
+        let (cancel_tx, cancel_rx) = tokio::sync::watch::channel(false);
+        let cancel_tx = Arc::new(cancel_tx);
+        let listener = bind_forward_listener(listen_host, listen_port).await?;
+        let handle = Arc::clone(self.transport.handle());
+        let task = spawn_autoclose_local_forward_task(
+            listener,
+            Arc::clone(&handle),
+            target_host.to_string(),
+            target_port,
+            listen_port,
+            cancel_rx,
+            Arc::clone(&cancel_tx),
+            policy,
+        );
+        tracing::info!(
+            "forward(-L on session) {}:{} -> {}:{} up",
+            listen_host, listen_port, target_host, target_port
+        );
+        Ok(ForwardSession {
+            handle,
+            cancel_tx,
+            _tasks: vec![task],
+            remote_bind: None,
+            remote_route: None,
+        })
+    }
+
     /// Run a short, silent command on a side channel of this live session
     /// and return its stdout. Same shape as `detect_os` (which predates
     /// it), generalized so callers can supply the command: the host

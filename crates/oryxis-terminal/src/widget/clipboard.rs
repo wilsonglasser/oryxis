@@ -70,12 +70,13 @@ fn open_scheme_allowed(url: &str) -> bool {
     )
 }
 
-/// Best-effort spawn of the OS default handler for a URL. Runs detached; the
-/// terminal widget never blocks on it and errors are swallowed, a failed
-/// launch just means nothing happens visibly, same as any other click miss.
-pub(crate) fn open_url(url: &str) {
+/// Spawn the OS default handler for a URL, reporting whether the launch
+/// was accepted. Runs detached: nothing here blocks on the handler, and
+/// a `false` means the click produced nothing visible, which is what the
+/// host says out loud rather than leaving the user to wonder.
+pub fn open_url(url: &str) -> bool {
     if !open_scheme_allowed(url) {
-        return;
+        return false;
     }
     #[cfg(target_os = "windows")]
     {
@@ -92,9 +93,8 @@ pub(crate) fn open_url(url: &str) {
         // the quote, and `%VAR%` expands inside quotes anyway).
         let mut file: Vec<u16> = std::ffi::OsStr::new(url).encode_wide().collect();
         file.push(0);
-        // HINSTANCE-shaped sentinel: > 32 is success. Nothing to report to
-        // here, a failed launch is the same visible outcome as a click miss.
-        unsafe {
+        // HINSTANCE-shaped sentinel: > 32 is success.
+        let hinst = unsafe {
             ShellExecuteW(
                 std::ptr::null_mut(),
                 std::ptr::null(),
@@ -104,14 +104,15 @@ pub(crate) fn open_url(url: &str) {
                 SW_SHOWNORMAL,
             )
         };
+        hinst as isize > 32
     }
     #[cfg(target_os = "macos")]
     {
-        let _ = std::process::Command::new("open").arg(url).spawn();
+        std::process::Command::new("open").arg(url).spawn().is_ok()
     }
     #[cfg(all(unix, not(target_os = "macos")))]
     {
-        let _ = std::process::Command::new("xdg-open").arg(url).spawn();
+        std::process::Command::new("xdg-open").arg(url).spawn().is_ok()
     }
 }
 

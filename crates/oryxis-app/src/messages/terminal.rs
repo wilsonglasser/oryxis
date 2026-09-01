@@ -191,4 +191,28 @@ pub enum TerminalMessage {
     /// The answer to "may this highlight rule run its snippet on this
     /// session" (C6). Remembered for the session either way.
     TriggerConfirmDecision(bool),
+    /// Ctrl+click activated a link in a pane: `(pane_id, url)`. The
+    /// widget hands the resolved target over instead of opening it,
+    /// because what happens next (confirm, tunnel a loopback callback)
+    /// depends on the pane's session.
+    TerminalLinkActivated(Uuid, String),
+    /// The answer to "open this link?". `false` opens nothing.
+    TerminalLinkDecision(bool),
+    /// Copy the pending link's target instead of opening it. Also an
+    /// answer to the question, so it closes the dialog.
+    TerminalLinkCopy,
+    /// A link's callback tunnel settled: `(pane_id, port, url, result)`.
+    /// The browser is launched from here on success, never before: the
+    /// redirect can arrive a second after the user finishes at the
+    /// provider, so the listener has to be up first.
+    TerminalLinkTunnelReady(
+        Uuid,
+        u16,
+        String,
+        Result<std::sync::Arc<oryxis_ssh::ForwardSession>, String>,
+    ),
+    /// A callback tunnel closed itself (served its redirect, or waited
+    /// out its unused timeout): `(pane_id, port)`. Drops the app's
+    /// bookkeeping entry.
+    TerminalLinkTunnelClosed(Uuid, u16),
 }

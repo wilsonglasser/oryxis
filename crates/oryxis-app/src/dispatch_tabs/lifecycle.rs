@@ -132,6 +132,9 @@ impl Oryxis {
         // Closing a pinned tab drops it from the persisted set.
         let was_pinned = self.tabs[idx].pinned;
         self.tabs.remove(idx);
+        // Give back the local ports held by any callback tunnel the
+        // tab's panes had open (each dropped `Arc` cancels its forward).
+        self.prune_link_forwards();
         if was_pinned {
             self.persist_pinned_tabs();
         }

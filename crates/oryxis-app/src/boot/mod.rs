@@ -514,6 +514,8 @@ impl Oryxis {
                 forward_conns: std::collections::HashMap::new(),
                 pf_aborted_pending: std::collections::HashMap::new(),
                 remote_desktop_forwards: std::collections::HashMap::new(),
+                link_forwards: std::collections::HashMap::new(),
+                link_confirm: None,
                 remote_desktop_seq: 0,
                 remote_desktop_enabled: false,
                 port_forward_starting: std::collections::HashSet::new(),

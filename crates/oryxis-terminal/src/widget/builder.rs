@@ -39,6 +39,7 @@ impl<Message> TerminalView<Message> {
             on_mouse_capture_hint: None,
             on_link_click_hint: None,
             on_link_opened: None,
+            on_link_activate: None,
             focused: true,
             resize_margins: (0.0, 0.0, 0.0, 0.0),
             bell_flash: false,
@@ -271,9 +272,23 @@ impl<Message> TerminalView<Message> {
         self
     }
 
-    /// Message emitted after a Ctrl+Click opens a URL.
+    /// Message emitted after a Ctrl+Click opens a URL. Ignored while
+    /// [`Self::on_link_activate`] is wired, which takes over the open.
     pub fn on_link_opened(mut self, msg: Message) -> Self {
         self.on_link_opened = Some(msg);
+        self
+    }
+
+    /// Wire the link ACTIVATION (Ctrl+Click on a URL) to the app,
+    /// which then owns opening it.
+    ///
+    /// The closure receives the resolved target: an allowlisted OSC 8
+    /// URI, or the literal `http(s)://` token scraped from the grid
+    /// (soft-wrapped rows joined). A host that wires this must open the
+    /// URL itself and retire the Ctrl+click hint the way
+    /// [`Self::on_link_opened`] would have.
+    pub fn on_link_activate(mut self, f: impl Fn(String) -> Message + 'static) -> Self {
+        self.on_link_activate = Some(Box::new(f));
         self
     }
 

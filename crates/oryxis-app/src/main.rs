@@ -141,6 +141,7 @@ mod sync_runtime;
 mod tab_conn_state;
 mod tab_cycle;
 mod terminal_appearance;
+mod terminal_link;
 mod theme;
 mod monitor;
 mod theme_export;

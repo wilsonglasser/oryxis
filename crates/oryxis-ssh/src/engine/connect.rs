@@ -276,7 +276,7 @@ impl SshEngine {
             local_port,
             cancel_rx,
             Arc::clone(&cancel_tx),
-            RD_TUNNEL_IDLE_GRACE,
+            AutoClose::on_idle(RD_TUNNEL_IDLE_GRACE),
         );
         tracing::info!(
             "forward(-L ephemeral) 127.0.0.1:{} -> {}:{} up",

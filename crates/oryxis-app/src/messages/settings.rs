@@ -143,9 +143,6 @@ pub enum SettingsMessage {
     TerminalFontWeightChanged(crate::fonts::TerminalFontWeight),
     /// Settings / Host config: terminal stroke widening picked.
     TerminalTextThicknessChanged(crate::fonts::TextThickness),
-    /// The user ctrl-clicked a link in the terminal: the gesture landed,
-    /// so under `HintMode::Once` retire the link toast for the focused pane.
-    TerminalLinkOpened,
     /// Settings: terminal hint mode picker changed. Carries the localized
     /// option label; the dispatch handler maps it back to a `HintMode`.
     HintModeChanged(String),
@@ -240,6 +237,12 @@ pub enum SettingsMessage {
     /// Offer stored credentials at a password prompt (issue #117),
     /// toggled in Settings > Terminal.
     ToggleTerminalPasswordAutofill,
+    /// Ask before opening a link from a remote pane, toggled in
+    /// Settings > Terminal.
+    ToggleTerminalLinkConfirm,
+    /// Tunnel a link's loopback callback through the pane's SSH
+    /// connection, toggled in Settings > Terminal.
+    ToggleTerminalLinkTunnel,
     /// Right-click scheme changed from the settings pick (localized
     /// "Context menu / Paste / Extend selection" label).
     TerminalRightClickChanged(String),

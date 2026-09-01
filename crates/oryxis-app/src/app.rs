@@ -1099,6 +1099,21 @@ pub struct Oryxis {
         Uuid,
         (u64, std::sync::Arc<oryxis_ssh::ForwardSession>),
     >,
+    /// Callback tunnels opened by Ctrl+clicking a link in a terminal
+    /// pane, keyed by `(pane_id, port)`. Each is a `-L` forward riding
+    /// that pane's own SSH connection so a CLI login's
+    /// `http://127.0.0.1:<port>` redirect reaches the listener on the
+    /// REMOTE machine. They close themselves once the redirect has been
+    /// served (or once they have waited long enough for one), and the
+    /// pane / tab close paths prune what is left; the app holds the only
+    /// strong `Arc`, so removing an entry cancels its tunnel.
+    pub(crate) link_forwards: std::collections::HashMap<
+        (Uuid, u16),
+        std::sync::Arc<oryxis_ssh::ForwardSession>,
+    >,
+    /// The pending "open this link?" question raised by a Ctrl+click in
+    /// a REMOTE pane (`Modal::TerminalLinkConfirm` while `Some`).
+    pub(crate) link_confirm: Option<crate::dispatch_terminal::LinkConfirmCard>,
     /// Monotonic launch counter feeding the generation in
     /// `remote_desktop_forwards`; bumped once per Open.
     pub(crate) remote_desktop_seq: u64,

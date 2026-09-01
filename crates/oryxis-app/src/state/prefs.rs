@@ -75,6 +75,20 @@ pub(crate) struct AppPrefs {
     /// default ON. Nothing is ever sent without the user picking a row:
     /// the popup is a suggestion, not an autofill that types itself.
     pub(crate) terminal_password_autofill: bool,
+    /// Ask before handing a link from a REMOTE pane to the browser
+    /// (default on, VS Code's behaviour for a remote window). The URL is
+    /// text a remote host printed, and an OSC 8 link's label can differ
+    /// from its target, so the prompt shows the target and names the
+    /// host. Local panes never ask: their output came from a program
+    /// running as the user. Persisted as `terminal_link_confirm`.
+    pub(crate) terminal_link_confirm: bool,
+    /// Tunnel a link's loopback callback through the pane's own SSH
+    /// connection (default on). A CLI login prints an authorize URL
+    /// whose `redirect_uri` is `127.0.0.1:<port>` on the machine running
+    /// it; over SSH that is the remote machine, so without the tunnel the
+    /// browser here follows the redirect to nothing. Persisted as
+    /// `terminal_link_tunnel`.
+    pub(crate) terminal_link_tunnel: bool,
     /// Command-history capture (default on): record commands executed on
     /// saved hosts into the vault's `command_history` table, surfaced in
     /// the terminal sidebar's History tab. Persisted as `command_history`.
@@ -566,6 +580,8 @@ impl Default for AppPrefs {
             scrollback_reset_output: false,
             paste_guard: true,
             terminal_password_autofill: true,
+            terminal_link_confirm: true,
+            terminal_link_tunnel: true,
             command_history: true,
             command_history_file: false,
             command_history_file_dir: None,

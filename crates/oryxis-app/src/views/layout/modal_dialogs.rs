@@ -370,6 +370,134 @@ impl Oryxis {
         .into()
     }
 
+    /// "Open this link?" for a Ctrl+click in a remote pane.
+    ///
+    /// A security prompt of the same family as the trigger one above:
+    /// the text was printed by a REMOTE host, and an OSC 8 link's label
+    /// can say anything at all about where it points, so what the dialog
+    /// shows is the TARGET (elided in the middle, both ends intact) and
+    /// the host that offered it. Cancel is the default; Esc and a click
+    /// outside open nothing.
+    ///
+    /// When the link carries a loopback callback, the dialog also says
+    /// which port is about to be forwarded and to where. That line is
+    /// the consent for the tunnel: it opens a listener on this machine,
+    /// which is not something to do silently on a click.
+    pub(crate) fn build_link_confirm_dialog<'a>(
+        &'a self,
+        card: &'a crate::dispatch_terminal::LinkConfirmCard,
+    ) -> Element<'a, Message> {
+        self.modal_nav_reset();
+        let mut info = column![
+            text(crate::i18n::t("terminal_link_confirm_title"))
+                .size(16)
+                .color(OryxisColors::t().text_primary),
+            Space::new().height(6),
+            text(
+                crate::i18n::t("terminal_link_confirm_body")
+                    .replace("{host}", &card.host_label)
+            )
+            .size(13)
+            .color(OryxisColors::t().text_secondary),
+            Space::new().height(12),
+            crate::widgets::panel_field(
+                crate::i18n::t("terminal_link_confirm_target"),
+                text(card.display.clone())
+                    .size(11)
+                    .font(iced::Font::MONOSPACE)
+                    .color(OryxisColors::t().text_primary)
+                    .into(),
+            ),
+        ];
+        if let Some(cb) = &card.callback {
+            let (label, body) = if card.tunnelable {
+                (
+                    crate::i18n::t("terminal_link_confirm_tunnel"),
+                    crate::i18n::t("terminal_link_confirm_tunnel_body")
+                        .replace("{port}", &cb.port.to_string())
+                        .replace("{host}", &card.host_label),
+                )
+            } else {
+                // Nothing to open a channel on (telnet, serial, mosh).
+                // Saying so beats a login that fails at its last step
+                // for reasons nothing on screen explains.
+                (
+                    crate::i18n::t("terminal_link_confirm_tunnel"),
+                    crate::i18n::t("terminal_link_confirm_no_tunnel")
+                        .replace("{port}", &cb.port.to_string()),
+                )
+            };
+            info = info.push(Space::new().height(8)).push(
+                crate::widgets::panel_field(
+                    label,
+                    text(body)
+                        .size(11)
+                        .color(OryxisColors::t().text_secondary)
+                        .into(),
+                ),
+            );
+        }
+
+        let buttons = crate::widgets::dir_row(vec![
+            self.modal_nav_slot_default(
+                crate::keynav::RowAction::activate(Message::Terminal(
+                    TerminalMessage::TerminalLinkDecision(false),
+                )),
+                6.0,
+                true,
+                styled_button(
+                    crate::i18n::t("cancel"),
+                    Message::Terminal(TerminalMessage::TerminalLinkDecision(false)),
+                    OryxisColors::t().bg_hover,
+                ),
+            ),
+            Space::new().width(8).into(),
+            // Copying is the escape hatch for a link the user wants to
+            // look at before following it (VS Code offers the same).
+            self.modal_nav_slot(
+                crate::keynav::RowAction::activate(Message::Terminal(
+                    TerminalMessage::TerminalLinkCopy,
+                )),
+                6.0,
+                false,
+                styled_button(
+                    crate::i18n::t("terminal_link_confirm_copy"),
+                    Message::Terminal(TerminalMessage::TerminalLinkCopy),
+                    OryxisColors::t().bg_hover,
+                ),
+            ),
+            Space::new().width(8).into(),
+            self.modal_nav_slot(
+                crate::keynav::RowAction::activate(Message::Terminal(
+                    TerminalMessage::TerminalLinkDecision(true),
+                )),
+                6.0,
+                false,
+                styled_button(
+                    crate::i18n::t("terminal_link_confirm_open"),
+                    Message::Terminal(TerminalMessage::TerminalLinkDecision(true)),
+                    OryxisColors::t().accent,
+                ),
+            ),
+        ]);
+
+        container(
+            column![info, Space::new().height(16), buttons]
+                .padding(24)
+                .width(460),
+        )
+        .style(|_| container::Style {
+            background: Some(Background::Color(OryxisColors::t().bg_surface)),
+            border: Border {
+                radius: Radius::from(12.0),
+                color: OryxisColors::t().border,
+                width: 1.0,
+            },
+            ..Default::default()
+        })
+        .into()
+    }
+
     /// The one-entry Import hub (owner call: ONE standardized import):
     /// names every supported source, and the "Choose file" picker's
     /// result is format-detected from its content, so the user never

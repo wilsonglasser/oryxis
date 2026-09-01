@@ -265,7 +265,6 @@ impl Oryxis {
             | SettingsMessage::TerminalFontWeightChanged(..)
             | SettingsMessage::TerminalTextThicknessChanged(..)
             | SettingsMessage::PackFontReady(..)
-            | SettingsMessage::TerminalLinkOpened
             | SettingsMessage::HintModeChanged(..)
             | SettingsMessage::ToggleCopyOnSelect
             | SettingsMessage::ToggleRightClickCopy
@@ -280,6 +279,8 @@ impl Oryxis {
             | SettingsMessage::ToggleScrollbackResetKeypress
             | SettingsMessage::ToggleScrollbackResetOutput
             | SettingsMessage::ToggleTerminalPasswordAutofill
+            | SettingsMessage::ToggleTerminalLinkConfirm
+            | SettingsMessage::ToggleTerminalLinkTunnel
             | SettingsMessage::TerminalRightClickChanged(..)
             | SettingsMessage::SidebarDefaultTabChanged(..)
             | SettingsMessage::ToggleCarefulPaste

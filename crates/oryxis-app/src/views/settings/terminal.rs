@@ -663,6 +663,30 @@ impl Oryxis {
             text(crate::i18n::t("terminal_password_autofill_desc"))
                 .size(11)
                 .color(OryxisColors::t().text_muted),
+            // Ctrl+click on a link. Both default ON: the confirmation is
+            // what stops a remote host's OSC 8 label from standing in for
+            // its target, and the tunnel is what makes a CLI login's
+            // loopback callback reach the machine that opened it.
+            Space::new().height(12),
+            self.nav_toggle_row(
+                crate::i18n::t("terminal_link_confirm"),
+                self.prefs.terminal_link_confirm,
+                Message::Settings(SettingsMessage::ToggleTerminalLinkConfirm),
+            ),
+            Space::new().height(4),
+            text(crate::i18n::t("terminal_link_confirm_desc"))
+                .size(11)
+                .color(OryxisColors::t().text_muted),
+            Space::new().height(12),
+            self.nav_toggle_row(
+                crate::i18n::t("terminal_link_tunnel"),
+                self.prefs.terminal_link_tunnel,
+                Message::Settings(SettingsMessage::ToggleTerminalLinkTunnel),
+            ),
+            Space::new().height(4),
+            text(crate::i18n::t("terminal_link_tunnel_desc"))
+                .size(11)
+                .color(OryxisColors::t().text_muted),
         ];
         // Where downloads land is behaviour, not appearance: it sat under
         // the Appearance header only because ZMODEM shipped alongside the

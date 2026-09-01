@@ -131,6 +131,10 @@ impl Oryxis {
                     // the default-ringed action, so a stray Enter can
                     // never hand the session to remote output.
                     | Modal::TriggerConfirm
+                    // "Open this link?": Cancel is the default-ringed
+                    // action, so a stray Enter never hands a remote
+                    // host's URL to the browser.
+                    | Modal::TerminalLinkConfirm
                     // The highlight-rule editor is a form, but it walks
                     // like a confirm: Tab / arrows step its rows, Enter
                     // fires the default (Save). Its text fields keep the

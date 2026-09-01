@@ -465,6 +465,12 @@ impl Oryxis {
             if let Ok(Some(v)) = vault.get_setting("terminal_password_autofill") {
                 self.prefs.terminal_password_autofill = v == "true";
             }
+            if let Ok(Some(v)) = vault.get_setting("terminal_link_confirm") {
+                self.prefs.terminal_link_confirm = v == "true";
+            }
+            if let Ok(Some(v)) = vault.get_setting("terminal_link_tunnel") {
+                self.prefs.terminal_link_tunnel = v == "true";
+            }
             if let Ok(Some(v)) = vault.get_setting("bold_is_bright") {
                 self.prefs.bold_is_bright = v == "true";
             }

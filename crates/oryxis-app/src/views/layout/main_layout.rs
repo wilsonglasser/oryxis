@@ -479,6 +479,22 @@ impl Oryxis {
             );
         }
 
+        // "Open this link?" (Ctrl+click in a remote pane): same family as
+        // the two prompts above, and layered with them, because what
+        // raised it is also remote output. Clicking outside opens
+        // nothing.
+        if let Some(ref card) = self.link_confirm {
+            return wrap_with_resize(
+                crate::widgets::modal_overlay(
+                    base,
+                    self.build_link_confirm_dialog(card),
+                    Some(Message::Terminal(TerminalMessage::TerminalLinkDecision(false))),
+                    0.0,
+                ),
+                resize_overlay,
+            );
+        }
+
         // Careful-paste confirmation: a clipboard paste containing a line
         // break is parked in `pending_paste` and previewed here (line
         // count + first lines) before anything reaches the session, so a

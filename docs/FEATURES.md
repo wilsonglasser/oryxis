@@ -215,6 +215,23 @@ coming next, see the [Roadmap](../README.md#roadmap).
   optional bottom tab bar.
 - **Syntax highlighting.** IPs, URLs, and file paths auto-detected and
   colored.
+- **Clickable links, including the ones that log in.** Ctrl+click follows
+  a URL, whether the program marked it up (OSC 8) or just printed it, and
+  a link long enough to soft-wrap is followed across the rows it wraps
+  onto instead of stopping at the margin. A link from a REMOTE pane asks
+  first, showing the target itself and the host that printed it, because
+  an OSC 8 label can say anything about where it points.
+- **Loopback callbacks are tunnelled.** A CLI login on the remote host
+  (`aws sso login`, `gcloud auth login`, anything doing OAuth) listens on
+  its OWN `127.0.0.1:<port>` and prints an authorize URL that redirects
+  back there. Opening that link locally would send the browser to this
+  machine's port instead, and the login would die at its last step. Oryxis
+  binds the same port here and forwards it down the pane's existing SSH
+  connection first, so the redirect completes; the tunnel closes itself
+  once the callback lands (or if none ever does). Both behaviours are
+  toggles in Settings > Terminal, on by default, and a link that would
+  open a port on your machine is confirmed either way, since the forward
+  is described nowhere else.
 - **17 terminal palettes plus custom schemes.** Picker with inline swatch
   previews, global or per-host; build your own, clone a built-in as a
   starting point, or import iTerm / Windows Terminal / base16 from a

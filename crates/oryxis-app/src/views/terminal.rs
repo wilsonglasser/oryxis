@@ -561,7 +561,17 @@ impl Oryxis {
                 }
             })
             .on_terminal_input(|v| Message::Terminal(TerminalMessage::TerminalInput(v)))
-            .on_link_opened(Message::Settings(SettingsMessage::TerminalLinkOpened));
+            // Ctrl+click hands the target here rather than opening it in
+            // the widget: only the app knows whether this pane is remote
+            // (so the link is confirmed first) and which SSH connection a
+            // loopback callback in it has to be tunnelled through. Carries
+            // THIS pane's id for the same reason the paste hooks do.
+            .on_link_activate({
+                let pane_id = pane.id;
+                move |url| {
+                    Message::Terminal(TerminalMessage::TerminalLinkActivated(pane_id, url))
+                }
+            });
         // The perf HUD's `net` row: link quality from the SSH session's
         // RTT probe window. Only sampled while the HUD can render it, so
         // the per-frame snapshot lock costs nothing when it's off. The

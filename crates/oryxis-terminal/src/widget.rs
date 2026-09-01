@@ -77,7 +77,11 @@ pub enum RightClickAction {
     Extend,
 }
 
-pub(crate) use clipboard::{open_url, set_clipboard_text};
+pub(crate) use clipboard::set_clipboard_text;
+// Shared with the app: a link the app opens on the widget's behalf (the
+// confirmation + callback-tunnel path) has to go through the same
+// hardened opener, not the app's own.
+pub use clipboard::open_url;
 pub(crate) use highlight::*;
 // Shared with the app-side session-log redaction so both sides agree on
 // what is IPv6-shaped.
@@ -207,13 +211,14 @@ pub struct TerminalWidgetState {
     /// canvas to underline only the hovered URL (not all of them) and
     /// to show the pointer cursor over it.
     hovered_url: Option<(String, iced::Point)>,
-    /// Per-row cell extents `(visible_row, start_col, end_col)` of the OSC 8
-    /// hyperlink currently hovered, used to underline it. One entry per grid
-    /// row the link wraps onto (empty when not over a link). Regex URLs derive
-    /// their extent from the per-frame highlight scan, but an explicit OSC 8
-    /// link isn't in that scan (its label need not look like a URL), so its
-    /// run is captured here at hover time while the grid lock is held.
-    hovered_osc8: Vec<(u16, u16, u16)>,
+    /// Per-row cell extents `(visible_row, start_col, end_col)` of the link
+    /// currently hovered, used to underline it. One entry per grid row the
+    /// link wraps onto (empty when not over a link). The per-frame highlight
+    /// scan is row-local and can't supply this: an explicit OSC 8 link isn't
+    /// in that scan at all (its label need not look like a URL), and a
+    /// scraped URL that soft-wraps is scanned as one highlight per row. Both
+    /// runs are captured here at hover time while the grid lock is held.
+    hovered_link_spans: Vec<(u16, u16, u16)>,
     /// Last `(col, row)` the URL hover detection ran for. Used to skip
     /// the lock + per-cell scan on sub-cell mouse moves, at typical
     /// font sizes the cursor crosses many pixels per cell, and running
@@ -316,9 +321,9 @@ struct RenderKey {
     /// Hovered URL quantized to its cell, so sliding along one URL doesn't
     /// rebuild every pixel. `None` when not over a detected URL.
     hovered_url_cell: Option<(u16, u16)>,
-    /// Digest of the per-row OSC 8 underline extents (0 when not over an
+    /// Digest of the per-row link underline extents (0 when not over an
     /// allowed link), so a wrapped-link hover invalidates the cached grid.
-    hovered_osc8: u64,
+    hovered_link_spans: u64,
     /// Only folded in under Privacy Mode (the sole draw-time consumer), so a
     /// bare hover move doesn't invalidate the grid when privacy is off.
     hovered_cell: Option<(u16, u16)>,
@@ -358,10 +363,10 @@ struct RenderKey {
     cell_h: f32,
 }
 
-/// Ordered digest of the OSC 8 underline extents (0 when empty), so the render
+/// Ordered digest of the link underline extents (0 when empty), so the render
 /// key changes as the hovered link's wrapped rows change. Empty maps to 0 so a
 /// no-link frame matches a no-link frame without a hash round trip.
-fn hash_osc8(segments: &[(u16, u16, u16)]) -> u64 {
+fn hash_link_spans(segments: &[(u16, u16, u16)]) -> u64 {
     use std::hash::{Hash, Hasher};
     if segments.is_empty() {
         return 0;
@@ -609,8 +614,20 @@ pub struct TerminalView<Message = ()> {
     /// wiring it once the hint has been taught for the pane.
     on_link_click_hint: Option<Box<dyn Fn() -> Message>>,
     /// Emitted after a Ctrl+Click successfully opens a URL, so the app
-    /// can persist "the user knows the gesture" and drop the hint.
+    /// can persist "the user knows the gesture" and drop the hint. Not
+    /// emitted when `on_link_activate` is wired: the app opens the link
+    /// itself there, and retires the hint on the same message.
     on_link_opened: Option<Message>,
+    /// Emitted with the resolved target when a Ctrl+Click activates a
+    /// link, INSTEAD of the widget opening it.
+    ///
+    /// What the app does with it that this crate cannot: ask before
+    /// handing a remote host's URL to the OS, and open an SSH tunnel for
+    /// a loopback callback baked into it (an `aws sso login` authorize
+    /// URL redirects to `127.0.0.1:<port>` on the machine that printed
+    /// it, which is not this one). Both need the pane's session; the
+    /// widget only knows its grid.
+    on_link_activate: Option<Box<dyn Fn(String) -> Message>>,
     /// Whether this pane currently has focus. Only the focused pane emits
     /// mouse-tracking reports, so a click that merely focuses an inactive
     /// split pane (e.g. one running htop, which leaves mouse mode on)

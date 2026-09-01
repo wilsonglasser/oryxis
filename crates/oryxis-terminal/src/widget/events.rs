@@ -1211,17 +1211,22 @@ where
                     // pointer + underline but still records the blocked
                     // target so the app can show a "not allowed" chip; an
                     // allowed one drives the underline + the reveal chip.
+                    let offset = widget_state.scroll_offset.get();
+                    // Segments are grid lines; the underline is drawn in
+                    // on-screen rows.
+                    let on_screen = |segments: Vec<LinkSegment>| -> Vec<(u16, u16, u16)> {
+                        segments
+                            .into_iter()
+                            .map(|(gl, sc, ec)| ((gl + offset) as u16, sc, ec))
+                            .collect()
+                    };
                     match osc8_link_run(&state.backend.term, line, col) {
                         Some((uri, segments)) => {
                             let allowed = osc8_scheme_allowed(&uri);
-                            // Underline every wrapped row (in on-screen
-                            // coordinates) only for an allowed link.
-                            let offset = widget_state.scroll_offset.get();
-                            widget_state.hovered_osc8 = if allowed {
-                                segments
-                                    .into_iter()
-                                    .map(|(gl, sc, ec)| ((gl + offset) as u16, sc, ec))
-                                    .collect()
+                            // Underline every wrapped row only for an
+                            // allowed link.
+                            widget_state.hovered_link_spans = if allowed {
+                                on_screen(segments)
                             } else {
                                 Vec::new()
                             };
@@ -1234,10 +1239,22 @@ where
                             allowed.then_some((uri, pos))
                         }
                         None => {
-                            widget_state.hovered_osc8.clear();
                             link_changed = state.hovered_link.is_some();
                             state.hovered_link = None;
-                            url_at_cell(&state.backend.term, line, col).map(|u| (u, pos))
+                            // A scraped URL underlines the same way: its
+                            // own row-local highlight stops at the wrap,
+                            // so the tail rows would otherwise sit under
+                            // the pointer with no cue.
+                            match url_run_at_cell(&state.backend.term, line, col) {
+                                Some((url, segments)) => {
+                                    widget_state.hovered_link_spans = on_screen(segments);
+                                    Some((url, pos))
+                                }
+                                None => {
+                                    widget_state.hovered_link_spans.clear();
+                                    None
+                                }
+                            }
                         }
                     }
                 } else {
@@ -1248,7 +1265,7 @@ where
                 // re-mask, so flag a cell change when one was tracked.
                 cell_changed = widget_state.hovered_cell.is_some();
                 widget_state.hovered_cell = None;
-                widget_state.hovered_osc8.clear();
+                widget_state.hovered_link_spans.clear();
                 // Retract any link-reveal chip (allowed or blocked).
                 if let Ok(mut state) = self.state.lock() {
                     link_changed = state.hovered_link.is_some();
@@ -1335,7 +1352,18 @@ where
                     };
                     drop(state);
                     if let Some(url) = target {
-                        open_url(&url);
+                        // Hand the URL to the app when it wants it: the
+                        // confirmation prompt and the loopback-callback
+                        // tunnel both need the PANE's session, which this
+                        // crate can't see. The app also retires the hover
+                        // hint from there, so the gesture still only
+                        // publishes one message. Unwired (the SFTP
+                        // console, the session player), the widget opens
+                        // the URL itself exactly as before.
+                        if let Some(cb) = &self.on_link_activate {
+                            return Some(CanvasAction::publish(cb(url)).and_capture());
+                        }
+                        let _ = open_url(&url);
                         // Tell the app the gesture landed so the
                         // one-time hover hint can retire itself.
                         if let Some(msg) = self.on_link_opened.clone() {

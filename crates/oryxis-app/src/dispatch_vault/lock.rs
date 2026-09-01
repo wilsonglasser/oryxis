@@ -311,8 +311,12 @@ impl Oryxis {
                             Self::close_tab_sessions(tab);
                         }
                         // Drop RDP/VNC tunnels too (each Arc drop cancels
-                        // the -L forward); locking severs everything.
+                        // the -L forward); locking severs everything. The
+                        // terminal's callback tunnels go the same way, and
+                        // a link waiting on an answer stops waiting.
                         self.remote_desktop_forwards.clear();
+                        self.link_forwards.clear();
+                        self.link_confirm = None;
                         // Standalone SFTP tabs ride their own SSH channels:
                         // close every mounted session and drop the tabs (plus
                         // their tab-order entries and the hoisted buffer), mirroring

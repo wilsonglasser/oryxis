@@ -41,6 +41,7 @@ impl Oryxis {
             Modal::ProxyCommand => self.pending_proxy_command.is_some(),
             Modal::AgentConfirm => self.agent.pending_confirm.is_some(),
             Modal::TriggerConfirm => self.trigger_confirm.is_some(),
+            Modal::TerminalLinkConfirm => self.link_confirm.is_some(),
             Modal::TerminalThemeGallery => self.panels.terminal_theme_gallery,
             Modal::UiThemeGallery => self.panels.ui_theme_gallery,
             Modal::ThemeEditor => self.theme_ui.editor.is_some(),
@@ -150,6 +151,10 @@ impl Oryxis {
             // session: a rule that could re-ask on the next matching
             // line would be a way to wear the user down.
             Modal::TriggerConfirm => self.resolve_trigger_confirm(false),
+            // Esc opens nothing. No state to remember either way: the
+            // next click on the link asks again, which is right for a
+            // question about one specific target.
+            Modal::TerminalLinkConfirm => self.link_confirm = None,
             Modal::ThemeEditor => {
                 self.theme_ui.editor = None;
                 self.theme_ui.color_popover = None;

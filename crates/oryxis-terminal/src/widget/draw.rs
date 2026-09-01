@@ -100,7 +100,7 @@ where
                     ((pos.y - TERM_PAD_TOP) / cell_h).max(0.0) as u16,
                 )
             }),
-            hovered_osc8: hash_osc8(&widget_state.hovered_osc8),
+            hovered_link_spans: hash_link_spans(&widget_state.hovered_link_spans),
             hovered_cell: if self.privacy { widget_state.hovered_cell } else { None },
             hover: widget_state.hover,
             scrollbar_dragging: widget_state.scrollbar_drag.is_some(),
@@ -535,9 +535,10 @@ where
         } else {
             None
         };
-        // An OSC 8 link's run was captured at hover time (it isn't in the
-        // regex highlight scan); underline every wrapped row the same way.
-        let hovered_osc8 = &widget_state.hovered_osc8;
+        // The hovered link's run was captured at hover time, across every
+        // row it wraps onto: an OSC 8 link isn't in the regex highlight
+        // scan at all, and a scraped URL is scanned one row at a time.
+        let hovered_link_spans = &widget_state.hovered_link_spans;
 
         // --- Pass 2: draw cells with highlight overrides ---
         // Consecutive plain ASCII glyphs in a row that share the same
@@ -834,7 +835,7 @@ where
             // looking like every link is independently clickable.
             let is_hovered_url = hovered_url_extent.is_some_and(|(r, sc, ec)| {
                 cd.row == r && cd.col >= sc && cd.col <= ec
-            }) || hovered_osc8.iter().any(|&(r, sc, ec)| {
+            }) || hovered_link_spans.iter().any(|&(r, sc, ec)| {
                 cd.row == r && cd.col >= sc && cd.col <= ec
             });
             if cd.flags.intersects(CellFlags::ALL_UNDERLINES) || is_hovered_url {

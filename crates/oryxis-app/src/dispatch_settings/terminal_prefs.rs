@@ -293,6 +293,26 @@ impl Oryxis {
                     if self.prefs.terminal_password_autofill { "true" } else { "false" },
                 );
             }
+            SettingsMessage::ToggleTerminalLinkConfirm => {
+                self.prefs.terminal_link_confirm = !self.prefs.terminal_link_confirm;
+                // Turning it off does not answer a question already on
+                // screen: that click is still the user's to make.
+                self.persist_setting(
+                    "terminal_link_confirm",
+                    if self.prefs.terminal_link_confirm { "true" } else { "false" },
+                );
+            }
+            SettingsMessage::ToggleTerminalLinkTunnel => {
+                self.prefs.terminal_link_tunnel = !self.prefs.terminal_link_tunnel;
+                // Live tunnels keep running: they were opened for a login
+                // that is mid-flight, and pulling the port out from under
+                // it would break exactly the round trip they exist for.
+                // Each closes itself once its callback lands.
+                self.persist_setting(
+                    "terminal_link_tunnel",
+                    if self.prefs.terminal_link_tunnel { "true" } else { "false" },
+                );
+            }
             SettingsMessage::ToggleCarefulPaste => {
                 self.prefs.careful_paste = !self.prefs.careful_paste;
                 // Turning the guard off releases nothing: a parked paste
@@ -442,16 +462,6 @@ impl Oryxis {
                 oryxis_terminal::osc::set_global_command_nonce(Some(fresh.clone()));
                 self.shell_integration_nonce = fresh;
                 self.set_toast(crate::i18n::t("shell_integration_rotated").to_string());
-            }
-            SettingsMessage::TerminalLinkOpened => {
-                // First successful ctrl-click on a link in this pane: the
-                // hint did its job, retire it for the pane (HintMode::Once).
-                // In-memory only, a fresh pane shows it again.
-                if let Some(tab_idx) = self.active_tab
-                    && let Some(tab) = self.tabs.get_mut(tab_idx)
-                {
-                    tab.active_mut().link_hint_shown = true;
-                }
             }
             SettingsMessage::HintModeChanged(name) => {
                 use crate::i18n::t;

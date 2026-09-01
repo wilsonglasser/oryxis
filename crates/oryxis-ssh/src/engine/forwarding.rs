@@ -205,6 +205,17 @@ impl ForwardSession {
         }
     }
 
+    /// Whether this forward has been cancelled, by an explicit `cancel()`
+    /// or by its own auto-close watcher.
+    ///
+    /// Distinct from [`Self::is_alive`], which asks about the CONNECTION:
+    /// a forward that rides a session's own connection (a terminal
+    /// callback tunnel) self-closes while that connection stays up, so
+    /// "alive" is still true for a tunnel whose listener is gone.
+    pub fn is_cancelled(&self) -> bool {
+        *self.cancel_tx.borrow()
+    }
+
     /// A receiver that flips to `true` when the forward is cancelled, whether
     /// by an explicit `cancel()` / drop or by an internal auto-close watcher.
     /// The RDP/VNC launcher awaits this to learn the tunnel closed on its own
@@ -455,12 +466,42 @@ pub(crate) fn spawn_local_forward_task(
 /// short enough that a closed desktop window doesn't leave the tunnel idle.
 pub(crate) const RD_TUNNEL_IDLE_GRACE: std::time::Duration = std::time::Duration::from_secs(10);
 
+/// When an ephemeral `-L` tunnel tears itself down. A saved rule has no
+/// such policy: it lives until the user toggles it off. A tunnel opened
+/// FOR something (a desktop client, an OAuth callback) has to end on its
+/// own, because nothing else in the app knows when that something is
+/// finished with it.
+#[derive(Debug, Clone, Copy)]
+pub struct AutoClose {
+    /// Idle time after the last connection closes before teardown. A new
+    /// connection arriving inside the grace aborts it.
+    pub idle_grace: std::time::Duration,
+    /// Cap on the wait for the FIRST connection. `None` waits
+    /// indefinitely (the RDP/VNC launcher: the user may take their time
+    /// getting to the client window, and the tunnel is visible in the
+    /// UI meanwhile). `Some` suits a tunnel opened for one expected
+    /// callback, which is either used within a couple of minutes or
+    /// never.
+    pub unused_timeout: Option<std::time::Duration>,
+}
+
+impl AutoClose {
+    /// Close `idle_grace` after the tunnel goes idle, and never on the
+    /// wait for a first connection.
+    pub fn on_idle(idle_grace: std::time::Duration) -> Self {
+        Self { idle_grace, unused_timeout: None }
+    }
+}
+
 /// A `-L` accept loop like `spawn_local_forward_task`, but it counts live
 /// connections and fires `cancel_tx` once the tunnel has served at least one
-/// connection and then sat idle for `idle_grace`. The RDP/VNC launcher uses
-/// this so its ephemeral tunnel self-destructs when the desktop client
-/// disconnects, with no dependency on the client's process lifetime (works
-/// the same for blocking viewers and handoff launchers).
+/// connection and then sat idle for `policy.idle_grace` (or, when
+/// `policy.unused_timeout` is set, once it has waited that long without
+/// serving one at all). The RDP/VNC launcher uses this so its ephemeral
+/// tunnel self-destructs when the desktop client disconnects, with no
+/// dependency on the client's process lifetime (works the same for blocking
+/// viewers and handoff launchers); the terminal's callback tunnel uses it so
+/// an abandoned login doesn't leave a local port bound.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn spawn_autoclose_local_forward_task(
     listener: tokio::net::TcpListener,
@@ -470,7 +511,7 @@ pub(crate) fn spawn_autoclose_local_forward_task(
     listen_port: u16,
     cancel: tokio::sync::watch::Receiver<bool>,
     cancel_tx: Arc<tokio::sync::watch::Sender<bool>>,
-    idle_grace: std::time::Duration,
+    policy: AutoClose,
 ) -> tokio::task::JoinHandle<()> {
     use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
@@ -501,11 +542,31 @@ pub(crate) fn spawn_autoclose_local_forward_task(
                     tokio::select! {
                         _ = cancel_watch.changed() => return,
                         _ = wake_rx.changed() => continue,
-                        _ = tokio::time::sleep(idle_grace) => {
+                        _ = tokio::time::sleep(policy.idle_grace) => {
                             if active.load(Ordering::SeqCst) == 0 {
                                 tracing::info!(
                                     "forward(-L ephemeral) {} idle {:?}, auto-closing",
-                                    listen_port, idle_grace
+                                    listen_port, policy.idle_grace
+                                );
+                                let _ = cancel_tx.send(true);
+                                return;
+                            }
+                        }
+                    }
+                } else if let Some(unused) = policy.unused_timeout
+                    && !ever_used.load(Ordering::SeqCst)
+                {
+                    // Nothing has ever connected. Wait out the cap, then
+                    // give the port back: the browser tab this tunnel was
+                    // opened for was closed, or the login was abandoned.
+                    tokio::select! {
+                        _ = cancel_watch.changed() => return,
+                        _ = wake_rx.changed() => continue,
+                        _ = tokio::time::sleep(unused) => {
+                            if !ever_used.load(Ordering::SeqCst) {
+                                tracing::info!(
+                                    "forward(-L ephemeral) {} unused after {:?}, auto-closing",
+                                    listen_port, unused
                                 );
                                 let _ = cancel_tx.send(true);
                                 return;

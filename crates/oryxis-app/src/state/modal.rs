@@ -121,6 +121,11 @@ pub(crate) enum Modal {
     /// through to the PTY behind it) and Esc refuses, which is also
     /// remembered for the session.
     TriggerConfirm,
+    /// "Open this link?" for a Ctrl+click in a REMOTE pane
+    /// (`link_confirm`). Same class as `TriggerConfirm`: what raised it
+    /// is REMOTE output, so it blocks input (Enter must never fall
+    /// through to the PTY behind it) and Esc opens nothing.
+    TerminalLinkConfirm,
     /// Manual-lock confirmation (`vault_ui.lock_confirm`). Lock Vault
     /// tears down every live SSH session and tab, so the button asks
     /// first; Esc / backdrop / the Cancel button all decline (the safe
@@ -170,6 +175,7 @@ impl Modal {
         Modal::MonitorKill,
         Modal::HighlightRuleEditor,
         Modal::TriggerConfirm,
+        Modal::TerminalLinkConfirm,
         Modal::LockVaultConfirm,
     ];
 
@@ -199,6 +205,9 @@ impl Modal {
         // Same class: Esc refuses to let remote output type into the
         // session, and the refusal sticks for the session.
         Modal::TriggerConfirm,
+        // Same class again: Esc opens nothing, which is the safe answer
+        // to a link whose text a remote host chose.
+        Modal::TerminalLinkConfirm,
         // The error dialog can pop over another flow, so it dismisses
         // before the heavier editors below; the two confirm dialogs
         // follow in the same lightweight-confirm group.
@@ -285,6 +294,7 @@ impl Modal {
             | Modal::MonitorKill
             | Modal::HighlightRuleEditor
             | Modal::TriggerConfirm
+            | Modal::TerminalLinkConfirm
             | Modal::LockVaultConfirm => true,
         }
     }
@@ -338,10 +348,11 @@ mod tests {
                 | Modal::MonitorKill
                 | Modal::HighlightRuleEditor
                 | Modal::TriggerConfirm
+                | Modal::TerminalLinkConfirm
                 | Modal::LockVaultConfirm => {}
             }
         }
-        assert_eq!(Modal::ALL.len(), 39, "add the new variant to Modal::ALL");
+        assert_eq!(Modal::ALL.len(), 40, "add the new variant to Modal::ALL");
         // Every Esc-closeable modal must also be a known modal.
         for m in Modal::ESC_ORDER {
             assert!(Modal::ALL.contains(m));

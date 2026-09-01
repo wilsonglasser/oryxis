@@ -927,68 +927,156 @@ pub(crate) fn hovered_url_range(
         .map(|h| (h.row, h.start_col, h.end_col))
 }
 
-/// Extract the URL string at a given cell from the current viewport, if any.
-/// Walks the row the cursor is on, finds the URL highlight that covers the
-/// column, and returns the full URL text. Returns `None` when the click
-/// lands outside any URL.
+/// How many rows a soft-wrap chain is followed across when a logical
+/// line is reassembled, IN EACH DIRECTION from the clicked row.
+///
+/// The bound is what keeps a pathological grid (every row carrying
+/// WRAPLINE) from walking the whole scrollback on a single hover; 64
+/// rows of a wide pane is several thousand characters, far past any URL
+/// a program actually prints. Same bound the prompt walk in `state.rs`
+/// uses, for the same reason.
+const MAX_WRAP_ROWS: usize = 64;
+
+/// A logical line reassembled across soft-wrapped rows, carrying the
+/// provenance the row-local scan used to get for free.
+struct LogicalLine {
+    text: String,
+    /// One entry per BYTE of `text`: the `(grid line, column)` that
+    /// produced it. A multi-byte char repeats its cell across its
+    /// bytes, so any byte offset maps back to a cell.
+    cells: Vec<(i32, u16)>,
+}
+
+impl LogicalLine {
+    /// Byte offset of a given cell, or `None` when the cell is past the
+    /// end of the line (a trimmed trailing blank).
+    fn byte_of(&self, line: i32, col: u16) -> Option<usize> {
+        self.cells.iter().position(|&c| c == (line, col))
+    }
+
+    /// The `cells` slice `[start, end)` as one segment per grid row:
+    /// `(line, first_col, last_col)`, inclusive columns. A chain is
+    /// contiguous and monotonic, so a run of equal lines is one segment.
+    fn segments(&self, start: usize, end: usize) -> Vec<LinkSegment> {
+        let mut segs: Vec<LinkSegment> = Vec::new();
+        for &(line, col) in &self.cells[start..end] {
+            match segs.last_mut() {
+                Some((l, _, last)) if *l == line => *last = col,
+                _ => segs.push((line, col, col)),
+            }
+        }
+        segs
+    }
+}
+
+/// Reassemble the logical line that `target_line` belongs to, following
+/// the soft-wrap chain in both directions.
+///
+/// A row that ends in WRAPLINE is continued by the next one, and the
+/// text of the two is one line with no break between them - the same
+/// rule the selection copy path follows so a wrapped URL copies out
+/// intact. Reading only the clicked row (what this used to do) truncated
+/// every link long enough to wrap, which is exactly the shape an OAuth
+/// authorize URL has.
+fn logical_line_at(
+    term: &alacritty_terminal::Term<crate::backend::EventProxy>,
+    target_line: i32,
+) -> Option<LogicalLine> {
+    use alacritty_terminal::index::{Column, Line};
+    use alacritty_terminal::term::cell::Flags as CellFlags;
+
+    // Index grid rows directly (the way `smart_span_at` does) instead of
+    // walking the viewport display iterator. `target_line` is a grid
+    // line (scroll adjusted, negative for scrollback), not an on-screen
+    // row, so Ctrl+click and hover stay correct when scrolled into
+    // history.
+    let grid = term.grid();
+    if Line(target_line) < grid.topmost_line() || Line(target_line) > grid.bottommost_line() {
+        return None;
+    }
+    let ncols = grid.columns();
+    let last_col = Column(ncols.saturating_sub(1));
+    let wraps = |line: i32| -> bool {
+        grid[Line(line)][last_col]
+            .flags
+            .contains(CellFlags::WRAPLINE)
+    };
+
+    let topmost = grid.topmost_line().0;
+    let bottommost = grid.bottommost_line().0;
+    let mut first = target_line;
+    // A budget PER DIRECTION, never one shared between them: the cell
+    // that was clicked is somewhere inside the chain, and a shared count
+    // spent going up leaves nothing to go down with, so a link long
+    // enough to fill the walk would open truncated at exactly the cell
+    // the user aimed at. That is the bug this walk exists to fix.
+    let mut up = 0;
+    while first > topmost && up < MAX_WRAP_ROWS && wraps(first - 1) {
+        first -= 1;
+        up += 1;
+    }
+    let mut last = target_line;
+    let mut down = 0;
+    while last < bottommost && down < MAX_WRAP_ROWS && wraps(last) {
+        last += 1;
+        down += 1;
+    }
+
+    let mut text = String::new();
+    let mut cells: Vec<(i32, u16)> = Vec::new();
+    for line in first..=last {
+        let row = &grid[Line(line)];
+        // A soft-wrapped row is full to the margin, so its trailing
+        // cells are interior content of the logical line; only the row
+        // that ENDS the chain gets its blank tail dropped.
+        let width = if line < last {
+            ncols
+        } else {
+            (0..ncols)
+                .rev()
+                .find(|&c| !matches!(row[Column(c)].c, ' ' | '\0'))
+                .map_or(0, |c| c + 1)
+        };
+        for ci in 0..width {
+            // `\0` is an unwritten cell; it reads as a blank, which ends
+            // a URL token the same way a printed space does.
+            let ch = match row[Column(ci)].c {
+                '\0' => ' ',
+                c => c,
+            };
+            text.push(ch);
+            cells.extend(std::iter::repeat_n((line, ci as u16), ch.len_utf8()));
+        }
+    }
+    (!text.trim().is_empty()).then_some(LogicalLine { text, cells })
+}
+
+/// Extract the URL string at a given cell, if any. Returns `None` when
+/// the click lands outside any URL.
 pub(crate) fn url_at_cell(
     term: &alacritty_terminal::Term<crate::backend::EventProxy>,
     target_line: i32,
     target_col: u16,
 ) -> Option<String> {
-    use alacritty_terminal::index::{Column, Line};
-    // Index the one grid row directly (the way `smart_span_at` does)
-    // instead of walking the whole viewport display iterator to pick
-    // a single row out of it. `target_line` is a grid line (scroll
-    // adjusted, negative for scrollback), not an on-screen row, so
-    // Ctrl+click and hover stay correct when scrolled into history.
-    let grid = term.grid();
-    let line = Line(target_line);
-    if line < grid.topmost_line() || line > grid.bottommost_line() {
-        return None;
-    }
-    let row_data = &grid[line];
-    let ncols = grid.columns();
-    let mut row_chars: Vec<(u16, char)> = Vec::with_capacity(ncols);
-    for ci in 0..ncols {
-        let c = row_data[Column(ci)].c;
-        if c != ' ' && c != '\0' {
-            row_chars.push((ci as u16, c));
-        }
-    }
-    if row_chars.is_empty() {
-        return None;
-    }
+    url_run_at_cell(term, target_line, target_col).map(|(url, _)| url)
+}
 
-    let max_col = row_chars.iter().map(|(c, _)| *c).max().unwrap_or(0) as usize;
-    let mut chars = vec![' '; max_col + 1];
-    for &(col, ch) in &row_chars {
-        if (col as usize) <= max_col {
-            chars[col as usize] = ch;
-        }
-    }
-    let row_str: String = chars.iter().collect();
-    let bytes = row_str.as_bytes();
+/// The scraped URL at a cell together with the rows it occupies.
+///
+/// The counterpart of [`osc8_link_run`] for links a program printed as
+/// plain text: both hand the hover path a target plus the segments to
+/// underline, so a URL that soft-wraps is drawn (and opened) as the one
+/// link it is rather than as its first row.
+pub(crate) fn url_run_at_cell(
+    term: &alacritty_terminal::Term<crate::backend::EventProxy>,
+    target_line: i32,
+    target_col: u16,
+) -> Option<(String, Vec<LinkSegment>)> {
+    let logical = logical_line_at(term, target_line)?;
+    let target = logical.byte_of(target_line, target_col)?;
+    let text = &logical.text;
+    let bytes = text.as_bytes();
     let len = bytes.len();
-
-    // Same byte-vs-column split as `detect_highlights`: `target_col` is a
-    // CELL column, the scan below walks bytes. Map a byte offset to its
-    // char's column before comparing (identity on pure-ASCII rows).
-    let byte_col: Option<Vec<u16>> = (!row_str.is_ascii()).then(|| {
-        let mut map = vec![0u16; len];
-        for (col, (b, ch)) in row_str.char_indices().enumerate() {
-            for off in 0..ch.len_utf8() {
-                map[b + off] = col as u16;
-            }
-        }
-        map
-    });
-    let col_of = |byte: usize| -> u16 {
-        match &byte_col {
-            Some(map) => map[byte],
-            None => byte as u16,
-        }
-    };
 
     let mut i = 0;
     while i < len {
@@ -996,11 +1084,11 @@ pub(crate) fn url_at_cell(
             i += 1;
             continue;
         }
-        let rest = &row_str[i..];
+        let rest = &text[i..];
         if rest.starts_with("http://") || rest.starts_with("https://") {
             let start = i;
             let mut end = i;
-            for ch in row_str[i..].chars() {
+            for ch in rest.chars() {
                 if ch.is_whitespace() || ch == '\0' {
                     break;
                 }
@@ -1017,8 +1105,8 @@ pub(crate) fn url_at_cell(
                         break;
                     }
                 }
-                if col_of(start) <= target_col && target_col <= col_of(end - 1) {
-                    return Some(row_str[start..end].to_string());
+                if (start..end).contains(&target) {
+                    return Some((text[start..end].to_string(), logical.segments(start, end)));
                 }
                 i = end;
                 continue;
@@ -1087,14 +1175,17 @@ pub(crate) fn osc8_link_at_cell(
 /// regions (an explicit `id=` can repeat), only a contiguous wrap. Capped at
 /// `MAX_ROWS` so a pathologically long link can't walk the whole scrollback
 /// on the draw hot path (it keeps a partial underline past the cap).
-/// One row's slice of a hyperlink run: `(grid_line, start_col, end_col)`.
-pub(crate) type Osc8Segment = (i32, u16, u16);
+/// One row's slice of a link run: `(grid_line, start_col, end_col)`.
+/// Shared by the OSC 8 and scraped-URL paths, both of which can span
+/// rows (an explicit hyperlink over a wrapped label, a plain URL over a
+/// soft wrap) and both of which underline every row they cover.
+pub(crate) type LinkSegment = (i32, u16, u16);
 
 pub(crate) fn osc8_link_run(
     term: &alacritty_terminal::Term<crate::backend::EventProxy>,
     target_line: i32,
     target_col: u16,
-) -> Option<(String, Vec<Osc8Segment>)> {
+) -> Option<(String, Vec<LinkSegment>)> {
     use alacritty_terminal::grid::Dimensions;
     use alacritty_terminal::index::{Column, Line};
     let grid = term.grid();
@@ -1117,7 +1208,7 @@ pub(crate) fn osc8_link_run(
             .is_some_and(|h| h.id() == id && h.uri() == uri)
     };
     // The contiguous run on one row around a known-matching column.
-    let seg = |line: i32, from: usize| -> Osc8Segment {
+    let seg = |line: i32, from: usize| -> LinkSegment {
         let mut s = from;
         while s > 0 && same_on(line, s - 1) {
             s -= 1;
@@ -1973,5 +2064,86 @@ mod tests {
             PrivacyClasses::default(),
         );
         assert!(is_privacy_cell(&auto, 0, 6));
+    }
+
+    // ── Scraped URLs across soft wraps ──
+
+    /// A grid narrow enough that a realistic URL wraps, the way an OAuth
+    /// authorize URL does in any normal pane.
+    fn wrapped_url_term(text: &[u8]) -> crate::backend::TerminalBackend {
+        let mut backend = crate::backend::TerminalBackend::new(20, 6);
+        backend.process(text);
+        backend
+    }
+
+    #[test]
+    fn scraped_url_run_joins_a_soft_wrapped_url() {
+        // 45 chars on a 20-col grid: rows 0 and 1 full, row 2 holds the
+        // 5-char tail. Every row of the run resolves the same whole URL.
+        let url = "https://example.com/authorize?code=abcdefgh12";
+        let b = wrapped_url_term(url.as_bytes());
+        for (line, col) in [(0, 0), (0, 19), (1, 5), (2, 3)] {
+            let (hit, segs) = url_run_at_cell(&b.term, line, col)
+                .unwrap_or_else(|| panic!("no link at {line},{col}"));
+            assert_eq!(hit, url);
+            assert_eq!(segs, vec![(0, 0, 19), (1, 0, 19), (2, 0, 4)]);
+        }
+    }
+
+    #[test]
+    fn scraped_url_run_stops_at_a_hard_line_break() {
+        // Row 0 ends in a real newline, so row 1 is a new logical line:
+        // the URL must not swallow the text under it (the failure that
+        // a naive "join the next row" would produce).
+        let b = wrapped_url_term(b"see https://a.co
+not-part-of-it");
+        let (hit, segs) = url_run_at_cell(&b.term, 0, 6).expect("link on row 0");
+        assert_eq!(hit, "https://a.co");
+        assert_eq!(segs, vec![(0, 4, 15)]);
+        assert!(url_run_at_cell(&b.term, 1, 2).is_none());
+    }
+
+    #[test]
+    fn scraped_url_run_keeps_the_row_local_rules() {
+        // Trailing sentence punctuation is trimmed, a cell outside the
+        // token is not a link, and the space still ends the token.
+        let b = wrapped_url_term(b"go https://a.co/x. now");
+        assert_eq!(
+            url_at_cell(&b.term, 0, 5).as_deref(),
+            Some("https://a.co/x")
+        );
+        assert!(url_at_cell(&b.term, 0, 1).is_none());
+        assert!(url_at_cell(&b.term, 0, 19).is_none());
+    }
+
+    #[test]
+    fn scraped_url_run_picks_the_token_under_the_cell() {
+        // Two URLs on one wrapped logical line: the hit is the one the
+        // cell sits in, not the first one in the line.
+        let b = wrapped_url_term(b"https://a.co/one https://b.co/two");
+        assert_eq!(
+            url_at_cell(&b.term, 0, 2).as_deref(),
+            Some("https://a.co/one")
+        );
+        assert_eq!(
+            url_at_cell(&b.term, 1, 2).as_deref(),
+            Some("https://b.co/two")
+        );
+    }
+
+    #[test]
+    fn a_chain_longer_than_the_walk_still_opens_whole_from_its_middle() {
+        // `MAX_WRAP_ROWS` rows above the click and more below it: with
+        // one budget shared between the two directions, the walk up
+        // spends all of it and the walk down never runs, so the click
+        // opens the link cut off at its own row. Which is the truncation
+        // the whole reassembly exists to stop, just further along the
+        // link than the row-local scan used to stop at.
+        let url = format!("https://a.co/{}", "x".repeat(1387));
+        let mut b = crate::backend::TerminalBackend::new(20, 80);
+        b.process(url.as_bytes());
+        // 1400 chars at 20 columns is 70 rows; row 64 is exactly the
+        // budget below the head, with 5 rows of tail under it.
+        assert_eq!(url_at_cell(&b.term, 64, 5).as_deref(), Some(url.as_str()));
     }
 }
