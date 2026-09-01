@@ -214,6 +214,24 @@ pub fn ipv6_is_local(s: &str) -> bool {
 /// row that is not pure ASCII, the map from byte offset back to column.
 /// Both scanners work in byte offsets and convert at the end; see the
 /// comment at the call site for why.
+/// One row as the scanners see it.
+///
+/// `wraps_at` is what lets a token be recognised across a soft wrap: a
+/// row that ended by running into the margin is the same LOGICAL line as
+/// the row below it, and a URL printed there has no scheme on its tail
+/// row to match on. Callers with no grid to ask (the privacy helper, the
+/// smart-select probe, tests) pass `None` and get the row-local
+/// behaviour.
+pub(crate) struct ScanRow {
+    /// Visible row index, the key every `Highlight` is reported under.
+    pub row: u16,
+    /// Non-blank cells, `(column, char)`.
+    pub cols: Vec<(u16, char)>,
+    /// `Some(last column)` when this row soft-wraps into the next one
+    /// (alacritty's WRAPLINE), `None` when it ends its line.
+    pub wraps_at: Option<u16>,
+}
+
 fn row_text(cols: &[(u16, char)]) -> (String, Option<Vec<u16>>) {
     let max_col = cols.iter().map(|(c, _)| *c).max().unwrap_or(0) as usize;
     let mut chars = vec![' '; max_col + 1];
@@ -245,12 +263,12 @@ fn row_text(cols: &[(u16, char)]) -> (String, Option<Vec<u16>>) {
 /// list first. And the two passes are gated independently: rules paint
 /// whether or not the automatic "Keyword highlighting" toggle is on.
 pub(crate) fn detect_rule_highlights(
-    row_chars: &[(u16, Vec<(u16, char)>)],
+    row_chars: &[ScanRow],
     rules: &[crate::highlight_rules::CompiledRule],
 ) -> Vec<Highlight> {
     let mut highlights = Vec::new();
     let mut spans = Vec::new();
-    for (row, cols) in row_chars {
+    for ScanRow { row, cols, .. } in row_chars {
         let (row_str, byte_col) = row_text(cols);
         // A row is blanks-padded to its last printable column, so the
         // trailing run of spaces is not text the user can see. Matching
@@ -288,7 +306,7 @@ pub(crate) fn detect_rule_highlights(
 /// extra strings (saved-connection hostnames, lowercase) masked wherever
 /// they appear, Privacy Mode only.
 pub(crate) fn detect_highlights(
-    row_chars: &[(u16, Vec<(u16, char)>)],
+    row_chars: &[ScanRow],
     palette: &TerminalPalette,
     privacy: bool,
     privacy_terms: &[String],
@@ -300,9 +318,17 @@ pub(crate) fn detect_highlights(
     let num_color = palette.ansi[5];  // magenta, same as IP, easy scan
 
     let mut highlights = Vec::new();
+    // Set by a row whose URL ran into the wrap margin, read by the row
+    // below it. A URL whose HEAD is scrolled off the top of the viewport
+    // starts with no carry and so keeps the old row-local colour: the
+    // scan is per-frame and viewport-local by design, and Ctrl+click and
+    // the hover underline both follow the wrap regardless
+    // (`url_run_at_cell` walks the grid, not this).
+    let mut carry_from: Option<u16> = None;
 
-    for (row, cols) in row_chars {
+    for ScanRow { row, cols, wraps_at } in row_chars {
         let row = *row;
+        let wraps_at = *wraps_at;
         // The scanners below all walk `bytes` and record BYTE offsets in
         // `start_col`/`end_col`. The row string holds exactly one char per
         // column, so a char's index IS its column; on a pure-ASCII row the
@@ -319,8 +345,63 @@ pub(crate) fn detect_highlights(
         let row_first_span = highlights.len();
 
         // --- URLs: "http://" or "https://" followed by non-whitespace ---
+        //
+        // A URL that runs into the wrap margin continues on the next row,
+        // where it has no scheme left to match on, so that tail is picked
+        // up from `carry_from` instead of by the scan. Without it the head
+        // of a wrapped link was blue and the rest of it was not, even
+        // though Ctrl+click opens the whole thing and the hover underline
+        // covers every row it touches.
         {
+            // Column of a byte, for comparing a span's end against the
+            // wrap margin. Byte offsets and columns coincide on an ASCII
+            // row; the map exists only when they do not.
+            let col_of = |byte: usize| -> u16 {
+                byte_col.as_ref().map_or(byte as u16, |m| m[byte])
+            };
+            // Trailing sentence punctuation belongs to the prose around
+            // the link. Trimmed only where the URL actually ENDS: at a
+            // wrap those bytes are interior text, and cutting them there
+            // would break the span and lose the carry with it.
+            let trim_tail = |mut end: usize, start: usize| -> usize {
+                while end > start
+                    && matches!(bytes[end - 1], b')' | b']' | b'>' | b',' | b'.' | b';')
+                {
+                    end -= 1;
+                }
+                end
+            };
             let mut i = 0;
+            // Only the row IMMEDIATELY below the one that carried out may
+            // claim the carry. A row with nothing printable on it never
+            // reaches this loop, and a stale carry must not leap over it
+            // onto unrelated text.
+            if carry_from.take() == Some(row.wrapping_sub(1)) {
+                let mut end = 0;
+                for ch in row_str.chars() {
+                    if ch.is_whitespace() || ch == '\0' {
+                        break;
+                    }
+                    end += ch.len_utf8();
+                }
+                if end > 0 {
+                    let carries_on = wraps_at == Some(col_of(end - 1));
+                    let cut = if carries_on { end } else { trim_tail(end, 0) };
+                    highlights.push(Highlight {
+                        row,
+                        start_col: 0,
+                        end_col: (cut - 1) as u16,
+                        color: url_color,
+                        kind: HighlightKind::Url,
+                    });
+                    if carries_on {
+                        carry_from = Some(row);
+                    }
+                    // Resume past the tail, not past the trim, so a second
+                    // URL later on the same row is still found.
+                    i = end;
+                }
+            }
             while i < len {
                 // Only slice at ASCII 'h', guaranteed char boundary. Skipping this
                 // guard panics when i lands mid-UTF-8 (e.g. typing "ç" crashed the app).
@@ -339,23 +420,20 @@ pub(crate) fn detect_highlights(
                         end += ch.len_utf8();
                     }
                     if end > start {
-                        while end > start {
-                            let last = bytes[end - 1];
-                            if last == b')' || last == b']' || last == b'>'
-                                || last == b',' || last == b'.' || last == b';'
-                            {
-                                end -= 1;
-                            } else {
-                                break;
-                            }
-                        }
+                        // Reaching the margin of a wrapped row means the
+                        // link goes on below.
+                        let carries_on = wraps_at == Some(col_of(end - 1));
+                        let cut = if carries_on { end } else { trim_tail(end, start) };
                         highlights.push(Highlight {
                             row,
                             start_col: start as u16,
-                            end_col: (end - 1) as u16,
+                            end_col: (cut - 1) as u16,
                             color: url_color,
                             kind: HighlightKind::Url,
                         });
+                        if carries_on {
+                            carry_from = Some(row);
+                        }
                         i = end;
                         continue;
                     }
@@ -844,12 +922,12 @@ pub(crate) fn privacy_extents(highlights: &[Highlight]) -> Vec<(u16, u16, u16)> 
 
 pub(crate) fn privacy_spans_with_text(
     highlights: &[Highlight],
-    row_chars: &[(u16, Vec<(u16, char)>)],
+    row_chars: &[ScanRow],
 ) -> Vec<((u16, u16, u16), String)> {
     merged_privacy_extents(highlights)
         .into_iter()
         .filter_map(|(row, start_col, end_col)| {
-            let (_, cells) = row_chars.iter().find(|(r, _)| *r == row)?;
+            let cells = &row_chars.iter().find(|sr| sr.row == row)?.cols;
             let mut text = String::with_capacity((end_col - start_col + 1) as usize);
             for col in start_col..=end_col {
                 text.push(
@@ -896,7 +974,7 @@ pub(crate) fn privacy_value_at_cell(
     if cols.is_empty() {
         return None;
     }
-    let rows = [(0u16, cols)];
+    let rows = [ScanRow { row: 0, cols, wraps_at: None }];
     let highlights = detect_highlights(&rows, palette, true, privacy_terms, classes);
     privacy_spans_with_text(&highlights, &rows)
         .into_iter()
@@ -1337,7 +1415,7 @@ pub(crate) fn smart_span_at(
     // token (its matcher is loose), hence the overlap test rather than a
     // containment test. `detect_highlights` takes (row, cells) pairs; a
     // single synthetic row 0 is enough as long as we match on the same key.
-    let rows = [(0u16, cols)];
+    let rows = [ScanRow { row: 0, cols, wraps_at: None }];
     let hit = detect_highlights(&rows, palette, false, &[], PrivacyClasses::default()).into_iter().any(|h| {
         h.row == 0
             && h.kind != HighlightKind::Number
@@ -1375,15 +1453,24 @@ mod tests {
         assert!(!ipv6_is_local("not-an-address"));
     }
 
-    fn rows_from(s: &str) -> Vec<(u16, Vec<(u16, char)>)> {
-        vec![(
-            0,
-            s.chars()
+    /// One unwrapped row, the shape most of these tests want.
+    fn rows_from(s: &str) -> Vec<ScanRow> {
+        vec![scan_row(0, s, None)]
+    }
+
+    /// A row at `row`, soft-wrapping into the next one when `wraps_at` is
+    /// set (the column its text ran into, i.e. the grid's last column).
+    fn scan_row(row: u16, s: &str, wraps_at: Option<u16>) -> ScanRow {
+        ScanRow {
+            row,
+            cols: s
+                .chars()
                 .enumerate()
                 .filter(|(_, c)| *c != ' ')
                 .map(|(i, c)| (i as u16, c))
                 .collect(),
-        )]
+            wraps_at,
+        }
     }
 
     /// `(start, end)` column spans of the UserDir highlights detected in `s`.
@@ -2145,5 +2232,96 @@ not-part-of-it");
         // 1400 chars at 20 columns is 70 rows; row 64 is exactly the
         // budget below the head, with 5 rows of tail under it.
         assert_eq!(url_at_cell(&b.term, 64, 5).as_deref(), Some(url.as_str()));
+    }
+
+    // -- Wrapped-URL colouring (the carry) --
+
+    /// `(row, start_col, end_col)` of every URL highlight, in order.
+    fn url_spans(rows: &[ScanRow]) -> Vec<(u16, u16, u16)> {
+        detect_highlights(rows, &TerminalPalette::default(), false, &[], PrivacyClasses::default())
+            .into_iter()
+            .filter(|h| h.kind == HighlightKind::Url)
+            .map(|h| (h.row, h.start_col, h.end_col))
+            .collect()
+    }
+
+    #[test]
+    fn a_wrapped_url_is_coloured_on_every_row_it_covers() {
+        // Row 0 is full to column 9 and wraps; row 1 holds the tail. Both
+        // rows belong to the one link, so both are coloured (this is what
+        // the hover underline already did and the colour did not).
+        let rows = vec![
+            scan_row(0, "http://a.co", Some(10)),
+            scan_row(1, "/deep/path x", None),
+        ];
+        assert_eq!(url_spans(&rows), vec![(0, 0, 10), (1, 0, 9)]);
+    }
+
+    #[test]
+    fn a_wrapped_url_carries_across_three_rows() {
+        let rows = vec![
+            scan_row(0, "http://a.co", Some(10)),
+            scan_row(1, "0123456789", Some(9)),
+            scan_row(2, "tail", None),
+        ];
+        assert_eq!(url_spans(&rows), vec![(0, 0, 10), (1, 0, 9), (2, 0, 3)]);
+    }
+
+    #[test]
+    fn a_hard_line_break_carries_nothing() {
+        // Row 0 ends its logical line (`wraps_at` is None), so row 1 is
+        // unrelated text and must keep its own colour.
+        let rows = vec![
+            scan_row(0, "http://a.co", None),
+            scan_row(1, "/not-part-of-it", None),
+        ];
+        assert_eq!(url_spans(&rows), vec![(0, 0, 10)]);
+    }
+
+    #[test]
+    fn a_url_that_stops_before_the_margin_carries_nothing() {
+        // The row wraps, but the link ended at column 10 with blanks
+        // after it: those blanks are real content of the logical line, so
+        // they end the URL and row 1 is not part of it.
+        let rows = vec![
+            scan_row(0, "http://a.co", Some(20)),
+            scan_row(1, "still-not-part", None),
+        ];
+        assert_eq!(url_spans(&rows), vec![(0, 0, 10)]);
+    }
+
+    #[test]
+    fn a_carry_reaches_only_the_next_row() {
+        // Row 2 does not follow row 0, so a carry that outlived its row
+        // must not paint it (a blank row never reaches the scanner, which
+        // is exactly how a stale carry could have skipped one).
+        let rows = vec![
+            scan_row(0, "http://a.co", Some(10)),
+            scan_row(2, "unrelated", None),
+        ];
+        assert_eq!(url_spans(&rows), vec![(0, 0, 10)]);
+    }
+
+    #[test]
+    fn punctuation_is_trimmed_at_the_end_but_not_at_a_wrap() {
+        // A `.` at the wrap margin is interior text: trimming it there
+        // would break the span and drop the carry. At the real end of the
+        // link it is prose again and comes off.
+        let rows = vec![
+            scan_row(0, "http://a.co.", Some(11)),
+            scan_row(1, "au/x.", None),
+        ];
+        assert_eq!(url_spans(&rows), vec![(0, 0, 11), (1, 0, 3)]);
+    }
+
+    #[test]
+    fn a_second_url_after_a_carried_tail_is_still_found() {
+        // The scan resumes past the tail, so the row's own link is not
+        // swallowed by the carry.
+        let rows = vec![
+            scan_row(0, "http://a.co", Some(10)),
+            scan_row(1, "/x http://b.co", None),
+        ];
+        assert_eq!(url_spans(&rows), vec![(0, 0, 10), (1, 0, 1), (1, 3, 13)]);
     }
 }

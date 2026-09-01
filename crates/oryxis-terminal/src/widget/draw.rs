@@ -215,7 +215,7 @@ where
 
         let mut cells: Vec<CellData> = DRAW_CELLS.take();
         cells.clear();
-        let mut row_chars: Vec<(u16, Vec<(u16, char)>)> = Vec::new();
+        let mut row_chars: Vec<ScanRow> = Vec::new();
         // Buffer-search match spans clipped to the visible window, in
         // (visible_row, start_col, end_col_inclusive, is_active) form.
         // Snapshot under the lock so pass 2 can fill each match's cells
@@ -431,7 +431,21 @@ where
                     });
                 }
                 if !chars.is_empty() {
-                    row_chars.push((visible_row as u16, chars));
+                    // A row whose last cell carries WRAPLINE ran into the
+                    // margin and is continued by the row below: one
+                    // logical line, so a URL may cross the boundary. The
+                    // scanners cannot see the grid, so the margin travels
+                    // with the row.
+                    let wraps_at = (cols_count > 0
+                        && row_data[alacritty_terminal::index::Column(cols_count - 1)]
+                            .flags
+                            .contains(CellFlags::WRAPLINE))
+                    .then(|| (cols_count - 1) as u16);
+                    row_chars.push(ScanRow {
+                        row: visible_row as u16,
+                        cols: chars,
+                        wraps_at,
+                    });
                 }
             }
 
