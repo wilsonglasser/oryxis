@@ -369,7 +369,7 @@ impl Oryxis {
                 if !in_tab_strip {
                     self.hover.tab = None;
                     self.hover.sftp_tab = None;
-                    self.hover.settings_tab = false;
+                    self.hover.panel_tab = None;
                 }
                 if let Some(idx) = self.hover.tab.filter(|_| in_tab_strip)
                     && let Some(tab) = self.tabs.get(idx)
@@ -388,12 +388,12 @@ impl Oryxis {
                         start: self.mouse_position,
                         active: false,
                     });
-                } else if self.hover.settings_tab && in_tab_strip {
-                    // So does the Settings tab, under its synthetic id
+                } else if let Some(kind) = self.hover.panel_tab.filter(|_| in_tab_strip) {
+                    // So do the panel tabs, under their synthetic ids
                     // (issue #120): the reorder machinery is uuid-keyed
                     // and `TabRef::strip_id` answers with the same value.
                     self.tab_drag = Some(crate::state::TabDrag {
-                        from_id: crate::state::SETTINGS_TAB_ID,
+                        from_id: kind.tab_id(),
                         start: self.mouse_position,
                         active: false,
                     });

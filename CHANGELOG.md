@@ -4,6 +4,39 @@ All notable changes to Oryxis are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the
 project uses [SemVer](https://semver.org/spec/v2.0.0.html).
 
+## [0.16.0] - 2026-08-31
+
+An interactive SFTP console for people who would rather type than drag, opening as a pane of the session already in front of them, and an optional network tools panel for the questions asked while a host will not connect. Alongside them, East Asian ambiguous width becomes a per-host answer, the CJK font fix stops Chinese, Japanese and Korean labels from looking cut off, and a command proxy connects on Windows for the first time.
+
+### Added
+- Interactive SFTP console: `sftp(1)` commands, globs, Tab completion on remote paths, a command history and byte-level progress inline (#188).
+- The console opens as a pane of the live session, stacked under the shell, beside it or zoomed over it (Settings > SFTP). Asked for from a host card it still gets a tab of its own.
+- One switch over Terminal / Console / SFTP: the tab's mode chip cycles, the status bar goes straight to one, and Ctrl+Shift+S (Cmd+Shift+S on macOS) is the round trip.
+- The console is offered on SSH hosts only, and not on a host carrying mosh. Its commands stay out of the per-host command history.
+- Network tools panel in its own tab: DNS, ping, traceroute, port test, HTTP, TLS certificate, WHOIS and eight public blocklists. Off by default; Settings > Features turns it on.
+- Ping and traceroute need no `ping` or `traceroute` installed on Linux, or on Windows for IPv4.
+- Port test takes up to 64 ports and reports open, refused and filtered as three different answers.
+- Per-host East Asian ambiguous width (Auto / Narrow / Wide), in the host editor and the sidebar's Host config tab. Auto reads the host's encoding.
+- A pane's right-click menu zooms and rearranges the pane it opened on, rather than whichever pane holds focus.
+- The tab strip answers a right-click and the `+` popover offers the reopen, so a closed tab comes back without the hotkey (#186).
+- Per-host opt-in that carries dropped files over ZMODEM instead of SFTP, for a shell running inside a container (#192, by @shideqin).
+
+### Security
+- The SFTP console refuses a downloaded file name that is not a single plain path component. A hostile server could answer a glob with `..\..\evil.exe` or `C:evil` and steer a `get` outside the local working directory on Windows.
+- The SFTP console prints remote file names with control characters replaced by `?`. A name could otherwise clear the screen, forge the console's own prompt marks, or reach the clipboard through OSC 52.
+- A value substituted into a ProxyCommand token may only be the shape of a host or a login name. The line is approved once, while the host filling `%h` arrives per dial and a sync peer writes it verbatim.
+- Ping and traceroute refuse a target starting with a dash, which the system binary would have read as one of its own flags.
+
+### Fixed
+- A command proxy connects on Windows: the spawn was `sh -c`, and a stock Windows box has no `sh` (#194, by @kblock1).
+- `%h`, `%n`, `%p` and `%r` resolve in a ProxyCommand, so an imported `~/.ssh/config` host stops asking its proxy for a host literally named `%h` (#194, by @kblock1).
+- A command proxy that fails says why: its last lines ride the dial error instead of surfacing as an unexplained disconnect, and its output is drained for the life of the session.
+- Chinese, Japanese and Korean labels no longer look cut off: the downloaded CJK font never reached the fallback chain (#189).
+- Open Plugins opens the plugin settings from outside Settings (#193).
+- Sidebar Files rows answer Delete and the context menu without the keyboard ring (#191, by @shideqin).
+- A serial host no longer panics on an unusual baud rate (serialport 4.10.1).
+- Zero-width characters past the cell limit no longer grow a cell without bound (alacritty).
+
 ## [0.15.0] - 2026-08-24
 
 The mosh release, and the first since 0.10 to carry a security section.

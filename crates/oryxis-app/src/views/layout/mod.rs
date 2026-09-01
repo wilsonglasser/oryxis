@@ -333,6 +333,7 @@ impl Oryxis {
                 View::Settings => self.view_settings(),
                 View::Terminal => self.view_terminal(),
                 View::Monitoring => self.view_monitor_dash(),
+                View::NetworkTools => self.view_net_tools(),
             }
         };
 

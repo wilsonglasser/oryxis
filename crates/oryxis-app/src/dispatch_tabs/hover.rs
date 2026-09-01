@@ -73,14 +73,15 @@ impl Oryxis {
             TabsMessage::SnippetCardUnhovered(idx) => {
                 self.hover.leave_snippet_card(idx);
             }
-            TabsMessage::SettingsTabHovered => {
-                self.hover.settings_tab = true;
+            TabsMessage::PanelTabHovered(kind) => {
+                self.hover.panel_tab = Some(kind);
                 return self.arm_tab_close_dwell();
             }
-            TabsMessage::SettingsTabUnhovered => {
-                self.hover.settings_tab = false;
-                // The Settings chip is a lone entry, so it has no
-                // `leave_*` guard to run the disarm for it.
+            TabsMessage::PanelTabUnhovered(kind) => {
+                // Crossing from one chip to the next publishes the
+                // arriving chip's enter first, so the clear has to name
+                // the chip it is leaving (the card-action convention).
+                self.hover.leave_panel_tab(kind);
                 if !self.hover.any_tab_chip() {
                     self.hover.tab_close_armed = false;
                 }

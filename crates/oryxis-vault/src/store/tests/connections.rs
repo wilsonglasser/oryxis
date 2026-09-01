@@ -104,6 +104,32 @@ fn connection_address_family_round_trips() {
 }
 
 #[test]
+fn connection_ambiguous_width_round_trips() {
+    use oryxis_core::models::connection::AmbiguousWidth;
+    let vault = unlocked_vault();
+    // Same guard as the address-family test, and the same failure mode:
+    // the column was appended LAST, so a wrong positional index reloads
+    // someone else's value and the `_ =>` fallthrough turns it into a
+    // silent Auto, which looks exactly like the default nobody set.
+    for width in [AmbiguousWidth::Auto, AmbiguousWidth::Narrow, AmbiguousWidth::Wide] {
+        let mut conn = Connection::new("h", "example.com");
+        conn.ambiguous_width = width;
+        // A CJK encoding alongside it, so a `Wide` that silently reloaded
+        // as `Auto` could not pass by resolving wide anyway.
+        conn.encoding = Some("Big5".to_string());
+        vault.save_connection(&conn, None).unwrap();
+        let loaded = vault
+            .list_connections()
+            .unwrap()
+            .into_iter()
+            .find(|c| c.id == conn.id)
+            .expect("connection listed");
+        assert_eq!(loaded.ambiguous_width, width);
+        assert_eq!(loaded.encoding.as_deref(), Some("Big5"));
+    }
+}
+
+#[test]
 fn monitor_disks_round_trip_keeps_all_three_states() {
     // Auto / Custom / Custom-with-nothing are three different answers
     // (issue #135) and the column has to tell them apart: NULL is Auto,

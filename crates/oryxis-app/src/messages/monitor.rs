@@ -7,7 +7,7 @@ pub enum MonitorMessage {
     /// Periodic poll: probe every monitored host that has a live session
     /// and an open Monitor tab. Mounted only while such a tab is
     /// visible, so idle screens never touch the network.
-    Tick,
+    PollHosts,
     /// A probe returned: the raw batched payload, or an error to
     /// surface on the card. The `MonitorKey` is the MACHINE the sample
     /// belongs to and is carried rather than re-derived, so an edit to

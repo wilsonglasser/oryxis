@@ -222,6 +222,16 @@ coming next, see the [Roadmap](../README.md#roadmap).
   a scheme moves between machines without the vault.
 - **Bundled Nerd Fonts.** SauceCodePro plus a Symbols Nerd Font fallback so
   Powerline and icon glyphs always render.
+- **East Asian ambiguous width.** Box drawing, arrows, circled digits and
+  Greek letters are one cell wide in Western environments and two in
+  legacy CJK ones, which is why vim borders step and htop bars break on a
+  zh / ja / ko remote. `Host editor → Terminal → Ambiguous width` picks
+  per host: Auto (a legacy CJK encoding on the host means wide),
+  Narrow or Wide. The same pick sits in the terminal sidebar's Host
+  config tab, where it applies to new output without reconnecting. Width
+  is a two-party contract: this only lets Oryxis match what the remote's
+  `wcwidth` already does, so pair it with a CJK locale on the server or
+  `set ambiwidth=double` in vim.
 - **Paste done right.** X11-style middle-click paste, configurable
   right-click (paste / context menu / xterm-style extend selection), CRLF
   normalization, and a paste guard (see Security below).
@@ -295,6 +305,48 @@ coming next, see the [Roadmap](../README.md#roadmap).
   rather than wrapping, and truncated or forged payloads degrade to
   "unknown" instead of nonsense.
 
+## Network tools
+
+Off by default, and while it is off the whole thing is invisible: no
+menu entry, no tab, no way in (Settings > Features > Network tools
+panel turns it on, next to the other optional ones). Switching it back off closes the tab with it.
+
+- **Its own tab, not a sidebar.** The panel opens from the burger menu
+  as a full surface next to Settings, so a lookup you are waiting on
+  does not cost you the terminal you were reading.
+- **DNS.** A, AAAA, CNAME, MX, NS, TXT, SOA and SPF from this machine's
+  own resolvers, each record with its TTL. An address target is looked
+  up in reverse (PTR) instead, and a domain publishing two SPF records
+  is called out as the error receivers treat it as.
+- **Ping and traceroute.** Four echo requests and a hop-by-hop path,
+  spoken natively where the OS allows it without privileges (a datagram
+  ICMP socket on Linux, `IcmpSendEcho2` on Windows), so neither needs
+  `ping` or `traceroute` to be installed: a stock WSL image has no
+  traceroute at all. Where there is no unprivileged path (macOS, the
+  BSDs, or a kernel with `ping_group_range` closed) it falls back to the
+  system binary and shows its raw output next to the summary, and a
+  missing binary says which package carries it rather than failing
+  silently.
+- **Port test.** Up to 64 ports per run (`22, 80, 443` or `8000-8010`),
+  connected in parallel, reporting open, refused or filtered as three
+  different answers: a service that is down and a firewall that swallows
+  the packet are not the same finding.
+- **HTTP and TLS.** The redirect chain hop by hop (the `http -> https ->
+  www` step that is usually what broke), the response with its headers,
+  and for https the certificate: subject, issuer, validity, days to
+  expiry, the names it covers, and whether the chain your own machine
+  trusts it. A certificate that is expired or self-signed is SHOWN
+  rather than refused, which is the point of looking.
+- **WHOIS.** Follows the referral chain (IANA to the registry to the
+  registrar), so a `.com` answers with the registrar record instead of
+  the near-empty thin one, and keeps the registry's own text behind the
+  copy action.
+- **Blocklists.** Eight public DNSBL zones asked at once for an
+  address, with the listing reason where the zone publishes one.
+  Verdicts are best-effort by construction: the public mirrors
+  rate-limit, so a zone that does not answer is reported as silent
+  rather than counted as clean.
+
 ## tmux session manager
 
 - **The host's tmux sessions in the sidebar.** A tmux tab lists what is
@@ -323,6 +375,23 @@ coming next, see the [Roadmap](../README.md#roadmap).
 
 - **Dual-pane layout.** Local and remote side by side, with sortable
   columns.
+- **Interactive console.** A surface that speaks `sftp(1)`: `get`, `put`,
+  `mget`, `mput`, `reget`, `reput`, `ls`, `cd`, `lcd`, `lls`, `lpwd`,
+  `mkdir`, `lmkdir`, `rm`, `rmdir`, `rename`, `chmod`, `progress`,
+  `version` and `help`, with globs, Tab completion on remote paths, a
+  command history and byte-level progress inline. Opened from the host
+  card, the tab menu or Ctrl+Shift+S (Cmd+Shift+S on macOS), and offered
+  only on SSH hosts that are not carrying mosh, since it dials the same
+  way a shell does and mosh closes the session it is handed. Asked for on
+  a live session it lands as a PANE of that tab, stacked under the shell,
+  beside it or zoomed over it (Settings > SFTP), and the tab's mode chip,
+  the status bar and Ctrl+Shift+S all switch between terminal, console
+  and files. Asked for from a host card, where there is no tab to place
+  it in, it still opens one of its own. It emits
+  OSC 133 marks around its own prompt, which it can place exactly rather
+  than guess, so the tab's activity indicator knows when a transfer is
+  running and whether it failed. Its commands stay out of the per-host
+  command history, which exists to be re-inserted into a shell.
 - **Open / Edit, in the background.** Hands a remote file to your OS
   default application, the editor you configured, or the OS "open with"
   picker, chosen right where you open it, then watches the local copy
@@ -723,8 +792,12 @@ the app's own actions sit on `Ctrl+Shift`.
 | `Ctrl+1...9` | Switch to tab 1-9 |
 | `Ctrl+Shift+C` / `Ctrl+Shift+V` | Copy / paste in the terminal |
 | `Ctrl+Shift+W` | Close tab |
+| `Ctrl+Shift+Y` | Reopen the last closed tab |
 | `Ctrl+Shift+R` | Reconnect the active tab |
 | `Ctrl+Shift+F` | Toggle Files mode on an SSH tab |
+| `Ctrl+Shift+S` | Open the active tab's SFTP console, or switch between it and the shell |
+| `Ctrl+Shift+Z` | Maximize / restore the focused pane |
+| `Ctrl+Shift+D` / `Ctrl+Shift+O` | Split the tab side by side / stacked |
 | `Ctrl+Shift+H` | Focus the terminal sidebar |
 | `Ctrl+Shift+P` | Command palette |
 | `Ctrl+Shift+L` | Open local terminal |

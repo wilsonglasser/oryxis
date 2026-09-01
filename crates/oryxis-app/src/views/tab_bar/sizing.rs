@@ -326,11 +326,11 @@ pub(crate) fn label_px_width(label: &str) -> f32 {
     label.chars().map(char_px_width).sum()
 }
 
-/// Natural width of the Settings tab (issue #120). Its X always occupies
-/// the trailing slot (there is no hover-reveal), so the slot is reserved
-/// whatever the close-button-side setting says; `settings_tab` subtracts
-/// the same amount before truncating.
-pub(crate) fn settings_tab_width(label: &str, number_px: f32) -> f32 {
+/// Natural width of a panel tab (issue #120 sized the first one, the
+/// Settings chip). Its X always occupies the trailing slot (there is no
+/// hover-reveal), so the slot is reserved whatever the close-button-side
+/// setting says; `panel_tab` subtracts the same amount before truncating.
+pub(crate) fn panel_tab_width(label: &str, number_px: f32) -> f32 {
     tab_content_width(label, true, false, number_px)
 }
 

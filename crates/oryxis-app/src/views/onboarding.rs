@@ -219,6 +219,12 @@ impl Oryxis {
                 self.prefs.tmux_manager,
                 Message::Settings(SettingsMessage::SettingToggleTmuxManager),
             ),
+            (
+                t("setting_network_tools"),
+                t("setting_network_tools_hint"),
+                self.prefs.network_tools,
+                Message::Settings(SettingsMessage::SettingToggleNetworkTools),
+            ),
         ];
         // The agent only exists where a listener can be bound.
         if crate::agent_server::listener_socket_display().is_some() {

@@ -476,11 +476,29 @@ impl Oryxis {
                 if !self.sftp_enabled {
                     return Task::none();
                 }
+                // On a tab that already HAS a console this is the switch,
+                // not a second open: away from the console it reveals it,
+                // on it it goes back to the shell. That makes one chord
+                // the whole round trip, which is what a split needs and
+                // what a zoomed console needs even more (there the other
+                // pane is not on screen to be clicked).
+                if let Some(idx) = self.active_tab
+                    && self.tabs.get(idx).is_some_and(|t| t.console_pane().is_some())
+                {
+                    let target = match self.tab_surface(idx) {
+                        crate::state::TabSurface::Console => crate::state::TabSurface::Terminal,
+                        _ => crate::state::TabSurface::Console,
+                    };
+                    return self.show_tab_surface(idx, target);
+                }
                 match self
                     .active_tab
                     .and_then(|idx| self.tab_console_target(idx))
                 {
-                    Some((conn, dir)) => self.open_sftp_console(conn, dir),
+                    Some((conn, dir)) => match self.active_tab {
+                        Some(idx) => self.open_sftp_console_in_tab(idx, conn, dir),
+                        None => self.open_sftp_console(conn, dir),
+                    },
                     // No session in front to open a console ON, so the
                     // answer is "pick a host": the dashboard is where
                     // the cards live, and every card's menu offers the

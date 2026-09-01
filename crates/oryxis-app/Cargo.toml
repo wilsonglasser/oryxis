@@ -1,6 +1,6 @@
 [package]
 name = "oryxis-app"
-version = "0.15.0"
+version = "0.16.0"
 edition = "2024"
 description = "Modern SSH client built in Rust, terminal, SFTP, and host management with a sane keyboard-driven UI."
 license.workspace = true
@@ -160,6 +160,29 @@ fontdb = "0.24"
 # RtlGetVersion on Windows, SystemVersion.plist on macOS). Serde
 # support is off, the report is plain text.
 os_info = { version = "3", default-features = false }
+# Unprivileged ICMP for the network tools panel's ping and traceroute
+# (`net_tools/icmp.rs`): a datagram ICMP socket on Linux, so neither
+# needs the system binary to be installed. Already in the tree
+# transitively; the socket options it wraps (TTL, hop limit, timeouts)
+# are the ones a traceroute is built from.
+socket2 = "0.6"
+# Typed DNS for the network tools panel: the system resolver alone
+# answers A/AAAA and nothing else, and the panel reports MX / TXT / NS /
+# SOA / PTR and the DNSBL zones. Default features are `system-config`
+# (read the host's resolvers) plus `tokio`; every TLS feature stays off,
+# so this pulls in no second crypto provider next to the aws-lc-rs one
+# `main` installs.
+hickory-resolver = "0.26"
+# The network tools panel's certificate probe drives a handshake of its
+# own (reqwest gives no access to the chain a server presented). Default
+# features off: the crypto provider comes from the `rustls` dep above,
+# and a second one would be a second implementation in the binary.
+tokio-rustls = { version = "0.26", default-features = false }
+# Decodes the DER the TLS probe captures during its handshake, so the
+# certificate card can report subject / issuer / SANs / validity. No
+# crypto backend feature: the panel INSPECTS a chain, it never verifies
+# one (see `net_tools::http`).
+x509-parser = "0.18"
 [target.'cfg(windows)'.build-dependencies]
 winresource = "0.1"
 
@@ -191,7 +214,9 @@ notify-rust = "4"
 # 0.61: newest line, and the one most of the tree already resolves to.
 # See the note in oryxis-ssh; `windows-sys` is a different crate from
 # `windows` (0.62 above) and numbers on its own.
-windows-sys = { version = "0.61", features = ["Win32_UI_Shell", "Win32_UI_WindowsAndMessaging", "Win32_Foundation", "Win32_System_Threading", "Win32_System_Diagnostics_Debug", "Win32_Security", "Win32_Security_Authorization", "Win32_System_Pipes", "Win32_Storage_Packaging_Appx", "Win32_System_Registry"] }
+# `Win32_NetworkManagement_IpHelper` is IcmpSendEcho2, the network
+# tools panel's unprivileged ping / traceroute on Windows.
+windows-sys = { version = "0.61", features = ["Win32_UI_Shell", "Win32_UI_WindowsAndMessaging", "Win32_Foundation", "Win32_System_Threading", "Win32_System_Diagnostics_Debug", "Win32_Security", "Win32_Security_Authorization", "Win32_System_Pipes", "Win32_Storage_Packaging_Appx", "Win32_System_Registry", "Win32_NetworkManagement_IpHelper"] }
 # The #[implement] proc-macro's expansion references `::windows_core`
 # directly, so the COM objects in drag_out.rs need it as an explicit
 # dependency (same 0.62 line the `windows` crate itself resolves).

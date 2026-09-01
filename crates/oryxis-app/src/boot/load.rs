@@ -553,6 +553,9 @@ impl Oryxis {
             if let Ok(Some(v)) = vault.get_setting("perf_overlay") {
                 self.prefs.perf_overlay = v == "true";
             }
+            if let Ok(Some(v)) = vault.get_setting("network_tools_enabled") {
+                self.prefs.network_tools = v == "true";
+            }
             if let Ok(Some(v)) = vault.get_setting("smart_contrast") {
                 self.prefs.smart_contrast = v == "true";
             }
@@ -1232,6 +1235,14 @@ impl Oryxis {
             }
             if let Ok(Some(v)) = vault.get_setting("sftp_ask_download_dir") {
                 self.prefs.sftp_ask_download_dir = v == "true";
+            }
+            if let Ok(Some(v)) = vault.get_setting("sftp_console_layout")
+                && let Some(layout) = crate::state::SftpConsoleLayout::from_code(&v)
+            {
+                // An unknown code keeps the default placement: a stored
+                // value nobody can read must not decide where a console
+                // lands.
+                self.prefs.sftp_console_layout = layout;
             }
             if let Ok(Some(v)) = vault.get_setting("sftp_default_editor") {
                 self.prefs.sftp_default_editor = v;

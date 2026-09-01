@@ -18,7 +18,7 @@ impl Oryxis {
     /// asks for a host would be answering a different question than the
     /// one the gesture asked.
     pub(super) fn sftp_tab_for_pane_host(&mut self, idx: usize) -> Option<Task<Message>> {
-        let conn_id = match self.tabs.get(idx)?.active().origin {
+        let conn_id = match self.tabs.get(idx)?.sftp_source().origin {
             crate::state::PaneOrigin::Host(id) => id,
             _ => return None,
         };
@@ -69,7 +69,7 @@ impl Oryxis {
         // the shell kept going. So the request becomes a tab of its
         // own, against the same host, where the connection is visibly
         // separate and can die without taking the session with it.
-        if self.tabs[idx].active().session.as_ref().is_some_and(|s| s.survives_roaming()) {
+        if self.tabs[idx].sftp_source().session.as_ref().is_some_and(|s| s.survives_roaming()) {
             self.sftp_open_at_path = None;
             return match self.sftp_tab_for_pane_host(idx) {
                 Some(task) => Task::batch(vec![select, task]),
@@ -78,9 +78,12 @@ impl Oryxis {
         }
         // Files mode needs a live SSH session (SFTP is an SSH
         // subsystem; local / Telnet / serial tabs never show the
-        // glyph, this guards the hotkey path).
+        // glyph, this guards the hotkey path). Read off the shell
+        // pane: the console's own transport has no `ssh()` to give,
+        // which is exactly what keeps its handover from re-entering
+        // itself, and would read here as "this tab has no session".
         let Some(session) = self.tabs[idx]
-            .active()
+            .sftp_source()
             .session
             .as_ref()
             .and_then(|s| s.ssh())
@@ -99,16 +102,19 @@ impl Oryxis {
             }
             return select;
         };
-        // Resolve by the FOCUSED pane (a split tab can host two
+        // Resolve by the focused SHELL pane (a split tab can host two
         // different servers; the tab label only names the first):
         // its label for the ad-hoc mount, its origin id for the
-        // saved-connection lookup (immune to renames).
+        // saved-connection lookup (immune to renames). `sftp_source`
+        // is what makes "focused" mean the focused shell, so asking
+        // for Files while standing in the SFTP console works instead
+        // of declining on a tab that plainly has a session.
         let base = self.tabs[idx]
-            .active()
+            .sftp_source()
             .label
             .trim_end_matches(" (disconnected)")
             .to_string();
-        let origin_conn = match &self.tabs[idx].active().origin {
+        let origin_conn = match &self.tabs[idx].sftp_source().origin {
             crate::state::PaneOrigin::Host(hid) => Some(*hid),
             _ => None,
         };

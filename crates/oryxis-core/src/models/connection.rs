@@ -120,6 +120,10 @@ pub struct Connection {
     /// Drives PTY transcoding in the SSH engine for legacy charsets.
     #[serde(default)]
     pub encoding: Option<String>,
+    /// How wide this host's terminal draws Unicode "Ambiguous" width
+    /// characters. See [`AmbiguousWidth`].
+    #[serde(default)]
+    pub ambiguous_width: AmbiguousWidth,
     /// Per-host terminal type sent to the server as `TERM` when requesting the
     /// PTY (e.g. `"xterm"`, `"linux"`, `"vt100"`). `None` = `xterm-256color`.
     /// Lets the user pick a fallback for hosts whose terminfo trips on the
@@ -374,6 +378,12 @@ impl Connection {
         }
     }
 
+    /// Whether this host's terminal draws ambiguous-width characters two
+    /// cells wide, with `Auto` resolved against its encoding.
+    pub fn ambiguous_width_effective(&self) -> bool {
+        self.ambiguous_width.resolve(self.encoding.as_deref())
+    }
+
     pub fn new(label: impl Into<String>, hostname: impl Into<String>) -> Self {
         let now = chrono::Utc::now();
         Self {
@@ -400,6 +410,7 @@ impl Connection {
             port_forwards: Vec::new(),
             env_vars: Vec::new(),
             encoding: None,
+            ambiguous_width: AmbiguousWidth::default(),
             terminal_type: None,
             proxy: None,
             proxy_identity_id: None,
@@ -622,6 +633,52 @@ impl std::fmt::Display for AddressFamily {
     }
 }
 
+/// How many cells a character in the Unicode East Asian Width class
+/// "Ambiguous" occupies on this host.
+///
+/// The class (box drawing U+2500..U+257F, circled digits, arrows, Greek
+/// and Cyrillic letters, `±`, `·`) is one cell wide in Western contexts
+/// and two in legacy CJK ones. Width is a two-party contract: this side
+/// decides how to DRAW, the remote's `wcwidth` decides where programs
+/// PUT things, and misaligned vim borders or htop bars are what a
+/// disagreement looks like. So this is per host, following that host's
+/// locale, rather than a global truth.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+pub enum AmbiguousWidth {
+    /// Follow this host's encoding: a CJK charset means the remote is a
+    /// legacy CJK environment, everything else stays narrow.
+    #[default]
+    Auto,
+    Narrow,
+    Wide,
+}
+
+impl AmbiguousWidth {
+    /// Whether ambiguous characters take two cells, given the host's
+    /// encoding label.
+    ///
+    /// `Auto` reads the label through `encoding_rs` rather than matching
+    /// strings, so the aliases a synced or imported host may carry
+    /// (`csbig5`, `x-gbk`, `ms_kanji`) resolve like the canonical names.
+    pub fn resolve(self, encoding: Option<&str>) -> bool {
+        match self {
+            AmbiguousWidth::Wide => true,
+            AmbiguousWidth::Narrow => false,
+            AmbiguousWidth::Auto => encoding
+                .and_then(|label| encoding_rs::Encoding::for_label(label.as_bytes()))
+                .is_some_and(|enc| {
+                    enc == encoding_rs::BIG5
+                        || enc == encoding_rs::GBK
+                        || enc == encoding_rs::GB18030
+                        || enc == encoding_rs::EUC_KR
+                        || enc == encoding_rs::SHIFT_JIS
+                        || enc == encoding_rs::EUC_JP
+                        || enc == encoding_rs::ISO_2022_JP
+                }),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub enum AuthMethod {
     #[default]
@@ -836,6 +893,51 @@ mod tests {
         value.as_object_mut().unwrap().remove("keepalive_interval");
         let de: Connection = serde_json::from_value(value).unwrap();
         assert_eq!(de.keepalive_interval, None);
+    }
+
+    /// A peer or export that predates the setting carries no field, and
+    /// must land on `Auto`: the narrow default is what every host had.
+    #[test]
+    fn ambiguous_width_legacy_payload_defaults_to_auto() {
+        let conn = Connection::new("legacy", "10.0.0.1");
+        let mut value = serde_json::to_value(&conn).unwrap();
+        value.as_object_mut().unwrap().remove("ambiguous_width");
+        let de: Connection = serde_json::from_value(value).unwrap();
+        assert_eq!(de.ambiguous_width, AmbiguousWidth::Auto);
+        assert!(!de.ambiguous_width_effective());
+    }
+
+    #[test]
+    fn ambiguous_width_explicit_choices_ignore_the_encoding() {
+        assert!(AmbiguousWidth::Wide.resolve(None));
+        assert!(AmbiguousWidth::Wide.resolve(Some("UTF-8")));
+        assert!(!AmbiguousWidth::Narrow.resolve(Some("Big5")));
+        assert!(!AmbiguousWidth::Narrow.resolve(Some("GBK")));
+    }
+
+    #[test]
+    fn ambiguous_width_auto_follows_the_encoding() {
+        // A legacy CJK charset is the only per-host signal we have that
+        // the remote is a wide-ambiguous environment.
+        for label in ["Big5", "GBK", "gb18030", "EUC-KR", "Shift_JIS", "EUC-JP", "ISO-2022-JP"] {
+            assert!(
+                AmbiguousWidth::Auto.resolve(Some(label)),
+                "{label} should resolve wide",
+            );
+        }
+        // Aliases resolve like the canonical names, which is the whole
+        // reason the label goes through encoding_rs.
+        for label in ["csbig5", "x-gbk", "ms_kanji", "csEUCKR"] {
+            assert!(
+                AmbiguousWidth::Auto.resolve(Some(label)),
+                "{label} should resolve wide",
+            );
+        }
+        for label in [None, Some("UTF-8"), Some("ISO-8859-1"), Some("windows-1251")] {
+            assert!(!AmbiguousWidth::Auto.resolve(label), "{label:?} should resolve narrow");
+        }
+        // An unreadable label is not a CJK host.
+        assert!(!AmbiguousWidth::Auto.resolve(Some("not-an-encoding")));
     }
 
     /// A peer or export that predates the disk key source carries

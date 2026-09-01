@@ -71,7 +71,7 @@ impl Oryxis {
                         // name, and the rename entry is never offered for
                         // it. Reachable only if some future surface starts
                         // a rename on it, which should do nothing.
-                        crate::state::TabRef::Settings => {}
+                        crate::state::TabRef::Panel(_) => {}
                     }
                 }
             }

@@ -164,7 +164,7 @@ impl Oryxis {
                 // Direct view assignment rather than ChangeView, so the
                 // strip entry is this handler's own responsibility or
                 // Settings would show with no chip (issue #120).
-                self.ensure_settings_tab();
+                self.ensure_panel_tab(crate::state::PanelKind::Settings);
             }
             SettingsMessage::RescanLocalTerminals => {
                 return Ok(Task::perform(

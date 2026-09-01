@@ -27,6 +27,20 @@ impl Oryxis {
                     if self.prefs.perf_overlay { "true" } else { "false" },
                 );
             }
+            SettingsMessage::SettingToggleNetworkTools => {
+                self.prefs.network_tools = !self.prefs.network_tools;
+                self.persist_setting(
+                    "network_tools_enabled",
+                    if self.prefs.network_tools { "true" } else { "false" },
+                );
+                if !self.prefs.network_tools {
+                    // Switching the feature off has to take the panel's
+                    // tab with it: a chip that reopens a surface the
+                    // user can no longer reach is the optional-features
+                    // rule broken in the one state nobody tests.
+                    return Ok(self.close_panel_tab(crate::state::PanelKind::NetTools));
+                }
+            }
             SettingsMessage::SettingToggleRemoteDesktop => {
                 self.remote_desktop_enabled = !self.remote_desktop_enabled;
                 self.persist_setting(

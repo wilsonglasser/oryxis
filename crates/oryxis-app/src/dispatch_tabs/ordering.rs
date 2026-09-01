@@ -5,40 +5,53 @@
 use crate::app::Oryxis;
 
 impl Oryxis {
-    /// Give the Settings surface a strip entry (issue #120), so leaving it
-    /// and coming back is one click instead of a hunt through the toolbar.
-    /// Idempotent, and called from `ChangeView(Settings)`, which is the
-    /// single door every entry point (gear, burger menu, hotkey, command
-    /// palette, the strip entry itself) already goes through. That is why
-    /// there is at most one: nothing else can mint a second.
+    /// Whether a panel currently has a chip in the strip.
+    pub(crate) fn panel_tab_open(&self, kind: crate::state::PanelKind) -> bool {
+        self.open_panel_tabs.contains(&kind)
+    }
+
+    /// Give a panel surface a strip entry (issue #120 gave Settings the
+    /// first one), so leaving it and coming back is one click instead of
+    /// a hunt through the toolbar. Idempotent, and called from
+    /// `ChangeView`, which is the single door every entry point (gear,
+    /// burger menu, hotkey, command palette, the strip entry itself)
+    /// already goes through. That is why there is at most one per kind:
+    /// nothing else can mint a second.
     ///
     /// Modelled on `ensure_sftp_tab`, which does the same for `View::Sftp`.
-    pub(crate) fn ensure_settings_tab(&mut self) {
-        if self.settings_tab_open {
+    pub(crate) fn ensure_panel_tab(&mut self, kind: crate::state::PanelKind) {
+        if !self.open_panel_tabs.insert(kind) {
             return;
         }
-        self.settings_tab_open = true;
-        if !self.tab_order.contains(&crate::state::TabRef::Settings) {
-            self.tab_order.push(crate::state::TabRef::Settings);
+        if !self.tab_order.contains(&crate::state::TabRef::Panel(kind)) {
+            self.tab_order.push(crate::state::TabRef::Panel(kind));
         }
     }
 
-    /// Close the Settings tab. When Settings is the surface on screen the
+    /// Close a panel tab. When the panel is the surface on screen the
     /// close has to take you somewhere, so it lands on the previously
     /// focused tab if there still is one, and on the Home dashboard
     /// otherwise. Closing it from another surface only removes the chip.
-    pub(crate) fn close_settings_tab(&mut self) -> iced::Task<crate::app::Message> {
-        self.settings_tab_open = false;
-        self.tab_order.retain(|r| !matches!(r, crate::state::TabRef::Settings));
-        self.settings_scroll.clear();
-        if !(self.active_tab.is_none() && self.active_view == crate::state::View::Settings) {
+    pub(crate) fn close_panel_tab(
+        &mut self,
+        kind: crate::state::PanelKind,
+    ) -> iced::Task<crate::app::Message> {
+        self.open_panel_tabs.remove(&kind);
+        self.tab_order.retain(|r| !matches!(r, crate::state::TabRef::Panel(k) if *k == kind));
+        // Per-panel teardown: what a closed panel must not carry into
+        // the next time it is opened.
+        match kind {
+            crate::state::PanelKind::Settings => self.settings_scroll.clear(),
+            crate::state::PanelKind::NetTools => self.net_tools.reset(),
+        }
+        if !(self.active_tab.is_none() && self.active_view == kind.view()) {
             return iced::Task::none();
         }
         // Most-recently-used first, skipping the entry we just dropped.
         let fallback = self
             .tab_mru
             .iter()
-            .find(|r| !matches!(r, crate::state::TabRef::Settings))
+            .find(|r| !matches!(r, crate::state::TabRef::Panel(k) if *k == kind))
             .copied()
             .and_then(|r| self.tab_ref_select_msg(&r));
         iced::Task::done(fallback.unwrap_or(crate::app::Message::Navigation(
@@ -55,9 +68,9 @@ impl Oryxis {
         self.tab_order.retain(|r| match r {
             TabRef::Terminal(id) => self.tabs.iter().any(|t| t._id == *id),
             TabRef::Sftp(id) => self.sftp_tabs.iter().any(|t| t.id == *id),
-            // Not backed by a storage vec: `settings_tab_open` is the
+            // Not backed by a storage vec: `open_panel_tabs` is the
             // whole existence test.
-            TabRef::Settings => self.settings_tab_open,
+            TabRef::Panel(kind) => self.open_panel_tabs.contains(kind),
         });
         for id in self.tabs.iter().map(|t| t._id).collect::<Vec<_>>() {
             if !self.tab_order.iter().any(|r| matches!(r, TabRef::Terminal(x) if *x == id)) {
@@ -172,7 +185,7 @@ impl Oryxis {
                 }
                 // Transient by design, so pinning it would promise a
                 // persistence it does not have.
-                crate::state::TabRef::Settings => false,
+                crate::state::TabRef::Panel(_) => false,
             }
         };
         let id_of = |r: &crate::state::TabRef| -> uuid::Uuid { r.strip_id() };
@@ -207,7 +220,7 @@ impl Oryxis {
                 }
                 // Transient by design, so pinning it would promise a
                 // persistence it does not have.
-                crate::state::TabRef::Settings => false,
+                crate::state::TabRef::Panel(_) => false,
             }
         };
         let id_of = |r: &crate::state::TabRef| -> uuid::Uuid { r.strip_id() };
@@ -335,7 +348,7 @@ mod tests {
                 TabRef::Terminal(a),
                 TabRef::Sftp(sftp),
                 TabRef::Terminal(b),
-                TabRef::Settings,
+                TabRef::Panel(crate::state::PanelKind::Settings),
             ],
             a,
             b,
@@ -379,8 +392,8 @@ mod tests {
     }
 
     #[test]
-    fn settings_can_be_the_source_of_a_placement() {
-        // Not reachable from Duplicate today (Settings has no duplicate
+    fn a_panel_can_be_the_source_of_a_placement() {
+        // Not reachable from Duplicate today (a panel has no duplicate
         // action), but the strip id is synthetic and the lookup must not
         // silently miss it if one ever appears.
         let (order, ..) = strip();
@@ -388,10 +401,33 @@ mod tests {
             placement_index(
                 &order,
                 TabPlacement::NextToOriginal,
-                crate::state::SETTINGS_TAB_ID
+                crate::state::PanelKind::Settings.tab_id()
             ),
             Some(4)
         );
+    }
+
+    #[test]
+    fn each_panel_kind_has_its_own_strip_id() {
+        // Two panels sharing a synthetic id would drag as one chip and
+        // reorder each other, which is exactly the kind of collision the
+        // uuid-keyed machinery cannot detect.
+        let mut ids: Vec<uuid::Uuid> =
+            crate::state::PanelKind::ALL.iter().map(|k| k.tab_id()).collect();
+        let count = ids.len();
+        ids.sort_unstable();
+        ids.dedup();
+        assert_eq!(ids.len(), count);
+    }
+
+    #[test]
+    fn every_panel_kind_round_trips_through_its_view() {
+        // `for_view` is what `ChangeView` uses to decide which chip to
+        // mint, so a kind whose view maps back to a different kind (or to
+        // nothing) would open a surface with no tab.
+        for kind in crate::state::PanelKind::ALL {
+            assert_eq!(crate::state::PanelKind::for_view(kind.view()), Some(kind));
+        }
     }
 
     #[test]

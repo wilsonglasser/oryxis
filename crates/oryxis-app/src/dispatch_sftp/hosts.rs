@@ -613,7 +613,10 @@ impl Oryxis {
                 let Some((conn, dir)) = self.tab_console_target(idx) else {
                     return Ok(Task::none());
                 };
-                return Ok(self.open_sftp_console(conn, dir));
+                // Asked for ON a session, so it lands in that session's
+                // tab: as a pane beside the shell, or zoomed over it,
+                // per the user's placement setting.
+                return Ok(self.open_sftp_console_in_tab(idx, conn, dir));
             }
             m => return Err(m),
         }

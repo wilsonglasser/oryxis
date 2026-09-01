@@ -141,6 +141,53 @@ impl Oryxis {
             ),
         ]).align_y(iced::Alignment::Center).into();
 
+        // Per-host ambiguous width (J4). Next to encoding because that is
+        // what `Auto` reads: a legacy CJK charset is the only per-host
+        // signal that the remote measures these characters as two cells.
+        // The explicit answers exist for the larger cohort that CANNOT be
+        // read off anything, a CJK environment on UTF-8.
+        use oryxis_core::models::connection::AmbiguousWidth;
+        let ambiguous_options = vec![
+            AmbiguousWidth::Auto,
+            AmbiguousWidth::Narrow,
+            AmbiguousWidth::Wide,
+        ];
+        let ambiguous_picker = pick_list(
+            Some(self.editor_form.ambiguous_width),
+            ambiguous_options,
+            |w: &AmbiguousWidth| crate::i18n::t(crate::util::ambiguous_width_key(*w)).to_string(),
+        )
+        .on_select(|v| Message::Editor(EditorMessage::EditorAmbiguousWidthChanged(v)))
+        .id(iced::widget::Id::new("editor-pick-ambiguous-width"))
+        .on_open(Message::Navigation(NavigationMessage::PickOpenChanged(true)))
+        .on_close(Message::Navigation(NavigationMessage::PickOpenChanged(false)))
+        // Wider than its neighbours because the default value names what
+        // it follows, and a truncated "Auto (follow enco..." is exactly
+        // the half of the answer nobody needs.
+        .width(210)
+        .padding(10)
+        .style(crate::widgets::rounded_pick_list_style);
+        let ambiguous_row: Element<'_, Message> = dir_row(vec![
+            text(crate::i18n::t("host_ambiguous_width")).size(13).color(OryxisColors::t().text_secondary).into(),
+            Space::new().width(Length::Fill).into(),
+            self.panel_nav_slot(
+                crate::keynav::RowAction::input(iced::widget::Id::new("editor-pick-ambiguous-width")),
+                crate::widgets::INPUT_RADIUS,
+                ambiguous_picker.into(),
+            ),
+        ]).align_y(iced::Alignment::Center).into();
+        // The honest half: this side decides how to DRAW, the remote's
+        // wcwidth decides where its programs PUT things, and only the
+        // pair being equal makes a TUI line up.
+        let ambiguous_hint: Element<'_, Message> = container(
+            text(crate::i18n::t("ambiguous_width_hint"))
+                .size(11)
+                .color(OryxisColors::t().text_muted),
+        )
+        .width(Length::Fill)
+        .align_x(dir_align_x())
+        .into();
+
         // Per-host TERM. "xterm-256color" is the default (stored as None);
         // the rest are fallbacks for hosts whose terminfo trips on it.
         let term_options: Vec<String> = [
@@ -189,6 +236,10 @@ impl Oryxis {
             icon_row,
             Space::new().height(12),
             encoding_row,
+            Space::new().height(12),
+            ambiguous_row,
+            Space::new().height(4),
+            ambiguous_hint,
             Space::new().height(12),
             term_row,
         ];

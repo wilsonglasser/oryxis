@@ -376,6 +376,12 @@ impl Oryxis {
                         // not be inherited by whatever the reconnect
                         // lands on.
                         p.triggers.clear();
+                        // The ambiguous-width answer was pinned to the
+                        // mosh screen this session handed over to (J4).
+                        // With that session gone, the pane goes back to
+                        // reading the host's current setting on every
+                        // batch, like every other pane.
+                        p.mosh_ambiguous_width = None;
                         // The emulator's modes belong to the session too,
                         // and the program that armed them is not around
                         // to disarm them. Until they are cleared the dead

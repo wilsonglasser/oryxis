@@ -96,7 +96,7 @@ impl Oryxis {
             StripEntry::Terminal(idx) => self.tabs[idx].pinned,
             // Transient by design, so pinning it would promise a
             // persistence it does not have.
-            StripEntry::Settings => false,
+            StripEntry::Panel(_) => false,
         }
     }
 
@@ -120,32 +120,33 @@ impl Oryxis {
         // Terminal and SFTP tabs share one strip; SFTP tabs are active
         // only while the SFTP surface itself is up.
         let sftp_surface = self.active_tab.is_none() && self.active_view == View::Sftp;
-        if entry == StripEntry::Settings {
+        if let StripEntry::Panel(kind) = entry {
             // Same active rule as the SFTP tabs: it owns the strip slot
             // only while its own surface is the one showing.
-            let is_active = self.active_tab.is_none() && self.active_view == View::Settings;
-            let label = crate::i18n::t("settings");
+            let is_active = self.active_tab.is_none() && self.active_view == kind.view();
+            let label = crate::i18n::t(kind.label_key());
             let width = ctx.uniform_w.unwrap_or_else(|| {
                 if ctx.dragging_any {
                     ctx.drag_uniform_w
                 } else if is_active {
                     TAB_NATURAL_WIDTH
                 } else {
-                    settings_tab_width(label, ctx.number_px)
+                    panel_tab_width(label, ctx.number_px)
                 }
             });
             let is_dragging = self
                 .tab_drag
                 .filter(|d| d.active)
-                .map(|d| d.from_id == crate::state::SETTINGS_TAB_ID)
+                .map(|d| d.from_id == kind.tab_id())
                 .unwrap_or(false);
             if is_dragging {
                 return Space::new().width(width).height(TAB_HEIGHT).into();
             }
-            return settings_tab(
+            return panel_tab(
+                kind,
                 label,
                 is_active,
-                self.hover.settings_tab && ctx.close_armed,
+                self.hover.panel_tab == Some(kind) && ctx.close_armed,
                 width,
                 ctx.close_on_right,
                 ctx.solid_fill,
@@ -154,7 +155,7 @@ impl Oryxis {
         }
         let idx = match entry {
             StripEntry::Terminal(i) | StripEntry::Sftp(i) => i,
-            StripEntry::Settings => unreachable!("handled above"),
+            StripEntry::Panel(_) => unreachable!("handled above"),
         };
         if entry == StripEntry::Sftp(idx) {
             let tab = &self.sftp_tabs[idx];
@@ -462,19 +463,22 @@ impl Oryxis {
             .host_accent_enabled()
             .then(|| sg_custom_color.or(lt_color).or(host_accent))
             .flatten();
-        // Hybrid mode glyph (issue #61): the chip (>_ terminal /
-        // folder files) only exists once the tab HAS an SFTP session
-        // (owner QA 2026-07-05: a plain SSH tab shows no glyph; the
-        // tab menu's "Open SFTP session" creates it and the toggle
-        // appears). An in-Files-mode tab always keeps it (the way
-        // back), even after a disconnect or feature toggle.
-        let files_mode = self.tab_has_sftp_session(tab).then_some(tab.files_mode);
+        // Mode glyph (issue #61): the chip (>_ terminal / console /
+        // folder files) only exists once the tab has a SECOND surface
+        // to switch to (owner QA 2026-07-05: a plain SSH tab shows no
+        // glyph; the tab menu's "Open SFTP session" creates one and the
+        // switch appears, and so does opening an SFTP console). An
+        // in-Files-mode tab always keeps it (the way back), even after
+        // a disconnect or feature toggle.
+        let mode = self
+            .tab_next_surface(idx)
+            .map(|next| (self.tab_surface(idx), next));
         if is_dragging {
             // The dragged tab floats as a ghost following the cursor;
             // leave a same-width gap here that the other tabs slide
             // around as the reorder happens.
             let gap_w = if tab.pinned && ctx.compact_pins {
-                pinned_chip_width(files_mode)
+                pinned_chip_width(mode)
             } else {
                 width
             };
@@ -499,7 +503,7 @@ impl Oryxis {
                 busy_frame,
                 self.prefs.tab_accent_text,
                 ctx.solid_fill,
-                files_mode,
+                mode,
                 number,
             )
         } else {
@@ -557,7 +561,7 @@ impl Oryxis {
                 // A transfer the user started wins over the shell's own
                 // OSC 9;4 report: it is the thing they are waiting on.
                 zmodem_progress.or(sftp_progress).or(tab.active().progress),
-                files_mode,
+                mode,
                 tab_address,
                 number,
             )
@@ -645,17 +649,20 @@ impl Oryxis {
                 ),
                 ghost_w,
             ))
-        } else if drag.from_id == crate::state::SETTINGS_TAB_ID {
-            // Its own ghost rather than `drag_ghost`: that one derives an
-            // OS badge from a host label, and Settings has no host. The
-            // gear + app accent is the same vocabulary as the chip being
-            // dragged.
-            Some((
-                settings_drag_ghost(crate::i18n::t("settings"), drag_uniform_w),
-                drag_uniform_w,
-            ))
         } else {
-            None
+            // Its own ghost rather than `drag_ghost`: that one derives an
+            // OS badge from a host label, and a panel has no host. The
+            // panel glyph + app accent is the same vocabulary as the chip
+            // being dragged.
+            crate::state::PanelKind::ALL
+                .into_iter()
+                .find(|k| k.tab_id() == drag.from_id)
+                .map(|kind| {
+                    (
+                        panel_drag_ghost(kind, crate::i18n::t(kind.label_key()), drag_uniform_w),
+                        drag_uniform_w,
+                    )
+                })
         }
     }
 }

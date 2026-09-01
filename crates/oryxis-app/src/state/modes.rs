@@ -180,6 +180,129 @@ impl TerminalSidebarTab {
     }
 }
 
+/// Where an SFTP console lands when it opens on a tab that already
+/// has a session.
+///
+/// All three are placements INSIDE that tab, never a tab of its own.
+/// The console the user asked for is the one on the host in front of
+/// them, and its first shape (a tab of its own) is what made that read
+/// as a second session on the same machine. `Full` is not a fourth
+/// mechanism either: it is the split, zoomed, so the way back is the
+/// same toggle the split already has and no state is invented for it.
+///
+/// A console opened from a host CARD still opens its own tab, because
+/// there is no tab to place it in.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum SftpConsoleLayout {
+    /// Stacked under the shell. The default because a console keeps
+    /// the full width there, and a listing is the one thing it prints
+    /// that a halved column count would wrap.
+    #[default]
+    SplitBelow,
+    /// Side by side with the shell.
+    SplitSide,
+    /// Split (stacked) and then zoomed, so the console fills the tab
+    /// while the shell keeps running behind it.
+    Full,
+}
+
+impl SftpConsoleLayout {
+    /// Every layout, in picker order.
+    pub const ALL: [SftpConsoleLayout; 3] = [
+        SftpConsoleLayout::SplitBelow,
+        SftpConsoleLayout::SplitSide,
+        SftpConsoleLayout::Full,
+    ];
+
+    /// Stable code persisted in the `sftp_console_layout` setting.
+    pub fn code(self) -> &'static str {
+        match self {
+            SftpConsoleLayout::SplitBelow => "split_below",
+            SftpConsoleLayout::SplitSide => "split_side",
+            SftpConsoleLayout::Full => "full",
+        }
+    }
+
+    /// Parse a persisted code; an unknown one falls back to the
+    /// default rather than failing, like every other stored mode here.
+    pub fn from_code(code: &str) -> Option<SftpConsoleLayout> {
+        SftpConsoleLayout::ALL.into_iter().find(|l| l.code() == code)
+    }
+
+    pub fn label_key(self) -> &'static str {
+        match self {
+            SftpConsoleLayout::SplitBelow => "sftp_console_layout_below",
+            SftpConsoleLayout::SplitSide => "sftp_console_layout_side",
+            SftpConsoleLayout::Full => "sftp_console_layout_full",
+        }
+    }
+
+    /// The split the console pane is created with. `Full` splits
+    /// stacked too: un-zooming it has to land on a usable layout, and
+    /// stacked is the one this picker calls the default.
+    pub fn axis(self) -> iced::widget::pane_grid::Axis {
+        match self {
+            SftpConsoleLayout::SplitSide => iced::widget::pane_grid::Axis::Vertical,
+            _ => iced::widget::pane_grid::Axis::Horizontal,
+        }
+    }
+
+    /// Whether the console pane is zoomed the moment it is created.
+    pub fn starts_maximized(self) -> bool {
+        matches!(self, SftpConsoleLayout::Full)
+    }
+}
+
+/// Which of a terminal tab's surfaces is on screen.
+///
+/// The tab chip and the status-bar segments switch between these, and
+/// they are NOT three flags: `Files` is the tab-level `files_mode`,
+/// while `Terminal` and `Console` are two panes of the same grid. What
+/// makes one control serve all three is that every switch is expressed
+/// as "show this one", never as a toggle of whichever mechanism
+/// happens to back it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TabSurface {
+    Terminal,
+    Console,
+    Files,
+}
+
+impl TabSurface {
+    /// i18n key for the status-bar segment (a noun: what it shows).
+    pub fn label_key(self) -> &'static str {
+        match self {
+            TabSurface::Terminal => "tab_mode_terminal",
+            TabSurface::Console => "tab_mode_console",
+            TabSurface::Files => "tab_mode_files",
+        }
+    }
+
+    /// i18n key for the chip tooltip (a verb: what clicking does).
+    pub fn action_key(self) -> &'static str {
+        match self {
+            TabSurface::Terminal => "tab_show_terminal",
+            TabSurface::Console => "tab_show_console",
+            TabSurface::Files => "tab_show_files",
+        }
+    }
+
+    /// The surface a cycling control moves to next.
+    ///
+    /// The tab chip has room for ONE glyph, so with three surfaces it
+    /// cycles; the status bar names them all and jumps straight there.
+    /// A `current` that is not in the list (a frame behind the state)
+    /// starts the cycle at the first entry rather than declining, so
+    /// the chip is never a dead button.
+    pub fn next_in(surfaces: &[TabSurface], current: TabSurface) -> Option<TabSurface> {
+        if surfaces.len() < 2 {
+            return None;
+        }
+        let at = surfaces.iter().position(|s| *s == current).unwrap_or(0);
+        Some(surfaces[(at + 1) % surfaces.len()])
+    }
+}
+
 /// How the Hosts dashboard lays its content out (issue #102 follow
 /// up): the responsive card grid, a single-column list, or the
 /// mRemoteNG-style tree (every level visible, folders expand in
@@ -266,6 +389,10 @@ pub enum View {
     /// Hosts toolbar's monitor icon, which only renders while the
     /// master `host_monitoring` toggle is on (optional-features rule).
     Monitoring,
+    /// Network tools (DNS, ping, traceroute, port test, HTTP/TLS,
+    /// WHOIS, DNSBL). A panel tab like Settings rather than a vault
+    /// surface, and reachable only while `network_tools_enabled` is on.
+    NetworkTools,
 }
 
 /// One row in the Plugins panel: a cloud-provider plugin and its
@@ -575,7 +702,53 @@ impl SettingsSection {
 
 #[cfg(test)]
 mod tests {
-    use super::{SidebarPlacement, TerminalSidebarTab};
+    use super::{SftpConsoleLayout, SidebarPlacement, TabSurface, TerminalSidebarTab};
+
+    #[test]
+    fn the_surface_chip_cycles_through_every_surface() {
+        use TabSurface::{Console, Files, Terminal};
+        // One surface is not a switch, and the chip is not drawn.
+        assert_eq!(TabSurface::next_in(&[Terminal], Terminal), None);
+        assert_eq!(TabSurface::next_in(&[], Terminal), None);
+        // Two surfaces are the historical toggle, both ways.
+        assert_eq!(TabSurface::next_in(&[Terminal, Files], Terminal), Some(Files));
+        assert_eq!(TabSurface::next_in(&[Terminal, Files], Files), Some(Terminal));
+        // Three wrap, and every surface is reachable from every other
+        // one by clicking: a cycle that stuck on two of the three is
+        // the failure this is here for.
+        let all = [Terminal, Console, Files];
+        let mut seen = vec![Terminal];
+        let mut at = Terminal;
+        for _ in 0..2 {
+            at = TabSurface::next_in(&all, at).expect("three surfaces cycle");
+            seen.push(at);
+        }
+        assert_eq!(seen, vec![Terminal, Console, Files]);
+        assert_eq!(TabSurface::next_in(&all, Files), Some(Terminal));
+        // A surface the tab no longer has (a frame behind the state)
+        // leaves the chip live rather than dead.
+        assert_eq!(TabSurface::next_in(&[Terminal, Console], Files), Some(Console));
+    }
+
+    #[test]
+    fn console_layout_code_roundtrips() {
+        // The persisted `sftp_console_layout` setting resolves back
+        // exactly; junk resolves to None so the caller falls back to
+        // the default placement instead of a wrong one.
+        for l in SftpConsoleLayout::ALL {
+            assert_eq!(SftpConsoleLayout::from_code(l.code()), Some(l));
+        }
+        assert_eq!(SftpConsoleLayout::from_code(""), None);
+        assert_eq!(SftpConsoleLayout::from_code("bogus"), None);
+        // Full is a zoomed split, so it must still name an axis: the
+        // restore has to land on a layout, not on nothing.
+        assert!(SftpConsoleLayout::Full.starts_maximized());
+        assert_eq!(
+            SftpConsoleLayout::Full.axis(),
+            SftpConsoleLayout::SplitBelow.axis(),
+        );
+        assert!(!SftpConsoleLayout::SplitBelow.starts_maximized());
+    }
 
     #[test]
     fn sidebar_placement_code_roundtrips() {

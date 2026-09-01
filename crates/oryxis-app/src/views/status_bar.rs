@@ -158,37 +158,36 @@ impl Oryxis {
                 items.push(Space::new().width(12).into());
             }
         }
-        // Hybrid tab mode segment (issue #61): redundant with the tab's
-        // own glyph on purpose, the status bar is optional
-        // (`show_status_bar`), so it can carry a switch but never THE
-        // switch. Like the glyph, it only exists once the tab has an
-        // SFTP session ("Open SFTP session" in the tab menu creates it).
-        if let Some(idx) = self.active_tab
-            && let Some(tab) = self.tabs.get(idx)
-            && self.tab_has_sftp_session(tab)
-        {
-            items.push(mode_segment_btn(
-                idx,
-                crate::i18n::t("tab_mode_terminal"),
-                !tab.files_mode,
-            ));
-            items.push(Space::new().width(2).into());
-            items.push(mode_segment_btn(
-                idx,
-                crate::i18n::t("tab_mode_files"),
-                tab.files_mode,
-            ));
-            items.push(Space::new().width(10).into());
+        // Tab surface segments (issue #61, widened for the SFTP
+        // console): redundant with the tab's own glyph on purpose, the
+        // status bar is optional (`show_status_bar`), so it can carry a
+        // switch but never THE switch. Where the glyph cycles (one
+        // chip's worth of room), the bar names every surface and goes
+        // straight to the one clicked, which is what makes a three-way
+        // switch readable.
+        if let Some(idx) = self.active_tab {
+            let surfaces = self.tab_surfaces(idx);
+            if surfaces.len() > 1 {
+                let current = self.tab_surface(idx);
+                for (n, surface) in surfaces.into_iter().enumerate() {
+                    if n > 0 {
+                        items.push(Space::new().width(2).into());
+                    }
+                    items.push(mode_segment_btn(idx, surface, surface == current));
+                }
+                items.push(Space::new().width(10).into());
+            }
         }
         // Broadcast input segment (C2): a single toggle for the active
         // terminal tab. Redundant with the tab menu + hotkey by design (the
         // status bar is optional). Armed state is warning-tinted so the "keys
         // go everywhere" mode is loud even from the bar. Only rendered when
-        // the tab is split, same precondition-gating as the Terminal/Files
-        // segments above (broadcast is inert on a single pane).
+        // two panes would actually take it, same precondition-gating as the
+        // surface segments above (broadcast is inert on a single pane, and
+        // an SFTP console never takes the fan-out).
         if let Some(idx) = self.active_tab
             && let Some(tab) = self.tabs.get(idx)
-            && tab.pane_grid.panes.len() >= 2
+            && tab.broadcast_capable()
         {
             items.push(broadcast_segment_btn(idx, tab.broadcast));
             items.push(Space::new().width(10).into());
@@ -529,10 +528,14 @@ fn vital(label: &str, value: String, color: Color) -> Element<'static, Message> 
 /// is an accent-tinted indicator; the inactive half is the clickable
 /// action (clicking the active one would be a no-op, so it gets no
 /// `on_press` and no misleading hover state).
-fn mode_segment_btn(idx: usize, label: &str, active: bool) -> Element<'_, Message> {
+fn mode_segment_btn<'a>(
+    idx: usize,
+    surface: crate::state::TabSurface,
+    active: bool,
+) -> Element<'a, Message> {
     let c = OryxisColors::t();
     let fg = if active { c.accent } else { c.text_muted };
-    let mut btn = button(text(label).size(11).color(fg))
+    let mut btn = button(text(crate::i18n::t(surface.label_key())).size(11).color(fg))
         .padding(Padding { top: 1.0, right: 8.0, bottom: 1.0, left: 8.0 })
         .style(move |_, status| {
             let c = OryxisColors::t();
@@ -552,7 +555,7 @@ fn mode_segment_btn(idx: usize, label: &str, active: bool) -> Element<'_, Messag
             }
         });
     if !active {
-        btn = btn.on_press(Message::Tabs(TabsMessage::ToggleTabFilesMode(idx)));
+        btn = btn.on_press(Message::Tabs(TabsMessage::ShowTabSurface(idx, surface)));
     }
     btn.into()
 }

@@ -196,9 +196,10 @@ impl Oryxis {
         }
         // Broadcast input across the tab's panes (C2): a check glyph +
         // warning tint mark the armed state, matching the pane borders and
-        // status segment. Only offered on split tabs (broadcast is inert on
-        // a single pane; arming is refused there anyway).
-        if self.tabs.get(idx).is_some_and(|t| t.pane_grid.panes.len() >= 2) {
+        // status segment. Only offered where there are two panes that take
+        // the fan-out (broadcast is inert otherwise; arming is refused
+        // there anyway, and an SFTP console never takes it).
+        if self.tabs.get(idx).is_some_and(|t| t.broadcast_capable()) {
             let broadcasting = self.tabs.get(idx).map(|t| t.broadcast).unwrap_or(false);
             let (bc_glyph, bc_color) = if broadcasting {
                 (iced_fonts::lucide::check(), OryxisColors::t().warning)
@@ -1120,6 +1121,51 @@ impl Oryxis {
             .and_then(|i| self.tabs.get(i))
             .is_some_and(|t| t.pane_grid.panes.len() > 1);
         if is_split {
+            // Zoom and rearrange, on the pane the user pointed at. The
+            // tab menu carries the same zoom for the FOCUSED pane; here
+            // the target is explicit, which is what a right-click on a
+            // specific pane means.
+            let tab = self.pane_tab_index(pane_id).and_then(|i| self.tabs.get(i));
+            let zoomed = tab.is_some_and(|t| t.pane_grid.maximized().is_some());
+            let (zoom_glyph, zoom_key) = if zoomed {
+                (iced_fonts::lucide::minimize(), "restore_panes")
+            } else {
+                (iced_fonts::lucide::maximize(), "maximize_pane")
+            };
+            items = items.push(self.menu_item(
+                zoom_glyph,
+                crate::i18n::t(zoom_key),
+                Message::Terminal(TerminalMessage::ToggleMaximizePaneAt(pane_id)),
+                OryxisColors::t().text_secondary,
+            ));
+            // Rearranging is about a divider, and a zoom is exactly the
+            // state where no divider is on screen, so the row is not
+            // offered there. The label names the arrangement the click
+            // PRODUCES, which is the only way a flip reads without
+            // trying it.
+            let axis = tab
+                .and_then(|t| {
+                    t.pane_grid
+                        .panes
+                        .iter()
+                        .find(|(_, p)| p.id == pane_id)
+                        .map(|(handle, _)| (t, *handle))
+                })
+                .and_then(|(t, handle)| t.split_axis_at(handle));
+            if !zoomed && let Some(axis) = axis {
+                let stacked = matches!(axis, iced::widget::pane_grid::Axis::Horizontal);
+                let (glyph, key) = if stacked {
+                    (iced_fonts::lucide::columns_two(), "pane_rearrange_side_by_side")
+                } else {
+                    (iced_fonts::lucide::rows_two(), "pane_rearrange_stacked")
+                };
+                items = items.push(self.menu_item(
+                    glyph,
+                    crate::i18n::t(key),
+                    Message::Terminal(TerminalMessage::FlipPaneSplit(pane_id)),
+                    OryxisColors::t().text_secondary,
+                ));
+            }
             items = items.push(self.menu_item(
                 iced_fonts::lucide::x(),
                 crate::i18n::t("close_pane"),
@@ -1128,6 +1174,40 @@ impl Oryxis {
             ));
         }
         items.into()
+    }
+
+    /// Row count of the pane context menu, for the popover's height.
+    ///
+    /// Kept NEXT TO the builder, like `split_menu_rows` and
+    /// `tab_bar_menu_rows`, because every row above is conditional and a
+    /// count that lives in another file drifts from them silently: the
+    /// popover is sized from this number, so a row too few clips the
+    /// last entry off the window rather than failing loudly.
+    pub(crate) fn terminal_context_menu_rows(
+        &self,
+        pane_id: uuid::Uuid,
+        selection: &Option<String>,
+    ) -> f32 {
+        // A selection adds TWO rows (Copy, then Paste selection), not one.
+        let mut rows = if selection.is_some() { 5.0 } else { 3.0 };
+        let tab = self.pane_tab_index(pane_id).and_then(|i| self.tabs.get(i));
+        let Some(tab) = tab.filter(|t| t.pane_grid.panes.len() > 1) else {
+            return rows;
+        };
+        // Zoom + Close pane, plus the rearrange row when a divider is
+        // actually on screen to rearrange.
+        rows += 2.0;
+        let zoomed = tab.pane_grid.maximized().is_some();
+        let has_divider = tab
+            .pane_grid
+            .panes
+            .iter()
+            .find(|(_, p)| p.id == pane_id)
+            .is_some_and(|(handle, _)| tab.split_axis_at(*handle).is_some());
+        if !zoomed && has_divider {
+            rows += 1.0;
+        }
+        rows
     }
 
     /// Read-only context menu for the session-log transcript viewer

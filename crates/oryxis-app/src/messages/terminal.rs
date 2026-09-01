@@ -103,6 +103,14 @@ pub enum TerminalMessage {
     /// Expand the focused pane to the whole tab, and back. `None` targets
     /// the active tab (hotkey); `Some(idx)` a specific one (tab menu).
     ToggleMaximizePane(Option<usize>),
+    /// Expand a SPECIFIC pane to the whole tab, and back. Carries the
+    /// right-clicked pane's id for the same reason `ClosePane` does: the
+    /// menu overlay is not modal, so focus and the active tab can move
+    /// out from under it.
+    ToggleMaximizePaneAt(Uuid),
+    /// Flip the orientation of the split that separates this pane from
+    /// its neighbour (stacked <-> side by side).
+    FlipPaneSplit(Uuid),
     /// Periodic flush of buffered session-log output to the vault.
     SessionLogFlushTick,
     /// Emitted by the terminal widget when the user right-clicks. The

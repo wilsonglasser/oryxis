@@ -119,7 +119,7 @@ impl Oryxis {
                     p.commit_scrub();
                 }
             }
-            PlayerMessage::Tick => {
+            PlayerMessage::ClockTick => {
                 if let Some(p) = &mut self.session_player
                     && p.playing
                 {

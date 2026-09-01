@@ -112,7 +112,7 @@ impl Oryxis {
                 // Sets the view directly rather than going through
                 // ChangeView, so it has to mint the strip entry itself or
                 // Settings would show with no chip (issue #120).
-                self.ensure_settings_tab();
+                self.ensure_panel_tab(crate::state::PanelKind::Settings);
                 self.update_error = None;
                 self.update_check_status = Some(crate::update::UpdateStatus::Checking);
                 self.set_toast(crate::i18n::t("update_check_checking").to_string());

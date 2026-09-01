@@ -105,18 +105,11 @@ fn detect_status(provider_id: &str) -> PluginUiStatus {
 }
 
 /// True when a freshly-built plugin binary sits next to the app
-/// executable. Debug builds only, matches `PluginProvider::resolve_binary`.
+/// executable. The rule lives in `plugins`, so the status this file
+/// reports and the binary `PluginProvider::resolve_binary` spawns can
+/// never disagree.
 pub(crate) fn dev_binary_present(provider_id: &str) -> bool {
-    #[cfg(debug_assertions)]
-    {
-        if let Ok(exe) = std::env::current_exe()
-            && let Some(dir) = exe.parent()
-        {
-            return dir.join(cache::binary_name(provider_id)).exists();
-        }
-    }
-    let _ = provider_id;
-    false
+    crate::plugins::dev_binary_present(provider_id)
 }
 
 impl Oryxis {

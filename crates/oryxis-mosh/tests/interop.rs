@@ -58,9 +58,9 @@ async fn until(
 async fn a_shell_answers_through_the_session() {
     let (port, key) = endpoint();
     let (session, mut rx) =
-        MoshSession::connect("127.0.0.1", port, &key, 80, 24).expect("open the session");
+        MoshSession::connect("127.0.0.1", port, &key, 80, 24, false).expect("open the session");
 
-    let mut seen = AlacrittyScreen::new(24, 80);
+    let mut seen = AlacrittyScreen::new(24, 80, false);
     assert!(
         until(&mut rx, &mut seen, "$", Duration::from_secs(10)).await,
         "no prompt arrived: {:?}",
@@ -85,11 +85,11 @@ async fn what_arrives_is_a_byte_stream_a_terminal_can_eat() {
     use mosh_rs::Screen as _;
     let (port, key) = endpoint();
     let (_session, mut rx) =
-        MoshSession::connect("127.0.0.1", port, &key, 80, 24).expect("open the session");
+        MoshSession::connect("127.0.0.1", port, &key, 80, 24, false).expect("open the session");
 
     // Here the RAW bytes are the claim, so here they are kept.
     let mut raw = Vec::new();
-    let mut screen = AlacrittyScreen::new(24, 80);
+    let mut screen = AlacrittyScreen::new(24, 80, false);
     let deadline = Instant::now() + Duration::from_secs(10);
     while Instant::now() < deadline && !screen.text().contains('$') {
         let left = deadline.saturating_duration_since(Instant::now());
@@ -115,9 +115,9 @@ async fn what_arrives_is_a_byte_stream_a_terminal_can_eat() {
 async fn a_resize_reaches_the_shell() {
     let (port, key) = endpoint();
     let (session, mut rx) =
-        MoshSession::connect("127.0.0.1", port, &key, 80, 24).expect("open the session");
+        MoshSession::connect("127.0.0.1", port, &key, 80, 24, false).expect("open the session");
 
-    let mut seen = AlacrittyScreen::new(24, 80);
+    let mut seen = AlacrittyScreen::new(24, 80, false);
     assert!(until(&mut rx, &mut seen, "$", Duration::from_secs(10)).await, "no prompt");
 
     session.resize(100, 30);
@@ -137,9 +137,9 @@ async fn a_resize_reaches_the_shell() {
 async fn closing_ends_the_session_rather_than_abandoning_it() {
     let (port, key) = endpoint();
     let (session, mut rx) =
-        MoshSession::connect("127.0.0.1", port, &key, 80, 24).expect("open the session");
+        MoshSession::connect("127.0.0.1", port, &key, 80, 24, false).expect("open the session");
 
-    let mut seen = AlacrittyScreen::new(24, 80);
+    let mut seen = AlacrittyScreen::new(24, 80, false);
     assert!(until(&mut rx, &mut seen, "$", Duration::from_secs(10)).await, "no prompt");
 
     session.close();

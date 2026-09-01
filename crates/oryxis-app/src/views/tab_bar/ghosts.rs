@@ -143,12 +143,16 @@ pub(crate) fn sftp_drag_ghost<'a>(
 /// function rather than a call into `drag_ghost`: that one derives an OS
 /// badge from a host label, and Settings has no host, so it would render
 /// a generic server glyph for a gear.
-pub(crate) fn settings_drag_ghost<'a>(label: &'a str, width: f32) -> Element<'a, Message> {
+pub(crate) fn panel_drag_ghost<'a>(
+    kind: crate::state::PanelKind,
+    label: &'a str,
+    width: f32,
+) -> Element<'a, Message> {
     let accent = crate::theme::readable_accent_on(
         OryxisColors::t().accent,
         OryxisColors::t().bg_hover,
     );
-    let badge = container(iced_fonts::lucide::settings().size(12).color(Color::WHITE))
+    let badge = container(super::tabs::panel_icon(kind).size(12).color(Color::WHITE))
         .center_x(Length::Fixed(TAB_ICON_SLOT))
         .center_y(Length::Fixed(TAB_ICON_SLOT))
         .style(move |_| container::Style {

@@ -68,7 +68,7 @@ use crate::theme::OryxisColors;
 
 // `Message` lives in its own module; re-export so call sites that
 // import `crate::app::Message` keep working.
-pub use crate::messages::{Message, SettingsMessage, TabsMessage, EditorMessage, KeysMessage, SidebarFilesMessage, MonitorMessage, TmuxMessage, TerminalMessage, SshMessage, CloudMessage, HistoryMessage, McpMessage, NavigationMessage, CommandHistoryMessage, UpdateMessage, ProxyIdentityMessage, PluginMessage, AgentMessage, ZmodemMessage, KnownHostMessage, RemoteDesktopMessage, TrayMessage, SessionGroupMessage, PortForwardMessage, VaultMessage, SnippetMessage, AiMessage, OnboardingMessage, PlayerMessage, ShareMessage, SftpMessage, SyncMessage};
+pub use crate::messages::{Message, SettingsMessage, TabsMessage, EditorMessage, KeysMessage, SidebarFilesMessage, MonitorMessage, NetToolsMessage, TmuxMessage, TerminalMessage, SshMessage, CloudMessage, HistoryMessage, McpMessage, NavigationMessage, CommandHistoryMessage, UpdateMessage, ProxyIdentityMessage, PluginMessage, AgentMessage, ZmodemMessage, KnownHostMessage, RemoteDesktopMessage, TrayMessage, SessionGroupMessage, PortForwardMessage, VaultMessage, SnippetMessage, AiMessage, OnboardingMessage, PlayerMessage, ShareMessage, SftpMessage, SyncMessage};
 
 // Layout constants
 pub(crate) const DEFAULT_TERM_COLS: u32 = 120;
@@ -1189,12 +1189,18 @@ pub struct Oryxis {
 
     // Settings
     pub(crate) settings_section: SettingsSection,
-    /// The Settings tab is in the strip (issue #120). Materialized on the
-    /// first visit to Settings, exactly like `ensure_sftp_tab` does for
-    /// the SFTP surface, so leaving Settings and coming back is one click
+    /// Which panel tabs are in the strip (Settings since issue #120,
+    /// network tools since the panel landed). Materialized on the first
+    /// visit to the panel's view, exactly like `ensure_sftp_tab` does
+    /// for the SFTP surface, so leaving it and coming back is one click
     /// instead of a hunt through the menus. Transient by design: never
     /// persisted, so a restart opens on real work.
-    pub(crate) settings_tab_open: bool,
+    ///
+    /// This is the existence test the strip and `reconcile_tab_order`
+    /// read; `tab_order` holds the position and is kept in step with it.
+    pub(crate) open_panel_tabs: std::collections::BTreeSet<crate::state::PanelKind>,
+    /// The network tools panel's own state (target, tool, results).
+    pub(crate) net_tools: crate::state::NetToolsState,
     /// Last scroll offset of each section, so returning to Settings lands
     /// where you left instead of at the top. Keyed by section because the
     /// sections are separate scrollables; the value is a relative offset

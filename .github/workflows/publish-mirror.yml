@@ -64,6 +64,17 @@ jobs:
       GH_TOKEN: ${{ github.token }}
       TAG: ${{ inputs.tag }}
     steps:
+      # The only thing this job needs from the repository is the purge
+      # helper, so it takes that directory and nothing else: everything
+      # published here comes from the release's own assets, which is why
+      # the rest of the job has never checked anything out. It runs first
+      # because a checkout cleans the directory it lands in, and by the
+      # time the assets are downloaded there is something there to lose.
+      - uses: actions/checkout@v5
+        with:
+          sparse-checkout: .github/scripts
+          sparse-checkout-cone-mode: false
+
       - name: Download release assets
         run: |
           set -euo pipefail
@@ -184,7 +195,38 @@ jobs:
             fi
           done
 
+      # The metadata snapshots are written with `max-age=300`, which the
+      # Cloudflare side honours and an EdgeOne node does not: it caches on
+      # its own TTL and goes on answering with whatever it holds.
+      # `latest.json` is what every client reads on an update check, so it
+      # is the file that stays hot and therefore the one that goes stale,
+      # and mainland China is then told about the previous release for as
+      # long as that copy lives. Assets are safe by construction (a new tag
+      # is a new path nobody has cached); only these three names are
+      # rewritten in place, so only these three are purged.
+      - name: Purge the China edge
+        env:
+          TENCENT_SECRET_ID: ${{ secrets.TENCENT_SECRET_ID }}
+          TENCENT_SECRET_KEY: ${{ secrets.TENCENT_SECRET_KEY }}
+          EDGEONE_ZONE_ID: ${{ secrets.EDGEONE_ZONE_ID }}
+        run: |
+          set -euo pipefail
+          if [ -z "${TENCENT_SECRET_ID:-}" ]; then
+            echo "::warning::no EdgeOne credentials; dl-cn.oryxis.app keeps serving its cached metadata until purged by hand"
+            exit 0
+          fi
+          # Cheap, and it fails on the one error the API cannot tell apart
+          # from a bad key: a malformed canonical request signs cleanly and
+          # is refused as an authentication failure.
+          python3 .github/scripts/edgeone_purge.py --selftest
+          python3 .github/scripts/edgeone_purge.py \
+            https://dl-cn.oryxis.app/releases/latest.json \
+            https://dl-cn.oryxis.app/releases/nightly.json \
+            https://dl-cn.oryxis.app/releases/index.json
+
       - name: Verify through the public endpoint
+        env:
+          PURGED: ${{ secrets.TENCENT_SECRET_ID != '' }}
         run: |
           set -euo pipefail
           # One asset fetched back through dl.oryxis.app proves the
@@ -196,4 +238,33 @@ jobs:
             "https://dl.oryxis.app/releases/$TAG/$probe"
           curl -fsS --range 0-199 -o /dev/null -w "index: HTTP %{http_code}\n" \
             "https://dl.oryxis.app/releases/index.json"
+
+          # A 200 says the file is reachable, not that it is THIS release:
+          # a stale edge answers 200 all day with last month's tag. So the
+          # check reads the tag out of the body, on both legs, which is the
+          # question a user's update check actually asks. Only for `v*`
+          # tags, since plugin releases do not move `latest.json`.
+          case "$TAG" in
+            v*)
+              for host in dl.oryxis.app dl-cn.oryxis.app; do
+                got=""
+                # The purge above is asynchronous, so the China leg is
+                # given time to come back rather than read once and fail.
+                for _ in 1 2 3 4 5 6; do
+                  got=$(curl -fsS "https://$host/releases/latest.json" \
+                    | python3 -c 'import json,sys; print(json.load(sys.stdin).get("tag_name",""))') || true
+                  [ "$got" = "$TAG" ] && break
+                  sleep 10
+                done
+                if [ "$got" = "$TAG" ]; then
+                  echo "$host: latest.json is $got"
+                elif [ "$host" = "dl-cn.oryxis.app" ] && [ "$PURGED" != "true" ]; then
+                  echo "::warning::$host still serves $got; purge its cache or add the EdgeOne credentials"
+                else
+                  echo "::error::$host serves $got for latest.json, expected $TAG"
+                  exit 1
+                fi
+              done
+              ;;
+          esac
           echo "mirror OK"

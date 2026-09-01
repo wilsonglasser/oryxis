@@ -89,6 +89,14 @@ impl VaultStore {
             AddressFamily::V4 => "v4",
             AddressFamily::V6 => "v6",
         };
+        // Ambiguous width ('auto' | 'narrow' | 'wide'); NULL and 'auto'
+        // both read back as Auto, so every host that predates the column
+        // keeps the narrow measurement it has always had.
+        let width_str = match conn.ambiguous_width {
+            AmbiguousWidth::Auto => "auto",
+            AmbiguousWidth::Narrow => "narrow",
+            AmbiguousWidth::Wide => "wide",
+        };
 
         // The proxy password, TOTP secret and target password live in
         // their own encrypted columns, written only by their dedicated
@@ -119,8 +127,8 @@ impl VaultStore {
             "INSERT OR REPLACE INTO connections
              (id, label, hostname, port, username, auth_method, key_id, group_id,
               jump_chain, proxy, tags, notes, color, password, last_used, created_at, updated_at, identity_id, mcp_enabled, port_forwards,
-              detected_os, custom_icon, custom_color, agent_forwarding, proxy_identity_id, terminal_theme, cloud_ref, initial_command, keepalive_interval, icon_style, customized_fields, env_vars, encoding, session_logging, startup_snippet_id, auto_title, terminal_type, ciphers, kex, macs, host_key_algorithms, privacy_mode, proxy_password, totp_secret, protocol, serial_config, rd_kind, rd_gateway_id, address_family, quirks, rekey_limit_mb, monitor_enabled, sidebar_auto_open, x11_forwarding, sftp_initial_path, mac_address, login_script, target_password, terminal_appearance, highlight_rules, monitor_disks, use_disk_key, identity_file, telnet_config, local_config, mosh_config, zmodem_drops)
-             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20,?21,?22,?23,?24,?25,?26,?27,?28,?29,?30,?31,?32,?33,?34,?35,?36,?37,?38,?39,?40,?41,?42,?43,?44,?45,?46,?47,?48,?49,?50,?51,?52,?53,?54,?55,?56,?57,?58,?59,?60,?61,?62,?63,?64,?65,?66,?67)",
+              detected_os, custom_icon, custom_color, agent_forwarding, proxy_identity_id, terminal_theme, cloud_ref, initial_command, keepalive_interval, icon_style, customized_fields, env_vars, encoding, session_logging, startup_snippet_id, auto_title, terminal_type, ciphers, kex, macs, host_key_algorithms, privacy_mode, proxy_password, totp_secret, protocol, serial_config, rd_kind, rd_gateway_id, address_family, quirks, rekey_limit_mb, monitor_enabled, sidebar_auto_open, x11_forwarding, sftp_initial_path, mac_address, login_script, target_password, terminal_appearance, highlight_rules, monitor_disks, use_disk_key, identity_file, telnet_config, local_config, mosh_config, zmodem_drops, ambiguous_width)
+             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20,?21,?22,?23,?24,?25,?26,?27,?28,?29,?30,?31,?32,?33,?34,?35,?36,?37,?38,?39,?40,?41,?42,?43,?44,?45,?46,?47,?48,?49,?50,?51,?52,?53,?54,?55,?56,?57,?58,?59,?60,?61,?62,?63,?64,?65,?66,?67,?68)",
             params![
                 conn.id.to_string(),
                 conn.label,
@@ -210,6 +218,7 @@ impl VaultStore {
                 local_json,
                 mosh_json,
                 conn.zmodem_drops as i32,
+                width_str,
             ],
         )?;
         // Re-creation clears any stale tombstone for this id (the
@@ -232,12 +241,12 @@ impl VaultStore {
         let query = match mcp_filter {
             Some(true) => {
                 "SELECT id, label, hostname, port, username, auth_method, key_id, group_id,
-                        jump_chain, proxy, tags, notes, color, last_used, created_at, updated_at, identity_id, mcp_enabled, port_forwards, detected_os, custom_icon, custom_color, agent_forwarding, proxy_identity_id, terminal_theme, cloud_ref, initial_command, keepalive_interval, icon_style, customized_fields, env_vars, encoding, session_logging, startup_snippet_id, auto_title, terminal_type, ciphers, kex, macs, host_key_algorithms, privacy_mode, protocol, serial_config, rd_kind, rd_gateway_id, address_family, quirks, rekey_limit_mb, monitor_enabled, sidebar_auto_open, x11_forwarding, sftp_initial_path, mac_address, login_script, terminal_appearance, highlight_rules, monitor_disks, use_disk_key, identity_file, telnet_config, local_config, mosh_config, zmodem_drops
+                        jump_chain, proxy, tags, notes, color, last_used, created_at, updated_at, identity_id, mcp_enabled, port_forwards, detected_os, custom_icon, custom_color, agent_forwarding, proxy_identity_id, terminal_theme, cloud_ref, initial_command, keepalive_interval, icon_style, customized_fields, env_vars, encoding, session_logging, startup_snippet_id, auto_title, terminal_type, ciphers, kex, macs, host_key_algorithms, privacy_mode, protocol, serial_config, rd_kind, rd_gateway_id, address_family, quirks, rekey_limit_mb, monitor_enabled, sidebar_auto_open, x11_forwarding, sftp_initial_path, mac_address, login_script, terminal_appearance, highlight_rules, monitor_disks, use_disk_key, identity_file, telnet_config, local_config, mosh_config, zmodem_drops, ambiguous_width
                  FROM connections WHERE mcp_enabled = 1 AND (protocol IS NULL OR protocol = 'ssh') ORDER BY label"
             }
             _ => {
                 "SELECT id, label, hostname, port, username, auth_method, key_id, group_id,
-                        jump_chain, proxy, tags, notes, color, last_used, created_at, updated_at, identity_id, mcp_enabled, port_forwards, detected_os, custom_icon, custom_color, agent_forwarding, proxy_identity_id, terminal_theme, cloud_ref, initial_command, keepalive_interval, icon_style, customized_fields, env_vars, encoding, session_logging, startup_snippet_id, auto_title, terminal_type, ciphers, kex, macs, host_key_algorithms, privacy_mode, protocol, serial_config, rd_kind, rd_gateway_id, address_family, quirks, rekey_limit_mb, monitor_enabled, sidebar_auto_open, x11_forwarding, sftp_initial_path, mac_address, login_script, terminal_appearance, highlight_rules, monitor_disks, use_disk_key, identity_file, telnet_config, local_config, mosh_config, zmodem_drops
+                        jump_chain, proxy, tags, notes, color, last_used, created_at, updated_at, identity_id, mcp_enabled, port_forwards, detected_os, custom_icon, custom_color, agent_forwarding, proxy_identity_id, terminal_theme, cloud_ref, initial_command, keepalive_interval, icon_style, customized_fields, env_vars, encoding, session_logging, startup_snippet_id, auto_title, terminal_type, ciphers, kex, macs, host_key_algorithms, privacy_mode, protocol, serial_config, rd_kind, rd_gateway_id, address_family, quirks, rekey_limit_mb, monitor_enabled, sidebar_auto_open, x11_forwarding, sftp_initial_path, mac_address, login_script, terminal_appearance, highlight_rules, monitor_disks, use_disk_key, identity_file, telnet_config, local_config, mosh_config, zmodem_drops, ambiguous_width
                  FROM connections ORDER BY label"
             }
         };
@@ -316,6 +325,13 @@ impl VaultStore {
                         Some("v6") => AddressFamily::V6,
                         _ => AddressFamily::Auto,
                     };
+                // Ambiguous width (NULL / unknown -> Auto).
+                let ambiguous_width =
+                    match row.get::<_, Option<String>>(63).ok().flatten().as_deref() {
+                        Some("narrow") => AmbiguousWidth::Narrow,
+                        Some("wide") => AmbiguousWidth::Wide,
+                        _ => AmbiguousWidth::Auto,
+                    };
                 // Login automation reference `{ id, vars }`. Malformed
                 // JSON reads as no automation rather than failing the
                 // whole row: a host that cannot be listed is worse than
@@ -339,6 +355,7 @@ impl VaultStore {
                     rd_kind,
                     rd_gateway_id,
                     address_family,
+                    ambiguous_width,
                     username: row.get(4)?,
                     auth_method,
                     key_id: row
@@ -538,8 +555,8 @@ impl VaultStore {
                         .ok()
                         .flatten()
                         .filter(|s| !s.trim().is_empty()),
-                    // Last SELECT column; NULL (a row from before the
-                    // migration) reads as off, the standard drop routing.
+                    // NULL (a row from before the migration) reads as
+                    // off, the standard drop routing.
                     zmodem_drops: row
                         .get::<_, Option<i32>>(62)
                         .unwrap_or(None)

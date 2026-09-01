@@ -81,15 +81,11 @@ impl PluginProvider {
 /// spawn failure reads as a clear `BinaryNotFound`.
 fn resolve_binary(provider_id: &str) -> PathBuf {
     #[cfg(debug_assertions)]
+    if super::dev_binary_present(provider_id)
+        && let Ok(exe) = std::env::current_exe()
+        && let Some(dir) = exe.parent()
     {
-        if let Ok(exe) = std::env::current_exe()
-            && let Some(dir) = exe.parent()
-        {
-            let dev = dir.join(cache::binary_name(provider_id));
-            if dev.exists() {
-                return dev;
-            }
-        }
+        return dir.join(cache::binary_name(provider_id));
     }
     cache::current_binary(provider_id)
         .ok()

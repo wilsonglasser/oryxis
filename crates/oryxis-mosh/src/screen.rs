@@ -73,11 +73,25 @@ pub struct AlacrittyScreen {
     term: Term<Events>,
     processor: ansi::Processor,
     events: Events,
+    /// Carried so a [`Clone`] measures text the way the original does.
+    ambiguous_width_wide: bool,
 }
 
 impl AlacrittyScreen {
     /// A blank screen of the given shape.
-    pub fn new(rows: u16, cols: u16) -> Self {
+    ///
+    /// `ambiguous_width_wide` must be the SAME answer the pane's own
+    /// emulator gives, and that is the whole reason it is a parameter
+    /// here: this screen decides where the server's bytes land, the pane
+    /// draws the diff computed from it, and two emulators disagreeing
+    /// about how wide `│` is would make the pane show something this
+    /// model never described.
+    ///
+    /// It is also FIXED for the life of the session, since there is no
+    /// path to reconfigure the screen once the protocol owns it. The
+    /// caller pins the pane's own answer at handover for that reason;
+    /// editing the host takes effect on the next connect.
+    pub fn new(rows: u16, cols: u16, ambiguous_width_wide: bool) -> Self {
         let size = Size { cols, rows };
         let config = TermConfig {
             // No scrollback. mosh synchronizes the VISIBLE screen and
@@ -85,6 +99,7 @@ impl AlacrittyScreen {
             // and a second copy here would be a second copy of every
             // state the session holds.
             scrolling_history: 0,
+            ambiguous_width_wide,
             ..Default::default()
         };
         let events = Events::default();
@@ -92,6 +107,7 @@ impl AlacrittyScreen {
             term: Term::new(config, &size, events.clone()),
             processor: ansi::Processor::new(),
             events,
+            ambiguous_width_wide,
         }
     }
 
@@ -106,7 +122,11 @@ impl Clone for AlacrittyScreen {
     /// fresh emulator restored to that grid continues from exactly
     /// where it left off.
     fn clone(&self) -> Self {
-        let mut copy = Self::new(self.term.screen_lines() as u16, self.term.columns() as u16);
+        let mut copy = Self::new(
+            self.term.screen_lines() as u16,
+            self.term.columns() as u16,
+            self.ambiguous_width_wide,
+        );
         *copy.term.grid_mut() = self.term.grid().clone();
         // Cursor visibility is a MODE, not a grid cell, so a copy that
         // only took the grid would report the cursor shown on a screen
@@ -418,7 +438,7 @@ mod tests {
     use super::*;
 
     fn screen(rows: u16, cols: u16, bytes: &[u8]) -> AlacrittyScreen {
-        let mut s = AlacrittyScreen::new(rows, cols);
+        let mut s = AlacrittyScreen::new(rows, cols, false);
         s.feed(bytes);
         s
     }
@@ -550,7 +570,7 @@ mod tests {
     #[test]
     fn a_reshaped_screen_is_repainted_rather_than_diffed() {
         let previous = screen(4, 10, b"before");
-        let mut target = AlacrittyScreen::new(6, 30);
+        let mut target = AlacrittyScreen::new(6, 30, false);
         target.feed(b"after");
         let diff = target.diff_from(&previous);
         // A repaint clears first, because nothing outside what it

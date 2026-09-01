@@ -36,6 +36,9 @@ pub enum EditorMessage {
     /// override (falls back to the global `default_host_icon`).
     EditorIconStyleChanged(String),
     EditorEncodingChanged(String),
+    /// How this host measures Unicode "Ambiguous" width characters,
+    /// picked in the host editor's Terminal card.
+    EditorAmbiguousWidthChanged(oryxis_core::models::connection::AmbiguousWidth),
     /// Per-host TERM name picked in the host editor.
     EditorTerminalTypeChanged(String),
     /// Empty string == "inherit the global keepalive setting".
@@ -215,6 +218,7 @@ pub enum EditorMessage {
     /// theme) repaints the running terminal for instant preview.
     HostConfigThemeChanged(String),
     HostConfigEncodingChanged(String),
+    HostConfigAmbiguousWidthChanged(oryxis_core::models::connection::AmbiguousWidth),
     HostConfigTerminalTypeChanged(String),
     HostConfigAutoTitleChanged(String),
     /// Host editor startup-command source changed (the picker label:

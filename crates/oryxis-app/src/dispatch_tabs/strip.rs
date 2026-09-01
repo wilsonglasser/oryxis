@@ -93,8 +93,8 @@ impl Oryxis {
                     self.reanchor_connecting_after_filter(connecting_id);
                 }
             }
-            TabsMessage::CloseSettingsTab => {
-                return self.close_settings_tab();
+            TabsMessage::ClosePanelTab(kind) => {
+                return self.close_panel_tab(kind);
             }
             TabsMessage::ToggleTabPin(idx) => {
                 self.overlay = None;
@@ -231,6 +231,12 @@ impl Oryxis {
                 }
             }
             TabsMessage::ToggleTabFilesMode(idx) => return self.handle_toggle_tab_files_mode(idx),
+            TabsMessage::ShowTabSurface(idx, surface) => {
+                // The chip and the segments live on the strip, so the
+                // overlay a right-click left open goes with them.
+                self.overlay = None;
+                return self.show_tab_surface(idx, surface);
+            }
             TabsMessage::DetachTabSftp(idx) => return self.handle_detach_tab_sftp(idx),
             TabsMessage::CloseTabSftpSession(idx) => return self.handle_close_tab_sftp_session(idx),
             TabsMessage::OpenTerminalForSftpTab(idx) => return self.handle_open_terminal_for_sftp_tab(idx),

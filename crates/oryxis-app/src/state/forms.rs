@@ -434,6 +434,8 @@ pub(crate) struct ConnectionForm {
     /// `default_host_icon` setting. Mirrors `Connection.icon_style`.
     pub icon_style: Option<String>,
     pub encoding: Option<String>,
+    /// Mirrors `Connection.ambiguous_width`; `Auto` follows the encoding.
+    pub ambiguous_width: oryxis_core::models::connection::AmbiguousWidth,
     /// Mirrors `Connection.terminal_type`; `None` = default `xterm-256color`.
     pub terminal_type: Option<String>,
     /// Per-host SSH algorithm overrides (legacy ciphers). `None` = Auto
@@ -1407,6 +1409,7 @@ impl Default for ConnectionForm {
             cloud_transport: None,
             icon_style: None,
             encoding: None,
+            ambiguous_width: Default::default(),
             terminal_type: None,
             ciphers: None,
             kex: None,

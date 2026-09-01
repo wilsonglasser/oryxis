@@ -145,12 +145,17 @@ impl MoshSession {
     /// chain, where SSH arrives from the last hop and the caller dials
     /// from somewhere else. It is not repairable at this layer, or any
     /// other: mosh is UDP, and UDP does not travel down an SSH tunnel.
+    ///
+    /// `ambiguous_width_wide` is the host's own setting, and it has to be
+    /// the same one the pane was given: the screen here decides where the
+    /// server's output lands, the pane draws the diff taken from it.
     pub fn connect(
         host: &str,
         port: u16,
         key: &str,
         cols: u16,
         rows: u16,
+        ambiguous_width_wide: bool,
     ) -> Result<(Self, mpsc::UnboundedReceiver<Vec<u8>>), MoshError> {
         let key = Base64Key::from_printable(key).map_err(|_| MoshError::BadKey)?;
         // The screen is supplied rather than asked for: `connect_with_size`
@@ -159,7 +164,7 @@ impl MoshSession {
             host,
             port,
             &key,
-            Screen::new(rows, cols),
+            Screen::new(rows, cols, ambiguous_width_wide),
         )
         .map_err(|e| MoshError::Unreachable(format!("{host}:{port}"), e.to_string()))?;
 
@@ -342,7 +347,7 @@ mod tests {
 
     #[test]
     fn a_key_that_is_not_a_key_is_refused_before_a_socket_is_opened() {
-        let opened = MoshSession::connect("127.0.0.1", 1, "not a key", 80, 24);
+        let opened = MoshSession::connect("127.0.0.1", 1, "not a key", 80, 24, false);
         assert!(matches!(opened, Err(MoshError::BadKey)));
     }
 
@@ -395,6 +400,7 @@ mod tests {
             "AAAAAAAAAAAAAAAAAAAAAA",
             80,
             24,
+            false,
         )
         .expect("a socket is all it takes to start");
         assert!(session.is_alive());
@@ -411,7 +417,7 @@ mod tests {
     #[tokio::test]
     async fn the_quiet_clock_runs_with_nothing_arriving() {
         let (session, _rx) =
-            MoshSession::connect("127.0.0.1", 1, "AAAAAAAAAAAAAAAAAAAAAA", 80, 24)
+            MoshSession::connect("127.0.0.1", 1, "AAAAAAAAAAAAAAAAAAAAAA", 80, 24, false)
                 .expect("a socket is all it takes to start");
         // Two idle cycles' worth, so the reading is one the driving task
         // published rather than the zero it was born with.

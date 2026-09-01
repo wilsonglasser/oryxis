@@ -219,6 +219,10 @@ pub enum SettingsMessage {
     SettingMonitorIntervalChanged(String),
     ToggleSftpAskDownloadDir,
     ToggleSftpUploadTempName,
+    /// Settings > SFTP: where an SFTP console opened on a live tab
+    /// lands (stacked / beside / zoomed). Carries the picked label,
+    /// like every other pick_list row.
+    SftpConsoleLayoutChanged(String),
     /// Settings > SFTP: the single external editor used by the remote
     /// "Open with default text editor" action (issue #84).
     SettingSftpDefaultEditorChanged(String),
@@ -346,6 +350,10 @@ pub enum SettingsMessage {
     SettingToggleTabAccentText,
     SettingTogglePerformanceMode,
     SettingTogglePerfOverlay,
+    /// Toggle the opt-in network tools panel (`network_tools_enabled`).
+    /// Switching it off also closes the panel's tab, so no chip
+    /// survives pointing at a surface that can no longer be opened.
+    SettingToggleNetworkTools,
     /// Toggle the opt-in "remote desktop" feature (`remote_desktop_enabled`).
     SettingToggleRemoteDesktop,
     /// Relaunch the app in place to apply a start-time-only setting (the

@@ -569,6 +569,25 @@ impl Oryxis {
                 // than a recompile.
                 let rules_conn_id = self.pane_by_id(pane_id).and_then(|p| p.saved_conn_id());
                 let highlight_rules = self.highlight_rules_for(rules_conn_id);
+                // How wide this host measures Unicode "Ambiguous" width
+                // characters (J4), installed here for the same reason the
+                // rules are: it is the one place every pane passes
+                // through, whichever of the creation paths made it. The
+                // setter is a bool comparison when the answer has not
+                // changed, so the first batch pays for it and no other.
+                // A mosh pane answers from the value PINNED at handover
+                // instead: the screen inside the protocol was built with
+                // that one and cannot be reconfigured, and a pane that
+                // re-read the setting would end up disagreeing with the
+                // model whose diff it is drawing.
+                let ambiguous_width_wide = self
+                    .pane_by_id(pane_id)
+                    .and_then(|p| p.mosh_ambiguous_width)
+                    .unwrap_or_else(|| {
+                        rules_conn_id
+                            .and_then(|id| self.connections.iter().find(|c| c.id == id))
+                            .is_some_and(|c| c.ambiguous_width_effective())
+                    });
                 // What each action-bearing rule should DO, resolved
                 // before the borrow because the actions themselves need
                 // the whole app (a toast, a snippet, a confirmation).
@@ -680,6 +699,7 @@ impl Oryxis {
                         && pane.login_script.is_none();
                     if let Ok(mut state) = pane.terminal.lock() {
                         state.set_highlight_rules(highlight_rules);
+                        state.set_ambiguous_width_wide(ambiguous_width_wide);
                         state.process(&bytes);
                         // Highlight rules that fired on this batch (C6).
                         // Drained inside the lock (the scanner lives in

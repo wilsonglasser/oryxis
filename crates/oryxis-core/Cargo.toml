@@ -21,6 +21,11 @@ data-encoding = "2"
 # Optional regex patterns in login scripts (`login_script` module); the
 # suffix form needs no engine, the escape hatch does.
 regex = { workspace = true }
+# Encoding LABELS, not transcoding: `AmbiguousWidth::Auto` asks whether a
+# host's charset is a legacy CJK one, and the aliases (`csbig5`, `x-gbk`,
+# `ms_kanji`) are exactly what a hand-rolled match would get wrong. Already
+# in the tree via oryxis-ssh and oryxis-telnet, which do the transcoding.
+encoding_rs = "0.8"
 
 # Free-space probe (`disk` module). `statvfs` on unix and
 # `GetDiskFreeSpaceExW` on Windows: no crate wraps both without pulling

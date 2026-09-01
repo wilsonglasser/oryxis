@@ -263,6 +263,29 @@ impl Oryxis {
                 .into(),
         );
 
+        // Ambiguous width, next to encoding because `Auto` reads it. The
+        // one control here that does NOT wait for a reconnect: the output
+        // funnel installs it on the pane's next batch.
+        use oryxis_core::models::connection::AmbiguousWidth;
+        let width_pick = self.sidebar_nav_slot(
+            crate::keynav::SidebarRow::input(iced::widget::Id::new("sidebar-hostcfg-ambiguous")),
+            stab,
+            crate::widgets::INPUT_RADIUS,
+            pick_list(
+                Some(conn.ambiguous_width),
+                vec![AmbiguousWidth::Auto, AmbiguousWidth::Narrow, AmbiguousWidth::Wide],
+                |w: &AmbiguousWidth| t(crate::util::ambiguous_width_key(*w)).to_string(),
+            )
+            .id(iced::widget::Id::new("sidebar-hostcfg-ambiguous"))
+            .on_select(|v| Message::Editor(EditorMessage::HostConfigAmbiguousWidthChanged(v)))
+            .on_open(Message::Navigation(NavigationMessage::PickOpenChanged(true)))
+            .on_close(Message::Navigation(NavigationMessage::PickOpenChanged(false)))
+            .width(Length::Fill)
+            .padding(8)
+            .style(pl_style)
+            .into(),
+        );
+
         let term_opts: Vec<String> = [
             "xterm-256color", "xterm", "screen-256color", "tmux-256color", "screen",
             "linux", "vt220", "vt100", "ansi",
@@ -338,6 +361,10 @@ impl Oryxis {
             label("host_config_encoding"),
             Space::new().height(4),
             encoding_pick,
+            Space::new().height(12),
+            label("host_ambiguous_width"),
+            Space::new().height(4),
+            width_pick,
             Space::new().height(12),
             label("host_config_terminal_type"),
             Space::new().height(4),

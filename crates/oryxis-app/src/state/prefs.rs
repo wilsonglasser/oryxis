@@ -143,6 +143,11 @@ pub(crate) struct AppPrefs {
     /// the top-right of every pane. Off by default; the `ORYXIS_TERM_PERF`
     /// env var forces it on too. `"perf_overlay"` setting.
     pub(crate) perf_overlay: bool,
+    /// The network tools panel (DNS, ping, traceroute, port test,
+    /// HTTP/TLS, WHOIS, DNSBL). Off by default and, while off, its whole
+    /// UI is hidden: no burger entry, no tab, no way in (the
+    /// optional-features rule). `"network_tools_enabled"` setting.
+    pub(crate) network_tools: bool,
     /// When the foreground and background of a cell render too close
     /// to each other (LS_COLORS' `ow` over a green palette,
     /// PowerShell's `$PSStyle.FileInfo.Directory` blue-on-blue, …),
@@ -477,6 +482,11 @@ pub(crate) struct AppPrefs {
     /// setting: turning it off would only restore the bug where an
     /// interrupted download leaves a truncated file under the real name.
     pub(crate) sftp_upload_temp_name: bool,
+    /// Where an SFTP console opened on a live tab lands: stacked under
+    /// the shell (default), beside it, or zoomed over it. Every option
+    /// is a pane of that tab, so the Terminal / Console / SFTP switch
+    /// works the same whichever one the user picked.
+    pub(crate) sftp_console_layout: crate::state::SftpConsoleLayout,
     /// TCP connect + SSH transport handshake timeout, in seconds.
     pub(crate) sftp_connect_timeout: String,
     /// Authentication phase timeout, in seconds.
@@ -573,6 +583,7 @@ impl Default for AppPrefs {
             compiled_highlight_rules: std::sync::Arc::default(),
             performance_mode: false,
             perf_overlay: false,
+            network_tools: false,
             smart_contrast: true,
             bell_mode: crate::util::BellMode::default(),
             clipboard_access: crate::util::ClipboardAccess::default(),
@@ -650,6 +661,7 @@ impl Default for AppPrefs {
             sftp_concurrency: "2".into(),
             sftp_ask_download_dir: false,
             sftp_upload_temp_name: false,
+            sftp_console_layout: crate::state::SftpConsoleLayout::default(),
             sftp_connect_timeout: "15".into(),
             sftp_auth_timeout: "30".into(),
             sftp_session_timeout: "10".into(),

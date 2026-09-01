@@ -28,6 +28,40 @@ pub mod manifest;
 pub mod provider;
 pub mod verify;
 
+/// True when a freshly-built plugin binary sits next to the app
+/// executable, which the dev loop treats as installed so a
+/// `cargo build` + restart picks up plugin edits without going
+/// through the cache.
+///
+/// The single authority for that question. `detect_status` (does the
+/// UI call it installed) and `resolve_binary` (what gets spawned) both
+/// ask here rather than probing separately: two answers to one
+/// question means a provider the panel calls a DevBuild while the host
+/// spawns something else.
+///
+/// A harness run never sees a dev binary. The sandbox exists so a run
+/// starts from first-run state whatever the machine looks like, and
+/// `target/debug` is machine state that the `$HOME` redirect cannot
+/// reach: with the cloud plugins built, `cloud-open-plugins.ice` fails
+/// on a developer's box and passes in CI, which is the least useful
+/// shape a test can have.
+pub fn dev_binary_present(provider_id: &str) -> bool {
+    #[cfg(debug_assertions)]
+    {
+        #[cfg(feature = "harness")]
+        if crate::harness::is_sandboxed() {
+            return false;
+        }
+        if let Ok(exe) = std::env::current_exe()
+            && let Some(dir) = exe.parent()
+        {
+            return dir.join(cache::binary_name(provider_id)).exists();
+        }
+    }
+    let _ = provider_id;
+    false
+}
+
 pub use host::PluginHost;
 pub use manifest::{ManifestEntry, PlatformBinary, PluginManifest};
 pub use provider::PluginProvider;

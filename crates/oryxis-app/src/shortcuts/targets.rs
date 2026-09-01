@@ -52,7 +52,7 @@ impl Oryxis {
                 TabRef::Sftp(id) => {
                     self.sftp_tabs.iter().find(|t| t.id == *id).map(|t| t.pinned).unwrap_or(false)
                 }
-                TabRef::Settings => false,
+                TabRef::Panel(_) => false,
             }
         };
         let mut refs: Vec<TabRef> =
@@ -75,10 +75,11 @@ impl Oryxis {
                 }
                 self.sftp_tabs.iter().position(|t| t.id == *id).map(|v| Message::Sftp(SftpMessage::SelectSftpTab(v)))
             }
-            // Selecting it IS navigating to Settings; `ensure_settings_tab`
-            // makes that idempotent, so this never opens a second one.
-            TabRef::Settings => self.settings_tab_open.then(|| {
-                Message::Navigation(crate::app::NavigationMessage::ChangeView(View::Settings))
+            // Selecting it IS navigating to the panel's view;
+            // `ensure_panel_tab` makes that idempotent, so this never
+            // opens a second one.
+            TabRef::Panel(kind) => self.panel_tab_open(*kind).then(|| {
+                Message::Navigation(crate::app::NavigationMessage::ChangeView(kind.view()))
             }),
         }
     }
@@ -100,11 +101,13 @@ impl Oryxis {
         if let Some(i) = self.active_tab {
             return self.tabs.get(i).map(|t| TabRef::Terminal(t._id));
         }
-        // Same rule as the SFTP arm above: Settings owns the strip slot
+        // Same rule as the SFTP arm above: a panel owns the strip slot
         // only while its own surface is the one showing, so Ctrl+Tab can
         // come back to whatever was open before it.
-        if self.settings_tab_open && self.active_view == View::Settings {
-            return Some(TabRef::Settings);
+        if let Some(kind) = crate::state::PanelKind::for_view(self.active_view)
+            && self.panel_tab_open(kind)
+        {
+            return Some(TabRef::Panel(kind));
         }
         None
     }
@@ -132,6 +135,10 @@ impl Oryxis {
             View::Dashboard => (!self.dashboard_is_empty())
                 .then(|| widget::Id::new("search-dashboard")),
             View::Keys => Some(widget::Id::new("search-keys")),
+            // The network tools panel has a target field, not a search
+            // field: Ctrl+F there would focus the thing the panel runs
+            // against, which is not what find means.
+            View::NetworkTools => None,
             // Snippets and History only expose their search field on
             // the Workspace-mode sub-nav. In Classic mode there's no
             // search input to focus, so Ctrl+F harmlessly tries to

@@ -81,7 +81,7 @@ impl Oryxis {
                     .and_then(|i| self.sftp_pin_spec(i)),
                 // Transient by design (issue #120): a restart should open
                 // on real work, not on the settings screen.
-                crate::state::TabRef::Settings => None,
+                crate::state::TabRef::Panel(_) => None,
             };
             if let Some(spec) = spec
                 && seen.insert(spec.dedupe_key())

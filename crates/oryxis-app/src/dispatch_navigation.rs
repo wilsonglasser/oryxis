@@ -68,6 +68,14 @@ impl Oryxis {
                 return Task::batch([leave, enter]);
             }
             NavigationMessage::ChangeView(view) => {
+                // A gated surface is not reachable while its feature is
+                // off, whatever asked. The menu entry is already hidden;
+                // this is the guard for everything else that can send a
+                // `ChangeView` (a restored route, a hotkey, a deep link
+                // added later).
+                if view == View::NetworkTools && !self.prefs.network_tools {
+                    return Task::none();
+                }
                 // Navigating away from the Shortcuts editor cancels
                 // any pending capture so the next keystroke doesn't
                 // silently rebind an action from another screen.
@@ -95,13 +103,14 @@ impl Oryxis {
                 }
                 self.active_view = view;
                 self.active_tab = None;
-                // Give Settings its strip entry (issue #120). Every door
-                // into Settings goes through here, which is what keeps it
-                // to one tab; and it has to happen BEFORE the early
-                // returns further down (the search-focus one fires for
-                // Settings, so a call at the end never ran).
-                if view == View::Settings {
-                    self.ensure_settings_tab();
+                // Give a panel surface its strip entry (issue #120).
+                // Every door into one goes through here, which is what
+                // keeps it to one tab per kind; and it has to happen
+                // BEFORE the early returns further down (the
+                // search-focus one fires for Settings, so a call at the
+                // end never ran).
+                if let Some(kind) = crate::state::PanelKind::for_view(view) {
+                    self.ensure_panel_tab(kind);
                 }
                 // Drop any keyboard selection when leaving / changing the
                 // surface so a stale highlight doesn't linger. Keynav's

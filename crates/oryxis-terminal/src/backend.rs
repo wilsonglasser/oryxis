@@ -306,6 +306,25 @@ impl TerminalBackend {
         self.term.set_options(self.config.clone());
     }
 
+    /// Set whether Unicode "Ambiguous" width characters occupy two cells.
+    ///
+    /// No-op when unchanged, for the same reason
+    /// `set_highlight_rules` is: the app installs this on every output
+    /// batch, which is the one place every pane passes through no matter
+    /// which creation path made it.
+    ///
+    /// A flip mid-session only governs what is written AFTER it. Cells
+    /// already on the grid keep the width they were written with, and
+    /// nothing rewrites them: a re-measured backscroll would move text the
+    /// user already read.
+    pub fn set_ambiguous_width_wide(&mut self, wide: bool) {
+        if self.config.ambiguous_width_wide == wide {
+            return;
+        }
+        self.config.ambiguous_width_wide = wide;
+        self.term.set_options(self.config.clone());
+    }
+
     /// Feed raw bytes from PTY into the terminal emulator.
     pub fn process(&mut self, bytes: &[u8]) {
         // Strip screen's `ESC k … ST` window titles first (issue #88): the
@@ -629,6 +648,60 @@ mod tests {
 
     fn cell0(backend: &TerminalBackend) -> char {
         backend.term.grid()[Line(0)][Column(0)].c
+    }
+
+    fn is_wide(backend: &TerminalBackend, column: usize) -> bool {
+        backend.term.grid()[Line(0)][Column(column)]
+            .flags
+            .contains(alacritty_terminal::term::cell::Flags::WIDE_CHAR)
+    }
+
+    /// `│` U+2502 is East Asian "Ambiguous": one cell for us by default,
+    /// two once the host says its remote measures it that way. Everything
+    /// downstream (selection, cursor math, the draw pass) reads the flag,
+    /// so this one bit is the whole feature.
+    #[test]
+    fn ambiguous_width_is_narrow_until_asked() {
+        let mut backend = TerminalBackend::new(40, 5);
+        backend.process("│x".as_bytes());
+        assert!(!is_wide(&backend, 0), "ambiguous defaults to one cell");
+        assert_eq!(backend.term.grid()[Line(0)][Column(1)].c, 'x');
+
+        let mut wide = TerminalBackend::new(40, 5);
+        wide.set_ambiguous_width_wide(true);
+        wide.process("│x".as_bytes());
+        assert!(is_wide(&wide, 0), "the option must reach the emulator");
+        assert_eq!(wide.term.grid()[Line(0)][Column(2)].c, 'x', "the glyph took two cells");
+    }
+
+    /// Hiragana is wide in both tables: the option must not be doing
+    /// something as blunt as "everything non-ASCII is two cells".
+    #[test]
+    fn unambiguous_widths_are_untouched() {
+        for wide in [false, true] {
+            let mut backend = TerminalBackend::new(40, 5);
+            backend.set_ambiguous_width_wide(wide);
+            backend.process("aあ".as_bytes());
+            assert!(!is_wide(&backend, 0));
+            assert!(is_wide(&backend, 1));
+        }
+    }
+
+    /// The app calls this on every output batch, so an unchanged value
+    /// must cost nothing, and a changed one must not re-measure the text
+    /// already on screen (`set_options` damages the grid, it does not
+    /// rewrite it).
+    #[test]
+    fn flipping_ambiguous_width_leaves_written_cells_alone() {
+        let mut backend = TerminalBackend::new(40, 5);
+        backend.process("│".as_bytes());
+        assert!(!is_wide(&backend, 0));
+
+        backend.set_ambiguous_width_wide(true);
+        assert!(!is_wide(&backend, 0), "the old cell keeps the width it was written with");
+
+        backend.process("│".as_bytes());
+        assert!(is_wide(&backend, 1), "new output follows the new setting");
     }
 
     /// An open DEC `?2026` synchronized update buffers output in vte: the

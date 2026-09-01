@@ -140,13 +140,24 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
+      # The registry only, never `target/`. A hosted runner has 14 GB of
+      # disk whatever the platform, and this job is the one that spends
+      # it twice: a release `target/` runs to several gigabytes for a
+      # 75 MB binary, and `hdiutil` then mounts the whole .app as a
+      # volume to compress it. Caching the build directory buys back a
+      # few minutes on a job that runs once per tag, and pays for it in
+      # the space the .dmg needs: past a certain size the two do not fit
+      # and `hdiutil` answers `create failed - No space left on device`.
+      #
+      # The key is deliberately new: `actions/cache` restores the archive
+      # it saved, not the paths listed here, so an old entry would extract
+      # the `target/` this stops caching.
       - uses: actions/cache@v5
         with:
           path: |
             ~/.cargo/registry/
             ~/.cargo/git/
-            target/
-          key: macos-arm-release-${{ hashFiles('**/Cargo.lock') }}
+          key: macos-arm-release-cargo-${{ hashFiles('**/Cargo.lock') }}
       - run: cargo build --locked --release
       - name: Package tarball
         run: |
@@ -197,14 +208,41 @@ jobs:
             echo "No Developer ID secrets set; applying ad-hoc signature."
             codesign --force --deep --sign - "$APP"
           fi
+      # The .app is self-contained from here on: the signature above and
+      # the .dmg and notarization below all work from it, and nothing
+      # reads `target/` again. Handing those gigabytes back is what
+      # leaves `hdiutil` room for the volume it mounts to compress, on a
+      # runner holding 14 GB for the whole job. Cheap now that the cache
+      # no longer keeps this directory, since there is nothing to save.
+      - name: Reclaim the build directory
+        run: |
+          rm -rf target
+          # What is left, and what the .dmg below has to fit into. In the
+          # log on every run, because the failure it guards against
+          # (`hdiutil: create failed`) says nothing about how close the
+          # disk was.
+          df -h /
       - name: Build .dmg
         run: |
           STAGING="$RUNNER_TEMP/dmg"
           mkdir -p "$STAGING"
-          cp -R Oryxis.app "$STAGING/"
+          # `mv`, not `cp -R`: nothing after this reads the bundle from
+          # the workspace (the .dmg is what gets notarized and uploaded),
+          # and a second copy of it is space the image itself needs.
+          mv Oryxis.app "$STAGING/"
           ln -s /Applications "$STAGING/Applications"
+          # The image is sized here, not estimated by hdiutil. Left to
+          # guess from `-srcfolder` it sizes the volume too tightly and
+          # runs out of room copying the bundle in, which it reports as
+          # `create failed - No space left on device`: a message about
+          # the image it is filling, not about the disk underneath (the
+          # runner has tens of GB free at that point). The content is
+          # measured and given 300 MB of headroom, and UDZO compresses
+          # the slack away, so the .dmg that ships is no bigger for it.
+          SIZE_MB=$(( $(du -sm "$STAGING" | cut -f1) + 300 ))
+          echo "staging is $(du -sh "$STAGING" | cut -f1), image sized ${SIZE_MB}m"
           hdiutil create -volname "Oryxis" -srcfolder "$STAGING" \
-            -ov -format UDZO oryxis-macos-aarch64.dmg
+            -size "${SIZE_MB}m" -ov -format UDZO oryxis-macos-aarch64.dmg
       - name: Notarize .dmg
         # Runs only when the App Store Connect secrets are present. Submits the
         # .dmg to Apple, waits for the ticket, then staples it so the app opens

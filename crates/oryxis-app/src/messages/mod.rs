@@ -29,6 +29,8 @@ mod keys;
 pub use keys::KeysMessage;
 mod monitor;
 pub use monitor::MonitorMessage;
+mod net_tools;
+pub use net_tools::NetToolsMessage;
 mod tmux;
 pub use tmux::TmuxMessage;
 mod sidebar_files;
@@ -270,6 +272,12 @@ pub enum Message {
     // anymore. Handlers stay wired so we can resurrect a dedicated
     // session-logs surface without re-introducing the messages.
 
+    // Network tools
+    /// The optional network tools panel (DNS, ping, traceroute, port
+    /// test, HTTP/TLS, WHOIS, DNSBL). Hidden behind
+    /// `network_tools_enabled`.
+    NetTools(NetToolsMessage),
+
     // Settings
     // Update (handle_update)
     Update(UpdateMessage),
@@ -390,5 +398,82 @@ impl Message {
             Some(id) => Message::SftpFor(id, Box::new(message)),
             None => Message::Sftp(message),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    /// A variant name must be unique across ALL the sub-enums.
+    ///
+    /// Two sub-enums may legally declare the same simple name, and the
+    /// wrappers make either one compile at every send site, so the
+    /// wrapper is the only thing telling them apart and nothing checks
+    /// it. That is a permanent landmine rather than a bug: it waits for
+    /// whoever next reaches for the name.
+    ///
+    /// The convention was written down and drifted anyway, twice: the
+    /// sync prefix strip minted three collisions with `SftpMessage`, and
+    /// `NetToolsMessage` arrived with `TabsMessage`'s `CardHovered(usize)`
+    /// under a different wrapper. Reading the sources is what makes the
+    /// rule hold without anyone remembering it, and it follows the
+    /// precedent of `lockfile_guard.rs` reading `Cargo.lock`.
+    #[test]
+    fn no_variant_name_is_declared_by_two_sub_enums() {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/messages");
+        let mut owners: std::collections::BTreeMap<String, Vec<String>> = Default::default();
+        let mut files = 0usize;
+        for entry in std::fs::read_dir(&dir).expect("read src/messages") {
+            let path = entry.expect("dir entry").path();
+            let stem = match path.file_stem().and_then(|s| s.to_str()) {
+                Some(s) if path.extension().is_some_and(|e| e == "rs") && s != "mod" => {
+                    s.to_owned()
+                }
+                _ => continue,
+            };
+            files += 1;
+            let src = std::fs::read_to_string(&path).expect("read sub-enum source");
+            for raw in src.lines() {
+                // A variant is declared at exactly one indent level
+                // inside its enum; anything deeper is a field or a match
+                // arm, and anything shallower is an item.
+                let Some(rest) = raw.strip_prefix("    ") else {
+                    continue;
+                };
+                if rest.starts_with(' ') || rest.starts_with("//") {
+                    continue;
+                }
+                let name: String = rest
+                    .chars()
+                    .take_while(|c| c.is_ascii_alphanumeric())
+                    .collect();
+                if name.is_empty() || !name.starts_with(|c: char| c.is_ascii_uppercase()) {
+                    continue;
+                }
+                // Only a declaration, never a use: the character after
+                // the name says which.
+                let tail = &rest[name.len()..];
+                if !(tail.starts_with('(')
+                    || tail.starts_with('{')
+                    || tail.starts_with(',')
+                    || tail.is_empty())
+                {
+                    continue;
+                }
+                owners.entry(name).or_default().push(stem.clone());
+            }
+        }
+        assert!(files > 20, "only found {files} sub-enum files; the scan moved");
+
+        let clashes: Vec<String> = owners
+            .iter()
+            .filter(|(_, wheres)| wheres.len() > 1)
+            .map(|(name, wheres)| format!("{name} in {}", wheres.join(" and ")))
+            .collect();
+        assert!(
+            clashes.is_empty(),
+            "a variant name is declared by two sub-enums, so the wrapper is \
+             the only thing telling them apart:\n  {}",
+            clashes.join("\n  ")
+        );
     }
 }

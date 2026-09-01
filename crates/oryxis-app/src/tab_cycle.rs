@@ -74,7 +74,7 @@ impl Oryxis {
         match r {
             TabRef::Terminal(id) => self.tabs.iter().any(|t| t._id == *id),
             TabRef::Sftp(id) => self.sftp_tabs.iter().any(|t| t.id == *id),
-            TabRef::Settings => self.settings_tab_open,
+            TabRef::Panel(kind) => self.panel_tab_open(*kind),
         }
     }
 
@@ -98,7 +98,7 @@ impl Oryxis {
                 .find(|t| t.id == *id)
                 .is_some_and(|t| t.pending_reopen.is_some()),
             // Never restored at boot, so it can never be a placeholder.
-            TabRef::Settings => false,
+            TabRef::Panel(_) => false,
         }
     }
 

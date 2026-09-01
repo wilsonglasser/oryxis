@@ -14,7 +14,7 @@ pub(crate) use oryxis_core::models::cloud_profile::CloudProfile;
 pub(crate) use oryxis_core::models::custom_terminal_theme::CustomTerminalTheme;
 pub(crate) use oryxis_core::models::custom_ui_theme::CustomUiTheme;
 pub(crate) use oryxis_core::models::connection::{
-    AddressFamily, AuthMethod, Connection, ConnectionProtocol, ProxyType,
+    AddressFamily, AmbiguousWidth, AuthMethod, Connection, ConnectionProtocol, ProxyType,
 };
 pub(crate) use oryxis_core::models::remote_desktop::RemoteDesktopKind;
 pub(crate) use oryxis_core::models::group::{Group, GroupDefaults};

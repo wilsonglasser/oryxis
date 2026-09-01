@@ -18,6 +18,12 @@ impl Oryxis {
                 let value = if v == "UTF-8" { None } else { Some(v) };
                 self.host_config_apply(|c| c.encoding = value, false);
             }
+            EditorMessage::HostConfigAmbiguousWidthChanged(v) => {
+                // Unlike encoding and TERM, this one does not wait for a
+                // reconnect: the output funnel installs it on the pane's
+                // next batch, so a redraw is enough to see it.
+                self.host_config_apply(|c| c.ambiguous_width = v, false);
+            }
             EditorMessage::HostConfigTerminalTypeChanged(v) => {
                 let value = if v == "xterm-256color" { None } else { Some(v) };
                 self.host_config_apply(|c| c.terminal_type = value, false);

@@ -167,6 +167,27 @@ fn civil_from_epoch(secs: i64) -> (i64, u32, u32, u32, u32) {
     (year, m, d, hour, minute)
 }
 
+/// A remote name with everything that is not text replaced by `?`.
+///
+/// A file name is remote input and it is about to be written to a
+/// terminal that interprets escape sequences. Left raw, a name can
+/// clear the screen, retitle the window, forge the OSC 133 marks this
+/// console emits around its own prompt, or reach the clipboard through
+/// OSC 52, which is on by default. None of that is the listing the user
+/// asked for.
+///
+/// `?` rather than a placeholder glyph because that is what `ls -q`
+/// does, and because it is one column wide, so the column arithmetic
+/// downstream keeps agreeing with what lands on screen.
+///
+/// Display only. The name used to BUILD a path is the real one, or a
+/// file whose name contains a tab would stop being downloadable.
+pub fn display_name(name: &str) -> String {
+    name.chars()
+        .map(|c| if c.is_control() { '?' } else { c })
+        .collect()
+}
+
 /// Render a directory listing.
 ///
 /// `now` is passed in rather than read, so the six-month boundary is
@@ -179,6 +200,15 @@ fn civil_from_epoch(secs: i64) -> (i64, u32, u32, u32, u32) {
 /// from the numeric attributes, which is exactly what `ls -n` shows. The
 /// fix is upstream, not a fork.
 pub fn render_listing(entries: &[SftpEntry], opts: &LsOpts, now: i64, cols: u16) -> String {
+    // Sanitized up front, once, so the sort, the width arithmetic and
+    // the bytes written can never be looking at different names.
+    let entries: Vec<SftpEntry> = entries
+        .iter()
+        .map(|e| SftpEntry {
+            name: display_name(&e.name),
+            ..e.clone()
+        })
+        .collect();
     let mut visible: Vec<&SftpEntry> = entries
         .iter()
         .filter(|e| opts.all || !e.name.starts_with('.'))
@@ -939,5 +969,47 @@ mod tests {
     #[test]
     fn help_admits_the_numeric_owner_limitation() {
         assert!(help_text().contains("numerically"));
+    }
+
+    /// A file name is remote input on its way to a terminal that acts on
+    /// escape sequences. Left raw it can clear the screen, forge the OSC
+    /// 133 marks this console emits, or reach the clipboard through OSC
+    /// 52, which is on by default.
+    #[test]
+    fn a_name_cannot_smuggle_an_escape_sequence_into_the_terminal() {
+        assert_eq!(display_name("plain.txt"), "plain.txt");
+        assert_eq!(display_name("a\u{1b}[2Jb"), "a?[2Jb");
+        assert_eq!(display_name("t\tab"), "t?ab");
+        assert_eq!(display_name("line\r\nbreak"), "line??break");
+        assert_eq!(display_name("\u{7}bell"), "?bell");
+        // Non-ASCII text is not a control sequence and must survive.
+        assert_eq!(display_name("relatório-日本語.txt"), "relatório-日本語.txt");
+    }
+
+    /// The sanitizer runs before the widths are measured, so a name full
+    /// of escapes cannot push the column arithmetic off what is drawn.
+    #[test]
+    fn a_listing_carries_no_control_bytes() {
+        let entry = SftpEntry {
+            name: "ev\u{1b}]0;pwned\u{7}il".to_string(),
+            is_dir: false,
+            is_symlink: false,
+            size: 1,
+            mtime: None,
+            permissions: None,
+            uid: None,
+            gid: None,
+        };
+        for opts in [
+            LsOpts { long: true, ..Default::default() },
+            LsOpts { one_per_line: true, ..Default::default() },
+            LsOpts::default(),
+        ] {
+            let out = render_listing(std::slice::from_ref(&entry), &opts, 0, 80);
+            assert!(
+                !out.chars().any(|c| c.is_control() && c != '\r' && c != '\n'),
+                "control byte survived into the listing: {out:?}"
+            );
+        }
     }
 }

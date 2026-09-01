@@ -124,16 +124,22 @@ matching installer. Windows binaries are Authenticode-signed (see
   groups, per-host themes, an optional translucent background or
   background image, bundled
   Nerd Fonts plus a downloadable font pack (JetBrains Mono, Fira Code,
-  MesloLGS and more), smart tabs that flag long-running commands, and
-  per-host command history.
+  MesloLGS and more), smart tabs that flag long-running commands,
+  per-host command history, and a per-host East Asian ambiguous-width
+  setting so CJK TUIs line up.
 - **Files everywhere.** Dual-pane SFTP with drag-and-drop, edit-in-place
   and server-to-server copy; every SSH tab also carries a Files sidebar
   that follows your shell's working directory. Prefer typing? An
   interactive SFTP console speaks `sftp(1)`'s commands (`get`, `put`,
-  `mget`, `lcd`, globs, Tab completion, inline progress) in a tab of its
-  own, opened from any host.
+  `mget`, `lcd`, globs, Tab completion, inline progress), opening as a
+  pane of the session you are already in (stacked, beside or zoomed,
+  your choice) with one switch between terminal, console and files.
 - **Session recording.** Encrypted at rest; exports to asciinema `.cast`
   (theme embedded) or plain transcript, output-only by design.
+- **The sysadmin toolbox.** An optional network tools panel (off by
+  default, opens as its own tab): DNS records, ping, traceroute, TCP
+  port test, HTTP redirect chain and certificate inspection, WHOIS, and
+  the public spam blocklists.
 - **Cloud accounts.** AWS, Google Cloud, Azure and Kubernetes discovery
   and connect (EC2, SSM, ECS Exec, GKE, AKS, `kubectl`), shipped as
   signed on-demand plugins.
@@ -251,7 +257,7 @@ information is collected or shared as part of this process.
 
 Oryxis ships small and often (roughly weekly). This section is
 forward-looking: items land incrementally as they are ready rather than
-being tied to a specific version. Latest stable is **v0.15.0**;
+being tied to a specific version. Latest stable is **v0.16.0**;
 [CHANGELOG.md](CHANGELOG.md) has the full history, and the
 [roadmap discussion](https://github.com/wilsonglasser/oryxis/discussions/67)
 tracks it interactively.
@@ -266,13 +272,19 @@ tracks it interactively.
 - **Native FIDO2:** talk to security keys directly (USB / NFC) for
   `sk-ssh-ed25519` / `sk-ecdsa-sk`, without delegating the touch to an
   external agent.
-- **Utilities:** an optional network tools panel (DNS, ping /
-  traceroute, port test, TLS check, WHOIS, RBL).
 - **Vault & sync:** one-click relay deploy (the app installs
   `oryxis-relay` on a host from your vault over SSH, with the script
   shown before it runs).
 - **China & CJK:** Alibaba Cloud (ECS) and Tencent Cloud (CVM)
-  providers, and an East Asian ambiguous-width option.
+  providers.
+- **Offline mode:** one switch, offered at first run and in Settings,
+  that stops Oryxis from making any request of its own. Update checks,
+  font downloads and the plugin catalog go quiet; what still travels is
+  what you asked for, the hosts you dial and the backends you
+  configured yourself. One build, not a separate edition, so turning it
+  off gives everything back. For machines that never had a network, an
+  offline bundle download ships alongside the ordinary installer with
+  the plugins and font packs already inside and the switch already on.
 - **AI ops toolkit:** the assistant graduates from generating shell
   strings to typed, structured operations synthesized for the host's
   actual OS, with dry-run previews on every state change, an audit

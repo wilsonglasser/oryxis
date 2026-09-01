@@ -499,6 +499,11 @@ impl VaultStore {
         let _ = self.db.execute_batch("ALTER TABLE connections ADD COLUMN login_script TEXT;");
         let _ = self.db.execute_batch("ALTER TABLE connections ADD COLUMN target_password BLOB;");
 
+        // East Asian ambiguous width ('auto' | 'narrow' | 'wide'); NULL
+        // on older rows reads as 'auto', which resolves narrow unless the
+        // host carries a legacy CJK encoding.
+        let _ = self.db.execute_batch("ALTER TABLE connections ADD COLUMN ambiguous_width TEXT;");
+
         // Populate new timestamp columns with sensible defaults
         let _ = self.db.execute_batch("UPDATE keys SET updated_at = created_at WHERE updated_at IS NULL;");
         let _ = self.db.execute_batch("UPDATE groups SET created_at = datetime('now'), updated_at = datetime('now') WHERE created_at IS NULL;");

@@ -31,6 +31,36 @@ pub struct SftpEntry {
     pub gid: Option<u32>,
 }
 
+/// True when a name that came from the SFTP SERVER is a single plain
+/// path component, and so is safe to join onto a local path.
+///
+/// A directory listing is remote input. The protocol carries a name as
+/// an opaque string, so a hostile or compromised server can answer with
+/// `../../.ssh/authorized_keys`, `..\..\evil.exe` or `C:evil`, and every
+/// one of those steers a later join outside the directory the user
+/// picked. Taking the last `/`-separated component is NOT enough: it
+/// leaves both Windows forms intact, and on Windows `\` is a separator
+/// while a drive prefix re-roots the whole path.
+///
+/// This is the single authority for that question. `oryxis-app`'s
+/// `is_safe_remote_entry_name` delegates here rather than keeping a
+/// second copy, because two predicates guarding one threat drift, and
+/// the one that drifts is the one nobody is looking at.
+pub fn is_safe_entry_name(name: &str) -> bool {
+    if name.is_empty() || name == "." || name == ".." {
+        return false;
+    }
+    if name.contains('/') || name.contains('\\') || name.contains('\0') {
+        return false;
+    }
+    // Windows absolute/drive-relative forms ("C:foo") survive the
+    // separator check above but still re-root PathBuf::join there.
+    if name.as_bytes().get(1) == Some(&b':') {
+        return false;
+    }
+    true
+}
+
 /// Destination-side policy for [`SftpClient::upload_from_options`].
 ///
 /// The defaults are the historical behaviour, so the plain
@@ -2543,5 +2573,38 @@ mod resume_offset_tests {
         assert_eq!(resume_offset(1_000, 0), 0);
         assert_eq!(resume_offset(1_000, 1_000), 0);
         assert_eq!(resume_offset(1_000, 2_000), 0);
+    }
+}
+
+#[cfg(test)]
+mod entry_name_tests {
+    use super::is_safe_entry_name;
+
+    /// Every shape a hostile listing can use to escape the directory the
+    /// user picked. The two Windows forms are the ones a `/`-only split
+    /// leaves intact, which is exactly how the SFTP console's `get` was
+    /// reachable before it started asking this question.
+    #[test]
+    fn an_entry_name_that_could_escape_a_join_is_refused() {
+        for bad in [
+            "",
+            ".",
+            "..",
+            "../evil",
+            "/etc/passwd",
+            "..\\..\\evil.exe",
+            "dir\\evil",
+            "C:evil",
+            "C:\\evil",
+            "nul\0byte",
+        ] {
+            assert!(!is_safe_entry_name(bad), "accepted {bad:?}");
+        }
+        // `a:b` is refused with the drive letters: one byte before a
+        // colon is indistinguishable from `C:foo` at this layer, and a
+        // remote file named that way is not worth the ambiguity.
+        for good in ["file.txt", "..leading-dots", "école", "with space", "a.b:c"] {
+            assert!(is_safe_entry_name(good), "rejected {good:?}");
+        }
     }
 }

@@ -15,14 +15,15 @@
 //! link a terminal tab is holding (the reuse pool hands out the same
 //! transport), which is why closing the console never closes it.
 
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use oryxis_ssh::SshSession;
 use oryxis_ssh::sftp_shell::SftpShellSession;
+use oryxis_terminal::widget::TerminalState;
 
-use crate::app::Oryxis;
-use crate::messages::{Message, SshMessage, TerminalMessage};
-use crate::state::{PanePurpose, TerminalTransport};
+use crate::app::{DEFAULT_TERM_COLS, DEFAULT_TERM_ROWS, Oryxis};
+use crate::messages::{Message, SshMessage, TabsMessage, TerminalMessage};
+use crate::state::{PanePurpose, TabSurface, TerminalTransport};
 
 impl Oryxis {
     /// Open an SFTP console for `conn`, in a tab of its own.
@@ -35,9 +36,11 @@ impl Oryxis {
     /// Branching on "is there a session" would have meant writing the
     /// cold path twice.
     ///
-    /// The console gets its own TAB rather than riding the one it was
-    /// opened from. A `get` of four gigabytes must not end because
-    /// somebody closed the shell they started it from.
+    /// This is the door for a console asked for where there is no tab to
+    /// put it in: a host card, the command palette on the dashboard. One
+    /// opened ON a session takes `open_sftp_console_in_tab` instead and
+    /// lands as a pane of that tab, because a console is a second view
+    /// of the machine in front of the user, not a second session.
     pub(crate) fn open_sftp_console(
         &mut self,
         conn: oryxis_core::models::Connection,
@@ -57,6 +60,211 @@ impl Oryxis {
         self.pending_console_dir = start_dir;
         let origin = crate::state::ProgressOrigin::Saved(conn.id);
         self.start_ssh_tab(conn, origin)
+    }
+
+    /// Open (or reveal) the SFTP console of the tab at `idx`, as a pane
+    /// of that tab.
+    ///
+    /// The placement is the user's (`sftp_console_layout`), and all
+    /// three options are panes: "Full" is the split, zoomed. That is
+    /// what lets ONE control (the tab chip, the status-bar segments,
+    /// this hotkey) move between shell and console whichever placement
+    /// they chose, and it is why the console can be reached from Files
+    /// mode at all.
+    ///
+    /// A tab gets at most ONE console: asking again reveals the one it
+    /// has. Splitting a second would leave two channels on one link
+    /// with nothing to tell them apart, and the toggle would have no
+    /// answer to "which console".
+    ///
+    /// The purpose is written straight onto the pane here rather than
+    /// through `pending_console_purpose`. That flag exists because
+    /// `start_ssh_tab` builds its pane deep inside the dial; here the
+    /// pane is in hand before anything is dialled, and a flag that
+    /// outlived its request is the exact failure it is documented for.
+    pub(crate) fn open_sftp_console_in_tab(
+        &mut self,
+        tab_idx: usize,
+        conn: oryxis_core::models::Connection,
+        start_dir: Option<String>,
+    ) -> iced::Task<Message> {
+        if !Self::host_can_console(&conn) {
+            return iced::Task::none();
+        }
+        let Some(tab) = self.tabs.get(tab_idx) else {
+            return iced::Task::none();
+        };
+        // Already there: reveal it. The layout is deliberately NOT
+        // re-applied, because by then it is the user's own arrangement,
+        // not the default they picked once in Settings.
+        if tab.console_pane().is_some() {
+            return self.show_tab_surface(tab_idx, TabSurface::Console);
+        }
+        let layout = self.prefs.sftp_console_layout;
+        let target = tab.focused;
+        // Files mode hides the whole grid, so a console split behind it
+        // would open where nobody can see it. Leaving first also makes
+        // "console from the SFTP screen" one gesture rather than two.
+        let leave_files = if tab.files_mode {
+            self.update(Message::Tabs(TabsMessage::ToggleTabFilesMode(tab_idx)))
+        } else {
+            iced::Task::none()
+        };
+        let Ok(mut term) =
+            TerminalState::new_no_pty(DEFAULT_TERM_COLS as u16, DEFAULT_TERM_ROWS as u16)
+        else {
+            return leave_files;
+        };
+        term.set_palette(self.resolve_terminal_palette_for_connection(&conn));
+        // Same seed line the split-pane connect writes: the pane exists
+        // before the dial answers, and an empty black rectangle is the
+        // one thing that reads as a crash.
+        term.process(
+            format!("Connecting to {} ({}:{})...\r\n", conn.label, conn.hostname, conn.port)
+                .as_bytes(),
+        );
+        let Some(pane_id) = self.make_split_pane(
+            tab_idx,
+            target,
+            layout.axis(),
+            conn.label.clone(),
+            Arc::new(Mutex::new(term)),
+            crate::state::PaneOrigin::Host(conn.id),
+        ) else {
+            return leave_files;
+        };
+        if let Some(tab) = self.tabs.get_mut(tab_idx) {
+            if let Some(pane) = tab.pane_by_id_mut(pane_id) {
+                pane.purpose = PanePurpose::SftpConsole;
+            }
+            if layout.starts_maximized() {
+                let handle = tab.focused;
+                tab.maximize_handle(handle);
+            }
+        }
+        // Read by `begin_sftp_console` when the dial lands, exactly as
+        // on the tab path.
+        self.pending_console_dir = start_dir;
+        self.active_tab = Some(tab_idx);
+        self.active_view = crate::state::View::Terminal;
+        self.remember_terminal_tab_focus(tab_idx);
+        iced::Task::batch([
+            leave_files,
+            self.spawn_ssh_for_pane_conn(conn, None, tab_idx, pane_id),
+        ])
+    }
+
+    /// Which surface the tab at `idx` is showing.
+    ///
+    /// Files is a tab-level mode and the other two are panes, so the
+    /// question is answered in that order: a tab in Files mode is
+    /// showing Files whatever its grid holds underneath.
+    pub(crate) fn tab_surface(&self, idx: usize) -> TabSurface {
+        let Some(tab) = self.tabs.get(idx) else {
+            return TabSurface::Terminal;
+        };
+        if tab.files_mode {
+            return TabSurface::Files;
+        }
+        match tab.pane_grid.get(tab.focused) {
+            Some(p) if p.purpose == PanePurpose::SftpConsole => TabSurface::Console,
+            _ => TabSurface::Terminal,
+        }
+    }
+
+    /// The surfaces the tab at `idx` can switch between, in switch
+    /// order. Fewer than two means there is nothing to switch and no
+    /// control is drawn.
+    ///
+    /// Terminal is conditional like the rest: a console opened from a
+    /// host card is a tab with no shell in it, and offering a switch to
+    /// a pane that does not exist is how a control starts reading as
+    /// broken.
+    pub(crate) fn tab_surfaces(&self, idx: usize) -> Vec<TabSurface> {
+        let Some(tab) = self.tabs.get(idx) else {
+            return Vec::new();
+        };
+        let mut out = Vec::with_capacity(3);
+        if tab.shell_pane().is_some() {
+            out.push(TabSurface::Terminal);
+        }
+        if tab.console_pane().is_some() {
+            out.push(TabSurface::Console);
+        }
+        // Unchanged gate (issue #61): the chip only exists once the tab
+        // HAS an SFTP session, which the tab menu's "Open SFTP session"
+        // creates. A tab already in Files mode keeps it, which is the
+        // way back.
+        if self.tab_has_sftp_session(tab) {
+            out.push(TabSurface::Files);
+        }
+        out
+    }
+
+    /// The surface the switch control moves to next, cycling in the
+    /// order `tab_surfaces` lists. `None` when there is nothing to
+    /// switch to.
+    pub(crate) fn tab_next_surface(&self, idx: usize) -> Option<TabSurface> {
+        TabSurface::next_in(&self.tab_surfaces(idx), self.tab_surface(idx))
+    }
+
+    /// Show one of the tab's surfaces.
+    ///
+    /// Every switch is "show this one", never a toggle of the mechanism
+    /// behind it, which is what lets the chip, the status bar and the
+    /// hotkey share one path across two different mechanisms (a
+    /// tab-level mode and a pane of the grid).
+    ///
+    /// Focus CARRIES THE ZOOM (`focus_handle`), so a maximized console
+    /// switched back to the terminal maximizes the terminal instead of
+    /// focusing a pane hidden behind the zoom. In a split, the same call
+    /// simply moves focus, which is the whole "easy way to switch
+    /// between them" the split needs.
+    pub(crate) fn show_tab_surface(
+        &mut self,
+        idx: usize,
+        surface: TabSurface,
+    ) -> iced::Task<Message> {
+        let Some(tab) = self.tabs.get(idx) else {
+            return iced::Task::none();
+        };
+        let in_files = tab.files_mode;
+        // Resolved BEFORE the first `update`, which takes `self`
+        // mutably: the pane a surface names cannot change under a tab
+        // selection, and reading it after would only cost a re-lookup.
+        let handle = match surface {
+            TabSurface::Console => tab.console_pane(),
+            _ => tab.shell_pane(),
+        };
+        // Clicking a background tab's chip brings the tab to front,
+        // whichever surface it lands on (the Files toggle's own rule).
+        let select = if self.active_tab != Some(idx) {
+            self.update(Message::Tabs(TabsMessage::SelectTab(idx)))
+        } else {
+            iced::Task::none()
+        };
+        if surface == TabSurface::Files {
+            if in_files {
+                return select;
+            }
+            let enter = self.update(Message::Tabs(TabsMessage::ToggleTabFilesMode(idx)));
+            return iced::Task::batch([select, enter]);
+        }
+        // No such pane: the control is not offering this surface, so
+        // this can only be a stale message. Doing nothing beats moving
+        // focus somewhere the user did not ask for.
+        let Some(handle) = handle else {
+            return select;
+        };
+        let leave = if in_files {
+            self.update(Message::Tabs(TabsMessage::ToggleTabFilesMode(idx)))
+        } else {
+            iced::Task::none()
+        };
+        if let Some(tab) = self.tabs.get_mut(idx) {
+            tab.focus_handle(handle);
+        }
+        iced::Task::batch([select, leave])
     }
 
     /// The console entry for the tab at `idx`: its host, and the working

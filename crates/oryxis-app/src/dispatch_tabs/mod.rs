@@ -90,8 +90,8 @@ impl Oryxis {
                 | TabsMessage::IdentityCardUnhovered(..)
                 | TabsMessage::SnippetCardHovered(..)
                 | TabsMessage::SnippetCardUnhovered(..)
-                | TabsMessage::SettingsTabHovered
-                | TabsMessage::SettingsTabUnhovered
+                | TabsMessage::PanelTabHovered(..)
+                | TabsMessage::PanelTabUnhovered(..)
                 | TabsMessage::TabHovered(..)
                 | TabsMessage::TabUnhovered(..)
                 | TabsMessage::TabCloseDwell(..)
@@ -104,7 +104,7 @@ impl Oryxis {
                 | TabsMessage::ReopenClosedTab
                 | TabsMessage::CloseOtherTabs(..)
                 | TabsMessage::CloseAllTabs
-                | TabsMessage::CloseSettingsTab
+                | TabsMessage::ClosePanelTab(..)
                 | TabsMessage::ToggleTabPin(..)
                 | TabsMessage::ReconnectTab(..)
                 | TabsMessage::DuplicateTab(..)
@@ -120,6 +120,7 @@ impl Oryxis {
                 | TabsMessage::ActivateStripSlot(..)
                 | TabsMessage::CopyTabAddress(..)
                 | TabsMessage::ToggleTabFilesMode(..)
+                | TabsMessage::ShowTabSurface(..)
                 | TabsMessage::DetachTabSftp(..)
                 | TabsMessage::CloseTabSftpSession(..)
                 | TabsMessage::OpenTerminalForSftpTab(..)

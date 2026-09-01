@@ -23,5 +23,5 @@ pub enum PlayerMessage {
     /// Scrubber released: apply the pending scrub target once.
     ScrubCommit,
     /// Playback clock tick (subscription mounted while playing).
-    Tick,
+    ClockTick,
 }

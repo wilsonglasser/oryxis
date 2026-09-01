@@ -219,6 +219,19 @@ impl Oryxis {
                     if self.prefs.sftp_upload_temp_name { "true" } else { "false" },
                 );
             }
+            SettingsMessage::SftpConsoleLayoutChanged(name) => {
+                use crate::state::SftpConsoleLayout;
+                // Matched against the TRANSLATED labels, like every
+                // other pick_list here; an unknown label is a stale
+                // frame and leaves the setting alone.
+                if let Some(layout) = SftpConsoleLayout::ALL
+                    .into_iter()
+                    .find(|l| crate::i18n::t(l.label_key()) == name)
+                {
+                    self.prefs.sftp_console_layout = layout;
+                    self.persist_setting("sftp_console_layout", layout.code());
+                }
+            }
             SettingsMessage::ToggleSftpAskDownloadDir => {
                 self.prefs.sftp_ask_download_dir = !self.prefs.sftp_ask_download_dir;
                 self.persist_setting(

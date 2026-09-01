@@ -45,7 +45,7 @@ const MONITOR_INTERVAL_FLOOR_SECS: u64 = 2;
 impl Oryxis {
     pub(crate) fn handle_monitor(&mut self, message: MonitorMessage) -> Task<Message> {
         match message {
-            MonitorMessage::Tick => self.monitor_probe_active_pane(),
+            MonitorMessage::PollHosts => self.monitor_probe_active_pane(),
             MonitorMessage::Sampled(key, conn_id, stamp, result) => {
                 self.monitor.probing.remove(&key);
                 // A reconnect (or monitoring turned off) while the probe

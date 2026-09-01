@@ -80,19 +80,12 @@ pub(crate) async fn upload_one(
 /// absolute paths, drive prefixes) would let a hostile server steer
 /// the recursive walks outside the destination the user picked, so
 /// such entries are skipped rather than joined onto a local path.
+///
+/// The rule itself lives in `oryxis_ssh`, next to the `list_dir` that
+/// mints the names, so the SFTP console guards with the same predicate
+/// these call sites do instead of a second copy of it.
 pub(crate) fn is_safe_remote_entry_name(name: &str) -> bool {
-    if name.is_empty() || name == "." || name == ".." {
-        return false;
-    }
-    if name.contains('/') || name.contains('\\') || name.contains('\0') {
-        return false;
-    }
-    // Windows absolute/drive-relative forms ("C:foo") survive the
-    // separator check above but still re-root PathBuf::join there.
-    if name.as_bytes().get(1) == Some(&b':') {
-        return false;
-    }
-    true
+    oryxis_ssh::sftp::is_safe_entry_name(name)
 }
 
 /// Slack left underneath a download so the volume never lands at

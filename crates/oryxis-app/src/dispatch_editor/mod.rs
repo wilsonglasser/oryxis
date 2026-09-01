@@ -631,6 +631,7 @@ impl Oryxis {
         conn.highlight_rules = self.editor_form.highlight_rules.clone().into_option();
         conn.icon_style = self.editor_form.icon_style.clone();
         conn.encoding = self.editor_form.encoding.clone();
+        conn.ambiguous_width = self.editor_form.ambiguous_width;
         conn.terminal_type = self.editor_form.terminal_type.clone();
         conn.ciphers = self.editor_form.ciphers.clone();
         conn.kex = self.editor_form.kex.clone();
@@ -1015,6 +1016,7 @@ impl Oryxis {
                 .map(|r| r.transport_pref),
             icon_style: conn.icon_style.clone(),
             encoding: conn.encoding.clone(),
+            ambiguous_width: conn.ambiguous_width,
             terminal_type: conn.terminal_type.clone(),
             ciphers: conn.ciphers.clone(),
             kex: conn.kex.clone(),
@@ -1121,6 +1123,7 @@ impl Oryxis {
                 | EditorMessage::EditorThemePickerFilterChanged(..)
                 | EditorMessage::EditorTerminalThemeChanged(..)
                 | EditorMessage::EditorEncodingChanged(..)
+                | EditorMessage::EditorAmbiguousWidthChanged(..)
                 | EditorMessage::EditorTerminalTypeChanged(..)
                 | EditorMessage::EditorAutoTitleChanged(..)
                 | EditorMessage::EditorPrivacyModeChanged(..)
@@ -1171,6 +1174,7 @@ impl Oryxis {
             m @ (
                 EditorMessage::HostConfigThemeChanged(..)
                 | EditorMessage::HostConfigEncodingChanged(..)
+                | EditorMessage::HostConfigAmbiguousWidthChanged(..)
                 | EditorMessage::HostConfigTerminalTypeChanged(..)
                 | EditorMessage::HostConfigAutoTitleChanged(..)
             ) => self.handle_editor_host_config(m),

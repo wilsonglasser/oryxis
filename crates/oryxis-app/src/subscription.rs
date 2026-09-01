@@ -328,7 +328,7 @@ impl Oryxis {
                 iced::time::every(std::time::Duration::from_secs(
                     self.monitor_interval_secs(),
                 ))
-                .map(|_| Message::Monitor(crate::app::MonitorMessage::Tick)),
+                .map(|_| Message::Monitor(crate::app::MonitorMessage::PollHosts)),
             );
         }
 
@@ -611,7 +611,7 @@ impl Oryxis {
         {
             subs.push(
                 iced::time::every(std::time::Duration::from_millis(33))
-                    .map(|_| Message::Player(PlayerMessage::Tick)),
+                    .map(|_| Message::Player(PlayerMessage::ClockTick)),
             );
         }
 

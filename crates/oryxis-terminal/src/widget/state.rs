@@ -374,6 +374,13 @@ impl TerminalState {
         self.backend.set_highlight_rules(rules);
     }
 
+    /// Whether this pane measures Unicode "Ambiguous" width characters as
+    /// two cells. Set from the host's setting on every output batch; see
+    /// [`crate::backend::TerminalBackend::set_ambiguous_width_wide`].
+    pub fn set_ambiguous_width_wide(&mut self, wide: bool) {
+        self.backend.set_ambiguous_width_wide(wide);
+    }
+
     /// Drain the highlight rules that fired on this pane's output since
     /// the last call.
     pub fn take_trigger_hits(&mut self) -> Vec<crate::trigger::TriggerHit> {

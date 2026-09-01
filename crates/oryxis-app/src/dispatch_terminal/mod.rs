@@ -344,7 +344,7 @@ impl Oryxis {
                 // surfaces are hidden for unsplit tabs, so a lingering
                 // armed state would be invisible) and drop the survivor's
                 // opt-out so a later re-arm starts clean.
-                if tab.pane_grid.panes.len() < 2 && tab.broadcast {
+                if !tab.broadcast_capable() && tab.broadcast {
                     tab.broadcast = false;
                     for pane in tab.pane_grid.panes.values_mut() {
                         pane.broadcast_opt_out = false;
@@ -399,6 +399,45 @@ impl Oryxis {
                 }
                 if let Some(tab) = self.tabs.get_mut(tab_idx) {
                     tab.toggle_maximize();
+                }
+            }
+            TerminalMessage::ToggleMaximizePaneAt(pane_id) => {
+                self.overlay = None;
+                // Resolved from the pane, so the zoom lands on the one
+                // that was right-clicked even if focus moved while the
+                // menu was open. Zooming also FOCUSES it: the grid draws
+                // only the zoomed pane, so leaving the caret behind would
+                // type into something invisible.
+                let Some(tab_idx) = self.pane_tab_index(pane_id) else {
+                    return Task::none();
+                };
+                self.active_tab = Some(tab_idx);
+                self.active_view = crate::state::View::Terminal;
+                self.remember_terminal_tab_focus(tab_idx);
+                if let Some(tab) = self.tabs.get_mut(tab_idx)
+                    && let Some((handle, _)) =
+                        tab.pane_grid.panes.iter().find(|(_, p)| p.id == pane_id)
+                {
+                    let handle = *handle;
+                    if tab.pane_grid.maximized().is_some() {
+                        tab.pane_grid.restore();
+                        tab.focused = handle;
+                    } else {
+                        tab.maximize_handle(handle);
+                    }
+                }
+            }
+            TerminalMessage::FlipPaneSplit(pane_id) => {
+                self.overlay = None;
+                let Some(tab_idx) = self.pane_tab_index(pane_id) else {
+                    return Task::none();
+                };
+                if let Some(tab) = self.tabs.get_mut(tab_idx)
+                    && let Some((handle, _)) =
+                        tab.pane_grid.panes.iter().find(|(_, p)| p.id == pane_id)
+                {
+                    let handle = *handle;
+                    tab.flip_split_at(handle);
                 }
             }
             TerminalMessage::TerminalBellFlashEnd(pane_id) => {
@@ -520,7 +559,7 @@ impl Oryxis {
                     // and menu entry are hidden there, so this path is only
                     // reachable via the hotkey / command palette. Disarming
                     // stays unconditional so no state can ever get stuck.
-                    if !tab.broadcast && tab.pane_grid.panes.len() < 2 {
+                    if !tab.broadcast && !tab.broadcast_capable() {
                         self.set_toast(crate::i18n::t("broadcast_needs_split_hint").to_string());
                         return crate::shortcuts::toast_clear_after_secs(4);
                     }

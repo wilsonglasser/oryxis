@@ -29,8 +29,9 @@ pub(crate) enum StripEntry {
     Terminal(usize),
     /// Index into `Oryxis::sftp_tabs`.
     Sftp(usize),
-    /// The single Settings tab; it has no storage vec to index.
-    Settings,
+    /// A panel tab (Settings, network tools); it has no storage vec to
+    /// index, so it carries the kind itself.
+    Panel(crate::state::PanelKind),
 }
 
 pub(crate) const TAB_HEIGHT: f32 = 26.0;
@@ -264,8 +265,8 @@ impl Oryxis {
                         number_px,
                     )
                 }
-                StripEntry::Settings => {
-                    settings_tab_width(crate::i18n::t("settings"), number_px)
+                StripEntry::Panel(kind) => {
+                    panel_tab_width(crate::i18n::t(kind.label_key()), number_px)
                 }
             };
             widest = widest.max(content);
@@ -884,7 +885,7 @@ impl Oryxis {
                 crate::state::TabRef::Sftp(id) => {
                     self.sftp_tabs.iter().find(|t| t.id == *id).map(|t| t.pinned).unwrap_or(false)
                 }
-                crate::state::TabRef::Settings => false,
+                crate::state::TabRef::Panel(_) => false,
             }
         };
         let to_entry = |r: &crate::state::TabRef| -> Option<StripEntry> {
@@ -898,8 +899,8 @@ impl Oryxis {
                     }
                     self.sftp_tabs.iter().position(|t| t.id == *id).map(StripEntry::Sftp)
                 }
-                crate::state::TabRef::Settings => {
-                    self.settings_tab_open.then_some(StripEntry::Settings)
+                crate::state::TabRef::Panel(kind) => {
+                    self.panel_tab_open(*kind).then_some(StripEntry::Panel(*kind))
                 }
             }
         };

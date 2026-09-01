@@ -114,6 +114,23 @@ impl Oryxis {
                     ),
                 ),
                 Space::new().height(12),
+                // Network tools (H1): same rule again. It lives HERE and
+                // not in Advanced, because this list is what a user reads
+                // to find out what the app can be made to do; a feature
+                // reachable only from a settings page nobody browses does
+                // not exist to them.
+                self.settings_nav_slot_labeled(
+                    crate::i18n::t("setting_network_tools"),
+                    crate::keynav::RowAction::activate(Message::Settings(SettingsMessage::SettingToggleNetworkTools)),
+                    8.0,
+                    toggle_row_desc(
+                        crate::i18n::t("setting_network_tools"),
+                        crate::i18n::t("setting_network_tools_hint"),
+                        self.prefs.network_tools,
+                        Message::Settings(SettingsMessage::SettingToggleNetworkTools),
+                    ),
+                ),
+                Space::new().height(12),
                 // Features holds only the enable toggle; the confirm +
                 // socket rows live in the Settings sidebar's SSH Agent
                 // section, which appears while the agent is enabled.

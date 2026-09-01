@@ -298,6 +298,22 @@ impl BellMode {
     }
 }
 
+/// i18n key for an ambiguous-width choice.
+///
+/// A free function rather than a method because the enum is a `oryxis-core`
+/// model, and both surfaces that offer the pick (the host editor's Terminal
+/// card and the sidebar's Host config tab) must label it identically.
+pub(crate) fn ambiguous_width_key(
+    width: oryxis_core::models::connection::AmbiguousWidth,
+) -> &'static str {
+    use oryxis_core::models::connection::AmbiguousWidth;
+    match width {
+        AmbiguousWidth::Auto => "ambiguous_width_auto",
+        AmbiguousWidth::Narrow => "ambiguous_width_narrow",
+        AmbiguousWidth::Wide => "ambiguous_width_wide",
+    }
+}
+
 /// OSC 52 clipboard access policy. Persisted as `code()` in the
 /// `terminal_clipboard_access` setting. Default `WriteOnly`: apps may set the
 /// system clipboard (tmux/vim yank) but not read it (read is a privacy risk).

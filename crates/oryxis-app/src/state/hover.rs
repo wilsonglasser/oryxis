@@ -24,8 +24,9 @@ pub(crate) struct HoverState {
     pub(crate) tab: Option<usize>,
     /// SFTP tab chip, which is a separate list in the same strip.
     pub(crate) sftp_tab: Option<usize>,
-    /// The Settings chip, which is one entry rather than a list.
-    pub(crate) settings_tab: bool,
+    /// The hovered panel chip (Settings, network tools), each of which
+    /// is one entry rather than a list.
+    pub(crate) panel_tab: Option<crate::state::PanelKind>,
 
     /// Whether the chip under the cursor has earned its close X.
     ///
@@ -61,6 +62,8 @@ pub(crate) struct HoverState {
     pub(crate) identity_card: Option<usize>,
     pub(crate) snippet_card: Option<usize>,
     pub(crate) port_forward_card: Option<usize>,
+    /// Network tools result card (the hover-revealed copy action).
+    pub(crate) net_tools_card: Option<usize>,
     pub(crate) local_terminal_card: Option<usize>,
 
     /// Cloud account card and the dynamic-group card beside it, both
@@ -144,7 +147,7 @@ impl HoverState {
 
     /// Whether any strip chip is under the cursor.
     pub(crate) fn any_tab_chip(&self) -> bool {
-        self.tab.is_some() || self.sftp_tab.is_some() || self.settings_tab
+        self.tab.is_some() || self.sftp_tab.is_some() || self.panel_tab.is_some()
     }
 
     /// The cursor left a chip: drop the arm once no chip holds the hover.
@@ -186,6 +189,16 @@ impl HoverState {
     /// Snippets, from both the full screen and the terminal sidebar.
     pub(crate) fn leave_snippet_card(&mut self, idx: usize) {
         Self::leave(&mut self.snippet_card, idx);
+    }
+
+    /// A panel chip lost the hover, named so a crossing between two of
+    /// them cannot wipe the one just gained.
+    pub(crate) fn leave_panel_tab(&mut self, kind: crate::state::PanelKind) {
+        Self::leave(&mut self.panel_tab, kind);
+    }
+
+    pub(crate) fn leave_net_tools_card(&mut self, idx: usize) {
+        Self::leave(&mut self.net_tools_card, idx);
     }
 
     pub(crate) fn leave_port_forward_card(&mut self, idx: usize) {

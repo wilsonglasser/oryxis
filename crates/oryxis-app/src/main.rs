@@ -46,6 +46,7 @@ mod gif_export;
 mod dispatch_command_history;
 mod dispatch_monitor;
 mod dispatch_monitor_dash;
+mod dispatch_net_tools;
 mod dispatch_tmux;
 mod dispatch_mcp;
 mod dispatch_sync;
@@ -85,6 +86,10 @@ mod stall_watchdog;
 mod agent_server;
 mod dispatch_agent;
 mod net_mirror;
+// The network tools panel's probes (DNS, ping, port, HTTP/TLS, WHOIS,
+// DNSBL). Hidden behind the `network_tools_enabled` setting, off by
+// default, like every other optional surface.
+mod net_tools;
 mod mcp;
 mod mcp_install;
 mod messages;

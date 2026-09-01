@@ -638,6 +638,19 @@ pub(crate) struct Pane {
     /// given for, exactly like the agent server's per-fingerprint
     /// grants die at vault lock.
     pub triggers: std::collections::HashMap<String, TriggerRuntime>,
+    /// The ambiguous-width answer this pane was HANDED OVER with, set
+    /// only on a mosh pane (J4).
+    ///
+    /// Every other pane reads the host's current setting on every output
+    /// batch, so an edit applies to new output. A mosh pane cannot: the
+    /// `AlacrittyScreen` inside the protocol was built with one answer at
+    /// handover and there is no path to re-`set_options` it, so letting
+    /// the funnel flip the PANE afterwards would leave the model and the
+    /// screen it feeds disagreeing about how wide `│` is, which is the
+    /// exact failure the mosh screen exists to prevent. Pinned here, so
+    /// the setting behaves like encoding and TERM on a mosh host: it
+    /// applies on the next connect.
+    pub mosh_ambiguous_width: Option<bool>,
     /// The password prompt this pane last raised a suggestion popup for
     /// (issue #117): `(prompt text, absolute grid row)`.
     ///
@@ -792,6 +805,7 @@ impl Pane {
             zmodem_detector: oryxis_zmodem::ZmodemDetector::new(),
             login_script: None,
             triggers: std::collections::HashMap::new(),
+            mosh_ambiguous_width: None,
             password_prompt_sig: None,
             zmodem: None,
             drop_upload: None,

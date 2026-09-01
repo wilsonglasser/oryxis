@@ -174,8 +174,24 @@ pub fn options_from_args() -> Option<Options> {
         // ~/.oryxis.
         std::env::set_var("ORYXIS_HOME", &options.home);
     }
+    SANDBOXED.store(true, std::sync::atomic::Ordering::Relaxed);
 
     Some(options)
+}
+
+/// Set once a harness mode redirects `$HOME`, and never cleared.
+static SANDBOXED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Whether this process is running inside a harness sandbox.
+///
+/// Read by the parts of the app whose state lives OUTSIDE the `.oryxis`
+/// tree, which the `$HOME` redirect cannot reach on its own: today that
+/// is the plugin dev-binary probe, which reads `target/debug`. The env
+/// vars are not the signal to test, because `ORYXIS_HOME` is also a
+/// legitimate user override and pointing it somewhere is not the same
+/// as asking for a reproducible run.
+pub fn is_sandboxed() -> bool {
+    SANDBOXED.load(std::sync::atomic::Ordering::Relaxed)
 }
 
 /// Pure argument parser, split from [`options_from_args`] so it can

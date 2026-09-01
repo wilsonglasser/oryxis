@@ -204,7 +204,33 @@ impl Oryxis {
                 // path (SFTP, ZMODEM, the sidebar browser) alike.
                 self.default_download_dir_row(),
             ]);
+            // Where an SFTP console opened on a live session lands. Its
+            // own card: it is about the terminal side of SFTP, not
+            // about transfers.
+            let console_section = panel_section(column![
+                text(t("setting_sftp_console_layout"))
+                    .size(13)
+                    .color(OryxisColors::t().text_primary),
+                Space::new().height(4),
+                text(t("setting_sftp_console_layout_desc"))
+                    .size(11)
+                    .color(OryxisColors::t().text_muted),
+                Space::new().height(8),
+                self.nav_pick_row(
+                    t("setting_sftp_console_layout"),
+                    crate::state::SftpConsoleLayout::ALL
+                        .into_iter()
+                        .map(|l| t(l.label_key()).to_string())
+                        .collect::<Vec<String>>(),
+                    t(self.prefs.sftp_console_layout.label_key()).to_string(),
+                    |s: &String| s.clone(),
+                    220.0,
+                    |v| Message::Settings(SettingsMessage::SftpConsoleLayoutChanged(v)),
+                ),
+            ]);
             content_col = content_col
+                .push(console_section)
+                .push(Space::new().height(12))
                 .push(download_section)
                 .push(Space::new().height(12))
                 .push(editor_section)

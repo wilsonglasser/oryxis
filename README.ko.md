@@ -163,9 +163,10 @@ Oryxis는 대략 매주 작은 단위로 릴리스하며, 기능은 준비되는
 [CHANGELOG.md](CHANGELOG.md), 인터랙티브 로드맵은
 [로드맵 Discussion](https://github.com/wilsonglasser/oryxis/discussions/67)에서
 볼 수 있습니다. 진행 중인 방향: 네이티브 FIDO2(USB / NFC로 보안
-키와 직접 통신), 다중 볼트, 동아시아 모호 폭(ambiguous width)
-옵션. 네이티브 mosh 클라이언트, 호스트별 디스크 키(`~/.ssh`),
-직전에 닫은 탭 되살리기는 이번 버전에 출시되었습니다.
+키와 직접 통신), 다중 볼트. 네이티브 mosh 클라이언트, 호스트별
+디스크 키(`~/.ssh`), 직전에 닫은 탭 되살리기는 이번 버전에
+출시되었습니다. 동아시아 모호 폭(ambiguous width) 옵션은 다음
+버전에 포함됩니다.
 
 ## 기여하기
 

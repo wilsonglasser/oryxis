@@ -382,6 +382,7 @@ impl Oryxis {
             Message::Player(m) => self.handle_player(m),
             Message::SidebarFiles(m) => self.handle_sidebar_files(m),
             Message::Monitor(m) => self.handle_monitor(m),
+            Message::NetTools(m) => self.handle_net_tools(m),
             Message::Tmux(m) => self.handle_tmux(m),
             Message::History(m) => self.handle_history(m),
             Message::Settings(m) => {

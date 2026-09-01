@@ -75,7 +75,13 @@ impl Oryxis {
             return self.search_named_connect();
         }
         let in_settings = self.active_tab.is_none() && self.active_view == View::Settings;
-        if !self.in_vault_area() && !in_settings {
+        // The network tools panel records its rows on the same ring
+        // Settings uses (`settings_nav_slot` -> `NavItem::SettingsRow`),
+        // so opening the gate is the whole wiring: movement, Enter and
+        // the picker's Left/Right already act on whatever recorded.
+        let in_net_tools =
+            self.active_tab.is_none() && self.active_view == View::NetworkTools;
+        if !self.in_vault_area() && !in_settings && !in_net_tools {
             return None;
         }
         // Settings-only declines: a pending hotkey capture must see
@@ -939,6 +945,10 @@ impl Oryxis {
             View::Proxies => ("proxies-list-scroll", 56.0),
             View::KnownHosts => ("known-hosts-scroll", 48.0),
             View::Settings => (self.settings_section.scroll_id(), 52.0),
+            // Result cards vary in height with their line count; 72 is
+            // the short ones (a DNS record type), which is the size that
+            // decides when scrolling has to start.
+            View::NetworkTools => ("net-tools-scroll", 72.0),
             // Table rows ~34 px, cards ~150: the walk is row-per-item
             // either way, so the height only tunes when scrolling
             // starts.

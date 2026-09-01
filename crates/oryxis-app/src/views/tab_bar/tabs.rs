@@ -1,6 +1,13 @@
 //! Tab bar: tabs. Split out of views/tab_bar/mod.rs.
 
 use super::*;
+use crate::state::TabSurface;
+
+/// What a tab's mode chip draws and what a click on it does: the
+/// surface currently on screen, and the next one in the switch order.
+/// Resolved by `Oryxis::tab_surface` / `tab_next_surface`, so the strip
+/// never decides for itself which surfaces a tab has.
+pub(crate) type TabModeChip = (TabSurface, TabSurface);
 pub(crate) fn area_tab<'a>(
     label: &'a str,
     glyph: iced::widget::Text<'a>,
@@ -96,6 +103,15 @@ pub(crate) fn numbered_label(label: &str, number: Option<TabNumber>) -> String {
 /// Whether this tab draws its number in the badge slot.
 fn number_in_badge(number: Option<TabNumber>) -> Option<usize> {
     number.filter(|n| n.in_icon).map(|n| n.value)
+}
+
+/// The badge glyph for a panel chip. One per kind, so the strip reads as
+/// two different surfaces rather than two identically-badged tabs.
+pub(crate) fn panel_icon(kind: crate::state::PanelKind) -> iced::widget::Text<'static> {
+    match kind {
+        crate::state::PanelKind::Settings => iced_fonts::lucide::settings(),
+        crate::state::PanelKind::NetTools => iced_fonts::lucide::radar(),
+    }
 }
 
 /// A SFTP browser tab chip in the strip, styled to match the terminal session
@@ -268,7 +284,9 @@ pub(crate) fn sftp_session_tab<'a>(
 /// redaction and no context menu. It carries the app accent and a gear,
 /// which is exactly the vocabulary the toolbar's Settings button already
 /// uses, so the strip entry reads as the same destination.
-pub(crate) fn settings_tab<'a>(
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn panel_tab<'a>(
+    kind: crate::state::PanelKind,
     label: &'a str,
     is_active: bool,
     // Whether the hovered chip has earned its close X: the reveal waits
@@ -305,7 +323,7 @@ pub(crate) fn settings_tab<'a>(
                 .font(SYSTEM_UI_SEMIBOLD)
                 .color(Color::WHITE)
                 .into(),
-            None => iced_fonts::lucide::settings().size(12).color(Color::WHITE).into(),
+            None => panel_icon(kind).size(12).color(Color::WHITE).into(),
         };
         container(glyph)
             .center_x(Length::Fixed(TAB_ICON_SLOT))
@@ -349,14 +367,14 @@ pub(crate) fn settings_tab<'a>(
                 ..Default::default()
             }
         })
-        .on_press(Message::Tabs(TabsMessage::CloseSettingsTab))
+        .on_press(Message::Tabs(TabsMessage::ClosePanelTab(kind)))
         .into()
     };
     let show_close = is_active || close_revealed;
     // `truncate_label` already reserves the badge + gaps; only the
     // trailing X slot is on top of that. Subtracting the badge again here
     // is what truncated "Settings" to "Sett…" on a min-width chip, so the
-    // reserve has to match `settings_tab_width` exactly.
+    // reserve has to match `panel_tab_width` exactly.
     let label_width = (width - TAB_ICON_SLOT - 4.0).max(0.0);
     let label_text = text(truncate_label(&numbered_label(label, number), label_width))
         .size(12)
@@ -389,7 +407,7 @@ pub(crate) fn settings_tab<'a>(
             .padding(Padding { top: 0.0, right: 4.0, bottom: 0.0, left: 2.0 }),
     )
     .width(Length::Fixed(width))
-    .on_press(Message::Navigation(NavigationMessage::ChangeView(View::Settings)))
+    .on_press(Message::Navigation(NavigationMessage::ChangeView(kind.view())))
     .style(move |_, status| {
         let hover_bg: Background = match status {
             BtnStatus::Hovered if !is_active => {
@@ -407,8 +425,8 @@ pub(crate) fn settings_tab<'a>(
     // reads it), so this MouseArea is what makes the tab draggable, not
     // just what reveals the X.
     MouseArea::new(tab_btn)
-        .on_enter(Message::Tabs(TabsMessage::SettingsTabHovered))
-        .on_exit(Message::Tabs(TabsMessage::SettingsTabUnhovered))
+        .on_enter(Message::Tabs(TabsMessage::PanelTabHovered(kind)))
+        .on_exit(Message::Tabs(TabsMessage::PanelTabUnhovered(kind)))
         .into()
 }
 
@@ -575,9 +593,10 @@ pub(crate) fn session_tab<'a>(
     solid_fill: bool,
     // OSC 9;4 progress from the focused pane; drawn as a growing border.
     progress: Option<oryxis_terminal::Progress>,
-    // Hybrid tab (issue #61): `Some(state)` renders the clickable mode
-    // glyph (>_ terminal / folder files); `None` hides it (no SSH).
-    files_mode: Option<bool>,
+    // Hybrid tab (issue #61): `Some((current, next))` renders the
+    // clickable mode glyph (>_ terminal / console / folder files);
+    // `None` hides it (nothing to switch to).
+    mode: Option<TabModeChip>,
     // Optional second line under the label: the connection address,
     // already formatted and privacy-masked by the caller (shared with
     // the host cards' subtitle). `None` = setting off / no host.
@@ -631,7 +650,7 @@ pub(crate) fn session_tab<'a>(
         width
     };
     // The hybrid mode glyph takes a chip slot out of the label's room.
-    if files_mode.is_some() {
+    if mode.is_some() {
         label_width = (label_width - 20.0).max(0.0);
     }
     // So does the split pane-count pill. `tab_content_width` already
@@ -816,9 +835,8 @@ pub(crate) fn session_tab<'a>(
     });
 
     // Hybrid mode glyph: shows the tab's current surface, clicking
-    // flips it (shared with the pinned chip form).
-    let mode_chip: Option<Element<'_, Message>> =
-        files_mode.map(|fm| tab_mode_chip(idx, fm, fg));
+    // moves to the next one (shared with the pinned chip form).
+    let mode_chip: Option<Element<'_, Message>> = mode.map(|m| tab_mode_chip(idx, m, fg));
 
     let inner_row: Element<'_, Message> = {
         let mut items: Vec<Element<'_, Message>> = vec![leading_slot];
@@ -1065,17 +1083,18 @@ impl iced::widget::canvas::Program<Message, iced::Theme> for TabProgressBorder {
 /// it. A real `button` (hover/press feedback per the house convention)
 /// nested inside the tab button, same pattern as the close X; tooltip
 /// since it's icon-only. Shared by the full tab and the pinned chip.
-pub(crate) fn tab_mode_chip<'a>(idx: usize, fm: bool, fg: Color) -> Element<'a, Message> {
+pub(crate) fn tab_mode_chip<'a>(idx: usize, mode: TabModeChip, fg: Color) -> Element<'a, Message> {
     const MODE_CHIP: f32 = 16.0;
-    let glyph: Element<'a, Message> = if fm {
-        iced_fonts::lucide::folder_tree().size(10).color(fg).into()
-    } else {
-        text(">_")
+    let (current, next) = mode;
+    let glyph: Element<'a, Message> = match current {
+        TabSurface::Files => iced_fonts::lucide::folder_tree().size(10).color(fg).into(),
+        TabSurface::Console => iced_fonts::lucide::square_terminal().size(10).color(fg).into(),
+        TabSurface::Terminal => text(">_")
             .size(9)
             .line_height(1.0)
             .font(iced::Font::MONOSPACE)
             .color(fg)
-            .into()
+            .into(),
     };
     let chip = button(
         container(glyph)
@@ -1083,7 +1102,7 @@ pub(crate) fn tab_mode_chip<'a>(idx: usize, fm: bool, fg: Color) -> Element<'a, 
             .center_y(Length::Fixed(MODE_CHIP)),
     )
     .padding(0)
-    .on_press(Message::Tabs(TabsMessage::ToggleTabFilesMode(idx)))
+    .on_press(Message::Tabs(TabsMessage::ShowTabSurface(idx, next)))
     .style(move |_, status| {
         // The app's dark surface as the chip fill (owner QA: the
         // translucent accent wash read washed-out over the active
@@ -1102,11 +1121,9 @@ pub(crate) fn tab_mode_chip<'a>(idx: usize, fm: bool, fg: Color) -> Element<'a, 
             ..Default::default()
         }
     });
-    let tip = if fm {
-        crate::i18n::t("tab_show_terminal")
-    } else {
-        crate::i18n::t("tab_show_files")
-    };
+    // The tooltip names what a click DOES, which is the only thing that
+    // makes a cycling chip readable once a tab has three surfaces.
+    let tip = crate::i18n::t(next.action_key());
     iced::widget::tooltip(
         chip,
         container(text(tip).size(11).color(OryxisColors::t().text_primary))
@@ -1126,9 +1143,9 @@ pub(crate) fn tab_mode_chip<'a>(idx: usize, fm: bool, fg: Color) -> Element<'a, 
 }
 
 /// Width of a compact pinned chip: the base icon square, plus the mode
-/// chip's slot when the tab is hybrid (has an SFTP session).
-pub(crate) fn pinned_chip_width(files_mode: Option<bool>) -> f32 {
-    if files_mode.is_some() {
+/// chip's slot when the tab has more than one surface to switch between.
+pub(crate) fn pinned_chip_width(mode: Option<TabModeChip>) -> f32 {
+    if mode.is_some() {
         CHIP_W + 20.0
     } else {
         CHIP_W
@@ -1228,9 +1245,9 @@ pub(crate) fn pinned_tab_chip<'a>(
     // in the theme's neutral text colours instead of the host accent.
     accent_text: bool,
     solid_fill: bool,
-    // Hybrid tab: `Some(state)` widens the chip to carry the mode glyph
-    // (a pinned hybrid must not lose its toggle).
-    files_mode: Option<bool>,
+    // Hybrid tab: `Some((current, next))` widens the chip to carry the
+    // mode glyph (a pinned hybrid must not lose its switch).
+    mode: Option<TabModeChip>,
     // Strip position under `tab_number_style`; `None` = numbering off.
     number: Option<TabNumber>,
 ) -> Element<'a, Message> {
@@ -1298,9 +1315,9 @@ pub(crate) fn pinned_tab_chip<'a>(
     };
     // A hybrid chip carries the mode glyph beside the badge (and widens
     // to fit); a plain pinned chip stays the icon-only square.
-    let chip_w = pinned_chip_width(files_mode);
-    let inner: Element<'_, Message> = match files_mode {
-        Some(fm) => {
+    let chip_w = pinned_chip_width(mode);
+    let inner: Element<'_, Message> = match mode {
+        Some(m) => {
             let fg = if is_active {
                 if accent_text { accent } else { OryxisColors::t().text_primary }
             } else {
@@ -1309,7 +1326,7 @@ pub(crate) fn pinned_tab_chip<'a>(
             crate::widgets::dir_row(vec![
                 badge,
                 Space::new().width(4).into(),
-                tab_mode_chip(idx, fm, fg),
+                tab_mode_chip(idx, m, fg),
             ])
             .align_y(iced::Alignment::Center)
             .into()

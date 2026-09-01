@@ -1312,7 +1312,7 @@ impl Oryxis {
         })
     }
 
-    pub(super) fn spawn_ssh_for_pane_conn(
+    pub(crate) fn spawn_ssh_for_pane_conn(
         &mut self,
         mut conn: oryxis_core::models::Connection,
         quick_id: Option<Uuid>,

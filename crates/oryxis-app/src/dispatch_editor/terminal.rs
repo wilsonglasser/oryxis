@@ -130,6 +130,9 @@ impl Oryxis {
                 // SSH engine skips transcoding entirely.
                 self.editor_form.encoding = if v == "UTF-8" { None } else { Some(v) };
             }
+            EditorMessage::EditorAmbiguousWidthChanged(v) => {
+                self.editor_form.ambiguous_width = v;
+            }
             EditorMessage::EditorTerminalTypeChanged(v) => {
                 // "xterm-256color" is the implicit default, stored as None.
                 self.editor_form.terminal_type =
