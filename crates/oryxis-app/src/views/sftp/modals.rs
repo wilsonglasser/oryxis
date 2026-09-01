@@ -130,6 +130,9 @@ pub(crate) fn close_guard_modal<'a>() -> Element<'a, Message> {
         .into()
 }
 
+/// Widget id of the new-entry name input, focused when the modal opens.
+pub(crate) const NEW_ENTRY_INPUT_ID: &str = "sftp-new-entry-input";
+
 /// Modal for "New folder" / "New file", single text input + create/cancel.
 /// `Enter` in the input commits, mirroring the inline rename behaviour.
 pub(crate) fn new_entry_modal<'a>(entry: &'a crate::state::SftpNewEntry) -> Element<'a, Message> {
@@ -146,6 +149,7 @@ pub(crate) fn new_entry_modal<'a>(entry: &'a crate::state::SftpNewEntry) -> Elem
             text(title).size(16).color(OryxisColors::t().text_primary),
             Space::new().height(12),
             text_input(placeholder, &entry.input)
+                .id(iced::widget::Id::new(NEW_ENTRY_INPUT_ID))
                 .on_input(|v| Message::Sftp(SftpMessage::SftpNewEntryInput(v)))
                 .on_submit(Message::Sftp(SftpMessage::SftpNewEntryCommit))
                 .padding(10)

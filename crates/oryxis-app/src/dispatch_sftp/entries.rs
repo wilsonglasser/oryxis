@@ -215,6 +215,12 @@ impl Oryxis {
                     kind,
                     input: String::new(),
                 });
+                // Drop the keyboard straight into the name field, so the
+                // right-click flows into typing the name. Same courtesy the
+                // inline rename above and the sidebar's new-entry row do.
+                return Ok(crate::widgets::focus_input(iced::widget::Id::new(
+                    crate::views::sftp::NEW_ENTRY_INPUT_ID,
+                )));
             }
             SftpMessage::SftpNewEntryInput(s) => {
                 if let Some(ref mut e) = self.sftp.new_entry {
