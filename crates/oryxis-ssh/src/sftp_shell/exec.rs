@@ -1574,6 +1574,13 @@ mod tests {
     fn local_paths_resolve_against_the_local_directory() {
         let s = ShellState::new("/home".into(), PathBuf::from("/tmp/work"), 80);
         assert_eq!(s.resolve_local("a.txt"), PathBuf::from("/tmp/work/a.txt"));
-        assert!(s.resolve_local("/etc/hosts").is_absolute());
+        // A rooted path REPLACES the local cwd instead of being joined
+        // onto it. Asserted as the resolved path rather than through
+        // `is_absolute()`, which cannot say so on Windows: absolute
+        // means "has a drive prefix" there, so `/etc/hosts` is rooted,
+        // resolves correctly, and still answers false. The old
+        // assertion made this test fail on Windows for a path the code
+        // handles perfectly well.
+        assert_eq!(s.resolve_local("/etc/hosts"), PathBuf::from("/etc/hosts"));
     }
 }
