@@ -1,4 +1,4 @@
-use portable_pty::{native_pty_system, CommandBuilder, MasterPty, PtySize, SlavePty};
+use portable_pty::{native_pty_system, CommandBuilder, MasterPty, PtySize};
 use std::io::{Read, Write};
 
 use tokio::sync::mpsc;
@@ -16,26 +16,36 @@ pub struct PtyHandle {
     /// `Write` and lets every public method stay `&self`.
     write_tx: mpsc::UnboundedSender<Vec<u8>>,
     _master: Box<dyn MasterPty + Send>,
-    // Keep the slave alive for the lifetime of the session.
-    // On Windows (ConPTY), dropping the slave calls ClosePseudoConsole(),
-    // which terminates the child process.
-    _slave: Box<dyn SlavePty + Send>,
-    /// The child process. Killed on `Drop` so closing a pane / tab tears
-    /// down the shell. Without this, the reader thread holds a cloned
-    /// master fd that keeps the slave open, so on Unix the child never
-    /// gets SIGHUP and a long-running app (htop, a `tail -f`) survives the
-    /// close, with the reader thread spinning forever on its output.
-    child: Box<dyn portable_pty::Child + Send + Sync>,
+    /// Kills the child on `Drop`, so closing a pane / tab tears down the
+    /// shell. Without it the reader thread holds a cloned master fd that
+    /// keeps the slave open, so on Unix the child never gets SIGHUP and a
+    /// long-running app (htop, a `tail -f`) survives the close with the
+    /// reader spinning forever on its output.
+    ///
+    /// A killer rather than the `Child` itself, because the child now
+    /// lives in the waiter thread below, blocked in `wait()`. That is the
+    /// split `ChildKiller` exists for.
+    killer: Box<dyn portable_pty::ChildKiller + Send + Sync>,
+    /// Fires once the child process has been reaped, whether it exited
+    /// on its own or was killed. Taken by whoever wants to be told.
+    ///
+    /// An explicit signal, NOT the output stream ending, because those
+    /// are not the same event and only this one means "the shell is
+    /// gone". A pty's reader cannot be relied on to notice: on Windows
+    /// the pseudoconsole outlives the slave (the master holds an `Arc`
+    /// to the same one), so the read side stays open and the reader
+    /// stays blocked until the whole handle is dropped, which can be
+    /// minutes after the shell died. Anything driven off the byte
+    /// stream is therefore reporting teardown, not exit.
+    child_exit: Option<tokio::sync::oneshot::Receiver<()>>,
 }
 
 impl Drop for PtyHandle {
     fn drop(&mut self) {
-        // Best effort: SIGKILL the child, then reap it so it doesn't
-        // linger as a zombie. After the kill the child exits promptly, so
-        // the `wait` doesn't meaningfully block. Killing also lets the
-        // reader thread see EOF and exit, ending the PTY output stream.
-        let _ = self.child.kill();
-        let _ = self.child.wait();
+        // Best effort: SIGKILL the child. The waiter thread is blocked in
+        // `wait()` and reaps it, so there is no zombie and nothing to
+        // block on here.
+        let _ = self.killer.kill();
     }
 }
 
@@ -107,7 +117,46 @@ impl PtyHandle {
             cmd.cwd(dir);
         }
 
-        let child = pair.slave.spawn_command(cmd)?;
+        let mut child = pair.slave.spawn_command(cmd)?;
+        let killer = child.clone_killer();
+
+        // Watch the child, so a shell that exits on its own is noticed.
+        //
+        // Nothing used to. The handle held the slave for the whole
+        // session and a pty's read side cannot reach EOF while a writer
+        // is open, so `exit` in a local shell produced no event at all:
+        // the pane froze, the reader thread stayed blocked on a shell
+        // that was already gone, and the only EOF it ever saw came from
+        // `Drop` killing a child that had died minutes earlier. That is
+        // why the reader's own log line can only say "child LIKELY
+        // exited"; it never actually knew.
+        //
+        // The answer is this thread and the oneshot it fires, not
+        // anything the byte stream does. Closing the slave here does
+        // free the reader on Unix, but on Windows it is inert: the
+        // pseudoconsole is behind an `Arc` the master holds too, so
+        // `ClosePseudoConsole()` does not run and the reader stays
+        // blocked regardless. Correctness must not rest on which of
+        // those a platform does, so it rests on the signal instead.
+        let slave = pair.slave;
+        let (exit_tx, exit_rx) = tokio::sync::oneshot::channel();
+        let waiter_label = program.unwrap_or("<default>").to_string();
+        std::thread::Builder::new()
+            .name("pty-waiter".into())
+            .spawn(move || {
+                let status = child.wait();
+                // Let the reader drain what the shell wrote on its way
+                // out before anyone is told it is gone, so the last of
+                // the session reaches the screen and the recording
+                // ahead of the notice that ends it.
+                std::thread::sleep(std::time::Duration::from_millis(100));
+                tracing::debug!(
+                    "PTY child exited for {} ({:?})",
+                    waiter_label, status,
+                );
+                let _ = exit_tx.send(());
+                drop(slave);
+            })?;
 
         let mut reader = pair.master.try_clone_reader()?;
         let mut writer = pair.master.take_writer()?;
@@ -230,11 +279,17 @@ impl PtyHandle {
             Self {
                 write_tx,
                 _master: pair.master,
-                _slave: pair.slave,
-                child,
+                killer,
+                child_exit: Some(exit_rx),
             },
             rx,
         ))
+    }
+
+    /// Take the child-exit signal, once. `None` on every later call, so
+    /// two callers cannot both believe they are the one being told.
+    pub fn take_child_exit(&mut self) -> Option<tokio::sync::oneshot::Receiver<()>> {
+        self.child_exit.take()
     }
 
     /// Write bytes to the PTY (keyboard input). Routes through the
