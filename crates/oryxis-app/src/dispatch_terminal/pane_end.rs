@@ -1,12 +1,13 @@
-//! What a pane of a SPLIT tab does when its session ends (issue #208).
+//! What a pane does when its session ends (issue #208).
 //!
-//! A single-pane tab already has an answer: `dispatch_ssh::session`
-//! relabels it "(disconnected)" and the auto-reconnect sweep picks it
-//! up. Neither works for a split tab. Both are tab-wide, and
-//! `ReconnectTab` rebuilds the tab, which would take the dead pane's
-//! LIVE siblings down with it. That is why the disconnect arm bails out
-//! early for a multi-pane tab today, leaving `[disconnected]` in the
-//! grid and nothing else.
+//! A lone REMOTE pane already has an answer: `dispatch_ssh::session`
+//! relabels its tab "(disconnected)" and the auto-reconnect sweep picks
+//! it up. That answer is tab-wide, and works precisely because such a
+//! tab has no siblings to endanger. It cannot serve a split tab, where
+//! `ReconnectTab` would rebuild the whole thing and take the dead pane's
+//! LIVE siblings with it, which is why the disconnect arm used to bail
+//! out early for a multi-pane tab, leaving `[disconnected]` in the grid
+//! and nothing else. And it never covered a local shell at all.
 //!
 //! So the verdict lives on the pane instead. The pane keeps whatever it
 //! was showing, records `ended`, and the grid draws a card offering the
@@ -28,8 +29,8 @@ impl Oryxis {
     /// Arm a local PTY stream for `pane_id` and hand back the generation
     /// to tag its `LocalPaneEnded` with.
     ///
-    /// Every local spawn goes through here so the EOF of a PTY the pane
-    /// has already replaced can be told apart from the EOF of the one it
+    /// Every local spawn goes through here so the exit of a PTY the pane
+    /// has already replaced can be told apart from the exit of the one it
     /// is listening to. Returns 0 for a pane that no longer exists; no
     /// pane holds generation 0 after arming, so the message is inert.
     pub(crate) fn arm_local_stream(&mut self, pane_id: Uuid) -> u64 {
@@ -82,17 +83,35 @@ impl Oryxis {
 
     /// A pane's session ended. Decide what happens to the pane itself.
     ///
-    /// Only split tabs are handled: a lone pane's tab keeps the existing
-    /// relabel-and-reconnect behaviour, which is correct precisely
-    /// because it has no siblings to endanger. Callers on the remote
-    /// path have already done the session teardown by the time they
-    /// reach here; the local path has its own, since a PTY leaves no
-    /// transport handle behind to close.
+    /// Answers every pane of a split tab, and a lone LOCAL shell. Not a
+    /// lone remote pane: its tab keeps the existing relabel-and-reconnect
+    /// behaviour, which is the better answer and is correct precisely
+    /// because it has no siblings to endanger.
+    ///
+    /// Callers on the remote path have already done the session teardown
+    /// by the time they reach here; the local path has its own, since a
+    /// PTY leaves no transport handle behind to close.
     pub(crate) fn note_pane_ended(&mut self, pane_id: Uuid) -> Task<Message> {
         let Some(tab_idx) = self.pane_tab_index(pane_id) else {
             return Task::none();
         };
-        if self.tabs[tab_idx].pane_grid.panes.len() <= 1 {
+        // A lone pane is answered only when it is a LOCAL shell.
+        //
+        // A remote tab with one pane already has an answer, and a better
+        // one: it relabels itself "(disconnected)" and the auto-reconnect
+        // sweep picks it up. That works precisely because it has no
+        // siblings to endanger, and the remote path does not call here
+        // for a lone pane anyway.
+        //
+        // A local one has never had any answer at all. Nothing noticed
+        // its shell exiting, so the pane simply froze on its last frame
+        // with no way forward but closing the tab by hand.
+        if self.tabs[tab_idx].pane_grid.panes.len() <= 1
+            && !matches!(
+                self.tabs[tab_idx].pane_by_id(pane_id).map(|p| &p.origin),
+                Some(crate::state::PaneOrigin::Local(_))
+            )
+        {
             return Task::none();
         }
         // A pane already holding the verdict must not be re-marked: the

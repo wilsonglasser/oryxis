@@ -105,14 +105,15 @@ pub enum TerminalMessage {
     /// button and by the Reconnect action when the focused pane of a
     /// split tab has ended.
     RestartPane(Uuid),
-    /// A local pane's PTY reached EOF: its shell exited. Chained onto
-    /// the pane's output stream, the same way the cloud transports
-    /// chain `PluginSessionEnded`, because a PTY has no other death
-    /// signal to offer.
+    /// A local pane's shell exited, reported by the child-exit signal
+    /// `PtyHandle` hands out. Deliberately not driven by the output
+    /// stream ending: a pty's reader cannot see a child die (see
+    /// `PtyHandle::take_child_exit`), so the stream would only ever
+    /// report teardown.
     ///
     /// The generation is the guard, like `LoginScriptTick`'s: swapping a
     /// pane's `TerminalState` drops the old PTY, so a restart-in-place
-    /// ends the OLD stream and this message arrives for a pane that is
+    /// ends the OLD session and this message arrives for a pane that is
     /// alive again. A stale generation is discarded.
     LocalPaneEnded(Uuid, u64),
     /// Move focus to the adjacent pane in a direction (keyboard nav).

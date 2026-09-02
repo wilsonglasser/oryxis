@@ -709,11 +709,13 @@ impl Oryxis {
                 })
                 .into()
         });
-        // The end-of-session card (issue #208). Only a split tab raises
-        // `ended`, so `multipane` is already implied; it is named here
-        // anyway because this is the render site's own precondition.
+        // The end-of-session card (issue #208). Not gated on `multipane`:
+        // a local shell in a tab of its own raises `ended` too, and it is
+        // the pane with the least other recourse, since no relabel or
+        // auto-reconnect covers a local tab. `note_pane_ended` is the one
+        // that decides which panes get here.
         let ended_card: Option<Element<'a, Message>> =
-            (pane.ended && multipane).then(|| self.pane_ended_card(pane));
+            pane.ended.then(|| self.pane_ended_card(pane));
         if overlay.is_none() && link_chip.is_none() && ring.is_none() && ended_card.is_none() {
             return host;
         }
@@ -805,9 +807,9 @@ impl Oryxis {
         .into()
     }
 
-    /// The card a pane of a split tab wears once its session has ended
-    /// (issue #208): what happened, and the two answers a tab-wide
-    /// reconnect cannot give one pane.
+    /// The card a pane wears once its session has ended (issue #208):
+    /// what happened, and the two answers a tab-wide reconnect cannot
+    /// give one pane. `note_pane_ended` decides which panes get here.
     ///
     /// Restart is offered only where there is something to restart: a
     /// saved host, a quick-connect entry or a local shell, all of which

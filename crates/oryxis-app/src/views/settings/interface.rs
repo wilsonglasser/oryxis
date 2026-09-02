@@ -626,11 +626,10 @@ impl Oryxis {
                 .size(11)
                 .color(OryxisColors::t().text_muted),
             Space::new().height(16),
-            // What a SPLIT tab's pane does when its session ends (issue
-            // #208). A single-pane tab is unaffected: it still relabels
-            // itself and rides the auto-reconnect sweep, neither of
-            // which a split tab can use without taking its live
-            // siblings down.
+            // What a pane does when its session ends (issue #208).
+            // A lone REMOTE pane is unaffected: it still relabels itself
+            // and rides the auto-reconnect sweep, neither of which a
+            // split tab can use without taking its live siblings down.
             self.nav_pick_row(
                 crate::i18n::t("pane_end_action"),
                 crate::util::PaneEndAction::ALL

@@ -574,22 +574,22 @@ pub(crate) struct Pane {
     /// This pane's session ended and the pane is still here, waiting for
     /// the user to restart it or close it (issue #208).
     ///
-    /// Only ever set on a pane of a SPLIT tab. A single-pane tab already
-    /// has an answer for the same event: the tab is relabelled
-    /// "(disconnected)" and the auto-reconnect sweep picks it up. Neither
-    /// can serve a split tab, because both are tab-wide and `ReconnectTab`
-    /// rebuilds the whole tab, taking the live siblings with it. So the
-    /// pane keeps the verdict instead, and the grid draws it.
+    /// Set on any pane of a SPLIT tab, and on a LOCAL shell that is a tab
+    /// on its own. Not on a lone remote pane: that tab is relabelled
+    /// "(disconnected)" and the auto-reconnect sweep picks it up, which
+    /// is a better answer and only possible because it has no siblings.
+    /// Neither of those can serve a split tab, since both are tab-wide
+    /// and `ReconnectTab` rebuilds the tab, taking the live siblings with
+    /// it. So the pane keeps the verdict instead, and the grid draws it.
     ///
     /// Cleared by the restart that replaces the session, so a pane that is
     /// dialling again never shows the card it was raised from.
     pub ended: bool,
-    /// Which local PTY stream this pane is currently listening to.
-    /// Bumped every time a PTY is wired into the pane; the chained
-    /// `LocalPaneEnded` carries the value it was armed with, so the EOF
-    /// of a PTY this pane has already replaced is discarded instead of
-    /// declaring a live shell dead. Unused by remote panes, which have a
-    /// transport handle to test instead.
+    /// Which local PTY this pane is currently listening to. Bumped every
+    /// time one is wired in; `LocalPaneEnded` carries the value it was
+    /// armed with, so the exit of a PTY this pane has already replaced
+    /// is discarded instead of declaring a live shell dead. Unused by
+    /// remote panes, which have a transport handle to test instead.
     pub local_generation: u64,
     /// True while a one-shot `TerminalSyncFlush` timer is armed for this
     /// pane. A DEC `?2026` synchronized update buffers output in vte until

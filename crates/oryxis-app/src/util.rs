@@ -528,14 +528,15 @@ impl HintMode {
     }
 }
 
-/// What happens to a pane of a SPLIT tab when its session ends (issue
-/// #208). Default `Prompt`: the pane stays, holding whatever it was
-/// showing, and offers restart and close. `Close` drops it immediately
-/// and lets the siblings take the room back.
+/// What happens to a pane when its session ends (issue #208). Default
+/// `Prompt`: the pane stays, holding whatever it was showing, and offers
+/// restart and close. `Close` drops it immediately and lets the siblings
+/// take the room back (on a lone pane, closing it closes its tab).
 ///
-/// Only split tabs consult this. A single-pane tab keeps its existing
-/// answer (relabel + auto-reconnect), which is tab-wide and works
-/// precisely because there are no siblings to take down with it.
+/// Consulted for every pane of a split tab, and for a local shell in a
+/// tab of its own. NOT for a lone remote pane: that tab keeps its
+/// existing answer (relabel + auto-reconnect), which is tab-wide and
+/// works precisely because there are no siblings to take down with it.
 #[derive(Clone, Copy, PartialEq, Eq, Default, Debug)]
 pub(crate) enum PaneEndAction {
     /// Keep the pane and offer restart / close.
