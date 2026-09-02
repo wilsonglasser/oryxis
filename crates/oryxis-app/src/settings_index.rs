@@ -103,6 +103,11 @@ pub(crate) static SETTINGS_INDEX: &[SettingsIndexEntry] = &[
     e(S::Interface, "renderer_backend", "renderer graphics backend gpu vulkan opengl software"),
     e(S::Interface, "performance_mode", "performance mode fps battery speed"),
     e(S::Interface, "terminal_hints", "hints tips toast teaching links help"),
+    e(
+        S::Interface,
+        "pane_end_action",
+        "split pane session ended disconnected exited restart close",
+    ),
     // ── Terminal ───────────────────────────────────────────────────
     e(S::Terminal, "copy_on_select", "copy select clipboard mouse selection"),
     e(S::Terminal, "terminal_right_click", "right click paste context menu mouse"),

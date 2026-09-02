@@ -1011,6 +1011,7 @@ impl Oryxis {
             return Task::none();
         };
         state.set_palette(self.terminal_palette.clone());
+        let exited = state.pty.as_mut().and_then(|p| p.take_child_exit());
         let terminal = Arc::new(Mutex::new(state));
         let label = pick
             .as_ref()
@@ -1028,8 +1029,11 @@ impl Oryxis {
             return Task::none();
         };
         self.active_tab = Some(tab_idx);
-        let stream = tokio_stream::wrappers::UnboundedReceiverStream::new(rx);
-        Task::stream(stream).map(move |bytes| Message::Terminal(TerminalMessage::PtyOutput(pane_id, bytes)))
+        // This spawn lives in the SSH module but is a LOCAL shell, which
+        // is exactly how it got missed once (issue #208): it is the pane
+        // a split fills from the picker, so it is also the one most
+        // likely to sit next to a live sibling when its shell exits.
+        self.local_pane_stream(pane_id, exited, rx)
     }
 
     /// Resolve the `Connection` a pane was opened from, via its `PaneOrigin`

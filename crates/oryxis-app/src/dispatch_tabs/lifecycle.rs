@@ -471,6 +471,30 @@ impl Oryxis {
                 return Task::none();
             }
         }
+        // A SPLIT tab reconnects its FOCUSED PANE, never itself (issue
+        // #208). Everything below this line is tab-wide: the in-place
+        // branch refuses a multi-pane tab outright, so a split tab fell
+        // through to the remove-and-rebuild fallback, which tore down
+        // every live sibling to restart one dead pane. That made this
+        // action the single most destructive gesture available on a
+        // split tab, and it was reachable from the chord AND the tab
+        // menu, which is why the guard lives here rather than at either
+        // call site.
+        //
+        // Restarting a LIVE focused pane is not a special case: the
+        // in-place branch below already treats a live pane as a "restart
+        // this host", so a split tab now answers the same way an unsplit
+        // one always has, one pane at a time.
+        //
+        // `AutoReconnectTick` never reaches this: it skips split tabs
+        // explicitly, and a split tab is never relabeled "(disconnected)"
+        // for it to find in the first place.
+        if let Some(tab) = self.tabs.get(idx)
+            && tab.pane_count() > 1
+        {
+            let pane_id = tab.active().id;
+            return self.restart_pane(pane_id);
+        }
         // Prefer an in-place reconnect that REUSES the pane's existing
         // terminal, so the scrollback the user was looking at survives
         // the round-trip instead of being wiped by a fresh tab. Only a

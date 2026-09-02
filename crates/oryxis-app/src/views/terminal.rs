@@ -709,7 +709,12 @@ impl Oryxis {
                 })
                 .into()
         });
-        if overlay.is_none() && link_chip.is_none() && ring.is_none() {
+        // The end-of-session card (issue #208). Only a split tab raises
+        // `ended`, so `multipane` is already implied; it is named here
+        // anyway because this is the render site's own precondition.
+        let ended_card: Option<Element<'a, Message>> =
+            (pane.ended && multipane).then(|| self.pane_ended_card(pane));
+        if overlay.is_none() && link_chip.is_none() && ring.is_none() && ended_card.is_none() {
             return host;
         }
         let mut stack = iced::widget::Stack::new().push(host);
@@ -737,6 +742,16 @@ impl Oryxis {
                     .align_x(crate::widgets::dir_align_x())
                     .align_y(iced::alignment::Vertical::Bottom)
                     .padding(Padding::from([6.0, 10.0])),
+            );
+        }
+        // Last, so nothing layers over the only controls a dead pane has.
+        if let Some(card) = ended_card {
+            stack = stack.push(
+                container(card)
+                    .width(Length::Fill)
+                    .height(Length::Fill)
+                    .center_x(Length::Fill)
+                    .center_y(Length::Fill),
             );
         }
         stack.into()
@@ -788,6 +803,66 @@ impl Oryxis {
             ..Default::default()
         })
         .into()
+    }
+
+    /// The card a pane of a split tab wears once its session has ended
+    /// (issue #208): what happened, and the two answers a tab-wide
+    /// reconnect cannot give one pane.
+    ///
+    /// Restart is offered only where there is something to restart: a
+    /// saved host, a quick-connect entry or a local shell, all of which
+    /// the pane's `PaneOrigin` names. A cloud pane (`Ephemeral`) gets
+    /// Close alone rather than a button that would toast an apology.
+    ///
+    /// It sits over the pane's own canvas, so the scrollback the user
+    /// disconnected on stays readable behind it, and it is deliberately
+    /// not full-bleed for the same reason.
+    fn pane_ended_card<'a>(&self, pane: &'a crate::state::Pane) -> Element<'a, Message> {
+        let colors = OryxisColors::t();
+        let pane_id = pane.id;
+        let restartable = match &pane.origin {
+            crate::state::PaneOrigin::Host(id) => {
+                self.connections.iter().any(|c| c.id == *id)
+            }
+            crate::state::PaneOrigin::QuickHost(id) => self.quick_connects.contains_key(id),
+            crate::state::PaneOrigin::Local(_) => true,
+            crate::state::PaneOrigin::Ephemeral => false,
+        };
+        let mut buttons = crate::widgets::dir_row(vec![]).spacing(8);
+        if restartable {
+            buttons = buttons.push(crate::widgets::styled_button(
+                t("pane_ended_restart"),
+                Message::Terminal(TerminalMessage::RestartPane(pane_id)),
+                colors.accent,
+            ));
+        }
+        buttons = buttons.push(crate::widgets::styled_button(
+            t("pane_ended_close"),
+            Message::Terminal(TerminalMessage::ClosePane(Some(pane_id))),
+            colors.bg_hover,
+        ));
+        let card = container(
+            iced::widget::column![
+                text(t("pane_ended")).size(13).color(colors.text_primary),
+                Space::new().height(10),
+                buttons,
+            ]
+            .align_x(iced::Alignment::Center)
+            .padding(Padding::from([14.0, 18.0])),
+        )
+        .style(move |_| container::Style {
+            background: Some(Background::Color(colors.bg_surface)),
+            border: Border {
+                radius: Radius::from(10.0),
+                width: 1.0,
+                color: colors.border,
+            },
+            ..Default::default()
+        });
+        // Swallow presses that miss the buttons, so a click aimed at the
+        // card never falls through to the canvas and starts a selection
+        // in the dead pane's scrollback.
+        MouseArea::new(card).on_press(Message::NoOp).into()
     }
 
     /// Broadcast opt-out chip (C2): a small button in the pane's top-right

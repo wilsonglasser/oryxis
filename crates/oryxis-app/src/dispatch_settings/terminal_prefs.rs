@@ -478,6 +478,16 @@ impl Oryxis {
                     self.persist_setting("terminal_hint_mode", mode.code());
                 }
             }
+            SettingsMessage::PaneEndActionChanged(name) => {
+                use crate::i18n::t;
+                use crate::util::PaneEndAction;
+                if let Some(action) =
+                    PaneEndAction::ALL.iter().find(|a| t(a.label_key()) == name)
+                {
+                    self.prefs.pane_end_action = *action;
+                    self.persist_setting("pane_end_action", action.code());
+                }
+            }
             SettingsMessage::ToggleSmartContrast => {
                 self.prefs.smart_contrast = !self.prefs.smart_contrast;
                 self.persist_setting(

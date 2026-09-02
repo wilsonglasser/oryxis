@@ -754,6 +754,12 @@ impl TerminalTab {
         self.pane_grid.panes.values_mut().find(|p| p.id == id)
     }
 
+    /// Read-only twin of [`Self::pane_by_id_mut`], for the callers that
+    /// only need to ask a pane a question.
+    pub fn pane_by_id(&self, id: Uuid) -> Option<&Pane> {
+        self.pane_grid.panes.values().find(|p| p.id == id)
+    }
+
     /// Number of panes in this tab. `> 1` means the tab is split.
     pub fn pane_count(&self) -> usize {
         self.pane_grid.panes.len()

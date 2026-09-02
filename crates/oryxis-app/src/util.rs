@@ -528,6 +528,49 @@ impl HintMode {
     }
 }
 
+/// What happens to a pane of a SPLIT tab when its session ends (issue
+/// #208). Default `Prompt`: the pane stays, holding whatever it was
+/// showing, and offers restart and close. `Close` drops it immediately
+/// and lets the siblings take the room back.
+///
+/// Only split tabs consult this. A single-pane tab keeps its existing
+/// answer (relabel + auto-reconnect), which is tab-wide and works
+/// precisely because there are no siblings to take down with it.
+#[derive(Clone, Copy, PartialEq, Eq, Default, Debug)]
+pub(crate) enum PaneEndAction {
+    /// Keep the pane and offer restart / close.
+    #[default]
+    Prompt,
+    /// Close the pane as soon as its session ends.
+    Close,
+}
+
+impl PaneEndAction {
+    pub(crate) const ALL: [PaneEndAction; 2] =
+        [PaneEndAction::Prompt, PaneEndAction::Close];
+
+    pub(crate) fn code(self) -> &'static str {
+        match self {
+            PaneEndAction::Prompt => "prompt",
+            PaneEndAction::Close => "close",
+        }
+    }
+
+    pub(crate) fn from_code(code: &str) -> Self {
+        match code {
+            "close" => PaneEndAction::Close,
+            _ => PaneEndAction::Prompt,
+        }
+    }
+
+    pub(crate) fn label_key(self) -> &'static str {
+        match self {
+            PaneEndAction::Prompt => "pane_end_action_prompt",
+            PaneEndAction::Close => "pane_end_action_close",
+        }
+    }
+}
+
 /// Middle-truncate a string to at most `max` characters, keeping both ends so
 /// a long URL's scheme + host and its tail both stay legible
 /// (`https://a.example.com/…/tail`). Char-based, so it never splits a UTF-8

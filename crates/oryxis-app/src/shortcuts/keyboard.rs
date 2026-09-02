@@ -655,6 +655,9 @@ impl Oryxis {
             },
             // Reconnect the focused tab: same handler as the tab context
             // menu's entry, so live tabs restart and dead ones rebuild.
+            // On a split tab that handler restarts the focused PANE
+            // (issue #208); the choice lives there so this chord and the
+            // menu row cannot disagree about it.
             ReconnectTab => match self.active_tab {
                 Some(idx) => Task::done(Message::Tabs(TabsMessage::ReconnectTab(idx))),
                 None => Task::none(),

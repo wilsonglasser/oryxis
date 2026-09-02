@@ -146,6 +146,9 @@ pub enum SettingsMessage {
     /// Settings: terminal hint mode picker changed. Carries the localized
     /// option label; the dispatch handler maps it back to a `HintMode`.
     HintModeChanged(String),
+    /// Settings: the "when a split pane's session ends" picker changed.
+    /// Carries the localized option label, like `HintModeChanged`.
+    PaneEndActionChanged(String),
     /// Flip the reveal/eye state of a secret input field.
     ToggleSecretVisibility(crate::state::SecretField),
     /// Trash on a custom theme card: RAISES THE CONFIRM, it does not

@@ -355,3 +355,62 @@ fn a_panes_purpose_survives_a_session_rebuild() {
         "a reconnected console came back as a shell"
     );
 }
+
+/// A fresh pane must never be born holding an end-of-session verdict:
+/// `ended` is what draws the restart / close card over the grid, so a
+/// wrong default would put a "Session ended" card over a shell that is
+/// about to start printing (issue #208).
+#[test]
+fn a_new_pane_is_not_already_ended() {
+    use crate::state::Pane;
+
+    let terminal = std::sync::Arc::new(std::sync::Mutex::new(
+        oryxis_terminal::widget::TerminalState::new_no_pty(80, 24).expect("terminal"),
+    ));
+    let pane = Pane::new("host".to_string(), terminal);
+    assert!(!pane.ended, "a pane was born disconnected");
+    // Nothing has been armed yet, and `arm_local_stream` returns the
+    // POST-increment value, so no live pane ever carries 0. That is what
+    // makes 0 usable as the "pane is gone" answer.
+    assert_eq!(pane.local_generation, 0, "generation must start unarmed");
+}
+
+/// The persisted `pane_end_action` setting has to survive the round trip
+/// through its stored code, and an unreadable value has to land on the
+/// default rather than on whichever variant happens to be first.
+#[test]
+fn pane_end_action_round_trips_through_its_stored_code() {
+    use crate::util::PaneEndAction;
+
+    for action in PaneEndAction::ALL {
+        assert_eq!(
+            PaneEndAction::from_code(action.code()),
+            action,
+            "{} did not survive its own code",
+            action.code(),
+        );
+    }
+    // A vault row from a future version, or a hand-edited one: keeping
+    // the pane is the answer that loses nothing.
+    assert_eq!(PaneEndAction::from_code("nonsense"), PaneEndAction::Prompt);
+    assert_eq!(PaneEndAction::default(), PaneEndAction::Prompt);
+}
+
+/// The settings picker maps the user's choice back by comparing
+/// LOCALIZED labels, so two variants sharing one label would silently
+/// select the wrong action. The compiler cannot see that coupling.
+#[test]
+fn every_pane_end_action_has_its_own_label() {
+    use crate::util::PaneEndAction;
+
+    let labels: Vec<&'static str> = PaneEndAction::ALL
+        .iter()
+        .map(|a| crate::i18n::t(a.label_key()))
+        .collect();
+    for (i, a) in labels.iter().enumerate() {
+        assert!(!a.is_empty(), "unresolved label key");
+        for b in labels.iter().skip(i + 1) {
+            assert_ne!(a, b, "two pane-end actions share a label");
+        }
+    }
+}

@@ -11,13 +11,12 @@ use std::sync::{Arc, Mutex};
 
 use iced::widget::pane_grid::{self, Configuration};
 use iced::Task;
-use tokio_stream::wrappers::UnboundedReceiverStream;
 
 use oryxis_core::models::group::Group;
 use oryxis_core::models::{PaneLayout, PaneSource, SessionGroup};
 use oryxis_terminal::widget::TerminalState;
 
-use crate::app::{TerminalMessage, SessionGroupMessage, Message, Oryxis, DEFAULT_TERM_COLS, DEFAULT_TERM_ROWS};
+use crate::app::{SessionGroupMessage, Message, Oryxis, DEFAULT_TERM_COLS, DEFAULT_TERM_ROWS};
 use crate::session_group_helpers::{
     apply_scripts, from_split_axis, prune_layout, rows_from_layout, snapshot_tab_layout,
 };
@@ -34,7 +33,10 @@ struct PendingHost {
 /// be wired to the pane.
 struct PendingLocal {
     pane_id: uuid::Uuid,
-    stream: UnboundedReceiverStream<Vec<u8>>,
+    rx: tokio::sync::mpsc::UnboundedReceiver<Vec<u8>>,
+    /// The pane's child-exit signal, taken at spawn time because the
+    /// `TerminalState` is wrapped for the pane in the same breath.
+    exited: Option<tokio::sync::oneshot::Receiver<()>>,
 }
 
 #[derive(Default)]
@@ -473,8 +475,9 @@ impl Oryxis {
             tasks.push(self.spawn_ssh_for_pane(h.conn_idx, tab_idx, h.pane_id));
         }
         for l in pending.locals {
-            let pid = l.pane_id;
-            tasks.push(Task::stream(l.stream).map(move |bytes| Message::Terminal(TerminalMessage::PtyOutput(pid, bytes))));
+            // A session-group tab is split by definition, so these are
+            // exactly the local panes whose exit raises the ended card.
+            tasks.push(self.local_pane_stream(l.pane_id, l.exited, l.rx));
         }
         tasks.push(self.tab_scroll_to_active());
         Task::batch(tasks)
@@ -544,6 +547,8 @@ impl Oryxis {
                         match spawned {
                             Ok((mut state, rx)) => {
                                 state.set_palette(self.terminal_palette.clone());
+                                let exited =
+                                    state.pty.as_mut().and_then(|p| p.take_child_exit());
                                 let mut pane =
                                     Pane::new(label.clone(), Arc::new(Mutex::new(state)));
                                 pane.origin = PaneOrigin::Local(LocalShellSpec {
@@ -553,7 +558,8 @@ impl Oryxis {
                                 });
                                 pending.locals.push(PendingLocal {
                                     pane_id: pane.id,
-                                    stream: UnboundedReceiverStream::new(rx),
+                                    rx,
+                                    exited,
                                 });
                                 if let Some(script) = non_empty(member.initial_script.as_deref())
                                 {

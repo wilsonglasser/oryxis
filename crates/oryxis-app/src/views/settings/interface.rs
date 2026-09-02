@@ -625,6 +625,27 @@ impl Oryxis {
             text(crate::i18n::t("terminal_hints_desc"))
                 .size(11)
                 .color(OryxisColors::t().text_muted),
+            Space::new().height(16),
+            // What a SPLIT tab's pane does when its session ends (issue
+            // #208). A single-pane tab is unaffected: it still relabels
+            // itself and rides the auto-reconnect sweep, neither of
+            // which a split tab can use without taking its live
+            // siblings down.
+            self.nav_pick_row(
+                crate::i18n::t("pane_end_action"),
+                crate::util::PaneEndAction::ALL
+                    .iter()
+                    .map(|a| crate::i18n::t(a.label_key()).to_string())
+                    .collect::<Vec<_>>(),
+                crate::i18n::t(self.prefs.pane_end_action.label_key()).to_string(),
+                |s: &String| s.clone(),
+                200.0,
+                |v| Message::Settings(SettingsMessage::PaneEndActionChanged(v)),
+            ),
+            Space::new().height(4),
+            text(crate::i18n::t("pane_end_action_desc"))
+                .size(11)
+                .color(OryxisColors::t().text_muted),
         ]);
 
         // Tray toggles only mean something on Windows (the

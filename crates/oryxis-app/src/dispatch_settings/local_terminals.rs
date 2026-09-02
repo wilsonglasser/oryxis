@@ -404,6 +404,7 @@ pub(crate) fn spawn_local_shell_in(
                 program_label, args_label
             );
             state.set_palette(app.terminal_palette.clone());
+            let exited = state.pty.as_mut().and_then(|p| p.take_child_exit());
             let tab_idx = app.tabs.len();
             let label = pick
                 .as_ref()
@@ -425,11 +426,10 @@ pub(crate) fn spawn_local_shell_in(
             app.active_tab = Some(tab_idx);
             app.remember_terminal_tab_focus(tab_idx);
             app.active_view = View::Terminal;
-            let stream = UnboundedReceiverStream::new(rx);
-            Task::batch(vec![
-                app.tab_scroll_to_active(),
-                Task::stream(stream).map(move |bytes| Message::Terminal(TerminalMessage::PtyOutput(pane_id, bytes))),
-            ])
+            // Wired for the split this tab may become; see the same call
+            // in `spawn_local_conn`.
+            let pty = app.local_pane_stream(pane_id, exited, rx);
+            Task::batch(vec![app.tab_scroll_to_active(), pty])
         }
         Err(e) => {
             tracing::error!(

@@ -775,6 +775,13 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "hint_mode_always" => "إظهار دائمًا",
         "hint_mode_once" => "مرة واحدة لكل علامة تبويب",
         "hint_mode_never" => "عدم الإظهار أبدًا",
+        "pane_end_action" => "عند انتهاء جلسة جزء مقسّم",
+        "pane_end_action_desc" => "ما يحدث لأحد أجزاء علامة تبويب مقسّمة عند خروج الصدفة أو انقطاع الاتصال. لا تتأثر علامات التبويب ذات الجزء الواحد.",
+        "pane_end_action_prompt" => "إبقاء الجزء",
+        "pane_end_action_close" => "إغلاق الجزء",
+        "pane_ended" => "انتهت الجلسة",
+        "pane_ended_restart" => "إعادة التشغيل",
+        "pane_ended_close" => "إغلاق الجزء",
         "keyboard_shortcuts" => "اختصارات لوحة المفاتيح",
 
         // Session logs

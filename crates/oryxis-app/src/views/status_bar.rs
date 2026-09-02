@@ -19,12 +19,21 @@ impl Oryxis {
         let (status_text, status_color) = if let Some(idx) = self.active_tab
             && let Some(tab) = self.tabs.get(idx)
         {
-            // Privacy Mode redacts the label here too (issue #78):
-            // the status bar sits in every screenshot. No hover
-            // reveal on a passive text line; the tab strip has one.
+            // The FOCUSED pane's name, not the tab's own (issue #208).
+            // `tab_conn_state` below has always described the focused
+            // pane, and the tab chip has always been captioned by it, so
+            // reading `tab.label` here made the bar the one surface that
+            // named the session that created the split while reporting
+            // the state of the one being typed into. Same accessors the
+            // chip uses, so the two cannot drift.
+            //
+            // Privacy Mode redacts the label here too (issue #78): the
+            // status bar sits in every screenshot. No hover reveal on a
+            // passive text line; the tab strip has one.
+            let auto_title = self.tab_auto_title(tab);
             let label = self.privacy_display_label(
-                &tab.label,
-                &tab.label,
+                tab.auto_label(auto_title),
+                tab.display_label(auto_title),
                 &self.privacy_terms(),
             );
             // The "(disconnected)" suffix is the strip's own way of

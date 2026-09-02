@@ -24,6 +24,7 @@ mod drop;
 mod keyboard;
 mod links;
 mod output;
+mod pane_end;
 mod session_file;
 mod triggers;
 
@@ -387,6 +388,34 @@ impl Oryxis {
                 // Drop quick-connect entries (and their in-memory
                 // credentials) that no pane references anymore.
                 self.prune_quick_connects();
+            }
+            TerminalMessage::RestartPane(pane_id) => {
+                return self.restart_pane(pane_id);
+            }
+            TerminalMessage::LocalPaneEnded(pane_id, generation) => {
+                // A PTY this pane has already replaced: its EOF says
+                // nothing about the shell now running here.
+                let current = self
+                    .pane_tab_index(pane_id)
+                    .and_then(|i| self.tabs[i].pane_by_id(pane_id))
+                    .map(|p| p.local_generation);
+                if current != Some(generation) {
+                    return Task::none();
+                }
+                // A local pane leaves no transport handle behind, so the
+                // end-of-session bookkeeping the remote path does before
+                // reaching `note_pane_ended` has to happen here.
+                self.flush_session_logs_final();
+                let log_id = self
+                    .pane_tab_index(pane_id)
+                    .and_then(|i| self.tabs[i].pane_by_id_mut(pane_id))
+                    .and_then(|p| p.session_log_id.take());
+                if let Some(log_id) = log_id
+                    && let Some(vault) = &self.vault
+                {
+                    let _ = vault.end_session_log(&log_id);
+                }
+                return self.note_pane_ended(pane_id);
             }
             TerminalMessage::FocusPaneDir(dir) => {
                 if let Some(tab_idx) = self.active_tab

@@ -429,16 +429,11 @@ impl Oryxis {
                     // auto-reconnect only make sense when the tab IS this one
                     // session. A split tab has live sibling panes, relabeling
                     // it would make `AutoReconnectTick` rebuild the whole tab
-                    // (`ReconnectTab` removes it), nuking the siblings. So for
-                    // a multi-pane tab we just note the disconnect inside the
-                    // pane and leave the tab alone.
+                    // (`ReconnectTab` removes it), nuking the siblings. So the
+                    // verdict goes on the PANE instead, which is what gives it
+                    // a restart and a close of its own (issue #208).
                     if self.tabs[tab_idx].pane_grid.panes.len() > 1 {
-                        if let Some(pane) = self.tabs[tab_idx].pane_by_id_mut(pane_id)
-                            && let Ok(mut state) = pane.terminal.lock()
-                        {
-                            state.process(b"\r\n[disconnected]\r\n");
-                        }
-                        return Task::none();
+                        return self.note_pane_ended(pane_id);
                     }
                     self.tabs[tab_idx].label = format!("{} (disconnected)", label);
                     // Surface the disconnect to the user. Without this the
@@ -487,6 +482,11 @@ impl Oryxis {
                     pane.session = Some(session.clone());
                     // The reconnect dial resolved; re-arm ReconnectTab.
                     pane.connecting = false;
+                    // This is the one point EVERY session goes through,
+                    // so a pane holding an end-of-session verdict drops
+                    // it here whichever path dialled the replacement,
+                    // not just the restart button's (issue #208).
+                    pane.ended = false;
                     if let Ok(mut state) = pane.terminal.lock() {
                         // Whatever armed the emulator's modes died with
                         // the previous session, and the fresh shell never

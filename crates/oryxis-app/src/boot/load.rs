@@ -1175,6 +1175,9 @@ impl Oryxis {
             if let Ok(Some(v)) = vault.get_setting("terminal_hint_mode") {
                 self.prefs.hint_mode = crate::util::HintMode::from_code(&v);
             }
+            if let Ok(Some(v)) = vault.get_setting("pane_end_action") {
+                self.prefs.pane_end_action = crate::util::PaneEndAction::from_code(&v);
+            }
             if let Ok(Some(v)) = vault.get_setting("cloud_auto_refresh_enabled") {
                 self.prefs.cloud_auto_refresh_enabled = v == "true";
             }
