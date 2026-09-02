@@ -83,10 +83,12 @@ impl Oryxis {
 
     /// A pane's session ended. Decide what happens to the pane itself.
     ///
-    /// Answers every pane of a split tab, and a lone LOCAL shell. Not a
-    /// lone remote pane: its tab keeps the existing relabel-and-reconnect
-    /// behaviour, which is the better answer and is correct precisely
-    /// because it has no siblings to endanger.
+    /// Answers every pane it is CALLED for, and the gating lives in the
+    /// callers rather than here. A lone remote pane keeps the existing
+    /// relabel-and-reconnect behaviour, which is the better answer and
+    /// is correct precisely because it has no siblings to endanger, so
+    /// the remote arm simply does not call for one. Every local shell
+    /// does, split or alone, whichever origin opened it.
     ///
     /// Callers on the remote path have already done the session teardown
     /// by the time they reach here; the local path has its own, since a
@@ -95,25 +97,24 @@ impl Oryxis {
         let Some(tab_idx) = self.pane_tab_index(pane_id) else {
             return Task::none();
         };
-        // A lone pane is answered only when it is a LOCAL shell.
+        // No lone-pane guard here, and that is the point: the only
+        // caller that can reach this with a single pane IS the local
+        // one. The remote arm gates on `panes.len() > 1` before calling
+        // (`dispatch_ssh::session`), because a lone remote pane already
+        // has a better answer, the tab relabelling itself
+        // "(disconnected)" and the auto-reconnect sweep picking it up,
+        // and that answer is only safe because there are no siblings to
+        // endanger.
         //
-        // A remote tab with one pane already has an answer, and a better
-        // one: it relabels itself "(disconnected)" and the auto-reconnect
-        // sweep picks it up. That works precisely because it has no
-        // siblings to endanger, and the remote path does not call here
-        // for a lone pane anyway.
-        //
-        // A local one has never had any answer at all. Nothing noticed
-        // its shell exiting, so the pane simply froze on its last frame
-        // with no way forward but closing the tab by hand.
-        if self.tabs[tab_idx].pane_grid.panes.len() <= 1
-            && !matches!(
-                self.tabs[tab_idx].pane_by_id(pane_id).map(|p| &p.origin),
-                Some(crate::state::PaneOrigin::Local(_))
-            )
-        {
-            return Task::none();
-        }
+        // A local shell has never had any answer, and which ORIGIN
+        // opened it says nothing about that: the picker mints
+        // `PaneOrigin::Local`, but a saved Local host mints
+        // `PaneOrigin::Host` and a quick-connect one `QuickHost`. Keying
+        // the guard on the origin let the last two keep freezing on
+        // their last frame, which is the very case issue #209 reports.
+        // A new caller must do its own gating, the way the remote arm
+        // does.
+
         // A pane already holding the verdict must not be re-marked: the
         // notice would be printed twice into the same grid.
         if self.tabs[tab_idx].pane_by_id(pane_id).is_some_and(|p| p.ended) {

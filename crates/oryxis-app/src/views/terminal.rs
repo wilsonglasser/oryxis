@@ -830,19 +830,24 @@ impl Oryxis {
             crate::state::PaneOrigin::Local(_) => true,
             crate::state::PaneOrigin::Ephemeral => false,
         };
-        let mut buttons = crate::widgets::dir_row(vec![]).spacing(8);
+        // Collected first and handed to `dir_row` in one call: it
+        // reverses its children AT CONSTRUCTION, so a row built empty
+        // and pushed into afterwards keeps physical order and never
+        // mirrors under RTL.
+        let mut actions: Vec<Element<'a, Message>> = Vec::with_capacity(2);
         if restartable {
-            buttons = buttons.push(crate::widgets::styled_button(
+            actions.push(crate::widgets::styled_button(
                 t("pane_ended_restart"),
                 Message::Terminal(TerminalMessage::RestartPane(pane_id)),
                 colors.accent,
             ));
         }
-        buttons = buttons.push(crate::widgets::styled_button(
+        actions.push(crate::widgets::styled_button(
             t("pane_ended_close"),
             Message::Terminal(TerminalMessage::ClosePane(Some(pane_id))),
             colors.bg_hover,
         ));
+        let buttons = crate::widgets::dir_row(actions).spacing(8);
         let card = container(
             iced::widget::column![
                 text(t("pane_ended")).size(13).color(colors.text_primary),

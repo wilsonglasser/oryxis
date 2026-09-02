@@ -414,36 +414,3 @@ fn every_pane_end_action_has_its_own_label() {
         }
     }
 }
-
-/// Which lone panes get the end-of-session card, expressed against the
-/// origin the guard actually reads. A lone REMOTE pane must not get one:
-/// its tab relabels itself and the auto-reconnect sweep takes it, and a
-/// card over that would offer a second, worse answer to the same event.
-/// A lone LOCAL shell must, because nothing else has ever answered for
-/// it. `PaneOrigin` is what separates them, and both values are legal on
-/// a lone pane, so only a test can say which way each goes.
-#[test]
-fn only_a_lone_local_pane_is_answered_by_the_card() {
-    use crate::state::{LocalShellSpec, PaneOrigin};
-
-    let local = PaneOrigin::Local(LocalShellSpec {
-        label: "PowerShell".into(),
-        program: "powershell.exe".into(),
-        args: Vec::new(),
-    });
-    // The exact test `note_pane_ended` applies to a single-pane tab.
-    let answered = |origin: &PaneOrigin| matches!(origin, PaneOrigin::Local(_));
-
-    assert!(answered(&local), "a lone local shell was left frozen");
-    assert!(
-        !answered(&PaneOrigin::Host(uuid::Uuid::new_v4())),
-        "a lone remote pane got a card as well as its tab's reconnect",
-    );
-    assert!(
-        !answered(&PaneOrigin::QuickHost(uuid::Uuid::new_v4())),
-        "a lone quick-connect pane got a card as well as its tab's reconnect",
-    );
-    // A cloud pane is `Ephemeral` and has no in-place restart at all;
-    // the card would be a Close button beside an apology.
-    assert!(!answered(&PaneOrigin::Ephemeral), "a cloud pane got a card");
-}

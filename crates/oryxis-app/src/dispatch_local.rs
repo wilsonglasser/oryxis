@@ -355,6 +355,16 @@ impl Oryxis {
         // a `TerminalState` owns its PTY, and the widget re-reads the
         // pane's Arc every frame, so this is the whole handover.
         pane.terminal = Arc::new(Mutex::new(state));
+        // Nothing is being dialled: a local shell is live the moment its
+        // PTY exists, and only `SshConnected` / `SshDisconnected` /
+        // `PaneConnectError` ever clear this flag, none of which a PTY
+        // raises. An in-place restart arms it before handing off here
+        // (`restart_pane`), so without this the pane reads
+        // "Reconnecting" for good and every later Reconnect on the tab
+        // is refused as a dial already in flight. The Telnet and Serial
+        // arms of the same switch need no such line: both go on to send
+        // `SshConnected`.
+        pane.connecting = false;
         if let Some(log_id) = session_log_id {
             pane.start_session_log(log_id);
         }

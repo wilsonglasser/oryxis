@@ -575,9 +575,11 @@ pub(crate) struct Pane {
     /// the user to restart it or close it (issue #208).
     ///
     /// Set on any pane of a SPLIT tab, and on a LOCAL shell that is a tab
-    /// on its own. Not on a lone remote pane: that tab is relabelled
-    /// "(disconnected)" and the auto-reconnect sweep picks it up, which
-    /// is a better answer and only possible because it has no siblings.
+    /// on its own, whichever origin opened that shell (the picker, a
+    /// saved Local host, a quick-connect one). Not on a lone remote pane:
+    /// that tab is relabelled "(disconnected)" and the auto-reconnect
+    /// sweep picks it up, which is a better answer and only possible
+    /// because it has no siblings.
     /// Neither of those can serve a split tab, since both are tab-wide
     /// and `ReconnectTab` rebuilds the tab, taking the live siblings with
     /// it. So the pane keeps the verdict instead, and the grid draws it.
