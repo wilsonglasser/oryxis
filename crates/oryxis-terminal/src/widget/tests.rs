@@ -635,3 +635,101 @@
             .collect::<String>();
         assert_eq!(row0, "shell output");
     }
+
+    // ── Scrolled viewport pinning across output ──
+
+    /// A viewport scrolled up must keep showing the same rows while new
+    /// output arrives: `scroll_offset` counts lines above the live edge,
+    /// so without compensation each new line drags the view one row
+    /// toward the bottom (and the scrollbar thumb with it).
+    #[test]
+    fn scrolled_viewport_pins_through_output() {
+        // 40 lines above the live edge of a 100-line history.
+        let (offset, anchor_history) = pin_scrolled_offset(40, Some(100), 100);
+        assert_eq!((offset, anchor_history), (40, Some(100)), "idle draw is a no-op");
+
+        // 25 more lines of output between draws: the offset rises by the
+        // growth so the same absolute rows stay on screen.
+        let (offset, anchor_history) = pin_scrolled_offset(offset, anchor_history, 125);
+        assert_eq!(
+            (offset, anchor_history),
+            (65, Some(125)),
+            "offset must track the history growth"
+        );
+
+        // A draw with nothing new between keeps the position.
+        let (offset, anchor_history) = pin_scrolled_offset(offset, anchor_history, 125);
+        assert_eq!((offset, anchor_history), (65, Some(125)));
+
+        // Back at the live edge the pin is dropped and output follows.
+        let (offset, anchor_history) = pin_scrolled_offset(0, anchor_history, 140);
+        assert_eq!((offset, anchor_history), (0, None));
+    }
+
+    /// Snapping back to the live edge (the reset-on-output yank, a
+    /// keypress snap) must also clear a stale anchor: a later scroll-up
+    /// pins from the present history, never from before the snap.
+    #[test]
+    fn live_edge_clears_a_stale_anchor() {
+        let (offset, anchor_history) = pin_scrolled_offset(0, Some(100), 140);
+        assert_eq!(
+            (offset, anchor_history),
+            (0, None),
+            "offset 0 always clears the anchor"
+        );
+    }
+
+    /// The very first scroll has no anchor yet: it pins from that draw
+    /// onward instead of guessing at older content.
+    #[test]
+    fn first_scroll_establishes_the_anchor() {
+        let (offset, anchor_history) = pin_scrolled_offset(10, None, 100);
+        assert_eq!((offset, anchor_history), (10, Some(100)));
+
+        let (offset, _) = pin_scrolled_offset(offset, anchor_history, 120);
+        assert_eq!(offset, 30, "subsequent output is compensated");
+    }
+
+    /// A history that shrank (clear-scrollback, resize, alt screen) has
+    /// no old lines left to pin: the anchor is dropped and the offset
+    /// counts as freshly set, so later growth is measured from the
+    /// current history instead of bridging the gap.
+    #[test]
+    fn pinned_viewport_drops_its_anchor_when_history_shrinks() {
+        let (offset, anchor_history) = pin_scrolled_offset(40, Some(100), 40);
+        assert_eq!(
+            (offset, anchor_history),
+            (40, None),
+            "shrink keeps the offset but drops the stale anchor"
+        );
+
+        // The next draw after a shrink establishes a fresh anchor: growth
+        // is compensated from this point on, never across the shrink.
+        let (offset, anchor_history) = pin_scrolled_offset(offset, anchor_history, 42);
+        assert_eq!((offset, anchor_history), (40, Some(42)));
+
+        // And growth after that is compensated normally.
+        let (offset, _) = pin_scrolled_offset(offset, anchor_history, 45);
+        assert_eq!(offset, 43);
+    }
+
+    /// An offset held through the alternate screen (where the caller
+    /// clears the anchor, since the primary history is not visible there)
+    /// must not be compensated over the buffer that grew while the alt
+    /// app owned the screen: with no anchor the jump lands as a fresh
+    /// pin, not a pull to the top.
+    #[test]
+    fn unanchored_offset_never_bridges_a_history_gap() {
+        // First frame back on the primary screen, history 5000 after a
+        // compile ran while vim was open.
+        let (offset, anchor_history) = pin_scrolled_offset(40, None, 5000);
+        assert_eq!(
+            (offset, anchor_history),
+            (40, Some(5000)),
+            "the gap must not be compensated across the alt-screen round trip"
+        );
+
+        // Only output from here on is compensated.
+        let (offset, _) = pin_scrolled_offset(offset, anchor_history, 5010);
+        assert_eq!(offset, 50);
+    }

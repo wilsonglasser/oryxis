@@ -82,6 +82,57 @@ where
             }
         }
         widget_state.last_draw_epoch.set(Some(content_epoch));
+
+        // Hold a scrolled-up viewport on the rows the user is reading:
+        // `scroll_offset` counts lines above the live edge, so output
+        // arriving while the user browses history would otherwise drag
+        // the view one row toward the bottom per new line, and the
+        // scrollbar thumb with it. Re-pin the offset against the history
+        // growth since the last draw (see [`pin_scrolled_offset`]); the
+        // reset-on-output block above already zeroed it when that
+        // behavior is on, and an offset of 0 means the live edge, which
+        // follows new output. Runs on every frame so the pin also lands
+        // when several output batches coalesce between two draws, and
+        // clears a stale anchor once the viewport is back at the bottom.
+        //
+        // The alternate screen (vim, top, less) has no scrollback of its
+        // own, and the pin cannot survive the round trip: the primary
+        // buffer may have grown while the app owned the screen, and
+        // compensating over that gap would fling the viewport to the top
+        // of the buffer on return. The anchor is dropped for the
+        // duration, so the first draw back on the primary screen treats
+        // the held offset as freshly set.
+        let offset = widget_state.scroll_offset.get();
+        if offset > 0 || widget_state.scroll_anchor_history_size.get().is_some() {
+            let (history, in_alt_screen) = {
+                let s = match self.state.lock() {
+                    Ok(s) => s,
+                    Err(p) => p.into_inner(),
+                };
+                use alacritty_terminal::grid::Dimensions;
+                use alacritty_terminal::term::TermMode;
+                let in_alt_screen = s
+                    .backend
+                    .term
+                    .mode()
+                    .contains(TermMode::ALT_SCREEN);
+                let grid = s.backend.term.grid();
+                let history =
+                    grid.total_lines().saturating_sub(grid.screen_lines()) as i32;
+                (history, in_alt_screen)
+            };
+            if in_alt_screen {
+                widget_state.scroll_anchor_history_size.set(None);
+            } else {
+                let (pinned_offset, anchor_history) = pin_scrolled_offset(
+                    offset,
+                    widget_state.scroll_anchor_history_size.get(),
+                    history,
+                );
+                widget_state.scroll_offset.set(pinned_offset);
+                widget_state.scroll_anchor_history_size.set(anchor_history);
+            }
+        }
         let render_key = RenderKey {
             epoch: content_epoch,
             scroll_offset: widget_state.scroll_offset.get(),

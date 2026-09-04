@@ -175,6 +175,18 @@ pub struct TerminalWidgetState {
     /// tell whether new terminal activity landed (drives the
     /// reset-on-output behavior). `None` before the first draw.
     last_draw_epoch: std::cell::Cell<Option<u64>>,
+    /// `history_size` (total − screen lines) the current `scroll_offset`
+    /// was established against. `scroll_offset` counts lines above the
+    /// live edge, so on its own every new line of output would slide a
+    /// scrolled-up viewport one row toward the bottom, dragging the rows
+    /// the user is reading along with it. The draw pass compares this
+    /// anchor with the grid's current history and grows the offset by
+    /// the difference, pinning the same content on screen until the user
+    /// scrolls back to the live edge (`scroll_offset == 0`, which clears
+    /// the anchor). `None` while following the live edge, and after the
+    /// history shrank under the pin (clear-scrollback / resize / alt
+    /// screen), where the pinned lines are gone.
+    scroll_anchor_history_size: std::cell::Cell<Option<i32>>,
     /// Sub-cell pixel remainder carried across wheel events that arrive
     /// as `ScrollDelta::Pixels` (Windows precision touchpads / high-res
     /// wheels deliver a few pixels per notch). Truncating each event to
@@ -739,6 +751,49 @@ fn scrollbar_geom(
         thumb_h,
         history_size,
     })
+}
+
+/// Re-pin a scrolled-up viewport against the grid's current history.
+///
+/// `scroll_offset` counts lines above the live edge, so if it is left
+/// untouched every new line of output pulls the viewport one row toward
+/// the bottom and the rows the user is reading scroll off the top.
+/// `anchor_history` records the `history_size` the offset was measured
+/// against; on growth the offset is raised by the difference, which
+/// keeps the same absolute rows on screen. Returns the offset to draw
+/// with plus the anchor for the next draw (`None` once the viewport is
+/// back at the live edge). Only growth is compensated: a history that
+/// shrank (clear-scrollback, resize, alternate screen) has no old lines
+/// left to pin, so the anchor is dropped and the offset counts as
+/// freshly set — otherwise leaving `vim` with the primary buffer grown
+/// in the meantime would compensate over the whole gap and fling the
+/// viewport to the top of the buffer.
+fn pin_scrolled_offset(
+    scroll_offset: i32,
+    anchor_history: Option<i32>,
+    history_size: i32,
+) -> (i32, Option<i32>) {
+    if scroll_offset <= 0 {
+        return (0, None);
+    }
+    let offset_pinned = match anchor_history {
+        // Growth since the anchor: raise the offset by the difference so
+        // the same rows stay on screen.
+        Some(prev) if history_size > prev => scroll_offset + (history_size - prev),
+        // No anchor yet (a fresh scroll before its first draw) or the
+        // history shrank (clear-scrollback / resize / alt screen), which
+        // invalidates whatever the old anchor pointed at: keep the
+        // offset and let growth from here on be compensated.
+        _ => scroll_offset,
+    };
+    let anchor_history_next = match anchor_history {
+        // A shrink is a discontinuity, not a pin: drop the anchor so a
+        // later history growth (leaving the alt screen, say) starts from
+        // the current offset instead of bridging the gap.
+        Some(prev) if history_size < prev => None,
+        _ => Some(history_size),
+    };
+    (offset_pinned, anchor_history_next)
 }
 
 /// Process-wide font-name interner. `iced::Font::new` needs a
