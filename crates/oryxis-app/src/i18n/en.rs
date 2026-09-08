@@ -1552,6 +1552,7 @@ pub(super) fn lookup(key: &str) -> &'static str {
         "use_master_password" => "Use master password instead",
         "biometric_unlock_desc" => "Unlock this app with your device's biometrics (Windows Hello, Touch ID) or, on Linux, your login keyring. Your master password is stored in the operating system's protected keystore. Windows and macOS release it only after a presence check (biometrics or PIN); on Linux it is available to your session whenever the login keyring is unlocked. This unlocks the app only; it is not SSH authentication, and the vault stays encrypted with your password either way.",
         "biometric_unlock_failed" => "Biometric unlock was cancelled or is unavailable. Enter your master password.",
+        "biometric_enroll_failed" => "The system keychain rejected the request, so biometric unlock stays off. Your master password still works.",
         "api_url" => "API URL",
         "loaded_bytes" => "Loaded ({bytes} bytes)",
         "edit_identity" => "Edit Identity",

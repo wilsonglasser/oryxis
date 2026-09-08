@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!--
+	  Local biometric unlock (crates/oryxis-biometric/src/macos.rs) stores the
+	  vault master password as a Keychain item guarded by a SecAccessControl
+	  user-presence policy, in the data-protection keychain. Adding such an item
+	  requires the app to declare a keychain-access-group; without it SecItemAdd
+	  fails with -34018 (errSecMissingEntitlement) and the Touch ID toggle can
+	  never turn on.
+
+	  __TEAM_ID__ is replaced with the Apple Developer Team ID at sign time
+	  (see .github/workflows/release.yml). The group name is the bundle
+	  identifier from resources/Info.plist.
+	-->
+	<key>keychain-access-groups</key>
+	<array>
+		<string>__TEAM_ID__.app.oryxis</string>
+	</array>
+</dict>
+</plist>

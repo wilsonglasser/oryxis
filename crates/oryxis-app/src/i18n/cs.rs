@@ -1551,6 +1551,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "use_master_password" => "Použít místo toho hlavní heslo",
         "biometric_unlock_desc" => "Odemkněte tuto aplikaci biometrikou zařízení (Windows Hello, Touch ID) nebo na Linuxu přihlašovací klíčenkou. Hlavní heslo je uloženo v chráněném úložišti klíčů operačního systému. Windows a macOS je vydají až po ověření přítomnosti (biometrika nebo PIN); na Linuxu je dostupné vaší relaci, kdykoli je přihlašovací klíčenka odemčená. Odemyká se tím jen aplikace; nejde o SSH ověření a trezor zůstává v obou případech zašifrován vaším heslem.",
         "biometric_unlock_failed" => "Biometrické odemčení bylo zrušeno nebo není dostupné. Zadejte hlavní heslo.",
+        "biometric_enroll_failed" => "Systémová klíčenka požadavek odmítla, takže biometrické odemčení zůstává vypnuté. Hlavní heslo stále funguje.",
         "api_url" => "URL API",
         "loaded_bytes" => "Načteno ({bytes} bajtů)",
         "edit_identity" => "Upravit identitu",

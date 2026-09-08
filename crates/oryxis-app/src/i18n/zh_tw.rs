@@ -1453,6 +1453,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "use_master_password" => "改用主密碼",
         "biometric_unlock_desc" => "使用裝置的生物辨識（Windows Hello、Touch ID）解鎖此應用程式，在 Linux 上則使用登入金鑰圈。您的主密碼儲存在作業系統的受保護金鑰庫中。Windows 和 macOS 僅在通過在場驗證（生物辨識或 PIN）後才會釋出它；在 Linux 上，只要登入金鑰圈處於解鎖狀態，您的工作階段即可取得它。這僅解鎖應用程式，並非 SSH 驗證，保險庫無論如何都會繼續使用您的密碼加密。",
         "biometric_unlock_failed" => "生物辨識解鎖已取消或無法使用。請輸入您的主密碼。",
+        "biometric_enroll_failed" => "系統鑰匙圈拒絕了該請求，生物辨識解鎖未啟用。您的主密碼仍然有效。",
         "api_url" => "API 位址",
         "loaded_bytes" => "已載入（{bytes} 位元組）",
         "edit_identity" => "編輯身分",

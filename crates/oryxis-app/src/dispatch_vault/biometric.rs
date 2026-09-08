@@ -26,13 +26,21 @@ impl Oryxis {
                 } else {
                     // Opt in: needs an available backend and the master
                     // password in hand (we are unlocked). Enroll first; only
-                    // turn the setting on if the store accepted it.
+                    // turn the setting on if the store accepted it. The three
+                    // ways this fails are distinct and used to collapse into
+                    // one "enter your master password" toast, which is
+                    // undiagnosable (nothing logged) and, for a keystore
+                    // rejection, simply the wrong advice.
                     if !self.biometric_available {
+                        tracing::warn!("biometric opt-in refused: backend unavailable");
                         return self.show_toast(
                             crate::i18n::t("biometric_unlock_failed").to_string(),
                         );
                     }
                     let Some(pw) = self.master_password.clone() else {
+                        tracing::warn!(
+                            "biometric opt-in refused: master password not held in memory"
+                        );
                         return self.show_toast(
                             crate::i18n::t("biometric_unlock_failed").to_string(),
                         );
@@ -42,9 +50,19 @@ impl Oryxis {
                             self.prefs.biometric_unlock_enabled = true;
                             self.persist_setting("biometric_unlock_enabled", "true");
                         }
-                        _ => {
+                        Some(Err(e)) => {
+                            // The OS keystore refused the write (on macOS the
+                            // SecItemAdd OSStatus is in the string). Keep the
+                            // setting off and say what actually happened.
+                            tracing::warn!("biometric enroll failed: {e}");
                             return self.show_toast(
-                                crate::i18n::t("biometric_unlock_failed").to_string(),
+                                crate::i18n::t("biometric_enroll_failed").to_string(),
+                            );
+                        }
+                        None => {
+                            tracing::warn!("biometric enroll skipped: no vault open");
+                            return self.show_toast(
+                                crate::i18n::t("biometric_enroll_failed").to_string(),
                             );
                         }
                     }

@@ -1446,6 +1446,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "use_master_password" => "Usar la contraseña maestra",
         "biometric_unlock_desc" => "Desbloquea esta app con la biometría de tu dispositivo (Windows Hello, Touch ID) o, en Linux, tu llavero de inicio de sesión. Tu contraseña maestra se almacena en el almacén protegido del sistema operativo. Windows y macOS solo la liberan tras una comprobación de presencia (biometría o PIN); en Linux está disponible para tu sesión siempre que el llavero de inicio de sesión esté desbloqueado. Esto solo desbloquea la app; no es autenticación SSH, y el cofre permanece cifrado con tu contraseña en cualquier caso.",
         "biometric_unlock_failed" => "El desbloqueo biométrico se canceló o no está disponible. Introduce tu contraseña maestra.",
+        "biometric_enroll_failed" => "El llavero del sistema rechazó la solicitud, así que el desbloqueo biométrico queda desactivado. Tu contraseña maestra sigue funcionando.",
         "api_url" => "URL de API",
         "loaded_bytes" => "Cargado ({bytes} bytes)",
         "edit_identity" => "Editar Identidad",

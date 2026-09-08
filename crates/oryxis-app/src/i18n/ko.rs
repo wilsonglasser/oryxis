@@ -1545,6 +1545,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "use_master_password" => "마스터 비밀번호 사용",
         "biometric_unlock_desc" => "이 앱을 기기의 생체 인증(Windows Hello, Touch ID)으로, Linux에서는 로그인 키링으로 잠금 해제합니다. 마스터 비밀번호는 운영 체제의 보호된 키 저장소에 저장됩니다. Windows와 macOS에서는 본인 확인(생체 인증 또는 PIN)을 거친 후에만 해제되며, Linux에서는 로그인 키링이 잠금 해제되어 있는 동안 세션에서 사용할 수 있습니다. 이는 앱만 잠금 해제하며 SSH 인증이 아닙니다. 볼트는 어느 경우든 비밀번호로 암호화된 상태로 유지됩니다.",
         "biometric_unlock_failed" => "생체 인증 잠금 해제가 취소되었거나 사용할 수 없습니다. 마스터 비밀번호를 입력하세요.",
+        "biometric_enroll_failed" => "시스템 키체인이 요청을 거부하여 생체 인증 잠금 해제가 켜지지 않았습니다. 마스터 비밀번호는 계속 사용할 수 있습니다.",
         "api_url" => "API URL",
         "loaded_bytes" => "로드됨 ({bytes} 바이트)",
         "edit_identity" => "ID 편집",

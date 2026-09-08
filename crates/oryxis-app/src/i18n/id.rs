@@ -1545,6 +1545,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "use_master_password" => "Gunakan kata sandi master",
         "biometric_unlock_desc" => "Buka kunci aplikasi ini dengan biometrik perangkat Anda (Windows Hello, Touch ID) atau, di Linux, keyring login Anda. Kata sandi utama Anda disimpan di penyimpanan kunci terlindungi sistem operasi. Windows dan macOS hanya melepaskannya setelah pemeriksaan kehadiran (biometrik atau PIN); di Linux, kata sandi tersedia untuk sesi Anda selama keyring login tidak terkunci. Ini hanya membuka kunci aplikasi; ini bukan autentikasi SSH, dan vault tetap terenkripsi dengan kata sandi Anda bagaimanapun juga.",
         "biometric_unlock_failed" => "Buka kunci biometrik dibatalkan atau tidak tersedia. Masukkan kata sandi utama Anda.",
+        "biometric_enroll_failed" => "Rantai kunci sistem menolak permintaan, jadi buka kunci biometrik tetap nonaktif. Kata sandi utama Anda masih berfungsi.",
         "api_url" => "URL API",
         "loaded_bytes" => "Dimuat ({bytes} byte)",
         "edit_identity" => "Edit Identitas",

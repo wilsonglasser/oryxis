@@ -36,6 +36,13 @@ cargo run
 `crates/oryxis-app`, engine work in `oryxis-ssh` / `oryxis-vault` /
 `oryxis-sync` / `oryxis-terminal`.
 
+On macOS, biometric (Touch ID) unlock needs a signed `.app` bundle: the
+Keychain item it stores carries a `keychain-access-groups` entitlement
+(`resources/oryxis.entitlements`), which a bare `cargo run` binary and an
+ad-hoc signature do not have, so enrollment fails with `-34018`. Package
+and Developer-ID-sign the bundle (see `.github/workflows/release.yml`) to
+exercise that path locally.
+
 ## Quality gates
 
 CI enforces all three; run them before pushing:

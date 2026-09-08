@@ -130,7 +130,17 @@ impl Oryxis {
                 self.persist_setting("biometric_unlock_enabled", "true");
                 None
             }
-            _ => Some(self.show_toast(crate::i18n::t("biometric_unlock_failed").to_string())),
+            Some(Err(e)) => {
+                // The OS keystore refused the write (on macOS the SecItemAdd
+                // OSStatus is in the string). The password itself is already
+                // committed, so leave the setting off and say what failed.
+                tracing::warn!("biometric enroll failed: {e}");
+                Some(self.show_toast(crate::i18n::t("biometric_enroll_failed").to_string()))
+            }
+            None => {
+                tracing::warn!("biometric enroll skipped: no vault open");
+                Some(self.show_toast(crate::i18n::t("biometric_enroll_failed").to_string()))
+            }
         }
     }
 

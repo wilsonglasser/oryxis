@@ -2,6 +2,15 @@
 //! `SecAccessControl` user-presence policy, so every read intrinsically
 //! raises the Touch ID (or Apple Watch / device-passcode) prompt.
 //!
+//! The item lives in the data-protection keychain
+//! (`kSecUseDataProtectionKeychain`), the only one that services an
+//! access-control policy cleanly on macOS. Access to it is granted by the
+//! app's `keychain-access-groups` entitlement (`resources/oryxis.entitlements`,
+//! stamped with the Team ID at sign time). A build signed without that
+//! entitlement gets `errSecMissingEntitlement` (-34018) on every call
+//! here, so a local `cargo run` or an ad-hoc-signed bundle cannot enroll;
+//! a Developer ID (or later) signature is required.
+//!
 //! The Security-framework entry points and the `kSec*` attribute keys are
 //! declared here as externs against the framework's stable C ABI, rather
 //! than pulled from a `-sys` crate whose exact Rust surface we cannot
@@ -37,6 +46,11 @@ const ERR_SEC_ITEM_NOT_FOUND: OSStatus = -25300;
 const ERR_SEC_DUPLICATE_ITEM: OSStatus = -25299;
 const ERR_SEC_USER_CANCELED: OSStatus = -128;
 const ERR_SEC_AUTH_FAILED: OSStatus = -25293;
+/// `errSecMissingEntitlement`: the process is not signed with a
+/// `keychain-access-groups` entitlement covering this item. Every
+/// data-protection-keychain call returns it, so it gets a message that
+/// names the cause rather than a bare number.
+const ERR_SEC_MISSING_ENTITLEMENT: OSStatus = -34018;
 
 /// `kSecAccessControlUserPresence` (1 << 0): biometry or device passcode.
 const ACCESS_CONTROL_USER_PRESENCE: CFOptionFlags = 1;
@@ -54,6 +68,7 @@ unsafe extern "C" {
     static kSecMatchLimit: CFStringRef;
     static kSecMatchLimitOne: CFStringRef;
     static kSecUseOperationPrompt: CFStringRef;
+    static kSecUseDataProtectionKeychain: CFStringRef;
     static kSecAttrAccessControl: CFStringRef;
     static kSecAttrAccessibleWhenUnlockedThisDeviceOnly: CFStringRef;
 
@@ -89,7 +104,17 @@ fn key(k: CFStringRef) -> CFType {
     unsafe { CFString::wrap_under_get_rule(k).as_CFType() }
 }
 
-/// The (service, account) pair every operation keys on.
+/// The (service, account) pair every operation keys on, plus the
+/// data-protection-keychain selector.
+///
+/// `kSecUseDataProtectionKeychain` opts every call (add / copy / delete)
+/// into the modern keychain instead of the legacy file-based one. That is
+/// where an access-control-protected item (see [`TouchId::enroll`])
+/// belongs on macOS, and access to it is what the app's
+/// `keychain-access-groups` entitlement grants. On the legacy keychain,
+/// adding a user-presence item fails under the hardened runtime with
+/// `errSecMissingEntitlement` (-34018). Add and match must agree on this
+/// flag or they look at different stores.
 fn base_pairs(account: &str) -> Vec<(CFType, CFType)> {
     vec![
         (key(unsafe { kSecClass }), key(unsafe { kSecClassGenericPassword })),
@@ -101,6 +126,7 @@ fn base_pairs(account: &str) -> Vec<(CFType, CFType)> {
             key(unsafe { kSecAttrAccount }),
             CFString::new(account).as_CFType(),
         ),
+        (key(unsafe { kSecUseDataProtectionKeychain }), cf_true()),
     ]
 }
 
@@ -148,6 +174,11 @@ impl BiometricProvider for TouchId {
         match status {
             ERR_SEC_SUCCESS => Ok(()),
             ERR_SEC_DUPLICATE_ITEM => Err(BioError::Backend("keychain item already exists".into())),
+            ERR_SEC_MISSING_ENTITLEMENT => Err(BioError::Backend(
+                "SecItemAdd failed: -34018 (errSecMissingEntitlement); the app \
+                 was signed without a keychain-access-groups entitlement"
+                    .into(),
+            )),
             other => Err(BioError::Backend(format!("SecItemAdd failed: {other}"))),
         }
     }
@@ -176,6 +207,11 @@ impl BiometricProvider for TouchId {
             }
             ERR_SEC_ITEM_NOT_FOUND => Err(BioError::NotEnrolled),
             ERR_SEC_USER_CANCELED | ERR_SEC_AUTH_FAILED => Err(BioError::Denied),
+            ERR_SEC_MISSING_ENTITLEMENT => Err(BioError::Backend(
+                "SecItemCopyMatching failed: -34018 (errSecMissingEntitlement); \
+                 the app was signed without a keychain-access-groups entitlement"
+                    .into(),
+            )),
             other => Err(BioError::Backend(format!("SecItemCopyMatching failed: {other}"))),
         }
     }

@@ -184,10 +184,18 @@ jobs:
         # signature so the bundle is at least internally consistent. An ad-hoc
         # build is still quarantined when downloaded (Gatekeeper warning) until
         # the Developer ID secrets are added and notarization below kicks in.
+        #
+        # The Developer ID branch also carries resources/oryxis.entitlements
+        # (keychain-access-groups, Team ID stamped in here): local biometric
+        # unlock stores the vault password in the data-protection keychain,
+        # and without that entitlement SecItemAdd fails with -34018 so the
+        # Touch ID toggle can never turn on. An ad-hoc bundle has no stable
+        # Team identity, so biometric unlock does not work there regardless.
         env:
           APPLE_CERT_P12_BASE64: ${{ secrets.APPLE_CERT_P12_BASE64 }}
           APPLE_CERT_PASSWORD: ${{ secrets.APPLE_CERT_PASSWORD }}
           APPLE_SIGN_IDENTITY: ${{ secrets.APPLE_SIGN_IDENTITY }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
           APP="Oryxis.app"
           if [ -n "$APPLE_CERT_P12_BASE64" ]; then
@@ -202,7 +210,25 @@ jobs:
             security set-key-partition-list -S apple-tool:,apple:,codesign: \
               -s -k "$KEYCHAIN_PW" "$KEYCHAIN" >/dev/null
             security list-keychains -d user -s "$KEYCHAIN" login.keychain
+            # Team ID for the keychain-access-group: the secret if set,
+            # else the (TEAMID) suffix of the signing identity string.
+            TEAM_ID="$APPLE_TEAM_ID"
+            if [ -z "$TEAM_ID" ]; then
+              TEAM_ID="$(printf '%s' "$APPLE_SIGN_IDENTITY" \
+                | sed -n 's/.*(\([A-Z0-9]\{10\}\))$/\1/p')"
+            fi
+            if [ -z "$TEAM_ID" ]; then
+              echo "::error::APPLE_TEAM_ID is unset and no Team ID could be" \
+                "parsed from APPLE_SIGN_IDENTITY; the keychain entitlement" \
+                "cannot be stamped."
+              exit 1
+            fi
+            ENTITLEMENTS="$RUNNER_TEMP/oryxis.entitlements"
+            sed "s/__TEAM_ID__/${TEAM_ID}/g" resources/oryxis.entitlements \
+              > "$ENTITLEMENTS"
+            echo "keychain-access-group: ${TEAM_ID}.app.oryxis"
             codesign --force --deep --options runtime --timestamp \
+              --entitlements "$ENTITLEMENTS" \
               --sign "$APPLE_SIGN_IDENTITY" "$APP"
           else
             echo "No Developer ID secrets set; applying ad-hoc signature."

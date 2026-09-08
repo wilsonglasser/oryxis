@@ -1440,6 +1440,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "use_master_password" => "Stattdessen Master-Passwort verwenden",
         "biometric_unlock_desc" => "Entsperren Sie diese App mit der Biometrie Ihres Geräts (Windows Hello, Touch ID) oder unter Linux mit Ihrem Anmelde-Schlüsselbund. Ihr Master-Passwort wird im geschützten Schlüsselspeicher des Betriebssystems abgelegt. Windows und macOS geben es erst nach einer Anwesenheitsprüfung (Biometrie oder PIN) frei; unter Linux ist es für Ihre Sitzung verfügbar, solange der Anmelde-Schlüsselbund entsperrt ist. Dies entsperrt nur die App; es ist keine SSH-Authentifizierung, und der Tresor bleibt in jedem Fall mit Ihrem Passwort verschlüsselt.",
         "biometric_unlock_failed" => "Die biometrische Entsperrung wurde abgebrochen oder ist nicht verfügbar. Geben Sie Ihr Master-Passwort ein.",
+        "biometric_enroll_failed" => "Der Systemschlüsselbund hat die Anfrage abgelehnt, daher bleibt die biometrische Entsperrung aus. Ihr Master-Passwort funktioniert weiterhin.",
         "api_url" => "API-URL",
         "loaded_bytes" => "Geladen ({bytes} Bytes)",
         "edit_identity" => "Identität bearbeiten",

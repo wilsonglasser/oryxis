@@ -1453,6 +1453,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "use_master_password" => "マスターパスワードを使用",
         "biometric_unlock_desc" => "このアプリをデバイスの生体認証（Windows Hello、Touch ID）で、または Linux ではログインキーリングでロック解除します。マスターパスワードはオペレーティングシステムの保護されたキーストアに保存されます。Windows と macOS では存在確認（生体認証または PIN）の後にのみ解放されます。Linux ではログインキーリングがロック解除されている間、セッションから利用できます。これはアプリのロックを解除するだけで、SSH 認証ではありません。ボールトはいずれの場合もパスワードで暗号化されたままです。",
         "biometric_unlock_failed" => "生体認証によるロック解除がキャンセルされたか、利用できません。マスターパスワードを入力してください。",
+        "biometric_enroll_failed" => "システムのキーチェーンが要求を拒否したため、生体認証によるロック解除は無効のままです。マスターパスワードは引き続き使用できます。",
         "api_url" => "API URL",
         "loaded_bytes" => "読み込み済み ({bytes} バイト)",
         "edit_identity" => "ID を編集",

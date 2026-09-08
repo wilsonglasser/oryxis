@@ -1440,6 +1440,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "use_master_password" => "Usa la password principale",
         "biometric_unlock_desc" => "Sblocca questa app con la biometria del tuo dispositivo (Windows Hello, Touch ID) o, su Linux, con il tuo portachiavi di accesso. La tua password principale viene archiviata nell'archivio protetto del sistema operativo. Windows e macOS la rilasciano solo dopo un controllo di presenza (biometria o PIN); su Linux è disponibile per la tua sessione finché il portachiavi di accesso è sbloccato. Questo sblocca solo l'app; non è un'autenticazione SSH e il vault resta comunque cifrato con la tua password.",
         "biometric_unlock_failed" => "Lo sblocco biometrico è stato annullato o non è disponibile. Inserisci la tua password principale.",
+        "biometric_enroll_failed" => "Il portachiavi di sistema ha rifiutato la richiesta, quindi lo sblocco biometrico resta disattivato. La tua password principale funziona ancora.",
         "api_url" => "URL API",
         "loaded_bytes" => "Caricati ({bytes} byte)",
         "edit_identity" => "Modifica Identità",

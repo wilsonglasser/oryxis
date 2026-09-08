@@ -1505,6 +1505,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "use_master_password" => "Usar a senha mestre",
         "biometric_unlock_desc" => "Desbloqueie este app com a biometria do seu dispositivo (Windows Hello, Touch ID) ou, no Linux, o chaveiro de login. Sua senha mestra fica armazenada no armazenamento protegido do sistema operacional. Windows e macOS só a liberam após uma verificação de presença (biometria ou PIN); no Linux ela fica disponível para sua sessão sempre que o chaveiro de login estiver desbloqueado. Isso desbloqueia apenas o app; não é autenticação SSH, e o cofre permanece criptografado com sua senha de qualquer forma.",
         "biometric_unlock_failed" => "O desbloqueio biométrico foi cancelado ou está indisponível. Digite sua senha mestra.",
+        "biometric_enroll_failed" => "O chaveiro do sistema rejeitou a solicitação, então o desbloqueio biométrico continua desativado. Sua senha mestra ainda funciona.",
         "api_url" => "URL da API",
         "loaded_bytes" => "Carregado ({bytes} bytes)",
         "edit_identity" => "Editar Identidade",

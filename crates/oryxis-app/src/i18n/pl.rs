@@ -1555,6 +1555,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "use_master_password" => "Użyj hasła głównego",
         "biometric_unlock_desc" => "Odblokuj tę aplikację biometrią swojego urządzenia (Windows Hello, Touch ID) lub, w systemie Linux, pękiem kluczy logowania. Twoje hasło główne jest przechowywane w chronionym magazynie kluczy systemu operacyjnego. Windows i macOS udostępniają je dopiero po sprawdzeniu obecności (biometria lub PIN); w systemie Linux jest dostępne dla Twojej sesji, dopóki pęk kluczy logowania jest odblokowany. To odblokowuje tylko aplikację; nie jest to uwierzytelnianie SSH, a sejf i tak pozostaje zaszyfrowany Twoim hasłem.",
         "biometric_unlock_failed" => "Odblokowanie biometryczne zostało anulowane lub jest niedostępne. Wprowadź hasło główne.",
+        "biometric_enroll_failed" => "Pęk kluczy systemu odrzucił żądanie, więc odblokowanie biometryczne pozostaje wyłączone. Hasło główne nadal działa.",
         "api_url" => "Adres URL API",
         "loaded_bytes" => "Wczytano ({bytes} bajtów)",
         "edit_identity" => "Edytuj tożsamość",

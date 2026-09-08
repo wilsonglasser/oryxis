@@ -1545,6 +1545,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "use_master_password" => "Dùng mật khẩu chính",
         "biometric_unlock_desc" => "Mở khóa ứng dụng này bằng sinh trắc học của thiết bị (Windows Hello, Touch ID) hoặc, trên Linux, chuỗi khóa đăng nhập của bạn. Mật khẩu chính của bạn được lưu trong kho khóa được bảo vệ của hệ điều hành. Windows và macOS chỉ giải phóng nó sau khi kiểm tra sự hiện diện (sinh trắc học hoặc PIN); trên Linux, nó khả dụng cho phiên của bạn miễn là chuỗi khóa đăng nhập đang được mở khóa. Điều này chỉ mở khóa ứng dụng; đây không phải xác thực SSH, và kho vẫn được mã hóa bằng mật khẩu của bạn trong mọi trường hợp.",
         "biometric_unlock_failed" => "Mở khóa sinh trắc học đã bị hủy hoặc không khả dụng. Nhập mật khẩu chính của bạn.",
+        "biometric_enroll_failed" => "Chuỗi khóa hệ thống đã từ chối yêu cầu nên mở khóa sinh trắc học vẫn tắt. Mật khẩu chính của bạn vẫn hoạt động.",
         "api_url" => "URL API",
         "loaded_bytes" => "Đã tải ({bytes} byte)",
         "edit_identity" => "Sửa danh tính",

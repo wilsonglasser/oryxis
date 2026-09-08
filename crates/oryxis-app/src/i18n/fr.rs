@@ -1453,6 +1453,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "use_master_password" => "Utiliser le mot de passe maître",
         "biometric_unlock_desc" => "Déverrouillez cette application avec la biométrie de votre appareil (Windows Hello, Touch ID) ou, sous Linux, votre trousseau de connexion. Votre mot de passe maître est stocké dans le magasin protégé du système d'exploitation. Windows et macOS ne le libèrent qu'après une vérification de présence (biométrie ou code PIN) ; sous Linux, il est disponible pour votre session tant que le trousseau de connexion est déverrouillé. Ceci déverrouille uniquement l'application ; ce n'est pas une authentification SSH, et le coffre reste chiffré avec votre mot de passe dans tous les cas.",
         "biometric_unlock_failed" => "Le déverrouillage biométrique a été annulé ou est indisponible. Saisissez votre mot de passe maître.",
+        "biometric_enroll_failed" => "Le trousseau du système a rejeté la demande ; le déverrouillage biométrique reste désactivé. Votre mot de passe maître fonctionne toujours.",
         "api_url" => "URL de l'API",
         "loaded_bytes" => "Chargé ({bytes} octets)",
         "edit_identity" => "Modifier l'identité",

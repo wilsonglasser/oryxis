@@ -1545,6 +1545,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "use_master_password" => "Ana parolayı kullan",
         "biometric_unlock_desc" => "Bu uygulamayı cihazınızın biyometrisiyle (Windows Hello, Touch ID) veya Linux'ta oturum açma anahtarlığınızla açın. Ana parolanız işletim sisteminin korumalı anahtar deposunda saklanır. Windows ve macOS bunu yalnızca varlık kontrolünden (biyometri veya PIN) sonra serbest bırakır; Linux'ta ise oturum açma anahtarlığınızın kilidi açık olduğu sürece oturumunuz için erişilebilir durumdadır. Bu yalnızca uygulamanın kilidini açar; SSH kimlik doğrulaması değildir ve kasa her durumda parolanızla şifreli kalır.",
         "biometric_unlock_failed" => "Biyometrik kilit açma iptal edildi veya kullanılamıyor. Ana parolanızı girin.",
+        "biometric_enroll_failed" => "Sistem anahtar zinciri isteği reddetti, bu yüzden biyometrik kilit açma kapalı kaldı. Ana parolanız hâlâ çalışıyor.",
         "api_url" => "API URL'si",
         "loaded_bytes" => "Yüklendi ({bytes} bayt)",
         "edit_identity" => "Kimliği Düzenle",
