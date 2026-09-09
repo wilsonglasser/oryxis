@@ -1412,7 +1412,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
 
         // Sync passwords toggle
         "sync_passwords" => "Synchronizuj hasła między urządzeniami",
-        "sync_passwords_desc" => "Gdy włączone, hasła połączeń / tożsamości / proxy są kopiowane na sparowane urządzenia. Wyłączone zachowuje je lokalnie na urządzeniu.",
+        "sync_passwords_desc" => "Gdy włączone, hasła połączeń / tożsamości / proxy i klucze prywatne SSH są kopiowane na sparowane urządzenia. Wyłączone zachowuje je lokalnie na urządzeniu.",
 
         // Layout direction (Settings → Appearance)
         "layout_direction" => "Kierunek układu",

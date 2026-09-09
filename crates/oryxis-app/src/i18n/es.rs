@@ -1199,7 +1199,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "flatten_hosts_desc" => "Cuando está activo, la raíz del panel muestra una sección de Grupos sobre una lista plana con todos los hosts. Cuando está apagado, los hosts agrupados solo aparecen al abrir la carpeta.",
 
         "sync_passwords" => "Sincronizar contraseñas entre dispositivos",
-        "sync_passwords_desc" => "Cuando está activo, las contraseñas de conexión / identidad / proxy se replican a los dispositivos emparejados. Apagado las mantiene locales.",
+        "sync_passwords_desc" => "Cuando está activo, las contraseñas de conexión / identidad / proxy y las claves privadas SSH se replican a los dispositivos emparejados. Apagado las mantiene locales.",
         "sync" => "Sincronización",
         "sync_device" => "Dispositivo",
         "sync_device_name" => "Nombre del Dispositivo",

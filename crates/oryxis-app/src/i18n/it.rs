@@ -1193,7 +1193,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "flatten_hosts_desc" => "Quando attivo, la radice della dashboard mostra una sezione Gruppi sopra un elenco piatto di tutti gli host. Disattivato, gli host raggruppati appaiono solo aprendo la cartella.",
 
         "sync_passwords" => "Sincronizza le password tra dispositivi",
-        "sync_passwords_desc" => "Quando attivo, le password di connessione / identità / proxy vengono replicate sui dispositivi accoppiati. Disattivato le mantiene locali.",
+        "sync_passwords_desc" => "Quando attivo, le password di connessione / identità / proxy e le chiavi private SSH vengono replicate sui dispositivi accoppiati. Disattivato le mantiene locali.",
         "sync" => "Sincronizzazione",
         "sync_device" => "Dispositivo",
         "sync_device_name" => "Nome del dispositivo",

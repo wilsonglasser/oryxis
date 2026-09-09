@@ -1402,7 +1402,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
 
         // Sync passwords toggle
         "sync_passwords" => "Đồng bộ mật khẩu giữa các thiết bị",
-        "sync_passwords_desc" => "Khi bật, mật khẩu kết nối / danh tính / proxy được sao chép sang các thiết bị đã ghép nối. Tắt sẽ giữ chúng cục bộ trên thiết bị.",
+        "sync_passwords_desc" => "Khi bật, mật khẩu kết nối / danh tính / proxy và khóa riêng SSH được sao chép sang các thiết bị đã ghép nối. Tắt sẽ giữ chúng cục bộ trên thiết bị.",
 
         // Layout direction (Settings → Appearance)
         "layout_direction" => "Hướng bố cục",

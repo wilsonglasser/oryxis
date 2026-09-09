@@ -1206,7 +1206,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "flatten_hosts_desc" => "啟用後，儀表板根層級會顯示群組區段以及包含所有主機的扁平清單。關閉後，群組內的主機僅在開啟資料夾時顯示。",
 
         "sync_passwords" => "在裝置之間同步密碼",
-        "sync_passwords_desc" => "啟用後，連線 / 身分 / 代理的密碼會鏡像到已配對的裝置。關閉則保留在本機。",
+        "sync_passwords_desc" => "啟用後，連線 / 身分 / 代理的密碼與 SSH 私鑰會鏡像到已配對的裝置。關閉則保留在本機。",
         "sync" => "同步",
         "sync_device" => "裝置",
         "sync_device_name" => "裝置名稱",

@@ -1409,7 +1409,7 @@ pub(super) fn lookup(key: &str) -> &'static str {
 
         // Sync passwords toggle
         "sync_passwords" => "Sync passwords across devices",
-        "sync_passwords_desc" => "When on, connection / identity / proxy passwords are mirrored to paired devices. Off keeps them device-local.",
+        "sync_passwords_desc" => "When on, connection / identity / proxy passwords and SSH private keys are mirrored to paired devices. Off keeps them device-local.",
 
         // Layout direction (Settings → Appearance)
         "layout_direction" => "Layout Direction",

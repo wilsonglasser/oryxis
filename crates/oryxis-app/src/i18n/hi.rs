@@ -1408,7 +1408,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
 
         // Sync passwords toggle
         "sync_passwords" => "डिवाइसों के बीच पासवर्ड सिंक करें",
-        "sync_passwords_desc" => "चालू होने पर कनेक्शन / पहचान / प्रॉक्सी पासवर्ड पेयर किए गए डिवाइसों पर मिरर होते हैं। बंद होने पर वे इसी डिवाइस तक रहते हैं।",
+        "sync_passwords_desc" => "चालू होने पर कनेक्शन / पहचान / प्रॉक्सी पासवर्ड और SSH निजी कुंजियाँ पेयर किए गए डिवाइसों पर मिरर होती हैं। बंद होने पर वे इसी डिवाइस तक रहती हैं।",
 
         // Layout direction (Settings → Appearance)
         "layout_direction" => "लेआउट दिशा",

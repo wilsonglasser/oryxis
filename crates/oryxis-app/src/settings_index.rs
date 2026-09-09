@@ -218,7 +218,11 @@ pub(crate) static SETTINGS_INDEX: &[SettingsIndexEntry] = &[
     e(S::Sync, "sftp_sync_path", "sftp sync remote path directory folder"),
     e(S::Sync, "sftp_sync_passphrase", "sftp sync passphrase password encrypt"),
     e(S::Sync, "sync_mode", "sync mode auto manual automatic"),
-    e(S::Sync, "sync_passwords", "sync passwords credentials devices share"),
+    e(
+        S::Sync,
+        "sync_passwords",
+        "sync passwords credentials keys private devices share",
+    ),
     e(S::Sync, "sync_now", "sync now manual trigger run push pull"),
     e(S::Sync, "sync_device_name", "device name label identify sync peer"),
     e(S::Sync, "sync_host_pairing", "pair device host pairing new add"),

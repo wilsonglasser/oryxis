@@ -1409,7 +1409,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
 
         // Sync passwords toggle
         "sync_passwords" => "ซิงค์รหัสผ่านระหว่างอุปกรณ์",
-        "sync_passwords_desc" => "เมื่อเปิด รหัสผ่านของการเชื่อมต่อ / identity / พร็อกซีจะถูกทำสำเนาไปยังอุปกรณ์ที่จับคู่ เมื่อปิดจะเก็บไว้เฉพาะในอุปกรณ์นี้",
+        "sync_passwords_desc" => "เมื่อเปิด รหัสผ่านของการเชื่อมต่อ / identity / พร็อกซี และคีย์ส่วนตัว SSH จะถูกทำสำเนาไปยังอุปกรณ์ที่จับคู่ เมื่อปิดจะเก็บไว้เฉพาะในอุปกรณ์นี้",
 
         // Layout direction (Settings → Appearance)
         "layout_direction" => "ทิศทางเลย์เอาต์",

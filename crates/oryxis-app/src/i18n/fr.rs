@@ -1206,7 +1206,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "flatten_hosts_desc" => "Quand activé, la racine du tableau de bord affiche une section Groupes au-dessus d'une liste plate de tous les hôtes. Désactivé, les hôtes groupés n'apparaissent qu'en ouvrant le dossier.",
 
         "sync_passwords" => "Synchroniser les mots de passe entre appareils",
-        "sync_passwords_desc" => "Quand activé, les mots de passe de connexion / identité / proxy sont répliqués vers les appareils appairés. Désactivé garde tout local.",
+        "sync_passwords_desc" => "Quand activé, les mots de passe de connexion / identité / proxy et les clés privées SSH sont répliqués vers les appareils appairés. Désactivé garde tout local.",
         "sync" => "Synchronisation",
         "sync_device" => "Appareil",
         "sync_device_name" => "Nom de l'appareil",

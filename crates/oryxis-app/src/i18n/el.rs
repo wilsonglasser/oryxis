@@ -1408,7 +1408,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
 
         // Sync passwords toggle
         "sync_passwords" => "Συγχρονισμός κωδικών μεταξύ συσκευών",
-        "sync_passwords_desc" => "Όταν είναι ενεργό, οι κωδικοί συνδέσεων / ταυτοτήτων / proxies αντιγράφονται στις συζευγμένες συσκευές. Ανενεργό τους κρατά τοπικά στη συσκευή.",
+        "sync_passwords_desc" => "Όταν είναι ενεργό, οι κωδικοί συνδέσεων / ταυτοτήτων / proxies και τα ιδιωτικά κλειδιά SSH αντιγράφονται στις συζευγμένες συσκευές. Ανενεργό τα κρατά τοπικά στη συσκευή.",
 
         // Layout direction (Settings → Appearance)
         "layout_direction" => "Κατεύθυνση διάταξης",

@@ -693,6 +693,12 @@ mod tests {
         let va = test_vault();
         let conn = Connection::new("web", "10.0.0.1");
         va.save_connection(&conn, Some("s3cret")).unwrap();
+        let key = oryxis_core::models::SshKey::new(
+            "laptop",
+            oryxis_core::models::KeyAlgorithm::Ed25519,
+        );
+        va.save_key(&key, Some("-----BEGIN OPENSSH PRIVATE KEY-----\nx\n"))
+            .unwrap();
         let va = Arc::new(Mutex::new(va));
 
         let blob = build_full_snapshot(&va, &SNAP_SECRET).unwrap();
@@ -709,6 +715,15 @@ mod tests {
         // pins the gate so a future change can't silently start shipping
         // passwords over SFTP.
         assert!(v.get_connection_password(&conn.id).unwrap().is_none());
+        // The same gate over the same transport, for the secret that
+        // matters most on a file backend: a Git remote keeps every
+        // snapshot it ever saw, so a private key shipped by accident
+        // stays in that history.
+        assert_eq!(v.list_keys().unwrap().len(), 1, "the key row travels");
+        assert!(
+            v.get_key_private(&key.id).unwrap().is_none(),
+            "a private key must not ride a snapshot with the gate off"
+        );
     }
 
     /// A newer edit on B, snapshotted back and merged into A, wins by

@@ -1408,7 +1408,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
 
         // Sync passwords toggle
         "sync_passwords" => "Synchronizovat hesla mezi zařízeními",
-        "sync_passwords_desc" => "Zapnuto: hesla připojení / identit / proxy se zrcadlí na spárovaná zařízení. Vypnuto je drží jen v tomto zařízení.",
+        "sync_passwords_desc" => "Zapnuto: hesla připojení / identit / proxy a soukromé klíče SSH se zrcadlí na spárovaná zařízení. Vypnuto je drží jen v tomto zařízení.",
 
         // Layout direction (Settings → Appearance)
         "layout_direction" => "Směr rozložení",

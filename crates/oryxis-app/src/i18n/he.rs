@@ -1408,7 +1408,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
 
         // Sync passwords toggle
         "sync_passwords" => "סנכרון סיסמאות בין מכשירים",
-        "sync_passwords_desc" => "כשפועל, סיסמאות של חיבורים / זהויות / פרוקסי משוכפלות למכשירים מצומדים. כשכבוי הן נשארות מקומיות למכשיר.",
+        "sync_passwords_desc" => "כשפועל, סיסמאות של חיבורים / זהויות / פרוקסי ומפתחות SSH פרטיים משוכפלים למכשירים מצומדים. כשכבוי הם נשארים מקומיים למכשיר.",
 
         // Layout direction (Settings → Appearance)
         "layout_direction" => "כיוון פריסה",

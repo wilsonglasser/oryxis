@@ -1402,7 +1402,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
 
         // Sync passwords toggle
         "sync_passwords" => "Parolaları cihazlar arasında senkronize et",
-        "sync_passwords_desc" => "Açıkken bağlantı / kimlik / proxy parolaları eşleştirilmiş cihazlara yansıtılır. Kapalı, onları cihaza özel tutar.",
+        "sync_passwords_desc" => "Açıkken bağlantı / kimlik / proxy parolaları ve SSH özel anahtarları eşleştirilmiş cihazlara yansıtılır. Kapalı, onları cihaza özel tutar.",
 
         // Layout direction (Settings → Appearance)
         "layout_direction" => "Düzen Yönü",

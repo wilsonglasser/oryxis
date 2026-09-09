@@ -416,20 +416,30 @@ pub struct SyncIdentity {
 /// row with a NULL private column and cannot authenticate with it. Sent
 /// only when `sync_passwords` is on, exactly like the connection and
 /// identity passwords.
+///
+/// This is the one secret wrapper with NO `_cleared` companion, and that
+/// asymmetry is the point: a private key is the only synced secret its
+/// owner cannot retype. A missing value therefore always means
+/// "preserve", never "erase". Nothing legitimate would produce a clear
+/// anyway (no `save_key` call site strips private material from a row it
+/// keeps, and a public-only FIDO2-SK row is public-only on every device
+/// because the id was minted once), while three ordinary things produce
+/// a key row that merely LOOKS empty: a peer that received the row from
+/// a build predating this field, `sync_passwords` off on the sender, and
+/// a `get_key_private` that simply failed to decrypt. Under LWW any of
+/// those would out-rank and destroy the origin's only copy. Removing a
+/// key from a device stays the tombstone's job (`delete_key`), which is
+/// explicit and mirrors the deletion the user actually asked for.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SyncSshKey {
     #[serde(flatten)]
     pub key: oryxis_core::models::SshKey,
     /// Private-key PEM in its stored form (it may itself be
     /// passphrase-encrypted; that is opaque to sync). `None` on the wire
-    /// means "preserve the receiver's copy" for legacy/`sync_passwords`-off
-    /// payloads.
+    /// means "preserve the receiver's copy": legacy payloads, a sender
+    /// with `sync_passwords` off, and a public-only row all send that.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub private_key: Option<String>,
-    /// The key has no private material (public-only / FIDO2-SK row, or it
-    /// was removed): propagate that so the receiver's copy is cleared too.
-    #[serde(default, skip_serializing_if = "is_false")]
-    pub private_key_cleared: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -804,7 +814,6 @@ mod tests {
         let wrapper = SyncSshKey {
             key,
             private_key: Some("-----BEGIN OPENSSH PRIVATE KEY-----\nx\n".into()),
-            private_key_cleared: false,
         };
         let bytes = serde_json::to_vec(&wrapper).unwrap();
         let back: SyncSshKey = serde_json::from_slice(&bytes).unwrap();
@@ -829,7 +838,6 @@ mod tests {
         let wrapped: SyncSshKey = serde_json::from_slice(&bare).unwrap();
         assert_eq!(wrapped.key.label, "old-key");
         assert!(wrapped.private_key.is_none());
-        assert!(!wrapped.private_key_cleared);
     }
 
     #[test]

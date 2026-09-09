@@ -1373,7 +1373,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "flatten_hosts_desc" => "Quando ativo, a raiz do painel mostra uma seção de Grupos acima de uma lista plana com todos os hosts. Quando desligado, hosts em grupos só aparecem ao abrir a pasta.",
 
         "sync_passwords" => "Sincronizar senhas entre dispositivos",
-        "sync_passwords_desc" => "Quando ativo, as senhas de conexão / identidade / proxy são espelhadas para os dispositivos pareados. Desligado mantém tudo local.",
+        "sync_passwords_desc" => "Quando ativo, as senhas de conexão / identidade / proxy e as chaves privadas SSH são espelhadas para os dispositivos pareados. Desligado mantém tudo local.",
 
         // Layout direction
         "layout_direction" => "Direção do Layout",

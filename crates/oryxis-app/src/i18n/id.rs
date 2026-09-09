@@ -1402,7 +1402,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
 
         // Sync passwords toggle
         "sync_passwords" => "Sinkronkan kata sandi antar perangkat",
-        "sync_passwords_desc" => "Saat aktif, kata sandi koneksi / identitas / proxy dicerminkan ke perangkat tersanding. Nonaktif menjaganya tetap lokal di perangkat.",
+        "sync_passwords_desc" => "Saat aktif, kata sandi koneksi / identitas / proxy dan kunci privat SSH dicerminkan ke perangkat tersanding. Nonaktif menjaganya tetap lokal di perangkat.",
 
         // Layout direction (Settings → Appearance)
         "layout_direction" => "Arah Tata Letak",

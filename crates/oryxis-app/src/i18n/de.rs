@@ -1193,7 +1193,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "flatten_hosts_desc" => "Wenn aktiviert, zeigt die Wurzel des Dashboards einen Gruppen-Abschnitt über einer flachen Liste aller Hosts. Wenn deaktiviert, erscheinen gruppierte Hosts erst beim Öffnen des Ordners.",
 
         "sync_passwords" => "Passwörter zwischen Geräten synchronisieren",
-        "sync_passwords_desc" => "Wenn aktiv, werden Verbindungs- / Identitäts- / Proxy-Passwörter auf gekoppelte Geräte gespiegelt. Deaktiviert bleiben sie lokal.",
+        "sync_passwords_desc" => "Wenn aktiv, werden Verbindungs- / Identitäts- / Proxy-Passwörter und private SSH-Schlüssel auf gekoppelte Geräte gespiegelt. Deaktiviert bleiben sie lokal.",
         "sync" => "Synchronisation",
         "sync_device" => "Gerät",
         "sync_device_name" => "Gerätename",

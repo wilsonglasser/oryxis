@@ -1402,7 +1402,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
 
         // Sync passwords toggle
         "sync_passwords" => "장치 간 비밀번호 동기화",
-        "sync_passwords_desc" => "켜면 연결 / ID / 프록시 비밀번호가 페어링된 장치에 미러링됩니다. 끄면 장치에만 보관됩니다.",
+        "sync_passwords_desc" => "켜면 연결 / ID / 프록시 비밀번호와 SSH 개인 키가 페어링된 장치에 미러링됩니다. 끄면 장치에만 보관됩니다.",
 
         // Layout direction (Settings → Appearance)
         "layout_direction" => "레이아웃 방향",

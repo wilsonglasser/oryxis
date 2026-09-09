@@ -1206,7 +1206,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "flatten_hosts_desc" => "启用后，仪表盘根目录会显示分组部分以及包含所有主机的扁平列表。关闭后，分组的主机仅在打开文件夹时显示。",
 
         "sync_passwords" => "在设备之间同步密码",
-        "sync_passwords_desc" => "启用后，连接 / 身份 / 代理的密码将镜像到配对的设备。关闭则保持本地。",
+        "sync_passwords_desc" => "启用后，连接 / 身份 / 代理的密码和 SSH 私钥将镜像到配对的设备。关闭则保持本地。",
         "sync" => "同步",
         "sync_device" => "设备",
         "sync_device_name" => "设备名称",
