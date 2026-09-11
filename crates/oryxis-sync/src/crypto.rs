@@ -110,7 +110,9 @@ impl DeviceIdentity {
     ///
     /// `fallback_device_name` is used only when generating a new
     /// identity; when loading an existing one, the name embedded in
-    /// the blob wins.
+    /// the blob wins. That embedded name is NOT what peers are told —
+    /// it is written once and would freeze a device under whatever
+    /// name it had at first start; see [`advertised_device_name`].
     pub fn load_or_generate(
         vault: &oryxis_vault::VaultStore,
         fallback_device_name: &str,
@@ -126,6 +128,22 @@ impl DeviceIdentity {
             .set_sync_device_identity(&fresh.to_bytes())
             .map_err(|e| SyncError::Vault(e.to_string()))?;
         Ok(fresh)
+    }
+}
+
+/// The name this device advertises to a peer right now.
+///
+/// The identity blob embeds a name, but it is written exactly once —
+/// at generation, which happens on the first engine start, typically
+/// before the user has typed anything into Device Name — and renaming
+/// must never mean regenerating the identity (that would orphan every
+/// paired peer). So the live `sync_device_name` setting wins whenever
+/// it holds something, and the blob's name is only the fallback for a
+/// vault where the field was never filled in.
+pub fn advertised_device_name(vault: &oryxis_vault::VaultStore, identity: &DeviceIdentity) -> String {
+    match vault.get_setting("sync_device_name") {
+        Ok(Some(name)) if !name.trim().is_empty() => name.trim().to_string(),
+        _ => identity.device_name.clone(),
     }
 }
 

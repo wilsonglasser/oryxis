@@ -385,6 +385,78 @@ mod tests {
         assert_eq!(joiner_secret, host_secret);
     }
 
+    /// Regression: the name a peer records at pairing time must be the
+    /// one currently set in Settings, not the one that happened to be
+    /// in the identity blob when it was first generated. The identity
+    /// is written exactly once (first engine start, typically before
+    /// the user has typed anything, so it carries the `oryxis-device`
+    /// fallback) and a rename must not require regenerating it.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn pairing_advertises_the_renamed_device_not_the_identity_blob() {
+        let (host, host_port) = started_engine("oryxis-device");
+        let (joiner, _) = started_engine("oryxis-device");
+        let host_id = host.identity().device_id;
+        let joiner_id = joiner.identity().device_id;
+
+        // Both engines are already running when the user fills in
+        // Device Name; no restart follows.
+        host.vault
+            .lock()
+            .unwrap()
+            .set_setting("sync_device_name", "work-desktop")
+            .unwrap();
+        joiner
+            .vault
+            .lock()
+            .unwrap()
+            .set_setting("sync_device_name", "travel-laptop")
+            .unwrap();
+
+        let code = host.handle().start_hosting_pairing();
+        joiner
+            .handle()
+            .join_pairing(loopback(host_port), code)
+            .await
+            .unwrap();
+        tokio::time::sleep(Duration::from_millis(300)).await;
+
+        let joiner_peers = joiner.vault.lock().unwrap().list_sync_peers().unwrap();
+        assert_eq!(joiner_peers.len(), 1);
+        assert_eq!(joiner_peers[0].peer_id, host_id);
+        assert_eq!(joiner_peers[0].device_name, "work-desktop");
+
+        let host_peers = host.vault.lock().unwrap().list_sync_peers().unwrap();
+        assert_eq!(host_peers.len(), 1);
+        assert_eq!(host_peers[0].peer_id, joiner_id);
+        assert_eq!(host_peers[0].device_name, "travel-laptop");
+    }
+
+    /// The advertised name falls back to the identity blob only when
+    /// the setting is absent or blank, so a vault that never had the
+    /// field filled keeps advertising what it always did.
+    #[test]
+    fn advertised_device_name_prefers_the_setting_over_the_blob() {
+        let vault = test_vault();
+        let identity = DeviceIdentity::load_or_generate(&vault, "oryxis-device").unwrap();
+        assert_eq!(
+            crate::crypto::advertised_device_name(&vault, &identity),
+            "oryxis-device"
+        );
+
+        vault.set_setting("sync_device_name", "  work-desktop ").unwrap();
+        assert_eq!(
+            crate::crypto::advertised_device_name(&vault, &identity),
+            "work-desktop"
+        );
+
+        // Clearing the field must not put an empty name on the wire.
+        vault.set_setting("sync_device_name", "   ").unwrap();
+        assert_eq!(
+            crate::crypto::advertised_device_name(&vault, &identity),
+            "oryxis-device"
+        );
+    }
+
     /// A wrong code is rejected and neither side stores a peer.
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn pairing_rejects_wrong_code() {

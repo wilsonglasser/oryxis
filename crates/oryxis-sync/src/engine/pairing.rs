@@ -66,9 +66,17 @@ pub(super) async fn run_pairing_as_joiner(
     // `x25519_dh` so the ephemeral private key is forgotten.
     let (joiner_x25519_secret, joiner_x25519_pub) = crypto::x25519_keypair();
 
+    // Read the name off the vault rather than off the cached identity:
+    // the identity is a snapshot taken when the engine started, and the
+    // user may well have filled in Device Name since (or ever).
+    let device_name = {
+        let v = vault.lock().map_err(|_| SyncError::Vault("Lock".into()))?;
+        crypto::advertised_device_name(&v, identity)
+    };
+
     transport.send(&SyncMessage::PairingRequest {
         device_id: identity.device_id,
-        device_name: identity.device_name.clone(),
+        device_name,
         public_key: identity.public_key_bytes(),
         pairing_code: code.to_string(),
         listen_port,
@@ -244,6 +252,7 @@ pub(super) async fn handle_pairing_request(
     // joiner's source IP + advertised listen port; relay has neither
     // (we'll sync via relay forever for this peer).
     let now = chrono::Utc::now();
+    let our_name;
     {
         let v = vault.lock().map_err(|_| SyncError::Vault("Lock".into()))?;
         v.save_sync_peer(
@@ -256,6 +265,9 @@ pub(super) async fn handle_pairing_request(
         if let Some((addr, listen_port)) = peer_endpoint {
             v.update_sync_peer_endpoint(&device_id, &addr.ip().to_string(), listen_port)?;
         }
+        // Under the same lock: the name we send back is read here, not
+        // taken from the engine-start snapshot in `identity`.
+        our_name = crypto::advertised_device_name(&v, identity);
     }
     if let Ok(mut state) = hosting_pairing.lock() {
         *state = None;
@@ -263,7 +275,7 @@ pub(super) async fn handle_pairing_request(
 
     transport.send(&SyncMessage::PairingAccepted {
         device_id: identity.device_id,
-        device_name: identity.device_name.clone(),
+        device_name: our_name,
         public_key: identity.public_key_bytes(),
         x25519_pub: host_x25519_pub.to_vec(),
     }).await?;
