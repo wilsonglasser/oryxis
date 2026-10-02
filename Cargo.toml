@@ -57,7 +57,7 @@ iced = { git = "https://github.com/wilsonglasser/iced", branch = "oryxis", featu
 # `des` enables 3des-cbc, needed for the per-host legacy-cipher override
 # (the rest of the legacy algorithms ship in russh's default set, just
 # off by default in `Preferred`).
-russh = { version = "0.62.5", features = ["des"] }
+russh = { version = "0.63.2", features = ["des"] }
 
 # Terminal parsing
 # Our fork's master: upstream tracking plus the windows-sys 0.61 bump,
