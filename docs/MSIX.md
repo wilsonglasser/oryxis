@@ -12,8 +12,8 @@ installer (policy 10.2.9). The installer path requires the binary and
 every PE inside it to be signed by a CA in the Microsoft Trusted Root
 Program. MSIX requires no code-signing certificate at all: Partner Center
 re-signs the package with a Microsoft certificate after it passes
-certification. So the Store channel is not blocked on the pending
-SignPath certificate.
+certification. So the Store channel needs no code-signing certificate
+of its own.
 
 Consequence for this repo: the package the workflow hands to Partner
 Center is **unsigned on purpose**.

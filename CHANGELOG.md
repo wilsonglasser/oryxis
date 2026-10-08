@@ -4,6 +4,11 @@ All notable changes to Oryxis are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the
 project uses [SemVer](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Removed
+- The SignPath signing step: Windows binaries and installers ship without an Authenticode signature; the updater keeps verifying every download with the project's Ed25519 key.
+
 ## [0.20.1] - 2026-10-08
 
 A patch release: the app starts again on Intel integrated GPUs whose Vulkan driver predates the 1.3.215 spec revision, and the AI chat speaks to Gemini 3 models with the thinking switch that generation accepts.

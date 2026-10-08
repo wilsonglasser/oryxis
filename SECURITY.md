@@ -52,13 +52,6 @@ What Oryxis does to protect your credentials:
   sync peers.
 - **Pure-Rust crypto path.** No C dependencies in the cryptography stack.
 
-## Code signing
-
-Windows binaries and installers are Authenticode-signed in CI by
-[SignPath.io](https://about.signpath.io) with a certificate from the
-[SignPath Foundation](https://signpath.org). The private key never leaves
-SignPath's hardware security module.
-
 ## Out of scope
 
 - Vulnerabilities in servers you connect to.
