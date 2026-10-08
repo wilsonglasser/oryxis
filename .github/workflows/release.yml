@@ -368,18 +368,18 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          # choco community repo occasionally returns 503s — retry a few times.
+          # The choco community feed answers a 504 with exit code 0 and
+          # "installed 0/0 packages", so the installed binary is the
+          # only proof of success: retry until makensis.exe exists.
+          $makensis = 'C:\Program Files (x86)\NSIS\makensis.exe'
           $max = 5
-          $ok = $false
-          for ($i = 1; $i -le $max -and -not $ok; $i++) {
+          for ($i = 1; $i -le $max -and -not (Test-Path $makensis); $i++) {
             Write-Host "NSIS install attempt $i/$max"
             choco install nsis -y --no-progress
-            if ($LASTEXITCODE -eq 0) { $ok = $true }
-            elseif ($i -lt $max) { Start-Sleep -Seconds 20 }
+            if (-not (Test-Path $makensis) -and $i -lt $max) { Start-Sleep -Seconds 20 }
           }
-          if (-not $ok) { throw "choco install nsis failed after $max attempts" }
-          if (-not (Test-Path 'C:\Program Files (x86)\NSIS\makensis.exe')) {
-            throw 'makensis.exe not found after install'
+          if (-not (Test-Path $makensis)) {
+            throw "makensis.exe not found after $max install attempts"
           }
           Add-Content $env:GITHUB_PATH 'C:\Program Files (x86)\NSIS'
 
@@ -556,17 +556,18 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
+          # The choco community feed answers a 504 with exit code 0 and
+          # "installed 0/0 packages", so the installed binary is the
+          # only proof of success: retry until makensis.exe exists.
+          $makensis = 'C:\Program Files (x86)\NSIS\makensis.exe'
           $max = 5
-          $ok = $false
-          for ($i = 1; $i -le $max -and -not $ok; $i++) {
+          for ($i = 1; $i -le $max -and -not (Test-Path $makensis); $i++) {
             Write-Host "NSIS install attempt $i/$max"
             choco install nsis -y --no-progress
-            if ($LASTEXITCODE -eq 0) { $ok = $true }
-            elseif ($i -lt $max) { Start-Sleep -Seconds 20 }
+            if (-not (Test-Path $makensis) -and $i -lt $max) { Start-Sleep -Seconds 20 }
           }
-          if (-not $ok) { throw "choco install nsis failed after $max attempts" }
-          if (-not (Test-Path 'C:\Program Files (x86)\NSIS\makensis.exe')) {
-            throw 'makensis.exe not found after install'
+          if (-not (Test-Path $makensis)) {
+            throw "makensis.exe not found after $max install attempts"
           }
           Add-Content $env:GITHUB_PATH 'C:\Program Files (x86)\NSIS'
           $envarZip = "$env:RUNNER_TEMP\EnVar.zip"
