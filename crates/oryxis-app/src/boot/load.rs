@@ -59,6 +59,13 @@ impl Oryxis {
             self.known_hosts = vault.list_known_hosts().unwrap_or_default();
             self.port_forward_rules = vault.list_port_forward_rules().unwrap_or_default();
         }
+        // The form's Parent Group follows the row FIRST, in both branches:
+        // `editor_group_pending` compares the typed path against the live
+        // row, so an external folder move would otherwise read as a
+        // pending edit and the next flush (the one `EditConnection` runs
+        // on reopen, or the drawer's close) would write the old folder
+        // back with a newer stamp that then wins on sync.
+        self.editor_follow_moved_host(was_dirty);
         if !was_dirty {
             self.editor_refresh_from_vault();
         }

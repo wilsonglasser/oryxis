@@ -98,6 +98,15 @@ impl RefusalLog {
         self.lock()
             .remove(&(host.to_string(), port, key_type.to_string()));
     }
+
+    /// Forget every refusal recorded for `endpoints`: called before a
+    /// dial, so a refusal an earlier dial left behind (never accepted)
+    /// cannot describe a later failure of another kind (the server
+    /// down, a DNS miss) as a host-key refusal.
+    pub fn clear_endpoints(&self, endpoints: &[(String, u16)]) {
+        self.lock()
+            .retain(|_, r| !endpoints.iter().any(|(h, p)| &r.host == h && r.port == *p));
+    }
 }
 
 /// The `ssh_execute` answer for a dial that failed on a refused key:

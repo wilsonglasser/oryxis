@@ -678,6 +678,8 @@ pub async fn handle_ssh_execute(
 
     let timeout = std::time::Duration::from_secs(timeout_secs);
     let endpoints = plan.endpoints.clone();
+    // Only what THIS dial refuses may describe its failure.
+    server.refusals.clear_endpoints(&endpoints);
     let outcome = server.pool.exec(plan, command, timeout, cancel).await;
     match outcome {
         Ok(run) => {

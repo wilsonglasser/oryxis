@@ -111,7 +111,13 @@ pub(crate) fn post_install_refresh(token: &str, vault_pw: Option<&str>) {
     }
     // The legacy dead-letter entry has no live config to refresh in
     // place; migrating it means writing Claude Code's real file once.
-    if !crate::mcp::client_has_entry(crate::mcp_clients::McpClient::ClaudeCode)
+    // Only when the LEGACY file holds one: another client's entry is not
+    // a reason to write a file Claude Code's user never asked for (with
+    // the vault password embedded, that would be a credential nobody
+    // guards; Claude Code's folder guard cannot catch it, its config
+    // sits in the home directory itself).
+    if crate::mcp::legacy_config_has_entry()
+        && !crate::mcp::client_has_entry(crate::mcp_clients::McpClient::ClaudeCode)
         && let Err(msg) = crate::mcp::install_mcp_config_to_file(
             crate::mcp_clients::McpClient::ClaudeCode,
             token,

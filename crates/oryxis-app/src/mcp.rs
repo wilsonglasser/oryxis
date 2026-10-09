@@ -316,16 +316,22 @@ pub(crate) fn client_has_entry(client: McpClient) -> bool {
     })
 }
 
+/// Whether the legacy dead-letter file carries an `oryxis` entry: an
+/// install older releases wrote where Claude Code never looked, which
+/// a plugin update migrates to the file it does read.
+pub(crate) fn legacy_config_has_entry() -> bool {
+    legacy_mcp_config_path().is_ok_and(|p| {
+        std::fs::read_to_string(&p)
+            .ok()
+            .is_some_and(|c| mcp_clients::has_entry(mcp_clients::ConfigFormat::JsonMcpServers, &c))
+    })
+}
+
 /// Whether any client's config on this machine (or the legacy
 /// dead-letter file) carries an `oryxis` entry, i.e. the user ran
 /// Install at some point and a plugin update should refresh.
 pub(crate) fn mcp_config_installed() -> bool {
-    McpClient::available().into_iter().any(client_has_entry)
-        || legacy_mcp_config_path().is_ok_and(|p| {
-            std::fs::read_to_string(&p)
-                .ok()
-                .is_some_and(|c| mcp_clients::has_entry(mcp_clients::ConfigFormat::JsonMcpServers, &c))
-        })
+    McpClient::available().into_iter().any(client_has_entry) || legacy_config_has_entry()
 }
 
 /// The clients installed on this machine (native target). Blocking

@@ -292,7 +292,8 @@ pub(crate) fn render_snippet(format: ConfigFormat, entry: &serde_json::Value) ->
         }
         ConfigFormat::TomlMcpServers => {
             let mut doc = toml_edit::DocumentMut::new();
-            set_toml_entry(&mut doc, entry);
+            // A fresh document has no `mcp_servers` to be the wrong shape.
+            let _ = set_toml_entry(&mut doc, entry);
             doc.to_string()
         }
     }
@@ -331,7 +332,7 @@ pub(crate) fn merge_into(
                     .parse()
                     .map_err(|e| format!("Failed to parse: {e}"))?
             };
-            set_toml_entry(&mut doc, &entry);
+            set_toml_entry(&mut doc, &entry)?;
             Ok(doc.to_string())
         }
     }
@@ -384,8 +385,10 @@ pub(crate) fn strip_entry(format: ConfigFormat, text: &str) -> Option<String> {
 
 /// Write the entry as the `[mcp_servers.oryxis]` table, replacing any
 /// previous one WHOLE: a stripped `env` must not survive as a stale
-/// sub-table carrying the old token or the vault password.
-fn set_toml_entry(doc: &mut toml_edit::DocumentMut, entry: &serde_json::Value) {
+/// sub-table carrying the old token or the vault password. An
+/// `mcp_servers` that is not a table (a value, an array of tables) is
+/// an error, never a silent no-op reported as installed.
+fn set_toml_entry(doc: &mut toml_edit::DocumentMut, entry: &serde_json::Value) -> Result<(), String> {
     let mut table = toml_edit::Table::new();
     table.set_implicit(false);
     if let Some(cmd) = entry.get("command").and_then(|v| v.as_str()) {
@@ -414,9 +417,11 @@ fn set_toml_entry(doc: &mut toml_edit::DocumentMut, entry: &serde_json::Value) {
             t.set_implicit(true);
             t
         }));
-    if let Some(servers) = servers.as_table_mut() {
-        servers.insert("oryxis", toml_edit::Item::Table(table));
-    }
+    let servers = servers
+        .as_table_like_mut()
+        .ok_or("mcp_servers is not a table")?;
+    servers.insert("oryxis", toml_edit::Item::Table(table));
+    Ok(())
 }
 
 #[cfg(test)]
@@ -453,6 +458,18 @@ mod tests {
     fn a_broken_file_is_refused_not_clobbered() {
         assert!(merge_into(ConfigFormat::JsonMcpServers, "{not json", entry()).is_err());
         assert!(merge_into(ConfigFormat::TomlMcpServers, "[broken", entry()).is_err());
+        // The right file with the wrong shape is refused too, never a
+        // silent no-op reported as installed.
+        assert!(merge_into(ConfigFormat::TomlMcpServers, "mcp_servers = 3\n", entry()).is_err());
+        assert!(merge_into(ConfigFormat::JsonMcpServers, r#"{"mcpServers": 3}"#, entry()).is_err());
+        // Codex's own inline-table spelling is the same table to us.
+        let out = merge_into(
+            ConfigFormat::TomlMcpServers,
+            "mcp_servers = { other = { command = \"x\" } }\n",
+            entry(),
+        )
+        .unwrap();
+        assert!(has_entry(ConfigFormat::TomlMcpServers, &out), "{out}");
     }
 
     #[test]
