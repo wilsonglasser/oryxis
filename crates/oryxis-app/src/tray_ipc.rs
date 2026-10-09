@@ -610,6 +610,22 @@ mod tests {
             .stdout(std::process::Stdio::null())
             .spawn()
             .expect("spawn a long-lived child");
+        // Between fork and exec the child IS this binary: on Linux its
+        // `/proc/<pid>/exe` still names the test executable until the
+        // exec lands, and `spawn` does not promise to wait for it. The
+        // probe under test runs against a process that already became
+        // the other program, so give the exec a moment to happen.
+        #[cfg(target_os = "linux")]
+        {
+            let own = std::env::current_exe().ok();
+            for _ in 0..200 {
+                let exe = std::fs::read_link(format!("/proc/{}/exe", child.id())).ok();
+                if exe.is_some() && exe != own {
+                    break;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
+        }
         let verdict = is_live_oryxis(child.id());
         let _ = child.kill();
         let _ = child.wait();
