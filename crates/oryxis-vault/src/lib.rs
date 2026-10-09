@@ -1,3 +1,4 @@
+pub mod change_notice;
 pub mod ephemeral;
 pub mod keygen;
 pub mod portable;

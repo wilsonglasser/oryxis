@@ -168,6 +168,22 @@ impl Oryxis {
         }
     }
 
+    /// The vault was re-read under an open editor whose form holds no
+    /// edits: reopen the same host so the form shows the row as it is
+    /// now. The open path is the one `EditConnection` runs (prefill,
+    /// combos, a fresh baseline), so nothing here can drift from it. A
+    /// host that vanished meanwhile keeps its drawer: `editor_owns_write`
+    /// is false for it, so the closing flush writes nothing back.
+    pub(crate) fn editor_refresh_from_vault(&mut self) {
+        let Some(id) = self.editor_form.editing_id else {
+            return;
+        };
+        if !self.panels.host_panel || !self.connections.iter().any(|c| c.id == id) {
+            return;
+        }
+        let _ = self.handle_editor(crate::app::EditorMessage::EditConnection(id));
+    }
+
     /// Whether the typed Parent Group value differs from the host's
     /// stored one. Read on its own because a group change can be the
     /// ONLY change (`GroupWrite::Skip` builds the signature, so the

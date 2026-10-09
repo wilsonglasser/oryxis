@@ -38,6 +38,8 @@ fn negotiate_protocol_version(params: Option<&Value>) -> &'static str {
 pub struct Server {
     vault: Mutex<VaultStore>,
     pub pool: Pool,
+    /// Host keys the strict dials refused, for `accept_host_key`.
+    pub refusals: Arc<crate::hostkey::RefusalLog>,
 }
 
 impl Server {
@@ -45,6 +47,7 @@ impl Server {
         Arc::new(Self {
             vault: Mutex::new(vault),
             pool: Pool::new(),
+            refusals: Arc::new(crate::hostkey::RefusalLog::default()),
         })
     }
 
@@ -132,6 +135,7 @@ impl Server {
                     }
                     "list_keys" => Ok(handlers::handle_list_keys(&self.vault()).unwrap_or(json!([]))),
                     "ssh_execute" => handlers::handle_ssh_execute(self, arguments, cancel).await,
+                    "accept_host_key" => crate::hostkey::handle_accept_host_key(self, arguments),
                     _ => Err(format!("Unknown tool: {}", tool_name)),
                 };
 

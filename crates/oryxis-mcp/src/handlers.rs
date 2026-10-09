@@ -25,7 +25,15 @@ use crate::server::Server;
 /// Every other dial site in the workspace wires this; this one is the
 /// odd one out and the same policy the boot port-forward and SFTP-sync
 /// dials already use applies here.
-fn make_host_key_check(vault: &VaultStore) -> oryxis_ssh::HostKeyCheckCallback {
+///
+/// Every refusal is RECORDED in `refusals` (host, port, key type,
+/// fingerprint, and the pin it disagreed with): the callback is the one
+/// place that sees the key, and `accept_host_key` pins only what it
+/// recorded (`hostkey.rs`).
+fn make_host_key_check(
+    vault: &VaultStore,
+    refusals: std::sync::Arc<crate::hostkey::RefusalLog>,
+) -> oryxis_ssh::HostKeyCheckCallback {
     let pinned = vault.list_known_hosts().unwrap_or_default();
     std::sync::Arc::new(move |host, port, key_type, fingerprint| {
         if let Some(existing) = pinned
@@ -33,12 +41,14 @@ fn make_host_key_check(vault: &VaultStore) -> oryxis_ssh::HostKeyCheckCallback {
             .find(|h| h.hostname == host && h.port == port && h.key_type == key_type)
         {
             if existing.fingerprint != fingerprint {
+                refusals.record(host, port, key_type, fingerprint, Some(&existing.fingerprint));
                 return oryxis_ssh::HostKeyStatus::Changed {
                     old_fingerprint: existing.fingerprint.clone(),
                 };
             }
             return oryxis_ssh::HostKeyStatus::Known;
         }
+        refusals.record(host, port, key_type, fingerprint, None);
         oryxis_ssh::HostKeyStatus::Unknown
     })
 }
@@ -227,6 +237,9 @@ pub struct DialPlan {
     pub engine: SshEngine,
     /// [`reuse_signature`] of `auth_conn`, the pool's reuse key.
     pub signature: u64,
+    /// Every (host, port) the dial touches, the target last: what a
+    /// refused host key is looked up by when the dial fails.
+    pub endpoints: Vec<(String, u16)>,
 }
 
 /// Why a plan could not be resolved. `NotFound` is its own case so the
@@ -425,7 +438,11 @@ fn resolve_credentials(
 /// Resolve the dial for `id`: the effective connection, its
 /// credentials and an engine configured for a headless caller. Sync,
 /// and the only part of `ssh_execute` that reads the vault.
-pub fn resolve_dial_plan(vault: &VaultStore, id: Uuid) -> Result<DialPlan, PlanError> {
+pub fn resolve_dial_plan(
+    vault: &VaultStore,
+    id: Uuid,
+    refusals: std::sync::Arc<crate::hostkey::RefusalLog>,
+) -> Result<DialPlan, PlanError> {
     let conns = vault
         .list_mcp_connections()
         .map_err(|e| PlanError::Other(e.to_string()))?;
@@ -558,6 +575,11 @@ pub fn resolve_dial_plan(vault: &VaultStore, id: Uuid) -> Result<DialPlan, PlanE
         .filter_map(|id| all_hosts.iter().find(|c| c.id == *id))
         .map(|c| (c.hostname.as_str(), c.port))
         .collect();
+    let endpoints: Vec<(String, u16)> = hops
+        .iter()
+        .map(|(h, p)| ((*h).to_string(), *p))
+        .chain(std::iter::once((conn.hostname.clone(), conn.port)))
+        .collect();
     let signature = reuse_signature(
         &auth_conn,
         &hops,
@@ -573,7 +595,7 @@ pub fn resolve_dial_plan(vault: &VaultStore, id: Uuid) -> Result<DialPlan, PlanE
         // unknown/changed ones: there is no terminal here to surface a
         // fingerprint prompt, so a host reached over MCP must already
         // have been trusted interactively in the app.
-        .with_host_key_check(make_host_key_check(vault))
+        .with_host_key_check(make_host_key_check(vault, refusals))
         .with_strict_host_key(true)
         .with_proxy_command_ask(oryxis_ssh::trusted_only_proxy_command_ask(
             trusted_proxy_commands,
@@ -609,6 +631,7 @@ pub fn resolve_dial_plan(vault: &VaultStore, id: Uuid) -> Result<DialPlan, PlanE
         certificate: final_cert,
         resolver,
         engine,
+        endpoints,
     })
 }
 
@@ -640,7 +663,7 @@ pub async fn handle_ssh_execute(
     let id = Uuid::parse_str(id_str).map_err(|_| "Invalid UUID".to_string())?;
 
     let started = Instant::now();
-    let plan = match resolve_dial_plan(&server.vault(), id) {
+    let plan = match resolve_dial_plan(&server.vault(), id, std::sync::Arc::clone(&server.refusals)) {
         Ok(plan) => plan,
         Err(PlanError::NotFound) => {
             // A host withdrawn from MCP (or deleted) takes its pooled
@@ -654,6 +677,7 @@ pub async fn handle_ssh_execute(
     tracing::debug!(host = %plan.label, command, "ssh_execute command");
 
     let timeout = std::time::Duration::from_secs(timeout_secs);
+    let endpoints = plan.endpoints.clone();
     let outcome = server.pool.exec(plan, command, timeout, cancel).await;
     match outcome {
         Ok(run) => {
@@ -682,6 +706,17 @@ pub async fn handle_ssh_execute(
                 error = %e.error,
                 "ssh_execute failed"
             );
+            // A handshake that died on a refused host key says which key
+            // and what to do about it, instead of russh's "Unknown server
+            // key": the refusal was recorded by the check callback while
+            // this very dial ran.
+            if e.stage == "connect" {
+                if let Some(text) =
+                    crate::hostkey::describe_refusals(&server.refusals, &endpoints)
+                {
+                    return Err(format!("{}: {text}", e.stage_title()));
+                }
+            }
             Err(format!("{}: {}", e.stage_title(), e.error))
         }
     }

@@ -41,6 +41,29 @@ impl Oryxis {
     }
 
     /// Auto-archive sweep (uses the previously-loaded orphan setting)
+    /// Another process wrote the vault (`VaultMessage::VaultChangedOutside`):
+    /// re-read the entity lists and the host-key pins, nothing else. Not
+    /// `load_data_from_vault`, which also restores tabs and runs the boot
+    /// migrations. The open host editor follows the row it is on when the
+    /// form holds no edits (the same courtesy a folder move gets,
+    /// `editor_follow_moved_host`); a form with edits keeps them, and its
+    /// closing flush writes them over the external change, which is the
+    /// user's own edit winning.
+    pub(crate) fn reload_after_external_write(&mut self) {
+        if self.vault_ui.state != crate::state::VaultState::Unlocked {
+            return;
+        }
+        let was_dirty = self.editor_autosave_dirty();
+        self.load_vault_entities();
+        if let Some(vault) = &self.vault {
+            self.known_hosts = vault.list_known_hosts().unwrap_or_default();
+            self.port_forward_rules = vault.list_port_forward_rules().unwrap_or_default();
+        }
+        if !was_dirty {
+            self.editor_refresh_from_vault();
+        }
+    }
+
     /// then the core entity lists: connections, groups (parent repair),
     /// session groups, keys, identities, proxy identities, cloud profiles.
     fn load_vault_entities(&mut self) {

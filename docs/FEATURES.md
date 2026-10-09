@@ -537,8 +537,12 @@ panel turns it on, next to the other optional ones). Switching it back off close
 
 - **AI integration.** Expose your SSH hosts to AI assistants via the
   [Model Context Protocol](https://modelcontextprotocol.io/).
-- **5 tools.** `list_hosts`, `get_host`, `ssh_execute`, `list_groups`,
-  `list_keys`.
+- **6 tools.** `list_hosts`, `get_host`, `ssh_execute`, `list_groups`,
+  `list_keys`, `accept_host_key`.
+- **Host keys stay pinned, and the agent is told.** A dial to a host whose
+  key the vault has not pinned fails with the key type and fingerprint;
+  `accept_host_key` pins exactly that key once the user has checked it. A
+  key that changed against the pin is never accepted over MCP.
 - **Per-host control.** Toggle MCP exposure per connection.
 - **One login per host.** Calls to the same host share one authenticated
   connection, closed after five idle minutes; requests run concurrently, a

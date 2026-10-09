@@ -715,16 +715,22 @@ impl Oryxis {
 /// bounds the courier's wait loop, which gives up (and boots its own
 /// window) after 2 s without a claim.
 fn deep_link_stream() -> impl iced::futures::Stream<Item = Message> {
-    iced::futures::stream::unfold(Vec::<Message>::new(), |mut queue| async {
+    // The vault-change marker rides the same poll: seeded here, so a
+    // bump from before this process started fires nothing.
+    let watch = oryxis_vault::change_notice::ChangeWatch::new();
+    iced::futures::stream::unfold((Vec::<Message>::new(), watch), |(mut queue, mut watch)| async {
         loop {
             if let Some(msg) = queue.pop() {
-                return Some((msg, queue));
+                return Some((msg, (queue, watch)));
             }
             tokio::time::sleep(std::time::Duration::from_millis(500)).await;
             // Two inboxes, two messages: a `ssh://` link prefills a
             // confirm surface, a CLI target dials. They are drained here
             // together only because they share a poll interval; the
-            // payloads never mix (see `tray_ipc::connect_dir`).
+            // payloads never mix (see `tray_ipc::connect_dir`). The
+            // third poll is the marker another process bumps after
+            // writing the vault (`oryxis_vault::change_notice`): a
+            // broadcast every instance reads, never a claim.
             queue = crate::tray_ipc::take_deeplinks()
                 .into_iter()
                 .map(|url| Message::Tray(crate::messages::TrayMessage::DeepLink(url)))
@@ -733,6 +739,11 @@ fn deep_link_stream() -> impl iced::futures::Stream<Item = Message> {
                         Message::Tray(crate::messages::TrayMessage::ConnectTarget(target))
                     }),
                 )
+                .chain(watch.poll().into_iter().map(|notice| {
+                    Message::Vault(crate::messages::VaultMessage::VaultChangedOutside {
+                        writer: notice.writer,
+                    })
+                }))
                 .collect();
         }
     })

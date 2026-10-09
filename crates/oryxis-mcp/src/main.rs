@@ -1,4 +1,5 @@
 mod handlers;
+mod hostkey;
 mod pool;
 mod protocol;
 mod server;

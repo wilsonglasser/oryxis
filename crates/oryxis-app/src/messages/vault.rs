@@ -69,4 +69,9 @@ pub enum VaultMessage {
     /// E1: Argon2id calibration finished off-thread; apply the pending
     /// set / change-password operation with the tuned parameters.
     VaultKdfCalibrated(crate::state::VaultPwOp, oryxis_vault::KdfParams),
+    /// Another process wrote the vault file (the MCP server pinning a
+    /// host key, creating or editing a host) and bumped the change
+    /// marker; `writer` names it. The in-memory entity lists are
+    /// re-read while the vault is unlocked.
+    VaultChangedOutside { writer: String },
 }

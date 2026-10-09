@@ -63,6 +63,11 @@ impl Oryxis {
                 | VaultMessage::ConfirmChangeVaultPassword
                 | VaultMessage::VaultKdfCalibrated(..)
             ) => self.handle_vault_password(m),
+            VaultMessage::VaultChangedOutside { writer } => {
+                tracing::info!(writer = %writer, "vault written by another process, reloading");
+                self.reload_after_external_write();
+                Task::none()
+            }
         }
     }
 }

@@ -50,7 +50,7 @@ mod tests {
         vault.set_connection_totp_secret(&target.id, Some("JBSWY3DPEHPK3PXP")).unwrap();
         vault.set_connection_totp_secret(&inner.id, Some("GEZDGNBVGY3TQOJQ")).unwrap();
 
-        let Ok(plan) = resolve_dial_plan(&vault, target.id) else {
+        let Ok(plan) = resolve_dial_plan(&vault, target.id, Default::default()) else {
             panic!("the target is exposed to MCP and must resolve");
         };
         assert_eq!(plan.auth_conn.jump_chain, vec![outer.id, inner.id]);
@@ -73,17 +73,18 @@ mod tests {
         let mut direct = Connection::new("direct", "direct.example");
         direct.mcp_enabled = true;
         vault.save_connection(&direct, None).unwrap();
-        let Ok(plan) = resolve_dial_plan(&vault, direct.id) else {
+        let Ok(plan) = resolve_dial_plan(&vault, direct.id, Default::default()) else {
             panic!("the direct host must resolve");
         };
         assert!(plan.resolver.is_none());
     }
 
     #[test]
-    fn tool_definitions_has_five_tools() {
+    fn tool_definitions_lists_every_tool() {
         let tools = tool_definitions();
-        assert_eq!(tools.len(), 5);
+        assert_eq!(tools.len(), 6);
         let names: Vec<&str> = tools.iter().map(|t| t["name"].as_str().unwrap()).collect();
+        assert!(names.contains(&"accept_host_key"));
         assert!(names.contains(&"list_hosts"));
         assert!(names.contains(&"get_host"));
         assert!(names.contains(&"ssh_execute"));
@@ -146,7 +147,7 @@ mod tests {
         let resp = server.handle_request("tools/list", json!(2), None, no_cancel()).await;
         let result = resp.result.unwrap();
         let tools = result["tools"].as_array().unwrap();
-        assert_eq!(tools.len(), 5);
+        assert_eq!(tools.len(), tool_definitions().len());
     }
 
     #[tokio::test]
@@ -261,7 +262,7 @@ mod tests {
         assert!(host["username"].is_null());
         assert_eq!(host["effective_username"], "deploy");
 
-        let Ok(plan) = resolve_dial_plan(&server.vault(), inherits.id) else {
+        let Ok(plan) = resolve_dial_plan(&server.vault(), inherits.id, Default::default()) else {
             panic!("the host is exposed to MCP and must resolve");
         };
         assert_eq!(plan.auth_conn.username.as_deref(), Some("deploy"));
@@ -622,7 +623,7 @@ mod tests {
             .await
             .expect("the loop keeps serving after a cancel");
         assert_eq!(listed["id"], 3);
-        assert_eq!(listed["result"]["tools"].as_array().unwrap().len(), 5);
+        assert_eq!(listed["result"]["tools"].as_array().unwrap().len(), tool_definitions().len());
 
         // A line that is not JSON gets the parse error, and nothing else
         // is disturbed by it.
@@ -666,5 +667,153 @@ mod tests {
         }
         ids.sort_unstable();
         assert_eq!(ids, vec![1, 2]);
+    }
+
+    // ── accept_host_key ──
+
+    async fn call(server: &Server, name: &str, args: Value) -> (bool, String) {
+        let resp = server
+            .handle_request(
+                "tools/call",
+                json!(9),
+                Some(&json!({"name": name, "arguments": args})),
+                no_cancel(),
+            )
+            .await;
+        let result = resp.result.unwrap();
+        let is_error = result["isError"].as_bool().unwrap_or(false);
+        (is_error, result["content"][0]["text"].as_str().unwrap().to_string())
+    }
+
+    /// A key the dial refused as unknown is pinned with the exact values
+    /// the refusal recorded, once; the pin lands in the vault and the
+    /// second call is an idempotent yes.
+    #[tokio::test]
+    async fn an_unknown_key_the_dial_refused_can_be_pinned_once() {
+        let server = Server::new(test_vault());
+        server
+            .refusals
+            .record("10.0.0.5", 22, "ssh-ed25519", "SHA256:abc", None);
+        let args = json!({"host": "10.0.0.5", "port": 22, "key_type": "ssh-ed25519", "fingerprint": "SHA256:abc"});
+        let (err, text) = call(&server, "accept_host_key", args.clone()).await;
+        assert!(!err, "{text}");
+        let v: Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(v["pinned"], true);
+        assert_eq!(v["already_pinned"], false);
+        let pins = server.vault().list_known_hosts().unwrap();
+        assert_eq!(pins.len(), 1);
+        assert_eq!(pins[0].fingerprint, "SHA256:abc");
+        assert_eq!(pins[0].key_type, "ssh-ed25519");
+
+        // The refusal is consumed, but the vault row makes a repeat a yes.
+        server
+            .refusals
+            .record("10.0.0.5", 22, "ssh-ed25519", "SHA256:abc", None);
+        let (err, text) = call(&server, "accept_host_key", args).await;
+        assert!(!err, "{text}");
+        let v: Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(v["already_pinned"], true);
+        assert_eq!(server.vault().list_known_hosts().unwrap().len(), 1);
+    }
+
+    /// Only what a refused dial reported: a fingerprint nobody saw, or a
+    /// host no dial touched, is turned away and nothing is written.
+    #[tokio::test]
+    async fn a_key_no_dial_reported_is_refused() {
+        let server = Server::new(test_vault());
+        let (err, text) = call(
+            &server,
+            "accept_host_key",
+            json!({"host": "10.0.0.5", "port": 22, "key_type": "ssh-ed25519", "fingerprint": "SHA256:abc"}),
+        )
+        .await;
+        assert!(err);
+        assert!(text.contains("No refused dial"), "{text}");
+
+        server
+            .refusals
+            .record("10.0.0.5", 22, "ssh-ed25519", "SHA256:real", None);
+        let (err, text) = call(
+            &server,
+            "accept_host_key",
+            json!({"host": "10.0.0.5", "port": 22, "key_type": "ssh-ed25519", "fingerprint": "SHA256:forged"}),
+        )
+        .await;
+        assert!(err);
+        assert!(text.contains("does not match"), "{text}");
+        assert!(server.vault().list_known_hosts().unwrap().is_empty());
+    }
+
+    /// A key that CHANGED against the vault's pin is never accepted here,
+    /// and the pin stays what it was.
+    #[tokio::test]
+    async fn a_changed_key_is_never_pinned_over_the_old_one() {
+        let server = Server::new(test_vault());
+        server
+            .vault()
+            .save_known_host(&pin("10.0.0.5", 22, "ssh-ed25519", "SHA256:old"))
+            .unwrap();
+        server
+            .refusals
+            .record("10.0.0.5", 22, "ssh-ed25519", "SHA256:new", Some("SHA256:old"));
+        let (err, text) = call(
+            &server,
+            "accept_host_key",
+            json!({"host": "10.0.0.5", "port": 22, "key_type": "ssh-ed25519", "fingerprint": "SHA256:new"}),
+        )
+        .await;
+        assert!(err);
+        assert!(text.contains("changed"), "{text}");
+        let pins = server.vault().list_known_hosts().unwrap();
+        assert_eq!(pins.len(), 1);
+        assert_eq!(pins[0].fingerprint, "SHA256:old");
+    }
+
+    /// The vault is re-read at the moment of writing: a pin the app made
+    /// meanwhile for a different key wins, the tool does not replace it.
+    #[tokio::test]
+    async fn a_pin_made_meanwhile_is_not_replaced() {
+        let server = Server::new(test_vault());
+        server
+            .refusals
+            .record("10.0.0.5", 22, "ssh-ed25519", "SHA256:abc", None);
+        server
+            .vault()
+            .save_known_host(&pin("10.0.0.5", 22, "ssh-ed25519", "SHA256:other"))
+            .unwrap();
+        let (err, text) = call(
+            &server,
+            "accept_host_key",
+            json!({"host": "10.0.0.5", "port": 22, "key_type": "ssh-ed25519", "fingerprint": "SHA256:abc"}),
+        )
+        .await;
+        assert!(err);
+        assert!(text.contains("different"), "{text}");
+        assert_eq!(server.vault().list_known_hosts().unwrap()[0].fingerprint, "SHA256:other");
+    }
+
+    /// What the agent reads after a refused dial: the four values, the
+    /// tool to call for an unknown key, and a plain refusal for a changed
+    /// one. A dial whose endpoints have no refusal keeps the plain error.
+    #[test]
+    fn the_refused_dial_answer_names_the_key_and_the_door() {
+        let log = crate::hostkey::RefusalLog::default();
+        let target = vec![("bastion.example".to_string(), 22), ("10.0.0.5".to_string(), 2222)];
+        assert!(crate::hostkey::describe_refusals(&log, &target).is_none());
+
+        log.record("10.0.0.5", 2222, "ssh-ed25519", "SHA256:abc", None);
+        let text = crate::hostkey::describe_refusals(&log, &target).unwrap();
+        assert!(text.contains("10.0.0.5:2222"), "{text}");
+        assert!(text.contains("SHA256:abc"));
+        assert!(text.contains("accept_host_key"));
+        assert!(text.contains("\"status\": \"unknown\""));
+        // A refusal for a host this dial never touched is not reported.
+        assert!(!text.contains("bastion.example:22"));
+
+        log.record("bastion.example", 22, "ssh-rsa", "SHA256:new", Some("SHA256:old"));
+        let text = crate::hostkey::describe_refusals(&log, &target).unwrap();
+        assert!(text.contains("HOST KEY CHANGED for bastion.example:22"), "{text}");
+        assert!(text.contains("SHA256:old") && text.contains("SHA256:new"));
+        assert!(text.contains("\"status\": \"changed\""));
     }
 }

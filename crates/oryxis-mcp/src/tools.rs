@@ -56,6 +56,20 @@ pub fn tool_definitions() -> Vec<Value> {
             }
         }),
         json!({
+            "name": "accept_host_key",
+            "description": "Pin a server host key that a previous ssh_execute refused as not yet trusted. Pass exactly the host, port, key_type and fingerprint that refusal reported; only a key this server saw refused as unknown is accepted, and a key that CHANGED against the vault's pin is never accepted here (a person reviews it in Oryxis > Known Hosts). Ask the user to confirm the fingerprint against what the server's administrator published before calling.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "host": { "type": "string", "description": "Hostname or IP exactly as the refusal reported it" },
+                    "port": { "type": "integer", "description": "SSH port the refusal reported" },
+                    "key_type": { "type": "string", "description": "Key algorithm, e.g. ssh-ed25519" },
+                    "fingerprint": { "type": "string", "description": "SHA256:... fingerprint the refusal reported" }
+                },
+                "required": ["host", "port", "key_type", "fingerprint"]
+            }
+        }),
+        json!({
             "name": "list_groups",
             "description": "List all host groups in the vault",
             "inputSchema": {
