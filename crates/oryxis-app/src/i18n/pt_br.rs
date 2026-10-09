@@ -1444,6 +1444,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "privacy_class_hostnames" => "Mascarar hostnames salvos",
         "privacy_hint_toast" => "O modo privacidade está mascarando a saída. Passe o mouse para espiar, clique para fixar.",
         "hotkey_toggle_privacy_mode" => "Alternar modo privacidade (sessão)",
+        "hotkey_move_tab_to_new_window" => "Mover aba para nova janela",
+        "hotkey_toggle_tab_pin" => "Fixar / desafixar aba",
         "privacy_chip" => "Privacidade",
         "privacy_toast_session_on" => "Modo privacidade forçado ligado nesta sessão",
         "privacy_toast_session_off" => "Modo privacidade forçado desligado nesta sessão",

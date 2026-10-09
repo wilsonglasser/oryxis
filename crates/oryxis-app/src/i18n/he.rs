@@ -1478,6 +1478,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "privacy_class_hostnames" => "הסוואת שמות מארחים שמורים",
         "privacy_hint_toast" => "מצב פרטיות מסווה את הפלט. רחפו כדי להציץ, לחצו כדי לקבע.",
         "hotkey_toggle_privacy_mode" => "החלפת מצב פרטיות (הפעלה)",
+        "hotkey_move_tab_to_new_window" => "העברת הכרטיסייה לחלון חדש",
+        "hotkey_toggle_tab_pin" => "נעיצה / ביטול נעיצה של הכרטיסייה",
         "privacy_chip" => "פרטיות",
         "privacy_toast_session_on" => "מצב פרטיות נכפה כפעיל להפעלה זו",
         "privacy_toast_session_off" => "מצב פרטיות נכפה ככבוי להפעלה זו",

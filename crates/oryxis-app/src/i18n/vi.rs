@@ -1472,6 +1472,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "privacy_class_hostnames" => "Che hostname đã lưu",
         "privacy_hint_toast" => "Chế độ riêng tư đang che đầu ra. Di chuột để xem, bấm để ghim.",
         "hotkey_toggle_privacy_mode" => "Bật/tắt chế độ riêng tư (phiên)",
+        "hotkey_move_tab_to_new_window" => "Chuyển tab sang cửa sổ mới",
+        "hotkey_toggle_tab_pin" => "Ghim / bỏ ghim tab",
         "privacy_chip" => "Riêng tư",
         "privacy_toast_session_on" => "Chế độ riêng tư được buộc bật cho phiên này",
         "privacy_toast_session_off" => "Chế độ riêng tư được buộc tắt cho phiên này",

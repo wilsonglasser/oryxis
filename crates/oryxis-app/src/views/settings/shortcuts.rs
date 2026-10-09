@@ -226,7 +226,11 @@ impl Oryxis {
         use crate::hotkeys::{HotkeyBindings, HotkeySlot};
         let fallback = HotkeyBindings::default();
         let binds = self.hotkey_bindings.get(&action).unwrap_or(&fallback);
-        let is_overridden = default.is_some_and(|d| d != binds);
+        // An action that ships unbound (`ships_unbound`, no entry in the
+        // factory table) is overridden by ANY chord: `None` there means
+        // "nothing", not "unknown", or its Reset would never show and a
+        // chord bound to it could not be taken back from here.
+        let is_overridden = default.map_or(!binds.is_empty(), |d| d != binds);
         let editing = self
             .editing_hotkey
             .filter(|(a, _)| *a == action)

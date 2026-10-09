@@ -1472,6 +1472,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "privacy_class_hostnames" => "저장된 호스트 이름 마스킹",
         "privacy_hint_toast" => "프라이버시 모드가 출력을 마스킹하고 있습니다. 마우스를 올리면 보이고, 클릭하면 고정됩니다.",
         "hotkey_toggle_privacy_mode" => "프라이버시 모드 전환(세션)",
+        "hotkey_move_tab_to_new_window" => "탭을 새 창으로 이동",
+        "hotkey_toggle_tab_pin" => "탭 고정 / 고정 해제",
         "privacy_chip" => "프라이버시",
         "privacy_toast_session_on" => "이 세션에서 프라이버시 모드를 강제로 켰습니다",
         "privacy_toast_session_off" => "이 세션에서 프라이버시 모드를 강제로 껐습니다",

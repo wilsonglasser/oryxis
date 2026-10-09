@@ -1239,6 +1239,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "privacy_class_hostnames" => "保存済みホスト名をマスク",
         "privacy_hint_toast" => "プライバシーモードが出力をマスクしています。ホバーで表示、クリックで固定。",
         "hotkey_toggle_privacy_mode" => "プライバシーモードを切り替え（セッション）",
+        "hotkey_move_tab_to_new_window" => "タブを新しいウィンドウに移動",
+        "hotkey_toggle_tab_pin" => "タブをピン留め / 解除",
         "privacy_chip" => "プライバシー",
         "privacy_toast_session_on" => "このセッションではプライバシーモードを強制的にオンにしました",
         "privacy_toast_session_off" => "このセッションではプライバシーモードを強制的にオフにしました",

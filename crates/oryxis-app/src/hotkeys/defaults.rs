@@ -556,6 +556,21 @@ pub fn default_bindings() -> HotkeyMap {
     // precedent), rebindable like everything else.
     put(&mut m, VaultSectionPrev, true, false, false, false, Named(keyboard::key::Named::PageUp));
     put(&mut m, VaultSectionNext, true, false, false, false, Named(keyboard::key::Named::PageDown));
+    // Not every action is in this table on purpose: the ones
+    // `HotkeyAction::ships_unbound` names (the tab menu's window verbs,
+    // rename / pin / copy address, close others / all, the pane's copy
+    // all / copy screen / clear scrollback, lock vault) ship with NO
+    // chord. Absence from the map IS "unbound out of the box"; an empty
+    // list here would read as a deliberate user unbind in the editor
+    // (its Reset compares against this map). The test
+    // `every_action_ships_bound_or_declares_unbound` keeps the two
+    // lists in step; the debug build checks it on every boot too.
+    debug_assert!(
+        HotkeyAction::all()
+            .iter()
+            .all(|a| m.contains_key(a) != a.ships_unbound()),
+        "an action is neither in the factory table nor declared unbound (or both)"
+    );
     m
 }
 
@@ -637,6 +652,29 @@ mod tests {
                 }
                 claimed.push((b, action));
             }
+        }
+    }
+
+    /// Every action either ships a factory chord or is declared unbound
+    /// by `ships_unbound`, never neither and never both. Both lists are
+    /// hand-written: an action left out of the table by mistake would
+    /// silently ship unbound, and one declared unbound that later grew a
+    /// `put` line would ship a chord its own doc denies.
+    #[test]
+    fn every_action_ships_bound_or_declares_unbound() {
+        let defaults = default_bindings();
+        for &action in HotkeyAction::all() {
+            let bound = defaults.get(&action).is_some_and(|b| !b.is_empty());
+            assert!(
+                !defaults.get(&action).is_some_and(|b| b.is_empty()),
+                "{action:?} is in the factory table with an empty list; leave it out instead"
+            );
+            assert_ne!(
+                bound,
+                action.ships_unbound(),
+                "{action:?}: factory chord {bound}, ships_unbound {}",
+                action.ships_unbound()
+            );
         }
     }
 

@@ -1478,6 +1478,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "privacy_class_hostnames" => "सहेजे गए होस्टनेम मास्क करें",
         "privacy_hint_toast" => "गोपनीयता मोड आउटपुट को मास्क कर रहा है। देखने के लिए होवर करें, स्थिर करने के लिए क्लिक करें।",
         "hotkey_toggle_privacy_mode" => "गोपनीयता मोड टॉगल करें (सत्र)",
+        "hotkey_move_tab_to_new_window" => "टैब को नई विंडो में ले जाएँ",
+        "hotkey_toggle_tab_pin" => "टैब पिन / अनपिन करें",
         "privacy_chip" => "गोपनीयता",
         "privacy_toast_session_on" => "इस सत्र के लिए गोपनीयता मोड ज़बरदस्ती चालू किया गया",
         "privacy_toast_session_off" => "इस सत्र के लिए गोपनीयता मोड ज़बरदस्ती बंद किया गया",

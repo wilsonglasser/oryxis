@@ -1226,6 +1226,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "privacy_class_hostnames" => "Маскировать сохранённые имена хостов",
         "privacy_hint_toast" => "Режим приватности маскирует вывод. Наведите курсор, чтобы посмотреть; кликните, чтобы закрепить.",
         "hotkey_toggle_privacy_mode" => "Переключить режим приватности (сеанс)",
+        "hotkey_move_tab_to_new_window" => "Переместить вкладку в новое окно",
+        "hotkey_toggle_tab_pin" => "Закрепить / открепить вкладку",
         "privacy_chip" => "Приватность",
         "privacy_toast_session_on" => "Режим приватности принудительно включён на этот сеанс",
         "privacy_toast_session_off" => "Режим приватности принудительно выключен на этот сеанс",

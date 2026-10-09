@@ -6,6 +6,9 @@ project uses [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- Settings > Shortcuts offers a chord for eleven verbs that only the menus reached: move the tab to a new window, duplicate it in a new window, rename or pin it, copy its host address, close the other tabs or all of them, copy the pane's whole buffer or its screen, clear its scrollback, and lock the vault. They ship unbound; the command palette lists them too.
+
 ### Changed
 - The environment report (About, debug log header) tells a portable Windows copy and an MSIX install apart from a system or per-user one.
 - The debug log no longer carries the window and taskbar icons' pixel values that `iced_winit` reports at startup (8.8 MB per launch), so a session's log survives the next launch.

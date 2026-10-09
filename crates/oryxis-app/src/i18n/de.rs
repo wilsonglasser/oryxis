@@ -1226,6 +1226,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "privacy_class_hostnames" => "Gespeicherte Hostnamen maskieren",
         "privacy_hint_toast" => "Der Privatsphäre-Modus maskiert die Ausgabe. Zum Ansehen darüberfahren, zum Anheften klicken.",
         "hotkey_toggle_privacy_mode" => "Privatsphäre-Modus umschalten (Sitzung)",
+        "hotkey_move_tab_to_new_window" => "Tab in neues Fenster verschieben",
+        "hotkey_toggle_tab_pin" => "Tab anheften / lösen",
         "privacy_chip" => "Privatsphäre",
         "privacy_toast_session_on" => "Privatsphäre-Modus für diese Sitzung erzwungen aktiviert",
         "privacy_toast_session_off" => "Privatsphäre-Modus für diese Sitzung erzwungen deaktiviert",

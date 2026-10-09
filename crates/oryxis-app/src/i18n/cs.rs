@@ -1478,6 +1478,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "privacy_class_hostnames" => "Maskovat uložené názvy hostitelů",
         "privacy_hint_toast" => "Režim soukromí maskuje výstup. Najetím nahlédnete, kliknutím připnete.",
         "hotkey_toggle_privacy_mode" => "Přepnout režim soukromí (relace)",
+        "hotkey_move_tab_to_new_window" => "Přesunout kartu do nového okna",
+        "hotkey_toggle_tab_pin" => "Připnout / odepnout kartu",
         "privacy_chip" => "Soukromí",
         "privacy_toast_session_on" => "Režim soukromí pro tuto relaci vynuceně zapnut",
         "privacy_toast_session_off" => "Režim soukromí pro tuto relaci vynuceně vypnut",

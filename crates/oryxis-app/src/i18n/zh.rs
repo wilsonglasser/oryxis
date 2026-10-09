@@ -1239,6 +1239,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "privacy_class_hostnames" => "遮蔽已保存的主机名",
         "privacy_hint_toast" => "隐私模式正在遮蔽输出。悬停可查看，点击可固定显示。",
         "hotkey_toggle_privacy_mode" => "切换隐私模式（会话）",
+        "hotkey_move_tab_to_new_window" => "将标签页移至新窗口",
+        "hotkey_toggle_tab_pin" => "固定 / 取消固定标签页",
         "privacy_chip" => "隐私",
         "privacy_toast_session_on" => "本次会话已强制开启隐私模式",
         "privacy_toast_session_off" => "本次会话已强制关闭隐私模式",

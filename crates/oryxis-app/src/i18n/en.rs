@@ -1479,6 +1479,8 @@ pub(super) fn lookup(key: &str) -> &'static str {
         "privacy_class_hostnames" => "Mask saved hostnames",
         "privacy_hint_toast" => "Privacy Mode is masking output. Hover to peek, click to pin.",
         "hotkey_toggle_privacy_mode" => "Toggle Privacy Mode (session)",
+        "hotkey_move_tab_to_new_window" => "Move tab to new window",
+        "hotkey_toggle_tab_pin" => "Pin / unpin tab",
         "privacy_chip" => "Privacy",
         "privacy_toast_session_on" => "Privacy Mode forced on for this session",
         "privacy_toast_session_off" => "Privacy Mode forced off for this session",

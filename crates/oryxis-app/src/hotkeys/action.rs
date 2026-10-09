@@ -149,6 +149,46 @@ pub enum HotkeyAction {
     /// Global rather than `terminal_only`: the moment it is wanted most
     /// is right after closing the last tab, which lands on Home.
     ReopenClosedTab,
+    // Menu verbs that ship UNBOUND: no factory chord, absent from
+    // `default_bindings()` (absence IS the representation, never an
+    // empty list there). The Shortcuts editor offers each as a row
+    // whose only chip reads "(unbound)", so the chord is the user's
+    // choice, and the command palette lists them like any other action.
+    // Nothing ships bound because no terminal or browser agrees on a
+    // chord for any of these (Chrome, Firefox, VS Code and kitty leave
+    // them to the menu), and a two-key chord on the Ctrl+Shift row fires
+    // by accident next to N / W (Konsole dropped its Ctrl+Shift+L
+    // detach-tab chord for exactly that in 2020). `ships_unbound` names
+    // the set; a test pins it against the factory table.
+    /// Move the focused tab into a window of its own: the tab menu's
+    /// "Move to New Window". Global, not `terminal_only`: an SFTP tab
+    /// moves too, and the terminal gate would never fire there.
+    MoveTabToNewWindow,
+    /// Open a second session like the focused tab's, in a new window.
+    DuplicateInNewWindow,
+    /// Rename the focused tab (terminal or SFTP) inline on its chip.
+    RenameTab,
+    /// Pin / unpin the focused tab (terminal or SFTP).
+    ToggleTabPin,
+    /// Copy the focused pane's host address to the clipboard.
+    CopyTabAddress,
+    /// Close every other tab of this window, through the same confirm
+    /// the tab menu's entry raises.
+    CloseOtherTabs,
+    /// Close every tab of this window, through its confirm.
+    CloseAllTabs,
+    /// Copy the focused pane's whole buffer (scrollback + screen).
+    /// App-dispatched, unlike `TerminalCopy`: the handler reads the
+    /// pane's buffer under its lock, so the palette can run it.
+    TerminalCopyAll,
+    /// Copy the focused pane's displayed screen only.
+    TerminalCopyScreen,
+    /// Drop the focused pane's scrollback.
+    TerminalClearScrollback,
+    /// Lock the vault, through its confirm (the burger menu's row). The
+    /// palette used to carry this as a hand-written extra; it is an
+    /// ordinary action now so a chord can reach it.
+    LockVault,
 }
 
 impl HotkeyAction {
@@ -168,7 +208,14 @@ impl HotkeyAction {
             NewIdentity,
             ReconnectTab,
             DuplicateTab,
+            DuplicateInNewWindow,
+            MoveTabToNewWindow,
+            RenameTab,
+            ToggleTabPin,
+            CopyTabAddress,
             CloseActiveTab,
+            CloseOtherTabs,
+            CloseAllTabs,
             OpenPortForwards,
             OpenSettings,
             FocusViewSearch,
@@ -200,10 +247,14 @@ impl HotkeyAction {
             TerminalSelectAll,
             ScrollbackPageUp,
             ScrollbackPageDown,
+            TerminalCopyAll,
+            TerminalCopyScreen,
+            TerminalClearScrollback,
             VaultSectionSlot,
             VaultSectionPrev,
             VaultSectionNext,
             ReopenClosedTab,
+            LockVault,
         ]
     }
 
@@ -260,6 +311,17 @@ impl HotkeyAction {
             ScrollbackPageUp => "scrollback_page_up",
             ScrollbackPageDown => "scrollback_page_down",
             ReopenClosedTab => "reopen_closed_tab",
+            MoveTabToNewWindow => "move_tab_to_new_window",
+            DuplicateInNewWindow => "duplicate_in_new_window",
+            RenameTab => "rename_tab",
+            ToggleTabPin => "toggle_tab_pin",
+            CopyTabAddress => "copy_tab_address",
+            CloseOtherTabs => "close_other_tabs",
+            CloseAllTabs => "close_all_tabs",
+            TerminalCopyAll => "terminal_copy_all",
+            TerminalCopyScreen => "terminal_copy_screen",
+            TerminalClearScrollback => "terminal_clear_scrollback",
+            LockVault => "lock_vault",
         }
     }
 
@@ -326,7 +388,47 @@ impl HotkeyAction {
             // Reuses the tab context menu's entry label, same pattern as
             // `ReconnectTab` above.
             ReopenClosedTab => "reopen_closed_tab",
+            // Own keys: the menu rows say "Move to New Window" and
+            // "Pin tab" / "Unpin tab", which read wrong in a flat list
+            // of actions (move WHAT; a toggle has one row).
+            MoveTabToNewWindow => "hotkey_move_tab_to_new_window",
+            ToggleTabPin => "hotkey_toggle_tab_pin",
+            // The rest reuse their menu row's label, same pattern as
+            // `ReconnectTab`.
+            DuplicateInNewWindow => "duplicate_new_window",
+            RenameTab => "rename_tab",
+            CopyTabAddress => "copy_host_address",
+            CloseOtherTabs => "close_other_tabs",
+            CloseAllTabs => "close_all_tabs",
+            TerminalCopyAll => "terminal_copy_all",
+            TerminalCopyScreen => "terminal_copy_screen",
+            TerminalClearScrollback => "terminal_clear_scrollback",
+            LockVault => "lock_vault",
         }
+    }
+
+    /// Whether the action ships with NO factory chord: offered in the
+    /// Shortcuts editor and the palette, bound only by the user. The
+    /// one list the factory table is checked against
+    /// (`defaults::tests::every_action_ships_bound_or_declares_unbound`),
+    /// so an action cannot be left out of `default_bindings()` by
+    /// accident, and one declared here cannot quietly grow a chord.
+    pub fn ships_unbound(self) -> bool {
+        use HotkeyAction::*;
+        matches!(
+            self,
+            MoveTabToNewWindow
+                | DuplicateInNewWindow
+                | RenameTab
+                | ToggleTabPin
+                | CopyTabAddress
+                | CloseOtherTabs
+                | CloseAllTabs
+                | TerminalCopyAll
+                | TerminalCopyScreen
+                | TerminalClearScrollback
+                | LockVault
+        )
     }
 
     /// Whether the action only applies while the terminal view is
@@ -357,6 +459,11 @@ impl HotkeyAction {
                 | TerminalSelectAll
                 | ScrollbackPageUp
                 | ScrollbackPageDown
+                | DuplicateInNewWindow
+                | CopyTabAddress
+                | TerminalCopyAll
+                | TerminalCopyScreen
+                | TerminalClearScrollback
         )
     }
 

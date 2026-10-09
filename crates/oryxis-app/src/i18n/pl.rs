@@ -1482,6 +1482,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "privacy_class_hostnames" => "Maskuj zapisane nazwy hostów",
         "privacy_hint_toast" => "Tryb prywatności maskuje wyjście. Najedź, aby podejrzeć; kliknij, aby przypiąć.",
         "hotkey_toggle_privacy_mode" => "Przełącz tryb prywatności (sesja)",
+        "hotkey_move_tab_to_new_window" => "Przenieś kartę do nowego okna",
+        "hotkey_toggle_tab_pin" => "Przypnij / odepnij kartę",
         "privacy_chip" => "Prywatność",
         "privacy_toast_session_on" => "Tryb prywatności wymuszony jako włączony w tej sesji",
         "privacy_toast_session_off" => "Tryb prywatności wymuszony jako wyłączony w tej sesji",

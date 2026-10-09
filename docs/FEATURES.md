@@ -913,3 +913,11 @@ the app's own actions sit on `Ctrl+Shift`.
 | `Ctrl+F` | Search the current view / terminal scrollback |
 | `Ctrl+,` | Settings |
 | `Ctrl+= / Ctrl+- / Ctrl+0` | Zoom the terminal font for the session (also `Ctrl+Wheel` and the touchpad pinch, one chord of its own with a switch beside the font size) |
+
+Some verbs ship with no chord at all and wait in Settings > Shortcuts
+for one: move the tab to a new window, duplicate it in a new window,
+rename or pin it, copy its host address, close the other tabs or all of
+them, copy the pane's whole buffer or its screen, clear its scrollback,
+and lock the vault. No terminal or browser agrees on a key for any of
+these, so the choice is yours; the command palette lists them either
+way.

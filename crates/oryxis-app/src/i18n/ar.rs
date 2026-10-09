@@ -1504,6 +1504,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "privacy_class_hostnames" => "إخفاء أسماء المضيفين المحفوظة",
         "privacy_hint_toast" => "وضع الخصوصية يخفي المخرجات. مرر المؤشر للاطلاع، وانقر للتثبيت.",
         "hotkey_toggle_privacy_mode" => "تبديل وضع الخصوصية (الجلسة)",
+        "hotkey_move_tab_to_new_window" => "نقل التبويب إلى نافذة جديدة",
+        "hotkey_toggle_tab_pin" => "تثبيت / إلغاء تثبيت التبويب",
         "privacy_chip" => "الخصوصية",
         "privacy_toast_session_on" => "تم فرض تشغيل وضع الخصوصية لهذه الجلسة",
         "privacy_toast_session_off" => "تم فرض إيقاف وضع الخصوصية لهذه الجلسة",

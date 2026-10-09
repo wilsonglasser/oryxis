@@ -1474,6 +1474,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "privacy_class_hostnames" => "پنهان‌سازی نام میزبان‌های ذخیره‌شده",
         "privacy_hint_toast" => "حالت حریم خصوصی خروجی را پنهان می‌کند. برای دیدن نشانگر را نگه دارید، برای ثابت‌کردن کلیک کنید.",
         "hotkey_toggle_privacy_mode" => "تغییر حالت حریم خصوصی (نشست)",
+        "hotkey_move_tab_to_new_window" => "انتقال تب به پنجره جدید",
+        "hotkey_toggle_tab_pin" => "سنجاق / برداشتن سنجاق تب",
         "privacy_chip" => "حریم خصوصی",
         "privacy_toast_session_on" => "حالت حریم خصوصی برای این نشست به‌اجبار روشن شد",
         "privacy_toast_session_off" => "حالت حریم خصوصی برای این نشست به‌اجبار خاموش شد",

@@ -1239,6 +1239,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "privacy_class_hostnames" => "Masquer les noms d'hôte enregistrés",
         "privacy_hint_toast" => "Le mode confidentialité masque la sortie. Survolez pour voir, cliquez pour épingler.",
         "hotkey_toggle_privacy_mode" => "Basculer le mode confidentialité (session)",
+        "hotkey_move_tab_to_new_window" => "Déplacer l'onglet dans une nouvelle fenêtre",
+        "hotkey_toggle_tab_pin" => "Épingler / désépingler l'onglet",
         "privacy_chip" => "Confidentialité",
         "privacy_toast_session_on" => "Mode confidentialité forcé activé pour cette session",
         "privacy_toast_session_off" => "Mode confidentialité forcé désactivé pour cette session",

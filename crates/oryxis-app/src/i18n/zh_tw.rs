@@ -1239,6 +1239,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "privacy_class_hostnames" => "遮蔽已儲存的主機名稱",
         "privacy_hint_toast" => "隱私模式正在遮蔽輸出。游標懸停可檢視，點一下可固定顯示。",
         "hotkey_toggle_privacy_mode" => "切換隱私模式（工作階段）",
+        "hotkey_move_tab_to_new_window" => "將分頁移至新視窗",
+        "hotkey_toggle_tab_pin" => "釘選 / 取消釘選分頁",
         "privacy_chip" => "隱私",
         "privacy_toast_session_on" => "本次工作階段已強制開啟隱私模式",
         "privacy_toast_session_off" => "本次工作階段已強制關閉隱私模式",

@@ -1472,6 +1472,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "privacy_class_hostnames" => "Kayıtlı ana bilgisayar adlarını maskele",
         "privacy_hint_toast" => "Gizlilik modu çıktıyı maskeliyor. Görmek için üzerine gelin, sabitlemek için tıklayın.",
         "hotkey_toggle_privacy_mode" => "Gizlilik modunu değiştir (oturum)",
+        "hotkey_move_tab_to_new_window" => "Sekmeyi yeni pencereye taşı",
+        "hotkey_toggle_tab_pin" => "Sekmeyi sabitle / sabitlemeyi kaldır",
         "privacy_chip" => "Gizlilik",
         "privacy_toast_session_on" => "Gizlilik modu bu oturum için zorla açıldı",
         "privacy_toast_session_off" => "Gizlilik modu bu oturum için zorla kapatıldı",

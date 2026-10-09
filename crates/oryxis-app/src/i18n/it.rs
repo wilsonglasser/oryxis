@@ -1226,6 +1226,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "privacy_class_hostnames" => "Maschera hostname salvati",
         "privacy_hint_toast" => "La modalità privacy sta mascherando l'output. Passa il mouse per vedere, clicca per fissare.",
         "hotkey_toggle_privacy_mode" => "Attiva/disattiva modalità privacy (sessione)",
+        "hotkey_move_tab_to_new_window" => "Sposta scheda in nuova finestra",
+        "hotkey_toggle_tab_pin" => "Fissa / sblocca scheda",
         "privacy_chip" => "Privacy",
         "privacy_toast_session_on" => "Modalità privacy forzata attiva per questa sessione",
         "privacy_toast_session_off" => "Modalità privacy forzata disattivata per questa sessione",

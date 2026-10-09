@@ -1479,6 +1479,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "privacy_class_hostnames" => "ปกปิดชื่อโฮสต์ที่บันทึกไว้",
         "privacy_hint_toast" => "โหมดความเป็นส่วนตัวกำลังปกปิดผลลัพธ์ ชี้เมาส์เพื่อดู คลิกเพื่อปักหมุด",
         "hotkey_toggle_privacy_mode" => "สลับโหมดความเป็นส่วนตัว (เซสชัน)",
+        "hotkey_move_tab_to_new_window" => "ย้ายแท็บไปหน้าต่างใหม่",
+        "hotkey_toggle_tab_pin" => "ปักหมุด / เลิกปักหมุดแท็บ",
         "privacy_chip" => "ความเป็นส่วนตัว",
         "privacy_toast_session_on" => "บังคับเปิดโหมดความเป็นส่วนตัวสำหรับเซสชันนี้",
         "privacy_toast_session_off" => "บังคับปิดโหมดความเป็นส่วนตัวสำหรับเซสชันนี้",

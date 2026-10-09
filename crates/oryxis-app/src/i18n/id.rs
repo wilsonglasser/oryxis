@@ -1472,6 +1472,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "privacy_class_hostnames" => "Samarkan hostname tersimpan",
         "privacy_hint_toast" => "Mode privasi menyamarkan keluaran. Arahkan kursor untuk melihat, klik untuk menyematkan.",
         "hotkey_toggle_privacy_mode" => "Alihkan mode privasi (sesi)",
+        "hotkey_move_tab_to_new_window" => "Pindahkan tab ke jendela baru",
+        "hotkey_toggle_tab_pin" => "Sematkan / lepas sematan tab",
         "privacy_chip" => "Privasi",
         "privacy_toast_session_on" => "Mode privasi dipaksa aktif untuk sesi ini",
         "privacy_toast_session_off" => "Mode privasi dipaksa nonaktif untuk sesi ini",

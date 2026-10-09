@@ -13,7 +13,7 @@
 //! (mirroring `TabJumpSelect`), never a list index, so a query change
 //! between the recording frame and the keypress can't misfire.
 
-use crate::app::{SettingsMessage, TabsMessage, SshMessage, VaultMessage, Message, Oryxis};
+use crate::app::{SettingsMessage, TabsMessage, SshMessage, Message, Oryxis};
 use crate::hotkeys::HotkeyAction;
 use crate::i18n::t;
 use crate::state::View;
@@ -89,7 +89,9 @@ fn hotkey_category(action: HotkeyAction) -> PaletteCategory {
     use HotkeyAction::*;
     match action {
         ShowNewTabPicker | ShowTabJump | OpenLocalShell | NewWindow | CloseActiveTab
-        | ReopenClosedTab | ReconnectTab | DuplicateTab | OpenSftp | OpenSftpConsole => PaletteCategory::Tabs,
+        | ReopenClosedTab | ReconnectTab | DuplicateTab | OpenSftp | OpenSftpConsole
+        | DuplicateInNewWindow | MoveTabToNewWindow | RenameTab | ToggleTabPin
+        | CopyTabAddress | CloseOtherTabs | CloseAllTabs => PaletteCategory::Tabs,
         OpenPortForwards | FocusViewSearch | NewHost | ShowQuickConnect | NewKey | NewIdentity
         | VaultSectionPrev | VaultSectionNext | VaultSectionSlot => PaletteCategory::Vault,
         FontZoomIn | FontZoomOut | FontZoomReset | SplitPaneVertical | SplitPaneHorizontal
@@ -98,12 +100,12 @@ fn hotkey_category(action: HotkeyAction) -> PaletteCategory {
         | FocusSidebarList
         | ToggleSidebar | ToggleSidebarOther | ToggleTabFiles | ToggleBroadcastInput | TerminalCopy
         | TerminalPaste | TerminalPasteSelection | TerminalSelectAll | ScrollbackPageUp
-        | ScrollbackPageDown => {
+        | ScrollbackPageDown | TerminalCopyAll | TerminalCopyScreen | TerminalClearScrollback => {
             PaletteCategory::Terminal
         }
         OpenSettings => PaletteCategory::Settings,
         ToggleFullscreen | ShowCommandPalette | SwitchToTabSlot | CycleTabs
-        | TogglePrivacyMode => PaletteCategory::Session,
+        | TogglePrivacyMode | LockVault => PaletteCategory::Session,
     }
 }
 
@@ -242,8 +244,11 @@ impl Oryxis {
             // Mirror the exact gate the keyboard loop applies before it
             // calls dispatch_hotkey_action (shortcuts.rs): terminal_only
             // needs a focused terminal, vault_only needs the vault area.
+            // Lock Vault has one more gate, the same one its handler
+            // applies: nothing to lock without a master password.
             let enabled = (!action.terminal_only() || in_terminal)
-                && (!action.vault_only() || self.in_vault_area());
+                && (!action.vault_only() || self.in_vault_area())
+                && (action != HotkeyAction::LockVault || self.vault_ui.has_user_password);
             candidates.push(Candidate {
                 label: t(action.label_key()).to_string(),
                 keywords: action.id(),
@@ -255,16 +260,8 @@ impl Oryxis {
         }
 
         // ── Non-hotkey extras ──────────────────────────────────────────
-        candidates.push(Candidate {
-            label: t("lock_vault").to_string(),
-            keywords: "lock_vault",
-            hotkey: None,
-            category: PaletteCategory::Session,
-            // Asks first: Lock Vault tears every live session down, so
-            // the row opens the confirm dialog, not the teardown.
-            message: Message::Vault(VaultMessage::LockVaultConfirm),
-            enabled: self.vault_ui.has_user_password,
-        });
+        // (Lock Vault is a generated row above since it became the
+        // `LockVault` action; the chord reaches the same confirm.)
         candidates.push(Candidate {
             label: t("privacy_mode_label").to_string(),
             keywords: "privacy_mode",

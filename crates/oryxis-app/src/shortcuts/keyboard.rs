@@ -9,11 +9,44 @@
 use iced::keyboard::{key::Named, Key, Modifiers};
 use iced::Task;
 
-use crate::app::{SftpMessage, SettingsMessage, TabsMessage, EditorMessage, KeysMessage, TerminalMessage, NavigationMessage, SnippetMessage, AiMessage, Message, Oryxis};
+use crate::app::{SftpMessage, SettingsMessage, TabsMessage, EditorMessage, KeysMessage, TerminalMessage, NavigationMessage, SnippetMessage, AiMessage, VaultMessage, Message, Oryxis};
 use crate::hotkeys::{FamilyMatch, HotkeyAction};
 use crate::state::View;
 
+/// The tab the current window's strip has in front, as an index into
+/// its storage vec. What the unbound tab verbs (`RenameTab`,
+/// `ToggleTabPin`, `CloseOtherTabs`, `MoveTabToNewWindow`) act on.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum FocusedTab {
+    Terminal(usize),
+    Sftp(usize),
+}
+
 impl Oryxis {
+    /// The tab in front of the current window. A terminal tab wins
+    /// (`active_tab` is cleared on every navigation away from one, so
+    /// `Some` means it is what the window shows); an SFTP tab counts
+    /// only while the SFTP view shows it, the same shape as
+    /// `sftp_surface_visible`. A panel tab or a vault screen is `None`.
+    fn focused_strip_tab(&self) -> Option<FocusedTab> {
+        if let Some(idx) = self.cur_active_tab() {
+            return Some(FocusedTab::Terminal(idx));
+        }
+        if self.cur_view() == View::Sftp {
+            return self.cur_active_sftp().map(FocusedTab::Sftp);
+        }
+        None
+    }
+
+    /// The strip id of the tab in front (`TabRef::strip_id`'s value for
+    /// a terminal or SFTP tab), for the by-id window verbs.
+    fn focused_strip_tab_id(&self) -> Option<uuid::Uuid> {
+        match self.focused_strip_tab()? {
+            FocusedTab::Terminal(idx) => self.tabs.get(idx).map(|t| t._id),
+            FocusedTab::Sftp(idx) => self.sftp_tabs.get(idx).map(|t| t.id),
+        }
+    }
+
     /// Main entry point for `dispatch_terminal::|v| Message::Terminal(TerminalMessage::KeyboardEvent(v))`.
     /// Returns `Some(task)` when the event was consumed (by capture
     /// mode, a binding match, or the Esc-closes-modal fallback), or
@@ -702,6 +735,73 @@ impl Oryxis {
             | ScrollbackPageDown => {
                 Task::none()
             }
+            // The menu verbs that ship unbound (`ships_unbound`). Each
+            // sends the SAME message its menu row sends, resolved on the
+            // tab / pane in front, so the chord and the row cannot
+            // disagree about what happens (the confirms included: close
+            // others / close all / lock vault ask exactly as the rows
+            // do). A surface with no such tab answers with nothing, the
+            // way `ReconnectTab` does.
+            MoveTabToNewWindow => match self.focused_strip_tab_id() {
+                Some(id) => Task::done(Message::Tabs(TabsMessage::MoveTabToNewWindow(id))),
+                None => Task::none(),
+            },
+            DuplicateInNewWindow => match self.cur_active_tab() {
+                Some(idx) => Task::done(Message::Tabs(TabsMessage::DuplicateInNewWindow(idx))),
+                None => Task::none(),
+            },
+            RenameTab => match self.focused_strip_tab() {
+                Some(FocusedTab::Terminal(idx)) => {
+                    Task::done(Message::Tabs(TabsMessage::StartRenameTab(idx)))
+                }
+                Some(FocusedTab::Sftp(idx)) => {
+                    Task::done(Message::Tabs(TabsMessage::StartRenameSftpTab(idx)))
+                }
+                None => Task::none(),
+            },
+            ToggleTabPin => match self.focused_strip_tab() {
+                Some(FocusedTab::Terminal(idx)) => {
+                    Task::done(Message::Tabs(TabsMessage::ToggleTabPin(idx)))
+                }
+                Some(FocusedTab::Sftp(idx)) => {
+                    Task::done(Message::Sftp(SftpMessage::ToggleSftpTabPin(idx)))
+                }
+                None => Task::none(),
+            },
+            CopyTabAddress => match self.cur_active_tab() {
+                Some(idx) => Task::done(Message::Tabs(TabsMessage::CopyTabAddress(idx))),
+                None => Task::none(),
+            },
+            CloseOtherTabs => match self.focused_strip_tab() {
+                Some(FocusedTab::Terminal(idx)) => {
+                    Task::done(Message::Tabs(TabsMessage::CloseOtherTabs(idx)))
+                }
+                Some(FocusedTab::Sftp(idx)) => {
+                    Task::done(Message::Sftp(SftpMessage::CloseOtherSftpTabs(idx)))
+                }
+                None => Task::none(),
+            },
+            CloseAllTabs => Task::done(Message::Tabs(TabsMessage::CloseAllTabs)),
+            // Pane-scoped, like `MovePaneToNewTab`: the message names a
+            // PANE, resolved to the focused one here.
+            TerminalCopyAll | TerminalCopyScreen | TerminalClearScrollback => {
+                let pane_id = self
+                    .cur_active_tab()
+                    .and_then(|i| self.tabs.get(i))
+                    .map(|t| t.active().id);
+                match pane_id {
+                    Some(pane_id) => Task::done(Message::Terminal(match action {
+                        TerminalCopyAll => TerminalMessage::TerminalCopyAll(pane_id),
+                        TerminalCopyScreen => TerminalMessage::TerminalCopyScreen(pane_id),
+                        _ => TerminalMessage::TerminalClearScrollback(pane_id),
+                    })),
+                    None => Task::none(),
+                }
+            }
+            // Through the confirm, never the teardown: the handler also
+            // declines a vault with no master password, like the burger
+            // menu's row.
+            LockVault => Task::done(Message::Vault(VaultMessage::LockVaultConfirm)),
             // Vault section cycling: neighbor of the active view in the
             // sub-nav pill order, wrapping. The loop only reaches these
             // in the vault area (vault_only gate above).
