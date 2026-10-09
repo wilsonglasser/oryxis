@@ -275,10 +275,22 @@ pub(crate) fn environment_report(renderer: Option<&(String, String)>) -> String 
             lines.push(format!("Vulkan implicit layers: {layers}"));
         }
     }
+    // The same probes the updater decides by: a portable copy (no
+    // uninstaller beside the exe) swaps its binary in place and reads
+    // its own report as "system" otherwise, since it lives outside
+    // `%LOCALAPPDATA%` too.
     #[cfg(target_os = "windows")]
     lines.push(format!(
         "Install: {}",
-        if crate::update::is_per_user_install() { "per-user" } else { "system" }
+        if crate::packaged::is_packaged() {
+            "msix"
+        } else if crate::update::is_portable_install() {
+            "portable"
+        } else if crate::update::is_per_user_install() {
+            "per-user"
+        } else {
+            "system"
+        }
     ));
     if let Some((backend, adapter)) = renderer {
         lines.push(format!("Renderer: {backend}, {adapter}"));

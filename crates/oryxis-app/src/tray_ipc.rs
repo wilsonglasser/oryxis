@@ -8,8 +8,10 @@
 //! - Each running Oryxis writes its current state (window title,
 //!   tab labels, hidden / visible) to `instances/<pid>.json`.
 //! - The primary (first to grab the single-instance mutex) scans
-//!   that directory on every TrayPoll tick, filters out dead PIDs
-//!   (via OpenProcess), and uses the survivors to populate the
+//!   that directory on every TrayPoll tick, filters out the rows
+//!   whose PID is no longer an Oryxis process (`is_live_oryxis`:
+//!   a freed PID is handed to the next program that starts), and
+//!   uses the survivors to populate the
 //!   "Hidden windows" section of its tray menu.
 //! - When the user clicks one of those entries, primary writes
 //!   `commands/<pid>.json` and that child's TrayPoll picks it up
@@ -18,7 +20,8 @@
 //! Failure modes:
 //!
 //! - **Hard kill**: child process gone, file stays. Primary sweeps
-//!   stale files based on PID liveness on each scan.
+//!   stale files on each scan, by what the PID is now, not by
+//!   whether something answers to it.
 //! - **Primary dies**: children's state files persist. A future
 //!   release will add primary handoff (first surviving child picks
 //!   up the mutex), v0.7 just orphans the tray; user has to relaunch.
@@ -287,7 +290,7 @@ impl Primary {
             if state.pid == self_pid {
                 continue;
             }
-            if !is_process_alive(state.pid) {
+            if !is_live_oryxis(state.pid) {
                 let _ = fs::remove_file(&path);
                 continue;
             }
@@ -452,7 +455,7 @@ pub fn any_live_instance() -> bool {
         if pid == self_pid {
             continue;
         }
-        if is_process_alive(pid) {
+        if is_live_oryxis(pid) {
             alive = true;
         } else {
             let _ = fs::remove_file(&path);
@@ -461,33 +464,70 @@ pub fn any_live_instance() -> bool {
     alive
 }
 
-/// PID liveness check. Windows opens the process for query access;
-/// Unix probes with `kill(pid, 0)` (EPERM still means "exists").
-/// Success means it's still running.
+/// Whether `pid` is a live Oryxis process. The number alone does not
+/// say: only a graceful exit removes a registry row, so a window
+/// killed from Task Manager (or taken down by a crash) leaves its file
+/// behind, and Windows hands a freed PID to the next process that
+/// starts, within seconds. Probing the number then reports whatever
+/// got it (a browser helper, an updater) as an Oryxis window, which
+/// refused the in-place update ("close the other windows") and handed
+/// a deep link to nobody until a reboot. So the probe asks what the
+/// process IS: its image must carry this executable's file name, see
+/// [`same_image`].
+///
+/// Windows opens the process for limited query access and reads its
+/// image path; Linux reads `/proc/<pid>/exe`, which also answers "no"
+/// for a zombie, where `kill(pid, 0)` would still say yes. Both treat
+/// an unreadable image as "not ours": the registry lives under this
+/// user's home, so a sibling is always a process this user can query.
 #[cfg(target_os = "windows")]
-fn is_process_alive(pid: u32) -> bool {
+fn is_live_oryxis(pid: u32) -> bool {
+    use std::os::windows::ffi::OsStringExt as _;
     use windows_sys::Win32::Foundation::CloseHandle;
     use windows_sys::Win32::System::Threading::{
-        OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION,
+        OpenProcess, QueryFullProcessImageNameW, PROCESS_NAME_WIN32,
+        PROCESS_QUERY_LIMITED_INFORMATION,
     };
-    // SAFETY: pid is a primitive integer, OpenProcess is documented
-    // safe to call from any thread, return value is a handle or
-    // null; we close on success.
-    unsafe {
+    // The longest path the kernel hands back, in UTF-16 units: an
+    // install directory past MAX_PATH must not read as "not ours".
+    let mut image = vec![0u16; 32_768];
+    let mut len = image.len() as u32;
+    // SAFETY: pid is a primitive integer and OpenProcess is documented
+    // safe to call from any thread; it returns a handle or null. The
+    // buffer outlives the query, `len` carries its capacity in and the
+    // written length out, and the handle is closed on every path.
+    let ok = unsafe {
         let h = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid);
         if h.is_null() {
             return false;
         }
+        let ok =
+            QueryFullProcessImageNameW(h, PROCESS_NAME_WIN32, image.as_mut_ptr(), &mut len);
         CloseHandle(h);
-        true
+        ok != 0
+    };
+    if !ok {
+        return false;
+    }
+    let image = std::ffi::OsString::from_wide(&image[..len as usize]);
+    same_image(std::path::Path::new(&image), &own_image_stem())
+}
+
+#[cfg(target_os = "linux")]
+fn is_live_oryxis(pid: u32) -> bool {
+    match std::fs::read_link(format!("/proc/{pid}/exe")) {
+        Ok(exe) => same_image(&exe, &own_image_stem()),
+        Err(_) => false,
     }
 }
 
-#[cfg(unix)]
-fn is_process_alive(pid: u32) -> bool {
-    // Signal 0 performs the permission/existence checks without
-    // delivering anything. EPERM means the process exists but isn't
-    // ours (another user's Oryxis), which still counts as alive.
+/// macOS has no image lookup short of libproc, and its PIDs are not
+/// recycled the way Windows' are: the plain existence probe stays.
+/// Signal 0 performs the permission / existence checks without
+/// delivering anything; EPERM means the process exists but is not
+/// ours, which still counts as alive.
+#[cfg(all(unix, not(target_os = "linux")))]
+fn is_live_oryxis(pid: u32) -> bool {
     // SAFETY: kill with signal 0 only validates, it never signals.
     let rc = unsafe { libc::kill(pid as libc::pid_t, 0) };
     rc == 0
@@ -495,6 +535,84 @@ fn is_process_alive(pid: u32) -> bool {
 }
 
 #[cfg(not(any(target_os = "windows", unix)))]
-fn is_process_alive(_pid: u32) -> bool {
+fn is_live_oryxis(_pid: u32) -> bool {
     false
+}
+
+/// This executable's file stem, lower-cased: the name every sibling
+/// shares (`oryxis`, whatever directory or scope it was installed to).
+#[cfg(any(target_os = "windows", target_os = "linux"))]
+fn own_image_stem() -> String {
+    std::env::current_exe()
+        .ok()
+        .and_then(|exe| image_stem(&exe))
+        .unwrap_or_else(|| "oryxis".to_string())
+}
+
+/// Whether `image` names the same program as `own_stem` (the value of
+/// [`own_image_stem`]): same file stem, case-insensitively, so
+/// `ORYXIS.EXE` under Program Files and `oryxis.exe` in a portable
+/// folder are siblings. Linux suffixes the link of a binary that was
+/// replaced under a running process with ` (deleted)`, which is still
+/// the old Oryxis for as long as it runs.
+#[cfg(any(target_os = "windows", target_os = "linux", test))]
+fn same_image(image: &std::path::Path, own_stem: &str) -> bool {
+    image_stem(image).as_deref() == Some(own_stem)
+}
+
+#[cfg(any(target_os = "windows", target_os = "linux", test))]
+fn image_stem(image: &std::path::Path) -> Option<String> {
+    let name = image.file_name()?.to_string_lossy().into_owned();
+    let name = name.strip_suffix(" (deleted)").unwrap_or(&name);
+    let stem = std::path::Path::new(name).file_stem()?.to_string_lossy().to_lowercase();
+    Some(stem)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Paths are built with `join` so the file-name split follows the
+    /// platform the test runs on (a backslash is a plain character on
+    /// Linux).
+    #[test]
+    fn same_image_compares_the_file_stem_case_insensitively() {
+        let own = "oryxis";
+        let dir = std::path::PathBuf::from("install").join("Oryxis");
+        assert!(same_image(&dir.join("ORYXIS.EXE"), own));
+        assert!(same_image(&dir.join("oryxis"), own));
+        assert!(same_image(&dir.join("oryxis (deleted)"), own));
+        assert!(!same_image(&dir.join("oryxis-mcp.exe"), own));
+        assert!(!same_image(&dir.join("sleep"), own));
+        assert!(!same_image(&dir.join("svchost.exe"), own));
+    }
+
+    /// The probe compares against THIS binary's name, so the running
+    /// test process is its own sibling.
+    #[test]
+    fn the_current_process_is_a_live_sibling() {
+        assert!(is_live_oryxis(std::process::id()));
+    }
+
+    /// A live process that is not Oryxis is not a sibling: a stale
+    /// registry row whose PID was handed to another program must sweep,
+    /// not refuse the update.
+    #[cfg(any(target_os = "windows", target_os = "linux"))]
+    #[test]
+    fn another_program_on_a_live_pid_is_not_a_sibling() {
+        let (program, args): (&str, &[&str]) = if cfg!(target_os = "windows") {
+            ("ping", &["-n", "30", "127.0.0.1"])
+        } else {
+            ("sleep", &["30"])
+        };
+        let mut child = std::process::Command::new(program)
+            .args(args)
+            .stdout(std::process::Stdio::null())
+            .spawn()
+            .expect("spawn a long-lived child");
+        let verdict = is_live_oryxis(child.id());
+        let _ = child.kill();
+        let _ = child.wait();
+        assert!(!verdict);
+    }
 }

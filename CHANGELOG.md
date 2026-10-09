@@ -6,6 +6,13 @@ project uses [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+- The environment report (About, debug log header) tells a portable Windows copy and an MSIX install apart from a system or per-user one.
+- The debug log no longer carries the window and taskbar icons' pixel values that `iced_winit` reports at startup (8.8 MB per launch), so a session's log survives the next launch.
+
+### Fixed
+- Windows: an Oryxis window killed from Task Manager (or by a crash) no longer counts as still running once another program receives its process id, which refused the in-place update ("close the other Oryxis windows") and left a deep link unanswered until a reboot (#247, reported by @britarok2).
+
 ### Removed
 - The SignPath signing step: Windows binaries and installers ship without an Authenticode signature; the updater keeps verifying every download with the project's Ed25519 key.
 

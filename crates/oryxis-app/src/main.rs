@@ -585,7 +585,17 @@ fn main() -> iced::Result {
         // compositors) and it falls back to X11, which works fine. Quiet
         // that one target so copy-on-select doesn't spam the log on every
         // click; everything else stays at info.
-        .with(tracing_subscriber::EnvFilter::new("oryxis=debug,info,arboard=error"))
+        // `iced_winit` reports every window's attributes at info with
+        // the icons INSIDE them, one channel value per line: the 64 px
+        // window icon and the 256 px taskbar icon are 278k lines, 8.8 MB,
+        // per launch. That alone is past the debug log's rotation
+        // threshold, so every launch pushed the previous session's log
+        // (the one with the evidence) to `.old` and the one before it
+        // out of existence. Its warnings (a surface it had to recover,
+        // a clipboard it could not serve) stay.
+        .with(tracing_subscriber::EnvFilter::new(
+            "oryxis=debug,info,arboard=error,iced_winit=warn",
+        ))
         // In harness mode stdout belongs to the driving protocol (the
         // REPL's `== ` lines, MCP's JSON-RPC messages), so logs go to
         // stderr there; the normal app keeps stdout.
@@ -669,10 +679,6 @@ fn main() -> iced::Result {
                 tracing::warn!("tray icon registration failed: {e}");
             }
         } else {
-            // Child: announce ourselves to the primary's registry.
-            // Title is the default app title; per-window state updates
-            // refine it later via tray_ipc::Child::write_state.
-            tray_ipc::Child::register("Oryxis");
             tracing::info!("running as tray IPC child (primary already up)");
         }
     }
