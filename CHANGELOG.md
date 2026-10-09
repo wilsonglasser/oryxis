@@ -7,6 +7,7 @@ project uses [SemVer](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- Settings > MCP Server installs the `oryxis` entry into the AI client you pick: Claude Code, Claude Desktop, Codex (TOML), Cursor, Gemini CLI, GitHub Copilot or Windsurf, detected by the folder each one reads from, merged into the client's existing config; the Windows build does the same for a client inside WSL.
 - Settings > Shortcuts offers a chord for eleven verbs that only the menus reached: move the tab to a new window, duplicate it in a new window, rename or pin it, copy its host address, close the other tabs or all of them, copy the pane's whole buffer or its screen, clear its scrollback, and lock the vault. They ship unbound; the command palette lists them too.
 
 ### Changed

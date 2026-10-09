@@ -26,6 +26,20 @@ pub(crate) struct McpState {
     /// client (`false`) or one running inside WSL (`true`). Only reachable on
     /// Windows, where the toggle that flips it renders.
     pub(crate) target_wsl: bool,
+    /// Which AI client the snippet, the path hint, Copy and Install are
+    /// for. Picked on the panel's client row; not persisted.
+    pub(crate) client: crate::mcp_clients::McpClient,
+    /// The clients found installed for the current target (native, or
+    /// the WSL distro), filled by the detection task the panel kicks
+    /// off when it opens or the target changes. Install is only offered
+    /// for these; the others keep Copy.
+    pub(crate) detected: Vec<crate::mcp_clients::McpClient>,
+    /// The distro's marker folders the WSL detection found, which decide
+    /// the config path of a client that moved folders (Windsurf).
+    pub(crate) wsl_markers: Vec<String>,
+    /// A detection task is in flight (the row says "checking" instead
+    /// of "not detected" meanwhile).
+    pub(crate) detecting: bool,
     /// Consent flag (persisted as the `mcp_config_vault_pw` setting): the
     /// user confirmed their master password and wants it embedded in the
     /// client config as `ORYXIS_VAULT_PASSWORD`. The password itself is

@@ -95,6 +95,7 @@ mod offline;
 // default, like every other optional surface.
 mod net_tools;
 mod mcp;
+mod mcp_clients;
 mod mcp_install;
 mod messages;
 mod mime_types;

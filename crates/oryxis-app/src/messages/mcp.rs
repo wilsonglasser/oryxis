@@ -14,6 +14,18 @@ pub enum McpMessage {
     /// elsewhere the variant is constructed nowhere.
     #[cfg_attr(not(target_os = "windows"), allow(dead_code))]
     SetMcpTarget(bool),
+    /// Pick which AI client the snippet, path hint, Copy and Install
+    /// are for (the client row on the setup panel).
+    SetMcpClient(crate::mcp_clients::McpClient),
+    /// The detection task's answer: which clients are installed for
+    /// the target it was asked about (`wsl`), plus the distro's marker
+    /// folders when it was the WSL one. An answer for a target no
+    /// longer selected is dropped.
+    McpClientsDetected {
+        wsl: bool,
+        found: Vec<crate::mcp_clients::McpClient>,
+        markers: Vec<String>,
+    },
     /// Generate a fresh random MCP server token and persist it. Wipes
     /// the previous value, every existing MCP config will need to be
     /// reissued (re-copy / re-install) with the new token.

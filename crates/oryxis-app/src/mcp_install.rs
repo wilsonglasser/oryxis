@@ -88,15 +88,15 @@ pub(crate) fn sync_launcher_from_cache() -> Result<PathBuf, PluginError> {
 
 /// Called from the plugin install completion handler when `mcp`
 /// finishes. Refreshes the stable launcher from the freshly-activated
-/// cached version and, if the user previously ran "Install to Claude
-/// Code" (an `oryxis` entry exists in `~/.claude.json`, or in the
-/// legacy `~/.claude/.mcp.json` dead-letter file older releases
-/// wrote), rewrites the config too so its `command` points at the
-/// launcher path the new version landed at (which also migrates a
-/// legacy entry to the correct file). `vault_pw` carries the master
-/// password when the user opted in to embedding it, so the refresh
-/// doesn't strip it from the config. Best-effort: failures are
-/// logged but don't roll back the install.
+/// cached version and rewrites the `oryxis` entry in every client
+/// config that already carries one (on this machine and, on Windows,
+/// inside the WSL distro), so each `command` points at the launcher
+/// path the new version landed at. A legacy `~/.claude/.mcp.json`
+/// entry older releases wrote counts as installed and is migrated to
+/// the file Claude Code reads. `vault_pw` carries the master password
+/// when the user opted in to embedding it, so the refresh doesn't
+/// strip it from the configs. Best-effort: failures are logged but
+/// don't roll back the install.
 pub(crate) fn post_install_refresh(token: &str, vault_pw: Option<&str>) {
     if let Err(e) = sync_launcher_from_cache() {
         tracing::warn!(
@@ -109,13 +109,22 @@ pub(crate) fn post_install_refresh(token: &str, vault_pw: Option<&str>) {
     if !crate::mcp::mcp_config_installed() {
         return;
     }
-    if let Err(msg) = crate::mcp::install_mcp_config_to_file(token, vault_pw) {
+    // The legacy dead-letter entry has no live config to refresh in
+    // place; migrating it means writing Claude Code's real file once.
+    if !crate::mcp::client_has_entry(crate::mcp_clients::McpClient::ClaudeCode)
+        && let Err(msg) = crate::mcp::install_mcp_config_to_file(
+            crate::mcp_clients::McpClient::ClaudeCode,
+            token,
+            vault_pw,
+        )
+    {
         tracing::warn!(
             target = "oryxis::mcp",
             error = %msg,
-            "failed to refresh ~/.claude.json after install"
+            "failed to migrate the legacy MCP entry after install"
         );
     }
+    crate::mcp::refresh_installed_clients(token, vault_pw);
 }
 
 /// One-shot migration / first-install: fetch the manifest, pick the

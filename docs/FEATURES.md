@@ -547,8 +547,14 @@ panel turns it on, next to the other optional ones). Switching it back off close
 - **Disabled by default.** Enable in Settings > Security.
 - **Distributed as a plugin.** Downloaded on demand, with a stable launcher
   path for external clients.
+- **One-click setup for your AI client.** Settings > MCP Server detects
+  which clients are installed (Claude Code, Claude Desktop, Codex, Cursor,
+  Gemini CLI, GitHub Copilot, Windsurf) and writes the `oryxis` entry into
+  the client's own config, in its own shape (JSON `mcpServers`, or Codex's
+  TOML), merged into whatever is already there. On Windows the same panel
+  targets a client running inside WSL.
 
-Setup for Claude Code (`~/.claude.json`):
+Setup by hand, for Claude Code (`~/.claude.json`):
 
 ```json
 {

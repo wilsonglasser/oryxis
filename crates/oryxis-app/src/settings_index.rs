@@ -248,7 +248,7 @@ pub(crate) static SETTINGS_INDEX: &[SettingsIndexEntry] = &[
     e(S::Mcp, "mcp_server", "mcp server enable model context protocol port"),
     e(S::Mcp, "mcp_setup_guide", "mcp setup guide help config claude cursor"),
     e(S::Mcp, "mcp_token_regenerate", "mcp token regenerate rotate reset auth"),
-    e(S::Mcp, "mcp_install_claude", "mcp install claude code config register"),
+    e(S::Mcp, "mcp_clients_label", "mcp install client claude code desktop codex cursor gemini copilot windsurf config register"),
     // ── SFTP ───────────────────────────────────────────────────────
     e(S::Sftp, "setting_sftp_console_layout", "sftp console placement split pane beside below maximized zoom full tab"),
     e(S::Sftp, "setting_default_editor", "sftp default editor external open program"),

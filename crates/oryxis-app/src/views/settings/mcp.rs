@@ -5,7 +5,8 @@
 use super::*;
 use iced::widget::column;
 
-use crate::mcp::{mcp_config_json_display, token_mask};
+use crate::mcp::{client_path_hint, mcp_config_snippet_display, token_mask};
+use crate::mcp_clients::McpClient;
 
 impl Oryxis {
     /// Standalone MCP Server settings section. Was nested inside the
@@ -84,19 +85,34 @@ impl Oryxis {
     }
 }
 
-/// Config file path hint for the native client per platform. Claude
-/// Code reads MCP servers from `~/.claude.json` (user scope) or a
-/// project-root `.mcp.json`; it explicitly does NOT read files inside
-/// `~/.claude/`. Claude Desktop uses `claude_desktop_config.json`. The
-/// WSL target has its own hint, built inline in the info panel, so
-/// this no longer needs to mention WSL on Windows.
-fn mcp_config_path() -> &'static str {
-    if cfg!(target_os = "windows") {
-        "~/.claude.json (Claude Code)  or  %APPDATA%\\Claude\\claude_desktop_config.json"
-    } else if cfg!(target_os = "macos") {
-        "~/.claude.json (Claude Code)  or  ~/Library/Application Support/Claude/claude_desktop_config.json"
+/// A selectable chip (the Native / WSL target and the AI client rows):
+/// filled with the accent while selected, hover feedback otherwise.
+fn chip_btn<'a>(label: Element<'a, Message>, selected: bool, msg: Message) -> Element<'a, Message> {
+    button(container(label).padding(Padding { top: 4.0, right: 14.0, bottom: 4.0, left: 14.0 }))
+        .on_press(msg)
+        .style(move |_, status| {
+            let bg = if selected {
+                OryxisColors::t().accent
+            } else if matches!(status, BtnStatus::Hovered) {
+                OryxisColors::t().bg_hover
+            } else {
+                Color::TRANSPARENT
+            };
+            button::Style {
+                background: Some(Background::Color(bg)),
+                border: Border { radius: Radius::from(6.0), color: OryxisColors::t().border, width: 1.0 },
+                ..Default::default()
+            }
+        })
+        .boxed()
+}
+
+/// Text colour on a chip: inverted on the accent fill.
+fn chip_text_color(selected: bool) -> Color {
+    if selected {
+        OryxisColors::t().bg_primary
     } else {
-        "~/.claude.json (Claude Code)"
+        OryxisColors::t().text_secondary
     }
 }
 
@@ -128,6 +144,8 @@ fn mcp_info_panel(app: &crate::app::Oryxis) -> Element<'_, Message> {
     let token: &str = &app.mcp.server_token;
     let token_visible = app.mcp.token_visible;
     let target_wsl = app.mcp.target_wsl;
+    let client = app.mcp.client;
+    let client_detected = app.mcp.detected.contains(&client);
     let vault_pw = app.mcp_vault_pw();
 
     // `target_wsl` switches the snippet (and the Copy / Install button
@@ -139,17 +157,15 @@ fn mcp_info_panel(app: &crate::app::Oryxis) -> Element<'_, Message> {
     // revealing one and hiding the other would be a mask in name only.
     // Copy / Install rebuild the JSON from state and always carry the
     // real values.
-    let json_text = mcp_config_json_display(token, vault_pw.as_deref(), target_wsl, token_visible);
-    let path_hint: &str = if target_wsl {
-        "~/.claude.json (WSL)"
-    } else {
-        mcp_config_path()
-    };
+    let json_text =
+        mcp_config_snippet_display(client, token, vault_pw.as_deref(), target_wsl, token_visible);
+    let path_hint = client_path_hint(client, target_wsl, &app.mcp.wsl_markers);
 
+    // "Copy", not "Copy JSON": the snippet is TOML for Codex.
     let copy_label = if copied {
         crate::i18n::t("mcp_copied")
     } else {
-        crate::i18n::t("mcp_info_copy")
+        crate::i18n::t("mcp_token_copy")
     };
     let copy_color = if copied { OryxisColors::t().success } else { OryxisColors::t().accent };
 
@@ -170,16 +186,26 @@ fn mcp_info_panel(app: &crate::app::Oryxis) -> Element<'_, Message> {
         }
     });
 
+    // Install writes into the client's own folder, so it is only
+    // offered once that folder was seen: an undetected client keeps
+    // Copy, and the note under the chips says why.
     let (install_label, install_color) = match install_status {
-        Some(Ok(_)) => (crate::i18n::t("mcp_installed"), OryxisColors::t().success),
-        Some(Err(_)) => (crate::i18n::t("mcp_install_failed"), OryxisColors::t().error),
-        None => (crate::i18n::t("mcp_install_claude"), OryxisColors::t().success),
+        Some(Ok(_)) => (crate::i18n::t("mcp_installed").to_string(), OryxisColors::t().success),
+        Some(Err(_)) => (crate::i18n::t("mcp_install_failed").to_string(), OryxisColors::t().error),
+        None if client_detected => (
+            crate::i18n::t("mcp_install_to").replace("{client}", client.name()),
+            OryxisColors::t().success,
+        ),
+        None => (
+            crate::i18n::t("mcp_install_to").replace("{client}", client.name()),
+            OryxisColors::t().text_muted,
+        ),
     };
     let install_btn = button(
         container(text(install_label).size(12).color(install_color))
             .padding(Padding { top: 6.0, right: 16.0, bottom: 6.0, left: 16.0 }),
     )
-    .on_press(Message::Mcp(McpMessage::InstallMcpConfig))
+    .on_press_maybe(client_detected.then_some(Message::Mcp(McpMessage::InstallMcpConfig)))
     .style(move |_, status| {
         let bg = match status {
             BtnStatus::Hovered => Color { a: 0.1, ..install_color },
@@ -269,31 +295,11 @@ fn mcp_info_panel(app: &crate::app::Oryxis) -> Element<'_, Message> {
     #[cfg(target_os = "windows")]
     {
         fn target_btn<'a>(label: &'a str, selected: bool, msg: Message) -> Element<'a, Message> {
-            let text_color = if selected {
-                OryxisColors::t().bg_primary
-            } else {
-                OryxisColors::t().text_secondary
-            };
-            button(
-                container(text(label).size(11).color(text_color))
-                    .padding(Padding { top: 4.0, right: 14.0, bottom: 4.0, left: 14.0 }),
+            chip_btn(
+                text(label).size(11).color(chip_text_color(selected)).boxed(),
+                selected,
+                msg,
             )
-            .on_press(msg)
-            .style(move |_, status| {
-                let bg = if selected {
-                    OryxisColors::t().accent
-                } else if matches!(status, BtnStatus::Hovered) {
-                    OryxisColors::t().bg_hover
-                } else {
-                    Color::TRANSPARENT
-                };
-                button::Style {
-                    background: Some(Background::Color(bg)),
-                    border: Border { radius: Radius::from(6.0), color: OryxisColors::t().border, width: 1.0 },
-                    ..Default::default()
-                }
-            })
-            .boxed()
         }
 
         let target_row = crate::widgets::dir_row(vec![
@@ -317,6 +323,81 @@ fn mcp_info_panel(app: &crate::app::Oryxis) -> Element<'_, Message> {
         .align_y(iced::Alignment::Center);
 
         info_col = info_col.push(Space::new().height(12).boxed()).push(target_row.boxed());
+    }
+
+    // Client row: one chip per AI client this target can hold, the
+    // detected ones marked, the selected one filled. The first chip
+    // carries the labeled slot so the settings search can reveal the
+    // row. Below it, one line says what the detection found about the
+    // selected client (or that it is still looking).
+    let clients: Vec<McpClient> = if target_wsl {
+        McpClient::available_in_wsl()
+    } else {
+        McpClient::available()
+    };
+    let mut client_items: Vec<Element<'_, Message>> = vec![
+        text(crate::i18n::t("mcp_clients_label"))
+            .size(11)
+            .color(OryxisColors::t().text_muted)
+            .boxed(),
+        Space::new().width(8).boxed(),
+    ];
+    for (i, c) in clients.iter().copied().enumerate() {
+        let selected = c == client;
+        let detected = app.mcp.detected.contains(&c);
+        let msg = Message::Mcp(McpMessage::SetMcpClient(c));
+        let mut label_items: Vec<Element<'_, Message>> = Vec::new();
+        if detected {
+            // A dot a reader scans faster than a word; the word is the
+            // tooltip.
+            label_items.push(
+                text("\u{25CF}")
+                    .size(9)
+                    .color(if selected { OryxisColors::t().bg_primary } else { OryxisColors::t().success })
+                    .boxed(),
+            );
+            label_items.push(Space::new().width(5).boxed());
+        }
+        label_items.push(text(c.name()).size(11).color(chip_text_color(selected)).boxed());
+        let chip = chip_btn(
+            crate::widgets::dir_row(label_items).align_y(iced::Alignment::Center).boxed(),
+            selected,
+            msg.clone(),
+        );
+        let chip = if detected {
+            crate::views::terminal::icon_tooltip(chip, crate::i18n::t("mcp_client_detected"))
+        } else {
+            chip
+        };
+        let action = crate::keynav::RowAction::activate(msg);
+        let slot = if i == 0 {
+            app.settings_nav_slot_labeled(crate::i18n::t("mcp_clients_label"), action, 6.0, chip)
+        } else {
+            app.settings_nav_slot(action, 6.0, chip)
+        };
+        if i > 0 {
+            client_items.push(Space::new().width(6).boxed());
+        }
+        client_items.push(slot);
+    }
+    let client_row = crate::widgets::dir_row(client_items)
+        .align_y(iced::Alignment::Center)
+        .wrap();
+    info_col = info_col.push(Space::new().height(12).boxed()).push(client_row.boxed());
+    if app.mcp.detecting {
+        info_col = info_col.push(Space::new().height(4).boxed()).push(
+            text(crate::i18n::t("mcp_client_detecting"))
+                .size(10)
+                .color(OryxisColors::t().text_muted)
+                .boxed(),
+        );
+    } else if !client_detected {
+        info_col = info_col.push(Space::new().height(4).boxed()).push(
+            text(crate::i18n::t("mcp_client_not_detected").replace("{client}", client.name()))
+                .size(10)
+                .color(OryxisColors::t().warning)
+                .boxed(),
+        );
     }
 
     // Token row, built after the target row so the keynav slots the
@@ -581,8 +662,7 @@ fn mcp_info_panel(app: &crate::app::Oryxis) -> Element<'_, Message> {
     info_col = info_col
         .push(Space::new().height(12).boxed())
         .push(crate::widgets::dir_row(vec![
-            app.settings_nav_slot_labeled(
-                crate::i18n::t("mcp_install_claude"),
+            app.settings_nav_slot(
                 crate::keynav::RowAction::activate(Message::Mcp(McpMessage::InstallMcpConfig)),
                 6.0,
                 install_btn.boxed(),

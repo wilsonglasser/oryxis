@@ -9,7 +9,7 @@
 use iced::Task;
 
 use crate::app::{McpMessage, PluginMessage, Message, Oryxis};
-use crate::mcp::{install_mcp_config_to_file, install_mcp_config_to_wsl, mcp_config_json, mcp_config_json_wsl};
+use crate::mcp::{install_mcp_config_to_file, install_mcp_config_to_wsl, mcp_config_snippet, mcp_config_snippet_wsl};
 
 impl Oryxis {
     pub(crate) fn handle_mcp(
@@ -39,6 +39,7 @@ impl Oryxis {
             McpMessage::ShowMcpInfo => {
                 self.mcp.show_info = true;
                 self.mcp.config_copied = false;
+                return self.mcp_detect_clients();
             }
             McpMessage::HideMcpInfo => {
                 self.mcp.show_info = false;
@@ -47,24 +48,26 @@ impl Oryxis {
             McpMessage::CopyMcpConfig => {
                 self.mcp.config_copied = true;
                 let vault_pw = self.mcp_vault_pw();
-                let json = if self.mcp.target_wsl {
-                    mcp_config_json_wsl(&self.mcp.server_token, vault_pw.as_deref())
+                let client = self.mcp.client;
+                let snippet = if self.mcp.target_wsl {
+                    mcp_config_snippet_wsl(client, &self.mcp.server_token, vault_pw.as_deref())
                 } else {
-                    mcp_config_json(&self.mcp.server_token, vault_pw.as_deref())
+                    mcp_config_snippet(client, &self.mcp.server_token, vault_pw.as_deref())
                 };
-                return iced::clipboard::write(json).discard();
+                return iced::clipboard::write(snippet).discard();
             }
             McpMessage::InstallMcpConfig => {
                 self.mcp.install_status = None;
                 let token = self.mcp.server_token.clone();
                 let vault_pw = self.mcp_vault_pw();
                 let wsl = self.mcp.target_wsl;
+                let client = self.mcp.client;
                 return Task::perform(
                     async move {
                         if wsl {
-                            install_mcp_config_to_wsl(&token, vault_pw.as_deref())
+                            install_mcp_config_to_wsl(client, &token, vault_pw.as_deref())
                         } else {
-                            install_mcp_config_to_file(&token, vault_pw.as_deref())
+                            install_mcp_config_to_file(client, &token, vault_pw.as_deref())
                         }
                     },
                     |v| Message::Mcp(McpMessage::InstallMcpConfigResult(v)),
@@ -73,9 +76,33 @@ impl Oryxis {
             McpMessage::SetMcpTarget(is_wsl) => {
                 self.mcp.target_wsl = is_wsl;
                 // The Copy / Install feedback from the previous target no
-                // longer reflects what's on screen.
+                // longer reflects what's on screen, and neither does the
+                // detection: the distro has its own set of clients.
                 self.mcp.config_copied = false;
                 self.mcp.install_status = None;
+                return self.mcp_detect_clients();
+            }
+            McpMessage::SetMcpClient(client) => {
+                self.mcp.client = client;
+                self.mcp.config_copied = false;
+                self.mcp.install_status = None;
+            }
+            McpMessage::McpClientsDetected { wsl, found, markers } => {
+                // An answer for the other target is stale: the toggle
+                // moved while the distro was being asked.
+                if wsl != self.mcp.target_wsl {
+                    return Task::none();
+                }
+                self.mcp.detecting = false;
+                self.mcp.detected = found;
+                self.mcp.wsl_markers = markers;
+                // A client that cannot exist on this target (the desktop
+                // app inside a distro) falls back to the default row.
+                if self.mcp.target_wsl
+                    && !crate::mcp_clients::McpClient::available_in_wsl().contains(&self.mcp.client)
+                {
+                    self.mcp.client = crate::mcp_clients::McpClient::default();
+                }
             }
             McpMessage::InstallMcpConfigResult(result) => {
                 self.mcp.install_status = Some(result);
@@ -180,5 +207,27 @@ impl Oryxis {
             }
         }
         Task::none()
+    }
+}
+
+impl Oryxis {
+    /// Ask which AI clients are installed for the current target, off
+    /// the UI thread: the native check is a few `stat`s, the WSL one a
+    /// `wsl.exe` spawn. The answer carries the target it was asked
+    /// about so a toggle flipped meanwhile drops it.
+    fn mcp_detect_clients(&mut self) -> Task<Message> {
+        self.mcp.detecting = true;
+        let wsl = self.mcp.target_wsl;
+        Task::perform(
+            async move {
+                if wsl {
+                    let (found, markers) = crate::mcp::detect_wsl_clients();
+                    (found, markers)
+                } else {
+                    (crate::mcp::detect_native_clients(), Vec::new())
+                }
+            },
+            move |(found, markers)| Message::Mcp(McpMessage::McpClientsDetected { wsl, found, markers }),
+        )
     }
 }

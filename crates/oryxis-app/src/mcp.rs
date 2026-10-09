@@ -1,8 +1,11 @@
-//! MCP (Model Context Protocol) setup helpers, command path resolution, config
-//! JSON generation, and installation into Claude Code's user-scope config
-//! (`~/.claude.json`). The setup info panel that renders these lives in
+//! MCP (Model Context Protocol) setup helpers: command path resolution,
+//! the config snippet in each client's shape, detection of the clients
+//! installed here (and inside a WSL distro), and the merge-in-place
+//! install into each client's own config. The client table itself is
+//! `mcp_clients.rs`; the setup info panel that renders all this lives in
 //! `views/settings/mcp.rs`.
 
+use crate::mcp_clients::{self, McpClient};
 use crate::mcp_install;
 
 /// Binary command external MCP clients (Claude Desktop / Code,
@@ -145,37 +148,40 @@ fn oryxis_mcp_entry_wsl(
     })
 }
 
-/// The JSON snippet users need to copy. When `token` is non-empty
-/// the snippet includes an `env` block that passes
-/// `ORYXIS_MCP_TOKEN` to the spawned MCP server; the server refuses
-/// every call when the token mismatches the value stored in the
-/// vault. Empty token keeps the legacy unauth path. `vault_pw` is the
-/// master password of a password-protected vault, embedded only after
-/// the user confirmed it in the setup panel.
-pub(crate) fn mcp_config_json(token: &str, vault_pw: Option<&str>) -> String {
-    let cmd = mcp_binary_command();
-    let root = serde_json::json!({
-        "mcpServers": {
-            "oryxis": oryxis_mcp_entry(&cmd, token, vault_pw),
-        }
-    });
-    serde_json::to_string_pretty(&root).unwrap_or_else(|_| String::from("{}"))
+/// The `oryxis` server entry for a client on this machine: the
+/// launcher path plus the env block the token and the opt-in vault
+/// password ride in.
+fn native_entry(token: &str, vault_pw: Option<&str>) -> serde_json::Value {
+    oryxis_mcp_entry(&mcp_binary_command(), token, vault_pw)
 }
 
-/// Same as [`mcp_config_json`] but for an AI client (Claude Code,
-/// Cursor) running *inside* a WSL distro on a Windows host. See
+/// The entry for a client living inside a WSL distro: see
 /// [`oryxis_mcp_entry_wsl`] for the cmd.exe wrapper that carries the
-/// token and vault password across the WSL -> Windows boundary; the
-/// Windows app produces this so the user doesn't have to assemble it
-/// by hand.
-pub(crate) fn mcp_config_json_wsl(token: &str, vault_pw: Option<&str>) -> String {
-    let entry = oryxis_mcp_entry_wsl(&mcp_wsl_command(), &mcp_binary_command(), token, vault_pw);
-    let root = serde_json::json!({
-        "mcpServers": {
-            "oryxis": entry,
-        }
-    });
-    serde_json::to_string_pretty(&root).unwrap_or_else(|_| String::from("{}"))
+/// secrets across the boundary.
+fn wsl_entry(token: &str, vault_pw: Option<&str>) -> serde_json::Value {
+    oryxis_mcp_entry_wsl(&mcp_wsl_command(), &mcp_binary_command(), token, vault_pw)
+}
+
+/// The snippet users copy for `client`, in that client's own shape
+/// (JSON under `mcpServers`, or Codex's TOML table). When `token` is
+/// non-empty the entry carries an env block passing `ORYXIS_MCP_TOKEN`;
+/// the server refuses every call when the token mismatches the value
+/// stored in the vault. Empty token keeps the legacy unauth path.
+/// `vault_pw` is the master password of a password-protected vault,
+/// embedded only after the user confirmed it in the setup panel.
+pub(crate) fn mcp_config_snippet(client: McpClient, token: &str, vault_pw: Option<&str>) -> String {
+    mcp_clients::render_snippet(client.format(), &native_entry(token, vault_pw))
+}
+
+/// Same as [`mcp_config_snippet`] but for a client running *inside* a
+/// WSL distro on a Windows host; the Windows app produces this so the
+/// user doesn't have to assemble the cmd.exe wrapper by hand.
+pub(crate) fn mcp_config_snippet_wsl(
+    client: McpClient,
+    token: &str,
+    vault_pw: Option<&str>,
+) -> String {
+    mcp_clients::render_snippet(client.format(), &wsl_entry(token, vault_pw))
 }
 
 /// Cap on the token's bullet run, mirroring the token row so both
@@ -206,11 +212,13 @@ pub(crate) fn token_mask(token: &str) -> String {
 /// rebuild from state, so what travels is always the real value.
 ///
 /// Masking the INPUTS rather than the finished string is what keeps
-/// this correct for both shapes at once, the native `env` block and the
-/// WSL `set VAR=...&&` argument, with no second escaping opinion: a
-/// password carrying `"` or `\` is escaped by serde on the way out, so
-/// a search-and-replace over the serialized JSON would silently miss it.
-pub(crate) fn mcp_config_json_display(
+/// this correct for every shape at once, the native `env` block, the
+/// WSL `set VAR=...&&` argument and the TOML table, with no second
+/// escaping opinion: a password carrying `"` or `\` is escaped by the
+/// serializer on the way out, so a search-and-replace over the
+/// finished text would silently miss it.
+pub(crate) fn mcp_config_snippet_display(
+    client: McpClient,
     token: &str,
     vault_pw: Option<&str>,
     wsl: bool,
@@ -231,9 +239,9 @@ pub(crate) fn mcp_config_json_display(
         }
     });
     if wsl {
-        mcp_config_json_wsl(&token_shown, pw_shown.as_deref())
+        mcp_config_snippet_wsl(client, &token_shown, pw_shown.as_deref())
     } else {
-        mcp_config_json(&token_shown, pw_shown.as_deref())
+        mcp_config_snippet(client, &token_shown, pw_shown.as_deref())
     }
 }
 
@@ -255,46 +263,31 @@ fn legacy_mcp_config_path() -> Result<std::path::PathBuf, String> {
     Ok(home_dir_for_config()?.join(".claude").join(".mcp.json"))
 }
 
-/// Where Claude Code reads its user-scope config from. Claude Code
-/// relocates `.claude.json` into `$CLAUDE_CONFIG_DIR` when that
-/// variable is set, so honor it; the plain home profile is the
-/// default. Best-effort: a GUI launch may not carry a shell-only
-/// export, in which case the default path is what Claude Code
-/// launched the same way would read anyway.
-fn claude_code_config_path() -> Result<std::path::PathBuf, String> {
-    if let Ok(dir) = std::env::var("CLAUDE_CONFIG_DIR") {
-        let dir = dir.trim();
-        if !dir.is_empty() {
-            return Ok(std::path::PathBuf::from(dir).join(".claude.json"));
-        }
+/// Where `client` reads its MCP servers from on this machine. An
+/// environment relocation (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`,
+/// `COPILOT_HOME`) is honoured, best-effort: a GUI launch may not
+/// carry a shell-only export, in which case the default path is what
+/// the client launched the same way would read anyway.
+fn client_config_path(client: McpClient) -> Result<std::path::PathBuf, String> {
+    let home = home_dir_for_config()?;
+    client
+        .config_path(&home)
+        .ok_or_else(|| format!("{} is not available on this platform", client.name()))
+}
+
+/// The on-screen hint for where `client`'s config lives: the resolved
+/// native path, or the distro-relative one for the WSL target.
+pub(crate) fn client_path_hint(client: McpClient, wsl: bool, wsl_markers: &[String]) -> String {
+    if wsl {
+        client
+            .wsl_config_path(wsl_markers)
+            .map(|p| format!("{p} (WSL)"))
+            .unwrap_or_default()
+    } else {
+        client_config_path(client)
+            .map(|p| p.display().to_string())
+            .unwrap_or_default()
     }
-    Ok(home_dir_for_config()?.join(".claude.json"))
-}
-
-/// Merge the given oryxis server entry into a parsed config root,
-/// creating the `mcpServers` object when absent. Every unrelated key
-/// in the file is preserved untouched.
-fn merge_oryxis_entry(
-    root: &mut serde_json::Map<String, serde_json::Value>,
-    entry: serde_json::Value,
-) -> Result<(), String> {
-    let servers = root
-        .entry("mcpServers")
-        .or_insert_with(|| serde_json::json!({}));
-    let servers_map = servers
-        .as_object_mut()
-        .ok_or("mcpServers is not an object")?;
-    servers_map.insert("oryxis".to_string(), entry);
-    Ok(())
-}
-
-/// Remove the `oryxis` entry from a parsed config root. Returns
-/// whether anything was actually removed.
-fn strip_oryxis_entry(root: &mut serde_json::Map<String, serde_json::Value>) -> bool {
-    root.get_mut("mcpServers")
-        .and_then(|s| s.as_object_mut())
-        .map(|m| m.remove("oryxis").is_some())
-        .unwrap_or(false)
 }
 
 /// Remove the `oryxis` entry from the legacy dead-letter config, if
@@ -303,90 +296,190 @@ fn strip_oryxis_entry(root: &mut serde_json::Map<String, serde_json::Value>) -> 
 fn sweep_legacy_mcp_config() {
     let Ok(path) = legacy_mcp_config_path() else { return };
     let Ok(content) = std::fs::read_to_string(&path) else { return };
-    let Ok(mut root) = serde_json::from_str::<serde_json::Map<String, serde_json::Value>>(&content)
-    else {
-        return;
-    };
-    if strip_oryxis_entry(&mut root)
-        && let Ok(output) = serde_json::to_string_pretty(&root)
+    if let Some(output) =
+        mcp_clients::strip_entry(mcp_clients::ConfigFormat::JsonMcpServers, &content)
     {
         let _ = std::fs::write(&path, output);
     }
 }
 
-/// Whether Claude Code's user config already carries an `oryxis` MCP
-/// entry (or the legacy dead-letter file does), i.e. the user ran
-/// "Install to Claude Code" at some point and a plugin update should
-/// refresh the entry.
-pub(crate) fn mcp_config_installed() -> bool {
-    let has_oryxis_entry = |path: &std::path::Path| {
-        std::fs::read_to_string(path)
-            .ok()
-            .and_then(|c| serde_json::from_str::<serde_json::Value>(&c).ok())
-            .map(|v| v.get("mcpServers").and_then(|s| s.get("oryxis")).is_some())
-            .unwrap_or(false)
-    };
-    claude_code_config_path().is_ok_and(|p| has_oryxis_entry(&p))
-        || legacy_mcp_config_path().is_ok_and(|p| has_oryxis_entry(&p))
-}
-
-/// Whether the ACTIVE Claude Code config (`~/.claude.json` only, never
-/// the legacy dead-letter) currently carries an `oryxis` MCP entry. The
-/// vault-password removal gates on this so it rewrites a live config in
-/// place and can never promote a dead legacy entry into an active one,
-/// nor create a config where none existed.
-fn active_config_has_oryxis() -> bool {
-    claude_code_config_path().is_ok_and(|p| {
+/// Whether `client`'s config on this machine currently carries an
+/// `oryxis` entry: the user installed into it at some point, so a
+/// plugin update or a vault-password revoke should rewrite it in place.
+/// Never true for a file that does not exist, so a rewrite can never
+/// create a config where none was.
+pub(crate) fn client_has_entry(client: McpClient) -> bool {
+    client_config_path(client).is_ok_and(|p| {
         std::fs::read_to_string(&p)
             .ok()
-            .and_then(|c| serde_json::from_str::<serde_json::Value>(&c).ok())
-            .map(|v| v.get("mcpServers").and_then(|s| s.get("oryxis")).is_some())
-            .unwrap_or(false)
+            .is_some_and(|c| mcp_clients::has_entry(client.format(), &c))
     })
 }
 
-/// Whether the WSL distro's `~/.claude.json` carries an `oryxis` entry.
-/// Same gate as [`active_config_has_oryxis`] for the WSL target, so a
-/// removal never creates a config inside a distro that never had one.
-#[cfg(target_os = "windows")]
-fn wsl_config_has_oryxis() -> bool {
-    use std::os::windows::process::CommandExt;
-    use std::process::Command;
-    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-    let Ok(out) = Command::new("wsl.exe")
-        .args(["--", "bash", "-c", "cat ~/.claude.json 2>/dev/null || true"])
-        .creation_flags(CREATE_NO_WINDOW)
-        .output()
-    else {
-        return false;
-    };
-    let text = String::from_utf8_lossy(&out.stdout);
-    serde_json::from_str::<serde_json::Value>(text.trim())
-        .ok()
-        .map(|v| v.get("mcpServers").and_then(|s| s.get("oryxis")).is_some())
-        .unwrap_or(false)
+/// Whether any client's config on this machine (or the legacy
+/// dead-letter file) carries an `oryxis` entry, i.e. the user ran
+/// Install at some point and a plugin update should refresh.
+pub(crate) fn mcp_config_installed() -> bool {
+    McpClient::available().into_iter().any(client_has_entry)
+        || legacy_mcp_config_path().is_ok_and(|p| {
+            std::fs::read_to_string(&p)
+                .ok()
+                .is_some_and(|c| mcp_clients::has_entry(mcp_clients::ConfigFormat::JsonMcpServers, &c))
+        })
 }
 
-/// Scrub the embedded `ORYXIS_VAULT_PASSWORD` from every Claude Code
-/// config that actually carries an `oryxis` entry, in place, WITHOUT
-/// creating one anywhere. Covers both the native config and (on Windows)
-/// the WSL distro's config, because the password may have been installed
-/// into either regardless of the currently selected target. Blocking
+/// The clients installed on this machine (native target). Blocking
+/// (a few `stat`s); call from a task, never from `view()`.
+pub(crate) fn detect_native_clients() -> Vec<McpClient> {
+    let Ok(home) = home_dir_for_config() else {
+        return Vec::new();
+    };
+    McpClient::available()
+        .into_iter()
+        .filter(|c| c.detected(&home))
+        .collect()
+}
+
+/// `CREATE_NO_WINDOW`: keeps `wsl.exe` from flashing a console over
+/// the app.
+#[cfg(target_os = "windows")]
+const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+
+/// Run `bash -c <script>` in the default WSL distro and return its
+/// stdout. A non-login bash keeps rc-file noise out of stdout while
+/// still expanding `~` via HOME.
+#[cfg(target_os = "windows")]
+fn wsl_bash(script: &str) -> Result<String, String> {
+    use std::os::windows::process::CommandExt;
+    use std::process::Command;
+    let out = Command::new("wsl.exe")
+        .args(["--", "bash", "-c", script])
+        .creation_flags(CREATE_NO_WINDOW)
+        .output()
+        .map_err(|e| format!("Could not run wsl.exe ({e}). Is WSL installed?"))?;
+    if !out.status.success() {
+        let err = String::from_utf8_lossy(&out.stderr);
+        return Err(format!("wsl.exe failed: {}", err.trim()));
+    }
+    Ok(String::from_utf8_lossy(&out.stdout).into_owned())
+}
+
+/// Read a `~/...` file inside the distro; empty when absent (the
+/// trailing `|| true` keeps the exit code at 0 on a first install,
+/// otherwise `cat`'s failure would look like a WSL error).
+#[cfg(target_os = "windows")]
+fn wsl_read_home_file(path: &str) -> Result<String, String> {
+    wsl_bash(&format!("cat {path} 2>/dev/null || true"))
+}
+
+/// Write a `~/...` file inside the distro with owner-only permissions.
+/// The contents go through stdin so they never have to be escaped into
+/// a shell argument. `umask 077` births the temp 0600, then an atomic
+/// `mv` swaps it in: the opt-in vault password embed writes a plaintext
+/// credential, so the real config must never be left world-readable nor
+/// partially written. The parent folder must already exist (it is the
+/// client's own, and its presence is what made the client "detected").
+#[cfg(target_os = "windows")]
+fn wsl_write_home_file_private(path: &str, contents: &str) -> Result<(), String> {
+    use std::io::Write;
+    use std::os::windows::process::CommandExt;
+    use std::process::{Command, Stdio};
+    let script = format!("umask 077 && cat > {path}.tmp && mv {path}.tmp {path}");
+    let mut child = Command::new("wsl.exe")
+        .args(["--", "bash", "-c", &script])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .creation_flags(CREATE_NO_WINDOW)
+        .spawn()
+        .map_err(|e| format!("Could not run wsl.exe ({e})."))?;
+    child
+        .stdin
+        .take()
+        .ok_or("failed to open wsl.exe stdin")?
+        .write_all(contents.as_bytes())
+        .map_err(|e| format!("Failed to write to WSL: {e}"))?;
+    let status = child
+        .wait()
+        .map_err(|e| format!("wsl.exe did not finish: {e}"))?;
+    if !status.success() {
+        return Err(format!("wsl.exe could not write {path}"));
+    }
+    Ok(())
+}
+
+/// The client marker folders present in the distro's home, in ONE
+/// `wsl.exe` spawn (each spawn costs a noticeable fraction of a
+/// second). Returns the `~`-relative names found.
+#[cfg(target_os = "windows")]
+pub(crate) fn wsl_detect_markers() -> Result<Vec<String>, String> {
+    let checks: Vec<String> = McpClient::wsl_markers()
+        .iter()
+        .map(|m| format!("[ -e \"$HOME/{m}\" ] && echo \"{m}\";"))
+        .collect();
+    let out = wsl_bash(&format!("{} true", checks.join(" ")))?;
+    Ok(out
+        .lines()
+        .map(|l| l.trim().to_string())
+        .filter(|l| !l.is_empty())
+        .collect())
+}
+
+/// Never-detected elsewhere: the WSL target only renders on Windows.
+#[cfg(not(target_os = "windows"))]
+pub(crate) fn wsl_detect_markers() -> Result<Vec<String>, String> {
+    Err("WSL is only available on the Windows build".to_string())
+}
+
+/// The clients installed inside the WSL distro, plus the markers that
+/// told us (the config paths of clients that moved depend on them).
+pub(crate) fn detect_wsl_clients() -> (Vec<McpClient>, Vec<String>) {
+    let markers = wsl_detect_markers().unwrap_or_default();
+    let found = McpClient::available_in_wsl()
+        .into_iter()
+        .filter(|c| c.detected_in_wsl(&markers))
+        .collect();
+    (found, markers)
+}
+
+/// Whether the distro's config for `client` carries an `oryxis`
+/// entry. Same gate as [`client_has_entry`] for the WSL target, so a
+/// rewrite never creates a config inside a distro that never had one.
+#[cfg(target_os = "windows")]
+fn wsl_client_has_entry(client: McpClient, markers: &[String]) -> bool {
+    let Some(path) = client.wsl_config_path(markers) else {
+        return false;
+    };
+    wsl_read_home_file(&path).is_ok_and(|c| mcp_clients::has_entry(client.format(), &c))
+}
+
+/// Scrub the embedded `ORYXIS_VAULT_PASSWORD` from every client config
+/// that actually carries an `oryxis` entry, in place, WITHOUT creating
+/// one anywhere. Covers every client on this machine and (on Windows)
+/// inside the WSL distro, because the password may have been installed
+/// into any of them regardless of the currently selected one. Blocking
 /// I/O; call from a background task. `Ok(())` means nothing failed; the
 /// caller surfaces any `Err` so a "revoked" claim never hides a
 /// plaintext credential still on disk.
 pub(crate) fn strip_vault_password_everywhere(token: &str) -> Result<(), String> {
     let mut errors: Vec<String> = Vec::new();
-    if active_config_has_oryxis()
-        && let Err(e) = install_mcp_config_to_file(token, None)
-    {
-        errors.push(e);
+    for client in McpClient::available() {
+        if client_has_entry(client)
+            && let Err(e) = install_mcp_config_to_file(client, token, None)
+        {
+            errors.push(e);
+        }
     }
     #[cfg(target_os = "windows")]
-    if wsl_config_has_oryxis()
-        && let Err(e) = install_mcp_config_to_wsl(token, None)
     {
-        errors.push(e);
+        let markers = wsl_detect_markers().unwrap_or_default();
+        for client in McpClient::available_in_wsl() {
+            if wsl_client_has_entry(client, &markers)
+                && let Err(e) = install_mcp_config_to_wsl(client, token, None)
+            {
+                errors.push(e);
+            }
+        }
     }
     if errors.is_empty() {
         Ok(())
@@ -395,45 +488,81 @@ pub(crate) fn strip_vault_password_everywhere(token: &str) -> Result<(), String>
     }
 }
 
-/// Write/merge the oryxis MCP entry into Claude Code's user-scope
-/// config, `~/.claude.json` (top-level `mcpServers` key, the same
-/// place `claude mcp add -s user` writes). Claude Code does NOT read
-/// `~/.claude/.mcp.json`, the path earlier releases wrote to; any
-/// stale `oryxis` entry there is swept as part of the install.
-/// Threads `token` and the opt-in vault password through so the
-/// on-disk config always carries whatever the current settings hold
-/// (a `None` password strips a previously installed one).
+/// Re-write the `oryxis` entry, with the current token and vault
+/// password, into every client config that already carries one, on
+/// this machine and (on Windows) inside the WSL distro. The plugin
+/// update's refresh: the launcher path is stable, but the entry's
+/// secrets must follow the settings. Errors are logged, not surfaced:
+/// nothing the user is looking at asked for this write.
+pub(crate) fn refresh_installed_clients(token: &str, vault_pw: Option<&str>) {
+    for client in McpClient::available() {
+        if client_has_entry(client)
+            && let Err(e) = install_mcp_config_to_file(client, token, vault_pw)
+        {
+            tracing::warn!(client = client.name(), error = %e, "failed to refresh MCP client config");
+        }
+    }
+    #[cfg(target_os = "windows")]
+    {
+        let markers = wsl_detect_markers().unwrap_or_default();
+        for client in McpClient::available_in_wsl() {
+            if wsl_client_has_entry(client, &markers)
+                && let Err(e) = install_mcp_config_to_wsl(client, token, vault_pw)
+            {
+                tracing::warn!(client = client.name(), error = %e, "failed to refresh MCP client config (WSL)");
+            }
+        }
+    }
+}
+
+/// Write/merge the oryxis MCP entry into `client`'s config on this
+/// machine, in that client's shape (the same place its own `mcp add`
+/// command writes). Merge, never replace: these are the clients' own
+/// state files. Threads `token` and the opt-in vault password through
+/// so the on-disk config always carries whatever the current settings
+/// hold (a `None` password strips a previously installed one).
+///
+/// Refuses when the client's folder is absent: the folder's presence
+/// is what says the client is installed, and a config file dropped
+/// into a folder nothing reads is litter at best and, with the vault
+/// password embedded, a credential nobody is guarding.
 pub(crate) fn install_mcp_config_to_file(
+    client: McpClient,
     token: &str,
     vault_pw: Option<&str>,
 ) -> Result<String, String> {
-    let config_path = claude_code_config_path()?;
+    let config_path = client_config_path(client)?;
+    let parent = config_path
+        .parent()
+        .ok_or_else(|| format!("{} has no config folder", config_path.display()))?;
+    if !parent.is_dir() {
+        return Err(format!(
+            "{} is not installed here ({} does not exist)",
+            client.name(),
+            parent.display()
+        ));
+    }
 
-    // `~/.claude.json` is Claude Code's main state file: merge into it,
-    // never replace it. A parse failure aborts rather than clobbering
-    // whatever Claude Code has stored there.
-    let mut root: serde_json::Map<String, serde_json::Value> = if config_path.exists() {
-        let content = std::fs::read_to_string(&config_path)
-            .map_err(|e| format!("Failed to read {}: {e}", config_path.display()))?;
-        serde_json::from_str(&content)
-            .map_err(|e| format!("Failed to parse {}: {e}", config_path.display()))?
+    // A parse failure aborts rather than clobbering whatever the
+    // client has stored there.
+    let existing = if config_path.exists() {
+        std::fs::read_to_string(&config_path)
+            .map_err(|e| format!("Failed to read {}: {e}", config_path.display()))?
     } else {
-        serde_json::Map::new()
+        String::new()
     };
-
-    let cmd = mcp_binary_command();
-    merge_oryxis_entry(&mut root, oryxis_mcp_entry(&cmd, token, vault_pw))?;
-
-    let output = serde_json::to_string_pretty(&root)
-        .map_err(|e| format!("Failed to serialize: {e}"))?;
+    let output = mcp_clients::merge_into(client.format(), &existing, native_entry(token, vault_pw))
+        .map_err(|e| format!("{e} ({})", config_path.display()))?;
     write_config_private(&config_path, &output)?;
 
-    sweep_legacy_mcp_config();
+    if client == McpClient::ClaudeCode {
+        sweep_legacy_mcp_config();
+    }
 
     Ok(config_path.display().to_string())
 }
 
-/// Write `~/.claude.json` with owner-only permissions (0600) on Unix.
+/// Write a client config with owner-only permissions (0600) on Unix.
 /// The opt-in vault password embed puts a plaintext credential in this
 /// file, so it must never be left world-readable under the default
 /// umask (0644). On non-Unix the ACL story differs and there is no
@@ -464,132 +593,57 @@ fn write_config_private(path: &std::path::Path, contents: &str) -> Result<(), St
     }
 }
 
-/// Write/merge the oryxis MCP entry into the WSL distro's
-/// `~/.claude.json` (Claude Code's user-scope config), for a Claude
-/// Code instance running inside WSL on a Windows host. Shells out to
-/// `wsl.exe` (default distro): reads the current config, merges in
-/// Rust so the JSON stays well-formed, and writes the result back
-/// through stdin so the payload never has to survive shell quoting.
-/// The entry shape comes from [`oryxis_mcp_entry_wsl`] (cmd.exe
-/// wrapper when a token is set). The legacy dead-letter
-/// `~/.claude/.mcp.json` gets its `oryxis` entry swept, mirroring the
-/// native install.
+/// Write/merge the oryxis MCP entry into `client`'s config inside the
+/// WSL distro, for a client running inside WSL on a Windows host.
+/// Shells out to `wsl.exe` (default distro): reads the current config,
+/// merges in Rust so the file stays well-formed, and writes the result
+/// back through stdin so the payload never has to survive shell
+/// quoting. The entry shape comes from [`oryxis_mcp_entry_wsl`]
+/// (cmd.exe wrapper when a secret is set). Claude Code's legacy
+/// dead-letter `~/.claude/.mcp.json` gets its `oryxis` entry swept,
+/// mirroring the native install.
 ///
 /// Only meaningful on Windows; returns an error elsewhere, where there
 /// is no `wsl.exe` to talk to.
 pub(crate) fn install_mcp_config_to_wsl(
+    client: McpClient,
     token: &str,
     vault_pw: Option<&str>,
 ) -> Result<String, String> {
     #[cfg(not(target_os = "windows"))]
     {
-        let _ = (token, vault_pw);
+        let _ = (client, token, vault_pw);
         Err("WSL install is only available on the Windows build".to_string())
     }
     #[cfg(target_os = "windows")]
     {
-        use std::io::Write;
-        use std::os::windows::process::CommandExt;
-        use std::process::{Command, Stdio};
-
-        // CREATE_NO_WINDOW keeps wsl.exe from flashing a console over
-        // the app.
-        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-
-        // Read the current config (empty when the file is absent). A
-        // non-login bash keeps rc-file noise out of stdout while still
-        // expanding `~` via HOME. The trailing `|| true` keeps the exit
-        // code at 0 when the file doesn't exist yet (first install),
-        // otherwise `cat`'s failure would look like a WSL error.
-        let read = Command::new("wsl.exe")
-            .args(["--", "bash", "-c", "cat ~/.claude.json 2>/dev/null || true"])
-            .creation_flags(CREATE_NO_WINDOW)
-            .output()
-            .map_err(|e| format!("Could not run wsl.exe ({e}). Is WSL installed?"))?;
-        if !read.status.success() {
-            let err = String::from_utf8_lossy(&read.stderr);
-            return Err(format!("wsl.exe failed: {}", err.trim()));
+        let markers = wsl_detect_markers()?;
+        if !client.detected_in_wsl(&markers) {
+            return Err(format!("{} is not installed in the WSL distro", client.name()));
         }
+        let path = client
+            .wsl_config_path(&markers)
+            .ok_or_else(|| format!("{} cannot run inside WSL", client.name()))?;
+        let existing = wsl_read_home_file(&path)?;
+        let output = mcp_clients::merge_into(client.format(), existing.trim(), wsl_entry(token, vault_pw))
+            .map_err(|e| format!("{e} (WSL {path})"))?;
+        wsl_write_home_file_private(&path, &output)?;
 
-        let existing = String::from_utf8_lossy(&read.stdout);
-        // `~/.claude.json` is Claude Code's main state file: merge into
-        // it, never replace it. A parse failure aborts rather than
-        // clobbering whatever Claude Code has stored there.
-        let mut root: serde_json::Map<String, serde_json::Value> = if existing.trim().is_empty() {
-            serde_json::Map::new()
-        } else {
-            serde_json::from_str(existing.trim())
-                .map_err(|e| format!("Failed to parse WSL ~/.claude.json: {e}"))?
-        };
-
-        let entry =
-            oryxis_mcp_entry_wsl(&mcp_wsl_command(), &mcp_binary_command(), token, vault_pw);
-        merge_oryxis_entry(&mut root, entry)?;
-
-        let output =
-            serde_json::to_string_pretty(&root).map_err(|e| format!("Failed to serialize: {e}"))?;
-
-        // Pipe the merged JSON back through stdin so it never has to be
-        // escaped into a shell argument. `umask 077` births the temp 0600,
-        // then an atomic `mv` swaps it in: the opt-in vault password embed
-        // writes a plaintext credential, so the real config must never be
-        // left world-readable nor partially written (a chmod-after-write
-        // would leave a loose window, permanently if `cat` died mid-pipe).
-        let mut child = Command::new("wsl.exe")
-            .args([
-                "--",
-                "bash",
-                "-c",
-                "umask 077 && cat > ~/.claude.json.tmp && mv ~/.claude.json.tmp ~/.claude.json",
-            ])
-            .stdin(Stdio::piped())
-            .stdout(Stdio::null())
-            .stderr(Stdio::piped())
-            .creation_flags(CREATE_NO_WINDOW)
-            .spawn()
-            .map_err(|e| format!("Could not run wsl.exe ({e})."))?;
-        child
-            .stdin
-            .take()
-            .ok_or("failed to open wsl.exe stdin")?
-            .write_all(output.as_bytes())
-            .map_err(|e| format!("Failed to write to WSL: {e}"))?;
-        let status = child
-            .wait()
-            .map_err(|e| format!("wsl.exe did not finish: {e}"))?;
-        if !status.success() {
-            return Err("wsl.exe could not write ~/.claude.json".to_string());
-        }
-
-        // Sweep a stale `oryxis` entry out of the dead-letter path this
-        // app used to write inside the distro. Best-effort, jq-free:
-        // read, strip in Rust, write back only when something changed.
-        let legacy = Command::new("wsl.exe")
-            .args(["--", "bash", "-c", "cat ~/.claude/.mcp.json 2>/dev/null || true"])
-            .creation_flags(CREATE_NO_WINDOW)
-            .output();
-        if let Ok(legacy) = legacy {
-            let content = String::from_utf8_lossy(&legacy.stdout);
-            if let Ok(mut root) =
-                serde_json::from_str::<serde_json::Map<String, serde_json::Value>>(content.trim())
-                && strip_oryxis_entry(&mut root)
-                && let Ok(stripped) = serde_json::to_string_pretty(&root)
-                && let Ok(mut child) = Command::new("wsl.exe")
-                    .args(["--", "bash", "-c", "cat > ~/.claude/.mcp.json"])
-                    .stdin(Stdio::piped())
-                    .stdout(Stdio::null())
-                    .stderr(Stdio::null())
-                    .creation_flags(CREATE_NO_WINDOW)
-                    .spawn()
+        if client == McpClient::ClaudeCode {
+            // Sweep a stale `oryxis` entry out of the dead-letter path this
+            // app used to write inside the distro. Best-effort, jq-free:
+            // read, strip in Rust, write back only when something changed.
+            if let Ok(content) = wsl_read_home_file("~/.claude/.mcp.json")
+                && let Some(stripped) = mcp_clients::strip_entry(
+                    mcp_clients::ConfigFormat::JsonMcpServers,
+                    content.trim(),
+                )
             {
-                if let Some(mut stdin) = child.stdin.take() {
-                    let _ = stdin.write_all(stripped.as_bytes());
-                }
-                let _ = child.wait();
+                let _ = wsl_write_home_file_private("~/.claude/.mcp.json", &stripped);
             }
         }
 
-        Ok("~/.claude.json (WSL)".to_string())
+        Ok(format!("{path} (WSL)"))
     }
 }
 
@@ -609,8 +663,7 @@ impl crate::app::Oryxis {
 #[cfg(test)]
 mod tests {
     use super::{
-        cmd_escape, mcp_config_json_display, merge_oryxis_entry, oryxis_mcp_entry,
-        oryxis_mcp_entry_wsl, strip_oryxis_entry,
+        cmd_escape, mcp_config_snippet_display, oryxis_mcp_entry, oryxis_mcp_entry_wsl, McpClient,
     };
 
     const WSL: &str = "/mnt/c/Users/wilso/.oryxis/bin/oryxis-mcp.exe";
@@ -675,13 +728,15 @@ mod tests {
     fn masked_snippet_carries_neither_secret() {
         const TOKEN: &str = "6f1c0b9a4d3e2f108c7b6a5948372615";
         const PW: &str = "correct horse battery staple";
-        for wsl in [false, true] {
-            let masked = mcp_config_json_display(TOKEN, Some(PW), wsl, false);
-            assert!(!masked.contains(TOKEN), "token leaked while masked (wsl={wsl})");
-            assert!(!masked.contains(PW), "vault password leaked while masked (wsl={wsl})");
-            let revealed = mcp_config_json_display(TOKEN, Some(PW), wsl, true);
-            assert!(revealed.contains(TOKEN), "token missing when revealed (wsl={wsl})");
-            assert!(revealed.contains(PW), "vault password missing when revealed (wsl={wsl})");
+        for client in McpClient::ALL {
+            for wsl in [false, true] {
+                let masked = mcp_config_snippet_display(client, TOKEN, Some(PW), wsl, false);
+                assert!(!masked.contains(TOKEN), "token leaked while masked (wsl={wsl})");
+                assert!(!masked.contains(PW), "vault password leaked while masked (wsl={wsl})");
+                let revealed = mcp_config_snippet_display(client, TOKEN, Some(PW), wsl, true);
+                assert!(revealed.contains(TOKEN), "token missing when revealed (wsl={wsl})");
+                assert!(revealed.contains(PW), "vault password missing when revealed (wsl={wsl})");
+            }
         }
     }
 
@@ -689,9 +744,11 @@ mod tests {
     // empty token keeps producing the env-free entry.
     #[test]
     fn masked_snippet_keeps_an_unset_token_unset() {
-        let masked = mcp_config_json_display("", None, false, false);
-        assert!(!masked.contains("ORYXIS_MCP_TOKEN"));
-        assert!(!masked.contains('\u{2022}'));
+        for client in McpClient::ALL {
+            let masked = mcp_config_snippet_display(client, "", None, false, false);
+            assert!(!masked.contains("ORYXIS_MCP_TOKEN"));
+            assert!(!masked.contains('\u{2022}'));
+        }
     }
 
     #[test]
@@ -714,48 +771,5 @@ mod tests {
 
         let v = oryxis_mcp_entry("oryxis-mcp", "", None);
         assert!(v.get("env").is_none());
-    }
-
-    // `~/.claude.json` is Claude Code's main state file: the install
-    // merge must leave every unrelated key (and sibling MCP servers)
-    // untouched while inserting/replacing only the `oryxis` entry.
-    #[test]
-    fn merge_preserves_unrelated_config() {
-        let mut root: serde_json::Map<String, serde_json::Value> = serde_json::from_str(
-            r#"{
-                "numStartups": 42,
-                "projects": {"/home/u/proj": {"allowedTools": []}},
-                "mcpServers": {"other": {"command": "other-mcp"}, "oryxis": {"command": "stale"}}
-            }"#,
-        )
-        .unwrap();
-        merge_oryxis_entry(&mut root, serde_json::json!({"command": "fresh"})).unwrap();
-        assert_eq!(root["numStartups"], 42);
-        assert!(root["projects"]["/home/u/proj"].is_object());
-        assert_eq!(root["mcpServers"]["other"]["command"], "other-mcp");
-        assert_eq!(root["mcpServers"]["oryxis"]["command"], "fresh");
-    }
-
-    #[test]
-    fn merge_creates_servers_object_when_absent() {
-        let mut root = serde_json::Map::new();
-        merge_oryxis_entry(&mut root, serde_json::json!({"command": "fresh"})).unwrap();
-        assert_eq!(root["mcpServers"]["oryxis"]["command"], "fresh");
-    }
-
-    // The legacy-file sweep must remove only the `oryxis` entry and
-    // report whether anything changed (an unchanged file is not
-    // rewritten).
-    #[test]
-    fn strip_removes_only_oryxis() {
-        let mut root: serde_json::Map<String, serde_json::Value> = serde_json::from_str(
-            r#"{"mcpServers": {"other": {"command": "other-mcp"}, "oryxis": {"command": "x"}}}"#,
-        )
-        .unwrap();
-        assert!(strip_oryxis_entry(&mut root));
-        assert!(root["mcpServers"].get("oryxis").is_none());
-        assert_eq!(root["mcpServers"]["other"]["command"], "other-mcp");
-        // Second pass: nothing left to remove.
-        assert!(!strip_oryxis_entry(&mut root));
     }
 }

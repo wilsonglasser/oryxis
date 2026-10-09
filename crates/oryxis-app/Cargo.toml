@@ -132,6 +132,7 @@ iced_fonts = { git = "https://github.com/wilsonglasser/iced_fonts", branch = "te
 ttf-parser = "0.25"
 serde = { workspace = true }
 serde_json = { workspace = true }
+toml_edit = "0.25"
 thiserror = { workspace = true }
 # Certificates are verified by the OS (rustls-platform-verifier): the
 # system's roots, the ones a company or the user installed, and its
