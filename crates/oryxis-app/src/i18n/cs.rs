@@ -1606,6 +1606,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "ip_or_hostname" => "IP nebo název hostitele",
         "my_server_placeholder" => "Můj server",
         "group_placeholder" => "Produkce, Staging...",
+        "editor_clear_group" => "Odebrat ze skupiny",
         "edit_group" => "Upravit skupinu",
         "new_subgroup" => "Nová podskupina",
         "move_to_group" => "Přesunout do skupiny…",

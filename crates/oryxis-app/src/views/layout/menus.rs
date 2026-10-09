@@ -87,6 +87,9 @@ impl Oryxis {
                     crate::state::GroupPickerTarget::GroupEditParent => {
                         self.group_edit_parent_combo_bounds.get()
                     }
+                    crate::state::GroupPickerTarget::HostEditorParent => {
+                        self.host_editor_parent_combo_bounds.get()
+                    }
                     // No combo to track: anchored at a kebab or the
                     // cursor, wide enough for a nested path on one line.
                     crate::state::GroupPickerTarget::MoveHosts => iced::Rectangle::default(),

@@ -916,10 +916,18 @@ impl Oryxis {
             .collect();
         all_groups.sort_by_key(|s| s.to_lowercase());
         all_groups.dedup();
-        // Moving hosts can also mean moving them OUT of every folder,
-        // which the form-filling targets never offer (an empty combo
-        // already means root there). First row, so it is one Down away.
-        if target == crate::state::GroupPickerTarget::MoveHosts {
+        // Moving a host can also mean moving it OUT of every folder:
+        // the move target and the host editor's field offer it as a row
+        // (an empty field already means root on save, but a row is the
+        // discoverable door); the group editors never do, since their
+        // own empty field is the "no parent" answer. First row, so it
+        // is one Down away.
+        let offers_root = matches!(
+            target,
+            crate::state::GroupPickerTarget::MoveHosts
+                | crate::state::GroupPickerTarget::HostEditorParent
+        );
+        if offers_root {
             let root = crate::i18n::t("group_picker_root");
             if needle.is_empty() || root.to_lowercase().contains(&needle) {
                 all_groups.insert(0, root.to_string());
@@ -972,12 +980,10 @@ impl Oryxis {
             let mut items = iced::widget::Column::<iced::Element<'_, _>>::new().spacing(2);
             for label in all_groups {
                 let display = label.clone();
-                // The move target's "Top level" row is the one label
-                // that is not a path: it travels as an empty string, the
-                // same value an empty combo means everywhere else.
-                let label = if target == crate::state::GroupPickerTarget::MoveHosts
-                    && label == crate::i18n::t("group_picker_root")
-                {
+                // The "Top level" row is the one label that is not a
+                // path: it travels as an empty string, the same value
+                // an empty field means everywhere else.
+                let label = if offers_root && label == crate::i18n::t("group_picker_root") {
                     String::new()
                 } else {
                     label

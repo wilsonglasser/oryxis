@@ -353,6 +353,9 @@ impl Oryxis {
                         GroupPickerTarget::GroupEditParent => {
                             self.group_edit_parent_combo_bounds.get()
                         }
+                        GroupPickerTarget::HostEditorParent => {
+                            self.host_editor_parent_combo_bounds.get()
+                        }
                         // Opened by `MoveHostsPick`, never toggled from
                         // a combo; an empty rect falls back to the cursor.
                         GroupPickerTarget::MoveHosts => iced::Rectangle::default(),
@@ -390,6 +393,12 @@ impl Oryxis {
                     }
                     GroupPickerTarget::GroupEditParent => {
                         self.group_edit.parent_label = label;
+                    }
+                    // The "Top level" row arrives as an empty path, the
+                    // value a cleared field means on save; nothing is
+                    // written here, the drawer's closing flush is.
+                    GroupPickerTarget::HostEditorParent => {
+                        self.editor_form.group_name = label;
                     }
                     GroupPickerTarget::MoveHosts => {
                         // The picker sends the breadcrumb path it showed,

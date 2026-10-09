@@ -1607,6 +1607,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "ip_or_hostname" => "IP หรือชื่อโฮสต์",
         "my_server_placeholder" => "เซิร์ฟเวอร์ของฉัน",
         "group_placeholder" => "Production, Staging...",
+        "editor_clear_group" => "นำออกจากกลุ่ม",
         "edit_group" => "แก้ไขกลุ่ม",
         "new_subgroup" => "กลุ่มย่อยใหม่",
         "move_to_group" => "ย้ายไปยังกลุ่ม…",

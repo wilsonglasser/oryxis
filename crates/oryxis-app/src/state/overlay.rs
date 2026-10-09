@@ -205,6 +205,12 @@ pub(crate) enum GroupPickerTarget {
     /// Parent combo in the manual group editor side panel. The list
     /// excludes the edited group's own subtree (no cycles).
     GroupEditParent,
+    /// Parent Group field of the host editor. Carries the "Top level"
+    /// row like `MoveHosts` (an empty path, what an empty field means
+    /// on save), because taking a host OUT of its folder is a pick
+    /// like any other; the pick only fills `editor_form.group_name`,
+    /// the drawer's closing flush is what writes it.
+    HostEditorParent,
     /// "Move to group" from a host card's kebab or the selection bar
     /// (issue #230). Anchored at the menu / cursor rather than a combo,
     /// carries a "Top level" row, and the pick MOVES

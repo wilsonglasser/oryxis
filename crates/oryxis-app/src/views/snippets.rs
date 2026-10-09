@@ -733,6 +733,12 @@ self.keynav_ring_content(kb_selected, card_el)
                         |v| Message::Snippet(SnippetMessage::SnippetGroupChanged(v)),
                     )
                     .on_input(|v| Message::Snippet(SnippetMessage::SnippetGroupChanged(v)))
+                    // The fork's combo clears its own input on focus and
+                    // restores the committed value on blur ONLY inside
+                    // its `on_close` branch; without one a focused-then-
+                    // abandoned field stays blank while the form keeps
+                    // the group. The message itself does nothing.
+                    .on_close(Message::NoOp)
                     .padding(10)
                     .input_style(crate::widgets::rounded_input_style)
                     .menu_style(crate::widgets::combo_menu_style)

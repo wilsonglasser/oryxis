@@ -535,9 +535,11 @@ impl Oryxis {
                 .size(13)
                 .style(crate::widgets::rounded_input_style)
                 .boxed();
-        // Same type-ahead combo as the host editor's Parent Group and
-        // the vault snippet panel: existing groups filter as you type,
-        // a new name is accepted as-is.
+        // Same type-ahead combo as the vault snippet panel: existing
+        // groups filter as you type, a new name is accepted as-is.
+        // `on_close` makes the fork's combo restore the committed value
+        // when the field is focused and then abandoned (it clears its
+        // own input on focus, and restores only on that branch).
         let group_selection = (!self.snippet_form.group.is_empty()).then_some(&self.snippet_form.group);
         let group_input: Element<'_, Message> = iced::widget::combo_box(
             &self.snippet_form.group_combo,
@@ -546,6 +548,7 @@ impl Oryxis {
             |v| Message::Snippet(SnippetMessage::SnippetGroupChanged(v)),
         )
         .on_input(|v| Message::Snippet(SnippetMessage::SnippetGroupChanged(v)))
+        .on_close(Message::NoOp)
         .padding(8)
         .size(13.0)
         .input_style(crate::widgets::rounded_input_style)

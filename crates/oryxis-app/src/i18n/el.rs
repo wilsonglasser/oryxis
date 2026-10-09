@@ -1606,6 +1606,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "ip_or_hostname" => "IP ή όνομα host",
         "my_server_placeholder" => "Ο διακομιστής μου",
         "group_placeholder" => "Παραγωγή, Staging...",
+        "editor_clear_group" => "Αφαίρεση από την ομάδα",
         "edit_group" => "Επεξεργασία ομάδας",
         "new_subgroup" => "Νέα υποομάδα",
         "move_to_group" => "Μετακίνηση σε ομάδα…",

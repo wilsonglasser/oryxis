@@ -1607,6 +1607,7 @@ pub(super) fn lookup(key: &str) -> &'static str {
         "ip_or_hostname" => "IP or Hostname",
         "my_server_placeholder" => "My Server",
         "group_placeholder" => "Production, Staging...",
+        "editor_clear_group" => "Remove from group",
         "edit_group" => "Edit Group",
         "new_subgroup" => "New subgroup",
         "move_to_group" => "Move to group…",

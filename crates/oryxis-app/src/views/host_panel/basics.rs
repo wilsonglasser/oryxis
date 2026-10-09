@@ -21,40 +21,151 @@ impl Oryxis {
     }
 
     pub(super) fn hp_parent_combo(&self) -> Element<'_, Message> {
-        // Parent Group is a native iced combo_box: a single field that
-        // filters the existing (visible) groups as you type and lets you
-        // pick one, while still accepting a brand new name. The typed /
-        // picked value flows through `EditorGroupChanged` into
+        // Parent Group is the same component as the manual group editor's
+        // and the session-group panel's: a plain text_input (typing a
+        // label works, a breadcrumb path too, empty = top level) with a
+        // chevron that opens the shared group picker popover, which
+        // carries a "Top level (no group)" row for this target. The
+        // typed / picked value flows through `EditorGroupChanged` into
         // `editor_form.group_name`, so the save path (find-or-create by
-        // label) is unchanged. The `selection` prop drives the unfocused
-        // display (the combo clears its internal value after a pick).
-        let parent_selection = (!self.editor_form.group_name.is_empty())
-            .then_some(&self.editor_form.group_name);
-        // Keyboard row: Left/Right cycle the existing group names (the
-        // fork's combo_box has no id hook, so Enter cannot focus it;
-        // free-text entry stays a mouse/typing affordance).
-        let (group_prev, group_next) = crate::keynav::slots::cycle_pair(
-            self.editor_parent_combo.options(),
+        // path) is unchanged.
+        //
+        // It used to be the native combo_box, and that could not take a
+        // host OUT of its folder: the fork's combo clears its own input
+        // on focus WITHOUT publishing `on_input`, so a field that looked
+        // empty still held the folder, and closing the drawer wrote the
+        // old folder straight back. A text_input never shows a value it
+        // does not hold.
+        const PARENT_COMBO_HEIGHT: f32 = 36.0;
+        let has_group = !self.editor_form.group_name.trim().is_empty();
+        let rtl = crate::i18n::is_rtl_layout();
+        // Trailing room for the clear button so it never covers typed
+        // text; constant whether or not the button is live, so toggling
+        // it does not reflow the field.
+        let trailing = 32.0;
+        let (pad_left, pad_right) = if rtl { (trailing, 10.0) } else { (10.0, trailing) };
+        let parent_input: Element<'_, Message> = text_input(
+            t("group_placeholder"),
             &self.editor_form.group_name,
-            |v| Message::Editor(EditorMessage::EditorGroupChanged(v)),
-        );
-        let parent_combo: Element<'_, Message> = self.panel_nav_slot(
-            crate::keynav::RowAction::picker(group_prev, group_next),
-            10.0,
-            iced::widget::combo_box(
-                &self.editor_parent_combo,
-                t("group_placeholder"),
-                parent_selection,
-                |v| Message::Editor(EditorMessage::EditorGroupChanged(v)),
+        )
+        .id(iced::widget::Id::new("editor-parent-group"))
+        .on_input(|v| Message::Editor(EditorMessage::EditorGroupChanged(v)))
+        .on_submit_maybe(self.hp_submit())
+        .padding(Padding { top: 10.0, right: pad_right, bottom: 10.0, left: pad_left })
+        .width(Length::Fill)
+        .style(crate::widgets::rounded_input_style)
+        .align_x(dir_align_x())
+        .boxed();
+
+        // The clear (×) empties the field in one click: the explicit
+        // "remove from group" the user asked for, since a cleared field
+        // IS top level on save. Always built (shape-stable, see
+        // `select_ring_opt`): with nothing to clear it is inert and
+        // invisible, and it is only a keyboard row while it is live.
+        let clear_msg = Message::Editor(EditorMessage::EditorGroupChanged(String::new()));
+        let clear_icon = iced_fonts::lucide::x::<iced::Theme>()
+            .size(14)
+            .color(if has_group { OryxisColors::t().text_muted } else { Color::TRANSPARENT });
+        let clear_btn = button(clear_icon)
+            .on_press_maybe(has_group.then(|| clear_msg.clone()))
+            .padding(4)
+            .style(move |_, status| {
+                let bg = match (has_group, status) {
+                    (true, BtnStatus::Hovered) => Color::from_rgba(1.0, 1.0, 1.0, 0.08),
+                    (true, BtnStatus::Pressed) => Color::from_rgba(1.0, 1.0, 1.0, 0.12),
+                    _ => Color::TRANSPARENT,
+                };
+                button::Style {
+                    background: Some(Background::Color(bg)),
+                    border: Border { radius: Radius::from(6.0), ..Default::default() },
+                    ..Default::default()
+                }
+            });
+        let clear_el: Element<'_, Message> = if has_group {
+            self.panel_nav_slot(
+                crate::keynav::RowAction::activate(clear_msg),
+                6.0,
+                crate::views::terminal::icon_tooltip(clear_btn.boxed(), t("editor_clear_group")),
             )
-            .on_input(|v| Message::Editor(EditorMessage::EditorGroupChanged(v)))
-            .padding(10)
-            .input_style(crate::widgets::rounded_input_style)
-            .menu_style(crate::widgets::combo_menu_style)
+        } else {
+            // Same wrapper as the ringed branch, with no tooltip to
+            // hover: the tooltip is a widget of its own, so it is kept
+            // out of the tree on BOTH sides and the ring wrapper alone
+            // keeps the shape identical.
+            crate::widgets::select_ring_opt(clear_btn.boxed(), 6.0, None)
+        };
+        let (clear_align, clear_pad) = if rtl {
+            (iced::alignment::Horizontal::Left, Padding { left: 2.0, ..Padding::ZERO })
+        } else {
+            (iced::alignment::Horizontal::Right, Padding { right: 2.0, ..Padding::ZERO })
+        };
+        let clear_overlay = container::<_, iced::Theme>(clear_el)
             .width(Length::Fill)
+            .height(Length::Fill)
+            .align_x(clear_align)
+            .align_y(iced::alignment::Vertical::Center)
+            .padding(clear_pad);
+        let input_with_clear: Element<'_, Message> = self.panel_nav_slot(
+            crate::keynav::RowAction::input(iced::widget::Id::new("editor-parent-group")),
+            10.0,
+            iced::widget::Stack::<iced::Element<'_, _>>::new()
+                .push(parent_input)
+                .push(clear_overlay.boxed())
+                .width(Length::Fill)
+                .boxed(),
+        );
+
+        // The chevron is its own keyboard row: Enter opens the picker,
+        // same as a click.
+        let picker_toggle = Message::Navigation(NavigationMessage::ToggleGroupPicker(
+            crate::state::GroupPickerTarget::HostEditorParent,
+        ));
+        let parent_chevron = self.panel_nav_slot(
+            crate::keynav::RowAction::activate(picker_toggle.clone()),
+            8.0,
+            button(
+                container(
+                    iced_fonts::lucide::chevron_down::<iced::Theme>()
+                        .size(12)
+                        .color(OryxisColors::t().text_muted),
+                )
+                .center_x(Length::Fixed(32.0))
+                .center_y(Length::Fixed(PARENT_COMBO_HEIGHT)),
+            )
+            .on_press(picker_toggle)
+            .padding(0)
+            .style(|_, status| {
+                let bg = match status {
+                    BtnStatus::Hovered => OryxisColors::t().bg_hover,
+                    _ => OryxisColors::t().bg_surface,
+                };
+                button::Style {
+                    background: Some(Background::Color(bg)),
+                    border: Border {
+                        radius: Radius::from(6.0),
+                        color: OryxisColors::t().border,
+                        width: 1.0,
+                    },
+                    ..Default::default()
+                }
+            })
             .boxed(),
         );
-        parent_combo
+        crate::widgets::bounds_reporter(
+            dir_row(vec![
+                container(input_with_clear)
+                    .width(Length::Fill)
+                    .height(Length::Fixed(PARENT_COMBO_HEIGHT))
+                    .boxed(),
+                Space::new().width(6).boxed(),
+                container(parent_chevron)
+                    .height(Length::Fixed(PARENT_COMBO_HEIGHT))
+                    .boxed(),
+            ])
+            .align_y(iced::Alignment::Center)
+            .boxed(),
+            self.host_editor_parent_combo_bounds.clone(),
+        )
     }
 
     pub(super) fn hp_tags_field(&self) -> Element<'_, Message> {

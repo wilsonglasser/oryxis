@@ -1600,6 +1600,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "ip_or_hostname" => "IP veya Sunucu Adı",
         "my_server_placeholder" => "Sunucum",
         "group_placeholder" => "Production, Staging...",
+        "editor_clear_group" => "Gruptan çıkar",
         "edit_group" => "Grubu düzenle",
         "new_subgroup" => "Yeni alt grup",
         "move_to_group" => "Gruba taşı…",

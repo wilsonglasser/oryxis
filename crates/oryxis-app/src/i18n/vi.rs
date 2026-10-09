@@ -1600,6 +1600,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "ip_or_hostname" => "IP hoặc tên máy chủ",
         "my_server_placeholder" => "Máy chủ của tôi",
         "group_placeholder" => "Production, Staging...",
+        "editor_clear_group" => "Gỡ khỏi nhóm",
         "edit_group" => "Sửa nhóm",
         "new_subgroup" => "Nhóm con mới",
         "move_to_group" => "Chuyển vào nhóm…",

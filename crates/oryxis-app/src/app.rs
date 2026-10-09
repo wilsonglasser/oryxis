@@ -1057,12 +1057,12 @@ pub struct Oryxis {
     /// is shown for that provider.
     pub(crate) plugin_install_modal: Option<String>,
     /// Native combo_box state for the host editor's Parent Group field.
-    /// Holds the (visible) group labels + the filtered subset and the
-    /// live typed value. Rebuilt on editor-open via
-    /// `rebuild_editor_combos`; the typed/selected value still
-    /// flows through `editor_form.group_name` (the save path's single
-    /// source of truth), so free-text "create on save" is unchanged.
-    pub(crate) editor_parent_combo: iced::widget::combo_box::State<String>,
+    /// Bounds of the host editor's Parent Group row (text input +
+    /// chevron), the anchor of its group picker popover. The typed /
+    /// picked value flows through `editor_form.group_name` (the save
+    /// path's single source of truth), so free-text "create on save"
+    /// is unchanged.
+    pub(crate) host_editor_parent_combo_bounds: crate::widgets::BoundsCell,
     /// Native combo_box state for the host editor's Initial Command /
     /// Snippet field. A forced-selection searchable combo: options are
     /// the None / Custom sentinels plus the snippet labels; the picked

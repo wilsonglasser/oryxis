@@ -157,7 +157,7 @@ impl Oryxis {
         self.editor_startup_choice = crate::state::StartupChoice::None;
         // Creating a host while inside a folder (root or subgroup)
         // lands it there: prefill with the full breadcrumb path, which
-        // is what the combo displays and what the save resolves first.
+        // is what the field displays and what the save resolves first.
         if let Some(gid) = self.cur_nav().active_group
             && self.groups.iter().any(|g| g.id == gid && g.cloud_query.is_none())
         {
@@ -243,14 +243,12 @@ impl Oryxis {
     }
 
     /// Rebuild the native combo_box states backing the host editor's
-    /// Parent Group and Initial Command / Snippet fields. Called on
-    /// editor-open.
+    /// Initial Command / Snippet, SSH Key and login-script fields.
+    /// Called on editor-open.
     ///
-    /// Parent Group: options are the visible (non-phantom) groups and
-    /// the current `group_name` seeds the selection so an existing host
-    /// pre-fills its folder. Typing / picking drives
-    /// `editor_form.group_name`, so the save path (find-or-create by
-    /// label) is untouched.
+    /// Parent Group is NOT one of them: it is a text_input + the shared
+    /// group picker popover (`GroupPickerTarget::HostEditorParent`),
+    /// which reads `self.groups` live and needs no state of its own.
     ///
     /// Initial Command / Snippet: a forced-selection searchable combo.
     /// Options are the `None` / `Custom` sentinels first, then every
@@ -258,26 +256,6 @@ impl Oryxis {
     /// there is no free-text path (no `on_input`), so typing only
     /// filters. The current choice seeds the selection for prefill.
     pub(crate) fn rebuild_editor_combos(&mut self) {
-        // Options are full breadcrumb paths ("Prod / Frontend"), so
-        // subgroups are visibly nested and same-named folders under
-        // different parents stay distinguishable. Alphabetical sort
-        // naturally clusters a parent with its children.
-        let visible = self.visible_group_ids();
-        let mut labels: Vec<String> = self
-            .groups
-            .iter()
-            .filter(|g| visible.contains(&g.id))
-            .map(|g| oryxis_core::models::Group::path_of(&self.groups, g.id))
-            .collect();
-        labels.sort_by_key(|s| s.to_lowercase());
-        labels.dedup();
-        // The live selection travels through the widget's `selection`
-        // argument at view time (host_panel/basics.rs); since the
-        // upstream unify-text-editing refactor the State only carries
-        // the options (`with_selection` is gone, the widget restores
-        // the selected value itself).
-        self.editor_parent_combo = iced::widget::combo_box::State::new(labels);
-
         self.reset_editor_startup_combo();
         self.reset_editor_key_combo();
         self.editor_login_script_combo =

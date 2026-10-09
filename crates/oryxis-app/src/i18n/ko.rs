@@ -1600,6 +1600,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "ip_or_hostname" => "IP 또는 호스트 이름",
         "my_server_placeholder" => "내 서버",
         "group_placeholder" => "프로덕션, 스테이징...",
+        "editor_clear_group" => "그룹에서 제거",
         "edit_group" => "그룹 편집",
         "new_subgroup" => "새 하위 그룹",
         "move_to_group" => "그룹으로 이동…",

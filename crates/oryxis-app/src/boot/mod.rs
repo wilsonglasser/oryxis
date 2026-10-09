@@ -518,7 +518,7 @@ impl Oryxis {
                 trigger_confirm: None,
                 cloud_profiles: Vec::new(),
                 cloud_form: crate::state::CloudForm::default(),
-                editor_parent_combo: iced::widget::combo_box::State::new(Vec::new()),
+                host_editor_parent_combo_bounds: crate::widgets::new_bounds_cell(),
                 editor_startup_combo: iced::widget::combo_box::State::new(Vec::new()),
                 editor_login_script_combo: iced::widget::combo_box::State::new(Vec::new()),
                 editor_script_template_combo: iced::widget::combo_box::State::new(Vec::new()),

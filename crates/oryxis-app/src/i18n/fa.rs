@@ -1591,6 +1591,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "ip_or_hostname" => "IP یا نام میزبان",
         "my_server_placeholder" => "سرور من",
         "group_placeholder" => "Production, Staging...",
+        "editor_clear_group" => "حذف از گروه",
         "edit_group" => "ویرایش گروه",
         "new_subgroup" => "زیرگروه جدید",
         "move_to_group" => "انتقال به گروه…",

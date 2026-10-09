@@ -1509,6 +1509,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "ip_or_hostname" => "IP 或主機名稱",
         "my_server_placeholder" => "我的伺服器",
         "group_placeholder" => "Production、Staging...",
+        "editor_clear_group" => "從群組中移除",
         "edit_group" => "編輯群組",
         "new_subgroup" => "新增子群組",
         "move_to_group" => "移動到群組…",

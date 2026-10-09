@@ -1509,6 +1509,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "ip_or_hostname" => "IP またはホスト名",
         "my_server_placeholder" => "マイサーバー",
         "group_placeholder" => "Production、Staging...",
+        "editor_clear_group" => "グループから外す",
         "edit_group" => "グループを編集",
         "new_subgroup" => "新しいサブグループ",
         "move_to_group" => "グループへ移動…",
