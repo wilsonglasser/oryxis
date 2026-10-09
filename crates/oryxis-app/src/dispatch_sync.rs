@@ -1022,11 +1022,17 @@ impl Oryxis {
                             self.sync.peers =
                                 vault.list_sync_peers().unwrap_or_default();
                         }
-                        // A pulled tombstone may have removed a cloud
+                        // The engine wrote the pulled records through its
+                        // own vault handle: the in-memory lists are re-read
+                        // the way an external write is (entities, pins,
+                        // forward rules, the open editor following its
+                        // row), never through `load_data_from_vault`,
+                        // which also restores tabs and runs migrations.
+                        // A pulled tombstone may also have removed a cloud
                         // account whose managed kubeconfig is still on
-                        // disk; this round does not pass through
-                        // `load_data_from_vault`, which sweeps the rest.
+                        // disk, so the sweep follows.
                         if pulled > 0 {
+                            self.reload_after_external_write();
                             self.sweep_orphan_kubeconfigs();
                         }
                     }
